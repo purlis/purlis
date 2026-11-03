@@ -71,6 +71,9 @@ export const SAID = {
   addToChat: "Add to a chat's context",
   removeFolder: "Remove folder",
   discardAnyway: "Discard that work and remove anyway",
+  // A chat's Branch ▸ (#4851): the words of `command-table.md` rows 24 and 25.
+  mergeItsBranch: "Merge its branch",
+  removeItsBranchFolder: "Remove its branch folder",
   clone: "Clone",
   dropFromWorkspace: "Remove from workspace…",
   dismiss: "Dismiss",
@@ -89,6 +92,7 @@ export const SUBMENU = {
   stop: { said: "Stop", tip: "Ways to stop this chat, or the tasks it asked for." },
   curate: { said: "Curate", tip: undefined },
   moveTo: { said: "Move to", tip: undefined },
+  branch: { said: "Branch", tip: "Each acts on the branch folder purlis cut for this chat." },
 } as const;
 
 /**

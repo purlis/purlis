@@ -1,0 +1,60 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **A chat's combined persona and state icon** (#3342, lifted out of the sidebar by #4762): the
+   persona's mark, or the terminal's, with the state's own mark on its lower end corner while the
+   chat asks for the person or is at work, ringed in the ground it stands on. One look wherever a
+   chat is drawn: the sidebar's row, a tab (its focused pane's chat), a pane's head and a folded
+   pane's rail. The place it stands sets two things and nothing else:
+
+   - `--chat-persona-size`, the mark's size (the sidebar's 20px when unset);
+   - `--chat-badge-ground`, the ground the badge is ringed in: its own at rest, under the pointer
+     and chosen. */
+.chat-persona {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.chat-persona > svg,
+.chat-persona > .persona-mark {
+  inline-size: var(--chat-persona-size, calc(var(--space-6) + var(--space-2)));
+  block-size: var(--chat-persona-size, calc(var(--space-6) + var(--space-2)));
+}
+
+/* At rest, no badge. */
+.chat-persona > .shown-state {
+  display: none;
+}
+
+/* The states that ask for the person or are at work. */
+.chat-persona:is(
+    [data-state="needs-you"],
+    [data-state="working"],
+    [data-state="asking"],
+    [data-state="waiting-on-tasks"],
+    [data-state="waiting-on-own-work"],
+    [data-state="failed"],
+    [data-state="unreported"],
+    [data-state="last-message"]
+  )
+  > .shown-state {
+  display: block;
+  position: absolute;
+  inset-block-end: calc(-1 * var(--space-2));
+  inset-inline-end: calc(-1 * var(--space-2));
+}
+
+.chat-persona > .shown-state .shape {
+  display: grid;
+  place-items: center;
+  inline-size: calc(var(--space-4) + var(--space-2));
+  block-size: calc(var(--space-4) + var(--space-2));
+  border-radius: 50%;
+  background-color: var(--chat-badge-ground);
+}
+
+.chat-persona > .shown-state .shape > svg {
+  inline-size: calc(var(--space-4) + var(--space-1));
+  block-size: calc(var(--space-4) + var(--space-1));
+}

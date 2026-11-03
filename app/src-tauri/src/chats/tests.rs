@@ -5240,37 +5240,44 @@ fn a_chat_put_back_is_one_the_next_quit_records_again() {
     assert_eq!(again.chats[0].resume, Some(SessionId::new(ID).unwrap()));
 }
 
-// ----- a pinned chat (ADR 0039, stored per ADR 0040) -----
+// ----- the pin is a tab's (#4762, ADR 0039 amended 2026-11-02) -----
 
 #[test]
-fn a_pin_is_written_into_the_record_so_it_outlives_the_app() {
-    // The record is the only thing that says a chat exists at all, which is why the pin
-    // is kept there and not in the machine store: a pin cannot outlive its chat.
+fn a_chat_pin_is_read_once_from_a_record_with_no_tabs_and_then_the_tab_holds_it() {
+    // The upgrade: a record written before tabs were recorded keeps each chat's pin until the
+    // window reports its layout, which carries it on the tab. From then on the chat's own
+    // field is never written again.
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
-        .unwrap();
+    let old = Record {
+        chats: vec![
+            Chat {
+                number: Some(3),
+                active: true,
+                ..chat(&a_claude(dir.path()), "ide.3", None)
+            },
+            Chat {
+                number: Some(4),
+                pinned: true,
+                ..chat(&a_claude(dir.path()), "ide.4", None)
+            },
+        ],
+        ..Record::default()
+    };
+    chats.put_back(&old, SIZE);
+    assert!(chats.record().chats[1].pinned, "carried until a layout");
 
-    chats.pin(session, true).expect("the chat is open");
+    let mut pinned = front_tab(Node::chat(4));
+    pinned.pinned = true;
+    chats.lay_out(on_ops(vec![pinned])).unwrap();
 
-    assert!(chats.record().chats[0].pinned);
-    let _ = chats.close(session);
-}
-
-#[test]
-fn a_pin_can_be_taken_off_again() {
-    let dir = tempfile::tempdir().unwrap();
-    let chats = Chats::new();
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
-        .unwrap();
-    chats.pin(session, true).unwrap();
-
-    chats.pin(session, false).unwrap();
-
-    assert!(!chats.record().chats[0].pinned);
-    let _ = chats.close(session);
+    let record = chats.record();
+    assert!(
+        record.chats.iter().all(|one| !one.pinned),
+        "the chat's pin retired"
+    );
+    assert!(record.layout.expect("a layout").tabs[0].pinned);
+    chats.end_all();
 }
 
 // ----- every tab as a tree of panes (#4751) -----
@@ -5500,6 +5507,60 @@ fn what_is_on_screen_is_every_chat_in_the_front_tab_of_the_drawn_strip_and_each_
 }
 
 #[test]
+fn a_pane_shows_a_chat_that_is_not_its_tab_s_own_beside_an_empty_pane_and_the_core_keeps_it() {
+    // #4755: a pane shows any open chat. Here a task sits on another strip's tab, its asker in
+    // no pane at all, beside an empty pane; the core holds it, says it is on screen, and a
+    // relaunch reads it back as it was.
+    use purlis_core::reopen::{HandedFrom, Mode, Owed};
+    let dir = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let before = Chats::new();
+    let asker = before
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let task = before
+        .start(
+            &Chat {
+                from: Some(HandedFrom {
+                    id: None,
+                    chat: asker,
+                    name: "ide.7".to_owned(),
+                    workspace: purlis_core::active::Place::Workspace("alpha".to_owned()),
+                    report: Owed::Due,
+                    mode: Mode::Task,
+                    depth: 1,
+                    root: None,
+                    above: None,
+                    by_person: false,
+                    long: false,
+                }),
+                ..chat(&a_claude(dir.path()), "talk", None)
+            },
+            SIZE,
+        )
+        .unwrap();
+    let laid = on_ops(vec![front_tab(Node::split(
+        Direction::Row,
+        EVEN,
+        Node::Pane(Pane::Empty),
+        Node::chat(task),
+    ))]);
+
+    before
+        .lay_out(laid.clone())
+        .expect("any open chat may be in a pane");
+
+    assert_eq!(before.looked_at(), vec![task]);
+    purlis_core::reopen::write(plane.path(), &before.record()).unwrap();
+    before.end_all();
+    let after = Chats::new();
+    let record = purlis_core::reopen::read_or_refusal(plane.path()).unwrap();
+    after.put_back(&record, SIZE);
+    assert_eq!(after.layout(), Some(laid));
+    after.end_all();
+}
+
+#[test]
 fn a_pane_follows_its_chat_when_that_chat_is_started_again_under_a_new_number() {
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
@@ -5610,39 +5671,6 @@ fn a_record_with_no_tabs_list_is_read_the_old_way_until_the_window_reports_and_t
     );
     assert!(record.layout.is_some());
     chats.end_all();
-}
-
-#[test]
-fn a_chat_charter_does_not_have_open_cannot_be_pinned() {
-    // A pin is an arrangement of what is there. Inventing an entry to hold one would put
-    // a chat in the record that no start ever put there.
-    let chats = Chats::new();
-
-    assert!(chats.pin(7, true).is_err());
-    assert_eq!(chats.record(), Record::default());
-}
-
-#[test]
-fn pinning_what_is_already_pinned_writes_nothing() {
-    // The record is rewritten on every write and every write is a fingerprint the
-    // machine store then has to vouch for — `bring_to_front` skips a no-op for the same
-    // reason, and a pin pressed twice must not cost two writes.
-    let dir = tempfile::tempdir().unwrap();
-    let written = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let counting = std::sync::Arc::clone(&written);
-    let chats = Chats::recorded_by(Box::new(move |_| {
-        counting.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    }));
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
-        .unwrap();
-    chats.pin(session, true).unwrap();
-    let after_one = written.load(std::sync::atomic::Ordering::SeqCst);
-
-    chats.pin(session, true).unwrap();
-
-    assert_eq!(written.load(std::sync::atomic::Ordering::SeqCst), after_one);
-    let _ = chats.close(session);
 }
 
 // ----- a task chat is listed with no tab until the person opens it (#1447) -----
@@ -6091,7 +6119,7 @@ fn a_ulid(id: Option<&String>) -> bool {
 }
 
 /// What the core's start answers for a shell on no profile.
-fn a_shell_ready() -> purlis_core::start::Ready {
+pub(crate) fn a_shell_ready() -> purlis_core::start::Ready {
     purlis_core::start::Ready {
         program: "/bin/sh".to_owned(),
         command: Vec::new(),
@@ -8833,6 +8861,83 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     assert!(first.gone.is_empty());
 }
 
+/// #4738: **a tab mount with no instruction change reads no skill folders**. Once the plane is
+/// watched, each open chat's stamp is read once and kept: a skill edited on disk that the watch
+/// has not told of is not seen, because nothing read the folder again. The watch's word that the
+/// instructions changed refreshes every open chat's stamp.
+#[test]
+fn a_chat_skill_stamp_is_read_again_only_once_the_instructions_change() {
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").expect("a manifest");
+    let skill = |name: &str, body: &str| {
+        let folder = plane.path().join("skills").join(name);
+        std::fs::create_dir_all(&folder).expect("a skill folder");
+        std::fs::write(
+            folder.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n\n{body}\n"),
+        )
+        .expect("a skill");
+    };
+    skill("deploy", "one");
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    chats.skills_now().watched(true);
+    for session in [1, 2] {
+        let harness = Harness::ClaudeCode;
+        lock(&chats.open).insert(
+            session,
+            Running {
+                chat: a_resumable_chat_in(plane.path()),
+                how: Reopened::Fresh(Fresh::NoConversationRecorded),
+                harness: Some(harness),
+                declared: None,
+                workspace: None,
+                confinement: None,
+                confines: None,
+                started_with: StartedWith::default(),
+                composed_by_its_host: false,
+                ran: None,
+                grants_as: None,
+                skills: Some(purlis_core::skills::stamp_now(
+                    &purlis_core::skills::Running {
+                        plane: plane.path(),
+                        workspace: None,
+                        persona: None,
+                        harness,
+                        built_in: None,
+                        plane_skills: true,
+                        start: None,
+                    },
+                )),
+                plane_skills: true,
+                skills_read: Default::default(),
+                last_prompt: None,
+                runs_as: None,
+                clones_at_start: None,
+                prompt_key: None,
+            },
+        );
+    }
+    let sessions = |chats: &Chats| -> Vec<u32> {
+        chats
+            .skills_changed_while_on()
+            .into_iter()
+            .map(|(session, _)| session)
+            .collect()
+    };
+    assert!(sessions(&chats).is_empty(), "nothing has changed yet");
+
+    // Written behind the watch's back: a mount asks again, and reads no skill folder.
+    skill("deploy", "two");
+    assert!(
+        sessions(&chats).is_empty(),
+        "a skill folder was read again with no instruction change"
+    );
+
+    // The watch says the instructions changed: every open chat's stamp is read again.
+    chats.skills_now().forget();
+    assert_eq!(sessions(&chats), [1, 2]);
+}
+
 /// #2019: a chat serving on a port is not told its sandbox is older once its own door listens
 /// there: a compile then finds the port in use, which changes no grant.
 #[test]
@@ -9578,4 +9683,138 @@ fn a_notification_is_not_lost_to_a_stale_layout_while_the_window_is_in_the_backg
         "and only held back while the window is in front"
     );
     chats.end_all();
+}
+
+/// **A start that chose a pool that is gone starts nothing, and says the pool can't be reached**
+/// (#4536, ruled 2026-11-01): the window then offers this machine for it, and nothing runs here
+/// before that press. A start that chose this machine runs here whatever its workspace names.
+#[cfg(unix)]
+#[test]
+fn a_start_on_a_pool_that_is_gone_starts_nothing_and_one_that_chose_this_machine_runs_here() {
+    use purlis_core::machine::StartChoice;
+    let plane = a_sandboxed_plane();
+    let workspace = plane.path().join("workspaces/w");
+    std::fs::create_dir_all(&workspace).expect("the workspace");
+    let config = tempfile::tempdir().expect("this machine's config");
+    purlis_core::machine::update(config.path(), |store| {
+        store.remember(plane.path(), 1);
+        store
+            .set_chats_run_on(plane.path(), "w", Some("builds"))
+            .expect("the workspace names a pool");
+    })
+    .expect("kept");
+    let host = Pretend::default();
+    let mut chats = restartable_chats_of(plane.path(), host.clone());
+    chats.keeping_pools_in(Some(config.path().to_path_buf()));
+
+    let on_a_gone_pool = Chat {
+        runs_on: Some(StartChoice::Pool("gone".to_owned())),
+        ..a_resumable_chat_in(&workspace)
+    };
+    let refused = crate::poolprofiles::offering_limits(|| chats.start(&on_a_gone_pool, SIZE))
+        .expect_err("a pool that is gone starts nothing");
+    assert_eq!(
+        refused.pool_unavailable.as_deref(),
+        Some("gone"),
+        "{refused:?}"
+    );
+    assert!(refused.words.contains("pool gone"), "{}", refused.words);
+    assert!(host.running().is_empty(), "never run here in its place");
+
+    let by_its_workspace = crate::poolprofiles::offering_limits(|| {
+        chats.start(&a_resumable_chat_in(&workspace), SIZE)
+    })
+    .expect_err("its workspace's pool is not kept either");
+    assert_eq!(by_its_workspace.pool_unavailable.as_deref(), Some("builds"));
+
+    // A shell, which writes no harness settings: what is asked here is only where it runs.
+    let here = Chat {
+        runs_on: Some(StartChoice::ThisMachine),
+        ..a_chat_in(&workspace, "/bin/sh")
+    };
+    let session = crate::poolprofiles::offering_limits(|| chats.start(&here, SIZE))
+        .expect("this machine, chosen for this start");
+    assert_eq!(host.running(), vec![session]);
+}
+
+/// **A move takes a chat's one-off choice of where it runs** (#4536): the record then follows its
+/// workspace, which the move just set, and the choice comes back where the move doesn't happen.
+#[test]
+fn a_chats_one_off_choice_of_where_it_runs_is_taken_and_given_back() {
+    use purlis_core::machine::StartChoice;
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let session = chats
+        .start(
+            &Chat {
+                runs_on: Some(StartChoice::ThisMachine),
+                ..a_chat_in(plane.path(), "/bin/sh")
+            },
+            SIZE,
+        )
+        .expect("a shell starts");
+    let recorded = |chats: &Chats| {
+        chats
+            .record()
+            .chats
+            .into_iter()
+            .find(|chat| chat.number == Some(session))
+            .and_then(|chat| chat.runs_on)
+    };
+    assert_eq!(recorded(&chats), Some(StartChoice::ThisMachine));
+
+    let was = chats.choose_runs_on(session, None);
+    assert_eq!(was, Some(StartChoice::ThisMachine));
+    assert_eq!(recorded(&chats), None, "it follows its workspace now");
+
+    chats.choose_runs_on(session, was);
+    assert_eq!(recorded(&chats), Some(StartChoice::ThisMachine));
+    let _ = chats.close(session);
+}
+
+/// **A start's own choice adds to a Claim only where the person made it in the window** (#4536,
+/// the person's ruling of 2026-11-02): a dispatched chat that chose where it runs adds nothing,
+/// and one that chose nothing follows its levels as every chat does.
+#[test]
+fn a_dispatched_chats_choice_of_where_it_runs_puts_nothing_on_a_claim() {
+    use purlis_core::machine::StartChoice;
+    use purlis_core::reopen::{HandedFrom, Mode, Owed};
+    let on_builds = Some(StartChoice::Pool("builds".to_owned()));
+    let from_a_chat = Some(HandedFrom {
+        id: None,
+        chat: 3,
+        name: "steward 3".to_owned(),
+        workspace: purlis_core::active::Place::Workspace("alpha".to_owned()),
+        report: Owed::Due,
+        mode: Mode::Task,
+        depth: 1,
+        root: None,
+        above: None,
+        by_person: false,
+        long: false,
+    });
+    let window = Chat {
+        runs_on: on_builds.clone(),
+        ..Default::default()
+    };
+    let dispatched = Chat {
+        runs_on: on_builds.clone(),
+        from: from_a_chat.clone(),
+        ..Default::default()
+    };
+    let following = Chat {
+        from: from_a_chat,
+        ..Default::default()
+    };
+    assert_eq!(claim_follows(&window), Some(on_builds.as_ref()));
+    assert_eq!(
+        claim_follows(&dispatched),
+        None,
+        "a dispatch's choice adds nothing"
+    );
+    assert_eq!(
+        claim_follows(&following),
+        Some(None),
+        "it follows the levels"
+    );
 }

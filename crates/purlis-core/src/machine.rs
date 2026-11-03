@@ -1143,6 +1143,32 @@ pub enum StartChoice {
     Pool(String),
 }
 
+/// [`StartChoice::word`] for this machine.
+const CHOSE_THIS_MACHINE: &str = "this-machine";
+/// What starts a pool's name in [`StartChoice::word`]: no pool's name has a colon.
+const CHOSE_A_POOL: &str = "pool:";
+
+impl StartChoice {
+    /// **The choice as one word** (#4536): `this-machine`, or `pool:<name>`. What `reopen.json`
+    /// keeps and a dispatch's line carries, so the two never spell it apart.
+    pub fn word(&self) -> String {
+        match self {
+            Self::ThisMachine => CHOSE_THIS_MACHINE.to_owned(),
+            Self::Pool(pool) => format!("{CHOSE_A_POOL}{pool}"),
+        }
+    }
+
+    /// [`Self::word`] read back, held to a name a pool may have: anything else is `None`.
+    pub fn read(word: &str) -> Option<Self> {
+        if word == CHOSE_THIS_MACHINE {
+            return Some(Self::ThisMachine);
+        }
+        let pool = word.strip_prefix(CHOSE_A_POOL)?;
+        crate::runners::usable_pool_name(pool).ok()?;
+        Some(Self::Pool(pool.to_owned()))
+    }
+}
+
 /// Which level decided where a chat runs, so the window can say why (#4536).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaceLevel {

@@ -367,16 +367,23 @@ pub fn left_out_said(profile: &str) -> Option<String> {
 
 /// The hits of a profile of `bytes` in `files`, against what `kept` is held to.
 fn limits_hit(kept: &Kept, bytes: u64, files: u64) -> Vec<LimitHit> {
+    hits_against(&kept.limits, &kept.highest, bytes, files)
+}
+
+/// **The limits a profile of `bytes` in `files` is over**, of `limits` chosen and the `highest`
+/// its runner takes: what a send to a runner refuses, said before anything is sent (#4482).
+#[must_use]
+pub fn hits_against(limits: &Chosen, highest: &Chosen, bytes: u64, files: u64) -> Vec<LimitHit> {
     [
         (LimitId::ProfileSize, bytes.div_ceil(MIB)),
         (LimitId::ProfileFiles, files),
     ]
     .into_iter()
     .filter_map(|(id, needed)| {
-        let highest = kept.highest.get(id);
-        let chosen = kept.limits.in_force(id);
+        let highest = highest.get(id);
+        let chosen = limits.in_force(id);
         let in_force = highest.map_or(chosen, |highest| highest.min(chosen));
-        (needed > in_force).then(|| kept.limits.hit(id, in_force, needed, highest))
+        (needed > in_force).then(|| limits.hit(id, in_force, needed, highest))
     })
     .collect()
 }
@@ -864,12 +871,13 @@ pub fn standing_for_the_wire(
 /// none sent leaves them as they are. Those of a keep that sent only what changed (#4088) are
 /// what it holds with those in place, read off its disk now, checked whole as any others and kept
 /// as any others, only where they come to the digest the keep names, so nothing it said of them
-/// decides it.
+/// decides it. `sent` is taken whole, so its settings are held once as they are checked and kept,
+/// never copied (#4396).
 pub fn kept_for_the_desktop(
     homes: &Homes,
     home: &Path,
     desktop: &str,
-    sent: &purlis_session_protocol::session::ProfileToKeep,
+    mut sent: purlis_session_protocol::session::ProfileToKeep,
     look: &dyn Look,
     now: u64,
 ) -> Result<purlis_session_protocol::session::ProfileStanding, String> {
@@ -878,7 +886,7 @@ pub fn kept_for_the_desktop(
     if sent.settings_changed.is_some() && sent.settings.is_none() {
         return Err("a keep of what changed named no settings staged for it".to_owned());
     }
-    let checked = match &sent.settings {
+    let checked = match sent.settings.take() {
         Some(_) if sent.sandbox_only => {
             return Err(format!(
                 "the profile '{}' is for sandboxed chats only, and its settings are purlis's, so \
@@ -888,16 +896,17 @@ pub fn kept_for_the_desktop(
         }
         Some(settings) => {
             let files: Vec<(String, Vec<u8>)> = settings
-                .iter()
-                .map(|file| (file.path.clone(), file.bytes.clone()))
+                .into_iter()
+                .map(|file| (file.path, file.bytes))
                 .collect();
             let files = match &sent.settings_changed {
-                Some(changed) => settings_after_change(homes, desktop, sent, changed, files)?,
+                Some(changed) => settings_after_change(homes, desktop, &sent, changed, files)?,
                 None => files,
             };
-            let checked = super::made::settings_checked(&sent.harness, &sent.name, &files)?;
+            let checked = super::made::settings_checked(&sent.harness, &sent.name, files)?;
             if let Some(changed) = &sent.settings_changed {
                 let digests: Vec<(&str, String)> = checked
+                    .files()
                     .iter()
                     .map(|(path, bytes)| (path.as_str(), wire::settings_digest(bytes)))
                     .collect();
@@ -917,10 +926,10 @@ pub fn kept_for_the_desktop(
         }
         None => None,
     };
-    let record = keep(homes, home, &Kept::from(sent), desktop, now)?;
-    if let Some(files) = &checked {
-        super::made::settings_kept(homes, &record, files)?;
-        keep_mcp_servers_of(&record, files);
+    let record = keep(homes, home, &Kept::from(&sent), desktop, now)?;
+    if let Some(checked) = &checked {
+        super::made::settings_kept(homes, &record, checked)?;
+        keep_mcp_servers_of(&record, checked.files());
     }
     super::made::loaded_unsent_cleared(&record)?;
     Ok(standing_for_the_wire(standing(&record, look)))

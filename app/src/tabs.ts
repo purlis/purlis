@@ -300,7 +300,13 @@ export type Content =
        * in italics on the strip, so the operator can tell which tab the next click reuses.
        */
       preview?: boolean;
-    };
+    }
+  /**
+   * **Nothing** (#4755): an empty pane, drawn with New chat and how many chats run here. A pane
+   * shows a chat, a view, or this; a tab can be all empty panes, and the record keeps them. It
+   * carries its workspace for a view's reason: nothing else files it on a strip.
+   */
+  | { kind: "empty"; workspace: string };
 
 export type Layout =
   | { kind: "pane"; pane: number; content: Content }
@@ -352,6 +358,13 @@ export type Tab = {
    * tab is in front and goes with the tab when it closes.
    */
   shows?: Readonly<Record<number, number>>;
+  /**
+   * **Whether the operator pinned the tab** (#4935): the tab's own, never its first pane's chat
+   * or view, so a tab whose only pane is empty can be pinned and the pin stays whatever that
+   * pane goes on to show. The record keeps it as the tab's `pinned` (`laidOut.layoutOf`).
+   * Absent on a tab that is not pinned.
+   */
+  pinned?: true;
 };
 
 /**
@@ -774,17 +787,6 @@ export function renamedView(
 }
 
 /**
- * A pinned view's key ({@link viewKey}) after the rename {@link renamedView} follows, or the key
- * itself when it names no view the rename touches.
- */
-export function renamedViewKey(key: string, from: string, to: string, root?: string): string {
-  const [space, view, ...rest] = key.split("/");
-  if (space !== "charter" || view === undefined || rest.length === 0) return key;
-  const moved = renamedView({ from: null, view, key: rest.join("/") }, from, to, root);
-  return moved ? viewKey(moved) : key;
-}
-
-/**
  * Every view tab follows a workspace renamed from `from` to `to` (charter#367): a view on its
  * strip moves to the new strip, and **every view keyed by the workspace's name is keyed by the
  * new one** ({@link renamedView}, #1248) — its settings, its changes, a todo, a memory, a piece's
@@ -970,11 +972,25 @@ export function workspaceOf(tabs: Tabs, id: number, filedIn: FiledIn): string | 
 /**
  * Whether a tab is pinned, which is a fact about the operator and not about the chat.
  *
- * A function rather than a field, for the same reasons `FiledIn` and `LastMoved` are: it is
- * answered somewhere else — the plane's own app record, through the core (ADR 0040) — and a
- * copy on the tab would be a second answer nothing invalidates.
+ * A function, as `FiledIn` and `LastMoved` are, so the strip's rules ask one question whatever
+ * answers it: the window answers it from the tab's own pin ({@link pinsOf}).
  */
 export type Pinned = (id: number) => boolean;
+
+/** Each tab's own pin (#4935), as {@link Pinned} asks it. */
+export function pinsOf(tabs: Tabs): Pinned {
+  return (id) => tabs.byId[id]?.pinned === true;
+}
+
+/** Tab `id` pinned, or unpinned (#4935). Answers `tabs` itself when it already was, or when
+ *  there is no such tab. */
+export function setPinned(tabs: Tabs, id: number, pinned: boolean): Tabs {
+  const tab = tabs.byId[id];
+  if (tab === undefined || (tab.pinned === true) === pinned) return tabs;
+  const next: Tab = { ...tab, pinned: true };
+  if (!pinned) delete next.pinned;
+  return { ...tabs, byId: { ...tabs.byId, [id]: next } };
+}
 
 /** Nothing pinned, which is what every caller that does not care about pins passes. */
 export const nothingPinned: Pinned = () => false;
@@ -1028,6 +1044,24 @@ export function tabsIn(
     ...front.filter(pinned),
     ...front.filter((id) => !pinned(id)),
   ];
+}
+
+/**
+ * **What Close other tabs closes** (#4762): every other tab on the strip tab `keep` is on, in
+ * the strip's order, except the pinned ones. A pin is the operator saying a tab stays, and a
+ * sweep of the strip is the act most likely to take it with the rest. The tab it was asked on
+ * stays, pinned or not.
+ */
+export function otherTabsToClose(
+  tabs: Tabs,
+  keep: number,
+  filedIn: FiledIn,
+  pinned: Pinned = nothingPinned,
+): number[] {
+  const strip = workspaceOf(tabs, keep, filedIn);
+  return tabs.order.filter(
+    (id) => id !== keep && !pinned(id) && workspaceOf(tabs, id, filedIn) === strip,
+  );
 }
 
 /**
@@ -1119,22 +1153,98 @@ export function splitFocusedPane(
 ): Tabs {
   const tab = frontTab(tabs);
   if (!tab) return tabs;
-  const pane = tabs.named.panes + 1;
-  const content: Content = {
-    kind: "session",
-    session,
-    chat: chat ?? chatNameOf(tabs, tab.id) ?? String(session),
-  };
-  const layout = replace(tab.layout, tab.focused, (focused) => ({
-    kind: "split",
+  return insertPane(tabs, {
+    tab: tab.id,
+    pane: tab.focused,
     direction,
-    children: [focused, { kind: "pane", pane, content }],
+    side: "after",
+    content: {
+      kind: "session",
+      session,
+      chat: chat ?? chatNameOf(tabs, tab.id) ?? String(session),
+    },
+  });
+}
+
+/** Which side of a pane a new one goes: `before` is the left or the top, `after` the right or
+ *  the bottom. */
+export type Side = "before" | "after";
+
+/** Where {@link insertPane} puts a new pane, and what it shows. */
+export type Insert = {
+  tab: number;
+  /** The pane the new one is put beside. */
+  pane: number;
+  direction: Direction;
+  side: Side;
+  content: Content;
+};
+
+/**
+ * **A new pane beside pane `pane` of tab `tab`, on either side** (#4755): the two become a split
+ * at an even share, the new pane its first child for `before` (left or top) and its second for
+ * `after` (right or bottom), and the new pane is the tab's focused one. The tab need not be in
+ * front, nor the pane focused, which is what a drop needs (#4763).
+ *
+ * Answers `tabs` itself when there is no such pane, or when `content` is a chat another pane
+ * already shows: a chat is on screen in one pane at a time, and the core refuses a layout that
+ * names one twice.
+ */
+export function insertPane(tabs: Tabs, at: Insert): Tabs {
+  const tab = tabs.byId[at.tab];
+  if (tab === undefined || !panes(tab.layout).some((each) => each.pane === at.pane)) return tabs;
+  if (at.content.kind === "session" && shownElsewhere(tabs, at.content.session)) return tabs;
+  const pane = tabs.named.panes + 1;
+  const added: Layout = { kind: "pane", pane, content: at.content };
+  const layout = replace(tab.layout, at.pane, (found) => ({
+    kind: "split",
+    direction: at.direction,
+    children: at.side === "before" ? [added, found] : [found, added],
   }));
   return {
     ...tabs,
     byId: { ...tabs.byId, [tab.id]: { ...tab, layout, focused: pane } },
     named: { ...tabs.named, panes: pane },
   };
+}
+
+/**
+ * **Pane `pane` of tab `id` shows `content`** (#4755): any open chat, not only its tab's own or
+ * a task of it; a view; or nothing. A task it showed in place of its chat (`Tab.shows`) is
+ * forgotten, since what it shows now is what it was given.
+ *
+ * Answers `tabs` itself when there is no such pane, when it shows `content` already, or when
+ * `content` is a chat another pane shows: a chat is on screen in one pane at a time.
+ */
+export function showIn(tabs: Tabs, id: number, pane: number, content: Content): Tabs {
+  const tab = tabs.byId[id];
+  const found = tab === undefined ? undefined : panes(tab.layout).find((one) => one.pane === pane);
+  if (tab === undefined || found === undefined) return tabs;
+  const switched = tab.shows?.[pane] !== undefined;
+  if (!switched && sameContent(found.content, content)) return tabs;
+  if (content.kind === "session" && shownElsewhere(tabs, content.session, id, pane)) return tabs;
+  const layout = replace(tab.layout, pane, (one) => ({ ...one, content }));
+  const shows = Object.fromEntries(
+    Object.entries(tab.shows ?? {}).filter(([at]) => Number(at) !== pane),
+  ) as Record<number, number>;
+  return { ...tabs, byId: { ...tabs.byId, [id]: showing({ ...tab, layout }, shows) } };
+}
+
+/**
+ * Whether a pane other than pane `pane` of tab `tab` shows chat `session`: what the core refuses
+ * twice is what each pane SHOWS (`layoutOf`), so a chat with a task drawn over it in its own pane
+ * is not counted there.
+ */
+function shownElsewhere(tabs: Tabs, session: number, tab?: number, pane?: number): boolean {
+  return tabs.order.some((id) =>
+    shownIn(tabs, id).some((one) => one.session === session && !(id === tab && one.pane === pane)),
+  );
+}
+
+function sameContent(a: Content, b: Content): boolean {
+  if (a.kind === "session" && b.kind === "session") return a.session === b.session;
+  if (a.kind === "view" && b.kind === "view") return viewKey(a.view) === viewKey(b.view);
+  return a.kind === "empty" && b.kind === "empty";
 }
 
 /**

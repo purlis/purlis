@@ -26,9 +26,11 @@
 //      can only end in GitHub's refusal stops early: when the only checks left are required ones
 //      that have not posted, and no run of the head is still going to post them, for a few polls
 //      running (a job renamed while protection still names it, or a run waiting on approval);
-//   6. marks a draft ready (`gh pr ready`), which the queue needs, and reads the checks again. No
-//      workflow here starts on `ready_for_review` today; the second read is a safety net for one
-//      that does;
+//   6. marks a draft ready (`gh pr ready`), which the queue needs. A draft runs no macOS job but the
+//      app's, and `ready_for_review` starts the `ci` run with the scoped macOS jobs and the outcome
+//      bars (#4849), so it waits for that run to finish and pass, then reads the checks again: the
+//      draft run's are not the ready head's claim. A ready that starts no run in a few minutes is
+//      refused;
 //   7. reads main once more, then enqueues through GraphQL `enqueuePullRequest` with the head it
 //      checked as `expectedHeadOid`, so a push since is refused by GitHub;
 //   8. prints the queue position, and with `--watch` waits until the pull request merges, or
@@ -166,6 +168,23 @@ export function unposted(checks, runs) {
   if (missing.length === 0 || missing.length < checks.pending.length) return [];
   if ((runs ?? []).some(going)) return [];
   return missing.map((check) => check.name);
+}
+
+/** The newest id of the `ci` runs a pull request started, of `runs` (the head's runs), or 0. */
+export function lastCiRun(runs) {
+  const ci = (runs ?? []).filter((run) => run.name === "ci" && run.event === "pull_request");
+  return Math.max(0, ...ci.map((run) => run.id));
+}
+
+/**
+ * The `ci` run marking a draft ready started, of `runs` (the head's runs): the newest pull request
+ * run newer than `after` (`lastCiRun` before the ready), or undefined while none has shown.
+ */
+export function readyRun(runs, after) {
+  const ci = (runs ?? []).filter(
+    (run) => run.name === "ci" && run.event === "pull_request" && run.id > after,
+  );
+  return [...ci].sort((a, b) => b.id - a.id)[0];
 }
 
 /** Whether GitHub's `reason` for a drop is a merge conflict, which builds no queue run. */
@@ -438,11 +457,42 @@ function main(options) {
   };
   checksGate(options.watch);
 
+  // A draft runs no macOS job but the app's, and `ready_for_review` starts the `ci` run with the
+  // scoped macOS jobs (not required checks, so only the run's conclusion speaks for them): so the
+  // checks are read again only once the head's newest `ci` run is done, and passed. That holds for a pull request marked ready by hand just
+  // before this, too, and for one whose ready run was cancelled, which posts nothing of its own.
+  let after = 0;
   if (pr.isDraft) {
+    after = lastCiRun(headRuns());
     gh(["pr", "ready", options.pr, "--repo", repo], false);
-    console.log(`marked #${options.pr} ready for review; reading its checks again`);
-    pause(SETTLE);
-    checksGate(true);
+    console.log(`marked #${options.pr} ready for review; waiting for the ci run that starts`);
+  }
+  for (let waited = 0; ; waited += Math.max(POLL, 1)) {
+    if (pr.isDraft) pause(waited === 0 ? SETTLE : POLL);
+    const run = readyRun(headRuns(), after);
+    if (!run && !pr.isDraft) break;
+    if (run && !going(run)) {
+      // Its failing required checks are named first, when it has any.
+      if (pr.isDraft || waited > 0) checksGate(true);
+      if (run.conclusion !== "success")
+        stop(
+          `the head's newest ci run ended ${run.conclusion}, so its macOS jobs have not passed: ${run.html_url}. Rerun it or push again, and land again.`,
+        );
+      break;
+    }
+    if (run && !pr.isDraft && !options.watch)
+      stop(
+        `pull request #${options.pr}'s newest ci run is still going; run again when it finishes, or with --watch: ${run.html_url}`,
+      );
+    if (!run && waited >= UNPOSTED_FOR)
+      stop(
+        `marking #${options.pr} ready started no ci run in ${waitedFor(UNPOSTED_FOR)}; its macOS jobs have not run. Push again or rerun ci, and land again.`,
+      );
+    if (waited >= CHECKS_FOR)
+      stop(
+        `the head's newest ci run is still going after ${waitedFor(CHECKS_FOR)}${run ? `: ${run.html_url}` : ""}`,
+      );
+    if (!pr.isDraft) pause(POLL);
   }
 
   // 7. Enqueue.

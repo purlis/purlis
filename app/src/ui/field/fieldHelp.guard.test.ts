@@ -23,9 +23,10 @@ import { handed, listed, PARTS, SRC, sources } from "./fieldCalls.testkit";
 
 /** Every file that hands a field its help, the grounds that field stands on, and where. */
 const HELPED: Record<string, { grounds: string[]; where: string }> = {
-  "PoolSetupTab.tsx": {
+  "poolsetup/PoolStep.tsx": {
     grounds: ["surface.raised"],
-    where: "Name your pool: a pool's name and its runner image, on a view tab's page (.pane.view)",
+    where:
+      "Name your pool: a pool's name, its runner image and each limit under Options, on a view tab's page (.pane.view)",
   },
   "RaiseLimit.tsx": {
     grounds: ["surface.raised"],

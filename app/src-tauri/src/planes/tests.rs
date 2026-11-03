@@ -39,7 +39,7 @@ fn a_change_the_watch_tells_is_in_the_sidebars_model_before_the_window_hears_it(
     std::fs::create_dir_all(&store).expect("a todo store");
     let model = Arc::new(Mutex::new(Model::read(&root)));
     let heard = Arc::new(Mutex::new(Vec::new()));
-    let changed = applying(Arc::clone(&model), root.clone(), {
+    let changed = applying(Arc::clone(&model), root.clone(), Arc::default(), {
         let model = Arc::clone(&model);
         let heard = Arc::clone(&heard);
         Arc::new(move |_, _| {
@@ -61,6 +61,68 @@ fn a_change_the_watch_tells_is_in_the_sidebars_model_before_the_window_hears_it(
     );
 
     assert_eq!(*heard.lock().expect("heard"), [vec!["Beta one".to_owned()]]);
+}
+
+#[test]
+fn only_a_change_to_the_instructions_makes_the_chats_read_their_skills_again() {
+    // #4738: each open chat's skill stamp is kept, so a tab mount reads no skill folder. A todo
+    // moving leaves it kept; a skill or `CLAUDE.md` changing, or a batch the watch could not
+    // place, has every chat's stamp read again — before the window hears and asks.
+    let dir = tempfile::tempdir().expect("a plane");
+    let root = dir.path().to_path_buf();
+    let model = Arc::new(Mutex::new(Model::read(&root)));
+    let skills_now = Arc::new(crate::chats::SkillsNow::default());
+    let forgotten_when_told = Arc::new(Mutex::new(Vec::new()));
+    let changed = applying(Arc::clone(&model), root.clone(), Arc::clone(&skills_now), {
+        let skills_now = Arc::clone(&skills_now);
+        let heard = Arc::clone(&forgotten_when_told);
+        Arc::new(move |_, _| heard.lock().expect("heard").push(skills_now.forgotten()))
+    });
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let change =
+        |path: &str| purlis_core::planechange::classify(&root, &root.join(path)).expect("placed");
+
+    changed(
+        plane.clone(),
+        Some(vec![change("workspaces/beta/todos/b1.md")]),
+    );
+    changed(plane.clone(), Some(vec![change("CLAUDE.md")]));
+    changed(plane.clone(), Some(vec![change("skills/deploy/SKILL.md")]));
+    changed(plane, None);
+
+    assert_eq!(*forgotten_when_told.lock().expect("heard"), [0, 1, 2, 3]);
+}
+
+#[test]
+fn a_workspaces_skill_settings_changing_makes_the_chats_read_their_skills_again() {
+    // #4813 review: what a chat would start on now reads the workspace's skills turned off,
+    // pinned and budget from its `workspace.json`, so a change there is an instruction change.
+    let dir = tempfile::tempdir().expect("a plane");
+    let root = dir.path().to_path_buf();
+    let settings = root.join("workspaces/beta/workspace.json");
+    std::fs::create_dir_all(settings.parent().expect("a workspace")).expect("a workspace");
+    let model = Arc::new(Mutex::new(Model::read(&root)));
+    let skills_now = Arc::new(crate::chats::SkillsNow::default());
+    let changed = applying(
+        Arc::clone(&model),
+        root.clone(),
+        Arc::clone(&skills_now),
+        Arc::new(|_, _| {}),
+    );
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+
+    std::fs::write(&settings, r#"{"settings":{"skills":{"off":["deploy"]}}}"#)
+        .expect("skills turned off");
+    changed(
+        plane,
+        Some(vec![
+            purlis_core::planechange::classify(&root, &settings).expect("placed"),
+        ]),
+    );
+
+    assert_eq!(skills_now.forgotten(), 1);
 }
 
 use super::*;
@@ -6321,7 +6383,7 @@ fn a_program_the_host_says_has_failed_is_failed_on_the_board_and_the_window_is_t
 
 #[test]
 fn a_tab_moved_writes_its_record_behind_the_window_and_the_close_writes_the_last() {
-    // #1949: a chat's tab pinned, moved or brought to the front changes the project's
+    // #1949: a chat renamed, its tab moved or brought to the front changes the project's
     // record, a synced file and a vouch in this machine's store. With the store held by
     // another writer, the change still answers at once; the close writes the last record
     // after it, and that is what is on disk.
@@ -6365,24 +6427,27 @@ fn a_tab_moved_writes_its_record_behind_the_window_and_the_close_writes_the_last
     });
     held_now.recv().expect("the store is held");
 
-    let pinning = std::thread::spawn({
+    let renaming = std::thread::spawn({
         let held = Arc::clone(&held);
-        move || held.chats().pin(session, true)
+        move || held.chats().rename(session, "the build")
     });
     let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while !pinning.is_finished() && std::time::Instant::now() < until {
+    while !renaming.is_finished() && std::time::Instant::now() < until {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    let answered = pinning.is_finished();
+    let answered = renaming.is_finished();
     release.send(()).expect("let go");
     other.join().expect("the other writer ends");
-    pinning.join().expect("pinned").expect("it pins");
-    assert!(answered, "the pin waited for the store's write");
+    renaming.join().expect("renamed").expect("it renames");
+    assert!(answered, "the rename waited for the store's write");
 
     planes.close(&plane).expect("it closes");
     let on_disk = reopen::read_or_refusal(&root).expect("the record reads");
     assert!(
-        on_disk.chats.iter().any(|chat| chat.pinned),
+        on_disk
+            .chats
+            .iter()
+            .any(|chat| chat.label.as_deref() == Some("the build")),
         "the last record is not the one on disk: {on_disk:?}"
     );
 }

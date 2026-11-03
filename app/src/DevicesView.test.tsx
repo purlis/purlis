@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { DevicesShown, DiskHeld, PoolNamedBy, RunnerAsked } from "./bindings";
@@ -31,8 +31,14 @@ let removed: string[];
 let removeSays: string | null;
 /** What `pool_named_by` says names a pool (#4678). */
 let namedBy: PoolNamedBy[];
+/** The runners `pool_held_runners` names, and what each removal was told to discard (#4860). */
+let heldRunners: string[];
+let discarded: unknown[];
 /** The held runners the core was asked to remove. */
 let heldRemoved: string[];
+/** The held runners whose conversations the core was asked to bring back, and what it says. */
+let broughtBack: string[];
+let bringBackSays: { error: string } | undefined;
 let devicesRead: number;
 
 beforeEach(() => {
@@ -92,7 +98,11 @@ beforeEach(() => {
   removed = [];
   removeSays = null;
   namedBy = [];
+  heldRunners = [];
+  discarded = [];
   heldRemoved = [];
+  broughtBack = [];
+  bringBackSays = undefined;
   devicesRead = 0;
   runnersAsked = [];
   holdAnswers = undefined;
@@ -100,19 +110,31 @@ beforeEach(() => {
   answerWithinForTests(90_000);
   forgetDevicesForTests();
   mockIPC((cmd, args) => {
-    const a = (args ?? {}) as { pool?: string; runner?: string; name?: string };
+    const a = (args ?? {}) as {
+      pool?: string;
+      runner?: string;
+      name?: string;
+      discarding?: unknown;
+    };
     if (cmd === "devices") {
       devicesRead += 1;
       return structuredClone(shown);
     }
     if (cmd === "devices_disk") return structuredClone(disk);
     if (cmd === "pool_named_by") return structuredClone(namedBy);
+    if (cmd === "pool_held_runners") return structuredClone(heldRunners);
     if (cmd === "remove_docker_pool") {
       removed.push(a.name ?? "");
+      discarded.push(a.discarding);
       return removeSays;
     }
     if (cmd === "docker_pool_remove_held_runner") {
       heldRemoved.push(a.runner ?? "");
+      return null;
+    }
+    if (cmd === "docker_pool_bring_back_held_runner") {
+      broughtBack.push(a.runner ?? "");
+      if (bringBackSays !== undefined) throw bringBackSays.error;
       return null;
     }
     if (cmd === "device_runner") {
@@ -344,24 +366,84 @@ describe("DevicesView", () => {
     expect(screen.getByText("Cannot connect to the Docker daemon").tagName).toBe("BDI");
   });
 
-  it("offers only a held runner's row its removal, asking first", async () => {
+  it("offers a held runner's Notice alone, and its Discard asks twice before anything goes", async () => {
     asked = { ...asked, "qa/qa": { ...(asked["qa/qa"] as RunnerAsked), held: true } };
     render(<DevicesView />);
-    await screen.findByRole("button", { name: "Remove runner qa" });
+    const notice = await waitFor(() => {
+      const found = document.querySelector('[data-cause="devices-held-runner:qa"]');
+      if (!(found instanceof HTMLElement)) throw new Error("no Notice yet");
+      return found;
+    });
+    expect(notice.textContent).toContain("purlis kept runner qa of pool qa");
+    expect(document.querySelector('[data-cause="devices-held-runner:builds"]')).toBeNull();
     const held = section("Runner qa of pool qa");
-    expect(held.textContent).toContain("keeps it and what they left until you remove it");
+    expect(held.textContent).toContain("until you bring their conversations back or discard them");
     expect(held.textContent).not.toContain("It starts again when");
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Discard…" }));
+    const first = await screen.findByRole("alertdialog", {
+      name: "Discard runner qa's conversations?",
+    });
+    await userEvent.click(within(first).getByRole("button", { name: "Discard…" }));
+    const again = await screen.findByRole("alertdialog", { name: "Discard them for good?" });
+    // The second ask opens on its way back, so a second press of the same spot discards nothing.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(again).getByRole("button", { name: "Cancel" })),
+    );
+    expect(heldRemoved).toEqual([]);
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    // The keyboard goes back to Discard…, though the ask that opened the second is gone.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(notice).getByRole("button", { name: "Discard…" })),
+    );
+    expect(heldRemoved).toEqual([]);
+  });
+
+  it("brings a held runner's conversations back on one press, removing nothing itself", async () => {
+    asked = { ...asked, "qa/qa": { ...(asked["qa/qa"] as RunnerAsked), held: true } };
+    render(<DevicesView />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Bring back conversations" }));
+
+    await vi.waitFor(() => expect(broughtBack).toEqual(["qa"]));
+    expect(heldRemoved).toEqual([]);
+  });
+
+  it("discards a held runner's conversations once asked twice", async () => {
+    asked = { ...asked, "qa/qa": { ...(asked["qa/qa"] as RunnerAsked), held: true } };
+    render(<DevicesView />);
+    const discard = await screen.findByRole("button", { name: "Discard…" });
+
+    await userEvent.click(discard);
+    await userEvent.click(
+      within(
+        await screen.findByRole("alertdialog", { name: "Discard runner qa's conversations?" }),
+      ).getByRole("button", { name: "Discard…" }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog", { name: "Discard them for good?" })).getByRole(
+        "button",
+        { name: "Discard conversations" },
+      ),
+    );
+
+    await vi.waitFor(() => expect(heldRemoved).toEqual(["qa"]));
+  });
+
+  it("says what stopped a bring back, and keeps the runner's Notice", async () => {
+    asked = { ...asked, "qa/qa": { ...(asked["qa/qa"] as RunnerAsked), held: true } };
+    bringBackSays = { error: "1 file of 2 files of its chats' conversations came back." };
+    render(<DevicesView />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Bring back conversations" }));
+
     expect(
-      within(section("Runner builds of pool builds")).queryByRole("button", {
-        name: /Remove runner/,
-      }),
-    ).toBeNull();
-
-    await userEvent.click(within(held).getByRole("button", { name: "Remove runner qa" }));
-    const asking = await screen.findByRole("alertdialog", { name: "Remove runner qa?" });
-    await userEvent.click(within(asking).getByRole("button", { name: "Remove runner" }));
-
-    await waitFor(() => expect(heldRemoved).toEqual(["qa"]));
+      await screen.findByText(/Bringing back runner qa's conversations did not finish:/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("1 file of 2 files of its chats' conversations came back.").tagName,
+    ).toBe("BDI");
   });
 
   it("leads a key-changed runner's row to removing its pool, asking first", async () => {
@@ -421,6 +503,28 @@ describe("DevicesView", () => {
         .map((one) => one.textContent),
     ).toEqual(["Workspace site in docs", "Workspace wiki in docs"]);
     expect(removed).toEqual([]);
+  });
+
+  it("removes a pool whose older runner may hold conversations only after asking again, and says which (#4860)", async () => {
+    asked["builds/builds"] = { ...asked["builds/builds"], link: { state: "key_changed" } };
+    heldRunners = ["builds-0a0b0c0d"];
+    render(<DevicesView />);
+    const builds = await waitFor(() => section("Runner builds of pool builds"));
+    await userEvent.click(
+      await within(builds).findByRole("button", { name: "Remove pool builds" }),
+    );
+    const asking = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await userEvent.click(await within(asking).findByRole("button", { name: "Remove pool…" }));
+    const again = await screen.findByRole("alertdialog", {
+      name: "Delete the conversations on runner builds-0a0b0c0d?",
+    });
+
+    await userEvent.click(
+      within(again).getByRole("button", { name: "Remove pool and conversations" }),
+    );
+
+    await waitFor(() => expect(removed).toEqual(["builds"]));
+    expect(discarded).toEqual([["builds-0a0b0c0d"]]);
   });
 
   it("leaves the line out of the question where nothing names the pool", async () => {

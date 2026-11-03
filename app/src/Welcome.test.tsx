@@ -452,8 +452,9 @@ describe("the welcome's way in by path and recents", () => {
 
     render(<App />);
     const person = userEvent.setup();
+    // The tab's mark says what the chat's row says (#4935): queued, it needs you.
     await vi.waitFor(() =>
-      expect(screen.getByRole("img", { name: "waiting on you" })).toBeInTheDocument(),
+      expect(screen.getByRole("img", { name: "needs you" })).toBeInTheDocument(),
     );
     await closeFromTheRail("one");
     // It has a chat open, so it asks first (charter-app#239's ruling), and this answers it.
@@ -465,7 +466,7 @@ describe("the welcome's way in by path and recents", () => {
     await openByPath("/home/dev/two");
 
     expect(await projectAt("/home/dev/two")).toBeInTheDocument();
-    expect(screen.queryByRole("img", { name: "waiting on you" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "needs you" })).not.toBeInTheDocument();
   });
 
   it("draws nothing of the last project's chats once the next one has answered", async () => {
@@ -515,8 +516,9 @@ describe("the welcome's way in by path and recents", () => {
 
     render(<App />);
     const person = userEvent.setup();
+    // The tab's mark says what the chat's row says (#4935): queued, it needs you.
     await vi.waitFor(() =>
-      expect(screen.getByRole("img", { name: "waiting on you" })).toBeInTheDocument(),
+      expect(screen.getByRole("img", { name: "needs you" })).toBeInTheDocument(),
     );
     await closeFromTheRail("one");
     // It has a chat open, so it asks first (charter-app#239's ruling), and this answers it.
@@ -528,7 +530,7 @@ describe("the welcome's way in by path and recents", () => {
     await openByPath("/home/dev/two");
 
     await vi.waitFor(() =>
-      expect(screen.queryByRole("img", { name: "waiting on you" })).not.toBeInTheDocument(),
+      expect(screen.queryByRole("img", { name: "needs you" })).not.toBeInTheDocument(),
     );
   });
 

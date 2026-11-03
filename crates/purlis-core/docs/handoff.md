@@ -835,12 +835,12 @@ purlis dispatch pass-on <chat> --note "..." # the asking chat, on to you, in the
   before it has read your answer, the Activity tab says so on the answer. Only the purlis window can send an answer as yours: no command, hook or file of a
   chat's can.
 - **A task has one way to ask.** Its route is decided by purlis's record of the chat. A task's
-  own question prompt on Claude Code and on Codex, and a plain `ask_operator`, go to its asking
-  chat as `dispatch_ask` does, and the task is told who answered. A handoff, a task you started
-  from a tab, and your own chats ask you directly, as a browser takeover does. A harness with no
-  adapter yet (opencode) keeps its prompt in its pane and the Inbox, and a redirect that fails
-  stays there too. On Codex the redirect is one more hook, so Codex asks once more to trust
-  purlis's hooks; until you trust them, its prompt asks in its pane.
+  own question prompt on Claude Code, Codex and opencode, and a plain `ask_operator`, go to its
+  asking chat as `dispatch_ask` does, and the task is told who answered. A handoff, a task you
+  started from a tab, and your own chats ask you directly, as a browser takeover does. A redirect
+  that fails keeps the prompt in the task's pane and the Inbox. On Codex the redirect is one more
+  hook, so Codex asks once more to trust purlis's hooks; until you trust them, its prompt asks in
+  its pane. On opencode it is purlis's plugin, which the app already loads.
 - **The asking chat answers a question or passes it on.** `pass-on` sends it to you in the
   task's own words, with at most a one-line note marked as the asking chat's. It takes no
   question text, so the wording cannot change on the way, and only the task's asking chat can

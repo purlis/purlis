@@ -444,15 +444,26 @@ use crate::view::{Limits, Views};
 /// `programs_of` [`PROGRAMS_NOT_KNOWN`] for a runner before 1.67, which it does not ask, so the
 /// window keeps what it knows of the chats there rather than settling them as gone. A window
 /// before 1.68 is answered no programs, as before.
+///
+/// 1.69 has a host answer `repos_held` (#4569): every repository in the projects it keeps, with
+/// each one's refs and each file of its work tree that no commit has, for a desktop to prove a
+/// chat's fresh runner holds nothing it lacks before it lets that runner go. The window's alone.
+/// A window does not ask a host before 1.69, and lets go of no fresh runner of one.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 68,
+    minor: 69,
 };
 
 /// The version that is first told a runner's programs are not known (#4684).
 pub const KNOWS_PROGRAMS_NOT_KNOWN: Version = Version {
     major: 1,
     minor: 68,
+};
+
+/// The version that first answers `repos_held` (#4569).
+pub const KNOWS_REPOS_HELD: Version = Version {
+    major: 1,
+    minor: 69,
 };
 
 /// The version that first answers `programs_of` on a link between hosts (#4271).
@@ -1120,6 +1131,9 @@ pub enum Command {
     /// the project it keeps there, none reached through a link. The window's alone
     /// ([`crate::grants::Power::Code`]), relayed for it.
     ClonesOf { project: String, workspace: String },
+    /// **Every repository in the projects the host keeps** (1.69, #4569): answered
+    /// [`Answer::ReposHeld`]. The window's alone ([`crate::grants::Power::Code`]), relayed for it.
+    ReposHeld,
     /// The person cancels the engine's download for browser `program`'s start (1.37, #2207):
     /// the download stops, nothing of it is kept, and the start is refused in words that say
     /// so. Answered [`Answer::Done`], also where nothing is downloading for it. The window's
@@ -1172,6 +1186,33 @@ pub struct CodeRef {
     pub name: String,
     /// The commit, as forty hexadecimal digits.
     pub oid: String,
+}
+
+/// **One repository a host holds** (1.69, #4569): what [`Answer::ReposHeld`] lists.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepoHeld {
+    /// The project it is in, by the id the host keeps that project's folder under.
+    pub project: String,
+    /// Where it is in that project, `/`-separated: empty for the project's own repository.
+    pub path: String,
+    /// Each ref it holds, but another repository's branches as last fetched
+    /// (`refs/remotes/…`) and what a desktop sent it (`refs/purlis/…`), at the commit it
+    /// reaches, `HEAD` at the commit checked out, and each stash under the newest as
+    /// `refs/stash@{<n>}` (#4781), which only the stash's log holds.
+    pub refs: Vec<CodeRef>,
+    /// Each file of its work tree that differs from what it has checked out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed: Vec<ChangedFile>,
+}
+
+/// **A file of a repository's work tree that no commit has** (1.69, #4569), and what it holds
+/// now: `blob:<oid>` for a file's bytes as git names them with no filter run, `link:<target>`
+/// for a link, `folder` for a folder, or none where the file is gone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangedFile {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub now: Option<String>,
 }
 
 /// What a [`Command::Confine`] asks for (1.4).
@@ -1618,6 +1659,7 @@ impl StagedSettings {
             if !self.paths.insert(piece.path.clone()) {
                 return Err("a settings file came twice".to_owned());
             }
+            self.whole_so_far();
             self.files.push(SettingsFile {
                 path: piece.path,
                 bytes: piece.bytes,
@@ -1627,12 +1669,21 @@ impl StagedSettings {
     }
 
     /// The files staged, as `profile`'s, where they are the `files` its `keep_profile` counts.
-    pub fn finished(self, profile: &str, files: u32) -> Result<Vec<SettingsFile>, String> {
+    pub fn finished(mut self, profile: &str, files: u32) -> Result<Vec<SettingsFile>, String> {
         let same = self.profile.as_deref().is_none_or(|p| p == profile);
         if !same || self.files.len() != files as usize {
             return Err("the settings staged are not the ones this keep names".to_owned());
         }
+        self.whole_so_far();
         Ok(self.files)
+    }
+
+    /// The last file staged, whole now, holding no more memory than its bytes (#4396): its pieces
+    /// grew it as they came, and a profile near its limit is held in memory once.
+    fn whole_so_far(&mut self) {
+        if let Some(file) = self.files.last_mut() {
+            file.bytes.shrink_to_fit();
+        }
     }
 }
 
@@ -2009,6 +2060,14 @@ pub enum Answer {
         repos: Vec<String>,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         origins: BTreeMap<String, String>,
+    },
+    /// Every repository the host holds, by project and path: [`Command::ReposHeld`] (1.69).
+    /// `unread` says, in sentences, what the host could not look through: a desktop takes the
+    /// list as whole only where it is empty.
+    ReposHeld {
+        repos: Vec<RepoHeld>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unread: Vec<String>,
     },
     /// Whether the profile a runner keeps is signed in there, as its harness says:
     /// [`Command::KeepProfile`] (1.43).
@@ -2540,6 +2599,7 @@ wire_words!(Command {
     TakeConversation => "take_conversation",
     GiveConversation => "give_conversation",
     ClonesOf => "clones_of",
+    ReposHeld => "repos_held",
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
     LogEnd => "log_end",
@@ -2606,7 +2666,8 @@ impl Command {
             | Command::GiveCode { .. }
             | Command::TakeConversation { .. }
             | Command::GiveConversation { .. }
-            | Command::ClonesOf { .. } => Power::Code,
+            | Command::ClonesOf { .. }
+            | Command::ReposHeld => Power::Code,
             Command::LogEnd => Power::EventLog,
             Command::AskGrade { .. } => Power::AskGrade,
             Command::AnswerGrade { .. } | Command::GradeStep { .. } => Power::RunGrade,
@@ -2679,6 +2740,7 @@ wire_words!(Answer {
     Code => "code",
     Conversation => "conversation",
     Clones => "clones",
+    ReposHeld => "repos_held",
     ProfileKept => "profile_kept",
     Profiles => "profiles",
     SettingsHeld => "settings_held",
@@ -3131,6 +3193,7 @@ impl Lane {
             | Command::TakeConversation { .. }
             | Command::GiveConversation { .. }
             | Command::ClonesOf { .. }
+            | Command::ReposHeld
             // Waits on the window, which may be asked more meanwhile.
             | Command::AskGrade { .. }
             // Never behind the start it cancels, which waits on the download.
@@ -4065,6 +4128,15 @@ impl Client {
             .await?
         {
             Answer::Clones { repos, origins } => Ok((repos, origins)),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// **Every repository in the projects the host keeps** (1.69, #4569), and what it could not
+    /// look through.
+    pub async fn repos_held(&self) -> Result<(Vec<RepoHeld>, Vec<String>), CallError> {
+        match self.call(Command::ReposHeld).await? {
+            Answer::ReposHeld { repos, unread } => Ok((repos, unread)),
             other => Err(unexpected(&other)),
         }
     }

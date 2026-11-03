@@ -1040,6 +1040,57 @@ fn a_block_s_notice_offers_allow_only_for_a_host_or_a_folder_and_the_way_out_oth
     );
 }
 
+/// plane ruling of 2026-11-02: a Claude Code chat's Allow on a held folder drops the name's glob,
+/// so it is offered for this chat alone, and its Notice says how far it goes.
+#[cfg(unix)]
+#[test]
+fn a_held_folder_is_offered_to_a_claude_code_chat_for_itself_and_says_it_goes_by_name() {
+    use crate::sandboxing::GrantLevel;
+    use purlis_core::harness::Harness;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let home = purlis_core::sandbox::Machine::this()
+        .home
+        .expect("a home to test in");
+    let folder = home.join(".config/gh");
+    let block = |harness: Harness| {
+        blocked(
+            &plane,
+            &purlis_core::hookwire::SandboxBlocked {
+                chat: 3,
+                sandbox_blocked: Block {
+                    operation: Operation::Write,
+                    kind: Kind::ProtectedFile,
+                    ours: false,
+                },
+                harness: Some(harness.declared().name.to_owned()),
+                target: Some(folder.join("config.yml").display().to_string()),
+                read_back: false,
+                suggested: None,
+            }
+            .into(),
+        )
+    };
+    let said = block(Harness::ClaudeCode);
+    assert_eq!(said.offer, BlockOffer::Write);
+    assert_eq!(said.target, Some(folder.display().to_string()));
+    assert_eq!(said.levels, vec![GrantLevel::Chat], "never as Always");
+    let route = said.route.expect("what allowing it means");
+    assert!(
+        route.contains("may write any .config/gh, in any folder"),
+        "{route}"
+    );
+    assert!(route.contains("only be allowed for this chat"), "{route}");
+    // Where purlis wraps no chat, another harness's Notice says the one folder alone.
+    if !purlis_core::sandbox::Machine::this().purlis_wraps(Harness::Codex) {
+        let route = block(Harness::Codex).route.expect("what allowing it means");
+        assert!(!route.contains("any folder"), "{route}");
+    }
+}
+
 /// #1476 and #1408 l32: a refused write the app makes for a chat through a purlis command
 /// offers no grant, and its Notice names that command: `purlis worktree commit` for a
 /// branch folder's git record, the brokered write's own for a file purlis writes. Any other

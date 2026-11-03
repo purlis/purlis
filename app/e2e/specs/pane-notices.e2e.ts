@@ -8,7 +8,7 @@ import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLef
 
 /**
  * **A Notice in a pane fits its pane, measured** (#1481), **in a row of its own above the
- * terminal, never over it, two at a time** (#1647).
+ * terminal, never over it** (#1647), **under the pane's header** (#4754).
  *
  * The operator, from the dev build with two panes side by side: *"ui is broken for questions
  * modals"*. In a narrow pane a Notice's sentence was one word wide and fourteen lines tall, its
@@ -21,9 +21,8 @@ import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLef
  * engine, against the built stylesheet, in real panes of a real split.
  *
  * Then the operator's screenshot of 2026-10-10: three Notices stacked in the pane's corner, over
- * the terminal, and hid the conversation (#1647). The Notices have the pane's top row now, the
- * terminal is under it, and past two the rest are behind "+N more". `NoticePaneRow` hides what
- * is past two whoever drew it, so the Notices this file raises are stacked as real ones are.
+ * the terminal, and hid the conversation (#1647). The Notices have a row of their own now, under
+ * the pane's header (#4754), the terminal under it, and past its room the band scrolls inside.
  *
  * **What is raised is the shape, not the cause.** A vault refusal and a held dispatch need a
  * persona chat and a core holding them, which this suite's fake harness has no way to make. So
@@ -145,9 +144,12 @@ async function raise(
       });
       if (opened !== null) box.setAttribute("data-opened", "");
       box.dataset.raised = "pane-notices.e2e";
-      // As `Notice` marks one with an answer besides Dismiss: what the pane's row stands first
-      // (#1647), so a Notice this file raises is one of the two that stand.
+      // As `Notice` marks one with an answer besides Dismiss.
       if (ways.some((way) => way !== "Dismiss")) box.setAttribute("data-asks", "");
+      // **Every Notice this file raises stands** (#4754): marked as an ask, which a minimised
+      // band never folds into its bell, since what this file measures is the card and not the
+      // fold (`PaneNotices.window.test.tsx` holds that).
+      box.setAttribute("data-waits", "");
       // The line is a small `ButtonRow` of the button family's buttons (#2904).
       const line = el("div", "");
       Object.assign(line.dataset, { scope: "button-row", size: "sm", wraps: "" });
@@ -218,8 +220,7 @@ async function raise(
         box.append(under);
       }
       // Before any Notice the app itself has in this pane (a chat on Linux can have its own),
-      // after the ones this file raised: the pane's order is this file's, and what it measures
-      // stands rather than waiting behind "+N more".
+      // after the ones this file raised: the pane's order is this file's.
       const theApps = [...stack.children].find(
         (one) => (one as HTMLElement).dataset.raised !== "pane-notices.e2e",
       );
@@ -324,12 +325,9 @@ async function measured(pane: number) {
       neighbours: frames.filter((one) => one !== frame).map((one) => box(one)),
       row: box(frame?.querySelector("[data-scope=notice-row][data-part=root]")),
       terminal: box(frame?.querySelector('[data-testid="pane"]')),
+      head: box(frame?.querySelector(".pane-head")),
+      // The cap's "+N more", which is gone (#4754): measured to say it is not drawn.
       more: box(frame?.querySelector("[data-scope=notice-row][data-part=root] > [data-way=more]")),
-      // What it says: of its two labels, the one not hidden (#3142).
-      moreSays:
-        frame?.querySelector(
-          "[data-scope=notice-row][data-part=root] > [data-way=more] [data-scope=notice-row][data-part=says] > :not([data-off])",
-        )?.textContent ?? null,
       stack: box(stack),
       // The stack's width inside its scrollbar, which a card takes whole.
       stackInside: stack ? stack.clientWidth : 0,
@@ -383,7 +381,7 @@ const overlap = (a: Box, b: Box) =>
  * **No Notice is over the terminal** (#1647): the row's stack ends above the terminal's top
  * edge, and what each Notice draws shares no area with it.
  *
- * What a Notice draws is its box **as far as the stack shows it**: once "+N more" is open the
+ * What a Notice draws is its box **as far as the stack shows it**: past the band's room the
  * stack scrolls, and a Notice scrolled out of it still has a box below the row, clipped and
  * drawn nowhere. So each box is cut to the stack's before it is compared.
  */
@@ -816,63 +814,50 @@ describe("a Notice in a pane", () => {
     });
   }
 
-  it("shows two in a pane and keeps the rest behind +N more, above the terminal", async () => {
+  it("shows every one in a pane, under its header, the band scrolling above the terminal", async () => {
     // The operator's screenshot (#1647): three cards stacked over the terminal. Six of the
-    // tallest here, far more than any pane of this window holds.
+    // tallest here, far more than any pane of this window holds; with no cap (#4754) every one
+    // is in the band, which scrolls inside its share of the pane.
     await windowIs(1024, 768);
     for (let one = 0; one < 6; one++)
       expect(await raise(0, { sentence: SENTENCE, ways: WAYS, opened: BRIEF })).toBe(true);
-    await browser.waitUntil(async () => (await measured(0)).moreSays === "+4 more", {
+    await browser.waitUntil(async () => (await measured(0)).notices.every((one) => one.shown), {
       timeout: 10_000,
       interval: 100,
-      timeoutMsg: "the pane never said +4 more",
+      timeoutMsg: "the pane never showed all six",
     });
 
     const seen = await measured(0);
     const frame = seen.frame as Box;
     expect(seen.notices).toHaveLength(6);
-    expect(seen.notices.map((one) => one.shown)).toEqual([true, true, false, false, false, false]);
+    expect(seen.more).toBeNull();
 
-    // The row is the top of the pane, inside it, and the terminal starts under it; the pane is
-    // as tall as its neighbour, so it did not grow to hold what purlis has to say.
-    inside(seen.row, frame, "the pane's row of Notices");
+    // The band is under the pane's header, inside the pane, and the terminal starts under it;
+    // the pane is as tall as its neighbour, so it did not grow to hold what purlis has to say.
+    inside(seen.row, frame, "the pane's band of Notices");
     check(
-      "the terminal starts above the row's bottom",
+      "the band starts above the header's bottom",
+      (seen.row as Box).top,
+      "atLeast",
+      (seen.head as Box).bottom - 1,
+    );
+    check(
+      "the terminal starts above the band's bottom",
       (seen.terminal as Box).top,
       "atLeast",
       (seen.row as Box).bottom - 1,
     );
     check(
-      "the row is more than three fifths of the pane",
+      "the band is more than three fifths of the pane",
       (seen.row as Box).height,
       "atMost",
       frame.height * 0.6 + 1,
     );
     expect(Math.abs(frame.height - (seen.neighbours[0] as Box).height)).toBeLessThanOrEqual(1);
+    expect(seen.stackScrolls).toBe(true);
     offTheTerminal(seen);
-    // "+N more" is in the band, on a row of its own under the warnings (#3142, rule 5).
-    inside(seen.more, seen.row, "+4 more in the row");
-    check(
-      "+4 more is not under the warnings",
-      (seen.more as Box).top,
-      "atLeast",
-      (seen.stack as Box).bottom - 1,
-    );
-
-    // Opened, every one is in the row, one under another in the order raised, the row scrolls
-    // inside the pane, and the last one's last button is reached there.
-    await $("button[data-way=more]").click();
-    await browser.waitUntil(async () => (await measured(0)).notices.every((one) => one.shown), {
-      timeout: 10_000,
-      interval: 100,
-      timeoutMsg: "+4 more never opened",
-    });
-    const open = await measured(0);
-    inside(open.row, open.frame, "the opened row");
-    expect(open.stackScrolls).toBe(true);
-    offTheTerminal(open);
-    for (const [index, one] of open.notices.entries()) {
-      const next = open.notices[index + 1];
+    for (const [index, one] of seen.notices.entries()) {
+      const next = seen.notices[index + 1];
       if (next === undefined) continue;
       expect((next.box as Box).top).toBeGreaterThan((one.box as Box).bottom);
       expect((next.box as Box).left).toBeCloseTo((one.box as Box).left, 0);
@@ -887,14 +872,7 @@ describe("a Notice in a pane", () => {
       const { left, right, top, bottom, width, height } = last.getBoundingClientRect();
       return { left, right, top, bottom, width, height };
     });
-    inside(reached, open.row, "the last Notice's last button, scrolled to");
-
-    // Escape closes it, and the keyboard is back on "+4 more".
-    await browser.keys(["Escape"]);
-    await browser.waitUntil(
-      async () => (await measured(0)).notices.filter((one) => one.shown).length === 2,
-      { timeout: 10_000, interval: 100, timeoutMsg: "Escape never closed +4 more" },
-    );
+    inside(reached, seen.row, "the last Notice's last button, scrolled to");
   });
 
   for (const width of [1024, 1600]) {

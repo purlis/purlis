@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The chosen chat tab's pane: the band, the header, then the terminal** (#3142, the operator's variant A of
- * 2026-10-24): the session tabs docked on the content panel, the chosen tab joined to its pane,
- * and in the pane a sticky band of washed warning cards (words above their ways out), a slim
- * header with the chips at its start and the pane's controls at its end, then the terminal,
- * pinned to its bottom.
+ * **The chosen chat tab's pane: the header, the band, then the terminal** (#3142, the operator's
+ * variant A of 2026-10-24; #4754): the session tabs docked on the content panel, the chosen tab
+ * joined to its pane, and in the pane a slim header with the chips at its start and the pane's
+ * controls at its end, the bell among them, then the band of washed notice cards (words above
+ * their ways out), minimised to its asks or expanded to every notice, then the terminal, pinned
+ * to its bottom.
  *
  * The warnings are the window's own `Notice`s in its own `NoticePaneRow`, and the header is
  * `PaneHead`; the strip, the panel and the pane's frame wear the classes and parts the window
@@ -14,12 +15,14 @@
  * harness's last lines in the terminal's own colours: what is held here is everything around it.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useRef, useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { Sparkles, X } from "lucide-react";
 import { Notice, NoticePaneRow } from "../../Notice";
 import { NOTICE_MOVED_JUST_NOW, SETTLE_MS, paneBand } from "../../noticeSettle";
-import { PaneActions, PaneHead } from "../../LayoutPanes";
+import { PaneActions, PaneBellAt, PaneBellOf, PaneHead } from "../../LayoutPanes";
+import { HOLDS_NOTHING, type BandHolds, type PaneNoticesShown } from "../../paneNotices";
+import { PANE_NOTICES } from "../../paneNoticesPref";
 import type { Offer } from "../../actions";
 import { ChatMark } from "../../NeedsYou";
 import { useTabIds, StripTablist } from "../../StripTablist";
@@ -189,7 +192,7 @@ function Warnings({ shown }: { shown: readonly Warning[] }) {
   );
 }
 
-/** One pane as `PaneFrame` draws it: the band, the header, then the terminal. */
+/** One pane as `PaneFrame` draws it: the header with its bell, the band, then the terminal. */
 function Pane({
   name,
   warnings,
@@ -202,6 +205,9 @@ function Pane({
   /** The pane the band is (`paneBand`), so it reads on from where it was when drawn anew. */
   band?: string;
 }) {
+  const [holds, setHolds] = useState<BandHolds>(HOLDS_NOTHING);
+  const bellAt = useRef<HTMLButtonElement>(null);
+  const minimised = PANE_NOTICES.use() === "minimised";
   return (
     <div
       className="pane-frame pane-headed"
@@ -209,17 +215,18 @@ function Pane({
       data-testid={`pane ${name}`}
     >
       <div className="pane-top">
-        <NoticePaneRow band={band}>
-          <Warnings shown={warnings} />
-        </NoticePaneRow>
         <PaneHead
           doing={
-            <PaneActions
-              pane={0}
-              offerFor={(id) => OFFERS[id]}
-              closeOf={() => OFFERS["pane.close"]}
-              onPaneDoes={() => undefined}
-            />
+            <PaneBellAt.Provider value={bellAt}>
+              <PaneBellOf.Provider value={holds}>
+                <PaneActions
+                  pane={0}
+                  offerFor={(id) => OFFERS[id]}
+                  closeOf={() => OFFERS["pane.close"]}
+                  onPaneDoes={() => undefined}
+                />
+              </PaneBellOf.Provider>
+            </PaneBellAt.Provider>
           }
         >
           <div className="pane-chips">
@@ -240,6 +247,17 @@ function Pane({
             </span>
           </div>
         </PaneHead>
+        <NoticePaneRow
+          band={band}
+          bell={{
+            minimised,
+            minimise: () => PANE_NOTICES.set("minimised"),
+            onHolds: setHolds,
+            focus: () => bellAt.current?.focus(),
+          }}
+        >
+          <Warnings shown={warnings} />
+        </NoticePaneRow>
       </div>
       <div className="pane-body">
         <div className={focused ? "pane focused" : "pane"}>
@@ -274,6 +292,8 @@ function PaneBand({
   split = false,
 }: {
   warnings: readonly Warning[];
+  /** Minimised or expanded, for every pane (#4754): set before the story is drawn. */
+  shown?: PaneNoticesShown;
   width?: number;
   /** The chosen tab split in two, the warnings in its first pane, the keyboard in its second. */
   split?: boolean;
@@ -347,6 +367,13 @@ function PaneBand({
 
 const meta = {
   component: PaneBand,
+  // Expanded unless a story says otherwise, so each warning's own story reads it; the window's
+  // default, minimised, has its own stories below. Set without telling the layout file.
+  args: { shown: "expanded" },
+  beforeEach: ({ args }) => {
+    PANE_NOTICES.keep(args.shown ?? "expanded");
+    return () => PANE_NOTICES.forget();
+  },
 } satisfies Meta<typeof PaneBand>;
 
 export default meta;
@@ -355,7 +382,7 @@ type Story = StoryObj<typeof meta>;
 type Box = DOMRect;
 const boxOf = (el: Element | null | undefined): Box => (el as Element).getBoundingClientRect();
 
-/** The band, the header and the terminal of the pane named `name`, top to bottom. */
+/** The header, the band and the terminal of the pane named `name`, top to bottom. */
 function rowsOf(canvas: HTMLElement, name = "steward 2") {
   const frame = canvas.querySelector(`[data-testid="pane ${name}"]`) as HTMLElement;
   return {
@@ -369,20 +396,24 @@ function rowsOf(canvas: HTMLElement, name = "steward 2") {
   };
 }
 
-/** Rules 1 to 3: the band and the header inside the pane, one above the other, the terminal
- *  under both, and the chosen tab joined to the pane's top where the tabs dock. */
+/** Rules 1 to 3, and #4754: the header and the band inside the pane, the band under the header,
+ *  the terminal under both, and the chosen tab joined to the pane's top where the tabs dock. */
 async function heldInThePane(canvas: HTMLElement, name = "steward 2") {
   const { frame, band, head, terminal, warnings } = rowsOf(canvas, name);
   const pane = boxOf(frame);
+  expect(boxOf(head).top).toBeGreaterThanOrEqual(pane.top + 2);
   for (const warning of warnings) {
     const at = boxOf(warning);
-    expect(at.top).toBeGreaterThanOrEqual(pane.top + 6);
+    expect(at.top).toBeGreaterThanOrEqual(boxOf(head).bottom - 1);
     expect(at.right).toBeLessThanOrEqual(pane.right + 1);
     // As far as the band shows it: past the band's room the warnings scroll inside it.
     const stack = boxOf(warning.parentElement);
-    expect(Math.min(at.bottom, stack.bottom)).toBeLessThanOrEqual(boxOf(head).top + 1);
+    expect(Math.min(at.bottom, stack.bottom)).toBeLessThanOrEqual(boxOf(terminal).top + 1);
   }
-  if (warnings.length > 0) expect(boxOf(band).bottom).toBeLessThanOrEqual(boxOf(head).top + 1);
+  if (warnings.length > 0) {
+    expect(boxOf(band).top).toBeGreaterThanOrEqual(boxOf(head).bottom - 1);
+    expect(boxOf(band).bottom).toBeLessThanOrEqual(boxOf(terminal).top + 1);
+  }
   expect(boxOf(head).bottom).toBeLessThanOrEqual(boxOf(terminal).top + 1);
   const layout = canvas.querySelector('[data-scope="tabs"][data-part="layout"]') as Element;
   if (getComputedStyle(layout).getPropertyValue("--tabs-joined").trim() === "1") {
@@ -418,11 +449,11 @@ export const AWarning: Story = {
 };
 
 /**
- * **A consent, trouble, and one more behind "+1 more"**: the vault refusal has no Dismiss, its
- * Allow stands apart from Keep blocked and neither is the primary look, and Esc on it answers
- * nothing; "+1 more" opens the rest and says Show fewer, in the same width.
+ * **A consent among notes**: the vault refusal has no Dismiss, its Allow stands apart from Keep
+ * blocked and neither is the primary look, and Esc on it answers nothing. Every notice stands
+ * expanded, with no cap and no "+N more".
  */
-export const ConsentAndMore: Story = {
+export const ConsentAndNotes: Story = {
   args: { warnings: ["vault-refused", "mcp-failed", "stale-clone"] },
   play: async ({ canvas, canvasElement, userEvent }) => {
     const vault = await canvas.findByRole("status", { name: "Vault" });
@@ -437,14 +468,112 @@ export const ConsentAndMore: Story = {
     expect(canvas.getByRole("status", { name: "Vault" })).toBeVisible();
     expect(keep).toHaveFocus();
 
-    const more = canvas.getByRole("button", { name: "+1 more" });
-    const width = boxOf(more).width;
-    await userEvent.click(more);
-    await waitFor(() => expect(more).toHaveAccessibleName("Show fewer"));
-    expect(boxOf(more).width).toBeCloseTo(width, 0);
-    await userEvent.click(more);
-    await waitFor(() => expect(more).toHaveAccessibleName("+1 more"));
+    expect(rowsOf(canvasElement).warnings).toHaveLength(3);
+    expect(canvas.queryByRole("button", { name: /more/ })).toBeNull();
     atRest();
+  },
+};
+
+/** The pane's bell, by its name. */
+const bellOf = (canvas: ReturnType<typeof within>) =>
+  canvas.getByRole("button", { name: /^Pane notices:/ });
+
+/**
+ * **Minimised, the window's default** (#4754): the notes fold into the bell's count, in the
+ * trouble colour while one is trouble, and the consent stands as a full card under the header.
+ * The bell holds its slot before split and close.
+ */
+export const Minimised: Story = {
+  args: {
+    shown: "minimised",
+    warnings: ["vault-refused", "mcp-failed", "stale-clone", "skills-missing"],
+  },
+  play: async ({ canvas, canvasElement }) => {
+    const vault = await canvas.findByRole("status", { name: "Vault" });
+    await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(1));
+    await heldInThePane(canvasElement);
+    expect(rowsOf(canvasElement).warnings[0]).toContainElement(vault);
+    const bell = bellOf(canvas);
+    expect(bell).toHaveAccessibleName("Pane notices: 3 notices, 1 in trouble, 1 asking");
+    expect(bell).toHaveTextContent(/^3$/);
+    expect(bell).toHaveAttribute("aria-expanded", "false");
+    // Before split and close, in the header's row.
+    const split = canvas.getByRole("button", { name: "Split right" });
+    expect(boxOf(bell).right).toBeLessThanOrEqual(boxOf(split).left + 1);
+    expect(boxOf(bell).top).toBeCloseTo(boxOf(split).top, 0);
+    atRest();
+  },
+};
+
+/**
+ * **Expanded** (#4754): every notice stands, the consent first as the pane wrote it, under a head
+ * row that says how many and how many wait on you, with Dismiss all, which counts the notes it
+ * clears and leaves the consent, and Minimise. The bell's count is the same as minimised.
+ */
+export const Expanded: Story = {
+  args: { warnings: ["vault-refused", "mcp-failed", "stale-clone", "skills-missing"] },
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByRole("status", { name: "Vault" });
+    await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(4));
+    await heldInThePane(canvasElement);
+    const band = within(canvas.getByRole("region", { name: "Pane notices" }));
+    expect(band.getByText("4 notices, 1 waiting on you")).toBeVisible();
+    expect(bellOf(canvas)).toHaveTextContent(/^3$/);
+    expect(bellOf(canvas)).toHaveAttribute("aria-expanded", "true");
+    const all = band.getByRole("button", { name: "Dismiss all 3" });
+    all.focus();
+    expectFocusInSight();
+    atRest();
+  },
+};
+
+/**
+ * **Dismiss all** (#4754): the notes go, each by its own Dismiss, and the consent stands; the
+ * keyboard stays on the band's head while it is drawn.
+ */
+export const DismissAll: Story = {
+  args: { warnings: ["vault-refused", "mcp-failed", "stale-clone", "skills-missing"] },
+  parameters: { screenshot: false },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const all = await canvas.findByRole("button", { name: "Dismiss all 3" });
+    await userEvent.click(all);
+    await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(1));
+    expect(canvas.getByRole("status", { name: "Vault" })).toBeVisible();
+    expect(bellOf(canvas)).toHaveAccessibleName("Pane notices: No notices, 1 asking");
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Minimise" }),
+      "the keyboard stays on the band's head",
+    );
+    atRest();
+  },
+};
+
+/**
+ * **A full band** (#4754): six notices, more than the band's half of the pane holds. Every one
+ * is in the band, which scrolls inside; the header is where it is in an empty pane, so nothing
+ * that arrives moves it; the terminal keeps the rest.
+ */
+export const FullBand: Story = {
+  args: {
+    warnings: [
+      "vault-refused",
+      "sandbox-ask",
+      "mcp-failed",
+      "skills-missing",
+      "stale-clone",
+      "sandbox-long",
+    ],
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByRole("status", { name: "Vault" });
+    await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(6));
+    await heldInThePane(canvasElement);
+    const { frame, head, band, terminal } = rowsOf(canvasElement);
+    expect(boxOf(head).top - boxOf(frame).top).toBeLessThanOrEqual(12);
+    const stack = band?.querySelector('[data-part="stack"]') as HTMLElement;
+    expect(stack.scrollHeight).toBeGreaterThan(stack.clientHeight);
+    expect(boxOf(terminal).height).toBeGreaterThan(boxOf(frame).height * 0.45);
+    expect(canvas.queryByRole("button", { name: /more/ })).toBeNull();
   },
 };
 
@@ -485,8 +614,8 @@ export const ConsentMoved: Story = {
     const open = await canvas.findByRole("button", { name: "Open in Skill studio" });
     open.focus();
     await userEvent.keyboard("{Escape}");
-    // The vault's card moved up into the first place, and the sandbox's came out from behind
-    // "+1 more": both moved, and neither is a cause the guard lists by name for the vault.
+    // The vault's card moved up into the first place, and the sandbox's under it: both moved,
+    // and neither is a cause the guard lists by name for the vault.
     const vault = await canvas.findByRole("status", { name: "Vault" });
     await untilFocused(() => vault, "Esc lands on the vault's card");
 

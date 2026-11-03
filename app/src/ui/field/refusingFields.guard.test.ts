@@ -37,6 +37,11 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
     grounds: ["surface.raised"],
     where: "HexColour: in a persona's card, a view tab's panel (Views.tsx)",
   },
+  "poolsetup/PoolStep.tsx": {
+    grounds: ["surface.base"],
+    where:
+      "PoolStep: a new pool's name, and each limit under Options, on the Pool setup tab's page, the window's own ground",
+  },
   "RaiseLimit.tsx": {
     grounds: ["surface.raised"],
     where:

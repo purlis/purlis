@@ -357,8 +357,8 @@ fn the_gallery_shows_it_first_as_the_default_and_purlis_classic_beside_it() {
 /// hue, chroma and alpha kept (chroma given up in steps of 0.001 until it fits sRGB); the scrim,
 /// the shadow and the scrollbar's track kept as they are; a wash not reflected but drawn in its
 /// hue's purest colour at its alpha (#2924), since a hue reflected dark and laid thin on a light
-/// ground reads as grey; and a reflected colour that misses a floor of the check stepped darker by
-/// 0.01 until it clears it.
+/// ground reads as grey, as is the waiting glow, which is a wash drawn as a ring (#3182); and a
+/// reflected colour that misses a floor of the check stepped darker by 0.01 until it clears it.
 mod light_rule {
     fn to_linear(c: f64) -> f64 {
         let c = c / 255.0;
@@ -483,6 +483,18 @@ mod light_rule {
     }
 }
 
+/// **What light draws as a wash** (#2924): a hue laid thin over a ground. The waiting glow is one,
+/// a ring laid around a mark (#3182).
+const LIGHT_WASHES: [&str; 7] = [
+    "danger.wash",
+    "wash.warning",
+    "diff.deleted",
+    "diff.inserted",
+    "accent.wash",
+    "accent.wash-hover",
+    "state.waiting-glow",
+];
+
 /// `wash` laid over the opaque `ground`, as the window composites it.
 fn laid(wash: &str, ground: &str) -> String {
     let byte = |hex: &str, at: usize| f64::from(u8::from_str_radix(&hex[at..at + 2], 16).unwrap());
@@ -497,20 +509,22 @@ fn laid(wash: &str, ground: &str) -> String {
 #[test]
 fn a_light_wash_reads_in_its_own_hue_on_every_ground_it_is_laid_on() {
     // The pane warnings' amber read as grey in light (#2924): each wash, laid on each ground,
-    // carries at least 0.02 of chroma, within 40 degrees of its hue in dark.
+    // carries at least 0.02 of chroma, within 40 degrees of its hue in dark. The grounds are every
+    // one a wash is drawn on (#3182), the three steps, `surface.deep` (the status bar's waiting
+    // pill), the editor's (the diffs) and the window's.
     let theme = purlis();
     let dark = theme.of(Appearance::Dark).unwrap();
     let light = theme.of(Appearance::Light).unwrap();
-    for wash in [
-        "danger.wash",
-        "wash.warning",
-        "diff.deleted",
-        "diff.inserted",
-        "accent.wash",
-        "accent.wash-hover",
-    ] {
+    for wash in LIGHT_WASHES {
         let hue = light_rule::oklch_of(&dark.value(wash)[..7]).2;
-        for ground in ["surface.base", "surface.raised", "surface.overlay"] {
+        for ground in [
+            "surface.base",
+            "surface.raised",
+            "surface.overlay",
+            "surface.deep",
+            "terminal.background",
+            "window.background",
+        ] {
             let drawn = laid(light.value(wash), light.value(ground));
             let (_, chroma, drawn_hue) = light_rule::oklch_of(&drawn);
             let apart = (drawn_hue - hue).rem_euclid(360.0);
@@ -555,22 +569,14 @@ fn reflected(
         "accent.fill-edge",
         "accent.fill-text",
     ];
-    // The washes: a hue laid thin over a ground, which reflected would read as grey (#2924).
-    let washes = [
-        "danger.wash",
-        "wash.warning",
-        "diff.deleted",
-        "diff.inserted",
-        "accent.wash",
-        "accent.wash-hover",
-    ];
     let mut derived: std::collections::BTreeMap<&str, String> = dark
         .values
         .iter()
         .map(|(token, value)| {
             let value = if kept.contains(token) {
                 value.clone()
-            } else if washes.contains(token) {
+            } else if LIGHT_WASHES.contains(token) {
+                // A hue laid thin over a ground, which reflected would read as grey (#2924).
                 light_rule::purest(value)
             } else {
                 light_rule::reflect(value, deepest)
@@ -742,6 +748,27 @@ fn light_and_high_contrast_ship_as_its_appearances_and_dark_stays_the_default() 
         drawn(None, Appearance::Light, Contrast::Standard),
         it("dark")
     );
+    // With nothing chosen the system's appearance is not asked: more contrast is high contrast's.
+    assert_eq!(
+        drawn(None, Appearance::Light, Contrast::More),
+        it("dark-high-contrast")
+    );
+}
+
+#[test]
+fn syntax_comments_and_punctuation_draw_the_muted_grey_of_their_appearance() {
+    // High contrast moved every grey up a tier and left these two behind (#3182): in every
+    // appearance they are `text.muted`, so they move with it.
+    for theme in &purlis().appearances {
+        for token in ["syntax.comment", "syntax.punctuation"] {
+            assert_eq!(
+                theme.value(token),
+                theme.value("text.muted"),
+                "{} {token}",
+                theme.id
+            );
+        }
+    }
 }
 
 #[test]

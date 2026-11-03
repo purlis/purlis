@@ -632,6 +632,16 @@ enum Command {
         /// and it ends when it reports done or failed, or is cancelled (#3905).
         #[arg(long)]
         long: bool,
+        /// Run the new chat on this pool's runner, whatever its workspace and its project say
+        /// (#4536). A chat on a runner that asks this is held for the person, as all its
+        /// dispatches are.
+        #[arg(long, value_name = "NAME", conflicts_with = "this_machine")]
+        pool: Option<String>,
+        /// Run the new chat on this machine, whatever its workspace and its project say
+        /// (#4536). A chat on a runner that asks this is held for the person, as all its
+        /// dispatches are.
+        #[arg(long)]
+        this_machine: bool,
         #[command(subcommand)]
         command: Option<dispatch::DispatchCommand>,
     },
@@ -1051,8 +1061,10 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                         // On a runner only the browser engine may make namespaces (D-2050-25).
                         serve_terminals(),
                         // Each held project's hooks, heard as the window's own host hears them
-                        // (#2447).
-                        purlis_core::hookchannel::HookChannels::keeping(log.clone()),
+                        // (#2447), and what its chats queued for the app carried to it, since
+                        // the window does not read this disk (#4804).
+                        purlis_core::hookchannel::HookChannels::keeping(log.clone())
+                            .carrying_dispatch_messages(),
                         Confines,
                     )
                     // What a chat's end leaves, kept as the window's own host keeps it (#2494),
@@ -1063,7 +1075,7 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                     .heeding(purlis_core::halt::OnDisk(config.clone()))
                     // The projects it holds for its desktop, each in `<data>/projects/<id>`,
                     // and the code the desktop moves in them over the link (#2046).
-                    .moving_code_with(purlis_core::codelink::Moves),
+                    .moving_code_with(purlis_core::codelink::Moves::from_now()),
                 ))
             },
             pairing,
@@ -1494,6 +1506,9 @@ enum ProfileCommand {
         /// 6 if this device has no such profile, and 1 if purlis could not ask.
         #[arg(long)]
         check: bool,
+        /// With --check, answer from what is installed, and fetch no harness a profile pins.
+        #[arg(long, requires = "check")]
+        no_fetch: bool,
         /// For an opencode profile, the plan it signs in to: openai (ChatGPT) or
         /// github-copilot. A Claude plan is never signed in through opencode.
         #[arg(long)]
@@ -4259,6 +4274,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
         ProfileCommand::Authenticate {
             name,
             check,
+            no_fetch,
             provider,
             pool,
             until_input_ends,
@@ -4293,7 +4309,12 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 None if *until_input_ends => Held::UntilInputEnds,
                 None => Held::No,
             };
-            return profile_sign_in(&store, name, *check, provider.as_deref(), held, way);
+            let check = match (*check, *no_fetch) {
+                (false, _) => Check::No,
+                (true, false) => Check::Fetching,
+                (true, true) => Check::AsInstalled,
+            };
+            return profile_sign_in(&store, name, check, provider.as_deref(), held, way);
         }
         ProfileCommand::SignOut { name } => return profile_sign_out(&store, name),
         ProfileCommand::List => unreachable!("listed in run"),
@@ -4314,15 +4335,26 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
 /// and asked by that version, fetched first where it is not installed yet, as a chat's start
 /// fetches it, with a line in this terminal saying so (#4007); a fetch that is refused says why
 /// and signs nothing in. Held to its input ([`Held`]), the login ends with it (#4043).
+/// Whether `purlis profile sign-in` only says how a profile stands, and if a pinned harness is
+/// fetched to say it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Check {
+    No,
+    Fetching,
+    /// `--no-fetch` (#4507): a read that changes nothing here.
+    AsInstalled,
+}
+
 fn profile_sign_in(
     store: &purlis_core::profilestore::Homes,
     name: &str,
-    check: bool,
+    check_only: Check,
     provider: Option<&str>,
     held: Held,
     way: purlis_core::profilestore::sign_in::Way,
 ) -> ExitCode {
     use purlis_core::profilestore::{self, installs, sign_in};
+    let check = check_only != Check::No;
     let record = match profilestore::list(store.config_root()) {
         Ok(records) => records.into_iter().find(|p| p.name == name),
         Err(why) => return refused(&why),
@@ -4349,7 +4381,12 @@ fn profile_sign_in(
     let here = profilestore::this_device();
     // Watched through a fetch too, so a sign-in cancelled meanwhile starts no login.
     let input = (!matches!(held, Held::No)).then(held_input);
-    let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
+    let fetched = if check_only == Check::AsInstalled {
+        Ok(None)
+    } else {
+        installs::on_this_runner(&record, &|line| eprintln!("{line}"))
+    };
+    let pinned = match fetched {
         Ok(pinned) => pinned,
         Err(why) if check => {
             refused(&format!(
@@ -5487,6 +5524,8 @@ fn main() -> ExitCode {
         timeout,
         place,
         long,
+        pool,
+        this_machine,
         command,
     } = &cli.command
     {
@@ -5509,6 +5548,10 @@ fn main() -> ExitCode {
                 profile: profile.as_deref(),
                 place: place.as_deref(),
                 long: *long,
+                runs_on: dispatch::RunsOn {
+                    pool: pool.as_deref(),
+                    this_machine: *this_machine,
+                },
             },
             waits,
         );

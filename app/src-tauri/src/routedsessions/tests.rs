@@ -16,11 +16,20 @@ use crate::host::pretend::Pretend;
 
 /// `app` runs on pool `builds`, `stale` names a pool this machine does not keep, every other
 /// workspace runs here.
+/// A start's own choice comes first, as `purlis_core::machine::Store::chat_place` orders it.
 fn runs_on() -> RunsOn {
-    Arc::new(|workspace| match workspace {
-        "app" => Ok(Some("builds".to_owned())),
-        "stale" => Err("Workspace stale runs its chats on pool gone: it is not kept".to_owned()),
-        _ => Ok(None),
+    use purlis_core::machine::StartChoice;
+    Arc::new(|workspace, start| match (start, workspace) {
+        (Some(StartChoice::ThisMachine), _) => Ok(None),
+        (Some(StartChoice::Pool(pool)), _) if pool == "builds" => Ok(Some(pool.clone())),
+        (Some(StartChoice::Pool(pool)), _) => Err(format!(
+            "This chat was to start on pool {pool}: it is not kept"
+        )),
+        (None, Some("app")) => Ok(Some("builds".to_owned())),
+        (None, Some("stale")) => {
+            Err("Workspace stale runs its chats on pool gone: it is not kept".to_owned())
+        }
+        (None, _) => Ok(None),
     })
 }
 
@@ -172,7 +181,9 @@ impl AMachine {
     fn window(&self) -> RoutedSessions {
         let runs_on: RunsOn = {
             let setting = Arc::clone(&self.setting);
-            Arc::new(move |workspace| Ok(setting.lock().unwrap().get(workspace).cloned()))
+            Arc::new(move |workspace, _start| {
+                Ok(workspace.and_then(|workspace| setting.lock().unwrap().get(workspace).cloned()))
+            })
         };
         let on_pools: OnPools = {
             let setting = Arc::clone(&self.setting);
@@ -644,8 +655,16 @@ fn a_put_back_on_a_pool_a_workspace_runs_on_still_closes_all_it_did_not_take_bac
 #[test]
 fn a_chat_in_a_workspace_set_to_a_pool_starts_on_its_runner_and_every_command_follows_it() {
     let world = a_world();
-    assert!(world.sessions.composes_its_harness_chats_in(Some("app")));
-    assert!(!world.sessions.composes_its_harness_chats_in(Some("fleet")));
+    assert!(
+        world
+            .sessions
+            .composes_its_harness_chats_in(Some("app"), None)
+    );
+    assert!(
+        !world
+            .sessions
+            .composes_its_harness_chats_in(Some("fleet"), None)
+    );
     assert!(
         world.made.lock().unwrap().is_empty(),
         "no runner is reached to say so"
@@ -687,6 +706,74 @@ fn a_chat_in_a_workspace_set_to_a_pool_starts_on_its_runner_and_every_command_fo
     assert_eq!(world.here.running(), vec![shell]);
     world.sessions.input(shell, b"ls\r").unwrap();
     assert_eq!(world.here.typed(shell), vec![b"ls\r".to_vec()]);
+}
+
+#[test]
+fn a_start_that_chose_where_it_runs_runs_there_whatever_its_workspace_says() {
+    use purlis_core::machine::StartChoice;
+    let world = a_world();
+    let on_builds = Some(StartChoice::Pool("builds".to_owned()));
+    let here = Some(StartChoice::ThisMachine);
+    assert_eq!(
+        world.sessions.pool_for(Some("fleet"), on_builds.as_ref()),
+        Some("builds".to_owned())
+    );
+    assert_eq!(world.sessions.pool_for(Some("app"), here.as_ref()), None);
+    assert!(
+        world
+            .sessions
+            .composes_its_harness_chats_in(Some("fleet"), on_builds.as_ref())
+    );
+    assert!(
+        !world
+            .sessions
+            .composes_its_harness_chats_in(Some("app"), here.as_ref())
+    );
+
+    let chose_the_pool = Named {
+        runs_on: on_builds.clone(),
+        ..named_in("fleet")
+    };
+    let on_the_runner = world
+        .sessions
+        .open_named(None, &chose_the_pool, Default::default(), &|_| {})
+        .expect("started on the pool it chose")
+        .number;
+    assert_eq!(world.builds.named().len(), 1, "the runner composed it");
+    assert_eq!(
+        world.sessions.pool_of(on_the_runner).as_deref(),
+        Some("builds")
+    );
+
+    let chose_here = Named {
+        runs_on: here,
+        ..named_in("app")
+    };
+    // This machine's stand-in composes no chat by its names: its own refusal says it went there.
+    let went_here = world
+        .sessions
+        .open_named(None, &chose_here, Default::default(), &|_| {})
+        .expect_err("this machine's stand-in composes none");
+    assert_eq!(went_here, crate::host::NOT_COMPOSED_HERE);
+    assert_eq!(
+        world.builds.named().len(),
+        1,
+        "nothing more went to the runner"
+    );
+
+    let chose_a_gone_pool = Named {
+        runs_on: Some(StartChoice::Pool("gone".to_owned())),
+        ..named_in("fleet")
+    };
+    let refused = world
+        .sessions
+        .open_named(None, &chose_a_gone_pool, Default::default(), &|_| {})
+        .expect_err("a pool that is gone starts nothing");
+    assert!(refused.contains("pool gone"), "{refused}");
+    assert!(
+        world.here.named().is_empty(),
+        "never started here in its place"
+    );
 }
 
 #[test]
@@ -739,6 +826,138 @@ fn a_runner_chat_left_running_before_this_window_is_taken_back_from_its_pool() {
     assert_eq!(world.sessions.reattach(7, &|_| {}).unwrap(), 7);
     assert_eq!(world.builds.reattached(), vec![7]);
     assert!(world.here.reattached().is_empty());
+}
+
+const FRESH: &str = "builds/fresh-0123456789abcdef";
+
+/// A world with a chat's fresh runner, reached by [`FRESH`], beside pool `builds`.
+fn a_world_with_a_fresh_runner() -> (World, Pretend) {
+    let mut world = a_world();
+    let fresh = Pretend::default();
+    fresh.on_a_runner();
+    let to_a_pool: ToAPool = {
+        let (builds, fresh) = (world.builds.clone(), fresh.clone());
+        Arc::new(move |pool| match pool {
+            "builds" => Ok(Box::new(builds.clone()) as Box<dyn SessionHost>),
+            FRESH => Ok(Box::new(fresh.clone()) as Box<dyn SessionHost>),
+            other => Err(format!("pool {other} is not kept")),
+        })
+    };
+    world.sessions = RoutedSessions::new(
+        Path::new("/planes/a"),
+        Box::new(world.here.clone()),
+        runs_on(),
+        on_pools(),
+        to_a_pool,
+    );
+    (world, fresh)
+}
+
+/// A chat left running on its fresh runner is its pool's for what asks, and every command after
+/// reaches that runner (#4569).
+#[test]
+fn a_chat_left_running_on_its_own_runner_is_taken_back_from_there() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    fresh.leaves_running(7, None);
+    assert!(
+        !world.sessions.left_running_in(7, Some("app")),
+        "the pool's own runner does not have it"
+    );
+    assert!(world.sessions.left_running_on(7, FRESH));
+    assert_eq!(world.sessions.reattach(7, &|_| {}).unwrap(), 7);
+    assert_eq!(fresh.reattached(), vec![7]);
+    assert_eq!(world.sessions.pool_of(7).as_deref(), Some("builds"));
+    assert!(!world.sessions.left_running_on(8, FRESH));
+}
+
+/// Waits for what a fresh runner's end is told, by the thread it runs on.
+fn told_of_its_end(sessions: &RoutedSessions, goes: bool) -> Vec<String> {
+    let (tell, told) = std::sync::mpsc::channel();
+    sessions.take_back_fresh(
+        FRESH,
+        Some("app"),
+        Box::new(move |failed| {
+            tell.send(failed).expect("the test waits");
+            goes
+        }),
+    );
+    let failed = told
+        .recv_timeout(Duration::from_secs(30))
+        .expect("the end is told");
+    // The host is let go of on that thread, after it is told.
+    std::thread::sleep(Duration::from_millis(200));
+    failed
+}
+
+/// **A fresh runner's work is fetched first, and what ends it hears whether it came** (#4569), and
+/// the way to a runner that went goes with it.
+#[test]
+fn a_fresh_runners_work_comes_back_before_it_goes_and_its_host_with_it() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    assert_eq!(told_of_its_end(&world.sessions, true), Vec::<String>::new());
+    assert_eq!(
+        fresh.fetched(),
+        vec![("app".to_owned(), FRESH.to_owned())],
+        "from that runner, by its name"
+    );
+    assert_eq!(fresh.let_go(), 1, "its link goes with it");
+    assert!(!lock(&world.sessions.shared.pools).contains_key(FRESH));
+}
+
+/// A runner nothing ran on is asked nothing on its way out (#4569): a refused start's runner goes
+/// though the link that would fetch from it is what failed.
+#[test]
+fn a_runner_nothing_ran_on_goes_with_nothing_fetched() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    fresh.fetch_fails("the link went");
+    let (tell, told) = std::sync::mpsc::channel();
+    world.sessions.take_back_fresh(
+        FRESH,
+        None,
+        Box::new(move |failed| {
+            tell.send(failed).expect("the test waits");
+            true
+        }),
+    );
+    let failed: Vec<String> = told
+        .recv_timeout(Duration::from_secs(30))
+        .expect("the end is told");
+    assert_eq!(failed, Vec::<String>::new());
+    assert!(fresh.fetched().is_empty());
+}
+
+/// A runner whose work did not come keeps its host, and is said to have failed: what ends it holds
+/// on to the claim.
+#[test]
+fn a_fresh_runner_whose_work_did_not_come_is_told_so_and_stays() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    fresh.fetch_fails("the link went");
+    assert_eq!(
+        told_of_its_end(&world.sessions, false),
+        vec!["the link went".to_owned()]
+    );
+    assert_eq!(fresh.let_go(), 0);
+    assert!(lock(&world.sessions.shared.pools).contains_key(FRESH));
+}
+
+/// A chat with a runner of its own stays on it whichever pool, if any, its workspace runs on now.
+#[test]
+fn a_chat_with_a_runner_of_its_own_starts_there_though_its_workspace_moved() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    let named = Named {
+        runner: Some(FRESH.to_owned()),
+        ..named_in("runs-here-now")
+    };
+    let composed = world
+        .sessions
+        .open_named(
+            None,
+            &named,
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
+        .expect("it starts");
+    assert!(fresh.running().contains(&composed.number));
 }
 
 #[test]
@@ -919,12 +1138,16 @@ fn the_routing_says_every_method_of_a_chats_host() {
     let every = methods(trait_source, "pub trait SessionHost");
     let said = methods(routed_source, "impl SessionHost for RoutedSessions");
     // `fetch_back` and `fetch_back_left` are the routing's own, through its saver
-    // (`FetchingBack`).
+    // (`FetchingBack`), and the two a fresh runner's end asks are its own host's.
+    let its_own = [
+        "fetch_back",
+        "fetch_back_left",
+        "fetch_back_whole",
+        "let_go_of_runner",
+    ];
     let unsaid: Vec<&String> = every
         .iter()
-        .filter(|one| {
-            !said.contains(one) && !matches!(one.as_str(), "fetch_back" | "fetch_back_left")
-        })
+        .filter(|one| !said.contains(one) && !its_own.contains(&one.as_str()))
         .collect();
     assert!(unsaid.is_empty(), "the routing does not say {unsaid:?}");
 }
@@ -962,4 +1185,21 @@ fn a_move_is_asked_of_the_pool_it_goes_to_or_comes_from_and_never_of_this_machin
             .is_err(),
         "a pool this machine does not keep moves nothing"
     );
+}
+
+/// **A chat whose start chose a pool is looked for there after a restart** (#4536), where no
+/// record of it was kept: its own choice, never its workspace's this machine.
+#[test]
+fn a_chat_its_start_put_on_a_pool_is_taken_back_from_that_pool() {
+    use purlis_core::machine::StartChoice;
+    let world = a_world();
+    world.builds.leaves_running(7, None);
+    assert!(!world.sessions.left_running_in(7, Some("fleet")));
+    assert!(world.sessions.left_running_as_started(
+        7,
+        Some("fleet"),
+        Some(&StartChoice::Pool("builds".to_owned())),
+    ));
+    assert_eq!(world.sessions.reattach(7, &|_| {}).unwrap(), 7);
+    assert_eq!(world.builds.reattached(), vec![7]);
 }

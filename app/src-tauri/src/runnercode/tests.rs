@@ -14,6 +14,7 @@ use purlis_host::standin::StandIns;
 
 use crate::host::{Named, SessionHost};
 use crate::hostedsessions::HostedSessions;
+use crate::runnercode::Sent;
 
 /// git for the test's own fixtures: no template, no signer, a test's own identity.
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -55,8 +56,13 @@ struct World {
     root: PathBuf,
     projects: PathBuf,
     sessions: HostedSessions,
+    /// The fresh runner's host, where the world has one, for a window that comes to it anew.
+    fresh: Option<Hosting>,
     _runtime: tokio::runtime::Runtime,
 }
+
+/// A chat's fresh runner of pool `builds`, by the name a link reaches it by.
+const FRESH: &str = "builds/fresh-0123456789abcdef";
 
 impl World {
     /// A project that is a git repository, with workspace `app` and its clone `web` (which the
@@ -94,7 +100,7 @@ impl World {
             StandIns::default(),
         )
         .keeping_projects_in(projects.clone())
-        .moving_code_with(purlis_core::codelink::Moves);
+        .moving_code_with(purlis_core::codelink::Moves::in_home(top.join("runner")));
         let relay = runtime.block_on(async move {
             purlis_host::Relay::new(Arc::new(move || {
                 let runner = runner.clone();
@@ -108,8 +114,60 @@ impl World {
             root,
             projects,
             sessions,
+            fresh: None,
             _runtime: runtime,
         }
+    }
+
+    /// [`World::new`], held on a chat's fresh runner, [`FRESH`] (#4569): the window's links to it
+    /// named so, as a task's are.
+    fn on_a_fresh_runner() -> World {
+        let world = World::new();
+        let runner = Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            StandIns::default(),
+        )
+        .keeping_projects_in(world.projects.clone())
+        .moving_code_with(purlis_core::codelink::Moves::in_home(
+            world
+                .projects
+                .parent()
+                .expect("the runner's home")
+                .to_path_buf(),
+        ));
+        let connection = crate::hostedsessions::tests::in_memory_with_a_runner(
+            runner.clone(),
+            runner.clone(),
+            &world._runtime,
+        )
+        .to_a_pool(FRESH);
+        World {
+            sessions: HostedSessions::on_a_pools_runner(connection, &world.root),
+            fresh: Some(runner),
+            ..world
+        }
+    }
+
+    /// A window started anew on the fresh runner: a connection of its own, holding nothing yet.
+    fn a_new_window_on_the_fresh_runner(&self) -> HostedSessions {
+        let runner = self.fresh.clone().expect("a fresh runner");
+        let connection = crate::hostedsessions::tests::in_memory_with_a_runner(
+            runner.clone(),
+            runner,
+            &self._runtime,
+        )
+        .to_a_pool(FRESH);
+        HostedSessions::on_a_pools_runner(connection, &self.root)
+    }
+
+    /// This project's own code and its clones of `app`, sent to the runner as a start sends them.
+    fn sends_its_clones(&self) {
+        let (link, project) = self
+            .sessions
+            .link_of_a_start_in_a_test()
+            .expect("held, its own code sent");
+        crate::runnercode::send_workspace(&link, &project, &self.root, "app", &Sent::default())
+            .expect("sent");
     }
 
     /// Where the runner keeps this project.
@@ -429,5 +487,107 @@ fn a_clone_the_runner_chat_made_comes_back_with_move_here_and_names_what_a_tool_
         git(&web, &["rev-parse", "HEAD"]),
         web_head,
         "the clone the runner never had is as it was"
+    );
+}
+
+/// **A fresh runner goes only on proof that its work is here** (#4569): a commit on a branch,
+/// fetched back, is proved home; one on no branch, which no fetch brings, is said missing.
+#[test]
+fn a_fresh_runners_work_is_proved_home_and_a_commit_on_no_branch_keeps_it() {
+    let world = World::on_a_fresh_runner();
+    world.sessions.hold().expect("held on the runner");
+    world.sends_its_clones();
+    let web = world.root.join("workspaces/app/web");
+    let there = world.kept().join("workspaces/app/web");
+    let on_the_runner = committed(&there, "login.rs", "fn log_in() { done() }\n");
+
+    assert_eq!(
+        world.sessions.fetch_back_whole("app", FRESH),
+        Vec::<String>::new(),
+        "every commit it holds is here"
+    );
+    assert_eq!(
+        git(
+            &web,
+            &["rev-parse", &format!("refs/remotes/{FRESH}/fix-login")]
+        ),
+        on_the_runner
+    );
+
+    git(&there, &["checkout", "-q", "--detach"]);
+    committed(&there, "lost.rs", "on no branch\n");
+    let missing = world.sessions.fetch_back_whole("app", FRESH);
+    assert!(
+        missing.iter().any(|why| why.contains("HEAD")),
+        "{missing:?}"
+    );
+}
+
+/// **A repository the task made outside the workspace's clones keeps its runner** (#4569): the
+/// runner lists it itself, though no clone here names it.
+#[test]
+fn a_repository_the_task_made_where_no_clone_is_keeps_its_runner() {
+    let world = World::on_a_fresh_runner();
+    world.sessions.hold().expect("held on the runner");
+    world.sends_its_clones();
+    let nested = world.kept().join("workspaces/app/web/vendor/made");
+    std::fs::create_dir_all(&nested).unwrap();
+    git(&nested, &["init", "-q", "-b", "main"]);
+    committed(&nested, "lib.rs", "made on the runner\n");
+
+    let missing = world.sessions.fetch_back_whole("app", FRESH);
+
+    assert!(
+        missing.iter().any(|why| why.contains("vendor/made")),
+        "{missing:?}"
+    );
+}
+
+/// **A re-hold never sends code to a fresh runner** (#4569): a window started again holds the
+/// project there again for its chat, and the task's commit on the project's own branch stays.
+#[test]
+fn a_start_on_a_fresh_runner_that_holds_the_project_sends_no_code_over_its_work() {
+    let world = World::on_a_fresh_runner();
+    world
+        .sessions
+        .link_of_a_start_in_a_test()
+        .expect("held, its code sent");
+    let kept = world.kept();
+    let the_tasks = committed(&kept, "task.md", "the task's work\n");
+    // The task moved on to a branch of its own, leaving its commit on `main`, which a send of
+    // this machine's `main` would move.
+    git(&kept, &["checkout", "-q", "-b", "the-tasks-next"]);
+    // Here, the project's own branch moves on meanwhile.
+    let here = committed(&world.root, "here.md", "moved on here\n");
+
+    let again = world.a_new_window_on_the_fresh_runner();
+    again
+        .moving_link_in_a_test()
+        .expect("held again for a chat");
+
+    assert_eq!(
+        git(&kept, &["rev-parse", "refs/heads/main"]),
+        the_tasks,
+        "the task's commit is where it left it"
+    );
+    assert_ne!(git(&kept, &["rev-parse", "refs/heads/main"]), here);
+}
+
+/// **A close waits for what still runs on the runner** (#4569): a program with no end yet counts,
+/// one that ended does not, and the runner is kept in words while any runs.
+#[test]
+fn a_program_that_has_not_ended_holds_its_runner_back() {
+    let programs: Vec<purlis_session_protocol::session::HeldProgram> =
+        serde_json::from_value(serde_json::json!([
+            {"program": "01J9ZQ3V7K8M2N4P6R8T0V2X4Z", "kind": "harness", "number": 3, "process": 4242, "cols": 120, "rows": 40},
+            {"program": "01J9ZQ8000000000000000000E", "kind": "shell", "number": 4, "exit": {"code": 0}, "cols": 80, "rows": 24},
+        ]))
+        .expect("programs");
+
+    assert_eq!(crate::runnercode::still_running(&programs), 1);
+    assert_eq!(crate::runnercode::still_running(&programs[1..]), 0);
+    assert_eq!(
+        crate::runnercode::running_said(1),
+        "1 program of this project still runs on the runner, and could still commit"
     );
 }

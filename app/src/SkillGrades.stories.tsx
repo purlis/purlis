@@ -3,8 +3,10 @@
 
 /**
  * **Grading a skill, as pages in the Skill studio** (#3688, `prototype/skill-grading` variant
- * A): a skill's Grades tab with its bars, its list and the after-each-edit row; one with no
- * trigger tests; the plan with its totals first and Start fixed at its foot; a plan that changed
+ * A; its checks, `prototype/plain-checks` layout A): a skill's Grades tab with its checks, a card
+ * per kind with its bars, its list and the after-each-edit row; one with no checks, one whose
+ * checks a chat wrote and wait as a draft, one never graded, and one with only "picked" checks;
+ * the plan with its totals first and Start fixed at its foot; a plan that changed
  * under the person, Start waiting; a grade running with Stop; a scorecard with its end banner,
  * totals and a row per test; and a saved chat, read-only. Walked by the keyboard, held to axe,
  * and pictured in every pictured theme cell. The core is faked at its command boundary.
@@ -20,8 +22,8 @@ import {
 import { inWorkspace, skillRowId, type GradingAt } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
-import type { GradeRow, GradeScorecard, SkillGradePlan } from "./bindings";
+import { expectFocusInSight, untilFocusInSight, untilFocusWithin } from "./stories.testkit";
+import type { GradeRow, GradeScorecard, SkillDraft, SkillGradePlan } from "./bindings";
 
 const SCOPE = inWorkspace("smart-ide");
 
@@ -38,6 +40,7 @@ const TESTS = [
 ];
 
 const PLAN: SkillGradePlan = {
+  draft: false,
   tests: TESTS,
   chats: 36,
   runs: 3,
@@ -132,6 +135,7 @@ const arm = (
 });
 
 const CARD: GradeScorecard = {
+  draft: false,
   grade: "01C",
   skill: "deploy",
   level: { at: "project", local: false },
@@ -225,6 +229,10 @@ function Tab({
   plan: SkillGradePlan;
   grades: GradeRow[];
   card: GradeScorecard;
+  /** How many outcome evals deploy has: none where it has only trigger tests. */
+  evals?: number;
+  /** The chats' drafts: one of deploy's checks waits on its Grades tab. */
+  drafts?: SkillDraft[];
 }) {
   return <StudioInPanel width={width} height={620} narrow={narrow} onOpenView={() => undefined} />;
 }
@@ -252,6 +260,7 @@ const meta = {
             asked: 0,
             ended: null,
             said: null,
+            draft: null,
           };
     mockIPC((cmd) => {
       switch (cmd) {
@@ -273,12 +282,14 @@ const meta = {
             grades: args.grades,
             said: null,
             tests: args.plan.tests.length,
-            evals: args.plan.evals.length,
+            evals: args.evals ?? args.plan.evals.length,
             tests_refused: args.plan.tests_refused,
             running: running(),
           };
         case "skill_grade_running":
           return running();
+        case "skill_drafts":
+          return args.drafts ?? [];
         case "skill_grade_plan":
           plans += 1;
           // A plan that changed under the person: the second read consents to another.
@@ -336,35 +347,151 @@ async function tabInto(target: () => Element | null, steps = 60): Promise<void> 
   await untilFocusWithin(target, "the keyboard reaches it by Tab");
 }
 
+/** deploy's grades, the latest of which ran its outcome evals too. */
+const BOTH: GradeRow[] = GRADES.map((one, at) =>
+  at === 0 ? { ...one, outcome_arms: { with: 75, without: 20, previous: null } } : one,
+);
+
 /**
- * **The Grades tab**: the latest grade as bars, every grade with how it ended, and the
- * after-each-edit row. Tab reaches a grade's Scorecard.
+ * **Checks, graded, both kinds** (ruling of 2026-11-02): the latest grade in one sentence, a card
+ * per kind with its question, its technical name and its bars, every grade with how it ended, and
+ * the after-each-edit row. Tab reaches a grade's Scorecard.
  */
 export const Grades: Story = {
+  args: { grades: BOTH, evals: 2 },
   play: async ({ canvas }) => {
-    const bars = await canvas.findByRole("group", { name: "The latest grade of deploy" });
+    await expect(await canvas.findByTestId("skill-checks-answer")).toHaveTextContent(
+      "With deploy, chats picked it right 86% of the time and met 75% of what the job asks; without it, 68% and 20%.",
+    );
+    const bars = await canvas.findByRole("group", {
+      name: "Does it get picked? The latest grade of deploy",
+    });
     await expect(within(bars).getAllByRole("meter")).toHaveLength(3);
+    const job = canvas.getByRole("group", {
+      name: "Does it do the job? The latest grade of deploy",
+    });
+    await expect(within(job).getAllByRole("meter")).toHaveLength(2);
     const list = await canvas.findByRole("grid", { name: "Grades of deploy" });
     await waitFor(() => expect(within(list).getAllByRole("row")).toHaveLength(4));
     const open = within(list).getByRole("button", {
       name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
     });
     await tabInto(() => open);
+    // The table's cell is scrolled in by React Aria a frame later, late in WebKit (#4026).
+    await untilFocusInSight("Tab to the Scorecard below the checks");
+  },
+};
+
+/** deploy's plan with no checks at all. */
+const NONE: SkillGradePlan = { ...PLAN, tests: [], chats: 0, after_edit_chats: 0, estimate: null };
+
+/**
+ * **A skill with no checks yet** (ruling of 2026-11-02): the tab says what the two kinds are,
+ * offers nothing to run, and offers one chat to write both, or to write them yourself. Tab
+ * reaches both.
+ */
+export const NoChecks: Story = {
+  args: { plan: NONE, grades: [], evals: 0 },
+  play: async ({ canvas }) => {
+    const none = await canvas.findByTestId("skill-checks-none");
+    await expect(none).toHaveTextContent("deploy has no checks yet");
+    await expect(within(none).getByRole("button", { name: "Write them yourself" })).toBeVisible();
+    const ask = within(none).getByRole("button", { name: "Ask a chat to write checks" });
+    await tabInto(() => ask);
+    expectFocusInSight();
+  },
+};
+
+/** One file of a draft: new, `after` its text. */
+const drafted = (path: string, after: unknown) => ({
+  path,
+  before: null,
+  after: JSON.stringify(after, null, 2),
+  hunks: [],
+  stale: false,
+});
+
+/** Chat 14's draft of deploy's checks: both kinds, in the skill's one draft. */
+const CHECKS_DRAFT: SkillDraft = {
+  id: "01D",
+  name: "deploy",
+  level: { at: "project", local: false },
+  chat: 14,
+  chat_open: true,
+  new: false,
+  stale: false,
+  files: [
+    drafted("evals/triggers.json", [
+      { query: "deploy the api to staging", should_trigger: true },
+      { query: "what changed since the last release?", should_trigger: false },
+      { query: "ship svc to production with a tag", should_trigger: true },
+      { query: "roll back yesterday's deploy", should_trigger: true },
+    ]),
+    drafted("evals/evals.json", {
+      skill_name: "deploy",
+      evals: [
+        {
+          id: 1,
+          prompt: "Deploy svc to staging from a branch with a failing test",
+          expectations: ["It stops before deploying", "It names the failing test"],
+        },
+        {
+          id: 2,
+          prompt: "Deploy the api to production",
+          expectations: ["It runs the tests first", "It tags the release"],
+        },
+      ],
+    }),
+  ],
+};
+
+/**
+ * **A chat wrote checks, and they wait** (ruling of 2026-11-02): both kinds in the skill's one
+ * draft, each kind's checks under its question, accepted or discarded whole. Tab reaches Accept
+ * checks.
+ */
+export const DraftWaiting: Story = {
+  args: { plan: NONE, grades: [], evals: 0, drafts: [CHECKS_DRAFT] },
+  play: async ({ canvas }) => {
+    const draft = await canvas.findByTestId("skill-checks-draft");
+    await expect(draft).toHaveTextContent("Chat 14 wrote checks for deploy");
+    await expect(draft).toHaveTextContent("Does it get picked? · 4 prompts");
+    await expect(draft).toHaveTextContent("Does it do the job? · 2 tasks");
+    await expect(canvas.queryByTestId("skill-checks-none")).toBeNull();
+    const accept = within(draft).getByRole("button", { name: "Accept checks" });
+    await tabInto(() => accept);
     expectFocusInSight();
   },
 };
 
 /**
- * **A skill with no trigger tests**: the tab says what they are, offers nothing to run, and offers
- * to write them or to ask a chat to (#3925). Tab reaches both.
+ * **Checks, never graded**: both kinds' cards, each saying how many it has and that it is not
+ * graded yet, and Grade deploy… beside the heading. Tab reaches it.
  */
-export const NoTests: Story = {
-  args: { plan: { ...PLAN, tests: [], chats: 0, after_edit_chats: 0, estimate: null }, grades: [] },
+export const NeverGraded: Story = {
+  args: { grades: [], evals: 2 },
   play: async ({ canvas }) => {
-    const none = await canvas.findByTestId("skill-grades-no-tests");
-    await expect(none).toHaveTextContent("deploy has no trigger tests yet");
-    await expect(within(none).getByRole("button", { name: "Write trigger tests" })).toBeVisible();
-    const ask = within(none).getByRole("button", { name: "Ask a chat to write them" });
+    const checks = await canvas.findByTestId("skill-checks");
+    await expect(within(checks).getAllByText("Not graded yet.")).toHaveLength(2);
+    const grade = within(checks).getByRole("button", { name: "Grade deploy…" });
+    await tabInto(() => grade);
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **A skill with only “picked” checks**: its picked card with its bars, and the job's card saying
+ * it has none yet, with a chat a press away. Tab reaches that offer.
+ */
+export const OnlyPicked: Story = {
+  args: { evals: 0 },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("skill-checks-answer")).toHaveTextContent(
+      "With deploy, chats picked it right 86% of the time; without it, 68%.",
+    );
+    const job = canvas.getByRole("region", { name: "Does it do the job?" });
+    await expect(job).toHaveTextContent("None yet.");
+    const ask = within(job).getByRole("button", { name: "Ask a chat to write these" });
     await tabInto(() => ask);
     expectFocusInSight();
   },
@@ -469,9 +596,10 @@ export const ScorecardOfOutcomeEvals: Story = {
   },
 };
 
-/** **The Grades tab of a grade of outcome evals**: its bars and its column (SK-55). */
+/** **The Grades tab of a grade of outcome evals alone**: the job's bars and its columns (SK-55). */
 export const GradesOfOutcomeEvals: Story = {
   args: {
+    evals: 1,
     grades: GRADES.map((row, at) =>
       at === 0
         ? {
@@ -484,7 +612,7 @@ export const GradesOfOutcomeEvals: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByRole("group", { name: "Outcome evals of the latest grade of deploy" }),
+      await canvas.findByRole("group", { name: "Does it do the job? The latest grade of deploy" }),
     ).toBeInTheDocument();
     await expect(canvas.queryByText(/nothing of deploy was compared/)).toBeNull();
   },

@@ -1996,6 +1996,9 @@ impl purlis_host::Compose for ComposesConfined {
 
 pub(crate) fn by_its_names() -> Named {
     Named {
+        runner: None,
+        its_code_is_there: false,
+        asked_to_run: crate::host::AskedToRun::default(),
         tools_allowed: None,
         plane_skills: false,
         chat: None,
@@ -2006,6 +2009,7 @@ pub(crate) fn by_its_names() -> Named {
         resume: None,
         first_message: None,
         without_sandbox: false,
+        runs_on: None,
         alone: Vec::new(),
         size: SIZE,
     }
@@ -2151,6 +2155,9 @@ fn a_chat_started_by_its_names_tells_the_host_what_was_allowed_it_alone_where_it
     let (_dir, root) = a_project();
     let sessions = HostedSessions::new(connection, &root);
     let alone = Named {
+        runner: None,
+        its_code_is_there: false,
+        asked_to_run: crate::host::AskedToRun::default(),
         alone: vec![6379],
         ..by_its_names()
     };
@@ -2672,6 +2679,8 @@ fn a_harness_chat_on_a_runner_is_started_there_by_its_names_and_its_asks_reach_t
     until("the runner ends it", || confines.ended(&held));
 
     let opted_out = Named {
+        runner: None,
+        its_code_is_there: false,
         without_sandbox: true,
         ..by_its_names()
     };
@@ -3570,4 +3579,36 @@ fn a_runners_skill_runs_are_told_once_each_from_its_log_over_the_relayed_link() 
     );
     assert!(told.iter().all(|one| one.run == run));
     drop(link);
+}
+
+/// **A start its runner was asked for counts as one that may have run there, however it then
+/// fails** (#4781): its program may have begun and written work before the window heard, so a
+/// fresh runner it made goes only on proof. One refused before it was asked ran nothing.
+#[test]
+fn a_start_the_runner_was_asked_for_counts_as_one_that_may_have_run_however_it_fails() {
+    let (sessions, _confines, _runs, _dir, _runtime) = on_a_runner();
+    let opted_out = Named {
+        without_sandbox: true,
+        ..by_its_names()
+    };
+    assert!(
+        sessions
+            .open_named(None, &opted_out, Default::default(), &|_| {})
+            .is_err()
+    );
+    assert!(!opted_out.asked_to_run.was(), "refused before it was asked");
+
+    // A program of the project's the window does not know already has number 5.
+    let (link, project) = sessions.link().unwrap();
+    link.call(Command::StartProgram(Box::new(StartProgram {
+        number: Some(5),
+        launch: Some(launch_of(&a_shell("true"), "/bin/sh".to_owned())),
+        ..StartProgram::of(project, ProgramKind::Shell)
+    })))
+    .unwrap();
+    let clashes = by_its_names();
+    let failed = sessions.open_named(Some(5), &clashes, Default::default(), &|_| {});
+
+    assert!(failed.is_err(), "{failed:?}");
+    assert!(clashes.asked_to_run.was(), "asked, so it may have run");
 }

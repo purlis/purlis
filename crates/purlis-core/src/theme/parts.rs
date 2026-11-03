@@ -798,12 +798,18 @@ const FIELD_HELP_GROUNDS: &[&str] = &["surface.raised", "surface.overlay"];
 /// **What the window draws each see-through ground on** (#4648), by ground: the danger wash is
 /// a refusal's or an unrun command's box in a dialog and the approval of what an extension runs
 /// as you, also a dialog (`App.css`; a dialog's content is `surface.overlay`, `dialog.css`), and a
-/// pane's trouble Notice over the terminal's fill (`paneFrame.css`).
+/// pane's trouble Notice over the terminal's fill (`paneFrame.css`); the warning wash is a pane's
+/// warning and its consent, over the same fill (#4795). A part's own wash (the title bar's
+/// waiting count, a waiting badge) is no ground: `PART_LAID_ON` says where one is laid.
+/// `app/src/theme/grounds.test.ts` follows every rule that paints a see-through token to the
+/// grounds under it and holds this table to them, exactly (#4796).
 /// The check reads a family on a wash laid over these alone, never over every opaque ground the
 /// family stands on (an active tab, a chosen row), since no wash is drawn there. A ground a theme
 /// makes see-through that is not here is read over each opaque ground its family names.
-const WASH_LAID_ON: &[(&str, &[&str])] =
-    &[("danger.wash", &["surface.overlay", "terminal.background"])];
+const WASH_LAID_ON: &[(&str, &[&str])] = &[
+    ("danger.wash", &["surface.overlay", "terminal.background"]),
+    ("wash.warning", &["terminal.background"]),
+];
 
 /// A part of a family in a look, as a sentence names it: `button.root.primary`, or
 /// `text-input.root` for a family that has no variants.
@@ -858,6 +864,8 @@ const CONTROL_GROUNDS: &[&str] = &[
     "control.aimed",
     "danger.surface",
     "danger.wash",
+    // A pane's warning and its consent, which hold their ways out (#4795).
+    "wash.warning",
     // An attention Notice's ground, under its ways out (#3678).
     "attention.surface",
     "layer.project",
@@ -3420,6 +3428,10 @@ const STANDS_ON: &[(&str, &[&str])] = &[
 #[cfg(test)]
 pub(super) const HOLDS_NO_CONSENT: &[(&str, &str)] = &[
     (
+        "code",
+        "a box of text to copy holds its ghost Copy button, never an Allow or a danger answer",
+    ),
+    (
         "text-input",
         "a field's box holds the words typed into it, never an answer",
     ),
@@ -3432,6 +3444,19 @@ pub(super) const HOLDS_NO_CONSENT: &[(&str, &str)] = &[
         "its toolbar holds ghost and plain buttons, never an Allow or a danger answer (#3268)",
     ),
     ("tooltip", "it holds words only"),
+    (
+        "badge",
+        "a waiting badge is filled with the warning wash and holds its own words only (#4795)",
+    ),
+    (
+        "count",
+        "a waiting count is filled with the warning wash and holds its own number only (#4795)",
+    ),
+    (
+        "status-item",
+        "the status bar's waiting pill is filled with the warning wash and holds its own icon \
+         and words only (#4795)",
+    ),
     (
         "separator",
         "it is a line between two groups, and holds nothing",

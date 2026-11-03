@@ -465,13 +465,15 @@ asked for), whatever the system's appearance. Where its values come from:
   lightness away from its ground by 0.01 until it clears: the quiet and faint tiers on the row
   under the pointer (`#61606c`, the placeholder too, and `#7c7a87`). **A wash is not reflected** (#2924):
   a hue reflected dark and laid thin on a light ground reads as grey, so `wash.warning`,
-  `danger.wash`, `diff.deleted` and `diff.inserted` are each their hue's purest colour, where
-  sRGB holds the most chroma for it, at dark's alpha: amber `#fdb0051f`, red `#fd04441f`, green
-  `#01fd781f`. Laid on any light ground, each keeps its hue within 40 degrees and at least 0.02 of
-  chroma, and a test holds that.
-- **High-contrast dark** moves each text step up one (primary to white, quiet to the muted
-  `#a09eab`, faint to quiet's `#91909d`), each edge up to a text grey, and the accent to the
-  record's lighter lavender `#c3baf5`. Its strong border and tree guides are the palette's
+  `danger.wash`, `diff.deleted`, `diff.inserted` and the waiting ring's `state.waiting-glow`
+  (#3182) are each their hue's purest colour, where sRGB holds the most chroma for it, at dark's
+  alpha: amber `#fdb0051f` and `#fdb00559`, red `#fd04441f`, green `#01fd781f`. Laid on any light
+  ground, the deepest surface, the editor's and the window's included, each keeps its hue within
+  40 degrees and at least 0.02 of chroma, and a test holds that.
+- **High-contrast dark** moves each text step up one (primary to white, muted to secondary's
+  `#c9c7d2`, quiet to the muted `#a09eab`, faint to quiet's `#91909d`), each edge up to a text
+  grey, and the accent to the record's lighter lavender `#c3baf5`. Syntax comments and punctuation
+  are muted in every appearance, so they move with it (#3182). Its strong border and tree guides are the palette's
   quiet, so they moved with it from `#8a8896` to `#91909d` (#2902): a lighter edge on dark.
 - **High-contrast light is high-contrast dark reflected by light's one rule** (#4677), so it is
   to high-contrast dark what light is to dark, and a test re-derives it. Its words are a step

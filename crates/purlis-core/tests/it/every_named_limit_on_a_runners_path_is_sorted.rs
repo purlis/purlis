@@ -223,6 +223,30 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/purlis-core/src/clusterpool.rs",
+        "CAPABILITIES_MOST_AHEAD",
+        Security,
+        "bounds what signed or untrusted input can claim",
+    ),
+    (
+        "crates/purlis-core/src/pools.rs",
+        "ORPHAN_AFTER",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/pools.rs",
+        "SKEW",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "app/src-tauri/src/runnercode.rs",
+        "PROGRAMS_END_WITHIN",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/clusterpool.rs",
         "MOST_PRINTED",
         Fixed,
         "fixedlimits::RUNNER_OUTPUT",
@@ -265,9 +289,33 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/purlis-core/src/dockerpool.rs",
+        "CONVERSATIONS_WITHIN",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool.rs",
         "MOST_NAME",
         Internal,
         "what the format or a tool holds",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool.rs",
+        "FLAG_NOT_KNOWN",
+        Internal,
+        "what the format or a tool holds",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool/contract.rs",
+        "INSIDE_WITHIN",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool/contract.rs",
+        "MOST_PROBLEMS",
+        Internal,
+        "how much purlis says at once",
     ),
     (
         "crates/purlis-core/src/dockerpool.rs",
@@ -374,6 +422,18 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     (
         "crates/purlis-core/src/pools.rs",
         "ASKED_EVERY",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/pools.rs",
+        "READ_AGAIN_FIRST",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/pools.rs",
+        "READ_AGAIN_MOST",
         Internal,
         "how purlis waits or looks",
     ),

@@ -399,9 +399,7 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "take_up_sandbox_block",
             "task_question",
             "persona_chats_of",
-            "opened_chats",
             "chats_that_would_not_start",
-            "chats_plane_updated",
             "skill_move_needs_grant",
             "chat_states",
             "chat_doings",
@@ -433,6 +431,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "put_away_lost_chat",
             // Which chats are reconnecting to their runner (#2496): in memory.
             "chats_reconnecting",
+            // A task's fresh runners kept (#4569): in memory.
+            "fresh_runners_kept",
             // Whether the session host is failing, and Try again (#2007): in memory, and a
             // wake of the supervisor's thread.
             "session_host_failing",
@@ -477,16 +477,27 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
         &["update_channel"],
     ),
     (
-        // A chat's pane and what lands in it: typed text, a resize before the watch after it
-        // (#891), a smart close's prompt before its cancel (#1007), a stop, a close before the
-        // resume that takes the chat's place, and the fixed words a Keep blocked tells a chat.
-        "INPUT_ORDER",
+        // A pane's keys, paste, mouse report, resize and its view's close (#4734, ADR 0108):
+        // each joins the back of its chat's lane in the order the window asked, which Tauri
+        // keeps only for synchronous commands, and answers at once. The lane's worker waits on
+        // the host; the view's open is `async` and takes its turn behind them (#891).
+        "QUEUED",
         &[
             "send_input",
             "send_input_bytes",
             "resize_session",
-            "watch_session",
             "unwatch_session",
+        ],
+    ),
+    (
+        // What else lands in a chat, in the order asked: a smart close's prompt before its
+        // cancel (#1007), a stop, a close before the resume that takes the chat's place, and
+        // the fixed words a Keep blocked tells a chat. What each types takes its turn in the
+        // chat's lane, behind what its pane queued, but waits for the lane no longer than
+        // `inputlanes::A_TURN_WAITS_AT_MOST` and is refused past it; then it waits for the host
+        // as before (ADR 0108). `async` would lose the order these keep.
+        "INPUT_ORDER",
+        &[
             "type_installer",
             "type_sandbox_install",
             "type_profile_sign_in",
@@ -512,7 +523,6 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
         "TAB_ORDER",
         &[
             "window_layout",
-            "pin_chat",
             "open_chat_tab",
             "close_chat_tab",
             "chat_order",
@@ -624,4 +634,319 @@ fn a_command_is_synchronous_only_where_the_list_says_why() {
     let mut once = listed.clone();
     once.dedup();
     assert_eq!(once, listed, "a command listed twice");
+}
+
+/// A project with its manifest and nothing else: a chat starts in it without a sandbox.
+fn a_bare_project() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    std::fs::write(dir.path().join(purlis_core::plane::MANIFEST), "").expect("a manifest");
+    dir
+}
+
+/// The app on Tauri's mock runtime with a pane's terminal commands, a project whose chats run
+/// in `host`, and one chat started in it: the project and the chat's number.
+fn app_typing_into(
+    host: &crate::host::pretend::Pretend,
+    root: &Path,
+) -> (tauri::App<MockRuntime>, PlaneId, u32) {
+    let planes = Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None)
+        .running_sessions_on(std::sync::Arc::new({
+            let host = host.clone();
+            move |_, _: &Path| Box::new(host.clone())
+        }));
+    app_typing_on(planes, root)
+}
+
+/// [`app_typing_into`], on `planes` as a test made it.
+fn app_typing_on(planes: Planes, root: &Path) -> (tauri::App<MockRuntime>, PlaneId, u32) {
+    let plane = planes.open(root);
+    let chat = purlis_core::reopen::Chat {
+        program: "/nowhere/a-harness".to_owned(),
+        name: "one".to_owned(),
+        ..Default::default()
+    };
+    let session = planes
+        .held(&plane)
+        .expect("held")
+        .chats()
+        .start(
+            &chat,
+            purlis_core::engine::Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("the host starts it");
+    let app = mock_builder()
+        .manage(planes)
+        .invoke_handler(tauri::generate_handler![
+            crate::send_input,
+            crate::send_input_bytes,
+            crate::resize_session,
+            crate::watch_session,
+            crate::unwatch_session,
+            crate::firstrun::type_installer,
+        ])
+        .build(tauri_context!(test = true))
+        .expect("the app builds");
+    tauri::WebviewWindowBuilder::new(&app, WINDOW, tauri::WebviewUrl::default())
+        .build()
+        .expect("the main window");
+    (app, plane, session)
+}
+
+/// What a pane sends as a person pastes, types and its terminal is resized, in that order: a
+/// paste, a key, a resize, a mouse report's bytes, a resize, a key.
+fn a_pane_sending(plane: &PlaneId, session: u32) -> Vec<(&'static str, Value)> {
+    let to = |more: Value| {
+        let mut args = json!({ "plane": plane, "session": session });
+        args.as_object_mut()
+            .expect("an object")
+            .extend(more.as_object().expect("an object").clone());
+        args
+    };
+    vec![
+        (
+            "send_input",
+            to(json!({ "text": "\u{1b}[200~pasted\u{1b}[201~" })),
+        ),
+        ("send_input", to(json!({ "text": "x" }))),
+        ("resize_session", to(json!({ "columns": 100, "rows": 30 }))),
+        (
+            "send_input_bytes",
+            to(json!({ "bytes": [0x1b, 0x5b, 0x4d] })),
+        ),
+        ("resize_session", to(json!({ "columns": 90, "rows": 20 }))),
+        ("send_input", to(json!({ "text": "y" }))),
+    ]
+}
+
+#[test]
+fn no_input_resize_or_view_waits_on_the_host_on_the_windows_thread() {
+    // #4734: a pane's input, its resizes and its view's open and close each went to the session
+    // host on the window's thread and waited for its answer, up to 30 s on a host that does not
+    // answer. Here the host takes a second for each: the window's thread is back at once from
+    // every one, and the view's open answers off it.
+    let dir = a_bare_project();
+    let host = crate::host::pretend::Pretend::default();
+    let (app, plane, session) = app_typing_into(&host, dir.path());
+    host.terminal_takes(Duration::from_secs(1));
+
+    for (command, args) in a_pane_sending(&plane, session) {
+        let asked = ask(&app, command, args);
+        assert!(
+            asked.held_for < Duration::from_millis(250),
+            "`{command}` held the window's thread for {:?} on a host that takes a second",
+            asked.held_for
+        );
+        assert_eq!(asked.answer, Ok(Value::Null), "`{command}` was refused");
+    }
+    let (held_for, opened) = ask_and_go_on(
+        &app,
+        "watch_session",
+        json!({ "plane": plane, "session": session, "output": "__CHANNEL__:1" }),
+    );
+    assert!(
+        held_for < Duration::from_millis(250),
+        "`watch_session` held the window's thread for {held_for:?}"
+    );
+    let unwatch = ask(
+        &app,
+        "unwatch_session",
+        json!({ "plane": plane, "session": session, "view": 1 }),
+    );
+    assert!(
+        unwatch.held_for < Duration::from_millis(250),
+        "`unwatch_session` held the window's thread for {:?}",
+        unwatch.held_for
+    );
+    assert!(
+        opened
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the view answered once the host did"),
+        "the view was refused"
+    );
+}
+
+#[test]
+fn a_chats_paste_keys_resizes_and_view_reach_its_host_in_the_order_the_pane_sent_them() {
+    // #4734 amends #891's rule: what a pane sends no longer waits on the window's thread, so
+    // its order is kept by the chat's own queue. A host that takes a while for each shows any
+    // send that overtook another. The view opens after the resizes before it, and closes after.
+    let dir = a_bare_project();
+    let host = crate::host::pretend::Pretend::default();
+    let (app, plane, session) = app_typing_into(&host, dir.path());
+    host.terminal_takes(Duration::from_millis(40));
+
+    for (command, args) in a_pane_sending(&plane, session) {
+        assert_eq!(ask(&app, command, args).answer, Ok(Value::Null));
+    }
+    let (_, opened) = ask_and_go_on(
+        &app,
+        "watch_session",
+        json!({ "plane": plane, "session": session, "output": "__CHANNEL__:1" }),
+    );
+    // As the pane does: the view is closed by the id its open answered with.
+    assert!(
+        opened
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the view answered"),
+        "the view was refused"
+    );
+    let closed = ask(
+        &app,
+        "unwatch_session",
+        json!({ "plane": plane, "session": session, "view": 1 }),
+    );
+    assert_eq!(closed.answer, Ok(Value::Null));
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while host.terminal().len() < 8 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        host.terminal(),
+        vec![
+            format!("typed {session} \u{1b}[200~pasted\u{1b}[201~"),
+            format!("typed {session} x"),
+            format!("resized {session} 100x30"),
+            format!("typed {session} \u{1b}[M"),
+            format!("resized {session} 90x20"),
+            format!("typed {session} y"),
+            format!("watched {session}"),
+            format!("unwatched {session} 1"),
+        ]
+    );
+}
+
+#[test]
+fn a_chat_whose_runner_is_reconnecting_is_sent_nothing_and_its_pane_is_told_at_once() {
+    // #4734: a link that is down fails fast to the chat's pane, never by holding the window's
+    // thread or the chat's lane for the host's 30 s. The host here would take a second for each.
+    let dir = a_bare_project();
+    let host = crate::host::pretend::Pretend::default();
+    let (told, heard) = std::sync::mpsc::channel();
+    let planes = Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None)
+        .running_sessions_on(std::sync::Arc::new({
+            let host = host.clone();
+            move |_, _: &Path| Box::new(host.clone())
+        }))
+        .telling_input_refused(std::sync::Arc::new(move |refused| {
+            let _ = told.send(refused);
+        }));
+    let (app, plane, session) = app_typing_on(planes, dir.path());
+    host.terminal_takes(Duration::from_secs(1));
+    host.link_down(&[session]);
+    let asked_at = std::time::Instant::now();
+
+    for (command, args) in a_pane_sending(&plane, session) {
+        let asked = ask(&app, command, args);
+        assert!(
+            asked.held_for < Duration::from_millis(250),
+            "`{command}` held the window's thread for {:?}",
+            asked.held_for
+        );
+        assert_eq!(asked.answer, Ok(Value::Null), "`{command}` was refused");
+    }
+
+    let refused = heard
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the chat's pane is told");
+    assert!(
+        asked_at.elapsed() < Duration::from_millis(900),
+        "told after {:?}, as long as the host would have taken",
+        asked_at.elapsed()
+    );
+    assert_eq!(
+        refused,
+        crate::inputlanes::InputRefused {
+            plane: plane.clone(),
+            session,
+            why: crate::inputlanes::RECONNECTING.to_owned(),
+        }
+    );
+    assert!(
+        host.terminal().is_empty(),
+        "the host was asked: {:?}",
+        host.terminal()
+    );
+}
+
+#[test]
+fn a_views_close_behind_a_refused_key_still_reaches_the_host() {
+    // Review of #4821: a key the host refused dropped everything queued behind it, the pane's
+    // view's close too, and a view never closed is one the host keeps open, and paced, for the
+    // rest of the session (#4810). Only what the person typed is dropped.
+    let dir = a_bare_project();
+    let host = crate::host::pretend::Pretend::default();
+    let (app, plane, session) = app_typing_into(&host, dir.path());
+    host.terminal_takes(Duration::from_secs(1));
+    let chat = json!({ "plane": plane, "session": session });
+    let with = |more: Value| {
+        let mut args = chat.clone();
+        args.as_object_mut()
+            .expect("an object")
+            .extend(more.as_object().expect("an object").clone());
+        args
+    };
+
+    // The first key holds the lane while the link goes down: the next key is refused, and the
+    // view's close is queued behind it.
+    assert_eq!(
+        ask(&app, "send_input", with(json!({ "text": "a" }))).answer,
+        Ok(Value::Null)
+    );
+    // Its worker has asked the host by now, which takes a second over it.
+    std::thread::sleep(Duration::from_millis(200));
+    host.link_down(&[session]);
+    for (command, args) in [
+        ("send_input", with(json!({ "text": "b" }))),
+        ("send_input", with(json!({ "text": "c" }))),
+        ("unwatch_session", with(json!({ "view": 1 }))),
+    ] {
+        assert_eq!(ask(&app, command, args).answer, Ok(Value::Null));
+    }
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while host.terminal().len() < 2 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        host.terminal(),
+        vec![
+            format!("typed {session} a"),
+            format!("unwatched {session} 1")
+        ]
+    );
+}
+
+#[test]
+fn what_types_into_a_chat_on_the_windows_thread_waits_on_its_lane_no_longer_than_its_deadline() {
+    // Review of #4821: a command that types into a chat (a stop's line, a smart close's prompt,
+    // an installer) takes its turn in the chat's lane on the window's thread. Behind a lane
+    // stuck on a slow host it waited for all of it, then for its own answer, and the window
+    // froze meanwhile. It waits for the lane no longer than `inputlanes::A_TURN_WAITS_AT_MOST`
+    // and is refused, unsent, past it.
+    let dir = a_bare_project();
+    let host = crate::host::pretend::Pretend::default();
+    let (app, plane, session) = app_typing_into(&host, dir.path());
+    host.terminal_takes(Duration::from_secs(4));
+    let chat = json!({ "plane": plane, "session": session });
+    let mut key = chat.clone();
+    key["text"] = json!("a");
+    assert_eq!(ask(&app, "send_input", key).answer, Ok(Value::Null));
+
+    let mut installer = chat;
+    installer["harness"] = json!("claude");
+    let typed = ask(&app, "type_installer", installer);
+
+    assert!(
+        typed.held_for < crate::inputlanes::A_TURN_WAITS_AT_MOST + Duration::from_millis(500),
+        "`type_installer` held the window's thread for {:?} behind a stuck lane",
+        typed.held_for
+    );
+    assert!(
+        typed.answer.is_err(),
+        "typed behind a lane that never emptied"
+    );
 }

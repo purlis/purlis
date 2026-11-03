@@ -9,7 +9,10 @@ import {
   openTab,
   openView,
   openViewBeside,
+  pinsOf,
   selectTab,
+  setPinned,
+  showIn,
   splitFocusedPane,
   type Tabs,
   type ViewRef,
@@ -17,10 +20,9 @@ import {
 
 const PERSONA: ViewRef = { from: null, view: "persona", key: "steward" };
 
-/** Every chat on `ops`, nothing pinned, no other strip remembered, every chat known. */
+/** Every chat on `ops`, no other strip remembered, every chat known. */
 const onOps: Saying = {
   workspaceOf: () => "ops",
-  pinned: () => false,
   frontOf: () => undefined,
   told: () => true,
 };
@@ -30,6 +32,11 @@ const allBack: Reopening = {
   chat: (session) => ({ name: String(session), who: "steward", label: null }),
   view: (view, title) => ({ view, title }),
 };
+
+/** `tabs` with its first tab's only pane emptied, as the empty pane's own close leaves it. */
+function withEmptyPane(tabs: Tabs): Tabs {
+  return showIn(tabs, tabs.order[0], 1, { kind: "empty", workspace: "ops" });
+}
 
 /** Chats 3 and 4 split side by side in one tab, the first holding a third. */
 function twoSplit(): Tabs {
@@ -89,13 +96,63 @@ describe("the window's tabs as the core holds them (#4751)", () => {
   });
 
   it("a tab that opens on a view comes back under its title and its pin", () => {
-    const before = openView(noTabs(), PERSONA, "steward", "ops");
-    const laid = layoutOf(before, { ...onOps, pinned: () => true });
+    const before = setPinned(openView(noTabs(), PERSONA, "steward", "ops"), 1, true);
+
+    const back = tabsOf(layoutOf(before, onOps), noTabs(), allBack);
+
+    const tab = back.tabs.byId[back.tabs.order[0]];
+    expect(tab.name).toBe("steward");
+    expect(tab.pinned).toBe(true);
+  });
+
+  it("a pinned chat tab comes back pinned by the layout, not by its chat (#4762)", () => {
+    // The pin is the tab's: the record's `tabs[].pinned` is what says it, and the chat's own
+    // field has retired.
+    const before = openTab(openTab(noTabs(), 1), 2);
+    const laid = layoutOf(setPinned(before, before.order[1], true), onOps);
 
     const back = tabsOf(laid, noTabs(), allBack);
 
-    expect(back.tabs.byId[back.tabs.order[0]].name).toBe("steward");
-    expect(back.pinnedViews).toHaveLength(1);
+    expect(back.tabs.order.map((id) => back.tabs.byId[id].pinned === true)).toEqual([false, true]);
+  });
+
+  it("a tab whose only pane is empty can be pinned, and the layout says its pin (#4935)", () => {
+    const before = withEmptyPane(openTab(noTabs(), 1));
+    const id = before.order[0];
+
+    const pinned = setPinned(before, id, true);
+
+    expect(pinsOf(pinned)(id)).toBe(true);
+    expect(layoutOf(pinned, onOps).tabs[0]).toMatchObject({
+      pinned: true,
+      tree: { kind: "empty" },
+    });
+    const back = tabsOf(layoutOf(pinned, onOps), noTabs(), allBack);
+    expect(back.tabs.byId[back.tabs.order[0]].pinned).toBe(true);
+  });
+
+  it("a tab's pin stays when its first pane shows another chat (#4935)", () => {
+    const before = setPinned(openTab(openTab(noTabs(), 1), 2), 1, true);
+    const [first, second] = before.order;
+
+    // Its first pane is emptied, then shows chat 3: the tab is the same tab, and pinned.
+    const emptied = showIn(before, first, 1, { kind: "empty", workspace: "ops" });
+    const other = showIn(emptied, first, 1, { kind: "session", session: 3, chat: "3" });
+
+    expect(pinsOf(emptied)(first)).toBe(true);
+    expect(pinsOf(other)(first)).toBe(true);
+    expect(pinsOf(other)(second)).toBe(false);
+    expect(layoutOf(other, onOps).tabs.map((tab) => tab.pinned)).toEqual([true, false]);
+  });
+
+  it("a tab unpinned says so, and leaves no pin behind (#4935)", () => {
+    const pinned = setPinned(openTab(noTabs(), 1), 1, true);
+
+    const unpinned = setPinned(pinned, 1, false);
+
+    expect(pinsOf(unpinned)(1)).toBe(false);
+    expect(unpinned.byId[1]).not.toHaveProperty("pinned");
+    expect(setPinned(unpinned, 1, false)).toBe(unpinned);
   });
 
   it("each strip records its front tab, and the strip outside every workspace is null", () => {
@@ -123,14 +180,21 @@ describe("the window's tabs as the core holds them (#4751)", () => {
     expect(back.inFront).toBe(back.tabs.order[1]);
   });
 
-  it("a chat the core does not have open is an empty pane, and an empty pane comes back as nothing", () => {
+  it("a chat the core does not have open is an empty pane, and an empty pane comes back empty (#4755)", () => {
     const laid = layoutOf(twoSplit(), { ...onOps, told: (session) => session !== 4 });
     expect(laid.tabs[0].tree).toMatchObject({ b: { kind: "empty" } });
 
     const back = tabsOf(laid, noTabs(), allBack);
 
     const layout = back.tabs.byId[back.tabs.order[0]].layout;
-    expect(layout).toMatchObject({ kind: "pane", content: { session: 3 } });
+    expect(layout).toMatchObject({
+      kind: "split",
+      share: 333,
+      children: [
+        { kind: "pane", content: { session: 3 } },
+        { kind: "pane", content: { kind: "empty", workspace: "ops" } },
+      ],
+    });
   });
 
   it("a chat that did not come back leaves its split to the other side, and a tab of nothing is not put back", () => {

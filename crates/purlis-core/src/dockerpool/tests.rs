@@ -3,7 +3,8 @@
 
 use super::*;
 
-const DIGEST: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+pub(crate) const DIGEST: &str =
+    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn image() -> Image {
     Image::pinned(&format!("ghcr.io/purlis/purlis-runner@{DIGEST}")).unwrap()
@@ -1041,7 +1042,8 @@ impl FakeDocker {
              prev=$a; done; \
              exit \"$(cat '{holds}' 2>/dev/null || echo 0)\" ;; esac\ncase \"$1 $2\" in\n  \
              'run --rm') [ -f '{copy_fails}' ] && \
-             {{ echo 'cp: cannot open' >&2; exit 1; }}; true ;;\n  \
+             {{ echo 'cp: cannot open' >&2; exit 1; }}; [ -f '{during_run}' ] && sh '{during_run}'; \
+             cat '{conversations}' 2>/dev/null; true ;;\n  \
              'run '*) [ -f '{run_fails}' ] && \
              {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
              'container inspect') if [ -f '{inspect}-once' ]; then cat '{inspect}-once'; rm '{inspect}-once'; \
@@ -1074,6 +1076,8 @@ impl FakeDocker {
             copy_fails = at("copy-fails"),
             containers = at("containers"),
             holds = at("holds"),
+            conversations = at("conversations"),
+            during_run = at("during-run"),
             probe = PROBE_ID,
         );
         stand_in::program(dir.path(), "docker", &script);
@@ -3370,4 +3374,444 @@ fn a_runner_is_told_the_image_it_runs() {
         image().as_str()
     );
     assert!(has_pair(&args, "--env", &told), "{args:?}");
+}
+
+/// Runs [`CONVERSATIONS`] by the shell, as in the pool's runner's image: `seen` with `to` as
+/// `None`, `bring` into `to`. What it said, and what it wrote on its error stream.
+#[cfg(unix)]
+fn conversations_run(
+    from: &std::path::Path,
+    to: Option<&std::path::Path>,
+) -> (Option<Conversations>, String) {
+    conversations_run_on(from, to, None)
+}
+
+/// [`conversations_run`], with `path` as its `PATH` where one is given.
+#[cfg(unix)]
+fn conversations_run_on(
+    from: &std::path::Path,
+    to: Option<&std::path::Path>,
+    path: Option<&std::path::Path>,
+) -> (Option<Conversations>, String) {
+    let mut command = std::process::Command::new("/bin/sh");
+    if let Some(path) = path {
+        command.env("PATH", path);
+    }
+    command
+        .arg("-c")
+        .arg(CONVERSATIONS)
+        .arg("sh")
+        .arg(CONVERSATION_FILES)
+        .arg(if to.is_some() { "bring" } else { "seen" })
+        .arg(from)
+        .arg(to.map_or_else(|| "-".into(), |to| to.display().to_string()))
+        .args(CONVERSATIONS_IN_A_RUNNER_HOME);
+    let out = crate::forklock::output(&mut command).unwrap();
+    (
+        conversations_said(&String::from_utf8_lossy(&out.stdout)),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// Writes `text` at `rel` under `home`, its folders made.
+#[cfg(unix)]
+fn put(home: &std::path::Path, rel: &str, text: &str) {
+    let at = home.join(rel);
+    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+    std::fs::write(at, text).unwrap();
+}
+
+const A_CLAUDE_CONVERSATION: &str =
+    ".local/share/purlis/profiles/work/config/projects/-home-purlis-p/0b5e.jsonl";
+const A_CODEX_CONVERSATION: &str =
+    ".codex/sessions/2026/11/02/rollout-2026-11-02T10-00-00-0b5e.jsonl";
+const AN_OPENCODE_CONVERSATION: &str = ".local/share/opencode/storage/session/p1/ses_1.json";
+
+/// **A home says whether it holds a chat's conversation** (#4633): Claude Code's, Codex's and
+/// opencode's each count, and a home with none, or with other files of a harness, holds none.
+#[cfg(unix)]
+#[test]
+fn a_home_says_how_many_conversations_it_holds() {
+    let home = tempfile::tempdir().unwrap();
+    put(home.path(), ".claude/settings.json", "{}");
+    put(
+        home.path(),
+        ".local/share/purlis/profiles/work/config/.credentials.json",
+        "{}",
+    );
+    assert_eq!(
+        conversations_run(home.path(), None).0,
+        Some(Conversations {
+            found: 0,
+            left: 0,
+            seen: 0
+        })
+    );
+
+    for rel in [
+        A_CLAUDE_CONVERSATION,
+        A_CODEX_CONVERSATION,
+        AN_OPENCODE_CONVERSATION,
+    ] {
+        put(home.path(), rel, "{}\n");
+    }
+
+    assert_eq!(
+        conversations_run(home.path(), None).0,
+        Some(Conversations {
+            found: 3,
+            left: 3,
+            seen: 1
+        })
+    );
+}
+
+/// **A link is no conversation**: one in the old home, or a folder linked out of it, counts as
+/// none, so nothing outside the home is read as one.
+#[cfg(unix)]
+#[test]
+fn a_link_in_a_home_is_no_conversation() {
+    let (home, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    put(outside.path(), "x/0b5e.jsonl", "{}\n");
+    std::fs::create_dir_all(home.path().join(".claude/projects")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("x"),
+        home.path().join(".claude/projects/p"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(home.path().join(".claude/projects/q")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("x/0b5e.jsonl"),
+        home.path().join(".claude/projects/q/1.jsonl"),
+    )
+    .unwrap();
+
+    assert_eq!(
+        conversations_run(home.path(), None).0,
+        Some(Conversations {
+            found: 0,
+            left: 0,
+            seen: 0
+        })
+    );
+}
+
+/// **Bringing back puts each conversation at its own place in the new home**, where its harness
+/// resumes it by its id; opencode's stays, said as left.
+#[cfg(unix)]
+#[test]
+fn bringing_back_puts_each_conversation_at_its_place_in_the_new_home() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    for rel in [
+        A_CLAUDE_CONVERSATION,
+        A_CODEX_CONVERSATION,
+        AN_OPENCODE_CONVERSATION,
+    ] {
+        put(from.path(), rel, &format!("{rel}\n"));
+    }
+    put(
+        to.path(),
+        ".claude/projects/-home-purlis-p/other.jsonl",
+        "the new runner's\n",
+    );
+    harnesses_ran_in(to.path());
+
+    let (said, errors) = conversations_run(from.path(), Some(to.path()));
+
+    assert_eq!(
+        said,
+        Some(Conversations {
+            found: 3,
+            left: 1,
+            seen: 1
+        }),
+        "{errors}"
+    );
+    for rel in [A_CLAUDE_CONVERSATION, A_CODEX_CONVERSATION] {
+        assert_eq!(
+            std::fs::read_to_string(to.path().join(rel)).unwrap(),
+            format!("{rel}\n")
+        );
+    }
+    assert!(!to.path().join(AN_OPENCODE_CONVERSATION).exists());
+    assert_eq!(
+        std::fs::read_to_string(
+            to.path()
+                .join(".claude/projects/-home-purlis-p/other.jsonl")
+        )
+        .unwrap(),
+        "the new runner's\n"
+    );
+}
+
+/// **Bringing back overwrites nothing**: one already there counts as brought back only where it
+/// is the same, and another is left as it is and said.
+#[cfg(unix)]
+#[test]
+fn bringing_back_overwrites_nothing() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    put(from.path(), A_CLAUDE_CONVERSATION, "the old one\n");
+    put(from.path(), A_CODEX_CONVERSATION, "the same\n");
+    put(to.path(), A_CLAUDE_CONVERSATION, "another\n");
+    put(to.path(), A_CODEX_CONVERSATION, "the same\n");
+
+    let (said, errors) = conversations_run(from.path(), Some(to.path()));
+
+    assert_eq!(
+        said,
+        Some(Conversations {
+            found: 2,
+            left: 1,
+            seen: 0
+        }),
+        "{errors}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(to.path().join(A_CLAUDE_CONVERSATION)).unwrap(),
+        "another\n"
+    );
+}
+
+/// **Bringing back writes nothing through a link in the new home**, which a chat on it could have
+/// made: the conversation is left, and said.
+#[cfg(unix)]
+#[test]
+fn bringing_back_writes_nothing_through_a_link_in_the_new_home() {
+    let (from, to, outside) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    put(from.path(), A_CLAUDE_CONVERSATION, "{}\n");
+    std::fs::create_dir_all(to.path().join(".local/share/purlis/profiles/work")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path(),
+        to.path().join(".local/share/purlis/profiles/work/config"),
+    )
+    .unwrap();
+
+    let (said, errors) = conversations_run(from.path(), Some(to.path()));
+
+    assert_eq!(
+        said,
+        Some(Conversations {
+            found: 1,
+            left: 1,
+            seen: 0
+        }),
+        "{errors}"
+    );
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+}
+
+/// **A home's conversations are read by a container that reaches nothing**: no network, no
+/// capability, the old home read-only, and a new home only to bring them back into.
+#[test]
+fn a_homes_conversations_are_read_by_a_container_that_reaches_nothing() {
+    let held = made();
+    let pools = Made {
+        container: ContainerId::new(&"b".repeat(64)).unwrap(),
+        runner: Runner::new(
+            "first-fedcba98",
+            image(),
+            User::new(10001, 10001).unwrap(),
+            "/home/purlis",
+        )
+        .unwrap(),
+    };
+
+    let seen = pools.conversations_args(&held, "d", false).join(" ");
+    let brought = pools.conversations_args(&held, "d", true).join(" ");
+
+    for args in [&seen, &brought] {
+        for needed in [
+            "--network none",
+            "--cap-drop ALL",
+            "--read-only",
+            "type=volume,source=purlis-runner-first-home,target=/from,readonly",
+        ] {
+            assert!(args.contains(needed), "{needed} in {args}");
+        }
+    }
+    assert!(!seen.contains("target=/to"), "{seen}");
+    assert!(
+        brought.contains("type=volume,source=purlis-runner-first-fedcba98-home,target=/to"),
+        "{brought}"
+    );
+}
+
+/// **A read of a home runs in a container of its own** (#4861): named and labelled for the home it
+/// reads, so a carry or a bring back that clears its own `-copy` container never ends a read that
+/// runs outside the runners lock, and a sweep of the read runner's leftovers takes it.
+#[test]
+fn a_homes_read_runs_in_a_container_named_for_that_home() {
+    let held = made();
+    let pools = Made {
+        container: ContainerId::new(&"b".repeat(64)).unwrap(),
+        runner: Runner::new(
+            "first-fedcba98",
+            image(),
+            User::new(10001, 10001).unwrap(),
+            "/home/purlis",
+        )
+        .unwrap(),
+    };
+
+    let seen = pools.conversations_args(&held, "d", false).join(" ");
+    let brought = pools.conversations_args(&held, "d", true).join(" ");
+
+    assert!(seen.contains("--name purlis-runner-first-read "), "{seen}");
+    assert!(seen.contains(&format!("--label {LABEL}=first ")), "{seen}");
+    assert!(
+        brought.contains("--name purlis-runner-first-fedcba98-copy "),
+        "{brought}"
+    );
+}
+
+/// **What a harness keeps beside a transcript comes back with it** (#4633): Claude Code's
+/// subagents' transcripts and tool results under the session's own folder, and Codex's archived
+/// rollouts, each at its place.
+#[cfg(unix)]
+#[test]
+fn bringing_back_takes_what_a_harness_keeps_beside_a_transcript() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let beside = [
+        ".claude/projects/-home-purlis-p/0b5e.jsonl",
+        ".claude/projects/-home-purlis-p/0b5e/subagents/agent-a.jsonl",
+        ".claude/projects/-home-purlis-p/0b5e/tool-results/t1.txt",
+        ".codex/archived_sessions/rollout-2026-10-01T10-00-00-0b5e.jsonl",
+    ];
+    for rel in beside {
+        put(from.path(), rel, &format!("{rel}\n"));
+    }
+    harnesses_ran_in(to.path());
+
+    let (said, errors) = conversations_run(from.path(), Some(to.path()));
+
+    assert_eq!(
+        said,
+        Some(Conversations {
+            found: 4,
+            left: 0,
+            seen: 0
+        }),
+        "{errors}"
+    );
+    for rel in beside {
+        assert_eq!(
+            std::fs::read_to_string(to.path().join(rel)).unwrap(),
+            format!("{rel}\n")
+        );
+    }
+}
+
+/// The folders Claude Code and Codex keep in a runner's home once each has run there, and the
+/// profile `work` made there.
+fn harnesses_ran_in(home: &std::path::Path) {
+    for folder in [
+        ".claude",
+        ".codex",
+        ".local/share/purlis/profiles/work/config",
+    ] {
+        std::fs::create_dir_all(home.join(folder)).unwrap();
+    }
+}
+
+/// **Nothing is brought back where the runner has no place for it yet**: a profile not made on
+/// the new runner yet, or a harness that never ran there. Its folder made by a bring back would
+/// stand in the way of the profile purlis makes there (the runner refuses a profile whose folder
+/// is already there), so those conversations are left, and the runner stays held until they can
+/// come.
+#[cfg(unix)]
+#[test]
+fn nothing_is_brought_back_where_the_runner_has_no_place_for_it_yet() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let made = ".local/share/charter/profiles/work/config/projects/-home-purlis-p/0b5e.jsonl";
+    let not_made = ".local/share/charter/profiles/home/config/projects/-home-purlis-p/1c6f.jsonl";
+    for rel in [made, not_made] {
+        put(from.path(), rel, &format!("{rel}\n"));
+    }
+    std::fs::create_dir_all(to.path().join(".local/share/charter/profiles/work/config")).unwrap();
+
+    let (said, errors) = conversations_run(from.path(), Some(to.path()));
+
+    assert_eq!(
+        said,
+        Some(Conversations {
+            found: 2,
+            left: 1,
+            seen: 0
+        }),
+        "{errors}"
+    );
+    assert!(to.path().join(made).is_file());
+    assert!(
+        !to.path()
+            .join(".local/share/charter/profiles/home")
+            .exists(),
+        "no folder of a profile the runner has not made"
+    );
+}
+
+/// **A read that cannot finish gives no answer**, never one of none: an image with no `realpath`
+/// says nothing of a home that holds a conversation.
+#[cfg(unix)]
+#[test]
+fn a_read_that_cannot_finish_says_nothing_of_the_home() {
+    let (home, bin) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    put(home.path(), A_CLAUDE_CONVERSATION, "{}\n");
+    for program in ["cat", "cmp", "find", "ln", "mkdir", "mktemp", "rm", "sh"] {
+        let found = ["/bin", "/usr/bin"]
+            .iter()
+            .map(|dir| std::path::Path::new(dir).join(program))
+            .find(|at| at.exists())
+            .unwrap();
+        std::os::unix::fs::symlink(found, bin.path().join(program)).unwrap();
+    }
+
+    let (said, _) = conversations_run_on(home.path(), None, Some(bin.path()));
+
+    assert_eq!(said, None);
+}
+
+/// A login whose `--check` is the shell script `script`, with `$*` what it was asked.
+#[cfg(test)]
+fn a_login_of(script: &str) -> crate::profilestore::sign_in::Login {
+    crate::profilestore::sign_in::Login {
+        program: "/bin/sh".into(),
+        args: vec!["-c".into(), script.into(), "login".into()],
+        env: Vec::new(),
+        cleared: Vec::new(),
+    }
+}
+
+#[test]
+fn a_read_as_installed_asks_the_runner_to_fetch_nothing() {
+    use crate::profilestore::sign_in::Standing;
+    let login = a_login_of(r#"case "$*" in *--no-fetch*) exit 3 ;; esac; exit 0"#);
+    assert_eq!(
+        standing_as_installed_by_login(&login, "work"),
+        Ok(Some(Standing::SignedOut))
+    );
+}
+
+#[test]
+fn an_older_runner_that_doesnt_know_the_flag_answers_it_cant_tell_and_fetches_nothing() {
+    use crate::profilestore::sign_in::Standing;
+    let asked = tempfile::tempdir().unwrap();
+    let log = asked.path().join("asked");
+    let login = a_login_of(&format!(
+        r#"echo "$*" >> '{}'; case "$*" in *--no-fetch*) exit 2 ;; esac; exit 3"#,
+        log.display()
+    ));
+    assert_eq!(
+        standing_as_installed_by_login(&login, "work"),
+        Ok(Some(Standing::CannotTell))
+    );
+    let said = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(
+        said.lines().count(),
+        1,
+        "asked once, never the fetching way: {said}"
+    );
 }

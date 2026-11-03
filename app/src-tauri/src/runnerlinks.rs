@@ -88,6 +88,34 @@ impl Machine {
     }
 }
 
+/// **`kept`'s container checked as it was made, and started again first where `wakes`** (#2051):
+/// one whose sign-ins were carried off, or kept no more, is never started again, and when it ran
+/// is written as it is read before its start, then its start (#3492). What a link and Pool setup's
+/// Wake the runner both do.
+pub fn checked_or_woken(
+    docker: &Docker,
+    config: &Path,
+    kept: &Kept,
+    wakes: bool,
+) -> Result<(), purlis_core::dockerpool::Refused> {
+    let wakes = wakes
+        && purlis_core::runners::named(config, kept.name())
+            .ok()
+            .flatten()
+            .is_some_and(|now| !now.carried);
+    if !wakes {
+        return docker.check(&kept.made);
+    }
+    docker.resumed(&kept.made).map(|resumed| {
+        hours_seen(config, kept, resumed.before);
+        if resumed.started
+            && let Ok(ran) = docker.ran(&kept.made)
+        {
+            hours_seen(config, kept, ran);
+        }
+    })
+}
+
 /// Writes when `kept` ran, as Docker's `ran` says (#3492); what could not be written is said.
 fn hours_seen(config: &Path, kept: &Kept, ran: purlis_core::dockerpool::Ran) {
     let now = crate::sandboxing::now_secs();
@@ -146,25 +174,7 @@ impl ToARunner {
             // The container is checked as it was made before every connection (ADR 0078 as
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || {
-                // One whose sign-ins were carried off, or kept no more, is not started again.
-                let wakes = resumes
-                    && purlis_core::runners::named(&config, of.name())
-                        .ok()
-                        .flatten()
-                        .is_some_and(|now| !now.carried);
-                let checked = if wakes {
-                    // When it ran, as read before it was started, then its start (#3492).
-                    checking.resumed(&made).map(|resumed| {
-                        hours_seen(&config, &of, resumed.before);
-                        if resumed.started
-                            && let Ok(ran) = checking.ran(&made)
-                        {
-                            hours_seen(&config, &of, ran);
-                        }
-                    })
-                } else {
-                    checking.check(&made)
-                };
+                let checked = checked_or_woken(&checking, &config, &of, resumes);
                 // A refusal of a container Docker no longer lists is a runner removed outside
                 // purlis, never linked to again on its own (#4149).
                 // On another engine it may be there still: the link keeps trying, so it comes
@@ -462,7 +472,9 @@ pub fn every_runner(config_root: PathBuf) -> purlis_host::EveryRunner {
 /// Every cluster pool's runner kept under `config_root`, as the kill switch reaches it (#3292).
 fn cluster_runners_to_stop(config_root: &Path) -> Vec<(String, Result<purlis_host::Keep, String>)> {
     let pools = purlis_core::runners::cluster_pools(config_root).unwrap_or_default();
-    let kept = purlis_core::runners::cluster_runners(config_root).unwrap_or_default();
+    let mut kept = purlis_core::runners::cluster_runners(config_root).unwrap_or_default();
+    // Each chat's own runner too (#3818).
+    kept.extend(purlis_core::runners::fresh_runners(config_root).unwrap_or_default());
     let kubectl = crate::clusterpools::kubectl(config_root);
     kept.iter()
         .filter_map(|kept| {
@@ -471,7 +483,7 @@ fn cluster_runners_to_stop(config_root: &Path) -> Vec<(String, Result<purlis_hos
                 .clone()
                 .and_then(|kubectl| ToARunner::of_cluster(config_root, &kubectl, pool, kept))
                 .map(|to| Arc::new(move || to.keep()) as purlis_host::Keep);
-            Some((format!("{}/{}", pool.name(), kept.name), keep))
+            Some((format!("{}/{}", pool.name(), kept.runner_name()), keep))
         })
         .collect()
 }

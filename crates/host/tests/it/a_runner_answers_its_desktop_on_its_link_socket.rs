@@ -141,12 +141,13 @@ fn keeping(kept: &KeptHere, desktop: Option<Pinned>) -> Keeping {
             desktop.as_ref(),
             "kept for the desktop the link proved"
         );
-        kept.lock().unwrap().push(profile.clone());
-        Ok(if profile.name == "signed-in" {
+        let standing = if profile.name == "signed-in" {
             ProfileStanding::SignedIn
         } else {
             ProfileStanding::SignedOut
-        })
+        };
+        kept.lock().unwrap().push(profile);
+        Ok(standing)
     })
 }
 

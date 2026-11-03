@@ -18,8 +18,11 @@ import {
 import { listen } from "./here";
 import { CHAT_RESTORED, isRestoring, restoredSince, type ChatRestored } from "./restoringChats";
 import { QueueRead } from "./QueueRead";
+import { QuestionsHere } from "./QuestionsHere";
+import { standingOf, waitingOnYou, type QuestionsHeld } from "./taskQuestions";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
+import { frontTabIs } from "./slowLog";
 import { createPortal } from "react-dom";
 import {
   AsLastShown,
@@ -47,8 +50,10 @@ import {
   type LimitRefused,
   type PoolLimitOffer,
   type Refused,
+  type RunsOnPick,
   type Sidebar as SidebarModel,
   type StartOptions,
+  type StartRunsOn,
   type ViewTab,
   type WindowDraft,
 } from "./bindings";
@@ -242,7 +247,7 @@ import {
   type ViewId,
 } from "./regions";
 import { drawnOnlyPresent, previewsDrawn, type ViewPlace } from "./sideViews";
-import { SkillsView, type FrontChat } from "./SkillsView";
+import { SkillsView, type FrontChat, type SkillsViewProps } from "./SkillsView";
 import type { ExplorerPlace } from "./skillsListing";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
@@ -258,6 +263,7 @@ import {
   closeChat,
   closeFocusedPane,
   closeTab,
+  otherTabsToClose,
   focusPane,
   noTabs,
   chatNameOf,
@@ -283,7 +289,6 @@ import {
   splitOf,
   refileViews,
   followRename,
-  renamedViewKey,
   SAVING_TITLE,
   POOL_SETUP_TITLE,
   POOL_SETUP_VIEW,
@@ -296,7 +301,9 @@ import {
   workspaceSettingsView,
   renameTab,
   viewKey,
+  pinsOf,
   selectTab,
+  setPinned,
   showWorkspace,
   splitFocusedPane,
   stopWaiting,
@@ -330,6 +337,8 @@ import {
   type ViewRef,
 } from "./tabs";
 import { layoutOf, tabsOf, withShare } from "./laidOut";
+import type { TabFacts } from "./ChatRows";
+import { rowFactsOf } from "./shownState";
 import {
   BROWSER_TITLE,
   browserView,
@@ -427,6 +436,7 @@ import {
 import { SandboxOffer } from "./SandboxOffer";
 import { ProjectHostsNotice } from "./ProjectHostsNotice";
 import { RunnerGoneNotice } from "./RunnerGoneNotice";
+import { FreshRunnerKeptNotice } from "./FreshRunnerKeptNotice";
 import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
@@ -530,7 +540,8 @@ import {
 } from "./chatMoves";
 import { readRunnerStage, refusedWith, saveLimits, usePools } from "./pools";
 import { useSignOutTerminals } from "./settings/signOutTerminals";
-import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
+import { LEAST, LEAST_CHIP, leastAt, NARROW_TAB, narrowTabs, pinnedFirst, useRoom } from "./fits";
+import type { Naming } from "./tabFace";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
 import { oneChatMidTurn, type Ending } from "./QuitWarning";
@@ -754,6 +765,7 @@ export const PlaneView = memo(function PlaneView({
   awayRefused,
   onAway,
   waiting,
+  questions,
   inboxAsked,
   inboxGroup,
   elsewhere,
@@ -836,6 +848,9 @@ export const PlaneView = memo(function PlaneView({
   /** This project's asks, as the window's registry derived them last (#1690): what the Inbox
    *  lists and its tab counts (#1692). Nothing before the first read. */
   waiting?: readonly Shown[];
+  /** This project's task questions as the registry derived them last (#4564): what a task's
+   *  row, its tab's hand and the rows above say of its question (`taskQuestions.ts`). */
+  questions?: QuestionsHeld;
   /** A count that goes up each time the window asks for THIS project's Inbox: the title bar's
    *  ✋ (#1692, I-2). */
   inboxAsked?: number;
@@ -861,6 +876,9 @@ export const PlaneView = memo(function PlaneView({
   shellAsked?: { typed: string; at: number };
 }) {
   const [tabs, setTabs] = useState<Tabs>(noTabs);
+  // The tab in front of the project in front, for what the stall log writes (`slowLog.ts`).
+  const frontTabName = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront]?.name;
+  useEffect(() => (inFront ? frontTabIs(frontTabName) : undefined), [inFront, frontTabName]);
   const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
   // used again, so one gone from every tab is gone for good.
@@ -964,6 +982,8 @@ export const PlaneView = memo(function PlaneView({
   const [picking, setPicking] = useState<{
     options: StartOptions;
     where: Where;
+    /** Where a chat started here would run, and why (#4536): the picker's Runs on row. */
+    runsOn?: StartRunsOn;
   }>();
   /** Why the last start did not happen, shown in the picker rather than behind it. */
   const [pickerTrouble, setPickerTrouble] = useState<string>();
@@ -978,8 +998,21 @@ export const PlaneView = memo(function PlaneView({
     refused: string;
     profile: string;
   }>();
+  /** The pool a start was to run on and could not reach (#4536), with that refusal: the picker
+   *  offers Try again, Pool setup and Run on this machine this once beside it, and beside no
+   *  other. */
+  const [pickerPoolGone, setPickerPoolGone] = useState<{ pool: string; refused: string }>();
   /** Whether the picker's fix (NO-8: its `local-ignore`) is running. */
   const [pickerFixing, setPickerFixing] = useState(false);
+  /** **Where a new chat in `workspace` would run** (#4536), read as the picker opens so its Runs
+   *  on row is drawn with it: `undefined` where the core could not say, and no row is drawn. */
+  const readRunsOn = useCallback(
+    async (workspace: string | null): Promise<StartRunsOn | undefined> => {
+      const said = await commands.startRunsOn(plane, workspace).catch(() => undefined);
+      return said?.status === "ok" && Array.isArray(said.data?.pools) ? said.data : undefined;
+    },
+    [plane],
+  );
   /** The chat tab whose name is open for editing on the strip, if one is (charter-app#254). */
   const [renaming, setRenaming] = useState<number>();
   /** The work item each chat works on, by session, as the core answered (V60, ADR 0088). */
@@ -1084,10 +1117,13 @@ export const PlaneView = memo(function PlaneView({
     busy: boolean;
     trouble?: string;
   }>();
-  /** What the core last said about where a chat is working, and which directory it was
-   *  asked about — so an answer about the chat that WAS in front is never drawn under the
-   *  one that is now. `workspaceState` keys its answers the same way, for the same reason. */
-  const [located, setLocated] = useState<{ cwd: string; piece?: ChatWorktree }>();
+  /** What the core last said about where each chat is working, by the directory it was asked
+   *  about — so an answer about a chat that WAS there is never drawn under one that is now.
+   *  `workspaceState` keys its answers the same way, for the same reason. Every chat's, not only
+   *  the one in front's: each chat's list has its own Branch rows (#4851). */
+  const [located, setLocated] = useState<ReadonlyMap<string, ChatWorktree | undefined>>(
+    () => new Map(),
+  );
   /** Bumped when something changed the answer, so it is asked again rather than guessed. */
   const [relocate, setRelocate] = useState(0);
   /**
@@ -1349,15 +1385,6 @@ export const PlaneView = memo(function PlaneView({
    * so several Undos in any order, or an unpin made in between, give back the order they had.
    */
   const [forgottenPins, setForgottenPins] = useState<{ name: string; after: string[] }[]>([]);
-  /** The chats this operator has pinned, by session. Seeded from the record the core put
-   *  back, and kept current by the one handler that writes it. */
-  const [pinnedChats, setPinnedChats] = useState<number[]>([]);
-  /**
-   * The view tabs this operator has pinned, by `tabs.viewKey`. A tab with no chat is pinned as
-   * the view it opened on, and the pin rides that view tab's line of the plane's record — the
-   * same file and the same reason as a chat's pin (ADR 0040).
-   */
-  const [pinnedViews, setPinnedViews] = useState<string[]>([]);
   /**
    * Whether the core has said which view tabs the record put back. Until it has, the window
    * says nothing about its own: an empty list sent first would be written over the record
@@ -1623,8 +1650,6 @@ export const PlaneView = memo(function PlaneView({
               }),
             ),
           }));
-          // A pinned chat comes back pinned: the pin rides the record it came back from.
-          setPinnedChats(open.filter((chat) => chat.pinned).map((chat) => chat.session));
           // A shell comes back a shell: on no profile, running no harness. One still restoring
           // says once it has started (`readRestored`): its harness is its start's to say.
           setShells(
@@ -1635,16 +1660,25 @@ export const PlaneView = memo(function PlaneView({
             ),
           );
         }
-        // A studio tab an older launch kept per scope is pinned as the one studio tab (#3681).
-        setPinnedViews(
-          back
-            .filter((view) => view.pinned)
-            .map((view) => {
-              // Only a studio's own tab (or a skill's old one) is the one studio tab.
-              const kept = studioOfSkillTab(refOf(view)) ?? refOf(view);
-              return viewKey(isSkillStudio(kept) ? studioOpening(kept, () => true).tab : kept);
-            }),
-        );
+        // **What a record from before tabs were recorded says is pinned** (#4762, #4935): each
+        // chat's pin and each view tab's, read once, at this upgrade, onto the tab that opens on
+        // it. A record with tabs says the pin on the tab, and the chat's own has retired. A
+        // studio tab an older launch kept per scope is pinned as the one studio tab (#3681).
+        const laid = layoutAnswer?.status === "ok" ? layoutAnswer.data : null;
+        const pinnedBefore: PinnedBefore = {
+          chats: new Set(
+            laid == null ? open.filter((chat) => chat.pinned).map((chat) => chat.session) : [],
+          ),
+          views: new Set(
+            back
+              .filter((view) => view.pinned)
+              .map((view) => {
+                // Only a studio's own tab (or a skill's old one) is the one studio tab.
+                const kept = studioOfSkillTab(refOf(view)) ?? refOf(view);
+                return viewKey(isSkillStudio(kept) ? studioOpening(kept, () => true).tab : kept);
+              }),
+          ),
+        };
         const focusedBack = focusAnswer?.status === "ok" ? focusAnswer.data : null;
         if (focusedBack !== null && focusedBack !== undefined)
           setFocusedBranch({
@@ -1655,7 +1689,6 @@ export const PlaneView = memo(function PlaneView({
         // **The record's tabs, where it has them** (#4751): each split with its sizes, its views
         // and each strip's front tab, as the window left them. A chat no pane holds gets the tab
         // of its own it always had, until chats stop getting tabs.
-        const laid = layoutAnswer?.status === "ok" ? layoutAnswer.data : null;
         if (laid !== null && laid !== undefined) {
           const named = new Map(open.map((chat) => [chat.session, chat]));
           /** The chat whose tab a task with no tab of its own is drawn in: its nearest asker
@@ -1690,22 +1723,23 @@ export const PlaneView = memo(function PlaneView({
               };
             },
           });
-          const all = open
-            .filter((chat) => chat.from?.tab !== false && !back.placed.has(chat.session))
-            .reduce(
-              (tabs, chat) =>
-                openTab(
-                  tabs,
-                  chat.session,
-                  chat.name,
-                  whoOf(chat.persona, chat.harness),
-                  chat.label,
-                ),
-              back.tabs,
-            );
+          const all = pinnedAsBefore(
+            open
+              .filter((chat) => chat.from?.tab !== false && !back.placed.has(chat.session))
+              .reduce(
+                (tabs, chat) =>
+                  openTab(
+                    tabs,
+                    chat.session,
+                    chat.name,
+                    whoOf(chat.persona, chat.harness),
+                    chat.label,
+                  ),
+                back.tabs,
+              ),
+            pinnedBefore,
+          );
           lastFront.current = { ...lastFront.current, ...back.fronts };
-          if (back.pinnedViews.length > 0)
-            setPinnedViews((was) => [...new Set([...was, ...back.pinnedViews])]);
           const frontChat = open.find((chat) => chat.in_front);
           const inFront =
             back.inFront ??
@@ -1765,12 +1799,15 @@ export const PlaneView = memo(function PlaneView({
         // **What each session's tab showed** (#1486): the record keeps it on the session's
         // own entry, and it is put back only where the chat it names is open and is a task
         // below that session. Anything else shows the session's own chat.
-        const shownBack = open.reduce((tabs, chat) => {
-          const shown = chat.shows ?? undefined;
-          if (shown === undefined || homeOf(tabs, shown, askedBy)?.own !== chat.session)
-            return tabs;
-          return restoreShown(tabs, [shown], askedBy);
-        }, besideBack);
+        const shownBack = pinnedAsBefore(
+          open.reduce((tabs, chat) => {
+            const shown = chat.shows ?? undefined;
+            if (shown === undefined || homeOf(tabs, shown, askedBy)?.own !== chat.session)
+              return tabs;
+            return restoreShown(tabs, [shown], askedBy);
+          }, besideBack),
+          pinnedBefore,
+        );
         // **A view tab in front comes first**: the chat the core holds in front can be one
         // beside that view (`chatInFrontOf`), and that chat's own tab is not the one the person
         // left in front.
@@ -1811,12 +1848,12 @@ export const PlaneView = memo(function PlaneView({
   const lastViewsSaid = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!viewsHeard) return;
-    const said = viewTabsOf(tabs, pinnedViews);
+    const said = viewTabsOf(tabs);
     const text = JSON.stringify(said);
     if (text === lastViewsSaid.current) return;
     lastViewsSaid.current = text;
     void commands.windowViews(plane, said).catch(() => undefined);
-  }, [pinnedViews, plane, tabs, viewsHeard]);
+  }, [plane, tabs, viewsHeard]);
 
   /** The branch the explorer is focused on (FM-5), told to the core when it changes, after the
    *  record is heard for the views' reason: a focus said first would write over the record's. */
@@ -2071,19 +2108,41 @@ export const PlaneView = memo(function PlaneView({
     },
     [sidebar],
   );
+  /** Chat `session` as the plane's chats list it, in a workspace or outside them all. */
+  const listedChatOf = useCallback(
+    (session: number | undefined) => {
+      if (session === undefined || sidebar === undefined) return undefined;
+      return [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled].find(
+        (chat) => chat.session === session,
+      );
+    },
+    [sidebar],
+  );
   /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it, or `null`. */
   const sandboxOf = useCallback(
     (session: number | undefined): SandboxSaid | null => {
-      if (session === undefined || sidebar === undefined) return null;
-      for (const chats of [...sidebar.workspaces.map((ws) => ws.chats), sidebar.unfiled]) {
-        const found = chats.find((chat) => chat.session === session);
-        if (found)
-          return found.sandbox == null
-            ? null
-            : { level: found.sandbox, why: found.sandbox_why, sites: found.browser_sites };
-      }
-      return null;
+      const found = listedChatOf(session);
+      if (found?.sandbox == null) return null;
+      return { level: found.sandbox, why: found.sandbox_why, sites: found.browser_sites };
     },
+    [listedChatOf],
+  );
+  /** What chat `session`'s row reads its state from beside the board (#4935), as the plane's
+   *  chats say it: so its tab says its row's word. */
+  const factsOf = useCallback(
+    (session: number): TabFacts | undefined => {
+      const found = listedChatOf(session);
+      return found === undefined ? undefined : rowFactsOf(found);
+    },
+    [listedChatOf],
+  );
+  /** How many chats run in `workspace`, as the sidebar lists them: what an empty pane says
+   *  (#4755). */
+  const runningIn = useCallback(
+    (workspace: string) =>
+      workspace === OUTSIDE
+        ? (sidebar?.unfiled.length ?? 0)
+        : (sidebar?.workspaces.find((ws) => ws.name === workspace)?.chats.length ?? 0),
     [sidebar],
   );
   const filedIn = useCallback<FiledIn>(
@@ -2104,17 +2163,8 @@ export const PlaneView = memo(function PlaneView({
     [pretended, sidebar, startedIn],
   );
 
-  /** Whether a tab is pinned: its own chat is, which is its first pane's. */
-  const isPinned = useCallback<Pinned>(
-    (id) => {
-      const lead = contentsOf(tabs, id)[0]?.content;
-      if (lead === undefined) return false;
-      return lead.kind === "session"
-        ? pinnedChats.includes(lead.session)
-        : pinnedViews.includes(viewKey(lead.view));
-    },
-    [pinnedChats, pinnedViews, tabs],
-  );
+  /** Whether a tab is pinned: the tab's own pin (#4935), whatever its panes hold. */
+  const isPinned = useMemo<Pinned>(() => pinsOf(tabs), [tabs]);
 
   /**
    * **The chats whose Smart close the operator has just pressed**, until the core's first step
@@ -2984,16 +3034,38 @@ export const PlaneView = memo(function PlaneView({
     },
     [measured],
   );
-  const { shown, hidden } = useMemo(
+  const { shown, hidden, pinsIconOnly } = useMemo(
     // Each tab and chip costs the room between it and the next too (the theme's gap, #2914),
-    // the last one's before the `+`.
+    // the last one's before the `+`. **A pinned tab never collapses** (#4762; ADR 0039, amended
+    // 2026-11-02): only the others go behind 'N more', and the pins go to their icons only
+    // when they alone would take more than half the strip.
     () =>
-      fitting(onStrip, tabs.inFront, room, chatLeast + chatGap, {
-        is: isBackground,
-        width: chipWidth + chatGap,
-      }),
-    [onStrip, room, tabs.inFront, chatLeast, chatGap, isBackground, chipWidth],
+      pinnedFirst(
+        onStrip,
+        tabs.inFront,
+        room,
+        chatLeast + chatGap,
+        { is: (id) => isPinned(id) && !isBackground(id), iconWidth: chipWidth + chatGap },
+        { is: isBackground, width: chipWidth + chatGap },
+      ),
+    [onStrip, room, tabs.inFront, chatLeast, chatGap, isBackground, isPinned, chipWidth],
   );
+  /**
+   * **Whether the strip's tabs are narrow** (#4702, #4762): each one's equal share is under
+   * 140px, so a tab shows its × only in front or under the pointer. Chips and icon-only pins
+   * take their own width out of the room first.
+   */
+  const narrow = useMemo(() => {
+    const ownWidth = shown.filter(
+      (id) => isBackground(id) || (pinsIconOnly && isPinned(id)),
+    ).length;
+    return narrowTabs(
+      room,
+      shown.length - ownWidth,
+      ownWidth * (chipWidth + chatGap),
+      leastAt(NARROW_TAB, windowText) + chatGap,
+    );
+  }, [shown, isBackground, pinsIconOnly, isPinned, room, chipWidth, chatGap, windowText]);
   /** Where the tab in front is drawn on the strip, or -1 where it is not (or is a name box). */
   const frontAt = tabs.inFront === undefined ? -1 : shown.indexOf(tabs.inFront);
   const frontPlace = frontAt >= 0 && !nameBoxFor(shown[frontAt]) ? frontAt : -1;
@@ -3075,13 +3147,6 @@ export const PlaneView = memo(function PlaneView({
       if (!layoutHeard.current) return;
       const laid = layoutOf(next, {
         workspaceOf: (id) => workspaceOf(next, id, filedIn),
-        pinned: (id) => {
-          const lead = contentsOf(next, id)[0]?.content;
-          if (lead === undefined) return false;
-          return lead.kind === "session"
-            ? pinnedChats.includes(lead.session)
-            : pinnedViews.includes(viewKey(lead.view));
-        },
         frontOf: (workspace) => lastFront.current[workspace],
         told: (session) => !pretendedNow.current.has(session),
       });
@@ -3106,7 +3171,7 @@ export const PlaneView = memo(function PlaneView({
         .catch(unsaid);
     };
     sayLayout.current(tabs);
-  }, [filedIn, pinnedChats, pinnedViews, plane, tabs, viewsHeard]);
+  }, [filedIn, plane, tabs, viewsHeard]);
 
   /**
    * Asks which profile and which persona. It starts nothing by itself.
@@ -3120,27 +3185,29 @@ export const PlaneView = memo(function PlaneView({
   const ask = useCallback(
     async (where: Where) => {
       setPickerTrouble(undefined);
-      const [options, found] = await Promise.all([
+      const cwd = ("in" in where ? where.in : undefined) ?? startIn;
+      // The workspace the chat would be filed in, or none at the project's root.
+      const filed = filedFor(cwd, focused);
+      const [options, found, runsOn] = await Promise.all([
         commands
           .startOptions(plane)
           .catch((err: unknown) => ({ status: "error" as const, error: String(err) })),
         commands.harnessSetupFound().catch(() => undefined),
+        readRunsOn(filed === OUTSIDE ? null : filed),
       ]);
       if (options.status === "error") {
         refusedBy("start-options", options.error);
         return;
       }
       succeeded("start-options");
-      const cwd = ("in" in where ? where.in : undefined) ?? startIn;
       if (cwd !== null && found?.status === "ok" && nothingCanStart(options.data, found.data)) {
-        const filed = filedFor(cwd, focused);
         const title = harnessSetupTitle(filed === OUTSIDE ? OUTSIDE_TITLE : filed);
         change((tabs) => openView(tabs, harnessSetupView(cwd), title, filed));
         return;
       }
-      setPicking({ options: options.data, where });
+      setPicking({ options: options.data, where, runsOn });
     },
-    [change, focused, plane, refusedBy, startIn, succeeded],
+    [change, focused, plane, readRunsOn, refusedBy, startIn, succeeded],
   );
 
   /**
@@ -3543,6 +3610,7 @@ export const PlaneView = memo(function PlaneView({
       newBranch: boolean,
       filedIn?: string,
       withoutSandbox: WithoutSandbox | null = null,
+      runsOn: RunsOnPick | null = null,
     ): Promise<LimitRefused | undefined> => {
       // A tab asked for in one directory starts there; everything else starts where the
       // explorer's pick says (charter-app#174).
@@ -3568,7 +3636,14 @@ export const PlaneView = memo(function PlaneView({
           label,
           // The core cuts the branch only when `cwd` is a repo's clone (GL-1).
           // The opt-out is the picker's alone (ADR 0067 §7): every other start sends none.
-          { show_footer: showFooter, new_branch: newBranch, without_sandbox: withoutSandbox },
+          // Runs on for this start alone (#4536), sent only where the person chose one: left out,
+          // the workspace's and the project's own decide.
+          {
+            show_footer: showFooter,
+            new_branch: newBranch,
+            without_sandbox: withoutSandbox,
+            ...(runsOn === null ? {} : { runs_on: runsOn }),
+          },
           STARTING_SIZE.columns,
           STARTING_SIZE.rows,
         )
@@ -3606,7 +3681,10 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the picker's start is in flight: the ref is the guard, the state is the button. */
   const startingNow = useRef(false);
   const [starting, setStarting] = useState(false);
-  const readStage = useCallback(() => readRunnerStage(plane, ofWorkspace), [plane, ofWorkspace]);
+  const readStage = useCallback(
+    (runsOn: RunsOnPick | null) => readRunnerStage(plane, ofWorkspace, runsOn),
+    [plane, ofWorkspace],
+  );
   /** The person cancelled the start in flight: what it answers is said to nobody. */
   const startLeft = useRef(false);
   /** Which start is the dialog's: one the person cancelled may still be winding down. */
@@ -3619,6 +3697,7 @@ export const PlaneView = memo(function PlaneView({
       label: string | null,
       newBranch: boolean,
       withoutSandbox: WithoutSandbox | null,
+      runsOn: RunsOnPick | null = null,
     ) => {
       if (picking === undefined || startingNow.current) return;
       const kind = picking.options.profiles.find((one) => one.name === profile)?.kind;
@@ -3639,6 +3718,7 @@ export const PlaneView = memo(function PlaneView({
         newBranch,
         undefined,
         withoutSandbox,
+        runsOn,
       ).finally(() => {
         if (startRun.current !== thisStart) return;
         startingNow.current = false;
@@ -3653,6 +3733,9 @@ export const PlaneView = memo(function PlaneView({
         setPickerTrouble(refused);
         setPickerSignIn(undefined);
         setPickerLimit(offer === null ? undefined : { offer, refused, profile });
+        // A pool that is gone, stopped or not reached, as the core found it (#4536).
+        const gone = started.pool_unavailable ?? undefined;
+        setPickerPoolGone(gone === undefined ? undefined : { pool: gone, refused });
         // The refusal left an Ask to sign the profile in (#2035): the Inbox reads it now.
         asksMoved(plane);
         // A profile of this machine's its harness says is not signed in here points to that
@@ -3673,6 +3756,7 @@ export const PlaneView = memo(function PlaneView({
       setPicking(undefined);
       setPickerTrouble(undefined);
       setPickerSignIn(undefined);
+      setPickerPoolGone(undefined);
     },
     [picking, plane, startOn],
   );
@@ -3688,6 +3772,7 @@ export const PlaneView = memo(function PlaneView({
       label: string | null,
       newBranch: boolean,
       withoutSandbox: WithoutSandbox | null,
+      runsOn: RunsOnPick | null = null,
     ) => {
       // A start already running from this picker is the one start it gets (GL-1).
       if (startingNow.current) return;
@@ -3703,7 +3788,7 @@ export const PlaneView = memo(function PlaneView({
       // away the choice on the one path where a profile is being used for the first time.
       // The footer choice rides the same path, and for the same reason: a first run of a
       // profile is exactly where a dropped choice would go unnoticed.
-      await startPicked(profile, persona, showFooter, label, newBranch, withoutSandbox);
+      await startPicked(profile, persona, showFooter, label, newBranch, withoutSandbox, runsOn);
     },
     [plane, startPicked],
   );
@@ -4462,12 +4547,25 @@ export const PlaneView = memo(function PlaneView({
           const { words: refused, limit: offer } = started;
           setPickerTrouble(refused);
           setPickerLimit(offer === null ? undefined : { offer, refused, profile: only.name });
+          // A pool that could not be reached is offered its three answers there (#4536).
+          const gone = started.pool_unavailable ?? undefined;
+          setPickerPoolGone(gone === undefined ? undefined : { pool: gone, refused });
         } else setPickerTrouble(undefined);
         offerBeside();
-        setPicking({ options: options.data, where });
+        setPicking({ options: options.data, where, runsOn: await readRunsOn(workspace) });
       })
       .catch((err: unknown) => refusedBy("start-options", String(err)));
-  }, [change, firstChatAsked, focusWorkspace, plane, refusedBy, sidebar, startOn, succeeded]);
+  }, [
+    change,
+    firstChatAsked,
+    focusWorkspace,
+    plane,
+    readRunsOn,
+    refusedBy,
+    sidebar,
+    startOn,
+    succeeded,
+  ]);
 
   /** What each chat the project lists is called (`shownName`, #1484), by its number: the one
    *  rule, asked once per chat, for every surface that names a chat by number. */
@@ -4499,6 +4597,32 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     nameOfNow.current = nameOf;
   }, [nameOf]);
+
+  /**
+   * **What a tab's panes are called on the strip** (#4762): a chat by its own name, never the
+   * name of the tab whose pane it is in, which is the first pane's; a chat with a tab of its
+   * own by that tab's name, which a rename sets. A view beside another, as DevTools is beside
+   * its browser, has no title of its own, and is called what its tab is.
+   */
+  const naming = useMemo<Naming>(() => {
+    const known = new Map(
+      [
+        ...reopened,
+        ...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []),
+        ...(sidebar?.unfiled ?? []),
+      ].map((chat) => [chat.session, chat]),
+    );
+    return {
+      chat: (session) => {
+        const own = ownTabOf(tabs, session);
+        if (own !== undefined) return tabs.byId[own].name;
+        const chat = known.get(session);
+        return chat === undefined ? nameOf(session) : untabbedName(chat);
+      },
+      // A view beside another has no title of its own: its tab's name is said (`tabFace`).
+      view: () => undefined,
+    };
+  }, [nameOf, reopened, sidebar, tabs]);
 
   /** Each chat's browsers as they are drawn (#2024), by the name the chat has here. */
   const chatBrowsersShown = useMemo(
@@ -4697,47 +4821,80 @@ export const PlaneView = memo(function PlaneView({
     (session: number) => backSaid(reports[session] ?? [], stoppedBelow[session] ?? []),
     [reports, stoppedBelow],
   );
-  // Where that chat is working. The sidebar's chats carry it, and so does the record the
-  // core put back at this launch; a chat the operator just opened is in the first.
-  const frontCwd =
-    frontSession === undefined
-      ? null
-      : ([...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []), ...(sidebar?.unfiled ?? [])]
-          .concat(reopened)
-          .find((chat) => chat.session === frontSession)?.cwd ?? null);
+  // Where each chat is working. The sidebar's chats carry it, and so does the record the
+  // core put back at this launch; a chat the operator just opened is in the first. Spelled as
+  // one line per chat first, so a re-read of the sidebar that moved no chat makes nothing new:
+  // not the map, not `worktreeOf`, not the catalogue that reads it.
+  const chatCwds = useMemo(() => {
+    const seen = new Set<number>();
+    const lines: string[] = [];
+    for (const chat of [
+      ...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []),
+      ...(sidebar?.unfiled ?? []),
+      ...reopened,
+    ])
+      if (chat.cwd !== null && !seen.has(chat.session)) {
+        seen.add(chat.session);
+        lines.push(`${chat.session}\t${chat.cwd}`);
+      }
+    return lines.sort().join("\n");
+  }, [sidebar, reopened]);
+  const cwdOf = useMemo(
+    () =>
+      new Map(
+        chatCwds === ""
+          ? []
+          : chatCwds.split("\n").map((line) => {
+              const tab = line.indexOf("\t");
+              return [Number(line.slice(0, tab)), line.slice(tab + 1)] as const;
+            }),
+      ),
+    [chatCwds],
+  );
+  /** The directories to ask about, one line each in a fixed order: the effect's key. */
+  const cwdsAsked = useMemo(() => [...new Set(cwdOf.values())].sort().join("\n"), [cwdOf]);
+  /** The directories already asked about, and the plane and `relocate` they were asked at:
+   *  only a new directory is asked about, until a removal says every answer may have moved.
+   *  The effect below is all that reads or writes it. */
+  const locatedAt = useRef({ plane, relocate, asked: new Set<string>() });
 
-  // Which piece the chat in front sits in. `worktree_of_chat` is path arithmetic plus one
-  // git listing, asked only when the directory in front changes — never per keystroke, and
-  // never for a palette that is not open.
+  // Which piece each chat sits in (#4851). `worktree_of_chat` is path arithmetic plus one git
+  // listing for a directory in a piece, asked once per directory — never per keystroke, and
+  // never for a palette that is not open — and again for every one after a removal.
   //
   // The plane travels with the directory (charter-app#127): the answer is about a piece of
-  // THIS project, and the core used to derive the plane by walking up from `frontCwd` alone.
+  // THIS project, and the core used to derive the plane by walking up from the cwd alone.
   useEffect(() => {
-    if (frontCwd === null) return;
-    let gone = false;
-    void commands
-      .worktreeOfChat(plane, frontCwd)
-      .then((answer) => {
-        if (gone) return;
-        setLocated({
-          cwd: frontCwd,
-          piece: answer.status === "ok" ? (answer.data ?? undefined) : undefined,
+    if (cwdsAsked === "") return;
+    const was = locatedAt.current;
+    if (was.plane !== plane || was.relocate !== relocate)
+      locatedAt.current = { plane, relocate, asked: new Set() };
+    const { asked } = locatedAt.current;
+    const cwds = cwdsAsked.split("\n").filter((cwd) => !asked.has(cwd));
+    for (const cwd of cwds) asked.add(cwd);
+    // **An answer lands even after the directories changed**: it is keyed by the directory it
+    // is about, so it is still true of that directory. Only one about another plane is dropped.
+    for (const cwd of cwds)
+      void commands
+        .worktreeOfChat(plane, cwd)
+        .then((answer) => (answer.status === "ok" ? (answer.data ?? undefined) : undefined))
+        // A window that cannot ask simply offers no Branch rows for that chat.
+        .catch(() => undefined)
+        .then((piece) => {
+          if (locatedAt.current.plane === plane) setLocated((was) => new Map(was).set(cwd, piece));
         });
-      })
-      // A window that cannot ask simply offers no worktree row — which the catalogue then
-      // lists with its reason rather than dropping.
-      .catch(() => {
-        if (!gone) setLocated({ cwd: frontCwd });
-      });
-    return () => {
-      gone = true;
-    };
-  }, [frontCwd, plane, relocate]);
+  }, [cwdsAsked, plane, relocate]);
 
-  // Only an answer about the directory in front. Nothing is cleared when the focus moves —
+  // Only an answer about the directory a chat is in now. Nothing is cleared when a chat moves —
   // clearing state from inside an effect is a render the window does not need, and a stale
   // answer is simply not this chat's.
-  const worktree = located?.cwd === frontCwd ? located.piece : undefined;
+  const worktreeOf = useCallback(
+    (session: number) => {
+      const cwd = cwdOf.get(session);
+      return cwd === undefined ? undefined : located.get(cwd);
+    },
+    [cwdOf, located],
+  );
 
   /**
    * Removes the piece THE ROW NAMED. The core's refusal travels back whole.
@@ -4757,7 +4914,7 @@ export const PlaneView = memo(function PlaneView({
       // it can neither follow that repair nor search for it.
       if (answer.status === "error") return { ok: false, refused: answer.error };
       // The core is asked again rather than the window assuming what it now says — both about
-      // where the chat in front is working, and about the workspace, because the explorer and
+      // where every chat is working, and about the workspace, because the explorer and
       // the bottom bar are still drawing the row that has just gone.
       setRelocate((asked) => asked + 1);
       setRereadWorkspace((asked) => asked + 1);
@@ -5155,7 +5312,6 @@ export const PlaneView = memo(function PlaneView({
       // Through `change`, as every other write to the tabs is: a write past it is undone by the
       // next one, which starts from `now` (#1248).
       change((was) => followRename(was, workspace, name, root));
-      setPinnedViews((was) => was.map((key) => renamedViewKey(key, workspace, name, root)));
       setPicked((was) => (was === workspace ? name : was));
       setPickedSpot((was) => (was?.workspace === workspace ? undefined : was));
       setReport({
@@ -5284,65 +5440,29 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
-   * Pins or unpins one chat.
+   * Pins or unpins one tab (#4762, ADR 0039 amended 2026-11-02): the one pin, the tab's.
    *
-   * **The core's write is what makes it true**, and this waits for it: the pin is written
-   * into the plane's own record, and a mark drawn before that landed would be a pin the next
-   * launch does not have. The core's refusal travels back whole for the same reason a
-   * worktree removal's does.
-   *
-   * **`early` is the one exception: the mark is drawn before the write lands**, and taken back
-   * if the core refuses. A drop across the pinned boundary asks for it (SI-6b), because the
-   * drop has already moved the tab and a pin that waited would draw it in its old group until
-   * the core answered — a jump under the pointer.
+   * **The layout the core is told is what keeps it** (`window_layout`): the record holds it as
+   * the tab's `pinned`, in the same write as the tab, so the mark is drawn at once and there is
+   * no answer to wait for.
    */
   const pinTab = useCallback(
-    async (id: number, pinned: boolean, { early = false } = {}): Promise<Ran> => {
-      const lead = contentsOf(now.current, id)[0]?.content;
-      if (lead?.kind === "view") {
-        // **Its own record line, written by the one effect that tells the core the view tabs**
-        // — so the pin lands with the tab it pins, in the same write, and there is nothing
-        // here for the core to refuse.
-        const key = viewKey(lead.view);
-        setPinnedViews((was) =>
-          pinned ? (was.includes(key) ? was : [...was, key]) : was.filter((one) => one !== key),
-        );
-        return { ok: true };
-      }
-      const session = chatOf(now.current, id);
-      if (session === undefined) return { ok: false, refused: "That tab has no chat to pin." };
-      const mark = (on: boolean) =>
-        setPinnedChats((was) =>
-          on
-            ? was.includes(session)
-              ? was
-              : [...was, session]
-            : was.filter((one) => one !== session),
-        );
-      if (early) mark(pinned);
-      const said = await commands
-        .pinChat(plane, session, pinned)
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (said.status === "error") {
-        if (early) mark(!pinned);
-        return { ok: false, refused: said.error };
-      }
-      mark(pinned);
-      // Nothing is said: the mark appearing on the tab is the answer, and a banner after
-      // every pin is noise about something the operator can already see.
+    async (id: number, pinned: boolean): Promise<Ran> => {
+      // Its own, whatever its panes hold, so a tab whose only pane is empty is pinned too
+      // (#4935). Nothing is said: the mark appearing on the tab is the answer.
+      change((tabs) => setPinned(tabs, id, pinned));
       return { ok: true };
     },
-    [plane],
+    [change],
   );
 
   /**
    * A chat or view tab dragged onto another on the chat strip (SI-6): moved to where it was put
    * down, and pinned or unpinned when it crossed from one group to the other (`reorder.ts`).
    *
-   * **The order and the pin are the window's at once**, because the pin is written by the core
-   * and a tab that waited for it would be drawn in its old group until the answer came (SI-6b).
-   * A pin the core refuses is taken back and said, as the tab's menu would say it, and the tab
-   * is drawn where its pin says it goes.
+   * **The order and the pin are the window's at once** (SI-6b): both ride the next layout the
+   * core is told. A pin refused is said, as the tab's menu would say it, and the tab is drawn
+   * where its pin says it goes.
    */
   const dragTab = useCallback(
     (moved: number, onto: number) => {
@@ -5360,7 +5480,7 @@ export const PlaneView = memo(function PlaneView({
       if (made === undefined) return;
       change((tabs) => ({ ...tabs, order: reslotted(tabs.order, made.order) }));
       if (made.pinned === undefined) return;
-      void pinTab(moved, made.pinned, { early: true }).then((ran) => {
+      void pinTab(moved, made.pinned).then((ran) => {
         if (!ran.ok) setReport({ from: "tab.drag", refused: true, words: ran.refused });
       });
     },
@@ -5649,10 +5769,14 @@ export const PlaneView = memo(function PlaneView({
               STARTING_SIZE.columns,
               STARTING_SIZE.rows,
             )
-          : wanted.kind === "triggers" || wanted.kind === "evals" || wanted.kind === "improve"
+          : wanted.kind === "triggers" ||
+              wanted.kind === "evals" ||
+              wanted.kind === "checks" ||
+              wanted.kind === "improve"
             ? {
                 triggers: commands.skillTriggerTestsChat,
                 evals: commands.skillOutcomeEvalsChat,
+                checks: commands.skillChecksChat,
                 improve: commands.skillImproveChat,
               }[wanted.kind](
                 plane,
@@ -5825,14 +5949,15 @@ export const PlaneView = memo(function PlaneView({
 
   /**
    * **A chat the window started again** — a Retry now, or a Start fresh (NO-3) — known the way a
-   * chat a relaunch put back is: where it is filed, its notes on how it came back, and its pin
-   * and its shell's mark.
+   * chat a relaunch put back is: where it is filed, its notes on how it came back, and its
+   * shell's mark. Its pin is its tab's (#4935): a restart keeps the tab, and a chat that opens
+   * a tab of its own carries a pin only a record from before tabs were recorded says
+   * (`pinnedAsBefore`).
    */
   const noteStarted = useCallback(
     (chat: OpenChat) => {
       setStartedIn((was) => ({ ...was, [chat.session]: filedFor(chat.cwd, focused) }));
       setReopened((was) => [...was.filter((one) => one.session !== chat.session), chat]);
-      if (chat.pinned) setPinnedChats((was) => [...was, chat.session]);
       if (isShell(chat)) setShells((was) => new Set(was).add(chat.session));
     },
     [focused],
@@ -5928,7 +6053,7 @@ export const PlaneView = memo(function PlaneView({
   const chatRestarted = useCallback(
     (was: number, chat: OpenChat) => {
       setReopened((all) => all.filter((one) => one.session !== was));
-      setPinnedChats((all) => all.filter((one) => one !== was));
+      // Its tab keeps its pin: the tab is the same, its chat in a new session.
       noteStarted(chat);
       followRestart(was, chat.session);
       change((tabs) => replaceSession(tabs, was, chat.session));
@@ -6465,7 +6590,10 @@ export const PlaneView = memo(function PlaneView({
       setWouldNotStart((was) => was.filter((one) => one.id !== id));
       noteStarted(chat);
       change((tabs) =>
-        openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+        pinnedAsBefore(
+          openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+          recordedPin(chat),
+        ),
       );
     },
     [change, noteStarted, plane],
@@ -6506,12 +6634,15 @@ export const PlaneView = memo(function PlaneView({
         noteStarted(chat);
         if (chat.from?.tab === false) continue;
         change((tabs) =>
-          openTabBehind(
-            tabs,
-            chat.session,
-            chat.name,
-            whoOf(chat.persona, chat.harness),
-            chat.label ?? null,
+          pinnedAsBefore(
+            openTabBehind(
+              tabs,
+              chat.session,
+              chat.name,
+              whoOf(chat.persona, chat.harness),
+              chat.label ?? null,
+            ),
+            recordedPin(chat),
           ),
         );
       }
@@ -6723,7 +6854,7 @@ export const PlaneView = memo(function PlaneView({
     const chat = said.data;
     setFreshening(undefined);
     setReopened((was) => was.filter((one) => one.session !== asked.session));
-    setPinnedChats((was) => was.filter((one) => one !== asked.session));
+    // Its tab keeps its pin: the tab is the same, its chat in a new session.
     noteStarted(chat);
     followRestart(asked.session, chat.session);
     change((tabs) => replaceSession(tabs, asked.session, chat.session));
@@ -6843,6 +6974,32 @@ export const PlaneView = memo(function PlaneView({
     [plane, setChatSkills],
   );
   /**
+   * **What the Skills view's cards act through, held still** (#4351): the view, kept once shown,
+   * draws every skill's card, and draws them again only for something of its own. Opening a tab
+   * moves `showView` and the restart's ask with the window around them; these call whichever is
+   * current.
+   */
+  const skillsActs = useRef({ showView, openUseSkill, revealInExplorer, askRestart });
+  useLayoutEffect(() => {
+    skillsActs.current = { showView, openUseSkill, revealInExplorer, askRestart };
+  });
+  const skillsOpenView = useCallback<SkillsViewProps["onOpenView"]>(
+    (view, title) => skillsActs.current.showView(view, title),
+    [],
+  );
+  const skillsUse = useCallback<SkillsViewProps["onUseSkill"]>(
+    (session, skill) => skillsActs.current.openUseSkill(session, skill),
+    [],
+  );
+  const skillsShowInExplorer = useCallback<SkillsViewProps["onShowInExplorer"]>(
+    (place) => skillsActs.current.revealInExplorer(place),
+    [],
+  );
+  const skillsRestart = useCallback(
+    (session: number) => skillsActs.current.askRestart(session),
+    [],
+  );
+  /**
    * A skill picked in Use skill…: the core types it into the chat in its tool's own syntax and
    * sends nothing (`use_skill`), or copies it with why. Either way the dialog closes and the
    * window says what became of it; a refusal stays in the dialog.
@@ -6957,6 +7114,10 @@ export const PlaneView = memo(function PlaneView({
       split,
       closePane,
       closeTab: close,
+      // Each as its own close (#4762): the chats asked about once, by the row, before this.
+      closeOtherTabs: (closing) => {
+        for (const tab of closing) close(tab);
+      },
       selectTab: bringToFront,
       renameChat: beginRename,
       linkWorkItem,
@@ -7212,7 +7373,7 @@ export const PlaneView = memo(function PlaneView({
         workspace,
         shownName(tabs, chat),
         tabHolding(tabs, chat.session) !== undefined,
-        nameOfListed,
+        standingOf(questions, chat.session),
       );
     // By number, which is the order they were started in: the list arrives workspace by
     // workspace, and a chat's children are read in the order it asked for them.
@@ -7222,7 +7383,7 @@ export const PlaneView = memo(function PlaneView({
       // Tasks a scenario spec pretends a session has (`e2eTasks.ts`): none in a shipped build.
       ...pretended.map(({ chat, workspace }) => one(chat, workspace)),
     ].sort((a, b) => a.session - b.session);
-  }, [nameOfListed, pretended, pretendedLimits, sidebar, tabs]);
+  }, [pretended, pretendedLimits, questions, sidebar, tabs]);
   /** The chats of each tab, as its chip counts them and its menu lists them (#1487). */
   const chatsByTab = useMemo(() => chatsOfTabs(tabs, listedChats), [listedChats, tabs]);
   /** The tab in front and its chats: what the Chats view's This tab lists (#1679). */
@@ -7534,8 +7695,10 @@ export const PlaneView = memo(function PlaneView({
       .filter(([, blocks]) => blocks.length > 0)
       .map(([session]) => Number(session));
     const prompted = asksHere.map((ask) => ask.session);
-    return [...prompted, ...heldFor, ...refusedFor, ...blocked, ...restarts];
-  }, [asksHere, heldFor, refusedFor, restartsSaid, sandboxBlocks]);
+    // A task question that has reached the person (#4564); one with its asking chat is not.
+    const reached = waitingOnYou(questions);
+    return [...prompted, ...reached, ...heldFor, ...refusedFor, ...blocked, ...restarts];
+  }, [asksHere, heldFor, questions, refusedFor, restartsSaid, sandboxBlocks]);
   /**
    * **Tab `id`'s chats that are waiting for the person and are not on screen**, by name, the
    * longest waiting first (#1486, V100-37): what the tab wears the hand for. A chat is on
@@ -7847,7 +8010,7 @@ export const PlaneView = memo(function PlaneView({
             workspaces: strips,
             live: liveNames,
             focused,
-            worktree,
+            worktreeOf,
             pieces,
             clones,
             absent: absentHere,
@@ -7886,8 +8049,6 @@ export const PlaneView = memo(function PlaneView({
             // The projects' pins are the WINDOW's, and travel down with the projects: a
             // project that is not in front draws nothing, so its pin cannot be held here.
             pinned: {
-              chats: pinnedChats,
-              views: pinnedViews,
               workspaces: pinnedWorkspaces,
               projects: pinnedProjects,
             },
@@ -7896,6 +8057,8 @@ export const PlaneView = memo(function PlaneView({
             curations,
             wrappingUp: [...wrapping],
             restoring: [...restoringChats],
+            // Close other tabs skips the pinned ones (#4762).
+            otherTabs: (tab) => otherTabsToClose(tabs, tab, filedIn, isPinned),
             workItems,
             // A chat filed in a workspace; one at the project root, or outside the project, is
             // offered no work link (ADR 0088 §4).
@@ -7937,9 +8100,7 @@ export const PlaneView = memo(function PlaneView({
       nameOf,
       personas,
       pieces,
-      pinnedChats,
       pinnedProjects,
-      pinnedViews,
       pinnedWorkspaces,
       plane,
       projects,
@@ -7962,10 +8123,11 @@ export const PlaneView = memo(function PlaneView({
       browsersOffered,
       views,
       extensionCommands,
-      worktree,
+      worktreeOf,
       liveNames,
       wrapping,
       restoringChats,
+      isPinned,
       workItems,
       filedIn,
       planeUpdates,
@@ -8119,7 +8281,9 @@ export const PlaneView = memo(function PlaneView({
             ? { ok: true, said: found.handed }
             : { ok: false, refused: found.refused };
         const drafts = found.drafts;
-        if (ending.length !== 1) {
+        // Close other tabs is never a smart close, however many chats it ends (#4762): a record
+        // is one chat's, asked for on its own tab.
+        if (ending.length !== 1 || offer.does.verb === "closeOtherTabs") {
           // A close of several chats at once asks nothing about what each started: those
           // keep running, and the dialog says so where any is.
           const theirs = await Promise.all(ending.map(below));
@@ -9360,6 +9524,9 @@ export const PlaneView = memo(function PlaneView({
         plane={plane}
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
       />
+      {/* **A task's runner kept, since its work is not all here** (#4569): never silent, with
+          Fetch again and Discard. */}
+      <FreshRunnerKeptNotice plane={plane} />
       {/* **The project's Internet access presets changed** (#1385): told once to each
           teammate, so a preset that widens never widens unseen. */}
       <ProjectPresetsNotice
@@ -9511,64 +9678,71 @@ export const PlaneView = memo(function PlaneView({
     </>
   );
 
-  /** **The chat in front, whose skills the Skills view shows** (#3266, #3693): the one shown in
-   *  the pane with the keyboard, never a shell's, which runs no tool with skills. */
-  const frontWorkspace = frontSession === undefined ? undefined : filedIn(frontSession);
+  /** **The chat whose skills the Skills view shows** (#3266, #3693): the one shown in the pane
+   *  with the keyboard, never a shell's, which runs no tool with skills. **While a tab that is not
+   *  a chat is in front** (#4351; ADR 0102, amended 2026-11-02), such as the Skill studio's, the
+   *  chat last in front (`chatKept`, until its tab closes): its set is not read again for a new
+   *  chat, and its cards are not drawn again. It is described as it is now, wherever it moved. */
+  const skillsSession = chatNow ?? (frontTab !== undefined ? chatKept : undefined);
+  const skillsWorkspace = skillsSession === undefined ? undefined : filedIn(skillsSession);
+  // The checkout it works in, as the core answered for its directory (#4851), in front or not.
+  const skillsPiece = skillsSession === undefined ? undefined : worktreeOf(skillsSession);
   const skillsChat: FrontChat | undefined =
-    frontSession === undefined || shells.has(frontSession)
+    skillsSession === undefined
       ? undefined
       : {
-          session: frontSession,
-          name: nameOf(frontSession),
-          workspace: frontWorkspace === OUTSIDE ? undefined : frontWorkspace,
-          persona: personaOf(frontSession),
-          harness: harnessOf(frontSession),
+          session: skillsSession,
+          name: nameOf(skillsSession),
+          workspace: skillsWorkspace === OUTSIDE ? undefined : skillsWorkspace,
+          persona: personaOf(skillsSession),
+          harness: harnessOf(skillsSession),
           // Only where it is filed: the view names a checkout by the chat's workspace.
-          ...(worktree === undefined || worktree.workspace !== frontWorkspace
+          ...(skillsPiece === undefined || skillsPiece.workspace !== skillsWorkspace
             ? {}
-            : { branchFolder: { repo: worktree.repo, piece: worktree.piece } }),
+            : { branchFolder: { repo: skillsPiece.repo, piece: skillsPiece.piece } }),
         };
 
   const view = (
     <ChatToUseHere.Provider value={chatToUse}>
-      <Lent
-        chats={chats}
-        tasksBelow={tasksBelow}
-        doings={doings}
-        skillRuns={skillRuns}
-        references={referenceChats}
-        memoryTargets={memoryTargets}
-        readOnly={readOnlySaid}
-        mendable={readOnly?.mendable === true}
-        personas={personaMarks}
-        askPersona={openAskPersona}
-        useSkill={openUseSkill}
-        chatSkillSets={chatSkillSets}
-        brief={openBrief}
-        answer={openAnswer}
-      >
-        <SessionOffersLent
-          plane={plane}
-          store={workspacePanels}
-          workspace={ofWorkspace}
-          atRoot={focused === OUTSIDE}
-          rootRecords={rootPanels?.sessions}
-          onRows={onSessionRows}
+      <QuestionsHere.Provider value={questions}>
+        <Lent
+          chats={chats}
+          tasksBelow={tasksBelow}
+          doings={doings}
+          skillRuns={skillRuns}
+          references={referenceChats}
+          memoryTargets={memoryTargets}
+          readOnly={readOnlySaid}
+          mendable={readOnly?.mendable === true}
+          personas={personaMarks}
+          askPersona={openAskPersona}
+          useSkill={openUseSkill}
+          chatSkillSets={chatSkillSets}
+          brief={openBrief}
+          answer={openAnswer}
         >
-          {/* **A project this purlis opens read-only says why, once, on its tab** (#826, FR-24):
+          <SessionOffersLent
+            plane={plane}
+            store={workspacePanels}
+            workspace={ofWorkspace}
+            atRoot={focused === OUTSIDE}
+            rootRecords={rootPanels?.sessions}
+            onRows={onSessionRows}
+          >
+            {/* **A project this purlis opens read-only says why, once, on its tab** (#826, FR-24):
           which feature is missing and which version has it. Above its workspaces, so it is the
           project's line and no workspace's; each row it turns off repeats it as its reason. */}
-          <ReadOnlyLine readOnly={readOnly} />
-          {/* **A project that lives only on this machine says so, with Publish beside it** (#1820). */}
-          <LivesHere plane={plane} />
-          {/* **The workspaces of this project are in the title bar** (#2916): the project's pins as
+            <ReadOnlyLine readOnly={readOnly} />
+            {/* **A project that lives only on this machine says so, with Publish beside it** (#1820). */}
+            <LivesHere plane={plane} />
+            {/* **The workspaces of this project are in the title bar** (#2916): the project's pins as
           chips after its name, and every workspace behind its ⌄ (`TitleBarSwitch.tsx`). The
           strip that drew them here is gone, as the project strip went to the rail (#2915). */}
-          {/* **A chat's theme draft is named on the workspace it is drawn in** (#2332): the
+            {/* **A chat's theme draft is named on the workspace it is drawn in** (#2332): the
           strip under the workspaces, with Keep, Revert and Compare, and the revert key. */}
-          <ThemeDraftStrip plane={plane} workspace={ofWorkspace ?? null} />
+            <ThemeDraftStrip plane={plane} workspace={ofWorkspace ?? null} />
 
-          {/* **The regions** (ADR 0038): by default the navigation region on the left, the
+            {/* **The regions** (ADR 0038): by default the navigation region on the left, the
           panes in the middle, and what is asking for you on the right. What the repos are
           doing was along the bottom until #1676 made it the left's Changes view, so the panes
           are the window's whole height. Every region resizes, and each side can be put away —
@@ -9580,315 +9754,317 @@ export const PlaneView = memo(function PlaneView({
 
           One workspace answer for every region and view (`workspacePanels.ts`), not one each:
           they draw the same workspace, and `workspace_repos` runs `git status` per clone. */}
-          <RegionFrame
-            arrangement={arrangement}
-            onResized={resized}
-            onReset={resetSize}
-            onSplit={splitHalves}
-            // F6 between the regions (P-13, #1741) is the project in front's, as its side keys are.
-            keyboard={inFront}
-            // Skills while the Skill studio's preview is on (#3266).
-            previews={previews}
-            /* **The navigation region's views** (ADR 0038 as amended 2026-10-10, #1673): Chats and
+            <RegionFrame
+              arrangement={arrangement}
+              onResized={resized}
+              onReset={resetSize}
+              onSplit={splitHalves}
+              // F6 between the regions (P-13, #1741) is the project in front's, as its side keys are.
+              keyboard={inFront}
+              // Skills while the Skill studio's preview is on (#3266).
+              previews={previews}
+              /* **The navigation region's views** (ADR 0038 as amended 2026-10-10, #1673): Chats and
            Explorer, one at a time, switched by the activity bar at the side's edge. Both stay
            mounted when the other is open or the side is away, so neither loses its folds. */
-            views={{
-              chats: (
-                <WaitingTaskWaysContext.Provider value={waitingTaskWays}>
-                  <ChatsSection
-                    rows={listRows}
-                    // The trees that started in the focused workspace, or at the root (#1655).
-                    here={focused === OUTSIDE ? ROOT_WORD : focused}
-                    // The tab in front's chats, for This tab (#1679).
-                    tab={tabInFront}
-                    // The chat that has the keyboard: a task, while its pane shows it (#1486).
-                    front={focusedChat(tabs)}
-                    onOpen={showChat}
-                    offers={found}
-                    onPress={press}
-                    stopping={stopping}
-                    finished={finishedTasks}
-                    onClearFinished={clearFinished}
-                    onReopen={reopenFinished}
-                    clock={chatClock}
-                    onDrawn={rowsDrawn}
-                    reveal={revealed}
-                    onRevealed={revealedSettled}
-                    onLookFinished={lookedAtFinished}
-                    restarts={restartsOnRows}
-                    ending={taskEndInline}
-                    onEndTask={endTaskOnRow}
-                    onEndConfirm={answerTaskEndOnRow}
-                    onChanges={(task) =>
-                      showView(taskChangesView(task.id), taskChangesTitle(task.name))
-                    }
-                    browsers={chatBrowsersShown}
-                    kept={keptShown}
-                    // The Browsers grid's button, while the grid has a tile (#2027).
-                    anyBrowser={gridTiles.length > 0}
-                    onBrowser={openChatBrowser}
-                    // The side panel's header (R123): the workspace, then the project, quiet.
-                    heading={
-                      <>
-                        {ofWorkspace ?? OUTSIDE_TITLE}{" "}
-                        <span className="side-head-project">· {projectName(plane)}</span>
-                      </>
-                    }
-                  />
-                </WaitingTaskWaysContext.Provider>
-              ),
-              explorer: (
-                <WorkspaceRegion
-                  store={workspacePanels}
-                  workspace={ofWorkspace}
-                  equal={FOR_THE_GIT_SIDE}
-                  draw={(state) => (
-                    <Explorer
-                      // Files, of the workspace the strip is on: Repos and branches is the Panel's
-                      // Repos view (#1737), and the strip is where a workspace is selected (qw358).
-                      part="explorer"
-                      plane={plane}
-                      workspace={ofWorkspace}
-                      live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
-                      state={state}
-                      chats={workspaceChats}
-                      spot={spot}
-                      onPick={pickSpot}
+              views={{
+                chats: (
+                  <WaitingTaskWaysContext.Provider value={waitingTaskWays}>
+                    <ChatsSection
+                      rows={listRows}
+                      // The trees that started in the focused workspace, or at the root (#1655).
+                      here={focused === OUTSIDE ? ROOT_WORD : focused}
+                      // The tab in front's chats, for This tab (#1679).
+                      tab={tabInFront}
+                      // The chat that has the keyboard: a task, while its pane shows it (#1486).
+                      front={focusedChat(tabs)}
+                      onOpen={showChat}
                       offers={found}
                       onPress={press}
-                      onOpenFile={(place, path) =>
-                        showView(pieceFileView(place, path), pieceFileTitle(place, path))
+                      stopping={stopping}
+                      finished={finishedTasks}
+                      onClearFinished={clearFinished}
+                      onReopen={reopenFinished}
+                      clock={chatClock}
+                      onDrawn={rowsDrawn}
+                      reveal={revealed}
+                      onRevealed={revealedSettled}
+                      onLookFinished={lookedAtFinished}
+                      restarts={restartsOnRows}
+                      ending={taskEndInline}
+                      onEndTask={endTaskOnRow}
+                      onEndConfirm={answerTaskEndOnRow}
+                      onChanges={(task) =>
+                        showView(taskChangesView(task.id), taskChangesTitle(task.name))
                       }
-                      focus={cockpit}
-                      onFocus={setFocusedBranch}
-                      cloning={cloning}
-                      onReadAgain={rereadPanels}
-                      onAddToChat={setAddingToChat}
-                      // A workspace's repo pressed in the plane root's files (issue 1916).
-                      onGoToWorkspace={focusWorkspace}
-                      // The Skills view's Show in Explorer (#3266).
-                      reveal={explorerReveal}
-                      // Search contents (#3343): Search on the filter's scope, with its words.
-                      onSearchContents={searchContents}
-                      onSearchKey={keepExplorerSearchKey}
+                      browsers={chatBrowsersShown}
+                      kept={keptShown}
+                      // The Browsers grid's button, while the grid has a tile (#2027).
+                      anyBrowser={gridTiles.length > 0}
+                      onBrowser={openChatBrowser}
+                      // The side panel's header (R123): the workspace, then the project, quiet.
+                      heading={
+                        <>
+                          {ofWorkspace ?? OUTSIDE_TITLE}{" "}
+                          <span className="side-head-project">· {projectName(plane)}</span>
+                        </>
+                      }
                     />
-                  )}
-                />
-              ),
-              // **Repos** (#1737, P-2, P-10): Explorer's *Repos and branches*, in the left half of
-              // the Panel. The same pick as ever: a repo or branch picked here is what Files lists.
-              repos: (
-                <WorkspaceRegion
-                  store={workspacePanels}
-                  workspace={ofWorkspace}
-                  equal={FOR_THE_GIT_SIDE}
-                  draw={(state) => (
-                    <Explorer
-                      part="repos"
-                      plane={plane}
-                      workspace={ofWorkspace}
-                      live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
-                      state={state}
-                      chats={workspaceChats}
-                      spot={spot}
-                      onPick={pickSpot}
-                      offers={found}
-                      onPress={press}
-                      focus={cockpit}
-                      onFocus={setFocusedBranch}
-                      cloning={cloning}
-                      onReadAgain={rereadPanels}
-                    />
-                  )}
-                />
-              ),
-              // **Search** (#1676): the Search tab's content, in the side. Drawn from the first time
-              // it is shown, then kept, so what was typed and found survives a switch away.
-              search: sideSearch !== undefined && (
-                <SearchTab
-                  plane={plane}
-                  view={sideSearch}
-                  onAsk={(_, to) => setSideSearch(to)}
-                  takesKeyboard={false}
-                />
-              ),
-              // **Skills** (#3266): this workspace's skills by level, from the Skill studio's own
-              // answer, drawn only while its preview is on; the side falls back to Chats meanwhile.
-              skills: studioOn && skillsDrawn && (
-                <SkillsView
-                  plane={plane}
-                  workspace={ofWorkspace}
-                  chat={skillsChat}
-                  onOpenView={showView}
-                  onUseSkill={openUseSkill}
-                  onShowInExplorer={revealInExplorer}
-                  onRestart={askRestart}
-                />
-              ),
-              // **Changes** (#1676, B-7): what the bottom region drew, the same content.
-              changes: (
-                <WorkspaceRegion
-                  store={workspacePanels}
-                  workspace={ofWorkspace}
-                  equal={FOR_THE_GIT_SIDE}
-                  draw={(state) => (
-                    <ChangesView
-                      workspace={ofWorkspace}
-                      state={state}
-                      offers={found}
-                      onPress={press}
-                      columns={facts.columns}
-                      cloning={cloning}
-                    />
-                  )}
-                />
-              ),
-              // **The Inbox** (#1692): what waits on the person here, answered in place.
-              inbox: (
-                <Inbox
-                  plane={plane}
-                  asks={waiting}
-                  onGo={(session) => {
-                    // A chat in the queue goes as the hand's Go did: the catalogue's own row, which
-                    // knows a failed task's row and a report with nowhere to go (#1448, #1491).
-                    const go = queueRow(showId(session), session);
-                    if (go?.available) press(go);
-                    else showChat(session);
-                  }}
-                  updates={inboxUpdates}
-                  notices={standing}
-                  onNotices={setNoticesListed}
-                  onNoticeAnswer={inboxOnScreen}
-                  elsewhere={elsewhere}
-                  // The scope's workspace is the strip's (qw359): the plane root is a place too.
-                  here={focused}
-                  workspaceOf={filedIn}
-                  workspaceNamed={workspaceNamed}
-                  windowLines={windowLines}
-                  asked={chatAsked}
-                  personaOf={personaOf}
-                  onLeave={leaveInbox}
-                  whyOf={inboxWhy}
-                  onAnswered={inboxAnswered}
-                  onIgnore={(session) => {
-                    // The queue's own row, as the palette presses it.
-                    const ignore = queueRow(ignoreId(session), session);
-                    if (ignore?.available) press(ignore);
-                  }}
-                />
-              ),
-              // **The attention region's views** (#1678): the "for you" side (ADR 0038 as amended
-              // 2026-10-10), one panel per view, and each approved extension's panel a view too.
-              ...Object.fromEntries(
-                [
-                  ...ATTENTION_VIEWS.filter((view) => view !== "inbox"),
-                  ...sidePanels.map((one) => one.view),
-                ].map((view) => [
-                  view,
-                  // Every part of the panels: these are what a memory or a session record draws.
+                  </WaitingTaskWaysContext.Provider>
+                ),
+                explorer: (
                   <WorkspaceRegion
-                    key={view}
                     store={workspacePanels}
                     workspace={ofWorkspace}
+                    equal={FOR_THE_GIT_SIDE}
                     draw={(state) => (
-                      <Panels
-                        view={view}
+                      <Explorer
+                        // Files, of the workspace the strip is on: Repos and branches is the Panel's
+                        // Repos view (#1737), and the strip is where a workspace is selected (qw358).
+                        part="explorer"
+                        plane={plane}
+                        workspace={ofWorkspace}
+                        live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
+                        state={state}
+                        chats={workspaceChats}
+                        spot={spot}
+                        onPick={pickSpot}
+                        offers={found}
+                        onPress={press}
+                        onOpenFile={(place, path) =>
+                          showView(pieceFileView(place, path), pieceFileTitle(place, path))
+                        }
+                        focus={cockpit}
+                        onFocus={setFocusedBranch}
+                        cloning={cloning}
+                        onReadAgain={rereadPanels}
+                        onAddToChat={setAddingToChat}
+                        // A workspace's repo pressed in the plane root's files (issue 1916).
+                        onGoToWorkspace={focusWorkspace}
+                        // The Skills view's Show in Explorer (#3266).
+                        reveal={explorerReveal}
+                        // Search contents (#3343): Search on the filter's scope, with its words.
+                        onSearchContents={searchContents}
+                        onSearchKey={keepExplorerSearchKey}
+                      />
+                    )}
+                  />
+                ),
+                // **Repos** (#1737, P-2, P-10): Explorer's *Repos and branches*, in the left half of
+                // the Panel. The same pick as ever: a repo or branch picked here is what Files lists.
+                repos: (
+                  <WorkspaceRegion
+                    store={workspacePanels}
+                    workspace={ofWorkspace}
+                    equal={FOR_THE_GIT_SIDE}
+                    draw={(state) => (
+                      <Explorer
+                        part="repos"
+                        plane={plane}
+                        workspace={ofWorkspace}
+                        live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
+                        state={state}
+                        chats={workspaceChats}
+                        spot={spot}
+                        onPick={pickSpot}
+                        offers={found}
+                        onPress={press}
+                        focus={cockpit}
+                        onFocus={setFocusedBranch}
+                        cloning={cloning}
+                        onReadAgain={rereadPanels}
+                      />
+                    )}
+                  />
+                ),
+                // **Search** (#1676): the Search tab's content, in the side. Drawn from the first time
+                // it is shown, then kept, so what was typed and found survives a switch away.
+                search: sideSearch !== undefined && (
+                  <SearchTab
+                    plane={plane}
+                    view={sideSearch}
+                    onAsk={(_, to) => setSideSearch(to)}
+                    takesKeyboard={false}
+                  />
+                ),
+                // **Skills** (#3266): this workspace's skills by level, from the Skill studio's own
+                // answer, drawn only while its preview is on; the side falls back to Chats meanwhile.
+                skills: studioOn && skillsDrawn && (
+                  <SkillsView
+                    plane={plane}
+                    workspace={ofWorkspace}
+                    chat={skillsChat}
+                    onOpenView={skillsOpenView}
+                    onUseSkill={skillsUse}
+                    onShowInExplorer={skillsShowInExplorer}
+                    onRestart={skillsRestart}
+                  />
+                ),
+                // **Changes** (#1676, B-7): what the bottom region drew, the same content.
+                changes: (
+                  <WorkspaceRegion
+                    store={workspacePanels}
+                    workspace={ofWorkspace}
+                    equal={FOR_THE_GIT_SIDE}
+                    draw={(state) => (
+                      <ChangesView
                         workspace={ofWorkspace}
                         state={state}
                         offers={found}
                         onPress={press}
-                        contributed={contributed}
-                        shownRow={shownRow}
-                        onShowRow={setShownRow}
-                        vaults={vaults}
-                        onAddTodo={edits.addTodo}
-                        atRoot={focused === OUTSIDE}
-                        rootPanels={rootPanels?.contributed}
-                        personaChats={personaChats}
-                        chatPersonasHere={
-                          ofWorkspace === undefined ? undefined : chatPersonasIn.get(ofWorkspace)
+                        columns={facts.columns}
+                        cloning={cloning}
+                      />
+                    )}
+                  />
+                ),
+                // **The Inbox** (#1692): what waits on the person here, answered in place.
+                inbox: (
+                  <Inbox
+                    plane={plane}
+                    asks={waiting}
+                    onGo={(session) => {
+                      // A chat in the queue goes as the hand's Go did: the catalogue's own row, which
+                      // knows a failed task's row and a report with nowhere to go (#1448, #1491).
+                      const go = queueRow(showId(session), session);
+                      if (go?.available) press(go);
+                      else showChat(session);
+                    }}
+                    updates={inboxUpdates}
+                    notices={standing}
+                    onNotices={setNoticesListed}
+                    onNoticeAnswer={inboxOnScreen}
+                    elsewhere={elsewhere}
+                    // The scope's workspace is the strip's (qw359): the plane root is a place too.
+                    here={focused}
+                    workspaceOf={filedIn}
+                    workspaceNamed={workspaceNamed}
+                    windowLines={windowLines}
+                    asked={chatAsked}
+                    personaOf={personaOf}
+                    onLeave={leaveInbox}
+                    whyOf={inboxWhy}
+                    onAnswered={inboxAnswered}
+                    onIgnore={(session) => {
+                      // The queue's own row, as the palette presses it.
+                      const ignore = queueRow(ignoreId(session), session);
+                      if (ignore?.available) press(ignore);
+                    }}
+                  />
+                ),
+                // **The attention region's views** (#1678): the "for you" side (ADR 0038 as amended
+                // 2026-10-10), one panel per view, and each approved extension's panel a view too.
+                ...Object.fromEntries(
+                  [
+                    ...ATTENTION_VIEWS.filter((view) => view !== "inbox"),
+                    ...sidePanels.map((one) => one.view),
+                  ].map((view) => [
+                    view,
+                    // Every part of the panels: these are what a memory or a session record draws.
+                    <WorkspaceRegion
+                      key={view}
+                      store={workspacePanels}
+                      workspace={ofWorkspace}
+                      draw={(state) => (
+                        <Panels
+                          view={view}
+                          workspace={ofWorkspace}
+                          state={state}
+                          offers={found}
+                          onPress={press}
+                          contributed={contributed}
+                          shownRow={shownRow}
+                          onShowRow={setShownRow}
+                          vaults={vaults}
+                          onAddTodo={edits.addTodo}
+                          atRoot={focused === OUTSIDE}
+                          rootPanels={rootPanels?.contributed}
+                          personaChats={personaChats}
+                          chatPersonasHere={
+                            ofWorkspace === undefined ? undefined : chatPersonasIn.get(ofWorkspace)
+                          }
+                        />
+                      )}
+                    />,
+                  ]),
+                ),
+              }}
+              panels={sidePanels}
+              // The Chats tab's count is the queue's, drawn where the queue is read (#1034): a chat
+              // that starts asking redraws the badge and nothing around it. It is on the bar, so it
+              // is there while the side is put away (B-8). Changes counts what git has uncommitted.
+              // The Lower icons' are drawn the same way, so they are there while their half of the
+              // Panel is away (P-9, #1739): Changes' count, and Repos' only once a clone is behind.
+              badges={{
+                repos: gap && (
+                  <ActivityCount
+                    count={gap.behind}
+                    drawn={`${gap.behind}↓${gap.ahead > 0 ? `${gap.ahead}↑` : ""}`}
+                    said={`${gap.behind === 1 ? "1 commit" : `${gap.behind} commits`} behind${gap.ahead > 0 ? `, ${gap.ahead} ahead` : ""}`}
+                  />
+                ),
+                changes: (
+                  <ActivityCount
+                    count={changedFiles}
+                    said={
+                      changedFiles === 1
+                        ? "1 uncommitted file"
+                        : `${changedFiles} uncommitted files`
+                    }
+                  />
+                ),
+                chats: (
+                  <QueueRead>
+                    {(queue) => (
+                      <ActivityCount
+                        count={queue.length}
+                        said={
+                          queue.length === 1 ? "1 chat needs you" : `${queue.length} chats need you`
                         }
                       />
                     )}
-                  />,
-                ]),
-              ),
-            }}
-            panels={sidePanels}
-            // The Chats tab's count is the queue's, drawn where the queue is read (#1034): a chat
-            // that starts asking redraws the badge and nothing around it. It is on the bar, so it
-            // is there while the side is put away (B-8). Changes counts what git has uncommitted.
-            // The Lower icons' are drawn the same way, so they are there while their half of the
-            // Panel is away (P-9, #1739): Changes' count, and Repos' only once a clone is behind.
-            badges={{
-              repos: gap && (
-                <ActivityCount
-                  count={gap.behind}
-                  drawn={`${gap.behind}↓${gap.ahead > 0 ? `${gap.ahead}↑` : ""}`}
-                  said={`${gap.behind === 1 ? "1 commit" : `${gap.behind} commits`} behind${gap.ahead > 0 ? `, ${gap.ahead} ahead` : ""}`}
-                />
-              ),
-              changes: (
-                <ActivityCount
-                  count={changedFiles}
-                  said={
-                    changedFiles === 1 ? "1 uncommitted file" : `${changedFiles} uncommitted files`
-                  }
-                />
-              ),
-              chats: (
-                <QueueRead>
-                  {(queue) => (
-                    <ActivityCount
-                      count={queue.length}
-                      said={
-                        queue.length === 1 ? "1 chat needs you" : `${queue.length} chats need you`
-                      }
-                    />
-                  )}
-                </QueueRead>
-              ),
-              // The asks waiting here (#1692, I-2): the ✋'s count for this project, in its tone, on
-              // the bar, so it is there while the side is put away.
-              inbox: (
-                <ActivityCount
-                  count={waiting?.length ?? 0}
-                  said={
-                    waiting?.length === 1
-                      ? "1 thing waits on you"
-                      : `${waiting?.length ?? 0} things wait on you`
-                  }
-                  tone="needs-you"
-                />
-              ),
-              // The focused workspace's open todos (B-8), the status line's own count: plain, since
-              // a todo is yours to do and not a chat asking for you.
-              todos: (
-                <ActivityCount
-                  count={openTodos ?? 0}
-                  said={openTodos === 1 ? "1 open todo" : `${openTodos ?? 0} open todos`}
-                />
-              ),
-            }}
-            keys={SIDE_KEYS_SAID}
-            onPick={pickSideView}
-            // The side panel's header (R123): Chats draws its own; Explorer names the workspace.
-            heads={{ chats: null, explorer: ofWorkspace ?? OUTSIDE_TITLE }}
-            // Right-click on a view's icon (#1740): its move, the catalogue's fourth reader.
-            menu={(view, to, tab) => (
-              <Menued on={{ on: "view", view, to }} offers={found} onPress={press}>
-                {tab}
-              </Menued>
-            )}
-            // Every region is views now (#1676, #1678): nothing is drawn outside a view.
-            content={{}}
-            centre={
-              /* **The editor: the chat strip, then the panes** (DS-6, #1836; ADR 0036 as amended
+                  </QueueRead>
+                ),
+                // The asks waiting here (#1692, I-2): the ✋'s count for this project, in its tone, on
+                // the bar, so it is there while the side is put away.
+                inbox: (
+                  <ActivityCount
+                    count={waiting?.length ?? 0}
+                    said={
+                      waiting?.length === 1
+                        ? "1 thing waits on you"
+                        : `${waiting?.length ?? 0} things wait on you`
+                    }
+                    tone="needs-you"
+                  />
+                ),
+                // The focused workspace's open todos (B-8), the status line's own count: plain, since
+                // a todo is yours to do and not a chat asking for you.
+                todos: (
+                  <ActivityCount
+                    count={openTodos ?? 0}
+                    said={openTodos === 1 ? "1 open todo" : `${openTodos ?? 0} open todos`}
+                  />
+                ),
+              }}
+              keys={SIDE_KEYS_SAID}
+              onPick={pickSideView}
+              // The side panel's header (R123): Chats draws its own; Explorer names the workspace.
+              heads={{ chats: null, explorer: ofWorkspace ?? OUTSIDE_TITLE }}
+              // Right-click on a view's icon (#1740): its move, the catalogue's fourth reader.
+              menu={(view, to, tab) => (
+                <Menued on={{ on: "view", view, to }} offers={found} onPress={press}>
+                  {tab}
+                </Menued>
+              )}
+              // Every region is views now (#1676, #1678): nothing is drawn outside a view.
+              content={{}}
+              centre={
+                /* **The editor: the chat strip, then the panes** (DS-6, #1836; ADR 0036 as amended
              2026-10-12). The session strip is the centre's own tab bar, directly above the chat
              it shows, as an editor's tabs are; the workspaces stay the full-width row above every
              region. Splits live inside a tab, so one centre has one strip. */
-              <div className="editor" {...tabsPart("layout")}>
-                {/* The chat strip is the focused workspace's, so it is drawn in that workspace's colour
+                <div className="editor" {...tabsPart("layout")}>
+                  {/* The chat strip is the focused workspace's, so it is drawn in that workspace's colour
               (charter-app#281): its shade, its selected tab and its accent.
 
               **Outside `Menued on=pane`**, so a right-click on the strip's gaps is not the pane
@@ -9896,164 +10072,170 @@ export const PlaneView = memo(function PlaneView({
               ones — because it is where `+` is. The editor's chrome (`REGION_CHROME`): F6 into
               the editor passes over it to the pane, as VS Code's F6 lands on the editor and not
               on its tabs. Tab still stops on it, in document order. */}
-                <ChatStrip
-                  by={by}
-                  found={found}
-                  press={press}
-                  tabs={tabs}
-                  ofWorkspace={ofWorkspace}
-                  colourOf={colourOf}
-                  tintOf={tintOf}
-                  shown={shown}
-                  notShowing={notShowing}
-                  chatTabId={chatTabId}
-                  strip={strip}
-                  chatControls={chatControls}
-                  chatLeast={chatLeast}
-                  chipWidth={chipWidth}
-                  dragSensors={dragSensors}
-                  chatDragWords={chatDragWords}
-                  dragTab={dragTab}
-                  draggingRef={dragging}
-                  draggedAtRef={draggedAt}
-                  notGoingBack={notGoingBack}
-                  isBackground={isBackground}
-                  isPinned={isPinned}
-                  isDragging={isDragging}
-                  nameBoxFor={nameBoxFor}
-                  saveName={saveName}
-                  endRename={endRename}
-                  pressTab={pressTab}
-                  referenceChats={referenceChats}
-                  wrapping={wrapping}
-                  stopping={stopping}
-                  shells={shells}
-                  personaOf={personaOf}
-                  sandboxOf={sandboxOf}
-                  taskNameOf={taskNameOf}
-                  taskTabOf={taskTabOf}
-                  tabHasTasks={tabHasTasks}
-                  showTabTasks={showTabTasks}
-                  tasksIdOf={tasksIdOf}
-                  tasksAsked={tasksAsked}
-                  chatsByTab={chatsByTab}
-                  endedByTab={endedByTab}
-                  runningOfTab={runningOfTab}
-                  chatClock={chatClock}
-                  hiddenIn={hiddenIn}
-                  waitingOn={waitingOn}
-                  showFromChip={showFromChip}
-                  taskEndsOf={taskEndsOf}
-                  pressTaskEnd={pressTaskEnd}
-                  placeFromChip={placeFromChip}
-                  usedFromChip={usedFromChip}
-                  stopAllOf={stopAllOf}
-                  activityFromChip={activityFromChip}
-                  openSkillRun={openSkillRun}
-                  freshOf={freshOf}
-                  freshMarkOf={freshMarkOf}
-                  planeUpdates={planeUpdates}
-                  handedFrom={handedFrom}
-                  workItems={workItems}
-                  restoring={restoringChats}
-                  browsersOfTab={browsersOfTab}
-                  openBrowser={openChatBrowser}
-                />
-                {/* The centre is where a chat is, so its menu is the chat verbs: a new tab, the two
+                  <ChatStrip
+                    by={by}
+                    found={found}
+                    press={press}
+                    tabs={tabs}
+                    ofWorkspace={ofWorkspace}
+                    colourOf={colourOf}
+                    tintOf={tintOf}
+                    shown={shown}
+                    notShowing={notShowing}
+                    chatTabId={chatTabId}
+                    strip={strip}
+                    chatControls={chatControls}
+                    chatLeast={chatLeast}
+                    chipWidth={chipWidth}
+                    dragSensors={dragSensors}
+                    chatDragWords={chatDragWords}
+                    dragTab={dragTab}
+                    draggingRef={dragging}
+                    draggedAtRef={draggedAt}
+                    notGoingBack={notGoingBack}
+                    isBackground={isBackground}
+                    isPinned={isPinned}
+                    isDragging={isDragging}
+                    nameBoxFor={nameBoxFor}
+                    saveName={saveName}
+                    endRename={endRename}
+                    pressTab={pressTab}
+                    referenceChats={referenceChats}
+                    wrapping={wrapping}
+                    stopping={stopping}
+                    shells={shells}
+                    personaOf={personaOf}
+                    factsOf={factsOf}
+                    sandboxOf={sandboxOf}
+                    taskNameOf={taskNameOf}
+                    taskTabOf={taskTabOf}
+                    tabHasTasks={tabHasTasks}
+                    showTabTasks={showTabTasks}
+                    tasksIdOf={tasksIdOf}
+                    tasksAsked={tasksAsked}
+                    chatsByTab={chatsByTab}
+                    naming={naming}
+                    pinsIconOnly={pinsIconOnly}
+                    narrow={narrow}
+                    endedByTab={endedByTab}
+                    runningOfTab={runningOfTab}
+                    chatClock={chatClock}
+                    hiddenIn={hiddenIn}
+                    waitingOn={waitingOn}
+                    showFromChip={showFromChip}
+                    taskEndsOf={taskEndsOf}
+                    pressTaskEnd={pressTaskEnd}
+                    placeFromChip={placeFromChip}
+                    usedFromChip={usedFromChip}
+                    stopAllOf={stopAllOf}
+                    activityFromChip={activityFromChip}
+                    openSkillRun={openSkillRun}
+                    freshOf={freshOf}
+                    freshMarkOf={freshMarkOf}
+                    planeUpdates={planeUpdates}
+                    handedFrom={handedFrom}
+                    workItems={workItems}
+                    restoring={restoringChats}
+                    browsersOfTab={browsersOfTab}
+                    openBrowser={openChatBrowser}
+                  />
+                  {/* The centre is where a chat is, so its menu is the chat verbs: a new tab, the two
                 splits, the key the palette claimed, and — under the line — ending this pane's
                 chat. `asChild` again: the panes' box is measured, and it must not gain a
                 wrapper, so the editor's column is outside it and not between it and the panes. */}
-                <Menued on={{ on: "pane" }} offers={found} onPress={press}>
-                  {/* The content panel, which the chosen tab joins (`ui/tabs`): the tab panel of
+                  <Menued on={{ on: "pane" }} offers={found} onPress={press}>
+                    {/* The content panel, which the chosen tab joins (`ui/tabs`): the tab panel of
                   the chosen tab, named by it, while it is drawn on the strip. */}
-                  <div className="panes" {...panelRoot("content")} {...tabPanelOf(panelNamedBy)}>
-                    {frontTab ? (
-                      <TaskEndContext.Provider value={taskEndHand}>
-                        <LayoutPanes
-                          plane={plane}
-                          restoring={restoringChats}
-                          // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
-                          // session that asked, while the tab is switched to it.
-                          layout={layoutShown(tabs, frontTab.id) ?? frontTab.layout}
-                          crumbs={frontCrumbs}
-                          placed={frontPlaced}
-                          away={frontAway}
-                          finished={frontFinished}
-                          explaining={chipToExplain}
-                          others={frontOthers}
-                          asked={frontAsked}
-                          asks={asksHere}
-                          waiting={waiting}
-                          onShowInbox={showInbox}
-                          onAnswer={answeredOnPane}
-                          closeOf={closeOfPane}
-                          onBack={backInPane}
-                          onShowChat={showChat}
-                          focused={frontTab.focused}
-                          onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
-                          offerFor={by}
-                          offers={found}
-                          onPaneDoes={onPaneDoes}
-                          name={frontTab.name}
-                          handedFrom={handedFrom}
-                          glances={glances}
-                          workItems={workItems}
-                          byHand={byHand}
-                          onByHand={answerByHand}
-                          startNotes={startNotes}
-                          onDismissStartNote={dismissStartNote}
-                          onRestartChat={askRestart}
-                          blocks={frontBlocks}
-                          onDismissBlock={dismissBlock}
-                          onRestarted={chatRestarted}
-                          onAllowed={oweRestart}
-                          restartsSaid={restartsSaid}
-                          onRestartAnswer={answerRestart}
-                          offered={views}
-                          onOpenView={showView}
-                          onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
-                          onVaultChanged={reloadVaults}
-                          memory={{
-                            // The views follow the disk themselves (`ViewPane`), so a memory saved
-                            // redraws the views and not this whole window (FD-10).
-                            changed: memoryEdits.changed,
-                            onSaved: memoryEdits.onSaved,
-                            onClose: closeView,
-                            showInstead: (from, to, title) => {
-                              change((tabs) => showInstead(tabs, from, to, title));
-                              // The level switcher moving Settings is a way into it (#1206).
-                              const place = placeOfView(to, plane);
-                              if (place !== undefined) enterSettings(place);
-                            },
-                          }}
-                          firstTask={firstTaskDoes}
-                          split={{
-                            of: (view) => splitOf(tabs, view),
-                            moved: (view, split) => change((tabs) => setSplit(tabs, view, split)),
-                            shared: (path, share) =>
-                              change((tabs) => withShare(tabs, frontTab.id, path, share)),
-                          }}
-                        />
-                      </TaskEndContext.Provider>
-                    ) : tabs.order.some((id) => !isBackground(id)) ? (
-                      // Chats are running — just not in the workspace being looked at. Saying
-                      // "no sessions" here would be charter telling the operator that what it is
-                      // still drawing on the strip above does not exist.
-                      <EmptyState
-                        mark={MessageSquarePlus}
-                        headline="No chats in this workspace"
-                        body="Other workspaces have some — pick one on the strip above, or start one here."
-                        action={
-                          <Doer
-                            offer={by("chat.new")}
-                            onPress={press}
-                            words="Open a chat here"
-                            primary
+                    <div className="panes" {...panelRoot("content")} {...tabPanelOf(panelNamedBy)}>
+                      {frontTab ? (
+                        <TaskEndContext.Provider value={taskEndHand}>
+                          <LayoutPanes
+                            plane={plane}
+                            restoring={restoringChats}
+                            // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
+                            // session that asked, while the tab is switched to it.
+                            layout={layoutShown(tabs, frontTab.id) ?? frontTab.layout}
+                            crumbs={frontCrumbs}
+                            placed={frontPlaced}
+                            away={frontAway}
+                            finished={frontFinished}
+                            explaining={chipToExplain}
+                            others={frontOthers}
+                            asked={frontAsked}
+                            asks={asksHere}
+                            waiting={waiting}
+                            onShowInbox={showInbox}
+                            onAnswer={answeredOnPane}
+                            closeOf={closeOfPane}
+                            onBack={backInPane}
+                            onShowChat={showChat}
+                            focused={frontTab.focused}
+                            onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
+                            offerFor={by}
+                            offers={found}
+                            onPaneDoes={onPaneDoes}
+                            name={frontTab.name}
+                            handedFrom={handedFrom}
+                            glances={glances}
+                            workItems={workItems}
+                            byHand={byHand}
+                            onByHand={answerByHand}
+                            startNotes={startNotes}
+                            onDismissStartNote={dismissStartNote}
+                            onRestartChat={askRestart}
+                            blocks={frontBlocks}
+                            onDismissBlock={dismissBlock}
+                            onRestarted={chatRestarted}
+                            onAllowed={oweRestart}
+                            restartsSaid={restartsSaid}
+                            onRestartAnswer={answerRestart}
+                            offered={views}
+                            onOpenView={showView}
+                            onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
+                            onVaultChanged={reloadVaults}
+                            memory={{
+                              // The views follow the disk themselves (`ViewPane`), so a memory saved
+                              // redraws the views and not this whole window (FD-10).
+                              changed: memoryEdits.changed,
+                              onSaved: memoryEdits.onSaved,
+                              onClose: closeView,
+                              showInstead: (from, to, title) => {
+                                change((tabs) => showInstead(tabs, from, to, title));
+                                // The level switcher moving Settings is a way into it (#1206).
+                                const place = placeOfView(to, plane);
+                                if (place !== undefined) enterSettings(place);
+                              },
+                            }}
+                            firstTask={firstTaskDoes}
+                            split={{
+                              of: (view) => splitOf(tabs, view),
+                              moved: (view, split) => change((tabs) => setSplit(tabs, view, split)),
+                              shared: (path, share) =>
+                                change((tabs) => withShare(tabs, frontTab.id, path, share)),
+                            }}
+                            runningIn={runningIn}
+                            tab={frontTab.id}
                           />
-                        }
-                        testid="empty-workspace"
-                      />
-                    ) : /* **The empty window, centred, with a way out** — the operator's own
+                        </TaskEndContext.Provider>
+                      ) : tabs.order.some((id) => !isBackground(id)) ? (
+                        // Chats are running — just not in the workspace being looked at. Saying
+                        // "no sessions" here would be charter telling the operator that what it is
+                        // still drawing on the strip above does not exist.
+                        <EmptyState
+                          mark={MessageSquarePlus}
+                          headline="No chats in this workspace"
+                          body="Other workspaces have some — pick one on the strip above, or start one here."
+                          action={
+                            <Doer
+                              offer={by("chat.new")}
+                              onPress={press}
+                              words="Open a chat here"
+                              primary
+                            />
+                          }
+                          testid="empty-workspace"
+                        />
+                      ) : /* **The empty window, centred, with a way out** — the operator's own
                      instruction: *"when opening empty workspace lets make open new tab button on
                      empty page center"*. It was one sentence in the top-left corner of a box the
                      size of the screen, and the thing to do about it was a menu item away.
@@ -10063,55 +10245,55 @@ export const PlaneView = memo(function PlaneView({
                      existing if the catalogue stops offering it. A second button with its own
                      label would be the second answer to "how do I start a chat" that
                      `actions.ts` exists to prevent. */
-                    sidebar !== undefined && sidebar.workspaces.length === 0 ? (
-                      /* **A plane with no workspace yet**: making one is the first thing to do,
+                      sidebar !== undefined && sidebar.workspaces.length === 0 ? (
+                        /* **A plane with no workspace yet**: making one is the first thing to do,
                        and it was reachable only from the palette. Both buttons are catalogue
                        rows, as the one below is; a chat here starts in the plane itself. */
-                      <EmptyState
-                        mark={FolderPlus}
-                        headline="No workspaces yet"
-                        body="A workspace holds the repos you work on and the chats about them."
-                        action={
-                          <>
-                            <Doer
-                              offer={by("workspace.create")}
-                              onPress={press}
-                              words="Create a workspace"
-                              primary
-                            />
+                        <EmptyState
+                          mark={FolderPlus}
+                          headline="No workspaces yet"
+                          body="A workspace holds the repos you work on and the chats about them."
+                          action={
+                            <>
+                              <Doer
+                                offer={by("workspace.create")}
+                                onPress={press}
+                                words="Create a workspace"
+                                primary
+                              />
+                              <Doer
+                                offer={by("chat.new")}
+                                onPress={press}
+                                words="Open a chat in the plane"
+                                primary
+                              />
+                            </>
+                          }
+                          testid="empty-plane"
+                        />
+                      ) : (
+                        <EmptyState
+                          mark={MessageSquarePlus}
+                          headline="No chats yet"
+                          body="purlis runs each chat in its own pane. Open the first one here."
+                          action={
                             <Doer
                               offer={by("chat.new")}
                               onPress={press}
-                              words="Open a chat in the plane"
+                              words="Open the first chat"
                               primary
                             />
-                          </>
-                        }
-                        testid="empty-plane"
-                      />
-                    ) : (
-                      <EmptyState
-                        mark={MessageSquarePlus}
-                        headline="No chats yet"
-                        body="purlis runs each chat in its own pane. Open the first one here."
-                        action={
-                          <Doer
-                            offer={by("chat.new")}
-                            onPress={press}
-                            words="Open the first chat"
-                            primary
-                          />
-                        }
-                        testid="empty-window"
-                      />
-                    )}
-                  </div>
-                </Menued>
-              </div>
-            }
-          />
+                          }
+                          testid="empty-window"
+                        />
+                      )}
+                    </div>
+                  </Menued>
+                </div>
+              }
+            />
 
-          {/* **charter's status line**, under everything, the terminals included. It is not
+            {/* **charter's status line**, under everything, the terminals included. It is not
           in the arrangement and `StatusLine.tsx` argues why at length: a slot is sized as a
           percentage of its group and this is one line of text, a region can be put away and
           this must not be, and the window is chrome · regions · chrome — the project
@@ -10121,505 +10303,516 @@ export const PlaneView = memo(function PlaneView({
           share, and the sidebar has already been read for the strip, so the line costs no
           command of its own — which matters here more than anywhere, because it is the one
           surface that is drawn whatever else the window is doing. */}
-          <StatusLineHere
-            sessions={quitSessions}
-            settled={settled}
-            plane={plane}
-            read={sidebar !== undefined}
-            where={focused === OUTSIDE ? OUTSIDE_TITLE : focused}
-            workspaces={sidebar?.workspaces.length}
-            workspacePanels={workspacePanels}
-            workspace={ofWorkspace}
-            doctor={doctor}
-            onOpenSettings={(group) => openSettingsAt({ group })}
-            pin={pin}
-            alerts={noticesButton}
-            // Focus mode puts the status bar away, and its card with it: the notices wait in the
-            // Notices centre (#3653).
-            notices={focusMode ? undefined : statusNotices}
-            badges={facts.badges}
-            factNotes={facts.notes}
-          />
+            <StatusLineHere
+              sessions={quitSessions}
+              settled={settled}
+              plane={plane}
+              read={sidebar !== undefined}
+              where={focused === OUTSIDE ? OUTSIDE_TITLE : focused}
+              workspaces={sidebar?.workspaces.length}
+              workspacePanels={workspacePanels}
+              workspace={ofWorkspace}
+              doctor={doctor}
+              onOpenSettings={(group) => openSettingsAt({ group })}
+              pin={pin}
+              alerts={noticesButton}
+              // Focus mode puts the status bar away, and its card with it: the notices wait in the
+              // Notices centre (#3653).
+              notices={focusMode ? undefined : statusNotices}
+              badges={facts.badges}
+              factNotes={facts.notes}
+            />
 
-          {/* Making a workspace, and deleting one. Mounted only while they are up, and drawn
+            {/* Making a workspace, and deleting one. Mounted only while they are up, and drawn
           here rather than in the window: a workspace belongs to a project. */}
-          {/* **What is asked over the window is asked only of the project in front**: a dialog is
+            {/* **What is asked over the window is asked only of the project in front**: a dialog is
           drawn over the whole window, wherever the project that opened it is. One left open in
           a project that is no longer in front is put away with it and is there again when the
           project is. */}
-          <OnlyInFront>
-            {makingWorkspace && (
-              <NewWorkspace
-                plane={plane}
-                trouble={workspaceTrouble}
-                making={busyMaking}
-                planeId={plane}
-                onCreate={(name, vision, live, repos) =>
-                  void makeWorkspace(name, vision, live, repos)
-                }
-                onCancel={() => {
-                  setMakingWorkspace(false);
-                  setWorkspaceTrouble(undefined);
-                }}
-              />
-            )}
-
-            {branching && (
-              <NewBranch
-                repo={branching.repo}
-                trouble={branchTrouble}
-                making={busyBranching}
-                onCut={(branch) => void cutBranch(branch)}
-                onCancel={() => {
-                  setBranching(undefined);
-                  setBranchTrouble(undefined);
-                }}
-              />
-            )}
-
-            {makingVault && (
-              <NewVault
-                plane={plane}
-                trouble={vaultTrouble}
-                making={busyVault}
-                onCreate={(name, provider, opVault) => void makeVault(name, provider, opVault)}
-                onMade={(done) => {
-                  // The guided set-up made it in the core (#1527): the same ending as `makeVault`.
-                  setMakingVault(false);
-                  setVaultTrouble(undefined);
-                  reloadVaults();
-                  showView(
-                    { from: null, view: "vault", key: done.contents.name },
-                    done.contents.name,
-                  );
-                }}
-                onCancel={() => {
-                  setMakingVault(false);
-                  setVaultTrouble(undefined);
-                }}
-              />
-            )}
-
-            {edits.dialogs}
-
-            {addingToChat && (
-              <AddToAChat
-                referenced={addingToChat}
-                chats={referenceChats.chats}
-                onPick={(chat) => {
-                  const [one, ...more] = addingToChat;
-                  if (more.length === 0) {
-                    if (one !== undefined) referenceChats.hand(one, chat.session, "add");
-                    return;
+            <OnlyInFront>
+              {makingWorkspace && (
+                <NewWorkspace
+                  plane={plane}
+                  trouble={workspaceTrouble}
+                  making={busyMaking}
+                  planeId={plane}
+                  onCreate={(name, vision, live, repos) =>
+                    void makeWorkspace(name, vision, live, repos)
                   }
-                  // Several rows picked in the explorer: one paste of them all (#1151).
-                  void handReferences(plane, chat.session, chat.name, addingToChat).then((ran) =>
-                    setReport(
-                      ran.ok
-                        ? { from: "reference", refused: false, words: ran.said ?? "" }
-                        : { from: "reference", refused: true, words: ran.refused },
-                    ),
-                  );
-                }}
-                onCancel={() => setAddingToChat(undefined)}
-              />
-            )}
+                  onCancel={() => {
+                    setMakingWorkspace(false);
+                    setWorkspaceTrouble(undefined);
+                  }}
+                />
+              )}
 
-            {pickingVault && (
-              <OpenVault
-                vaults={vaults.vaults ?? []}
-                offers={found}
-                onPress={press}
-                onCancel={() => setPickingVault(false)}
-              />
-            )}
+              {branching && (
+                <NewBranch
+                  repo={branching.repo}
+                  trouble={branchTrouble}
+                  making={busyBranching}
+                  onCut={(branch) => void cutBranch(branch)}
+                  onCancel={() => {
+                    setBranching(undefined);
+                    setBranchTrouble(undefined);
+                  }}
+                />
+              )}
 
-            {renamingChat && (
-              <RenameChat
-                name={renamingChat.name}
-                trouble={renamingChat.trouble}
-                renaming={renamingChat.busy}
-                onRename={(typed) => void saveChatName(typed)}
-                onCancel={() => setRenamingChat(undefined)}
-              />
-            )}
+              {makingVault && (
+                <NewVault
+                  plane={plane}
+                  trouble={vaultTrouble}
+                  making={busyVault}
+                  onCreate={(name, provider, opVault) => void makeVault(name, provider, opVault)}
+                  onMade={(done) => {
+                    // The guided set-up made it in the core (#1527): the same ending as `makeVault`.
+                    setMakingVault(false);
+                    setVaultTrouble(undefined);
+                    reloadVaults();
+                    showView(
+                      { from: null, view: "vault", key: done.contents.name },
+                      done.contents.name,
+                    );
+                  }}
+                  onCancel={() => {
+                    setMakingVault(false);
+                    setVaultTrouble(undefined);
+                  }}
+                />
+              )}
 
-            {linkingWork && (
-              <LinkWorkItem
-                chat={nameOf(linkingWork.session)}
-                linked={workItems[linkingWork.session]}
-                trouble={linkingWork.trouble}
-                linking={linkingWork.busy}
-                onLink={(key) => void saveWorkLink(linkingWork.session, key)}
-                onCancel={() => setLinkingWork(undefined)}
-              />
-            )}
+              {edits.dialogs}
 
-            {briefOf && (
-              <BriefPanel
-                // Another task's brief is another panel: it reads again, from nothing.
-                key={"chat" in briefOf ? `chat:${briefOf.chat}` : `dispatch:${briefOf.dispatch}`}
-                plane={plane}
-                of={briefOf}
-                onClose={() => setBriefOf(undefined)}
-              />
-            )}
+              {addingToChat && (
+                <AddToAChat
+                  referenced={addingToChat}
+                  chats={referenceChats.chats}
+                  onPick={(chat) => {
+                    const [one, ...more] = addingToChat;
+                    if (more.length === 0) {
+                      if (one !== undefined) referenceChats.hand(one, chat.session, "add");
+                      return;
+                    }
+                    // Several rows picked in the explorer: one paste of them all (#1151).
+                    void handReferences(plane, chat.session, chat.name, addingToChat).then((ran) =>
+                      setReport(
+                        ran.ok
+                          ? { from: "reference", refused: false, words: ran.said ?? "" }
+                          : { from: "reference", refused: true, words: ran.refused },
+                      ),
+                    );
+                  }}
+                  onCancel={() => setAddingToChat(undefined)}
+                />
+              )}
 
-            {answerOf && (
-              <AnswerPanel
-                // Another task's question is another dialog: it reads again, from nothing.
-                key={answerOf.chat}
-                plane={plane}
-                of={answerOf}
-                asking={chatsByNumber.get(answerOf.chat)?.from?.asking === true}
-                onClose={() => setAnswerOf(undefined)}
-              />
-            )}
+              {pickingVault && (
+                <OpenVault
+                  vaults={vaults.vaults ?? []}
+                  offers={found}
+                  onPress={press}
+                  onCancel={() => setPickingVault(false)}
+                />
+              )}
 
-            {askingPersona && (
-              <AskPersona
-                // A new question is a new dialog: its boxes start from its own prefill.
-                key={`${askingPersona.session}:${askingPersona.persona}`}
-                persona={askingPersona.persona}
-                chat={nameOf(askingPersona.session)}
-                // Every workspace but the one that chat works in: there, "this chat's folder" is it.
-                workspaces={(sidebar?.workspaces ?? [])
-                  .filter((ws) => !ws.chats.some((chat) => chat.session === askingPersona.session))
-                  .map((ws) => ws.name)}
-                prefill={askingPersona.prefill}
-                from={askingPersona.from}
-                trouble={askingPersona.trouble}
-                asking={askingPersona.busy}
-                folderShared={folderShared}
-                onAsk={(name, ask, place) => void sendAsk(name, ask, place)}
-                onCancel={() => setAskingPersona(undefined)}
-              />
-            )}
+              {renamingChat && (
+                <RenameChat
+                  name={renamingChat.name}
+                  trouble={renamingChat.trouble}
+                  renaming={renamingChat.busy}
+                  onRename={(typed) => void saveChatName(typed)}
+                  onCancel={() => setRenamingChat(undefined)}
+                />
+              )}
 
-            {usingSkill && (
-              <UseSkill
-                // Another chat's Use skill… is a new dialog: its filter and boxes start empty.
-                // Opened on one skill, it is drawn again once the chat's skills are read: what it
-                // starts with is decided from them (`UseSkill`'s `picks`).
-                key={
-                  usingSkill.picks === undefined
-                    ? usingSkill.session
-                    : `${usingSkill.session}\u0000${usingSkill.picks}\u0000${usingSkill.skills === undefined ? "reading" : "read"}`
-                }
-                chat={nameOf(usingSkill.session)}
-                picks={usingSkill.picks}
-                skills={usingSkill.skills}
-                trouble={usingSkill.trouble}
-                busy={usingSkill.busy}
-                onUse={(skill, values) => void sendUseSkill(skill, values)}
-                onCancel={() => setUsingSkill(undefined)}
-              />
-            )}
+              {linkingWork && (
+                <LinkWorkItem
+                  chat={nameOf(linkingWork.session)}
+                  linked={workItems[linkingWork.session]}
+                  trouble={linkingWork.trouble}
+                  linking={linkingWork.busy}
+                  onLink={(key) => void saveWorkLink(linkingWork.session, key)}
+                  onCancel={() => setLinkingWork(undefined)}
+                />
+              )}
 
-            {askingAction && (
-              <AskFirst
-                extension={askingAction.extension}
-                action={askingAction.action}
-                onRun={async () => {
-                  const outcome = await runExtensionAction(
-                    plane,
-                    askingAction.extension,
-                    askingAction.action,
-                    { view: null, key: "", row: null },
-                    ofWorkspace,
-                    true,
-                  );
-                  if ("refused" in outcome) return { refused: outcome.refused };
-                  // From the palette there is no view to say it above, so the dialog says it.
-                  if (outcome.answer.overreach !== null) return { seen: outcome.answer.overreach };
-                  setAskingAction(undefined);
-                  return undefined;
-                }}
-                onCancel={() => setAskingAction(undefined)}
-              />
-            )}
+              {briefOf && (
+                <BriefPanel
+                  // Another task's brief is another panel: it reads again, from nothing.
+                  key={"chat" in briefOf ? `chat:${briefOf.chat}` : `dispatch:${briefOf.dispatch}`}
+                  plane={plane}
+                  of={briefOf}
+                  onClose={() => setBriefOf(undefined)}
+                />
+              )}
 
-            {liveAsk !== undefined && (
-              <LiveDialog
-                plane={plane}
-                workspace={liveAsk}
-                onClose={() => setLiveAsk(undefined)}
-                onDone={(said) => {
-                  setLiveAsk(undefined);
-                  setReport({
-                    from: `workspace.live:${liveAsk}`,
-                    refused: false,
-                    words: said.join(" "),
-                  });
-                  // Read the plane again: the marks come from what is on disk, not from this press.
-                  setReplan((asked) => asked + 1);
-                }}
-              />
-            )}
+              {answerOf && (
+                <AnswerPanel
+                  // Another task's question is another dialog: it reads again, from nothing.
+                  key={answerOf.chat}
+                  plane={plane}
+                  of={answerOf}
+                  asking={standingOf(questions, answerOf.chat) !== undefined}
+                  onClose={() => setAnswerOf(undefined)}
+                />
+              )}
 
-            {membershipAsk !== undefined && (
-              <RemoveFromWorkspace
-                plane={plane}
-                workspace={membershipAsk.workspace}
-                repo={membershipAsk.repo}
-                onClose={() => setMembershipAsk(undefined)}
-                onDone={(said) => {
-                  setMembershipAsk(undefined);
-                  setReport({
-                    from: `absent.drop:${membershipAsk.repo}`,
-                    refused: false,
-                    words: said.join(" "),
-                  });
-                  // The list is what is on disk: read again, so the repo leaves "Not cloned here".
-                  rereadPanels();
-                }}
-              />
-            )}
+              {askingPersona && (
+                <AskPersona
+                  // A new question is a new dialog: its boxes start from its own prefill.
+                  key={`${askingPersona.session}:${askingPersona.persona}`}
+                  persona={askingPersona.persona}
+                  chat={nameOf(askingPersona.session)}
+                  // Every workspace but the one that chat works in: there, "this chat's folder" is it.
+                  workspaces={(sidebar?.workspaces ?? [])
+                    .filter(
+                      (ws) => !ws.chats.some((chat) => chat.session === askingPersona.session),
+                    )
+                    .map((ws) => ws.name)}
+                  prefill={askingPersona.prefill}
+                  from={askingPersona.from}
+                  trouble={askingPersona.trouble}
+                  asking={askingPersona.busy}
+                  folderShared={folderShared}
+                  onAsk={(name, ask, place) => void sendAsk(name, ask, place)}
+                  onCancel={() => setAskingPersona(undefined)}
+                />
+              )}
 
-            {addingVision && (
-              <AddVision
-                workspace={addingVision.workspace}
-                current={
-                  sidebar?.workspaces.find((ws) => ws.name === addingVision.workspace)?.vision ?? ""
-                }
-                trouble={addingVision.trouble}
-                saving={addingVision.busy}
-                onSave={(vision) => void saveVision(addingVision.workspace, vision)}
-                onCancel={() => setAddingVision(undefined)}
-              />
-            )}
+              {usingSkill && (
+                <UseSkill
+                  // Another chat's Use skill… is a new dialog: its filter and boxes start empty.
+                  // Opened on one skill, it is drawn again once the chat's skills are read: what it
+                  // starts with is decided from them (`UseSkill`'s `picks`).
+                  key={
+                    usingSkill.picks === undefined
+                      ? usingSkill.session
+                      : `${usingSkill.session}\u0000${usingSkill.picks}\u0000${usingSkill.skills === undefined ? "reading" : "read"}`
+                  }
+                  chat={nameOf(usingSkill.session)}
+                  picks={usingSkill.picks}
+                  skills={usingSkill.skills}
+                  trouble={usingSkill.trouble}
+                  busy={usingSkill.busy}
+                  onUse={(skill, values) => void sendUseSkill(skill, values)}
+                  onCancel={() => setUsingSkill(undefined)}
+                />
+              )}
 
-            {renamingWs && (
-              <RenameWorkspace
-                workspace={renamingWs.workspace}
-                startsFresh={renamingWs.startsFresh}
-                trouble={renamingWs.trouble}
-                renaming={renamingWs.busy}
-                onRename={(name) => void doRename(renamingWs.workspace, name)}
-                onCancel={() => setRenamingWs(undefined)}
-              />
-            )}
+              {askingAction && (
+                <AskFirst
+                  extension={askingAction.extension}
+                  action={askingAction.action}
+                  onRun={async () => {
+                    const outcome = await runExtensionAction(
+                      plane,
+                      askingAction.extension,
+                      askingAction.action,
+                      { view: null, key: "", row: null },
+                      ofWorkspace,
+                      true,
+                    );
+                    if ("refused" in outcome) return { refused: outcome.refused };
+                    // From the palette there is no view to say it above, so the dialog says it.
+                    if (outcome.answer.overreach !== null)
+                      return { seen: outcome.answer.overreach };
+                    setAskingAction(undefined);
+                    return undefined;
+                  }}
+                  onCancel={() => setAskingAction(undefined)}
+                />
+              )}
 
-            {/* The one question a close asks about a view's unsaved work (#3929). */}
-            {unsavedAsk && (
-              <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={() => askUnsaved(undefined)} />
-            )}
+              {liveAsk !== undefined && (
+                <LiveDialog
+                  plane={plane}
+                  workspace={liveAsk}
+                  onClose={() => setLiveAsk(undefined)}
+                  onDone={(said) => {
+                    setLiveAsk(undefined);
+                    setReport({
+                      from: `workspace.live:${liveAsk}`,
+                      refused: false,
+                      words: said.join(" "),
+                    });
+                    // Read the plane again: the marks come from what is on disk, not from this press.
+                    setReplan((asked) => asked + 1);
+                  }}
+                />
+              )}
 
-            {removing && (
-              <DeleteWorkspace
-                workspace={removing.workspace}
-                atRisk={removing.atRisk}
-                unreadable={removing.unreadable}
-                refusal={removing.refusal}
-                deleting={removing.busy}
-                onDelete={(force) => void deleteWorkspace(removing.workspace, force)}
-                onCancel={() => setRemoving(undefined)}
-              />
-            )}
+              {membershipAsk !== undefined && (
+                <RemoveFromWorkspace
+                  plane={plane}
+                  workspace={membershipAsk.workspace}
+                  repo={membershipAsk.repo}
+                  onClose={() => setMembershipAsk(undefined)}
+                  onDone={(said) => {
+                    setMembershipAsk(undefined);
+                    setReport({
+                      from: `absent.drop:${membershipAsk.repo}`,
+                      refused: false,
+                      words: said.join(" "),
+                    });
+                    // The list is what is on disk: read again, so the repo leaves "Not cloned here".
+                    rereadPanels();
+                  }}
+                />
+              )}
 
-            {/* The one question charter asks before it ends a chat, wherever the row was pressed
+              {addingVision && (
+                <AddVision
+                  workspace={addingVision.workspace}
+                  current={
+                    sidebar?.workspaces.find((ws) => ws.name === addingVision.workspace)?.vision ??
+                    ""
+                  }
+                  trouble={addingVision.trouble}
+                  saving={addingVision.busy}
+                  onSave={(vision) => void saveVision(addingVision.workspace, vision)}
+                  onCancel={() => setAddingVision(undefined)}
+                />
+              )}
+
+              {renamingWs && (
+                <RenameWorkspace
+                  workspace={renamingWs.workspace}
+                  startsFresh={renamingWs.startsFresh}
+                  trouble={renamingWs.trouble}
+                  renaming={renamingWs.busy}
+                  onRename={(name) => void doRename(renamingWs.workspace, name)}
+                  onCancel={() => setRenamingWs(undefined)}
+                />
+              )}
+
+              {/* The one question a close asks about a view's unsaved work (#3929). */}
+              {unsavedAsk && (
+                <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={() => askUnsaved(undefined)} />
+              )}
+
+              {removing && (
+                <DeleteWorkspace
+                  workspace={removing.workspace}
+                  atRisk={removing.atRisk}
+                  unreadable={removing.unreadable}
+                  refusal={removing.refusal}
+                  deleting={removing.busy}
+                  onDelete={(force) => void deleteWorkspace(removing.workspace, force)}
+                  onCancel={() => setRemoving(undefined)}
+                />
+              )}
+
+              {/* The one question charter asks before it ends a chat, wherever the row was pressed
           (the operator: *"closing session should ask confirmation"*). */}
-            {/* A finished task's Merge… or Discard branch…, asked from its row's menu (#1534). */}
-            {taskBranchActs.asking}
-            {/* NO-3's two questions: a chat's record dropped, and a chat started again. */}
-            {forgetting && (
-              <ChatAsk
-                title={`Forget ${forgetting.name}?`}
-                says={`purlis stops keeping ${forgetting.name}, and no later launch tries to start it again. This cannot be undone.`}
-                answer="Forget chat"
-                trouble={forgetting.trouble}
-                busy={forgetting.busy}
-                onAnswer={() => void forgetChat(forgetting.id, forgetting.name)}
-                onCancel={() => setForgetting(undefined)}
-                afterClose={afterForgetAsk}
-              />
-            )}
-            {startApproving && (
-              <StartApproveAsk
-                plane={plane}
-                asked={startApproving}
-                onCancel={() => setStartApproving(undefined)}
-                onApproved={() => {
-                  // The refusal it answered is put away; any other line stays.
-                  const answered = startApproving.way;
-                  setReport((was) => (was?.ways?.includes(answered) ? undefined : was));
-                  setStartApproving(undefined);
-                }}
-              />
-            )}
-            {approving && (
-              <ChatAsk
-                title={`Approve ${approving.approval.profile}?`}
-                says={`${approving.name} starts on the profile ${approving.approval.profile}. Approving records that purlis may run its command on this machine, and starts nothing: Retry now starts the chat.`}
-                answer="Approve"
-                trouble={approving.trouble}
-                busy={approving.busy}
-                onAnswer={() => void approveWaiting(approving)}
-                onCancel={() => setApproving(undefined)}
-                afterClose={afterApproveAsk}
-              >
-                {/* The picker's own sentence, line and mark (`ProfileApproval.tsx`, ruling V69). */}
-                <ApprovalSentence row={approving.approval} />
-                <ProfileMeta row={approving.approval} />
-              </ChatAsk>
-            )}
-            {stopAsk && (
-              <ChatAsk
-                title={stopTitle(stopAsk)}
-                says={stopSays(stopAsk)}
-                answer={stopAnswer(stopAsk)}
-                trouble={stopAsk.trouble}
-                busy={stopAsk.busy}
-                onAnswer={() => void stopAsked()}
-                onCancel={() => setStopAsk(undefined)}
-              />
-            )}
-            {stopAllAsk && (
-              <ChatAsk
-                title={stopAllTitle(stopAllAsk)}
-                says={stopAllSays(stopAllAsk)}
-                answer={stopAllAnswer(stopAllAsk)}
-                trouble={stopAllAsk.trouble}
-                busy={stopAllAsk.busy}
-                onAnswer={() => void stopAllAsked()}
-                onCancel={() => setStopAllAsk(undefined)}
-              />
-            )}
-            {taskEndAsk && (
-              <TaskEndAsk
-                asked={taskEndAsk}
-                onBelow={(belowToo) => setTaskEndAsk({ ...taskEndAsk, belowToo })}
-                onAnswer={(way) =>
-                  void endTaskNow(
-                    taskEndAsk.session,
-                    way,
-                    taskEndAsk.belowToo && taskEndAsk.below.length > 0,
-                    taskEndAsk,
-                  )
-                }
-                onCancel={() => setTaskEndAsk(undefined)}
-              />
-            )}
-            {freshening && (
-              <ChatAsk
-                title={`Start ${freshening.name} fresh?`}
-                says={`The project's instructions changed since it started (${freshening.files.join(", ")}). Its program ends, and it starts again on what is there now, as a new conversation.`}
-                answer="Start fresh"
-                warns={oneChatMidTurn(freshening.name, freshening.doing)}
-                trouble={freshening.trouble}
-                busy={freshening.busy}
-                onAnswer={() => void startFresh()}
-                onCancel={() => setFreshening(undefined)}
-              />
-            )}
-            {restartingTask && (
-              <ChatAsk
-                title={`Restart ${restartingTask.name}?`}
-                says="It is a task. Its program ends and starts again on the same conversation, once its turn has ended. It stays a task, and still owes its report."
-                answer="Restart it"
-                busy={false}
-                onAnswer={() => {
-                  const { session } = restartingTask;
-                  setRestartingTask(undefined);
-                  restartNow.current(session);
-                }}
-                onCancel={() => setRestartingTask(undefined)}
-              />
-            )}
-            {endingChat && (
-              <EndingChat
-                offer={endingChat.offer}
-                smart={endingChat.smart}
-                running={endingChat.running}
-                closing={endingChat.closing}
-                keeps={endingChat.keeps}
-                shows={endingChat.shows}
-                back={endingChat.back}
-                ownTabs={endingChat.ownTabs}
-                drafts={endingChat.drafts}
-                fromALink={endingChat.fromALink}
-                onEnd={(stop, keepDrafts) => {
-                  const { offer: ending, session, drafts } = endingChat;
-                  setEndingChat(undefined);
-                  void (async () => {
-                    // The drafts first: they are the chat's, and go with it.
-                    if (!(await settleDrafts(drafts, keepDrafts))) return;
-                    // Stop them: the core closes the chat too, in the one step. Keep them: the
-                    // ordinary close.
-                    if (stop && session !== undefined) void closeStopping(session, "close");
-                    else void carryOut(ending);
-                  })();
-                }}
-                onSmartClose={(stop, keepDrafts) => {
-                  const { session, drafts } = endingChat;
-                  setEndingChat(undefined);
-                  if (session === undefined) return;
-                  void (async () => {
-                    if (!(await settleDrafts(drafts, keepDrafts))) return;
-                    if (stop && !(await closeStopping(session, "smart_close"))) return;
-                    await beginSmartClose(session);
-                  })();
-                }}
-                onCancel={() => setEndingChat(undefined)}
-              />
-            )}
+              {/* A finished task's Merge… or Discard branch…, asked from its row's menu (#1534). */}
+              {taskBranchActs.asking}
+              {/* NO-3's two questions: a chat's record dropped, and a chat started again. */}
+              {forgetting && (
+                <ChatAsk
+                  title={`Forget ${forgetting.name}?`}
+                  says={`purlis stops keeping ${forgetting.name}, and no later launch tries to start it again. This cannot be undone.`}
+                  answer="Forget chat"
+                  trouble={forgetting.trouble}
+                  busy={forgetting.busy}
+                  onAnswer={() => void forgetChat(forgetting.id, forgetting.name)}
+                  onCancel={() => setForgetting(undefined)}
+                  afterClose={afterForgetAsk}
+                />
+              )}
+              {startApproving && (
+                <StartApproveAsk
+                  plane={plane}
+                  asked={startApproving}
+                  onCancel={() => setStartApproving(undefined)}
+                  onApproved={() => {
+                    // The refusal it answered is put away; any other line stays.
+                    const answered = startApproving.way;
+                    setReport((was) => (was?.ways?.includes(answered) ? undefined : was));
+                    setStartApproving(undefined);
+                  }}
+                />
+              )}
+              {approving && (
+                <ChatAsk
+                  title={`Approve ${approving.approval.profile}?`}
+                  says={`${approving.name} starts on the profile ${approving.approval.profile}. Approving records that purlis may run its command on this machine, and starts nothing: Retry now starts the chat.`}
+                  answer="Approve"
+                  trouble={approving.trouble}
+                  busy={approving.busy}
+                  onAnswer={() => void approveWaiting(approving)}
+                  onCancel={() => setApproving(undefined)}
+                  afterClose={afterApproveAsk}
+                >
+                  {/* The picker's own sentence, line and mark (`ProfileApproval.tsx`, ruling V69). */}
+                  <ApprovalSentence row={approving.approval} />
+                  <ProfileMeta row={approving.approval} />
+                </ChatAsk>
+              )}
+              {stopAsk && (
+                <ChatAsk
+                  title={stopTitle(stopAsk)}
+                  says={stopSays(stopAsk)}
+                  answer={stopAnswer(stopAsk)}
+                  trouble={stopAsk.trouble}
+                  busy={stopAsk.busy}
+                  onAnswer={() => void stopAsked()}
+                  onCancel={() => setStopAsk(undefined)}
+                />
+              )}
+              {stopAllAsk && (
+                <ChatAsk
+                  title={stopAllTitle(stopAllAsk)}
+                  says={stopAllSays(stopAllAsk)}
+                  answer={stopAllAnswer(stopAllAsk)}
+                  trouble={stopAllAsk.trouble}
+                  busy={stopAllAsk.busy}
+                  onAnswer={() => void stopAllAsked()}
+                  onCancel={() => setStopAllAsk(undefined)}
+                />
+              )}
+              {taskEndAsk && (
+                <TaskEndAsk
+                  asked={taskEndAsk}
+                  onBelow={(belowToo) => setTaskEndAsk({ ...taskEndAsk, belowToo })}
+                  onAnswer={(way) =>
+                    void endTaskNow(
+                      taskEndAsk.session,
+                      way,
+                      taskEndAsk.belowToo && taskEndAsk.below.length > 0,
+                      taskEndAsk,
+                    )
+                  }
+                  onCancel={() => setTaskEndAsk(undefined)}
+                />
+              )}
+              {freshening && (
+                <ChatAsk
+                  title={`Start ${freshening.name} fresh?`}
+                  says={`The project's instructions changed since it started (${freshening.files.join(", ")}). Its program ends, and it starts again on what is there now, as a new conversation.`}
+                  answer="Start fresh"
+                  warns={oneChatMidTurn(freshening.name, freshening.doing)}
+                  trouble={freshening.trouble}
+                  busy={freshening.busy}
+                  onAnswer={() => void startFresh()}
+                  onCancel={() => setFreshening(undefined)}
+                />
+              )}
+              {restartingTask && (
+                <ChatAsk
+                  title={`Restart ${restartingTask.name}?`}
+                  says="It is a task. Its program ends and starts again on the same conversation, once its turn has ended. It stays a task, and still owes its report."
+                  answer="Restart it"
+                  busy={false}
+                  onAnswer={() => {
+                    const { session } = restartingTask;
+                    setRestartingTask(undefined);
+                    restartNow.current(session);
+                  }}
+                  onCancel={() => setRestartingTask(undefined)}
+                />
+              )}
+              {endingChat && (
+                <EndingChat
+                  offer={endingChat.offer}
+                  smart={endingChat.smart}
+                  running={endingChat.running}
+                  closing={endingChat.closing}
+                  keeps={endingChat.keeps}
+                  shows={endingChat.shows}
+                  back={endingChat.back}
+                  ownTabs={endingChat.ownTabs}
+                  drafts={endingChat.drafts}
+                  fromALink={endingChat.fromALink}
+                  onEnd={(stop, keepDrafts) => {
+                    const { offer: ending, session, drafts } = endingChat;
+                    setEndingChat(undefined);
+                    void (async () => {
+                      // The drafts first: they are the chat's, and go with it.
+                      if (!(await settleDrafts(drafts, keepDrafts))) return;
+                      // Stop them: the core closes the chat too, in the one step. Keep them: the
+                      // ordinary close.
+                      if (stop && session !== undefined) void closeStopping(session, "close");
+                      else void carryOut(ending);
+                    })();
+                  }}
+                  onSmartClose={(stop, keepDrafts) => {
+                    const { session, drafts } = endingChat;
+                    setEndingChat(undefined);
+                    if (session === undefined) return;
+                    void (async () => {
+                      if (!(await settleDrafts(drafts, keepDrafts))) return;
+                      if (stop && !(await closeStopping(session, "smart_close"))) return;
+                      await beginSmartClose(session);
+                    })();
+                  }}
+                  onCancel={() => setEndingChat(undefined)}
+                />
+              )}
 
-            {keptOnClose.length > 0 && (
-              <KeepAsk
-                key={`${keptOnClose[0].folder} ${keptOnClose.length}`}
-                plane={plane}
-                folder={keptOnClose[0].folder}
-                workspace={keptOnClose[0].workspace}
-                keptTo={keptOnClose[0].keptTo}
-                onDone={() => setKeptOnClose((was) => was.slice(1))}
-              />
-            )}
+              {keptOnClose.length > 0 && (
+                <KeepAsk
+                  key={`${keptOnClose[0].folder} ${keptOnClose.length}`}
+                  plane={plane}
+                  folder={keptOnClose[0].folder}
+                  workspace={keptOnClose[0].workspace}
+                  keptTo={keptOnClose[0].keptTo}
+                  onDone={() => setKeptOnClose((was) => was.slice(1))}
+                />
+              )}
 
-            {picking && (
-              <StartChat
-                options={picking.options}
-                repo={pickingInRepo}
-                // Where it starts, by name (R8): the workspace in front, else the project.
-                place={ofWorkspace ?? projectName(plane)}
-                starting={starting}
-                readStage={readStage}
-                prefer={"prefer" in picking.where ? picking.where.prefer : undefined}
-                trouble={pickerTrouble}
-                // Only beside the refusal it was asked for, never beside a later one.
-                signIn={
-                  pickerSignIn !== undefined && pickerSignIn.refused === pickerTrouble
-                    ? pickerSignIn.profile
-                    : undefined
-                }
-                // The Ask to sign it in (#2035): the picker closes, and the Inbox, where it waits,
-                // comes to the front. The person starts the chat again once it is signed in.
-                onShowSignIn={() => {
-                  setPicking(undefined);
-                  setPickerTrouble(undefined);
-                  setPickerSignIn(undefined);
-                  showInbox();
-                }}
-                limitOffer={
-                  pickerLimit !== undefined && pickerLimit.refused === pickerTrouble
-                    ? pickerLimit.offer
-                    : undefined
-                }
-                limitProfile={pickerLimit?.profile}
-                onRaiseLimit={async (values) => {
-                  const pool = pickerLimit?.offer.pool;
-                  if (pool === undefined) return false;
-                  const refused = await saveLimits(pool, values);
-                  if (refused === undefined) return true;
-                  // The offer stays beside the words that replaced the refusal.
-                  setPickerTrouble(refused);
-                  setPickerLimit((was) => was && { ...was, refused });
-                  return false;
-                }}
-                onStart={(profile, persona, footer, label, newBranch, withoutSandbox) =>
-                  void startPicked(profile, persona, footer, label, newBranch, withoutSandbox)
-                }
-                onApprove={(profile, persona, footer, shown, label, newBranch, withoutSandbox) =>
-                  void approveAndStart(
+              {picking && (
+                <StartChat
+                  options={picking.options}
+                  repo={pickingInRepo}
+                  // Where it starts, by name (R8): the workspace in front, else the project.
+                  place={ofWorkspace ?? projectName(plane)}
+                  starting={starting}
+                  readStage={readStage}
+                  prefer={"prefer" in picking.where ? picking.where.prefer : undefined}
+                  trouble={pickerTrouble}
+                  // Only beside the refusal it was asked for, never beside a later one.
+                  signIn={
+                    pickerSignIn !== undefined && pickerSignIn.refused === pickerTrouble
+                      ? pickerSignIn.profile
+                      : undefined
+                  }
+                  // The Ask to sign it in (#2035): the picker closes, and the Inbox, where it waits,
+                  // comes to the front. The person starts the chat again once it is signed in.
+                  onShowSignIn={() => {
+                    setPicking(undefined);
+                    setPickerTrouble(undefined);
+                    setPickerSignIn(undefined);
+                    showInbox();
+                  }}
+                  limitOffer={
+                    pickerLimit !== undefined && pickerLimit.refused === pickerTrouble
+                      ? pickerLimit.offer
+                      : undefined
+                  }
+                  limitProfile={pickerLimit?.profile}
+                  onRaiseLimit={async (values) => {
+                    const pool = pickerLimit?.offer.pool;
+                    if (pool === undefined) return false;
+                    const refused = await saveLimits(pool, values);
+                    if (refused === undefined) return true;
+                    // The offer stays beside the words that replaced the refusal.
+                    setPickerTrouble(refused);
+                    setPickerLimit((was) => was && { ...was, refused });
+                    return false;
+                  }}
+                  onStart={(profile, persona, footer, label, newBranch, withoutSandbox, runsOn) =>
+                    void startPicked(
+                      profile,
+                      persona,
+                      footer,
+                      label,
+                      newBranch,
+                      withoutSandbox,
+                      runsOn ?? null,
+                    )
+                  }
+                  onApprove={(
                     profile,
                     persona,
                     footer,
@@ -10627,46 +10820,73 @@ export const PlaneView = memo(function PlaneView({
                     label,
                     newBranch,
                     withoutSandbox,
-                  )
-                }
-                // SD-30's install action: a shell tab at the project root with the command typed and
-                // not run. The picker closes, since the chat it was for starts after the install.
-                onInstall={
-                  root === undefined
-                    ? undefined
-                    : () => {
-                        setPicking(undefined);
-                        setPickerTrouble(undefined);
-                        openShell(root, OUTSIDE, { sandboxInstall: true });
-                      }
-                }
-                fixing={pickerFixing}
-                onFix={(id) => void fixInPicker(id)}
-                // A refused profile is mended on its page in Settings, its command focused (NO-8,
-                // #1296): the picker closes, as it does for the install, since the chat it was for
-                // starts after the mend.
-                onOpenSettings={(group, setting) => {
-                  setPicking(undefined);
-                  setPickerTrouble(undefined);
-                  openSettingsAt({ group, setting });
-                }}
-                onCancel={() => {
-                  // A start the session host has not answered stops here (#4264).
-                  if (startingNow.current) {
-                    startLeft.current = true;
-                    startRun.current += 1;
-                    startingNow.current = false;
-                    setStarting(false);
-                    void commands.cancelChatStart(plane).catch(() => undefined);
+                    runsOn,
+                  ) =>
+                    void approveAndStart(
+                      profile,
+                      persona,
+                      footer,
+                      shown,
+                      label,
+                      newBranch,
+                      withoutSandbox,
+                      runsOn ?? null,
+                    )
                   }
-                  setPicking(undefined);
-                  setPickerTrouble(undefined);
-                }}
-              />
-            )}
-          </OnlyInFront>
-        </SessionOffersLent>
-      </Lent>
+                  runsOn={picking.runsOn}
+                  // Only beside the refusal it came with, never beside a later one (#4536).
+                  poolUnavailable={
+                    pickerPoolGone !== undefined && pickerPoolGone.refused === pickerTrouble
+                      ? pickerPoolGone.pool
+                      : undefined
+                  }
+                  // Pool setup, where the pool is added or mended: the picker closes, as it does
+                  // for Settings, since the chat it was for starts after the mend.
+                  onPoolSetup={() => {
+                    setPicking(undefined);
+                    setPickerTrouble(undefined);
+                    setPickerPoolGone(undefined);
+                    showView(POOL_SETUP_VIEW, POOL_SETUP_TITLE);
+                  }}
+                  // SD-30's install action: a shell tab at the project root with the command typed and
+                  // not run. The picker closes, since the chat it was for starts after the install.
+                  onInstall={
+                    root === undefined
+                      ? undefined
+                      : () => {
+                          setPicking(undefined);
+                          setPickerTrouble(undefined);
+                          openShell(root, OUTSIDE, { sandboxInstall: true });
+                        }
+                  }
+                  fixing={pickerFixing}
+                  onFix={(id) => void fixInPicker(id)}
+                  // A refused profile is mended on its page in Settings, its command focused (NO-8,
+                  // #1296): the picker closes, as it does for the install, since the chat it was for
+                  // starts after the mend.
+                  onOpenSettings={(group, setting) => {
+                    setPicking(undefined);
+                    setPickerTrouble(undefined);
+                    openSettingsAt({ group, setting });
+                  }}
+                  onCancel={() => {
+                    // A start the session host has not answered stops here (#4264).
+                    if (startingNow.current) {
+                      startLeft.current = true;
+                      startRun.current += 1;
+                      startingNow.current = false;
+                      setStarting(false);
+                      void commands.cancelChatStart(plane).catch(() => undefined);
+                    }
+                    setPicking(undefined);
+                    setPickerTrouble(undefined);
+                  }}
+                />
+              )}
+            </OnlyInFront>
+          </SessionOffersLent>
+        </Lent>
+      </QuestionsHere.Provider>
     </ChatToUseHere.Provider>
   );
   return createPortal(
@@ -11008,7 +11228,10 @@ function alreadyShows(tabs: Tabs, session: number): boolean {
  */
 function endsAChat(does: Offer["does"]): boolean {
   if (does.verb === "endChat") return true;
-  return (does.verb === "closeTab" || does.verb === "closePane") && does.ends;
+  return (
+    (does.verb === "closeTab" || does.verb === "closePane" || does.verb === "closeOtherTabs") &&
+    does.ends
+  );
 }
 
 /**
@@ -11019,6 +11242,10 @@ function chatsEndedBy(does: Offer["does"], tabs: Tabs, askedBy: AskedBy): number
   // **A task is never one of them** (#1489): one beside its session goes on working when the
   // session's tab closes, unless the person answers that the session's tasks stop.
   if (does.verb === "endChat") return [does.session];
+  if (does.verb === "closeOtherTabs")
+    return does.closes
+      .flatMap((tab) => panesOf(tabs, tab).map((one) => one.session))
+      .filter((session) => askedBy(session) === undefined);
   if (does.verb === "closeTab")
     return panesOf(tabs, does.tab)
       .map((one) => one.session)
@@ -11069,6 +11296,33 @@ function giveViewTheKeyboard(view: ViewId): void {
   )?.focus();
 }
 
+/** What a record from before tabs were recorded says is pinned (#4762, #4935): chats by
+ *  session, view tabs by `tabs.viewKey`. */
+type PinnedBefore = { chats: ReadonlySet<number>; views: ReadonlySet<string> };
+
+/** Chat `chat`'s own pin, where only a record from before tabs were recorded still says one:
+ *  the core clears every chat's own pin once the window has told it a layout
+ *  (`Chats::lay_out`), which the launch does at once. */
+function recordedPin(chat: OpenChat): PinnedBefore {
+  return { chats: new Set(chat.pinned ? [chat.session] : []), views: new Set() };
+}
+
+/**
+ * `tabs` with the pins `before` says carried onto the tabs that open on them (#4935): each tab
+ * whose first pane is a chat or a view `before` names is pinned, read once, at the upgrade, and
+ * the tab's own pin from then on.
+ */
+function pinnedAsBefore(tabs: Tabs, before: PinnedBefore): Tabs {
+  if (before.chats.size === 0 && before.views.size === 0) return tabs;
+  return tabs.order.reduce((next, id) => {
+    const lead = contentsOf(next, id)[0]?.content;
+    const was =
+      (lead?.kind === "session" && before.chats.has(lead.session)) ||
+      (lead?.kind === "view" && before.views.has(viewKey(lead.view)));
+    return was ? setPinned(next, id, true) : next;
+  }, tabs);
+}
+
 /**
  * The view tabs, as the record keeps them: every tab whose first pane is a view.
  *
@@ -11076,7 +11330,7 @@ function giveViewTheKeyboard(view: ViewId): void {
  * split is not recorded either, and both come back as what they are: the chat as its own tab,
  * the view as nothing, to be opened again.
  */
-function viewTabsOf(tabs: Tabs, pinnedViews: readonly string[]): ViewTab[] {
+function viewTabsOf(tabs: Tabs): ViewTab[] {
   return tabs.order.flatMap((id, at) => {
     const lead = contentsOf(tabs, id)[0]?.content;
     if (lead?.kind !== "view") return [];
@@ -11091,7 +11345,7 @@ function viewTabsOf(tabs: Tabs, pinnedViews: readonly string[]): ViewTab[] {
         workspace: lead.workspace === OUTSIDE ? null : lead.workspace,
         at,
         active: tabs.inFront === id,
-        pinned: pinnedViews.includes(viewKey(lead.view)),
+        pinned: tabs.byId[id].pinned === true,
         split: splitOf(tabs, lead.view) ?? null,
       },
     ];

@@ -6,7 +6,7 @@
  * seam with the core faked at its command boundary.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
   GradeChatPage,
@@ -35,6 +35,7 @@ vi.stubGlobal("matchMedia", (query: string) => ({
 }));
 
 const CARD: GradeScorecard = {
+  draft: false,
   grade: "01GRADE",
   skill: "deploy",
   level: { at: "project", local: false },
@@ -189,6 +190,12 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
       ", this version made a difference of +25 points against its previous version fedcba987654, and the skill +75 against no skill.",
     );
     expect(differenceSaid({ ...CARD, delta: null })).toBe(".");
+    expect(differenceSaid({ ...CARD, draft: true, delta: 17, delta_without: 59 })).toBe(
+      ", the draft made a difference of +17 points against the current version, and +59 against no skill.",
+    );
+    expect(differenceSaid({ ...CARD, draft: true, delta: 59 })).toBe(
+      ", the draft made a difference of +59 points.",
+    );
   });
 
   it("shows the previous version's arm, and says a grade a saved edit started (SK-57, SK-58)", async () => {
@@ -285,12 +292,74 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
       await screen.findByRole("button", { name: "Open with the skill, chat 1, of outcome eval 4" }),
     );
     expect(told.onChat).toHaveBeenCalledWith("01E");
+    const table = screen.getByRole("grid", { name: "Outcome evals of deploy" });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((one) => one.textContent),
+    ).toEqual(["Outcome eval", "With the skill", "Without it"]);
     const judge = screen.getByRole("button", {
       name: "Open with the skill, judge 1, of outcome eval 4",
     });
     expect(judge.hasAttribute("disabled") || judge.getAttribute("aria-disabled") === "true").toBe(
       true,
     );
+  });
+
+  it("names a draft's arms in its outcome eval table as its tiles do, the draft and the current version (#4923)", async () => {
+    const run = (arm: "with" | "without" | "previous", chat: string) => ({
+      arm,
+      runs: 1,
+      points: arm === "with" ? 100 : 0,
+      results: [
+        {
+          run: 1,
+          chat: { id: chat, run: 1, kept: true },
+          judge: null,
+          passed: arm === "with" ? 1 : 0,
+          checks: [{ passed: arm === "with", evidence: `${chat} said so` }],
+          failed: arm === "with" ? null : "It never filled the form.",
+        },
+      ],
+    });
+    const card: GradeScorecard = {
+      ...CARD,
+      draft: true,
+      tests: [],
+      arms: { with: null, without: null, previous: null },
+      outcome_arms: { with: 100, without: 0, previous: 0 },
+      evals: [
+        {
+          id: "4",
+          expectations: ["It is filled"],
+          arms: [run("with", "01E"), run("without", "01F"), run("previous", "01G")],
+        },
+      ],
+    };
+    mockIPC((cmd) => (cmd === "skill_grade_scorecard" ? card : null));
+    renderCard();
+    const table = await screen.findByRole("grid", { name: "Outcome evals of deploy" });
+    const headers = within(table)
+      .getAllByRole("columnheader")
+      .map((one) => one.textContent);
+    expect(headers).toEqual(["Outcome eval", "The draft", "Without it", "Current version"]);
+    const why = screen.getAllByTestId("grade-scorecard-eval-why").map((one) => one.textContent);
+    expect(why).toEqual([
+      "Eval 4, without it, run 1: It never filled the form.",
+      "Eval 4, the current version, run 1: It never filled the form.",
+    ]);
+    const expectation = screen.getByTestId("grade-scorecard-expectation");
+    expect(expectation).toHaveTextContent(
+      "The draft: 1 of 1 passed · Without it: 0 of 1 passed · Current version: 0 of 1 passed",
+    );
+    expect(expectation).toHaveTextContent("The draft, run 1: 01E said so");
+    expect(expectation).toHaveTextContent("Current version, run 1: 01G said so");
+    expect(
+      await screen.findByRole("button", { name: "Open the draft, chat 1, of outcome eval 4" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Open the current version, chat 1, of outcome eval 4" }),
+    ).toBeTruthy();
   });
 
   it("walks an outcome eval's kept chats, and says a row too long kept no verdicts (SK-55)", () => {

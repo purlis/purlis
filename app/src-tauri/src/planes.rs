@@ -271,6 +271,9 @@ pub struct Held {
     tasks: Arc<crate::dispatched::Tasks>,
     /// The window, for each step of a smart close.
     smart: crate::smartclose::Teller,
+    /// Each chat's lane, which everything typed into a chat, its resizes and its views take in
+    /// turn (#4734, ADR 0108).
+    lanes: crate::inputlanes::Lanes,
     /// The chats the person is stopping (#1448).
     stopping: crate::stopping::Stopping,
     /// The window, for each step of a stop.
@@ -336,6 +339,9 @@ pub struct Held {
     /// is let go of.
     #[expect(dead_code, reason = "held for its drop, which stops the sweep")]
     talk_sweep: crate::activity::Daily,
+    /// What each chat's browser-site count is read from, kept until the policy or the sites
+    /// kept here change (#4739).
+    kept_sites: crate::network::KeptSites,
     /// This plane, once it is in its `Arc`: what a program's end writes the record through.
     me: Arc<std::sync::OnceLock<std::sync::Weak<Held>>>,
 }
@@ -345,6 +351,7 @@ pub struct Held {
 fn applying(
     model: Arc<Mutex<Model>>,
     root: PathBuf,
+    skills_now: Arc<crate::chats::SkillsNow>,
     tell: crate::planewatch::Changed,
 ) -> crate::planewatch::Changed {
     Arc::new(move |plane, what: crate::planewatch::What| {
@@ -352,12 +359,24 @@ fn applying(
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .apply(&root, what.as_deref());
+        // Each chat's kept skill stamp is read again where the change concerns the instructions
+        // a chat starts on, or is not known (#4738): before the window hears and asks.
+        if concerns_instructions(what.as_deref()) {
+            skills_now.forget();
+        }
         // The window is told first, and nothing is settled on this thread: where the change
         // may be the project's file, this machine's acceptances of its dispatch grants are
         // settled on a thread of their own, and the window is told again then (#1506).
         tell(plane.clone(), what.clone());
         crate::dispatchgrants::project_moved(&plane, &root, what.as_deref());
     })
+}
+
+/// Whether `changes` concern [`purlis_core::planechange::Answer::Instructions`]: a change not
+/// known concerns every answer.
+fn concerns_instructions(changes: Option<&[purlis_core::planechange::Change]>) -> bool {
+    purlis_core::planechange::answers(changes)
+        .is_none_or(|answers| answers.contains(&purlis_core::planechange::Answer::Instructions))
 }
 
 /// Starts the watch with `start`, then reads `model` again whole: it was read before the watch
@@ -454,6 +473,8 @@ impl Held {
             None | Some(crate::planewatch::Standing::Partial) => false,
             Some(crate::planewatch::Standing::WholeAgain) => {
                 model.apply(&self.root, None);
+                // A change in the gap was told to nobody: the chats' skill stamps too (#4738).
+                self.chats.skills_now().forget();
                 true
             }
             Some(crate::planewatch::Standing::Whole) => true,
@@ -593,6 +614,25 @@ impl Held {
     /// Each chat's browsers, and what the person said they may reach (#2013).
     pub fn browsers(&self) -> &crate::chatbrowsers::ChatBrowsers {
         &self.browsers
+    }
+
+    /// What each chat's browser-site count is read from (#4739): read from the policy files
+    /// once, and again only after [`Self::browser_sites_moved`].
+    pub fn browser_sites_in_force(&self) -> Arc<crate::network::SitesInForce> {
+        self.kept_sites
+            .now(|| crate::network::SitesInForce::read(&self.root))
+    }
+
+    /// This machine's policy changed, or a browser site was kept or removed for every chat
+    /// here: [`Self::browser_sites_in_force`] reads again at its next ask (#4739).
+    pub fn browser_sites_moved(&self) {
+        self.kept_sites.forget();
+    }
+
+    /// Whether [`Self::browser_sites_in_force`] holds a read.
+    #[cfg(test)]
+    pub fn browser_sites_kept(&self) -> bool {
+        self.kept_sites.holds()
     }
 
     /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
@@ -773,7 +813,92 @@ impl Held {
     /// are sent, under the lock that sends its prompt — unless the chat is asking them something
     /// mid-turn, which their keys are answering. A wheel over the pane is not typing
     /// (`smartclose::typed_by_the_operator`).
+    ///
+    /// **The bytes take their turn in the chat's lane** (#4734, ADR 0108): after what was sent
+    /// before, and waiting for the host's answer. A pane's own keys go by
+    /// [`Self::queue_operator_input`] instead, which waits on nothing.
     pub fn operator_input(&self, session: u32, bytes: &[u8]) -> Result<(), String> {
+        self.operator_typing(session, bytes);
+        self.type_in_turn(session, bytes)
+    }
+
+    /// [`Self::operator_input`] for a pane's keys, paste or mouse report (#4734, ADR 0108): what
+    /// they change in memory is changed now, on the thread that asked, and the bytes join the
+    /// back of the chat's lane, so this answers at once. A send the host refuses is told to the
+    /// window for the chat's pane, and the keys queued behind it are dropped.
+    pub fn queue_operator_input(self: &Arc<Self>, session: u32, bytes: Vec<u8>) {
+        self.operator_typing(session, &bytes);
+        let held = Arc::clone(self);
+        self.lanes.send(session, move || {
+            held.linked(session)?;
+            held.chats.sessions().input(session, &bytes)
+        });
+    }
+
+    /// A pane's new size, sent in the chat's lane: this answers at once (#4734). A size the host
+    /// refuses is logged, never said: the pane's next resize says it again. Never dropped behind
+    /// a key that was refused: the chat's program draws for the size it was last told.
+    pub fn queue_resize(self: &Arc<Self>, session: u32, size: Size) {
+        let held = Arc::clone(self);
+        self.lanes.send_always(session, move || {
+            let resized = held
+                .linked(session)
+                .and_then(|()| held.chats.resize(session, size));
+            if let Err(why) = resized {
+                tracing::info!("purlis: chat {session} was not resized: {why}");
+            }
+            Ok(())
+        });
+    }
+
+    /// A pane's view of a chat closed, in the chat's lane: this answers at once (#4734). Never
+    /// dropped behind a key that was refused, or the host keeps the view open, and fed, for good.
+    pub fn queue_unwatch(self: &Arc<Self>, session: u32, view: u32) {
+        let held = Arc::clone(self);
+        self.lanes.send_always(session, move || {
+            if let Err(why) = held.chats.sessions().unwatch(session, view) {
+                tracing::info!("purlis: chat {session}'s view {view} was not closed: {why}");
+            }
+            Ok(())
+        });
+    }
+
+    /// A view of chat `session` opened in its turn in the chat's lane, after every resize sent
+    /// before it (#891, #4734), waiting for the host's answer: never on the window's thread.
+    pub fn watch_in_turn(
+        &self,
+        session: u32,
+        sink: crate::host::Sink,
+    ) -> Result<crate::host::Watching, String> {
+        self.lanes
+            .in_turn(session, || self.chats.sessions().watch(session, sink))
+    }
+
+    /// Types `bytes` into chat `session` in its turn in the chat's lane, waiting for the host's
+    /// answer: what everything but a pane types into a chat with (#4734, ADR 0108), so it never
+    /// lands in the middle of what the pane sent before it. It waits for the lane no longer
+    /// than [`crate::inputlanes::A_TURN_WAITS_AT_MOST`], as most of it is asked on the window's
+    /// thread: past it, nothing is typed and the answer is a refusal.
+    pub fn type_in_turn(&self, session: u32, bytes: &[u8]) -> Result<(), String> {
+        self.lanes
+            .in_turn_within(session, crate::inputlanes::A_TURN_WAITS_AT_MOST, || {
+                self.chats.sessions().input(session, bytes)
+            })?
+    }
+
+    /// Whether chat `session` can be sent anything now: not while its runner is reconnecting,
+    /// which fails at once rather than holding its lane (#4734).
+    fn linked(&self, session: u32) -> Result<(), String> {
+        if self.chats.sessions().reconnecting().contains(&session) {
+            return Err(crate::inputlanes::RECONNECTING.to_owned());
+        }
+        Ok(())
+    }
+
+    /// What the person's keys change in memory, before their bytes are sent (SI-2, ADR 0064,
+    /// #1332, #1442): changed on the thread that asked, so a lane's worker takes no lock of the
+    /// app's (ADR 0108).
+    fn operator_typing(&self, session: u32, bytes: &[u8]) {
         if !crate::curation::only_the_terminal_answering(bytes) {
             self.typed.operator_sent(session);
         }
@@ -796,14 +921,19 @@ impl Held {
         // And a prompt the person sends a dispatched task is what its report says of them: that
         // they stepped in, and nothing of what they typed (#1442, #1463).
         crate::dispatched::person_typed(self, session, bytes, submitted);
-        self.chats.sessions().input(session, bytes)
     }
 
     /// Every chat this plane has open whose start-time instructions — `CLAUDE.md`, the
     /// harness settings and sub-agents, a persona's charter — have changed since it started,
-    /// by session (charter#369). Read from disk each time it is asked: the window asks when the
-    /// plane changes, and a chat started after the change read the new ones and is not here.
+    /// by session (charter#369). The instructions are read from disk each time it is asked, and
+    /// each chat's skills only once the plane's instructions change ([`crate::chats::SkillsNow`],
+    /// #4738): the window asks when the plane changes, and a chat started after the change read
+    /// the new ones and is not here.
     pub fn plane_updated(&self) -> Vec<PlaneUpdated> {
+        // Each chat's skill stamp is kept only while the watch tells every change, the sidebar
+        // model's rule (#4738); otherwise it is read from disk on each ask.
+        let whole = self.watched_model().is_some();
+        self.chats.skills_now().watched(whole);
         let now = Stamp::of(&self.root);
         // The persona each chat started as, whose charter is the one it read.
         let personas: HashMap<u32, Option<String>> = self
@@ -1709,6 +1839,11 @@ impl Held {
             .take()
     }
 
+    /// [`crate::chats::Chats::sweeps_fresh_runners`].
+    pub fn sweeps_fresh_runners(&self) {
+        self.chats.sweeps_fresh_runners();
+    }
+
     /// Tell the plane's auto-save worker something, if it has one.
     pub fn poke_autosave(&self, poke: crate::autosave::Poke) {
         if let Some(worker) = self
@@ -2165,6 +2300,8 @@ pub struct Planes {
     browser_asks_ended: crate::browserneedsyou::Teller,
     /// Told each persona MCP server a chat could not start (qw381).
     mcp_failed: crate::mcpfailed::Teller,
+    /// Told each send of a pane's that its chat was not sent (#4734).
+    input_refused: crate::inputlanes::Teller,
     /// Told each chat whose browsers ended because the person narrowed its reach (#2013).
     browsers_ended: crate::chatbrowsers::Teller,
     /// Told each project whose chats' browsers were added to or taken from (#2024).
@@ -2177,6 +2314,8 @@ pub struct Planes {
     lost_with_the_host: crate::hostlost::Teller,
     /// Told each plane's chats that start or stop reconnecting to their runner (#2496).
     reconnecting: crate::reconnecting::Teller,
+    /// Told each plane's fresh runners kept since their work is not all here (#4569).
+    fresh_kept: crate::freshkept::Teller,
     /// Told each step of a smart close in any plane (ADR 0064).
     smart: crate::smartclose::Teller,
     /// Told each step of a stop in any plane (#1448).
@@ -2446,12 +2585,14 @@ impl Planes {
             vault_refused: Arc::new(|_| {}),
             browser_asks_ended: Arc::new(|_| {}),
             mcp_failed: Arc::new(|_| {}),
+            input_refused: Arc::new(|_| {}),
             browsers_ended: Arc::new(|_| {}),
             browsers_listed: Arc::new(|_| {}),
             browser_timeline: Arc::new(|_, _| {}),
             browser_driver: None,
             lost_with_the_host: Arc::new(|_| {}),
             reconnecting: Arc::new(|_| {}),
+            fresh_kept: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
             activity: Arc::new(|_| {}),
@@ -2773,6 +2914,13 @@ impl Planes {
         self
     }
 
+    /// Tells `refused` each send of a pane's that its chat, in a plane this registry holds, was
+    /// not sent, so the window can say so on the chat's pane (#4734, ADR 0108).
+    pub fn telling_input_refused(mut self, refused: crate::inputlanes::Teller) -> Self {
+        self.input_refused = refused;
+        self
+    }
+
     /// Tells `lost` each chat whose program ended with its session host, in a plane this
     /// registry holds, so the window can say so on the chat's pane, with Resume (#2007).
     pub fn telling_lost_chats(mut self, lost: crate::hostlost::Teller) -> Self {
@@ -2784,6 +2932,13 @@ impl Planes {
     /// the runner they run on is down, so the window can say so over each one's screen (#2496).
     pub fn telling_reconnecting(mut self, reconnecting: crate::reconnecting::Teller) -> Self {
         self.reconnecting = reconnecting;
+        self
+    }
+
+    /// Tells `fresh_kept` each plane's fresh runners kept since their work is not all here, each
+    /// time they change, so the window's Notice offers Fetch again and Discard (#4569).
+    pub fn telling_fresh_kept(mut self, fresh_kept: crate::freshkept::Teller) -> Self {
+        self.fresh_kept = fresh_kept;
         self
     }
 
@@ -3265,7 +3420,10 @@ impl Planes {
                 let has_check = strong
                     .as_ref()
                     .is_some_and(|held| held.chats().has_certificate_check(block.line.chat));
-                let mut told = hooks::blocked_holding(&plane, &block, has_check);
+                let started = strong
+                    .as_ref()
+                    .and_then(|held| held.chats().started_as(block.line.chat));
+                let mut told = hooks::blocked_holding(&plane, &block, has_check, started);
                 if let Some(strong) = strong {
                     // A runner's service is said with that runner's name (#2510).
                     told = hooks::on_its_runner(
@@ -4253,7 +4411,12 @@ impl Planes {
         // Read once here, and from then on only as far as each change the watch and auto-save
         // name (FD-10b).
         let model = Arc::new(Mutex::new(Model::read(&root)));
-        let changes = applying(Arc::clone(&model), root.clone(), Arc::clone(&self.changes));
+        let changes = applying(
+            Arc::clone(&model),
+            root.clone(),
+            chats.skills_now(),
+            Arc::clone(&self.changes),
+        );
         // Before a chat can end, so its end is one the worker hears. Where the chats run: in
         // the session host, the host saves the plane, and this window starts none of its own.
         let autosave = chats.sessions().keep_saving(&root, {
@@ -4493,6 +4656,17 @@ impl Planes {
                     });
                 }));
         }
+        // A task's fresh runner kept since its work is not all here (#4569).
+        {
+            let tell = Arc::clone(&self.fresh_kept);
+            let plane = id.clone();
+            chats.tells_fresh_kept(Arc::new(move |kept| {
+                tell(crate::freshkept::FreshRunnersKept {
+                    plane: plane.clone(),
+                    kept,
+                });
+            }));
+        }
         // A pool runner's chats' skill runs, logged in this plane's skill log (SK-20b, #3084).
         {
             let me = Arc::clone(&me);
@@ -4543,6 +4717,18 @@ impl Planes {
             let plane = id.clone();
             Arc::new(move |chat| moved(plane.clone(), chat))
         };
+        // What a pane sent a chat that was refused, told to the window for its pane (#4734).
+        let lanes = crate::inputlanes::Lanes::new({
+            let told = Arc::clone(&self.input_refused);
+            let plane = id.clone();
+            Arc::new(move |session, why| {
+                told(crate::inputlanes::InputRefused {
+                    plane: plane.clone(),
+                    session,
+                    why,
+                });
+            })
+        });
         let moves = Arc::new(crate::chatmoves::Moves::default());
         moves.telling({
             let (plane, told) = (id.clone(), Arc::clone(&self.moves_told));
@@ -4564,6 +4750,7 @@ impl Planes {
             closing,
             tasks: Arc::default(),
             smart: Arc::clone(&self.smart),
+            lanes,
             stopping: crate::stopping::Stopping::default(),
             stops: Arc::clone(&self.stops),
             changes: Arc::clone(&self.changes),
@@ -4596,6 +4783,7 @@ impl Planes {
             dispatches: crate::dispatches::Waiting::default(),
             touched_files: crate::taskchanges::Touched::default(),
             talk_sweep,
+            kept_sites: crate::network::KeptSites::default(),
             me,
         }
     }

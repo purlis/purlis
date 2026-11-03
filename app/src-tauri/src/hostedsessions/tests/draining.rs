@@ -283,7 +283,7 @@ fn routed_on(window: &Arc<Connection>, root: &Path) -> crate::routedsessions::Ro
     crate::routedsessions::RoutedSessions::new(
         root,
         Box::new(HostedSessions::new(Arc::clone(window), root)),
-        Arc::new(|_| Ok(Some("builds".to_owned()))),
+        Arc::new(|_, _| Ok(Some("builds".to_owned()))),
         Arc::new(Default::default),
         Arc::new(move |name| {
             Ok(Box::new(HostedSessions::on_a_runner(
@@ -822,10 +822,9 @@ fn on_an_idle_runner(takes: Duration) -> OnAnIdleRunner {
     let projects = top.join("runner");
     std::fs::create_dir_all(&projects).unwrap();
     let mut host = a_host_slow_by(Duration::ZERO, &runtime);
-    host.inner = host
-        .inner
-        .keeping_projects_in(projects)
-        .moving_code_with(purlis_core::codelink::Moves);
+    host.inner = host.inner.keeping_projects_in(projects).moving_code_with(
+        purlis_core::codelink::Moves::in_home(top.join("runner-home")),
+    );
     *host.next_hold_takes.lock().unwrap() = Some(takes);
     let holds = Arc::clone(&host.holds);
     let code_taken = Arc::clone(&host.code_taken);
@@ -1029,4 +1028,15 @@ fn a_gone_runner_tells_only_the_chats_lost_on_it_and_only_once() {
 fn a_hosts_signal_is_never_the_windows_word_for_a_gone_runner() {
     assert_ne!(a_hosts_signal(ITS_RUNNER_WENT.to_owned()), ITS_RUNNER_WENT);
     assert_eq!(a_hosts_signal("Hangup".to_owned()), "Hangup");
+}
+
+/// **Only a short task's start is one** (#3818), and the word ends with it, on a thread the next
+/// start may share.
+#[test]
+fn a_short_tasks_start_says_so_only_while_it_runs() {
+    assert!(!is_a_short_task());
+    assert!(a_short_task(is_a_short_task));
+    assert!(!is_a_short_task());
+    let _ = std::panic::catch_unwind(|| a_short_task(|| panic!("a start that fails")));
+    assert!(!is_a_short_task());
 }

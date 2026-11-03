@@ -9,11 +9,11 @@
 //! alone (`ui::WINDOW_ONLY`): only the person adds or removes a pool, which runs a container on
 //! their machine.
 
+use purlis_core::dockerpool::Limits;
 #[cfg(unix)]
 use purlis_core::dockerpool::Missing;
-use purlis_core::dockerpool::{Image, Limits};
 #[cfg(unix)]
-use purlis_core::runners::{Pool, Set};
+use purlis_core::runners::Pool;
 #[cfg(unix)]
 use purlis_session_protocol::browsing::LinkFrames;
 
@@ -89,6 +89,24 @@ pub struct PoolAdding {
     pub width: Option<u32>,
 }
 
+impl PoolAdding {
+    /// What the core takes it as: one value for the button and for `purlis pool add` (#4481).
+    #[cfg(unix)]
+    pub fn asked(&self) -> purlis_core::poolsetup::asked::Asked {
+        purlis_core::poolsetup::asked::Asked {
+            name: self.name.clone(),
+            image: self.image.clone(),
+            cpus: self.cpus.clone(),
+            memory_mib: self.memory_mib,
+            processes: self.processes,
+            tmp_mib: self.tmp_mib,
+            suspend_after: self.suspend_after.clone(),
+            frames: self.frames,
+            width: self.width,
+        }
+    }
+}
+
 /// **The runner image a new pool is offered** (the person's ruling of 2026-10-30), by the
 /// release that names it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -146,6 +164,22 @@ pub struct PoolRemoved {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct MadeAgain {
     pub sign_ins_kept: bool,
+    /// What became of the gone runner's home (#4859).
+    pub old_home: OldHome,
+}
+
+/// **What Make the runner again did with the gone runner's home** (#4859), for the pool's row to
+/// say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum OldHome {
+    /// It held no conversation, or was gone too: it was removed.
+    Removed,
+    /// It holds its chats' conversations, so it is kept, held: Devices offers to bring them back
+    /// or discard them.
+    Held,
+    /// It could not be read, so it is kept, held, all the same.
+    Unread,
 }
 
 /// **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
@@ -164,8 +198,8 @@ pub struct PoolVersion {
     /// How many of its older runners drain: each keeps its chats until they end, then is
     /// removed.
     pub draining: u32,
-    /// How many of its older runners are held: each stopped during its drain, and stays with its
-    /// home until the person removes it.
+    /// How many of its older runners are held: each stopped with what its chats left, and stays with
+    /// its home until the person brings their conversations back or discards them.
     pub held: u32,
     /// Whether this version's release named a runner image, as purlis last found it (#2880):
     /// one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
@@ -240,77 +274,10 @@ fn after_shown(after: std::time::Duration) -> String {
         .unwrap_or_else(|| format!("{}s", after.as_secs()))
 }
 
-/// `typed`, how long a pool's runner is left without a link before it suspends (`12h`, `90m`).
-pub fn suspend_after_of(typed: &str) -> Result<std::time::Duration, String> {
-    let typed = typed.trim();
-    let after = purlis_core::spelledtime::read(typed, purlis_core::spelledtime::UP_TO_HOURS)
-        .ok_or_else(|| {
-            format!(
-                "\"{typed}\" is not a time; write a whole number followed by h, m or s, such as \
-                 12h or 90m"
-            )
-        })?;
-    purlis_core::dockerpool::suspend_after(after).map_err(|why| why.0)
-}
-
-/// `typed`, a number of CPUs to the thousandth (`2`, `0.5`, `1.25`), in thousandths.
-pub fn millicpus_of(typed: &str) -> Result<u32, String> {
-    let not = || {
-        format!(
-            "\"{typed}\" is not a number of CPUs; write one such as 2 or 1.5, to the thousandth"
-        )
-    };
-    let typed = typed.trim();
-    let (whole, part) = typed.split_once('.').unwrap_or((typed, "0"));
-    let digits = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
-    if !digits(whole) || !digits(part) || part.len() > 3 {
-        return Err(not());
-    }
-    let whole: u32 = whole.parse().map_err(|_| not())?;
-    let part: u32 = format!("{part:0<3}").parse().map_err(|_| not())?;
-    whole
-        .checked_mul(1000)
-        .and_then(|whole| whole.checked_add(part))
-        .ok_or_else(not)
-}
-
 #[cfg(unix)]
 /// The pool `adding` names, held to the core's rules.
 pub fn pool_of(adding: &PoolAdding) -> Result<Pool, String> {
-    let image = Image::pinned(adding.image.trim()).map_err(|why| why.0)?;
-    let set = Set {
-        millicpus: adding
-            .cpus
-            .as_deref()
-            .filter(|cpus| !cpus.trim().is_empty())
-            .map(millicpus_of)
-            .transpose()?,
-        memory_mib: adding.memory_mib.map(u64::from),
-        processes: adding.processes,
-        tmp_mib: adding.tmp_mib.map(u64::from),
-        suspend_after: adding
-            .suspend_after
-            .as_deref()
-            .filter(|after| !after.trim().is_empty())
-            .map(suspend_after_of)
-            .transpose()?,
-        frames: adding.frames,
-        width: adding
-            .width
-            .map(|width| {
-                u16::try_from(width).map_err(|_| {
-                    let widest = purlis_session_protocol::browsing::LinkFrames::WIDTH;
-                    format!(
-                        "a pool's widest browser frame is {} to {} pixels",
-                        widest.start(),
-                        widest.end()
-                    )
-                })
-            })
-            .transpose()?,
-        chosen: Default::default(),
-    };
-    Pool::new(adding.name.trim(), image, set).map_err(|why| why.to_string())
+    adding.asked().pool()
 }
 
 #[cfg(unix)]
@@ -393,12 +360,15 @@ pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
 /// the chats on them with them ([`links_end_once_gone`]). `elsewhere` is what the person was told
 /// before they agreed: that its runner is on an engine Docker no longer reaches, so nothing there
 /// goes. Where that is no longer so, or the other way round, nothing is done (#4325).
+/// `discarding` names the held runners whose conversations the person was asked about, and agreed
+/// to discard with the pool (#4860): a runner held now that it does not name removes nothing.
 #[tauri::command]
 #[specta::specta]
 pub async fn remove_docker_pool(
     app: tauri::AppHandle,
     name: String,
     elsewhere: bool,
+    discarding: Vec<String>,
 ) -> Result<Option<String>, String> {
     #[cfg(unix)]
     {
@@ -411,7 +381,7 @@ pub async fn remove_docker_pool(
                 let machine = Machine::here(&config)?;
                 as_the_person_was_told(&machine, &name, elsewhere)?;
                 elsewhere_only_from_your_own(&name, elsewhere, crate::poolprofiles::owned)?;
-                remove_on(&machine, &name)
+                remove_on(&machine, &name, &discarding)
             };
             if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
                 links_end_once_gone(&host.connection(), &config, &name);
@@ -422,7 +392,7 @@ pub async fn remove_docker_pool(
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, name, elsewhere);
+        let _ = (app, name, elsewhere, discarding);
         Err(NOT_HERE.to_owned())
     }
 }
@@ -486,15 +456,25 @@ fn links_end_once_gone(
 }
 
 #[cfg(unix)]
-/// [`remove_docker_pool`], on `machine`.
-pub fn remove_on(machine: &Machine, name: &str) -> Result<Option<String>, String> {
+/// [`remove_docker_pool`], on `machine`, discarding the held runners `discarding` names.
+pub fn remove_on(
+    machine: &Machine,
+    name: &str,
+    discarding: &[String],
+) -> Result<Option<String>, String> {
     // Each runner of the pool is unpaired over a link to it, a draining one too (#2749).
     let unpair = |kept: &purlis_core::runners::Kept| {
         let to = ToARunner::of_kept(machine, kept)?;
         crate::runnerlinks::unpair(&to)
     };
-    let removed = purlis_core::pools::remove(&machine.config, &machine.docker, name, Some(&unpair))
-        .map_err(|why| refused_said(&why.to_string()))?;
+    let removed = purlis_core::pools::remove_discarding(
+        &machine.config,
+        &machine.docker,
+        name,
+        Some(&unpair),
+        discarding,
+    )
+    .map_err(|why| refused_said(&why.to_string()))?;
     // The projects that ran their chats on it run them on no pool now: their marks go (#2846).
     crate::notheld::recheck(&machine.config);
     // Nothing of it waits on chats any more (#2865).
@@ -623,6 +603,11 @@ pub fn make_again_on(machine: &Machine, name: &str) -> Result<MadeAgain, String>
         .map_err(|why| refused_said(&why.to_string()))?;
     Ok(MadeAgain {
         sign_ins_kept: again.sign_ins_kept,
+        old_home: match again.old_home {
+            purlis_core::pools::OldHome::Removed => OldHome::Removed,
+            purlis_core::pools::OldHome::Held => OldHome::Held,
+            purlis_core::pools::OldHome::Unread => OldHome::Unread,
+        },
     })
 }
 
@@ -694,6 +679,87 @@ pub async fn docker_pool_remove_held_runner(
         let _ = (app, runner);
         Err(NOT_HERE.to_owned())
     }
+}
+
+/// **Brings back the held runner `runner`'s conversations to its pool's runner, as the person
+/// pressed** (#4633, ruled 2026-11-02), and then removes it, once none is left behind
+/// ([`purlis_core::pools::bring_back`]). The window's alone, as removing one is. What stopped
+/// it, or what is left of it, is said.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pool_bring_back_held_runner(
+    app: tauri::AppHandle,
+    runner: String,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("bringing back a held runner's conversations", move || {
+            let machine = Machine::here(&config_root()?)?;
+            let kept = purlis_core::runners::named(&machine.config, &runner)
+                .map_err(|why| refused_said(&why.to_string()))?
+                .ok_or_else(|| format!("No runner {runner} is on this machine."))?;
+            let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)?;
+            let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
+            let brought = purlis_core::pools::bring_back(
+                &machine.config,
+                &machine.docker,
+                &runner,
+                Some(&unpair),
+            )
+            .map_err(|why| refused_said(&why.to_string()))?;
+            let Some(removed) = brought.removed else {
+                return Err(left_behind_said(
+                    &runner,
+                    brought.found,
+                    brought.left,
+                    brought.seen,
+                ));
+            };
+            if removed.forgotten {
+                crate::poolfollow::forget_waiting_on(&machine.config, kept.pool(), &runner);
+                if let Some(host) =
+                    tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app)
+                {
+                    host.connection().links_to_gone_runners_end(&machine.config);
+                }
+            }
+            removed.left().map_or(Ok(()), Err)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, runner);
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+/// What the window says when `left` of the `found` files of the held runner `runner`'s
+/// conversations stayed where they were, `seen` of them opencode's, so it is kept (#4633).
+#[cfg(unix)]
+fn left_behind_said(runner: &str, found: u32, left: u32, seen: u32) -> String {
+    let files = |n: u32| {
+        if n == 1 {
+            "1 file".to_owned()
+        } else {
+            format!("{n} files")
+        }
+    };
+    let opencode = if seen == 0 {
+        String::new()
+    } else {
+        format!(
+            " {} of them opencode's, which stay where they are.",
+            files(seen)
+        )
+    };
+    format!(
+        "{} of {} of its chats' conversations came back. purlis keeps runner {runner} with the \
+         {} left.{opencode} Discard them to remove it.",
+        files(found.saturating_sub(left)),
+        files(found),
+        files(left),
+    )
 }
 
 /// **Which version the pool `name`'s runner runs, against this desktop's** (#2749).
@@ -802,6 +868,91 @@ pub fn version_read(read: Result<String, String>) -> (Option<String>, Option<Str
 
 #[cfg(test)]
 mod tests;
+
+/// **Which level decides where a new chat runs** (#4536), as Start chat's Runs on row says why.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RunsOnLevel {
+    /// The workspace's own setting.
+    Workspace,
+    /// The project's setting, which the workspace follows.
+    Project,
+    /// No level names a pool, or the chat starts at the project's root.
+    ThisMachine,
+}
+
+/// **Where a new chat in a workspace would run, and why** (#4536): what Start chat's Runs on row
+/// shows before the person picks anything, and every pool this machine keeps, which the row
+/// offers for this start only. `at_root` is a chat at the project's root, which runs here and is
+/// offered no pool. Nothing here is checked against the pool's runner: the start does that.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct StartRunsOn {
+    pub pool: Option<String>,
+    pub level: RunsOnLevel,
+    pub at_root: bool,
+    pub pools: Vec<String>,
+}
+
+/// [`StartRunsOn`] for a chat in `workspace` of the plane at `plane`, on `config`.
+pub fn start_runs_on_at(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    workspace: Option<&str>,
+) -> Result<StartRunsOn, String> {
+    use purlis_core::machine::PlaceLevel;
+    let pools = purlis_core::runners::pool_names(config).map_err(|why| why.to_string())?;
+    let Some(workspace) = workspace else {
+        return Ok(StartRunsOn {
+            pool: None,
+            level: RunsOnLevel::ThisMachine,
+            at_root: true,
+            pools,
+        });
+    };
+    let place = purlis_core::machine::read(config)
+        .store
+        .chat_place(plane, workspace, None);
+    let level = match place.level {
+        PlaceLevel::Workspace => RunsOnLevel::Workspace,
+        PlaceLevel::Project => RunsOnLevel::Project,
+        PlaceLevel::Start | PlaceLevel::Default => RunsOnLevel::ThisMachine,
+    };
+    Ok(StartRunsOn {
+        pool: place.pool,
+        level,
+        at_root: false,
+        pools,
+    })
+}
+
+/// **Where a new chat in `workspace` would run, and why**, for Start chat's Runs on row (#4536).
+#[tauri::command]
+#[specta::specta]
+pub async fn start_runs_on(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+) -> Result<StartRunsOn, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading where a new chat would run", move || {
+            start_runs_on_at(&config_root()?, &root, workspace.as_deref())
+        })
+        .await
+    }
+    // No pool runs here: every chat runs on this machine.
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        Ok(StartRunsOn {
+            pool: None,
+            level: RunsOnLevel::ThisMachine,
+            at_root: workspace.is_none(),
+            pools: Vec::new(),
+        })
+    }
+}
 
 /// **Where a workspace's chats run on this machine** (#2046, #4536): what the workspace itself
 /// says (`pool`, or `here` for this machine, or neither to follow the project), what the project
@@ -1137,6 +1288,29 @@ pub async fn pool_named_by(name: String) -> Result<Vec<PoolNamedBy>, String> {
     {
         crate::off_the_window("reading what names the pool", move || {
             pool_named_by_on(&config_root()?, &name)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = name;
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+/// **The runners of a pool that hold, or may hold, their chats' conversations** (#4860), by name
+/// ([`purlis_core::pools::held_of`]): each older runner kept with them, or that no look has read
+/// yet, whose conversations removing the pool discards, so its question names them and asks again.
+/// None for a cluster pool, whose runners are never held.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_held_runners(name: String) -> Result<Vec<String>, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading a pool's held runners", move || {
+            let machine = Machine::here(&config_root()?)?;
+            purlis_core::pools::held_of(&machine.config, &machine.docker, &name)
+                .map_err(|why| refused_said(&why.to_string()))
         })
         .await
     }

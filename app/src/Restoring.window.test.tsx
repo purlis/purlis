@@ -249,4 +249,15 @@ describe("what a read says has become of the restoring chats", () => {
     // And not twice: a chat a tab already shows is not drawn again.
     expect(restoredSince(was, [chat(9)], 9, () => true).arrived).toEqual([]);
   });
+
+  it("never draws a chat as restoring again from an answer older than one already read", () => {
+    // #4739: `opened_chats` answers off the window's thread, so two asks a launch makes close
+    // together can be answered out of order. Chat 4 started in the answer read first; the
+    // older one landing after it still lists 4 as restoring.
+    const after = restoredSince(was, [chat(4), restoring(5), restoring(6)], 4, shown).still;
+    const older = restoredSince(after, [restoring(4), restoring(5), restoring(6)], null, shown);
+    expect([...older.still]).toEqual([5, 6]);
+    expect(older.started).toEqual([]);
+    expect(older.gone).toEqual([]);
+  });
 });

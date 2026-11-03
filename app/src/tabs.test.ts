@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   chatNameOf,
+  otherTabsToClose,
   byLastActivity,
   closeChat,
   closeFocusedPane,
@@ -33,7 +34,6 @@ import {
   refileViews,
   followRename,
   renamedView,
-  renamedViewKey,
   contentsOf,
   renameTab,
   workspaceSettingsTitle,
@@ -601,6 +601,16 @@ describe("a pin on the strip", () => {
     expect(showWorkspace(tabs, "alpha", oneWorkspace, undefined, holding(3)).inFront).toBe(3);
   });
 
+  it("is skipped by Close other tabs, which closes the rest of the strip (#4762)", () => {
+    const tabs = fourTabs();
+
+    expect(otherTabsToClose(tabs, 2, oneWorkspace, holding(4))).toEqual([1, 3]);
+  });
+
+  it("keeps the tab Close other tabs was asked on, pinned or not", () => {
+    expect(otherTabsToClose(fourTabs(), 4, oneWorkspace, holding(4))).toEqual([1, 2, 3]);
+  });
+
   it("is what a strip with nothing pinned always did", () => {
     // Every caller that does not care about pins passes nothing, and gets the old answer.
     const tabs = fourTabs();
@@ -896,15 +906,6 @@ describe("a workspace's rename, in the keys of its views (#1248)", () => {
     expect(renamedView(firstTask, "alpha", "beta", "/home/dev/plane")).toEqual(
       charter("first-task", "/home/dev/plane/workspaces/beta/api"),
     );
-  });
-
-  it("rekeys a pinned view, and no other pin", () => {
-    expect(renamedViewKey("charter/todo/alpha/one", "alpha", "beta")).toBe("charter/todo/beta/one");
-    expect(renamedViewKey("charter/workspace-settings/alpha", "alpha", "beta")).toBe(
-      "charter/workspace-settings/beta",
-    );
-    expect(renamedViewKey("charter/persona/alpha", "alpha", "beta")).toBe("charter/persona/alpha");
-    expect(renamedViewKey("ext/acme/stats/alpha", "alpha", "beta")).toBe("ext/acme/stats/alpha");
   });
 
   it("moves an open todo and memory with it, so opening either again finds the same tab", () => {

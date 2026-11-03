@@ -1477,6 +1477,11 @@ impl Hosting {
         }
     }
 
+    /// The folder this host keeps its own projects in, where it keeps any (1.34, #2046).
+    pub(crate) fn projects_kept_in(&self) -> Option<PathBuf> {
+        self.inner.projects.get().cloned()
+    }
+
     /// The folder this host keeps `project` in: `<projects>/<project id>`, for an id that is a
     /// ULID; or why not.
     fn kept_place(&self, project: &str) -> Result<PathBuf, Refusal> {
@@ -3801,10 +3806,14 @@ impl session::Host for Hosting {
             Command::ClonesOf { project, workspace } => {
                 self.clones_of(&project, workspace, peer).await
             }
-            Command::StartProgram(start) => match start.kind {
-                ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
-                ProgramKind::Browser => self.start_browser(*start, peer).await,
-            },
+            Command::ReposHeld => self.repos_held().await,
+            Command::StartProgram(start) => {
+                self.code().program_starting();
+                match start.kind {
+                    ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
+                    ProgramKind::Browser => self.start_browser(*start, peer).await,
+                }
+            }
             Command::AttachView {
                 program,
                 kind,

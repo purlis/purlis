@@ -90,7 +90,8 @@ describe("the away summary in a narrow window (#1551)", () => {
 
   it("wraps the sentence and its link inside the band, and nothing is wider than it", async () => {
     await pressAndStart("New tab");
-    await until("running");
+    // The tab says its row's word (#4935).
+    await until("working");
 
     // The keyboard on the chat's terminal first: its line is typed after the person has left.
     const pane = await $('[data-testid="pane"]');
@@ -105,7 +106,7 @@ describe("the away summary in a narrow window (#1551)", () => {
       async () => (await (await pane.$(".xterm-rows")).getText()).includes(READY),
       { timeout: 30_000, interval: 250, timeoutMsg: "the harness never finished its output" },
     );
-    await until("waiting on you");
+    await until("needs you");
 
     // Six minutes later, the person is back.
     await browser.execute(() => {

@@ -49,7 +49,9 @@ import {
 } from "./theme/theme";
 import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
+import { writePerFrame } from "./paneWrites";
 import { useProjectShown } from "./projectShown";
+import { viewOpening } from "./slowLog";
 
 /**
  * One pane, drawing one session.
@@ -372,13 +374,18 @@ export function SessionPane({
     // text it belongs to.
     const waiting: { text: string; written?: () => void }[] = [];
     let ready = false;
+    // What arrives within a frame is one write to the terminal, not one per chunk (#4732).
+    const writes = writePerFrame((text, parsed) => pane.write(text, parsed));
     const output = new Channel<string>();
     output.onmessage = (text) => {
       if (gone) return;
       const written = bench.paneSent(pane, text);
-      if (ready) pane.write(text, written);
+      if (ready) writes.add(text, written);
       else waiting.push({ text, written });
     };
+    // Opening the view, until its screen is handed to the terminal: what the stall log says was
+    // going on (`slowLog.ts`).
+    const openingDone = viewOpening();
     // The pane's own size first: a session nobody is showing keeps whatever size it had.
     void (async () => {
       fit.fit();
@@ -386,10 +393,12 @@ export function SessionPane({
         .watchSession(plane, session, output)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       if (opened.status === "error") {
+        openingDone();
         say(opened.error);
         return;
       }
       if (gone) {
+        openingDone();
         void commands.unwatchSession(plane, session, opened.data.view);
         return;
       }
@@ -400,13 +409,15 @@ export function SessionPane({
       newline = opened.data.newline ?? undefined;
       pane.resize(opened.data.columns, opened.data.rows);
       ready = true;
-      for (const held of waiting.splice(0)) pane.write(held.text, held.written);
+      for (const held of waiting.splice(0)) writes.add(held.text, held.written);
       // Now that the screen is drawn, the pane's own size applies again.
       fit.fit();
+      openingDone();
     })();
 
     return () => {
       gone = true;
+      openingDone();
       where.removeEventListener("mousedown", pastTheProgram, true);
       undrawn();
       unfollow();
@@ -421,6 +432,7 @@ export function SessionPane({
       bytes.dispose();
       resized.dispose();
       if (view !== undefined) void commands.unwatchSession(plane, session, view);
+      writes.dispose();
       pane.dispose();
       terminal.current = undefined;
       setFinding(null);

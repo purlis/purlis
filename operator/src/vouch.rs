@@ -17,7 +17,7 @@
 
 use crate::reconcile::FIELD_MANAGER;
 use crate::resources::{
-    Claim, KEY_PUBLISHED, LinkKey, NextSigningKeyVouch, PoolStatus, condition_of,
+    Claim, KEY_PUBLISHED, LinkKey, NextSigningKeyVouch, OperatorWord, PoolStatus, condition_of,
 };
 use crate::upstream::{KEY_STEP, SandboxClaim, TERMINATION_LOG};
 use k8s_openapi::api::core::v1::{Pod, PodSpec, PodTemplateSpec};
@@ -367,9 +367,34 @@ pub fn roll_statement(cluster: &str, from: &str, to: &str, until: u64) -> Option
     ))
 }
 
-/// **What the operator says on every Pool** (#3305): its signing key, its cluster, and during a
-/// roll the next key with the current key's word for it, signed again only near its end, so a
-/// Pool's status is not written every pass.
+/// The first line of the operator's word for what it does, and its version (#4569).
+pub const CAPABILITIES_HEADER: &str = "purlis cluster operator capabilities v1";
+
+/// What this operator does that an older one does not, as its word names it (#4569).
+pub const CAPABILITIES: &[&str] = &[crate::lifecycle::FRESH_RUNNERS_STAY];
+
+/// **The operator's word for what it does** (#4569): in the cluster `cluster`, it does each of
+/// `capabilities` (each a plain name, joined by `, `), until `until`. One `name: value` line each
+/// after [`CAPABILITIES_HEADER`]. `None` where the cluster is not a uid or a name not plain.
+pub fn capabilities_statement(cluster: &str, capabilities: &[&str], until: u64) -> Option<String> {
+    let named = |name: &&str| {
+        !name.is_empty()
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    };
+    if !is_uid(cluster) || capabilities.is_empty() || !capabilities.iter().all(named) {
+        return None;
+    }
+    Some(format!(
+        "{CAPABILITIES_HEADER}\ncluster: {cluster}\ncapabilities: {}\nuntil: {until}\n",
+        capabilities.join(", ")
+    ))
+}
+
+/// **What the operator says on every Pool** (#3305): its signing key, its cluster, its word for
+/// what it does (#4569), and during a roll the next key with the current key's word for it, each
+/// word signed again only near its end, so a Pool's status is not written every pass.
 pub fn pool_status(
     keys: &SigningKeys,
     cluster: &str,
@@ -377,8 +402,33 @@ pub fn pool_status(
     now: u64,
 ) -> PoolStatus {
     let current = keys.current.public();
+    // Its word holds ten minutes, and is signed again with five left: an operator rolled back to
+    // one that does not sign it stops being taken at it within ten minutes.
+    let word = previous
+        .and_then(|held| held.capabilities_vouch.as_ref())
+        .filter(|held| {
+            until_of(&held.statement).is_some_and(|until| {
+                until > now.saturating_add(RENEW_WITHIN.as_secs())
+                    && until <= now.saturating_add(VALID_FOR.as_secs())
+                    && capabilities_statement(cluster, CAPABILITIES, until).as_deref()
+                        == Some(held.statement.as_str())
+            }) && held.signature == keys.current.sign(&held.statement)
+        })
+        .cloned()
+        .or_else(|| {
+            capabilities_statement(
+                cluster,
+                CAPABILITIES,
+                now.saturating_add(VALID_FOR.as_secs()),
+            )
+            .map(|statement| OperatorWord {
+                signature: keys.current.sign(&statement),
+                statement,
+            })
+        });
     let mut status = PoolStatus {
         signing_key: Some(current.clone()),
+        capabilities_vouch: word,
         cluster: Some(cluster.to_owned()),
         next_signing_key: None,
         next_signing_key_vouch: None,

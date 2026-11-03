@@ -37,6 +37,7 @@ fn a_named_open(chat: u32, ticket: &str, message: String, name: Option<&str>) ->
 /// that asks for one is refused (#1471). It used to ride a reporting open.
 fn a_task_into_alpha(chat: u32, ticket: &str, name: Option<&str>) -> Ask {
     Ask::Dispatch(Box::new(DispatchAsk {
+        runs_on: None,
         chat,
         to: None,
         name: name.unwrap_or("ship it").to_owned(),
@@ -1399,7 +1400,6 @@ fn a_handoff_opens_a_chat_on_the_asking_chats_profile_with_the_brief_as_its_firs
                 reported: false,
                 unreported: false,
                 outcome: None,
-                asking: None,
                 by_person: None,
                 asker_waiting: None,
             }),
@@ -2615,7 +2615,6 @@ fn the_new_chat_knows_its_parent_by_the_name_the_operator_gave_it() {
             reported: false,
             unreported: false,
             outcome: None,
-            asking: None,
             by_person: None,
             asker_waiting: None,
         })
@@ -3836,6 +3835,7 @@ fn a_chat_without_sandbox_as(held: &Held, root: &Path, persona: Option<&str>, cw
 
 fn a_dispatch(chat: u32, ticket: &str, to: Option<&str>, name: &str) -> Ask {
     Ask::Dispatch(Box::new(DispatchAsk {
+        runs_on: None,
         chat,
         to: to.map(str::to_owned),
         name: name.to_owned(),
@@ -3940,7 +3940,6 @@ fn a_task_for_the_asking_chats_own_persona_starts_one_chat_beside_it_on_the_stam
             reported: false,
             unreported: false,
             outcome: None,
-            asking: None,
             by_person: None,
             asker_waiting: None,
         })
@@ -4312,6 +4311,7 @@ fn many_dispatches_at_once_from_one_chat_start_no_more_than_its_limit() {
     let held = planes.held(&id).expect("held");
     let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
     let ask = |n: usize| Wanted {
+        runs_on: None,
         chat: asking,
         to: None,
         name: format!("task {n}"),
@@ -4733,6 +4733,7 @@ fn dispatch_in(
         tickets,
         1,
         Ask::Dispatch(Box::new(DispatchAsk {
+            runs_on: None,
             chat: asking,
             to: to.map(str::to_owned),
             name: name.to_owned(),
@@ -5886,6 +5887,7 @@ fn dispatch_with(
         &tickets,
         1,
         Ask::Dispatch(Box::new(DispatchAsk {
+            runs_on: None,
             chat: asking,
             to: to.map(str::to_owned),
             name: name.to_owned(),
@@ -6666,6 +6668,7 @@ fn the_list_holds_a_handoff_the_person_s_ask_and_the_persona_s_own_profile() {
         let ticket = ticket(&held, &id, &tickets, asking);
         let ask = if task {
             Ask::Dispatch(Box::new(DispatchAsk {
+                runs_on: None,
                 to: Some("devops".to_owned()),
                 ..match a_task_into_alpha(asking, &ticket, None) {
                     Ask::Dispatch(dispatch) => *dispatch,
@@ -8805,6 +8808,12 @@ fn a_task_chat_whose_real_program_is_killed_reports_failed_to_the_chat_that_aske
     }
     assert_eq!(left.len(), 1, "the asking chat was never told");
     assert_eq!(left[0].summary, "ended without a report");
+    // The record is marked once the report is kept and delivered, on that same thread: the
+    // file is there a moment before the mark is.
+    let failed = || held.chats().handed_from(task).map(|from| from.report) == Some(Owed::Failed);
+    while !failed() && Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     assert_eq!(
         held.chats().handed_from(task).map(|from| from.report),
         Some(Owed::Failed)
@@ -10781,8 +10790,12 @@ fn a_listed_task_says_how_it_reported_in_its_dispatch_records_word() {
         let task = a_task_of(&held, &id, steward, "check the queue");
         let working = listed_from(&held, task);
         assert_eq!(
-            (working.reported, working.outcome, working.asking),
-            (false, None, None),
+            (
+                working.reported,
+                working.outcome,
+                asks_its_asker_listed(&held, task)
+            ),
+            (false, None, false),
             "a working task has no outcome, and asks nothing"
         );
 
@@ -10859,12 +10872,12 @@ fn the_window_is_told_the_rows_changed_when_a_question_opens_is_answered_and_a_r
     asks(&held, &id, task, question("Which queue?"));
     let asked = rows_changed();
     assert!(asked > before, "a question opening is told");
-    assert_eq!(listed_from(&held, task).asking, Some(true));
+    assert!(asks_its_asker_listed(&held, task));
 
     asks(&held, &id, asking, the_answer(task, "The slow one."));
     let answered = rows_changed();
     assert!(answered > asked, "its answer is told");
-    assert_eq!(listed_from(&held, task).asking, None);
+    assert!(!asks_its_asker_listed(&held, task));
 
     tasks_report(
         &held,
@@ -10879,6 +10892,15 @@ fn the_window_is_told_the_rows_changed_when_a_question_opens_is_answered_and_a_r
     assert_eq!(listed_from(&held, task).outcome.as_deref(), Some("done"));
 }
 
+/// Whether the asks registry lists task `task`'s question as with its asking chat (#4564):
+/// what its row says, read where the window reads it.
+fn asks_its_asker_listed(held: &Held, task: u32) -> bool {
+    crate::asking::every_ask(held)
+        .with_asking_chat
+        .iter()
+        .any(|one| one.session == task)
+}
+
 #[test]
 fn a_listed_task_says_it_is_asking_while_its_question_is_open_and_not_after() {
     let plane = a_plane_with_personas();
@@ -10888,7 +10910,7 @@ fn a_listed_task_says_it_is_asking_while_its_question_is_open_and_not_after() {
     let task = a_task_of(&held, &id, asking, "check the queue");
 
     asks(&held, &id, task, question("Which queue?"));
-    assert_eq!(listed_from(&held, task).asking, Some(true));
+    assert!(asks_its_asker_listed(&held, task));
 
     asks(
         &held,
@@ -10899,7 +10921,7 @@ fn a_listed_task_says_it_is_asking_while_its_question_is_open_and_not_after() {
             text: "The slow one.".to_owned(),
         },
     );
-    assert_eq!(listed_from(&held, task).asking, None);
+    assert!(!asks_its_asker_listed(&held, task));
 }
 
 #[test]
@@ -12011,6 +12033,9 @@ mod task_questions;
 /// A task's question on its route from a pool's runner (#4560).
 mod task_questions_on_runners;
 
+/// A message a chat on a pool's runner queued there, carried by the runner's host (#4804).
+mod carried_from_runners;
+
 /// A task started fresh is handed its brief again, or not started at all (#1609).
 mod started_fresh;
 
@@ -12273,6 +12298,7 @@ fn many_dispatches_at_once_under_one_name_start_one_task() {
     let held = planes.held(&id).expect("held");
     let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
     let ask = Wanted {
+        runs_on: None,
         chat: asking,
         to: None,
         name: "check prod".to_owned(),
@@ -12424,3 +12450,90 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
 
 /// A chat's open or dispatch heard from a pool waits for the person's Approve.
 mod heard_from_a_pool;
+
+/// **A dispatch that names where the levels already put it starts at once, and follows them**
+/// (#4536): `--this-machine` in a workspace that runs here asks nobody, and the chat keeps no
+/// choice of its own, so a later change of the levels holds for it. A word purlis can't read is
+/// refused, and nothing is started where the levels say instead.
+#[test]
+fn a_dispatch_naming_where_the_levels_put_it_follows_them_and_a_word_purlis_cannot_read_starts_nothing()
+ {
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+    let dispatched = |runs_on: &str| {
+        let ticket = ticket(&held, &id, &tickets, asking);
+        let Ask::Dispatch(mut ask) = a_task_into_alpha(asking, &ticket, Some("lint")) else {
+            unreachable!("a dispatch");
+        };
+        ask.runs_on = Some(runs_on.to_owned());
+        answer(&held, &id, &tickets, 1, Ask::Dispatch(ask), &|_| {})
+    };
+
+    let Answer::Dispatched { chat, .. } = dispatched("this-machine") else {
+        panic!("dispatched");
+    };
+    let record = held.chats().record();
+    let started = record
+        .chats
+        .iter()
+        .find(|one| one.number == Some(chat))
+        .expect("the task's chat is recorded");
+    assert_eq!(started.runs_on, None, "it follows the levels");
+
+    let before = held.chats().record().chats.len();
+    let refused = dispatched("pool:../elsewhere");
+    assert!(
+        matches!(&refused, Answer::No { why } if why.contains("where this task was to run")),
+        "{refused:?}"
+    );
+    assert_eq!(held.chats().record().chats.len(), before, "nothing started");
+}
+
+/// **A chat's dispatch that moves work waits for the person's Approve** (#4536, the person's
+/// ruling of 2026-11-02): one to no persona, which no grant asks about, that names a pool its
+/// workspace doesn't run on, starts nothing and is held for the person, saying where it would run.
+#[test]
+fn a_chats_dispatch_that_names_another_place_than_its_workspaces_waits_for_the_person() {
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+    let ticket = ticket(&held, &id, &tickets, asking);
+    let Ask::Dispatch(mut ask) = a_task_into_alpha(asking, &ticket, Some("lint")) else {
+        unreachable!("a dispatch");
+    };
+    ask.runs_on = Some("pool:builds".to_owned());
+    let before = held.chats().record().chats.len();
+
+    let answered = answer(&held, &id, &tickets, 1, Ask::Dispatch(ask), &|_| {});
+
+    assert_eq!(
+        answered,
+        Answer::HeldToMove {
+            to: "a chat".to_owned(),
+            runs_on: "pool:builds".to_owned(),
+        }
+    );
+    assert_eq!(held.chats().record().chats.len(), before, "nothing started");
+    let waiting = held.runner_dispatches().every();
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(
+        waiting[0].pool, None,
+        "held for the move, not for a pool's chat"
+    );
+    let whole = crate::runnerdispatches::whole_of(&held, &waiting[0]).expect("drawn");
+    assert_eq!(whole.runs_on, "Pool builds, as the chat asks");
+    assert!(
+        waiting[0].said().contains("on pool builds"),
+        "{}",
+        waiting[0].said()
+    );
+}

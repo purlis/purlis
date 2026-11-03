@@ -9,6 +9,7 @@ import {
   inForceSettled,
   PARTS_ASKED_AGAIN_AFTER,
   partsLand,
+  STAND_IN_WAITS_FOR_AN_ANSWER,
   STAND_IN_WAITS_FOR_AN_ASK,
 } from "./partsLater";
 import { DEFAULT_THEME, drawIn, inForce } from "./theme";
@@ -172,10 +173,40 @@ describe("a frame standing in for an extension's theme lands its parts only if n
 
     await partsLand(frame);
     inForceAsked();
-    await vi.advanceTimersByTimeAsync(STAND_IN_WAITS_FOR_AN_ASK * 2);
+    await vi.advanceTimersByTimeAsync(STAND_IN_WAITS_FOR_AN_ANSWER - 1);
 
     expect(asked).toEqual([]);
     expect(inForce()).toBe(frame.theme);
+  });
+
+  it("lands them when the ask it waits on never settles (#4822)", async () => {
+    const frame = aFrame(7, true);
+    drawIn(frame.theme);
+    const asked = theCoreAnswers(PARTS);
+
+    await partsLand(frame);
+    await vi.advanceTimersByTimeAsync(STAND_IN_WAITS_FOR_AN_ASK - 1);
+    inForceAsked();
+    await vi.advanceTimersByTimeAsync(STAND_IN_WAITS_FOR_AN_ANSWER - 1);
+    expect(asked).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(asked).toEqual([7]);
+    expect(inForce().parts).toBe(PARTS);
+  });
+
+  it("waits on the first ask's bound, not one more for each ask after it (#4822)", async () => {
+    const frame = aFrame(7, true);
+    drawIn(frame.theme);
+    const asked = theCoreAnswers(PARTS);
+
+    await partsLand(frame);
+    inForceAsked();
+    await vi.advanceTimersByTimeAsync(STAND_IN_WAITS_FOR_AN_ANSWER - 1);
+    inForceAsked();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(asked).toEqual([7]);
   });
 
   it("lands them when that ask settles with the frame still drawn: an answer that failed", async () => {

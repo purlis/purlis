@@ -94,6 +94,7 @@ export function WorkspaceRemovalNotice({
             at="pane"
             tone={said === undefined ? "news" : "trouble"}
             label="Remove workspace"
+            waits
             fixes={[first, ...rest]}
           >
             {offScreen ? "It asks" : "This chat asks"} you to remove workspace{" "}

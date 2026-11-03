@@ -15,6 +15,7 @@ import { SandboxBlockNotice } from "./SandboxBlockNotice";
 import { PolicyRequiresNotice } from "./SandboxChanged";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { McpFailedNotice } from "./McpFailedNotice";
+import { InputRefusedNotice } from "./InputRefusedNotice";
 import { SkillsMissingNotice } from "./SkillsMissingNotice";
 import { DraftReadyNotice } from "./DraftReadyNotice";
 import { HostLostNotice } from "./HostLostNotice";
@@ -29,7 +30,7 @@ import { ProposedChangeNotice } from "./ProposedChangeNotice";
 import { asksOf, isAnAsk, noticeKey } from "./sandboxBlocks";
 import { TaskPromptNotice } from "./TaskPromptNotice";
 import { SkillsChangedNotice } from "./SkillsChangedNotice";
-import { offItsPane, onItsPane } from "./inboxRules";
+import { onItsPane } from "./inboxRules";
 import type { Shown } from "./bindings";
 import { type HandedFrom } from "./handedFrom";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
@@ -275,18 +276,6 @@ export function StartNotice({
 }
 
 /**
- * **What a pane says of its chat's asks it has no room for** (#1695, spec #1688): the cap of
- * two keeps the rest off it, and each waits in the Inbox, which lists them all. Said for a chat
- * off screen as "its", since its Notice says whose it is first (`NoticeOf`).
- */
-export function askedInTheInbox(count: number, offScreen: boolean): string {
-  const whose = offScreen ? "its" : "this chat's";
-  return count === 1
-    ? `One more of ${whose} asks waits in the Inbox.`
-    : `${count} more of ${whose} asks wait in the Inbox.`;
-}
-
-/**
  * **What purlis has to say of one chat, on a pane** (#1481).
  *
  * **The order is who is waiting on whom**: first the Notice that waits for the person's answer
@@ -341,7 +330,7 @@ export function ChatNotices({
   asks: readonly Shown[];
   /** This project's asks, as the registry derived them last; nothing before the first read. */
   waiting?: readonly Shown[];
-  /** Opens this project's Inbox, where the asks this pane has no room for wait. */
+  /** Opens this project's Inbox (a vault's refusal names it). */
   onShowInbox?: () => void;
   /** An answer was pressed on one of this chat's Notices: its words, and the ask it answered. */
   onAnswer?: (words: string, ask: Shown) => void;
@@ -352,8 +341,8 @@ export function ChatNotices({
   );
   /**
    * **The chat's asks its pane draws, from the registry** (#1695, spec #1688): the Inbox's own
-   * list, so an answer in either place clears both, and at most two of them, the longest
-   * waiting first. A permission is drawn only for a chat off screen (`TaskPromptNotice`); on
+   * list, so an answer in either place clears both, every one of them, the longest waiting
+   * first (#4754). A permission is drawn only for a chat off screen (`TaskPromptNotice`); on
    * screen its prompt is in the pane itself, so it takes no place here.
    */
   const offScreen = useContext(NoticeOf) !== null;
@@ -365,8 +354,6 @@ export function ChatNotices({
     [offScreen, waiting],
   );
   const drawn = useMemo(() => onItsPane(paneAsks, session), [paneAsks, session]);
-  /** The chat's asks the cap keeps off this pane: each waits in the Inbox, and the pane says so. */
-  const off = offItsPane(paneAsks, session);
   /** The blocks an Allow on this pane answered: what that Allow said stands, though the
    *  registry lists the block no more. */
   const [answeredHere, setAnsweredHere] = useState<ReadonlySet<string>>(() => new Set());
@@ -440,22 +427,14 @@ export function ChatNotices({
         onShowInbox={onShowInbox}
       />
       <McpFailedNotice plane={plane} session={session} onRestart={onRestart} />
+      {/* What its pane sent that did not reach it (#4734). */}
+      <InputRefusedNotice plane={plane} session={session} />
       {/* A skill its persona names that it started without (#2768). */}
       <SkillsMissingNotice plane={plane} session={session} />
       <HostLostNotice plane={plane} session={session} onRestart={onRestart} />
       {/* Its move to or from a pool's runner (#2048). */}
       <MoveNotice plane={plane} session={session} />
       <TaskQuietNotice plane={plane} session={session} />
-      {off > 0 && onShowInbox !== undefined && (
-        <Notice
-          cause={`asks-in-inbox:${session}`}
-          at="pane"
-          label="More asks"
-          link={{ label: off === 1 ? "Show it" : "Show them", onPress: onShowInbox }}
-        >
-          {askedInTheInbox(off, offScreen)}
-        </Notice>
-      )}
       {restartSaid?.trouble !== undefined && (
         <Notice
           cause={`restart:${session}`}

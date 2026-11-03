@@ -118,6 +118,22 @@ pub trait Code: Send + Sync + 'static {
         Err(moves_no_chat())
     }
 
+    /// **A program is about to start on this host** (#4781): told before each, so what a task
+    /// leaves outside its project since the first is known as its own. A binary that moves no
+    /// chat hears nothing.
+    fn program_starting(&self) {}
+
+    /// **Every repository in the projects this host keeps in `projects`** (1.69, #4569): each
+    /// one's project, path, refs and the files of its work tree no commit has, and what
+    /// could not be looked through. A binary that moves no chat refuses it.
+    fn repos_held(
+        &self,
+        projects: &Path,
+    ) -> Result<(Vec<session::RepoHeld>, Vec<String>), Refusal> {
+        let _ = projects;
+        Err(moves_no_chat())
+    }
+
     /// **Where each of `repos`, clones in `workspace`, came from** (1.54, #3985): the `origin`
     /// URL of each one's own configuration, by its folder name, only where it is a forge's
     /// address with no sign-in in it. None from a binary that moves no chat.
@@ -347,6 +363,20 @@ impl Hosting {
         })
         .await?;
         Ok(Answer::Clones { repos, origins })
+    }
+
+    /// **Every repository in the projects the host keeps** (1.69, #4569): no stream, only what
+    /// the binary reads. A host that keeps no projects of its own holds none.
+    pub(crate) async fn repos_held(&self) -> Result<Answer, Refusal> {
+        let Some(projects) = self.projects_kept_in() else {
+            return Ok(Answer::ReposHeld {
+                repos: Vec::new(),
+                unread: Vec::new(),
+            });
+        };
+        let code = self.code();
+        let (repos, unread) = blocking(move || code.repos_held(&projects)).await?;
+        Ok(Answer::ReposHeld { repos, unread })
     }
 
     /// Where a transfer's bundle is kept while it moves: beside the projects the host keeps, so

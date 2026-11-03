@@ -54,6 +54,20 @@ fn the_remedy_asks_who_holds_it_before_it_offers_the_rm() {
 }
 
 #[test]
+fn the_remedys_rm_quotes_a_path_with_a_space_and_a_quote_for_the_shell() {
+    let awkward = IndexLock {
+        path: PathBuf::from("/it's a clone/.git/index.lock"),
+        size: 0,
+        age: STALE_AFTER,
+    };
+    let [_, second] = awkward.remedy();
+    assert!(
+        second.contains("rm -f '/it'\"'\"'s a clone/.git/index.lock'   ("),
+        "{second}"
+    );
+}
+
+#[test]
 fn a_real_lock_is_found_with_its_size_and_a_directory_without_one_is_not() {
     let dir = tempfile::tempdir().unwrap();
     let git_dir = dir.path().join(".git");

@@ -8,8 +8,10 @@ import {
   type ClusterPoolAdding,
   type ClusterPoolKey,
   type LimitRefused,
+  type OldHome,
   type PlaneId,
   type RunnerStage,
+  type RunsOnPick,
   type PoolAdding,
   type PoolLink,
   type PoolLimitRow,
@@ -210,8 +212,9 @@ export async function addPool(adding: PoolAdding): Promise<string | undefined> {
 export async function readRunnerStage(
   plane: PlaneId,
   workspace: string | undefined,
+  runsOn: RunsOnPick | null = null,
 ): Promise<RunnerStage | undefined> {
-  const said = await caught(commands.runnerStage(plane, workspace ?? null));
+  const said = await caught(commands.runnerStage(plane, workspace ?? null, runsOn));
   return said.status === "ok" && said.data !== null ? said.data : undefined;
 }
 
@@ -303,11 +306,20 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
 }
 
 /**
- * **Removes the held runner `runner`**, a draining one that stopped during its drain, and what its
- * chats left with it. Why not, in the core's words.
+ * **Removes the held runner `runner`**, and what its chats left with it, once the person discarded
+ * them. Why not, in the core's words.
  */
 export async function removeHeldRunner(runner: string): Promise<string | undefined> {
   const said = await caught(commands.dockerPoolRemoveHeldRunner(runner));
+  return said.status === "error" ? said.error : undefined;
+}
+
+/**
+ * **Brings back the held runner `runner`'s conversations to its pool's runner** (#4633), and then
+ * removes it, once none is left behind. Why not, or what is left, in the core's words.
+ */
+export async function bringBackHeldRunner(runner: string): Promise<string | undefined> {
+  const said = await caught(commands.dockerPoolBringBackHeldRunner(runner));
   return said.status === "error" ? said.error : undefined;
 }
 
@@ -471,12 +483,18 @@ export async function askVersion(name: string) {
 /** Removes pool `name`, its runner, its container and its home; answers what could not be
  *  removed, or why nothing was, in purlis's or Docker's words already shown safely. `elsewhere`
  *  is what the person was told: that its runner is on an engine Docker no longer reaches, so nothing
- *  there goes. Where that no longer holds, or the other way round, nothing is done (#4325). */
-export async function removePool(name: string, elsewhere = false): Promise<string | undefined> {
+ *  there goes. Where that no longer holds, or the other way round, nothing is done (#4325).
+ *  `discarding` names the held runners the person agreed to discard with it (#4860): a runner held
+ *  now that it does not name removes nothing. */
+export async function removePool(
+  name: string,
+  elsewhere = false,
+  discarding: readonly string[] = [],
+): Promise<string | undefined> {
   if (held.removing !== undefined)
     return `purlis is removing pool ${held.removing}: remove ${name} once it is gone.`;
   set((was) => ({ ...was, removing: name, said: undefined }));
-  const said = await caught(commands.removeDockerPool(name, elsewhere));
+  const said = await caught(commands.removeDockerPool(name, elsewhere, [...discarding]));
   const left = said.status === "error" ? said.error : (said.data ?? undefined);
   set((was) => {
     const links = { ...was.links };
@@ -532,6 +550,39 @@ export function useNamedBy(name: string): NamedBy {
   return read?.name === name ? read.said : { state: "reading" };
 }
 
+/** **A pool's held runners** (#4860): the older runners kept with their chats' conversations,
+ *  which removing the pool discards, while purlis reads them, or why it could not. */
+export type HeldRunners =
+  | { state: "reading" }
+  | { state: "read"; held: readonly string[] }
+  | { state: "trouble"; why: string };
+
+/** Reads pool `name`'s held runners, once for each name asked about; a cluster pool has none. */
+export function useHeldRunners(name: string, cluster: boolean): HeldRunners {
+  const [read, setRead] = useState<{ name: string; said: HeldRunners }>();
+  useEffect(() => {
+    if (cluster) return;
+    let gone = false;
+    void caught(commands.poolHeldRunners(name)).then((said) => {
+      if (gone) return;
+      setRead({
+        name,
+        said:
+          said.status === "error"
+            ? { state: "trouble", why: said.error }
+            : Array.isArray(said.data)
+              ? { state: "read", held: said.data }
+              : { state: "trouble", why: "purlis did not say which runners it holds." },
+      });
+    });
+    return () => {
+      gone = true;
+    };
+  }, [name, cluster]);
+  if (cluster) return { state: "read", held: [] };
+  return read?.name === name ? read.said : { state: "reading" };
+}
+
 /** **The Docker pools whose runner was removed outside purlis** (#4149): what a refused start's
  *  Notice offers to make again. None where purlis could not ask. */
 export async function readRemovedPools(): Promise<readonly PoolRemoved[]> {
@@ -552,11 +603,26 @@ export function anotherEngineSaid(name: string): string {
   return `Docker points at another engine than the one pool ${name}'s runner was made on. Point Docker back at that engine and its chats come back. If that engine is gone for good, remove the pool and add it again; anything still on that engine stays there.`;
 }
 
-/** What a row says once its runner was made again, by whether its sign-ins were carried. */
-export function madeAgainSaid(name: string, signInsKept: boolean): string {
-  return signInsKept
+/**
+ * What a row says once its runner was made again, by whether its sign-ins were carried and what
+ * became of the old runner's home (#4859).
+ */
+export function madeAgainSaid(
+  name: string,
+  signInsKept: boolean,
+  oldHome: OldHome = "removed",
+): string {
+  const made = signInsKept
     ? `Pool ${name}'s runner was made again, with its sign-ins.`
     : `Pool ${name}'s runner was made again: sign its profiles in again there.`;
+  switch (oldHome) {
+    case "held":
+      return `${made} The old runner's home still holds its chats' conversations, so purlis kept it. Bring them back to the new runner or discard them in Devices.`;
+    case "unread":
+      return `${made} purlis could not read the old runner's home, so it kept it in case it holds conversations. Bring back or discard what it holds in Devices.`;
+    case "removed":
+      return made;
+  }
 }
 
 /**
@@ -574,7 +640,8 @@ export async function makeRunnerAgain(name: string, plane?: string): Promise<str
   const why = said.status === "error" ? said.error : undefined;
   set((was) => {
     const remade = { ...was.remade };
-    if (said.status === "ok") remade[name] = madeAgainSaid(name, said.data.sign_ins_kept);
+    if (said.status === "ok")
+      remade[name] = madeAgainSaid(name, said.data.sign_ins_kept, said.data.old_home);
     else Reflect.deleteProperty(remade, name);
     return { ...was, remaking: undefined, remade };
   });

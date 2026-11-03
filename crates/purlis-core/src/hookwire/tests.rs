@@ -746,6 +746,7 @@ fn a_dispatch(chat: u32) -> Ask {
         place: None,
         ticket: "t".repeat(64),
         long: false,
+        runs_on: None,
     }))
 }
 
@@ -802,6 +803,7 @@ fn a_dispatch_has_no_field_that_says_who_asks_but_the_chats_number() {
             place: None,
             ticket: "t".to_owned(),
             long: false,
+            runs_on: None,
         }
     );
 }
@@ -830,12 +832,38 @@ fn a_dispatch_says_where_in_one_word_and_has_no_field_for_a_folder_or_a_branch()
             place: Some("worktree".to_owned()),
             ticket: "t".to_owned(),
             long: false,
+            runs_on: None,
         }
     );
     // And it is written back as that one word.
     let written = serde_json::to_value(Ask::Dispatch(read)).expect("json");
     assert_eq!(written["dispatch"]["in"], "worktree");
     assert_eq!(written["dispatch"].get("place"), None);
+}
+
+#[test]
+fn a_dispatch_says_where_it_runs_in_one_word_and_a_line_without_it_follows_the_levels() {
+    // #4536: `runs_on` is a pool or this machine, in the reopen record's own word, and the line
+    // names nothing more of a runner: no link, no address, no key.
+    let forged = concat!(
+        r#"{"dispatch":{"chat":7,"name":"x","brief":"a b","ticket":"t","#,
+        r#""runs_on":"pool:builds","runner":"evil","link":"tcp://x","key":"k"}}"#
+    );
+    let (read, _) = read_line(forged).expect("it reads");
+    let Line::Ask(Ask::Dispatch(read)) = read else {
+        panic!("a dispatch");
+    };
+    assert_eq!(read.runs_on.as_deref(), Some("pool:builds"));
+    let written = serde_json::to_value(Ask::Dispatch(read)).expect("json");
+    assert_eq!(written["dispatch"]["runs_on"], "pool:builds");
+    assert_eq!(written["dispatch"].get("runner"), None);
+
+    let older = r#"{"dispatch":{"chat":7,"name":"x","brief":"a b","ticket":"t"}}"#;
+    let (read, _) = read_line(older).expect("it reads");
+    let Line::Ask(Ask::Dispatch(read)) = read else {
+        panic!("a dispatch");
+    };
+    assert_eq!(read.runs_on, None);
 }
 
 #[cfg(unix)]
@@ -2929,6 +2957,7 @@ fn an_open_is_taken_only_on_the_connection_that_minted_its_ticket_and_only_once(
 fn a_dispatch_is_taken_only_on_the_connection_that_minted_its_ticket_and_only_once() {
     the_ticket_is_its_connection_s_alone(|ticket| {
         Ask::Dispatch(Box::new(DispatchAsk {
+            runs_on: None,
             chat: 3,
             to: None,
             name: "check the queue".to_owned(),

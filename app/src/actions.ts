@@ -128,7 +128,6 @@ import {
   AGENT_IDENTITY_VIEW,
   DEVICES_TITLE,
   DEVICES_VIEW,
-  viewKey,
   type AskedBy,
   type Direction,
   type Tabs,
@@ -356,6 +355,9 @@ export type Does =
    *  nothing, and only a row that ends a chat is asked about first (`PlaneView.ENDS_A_CHAT`). */
   | { verb: "closePane"; ends: boolean }
   | { verb: "closeTab"; tab: number; ends: boolean }
+  /** Close other tabs (#4762): `closes` is the tabs it closes, every other tab on the strip of
+   *  `tab` but the pinned ones, and `ends` whether any of them holds a chat it would end. */
+  | { verb: "closeOtherTabs"; tab: number; closes: readonly number[]; ends: boolean }
   | { verb: "selectTab"; tab: number }
   /** Opens a chat's name for editing (charter-app#254, #4753): in place on the strip where the
    *  chat is its tab's own, and in a dialog where it has no tab. By the chat's number. */
@@ -692,7 +694,7 @@ export type Offer = {
    *
    * It is a field rather than something read back out of the title, because what is a name
    * and what is charter's own word is not recoverable from the finished sentence: `Switch to
-   * tab release.3` and `Remove the folder of this chat's branch` both contain `re`. `narrow`
+   * tab release.3` and `Remove steward 1's branch folder` both contain `re`. `narrow`
    * uses it to put a row the operator's words FOUND ahead of a row that merely has those
    * letters in somebody's name — which at fifty chats is the whole difference (charter-app#48).
    */
@@ -732,6 +734,13 @@ export type Offer = {
    * each tab's menu keeps its own ({@link inPalette}).
    */
   menuOnly?: true;
+  /**
+   * **A row about the chat in front, though its id names it** (#4851): the palette ranks it
+   * with the rows that name nothing ({@link aboutWhatIsInFront}). A chat's Branch rows used to
+   * be `worktree.merge` and `worktree.remove`, about the chat in front alone, and at fifty
+   * pieces `remove` must still find this chat's folder before fifty others (charter-app#174).
+   */
+  inFront?: true;
 };
 
 /** The window as it now stands: everything an offer's availability is decided from. */
@@ -750,8 +759,12 @@ export type Now = {
   live?: readonly string[];
   /** The workspace the panels are showing. */
   focused?: string;
-  /** Where the chat in front is working, when it is working in a charter worktree. */
-  worktree?: ChatWorktree;
+  /**
+   * **The branch folder each chat works in**, by its number, where it works in one purlis cut
+   * (#4851): what its Branch rows on its list act on. None for a chat working anywhere else, and
+   * none not yet asked about, so a chat has no Branch rows until the core has said where it is.
+   */
+  worktreeOf?: (session: number) => ChatWorktree | undefined;
   /**
    * The focused workspace's worktrees, as the explorer lists them (charter-app#174).
    *
@@ -873,14 +886,12 @@ export type Now = {
   /**
    * What this operator has pinned (ADR 0039).
    *
-   * Three lists rather than a flag on each thing, because a pin is not a property of the
-   * chat, the workspace or the plane — it is the operator's arrangement of them, held
-   * somewhere else entirely (ADR 0040), and a copy on the thing would be a second answer.
+   * Lists rather than a flag on each thing, because a pin is not a property of the workspace
+   * or the plane — it is the operator's arrangement of them, held somewhere else entirely (ADR
+   * 0040), and a copy on the thing would be a second answer. A tab's pin is the tab's own
+   * (`Tab.pinned`, #4935), so it is read off {@link Now.tabs}.
    */
   pinned?: {
-    readonly chats: readonly number[];
-    /** View tabs, by `tabs.viewKey`. A tab with no chat is pinned as the view it shows. */
-    readonly views?: readonly string[];
     readonly workspaces: readonly string[];
     readonly projects: readonly string[];
   };
@@ -907,6 +918,9 @@ export type Now = {
   /** The chats a launch has still to start (`restoring.rs`): none has a close until it has
    *  started, since there is no program yet to end. */
   restoring?: readonly number[];
+  /** The tabs Close other tabs on tab `tab` would close (#4762): every other tab on its strip
+   *  but the pinned ones (`tabs.otherTabsToClose`). None where the window does not say. */
+  otherTabs?: (tab: number) => readonly number[];
   /** The work item each chat works on, by session, as `chat_work_item` answered (ADR 0088). */
   workItems?: Readonly<Record<number, string>>;
   /** Whether a chat can have a work link: it is filed in a workspace. A chat at the project
@@ -1001,6 +1015,8 @@ export type Doing = {
   split: (direction: Direction) => void;
   closePane: () => void;
   closeTab: (tab: number) => void;
+  /** Closes each of `tabs`, as its own close does (#4762). */
+  closeOtherTabs: (tabs: readonly number[]) => void;
   selectTab: (tab: number) => void;
   /** Opens the chat's name for editing: on its tab where it has one, else in a dialog.
    *  Nothing is renamed until the operator says the name, so it answers no `Ran`. */
@@ -1508,6 +1524,9 @@ export const DISPATCHES_SHOW = "dispatches.show";
 export const BROWSERS_SHOW = "browsers.show";
 /** The Skill studio (#2765), offered only while its flag is on: `skillStudio.ts` spells it. */
 export { SKILL_STUDIO_SHOW };
+
+/** Why Close other tabs is not offered on a tab (#4762). */
+const NO_OTHER_TAB = "Every other tab here is pinned, or there is none.";
 
 /** An offer that can run, spelled once so `reason` cannot drift from `available`. */
 function can(id: string, title: string, does: Does, name?: string): Offer {
@@ -2039,7 +2058,7 @@ export function catalogue(now: Now): Offer[] {
   );
   offers.push(...stoppedRows(now.stopped ?? {}, now.needsYou, now.nameOf, now.tabs));
 
-  const pinned = now.pinned ?? { chats: [], workspaces: [], projects: [] };
+  const pinned = now.pinned ?? { workspaces: [], projects: [] };
 
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
@@ -2057,19 +2076,13 @@ export function catalogue(now: Now): Offer[] {
   // thing gets on its strip is a mark, and pressing the mark runs this same row.
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
-    // A tab is pinned as its own chat, or — a tab with none — as the view it opened on. The
-    // pin is stored with whichever it is (the chat's record, or the view tab's), so it goes
-    // away with the thing it pins.
-    const chat = chatOf(now.tabs, tab);
-    const first = contentsOf(now.tabs, tab)[0]?.content;
-    const held =
-      chat !== undefined
-        ? isPinned(pinned.chats, chat)
-        : first?.kind === "view" && isPinned(pinned.views ?? [], viewKey(first.view));
+    // **The one pin is the tab's** (#4762, #4935): its own, whatever its panes hold, so a tab
+    // whose only pane is empty is pinned as any other.
+    const held = now.tabs.byId[tab].pinned === true;
     offers.push({
       ...can(
         `tab.pin:${tab}`,
-        `${held ? "Unpin" : "Pin"} ${chat === undefined ? "tab" : "chat"} ${name}`,
+        `${held ? "Unpin" : "Pin"} tab ${name}`,
         { verb: "pinTab", tab, pinned: !held },
         name,
       ),
@@ -2844,16 +2857,6 @@ export function catalogue(now: Now): Offer[] {
   // front and above the line: none of them ends anything.
   offers.push(...tabChatRows(now));
 
-  // The worktree of the chat in front. Merging is not destructive — it is fast-forward only
-  // and never pushes — so it sits above the line; removing is below it.
-  const inFront = frontWorktree(now, chatInFocus);
-  const merge = "Merge this chat's branch into its clone";
-  offers.push(
-    "cut" in inFront
-      ? can("worktree.merge", merge, { verb: "mergeWorktree", cut: inFront.cut })
-      : cannot("worktree.merge", merge, inFront.why),
-  );
-
   // **And one row per piece of the focused workspace** (charter-app#174). The explorer's rows
   // had no menu because the two rows above are about THE CHAT IN FRONT, and a piece nothing
   // is running in is not in front of anything. These name the piece, exactly as
@@ -2974,6 +2977,31 @@ export function catalogue(now: Now): Offer[] {
     });
   }
 
+  // **Close other tabs skips the pinned ones** (#4762): a pin is the operator saying a tab
+  // stays. One row, the tab in front's, however many tabs there are: a row per tab would be
+  // fifty more at fifty chats, all saying the same verb. It closes each tab as that tab's own
+  // close would, so the chats it ends are asked about first, and the tasks in them go back to
+  // the Chats list.
+  if (now.tabs.inFront !== undefined && now.tabs.byId[now.tabs.inFront] !== undefined) {
+    const tab = now.tabs.inFront;
+    const id = `tab.closeOthers:${tab}`;
+    const title = "Close other tabs";
+    const closes = now.otherTabs?.(tab) ?? [];
+    const restoring = (one: number) =>
+      panesOf(now.tabs, one).some((pane) => (now.restoring ?? []).includes(pane.session));
+    if (closes.length === 0) offers.push(cannot(id, title, NO_OTHER_TAB));
+    else if (closes.some(restoring)) offers.push(cannot(id, title, RESTORING_HAS_NO_CLOSE));
+    else {
+      const ends = closes.some((one) =>
+        panesOf(now.tabs, one).some((pane) => askedBy(pane.session) === undefined),
+      );
+      offers.push({
+        ...can(id, title, { verb: "closeOtherTabs", tab, closes, ends }),
+        ...(ends ? { note: ENDS_IT } : {}),
+      });
+    }
+  }
+
   offers.push(...stopRows(now.listed ?? [], now.stopping ?? []));
   offers.push(...taskEndRows(now.listed ?? [], now.stopping ?? []));
   offers.push(...taskRows(now.listed ?? []));
@@ -2983,19 +3011,8 @@ export function catalogue(now: Now): Offer[] {
   offers.push(...briefRows(now.listed ?? []));
   offers.push(...answerRows(now.listed ?? []));
 
-  const remove = "Remove the folder of this chat's branch";
-  offers.push(
-    "cut" in inFront
-      ? {
-          ...can("worktree.remove", remove, {
-            verb: "removeWorktree",
-            cut: inFront.cut,
-            force: false,
-          }),
-          note: KEEPS_THE_BRANCH,
-        }
-      : cannot("worktree.remove", remove, inFront.why),
-  );
+  // Each chat's own branch folder goes from its list (#4851): below the line, with the rest.
+  offers.push(...chatBranchRemoveRows(now));
 
   for (const cut of pieces) {
     // The folder goes and the branch stays (ADR 0072 §4), so the row names the folder.
@@ -3025,15 +3042,6 @@ export function catalogue(now: Now): Offer[] {
   // **And it is beside THE ROW THAT WAS REFUSED**, not beside every removal there is. With
   // one removal per piece, a discard row that appeared for all of them would be fifty offers
   // to throw work away raised by one refusal about one piece.
-  if (now.refused === "worktree.remove" && "cut" in inFront) {
-    offers.push(
-      can("worktree.discard", "Discard that work and remove the folder anyway", {
-        verb: "removeWorktree",
-        cut: inFront.cut,
-        force: true,
-      }),
-    );
-  }
   for (const cut of pieces) {
     if (now.refused !== `worktree.remove:${idOf(cut)}` || noPlane !== undefined) continue;
     offers.push(
@@ -3263,6 +3271,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "closeTab":
       doing.closeTab(does.tab);
+      return DID;
+    case "closeOtherTabs":
+      doing.closeOtherTabs(does.closes);
       return DID;
     case "selectTab":
       doing.selectTab(does.tab);
@@ -4093,6 +4104,7 @@ export const FRESH_UNCHANGED =
 function chatRows(now: Now): Offer[] {
   const offers: Offer[] = [];
   const askedBy = now.askedBy ?? askedByOf(now.listed ?? []);
+  const front = chatInFront(now.tabs);
   // **Where policy locks all dispatch there is no Ask row on any chat**, and one row that
   // cannot run says why, in the palette, where a person looks for an action that has gone.
   const askLocked = now.ask?.locked ?? null;
@@ -4262,6 +4274,12 @@ function chatRows(now: Now): Offer[] {
       });
     }
 
+    // **Merge its branch** (#4851, `command-table.md` row 24): for a chat working in a branch
+    // folder purlis cut, whatever its kind. Merging is fast-forward only and never pushes, so it
+    // is above the line; its folder's removal is below it ({@link chatBranchRemoveRows}).
+    const merge = branchRow(now, session, name, branchMergeId(session), "merge", front);
+    if (merge !== undefined) offers.push(merge);
+
     // **End…** (#4753): the chat's own row, never a tab's. It asks first (`EndingChat`: Cancel,
     // End, Smart close). A task ends by its own two rows instead, and a chat still restoring has
     // no program to end yet.
@@ -4274,6 +4292,91 @@ function chatRows(now: Now): Offer[] {
               note: ENDS_IT,
             },
       );
+  }
+  return offers;
+}
+
+/** Why a chat's Branch rows cannot run where purlis has no project to reach the branch in. */
+const NO_PROJECT_FOR_BRANCH = "purlis found no project, so it cannot reach a branch.";
+
+/**
+ * **The branch folder chat `session` works in, or why its Branch rows cannot run** (#4851).
+ * `undefined` where it works in none, and has no Branch rows at all: a chat's folder is what
+ * kind of chat it is, not a state it passes through (`command-table.md`, rule 2).
+ */
+function branchFolderOf(now: Now, session: number): { cut: Cut } | { why: string } | undefined {
+  const at = now.worktreeOf?.(session);
+  if (at === undefined) return undefined;
+  if (now.plane === undefined) return { why: NO_PROJECT_FOR_BRANCH };
+  return {
+    cut: { workspace: at.workspace, repo: at.repo, piece: at.piece, branch: at.branch },
+  };
+}
+
+/** What each of a chat's Branch rows does, and its words in the palette. */
+const BRANCH_ROWS = {
+  merge: {
+    title: (name: string) => `Merge ${name}'s branch into its clone`,
+    does: (cut: Cut): Does => ({ verb: "mergeWorktree", cut }),
+  },
+  remove: {
+    title: (name: string) => `Remove ${name}'s branch folder`,
+    does: (cut: Cut): Does => ({ verb: "removeWorktree", cut, force: false }),
+  },
+  discard: {
+    title: (name: string) => `Discard that work and remove ${name}'s branch folder anyway`,
+    does: (cut: Cut): Does => ({ verb: "removeWorktree", cut, force: true }),
+  },
+} as const;
+
+/**
+ * **One of chat `session`'s Branch rows** (#4851), or `undefined` where it works in no branch
+ * folder. Greyed with its reason where it cannot run, and marked {@link Offer.inFront} where its
+ * chat is the one the keyboard is in.
+ */
+function branchRow(
+  now: Now,
+  session: number,
+  name: string,
+  id: string,
+  row: keyof typeof BRANCH_ROWS,
+  /** The chat the keyboard is in ({@link chatInFront}), worked out once per catalogue. */
+  front: number | undefined,
+): Offer | undefined {
+  const folder = branchFolderOf(now, session);
+  if (folder === undefined) return undefined;
+  const { title, does } = BRANCH_ROWS[row];
+  const offer =
+    "cut" in folder
+      ? can(id, title(name), does(folder.cut), name)
+      : cannot(id, title(name), folder.why, name);
+  return front === session ? { ...offer, inFront: true } : offer;
+}
+
+/** The chat shown in the pane that has the keyboard, if it shows one. */
+function chatInFront(tabs: Tabs): number | undefined {
+  const focused = focusedContent(tabs);
+  return focused?.kind === "session" ? focused.session : undefined;
+}
+
+/**
+ * **Remove its branch folder** (#4851, `command-table.md` row 25), for each chat working in
+ * one: the folder goes and the branch stays (ADR 0072 §4). Below the line, with the rest that
+ * takes something away, while its Merge is above it in {@link chatRows}: the catalogue's line
+ * is what keeps Enter on a fresh palette off a removal. And **Discard and remove anyway** (row
+ * 26) on the one chat whose removal the core has just refused, beside the row it refused and
+ * nowhere before: absent rather than refused, for the reason `worktree.discard:<piece>` is.
+ */
+function chatBranchRemoveRows(now: Now): Offer[] {
+  const offers: Offer[] = [];
+  const front = chatInFront(now.tabs);
+  for (const { session, name } of chatsHere(now)) {
+    const remove = branchRow(now, session, name, branchRemoveId(session), "remove", front);
+    if (remove === undefined) continue;
+    offers.push({ ...remove, ...(remove.available ? { note: KEEPS_THE_BRANCH } : {}) });
+    const discard = branchRow(now, session, name, branchDiscardId(session), "discard", front);
+    if (now.refused === branchRemoveId(session) && discard?.available === true)
+      offers.push(discard);
   }
   return offers;
 }
@@ -4303,13 +4406,14 @@ export function briefRows(listed: readonly ListedChat[]): Offer[] {
  * **Answer, for a task paused on a question to its asking chat** (#1496, #1551):
  * `chat.answer:<session>`, which opens a form that answers it as the person. On the task's row
  * menu in the Chats list, on its own tab's menu, and in the palette; a tab's menu offers it at
- * the end of the task's line. **Only while the task is asking**: the row is gone once it is
- * answered or has moved on, and a form opened just before says so itself. It sends nothing:
+ * the end of the task's line. **Only while the task has an open question**, with its asking
+ * chat or waiting on the person (#4564, spec #4551 story 30): the row is gone once it is
+ * answered, and a form opened just before says so itself. It sends nothing:
  * the form's Send does, so it is among a menu's ordinary rows.
  */
 export function answerRows(listed: readonly ListedChat[]): Offer[] {
   return listed
-    .filter((chat) => chat.mode === "task" && chat.asking !== null)
+    .filter((chat) => chat.mode === "task" && (chat.question ?? null) !== null)
     .map((chat) => ({
       ...can(
         answerId(chat.session),
@@ -4511,6 +4615,21 @@ export const BELOW_TOO =
 export const STOPS_IT =
   "A chat another chat started gets one short turn to write what it did, then it ends. The chat that asked is told you stopped it.";
 
+/** A chat's Merge its branch row (#4851). */
+export function branchMergeId(session: number): string {
+  return `chat.branch.merge:${session}`;
+}
+
+/** A chat's Remove its branch folder row (#4851). */
+export function branchRemoveId(session: number): string {
+  return `chat.branch.remove:${session}`;
+}
+
+/** A chat's Discard and remove anyway, once its removal was refused (#4851). */
+export function branchDiscardId(session: number): string {
+  return `chat.branch.discard:${session}`;
+}
+
 /** The catalogue's id for a chat's Stop row (#1448). */
 export function stopId(session: number): string {
   return `chat.stop:${session}`;
@@ -4698,24 +4817,6 @@ function nothingSaidSoFar(quiet: readonly string[]): string {
 }
 
 /**
- * The worktree the chat in front is working in, or why there is none.
- *
- * **The piece and the reason in one answer, rather than a reason and a second look at
- * `now.worktree`** (charter-app#174). A row about a worktree now carries the worktree, so
- * "can this row run" and "which piece does it mean" are the same question asked once — two
- * checks would let a row be available while carrying no piece, which is a defect nothing on
- * screen could show.
- */
-function frontWorktree(now: Now, inFront: boolean): { cut: Cut } | { why: string } {
-  if (!inFront) return { why: "No chat is in front." };
-  if (now.plane === undefined)
-    return { why: "purlis found no project, so it cannot reach a branch." };
-  if (now.worktree === undefined)
-    return { why: "The chat in front is not working in a branch purlis cut." };
-  return { cut: now.worktree };
-}
-
-/**
  * **The close of one pane of the tab in front** (`pane.close`), decided for that pane: the
  * catalogue's row is the focused pane's, and a pane's own corner draws its own (#1486).
  *
@@ -4744,6 +4845,9 @@ export function paneCloseOf(
       : contentsOf(tabs, front.id).find((one) => one.pane === pane)?.content;
   if (content?.kind === "view")
     return can("pane.close", "Close this view", { verb: "closePane", ends: false });
+  // An empty pane holds nothing to end (#4755): closing it only takes it away.
+  if (content?.kind === "empty")
+    return can("pane.close", "Close this pane", { verb: "closePane", ends: false });
   if (front === undefined || content === undefined || pane === undefined)
     return cannot(
       "pane.close",
@@ -4893,8 +4997,8 @@ export function matches(query: string, offer: Offer): boolean {
  * happens to carry.
  *
  * The title with the row's `name` taken out of it, plus charter's part of the id. `Switch to
- * tab release.3` answers no to `re` and yes to `switch`; `Remove the folder of this chat's
- * branch` has no name in it and answers yes to both. A row with no name is always its own words.
+ * tab release.3` answers no to `re` and yes to `switch`; `Search in files` has no name in it
+ * and answers yes to `re`. A row with no name is always its own words.
  */
 function byItsWords(query: string, offer: Offer): boolean {
   const want = query.toLowerCase();
@@ -4921,7 +5025,7 @@ function byItsWords(query: string, offer: Offer): boolean {
  * shape on screen; the operator does not get to care about the difference.
  */
 function aboutWhatIsInFront(offer: Offer): boolean {
-  return !offer.id.includes(":");
+  return !offer.id.includes(":") || offer.inFront === true;
 }
 
 /**
@@ -5109,6 +5213,11 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           stopId(at),
           stopBelowId(at),
           stopAllId(at),
+          // **Branch** (#4851): after how it runs and before what ends it (rule 3). Merging
+          // takes nothing away, but it folds into one Branch ▸ with the removal.
+          branchMergeId(at),
+          branchRemoveId(at),
+          branchDiscardId(at),
           endId(at),
           ...taskEndIds(at),
         ],

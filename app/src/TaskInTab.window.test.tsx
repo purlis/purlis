@@ -154,6 +154,7 @@ function held(session: number, id: number): DispatchPending {
     task_cut: false,
     profile: null,
     mode: "task",
+    runs_on: null,
   };
 }
 
@@ -1251,8 +1252,9 @@ describe("a task that needs you and is not on screen", () => {
     await waitFor(() => expect(onScreen()).toEqual([2]));
 
     expect(handSays("steward 1")).toBe("talk needs you");
-    // And the tab's own state mark is still the session's, not the task's.
-    expect(within(tab("steward 1")).queryByRole("img", { name: "waiting on you" })).toBeNull();
+    // And the tab's own state mark is still the session's, not the task's, which needs you
+    // (the word the tab says is its row's, #4935).
+    expect(within(tab("steward 1")).queryByRole("img", { name: "needs you" })).toBeNull();
   });
 
   it("puts the hand on the tab for the session's own chat, while the tab shows a task", async () => {

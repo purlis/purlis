@@ -307,54 +307,83 @@ fn at_web_address(address: &str) -> bool {
 
 /// **Where frame `frame` of `page` is judged**: at its document's origin, or for one that
 /// takes the origin around it, or shows the engine's own page, the nearest ancestor's that has
-/// one of its own, up to the page's. A document that takes the origin around it shares the
-/// process, and so the session, of the document around it; one held by another session, or
-/// whose own context's word may not have been kept, is [`Unjudged::Unread`] until that word
-/// is read.
+/// one of its own. The page's own document is judged the same way, by its origin: a blank page
+/// has the origin its own context says, and is [`Unjudged::Unread`] until that word is read; the
+/// engine's own page at the top sends nowhere. A document that takes the origin around it shares
+/// the process, and so the session, of the document around it; one held by another session, or
+/// whose own context's word may not have been kept, is [`Unjudged::Unread`] until that word is
+/// read, and so is one whose frame element's sandbox has not been read ([`Frame::sandboxed`]):
+/// sandboxed, it has no origin of its own.
 fn judged_at(page: &Page, frame: &str, origins: &DocumentOrigins) -> Result<Judged, Unjudged> {
     let Some(mut at) = page.frames.get(frame) else {
-        return Ok(Judged::Lost);
+        return if frame == page.target {
+            page_address(page)
+        } else {
+            Ok(Judged::Lost)
+        };
     };
     let mut id = frame;
     for _ in 0..=page.frames.len() {
         if at.unknown() {
             return Err(Unjudged::Unread);
         }
+        let top = id == page.target;
         match at.origin(origins.origin(&at.session, id)) {
             Origin::Web(address) => return Ok(Judged::At(address)),
             Origin::Opaque => return Err(Unjudged::Opaque),
+            Origin::Engine if top => return Ok(Judged::Nowhere),
             Origin::Engine => {}
+            Origin::Inherited if top => return Err(Unjudged::Unread),
             Origin::Inherited => {
                 let around = match at.parent.as_deref() {
-                    Some(parent) if parent != page.target => {
-                        page.frames.get(parent).map(|up| up.session.as_str())
-                    }
-                    _ => page.session.as_deref(),
+                    Some(parent) => page
+                        .frames
+                        .get(parent)
+                        .map(|up| up.session.as_str())
+                        .or(page.session.as_deref().filter(|_| parent == page.target)),
+                    None => None,
                 };
                 if around != Some(at.session.as_str()) || !origins.all_kept(&at.session) {
                     return Err(Unjudged::Unread);
                 }
+                match at.sandboxed {
+                    None => return Err(Unjudged::Unread),
+                    Some(true) => return Err(Unjudged::Opaque),
+                    Some(false) => {}
+                }
             }
         }
-        match at.parent.as_deref() {
-            Some(parent) if parent == page.target => break,
-            Some(parent) => match page.frames.get(parent) {
-                Some(up) => {
-                    at = up;
-                    id = parent;
-                }
-                None => return Ok(Judged::Lost),
-            },
-            None => break,
+        let Some(parent) = at.parent.as_deref() else {
+            return Err(Unjudged::Unread);
+        };
+        match page.frames.get(parent) {
+            Some(up) => {
+                at = up;
+                id = parent;
+            }
+            None if parent == page.target => return page_address(page),
+            None => return Ok(Judged::Lost),
         }
     }
-    Ok(Judged::At(page.url.clone()))
+    Err(Unjudged::Unread)
+}
+
+/// Where the page's own document is judged while the driver has not read its frame: at the
+/// page's address where that is a web one, and otherwise not known.
+fn page_address(page: &Page) -> Result<Judged, Unjudged> {
+    if at_web_address(&page.url) {
+        Ok(Judged::At(page.url.clone()))
+    } else {
+        Err(Unjudged::Unread)
+    }
 }
 
 /// Where a frame is judged ([`judged_at`]).
 enum Judged {
     /// At this address.
     At(String),
+    /// Nowhere: the engine's own page, which sends nothing.
+    Nowhere,
     /// Not known: a frame on the way to the page is not one the driver knows.
     Lost,
 }
@@ -379,6 +408,11 @@ struct Frame {
     /// takes the origin around it (`about:srcdoc`, `about:blank`) it says nothing of the
     /// document: there the document's own context says it ([`DocumentOrigins`]).
     security_origin: String,
+    /// Whether the frame element's `sandbox` leaves the document it shows no origin of its own
+    /// (it lacks `allow-same-origin`), as read for that document; `None` until read. Read only
+    /// where it decides: a blank or srcdoc document with no word of its own context, as one
+    /// sandboxed without scripts may never have (#2018).
+    sandboxed: Option<bool>,
 }
 
 impl Frame {
@@ -403,11 +437,7 @@ impl Frame {
         if scheme_rest(&self.url, "chrome-error").is_some() {
             return Origin::Engine;
         }
-        let bare = self.url.split(['?', '#']).next().unwrap_or_default();
-        if bare.is_empty()
-            || bare.eq_ignore_ascii_case("about:blank")
-            || bare.eq_ignore_ascii_case("about:srcdoc")
-        {
+        if takes_the_origin_around(&self.url) {
             return match document {
                 None => Origin::Inherited,
                 Some(origin) => web_origin(origin),
@@ -427,6 +457,35 @@ impl Frame {
         }
         Origin::Opaque
     }
+}
+
+/// Whether a document at `address` takes the origin of the document around it, unless it is
+/// sandboxed: `about:blank`, `about:srcdoc`, or no address yet.
+fn takes_the_origin_around(address: &str) -> bool {
+    let bare = address.split(['?', '#']).next().unwrap_or_default();
+    bare.is_empty()
+        || bare.eq_ignore_ascii_case("about:blank")
+        || bare.eq_ignore_ascii_case("about:srcdoc")
+}
+
+/// Whether a frame element with `attributes` (the engine's list: name, value, name, ...) leaves
+/// the document in it no origin of its own: it has a `sandbox` that does not allow the same
+/// origin. `None` where the engine gave no attributes.
+fn sandbox_leaves_no_origin(attributes: &Value) -> Option<bool> {
+    let attributes = attributes.as_array()?;
+    let sandbox = attributes.chunks(2).find(|pair| {
+        pair[0]
+            .as_str()
+            .is_some_and(|name| name.eq_ignore_ascii_case("sandbox"))
+    });
+    Some(sandbox.is_some_and(|pair| {
+        !pair
+            .get(1)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .split_ascii_whitespace()
+            .any(|token| token.eq_ignore_ascii_case("allow-same-origin"))
+    }))
 }
 
 /// The origin the engine wrote as `origin`: a web one, as the root of its site (an origin is
@@ -796,8 +855,9 @@ impl State {
     }
 
     /// **The addresses what is in document `frame` of `target`'s page goes to** (#2018): the
-    /// address of its document's origin ([`Frame::origin`]); for a document that takes the
-    /// origin around it, or the engine's own page, its nearest ancestor's ([`judged_at`]); and
+    /// address of its document's origin ([`Frame::origin`]), the page's own document's as much
+    /// as a frame's; for a document that takes the origin around it, or the engine's own page,
+    /// its nearest ancestor's ([`judged_at`]); and
     /// for a frame the driver does not know,
     /// every document the page shows. [`Unjudged::Unread`] where a frame on the way is
     /// [`Frame::unknown`]: an ancestor's address says nothing of it (#4472).
@@ -806,11 +866,9 @@ impl State {
         let Some(page) = self.page(target) else {
             return Ok(Vec::new());
         };
-        if frame == target {
-            return Ok(vec![page.url.clone()]);
-        }
         match judged_at(page, frame, &self.document_origins)? {
             Judged::At(address) => Ok(vec![address]),
+            Judged::Nowhere => Ok(Vec::new()),
             Judged::Lost => self.every_document(target),
         }
     }
@@ -825,17 +883,22 @@ impl State {
         if page.frames.values().any(Frame::unknown) {
             return Err(Unjudged::Unread);
         }
+        let judged = |frame: &str| match judged_at(page, frame, &self.document_origins)? {
+            Judged::At(address) => Ok(Some(address)),
+            Judged::Nowhere => Ok(None),
+            Judged::Lost => Err(Unjudged::Unread),
+        };
+        let own = judged(&page.target)?;
         let mut every = Vec::new();
-        for frame in page.frames.keys() {
-            match judged_at(page, frame, &self.document_origins)? {
-                Judged::At(address) => every.push(address),
-                Judged::Lost => return Err(Unjudged::Unread),
-            }
+        for frame in page.frames.keys().filter(|frame| **frame != page.target) {
+            every.extend(judged(frame)?);
         }
         every.sort();
         every.dedup();
-        every.retain(|one| *one != page.url);
-        every.insert(0, page.url.clone());
+        if let Some(own) = own {
+            every.retain(|one| *one != own);
+            every.insert(0, own);
+        }
         Ok(every)
     }
 
@@ -1061,6 +1124,7 @@ impl State {
             // Back while a session holds it: only that session can say what it shows (#4472).
             unread: owned_elsewhere,
             security_origin: String::new(),
+            sandboxed: None,
         });
         if parent.is_some() {
             entry.parent = parent;
@@ -1080,6 +1144,9 @@ impl State {
                 let keeps = entry.told > since
                     || (entry.unread && at_web_address(&entry.url) && !at_web_address(&read));
                 if !keeps {
+                    if entry.url != read {
+                        entry.sandboxed = None;
+                    }
                     entry.url = read;
                     entry.security_origin = text("securityOrigin");
                 }
@@ -1090,6 +1157,7 @@ impl State {
                 entry.name = text("name");
                 entry.url = text("url");
                 entry.security_origin = text("securityOrigin");
+                entry.sandboxed = None;
                 entry.told = generation;
                 entry.unread = false;
                 page.shows = generation;
@@ -1127,10 +1195,12 @@ impl State {
                 told,
                 unread: true,
                 security_origin: String::new(),
+                sandboxed: None,
             });
         entry.session = session.to_owned();
         entry.url = url.to_owned();
         entry.security_origin.clear();
+        entry.sandboxed = None;
         entry.told = told;
         entry.unread = true;
     }
@@ -1150,6 +1220,7 @@ impl State {
         {
             entry.url = url.to_owned();
             entry.security_origin.clear();
+            entry.sandboxed = None;
             entry.told = told;
         }
     }
@@ -1168,6 +1239,7 @@ impl State {
             return;
         }
         entry.session = session.to_owned();
+        entry.sandboxed = None;
         self.generations += 1;
         let generation = self.generations;
         if let Some(page) = self.page_mut(target)
@@ -1699,9 +1771,73 @@ impl Browser {
 
     /// The addresses what is typed into the element `written` names goes to: its document's.
     fn addresses_of(&self, written: &Ref) -> Result<Vec<String>, Refusal> {
+        let page = live_ref(&lock(&self.inner.state), written)?.0;
+        self.read_sandboxes(&page);
         let state = lock(&self.inner.state);
         let (page, key) = live_ref(&state, written)?;
         self.known_documents(state.documents_of(&page, &key.frame))
+    }
+
+    /// **Reads the `sandbox` of the frame element of each blank or srcdoc frame of `target`'s
+    /// page with no word of its own context** ([`Frame::sandboxed`]), where a judge is to say
+    /// where what is in it goes: such a frame is judged by it. A read that fails leaves the
+    /// frame not known.
+    fn read_sandboxes(&self, target: &str) {
+        if self.inner.judge.is_none() {
+            return;
+        }
+        let wanted: Vec<(String, String, String, u64)> = {
+            let state = lock(&self.inner.state);
+            let Some(page) = state.page(target) else {
+                return;
+            };
+            page.frames
+                .iter()
+                .filter(|(id, frame)| {
+                    **id != page.target
+                        && frame.sandboxed.is_none()
+                        && takes_the_origin_around(&frame.url)
+                        && state.document_origins.origin(&frame.session, id).is_none()
+                })
+                .map(|(id, frame)| {
+                    (
+                        id.clone(),
+                        frame.session.clone(),
+                        frame.url.clone(),
+                        frame.told,
+                    )
+                })
+                .collect()
+        };
+        for (id, session, url, told) in wanted {
+            let on = Some(session.as_str());
+            let Some(owner) = self
+                .devtools()
+                .call("DOM.getFrameOwner", json!({ "frameId": id }), on)
+                .ok()
+                .and_then(|owner| owner.get("backendNodeId").and_then(Value::as_i64))
+            else {
+                continue;
+            };
+            let Some(sandboxed) = self
+                .devtools()
+                .call("DOM.describeNode", json!({ "backendNodeId": owner }), on)
+                .ok()
+                .and_then(|node| sandbox_leaves_no_origin(&node["node"]["attributes"]))
+            else {
+                continue;
+            };
+            let mut state = lock(&self.inner.state);
+            if let Some(frame) = state
+                .page_mut(target)
+                .and_then(|page| page.frames.get_mut(&id))
+                && frame.session == session
+                && frame.url == url
+                && frame.told == told
+            {
+                frame.sandboxed = Some(sandboxed);
+            }
+        }
     }
 
     /// `documents`, as [`State::documents_of`] answers them: where they are not known, or have
@@ -1733,6 +1869,7 @@ impl Browser {
                 [one] => Some(one.frame.clone()),
                 _ => None,
             });
+        self.read_sandboxes(target);
         let state = lock(&self.inner.state);
         self.known_documents(match focused {
             Some(frame) => state.documents_of(target, &frame),
@@ -3303,6 +3440,7 @@ impl Browser {
             // Where what a native drag carries may go when it drops (#2018): into whichever
             // document is drawn at the drop, which may be any of the page's, whatever element
             // the drag aims at.
+            self.read_sandboxes(&page);
             let drops_into = lock(&self.inner.state).every_document(&page);
             // A native drag source starts the engine's own drag, which the engine hands over
             // while this drag lasts, and never after (#2136): once asked to, it is told to stop

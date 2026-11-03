@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use purlis_core::poolsetup::asked::millicpus_of;
 
 const IMAGE: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
@@ -325,4 +326,43 @@ fn a_removal_from_another_engine_is_refused_unless_that_engine_is_your_own() {
     assert!(refused.contains("another machine"), "{refused}");
     assert_eq!(elsewhere_only_from_your_own("builds", true, yes), Ok(()));
     assert_eq!(elsewhere_only_from_your_own("builds", false, not), Ok(()));
+}
+
+/// **Start chat's Runs on row says where a chat would run and which level says so** (#4536):
+/// the workspace's own word, else the project's, else this machine; a chat at the project's root
+/// runs here and is offered no pool.
+#[test]
+fn where_a_new_chat_would_run_is_said_with_the_level_that_decides_it() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    purlis_core::machine::update(config.path(), |store| {
+        store.remember(plane, 1);
+        store
+            .set_project_chats_run_on(plane, Some("builds"))
+            .unwrap();
+        store.set_chats_run_here(plane, "local").unwrap();
+        store.set_chats_run_on(plane, "gpu", Some("gpus")).unwrap();
+    })
+    .unwrap();
+    let said = |workspace: Option<&str>| {
+        let now = start_runs_on_at(config.path(), plane, workspace).unwrap();
+        (now.pool, now.level, now.at_root)
+    };
+    assert_eq!(
+        said(Some("app")),
+        (Some("builds".to_owned()), RunsOnLevel::Project, false)
+    );
+    assert_eq!(said(Some("local")), (None, RunsOnLevel::Workspace, false));
+    assert_eq!(
+        said(Some("gpu")),
+        (Some("gpus".to_owned()), RunsOnLevel::Workspace, false)
+    );
+    assert_eq!(said(None), (None, RunsOnLevel::ThisMachine, true));
+
+    let nothing_named = tempfile::tempdir().unwrap();
+    let fresh = start_runs_on_at(nothing_named.path(), plane, Some("app")).unwrap();
+    assert_eq!(
+        (fresh.pool, fresh.level, fresh.pools),
+        (None, RunsOnLevel::ThisMachine, Vec::<String>::new())
+    );
 }
