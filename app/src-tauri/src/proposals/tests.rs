@@ -845,11 +845,4 @@ fn a_first_undeclared_fill_is_offered_as_a_need_and_written_only_when_applied() 
         "---\nrole: Ops\nvault: devops\nsecret-need.STRIPE_KEY: charge test cards\n\
          secret-need.GITHUB_TOKEN: charge test cards\n---\n\nThe charter.\n"
     );
-    assert_eq!(
-        purlis_core::secrets::needs::of(&root, "devops")
-            .into_iter()
-            .map(|need| need.key)
-            .collect::<Vec<_>>(),
-        ["STRIPE_KEY", "GITHUB_TOKEN"]
-    );
 }

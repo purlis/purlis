@@ -691,18 +691,6 @@ impl Locks {
         })
     }
 
-    /// **Why a Secret ask for a key the persona does not declare is refused**, where policy
-    /// turns such asks off (#5078, ADR 0109): the chat is told `declined: policy`, and the
-    /// person is never asked.
-    pub fn undeclared_secret_asks_refused(&self) -> Option<String> {
-        self.no_undeclared_secret_asks.then(|| {
-            format!(
-                "Policy turns off asks for a secret the persona does not declare. {}",
-                self.locked_by()
-            )
-        })
-    }
-
     /// Whether policy refuses Secret asks for undeclared keys (#5078).
     pub fn forbids_undeclared_secret_asks(&self) -> bool {
         self.no_undeclared_secret_asks

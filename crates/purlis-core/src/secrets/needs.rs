@@ -43,15 +43,36 @@ pub fn is_key(key: &str) -> bool {
             .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
 }
 
-/// **The Secret needs persona `persona` declares** in the project at `root`, down its `extends`
-/// chain, in the order a definition first names them. A line whose key is no key a Secret ask
-/// takes ([`is_key`]) is no need. None for a persona that does not load.
+/// **The Secret needs persona `persona` declares** in the project at `root`, **as committed**:
+/// each definition down its `extends` chain read from the project's `HEAD`, in the order a
+/// definition first names them. **Never the file on disk**, which a chat can write: a line a
+/// chat added would lift policy's lock on undeclared keys and show the chat's own words as the
+/// persona's (#5078). A line whose key is no key a Secret ask takes ([`is_key`]) is no need.
+/// None for a persona with no committed definition, or a project that is no git repository.
 pub fn of(root: &Path, persona: &str) -> Vec<Need> {
-    let mut needs: Vec<Need> = Vec::new();
-    for ancestor in crate::personas::lineage(root, persona).iter().rev() {
-        let Some(pairs) = crate::personas::load(root, ancestor) else {
-            continue;
+    // The chain as committed, child first, each name once.
+    let mut chain: Vec<Vec<(String, String)>> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    let mut next = Some(persona.to_owned());
+    while let Some(name) = next.take() {
+        if seen.contains(&name)
+            || seen.len() >= MOST_ANCESTORS
+            || !crate::personas::valid_name(&name)
+        {
+            break;
+        }
+        let Some(text) = committed_definition(root, &name) else {
+            break;
         };
+        let pairs = crate::personas::frontmatter(&text);
+        next = crate::personas::meta(&pairs, "extends")
+            .map(str::to_owned)
+            .filter(|parent| !parent.is_empty());
+        seen.push(name);
+        chain.push(pairs);
+    }
+    let mut needs: Vec<Need> = Vec::new();
+    for pairs in chain.into_iter().rev() {
         for (name, purpose) in pairs {
             let Some(key) = name.strip_prefix(PREFIX).filter(|key| is_key(key)) else {
                 continue;
@@ -66,6 +87,33 @@ pub fn of(root: &Path, persona: &str) -> Vec<Need> {
         }
     }
     needs
+}
+
+/// The longest `extends` chain read.
+const MOST_ANCESTORS: usize = 16;
+
+/// The most of a definition read from `HEAD`, in bytes.
+const MOST_DEFINITION_BYTES: usize = 256 * 1024;
+
+/// Persona `name`'s definition as the project's `HEAD` holds it: `personas/<name>/persona.md`,
+/// else the legacy flat `personas/<name>.md`; none where neither is committed.
+fn committed_definition(root: &Path, name: &str) -> Option<String> {
+    [
+        format!("personas/{name}/persona.md"),
+        format!("personas/{name}.md"),
+    ]
+    .into_iter()
+    .find_map(|rel| {
+        crate::worktree::git::run(
+            root,
+            &["show", &format!("HEAD:{rel}")],
+            crate::worktree::git::READ,
+        )
+        .ok()
+        .filter(crate::worktree::git::Run::ok)
+        .map(|run| run.out)
+        .filter(|text| text.len() <= MOST_DEFINITION_BYTES)
+    })
 }
 
 /// The need `persona` declares for `key`, where it declares one.
@@ -111,8 +159,19 @@ pub fn with_need(
 pub const NO_PURPOSE_SAID: &str = "asked for by a chat; say what for";
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// Commits everything in the project at `root`, a new git repository: what a need is read
+    /// from.
+    pub(crate) fn committed(root: &Path) {
+        use crate::testgit::run;
+        run(root, &["init", "-q", "-b", "main", "."]);
+        run(root, &["config", "user.name", "Fixture"]);
+        run(root, &["config", "user.email", "fixture@example.invalid"]);
+        run(root, &["add", "-A"]);
+        run(root, &["commit", "-q", "-m", "a project"]);
+    }
 
     fn plane(personas: &[(&str, &str)]) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
@@ -122,6 +181,7 @@ mod tests {
             std::fs::create_dir_all(&at).unwrap();
             std::fs::write(at.join("persona.md"), text).unwrap();
         }
+        committed(dir.path());
         dir
     }
 
@@ -158,6 +218,31 @@ mod tests {
         );
         assert_eq!(declared(plane.path(), "shop", "OTHER"), None);
         assert!(of(plane.path(), "nobody").is_empty());
+    }
+
+    #[test]
+    fn only_a_committed_line_declares_a_need() {
+        let plane = plane(&[("ops", "---\nrole: Ops\nsecret-need.KEPT: kept\n---\n")]);
+        std::fs::write(
+            plane.path().join("personas/ops/persona.md"),
+            "---\nrole: Ops\nsecret-need.KEPT: changed\nsecret-need.NEW: written by a chat\n---\n",
+        )
+        .unwrap();
+        assert_eq!(
+            of(plane.path(), "ops"),
+            [Need {
+                key: "KEPT".into(),
+                purpose: "kept".into()
+            }]
+        );
+        let bare = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(bare.path().join("personas/ops")).unwrap();
+        std::fs::write(
+            bare.path().join("personas/ops/persona.md"),
+            "---\nsecret-need.K: p\n---\n",
+        )
+        .unwrap();
+        assert!(of(bare.path(), "ops").is_empty(), "no repository, no need");
     }
 
     #[test]

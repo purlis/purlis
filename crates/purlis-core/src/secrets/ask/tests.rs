@@ -606,8 +606,8 @@ fn a_starts_ask_is_traced_under_no_session() {
 // ----------------------------------------------------------------------------------------
 // A chat asks: the `secret_ask` line (#5072)
 
-/// [`project`], with persona `devops` declaring `DECLARED` as a Secret need, a second vault
-/// `mine` (a plain file of its own, tagged for nobody) and `charter.toml`.
+/// [`project`], committed, with persona `devops` declaring `DECLARED` as a Secret need, a
+/// second vault `mine` tagged for it, a third `others` tagged for nobody, and `charter.toml`.
 fn project_with_needs() -> tempfile::TempDir {
     let tmp = project();
     let root = tmp.path();
@@ -615,19 +615,22 @@ fn project_with_needs() -> tempfile::TempDir {
     std::fs::create_dir_all(root.join("personas/devops")).unwrap();
     std::fs::write(
         root.join("personas/devops/persona.md"),
-        "---\nrole: Ops\nsecret-need.DECLARED: deploy to staging\n---\n",
+        "---\nrole: Ops\nvault: team\nsecret-need.DECLARED: deploy to staging\n---\n",
     )
     .unwrap();
     std::fs::write(
         root.join("vaults.json"),
         serde_json::json!({ "vaults": {
             "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
-            "mine": {"provider": "plain-file", "config": {"file": "mine.json"}},
+            "mine": {"provider": "plain-file", "config": {"file": "mine.json"}, "persona": "devops"},
+            "others": {"provider": "plain-file", "config": {"file": "others.json"}},
         }})
         .to_string(),
     )
     .unwrap();
     std::fs::write(root.join("mine.json"), "{}").unwrap();
+    std::fs::write(root.join("others.json"), "{}").unwrap();
+    crate::secrets::needs::tests::committed(root);
     tmp
 }
 
@@ -891,18 +894,76 @@ fn a_line_that_is_not_one_is_refused_before_anything_is_asked() {
 
 #[test]
 fn a_vault_the_persona_may_not_use_is_still_asked_and_never_answered_filled_at_once() {
-    // `mine` holds the key, and the persona may not use it: a chat learns nothing of what a
-    // vault it could not list holds. The person decides what to put where.
+    // `others` holds the key, and the persona may not use it: a chat learns nothing of what a
+    // vault it could not list holds.
     let project = project_with_needs();
     let root = project.path();
-    std::fs::write(root.join("mine.json"), r#"{"HELD": "x"}"#).unwrap();
+    std::fs::write(root.join("others.json"), r#"{"HELD": "x"}"#).unwrap();
     let asks = Asks::new(root);
     assert_eq!(
-        raised_now(root, &asks, &line(7, "HELD", Some("mine"))),
+        raised_now(root, &asks, &line(7, "HELD", Some("others"))),
         Ok(Said::Pending {
-            vault: "mine".into(),
+            vault: "others".into(),
             key: "HELD".into()
         })
+    );
+    // And the person cannot fill into it for this persona, nor over the value it holds.
+    let refused = asks
+        .answer(
+            &ctx(root),
+            asks.open()[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .expect_err("not the persona's to use");
+    assert!(refused.contains("Allow it for devops first"), "{refused}");
+    assert_eq!(asks.open().len(), 1, "still open");
+}
+
+#[test]
+fn a_fill_never_replaces_a_value_a_vault_holds_already() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    raised_now(root, &asks, &line(7, "STRIPE", None)).unwrap();
+    let refused = asks
+        .answer_as(
+            &ctx(root),
+            asks.open()[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            Named {
+                vault: None,
+                key: Some("TOKEN".into()),
+            },
+            window(),
+        )
+        .expect_err("TOKEN is held");
+    assert!(refused.contains("holds a value already"), "{refused}");
+    assert_eq!(stored(root, "TOKEN"), Some("t0ken".into()));
+    assert_eq!(asks.open().len(), 1, "still open");
+}
+
+#[test]
+fn a_need_a_chat_wrote_into_its_persona_file_and_never_committed_declares_nothing() {
+    // #5078 review: the definition on disk is the chat's to write; only what is committed
+    // declares a need, so an edit lifts no lock and puts no words in the persona's mouth.
+    let project = project_with_needs();
+    let root = project.path();
+    std::fs::write(
+        root.join("personas/devops/persona.md"),
+        "---\nrole: Ops\nvault: team\nsecret-need.DECLARED: deploy to staging\nsecret-need.SNEAKY: trust me\n---\n",
+    )
+    .unwrap();
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"undeclared-secret-asks": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let asks = Asks::new(root);
+    let said = raised_now(root, &asks, &line(7, "SNEAKY", None));
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    assert!(
+        matches!(&said, Ok(Said::Declined { reason, .. }) if reason == DECLINED_BY_POLICY),
+        "{said:?}"
     );
 }
 

@@ -592,10 +592,11 @@ impl Asks {
         self.answer_as(ctx, id, answer, Named::as_asked(), by)
     }
 
-    /// **[`Self::answer`], storing a fill as `named`** (#5072): in another vault of the
-    /// project's or under another key name, which the person chose before filling. Every chat
-    /// that waits hears the name it is stored under. Refused, leaving the ask open, for a key
-    /// name no Secret ask takes or a vault the project does not have.
+    /// **[`Self::answer`], storing a fill as `named`** (#5072): in another vault or under
+    /// another key name, which the person chose before filling. Every chat that waits hears the
+    /// name it is stored under. A vault the project does not have is made for the persona
+    /// ([`MADE_ON`], #5076). Refused, leaving the ask open, for a key name no Secret ask takes,
+    /// a vault the persona may not use, or a key the vault holds a value under already.
     pub fn answer_as(
         &self,
         ctx: &Ctx,
@@ -637,11 +638,7 @@ impl Asks {
             Answer::Fill(value) => {
                 if !super::needs::is_key(&into_key) {
                     still_open();
-                    return Err(format!(
-                        "{} is not a key name purlis stores: use letters, digits, _, - and ., \
-                         starting with a letter or _",
-                        crate::shown::one_line(&into_key, 40)
-                    ));
+                    return Err(not_a_key(&into_key));
                 }
                 let persona = self
                     .inner()
@@ -656,6 +653,12 @@ impl Asks {
                         return Err(why);
                     }
                 };
+                // Only into a vault the persona may use, and never over a value already there:
+                // an ask is for a key nobody holds, wherever the chat or the person named.
+                if !made_vault && let Err(why) = fillable(ctx, &persona, &into_vault, &into_key) {
+                    still_open();
+                    return Err(why);
+                }
                 let written = cmd::provider(ctx, &into_vault)
                     .and_then(|v| cmd::set_value(ctx, &v, &into_key, value));
                 if let Err(e) = written {
@@ -890,11 +893,7 @@ pub fn raised_within(
         return Err(format!("this line is not chat {}'s", chat.chat));
     }
     if !super::needs::is_key(&line.key) {
-        return Err(format!(
-            "{} is not a key name a secret ask takes: use letters, digits, _, - and ., starting \
-             with a letter or _",
-            crate::shown::one_line(&line.key, 40)
-        ));
+        return Err(not_a_key(&line.key));
     }
     let purpose = purpose_said(&line.purpose);
     if purpose.is_empty() {
@@ -950,6 +949,15 @@ pub fn raised_within(
     })
 }
 
+/// What a key name no Secret ask takes is refused with.
+fn not_a_key(key: &str) -> String {
+    format!(
+        "{} is not a key name a secret ask takes: use letters, digits, _, - and ., starting with \
+         a letter or _",
+        crate::shown::one_line(key, 40)
+    )
+}
+
 /// The vault persona `persona` uses, as its definition or the registry names it; none where
 /// it names none (`vault: none`, or nothing at all); or why the registry could not be read.
 fn persona_vault(ctx: &Ctx, persona: &str) -> Result<Option<String>, String> {
@@ -961,6 +969,25 @@ fn persona_vault(ctx: &Ctx, persona: &str) -> Result<Option<String>, String> {
         crate::personas::Vault::RegistryUnreadable(why) => Err(why),
         crate::personas::Vault::DeclaredNone | crate::personas::Vault::Unnamed => Ok(None),
     }
+}
+
+/// **Whether a fill of `key` may go into vault `vault` for `persona`**: one the persona may
+/// use ([`super::brokered::authorise`]: the registry's tag, or the person's Allow), which holds
+/// no value under that key yet. Read by key names alone. The refusal says what to do.
+fn fillable(ctx: &Ctx, persona: &str, vault: &str, key: &str) -> Result<(), String> {
+    super::brokered::authorise(ctx, Some(persona), vault).map_err(|why| {
+        format!("{why} Allow it for {persona} first, or fill the key into {persona}'s own vault.")
+    })?;
+    let held = cmd::provider(ctx, vault)
+        .and_then(|v| cmd::keys(ctx, &v))
+        .map_err(|e| e.message.to_string())?;
+    if held.iter().any(|one| one == key) {
+        return Err(format!(
+            "{} holds a value already, and a fill never replaces one: choose another name",
+            vault_and_key(vault, key)
+        ));
+    }
+    Ok(())
 }
 
 /// The provider a vault made by a first fill is kept by: the system's credential store, as a
