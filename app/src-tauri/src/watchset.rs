@@ -13,9 +13,10 @@
 //! each path on its own clock, ticked a quarter of its timeout apart, so writes spread over
 //! more than a tick by a busy machine came out as several batches rather than one. A burst
 //! here is every change from its first event until [`bursts`]' `quiet_for` after it, whatever
-//! its paths did in between.
+//! its paths did in between; or, for [`trailing_bursts`], until `quiet_for` passes with no
+//! event, and at most its `longest` after the first.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
@@ -59,8 +60,13 @@ pub(crate) struct Burst {
     pub paths: HashSet<PathBuf>,
     /// The paths among them a removal named.
     pub removed: HashSet<PathBuf>,
+    /// Folders, or files, each standing for every path in it the burst named past what it
+    /// holds of one tree (#4740): the entry at the top of that tree the path lies in, or the
+    /// tree's own folder for the tree itself. Only a burst folded by tree ([`bursts_by_tree`])
+    /// has any, and none when [`Burst::everything`].
+    pub crowded: HashSet<PathBuf>,
     /// Anything may have changed: the platform lost track, an event named no path, or the
-    /// burst named more paths than it holds.
+    /// burst named more paths than it holds (of those in no tree, or of crowded entries).
     pub everything: bool,
     /// A folder may have been made: a creation the platform named as a folder's, or as
     /// anything's, or a burst that is everything.
@@ -78,10 +84,22 @@ pub(crate) struct Burst {
 }
 
 impl Burst {
-    /// Folds `event` in, holding at most `most` paths: past that the burst counts as
-    /// everything, so a flood costs a fixed amount of memory and the reader reads a little
-    /// more than it needed to rather than missing a change.
+    /// Folds `event` in, holding at most `most` paths, as [`bursts`] does.
+    #[cfg(test)]
     fn add(&mut self, event: notify::Event, most: usize) {
+        self.add_holding(event, &mut Holding::new(most, |_: &Path| None));
+    }
+
+    /// Folds `event` in as `holding` says: past what it holds of a tree, a path is held by
+    /// its entry at the top of the tree ([`Burst::crowded`]); past what it holds in all, the
+    /// burst counts as everything, so a flood costs a fixed amount of memory and the reader
+    /// reads a little more than it needed to rather than missing a change.
+    fn add_holding<T: FnMut(&Path) -> Option<PathBuf>>(
+        &mut self,
+        event: notify::Event,
+        holding: &mut Holding<T>,
+    ) {
+        let most = holding.most;
         if event.need_rescan() || event.paths.is_empty() {
             self.lost_in(event.paths, most);
             return self.is_everything();
@@ -96,8 +114,18 @@ impl Burst {
             EventKind::Create(CreateKind::Folder | CreateKind::Any)
         );
         for path in event.paths {
-            if self.paths.len() >= most && !self.paths.contains(&path) {
-                return self.is_everything();
+            if !self.paths.contains(&path) {
+                match holding.place(&path, self.paths.len()) {
+                    Place::Named => {}
+                    Place::Crowded(entry) => {
+                        if self.crowded.len() >= most && !self.crowded.contains(&entry) {
+                            return self.is_everything();
+                        }
+                        self.crowded.insert(entry);
+                        continue;
+                    }
+                    Place::Full => return self.is_everything(),
+                }
             }
             if removed {
                 self.removed.insert(path.clone());
@@ -133,6 +161,76 @@ impl Burst {
         self.made_folder = true;
         self.paths = HashSet::new();
         self.removed = HashSet::new();
+        self.crowded = HashSet::new();
+    }
+}
+
+/// How many trees' share of paths a burst holds in all (the review of #4740): past
+/// `most` × this many paths in trees, a tree's further paths are held by the entry at its top
+/// they lie in, as a full tree's are. So a burst holds a fixed number of paths however many
+/// trees are listened to, rather than `most` for each of them.
+const TREES_IN_ALL: usize = 4;
+
+/// How many paths one burst holds: at most `most` of each tree's, by the tree `tree` puts a
+/// path in, `most` × [`TREES_IN_ALL`] of all trees', and at most `most` of those it puts in
+/// none.
+struct Holding<T> {
+    most: usize,
+    tree: T,
+    /// How many paths each tree has named so far.
+    held: HashMap<PathBuf, usize>,
+    /// How many of the burst's paths are held for a tree.
+    in_trees: usize,
+}
+
+/// Where a path the burst has not named yet goes.
+enum Place {
+    /// Among the burst's paths.
+    Named,
+    /// Held by this entry at the top of its tree, which is full, or all trees are.
+    Crowded(PathBuf),
+    /// Nowhere: the burst holds no more paths outside a tree.
+    Full,
+}
+
+impl<T: FnMut(&Path) -> Option<PathBuf>> Holding<T> {
+    fn new(most: usize, tree: T) -> Self {
+        Self {
+            most,
+            tree,
+            held: HashMap::new(),
+            in_trees: 0,
+        }
+    }
+
+    /// Where `path` goes, in a burst naming `named` paths already.
+    fn place(&mut self, path: &Path, named: usize) -> Place {
+        let Some(tree) = (self.tree)(path) else {
+            return if named - self.in_trees < self.most {
+                Place::Named
+            } else {
+                Place::Full
+            };
+        };
+        let held = self.held.entry(tree.clone()).or_default();
+        if *held < self.most && self.in_trees < self.most * TREES_IN_ALL {
+            *held += 1;
+            self.in_trees += 1;
+            return Place::Named;
+        }
+        Place::Crowded(top_of(&tree, path))
+    }
+}
+
+/// The entry at the top of `tree` that `path` lies in, or `tree` itself.
+pub(crate) fn top_of(tree: &Path, path: &Path) -> PathBuf {
+    match path
+        .strip_prefix(tree)
+        .ok()
+        .and_then(|below| below.components().next())
+    {
+        Some(first) => tree.join(first),
+        None => tree.to_path_buf(),
     }
 }
 
@@ -151,6 +249,51 @@ pub(crate) fn bursts(
     std::iter::from_fn(move || {
         let first = events.recv().ok()?;
         rest_of_burst(&events, first, quiet_for, most)
+    })
+}
+
+/// [`bursts`] for a watch of several trees (#4740): `tree` names the tree a path lies in, or
+/// none, and the burst holds at most `most` paths of each tree and `most` × [`TREES_IN_ALL`]
+/// of all trees together. Past either, a tree's paths are held by the entry at its top they lie
+/// in ([`Burst::crowded`]), so one tree's flood leaves what the others named as it was. Past
+/// `most` paths in no tree, or `most` crowded entries, the burst is everything, as [`bursts`]'
+/// is. Its timing is [`bursts`]'.
+pub(crate) fn bursts_by_tree(
+    events: Receiver<notify::Event>,
+    quiet_for: Duration,
+    most: usize,
+    mut tree: impl FnMut(&Path) -> Option<PathBuf>,
+) -> impl Iterator<Item = Burst> {
+    std::iter::from_fn(move || {
+        let first = events.recv().ok()?;
+        fold(
+            &events,
+            first,
+            quiet_for,
+            quiet_for,
+            &mut Holding::new(most, &mut tree),
+        )
+    })
+}
+
+/// [`bursts`], each burst closing once `quiet_for` has passed with no event, and at most
+/// `longest` after its first event (#4741): a trailing debounce, so a writer that never pauses
+/// is told about once a `longest`, and a single write within `quiet_for`.
+pub(crate) fn trailing_bursts(
+    events: Receiver<notify::Event>,
+    quiet_for: Duration,
+    longest: Duration,
+    most: usize,
+) -> impl Iterator<Item = Burst> {
+    std::iter::from_fn(move || {
+        let first = events.recv().ok()?;
+        fold(
+            &events,
+            first,
+            quiet_for,
+            longest,
+            &mut Holding::new(most, |_: &Path| None),
+        )
     })
 }
 
@@ -178,16 +321,43 @@ pub(crate) fn rest_of_burst(
     quiet_for: Duration,
     most: usize,
 ) -> Option<Burst> {
+    fold(
+        events,
+        first,
+        quiet_for,
+        quiet_for,
+        &mut Holding::new(most, |_: &Path| None),
+    )
+}
+
+/// The burst `first` begins: everything received until `quiet_for` passes with nothing, or
+/// `longest` after `first`, whichever is sooner, holding paths as `holding` says; `None` when
+/// the watcher is dropped before then. A `longest` of `quiet_for` is [`bursts`]' fixed burst.
+///
+/// **One `holding` folds the whole burst**, so what it has counted of each tree carries from
+/// one event to the next: a holding made afresh for each event would never find a tree full.
+fn fold<T: FnMut(&Path) -> Option<PathBuf>>(
+    events: &Receiver<notify::Event>,
+    first: notify::Event,
+    quiet_for: Duration,
+    longest: Duration,
+    holding: &mut Holding<T>,
+) -> Option<Burst> {
     let mut burst = Burst::default();
-    burst.add(first, most);
-    let until = Instant::now() + quiet_for;
+    burst.add_holding(first, holding);
+    let began = Instant::now();
+    let at_most = began + longest;
+    let mut until = (began + quiet_for).min(at_most);
     loop {
         let left = until.saturating_duration_since(Instant::now());
         if left.is_zero() {
             return Some(burst);
         }
         match events.recv_timeout(left) {
-            Ok(more) => burst.add(more, most),
+            Ok(more) => {
+                burst.add_holding(more, holding);
+                until = (Instant::now() + quiet_for).min(at_most);
+            }
             Err(RecvTimeoutError::Timeout) => return Some(burst),
             Err(RecvTimeoutError::Disconnected) => return None,
         }
@@ -463,6 +633,83 @@ mod tests {
     }
 
     #[test]
+    fn a_tree_past_its_cap_is_held_by_its_top_entries_and_leaves_the_others_named() {
+        let tree = |path: &Path| {
+            ["/a", "/b"]
+                .into_iter()
+                .map(PathBuf::from)
+                .find(|tree| path.starts_with(tree))
+        };
+        let mut holding = Holding::new(8, tree);
+        let mut burst = Burst::default();
+        for n in 0..20 {
+            let path = format!("/a/target/debug/{n}");
+            burst.add_holding(on(EventKind::Create(CreateKind::File), &path), &mut holding);
+        }
+        burst.add_holding(
+            on(EventKind::Create(CreateKind::File), "/a/src/lib.rs"),
+            &mut holding,
+        );
+        burst.add_holding(on(EventKind::Create(CreateKind::File), "/a"), &mut holding);
+        burst.add_holding(
+            on(EventKind::Create(CreateKind::File), "/b/src/lib.rs"),
+            &mut holding,
+        );
+
+        assert!(!burst.everything);
+        assert_eq!(
+            burst
+                .paths
+                .iter()
+                .filter(|path| path.starts_with("/a"))
+                .count(),
+            8
+        );
+        assert!(burst.paths.contains(Path::new("/b/src/lib.rs")));
+        assert_eq!(burst.crowded, set(&["/a/target", "/a/src", "/a"]));
+    }
+
+    /// The review of #4817: each tree under its own cap, many trees at once, must not make a
+    /// burst hold a cap's worth of paths per tree.
+    #[test]
+    fn many_trees_each_under_their_cap_hold_no_more_paths_in_all_than_the_ceiling() {
+        let mut holding = Holding::new(8, |path: &Path| {
+            path.ancestors()
+                .find(|above| above.parent() == Some(Path::new("/")))
+                .map(Path::to_path_buf)
+        });
+        let mut burst = Burst::default();
+        for tree in 0..10 {
+            for n in 0..8 {
+                let path = format!("/t{tree}/src/{n}");
+                burst.add_holding(on(EventKind::Create(CreateKind::File), &path), &mut holding);
+            }
+        }
+
+        assert!(!burst.everything);
+        assert_eq!(burst.paths.len(), 8 * TREES_IN_ALL);
+        // Every tree past the ceiling is held by its top entry, as a full tree's paths are.
+        let past: HashSet<PathBuf> = (TREES_IN_ALL..10)
+            .map(|tree| PathBuf::from(format!("/t{tree}/src")))
+            .collect();
+        assert_eq!(burst.crowded, past);
+    }
+
+    #[test]
+    fn past_its_cap_outside_every_tree_a_burst_folded_by_tree_is_everything() {
+        let mut holding = Holding::new(8, |path: &Path| {
+            path.starts_with("/a").then(|| PathBuf::from("/a"))
+        });
+        let mut burst = Burst::default();
+        for n in 0..20 {
+            let path = format!("/elsewhere/{n}");
+            burst.add_holding(on(EventKind::Create(CreateKind::File), &path), &mut holding);
+        }
+        assert!(burst.everything);
+        assert!(burst.paths.is_empty() && burst.crowded.is_empty());
+    }
+
+    #[test]
     fn a_folder_made_or_anything_made_or_everything_may_have_made_a_folder() {
         let mut file = Burst::default();
         file.add(on(EventKind::Create(CreateKind::File), "/p/a"), 8);
@@ -600,5 +847,126 @@ mod tests {
         assert_eq!(burst.paths, HashSet::from([PathBuf::from("/p/a")]));
         drop(tx);
         assert_eq!(bursts.next(), None, "a dropped watcher ends them");
+    }
+
+    #[test]
+    fn a_trailing_burst_stays_open_while_writes_keep_coming_inside_its_quiet() {
+        let (tx, rx) = mpsc::channel();
+        let quiet = Duration::from_millis(250);
+        let writer = std::thread::spawn(move || {
+            for n in 0..8 {
+                tx.send(on(EventKind::Create(CreateKind::File), &format!("/p/{n}")))
+                    .unwrap();
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            tx
+        });
+        let mut bursts = trailing_bursts(rx, quiet, Duration::from_secs(10), 256);
+
+        let burst = bursts.next().expect("a burst");
+        assert_eq!(
+            burst.paths.len(),
+            8,
+            "every write 50 ms apart is in one burst"
+        );
+        drop(writer.join().unwrap());
+        assert_eq!(bursts.next(), None);
+    }
+
+    #[test]
+    fn a_trailing_burst_under_writes_that_never_pause_closes_at_its_longest() {
+        let (tx, rx) = mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            let mut n: u64 = 0;
+            while tx
+                .send(on(EventKind::Create(CreateKind::File), &format!("/p/{n}")))
+                .is_ok()
+            {
+                n += 1;
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        });
+        let longest = Duration::from_millis(300);
+        let (told, closed) = mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            for _ in trailing_bursts(rx, Duration::from_millis(200), longest, 100_000) {
+                if told.send(Instant::now()).is_err() {
+                    break;
+                }
+            }
+        });
+
+        let mut opened = Instant::now();
+        for _ in 0..2 {
+            let at = closed
+                .recv_timeout(Duration::from_millis(1500))
+                .expect("a burst stayed open under the writes");
+            let took = at - opened;
+            assert!(
+                took >= longest,
+                "a burst closed before its longest: {took:?}"
+            );
+            opened = at;
+        }
+        // Hanging up ends the reader, whose receiver going ends the writer.
+        drop(closed);
+        reader.join().unwrap();
+        writer.join().unwrap();
+    }
+
+    #[test]
+    fn a_single_write_is_a_trailing_burst_once_its_quiet_has_passed() {
+        let (tx, rx) = mpsc::channel();
+        let quiet = Duration::from_millis(100);
+        let longest = Duration::from_secs(1);
+        let mut bursts = trailing_bursts(rx, quiet, longest, 256);
+        tx.send(on(EventKind::Create(CreateKind::File), "/p/a"))
+            .unwrap();
+
+        let started = Instant::now();
+        let burst = bursts.next().expect("a burst");
+        let took = started.elapsed();
+        assert_eq!(burst.paths, HashSet::from([PathBuf::from("/p/a")]));
+        assert!(
+            took < longest,
+            "a single write waited out the longest: {took:?}"
+        );
+    }
+
+    /// The review of #4817 and #4838: a branch burst folded over many receives keeps what it
+    /// counted of each tree, so a tree past its cap is crowded however its events arrived.
+    #[test]
+    fn a_tree_burst_over_many_receives_still_crowds_a_tree_past_its_cap() {
+        let (tx, rx) = mpsc::channel();
+        for n in 0..20 {
+            let path = format!("/a/target/debug/{n}");
+            tx.send(on(EventKind::Create(CreateKind::File), &path))
+                .unwrap();
+        }
+        tx.send(on(EventKind::Create(CreateKind::File), "/b/src/lib.rs"))
+            .unwrap();
+        let tree = |path: &Path| {
+            ["/a", "/b"]
+                .into_iter()
+                .map(PathBuf::from)
+                .find(|tree| path.starts_with(tree))
+        };
+
+        let burst = bursts_by_tree(rx, Duration::from_millis(200), 8, tree)
+            .next()
+            .expect("a burst");
+        assert!(!burst.everything);
+        assert_eq!(
+            burst
+                .paths
+                .iter()
+                .filter(|path| path.starts_with("/a"))
+                .count(),
+            8,
+            "the first tree's count carried across receives"
+        );
+        assert!(burst.paths.contains(Path::new("/b/src/lib.rs")));
+        assert_eq!(burst.crowded, set(&["/a/target"]));
+        drop(tx);
     }
 }
