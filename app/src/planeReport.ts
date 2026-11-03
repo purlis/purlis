@@ -75,13 +75,6 @@ export type PlaneReport = {
   /** The branch the explorer has picked in the workspace in front, or none: the narrowest
    *  scope ⌘P finds files in (FM-7). */
   branch?: Place;
-  /**
-   * When anything in it last moved: the newest `movedAt` among its chats, `0` when nothing
-   * has been heard. What the project strip's show-more menu orders its rows by after the ones
-   * that need you (ADR 0054, charter#401). The core counts moves across every project's
-   * board with one count, so this compares across projects.
-   */
-  moved: number;
   /** Its workspaces, once its plane is read: the title bar's chips and switchers (#2916). */
   workspaces?: ReportedWorkspaces;
 };
