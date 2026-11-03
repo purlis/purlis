@@ -49,6 +49,7 @@ import {
 } from "./theme/theme";
 import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
+import { writePerFrame } from "./paneWrites";
 import { useProjectShown } from "./projectShown";
 
 /**
@@ -372,11 +373,13 @@ export function SessionPane({
     // text it belongs to.
     const waiting: { text: string; written?: () => void }[] = [];
     let ready = false;
+    // What arrives within a frame is one write to the terminal, not one per chunk (#4732).
+    const writes = writePerFrame((text, parsed) => pane.write(text, parsed));
     const output = new Channel<string>();
     output.onmessage = (text) => {
       if (gone) return;
       const written = bench.paneSent(pane, text);
-      if (ready) pane.write(text, written);
+      if (ready) writes.add(text, written);
       else waiting.push({ text, written });
     };
     // The pane's own size first: a session nobody is showing keeps whatever size it had.
@@ -400,7 +403,7 @@ export function SessionPane({
       newline = opened.data.newline ?? undefined;
       pane.resize(opened.data.columns, opened.data.rows);
       ready = true;
-      for (const held of waiting.splice(0)) pane.write(held.text, held.written);
+      for (const held of waiting.splice(0)) writes.add(held.text, held.written);
       // Now that the screen is drawn, the pane's own size applies again.
       fit.fit();
     })();
@@ -421,6 +424,7 @@ export function SessionPane({
       bytes.dispose();
       resized.dispose();
       if (view !== undefined) void commands.unwatchSession(plane, session, view);
+      writes.dispose();
       pane.dispose();
       terminal.current = undefined;
       setFinding(null);
