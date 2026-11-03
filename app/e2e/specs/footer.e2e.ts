@@ -5,7 +5,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { browser, expect, $ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { harnessRowsDrawn, pressOnly } from "../opening.js";
+import { harnessRowsDrawn, openThePicker } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { openedSince, tabNames } from "../reach.js";
 
@@ -67,7 +67,7 @@ async function aPaneShows(text: string): Promise<boolean> {
  */
 async function startAChat(plane: string, showTheFooter: boolean): Promise<void> {
   const before = Object.keys(markers(plane)).length;
-  await pressOnly("New tab");
+  await openThePicker();
   await dialog().waitForDisplayed({ timeout: 20_000 });
   await harnessRowsDrawn();
 

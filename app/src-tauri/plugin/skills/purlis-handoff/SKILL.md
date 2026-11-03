@@ -25,9 +25,9 @@ person's work moves to a chat they will read themselves.
 
 **2. Will the operator read the new chat themselves?** Then it is a **handoff**: a bug to
 fix, a chore, a question for another workspace to own. It starts in that workspace's sidebar
-without taking a pane, and this chat hears nothing back. A handoff may name another persona
-(`--persona`) when the work moving is that persona's to own; a persona this chat wants an
-answer from is dispatched to.
+without taking a pane, and this chat hears nothing back.
+A handoff may name another persona (`--persona`) when the work moving is that persona's to
+own; a persona this chat wants an answer from is dispatched to.
 
 **3. This workspace or another — does the ask serve this workspace's vision?** Yes → a new
 chat here. No → another workspace. Either way it is one mechanism, because a chat belongs to

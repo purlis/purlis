@@ -170,10 +170,45 @@ export async function pressOnly(name: string): Promise<void> {
   await button.click();
 }
 
-/** Presses a button that starts a chat, and answers the picker it opens. */
+/**
+ * Presses a button that starts a chat, and answers the picker it opens.
+ *
+ * **"New tab" is the strip's `+`, which opens a tab of one empty pane** (#4758): no chat, and no
+ * picker. A spec that asks for it wants its chat in a tab of its own, so it is what the person
+ * does for that: `+`, then the empty pane's own New chat, which opens the picker for that pane.
+ */
 export async function pressAndStart(name: string): Promise<void> {
   await pressOnly(name);
+  if (name === NEW_TAB) await pressTheEmptyPanesNewChat();
   await pickAndStart();
+}
+
+/** **Opens the picker for a chat in a tab of its own**: the strip's `+`, then the new tab's
+ *  empty pane's New chat (#4758), and nothing picked. */
+export async function openThePicker(): Promise<void> {
+  await pressOnly(NEW_TAB);
+  await pressTheEmptyPanesNewChat();
+}
+
+/** The strip's `+` (`tab.new`). */
+const NEW_TAB = "New tab";
+
+/** Presses New chat on the empty pane drawn in front: the one a `+` just opened. */
+async function pressTheEmptyPanesNewChat(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        const pane = [...document.querySelectorAll<HTMLElement>('[data-testid="empty-pane"]')].find(
+          (one) => one.getBoundingClientRect().width > 0,
+        );
+        const button = [...(pane?.querySelectorAll<HTMLElement>("button") ?? [])].find(
+          (one) => (one.textContent ?? "").trim() === "New chat",
+        );
+        button?.click();
+        return button !== undefined;
+      }),
+    { timeout: 20_000, interval: 200, timeoutMsg: "the new tab drew no empty pane to start in" },
+  );
 }
 
 /**

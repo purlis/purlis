@@ -2179,8 +2179,8 @@ fn a_task_the_person_asked_for_is_refused_to_the_asking_chat_in_words_that_say_s
         assert_eq!(text(&out.stdout), "", "{args:?}");
         assert!(
             text(&out.stderr).contains(
-                "purlis dispatch: the person asked for chat 9 themselves, from this chat's \
-                 tab, so it is theirs and not this chat's to wait on, tell, answer or cancel. \
+                "purlis dispatch: the person asked for chat 9 themselves, from this chat, so \
+                 it is theirs and not this chat's to wait on, tell, answer or cancel. \
                  Nothing was sent. Its report comes to this chat when it has one."
             ),
             "{args:?}: {}",

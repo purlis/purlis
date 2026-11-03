@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import process from "node:process";
 import { A_FINDER_LAUNCHS_PATH, built, READY } from "../harness.js";
 import { THEIR_STATUS_LINE } from "../wdio.finder.conf.js";
-import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
+import { harnessRowsDrawn, pickAndStart, openThePicker } from "../opening.js";
 import { projectInFront, runningIn } from "../running.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { escapeUntilClosed } from "../tooltips.js";
@@ -80,7 +80,7 @@ async function theNewestTabComesToSay(state: string, why: string): Promise<void>
 async function startAChatOnTheBuiltIn(): Promise<void> {
   const plane = await projectInFront();
   const before = new Set(await runningIn(plane));
-  await pressOnly("New tab");
+  await openThePicker();
   await harnessRowsDrawn();
   await (await $("label*=claude")).click();
   await pickAndStart();
@@ -115,7 +115,7 @@ describe("an app opened from Finder", () => {
   });
 
   it("offers the built-in profile whose program only a shell's PATH would find", async () => {
-    await pressOnly("New tab");
+    await openThePicker();
 
     await expect(dialog()).toBeDisplayed();
     // The built-in is listed only when charter can find its program, so the row being here is
@@ -129,7 +129,7 @@ describe("an app opened from Finder", () => {
   it("starts the chat rather than refusing over a harness it could not look for", async () => {
     const before = (await $$('[data-testid="pane"]').getElements()).length;
 
-    await pressOnly("New tab");
+    await openThePicker();
     await harnessRowsDrawn();
     await (await $("label*=claude")).click();
     await pickAndStart();
