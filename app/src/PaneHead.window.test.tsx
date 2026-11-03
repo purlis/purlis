@@ -27,11 +27,27 @@ import type { Moved } from "./bindings";
  * parts in the ruled order (`paneHead.ts`), and the bell, ⋯, Split right and Close never go.
  */
 
-vi.mock("./SessionPane", () => ({
-  SessionPane: ({ session }: { session: number }) => (
-    <div data-testid="pane">session {session}</div>
-  ),
-}));
+/** What the stand-in terminal was asked to do from its pane's head (#4760). */
+const ran: string[] = [];
+
+vi.mock("./SessionPane", async () => {
+  const { useContext, useEffect } = await import("react");
+  const { PaneTerminalAt } = await import("./paneTerminal");
+  return {
+    // A terminal with something selected, which says to its pane's head what it can do.
+    SessionPane: ({ session }: { session: number }) => {
+      const at = useContext(PaneTerminalAt);
+      useEffect(() => {
+        if (at === null) return;
+        at.current = { selected: () => true, run: (id) => ran.push(id) };
+        return () => {
+          at.current = null;
+        };
+      }, [at]);
+      return <div data-testid="pane">session {session}</div>;
+    },
+  };
+});
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
@@ -195,6 +211,30 @@ describe("a chat's pane head", () => {
     // Nothing of a tab's and nothing of the window's.
     expect(items).not.toContain("Pinned");
     expect(items).not.toContain("New tab");
+  });
+
+  it("puts the terminal's Copy and Paste among the pane's rows, before Send F2, and runs them on it", async () => {
+    await aPane();
+    await waitFor(() => expect(controls()[0]).toMatch(/^More for /));
+    ran.length = 0;
+
+    fireEvent.contextMenu(head().querySelector(".pane-chips") as HTMLElement);
+    const menu = await screen.findByRole("menu");
+    const items = [...menu.querySelectorAll('[role^="menuitem"]')].map(
+      (one) => one.getAttribute("aria-label") ?? one.textContent,
+    );
+    const split = items.indexOf("Split right");
+    expect(items.slice(split)).toEqual(
+      expect.arrayContaining(["Copy", "Paste", "Send F2 to the chat in front"]),
+    );
+    expect(items.indexOf("Copy")).toBeGreaterThan(items.indexOf("Split down"));
+    expect(items.indexOf("Paste")).toBe(items.indexOf("Copy") + 1);
+    expect(items.indexOf("Send F2 to the chat in front")).toBeGreaterThan(items.indexOf("Paste"));
+    // Not Select all: the terminal's own right-click keeps that.
+    expect(items).not.toContain("Select all");
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Copy" }));
+    await waitFor(() => expect(ran).toEqual(["terminal.copy"]));
   });
 });
 

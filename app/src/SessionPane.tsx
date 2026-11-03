@@ -3,6 +3,7 @@
 
 import {
   useCallback,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -10,6 +11,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { Channel } from "@tauri-apps/api/core";
+import { PaneTerminalAt } from "./paneTerminal";
 import { FitAddon } from "@xterm/addon-fit";
 import { afterTheSlide } from "./railSlide";
 import { SearchAddon } from "@xterm/addon-search";
@@ -159,6 +161,17 @@ export function SessionPane({
       if (trouble !== undefined) saying.current(trouble);
     });
   }, []);
+
+  // **Its pane's head reaches it** (#4760): Copy and Paste on a right-click of the head run
+  // here, as its own menu's do.
+  const headRef = useContext(PaneTerminalAt);
+  useEffect(() => {
+    if (headRef === null) return;
+    headRef.current = { selected: () => terminal.current?.hasSelection() ?? false, run };
+    return () => {
+      headRef.current = null;
+    };
+  }, [headRef, run]);
 
   /** The menu closed on a row of the terminal's own, or on Escape: the keyboard is the
    *  terminal's again, said here and not left to where the engine thinks it was. */

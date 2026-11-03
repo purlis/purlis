@@ -2,9 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { RowMenu } from "./ui/list/List";
-import { useEffect, useId, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode, type RefObject } from "react";
+import type { PaneTerminal } from "./paneTerminal";
+import { isTerminalRow, terminalGroup, terminalRows } from "./terminalRows";
+import { onAMac } from "./mac";
 import { Ellipsis } from "lucide-react";
-import { noteOf, renameId, type Catalogued, type MenuOn, type Offer } from "./actions";
+import {
+  noteOf,
+  PASS_THROUGH_ID,
+  renameId,
+  type Catalogued,
+  type MenuOn,
+  type Offer,
+} from "./actions";
 import { turnStateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { menuIsEmpty, menuOf, type GroupDrawn, type RowDrawn, type SubDrawn } from "./menuModel";
 import { landSettingsFocus } from "./settings/entering";
@@ -141,21 +151,35 @@ export function PaneHeadMenued({
   session,
   offers,
   pane,
+  terminal,
   onPress,
   children,
 }: {
   session: number;
   offers: Catalogued;
   pane: Catalogued;
+  /** The terminal the pane draws, where it draws one: its Copy and Paste are pane rows. */
+  terminal?: RefObject<PaneTerminal | null>;
   onPress: (offer: Offer) => void;
   /** The pane head. One element: it is the trigger itself. */
   children: ReactNode;
 }) {
+  /** The terminal as the menu opened: whether anything was selected is read then, once. */
+  const [clip, setClip] = useState<PaneTerminal | null>(null);
   const on: MenuOn = { on: "chat", session };
   if (menuIsEmpty(on, offers) && menuIsEmpty({ on: "pane" }, pane)) return <>{children}</>;
   return (
     <ContextMenu
-      menu={() => <PaneHeadMenu session={session} offers={offers} pane={pane} onPress={onPress} />}
+      onOpenChange={(open) => setClip(open ? (terminal?.current ?? null) : null)}
+      menu={() => (
+        <PaneHeadMenu
+          session={session}
+          offers={offers}
+          pane={pane}
+          terminal={clip}
+          onPress={onPress}
+        />
+      )}
       onClosed={landSettingsFocus}
     >
       {children}
@@ -163,23 +187,62 @@ export function PaneHeadMenued({
   );
 }
 
-/** That menu's content, made only while it is open, as `CatalogueMenu`'s is. */
+/**
+ * That menu's content, made only while it is open, as `CatalogueMenu`'s is. **The pane's rows
+ * in the table's order** (`command-table.md`, "Panes"): the splits and Tile all, then the
+ * terminal's Copy and Paste, then Send F2, and under a line Close pane. Select all stays the
+ * terminal's own right-click's.
+ */
 function PaneHeadMenu({
   session,
   offers,
   pane,
+  terminal,
   onPress,
 }: {
   session: number;
   offers: Catalogued;
   pane: Catalogued;
+  terminal: PaneTerminal | null;
   onPress: (offer: Offer) => void;
 }) {
   const chat = menuOf({ on: "chat", session }, offers);
-  const groups = [...chat.groups, ...menuOf({ on: "pane" }, pane).groups];
+  const [rows, ...below] = menuOf({ on: "pane" }, pane).groups;
+  const clip =
+    terminal === null
+      ? []
+      : terminalGroup(
+          terminalRows({ selected: terminal.selected(), mac: onAMac() }).filter(
+            (row) => row.id !== "terminal.selectAll",
+          ),
+        ).entries;
+  const at = (rows?.entries ?? []).findIndex(
+    (entry) => entry.kind === "row" && entry.offer.id === PASS_THROUGH_ID,
+  );
+  const paneRows: GroupDrawn[] =
+    rows === undefined
+      ? clip.length === 0
+        ? []
+        : [{ entries: clip }]
+      : [
+          {
+            ...rows,
+            entries:
+              at === -1
+                ? [...rows.entries, ...clip]
+                : [...rows.entries.slice(0, at), ...clip, ...rows.entries.slice(at)],
+          },
+        ];
   return (
     <Menu aria-label={chat.about} className="item-menu">
-      <Groups groups={groups} onPress={onPress} />
+      <Groups
+        groups={[...chat.groups, ...paneRows, ...below]}
+        onPress={(offer) => {
+          // One of the terminal's own rows, by its id, runs on it; any other is the catalogue's.
+          if (isTerminalRow(offer.id)) terminal?.run(offer.id);
+          else onPress(offer);
+        }}
+      />
     </Menu>
   );
 }
