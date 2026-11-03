@@ -1658,6 +1658,7 @@ impl StagedSettings {
             if !self.paths.insert(piece.path.clone()) {
                 return Err("a settings file came twice".to_owned());
             }
+            self.whole_so_far();
             self.files.push(SettingsFile {
                 path: piece.path,
                 bytes: piece.bytes,
@@ -1667,12 +1668,21 @@ impl StagedSettings {
     }
 
     /// The files staged, as `profile`'s, where they are the `files` its `keep_profile` counts.
-    pub fn finished(self, profile: &str, files: u32) -> Result<Vec<SettingsFile>, String> {
+    pub fn finished(mut self, profile: &str, files: u32) -> Result<Vec<SettingsFile>, String> {
         let same = self.profile.as_deref().is_none_or(|p| p == profile);
         if !same || self.files.len() != files as usize {
             return Err("the settings staged are not the ones this keep names".to_owned());
         }
+        self.whole_so_far();
         Ok(self.files)
+    }
+
+    /// The last file staged, whole now, holding no more memory than its bytes (#4396): its pieces
+    /// grew it as they came, and a profile near its limit is held in memory once.
+    fn whole_so_far(&mut self) {
+        if let Some(file) = self.files.last_mut() {
+            file.bytes.shrink_to_fit();
+        }
     }
 }
 

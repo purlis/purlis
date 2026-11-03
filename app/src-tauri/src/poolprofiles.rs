@@ -1041,15 +1041,13 @@ fn limits_shown(
             .iter()
             .find(|one| one.limit == limit.id)
             .map(purlis_core::poollimits::RefusedValue::said)
-            .or_else(|| chosen.over_team_said(limit.id)),
+            .or_else(|| chosen.over_highest_said(limit.id)),
         default_by_team: chosen.default_by_team(limit.id),
         suggested: chosen.team_suggests(limit.id).map(number),
         suggested_said: chosen
             .team_suggests(limit.id)
             .map(|value| limit.unit.said(value)),
-        highest_said: chosen
-            .team_highest(limit.id)
-            .map(|top| format!("The team allows up to {}.", limit.unit.said(top))),
+        highest_said: chosen.highest_said(limit.id),
     };
     let groups = Group::ALL
         .into_iter()
@@ -1129,13 +1127,14 @@ pub async fn pool_limit_check(pool: String, key: String, typed: String) -> Resul
     .map_err(|why| format!("the value was not checked: {why}"))?
 }
 
-/// [`pool_limit_check`], on the machine at `config`. What the team defining a cluster pool allows
-/// is refused as it is typed (#4287).
+/// [`pool_limit_check`], on the machine at `config`. What the team defining a cluster pool allows,
+/// and what a Docker pool's runner can hold in its memory (#4396), is refused as it is typed
+/// (#4287).
 fn limit_checked_on(config: &Path, pool: &str, key: &str, typed: &str) -> Result<u32, String> {
     let limit = limit_named(key)?;
     let chosen =
         purlis_core::runners::chosen_limits_of(config, pool).map_err(|why| why.to_string())?;
-    let value = limit.check_typed(typed, chosen.team_highest(limit.id))?;
+    let value = chosen.check_typed(limit.id, typed)?;
     u32::try_from(value).map_err(|_| format!("{} is too large a number here", limit.plain))
 }
 

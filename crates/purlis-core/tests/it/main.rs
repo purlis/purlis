@@ -26,8 +26,8 @@
 //! by filter (`support::forge_cli::in_a_child`) starts its filter with the module too, so it
 //! cannot pick up another file's tests.
 //!
-//! `design_tokens_memory.rs` stays a binary of its own: it installs a counting
-//! `#[global_allocator]`, which is the whole process's.
+//! `design_tokens_memory.rs` and `a_runner_holds_a_profile_once_as_it_keeps_it.rs` stay binaries
+//! of their own: each installs a counting `#[global_allocator]`, which is the whole process's.
 
 // The shared helpers, in the folders they always had; each module reaches one as
 // `crate::support` and so on.
@@ -238,7 +238,10 @@ pub(crate) fn alone() -> bool {
 }
 
 /// The `.rs` files straight under `tests/` that are binaries of their own on purpose.
-const OWN_BINARIES: [&str; 1] = ["design_tokens_memory.rs"];
+const OWN_BINARIES: [&str; 2] = [
+    "design_tokens_memory.rs",
+    "a_runner_holds_a_profile_once_as_it_keeps_it.rs",
+];
 
 /// A `.rs` file straight under `tests/` is a test binary of its own, which links the whole
 /// graph again: the cost this layout exists to remove. A new test file goes in this folder,
