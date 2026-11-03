@@ -718,7 +718,7 @@ export const commands = {
 	 *  stored in the vault and every command that waits on it runs; Not now tells them it was
 	 *  declined. Each chat that stopped waiting is nudged.
 	 */
-	answerSecretAsk: (plane: PlaneId, id: number, value: SecretValue | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value })),
+	answerSecretAsk: (plane: PlaneId, id: number, value: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value })),
 	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
 	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone

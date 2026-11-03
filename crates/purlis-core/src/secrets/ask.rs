@@ -197,8 +197,9 @@ fn still_open_said(vault: &str, key: &str) -> String {
 /// What a command is told as it starts to wait.
 fn asked_said(vault: &str, key: &str, within: Duration) -> String {
     format!(
-        "vault {vault} holds no {key}, so purlis asked the person for it in its window: this \
+        "purlis asked the person in its window for {}, which the vault doesn't hold: this \
          command waits for their answer for up to {} seconds",
+        vault_and_key(vault, key),
         within.as_secs()
     )
 }

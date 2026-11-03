@@ -57,7 +57,7 @@ pub fn secret_answered(
     held.chats().asks_may_have_moved();
     let answered = answered?;
     tracing::info!(
-        "purlis: the person {} {}/{}, which {} chat(s) had stopped waiting on",
+        "purlis: the person {} {}/{}",
         if answered.filled {
             "filled"
         } else {
@@ -65,7 +65,6 @@ pub fn secret_answered(
         },
         answered.vault,
         answered.key,
-        answered.nudge.len()
     );
     nudge(held, &answered);
     Ok(())
