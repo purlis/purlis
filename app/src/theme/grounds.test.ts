@@ -1509,9 +1509,12 @@ describe("where each see-through ground is laid", () => {
   });
 
   it("fails a danger-wash box over surface.raised until WASH_LAID_ON names it", () => {
+    // The window is read once, above; the box is read on its own and added to it. Nothing in the
+    // window carries `raised` or `box`, or draws `Raised`, so this is the window with the box in
+    // it, without reading the whole window a second time (#4991: that read timed out on CI).
     const { files, css } = raised('<p className="box">Refused.</p>');
-    const both = readGrounds([...sources(SRC), ...files], [...sheets(), ...css], SEE_THROUGH);
-    const laid = laidGrounds(both.laid, PAINTED).laid;
+    const box = readGrounds(files, css, SEE_THROUGH);
+    const laid = laidGrounds(new Map([...window.laid, ...box.laid]), PAINTED).laid;
     expect(unsaid(laid, engineWashes())).toContain(
       "danger.wash over surface.raised: not in WASH_LAID_ON",
     );
