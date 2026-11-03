@@ -115,8 +115,9 @@ type Dress = {
   /** Its words: written once, or made from the row where they change with it. */
   said: string | ((offer: Offer) => string);
   midTurn?: string;
-  /** The group it is drawn in: one, or the one the row itself says where what it does varies. */
-  slot: Slot | ((offer: Offer) => Slot);
+  /** The group it is drawn in: one, or the one the row itself says where what it does varies,
+   *  or the menu it is drawn on says, where one row is on two menus (Tile all, #4765). */
+  slot: Slot | ((offer: Offer, on: MenuOn) => Slot);
   /** The submenu it is folded into. */
   under?: SubKey;
   /** Whether it cannot be undone. */
@@ -232,7 +233,9 @@ const DRESS: Readonly<Record<string, Dress>> = {
   },
   "tab.select": { said: SAID.switchTo, slot: "first", quiet: true },
   "tab.pin": pin,
-  "tab.tile": { said: SAID.tileAll, slot: "first" },
+  // Tile all (#4765): among a tab's own rows on its right-click, and with the splits on a pane's,
+  // where it rearranges the panes as they do (#4760, `command-table.md` "Panes").
+  "tab.tile": { said: SAID.tileAll, slot: (_offer, on) => (on.on === "pane" ? "run" : "first") },
   "tab.keep": { said: SAID.keepOpen, slot: "first" },
   "tab.close": {
     said: unnamed,
@@ -559,7 +562,7 @@ export function menuOf(what: MenuOn, offers: Catalogued): MenuDrawn {
           ? "end"
           : "first"
         : typeof dress.slot === "function"
-          ? dress.slot(offer)
+          ? dress.slot(offer, what)
           : dress.slot;
     if (dress?.under === undefined) slots[slot].push(row);
     else folded(dress.under, slot).groups[0].entries.push(row);
