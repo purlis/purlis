@@ -560,11 +560,7 @@ impl SkillGradePlan {
                 .iter()
                 .map(|eval| {
                     let prompt = grading::outcomes::outcome_prompt(eval);
-                    let not_text = planned
-                        .copy
-                        .as_ref()
-                        .map(|copy| copy.inputs_of(eval).1)
-                        .unwrap_or_default();
+                    let not_text = planned.eval_not_text(eval);
                     let as_shown = |path: &String| {
                         purlis_unicode::marked(path, purlis_unicode::Breaks::Marked)
                     };
