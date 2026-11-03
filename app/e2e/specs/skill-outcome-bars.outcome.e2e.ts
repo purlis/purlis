@@ -224,6 +224,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         }; // [DEBUG-4351]
         requestAnimationFrame(frame); // [DEBUG-4351]
         const started = performance.now();
+        (globalThis as { __t04351?: number }).__t04351 = started; // [DEBUG-4351]
         row.click();
         tl.push(`${(performance.now() - started).toFixed(0)} click returned`); // [DEBUG-4351]
         const look = () => {
