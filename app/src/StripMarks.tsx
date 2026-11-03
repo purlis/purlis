@@ -99,7 +99,7 @@ export function Doer({
   primary?: boolean;
 }) {
   if (!offer) return null;
-  const Mark = MARKS[offer.id] ?? MARKS[offer.id.split(":")[0]];
+  const Mark = MARKS[markKey(offer.id)];
   const bare = iconOnly && Mark !== undefined;
   if (primary)
     return (
@@ -439,5 +439,11 @@ export function markOf(offer: Offer): typeof Plus | undefined {
   }
   if (offer.id.startsWith("chat.own:")) return SquareArrowOutUpRight;
   if (offer.id.startsWith("chat.beside:")) return PanelRight;
-  return MARKS[offer.id];
+  return MARKS[markKey(offer.id)];
+}
+
+/** Which key of `MARKS` a row's mark is under: its whole id, else its stem, for a row with one
+ *  id per thing it acts on (Tile all's `tab.tile:<tab>`, #4765). */
+function markKey(id: string): string {
+  return id in MARKS ? id : id.split(":")[0];
 }

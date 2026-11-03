@@ -423,7 +423,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "focus.toggle",
-    does: "Focus this pane: zoom in a split, Focus mode in one pane",
+    does: "Focus this pane: zoom in a split, focus mode in one pane",
     group: "Window",
     where: "window",
     kind: "key",

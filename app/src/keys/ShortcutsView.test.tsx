@@ -38,7 +38,7 @@ describe("the cheat sheet (N25)", () => {
     const list = screen.getByRole("grid", { name: "Keyboard shortcuts" });
     for (const group of ["Go to", "Window", "Tabs and chats", "Palette", "Dialogs and forms"])
       expect(within(list).getByText(group)).toBeInTheDocument();
-    const focus = within(list).getByRole("row", { name: /Focus mode/ });
+    const focus = within(list).getByRole("row", { name: /Focus this pane/ });
     const cap = focus.querySelector('[data-part="shortcut"]');
     expect(cap).toHaveTextContent("⌘⇧↩");
     // Heard as words, not as the symbols drawn.

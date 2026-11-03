@@ -1,9 +1,9 @@
 ### Added
 
-- **Tile all evens a tab's panes into a grid.** The button at the right end of the tab strip, the
-  tab's right-click menu and the palette all offer it. It arranges only the panes already in
-  the tab, in reading order, and Undo in the palette puts them back. It's greyed in a tab with
-  one pane (#4765).
+- **Tile all evens a tab's panes into a grid.** The tab's right-click menu and the palette offer
+  it, and a split tab shows it at the right end of the tab strip. It arranges only the panes
+  already in the tab, in reading order, and "Undo the last layout change" in the palette puts
+  them back. In a tab with one pane the menu and the palette show it greyed (#4765).
 
 ### Changed
 

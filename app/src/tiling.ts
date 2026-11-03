@@ -75,10 +75,15 @@ function unzoomed(tab: Tab): Tab {
   return plain;
 }
 
+/** Whether tab `id` is split: more than one pane, which Tile all and a zoom need. */
+export function isSplit(tabs: Tabs, id: number | undefined): boolean {
+  const tab = id === undefined ? undefined : tabs.byId[id];
+  return tab !== undefined && tab.layout.kind === "split";
+}
+
 /** Whether tab `id` has more than one pane to tile. */
 export function canTileAll(tabs: Tabs, id: number): boolean {
-  const tab = tabs.byId[id];
-  return tab !== undefined && tab.layout.kind === "split";
+  return isSplit(tabs, id);
 }
 
 /**
@@ -118,19 +123,23 @@ export function canUndoLayout(tabs: Tabs, id: number): boolean {
  *  is nothing to undo. */
 export function undoLayout(tabs: Tabs, id: number): Tabs {
   const tab = tabs.byId[id];
-  if (tab?.undo === undefined || !canUndoLayout(tabs, id)) return tabs;
-  const back: Tab = { ...unzoomed(tab), layout: tab.undo.layout, focused: tab.undo.focused };
+  const undo = tab?.undo;
+  if (tab === undefined || undo === undefined || undo.after !== tab.layout) return tabs;
+  const back: Tab = { ...unzoomed(tab), layout: undo.layout, focused: undo.focused };
   delete back.undo;
   return withTab(tabs, back);
 }
 
 /**
- * The pane zoomed in tab `id`, or nothing: a zoom whose pane has gone, or in a tab left with one
- * pane, is no zoom.
+ * The pane zoomed in tab `id`, or nothing. **A zoom holds only while its pane has the focus**:
+ * once the focus moves (a split, a pane focused, its pane gone) the pane drawn alone would not be
+ * the one the keyboard and the next split act on, so it is no zoom. Nor is one in a tab left
+ * with one pane.
  */
 export function zoomedOf(tabs: Tabs, id: number): number | undefined {
   const tab = tabs.byId[id];
-  if (tab?.zoomed === undefined || tab.layout.kind !== "split") return undefined;
+  if (tab?.zoomed === undefined || !isSplit(tabs, id) || tab.zoomed !== tab.focused)
+    return undefined;
   return panesOf(tab.layout).some((one) => one.pane === tab.zoomed) ? tab.zoomed : undefined;
 }
 
@@ -141,7 +150,7 @@ export function zoomedOf(tabs: Tabs, id: number): number | undefined {
  */
 export function zoomFocusedPane(tabs: Tabs): Tabs {
   const tab = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
-  if (tab === undefined || tab.layout.kind !== "split") return tabs;
+  if (tab === undefined || !isSplit(tabs, tab.id)) return tabs;
   if (zoomedOf(tabs, tab.id) !== undefined) return withTab(tabs, unzoomed(tab));
   return withTab(tabs, { ...tab, zoomed: tab.focused });
 }

@@ -330,4 +330,19 @@ describe("Focus this pane in a split: zoom (#4765)", () => {
 
     expect(zoomedOf(tileAll(zoomed, 1), 1)).toBeUndefined();
   });
+
+  it("ends when the focus moves to another pane, so the pane drawn is the one with the keyboard", () => {
+    const zoomed = zoomFocusedPane(focusPane(nested(3), 2));
+
+    const moved = focusPane(zoomed, 3);
+
+    expect(zoomedOf(moved, 1)).toBeUndefined();
+    expect(zoomedLayout(moved, 1, moved.byId[1].layout)).toBe(moved.byId[1].layout);
+  });
+
+  it("ends when the zoomed pane is split, since the new pane takes the focus", () => {
+    const zoomed = zoomFocusedPane(nested(2));
+
+    expect(zoomedOf(splitFocusedPane(zoomed, "row", 9, "9"), 1)).toBeUndefined();
+  });
 });

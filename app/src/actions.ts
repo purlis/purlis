@@ -133,7 +133,7 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
-import { canTileAll, canUndoLayout, zoomedOf } from "./tiling";
+import { canTileAll, canUndoLayout, isSplit, zoomedOf } from "./tiling";
 import { isBrowser } from "./browsers";
 import { anyPoolKept, startAddingAPool } from "./pools";
 import { isDriven } from "./browserDriving";
@@ -1984,27 +1984,35 @@ export function catalogue(now: Now): Offer[] {
   // own (N25). Their keys are drawn on the rows from the registry.
   // **Focus this pane** (#4765): in a split it zooms the focused pane and the same row brings
   // the split back; in a one-pane tab it is focus mode, which, once on, it leaves first.
-  const zoomed = front === undefined ? undefined : zoomedOf(now.tabs, front.id);
-  if (now.focusMode !== true && front?.layout.kind === "split")
-    offers.push({
-      ...can(FOCUS_MODE_ID, zoomed === undefined ? FOCUS_THIS_PANE : "Back to the split", {
-        verb: "zoomPane",
-      }),
-      note:
-        zoomed === undefined
-          ? `This pane fills the tab for now, and the others keep running. ${FOCUS_KEY_SAID}.`
-          : `Every pane of this tab drawn again, as it was. ${FOCUS_KEY_SAID}.`,
-    });
-  else
-    offers.push({
-      ...can(FOCUS_MODE_ID, now.focusMode === true ? "Leave focus mode" : FOCUS_THIS_PANE, {
-        verb: "toggleFocusMode",
-      }),
-      note:
-        now.focusMode === true
-          ? `The rail, the bars and the panels back where they were. ${FOCUS_KEY_SAID}.`
-          : `The rail, the bars and the panels hidden: the work alone. ${FOCUS_KEY_SAID}.`,
-    });
+  const zooms = now.focusMode !== true && isSplit(now.tabs, front?.id);
+  const zoomed = zooms && front !== undefined && zoomedOf(now.tabs, front.id) !== undefined;
+  const [focusTitle, focusVerb, focusNote]: [string, Does, string] = zooms
+    ? zoomed
+      ? [
+          "Back to the split",
+          { verb: "zoomPane" },
+          "Every pane of this tab drawn again, as it was.",
+        ]
+      : [
+          FOCUS_THIS_PANE,
+          { verb: "zoomPane" },
+          "This pane fills the tab for now, and the others keep running.",
+        ]
+    : now.focusMode === true
+      ? [
+          "Leave focus mode",
+          { verb: "toggleFocusMode" },
+          "The rail, the bars and the panels back where they were.",
+        ]
+      : [
+          FOCUS_THIS_PANE,
+          { verb: "toggleFocusMode" },
+          "The rail, the bars and the panels hidden: the work alone.",
+        ];
+  offers.push({
+    ...can(FOCUS_MODE_ID, focusTitle, focusVerb),
+    note: `${focusNote} ${FOCUS_KEY_SAID}.`,
+  });
   offers.push({
     ...can(SHORTCUTS_ID, "Keyboard shortcuts", {
       verb: "openView",
@@ -2147,7 +2155,10 @@ export function catalogue(now: Now): Offer[] {
   // while it can run, as the change it undoes was just made; the toast and ⌘Z come with #4763.
   if (front !== undefined && canUndoLayout(now.tabs, front.id))
     offers.push({
-      ...can(UNDO_LAYOUT_ID, "Undo tiling", { verb: "undoLayout", tab: front.id }),
+      ...can(UNDO_LAYOUT_ID, "Undo the last layout change", {
+        verb: "undoLayout",
+        tab: front.id,
+      }),
       note: "This tab's panes back where they were before.",
     });
 
