@@ -2142,17 +2142,39 @@ export function openViewBesideView(
   if (findView(tabs, view)) return openView(tabs, view, name, workspace);
   const at = findView(tabs, beside);
   if (at === undefined) return openView(tabs, view, name, workspace);
-  const tab = tabs.byId[at.tab];
-  const pane = tabs.named.panes + 1;
-  const layout = replace(tab.layout, at.pane, (found) => ({
+  return openViewBesidePane(tabs, at.pane, view, name, workspace, "row");
+}
+
+/**
+ * **Opens `view` beside pane `pane`, in that pane's tab** (#4769, Open beside): the pane is split
+ * in `direction` (the pane's shape, `viewBeside.ts`), the view second, and the tab comes forward
+ * with the keyboard in the new pane: the person pressed for it there. **A view some pane shows
+ * already is brought forward instead, never opened twice** ({@link openView}), and where no tab
+ * has `pane` any more the view opens in a tab of its own named `name`. Whether the split leaves
+ * each side room is the caller's to judge before the press (`besideOf`).
+ */
+export function openViewBesidePane(
+  tabs: Tabs,
+  pane: number,
+  view: ViewRef,
+  name: string,
+  workspace: string,
+  direction: Direction,
+): Tabs {
+  if (findView(tabs, view)) return openView(tabs, view, name, workspace);
+  const id = tabs.order.find((one) => panes(tabs.byId[one].layout).some((it) => it.pane === pane));
+  if (id === undefined) return openView(tabs, view, name, workspace);
+  const tab = tabs.byId[id];
+  const made = tabs.named.panes + 1;
+  const layout = replace(tab.layout, pane, (found) => ({
     kind: "split",
-    direction: "row",
-    children: [found, { kind: "pane", pane, content: { kind: "view", view, workspace } }],
+    direction,
+    children: [found, { kind: "pane", pane: made, content: { kind: "view", view, workspace } }],
   }));
   return {
     ...tabs,
-    byId: { ...tabs.byId, [tab.id]: { ...tab, layout, focused: pane } },
-    named: { ...tabs.named, panes: pane },
+    byId: { ...tabs.byId, [tab.id]: { ...tab, layout, focused: made } },
+    named: { ...tabs.named, panes: made },
     inFront: tab.id,
   };
 }

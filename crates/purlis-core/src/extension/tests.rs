@@ -3128,7 +3128,8 @@ fn an_extension_that_hears_an_event_and_fails_is_one_note_and_one_that_does_not_
         &events::Event::WorkspaceCreated {
             workspace: "alpha".into(),
         },
-    );
+    )
+    .notes;
     assert_eq!(notes.len(), 1, "{notes:?}");
     assert!(
         notes[0].starts_with("Teller missed workspace 'alpha' being created: "),
@@ -3140,8 +3141,107 @@ fn an_extension_that_hears_an_event_and_fails_is_one_note_and_one_that_does_not_
         &made.config(),
         &choices,
         &events::Event::PlaneSaved,
-    );
+    )
+    .notes;
     assert_eq!(notes, Vec::<String>::new(), "an event it does not hear");
+}
+
+/// A teller that hears a workspace being created, declares the view `stats` about personas, and
+/// answers `answer` to every event (#4769).
+#[cfg(unix)]
+fn offering(made: &Made, answer: &str) -> Extension {
+    made.manifest(
+        r#"{"version":2,"id":"teller","name":"Teller","capabilities":["events"],
+            "contributes":{"runs":"bin/run",
+                           "views":[{"id":"stats","title":"Statistics","about":"personas"}],
+                           "events":{"hears":["workspace-created"]}}}"#,
+    );
+    std::fs::create_dir_all(made.at().join("bin")).expect("the directory");
+    stand_in::program(
+        &made.at().join("bin"),
+        "run",
+        &format!("#!/bin/sh\nIFS= read -r line\nprintf '%s\\n' '{answer}'\n"),
+    );
+    let found = read_at(&made.at()).expect("an extension");
+    install(&made.config(), &BuiltIn::none(), &found.path).expect("installed");
+    approve(&made.config(), found.id(), &found.path, &found.fingerprint).expect("approved");
+    found
+}
+
+#[cfg(unix)]
+fn created_alpha(made: &Made) -> events::Delivered {
+    let executor =
+        crate::executor::Executor::default().with_deadline(std::time::Duration::from_secs(30));
+    events::deliver(
+        &executor,
+        &made.config(),
+        &project::Choices::default(),
+        &events::Event::WorkspaceCreated {
+            workspace: "alpha".into(),
+        },
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn an_extension_that_hears_an_event_may_offer_one_of_its_own_views_and_opens_nothing() {
+    let made = Made::new();
+    offering(
+        &made,
+        r#"{"charter":2,"offer":{"view":"stats","key":"steward","chat":4}}"#,
+    );
+
+    let delivered = created_alpha(&made);
+
+    assert_eq!(delivered.notes, Vec::<String>::new());
+    assert_eq!(
+        delivered.offers,
+        [events::Offered {
+            extension: "teller".into(),
+            view: "stats".into(),
+            key: "steward".into(),
+            chat: Some(4),
+        }]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_offer_of_a_view_the_extension_does_not_declare_is_refused_as_an_undeclared_action_is() {
+    let made = Made::new();
+    offering(&made, r#"{"charter":2,"offer":{"view":"secrets"}}"#);
+
+    let delivered = created_alpha(&made);
+
+    assert_eq!(delivered.offers, Vec::<events::Offered>::new());
+    assert_eq!(delivered.notes.len(), 1, "{:?}", delivered.notes);
+    assert!(
+        delivered.notes[0].starts_with(
+            "Teller missed workspace 'alpha' being created: 'teller' offered the view \"secrets\", \
+             which its manifest does not declare"
+        ),
+        "{:?}",
+        delivered.notes
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_offer_with_a_word_the_protocol_does_not_have_is_refused_whole() {
+    let made = Made::new();
+    offering(
+        &made,
+        r#"{"charter":2,"offer":{"view":"stats","where":"right"}}"#,
+    );
+
+    let delivered = created_alpha(&made);
+
+    assert_eq!(delivered.offers, Vec::<events::Offered>::new());
+    assert!(
+        delivered.notes[0].contains("offered a view with \"where\""),
+        "{:?}",
+        delivered.notes
+    );
 }
 
 #[test]

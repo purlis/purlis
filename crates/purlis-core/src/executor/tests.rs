@@ -1835,7 +1835,9 @@ impl Rig {
         executor: &Executor,
         event: &extension::events::Event,
     ) -> Result<Option<String>, String> {
-        executor.tell(&self.config(), &project::Choices::default(), "probe", event)
+        executor
+            .tell(&self.config(), &project::Choices::default(), "probe", event)
+            .map(|told| told.overreach)
     }
 }
 
@@ -2248,7 +2250,9 @@ fn an_event_s_program_that_writes_outside_its_paths_is_reported() {
         )
         .expect("it heard");
 
-    let said = told.expect("a write outside notes/ went unreported");
+    let said = told
+        .overreach
+        .expect("a write outside notes/ went unreported");
     assert!(said.starts_with("While 'probe' was answering"), "{said}");
     assert!(said.contains(": stray."), "{said}");
 }

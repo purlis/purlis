@@ -161,7 +161,7 @@ struct Came {
     /// line saying a section is missing — and is a note for the operator.
     refused: Option<String>,
     section: Option<Result<String, String>>,
-    told: Option<Result<Option<String>, String>>,
+    told: Option<Result<crate::executor::Told, String>>,
 }
 
 /// Ask every approved extension that is on in `choices`' project for its section, and tell each
@@ -304,7 +304,12 @@ pub fn at_session_start(
                 "{} missed a chat starting in workspace '{}': {why}",
                 one.name, asked.workspace
             )),
-            Some(Ok(Some(overreach))) => out.notes.push(overreach),
+            // An offer made at a chat's start has no window to be shown in from the hook, which
+            // runs in the harness's process (#4769): only the window relays one.
+            Some(Ok(crate::executor::Told {
+                overreach: Some(overreach),
+                ..
+            })) => out.notes.push(overreach),
             _ => {}
         }
         let (Some(title), Some(section)) = (&one.title, section) else {
