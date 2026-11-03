@@ -62,6 +62,9 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  // A chat shown last keeps its terminal (`keptTerminals.ts`), and letting go of it closes its
+  // view through the core: let go while this file's IPC mock still answers.
+  letGoOfKeptTerminals();
   clearMocks();
   drawIn(DEFAULT_THEME);
   setScreenReaderMode(false);
