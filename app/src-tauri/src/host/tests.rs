@@ -31,6 +31,7 @@ fn a_chat_waiting_on_its_own_work_is_in_its_turn_and_one_with_nothing_in_flight_
         turns: 1,
         prompt: None,
         own_work,
+        wakes_on_its_own_work: own_work,
     };
     assert!(glance(State::Running, false).in_its_turn());
     assert!(glance(State::Waiting, true).in_its_turn());

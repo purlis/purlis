@@ -1004,3 +1004,143 @@ fn the_person_s_answer_during_a_background_turn_clears_the_wait_at_once() {
 
     assert!(!queue(&held).contains(&task));
 }
+
+/// A chat on the board alone, with no program behind it, in a project that keeps every move it
+/// tells the window: what a hook reaching the board needs, and nothing a sandboxed start asks.
+fn a_chat_on_the_board_telling() -> (Plane, Planes, Arc<Held>, u32, Told) {
+    let plane = a_plane_with_personas();
+    let told: Told = Arc::default();
+    let planes = Planes::telling(
+        Arc::new({
+            let told = Arc::clone(&told);
+            move |moved| told.lock().expect("the moves told").push(moved)
+        }),
+        crate::Shipped::default(),
+        None,
+    );
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = 41;
+    held.hooks().board().opened(
+        chat,
+        Some(purlis_core::harness::Harness::ClaudeCode),
+        Some("0b6f1f9e-1c1a-4c43-9d65-1f4b5b6c7d8e".to_owned()),
+    );
+    (plane, planes, held, chat, Told::clone(&told))
+}
+
+/// Chat `chat`'s turn ends while a background command of its own runs, with a limit on the
+/// wait (#3878).
+fn ends_on_its_own_shell(held: &Held, told: &Told, chat: u32) {
+    let report = purlis_core::hookwire::Report {
+        chat,
+        event: Event::Stop,
+        conversation: held
+            .board()
+            .conversation(chat)
+            .map_or(purlis_core::hookwire::Conversation::Unknown, |said| {
+                purlis_core::hookwire::Conversation::Named(said)
+            }),
+        pid: Some(4000 + chat),
+        agent: None,
+        detail: purlis_core::state::Detail {
+            own_work: purlis_core::ownwork::Said {
+                shells: 1,
+                lapses_in: Some(60),
+                ..purlis_core::ownwork::Said::default()
+            },
+            ..purlis_core::state::Detail::default()
+        },
+    };
+    if let Some(moved) = held.hooks().hear(&report) {
+        told.lock().expect("the moves told").push(moved);
+    }
+    crate::dispatched::heard(held, &report);
+    assert!(
+        held.hooks().board().own_work(chat).is_some(),
+        "it waits on its shell"
+    );
+}
+
+/// The wait on chat `chat`'s own work passes its limit with no wake, as the app's clock ends it.
+fn its_wait_lapses(held: &Held, chat: u32) {
+    let until = held
+        .hooks()
+        .board()
+        .own_work(chat)
+        .and_then(|work| work.until)
+        .expect("a wait with a limit");
+    let waits = crate::dispatched::waits_as(held, chat, true);
+    assert!(held.hooks().board().own_work_lapsed(chat, until, waits));
+}
+
+/// The person sends chat `chat` a line from its pane.
+fn the_person_sends_a_line(held: &Held, chat: u32) {
+    crate::dispatched::person_typed(held, chat, b"carry on\r", Some(None));
+}
+
+#[test]
+fn a_late_wake_after_a_lapsed_wait_on_its_own_work_leaves_the_wait_as_it_was() {
+    let (_plane, _planes, held, chat, told) = a_chat_on_the_board_telling();
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+    ends_on_its_own_shell(&held, &told, chat);
+    its_wait_lapses(&held, chat);
+    assert_eq!(queue(&held), vec![chat]);
+    let before = told_so_far(&told);
+
+    // The shell ends after all, and wakes the chat.
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+
+    assert_eq!(queue(&held), vec![chat], "the wake cleared the wait");
+    assert_eq!(held.board().now(chat).state, "waiting");
+    hears(&held, &told, chat, Event::Stop);
+    assert_eq!(queue(&held), vec![chat]);
+    assert_eq!(
+        interruptions(&told, before, chat),
+        0,
+        "the wait never left, so nothing is raised again"
+    );
+}
+
+#[test]
+fn a_late_wake_after_a_block_ended_the_wait_on_its_own_work_leaves_the_wait_as_it_was() {
+    let (_plane, _planes, held, chat, told) = a_chat_on_the_board_telling();
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+    ends_on_its_own_shell(&held, &told, chat);
+    held.blocked_while_waiting(chat);
+    assert_eq!(queue(&held), vec![chat]);
+    let before = told_so_far(&told);
+
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+
+    assert_eq!(queue(&held), vec![chat], "the wake cleared the wait");
+    assert_eq!(held.board().now(chat).state, "waiting");
+    hears(&held, &told, chat, Event::Stop);
+    assert_eq!(interruptions(&told, before, chat), 0);
+}
+
+#[test]
+fn the_person_s_reply_after_a_lapsed_wait_on_its_own_work_clears_the_wait() {
+    let (_plane, _planes, held, chat, told) = a_chat_on_the_board_telling();
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+    ends_on_its_own_shell(&held, &told, chat);
+    its_wait_lapses(&held, chat);
+
+    the_person_sends_a_line(&held, chat);
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+
+    assert!(queue(&held).is_empty());
+}
+
+#[test]
+fn the_person_s_reply_after_a_block_ended_the_wait_on_its_own_work_clears_the_wait() {
+    let (_plane, _planes, held, chat, told) = a_chat_on_the_board_telling();
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+    ends_on_its_own_shell(&held, &told, chat);
+    held.blocked_while_waiting(chat);
+
+    the_person_sends_a_line(&held, chat);
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+
+    assert!(queue(&held).is_empty());
+}

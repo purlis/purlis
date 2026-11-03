@@ -65,9 +65,17 @@ const ROUTES = {
   }
 }
 
-const TIMEOUTS = {"sessionstart":5,"userpromptsubmit":5,"userpromptexpansion":5,"pretooluse":10,"pretooluse-read":5,"pretooluse-edit":5,"pretooluse-dispatch":5,"posttooluse":5,"posttooluse-skill":5,"posttooluse-dispatch":5,"posttooluse-blocked":5,"posttoolusefailure-blocked":5,"notification":5,"stop":5,"subagentstop":5,"sessionend":5}
+const TIMEOUTS = {"sessionstart":5,"userpromptsubmit":5,"userpromptexpansion":5,"pretooluse":10,"pretooluse-read":5,"pretooluse-edit":5,"pretooluse-dispatch":5,"posttooluse":5,"posttooluse-skill":5,"posttooluse-dispatch":5,"posttooluse-blocked":5,"posttoolusefailure-blocked":5,"notification":5,"stop":5,"subagentstop":5,"sessionend":5,"taskquestion":10}
 
 const DEFAULT_PRE = "pretooluse"
+
+// opencode's own question tool, which no guard refuses: a refused question would be lost. The
+// app's chat routes it to a task's asking chat by `purlis hook taskquestion` (#4559); the
+// copy `purlis plugin install` wrote, loaded beside it there, lets it through, so the app is
+// asked once.
+const QUESTION_TOOL = "question"
+const QUESTION_WORD = "taskquestion"
+const ROUTES_QUESTIONS = true
 
 const EFFECTFUL = ["bash","edit","write"]
 
@@ -125,6 +133,19 @@ const response = (tool, output) => {
   if (tool !== "bash") return { output: said }
   const exit = output?.metadata?.exit
   return typeof exit === "number" && exit !== 0 ? { stderr: said, mixed: true } : said
+}
+
+// Where a task's own question went, when purlis sent it to the task's asking chat (#4559), or
+// null: then opencode asks it in its pane, and its `question.asked` puts the chat in the Inbox.
+// Only a whole `deny` with its reason refuses. A `purlis` that crashed, timed out, refused or
+// said something this cannot read leaves the question to the pane, since a refused question
+// would be lost.
+const redirected = (said) => {
+  if (said.code !== 0) return null
+  const decision = answer(said)?.hookSpecificOutput
+  if (decision?.permissionDecision !== "deny") return null
+  const went = decision.permissionDecisionReason
+  return typeof went === "string" && went ? went : null
 }
 
 // Why a tool call is refused, or null when it may run.
@@ -231,6 +252,18 @@ export const PurlisPlugin = async (plugin, options) => {
   const before = async (input, output) => {
     const tool = toolId(input)
     const args = output?.args ?? {}
+    if (tool === QUESTION_TOOL) {
+      if (!ROUTES_QUESTIONS) return
+      const went = redirected(await run(QUESTION_WORD, {
+        hook_event_name: "PreToolUse",
+        session_id: rootOf(input?.sessionID),
+        cwd: directory,
+        tool_name: tool,
+        tool_input: args,
+      }, input?.sessionID))
+      if (went !== null) throw new Error(went)
+      return
+    }
     const why = refusal(await run(route(tool, "pre") ?? DEFAULT_PRE, {
       hook_event_name: "PreToolUse",
       session_id: rootOf(input?.sessionID),

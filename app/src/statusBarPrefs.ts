@@ -200,3 +200,12 @@ export function moveStatusItem(id: string, onto: string, shown: readonly string[
     if (!shown.includes(order[at])) order.splice(at, 1);
   STATUS_BAR.set({ ...prefs, order: order.slice(0, MOST_ORDERED) });
 }
+
+/**
+ * **Puts every status item back in its shipped place** (#4776): forgets the order the person gave,
+ * so each end draws by priority again, and the file names no order for the next launch. What the
+ * person hid stays hidden: that is not the order's.
+ */
+export function resetStatusOrder(): void {
+  STATUS_BAR.set({ ...STATUS_BAR.value(), order: [] });
+}

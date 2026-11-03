@@ -23,9 +23,19 @@ async function asked(ticket: number): Promise<string | undefined> {
  *  launch's restore to say which project is in front, so a window that asks never draws twice. */
 export const STAND_IN_WAITS_FOR_AN_ASK = 5000;
 
+/** How long, in milliseconds, a frame that stands in for an extension's theme waits for the
+ *  window's first ask of what is in force to settle before it lands its own parts (#4822): an
+ *  answer that never comes must not leave the window without them. Counted from the first ask
+ *  only, so asks that overtake one another never put it off. */
+export const STAND_IN_WAITS_FOR_AN_ANSWER = 5000;
+
 /** The first frame standing in for an extension's theme, while it waits for the window's ask of
- *  what is in force to settle; `undefined` once it has, or when there is none. */
-let standIn: { frame: Frame; never: ReturnType<typeof setTimeout> } | undefined;
+ *  what is in force to settle; `undefined` once it has, or when there is none. `never` lands its
+ *  parts when no ask came, then when no answer did; `asked` says which it is waiting on. */
+let standIn: { frame: Frame; never: ReturnType<typeof setTimeout>; asked: boolean } | undefined;
+
+/** {@link inForceSettled}, `wait` milliseconds from now. */
+const landsAfter = (wait: number) => setTimeout(() => void inForceSettled(), wait);
 
 /**
  * **Lands the parts of a first frame drawn without them** (#4410): a theme measured past the
@@ -41,18 +51,22 @@ let standIn: { frame: Frame; never: ReturnType<typeof setTimeout> } | undefined;
  * in force draws that theme over it, so landing its parts first would change the window twice.
  * They land once that ask settles with the frame still drawn ({@link inForceSettled}): an answer
  * that failed, or that kept the window as it is. A window that has not asked within
- * {@link STAND_IN_WAITS_FOR_AN_ASK} lands them then.
+ * {@link STAND_IN_WAITS_FOR_AN_ASK} lands them then, and so does one whose ask has not settled
+ * within {@link STAND_IN_WAITS_FOR_AN_ANSWER} (#4822).
  */
 export async function partsLand(frame: Frame): Promise<void> {
   if (frame.parts_later === null) return;
   if (!frame.stands_in) return land(frame);
   if (standIn !== undefined) clearTimeout(standIn.never);
-  standIn = { frame, never: setTimeout(() => void inForceSettled(), STAND_IN_WAITS_FOR_AN_ASK) };
+  standIn = { frame, never: landsAfter(STAND_IN_WAITS_FOR_AN_ASK), asked: false };
 }
 
-/** The window asked what is in force: a stand-in waits for that answer, however long it takes. */
+/** The window asked what is in force: a stand-in waits for that answer, for
+ *  {@link STAND_IN_WAITS_FOR_AN_ANSWER} from the first ask and no longer (#4822). */
 export function inForceAsked(): void {
-  if (standIn !== undefined) clearTimeout(standIn.never);
+  if (standIn === undefined || standIn.asked) return;
+  clearTimeout(standIn.never);
+  standIn = { ...standIn, never: landsAfter(STAND_IN_WAITS_FOR_AN_ANSWER), asked: true };
 }
 
 /** The window's ask of what is in force settled, drawn or not: a stand-in still drawn lands its

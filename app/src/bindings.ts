@@ -861,6 +861,18 @@ export const commands = {
 	 *  from.
 	 */
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
+	/**  The fresh runners of `plane` kept now: what the window's Notice starts from. */
+	freshRunnersKept: (plane: PlaneId) => typedError<FreshKept[], string>(__TAURI_INVOKE("fresh_runners_kept", { plane })),
+	/**
+	 *  **Fetch again**: the kept runner of chat `chat` is asked again for its work, off the window,
+	 *  and goes once all of it is here. The Notice hears how it came out on [`EVENT`].
+	 */
+	fetchFreshRunnerAgain: (plane: PlaneId, chat: string) => typedError<null, string>(__TAURI_INVOKE("fetch_fresh_runner_again", { plane, chat })),
+	/**
+	 *  **Discard**: the person lets the kept runner of chat `chat` go with what it holds that is not
+	 *  here. The Notice hears it went on [`EVENT`].
+	 */
+	discardFreshRunner: (plane: PlaneId, chat: string) => typedError<null, string>(__TAURI_INVOKE("discard_fresh_runner", { plane, chat })),
 	/**
 	 *  **Each runner of `plane`'s chats, for the away summary** (#2051): of `sessions`, the chats
 	 *  that run on each pool's runner, and the branches each runner has, as this machine last
@@ -2213,6 +2225,20 @@ export const commands = {
 	 *  Refused while a grade runs in the project.
 	 */
 	skillGradeStart: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, evals: string[], grader: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_start", { plane, level, skill, profile, model, evals, grader, consent })),
+	/**  **What the page of the draft `draft` says of its grade.** */
+	skillDraftGrade: (plane: PlaneId, draft: string) => typedError<SkillDraftGrade, string>(__TAURI_INVOKE("skill_draft_grade", { plane, draft })),
+	/**  **What grading the draft `draft` would run**, before anything runs. */
+	skillDraftGradePlan: (plane: PlaneId, draft: string, profile: string | null, model: string | null, evals: string[], grader: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_draft_grade_plan", { plane, draft, profile, model, evals, grader })),
+	/**
+	 *  **Grades the draft `draft`**, on the plan the person pressed Start on: see
+	 *  `skill_grade_start`. The answer is the grade's id.
+	 */
+	skillDraftGradeStart: (plane: PlaneId, draft: string, profile: string | null, model: string | null, evals: string[], grader: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_draft_grade_start", { plane, draft, profile, model, evals, grader, consent })),
+	/**
+	 *  **Sets the token cap a grade in the project is held to**, as `skill_grade_set_cap` does: the
+	 *  answer is the plan of the draft `draft` again, with it.
+	 */
+	skillDraftGradeSetCap: (plane: PlaneId, draft: string, profile: string | null, model: string | null, evals: string[], grader: string | null, tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_draft_grade_set_cap", { plane, draft, profile, model, evals, grader, tokens })),
 	/**
 	 *  **Stops the grade `grade`**: the chat it runs now is ended, no other starts, and what ran is
 	 *  scored and recorded.
@@ -2269,6 +2295,11 @@ export const commands = {
 	 *  recorded.
 	 */
 	said: string | null,
+	/**
+	 *  **The draft it grades, by its id** (#2780): a step of this one moves nothing on the
+	 *  skill's Grades tab.
+	 */
+	draft: string | null,
 } | null, string>(__TAURI_INVOKE("skill_grade_running", { plane, grade })),
 	/**
 	 *  **Sets the token cap a grade in the project is held to**, on this machine (#2779; the
@@ -7164,6 +7195,18 @@ export type Doing = {
 	over: boolean,
 };
 
+/**
+ *  **What a draft's grade measured of one kind of fixture**: each arm's rate in points, and the
+ *  draft's difference from what it is weighed against, which the core leaves out where that arm
+ *  did not run.
+ */
+export type DraftScore = {
+	/**  Its outcome evals, rather than its trigger tests. */
+	evals: boolean,
+	arms: GradeArms,
+	delta: number | null,
+};
+
 /**  One download, as its Notice shows it. */
 export type EngineDownloadShown = {
 	/**  The browser whose start it is for: what Cancel names. */
@@ -7969,6 +8012,26 @@ export type FoundFile = {
 	matched: number[],
 };
 
+/**  One fresh runner kept since its work is not all here. */
+export type FreshKept = {
+	/**  Its chat's stable id, which Fetch again and Discard name it by. */
+	chat: string,
+	/**  The runner, `<pool>/fresh-<hash>`. */
+	runner: string,
+	/**  The workspace its work goes back to. */
+	workspace: string,
+	/**  What is not here, in sentences. */
+	why: string[],
+	/**  Whether its cluster says the runner is gone already, with what it held. */
+	gone: boolean,
+};
+
+/**  A plane's kept fresh runners, as they are now. */
+export type FreshRunnersKept = {
+	plane: PlaneId,
+	kept: FreshKept[],
+};
+
 /**
  *  **Where Apply was pressed** (PC-7): a row (the Inbox's, a tab's Notice), which shows a change
  *  whole only up to its length, or the change's own tab, which shows it whole however long.
@@ -8255,6 +8318,8 @@ export type GradeScorecard = {
 	delta_without: number | null,
 	/**  Whether a saved edit started it (SK-58, #3238), rather than a press of Grade. */
 	after_edit: boolean,
+	/**  Whether it graded a draft (#2780): its arms are the draft and the current version. */
+	draft: boolean,
 	/**  How many of its chats asked the person something and were ended there. */
 	asked: number,
 	tests: ScoredTest[],
@@ -13898,6 +13963,29 @@ export type SkillDraftFile = {
 	stale: boolean,
 };
 
+/**  **What a draft's page says of its grade.** */
+export type SkillDraftGrade = {
+	/**  It changes only the skill's tests, so it gets no grade. */
+	only_evals: boolean,
+	/**
+	 *  What a grade of it would run, counted, and why its tests were not read, where they were
+	 *  not.
+	 */
+	tests: number,
+	evals: number,
+	tests_refused: string | null,
+	/**
+	 *  Its newest grade, what that measured, the chats its plan ran, and whether the draft
+	 *  changed since.
+	 */
+	latest: GradeRow | null,
+	scores: DraftScore[],
+	asked: number,
+	changed: boolean,
+	/**  The grade of it running now, at its latest step. */
+	running: SkillGradeStep | null,
+};
+
 /**  How well a skill fits a harness, as its badge draws it (SK-8): the core's `Fit`. */
 export type SkillFit = 
 /**  Everything it asks for applies. */
@@ -14016,6 +14104,11 @@ export type SkillGradePlan = {
 	graders: GradeGrader[],
 	grader: GradeGrader | null,
 	grader_refused: string | null,
+	/**
+	 *  **Whether it grades a draft** (#2780): its `previous` is then the current version, read
+	 *  from the folder, which may be no commit.
+	 */
+	draft: boolean,
 };
 
 /**
@@ -14055,6 +14148,11 @@ export type SkillGradeStep = {
 	 *  recorded.
 	 */
 	said: string | null,
+	/**
+	 *  **The draft it grades, by its id** (#2780): a step of this one moves nothing on the
+	 *  skill's Grades tab.
+	 */
+	draft: string | null,
 };
 
 /**

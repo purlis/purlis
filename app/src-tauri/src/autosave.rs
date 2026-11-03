@@ -639,7 +639,10 @@ pub fn plane_fetch(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
 ) -> Result<(), String> {
-    planes.held(&plane)?.poke_autosave(Poke::Fetch);
+    let held = planes.held(&plane)?;
+    held.poke_autosave(Poke::Fetch);
+    // A chat's fresh runner that could not go yet is tried again as the person comes back (#4569).
+    held.sweeps_fresh_runners();
     Ok(())
 }
 

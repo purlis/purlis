@@ -40,6 +40,7 @@ const TESTS = [
 ];
 
 const PLAN: SkillGradePlan = {
+  draft: false,
   tests: TESTS,
   chats: 36,
   runs: 3,
@@ -134,6 +135,7 @@ const arm = (
 });
 
 const CARD: GradeScorecard = {
+  draft: false,
   grade: "01C",
   skill: "deploy",
   level: { at: "project", local: false },
@@ -258,6 +260,7 @@ const meta = {
             asked: 0,
             ended: null,
             said: null,
+            draft: null,
           };
     mockIPC((cmd) => {
       switch (cmd) {

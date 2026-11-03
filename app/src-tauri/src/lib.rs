@@ -100,6 +100,7 @@ mod useskill;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
 #[cfg(all(test, unix))]
 mod behaviour;
+mod freshkept;
 #[cfg(unix)]
 mod hostedconfinement;
 #[cfg(unix)]
@@ -3018,6 +3019,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<smartclose::SmartClosing>()
         // What `chats-reconnecting` carries (#2496).
         .typ::<reconnecting::ChatsReconnecting>()
+        // What `fresh-runners-kept` carries (#4569).
+        .typ::<freshkept::FreshRunnersKept>()
         // What `projects_not_held` answers, read again on `projects-not-held` (#2846).
         .typ::<notheld::ProjectNotHeld>()
         // What `chat-stop` carries (#1448).
@@ -4308,6 +4311,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             reconnecting::EVENT,
+                            &told,
+                        );
+                    })
+                })
+                // A task's fresh runner kept since its work is not all here: the window's Notice
+                // offers Fetch again and Discard (#4569).
+                .telling_fresh_kept({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: freshkept::FreshRunnersKept| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            freshkept::EVENT,
                             &told,
                         );
                     })

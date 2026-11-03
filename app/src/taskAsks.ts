@@ -79,7 +79,10 @@ function keyOf(block: ChatBlocked): string | undefined {
   if (block.ours || block.target === null) return undefined;
   if (block.offer !== "host" && block.offer !== "write") return undefined;
   const target = matched(block.offer, block.target);
-  return `${block.offer}\u0000${block.operation}\u0000${block.kind}\u0000${target}`;
+  // What allowing a folder means is said per block (a held folder's reach turns on the chat's
+  // harness), so tasks told different words are never asked under one question.
+  const means = block.offer === "write" ? (block.route ?? "") : "";
+  return `${block.offer}\u0000${block.operation}\u0000${block.kind}\u0000${target}\u0000${means}`;
 }
 
 /**

@@ -240,6 +240,12 @@ pub struct PoolStatus {
     /// whose link key it did not sign (#2056).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signing_key: Option<String>,
+    /// The operator's signed word for what it does that an older one does not (#4569), holding
+    /// for ten minutes and signed again before it ends. `fresh-runners-stay`: a fresh Claim's
+    /// runner is not suspended for being idle. A desktop counts it only while it holds, so an
+    /// operator rolled back stops counting soon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities_vouch: Option<OperatorWord>,
     /// The cluster the Pool is in: the uid of its `kube-system` namespace. A desktop pins it with
     /// the key, and refuses a statement made in any other cluster (#3305).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -253,6 +259,17 @@ pub struct PoolStatus {
     /// days at most (#3305).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_signing_key_vouch: Option<NextSigningKeyVouch>,
+}
+
+/// The operator's word for what it does (#4569).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OperatorWord {
+    /// The statement, exactly as signed (crate::vouch::capabilities_statement): the cluster, what
+    /// the operator does, and until when it holds.
+    pub statement: String,
+    /// Its Ed25519 signature, 128 lower-case hex, by the key `signingKey` names.
+    pub signature: String,
 }
 
 /// The operator's current key's word for its next one (#3305).
