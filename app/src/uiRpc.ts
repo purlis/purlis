@@ -6810,10 +6810,15 @@ export type LocalModelRow = {
  *  value: purlis hasn't read one.
  */
 export type LoginShown = {
-	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
+	/**  The domain of the page it opens, with a port where it has one: `shop.example.com`. */
 	domain: string,
 	/**  The page's path on it. */
 	path: string,
+	/**
+	 *  **The host the password is typed on** (#4995), with a port where it has one: the login
+	 *  form's, which the page may have sent the browser to. The domain where they're one.
+	 */
+	form: string,
 	vault: string,
 	user_key?: string | null,
 	key: string,
@@ -6826,6 +6831,10 @@ export type LoginShown = {
 	no_always?: string | null,
 	/**  The persona's chats get the vault too with Always. */
 	vault_too: boolean,
+	/**  **The page the declared login opens now, which this replaces** (#4996). */
+	replaces?: string | null,
+	/**  The host its password is typed on now, with a port where it has one. */
+	replaces_form?: string | null,
 };
 
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */

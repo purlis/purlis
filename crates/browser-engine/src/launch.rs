@@ -172,7 +172,9 @@ impl Launch {
             "--disable-sync".into(),
             "--disable-extensions".into(),
             "--disable-default-apps".into(),
-            "--disable-features=MediaRouter,DialMediaRouteProvider,Translate,AutofillServerCommunication".into(),
+            // No page comes back from the back-forward cache: a login form purlis filled is never
+            // shown again as it was once the page has moved on (#4995).
+            "--disable-features=MediaRouter,DialMediaRouteProvider,Translate,AutofillServerCommunication,BackForwardCache".into(),
             "--no-first-run".into(),
             "--no-default-browser-check".into(),
             "--noerrdialogs".into(),

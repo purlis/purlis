@@ -47,6 +47,7 @@ fn shop_login_with(user: Option<&str>, key: &str) -> Tool {
         login: Some(Login {
             url: "https://shop.example.test/login".to_owned(),
             origin: "https://shop.example.test".to_owned(),
+            form: None,
         }),
         args: None,
         mint: None,
@@ -363,4 +364,70 @@ fn a_login_page_named_in_another_script_is_bound_to_its_ascii_spelling() {
     assert!(login::origin_of("http://bücher.example/login").is_err());
     assert!(login::origin_of("http://shop.example.test/login").is_err());
     assert!(login::origin_of("http://127.0.0.1:8123/login").is_ok());
+}
+
+/// #4995: a site that signs in on another host names its form's origin, and the password is
+/// typed there alone; the line says so, so its Allow is bound to it.
+#[test]
+fn a_login_s_form_is_where_its_password_is_typed_and_its_line_names_it() {
+    let (tools, refused) = read(
+        r#"tools = { shop-login = { vault = "qa", browser = "https://app.example.test/",
+                                    form = "https://auth.example.test", key = "password" } }"#,
+    );
+    assert!(refused.is_empty(), "{refused:?}");
+    let login = tools[0].login.clone().expect("a login");
+    assert_eq!(login.origin, "https://app.example.test");
+    assert_eq!(login.fills_on(), "https://auth.example.test");
+    assert_eq!(
+        tools[0].whole(),
+        "shop-login logs in to https://app.example.test/ with \"password\" from vault qa in a \
+         browser, typed on https://auth.example.test"
+    );
+    let digest =
+        |tool: &Tool| super::super::persona::digest_of(&[], std::slice::from_ref(tool), false);
+    let mut on_the_page = tools[0].clone();
+    on_the_page.login.as_mut().expect("login").form = None;
+    assert_ne!(digest(&tools[0]), digest(&on_the_page));
+}
+
+/// A form on the page's own origin is the login it always was: the same line and Allow.
+#[test]
+fn a_form_on_the_page_s_own_origin_keeps_the_line_it_had() {
+    let (tools, refused) = read(
+        r#"tools = { shop-login = { vault = "qa", browser = "https://shop.example.test/login",
+                                    form = "https://shop.example.test", user = "username",
+                                    key = "password" } }"#,
+    );
+    assert!(refused.is_empty(), "{refused:?}");
+    assert_eq!(tools, vec![shop_login()]);
+}
+
+#[test]
+fn a_form_that_is_no_https_origin_alone_is_refused_with_the_login() {
+    for (form, said) in [
+        ("http://auth.example.test", "plain http"),
+        ("https://auth.example.test/realms/x", "not an origin alone"),
+        ("https://user@auth.example.test", "user or password"),
+        ("", "names no origin"),
+    ] {
+        let (tools, refused) = read(&format!(
+            r#"tools = {{ shop-login = {{ vault = "qa", browser = "https://app.example.test/",
+                                          form = "{form}", key = "password" }} }}"#
+        ));
+        assert!(tools.is_empty(), "{form}");
+        assert!(
+            refused.iter().any(|why| why.contains(said)),
+            "{form}: {refused:?}"
+        );
+    }
+    let (tools, refused) = read(
+        r#"tools = { aws = { vault = "qa", as = "X env", key = "k", form = "https://a.b" } }"#,
+    );
+    assert!(tools.is_empty());
+    assert!(
+        refused
+            .iter()
+            .any(|why| why.contains("form is a browser login's key")),
+        "{refused:?}"
+    );
 }

@@ -158,6 +158,10 @@ pub struct Login {
     /// A chat chose this page and these keys (#4595): the user name goes only into a field that
     /// says it's one, or beside a password field.
     pub suggested: bool,
+    /// **The page's own origin, where the form is on another** (#4995): a page that has gone
+    /// back there since the login was submitted is a login that went through. Nothing is ever
+    /// filled on it.
+    pub back_to: Option<String>,
 }
 
 impl fmt::Debug for Login {
@@ -165,6 +169,7 @@ impl fmt::Debug for Login {
         f.debug_struct("Login")
             .field("address", &self.address.as_str())
             .field("origin", &self.origin)
+            .field("back_to", &self.back_to)
             .finish_non_exhaustive()
     }
 }
@@ -305,6 +310,12 @@ pub enum DragTo {
 pub enum Call {
     /// Opens a new page at `address`, which becomes the current page.
     Open {
+        address: WebAddress,
+    },
+    /// **Where `address` sends the browser to sign in** (#4995): a new page opened at `address`
+    /// and followed until its own document shows a login form. Its answer's page is that
+    /// document, as the engine records it. Nothing is typed.
+    FindLoginForm {
         address: WebAddress,
     },
     /// Sends a page to `address`.

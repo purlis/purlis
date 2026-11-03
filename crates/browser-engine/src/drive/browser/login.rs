@@ -387,11 +387,15 @@ impl Browser {
         filled.push(password.key);
         self.press_enter(target)?;
         // Gone in two reads in a row: a page between documents is read as neither.
+        // A site that signs in on another host sends the browser back to its page once the
+        // login went through (#4995).
         self.wait_until(within, 2, || {
-            Ok(
-                self.on_origin(target, origin)
-                    && self.shows(target, PASSWORD_FIELD)? == Some(false),
-            )
+            Ok(login
+                .back_to
+                .as_deref()
+                .is_some_and(|back| self.on_origin(target, back))
+                || (self.on_origin(target, origin)
+                    && self.shows(target, PASSWORD_FIELD)? == Some(false)))
         })
         .map_err(|why| {
             or_said(
@@ -404,10 +408,63 @@ impl Browser {
             .clone()
             .unwrap_or_else(|| target.to_owned());
         let mut answer = self.answer_now(&shown, Content::Nothing);
-        answer.note = Some(format!(
-            "the password field is gone from {origin} since purlis submitted the login"
-        ));
+        answer.note = Some(match &login.back_to {
+            Some(back) if self.on_origin(target, back) => format!(
+                "the browser went back to {back} since purlis submitted the login on {origin}"
+            ),
+            _ => {
+                format!("the password field is gone from {origin} since purlis submitted the login")
+            }
+        });
         Ok(answer)
+    }
+
+    /// **Where `address` sends the browser to sign in** (#4995): a page of purlis's own opened at
+    /// `address`, followed until its own document shows a password field, or a field that says
+    /// it's for a user name, on the same origin at two looks in a row. Answers that page, its
+    /// address as the engine records its document's, never what the page says. Nothing is typed
+    /// or sent: this is how purlis learns where a login's password would go, before anyone is
+    /// asked about it. No form within [`crate::drive::Limits::login_within`] is a refusal.
+    pub(crate) fn find_login_form(&self, address: &crate::WebAddress) -> Result<Answer, Refusal> {
+        self.open(address)?;
+        let target = lock(&self.inner.state)
+            .current
+            .clone()
+            .ok_or(Refusal::NoPage)?;
+        let within = self.inner.limits.login_within;
+        let began = Instant::now();
+        let deadline = began + within;
+        // A field for a user name alone counts only once half the wait is gone: a page that asks
+        // for the name first may send the browser elsewhere for the password.
+        let names_count = began + within / 2;
+        let mut seen: Option<String> = None;
+        loop {
+            let here = self.document_origin(&target);
+            let shows = self.shows(&target, PASSWORD_FIELD)? == Some(true)
+                || (Instant::now() >= names_count
+                    && self.shows(&target, SAYS_IT_IS_A_NAME)? == Some(true));
+            // Read again after the look: a page that moved meanwhile is looked at again.
+            let still = here.is_some() && self.document_origin(&target) == here;
+            if shows && still && seen == here {
+                let answer = self.answer_now(&target, Content::Nothing);
+                let answered = answer
+                    .page
+                    .as_ref()
+                    .and_then(|page| origin_of(&page.address));
+                if answered == here {
+                    return Ok(answer);
+                }
+            }
+            seen = if shows && still { here } else { None };
+            if Instant::now() >= deadline {
+                return Err(not_logged_in(format!(
+                    "no login form appeared within {} seconds of opening the page, so nothing \
+                     was recorded",
+                    within.as_secs()
+                )));
+            }
+            self.pause(LOOK_AGAIN)?;
+        }
     }
 
     /// Opens a page of purlis's own at the login's address, which no other page opened, and
@@ -422,12 +479,17 @@ impl Browser {
 
     /// Whether `target`'s page shows a document on `origin` now, as the engine recorded it.
     fn on_origin(&self, target: &str, origin: &str) -> bool {
+        self.document_origin(target)
+            .is_some_and(|its| its == origin)
+    }
+
+    /// The origin of the document `target`'s page shows now, as the engine recorded it.
+    fn document_origin(&self, target: &str) -> Option<String> {
         let state = lock(&self.inner.state);
         state
             .page(target)
             .and_then(|page| page.frames.get(target))
             .and_then(|frame| origin_of(&frame.url))
-            .is_some_and(|its| its == origin)
     }
 
     /// Whether `target`'s own document shows the field `script` finds: unknown (`None`) while

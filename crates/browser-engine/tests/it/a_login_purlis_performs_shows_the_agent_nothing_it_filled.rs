@@ -35,6 +35,7 @@ fn login_on(page: &str, origin: &str) -> Login {
         password: PASSWORD.to_owned().into(),
         only_if_asked: false,
         suggested: false,
+        back_to: None,
     }
 }
 
