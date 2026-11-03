@@ -279,7 +279,10 @@ fn a_record_written_while_chats_come_back_holds_every_one_once_in_its_place() {
             .filter(|chat| chat.active)
             .map(|chat| chat.name.as_str())
             .collect();
-        assert_eq!(front, ["chat 3"]);
+        // What is in front is the layout's to say (#4751), and the upgrade gave this record one
+        // (#4758): chat 4's tab, the one in front at quit. Chat 3 has no tab, so bringing it
+        // forward does not move the front, though it is a change, and it wrote the record.
+        assert_eq!(front, ["chat 4"]);
         // The ones that started have a run of this launch; the two that have not are as
         // they were recorded, with no program.
         assert!(record.chats[1].identity.run.is_some());

@@ -3,7 +3,7 @@
 
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
+import { harnessRowsDrawn, pickAndStart, openThePicker } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
@@ -63,7 +63,7 @@ describe("starting a chat", () => {
   it("asks which profile and which persona, and starts nothing until a row is picked", async () => {
     const panes = (await $$('[data-testid="pane"]').getElements()).length;
 
-    await pressOnly("New tab");
+    await openThePicker();
 
     await expect(dialog()).toBeDisplayed();
     // Both come off the plane on disk: the profiles it declares, and the personas it has.
@@ -104,7 +104,7 @@ describe("starting a chat", () => {
     // explains why a synthesised `Enter` does not press a button. Whether WebKit honours a
     // written-down `tabindex` is WebKit's rule, cited in that file; whether charter writes one
     // down is this test.
-    await pressOnly("New tab");
+    await openThePicker();
     await harnessRowsDrawn();
 
     const answers = await browser.execute(() => {
@@ -129,7 +129,7 @@ describe("starting a chat", () => {
   it("shows the command of a profile charter has never run, and asks before running it", async () => {
     // The file is gitignored, so an edit to it leaves no diff for a reviewer to catch —
     // which is why the ask is about the words that are about to run, not the profile's name.
-    await pressOnly("New tab");
+    await openThePicker();
     // The label is a real `<label for>` tied to the row's control, so clicking the words picks
     // the row — which is the association that was missing.
     await harnessRowsDrawn();
@@ -224,7 +224,7 @@ describe("starting a chat", () => {
   });
 
   it("does not ask again for a profile it has already run, exactly as it stands", async () => {
-    await pressOnly("New tab");
+    await openThePicker();
     await harnessRowsDrawn();
     // Its option card's radio (#2907), clicked as the driver's pointerless click reaches it.
     const card = await $("label*=needs-approval");

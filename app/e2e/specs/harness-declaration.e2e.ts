@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
-import { harnessRowsDrawn, pressOnly } from "../opening.js";
+import { harnessRowsDrawn, openThePicker } from "../opening.js";
 import { ask } from "../switching.js";
 
 /**
@@ -140,7 +140,7 @@ describe("a harness the project declares", function () {
 
   it("asks before running it, showing every word that would run (#969)", async () => {
     const panes = (await $$('[data-testid="pane"]').getElements()).length;
-    await pressOnly("New tab");
+    await openThePicker();
     await harnessRowsDrawn();
     // The declaration is a profile named after it, picked by its row's words.
     const row = await $(`label*=${NAME}`);
