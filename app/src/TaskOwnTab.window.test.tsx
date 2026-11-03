@@ -22,6 +22,7 @@ import { chatsOf } from "./laidOut";
 import { leadOf, onScreenOf } from "./laidOut.testkit";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
+import { askToEnd } from "./menus.testkit";
 import { stripNamed } from "./test-strips";
 import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 
@@ -388,19 +389,19 @@ describe("moving a task to a tab of its own", () => {
     const minimise = ender("talk");
     expect(minimise?.getAttribute("aria-label")).toBe("Send talk back into steward 1's tab");
     expect(minimise?.hasAttribute("data-minimise")).toBe(true);
-    // Not the danger look a close wears, and no close anywhere in the tab's cell.
-    expect(minimise?.className).toContain("keeps");
+    // No close anywhere in the tab's cell.
+    expect(minimise?.className).not.toContain("ends-a-chat");
     const said = [...cell("talk").querySelectorAll("button")].map(
       (button) => button.getAttribute("aria-label") ?? button.textContent ?? "",
     );
     expect(said.filter((name) => /\b(end|close|stop)\b/i.test(name))).toEqual([]);
     // Its pane has the same minimise where a session's pane has its close.
-    expect(screen.queryByRole("button", { name: "End this pane's chat" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close this pane" })).toBeNull();
     expect(
       screen.getAllByRole("button", { name: "Send talk back into steward 1's tab" }),
     ).toHaveLength(2);
     // The session's tab keeps the one close on the strip.
-    expect(ender("steward 1")?.getAttribute("aria-label")).toBe("End chat steward 1");
+    expect(ender("steward 1")?.getAttribute("aria-label")).toBe("Close steward 1");
     expect(ender("steward 1")?.hasAttribute("data-minimise")).toBe(false);
   });
 
@@ -627,7 +628,7 @@ describe("opening a task beside its session", () => {
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
 
     // One close, the session's pane's; and one minimise, the task's.
-    expect(screen.getAllByRole("button", { name: "End this pane's chat" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Close this pane" })).toHaveLength(1);
     const minimise = screen.getByRole("button", { name: "Send talk back among steward 1's tasks" });
     expect(minimise.hasAttribute("data-minimise")).toBe(true);
     expect(minimise.className).not.toContain("ends-a-chat");
@@ -692,7 +693,7 @@ describe("opening a task beside its session", () => {
     expect(onScreenSaid(asked)).toEqual([1]);
   });
 
-  it("closes the session's tab without ending the task beside it, which goes back to the list", async () => {
+  it("closes the session's tab, ending neither it nor the task beside it, which goes back to the list", async () => {
     const { tree, asked } = await drawn(withTasks(), {
       running: ["talk", "sweep", "probe", "deep"],
     });
@@ -701,17 +702,17 @@ describe("opening a task beside its session", () => {
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
 
     await userEvent.click(ender("talk") as HTMLElement);
-    // One chat ends, the session: the question is the one a session's close always asked.
-    const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
-    await userEvent.click(within(question).getByRole("button", { name: "Close" }));
 
+    // A close ends nothing (#4756): nothing is asked, and both chats go on in the sidebar.
     await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
-    expect(commandsOf(asked, "close_session")).toEqual([{ plane: PLANE, session: 1 }]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(commandsOf(asked, "close_session")).toEqual([]);
+    expect(row(tree, "talk")).toBeTruthy();
   });
 });
 
-describe("the session's close, the only close on the strip", () => {
-  it("leaves its tasks' own tabs where they are when it is kept closing (#4757)", async () => {
+describe("the session's End…, the one way it ends (#4756)", () => {
+  it("leaves its tasks' own tabs where they are when it is kept ending (#4757)", async () => {
     const { tree, asked } = await drawn(withTasks(), {
       running: ["talk", "sweep", "probe", "deep"],
     });
@@ -721,10 +722,8 @@ describe("the session's close, the only close on the strip", () => {
     // Every other button at a tab's end is a minimise.
     expect(ender("talk")?.hasAttribute("data-minimise")).toBe(true);
     expect(ender("sweep")?.hasAttribute("data-minimise")).toBe(true);
-    await userEvent.click(ender("steward 1") as HTMLElement);
-
+    const question = await askToEnd("steward 1");
     // A chat leaving moves no other pane (#4757), so the question has nothing to say of them.
-    const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
     expect(question.textContent).not.toContain("of their own");
     // Asked once, as it always was.
     expect(within(question).getAllByRole("radio")).toHaveLength(2);
@@ -745,8 +744,7 @@ describe("the session's close, the only close on the strip", () => {
     });
     await toOwnTab(tree, "talk");
 
-    await userEvent.click(ender("steward 1") as HTMLElement);
-    const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
+    const question = await askToEnd("steward 1");
     await userEvent.click(within(question).getByRole("radio", { name: "Stop them" }));
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
 
@@ -760,8 +758,7 @@ describe("the session's close, the only close on the strip", () => {
 
   it("says nothing of tabs for a session none of whose tasks has one", async () => {
     await drawn(withTasks(), { running: ["talk"] });
-    await userEvent.click(ender("steward 1") as HTMLElement);
-    const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
+    const question = await askToEnd("steward 1");
     expect(question.textContent).not.toContain("of its own");
     expect(question.textContent).not.toContain("of their own");
   });
@@ -957,10 +954,17 @@ describe("a session's pane goes: its tasks' own tabs stay where they are, by eve
     );
   }
 
-  it("a close of the session's pane", async () => {
+  it("a close of the session's pane, which ends nothing (#4756)", async () => {
     const held = await withTalkInItsTab({ running: ["talk"] });
-    await userEvent.click(screen.getByRole("button", { name: "End this pane's chat" }));
-    const question = await screen.findByRole("alertdialog");
+    await userEvent.click(screen.getByRole("button", { name: "Close this pane" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await talkStays(held);
+    expect(commandsOf(held.asked, "close_session")).toEqual([]);
+  });
+
+  it("the session's End…, which says so first", async () => {
+    const held = await withTalkInItsTab({ running: ["talk"] });
+    const question = await askToEnd("steward 1");
     expect(question.textContent).not.toContain("of its own");
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
     await talkStays(held);
@@ -983,10 +987,9 @@ describe("a session's pane goes: its tasks' own tabs stay where they are, by eve
     await talkStays(held);
   });
 
-  it("a close that stops what is below, for a task the core did not end", async () => {
+  it("an End… that stops what is below, for a task the core did not end", async () => {
     const held = await withTalkInItsTab({ running: ["sweep"], spared: [4, 7] });
-    await userEvent.click(ender("steward 1") as HTMLElement);
-    const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
+    const question = await askToEnd("steward 1");
     await userEvent.click(within(question).getByRole("radio", { name: "Stop them" }));
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
     await talkStays(held);
@@ -998,14 +1001,13 @@ describe("a session's pane goes: its tasks' own tabs stay where they are, by eve
     await userEvent.keyboard(" ");
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
 
-    await userEvent.click(screen.getByRole("button", { name: "End this pane's chat" }));
-    await userEvent.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Close" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Close this pane" }));
 
-    // What shared the split takes its place (#4757): talk, which is not ended.
+    // What shared the split takes its place (#4757): talk, still running. A close ends nothing
+    // (#4756): the session goes on in the sidebar.
     await waitFor(() => expect(onScreen()).toEqual([4]));
-    expect(commandsOf(asked, "close_session")).toEqual([{ plane: PLANE, session: 1 }]);
+    expect(commandsOf(asked, "close_session")).toEqual([]);
+    expect(row(tree, "steward 1")).toBeTruthy();
     // The core is not left believing the closed session is on screen.
     await waitFor(() => expect(panedSaid(asked)).not.toContain(1));
   });

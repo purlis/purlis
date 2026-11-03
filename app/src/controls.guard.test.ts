@@ -242,7 +242,6 @@ const CEILING: Record<string, number> = {
   "StripMarks.tsx": 4,
   "TabChip.tsx": 3,
   "TabRename.tsx": 1,
-  "TaskAway.tsx": 2,
   "TaskBlocksNotice.tsx": 1,
   "TaskChangesTab.tsx": 4,
   "TaskEnd.tsx": 6,

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 
 /**
@@ -92,4 +92,17 @@ export async function chatList(name: string): Promise<HTMLElement> {
   });
   fireEvent.contextMenu(row);
   return screen.findByRole("menu");
+}
+
+/**
+ * **Asks to end chat `name`** the one way there is (#4753, #4756): End… on its one list. A close
+ * ends nothing. Answers the question End… asks, once it is up.
+ */
+export async function askToEnd(name: string): Promise<HTMLElement> {
+  // Its pane's ⋯ where it is on screen, and its row's menu where it is not.
+  const more = screen.queryAllByRole("button", { name: `More for ${name}` });
+  if (more.length > 0) await userEvent.click(more[0]);
+  const list = more.length > 0 ? await screen.findByRole("menu") : await chatList(name);
+  await userEvent.click(within(list).getByRole("menuitem", { name: "End…" }));
+  return screen.findByRole("alertdialog");
 }

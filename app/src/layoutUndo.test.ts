@@ -3,7 +3,17 @@
 
 import { describe, expect, it } from "vitest";
 import { canUndoLayout, recorded, undoLayout } from "./layoutUndo";
-import { focusPane, noTabs, openTab, renameTab, splitFocusedPane, type Tabs } from "./tabs";
+import {
+  closeFocusedPane,
+  closeLayout,
+  focusPane,
+  noTabs,
+  openTab,
+  renameTab,
+  splitFocusedPane,
+  type FiledIn,
+  type Tabs,
+} from "./tabs";
 
 /**
  * **The window's one Undo** (#4763, #4765): a drop, a split and Tile all each record their
@@ -51,5 +61,30 @@ describe("Undo after a layout change (#4763)", () => {
     const unrecorded = splitFocusedPane(after, "column", 9, "9");
     expect(canUndoLayout(unrecorded)).toBe(false);
     expect(undoLayout(unrecorded)).toBe(unrecorded);
+  });
+
+  it("names the strip's last tab as it was when a close it puts back had left it empty (#4756)", () => {
+    const filed: FiledIn = () => "alpha";
+    const tabs = split(one(), 8);
+    const id = tabs.order[0];
+    const closed = recorded(tabs, closeLayout(tabs, id, filed), "Closed steward 7.");
+    expect(closed.byId[id].name).not.toBe(tabs.byId[id].name);
+
+    const back = undoLayout(closed);
+
+    expect(back.byId[id].name).toBe(tabs.byId[id].name);
+    expect(back.byId[id].layout).toBe(tabs.byId[id].layout);
+  });
+
+  it("keeps a name the person gave the tab since, whatever the Undo puts back", () => {
+    const filed: FiledIn = () => "alpha";
+    const tabs = split(one(), 8);
+    const id = tabs.order[0];
+    const closed = recorded(tabs, closeFocusedPane(tabs, filed), "Closed the pane.");
+
+    const back = undoLayout(renameTab(closed, id, "mine"));
+
+    expect(back.byId[id].name).toBe("mine");
+    expect(back.byId[id].layout).toBe(tabs.byId[id].layout);
   });
 });

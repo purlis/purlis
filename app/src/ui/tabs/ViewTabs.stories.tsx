@@ -64,7 +64,7 @@ const PANE_OFFERS: Record<string, Offer> = {
     title: "Close this view",
     available: true,
     reason: "",
-    does: { verb: "closePane", ends: false },
+    does: { verb: "closePane" },
   },
 };
 
