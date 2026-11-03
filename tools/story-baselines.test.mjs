@@ -8,7 +8,9 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -177,6 +179,7 @@ test("take writes drawn baselines into the app", () => {
   assert.deepEqual(take(drawn, app), {
     taken: [`${SHOT}-chromium-linux.png`],
     removed: [],
+    unchanged: [],
   });
   assert.deepEqual(readFileSync(join(app, `${SHOT}-chromium-linux.png`)), PNG);
 });
@@ -346,8 +349,9 @@ test("take deletes every baseline that was not drawn, and nothing else", () => {
     [otherPlatform]: PNG,
   });
   assert.deepEqual(take(drawn, app), {
-    taken: [`${SHOT}-chromium-linux.png`],
+    taken: [],
     removed: [gone, otherPlatform].sort(),
+    unchanged: [`${SHOT}-chromium-linux.png`],
   });
   assert.equal(existsSync(join(app, gone)), false);
   assert.equal(existsSync(join(app, otherPlatform)), false);
@@ -533,4 +537,106 @@ test("gather refuses an index with no live story, rather than gather nothing", (
     { file: "src/settings/Choice.stories.tsx", id: "settings-choice--radios" },
   ];
   assert.deepEqual(gather(app, INDEX, out, CELLS, off), []);
+});
+
+// A take writes only what changed (#4937): main's whole set is near the total cap, so a cap on
+// the set would refuse every pull request that draws a few more pictures.
+const OTHER = png(3, 3);
+/** A whole PNG longer than {@link PNG}: a text chunk before its IEND. */
+const BIG = Buffer.concat([
+  PNG.subarray(0, PNG.length - 12),
+  chunk("tEXt", Buffer.from("Comment\0longer")),
+  PNG.subarray(PNG.length - 12),
+]);
+const at = (n, browser = "chromium") =>
+  `src/settings/__screenshots__/Choice.stories.tsx/settings-choice-s${n}_purlis_dark-${browser}-linux.png`;
+
+test("take writes only the pictures that changed, so a set past the total cap is taken", () => {
+  const drawn = tree({
+    [at(1)]: PNG,
+    [at(2)]: PNG,
+    [at(3)]: OTHER,
+    [at(4)]: OTHER,
+  });
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [at(1)]: PNG,
+    [at(2)]: PNG,
+    [at(3)]: PNG,
+  });
+  // The whole set is over the cap; what changes, one changed and one new, is within it.
+  assert.deepEqual(take(drawn, app, { total: 2 * OTHER.length }), {
+    taken: [at(3), at(4)],
+    removed: [],
+    unchanged: [at(1), at(2)],
+  });
+  assert.deepEqual(readFileSync(join(app, at(3))), OTHER);
+  assert.deepEqual(readFileSync(join(app, at(4))), OTHER);
+  assert.deepEqual(readFileSync(join(app, at(1))), PNG);
+});
+
+test("take leaves a picture that matches what is there untouched", () => {
+  const drawn = tree({ [at(1)]: PNG, [at(2)]: OTHER });
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [at(1)]: PNG,
+    [at(2)]: PNG,
+  });
+  const long = new Date("2020-01-01T00:00:00Z");
+  utimesSync(join(app, at(1)), long, long);
+  utimesSync(join(app, at(2)), long, long);
+  take(drawn, app);
+  assert.equal(statSync(join(app, at(1))).mtimeMs, long.getTime());
+  assert.notEqual(statSync(join(app, at(2))).mtimeMs, long.getTime());
+});
+
+test("the count cap counts the pictures written and deleted, not those that match", () => {
+  const drawn = tree({ [at(1)]: PNG, [at(2)]: PNG, [at(3)]: OTHER });
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [at(1)]: PNG,
+    [at(2)]: PNG,
+    [at(9)]: PNG,
+  });
+  assert.throws(() => take(drawn, app, { files: 1 }), /more than 1/);
+  assert.equal(existsSync(join(app, at(3))), false);
+  assert.equal(existsSync(join(app, at(9))), true);
+  assert.deepEqual(take(drawn, app, { files: 2 }), {
+    taken: [at(3)],
+    removed: [at(9)],
+    unchanged: [at(1), at(2)],
+  });
+});
+
+test("take refuses what it would write past the total cap, and writes and deletes nothing", () => {
+  const drawn = tree({ [at(1)]: PNG, [at(2)]: OTHER, [at(3)]: OTHER });
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [at(1)]: PNG,
+    [at(2)]: PNG,
+    [at(9)]: PNG,
+  });
+  assert.throws(
+    () => take(drawn, app, { total: 2 * OTHER.length - 1 }),
+    /in all/,
+  );
+  assert.deepEqual(readFileSync(join(app, at(2))), PNG);
+  assert.equal(existsSync(join(app, at(3))), false);
+  assert.equal(existsSync(join(app, at(9))), true);
+});
+
+test("take still refuses a picture that is not a baseline when the rest match", () => {
+  const app = tree({ "src/settings/Choice.stories.tsx": "", [at(1)]: PNG });
+  for (const [why, body] of [
+    ["not a whole PNG", SIGNATURE],
+    ["over the size cap", BIG],
+  ]) {
+    const drawn = tree({ [at(1)]: PNG, [at(2)]: body });
+    assert.throws(
+      () => take(drawn, app, { bytes: PNG.length }),
+      /not a baseline/,
+      why,
+    );
+    assert.equal(existsSync(join(app, at(2))), false, why);
+  }
 });
