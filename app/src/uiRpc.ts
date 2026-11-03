@@ -13703,6 +13703,12 @@ export type VaultIdentity = {
 	kept: boolean,
 };
 
+/**  The entry a linked entry reads, as its row names it. */
+export type VaultLink = {
+	vault: string,
+	key: string,
+};
+
 /**
  *  A vault a chat was refused, as the Notice on its tab shows it: names only. No key, no
  *  value, and nothing of the command the chat ran.
@@ -13751,6 +13757,10 @@ export type VaultSecret = {
 	key: string,
 	size: string | null,
 	updated: string | null,
+	/**  The entry it reads, when it is a linked entry (#5069): names, never a value. */
+	link: VaultLink | null,
+	/**  How many linked entries read it: what deleting it would break. */
+	linked_by: number,
 };
 
 /**  One registered vault, as the Vaults panel lists it. */

@@ -6,6 +6,7 @@
 use purlis_core::secrets::cmd::{self, Io, Say};
 use purlis_core::secrets::identity::{self, Held};
 use purlis_core::secrets::keyring;
+use purlis_core::secrets::links;
 use purlis_core::secrets::onepassword;
 use purlis_core::secrets::registry::{self, Vault};
 use purlis_core::secrets::setup;
@@ -114,11 +115,14 @@ fn listed_health(ctx: &Ctx, v: &Vault) -> VaultHealth {
 }
 
 /// How many secrets the vault holds, where charter can say so without a network: the keys
-/// index for a keyring vault, the file for a plain-file or reference one. `None` for a
+/// index for a keyring vault, the file for a plain-file or reference one, and the linked
+/// entries of each. `None` for a
 /// 1Password vault, whose count is `op`'s to give and is not worth a round trip per panel draw.
 fn count(ctx: &Ctx, v: &Vault) -> Option<u32> {
     let n = match v.provider.as_str() {
-        "keyring" => keyring::load_index(ctx, v).ok()?.keys.len(),
+        "keyring" => {
+            keyring::load_index(ctx, v).ok()?.keys.len() + links::in_vault(ctx, &v.name).ok()?.len()
+        }
         "plain-file" | "reference" => cmd::keys(ctx, v).ok()?.len(),
         _ => return None,
     };
@@ -471,6 +475,17 @@ pub(crate) struct VaultSecret {
     pub key: String,
     pub size: Option<String>,
     pub updated: Option<String>,
+    /// The entry it reads, when it is a linked entry (#5069): names, never a value.
+    pub link: Option<VaultLink>,
+    /// How many linked entries read it: what deleting it would break.
+    pub linked_by: u32,
+}
+
+/// The entry a linked entry reads, as its row names it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub(crate) struct VaultLink {
+    pub vault: String,
+    pub key: String,
 }
 
 /// Where one of a vault's identity variables is read from now (#237).
@@ -588,26 +603,53 @@ fn identity_of(ctx: &Ctx, v: &Vault) -> Vec<VaultIdentity> {
         .collect()
 }
 
-/// The vault's secrets, by name, as its table lists them.
+/// The vault's secrets, by name, as its table lists them: what the provider holds, and its
+/// linked entries, each naming the entry it reads (#5069), and each with the count of links
+/// that read it.
 fn secrets_of(ctx: &Ctx, v: &Vault) -> Result<Vec<VaultSecret>, VaultError> {
-    if v.provider == "keyring" {
-        return Ok(keyring::listed(ctx, v)?
+    let mut secrets: Vec<VaultSecret> = if v.provider == "keyring" {
+        keyring::listed(ctx, v)?
             .into_iter()
             .map(|l| VaultSecret {
                 key: l.key,
                 size: Some(l.size).filter(|s| !s.is_empty()),
                 updated: Some(l.updated).filter(|s| !s.is_empty()),
+                link: None,
+                linked_by: 0,
             })
-            .collect());
-    }
-    Ok(cmd::keys(ctx, v)?
-        .into_iter()
-        .map(|key| VaultSecret {
+            .collect()
+    } else {
+        cmd::stored_keys(ctx, v)?
+            .into_iter()
+            .map(|key| VaultSecret {
+                key,
+                size: None,
+                updated: None,
+                link: None,
+                linked_by: 0,
+            })
+            .collect()
+    };
+    let links = links::in_vault(ctx, &v.name)?;
+    if !links.is_empty() {
+        secrets.retain(|s| !links.contains_key(&s.key));
+        secrets.extend(links.into_iter().map(|(key, to)| VaultSecret {
             key,
             size: None,
             updated: None,
-        })
-        .collect())
+            link: Some(VaultLink {
+                vault: to.vault,
+                key: to.key,
+            }),
+            linked_by: 0,
+        }));
+        secrets.sort_by(|a, b| a.key.cmp(&b.key));
+    }
+    let read = links::readers_in(ctx, &v.name)?;
+    for secret in &mut secrets {
+        secret.linked_by = counted(read.get(&secret.key).copied().unwrap_or(0));
+    }
+    Ok(secrets)
 }
 
 /// What the tab of a vault whose identity variable is found nowhere says: the first line of the
