@@ -39,7 +39,7 @@ use crate::drive::{
 /// constant, run in purlis's own world on the field, so the page's own redefinitions of what it
 /// reads are never the ones it calls.
 pub(crate) const FIELD_KIND: &str = r"function () {
-  const oneLine = ['password', 'text', 'email', 'number', 'tel', 'url', 'search'];
+  const oneLine = ['password', 'text', 'email', 'number', 'tel', 'url'];
   let kind = 'other';
   if (this instanceof HTMLInputElement) {
     if (oneLine.includes(this.type) && !this.disabled && !this.readOnly) kind = 'one_line';
