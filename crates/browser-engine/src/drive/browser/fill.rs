@@ -25,8 +25,8 @@
 //! page can steer the value into another field or frame between a check and the write. A field
 //! that doesn't keep the value whole is emptied, and nothing is filled.
 //!
-//! **Once a value may be in a page, the agent copies and cuts nothing in that browser**, for its
-//! life: what a copy would take could be the value.
+//! **Once a value may be in a page, the agent copies, cuts and drags nothing in that browser**,
+//! for its life: what a copy or a drag would take could be the value, or part of it.
 
 use serde_json::{Value, json};
 

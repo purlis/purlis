@@ -3530,6 +3530,10 @@ impl Browser {
     }
 
     fn drag(&self, from: &Ref, to: &DragTo) -> Result<Answer, Refusal> {
+        // What a drag carries could be part of a secret purlis filled (#5115).
+        if self.inner.copy_withheld.load(Ordering::SeqCst) {
+            return Err(Refusal::CopyWithheld);
+        }
         let start_at = self.locate(from)?;
         let page = start_at.target.clone();
         let end_at = match to {
