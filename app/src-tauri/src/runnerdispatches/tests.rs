@@ -4,6 +4,7 @@
 //! A runner chat's open or dispatch, held for the person: what its row says and offers.
 
 use super::*;
+use purlis_core::machine::StartChoice;
 
 fn a_task(chat: u32, name: &str, brief: &str) -> Wanted {
     Wanted {
@@ -95,4 +96,73 @@ fn a_chat_holds_at_most_eight_and_its_close_takes_them() {
     );
     held.forget(4);
     assert_eq!(held.every().len(), 1);
+}
+
+/// A task of chat `chat` that names pool `pool` to run on: held because it moves work (#4536).
+fn a_move(chat: u32, pool: &str) -> Wanted {
+    Wanted {
+        runs_on: Some(StartChoice::Pool(pool.to_owned())),
+        ..a_task(chat, "t", "b")
+    }
+}
+
+/// **A refused move isn't asked again by the same chat** (#4862): once the person refuses a
+/// chat's dispatch to a place, that chat's later dispatches to that place are refused without
+/// asking, while it runs. Other places and other chats still ask.
+#[test]
+fn a_refused_move_is_refused_again_for_its_chat_and_place_alone_while_the_chat_runs() {
+    let held = RunnerDispatches::default();
+    let builds = StartChoice::Pool("builds".to_owned());
+    let id = held
+        .note(None, None, a_move(4, "builds"), 100)
+        .expect("held");
+    assert!(
+        !held.refused_before(4, &builds),
+        "not before the person refuses"
+    );
+
+    held.refuse(id).expect("it was held");
+
+    assert!(held.refused_before(4, &builds));
+    assert!(!held.refused_before(4, &StartChoice::Pool("tests".to_owned())));
+    assert!(!held.refused_before(4, &StartChoice::ThisMachine));
+    assert!(!held.refused_before(5, &builds), "another chat still asks");
+    held.forget(4);
+    assert!(!held.refused_before(4, &builds), "it ends with the chat");
+}
+
+/// Only the person's Refuse of a move is kept: an Approve keeps nothing, and a refused ask of a
+/// chat on a pool's runner is held for another reason, so it is no refusal of a place.
+#[test]
+fn only_a_refused_move_is_kept_never_an_approved_one_or_a_pool_chats() {
+    let held = RunnerDispatches::default();
+    let builds = StartChoice::Pool("builds".to_owned());
+    let approved = held
+        .note(None, None, a_move(4, "builds"), 100)
+        .expect("held");
+    held.take(approved).expect("it was held");
+    assert!(!held.refused_before(4, &builds));
+
+    let on_a_pool = held
+        .note(Some("builds"), None, a_move(4, "builds"), 100)
+        .expect("held");
+    held.refuse(on_a_pool).expect("it was held");
+    assert!(!held.refused_before(4, &builds));
+}
+
+/// What a chat is told when the person refuses its move says, in words, that it won't be asked
+/// again for that place.
+#[test]
+fn a_refused_moves_chat_is_told_it_is_not_asked_again_for_that_place() {
+    let held = RunnerDispatches::default();
+    let id = held
+        .note(None, None, a_move(4, "builds"), 100)
+        .expect("held");
+    let said = refused_said(&held.refuse(id).expect("it was held"));
+    assert!(said.starts_with("the person refused it"), "{said}");
+    assert!(said.contains("pool builds"), "{said}");
+    assert!(
+        said.contains("refused from now on without asking the person"),
+        "{said}"
+    );
 }

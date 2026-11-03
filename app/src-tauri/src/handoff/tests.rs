@@ -12531,3 +12531,50 @@ fn a_chats_dispatch_that_names_another_place_than_its_workspaces_waits_for_the_p
         waiting[0].said()
     );
 }
+
+/// **A move the person refused isn't asked again by the same chat** (#4862): after Refuse, the
+/// chat's next dispatch to the same pool starts nothing and holds nothing, and the chat is told,
+/// in words, that the person refused it before. A dispatch of it to another pool still asks.
+#[test]
+fn a_chats_dispatch_to_a_place_the_person_refused_it_is_refused_without_asking_again() {
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+    let dispatched = |runs_on: &str| {
+        let ticket = ticket(&held, &id, &tickets, asking);
+        let Ask::Dispatch(mut ask) = a_task_into_alpha(asking, &ticket, Some("lint")) else {
+            unreachable!("a dispatch");
+        };
+        ask.runs_on = Some(runs_on.to_owned());
+        answer(&held, &id, &tickets, 1, Ask::Dispatch(ask), &|_| {})
+    };
+    assert!(matches!(
+        dispatched("pool:builds"),
+        Answer::HeldToMove { .. }
+    ));
+    let waiting = held.runner_dispatches().every()[0].id;
+    crate::runnerdispatches::refused(&held, waiting).expect("refused");
+    let before = held.chats().record().chats.len();
+
+    let again = dispatched("pool:builds");
+
+    assert!(
+        matches!(&again, Answer::No { why }
+            if why.contains("refused this chat's dispatch to run on pool builds before")
+                && why.contains("Nothing was started")),
+        "{again:?}"
+    );
+    assert!(
+        held.runner_dispatches().every().is_empty(),
+        "the person isn't asked again"
+    );
+    assert_eq!(held.chats().record().chats.len(), before, "nothing started");
+    assert!(
+        matches!(dispatched("pool:tests"), Answer::HeldToMove { .. }),
+        "another place still asks"
+    );
+}

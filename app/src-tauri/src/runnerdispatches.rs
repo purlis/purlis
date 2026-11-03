@@ -28,18 +28,31 @@ use crate::planes::{Held, PlaneId, Planes};
 pub const AT_MOST_PER_CHAT: usize = 8;
 
 /// What a refused dispatch's chat is told, after the task's name.
-pub fn refused_said(pool: Option<&str>) -> String {
-    let Some(pool) = pool else {
-        return "the person refused it: it asked to run somewhere other than where its \
-                workspace runs its chats, and that waits for the person's Approve. Nothing was \
-                started. Do not ask again for it; dispatch it without naming where it runs, or \
-                tell the person it waits."
-            .to_owned();
+pub fn refused_said(one: &HeldDispatch) -> String {
+    let Some(pool) = &one.pool else {
+        let place = moves_said(&one.wanted);
+        return format!(
+            "the person refused it: it asked to run {place}, which is not where its workspace \
+             runs its chats, and that waits for the person's Approve. Nothing was started. This \
+             chat's dispatches to run {place} are refused from now on without asking the \
+             person: dispatch it without naming where it runs, or tell the person it waits."
+        );
     };
     format!(
         "the person refused it: this chat runs on pool {pool}'s runner, and a chat there starts \
          a chat on the person's machine only with their Approve. Nothing was started. Do not \
          ask again for it; do the work on the runner, or tell the person it waits."
+    )
+}
+
+/// What a chat is told where the person refused its dispatch to `runs_on` before (#4862): this
+/// one is refused without asking them again.
+fn refused_before_said(runs_on: &purlis_core::machine::StartChoice) -> String {
+    let place = place_said(Some(runs_on));
+    format!(
+        "the person refused this chat's dispatch to run {place} before, so this one is refused \
+         without asking them again. Nothing was started: dispatch it without naming where it \
+         runs, or tell the person it waits."
     )
 }
 
@@ -101,6 +114,9 @@ impl HeldDispatch {
 #[derive(Debug, Default)]
 pub struct RunnerDispatches {
     held: Mutex<(u32, Vec<HeldDispatch>)>,
+    /// The places each chat asked to run its work and the person refused (#4862): a later
+    /// dispatch of that chat to one of them is refused without asking, until the chat closes.
+    refused_moves: Mutex<Vec<(u32, purlis_core::machine::StartChoice)>>,
 }
 
 impl RunnerDispatches {
@@ -147,9 +163,48 @@ impl RunnerDispatches {
         Some(held.1.remove(at))
     }
 
-    /// Chat `session` has closed: its held dispatches go with it.
+    /// Takes dispatch `id` out because the person refused it. Where it was held because it
+    /// moves work, its chat's later dispatches to the same place are refused without asking
+    /// ([`Self::refused_before`]).
+    pub fn refuse(&self, id: u32) -> Option<HeldDispatch> {
+        let one = self.take(id)?;
+        if one.pool.is_none()
+            && let Some(runs_on) = &one.wanted.runs_on
+        {
+            let mut refused = self.refused_moves();
+            if !refused
+                .iter()
+                .any(|(chat, place)| *chat == one.session && place == runs_on)
+            {
+                refused.push((one.session, runs_on.clone()));
+            }
+        }
+        Some(one)
+    }
+
+    /// Whether the person refused chat `session`'s dispatch to run at `runs_on` while it runs.
+    pub fn refused_before(
+        &self,
+        session: u32,
+        runs_on: &purlis_core::machine::StartChoice,
+    ) -> bool {
+        self.refused_moves()
+            .iter()
+            .any(|(chat, place)| *chat == session && place == runs_on)
+    }
+
+    fn refused_moves(
+        &self,
+    ) -> std::sync::MutexGuard<'_, Vec<(u32, purlis_core::machine::StartChoice)>> {
+        self.refused_moves
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Chat `session` has closed: its held dispatches, and the places it was refused, go with it.
     pub fn forget(&self, session: u32) {
         self.lock().1.retain(|one| one.session != session);
+        self.refused_moves().retain(|(chat, _)| *chat != session);
     }
 }
 
@@ -171,6 +226,18 @@ pub fn hold(held: &Held, pool: Option<&str>, wanted: Wanted) -> Answer {
         .clone()
         .or_else(|| from.clone())
         .unwrap_or_else(|| "a chat".to_owned());
+    // **A place the person refused this chat is not asked about again** (#4862), while the chat
+    // runs. Only a refusal: nothing here ever starts a dispatch or stands in for an Approve.
+    if pool.is_none()
+        && let Some(runs_on) = &wanted.runs_on
+        && held
+            .runner_dispatches()
+            .refused_before(wanted.chat, runs_on)
+    {
+        return Answer::No {
+            why: refused_before_said(runs_on),
+        };
+    }
     let runs_on = wanted
         .runs_on
         .as_ref()
@@ -301,8 +368,13 @@ pub(crate) fn runs_on_said(
 
 /// What a dispatch held because it moves work asks, in words: where it asks to run.
 fn moves_said(wanted: &Wanted) -> String {
+    place_said(wanted.runs_on.as_ref())
+}
+
+/// Where a chat asked to run, in words: "on pool <name>" or "on this machine".
+fn place_said(runs_on: Option<&purlis_core::machine::StartChoice>) -> String {
     use purlis_core::machine::StartChoice;
-    match &wanted.runs_on {
+    match runs_on {
         Some(StartChoice::Pool(pool)) => format!("on pool {pool}"),
         Some(StartChoice::ThisMachine) | None => "on this machine".to_owned(),
     }
@@ -403,9 +475,9 @@ pub async fn refuse_runner_dispatch(
 pub fn refused(held: &Held, id: u32) -> Result<(), String> {
     let one = held
         .runner_dispatches()
-        .take(id)
+        .refuse(id)
         .ok_or_else(|| WAITS_NO_MORE.to_owned())?;
-    crate::handoff::tell_refused(held, &one.wanted, &refused_said(one.pool.as_deref()));
+    crate::handoff::tell_refused(held, &one.wanted, &refused_said(&one));
     // Listed on the Dispatches tab with the ones kept blocked, as a refused grant is (#1456).
     held.held_dispatches().kept_blocked(one.wanted);
     held.chats().asks_may_have_moved();

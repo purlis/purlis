@@ -77,7 +77,7 @@ export function RunnerDispatchTab({ plane, id }: { plane: PlaneId; id: number })
         <p>
           {read.chat} (chat {read.session}) asks to start a task that runs somewhere other than
           where its workspace runs its chats. Only you start it; it is told what you did on its next
-          turn.
+          turn. If you refuse, it can't ask you again to run there while it runs.
         </p>
       )}
       <dl className="runner-dispatch-facts" data-testid="runner-dispatch-facts">
