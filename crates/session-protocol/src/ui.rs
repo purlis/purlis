@@ -928,6 +928,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "theme_drafts_revert_here",
     "theme_move_to_project",
     "theme_copy_to_machine",
+    // Copy diagnostics' facts about this machine (#4774): its system and how many chats it
+    // holds, for a bug report the person copies from About in their own window. The report
+    // carries the slow-answer log, which is the window's alone, so the facts beside it are too.
+    "diagnostics_here",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
