@@ -7162,10 +7162,14 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Tier:** Machine, device-bound — beside the queues in `app/spool/messages/<n>/` on a pool's
   runner, where its host carries them (#4804).
 - **Format:** JSON, `{"v": 1, "chats": {"<n>": ["<message id>", ...]}}`: per chat, the ids of
-  the messages whose `Deliver` a host answered, newest last, at most 256 a chat.
+  the messages whose `Deliver` a host answered and that are not delivered yet, newest last, at
+  most 256 a chat.
 - **Written by:** `purlis_core::hookwire::Relaying`, in `purlis serve` on a runner: each
   `Deliver` its host carries is written down before its chat is told the message waits or was
-  delivered, and each time a host starts carrying, what it kept (#4895). Replaced whole.
+  delivered, its id is taken out once the window answers it, and each time a host starts
+  carrying, what it kept (#4895). Replaced whole. A `Deliver` for a message a host retired as it
+  started, its sender's connect waiting while it did, is told nothing was sent, and not written
+  down (#4961).
 - **Read by:** the same, each time a host starts carrying: every message queued that is not
   written down here is retired, removed and never delivered, past any `.part` a sender is still
   writing (#4941). Such a message was queued while no host carried, under a build from before
@@ -7175,6 +7179,18 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Status:** **internal**. A file that is missing or does not read makes the next host retire
   everything queued then: messages lost, never one delivered twice or after its sender was told
   it was not sent.
+
+### `app/spool/messages/carries`
+- **Tier:** Machine, device-bound — beside `app/spool/messages/waits.json` on a pool's runner.
+- **Format:** an empty file. Only whether it is there counts.
+- **Written by:** builds from #4895 to #4941 only, the first time their host carried the queues.
+  No build since writes it.
+- **Read by:** those builds, each time a host started carrying: where it was there, nothing was
+  retired.
+- **Removed by:** `purlis_core::hookwire::Relaying::carrying_queues_beside`, each time a host
+  starts carrying (#4961), so one of those builds started later never finds it left behind past
+  a build from before #4804 that refused a message, and delivers that message.
+- **Status:** **internal**, retired. Nothing reads it now.
 
 ### `app/spool/keys.json`
 - **Format:** JSON, `{"v": 2, "keys": [{"id": "<16 hex>", "chat": <n>, "key": "<64 hex>",

@@ -33,7 +33,7 @@
 //! writes nothing down. The retire looks at every message in the folder, past any a sender is
 //! still writing.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -69,6 +69,9 @@ pub(super) struct Carrying {
     /// The ids of the messages it told each chat wait, as written down beside the queues
     /// ([`dispatchqueue::TOLD_WAITS`]), newest last.
     told: Mutex<Told>,
+    /// The messages it retired as it started carrying (chat, id): a `Deliver` for one, whose
+    /// sender's connect waited while it started, is told it was not sent (#4961).
+    retired: Mutex<BTreeSet<(u32, String)>>,
 }
 
 /// The ids of the messages a host told each chat wait, newest last.
@@ -106,8 +109,21 @@ impl Relaying {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let mut told = lock(&self.carrying.told);
-        *told = retire_what_no_host_told_waits(socket, &told_waits(socket));
+        let mut retired = lock(&self.carrying.retired);
+        *told = retire_what_no_host_told_waits(socket, &told_waits(socket), &mut retired);
+        drop(retired);
         write_told_waits(socket, &told);
+        // A build from #4895 to #4941 that found it would retire nothing, and deliver what a build
+        // before hosts carried refused in between (#4961).
+        let old = dispatchqueue::old_carries_marker_for(socket);
+        if let Err(why) = std::fs::remove_file(&old)
+            && why.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(
+                "purlisd: the marker an older host left was not removed ({}): {why}",
+                old.display()
+            );
+        }
         if !told.is_empty() {
             self.carry_waits.store(true, Ordering::SeqCst);
         }
@@ -125,6 +141,24 @@ impl Relaying {
             ids.pop_front();
         }
         ids.push_back(id.to_owned());
+        write_told_waits(socket, &told);
+    }
+
+    /// **Chat `chat`'s message `id` is delivered**: no longer written down as waiting, so what
+    /// still waits keeps its place among the most a chat may have written down.
+    fn no_longer_waits(&self, socket: &Path, chat: u32, id: &str) {
+        let mut told = lock(&self.carrying.told);
+        let Some(ids) = told.get_mut(&chat) else {
+            return;
+        };
+        let before = ids.len();
+        ids.retain(|told| told != id);
+        if ids.len() == before {
+            return;
+        }
+        if ids.is_empty() {
+            told.remove(&chat);
+        }
         write_told_waits(socket, &told);
     }
 
@@ -149,6 +183,15 @@ impl Relaying {
             return None;
         };
         let socket = self.carries()?;
+        if lock(&self.carrying.retired).contains(&(asked.chat, id.clone())) {
+            return Some(Answer::No {
+                why: format!(
+                    "nothing was sent: message {id} was queued while no purlis here carried \
+                     messages to the app, so it was removed. Do not wait for an answer to it; \
+                     send it again if it still matters"
+                ),
+            });
+        }
         self.telling_it_waits(&socket, asked.chat, id);
         Some(self.carry(&socket, connection, asked.chat, Some(id)))
     }
@@ -184,6 +227,7 @@ impl Relaying {
             match self.carry_one(connection, chat, &message) {
                 Came::Answered(answer) => {
                     dispatchqueue::delivered(socket, chat, &message);
+                    self.no_longer_waits(socket, chat, &message.id);
                     if is_fresh {
                         answered = Some(answer);
                     } else {
@@ -332,8 +376,12 @@ impl Drop for Gone<'_> {
 
 /// **Removes every message queued beside `socket` that no host told its chat waits** (`told`),
 /// none delivered, past any message a sender is still writing: what was queued while no host
-/// carried. What it keeps, as [`Told`].
-fn retire_what_no_host_told_waits(socket: &Path, told: &Told) -> Told {
+/// carried. What it keeps, as [`Told`]; what it removes, added to `retired`.
+fn retire_what_no_host_told_waits(
+    socket: &Path,
+    told: &Told,
+    retired: &mut BTreeSet<(u32, String)>,
+) -> Told {
     let mut kept = Told::new();
     for chat in dispatchqueue::chats(socket) {
         let waits = told.get(&chat);
@@ -349,6 +397,7 @@ fn retire_what_no_host_told_waits(socket: &Path, told: &Told) -> Told {
                          not carried"
                     );
                     dispatchqueue::retired(&message);
+                    retired.insert((chat, message.id));
                 }
                 Found::Delivered(path) | Found::Unchecked(path) => {
                     dispatchqueue::drop_unchecked(&path);

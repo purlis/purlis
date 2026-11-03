@@ -67,6 +67,11 @@ pub const RECORDS: &str = "records.json";
 /// nothing was sent, and is never delivered.
 pub const TOLD_WAITS: &str = "waits.json";
 
+/// **The marker hosts from #4895 to #4941 left**, and, finding it, retired nothing: a host
+/// removes it each time it starts carrying, so a build that reads it never finds one left past a
+/// build that refused a message.
+pub const OLD_CARRIES_MARKER: &str = "carries";
+
 /// What a queued message's MAC is over, ahead of its body: so no spool line's MAC is ever a
 /// message's, or the other way round.
 const LABEL: &str = "purlis dispatch message v1\n";
@@ -283,6 +288,12 @@ pub fn records_for(socket: &Path) -> PathBuf {
 /// Where a runner's host keeps what it told each chat waits ([`TOLD_WAITS`]), beside `socket`.
 pub fn told_waits_for(socket: &Path) -> PathBuf {
     queues_for(socket).join(TOLD_WAITS)
+}
+
+/// Where hosts from #4895 to #4941 marked that they carried these queues
+/// ([`OLD_CARRIES_MARKER`]), beside `socket`.
+pub fn old_carries_marker_for(socket: &Path) -> PathBuf {
+    queues_for(socket).join(OLD_CARRIES_MARKER)
 }
 
 /// Where every chat's queue is.
