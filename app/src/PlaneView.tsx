@@ -3196,10 +3196,11 @@ export const PlaneView = memo(function PlaneView({
    * draws the ones that came to it (`tabWindows.ts`). Nothing ends: a tab that left takes its
    * chats on screen with it.
    */
+  // Heard once per project: what it reads is the window's now, so a workspace removed, which
+  // files chats again, does not listen anew.
+  const layoutMovedHere = useRef<(moved: LayoutMoved) => void>(() => undefined);
   useEffect(() => {
-    const listening = listen<LayoutMoved>(LAYOUT_MOVED, (event) => {
-      const moved = event.payload;
-      if (moved.plane !== plane) return;
+    layoutMovedHere.current = (moved) => {
       windowsOf(moved.layout);
       void commands
         .openedChats(plane)
@@ -3212,9 +3213,14 @@ export const PlaneView = memo(function PlaneView({
           );
         })
         .catch(() => undefined);
+    };
+  }, [change, filedIn, plane, reopeningOf, tabWindow, windowsOf]);
+  useEffect(() => {
+    const listening = listen<LayoutMoved>(LAYOUT_MOVED, (event) => {
+      if (event.payload.plane === plane) layoutMovedHere.current(event.payload);
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
-  }, [change, filedIn, plane, reopeningOf, tabWindow, windowsOf]);
+  }, [plane]);
 
   /** **A press in another of the project's windows landed on a chat this one has in a pane**
    *  (#4768): it is shown here, in its pane, and this window has come forward. */
