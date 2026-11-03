@@ -554,15 +554,6 @@ fn step_of_a_refused_start(why: &str) -> Option<purlis_core::poolsetup::StepId> 
         .then_some(purlis_core::poolsetup::StepId::Signins)
 }
 
-/// Whether `workspaces/<name>` of the project at `root` is a folder of its own: never a link,
-/// which could lead out of the project.
-#[cfg(unix)]
-fn a_workspace_folder(root: &std::path::Path, name: &str) -> bool {
-    purlis_core::wscmd::workspace_dir(root, name)
-        .and_then(|dir| dir.symlink_metadata().ok())
-        .is_some_and(|meta| meta.is_dir())
-}
-
 /// **The workspace Try it starts its chat in, and its folder**: workspace `asked`, where the
 /// tab is filed in one, else the project's first workspace by name. None where the project has
 /// none.
@@ -571,10 +562,10 @@ fn workspace_to_try(
     root: &std::path::Path,
     asked: Option<&str>,
 ) -> Option<(String, std::path::PathBuf)> {
+    // A folder of the project's own, reached without a link: what a branch folder is held to.
     let found = |name: &str| {
-        a_workspace_folder(root, name)
-            .then(|| purlis_core::wscmd::workspace_dir(root, name))
-            .flatten()
+        purlis_core::worktree::confine::workspace_dir(root, name)
+            .ok()
             .map(|dir| (name.to_owned(), dir))
     };
     if let Some(chosen) = asked.and_then(found) {
