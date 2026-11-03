@@ -1913,17 +1913,17 @@ export function catalogue(now: Now): Offer[] {
   // opens that question; it never answers it. **The chat takes the focused pane** (#4758): a
   // chat is never a tab of its own.
   offers.push(can("chat.new", SAID.newChat, { verb: "chat.new" }));
-  // **The strip's `+`** (#4758; spec story 13): a tab with one empty pane, which New chat then
-  // fills. "New tab" still means a tab.
-  offers.push(can("tab.new", SAID.newTab, { verb: "tab.new" }));
 
   // **Beside it, and never inside the picker** (SI-5). A shell tab runs no harness, so there
   // is no profile to pick and nothing for ADR 0022 to ask. It is still a chat to the core — a
   // session with a number, recorded and put back — which is why it is a tab like one.
   offers.push({
     ...can("shell.new", "New shell", { verb: "newShell" }),
-    note: `Your own shell, with no harness, where a new tab would start. ${SHELL_KEY_SAID}.`,
+    note: `Your own shell, with no harness, in the focused pane. ${SHELL_KEY_SAID}.`,
   });
+  // **The strip's `+`** (#4758; spec story 13): a tab with one empty pane, which New chat then
+  // fills. "New tab" still means a tab.
+  offers.push(can("tab.new", SAID.newTab, { verb: "tab.new" }));
 
   // A browser purlis runs and you watch in a tab (#2012): it never opens as a window of its own.
   // It goes to an address you type in its tab (#2176).

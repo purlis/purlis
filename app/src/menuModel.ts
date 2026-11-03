@@ -262,7 +262,7 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "shell.new": {
     said: SAID.newShell,
     slot: "open",
-    // The key opens a shell where a new tab would start: the row with no place of its own.
+    // The key opens a shell in the focused pane: the row with no place of its own.
     keys: (offer) => (offer.id === "shell.new" ? shellKeySaid(onAMac()) : undefined),
   },
   "workspace.create": { said: (offer) => offer.title, slot: "open" },
