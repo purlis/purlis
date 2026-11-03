@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793682019759,
+  "lastUpdate": 1793683691269,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37212,6 +37212,48 @@ window.BENCHMARK_DATA = {
             "value": 101.76019500000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.168, 100.973, 101.760, 102.058, 103.000 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ba20cf31c2b9c4b2a416d621be838a6f192ba0c3",
+          "message": "SK-55c: the terminal's grade plan names a file it could not check (#4922) (#4926)\n\n* SK-55c: the terminal's grade plan names a file it could not check (#4922)\n\nThe Skill studio's plan says an outcome eval's file that isn't text could\nnot be checked for characters no reader would see, and that a judge may\nnot be able to read it. purlis skill grade's plan at a terminal now says\nit too, in the same words; a plan with none says nothing extra.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F8VB7G4ZH2CP46EX9J46CX\nPurlis-Persona: steward\n\n* SK-55c: a changelog fragment for #4922\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F8VB7G4ZH2CP46EX9J46CX\nPurlis-Persona: steward\n\n* SK-55c: one rule names an eval's files that aren't text, for both plans (#4922)\n\nPlanned::eval_not_text, beside eval_hides, is what the Skill studio's plan\nand purlis skill grade's both name. At a terminal the not-text clause\nfollows a semicolon, so its files never run on into the list of files\nthe eval stages; a test pins the plural.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F8VB7G4ZH2CP46EX9J46CX\nPurlis-Persona: steward\n\n* SK-55c: the command scan reads \"purlis couldn't\" as prose (#4922)\n\nThe scan of every message for a command it names reads a word up to an\napostrophe, so the plan's \"isn't text: purlis couldn't check it\" was\nread as a command \"purlis couldn\". \"couldn\" joins the words that\nfollow purlis as the subject of a sentence, as \"could\" already does, so\nthe terminal keeps the window's words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F8VB7G4ZH2CP46EX9J46CX\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T04:45:46Z",
+          "tree_id": "22f6b60d89bb1ba20bc7b2c4e95ce1e89af9dfb9",
+          "url": "https://github.com/purlis/purlis/commit/ba20cf31c2b9c4b2a416d621be838a6f192ba0c3"
+        },
+        "date": 1793683685774,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.668366,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.650, 0.659, 0.668, 0.691, 0.713 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.41319,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.397, 16.407, 16.413, 16.707, 16.946 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.7224195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.301, 102.715, 102.722, 102.891, 103.007 ms"
           }
         ]
       }
