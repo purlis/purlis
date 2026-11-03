@@ -120,7 +120,7 @@ async fn a_login_names_no_value_in_what_the_host_says_of_it() {
         "{:?}",
         session::Command::LogIn {
             program: "b".into(),
-            login: login(),
+            login: Box::new(login()),
         }
     );
     assert!(

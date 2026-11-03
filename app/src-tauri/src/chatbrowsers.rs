@@ -2645,7 +2645,7 @@ impl ChatBrowsers {
             }
             Browsing::Act(act) => Doing::Act(act.clone()),
             Browsing::LogIn { login, .. } => match read {
-                Some(Ok(read)) => Doing::LogIn(login.clone(), read),
+                Some(Ok(read)) => Doing::LogIn(login.clone(), Box::new(read)),
                 Some(Err(why)) => return (no(&why), false),
                 None => {
                     return (
@@ -2726,12 +2726,10 @@ impl ChatBrowsers {
             }
             // The login was read before the lock, for the browser it goes into, and is handed on
             // whole.
-            Doing::LogIn(
-                declared,
-                LoginRead {
+            Doing::LogIn(declared, read) => {
+                let LoginRead {
                     login, identity, ..
-                },
-            ) => {
+                } = *read;
                 // Bound to the runner the chat's link reached, so it goes into a browser on no
                 // other: a project's chats and browsers may be on two runners during a drain
                 // (#4248).
@@ -2849,8 +2847,8 @@ fn pool_login_kept_off_said(persona: &str, login: &str, pool: &str) -> String {
 /// purlis's by the login's name (#2016).
 enum Doing {
     Act(Act),
-    /// A login by its name, as read.
-    LogIn(String, LoginRead),
+    /// A login by its name, as read: boxed, as it is far larger than an act.
+    LogIn(String, Box<LoginRead>),
 }
 
 /// What the chat is told once purlis performed its browser login `name` (#2016): that its

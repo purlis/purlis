@@ -395,7 +395,7 @@ mod hosted {
             }
             let command = Command::LogIn {
                 program: program.to_owned(),
-                login,
+                login: Box::new(login),
             };
             // purlis drives it while it logs in (#2293), unless the person does: the host
             // refuses the login then. Who drives it is the host's word where this window has

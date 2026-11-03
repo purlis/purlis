@@ -1027,7 +1027,8 @@ pub enum Command {
     /// ([`crate::grants::Power::KeptLogin`]).
     LogIn {
         program: String,
-        login: crate::browsing::LogIn,
+        /// Boxed: a login is far larger than the rest of a command (1.70 gave it a `form`).
+        login: Box<crate::browsing::LogIn>,
     },
     /// A relaying host's word on each link it makes to another host for one window (1.22,
     /// #2511): this link is `window`'s, by the name the relaying host gives that window on
@@ -4327,7 +4328,7 @@ impl Client {
         match self
             .call(Command::LogIn {
                 program: program.into(),
-                login,
+                login: Box::new(login),
             })
             .await?
         {
