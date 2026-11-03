@@ -43,6 +43,7 @@ use crate::drive::{
 /// constant, run in purlis's own world on the field, so the page's own redefinitions of what it
 /// reads are never the ones it calls.
 pub(crate) const FIELD_KIND: &str = r"function () {
+  if (!(this instanceof Element)) return { kind: 'other', label: '' };
   const oneLine = ['password', 'text', 'email', 'number', 'tel', 'url'];
   let kind = 'other';
   if (this instanceof HTMLInputElement) {
@@ -294,6 +295,10 @@ impl Browser {
             .devtools()
             .call("Runtime.releaseObject", json!({ "objectId": object }), on);
         let read = read.map_err(|_| Refusal::Unknown)?;
+        // What the function could not read is no field a secret goes into.
+        if read.get("exceptionDetails").is_some() {
+            return Ok((FieldKind::Other, String::new()));
+        }
         let value = read.pointer("/result/value").ok_or(Refusal::Unknown)?;
         let kind = match value.get("kind").and_then(Value::as_str) {
             Some("one_line") => FieldKind::OneLine,

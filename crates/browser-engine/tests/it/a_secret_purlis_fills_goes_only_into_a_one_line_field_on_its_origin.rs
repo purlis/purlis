@@ -62,12 +62,13 @@ fn described(browser: &Browser, target: Ref) -> FieldInfo {
 }
 
 /// The reference of the element labelled `label`, waiting for it to show.
-fn ref_of(browser: &Browser, label: &str) -> Ref {
+fn ref_of(browser: &Browser, line: &str) -> Ref {
+    let label = line.split('"').nth(1).unwrap_or(line);
     let start = Instant::now();
     loop {
         let found = find(browser, label);
-        if found.contains('[') {
-            return ref_on(&found, label);
+        if found.lines().any(|l| l.contains(line) && l.contains('[')) {
+            return ref_on(&found, line);
         }
         assert!(
             start.elapsed() < Duration::from_secs(10),
@@ -83,7 +84,7 @@ fn a_secret_goes_into_a_one_line_field_and_nothing_read_after_shows_it() {
         return;
     };
     open(&browser, "fill.html");
-    let key = ref_of(&browser, "API key");
+    let key = ref_of(&browser, "textbox \"API key\"");
     assert_eq!(
         described(&browser, key.clone()),
         FieldInfo {
@@ -129,7 +130,7 @@ fn a_field_whose_frame_is_on_another_origin_is_refused_and_says_why() {
         return;
     };
     open(&browser, "fill-frame.html");
-    let card = ref_of(&browser, "Card number");
+    let card = ref_of(&browser, "textbox \"Card number\"");
     assert_eq!(
         described(&browser, card.clone()).origin.as_deref(),
         Some("http://other.test"),
@@ -152,8 +153,8 @@ fn a_multi_line_box_or_an_editable_area_takes_no_secret() {
     };
     open(&browser, "fill.html");
     for (label, kind) in [
-        ("Notes", FieldKind::MultiLine),
-        ("Editor", FieldKind::Editable),
+        ("textbox \"Notes\"", FieldKind::MultiLine),
+        ("textbox \"Editor\"", FieldKind::Editable),
     ] {
         let field = ref_of(&browser, label);
         assert_eq!(described(&browser, field.clone()).kind, kind, "{label}");
@@ -173,7 +174,7 @@ fn a_fill_on_an_origin_nobody_approved_fills_nothing() {
         return;
     };
     open(&browser, "fill.html");
-    let key = ref_of(&browser, "API key");
+    let key = ref_of(&browser, "textbox \"API key\"");
     match filled(&browser, key, "https://fixture.test") {
         Err(Refusal::NotFilled(why)) => assert!(why.contains("nothing was filled"), "{why}"),
         other => panic!("refused otherwise: {}", ended_as(&other)),
@@ -190,7 +191,7 @@ fn a_number_field_given_letters_keeps_nothing_and_the_browser_stays() {
         return;
     };
     open(&browser, "fill.html");
-    let port = ref_of(&browser, "Port");
+    let port = ref_of(&browser, "spinbutton \"Port\"");
     match filled(&browser, port, "http://fixture.test") {
         Err(Refusal::NotFilled(why)) => {
             assert!(why.contains("did not keep the value whole"), "{why}")
@@ -207,7 +208,7 @@ fn once_a_secret_is_filled_the_agent_cannot_copy_it_out() {
         return;
     };
     open(&browser, "fill.html");
-    let key = ref_of(&browser, "API key");
+    let key = ref_of(&browser, "textbox \"API key\"");
     filled(&browser, key.clone(), "http://fixture.test")
         .unwrap_or_else(|why| panic!("filled: {}", ended_as(&Err::<(), _>(why))));
     call(&browser, Call::Click { target: key });
