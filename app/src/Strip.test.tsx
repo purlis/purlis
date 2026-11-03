@@ -549,6 +549,39 @@ describe("the strip's tabs (#4762)", () => {
     expect(await hoverTipOf(tab)).toBe("ide.1 · ide.2");
   });
 
+  it("draws Tile all at its right end only while the tab in front is split (#4765)", async () => {
+    core([chat(1), chat(2)], {
+      strip: null,
+      tabs: [
+        {
+          workspace: null,
+          pinned: false,
+          window: 0,
+          front: true,
+          focused: "a",
+          tree: {
+            kind: "split",
+            direction: "row",
+            share: 500,
+            a: { kind: "chat", chat: 1 },
+            b: { kind: "chat", chat: 2 },
+          },
+        },
+      ],
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Tile all" })).toBeEnabled();
+  });
+
+  it("draws no Tile all for a tab of one pane, so it takes no room from the tabs (#4765)", async () => {
+    core([chat(1)]);
+    render(<App />);
+
+    await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
+    expect(screen.queryByRole("button", { name: "Tile all" })).toBeNull();
+  });
+
   it("always draws the tab in front, in the last place that fits", async () => {
     // `chat()` puts chat 1 in front; here the core says 4 is.
     core([{ ...chat(1), in_front: false }, chat(2), chat(3), { ...chat(4), in_front: true }]);

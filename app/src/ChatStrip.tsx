@@ -559,8 +559,11 @@ export function ChatStrip({
         </QueueRead>
       </div>
       {/* **Tile all, at the strip's right end** (#4765): the tab in front's panes evened into a
-        grid. The catalogue's row, so a tab of one pane draws it greyed with its reason. */}
-      {tabs.inFront !== undefined && (
+        grid. **Drawn only while it can run**, as the show-more is only while something is
+        hidden: at one pane it has nothing to say, and a button there would take room from the
+        tabs on every strip that is not split. The tab menu and the palette keep its row,
+        greyed with its reason. */}
+      {tabs.inFront !== undefined && by(tileAllId(tabs.inFront))?.available === true && (
         <span className="strip-tile">
           <Doer offer={by(tileAllId(tabs.inFront))} onPress={press} words="Tile all" iconOnly />
         </span>
