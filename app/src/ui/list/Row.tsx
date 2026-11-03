@@ -21,6 +21,7 @@ import {
   type ReactNode,
 } from "react";
 import { Text as AriaText } from "react-aria-components";
+import { drawnCut } from "../drawnCut";
 
 /** The families a row belongs to. */
 export type RowFamily = "list" | "tree" | "table";
@@ -92,14 +93,6 @@ export const RowTrail = slot("trail");
  */
 export const RowCutWords = createContext<((words: string | undefined) => void) | null>(null);
 
-/** Whether `element`'s words are drawn cut: wider or taller than its box shows. */
-function drawnCut(element: HTMLElement): boolean {
-  return (
-    element.scrollWidth > element.clientWidth + 0.5 ||
-    element.scrollHeight > element.clientHeight + 0.5
-  );
-}
-
 /**
  * **A line under the row's words, inside the row**: what a search matched in its body, why it
  * was refused, a skill's one-line description. The row grows to fit it and is still one row to
@@ -107,8 +100,9 @@ function drawnCut(element: HTMLElement): boolean {
  * one it wraps.
  *
  * **`tipWhenCut`** (#4711): while its clamp cuts it, its whole words are its row's tooltip
- * (`RowTip.tsx`), under the pointer and while the keyboard is on the row; while they fit, there
- * is none. The row stays as it is drawn. A list's row's alone (`ListRow`, `ListOption`).
+ * (`RowTip.tsx`) and its description, under the pointer and while the keyboard is on the row;
+ * while they fit, there is none. The row stays as it is drawn. One to a row, and a list's row's
+ * alone (`ListRow`, `ListOption`).
  */
 export function RowBelow({
   clamp,
@@ -127,6 +121,7 @@ export function RowBelow({
     // string, which only a change of words changes.
     const measure = () => asks(drawnCut(element) ? element.textContent || undefined : undefined);
     measure();
+    if (typeof ResizeObserver !== "function") return () => asks(undefined);
     const watch = new ResizeObserver(measure);
     watch.observe(element);
     return () => {

@@ -81,12 +81,12 @@ describe("a line under a row's words that asks for its whole in the tooltip (#47
     expect(within(document.body).getByRole("tooltip")).toHaveTextContent(LONG);
   });
 
-  it("never describes its row, whose own words already say all of it", async () => {
+  it("is its row's description while it is shown, the row being named by its words alone", async () => {
     cut.add(LONG);
     render(<Skills />);
     await userEvent.tab();
-    expect(screen.getByRole("tooltip")).toBeInTheDocument();
-    expect(row("long")).not.toHaveAttribute("aria-describedby");
+    expect(row("long")).toHaveAccessibleName("long");
+    expect(row("long")).toHaveAccessibleDescription(LONG);
   });
 
   it("shows no tooltip while its words fit", async () => {

@@ -58,10 +58,6 @@ export function useRowTip(
   /** Shown to the pointer alone: a tip that only repeats the row (a file's path) would be heard
    *  on every arrow step. Nothing shows it on the keyboard, and so no Esc is spent on it. */
   pointerOnly = false,
-  /** The tip is the row's own words, cut short where they are drawn (`RowBelow`'s
-   *  `tipWhenCut`): shown to the eye, never the row's description, since a reader already hears
-   *  them whole as the row's. */
-  repeats = false,
 ): RowTipped {
   // Where the pointer rested as the delay ran out (its x in the window), while it is shown.
   const [pointed, setPointed] = useState<number | null>(null);
@@ -94,7 +90,7 @@ export function useRowTip(
     drawn: (keyboardOn) =>
       (pointed !== null || (keyboardOn && !pointerOnly)) &&
       !dismissed && (
-        <Shown pointer={pointed} describes={!repeats} onEscape={() => setDismissed(true)}>
+        <Shown pointer={pointed} onEscape={() => setDismissed(true)}>
           {tip}
         </Shown>
       ),
@@ -104,7 +100,8 @@ export function useRowTip(
 /**
  * **A list's row's tooltip, or the whole of its line cut short** (#4711): the row's own `tip`
  * where it has one; else, while a `RowBelow` that asks (`tipWhenCut`) is cut by its clamp, that
- * line's whole words, never as the row's description. `hold` draws the row's content where its
+ * line's whole words, which are its row's description while they are shown (a row is named by its
+ * `textValue` alone, so a reader hears the line only so). `hold` draws the row's content where its
  * `RowBelow` can say it is cut.
  */
 export function useListRowTip(tip: Tip | undefined): {
@@ -113,7 +110,7 @@ export function useListRowTip(tip: Tip | undefined): {
 } {
   const [cut, setCut] = useState<string>();
   const own = tip !== undefined && says(tip);
-  const tipped = useRowTip(own ? tip : cut, false, !own);
+  const tipped = useRowTip(own ? tip : cut);
   return {
     tipped,
     hold: (content) => <RowCutWords.Provider value={setCut}>{content}</RowCutWords.Provider>,
@@ -131,14 +128,11 @@ interface Place {
 /** The tooltip while it is up, which the first Esc takes down. */
 function Shown({
   pointer,
-  describes,
   onEscape,
   children,
 }: {
   /** The pointer's x in the window, where the pointer opened it. */
   pointer: number | null;
-  /** It is said as the row's description while it is shown. */
-  describes: boolean;
   onEscape: () => void;
   children: Tip;
 }) {
@@ -159,7 +153,7 @@ function Shown({
   useEffect(() => {
     const row = anchor.current?.closest(`[data-scope="${scope}"][data-part="root"]`);
     const shown = tooltip.current;
-    if (!describes || !row || !shown) return;
+    if (!row || !shown) return;
     if (shown.id === "") shown.id = fallback;
     const id = shown.id;
     const was = row.getAttribute("aria-describedby");
@@ -171,7 +165,7 @@ function Shown({
       if (now.length === 0) row.removeAttribute("aria-describedby");
       else row.setAttribute("aria-describedby", now.join(" "));
     };
-  }, [fallback, scope, placed, describes]);
+  }, [fallback, scope, placed]);
   const at = placed ? place.at : null;
   return (
     <>
