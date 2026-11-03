@@ -251,6 +251,14 @@ export const PASS_THROUGH_KEY = "F2";
 /** The row that sends it, looked up by id wherever the keystroke is handled. */
 export const PASS_THROUGH_ID = "pane.sendkey";
 
+/**
+ * **Tile all** (spec #4750, decision 6): one row, on a tab's right-click, a pane head's and the
+ * palette. The menus list it here (#4760); the catalogue row that carries it out is #4765's,
+ * and until it lands no menu draws it, since a menu draws only the ids the catalogue has
+ * (`menuRows`).
+ */
+export const TILE_ALL_ID = "pane.tileAll";
+
 /** The row that turns screen-reader mode on or off (DS-6, #629). Its id names what it changes,
  *  every terminal's mode, after the colon: it is no row about what is in front
  *  (`aboutWhatIsInFront`), so a verb typed for the chat in front still ranks above it. */
@@ -5269,14 +5277,12 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
       };
     }
     case "tab":
+      // **A tab's own rows and nothing else** (#4760, `command-table.md` "Tabs"): no chat's, and
+      // no Switch to, which the tab's press does. Close other tabs is offered on the tab in
+      // front (#4762).
       return {
-        above: [
-          `tab.select:${what.tab}`,
-          `tab.pin:${what.tab}`,
-          tileAllId(what.tab),
-          `tab.keep:${what.tab}`,
-        ],
-        below: [`tab.close:${what.tab}`],
+        above: [`tab.pin:${what.tab}`, tileAllId(what.tab), `tab.keep:${what.tab}`],
+        below: [`tab.closeOthers:${what.tab}`, `tab.close:${what.tab}`],
       };
     case "workspace":
       return {
@@ -5406,8 +5412,10 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
         below: [dropMembershipId(what.repo), forgetFailedCloneId(what.repo)],
       };
     case "pane":
+      // **The pane's rows** (#4760, `command-table.md` "Panes"): New tab and New shell are the
+      // window's, on the strip's `+` and the palette, and no pane's.
       return {
-        above: ["chat.new", "shell.new", "pane.split.right", "pane.split.down", PASS_THROUGH_ID],
+        above: ["pane.split.right", "pane.split.down", TILE_ALL_ID, PASS_THROUGH_ID],
         below: ["pane.close"],
       };
   }

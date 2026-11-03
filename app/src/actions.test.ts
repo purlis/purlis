@@ -22,6 +22,8 @@ import {
   KEEPS_THE_BRANCH,
   matches,
   menuOn,
+  PASS_THROUGH_ID,
+  TILE_ALL_ID,
   memoryOffers,
   menuRows,
   narrow,
@@ -1939,10 +1941,11 @@ describe("a plain shell tab (SI-5)", () => {
     expect(by(read, `shell.new:${OUTSIDE}`)?.available).toBe(true);
   });
 
-  it("puts a new shell on a workspace's menu and on the panes' menu, beside a new tab", () => {
+  it("puts a new shell on a workspace's menu, and not on a pane's, which holds the pane's rows (#4760)", () => {
     expect(menuOn({ on: "workspace", workspace: "alpha" }).above).toContain("shell.new:alpha");
     const pane = menuOn({ on: "pane" }).above;
-    expect(pane.indexOf("shell.new")).toBe(pane.indexOf("chat.new") + 1);
+    expect(pane).not.toContain("shell.new");
+    expect(pane).not.toContain("chat.new");
   });
 
   it("says the key that opens one on the row, so the palette teaches it", () => {
@@ -2611,8 +2614,8 @@ describe("the palette at fifty chats", () => {
     it("asks for five rows per tab and never walks the list", () => {
       const offers = new Counting(loaded().map((offer) => [offer.id, offer]));
 
-      // 50 tabs × the five ids a tab's menu lists: Switch to, Pin, Tile all (#4765), Keep open
-      // and Close. A
+      // 50 tabs × the five ids a tab's menu lists: Pin, Tile all (#4765), Keep open, Close other
+      // tabs and Close (#4760). A
       // chat's rows are its own list's since #4753, which a strip never draws.
       // **Not fifty scans of 291 rows**, which is
       // what this cost before the lookup was built once for the window — and the number that
@@ -3714,7 +3717,29 @@ describe("stopping a chat (#1448)", () => {
     expect(ids(task.above)).toEqual(expect.arrayContaining([ownTabId(3), besideId(3)]));
     expect(ids(task.below)).toEqual(taskEndIds(3));
     // A tab holds a layout: it has no chat to stop (#4753).
-    expect(menuOn({ on: "tab", tab: 7 }).below).toEqual(["tab.close:7"]);
+    expect(menuOn({ on: "tab", tab: 7 }).below).toEqual(["tab.closeOthers:7", "tab.close:7"]);
+  });
+
+  describe("a tab's right-click and a pane's rows (#4760)", () => {
+    it("holds Pin tab, Tile all, Keep open, Close other tabs and Close tab, and nothing else", () => {
+      expect(menuOn({ on: "tab", tab: 7 })).toEqual({
+        above: ["tab.pin:7", "tab.tile:7", "tab.keep:7"],
+        below: ["tab.closeOthers:7", "tab.close:7"],
+      });
+    });
+
+    it("lists no chat's row and no Switch to: the tab's press switches to it", () => {
+      const { above, below } = menuOn({ on: "tab", tab: 7 });
+      for (const id of [...above, ...below]) expect(id).not.toMatch(/^(chat|task|needs)\./);
+      expect([...above, ...below]).not.toContain("tab.select:7");
+    });
+
+    it("are the splits, Tile all and Send F2, then Close pane, and not the window's New tab or New shell", () => {
+      expect(menuOn({ on: "pane" })).toEqual({
+        above: ["pane.split.right", "pane.split.down", TILE_ALL_ID, PASS_THROUGH_ID],
+        below: ["pane.close"],
+      });
+    });
   });
 
   it("offers no stop for a chat that is not running", () => {

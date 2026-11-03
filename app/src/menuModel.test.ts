@@ -557,8 +557,9 @@ describe("a tab's menu (#4753)", () => {
   const [behind, front] = tabs.order;
 
   it("holds the tab's own rows and no chat's", () => {
+    // The tab's press switches to it, so Switch to is no row (#4760); Tile all is (#4765).
     expect(said(menuOf({ on: "tab", tab: behind }, offers))).toEqual([
-      ["Switch to", "Pinned", "Tile all"],
+      ["Pinned", "Tile all"],
       ["Close"],
     ]);
     const inFront = rowsOf(menuOf({ on: "tab", tab: front }, offers));
@@ -645,16 +646,12 @@ describe("the other tabs' menus", () => {
     ]);
   });
 
-  it("the panes keep the shell's key and the catalogue's words", () => {
-    const rows = rowsOf(menuOf({ on: "pane" }, offers));
-
+  it("the panes hold the pane's rows in the catalogue's words, and not the window's New tab or New shell (#4760)", () => {
     expect(said(menuOf({ on: "pane" }, offers))).toEqual([
-      ["New tab", "New shell"],
       ["Split right", "Split down", "Send F2 to the chat in front"],
       ["Close this pane"],
     ]);
-    expect(rows.find((row) => row.said === "New shell")?.keys).toMatch(/^(⌘⇧T|Ctrl\+Shift\+T)$/);
-    // The same words on a workspace's tab open a shell in that workspace, which has no key.
+    // A workspace's tab opens a shell in that workspace, which has no key.
     expect(
       rowsOf(menuOf({ on: "workspace", workspace: "alpha" }, offers)).find(
         (row) => row.said === "New shell",

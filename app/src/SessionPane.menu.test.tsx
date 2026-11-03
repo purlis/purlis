@@ -123,7 +123,6 @@ function offer(id: string, title: string): Offer {
 
 /** The pane's own rows, as `LayoutPanes` hands the catalogue's to a pane. */
 const paneRows = catalogued([
-  offer("chat.new", "New tab"),
   offer("pane.split.right", "Split right"),
   offer("pane.close", "End chat 1"),
 ]);
@@ -206,11 +205,11 @@ describe("a right-click on a terminal", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((item) => item.getAttribute("aria-label")),
-    ).toEqual(["Copy", "Paste", "Select all", "New tab", "Split right", "End chat 1"]);
+    ).toEqual(["Copy", "Paste", "Select all", "Split right", "End chat 1"]);
     // The terminal's rows are the first group, and the pane's follow in the groups every
-    // menu on the panes has (`menuModel.menuOf`), a line before each: what the pane starts,
-    // how it is split, and last what ends the chat.
-    expect(within(menu).getAllByRole("separator")).toHaveLength(3);
+    // menu on the panes has (`menuModel.menuOf`), a line before each: how it is split, and
+    // last what ends the chat.
+    expect(within(menu).getAllByRole("separator")).toHaveLength(2);
     // What the menu is about is said once, on the menu, and by no row.
     expect(menu.getAttribute("aria-label")).toBe("Terminal");
     expect(written).toEqual([]);
@@ -444,11 +443,13 @@ describe("a right-click on a terminal", () => {
   it("is handed the panes' own rows by id, and no row the panes' menu does not list", () => {
     const all = catalogued([
       offer("chat.new", "New tab"),
+      offer("pane.split.down", "Split down"),
       offer("pane.close", "End chat 1"),
       offer("tab.rename:1", "Rename tab"),
     ]);
 
-    expect([...paneMenuOf((id) => all.get(id)).keys()]).toEqual(["chat.new", "pane.close"]);
+    // New tab is the window's, not a pane's (#4760).
+    expect([...paneMenuOf((id) => all.get(id)).keys()]).toEqual(["pane.split.down", "pane.close"]);
   });
 
   it("gives the keyboard back to the terminal when the menu closes", async () => {

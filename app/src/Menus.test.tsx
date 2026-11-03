@@ -119,13 +119,10 @@ describe("what a menu lists", () => {
 
   it("puts what ends or closes something below the line and nothing else", () => {
     const tabs = openTab(noTabs(), 7, "3 steward");
-    // A tab's own rows (#4753), and its close, which ends nothing (#4756) and is still last.
+    // A tab's own rows (#4753), and its close, which ends nothing (#4756) and is still last;
+    // the tab's press switches to it (#4760).
     const tab = titles({ on: "tab", tab: 1 }, { tabs });
-    expect(tab.above).toEqual([
-      "Switch to tab 3 steward",
-      "Pin tab 3 steward",
-      "Tile all in 3 steward",
-    ]);
+    expect(tab.above).toEqual(["Pin tab 3 steward", "Tile all in 3 steward"]);
     expect(tab.below).toEqual(["Close 3 steward"]);
     // The chat's own list: its Activity only reads (#1495), and End… ends it.
     const chat = titles({ on: "chat", session: 7 }, { tabs });
@@ -217,13 +214,8 @@ describe("what a menu lists", () => {
   it("offers the pane's own verbs in the centre of the window", () => {
     const pane = titles({ on: "pane" }, { tabs: openTab(noTabs(), 7, "one") });
 
-    expect(pane.above).toEqual([
-      "New tab",
-      "New shell",
-      "Split right",
-      "Split down",
-      "Send F2 to the chat in front",
-    ]);
+    // New tab and New shell are the window's, not a pane's (#4760).
+    expect(pane.above).toEqual(["Split right", "Split down", "Send F2 to the chat in front"]);
     expect(pane.below).toEqual(["Close this pane"]);
   });
 
@@ -463,7 +455,7 @@ describe("a menu on screen", () => {
       // it, which keeps it (WCAG 1.4.13, hoverable).
       // A key moved the keyboard here, as a person's does.
       fireEvent.keyDown(document.body, { key: "ArrowDown" });
-      act(() => within(menu).getByRole("menuitem", { name: "Switch to" }).focus());
+      act(() => within(menu).getByRole("menuitem", { name: /^End/ }).focus());
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY);
       });
@@ -488,9 +480,9 @@ describe("a menu on screen", () => {
       expect(tip).not.toBeNull();
       // The pointer leaves the row for the note: the row loses the keyboard, the note stays.
       fireEvent.pointerEnter(tip as Element);
-      // A key moved the keyboard here, as a person's does.
-      fireEvent.keyDown(document.body, { key: "ArrowDown" });
-      act(() => within(menu).getByRole("menuitem", { name: "Switch to" }).focus());
+      // The keyboard leaves the row for the menu itself: no other row's note is drawn, which
+      // the tab's close, its only other row since #4760, has.
+      act(() => menu.focus());
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY * 10);
       });
