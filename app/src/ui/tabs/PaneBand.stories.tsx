@@ -674,12 +674,33 @@ export const ConsentRewraps: Story = {
 };
 
 /**
+ * **Holds the page's `performance.now()` where it is now** until the returned function lets it
+ * go (#4685): what the press-settle guard reads as the time, so a press that took long to arrive
+ * from outside the page is read as one made at once. Letting go twice is letting go once.
+ */
+function holdTheClock(): () => void {
+  const real = performance.now;
+  const at = real.call(performance);
+  performance.now = () => at;
+  return () => {
+    performance.now = real;
+  };
+}
+
+/**
  * **A consent pressed with the pointer, as a person does** (#3399): the real engine's own mouse,
  * driven from outside the page (Playwright's), never an event the page makes for itself. A press
  * on the Allow just after the warning above it was put away, and the consent moved up under the
  * pointer, does nothing and says why; once it has stood still for the settle time, the same
  * press allows. Every end-to-end press of a grant goes through the keyboard (`pressGrant`), so
  * this is where a pointer's press on one is held and let through in a real engine.
+ *
+ * **The page's clock is held still while the engine's press travels** (#4685): the press goes
+ * out of the page to the test runner and Playwright, which waits for the Allow to be stable, and
+ * comes back as the engine's own mouse. On a loaded runner that trip took longer than the settle
+ * time, so the guard rightly let the press through: the consent had stood still for 1.5 s by
+ * the clock the guard reads (`performance.now()`). Held, that clock says the press came at once,
+ * however long the trip; let go, the second press waits the settle time for real.
  */
 export const ConsentPressedByThePointer: Story = {
   args: { warnings: ["skills-missing", "vault-refused"] },
@@ -692,14 +713,17 @@ export const ConsentPressedByThePointer: Story = {
     await userEvent.keyboard("{Escape}");
     const vault = await canvas.findByRole("status", { name: "Vault" });
     const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
+    const letGo = holdTheClock();
     try {
       await mouse.click(allow);
+      letGo();
       expect(allowed).toEqual([]);
       expect(await canvas.findByText(NOTICE_MOVED_JUST_NOW)).toBeVisible();
 
       await new Promise((done) => setTimeout(done, SETTLE_MS + 100));
       await mouse.click(allow);
     } finally {
+      letGo();
       // **The engine's mouse stays where it last was, story after story**: put back in the page's
       // corner, so it hovers nothing a later story draws (a tooltip, a row's hover).
       await mouse.hover(document.body, { position: { x: 0, y: 0 } });
