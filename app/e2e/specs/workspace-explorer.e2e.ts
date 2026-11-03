@@ -386,7 +386,54 @@ describe("the explorer", () => {
         timeoutMsg: `the file tab never came forward; in front is ${await tabInFront()}`,
       });
       const editor = await $('[data-testid="light-editor"]');
-      await editor.waitForDisplayed({ timeout: 20_000 });
+      // DIAGNOSIS (#4799, temporary): what hides the editor, at the moment it is not displayed.
+      try {
+        await editor.waitForDisplayed({ timeout: 20_000 });
+      } catch (err) {
+        const said = await browser.execute(() => {
+          const lines: string[] = [];
+          const all = document.querySelectorAll('[data-testid="light-editor"]');
+          lines.push(`editors: ${all.length}`);
+          all.forEach((el, i) => {
+            const box = el.getBoundingClientRect();
+            const vis = (el as Element & { checkVisibility: (o?: object) => boolean })
+              .checkVisibility;
+            lines.push(
+              `#${i} ${Math.round(box.width)}x${Math.round(box.height)} at ${Math.round(box.left)},${Math.round(box.top)} plain=${vis.call(el)} opacity=${vis.call(el, { opacityProperty: true })} visibility=${vis.call(el, { visibilityProperty: true })} cv=${vis.call(el, { contentVisibilityAuto: true })} text=${(el.textContent ?? "").slice(0, 40)}`,
+            );
+            for (let up: Element | null = el; up !== null; up = up.parentElement) {
+              const s = getComputedStyle(up);
+              const odd =
+                s.opacity !== "1" ||
+                s.visibility !== "visible" ||
+                s.display === "none" ||
+                s.contentVisibility !== "visible" ||
+                s.animationName !== "none" ||
+                up.hasAttribute("hidden") ||
+                up.hasAttribute("inert");
+              if (!odd) continue;
+              const data = [...up.attributes]
+                .filter(
+                  (a) => a.name.startsWith("data-") || a.name === "hidden" || a.name === "inert",
+                )
+                .map((a) => `${a.name}=${a.value}`)
+                .join(" ");
+              lines.push(
+                `  ${up.tagName.toLowerCase()}.${String(up.className).trim().split(/\s+/).slice(0, 3).join(".")} opacity=${s.opacity} visibility=${s.visibility} display=${s.display} cv=${s.contentVisibility} anim=${s.animationName}/${s.animationPlayState} ${data}`,
+              );
+            }
+          });
+          const running = document.getAnimations().map((a) => {
+            const t = (a.effect as KeyframeEffect | null)?.target;
+            return `${(a as CSSAnimation).animationName ?? a.constructor.name} ${a.playState} t=${String(a.currentTime)} on ${t ? `${t.tagName.toLowerCase()}.${String(t.className).split(/\s+/)[0]}` : "?"}`;
+          });
+          lines.push(`animations: ${running.join(" | ") || "none"}`);
+          return lines.join("\n");
+        });
+        console.error(`DIAGNOSIS #4799\n${said}`);
+        if (err instanceof Error) err.message += `\nDIAGNOSIS #4799\n${said}`;
+        throw err;
+      }
       await expect(editor).toHaveText(expect.stringContaining("quokka-sentinel"));
       // The cursor is on the hit's line, which the gutter marks.
       const marked = await $('[data-testid="light-editor"] .cm-activeLineGutter');
