@@ -1222,3 +1222,30 @@ fn what_a_waiting_chat_said_is_told_to_the_board_the_host_keeps_until_the_person
     hears(&held, &told, steward, Event::UserPromptSubmit);
     assert!(held.hooks().board().said_of(steward).is_empty());
 }
+
+#[test]
+fn a_vault_value_remembered_after_the_turn_is_masked_in_the_board_a_relaunched_window_takes() {
+    // #4843, the review of #4905: the window masks what a chat said again once it learns a
+    // vault value the message holds, and the host's board must have it masked too. A window
+    // relaunched from that board may not have read the value yet, so it cannot mask it itself.
+    let (_plane, _host, _planes, _id, held, steward, _task, _told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    let value = "vault value remembered after the turn 4905";
+    says(&held, steward, &format!("Is {value} the right password?"));
+    assert_eq!(
+        held.hooks().board().said_of(steward),
+        [format!("Is {value} the right password?")]
+    );
+
+    purlis_core::secrets::seen::remember(value);
+    // The strip reads what the chat said, masked now.
+    assert_eq!(
+        reply_ask(&held, steward).and_then(|ask| ask.last_message),
+        Some("Is *** the right password?".to_owned())
+    );
+
+    // The window relaunches and takes the board the host kept.
+    let mut relaunched = purlis_core::state::Board::new();
+    relaunched.keep(held.hooks().board().kept());
+    assert_eq!(relaunched.said_of(steward), ["Is *** the right password?"]);
+}

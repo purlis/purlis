@@ -666,6 +666,9 @@ pub struct Ledger {
     /// were last masked under (#4843): a vault value read since is masked in them before they
     /// are next read ([`Self::masked_again`]).
     masked_at: u64,
+    /// The chats whose `last` [`Self::masked_again`] changed, until
+    /// [`Self::said_masked_again`] hands them on.
+    remasked: std::collections::BTreeSet<u32>,
 }
 
 /// A task whose chat has closed.
@@ -1611,7 +1614,12 @@ impl Ledger {
                 *text = crate::secrets::mcpstart::masked(text);
             }
         };
-        self.last.values_mut().flatten().for_each(mask);
+        for (chat, said) in &mut self.last {
+            if said.iter().any(|text| crate::secrets::seen::holds(text)) {
+                said.iter_mut().for_each(mask);
+                self.remasked.insert(*chat);
+            }
+        }
         self.asking.values_mut().for_each(mask);
         for entry in self.tasks.values_mut() {
             entry.heard.finals.iter_mut().for_each(mask);
@@ -1619,6 +1627,18 @@ impl Ledger {
         for (_, gone) in &mut self.gone {
             gone.heard.finals.iter_mut().for_each(mask);
         }
+    }
+
+    /// **Each chat whose kept messages [`Self::masked_again`] changed since this was last
+    /// asked, with all it keeps now**, oldest first: what the app tells the board the session
+    /// host keeps ([`crate::state::Board::keep_said`]), so a window relaunched from it, which
+    /// may not know the value yet, shows it masked too (the review of #4905).
+    pub fn said_masked_again(&mut self) -> Vec<(u32, Vec<String>)> {
+        self.masked_again();
+        std::mem::take(&mut self.remasked)
+            .into_iter()
+            .map(|chat| (chat, self.said(chat)))
+            .collect()
     }
 
     /// Chat `chat` asks the person `question` (#4710), masked by the app already.

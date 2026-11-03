@@ -3293,3 +3293,23 @@ fn a_secret_remembered_after_a_message_was_kept_is_masked_where_it_is_read() {
             .all(|said| !said.contains(value))
     );
 }
+
+#[test]
+fn what_a_chat_said_masked_again_is_handed_once_to_whoever_keeps_it_past_the_window() {
+    // The review of #4905: the host's board keeps what each chat said for a relaunched window,
+    // so what is masked again here has to reach it, once, and only for the chats it changed.
+    let value = "vault value remembered after the turn 4905 core";
+    let mut ledger = Ledger::default();
+    ledger.said_last(OWN_CHAT, format!("Is {value} right?"));
+    ledger.said_last(OWN_CHAT + 1, "Nothing secret here.".to_owned());
+    assert!(ledger.said_masked_again().is_empty());
+
+    crate::secrets::seen::remember(value);
+    let _ = ledger.last_said(OWN_CHAT + 1);
+
+    assert_eq!(
+        ledger.said_masked_again(),
+        [(OWN_CHAT, vec!["Is *** right?".to_owned()])]
+    );
+    assert!(ledger.said_masked_again().is_empty());
+}
