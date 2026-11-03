@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793722367202,
+  "lastUpdate": 1793725347171,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37800,6 +37800,48 @@ window.BENCHMARK_DATA = {
             "value": 101.95273449999999,
             "unit": "ms",
             "extra": "median of 5 runs: 99.908, 101.832, 101.953, 102.766, 103.035 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0ee9f3c5d8734a219c4c8da92abd4788d18483fb",
+          "message": "Purlis: a light high-contrast appearance (#4677) (#4880)\n\n* Purlis: a light high-contrast appearance, its sixth shipped (#4677)\n\nLight high contrast is dark high contrast reflected by light's one rule,\nwith faint and the success colour stepped darker until every pair the\ncheck measures reaches the tier (7:1, 4.5:1, 3:1) it reaches in dark high\ncontrast. Tests re-derive it and hold the tiers. A stored purlis-light\npick now draws it under more contrast, as purlis-dark draws the dark one;\nthe theme preview tool names it; the stories draw it in two new cells.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX0XAH9N7RXW1AARCAFEXJ\nPurlis-Persona: steward\n\n* Stories: light high contrast's baselines, and room for a twelve-cell set (#4677)\n\n1680 new pictures, both light high-contrast cells in both browsers, taken\nfrom stories run 41517301062 with tools/story-baselines-pull.mjs. No\nexisting picture moved. A run keeps every baseline: twelve cells came to\n10,140 pictures and 289 MB, over take's 256 MB cap, so the caps are now\n20,000 files and 512 MB. The JSON listing counts Purlis's 4 combinations.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX0XAH9N7RXW1AARCAFEXJ\nPurlis-Persona: steward\n\n* Stories: SkillSources in light high contrast, Chromium (#4677)\n\nThe twelve pictures the first take missed: the shard's report filed\nthem under the compact cell (#4073), so they were never drawn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX0XAH9N7RXW1AARCAFEXJ\nPurlis-Persona: steward\n\n* Changes: a stored purlis-light pick follows the system's contrast (#4677)\n\nD-4677-3 changes what a stored purlis-light draws under more\ncontrast; say so in the change note.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX0XAH9N7RXW1AARCAFEXJ\nPurlis-Persona: steward\n\n* Light high contrast: accent.text is tinted, as main now has it (#4677)\n\nmain's #4614 made accent.text one of the tinted tokens. Light high\ncontrast's drawn cases gain it (as written, #403667, in yellow and\ngreen, read from the engine), and the story fixture's entry takes\nlight's tint lists and rules, which are the family's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX0XAH9N7RXW1AARCAFEXJ\nPurlis-Persona: steward\n\n* Light high contrast takes #4663's values (#4677)\n\n#4663 moved high contrast's code comments and punctuation to muted,\nand made the waiting glow a wash, the hue's purest colour. Light high\ncontrast is dark high contrast reflected by light's rule, so it takes\nboth: syntax.comment and syntax.punctuation #5d5b67 -> #3b3942, and\nstate.waiting-glow #52360159 -> #fdb00559. The story fixture's entry\nfollows. Its lowest syntax pair rises from 3.19 to 4.67; nothing else\nmoves.\n\n#4663's change note said Purlis has no light high contrast; this\nrelease adds one, so that line goes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6EX0XAH9N7RXW1AARCAFEXJ\nPurlis-Persona: steward\n\n* Stories: light high contrast's pictures on main as it is now (#4677)\n\nFrom stories run 41614498687 on 5ef2b67, every change in a light high\ncontrast cell: 223 new (StatusItem's accent over Purlis, and the\nstories main added since: SkillStudioDrafts' grades, SkillGrades,\nPoolSetupTab, StartChat and others), 158 redrawn (#4663's comment\ngrey and amber waiting glow, and main's tab and pane changes), and 8\ndeleted with the stories main removed. No other cell moved.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6EX0XAH9N7RXW1AARCAFEXJ\nPurlis-Persona: steward\n\n* Tint fixture: light HC's drawn cases carry its washes (#4677)\n\nAfter #4917 every drawn case names accent.wash and accent.wash-hover. Light HC\nholds its accent as written under yellow and green, so the washes stay light's\n#7507ff24 / #7507ff3a, as the engine draws them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GRHFH238405H6CFD4FT1WY\nPurlis-Persona: steward\n\n* Stories: light HC's built-in theme carries #4917's washes and no-nearer rule (#4677)\n\nWritten again from the engine with PURLIS_WRITE_STORY_THEMES. Main's #4917\ngave every appearance accent.wash/-hover, with_words and no_nearer; the\nfixture's light-HC entry predated it, so tintedAs read no_nearer.tokens of\nundefined and storythemes failed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GWKQ26W72D0M2WZ2RR852H\nPurlis-Persona: steward\n\n* Stories: light HC pictures for the stories main added since (#4677)\n\n31 light high-contrast pictures from run 41654675573, for stories main added after this branch last took pictures (pool setup, skill publish, waiting strip and others). Only light-HC cells; no other cell changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T16:15:46Z",
+          "tree_id": "fbaead3b78f2577a53b84f367f841a4281f2aa4f",
+          "url": "https://github.com/purlis/purlis/commit/0ee9f3c5d8734a219c4c8da92abd4788d18483fb"
+        },
+        "date": 1793725329780,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5298635,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.522, 0.527, 0.530, 0.530, 0.540 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.344548,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.147, 16.289, 16.345, 16.348, 16.406 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.785455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.211, 101.584, 101.785, 102.405, 102.666 ms"
           }
         ]
       }
