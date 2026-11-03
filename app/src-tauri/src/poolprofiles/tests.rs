@@ -897,6 +897,7 @@ fn a_pools_page_shows_what_the_team_set() {
 fn a_pools_page_says_what_its_runners_memory_holds_of_a_profile() {
     use purlis_core::poollimits::{Chosen, LimitId};
     let chosen = Chosen::default()
+        .with(LimitId::Memory, Some(1024))
         .on_a_runner_of(1024)
         .with(LimitId::ProfileSize, Some(1000));
     let shown = limits_shown(&chosen, &[], true, &[]);
@@ -908,7 +909,8 @@ fn a_pools_page_says_what_its_runners_memory_holds_of_a_profile() {
     let size = rows.iter().find(|row| row.key == "profileSize").unwrap();
     let says = size.highest_said.as_deref().unwrap_or("");
     assert!(says.starts_with("Up to 512 MiB"), "{says}");
-    assert!(says.contains("half of Memory"), "{says}");
+    assert!(says.contains("half of the runner's memory"), "{says}");
+    assert!(says.ends_with("Raise Memory to allow more."), "{says}");
     let refused = size.refused.as_deref().unwrap_or("");
     assert!(refused.contains("holds at 512 MiB"), "{refused}");
     let files = rows.iter().find(|row| row.key == "profileFiles").unwrap();

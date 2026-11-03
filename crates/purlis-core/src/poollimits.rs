@@ -549,6 +549,7 @@ impl Limit {
             highest,
             by_team: false,
             runner_memory: None,
+            memory_on_replace: None,
             team_suggested: false,
         }
     }
@@ -585,7 +586,7 @@ pub fn profile_room(memory_mib: u64) -> u64 {
 }
 
 /// The least memory, in MiB, a runner needs to hold a profile of `needed` MiB ([`profile_room`]),
-/// rounded up to a step a pool's memory is set in.
+/// rounded up to half a GiB, a round number a person sets Memory to.
 fn memory_holding(needed: u64) -> u64 {
     const STEP: u64 = 512;
     needed.saturating_mul(2).div_ceil(STEP).saturating_mul(STEP)
@@ -607,6 +608,9 @@ pub struct LimitHit {
     pub by_team: bool,
     /// That highest is what the memory of the pool's runner holds, in MiB (#4396): this many.
     pub runner_memory: Option<u64>,
+    /// The pool's Memory, in MiB, where it is more than its runner was made with and holds what is
+    /// needed: replacing the runner is all it takes (#4396).
+    pub memory_on_replace: Option<u64>,
     /// The value suggested is what the team defining the pool suggests (#4287).
     pub team_suggested: bool,
 }
@@ -638,13 +642,24 @@ impl LimitHit {
         }
         let offer = match (self.suggested, self.runner_memory) {
             (Some(value), _) => format!(": raise it to {}", limit.unit.said(value)),
-            (None, Some(memory)) => format!(
-                ", and this pool's runner holds at most {} of a profile, half its {} of memory: \
-                 raise this pool's Memory to {} and replace its runner, or send less",
-                limit.unit.said(self.highest.unwrap_or(limit.most)),
-                Unit::Mib.said(memory),
-                Unit::Mib.said(memory_holding(self.needed)),
-            ),
+            (None, Some(memory)) => {
+                let what = match self.memory_on_replace {
+                    Some(pool) => format!(
+                        "replace its runner, which then has this pool's {} of Memory",
+                        Unit::Mib.said(pool)
+                    ),
+                    None => format!(
+                        "raise this pool's Memory to {} and replace its runner",
+                        Unit::Mib.said(memory_holding(self.needed))
+                    ),
+                };
+                format!(
+                    ", and this pool's runner holds at most {} of a profile, half its {} of \
+                     memory: {what}, or send less",
+                    limit.unit.said(self.highest.unwrap_or(limit.most)),
+                    Unit::Mib.said(memory),
+                )
+            }
             (None, None) if self.by_team => format!(
                 ", and this pool allows at most {}: {TEAM_SET}, or send less",
                 limit.unit.said(self.highest.unwrap_or(limit.most))
@@ -803,8 +818,9 @@ impl Chosen {
         Some(match self.memory_holds(id) {
             Some((memory, room)) if room == top => format!(
                 "This pool's runner has {} of memory, and holds a profile in it as it keeps it, so \
-                 this holds at {top_said}, half of it. Raise Memory, or set a value within it.",
-                Unit::Mib.said(memory)
+                 this holds at {top_said}, half of it. {}, or set a value within it.",
+                Unit::Mib.said(memory),
+                self.memory_remedy()
             ),
             _ => format!(
                 "The team that defines this pool allows at most {top_said}, so that holds. Set a \
@@ -834,6 +850,42 @@ impl Chosen {
         (room < id.limit().most).then_some((memory, room))
     }
 
+    /// **What the pool's page says of the highest of limit `id`**, where something holds it below
+    /// what the limit can be: the team, or its runner's memory (#4396).
+    #[must_use]
+    pub fn highest_said(&self, id: LimitId) -> Option<String> {
+        let top = self.highest(id)?;
+        let top_said = id.limit().unit.said(top);
+        if self.team_highest(id) == Some(top) {
+            return Some(format!("The team allows up to {top_said}."));
+        }
+        Some(format!(
+            "Up to {top_said}, half of the runner's memory, which holds a profile as it is sent. \
+             {}.",
+            self.memory_remedy()
+        ))
+    }
+
+    /// The pool's Memory, where it is more than its runner was made with: the runner waits to
+    /// be replaced (#4286).
+    fn memory_waiting(&self) -> Option<u64> {
+        let runner = self.runner_memory?;
+        let pool = self.in_force(LimitId::Memory);
+        (pool > runner).then_some(pool)
+    }
+
+    /// What lets the runner hold more of a profile: raising Memory, or, where it is raised
+    /// already, replacing the runner.
+    fn memory_remedy(&self) -> String {
+        match self.memory_waiting() {
+            Some(pool) => format!(
+                "Replace the runner to allow more: this pool's {} of Memory applies then",
+                Unit::Mib.said(pool)
+            ),
+            None => "Raise Memory to allow more".to_owned(),
+        }
+    }
+
     /// These values, on a Docker pool whose runner has `memory_mib` of memory (#4396).
     #[must_use]
     pub fn on_a_runner_of(mut self, memory_mib: u64) -> Chosen {
@@ -850,10 +902,11 @@ impl Chosen {
         match self.memory_holds(id) {
             Some((memory, room)) if value > room => Err(format!(
                 "{} is at most {} on this pool: its runner has {} of memory, and holds what a \
-                 profile sends in it as it keeps it. Raise Memory first",
+                 profile sends in it as it keeps it. {}",
                 limit.plain,
                 limit.unit.said(room),
-                Unit::Mib.said(memory)
+                Unit::Mib.said(memory),
+                self.memory_remedy()
             )),
             _ => Ok(()),
         }
@@ -960,11 +1013,16 @@ impl Chosen {
             .filter(|team| *team > in_force && *team >= needed)
             .filter(|team| highest.is_none_or(|top| *team <= top));
         let by_team = team.is_some() && team == highest;
+        // Memory is the way only to what the limit can be at all.
+        let runner_memory = memory
+            .filter(|(_, room)| !by_team && Some(*room) == highest && needed <= id.limit().most)
+            .map(|(memory, _)| memory);
         LimitHit {
             by_team,
-            runner_memory: memory
-                .filter(|(_, room)| !by_team && Some(*room) == highest)
-                .map(|(memory, _)| memory),
+            runner_memory,
+            memory_on_replace: runner_memory
+                .and(self.memory_waiting())
+                .filter(|pool| profile_room(*pool) >= needed),
             team_suggested: team_says.is_some(),
             suggested: team_says.or(hit.suggested),
             ..hit
@@ -1590,7 +1648,9 @@ mod tests {
     /// runner couldn't hold is refused as it is typed, and one kept from before holds to it.
     #[test]
     fn a_profile_may_send_a_docker_runner_at_most_half_its_memory() {
-        let small = Chosen::default().on_a_runner_of(1024);
+        let small = Chosen::default()
+            .with(LimitId::Memory, Some(1024))
+            .on_a_runner_of(1024);
         assert_eq!(small.highest(LimitId::ProfileSize), Some(512));
         assert_eq!(small.check(LimitId::ProfileSize, 512), Ok(()));
         let refused = small.check(LimitId::ProfileSize, 513).unwrap_err();
@@ -1623,7 +1683,9 @@ mod tests {
     /// offers no size the runner couldn't hold; within it, the offer is a size as before.
     #[test]
     fn a_profile_over_what_its_runner_holds_says_what_memory_to_set() {
-        let small = Chosen::default().on_a_runner_of(1024);
+        let small = Chosen::default()
+            .with(LimitId::Memory, Some(1024))
+            .on_a_runner_of(1024);
         let over = small.hit(LimitId::ProfileSize, 512, 700, None);
         assert_eq!(over.suggested, None);
         assert_eq!(over.runner_memory, Some(1024));
@@ -1647,5 +1709,40 @@ mod tests {
         let over_team = team.hit(LimitId::ProfileSize, 160, 300, None);
         assert!(over_team.by_team);
         assert_eq!(over_team.runner_memory, None);
+
+        // Past what the limit can be at all, no Memory would hold it.
+        let past = small.hit(LimitId::ProfileSize, 512, 1500, None);
+        assert_eq!(past.runner_memory, None);
+        assert!(!past.said().contains("Memory"), "{}", past.said());
+    }
+
+    /// **Where Memory is raised and the runner waits to be replaced** (#4396), every word says to
+    /// replace it, never to raise Memory again.
+    #[test]
+    fn a_runner_made_with_less_memory_than_its_pool_says_to_replace_it() {
+        let waiting = Chosen::default()
+            .with(LimitId::Memory, Some(4096))
+            .on_a_runner_of(1024);
+        assert_eq!(waiting.highest(LimitId::ProfileSize), Some(512));
+        let refused = waiting.check(LimitId::ProfileSize, 600).unwrap_err();
+        assert!(refused.contains("Replace the runner"), "{refused}");
+        assert!(!refused.contains("Raise Memory"), "{refused}");
+        let page = waiting.highest_said(LimitId::ProfileSize).unwrap();
+        assert!(page.contains("4096 MiB of Memory applies then"), "{page}");
+
+        let said = waiting.hit(LimitId::ProfileSize, 512, 700, None).said();
+        assert!(
+            said.contains("replace its runner, which then has this pool's 4096 MiB of Memory"),
+            "{said}"
+        );
+        // Where the pool's Memory would not hold it either, raising it is still the way.
+        let short = Chosen::default()
+            .with(LimitId::Memory, Some(1200))
+            .on_a_runner_of(1024);
+        let said = short.hit(LimitId::ProfileSize, 512, 700, None).said();
+        assert!(
+            said.contains("raise this pool's Memory to 1536 MiB"),
+            "{said}"
+        );
     }
 }

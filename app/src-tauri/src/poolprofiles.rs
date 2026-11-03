@@ -985,17 +985,7 @@ fn limits_shown(
         suggested_said: chosen
             .team_suggests(limit.id)
             .map(|value| limit.unit.said(value)),
-        highest_said: chosen.highest(limit.id).map(|top| {
-            if chosen.team_highest(limit.id) == Some(top) {
-                format!("The team allows up to {}.", limit.unit.said(top))
-            } else {
-                format!(
-                    "Up to {}: its runner holds what a profile sends in its memory, so this is \
-                     at most half of Memory. Raise Memory to allow more.",
-                    limit.unit.said(top)
-                )
-            }
-        }),
+        highest_said: chosen.highest_said(limit.id),
     };
     let groups = Group::ALL
         .into_iter()
