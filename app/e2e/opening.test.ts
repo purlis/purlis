@@ -5,7 +5,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { FIRST_ASK, aDialogOffers, showsTheQuestion } from "./opening";
+import { FIRST_ASK, aDialogOffers, showsTheQuestion, whatThePickerOffers } from "./opening";
 
 /**
  * **The trust question is waited for by what it says, read again at every look** (#2126).
@@ -116,6 +116,58 @@ describe("a dialog that offers an answer, as a spec waits for it", () => {
   it("is gone once the dialog has gone", () => {
     offering("alertdialog", "End chat one?", ["Close"]).remove();
     expect(aDialogOffers("alertdialog", "End chat one", "Close", false)).toBe(false);
+  });
+});
+
+/**
+ * **The picker's Start is chosen in one look** (#4736, #4979). The picker opens before its rows'
+ * details and marks them `aria-busy` until they arrive; until then its button reads Start chat
+ * even for a profile that asks for its approval. `pickAndStart` asked "is it checking?" and
+ * "which button?" in two calls to the page, and on macOS the dialog was drawn between them about
+ * once a run: the first found no dialog to be busy, the second found its Start chat, the press
+ * waited for the details, and they made it an approval, which is a press of its own (ADR 0097
+ * §6), so the picker never went. One look answers both about the same dialog.
+ */
+describe("what the picker offers to press, as a spec chooses it", () => {
+  /** The picker as `StartChat` draws it: its rows `aria-busy` while `checking`. */
+  function picker(checking: boolean, button: string): HTMLElement {
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.append("Start a chat");
+    const rows = document.createElement("div");
+    rows.setAttribute("aria-busy", String(checking));
+    rows.append("Harness");
+    dialog.append(rows);
+    for (const words of ["Cancel", button]) {
+      const pressed = document.createElement("button");
+      pressed.textContent = words;
+      dialog.append(pressed);
+    }
+    document.body.append(dialog);
+    return dialog;
+  }
+
+  it("is nothing before the picker is drawn", () => {
+    expect(whatThePickerOffers("Start a chat")).toBeNull();
+  });
+
+  it("is nothing while the picker is still checking its rows, though it reads Start chat", () => {
+    // The look that comes right after the picker is drawn: nothing seen busy before it.
+    picker(true, "Start chat");
+    expect(whatThePickerOffers("Start a chat")).toBeNull();
+  });
+
+  it("is the approval once the rows are checked and the profile asks for one", () => {
+    const checking = picker(true, "Start chat");
+    expect(whatThePickerOffers("Start a chat")).toBeNull();
+    checking.remove();
+    picker(false, "Approve and start");
+    expect(whatThePickerOffers("Start a chat")).toBe("Approve and start");
+  });
+
+  it("is Start chat once the rows are checked and nothing asks", () => {
+    picker(false, "Start chat");
+    expect(whatThePickerOffers("Start a chat")).toBe("Start chat");
   });
 });
 
