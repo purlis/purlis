@@ -300,6 +300,8 @@ pub struct Held {
     vault_refusals: crate::vaultroute::Refusals,
     /// The browser logins the person is asked about, and allowed from their notice (#4595).
     login_grants: crate::loginasks::Grants,
+    /// The secret fills the person is asked about (#5115).
+    secret_fills: crate::secretfills::Fills,
     /// The workspaces each chat asked the person to remove, until they answer (qw356).
     removal_asks: crate::removalasks::Asked,
     /// Each chat's browsers, and what the person said they may reach (#2013).
@@ -606,6 +608,11 @@ impl Held {
     /// The browser logins the person is asked about, and allowed from their notice (#4595).
     pub fn login_grants(&self) -> &crate::loginasks::Grants {
         &self.login_grants
+    }
+
+    /// The secret fills the person is asked about (#5115).
+    pub fn secret_fills(&self) -> &crate::secretfills::Fills {
+        &self.secret_fills
     }
 
     /// The Asks that wait on the person to take a chat's browser over (#2015).
@@ -1306,6 +1313,7 @@ impl Held {
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
         self.login_grants.forget(session);
+        self.secret_fills.forget(session);
         self.removal_asks.forget(session);
         // What its runner's commands wait on goes with it (#2047).
         self.pool_tools.forget(session);
@@ -4819,6 +4827,7 @@ impl Planes {
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
             login_grants: crate::loginasks::Grants::default(),
+            secret_fills: crate::secretfills::Fills::default(),
             removal_asks: crate::removalasks::Asked::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
                 .noting(self.browser_driver.clone(), &browsers_root)

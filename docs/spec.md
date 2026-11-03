@@ -428,7 +428,7 @@ how it is cited and nothing here is renumbered.
     login the persona doesn't declare, the person's answer to its one notice (#4595), which
     confirms the exact site and the host its form is on (#4995), which the browser reaches only
     while it signs in (the person's ruling of 2026-11-03); a call naming another site
-    for a login already declared asks the same way to replace it (#4996). Codex's approval and
+    for a login already declared asks the same way to replace it (#4996). So does `browser_fill_secret` (#5115): its consent is the person's answer to its one notice, which names the key and the exact site the field is on. Codex's approval and
     sandbox are whole-session switches, so it carries none (ADR 0064's measurements). A record's tab resumes that record whichever place is
     in front. **Smart close puts the chat into the background** (SI-8f): its tab shrinks to a
     fixed chip — the chat's icon and the breathing mark, the name in its tooltip — at the chat

@@ -1392,6 +1392,38 @@ fn granted_ready(
     (ready, ctx)
 }
 
+/// **The value of `key` in `vault`, for a secret fill the person allowed** (#5115): read for
+/// chat `asker` as a login the person allowed from its notice is ([`granted_login`]), since that
+/// press confirmed this vault and this key for one exact site. Refused, with a sentence and no
+/// value, for a private key, whoever asked: no private key is filled on a page.
+pub fn fill_value(
+    asker: &Asker,
+    vault: &str,
+    key: &str,
+) -> Result<purlis_session_protocol::browsing::Secret, String> {
+    let ctx = match &asker.confines {
+        Some(confines) => {
+            Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
+        }
+        None => Ctx::new(&asker.root, asker.env.clone()),
+    };
+    let provider = cmd::provider(&ctx, vault).map_err(|e| e.message.to_string())?;
+    let value = cmd::get_value(&ctx, &provider, key)
+        .map(purlis_session_protocol::browsing::Secret::new)
+        .map_err(|e| {
+            format!(
+                "vault '{vault}' did not give {key}, so nothing was filled ({})",
+                e.message
+            )
+        })?;
+    if crate::sandbox::tools::mint::a_private_key(value.expose()) {
+        return Err(format!(
+            "{key} in vault '{vault}' is a private key, so purlis filled nothing"
+        ));
+    }
+    Ok(value)
+}
+
 /// `ready`'s values, read from its vault, and its identity. A key the vault holds no value
 /// under is asked of the person through `missing`, as a brokered run's is (#5074, ADR 0109):
 /// the read waits on the ask, and a decline, or no answer in time, fills nothing and says so.
