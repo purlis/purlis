@@ -2,9 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { RowMenu } from "./ui/list/List";
-import { useEffect, useId, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode, type RefObject } from "react";
+import type { PaneTerminal } from "./paneTerminal";
+import { isTerminalRow, terminalGroup, terminalRows } from "./terminalRows";
+import { onAMac } from "./mac";
 import { Ellipsis } from "lucide-react";
-import { noteOf, renameId, type Catalogued, type MenuOn, type Offer } from "./actions";
+import {
+  noteOf,
+  PASS_THROUGH_ID,
+  renameId,
+  type Catalogued,
+  type MenuOn,
+  type Offer,
+} from "./actions";
 import { turnStateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { menuIsEmpty, menuOf, type GroupDrawn, type RowDrawn, type SubDrawn } from "./menuModel";
 import { landSettingsFocus } from "./settings/entering";
@@ -128,6 +138,118 @@ export function ChatMenuButton({
           with it: a handful of scans, not fifty. */}
       <CatalogueMenu on={on} offers={offers} onPress={onPress} />
     </MenuTrigger>
+  );
+}
+
+/**
+ * **A right-click on a chat's pane head** (#4760, spec #4750 story 60): the chat's one list,
+ * the same its ⋯ opens, then under a line the pane's own rows (`menuOn({ on: "pane" })`), of
+ * this pane and not the focused one. `pane` is those rows as this pane offers them: its close is
+ * its own. Inside the panes' menu, so the innermost one opens, as a terminal's does.
+ */
+export function PaneHeadMenued({
+  session,
+  offers,
+  pane,
+  tab,
+  terminal,
+  onPress,
+  children,
+}: {
+  session: number;
+  offers: Catalogued;
+  pane: Catalogued;
+  /** The tab the pane is in: its Tile all is one of the pane's rows (#4765). */
+  tab?: number;
+  /** The terminal the pane draws, where it draws one: its Copy and Paste are pane rows. */
+  terminal?: RefObject<PaneTerminal | null>;
+  onPress: (offer: Offer) => void;
+  /** The pane head. One element: it is the trigger itself. */
+  children: ReactNode;
+}) {
+  /** The terminal as the menu opened: whether anything was selected is read then, once. */
+  const [terminalNow, setTerminalNow] = useState<PaneTerminal | null>(null);
+  const on: MenuOn = { on: "chat", session };
+  if (menuIsEmpty(on, offers) && menuIsEmpty({ on: "pane", tab }, pane)) return <>{children}</>;
+  return (
+    <ContextMenu
+      onOpenChange={(open) => setTerminalNow(open ? (terminal?.current ?? null) : null)}
+      menu={() => (
+        <PaneHeadMenu
+          session={session}
+          offers={offers}
+          pane={pane}
+          tab={tab}
+          terminal={terminalNow}
+          onPress={onPress}
+        />
+      )}
+      onClosed={landSettingsFocus}
+    >
+      {children}
+    </ContextMenu>
+  );
+}
+
+/**
+ * That menu's content, made only while it is open, as `CatalogueMenu`'s is. **The pane's rows
+ * in the table's order** (`command-table.md`, "Panes"): the splits and Tile all, then the
+ * terminal's Copy and Paste, then Send F2, and under a line Close pane. Select all stays the
+ * terminal's own right-click's.
+ */
+function PaneHeadMenu({
+  session,
+  offers,
+  pane,
+  tab,
+  terminal,
+  onPress,
+}: {
+  session: number;
+  offers: Catalogued;
+  pane: Catalogued;
+  tab?: number;
+  terminal: PaneTerminal | null;
+  onPress: (offer: Offer) => void;
+}) {
+  const chat = menuOf({ on: "chat", session }, offers);
+  const [rows, ...below] = menuOf({ on: "pane", tab }, pane).groups;
+  const copyPaste =
+    terminal === null
+      ? []
+      : terminalGroup(
+          terminalRows({ selected: terminal.selected(), mac: onAMac() }).filter(
+            (row) => row.id !== "terminal.selectAll",
+          ),
+        ).entries;
+  const at = (rows?.entries ?? []).findIndex(
+    (entry) => entry.kind === "row" && entry.offer.id === PASS_THROUGH_ID,
+  );
+  const paneRows: GroupDrawn[] =
+    rows === undefined
+      ? copyPaste.length === 0
+        ? []
+        : [{ entries: copyPaste }]
+      : [
+          {
+            ...rows,
+            entries:
+              at === -1
+                ? [...rows.entries, ...copyPaste]
+                : [...rows.entries.slice(0, at), ...copyPaste, ...rows.entries.slice(at)],
+          },
+        ];
+  return (
+    <Menu aria-label={chat.about} className="item-menu">
+      <Groups
+        groups={[...chat.groups, ...paneRows, ...below]}
+        onPress={(offer) => {
+          // One of the terminal's own rows, by its id, runs on it; any other is the catalogue's.
+          if (isTerminalRow(offer.id)) terminal?.run(offer.id);
+          else onPress(offer);
+        }}
+      />
+    </Menu>
   );
 }
 

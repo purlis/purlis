@@ -45,6 +45,7 @@ impl Host for OneProgram {
                     cols: 80,
                     rows: 24,
                     kind: Some(ViewKind::Terminal),
+                    older: None,
                 }))
             }
             Command::DetachView { view, .. } => {

@@ -323,7 +323,6 @@ import {
   workspaceOf,
   type Direction,
   type FiledIn,
-  sendToBackground,
   focusedChat,
   focusedContent,
   homeOf,
@@ -349,7 +348,6 @@ import {
   type PressedChat,
   type Pressing,
   type AskedBy,
-  type Backgrounded,
   type Pinned,
   type Tabs,
   type ViewRef,
@@ -402,6 +400,9 @@ import { finishedBucketOf, taskBucketOf } from "./taskBuckets";
 import { stateClock } from "./stateClock";
 import { useTabIds } from "./StripTablist";
 import { TASK_KEY_ROW, taskKeyOf } from "./taskKeys";
+import { paneStepOf } from "./moveKeys";
+import { paneToward } from "./panePlaces";
+import { paneSaidOf } from "./paneSaid";
 import { usePretendLimits, usePretendTasks, withPretendedLimits } from "./e2eTasks";
 import { BriefOpener, BriefPanel, type BriefAsk, type OpenBrief } from "./Brief";
 import { AnswerOpener, AnswerPanel, type AnswerAsk, type OpenAnswer } from "./AnswerPanel";
@@ -604,6 +605,7 @@ import {
 } from "./planeReport";
 import { Doer } from "./StripMarks";
 import type { SandboxSaid } from "./SandboxMark";
+import type { ChatHead } from "./paneHead";
 import {
   type RestartAct,
   type RestartSaid,
@@ -754,9 +756,11 @@ let cloneRuns = 0;
  * this project's report, and the window draws the one palette.
  *
  * Its panes stay with it: only the tab in front has panes drawn (`tabs.ts`), so a project kept
- * off the window keeps those terminals and their views of the session open, and no more. A
- * project that draws nothing has none, which costs it nothing: the core has held every
- * session's terminal all along, and a view opened again is sent the screen as it already is.
+ * off the window keeps those terminals and their views of the session open. A project that
+ * draws nothing has none, which costs it nothing: the core has held every session's terminal
+ * all along, and a view opened again is sent the screen as it already is. Apart from those, the
+ * last three chats shown across the window keep theirs (`keptTerminals.ts`), so a tab switched
+ * back to one of them starts nothing either.
  *
  * **Held (`memo`), so the window redrawing is not this view redrawing** (SC-3). Every chat move
  * reaches the window as this project's report — the quit warning's states, the project strip's
@@ -950,6 +954,16 @@ export const PlaneView = memo(function PlaneView({
   /** The tab whose task menu the keyboard asked for, and a count of the asks (#1487): its
    *  chip opens when the count changes, so being drawn is never being asked. */
   const [tasksAsked, setTasksAsked] = useState<{ tab: number; count: number }>();
+  /**
+   * **The one polite line about a pane the keyboard did not ask for** (#4767, ruled on #4699):
+   * a press that lands on a chat already in another pane of the tab says where it went. Where
+   * the keyboard follows a change into its own pane, the terminal's name says it, and nothing
+   * here does. Counted, so the same line said twice is said twice.
+   */
+  const [paneSaid, setPaneSaid] = useState<{ said: string; count: number }>({
+    said: "",
+    count: 0,
+  });
   const showTabTasks = useCallback(
     (tab: number) => setTasksAsked((was) => ({ tab, count: (was?.count ?? 0) + 1 })),
     [],
@@ -2206,8 +2220,8 @@ export const PlaneView = memo(function PlaneView({
 
   /**
    * **The chats whose Smart close the operator has just pressed**, until the core's first step
-   * about them arrives (SI-8f). The press is what puts the tab into the background, so it goes
-   * at once rather than a round trip later; a start the core refuses brings it back.
+   * about them arrives (SI-8f). The press is what makes its head and row breathe, so they do at
+   * once rather than a round trip later; a start the core refuses takes it back.
    */
   const [leaving, setLeaving] = useState<ReadonlySet<number>>(() => new Set());
   /** Why each chat's smart close stopped without its record, for the title bar's needs-you
@@ -2226,9 +2240,6 @@ export const PlaneView = memo(function PlaneView({
       return now;
     });
   }, []);
-  /** {@link isBackground} as of the last render, for handlers the set it reads is made from,
-   *  which so cannot take it as a dependency. */
-  const inTheBackground = useRef<Backgrounded>(() => false);
   /**
    * **The tasks that ended in a pane, kept there as ended** (#4757): a press put each in its
    * pane, and its end does not take the pane away (`closeChat`'s `keeps`). The core is told
@@ -2266,9 +2277,7 @@ export const PlaneView = memo(function PlaneView({
     (step: SmartClosing) => {
       settle(step.session);
       if (step.phase === "closed") {
-        change((tabs) =>
-          closeChat(tabs, step.session, filedIn, isPinned, inTheBackground.current, keepsItsPane),
-        );
+        change((tabs) => closeChat(tabs, step.session, filedIn, isPinned, keepsItsPane));
         stoppedFor(step.session, undefined);
         setSavedNotice({ record: step.record });
         return;
@@ -2299,9 +2308,7 @@ export const PlaneView = memo(function PlaneView({
    */
   const chatStopped = useCallback(
     (session: number) => {
-      change((tabs) =>
-        closeChat(tabs, session, filedIn, isPinned, inTheBackground.current, keepsItsPane),
-      );
+      change((tabs) => closeChat(tabs, session, filedIn, isPinned, keepsItsPane));
       stoppedFor(session, undefined);
       setStopsEnded((count) => count + 1);
     },
@@ -2427,7 +2434,7 @@ export const PlaneView = memo(function PlaneView({
    * standard close dialog is never part of this.
    */
   /** Whether a pane of tab `tab` draws a breadcrumb ending in task `session`: the one place
-   *  a second step is drawn in place (`TaskEnds`). Held here for what is declared before the
+   *  a second step is drawn in place (`TaskEndAsked`). Held here for what is declared before the
    *  list is read. */
   const drawsCrumbFor = useRef<(tab: number, session: number) => boolean>(() => false);
   const askToEndTask = useCallback(
@@ -2527,9 +2534,7 @@ export const PlaneView = memo(function PlaneView({
   const closeKeptOpen = useCallback(
     (session: number) => {
       forgetKeptOpen(session);
-      change((tabs) =>
-        closeChat(tabs, session, filedIn, isPinned, inTheBackground.current, keepsItsPane),
-      );
+      change((tabs) => closeChat(tabs, session, filedIn, isPinned, keepsItsPane));
       void commands.closeSession(plane, session);
     },
     [keepsItsPane, change, filedIn, forgetKeptOpen, isPinned, plane],
@@ -2541,9 +2546,7 @@ export const PlaneView = memo(function PlaneView({
    */
   const endChat = useCallback(
     (session: number) => {
-      change((tabs) =>
-        closeChat(tabs, session, filedIn, isPinned, inTheBackground.current, keepsItsPane),
-      );
+      change((tabs) => closeChat(tabs, session, filedIn, isPinned, keepsItsPane));
       void commands.closeSession(plane, session);
     },
     [keepsItsPane, change, filedIn, isPinned, plane],
@@ -2553,20 +2556,6 @@ export const PlaneView = memo(function PlaneView({
     () => (leaving.size === 0 ? told : new Set([...told, ...leaving])),
     [leaving, told],
   );
-  /** A tab in the background: every pane of it is a chat wrapping up (`tabs.tabsIn`). */
-  const isBackground = useCallback<Backgrounded>(
-    (id) => {
-      const all = contentsOf(tabs, id);
-      return (
-        all.length > 0 &&
-        all.every(({ content }) => content.kind === "session" && wrapping.has(content.session))
-      );
-    },
-    [tabs, wrapping],
-  );
-  useLayoutEffect(() => {
-    inTheBackground.current = isBackground;
-  }, [isBackground]);
 
   /**
    * The workspace the strip DRAWS, and the one axis rule: **the tab in front is on it.**
@@ -2883,8 +2872,8 @@ export const PlaneView = memo(function PlaneView({
   // The floors grow with the window's text (charter-app#283, `fits.leastAt`).
   const windowText = useTextSizes().window;
   const chatLeast = leastAt(LEAST.chat, windowText);
-  // A chip is exactly this wide (`.tab.chip`), and the chat strip fits by it: a chip holding a
-  // tab's floor would hide a tab the strip has room for.
+  // An icon-only pin is exactly this wide (#4762), and the chat strip fits by it: a pin holding
+  // a tab's floor would hide a tab the strip has room for.
   const chipWidth = leastAt(LEAST_CHIP, windowText);
 
   /**
@@ -3010,9 +2999,8 @@ export const PlaneView = memo(function PlaneView({
    * for the moment before the answer arrives.
    */
   const onStrip = useMemo(
-    () =>
-      sidebar === undefined ? tabs.order : tabsIn(tabs, focused, filedIn, isPinned, isBackground),
-    [filedIn, focused, isBackground, isPinned, sidebar, tabs],
+    () => (sidebar === undefined ? tabs.order : tabsIn(tabs, focused, filedIn, isPinned)),
+    [filedIn, focused, isPinned, sidebar, tabs],
   );
 
   /**
@@ -3035,11 +3023,11 @@ export const PlaneView = memo(function PlaneView({
   } = useRoom(onStrip.length);
   /** The chat tabs' ids, which the strip's tablist owns them by (#1204). */
   const chatTabId = useTabIds();
-  /** Whether chat tab `id` is drawn as its name box rather than as a tab: it is being renamed
-   *  and is not a chip, which is drawn as a tab whatever is open for renaming (a chat can go
-   *  into the background with its name open). One answer for the strip and for its tablist's
-   *  `aria-owns`, so the tablist never misses a tab it draws (#1204). */
-  const nameBoxFor = (id: number) => renaming === id && !isBackground(id);
+  /** Whether chat tab `id` is drawn as its name box rather than as a tab: it is being renamed.
+   *  Since no tab turns into a chip (#4760), a chat that starts wrapping up with its name open
+   *  keeps its name box. One answer for the strip and for its tablist's `aria-owns`, so the
+   *  tablist never misses a tab it draws (#1204). */
+  const nameBoxFor = (id: number) => renaming === id;
   /** The chat strip itself, for handing the keyboard back to a tab after a rename. */
   const chatStrip = useRef<HTMLElement | null>(null);
   /** Unique to this view, so two projects' tabs never name each other's fresh marks. */
@@ -3060,15 +3048,11 @@ export const PlaneView = memo(function PlaneView({
     // 2026-11-02): only the others go behind 'N more', and the pins go to their icons only
     // when they alone would take more than half the strip.
     () =>
-      pinnedFirst(
-        onStrip,
-        tabs.inFront,
-        room,
-        chatLeast + chatGap,
-        { is: (id) => isPinned(id) && !isBackground(id), iconWidth: chipWidth + chatGap },
-        { is: isBackground, width: chipWidth + chatGap },
-      ),
-    [onStrip, room, tabs.inFront, chatLeast, chatGap, isBackground, isPinned, chipWidth],
+      pinnedFirst(onStrip, tabs.inFront, room, chatLeast + chatGap, {
+        is: isPinned,
+        iconWidth: chipWidth + chatGap,
+      }),
+    [onStrip, room, tabs.inFront, chatLeast, chatGap, isPinned, chipWidth],
   );
   /**
    * **Whether the strip's tabs are narrow** (#4702, #4762): each one's equal share is under
@@ -3076,16 +3060,14 @@ export const PlaneView = memo(function PlaneView({
    * take their own width out of the room first.
    */
   const narrow = useMemo(() => {
-    const ownWidth = shown.filter(
-      (id) => isBackground(id) || (pinsIconOnly && isPinned(id)),
-    ).length;
+    const ownWidth = shown.filter((id) => pinsIconOnly && isPinned(id)).length;
     return narrowTabs(
       room,
       shown.length - ownWidth,
       ownWidth * (chipWidth + chatGap),
       leastAt(NARROW_TAB, windowText) + chatGap,
     );
-  }, [shown, isBackground, pinsIconOnly, isPinned, room, chipWidth, chatGap, windowText]);
+  }, [shown, pinsIconOnly, isPinned, room, chipWidth, chatGap, windowText]);
   /** Where the tab in front is drawn on the strip, or -1 where it is not (or is a name box). */
   const frontAt = tabs.inFront === undefined ? -1 : shown.indexOf(tabs.inFront);
   const frontPlace = frontAt >= 0 && !nameBoxFor(shown[frontAt]) ? frontAt : -1;
@@ -3817,6 +3799,28 @@ export const PlaneView = memo(function PlaneView({
   }, [chatsByNumber]);
 
   /**
+   * **The keyboard goes into the focused pane of `next`** (#4767): its chat's terminal, or, in a
+   * pane with nothing or a view, its first control once it is drawn: New chat, or the view.
+   */
+  const keyboardInto = useCallback(
+    (next: Tabs) => {
+      const session = focusedChat(next);
+      if (session !== undefined) {
+        giveKeyboardTo(plane, session);
+        return;
+      }
+      setTimeout(() => {
+        const pane = document.querySelector<HTMLElement>(".pane.focused");
+        const into =
+          pane?.querySelector<HTMLElement>('[data-scope="view-frame"][data-part="root"]') ??
+          pane?.querySelector<HTMLElement>("button");
+        into?.focus();
+      });
+    },
+    [plane],
+  );
+
+  /**
    * **Close pane: the focused pane is cleared, and its chat goes on in the sidebar** (#4756).
    * Nothing ends, and its tasks stay wherever they are shown (#4757).
    */
@@ -3827,12 +3831,14 @@ export const PlaneView = memo(function PlaneView({
     // A task's own pane is never closed (#1489): its control is the minimise, another verb.
     if (going !== undefined && askedByNow(going.session) !== undefined) return;
     // A close is a layout change, so Undo puts it back (#4763, #4583 rule 3): it ended nothing.
-    change((tabs) =>
-      recorded(tabs, closeFocusedPane(tabs, filedIn, isPinned, isBackground), "Closed the pane."),
+    keyboardInto(
+      change((tabs) =>
+        recorded(tabs, closeFocusedPane(tabs, filedIn, isPinned), "Closed the pane."),
+      ),
     );
     // Nothing ends, and its tasks stay in whatever panes they are in: a chat leaving moves no
     // other pane (#4757).
-  }, [askedByNow, change, filedIn, isBackground, isPinned]);
+  }, [askedByNow, change, filedIn, isPinned, keyboardInto]);
 
   /**
    * **Clear pane, on an ended chat's band** (#4756): pane `pane` of the tab in front shows
@@ -3866,7 +3872,7 @@ export const PlaneView = memo(function PlaneView({
       change((tabs) =>
         recorded(
           tabs,
-          closeLayout(tabs, id, filedIn, isPinned, isBackground),
+          closeLayout(tabs, id, filedIn, isPinned),
           `Closed ${tabs.byId[id]?.name ?? "the tab"}.`,
         ),
       );
@@ -3874,7 +3880,7 @@ export const PlaneView = memo(function PlaneView({
         if (askedByNow(session) !== undefined)
           void commands.closeChatTab(plane, session).catch(() => undefined);
     },
-    [askedByNow, change, filedIn, isBackground, isPinned, plane],
+    [askedByNow, change, filedIn, isPinned, plane],
   );
 
   /**
@@ -3967,14 +3973,14 @@ export const PlaneView = memo(function PlaneView({
     (session: number) => {
       const before = now.current;
       const from = tabHolding(before, session);
-      const next = change((tabs) => sendBack(tabs, session, filedIn, isPinned, isBackground));
+      const next = change((tabs) => sendBack(tabs, session, filedIn, isPinned));
       if (next === before) return;
       void commands.closeChatTab(plane, session).catch(() => undefined);
       // What shared its split has the room now, and the keyboard with it.
       const beside = from !== undefined && next.inFront === from ? focusedChat(next) : undefined;
       if (beside !== undefined) giveKeyboardTo(plane, beside);
     },
-    [change, filedIn, isBackground, isPinned, plane],
+    [change, filedIn, isPinned, plane],
   );
 
   /** The chats in the tab in front's other panes, which the sidebar marks faintly (#4757). */
@@ -4013,6 +4019,14 @@ export const PlaneView = memo(function PlaneView({
       if (sidebar !== undefined && landed !== undefined) setPicked(landed);
       const typing = focusedChat(next);
       if (typing !== undefined && typing !== focusedChat(before)) giveKeyboardTo(plane, typing);
+      const said =
+        typing === undefined
+          ? undefined
+          : paneSaidOf(before, next, typing, (session) => {
+              const listed = listedNow.current.get(session);
+              return listed?.label ?? listed?.name ?? String(session);
+            });
+      if (said !== undefined) setPaneSaid((was) => ({ said, count: was.count + 1 }));
     },
     [change, plane, sidebar],
   );
@@ -4676,7 +4690,6 @@ export const PlaneView = memo(function PlaneView({
     () => ({
       filedIn,
       pinned: isPinned,
-      background: isBackground,
       name: (content) =>
         content.kind === "session"
           ? nameOf(content.session)
@@ -4684,7 +4697,7 @@ export const PlaneView = memo(function PlaneView({
             ? (tabs.byId[findView(tabs, content.view)?.tab ?? -1]?.name ?? "this view")
             : "the empty pane",
     }),
-    [filedIn, isBackground, isPinned, nameOf, tabs],
+    [filedIn, isPinned, nameOf, tabs],
   );
   const holdTab = useCallback((id: number) => change((tabs) => selectTab(tabs, id)), [change]);
   const ownNameOf = useCallback(
@@ -5573,13 +5586,9 @@ export const PlaneView = memo(function PlaneView({
    */
   const dragTab = useCallback(
     (moved: number, onto: number) => {
-      // **A tab in the background is out of the arrangement** (SI-8f): it cannot be picked up,
-      // nothing is put down on it, and the tabs dragged past it leave its place in the order
-      // where it was — which is where it comes back if its smart close ends without a record.
-      const loose = (id: number) => !isBackground(id);
       const made = afterDrop({
-        whole: onStrip.filter(loose),
-        drawn: shown.filter(loose),
+        whole: onStrip,
+        drawn: shown,
         moved,
         onto,
         isPinned,
@@ -5591,7 +5600,7 @@ export const PlaneView = memo(function PlaneView({
         if (!ran.ok) setReport({ from: "tab.drag", refused: true, words: ran.refused });
       });
     },
-    [change, isBackground, isPinned, onStrip, pinTab, shown],
+    [change, isPinned, onStrip, pinTab, shown],
   );
 
   /** What a screen reader hears while a tab is dragged on the chat strip. */
@@ -6803,11 +6812,7 @@ export const PlaneView = memo(function PlaneView({
       }
       if (gone.length > 0) {
         change((tabs) =>
-          gone.reduce(
-            (left, one) =>
-              closeChat(left, one, filedIn, isPinned, inTheBackground.current, keepsItsPane),
-            tabs,
-          ),
+          gone.reduce((left, one) => closeChat(left, one, filedIn, isPinned, keepsItsPane), tabs),
         );
         setReopened((was) => was.filter((one) => !gone.includes(one.session)));
         void commands
@@ -7550,6 +7555,17 @@ export const PlaneView = memo(function PlaneView({
   }, [pretended, pretendedLimits, questions, sidebar, tabs]);
   /** The chats of each tab, as its chip counts them and its menu lists them (#1487). */
   const chatsByTab = useMemo(() => chatsOfTabs(tabs, listedChats), [listedChats, tabs]);
+  /** **What each chat's pane head says of it** (#4760): the chat as the Chats list lists it,
+   *  its sandbox, and whether it wraps up. */
+  const paneHeads = useMemo(() => {
+    const byNumber = new Map(listedChats.map((chat) => [chat.session, chat]));
+    return (session: number): ChatHead | undefined => {
+      const chat = byNumber.get(session);
+      return chat === undefined
+        ? undefined
+        : { chat, sandbox: sandboxOf(session), wrapping: wrapping.has(session) };
+    };
+  }, [listedChats, sandboxOf, wrapping]);
   /** The tab in front and its chats: what the Chats view's This tab lists (#1679). */
   const tabInFront = useMemo(
     () =>
@@ -8539,27 +8555,16 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
-   * Smart close pressed: the core sends the chat its prompt, now or when its turn ends, and **the
-   * tab goes into the background at once** (SI-8f) — a chip at the strip's left edge, and the
-   * front where Close would have sent it (`tabs.sendToBackground`, which `closeTab` shares). A
-   * tab with another chat beside it in a split stays where it is, wearing the wrapping-up mark.
-   * A start the core refuses brings it back, says why, and lists it as needing the operator.
+   * Smart close pressed: the core sends the chat its prompt, now or when its turn ends. **The
+   * chat stays where it is** (#4760, spec #4750): no tab goes into the background as a chip any
+   * more; its pane head and its row breathe, and Cancel smart close is its head's state button
+   * and first in its list. A start the core refuses says why, and lists it as needing the
+   * operator.
    */
   const beginSmartClose = useCallback(
     async (session: number) => {
       stoppedFor(session, undefined);
       setLeaving((was) => new Set([...was, session]));
-      const tab = now.current.order.find((id) =>
-        panesOf(now.current, id).some((one) => one.session === session),
-      );
-      const goes =
-        tab !== undefined &&
-        contentsOf(now.current, tab).every(
-          ({ content }) =>
-            content.kind === "session" &&
-            (content.session === session || wrapping.has(content.session)),
-        );
-      if (goes) change((tabs) => sendToBackground(tabs, tab, filedIn, isPinned, isBackground));
       const began = await commands
         .smartClose(plane, session)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
@@ -8569,7 +8574,7 @@ export const PlaneView = memo(function PlaneView({
         setReport({ from: `smartclose:${session}`, refused: true, words: began.error });
       }
     },
-    [change, filedIn, isBackground, isPinned, plane, settle, stoppedFor, wrapping],
+    [plane, settle, stoppedFor],
   );
 
   /**
@@ -8592,11 +8597,7 @@ export const PlaneView = memo(function PlaneView({
       const gone = Array.isArray(stopped.data) ? stopped.data : [];
       if (gone.length > 0) {
         change((tabs) =>
-          gone.reduce(
-            (left, one) =>
-              closeChat(left, one, filedIn, isPinned, inTheBackground.current, keepsItsPane),
-            tabs,
-          ),
+          gone.reduce((left, one) => closeChat(left, one, filedIn, isPinned, keepsItsPane), tabs),
         );
         // Whatever below them the core did not end (it ends what is at work) has no tab left.
       }
@@ -8853,7 +8854,7 @@ export const PlaneView = memo(function PlaneView({
       if (which === undefined) return;
       const offer = by(TASK_KEY_ROW[which]);
       const runnable = offer?.available === true;
-      if (pressed(e, [`tasks.${which}`], { mac, runnable }) === undefined) return;
+      if (pressed(e, [TASK_KEY_ROW[which]], { mac, runnable }) === undefined) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat || offer?.available !== true) return;
@@ -8862,6 +8863,45 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   }, [by, inFront, press]);
+
+  /**
+   * **The keys that move between panes and tabs** (`moveKeys.ts`, #4767, ruled on #4699): ⌘⌥
+   * and an arrow (Alt and an arrow off a Mac) gives the keyboard to the pane in that direction,
+   * with no wrap; ⌘⇧] and ⌘⇧[ bring the next and previous tab on the strip forward, round its
+   * ends, with the keyboard in its focused pane. Claimed on the window, capture-phase, by the
+   * project in front, with the registry's rules: not under a dialog, and off a Mac Alt and an
+   * arrow is left to a chat's terminal and to a view. Neither key is a byte to a terminal where
+   * it is taken (`keys/harnessBytes.test.ts`). Nothing is announced: the keyboard follows.
+   */
+  useEffect(() => {
+    if (!inFront) return;
+    const key = (e: KeyboardEvent) => {
+      const mac = onAMac();
+      const hit = pressed(e, ["pane.focus", "tab.next", "tab.previous"], { mac });
+      if (hit === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const tabs = now.current;
+      const front = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
+      if (front === undefined) return;
+      if (hit.id === "pane.focus") {
+        const toward = paneStepOf(e, mac);
+        const to =
+          toward === undefined ? undefined : paneToward(front.layout, front.focused, toward);
+        if (to === undefined) return;
+        keyboardInto(change((was) => focusPane(was, to)));
+        return;
+      }
+      const strip = onStrip;
+      const at = strip.indexOf(front.id);
+      if (at < 0 || strip.length < 2) return;
+      const step = hit.id === "tab.next" ? 1 : -1;
+      const id = strip[(at + step + strip.length) % strip.length];
+      keyboardInto(change((was) => selectTab(was, id)));
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [change, inFront, keyboardInto, onStrip]);
 
   /**
    * **The keys of the left side** (`sideKeys.ts`, #1673): ⌘B puts the navigation region away
@@ -9834,6 +9874,10 @@ export const PlaneView = memo(function PlaneView({
             {/* **A chat's theme draft is named on the workspace it is drawn in** (#2332): the
           strip under the workspaces, with Keep, Revert and Compare, and the revert key. */}
             <ThemeDraftStrip plane={plane} workspace={ofWorkspace ?? null} />
+            {/* **One polite line about a pane the keyboard did not ask for** (#4767). */}
+            <p role="status" className="sr-only" data-testid="pane-said">
+              <span key={paneSaid.count}>{paneSaid.said}</span>
+            </p>
 
             {/* **The regions** (ADR 0038): by default the navigation region on the left, the
           panes in the middle, and what is asking for you on the right. What the repos are
@@ -9875,6 +9919,8 @@ export const PlaneView = memo(function PlaneView({
                       offers={found}
                       onPress={press}
                       stopping={stopping}
+                      wrapping={wrapping}
+                      sandboxOf={sandboxOf}
                       finished={finishedTasks}
                       onClearFinished={clearFinished}
                       onReopen={reopenFinished}
@@ -10188,7 +10234,6 @@ export const PlaneView = memo(function PlaneView({
                     draggingRef={dragging}
                     draggedAtRef={draggedAt}
                     notGoingBack={notGoingBack}
-                    isBackground={isBackground}
                     isPinned={isPinned}
                     isDragging={isDragging}
                     nameBoxFor={nameBoxFor}
@@ -10201,7 +10246,6 @@ export const PlaneView = memo(function PlaneView({
                     shells={shells}
                     personaOf={personaOf}
                     factsOf={factsOf}
-                    sandboxOf={sandboxOf}
                     taskNameOf={taskNameOf}
                     taskTabOf={taskTabOf}
                     tabHasTasks={tabHasTasks}
@@ -10234,11 +10278,11 @@ export const PlaneView = memo(function PlaneView({
                     browsersOfTab={browsersOfTab}
                     openBrowser={openChatBrowser}
                   />
-                  {/* The centre is where a chat is, so its menu is the chat verbs: a new tab, the two
-                splits, the key the palette claimed, and — under the line — ending this pane's
-                chat. `asChild` again: the panes' box is measured, and it must not gain a
+                  {/* The centre is where a chat is, so its menu is the pane's rows: the two splits,
+                the tab in front's Tile all, the key the palette claimed, and — under the line —
+                Close pane, which ends nothing (#4756). `asChild` again: the panes' box is measured, and it must not gain a
                 wrapper, so the editor's column is outside it and not between it and the panes. */}
-                  <Menued on={{ on: "pane" }} offers={found} onPress={press}>
+                  <Menued on={{ on: "pane", tab: frontTabId }} offers={found} onPress={press}>
                     {/* The content panel, which the chosen tab joins (`ui/tabs`): the tab panel of
                   the chosen tab, named by it, while it is drawn on the strip. */}
                     <div className="panes" {...panelRoot("content")} {...tabPanelOf(panelNamedBy)}>
@@ -10273,6 +10317,7 @@ export const PlaneView = memo(function PlaneView({
                             onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
                             offerFor={by}
                             offers={found}
+                            heads={paneHeads}
                             onPaneDoes={onPaneDoes}
                             name={frontTab.name}
                             handedFrom={handedFrom}
@@ -10321,7 +10366,7 @@ export const PlaneView = memo(function PlaneView({
                             onResumeTask={(pane, task) => void resumeTaskIn(pane, task)}
                           />
                         </TaskEndContext.Provider>
-                      ) : tabs.order.some((id) => !isBackground(id)) ? (
+                      ) : tabs.order.length > 0 ? (
                         // Chats are running — just not in the workspace being looked at. Saying
                         // "no sessions" here would be charter telling the operator that what it is
                         // still drawing on the strip above does not exist.

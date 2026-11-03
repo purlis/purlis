@@ -28,9 +28,14 @@ export const SAID = {
   end: "End…",
   keepOpen: "Keep open",
   tileAll: "Tile all",
+  closeOtherTabs: "Close other tabs",
   thisMachine: "This machine",
   brief: "Brief",
   answer: "Answer its question",
+  // A pane head's one state button (#4760, spec #4750 story 55): its row's act in a word, for a
+  // button whose name is the row's whole title.
+  answerButton: "Answer",
+  stopButton: "Stop",
   activity: "Activity",
   network: "Network",
   restart: "Restart",

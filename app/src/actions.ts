@@ -88,9 +88,8 @@ import { SESSION_VIEW, sessionTitle, sessionTitleOf, sessionView } from "./sessi
 import { shellKeySaid } from "./shellKey";
 import { switcherKeySaid } from "./switcherKey";
 import { focusKeySaid, shortcutsKeySaid } from "./keys/ownKeys";
-import { askedByOf, chatsOfTab } from "./tabChats";
-import { neighbour } from "./tabTasks";
-import { taskKeyNote, taskKeySaid } from "./taskKeys";
+import { askedByOf } from "./tabChats";
+import { taskKeySaid } from "./taskKeys";
 import { todoDeleteId, todoOpenId, todoReopenId, todoView } from "./todos";
 import { onAMac } from "./tabKeys";
 import type { RegionId, Toggled } from "./regions";
@@ -3036,20 +3035,22 @@ export function catalogue(now: Now): Offer[] {
   }
 
   // **Close other tabs skips the pinned ones** (#4762): a pin is the operator saying a tab
-  // stays. One row, the tab in front's, however many tabs there are: a row per tab would be
-  // fifty more at fifty chats, all saying the same verb. It closes each tab as that tab's own
-  // close would: their chats go on in the sidebar, and the tasks in them go back to the Chats
-  // list.
-  if (now.tabs.inFront !== undefined && now.tabs.byId[now.tabs.inFront] !== undefined) {
-    const tab = now.tabs.inFront;
+  // stays. It closes each tab as that tab's own close would: their chats go on in the sidebar
+  // (#4756), and the tasks in them go back to the Chats list. **On every tab's right-click**
+  // (#4760, spec #4750 story 59), closing the tabs beside that one; **one row in the palette**,
+  // the tab in front's (#4762): a row per tab there would be fifty more at fifty chats, all
+  // saying the same verb, so the others are their menus' only.
+  for (const tab of now.tabs.order) {
     const id = `tab.closeOthers:${tab}`;
     const title = "Close other tabs";
+    const only = tab === now.tabs.inFront ? {} : { menuOnly: true as const };
     const closes = now.otherTabs?.(tab) ?? [];
     const restoring = (one: number) =>
       panesOf(now.tabs, one).some((pane) => (now.restoring ?? []).includes(pane.session));
-    if (closes.length === 0) offers.push(cannot(id, title, NO_OTHER_TAB));
-    else if (closes.some(restoring)) offers.push(cannot(id, title, RESTORING_HAS_NO_CLOSE));
-    else offers.push(can(id, title, { verb: "closeOtherTabs", tab, closes }));
+    if (closes.length === 0) offers.push({ ...cannot(id, title, NO_OTHER_TAB), ...only });
+    else if (closes.some(restoring))
+      offers.push({ ...cannot(id, title, RESTORING_HAS_NO_CLOSE), ...only });
+    else offers.push({ ...can(id, title, { verb: "closeOtherTabs", tab, closes }), ...only });
   }
 
   offers.push(...stopRows(now.listed ?? [], now.stopping ?? []));
@@ -4928,33 +4929,28 @@ export function paneCloseOf(
 /** Close pane's words (#4756), on the pane head's `×`, its menu and the palette. */
 export const PANE_CLOSE = "Close this pane";
 
-/** The four rows' ids, which their keys press (`taskKeys.TASK_KEY_ROW`). */
+/** The two rows' ids, which their keys press (`taskKeys.TASK_KEY_ROW`). */
 export const TAB_TASKS_ID = "tasks.menu";
-export const NEXT_CHAT_ID = "tasks.next";
-export const PREVIOUS_CHAT_ID = "tasks.previous";
-export const OWN_CHAT_ID = "tasks.own";
+export const PANE_BACK_ID = "pane.back";
 
 /**
- * **The chats inside the tab in front** (#1487, V100-33, V100-36): its menu, the next and the
- * previous chat in it, and back to its session's own chat. Rows, so the palette lists them and
- * says their keys, and the keys press these rows and nothing of their own (`taskKeys.ts`).
+ * **The focused chat's tasks, and its pane's previous chat** (#4767, ruled on #4699; before it
+ * #1487 and #4757): rows, so the palette lists them and says their keys, and ⌘⇧J and ⌘⇧H press
+ * these rows and nothing of their own (`taskKeys.ts`). A tab's next and previous chat went with
+ * the tab a chat no longer has.
  *
- * Next and previous are neighbours in the menu's order (`tabChats.chatsOfTab`), from the chat
- * the focused pane shows. Each is an ordinary `showChat`: the tab is switched and the chat's
- * terminal takes the keyboard, as a press on its row does. A tab with no tasks has all four,
- * unable to run and saying why.
+ * The tasks are those of the chat the focused pane shows, whichever chat that is: its tasks
+ * running or finished. They open the tab's task menu, which lists them under that chat.
  */
 function tabChatRows(now: Now): Offer[] {
   const mac = onAMac();
   const titles = {
-    tasks: "Show this tab's tasks",
-    next: "Next chat in this tab",
-    previous: "Previous chat in this tab",
-    own: "Back to this pane's previous chat",
+    tasks: "Show the focused chat's tasks",
+    back: "Back to the chat this pane showed before",
   };
   const front = now.tabs.inFront === undefined ? undefined : now.tabs.byId[now.tabs.inFront];
-  const pane = front && panesOf(now.tabs, front.id).find((one) => one.pane === front.focused);
-  if (front === undefined || pane === undefined) {
+  const shown = front === undefined ? undefined : focusedChat(now.tabs);
+  if (front === undefined || shown === undefined) {
     const focused =
       front === undefined
         ? undefined
@@ -4967,43 +4963,23 @@ function tabChatRows(now: Now): Offer[] {
           : "The pane in focus shows a view, not a chat, so it has no tasks.";
     return [
       cannot(TAB_TASKS_ID, titles.tasks, why),
-      cannot(NEXT_CHAT_ID, titles.next, why),
-      cannot(PREVIOUS_CHAT_ID, titles.previous, why),
       // ⌘⇧H still goes back from a pane a chat left empty (#4757): it remembers that chat.
       front !== undefined && focused?.kind === "empty"
-        ? backRow(now, front, titles.own, mac)
-        : cannot(OWN_CHAT_ID, titles.own, why),
+        ? backRow(now, front, titles.back, mac)
+        : cannot(PANE_BACK_ID, titles.back, why),
     ];
   }
-  // A task in a tab of its own is listed by this tab's menu and is not a chat IN this tab:
-  // next and previous stay inside the tab (#1489).
-  const rows = chatsOfTab(now.tabs, front.id, now.listed ?? []).filter(
-    (row) => row.placed !== "tab",
-  );
-  const shown = focusedChat(now.tabs);
-  const hasTasks =
-    rows.some((row) => row.level > 1 || (now.finished?.get(row.session)?.length ?? 0) > 0) ||
-    front.shows !== undefined;
-  const none = `${front.name} has no tasks.`;
-  const step = (id: string, title: string, by: 1 | -1, key: "next" | "previous"): Offer => {
-    const to = hasTasks ? neighbour(rows, shown, by) : undefined;
-    return to === undefined || to === shown
-      ? cannot(id, title, hasTasks ? `${front.name} is the only chat in this tab.` : none)
-      : {
-          ...can(id, title, { verb: "showChat", session: to }),
-          note: `${taskKeySaid(key, mac)}.${taskKeyNote(key, mac)}`,
-        };
-  };
+  const asked = (now.listed ?? []).some((chat) => chat.mode === "task" && chat.parent === shown);
+  const hasTasks = asked || (now.finished?.get(shown)?.length ?? 0) > 0;
+  const name = now.nameOf(shown);
   return [
     hasTasks
       ? {
           ...can(TAB_TASKS_ID, titles.tasks, { verb: "showTabTasks", tab: front.id }),
-          note: `${front.name} and the tasks it asked for, to switch between. ${taskKeySaid("menu", mac)}.`,
+          note: `${name} and the tasks it asked for, to switch between. ${taskKeySaid("menu", mac)}.`,
         }
-      : cannot(TAB_TASKS_ID, titles.tasks, none),
-    step(NEXT_CHAT_ID, titles.next, 1, "next"),
-    step(PREVIOUS_CHAT_ID, titles.previous, -1, "previous"),
-    backRow(now, front, titles.own, mac),
+      : cannot(TAB_TASKS_ID, titles.tasks, `${name} has no tasks.`),
+    backRow(now, front, titles.back, mac),
   ];
 }
 
@@ -5016,17 +4992,17 @@ function tabChatRows(now: Now): Offer[] {
 function backRow(now: Now, front: Tab, title: string, mac: boolean): Offer {
   const before = front.previous?.[front.focused];
   if (before === undefined)
-    return cannot(OWN_CHAT_ID, title, "This pane has shown no other chat yet.");
+    return cannot(PANE_BACK_ID, title, "This pane has shown no other chat yet.");
   const listed = now.listed?.some((chat) => chat.session === before) ?? false;
   if (!listed)
     return cannot(
-      OWN_CHAT_ID,
+      PANE_BACK_ID,
       title,
       `${now.nameOf(before)} has ended, so there is nothing to go back to.`,
     );
   return {
-    ...can(OWN_CHAT_ID, title, { verb: "paneBack" }),
-    note: `Shows ${now.nameOf(before)} again. The chat on screen goes on. ${taskKeySaid("own", mac)}.`,
+    ...can(PANE_BACK_ID, title, { verb: "paneBack" }),
+    note: `Shows ${now.nameOf(before)} again. The chat on screen goes on. ${taskKeySaid("back", mac)}.`,
   };
 }
 
@@ -5219,8 +5195,10 @@ export type MenuOn =
    *  what it is as the tree drew it, and why it does not open when the tree said. */
   | FileOn
   /** The panes — the centre of the window, where a chat is. Not about any one pane: a split
-   *  acts on the pane that has the keyboard, which is what the bar's buttons act on too. */
-  | { on: "pane" }
+   *  acts on the pane that has the keyboard, which is what the bar's buttons act on too. `tab`
+   *  is the tab the panes are of, whose Tile all the menu lists (#4760, #4765): none where the
+   *  window has no tab in front, and then no Tile all. */
+  | { on: "pane"; tab?: number }
   /** A refused read of the focused workspace, on the Changes view's line that says it
    *  (#1244; the bottom region's until #1676). */
   | { on: "refusal" }
@@ -5295,14 +5273,12 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
       };
     }
     case "tab":
+      // **A tab's own rows and nothing else** (#4760, `command-table.md` "Tabs"): no chat's, and
+      // no Switch to, which the tab's press does. Close other tabs is on every tab's own menu;
+      // the palette lists the tab in front's alone (#4762).
       return {
-        above: [
-          `tab.select:${what.tab}`,
-          `tab.pin:${what.tab}`,
-          tileAllId(what.tab),
-          `tab.keep:${what.tab}`,
-        ],
-        below: [`tab.close:${what.tab}`],
+        above: [`tab.pin:${what.tab}`, tileAllId(what.tab), `tab.keep:${what.tab}`],
+        below: [`tab.closeOthers:${what.tab}`, `tab.close:${what.tab}`],
       };
     case "workspace":
       return {
@@ -5432,8 +5408,17 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
         below: [dropMembershipId(what.repo), forgetFailedCloneId(what.repo)],
       };
     case "pane":
+      // **The pane's rows** (#4760, `command-table.md` "Panes"): New tab and New shell are the
+      // window's, on the strip's `+` and the palette, and no pane's.
       return {
-        above: ["chat.new", "shell.new", "pane.split.right", "pane.split.down", PASS_THROUGH_ID],
+        above: [
+          "pane.split.right",
+          "pane.split.down",
+          // **Tile all** (spec #4750, decision 6): the tab's own row, the one its right-click
+          // and the palette list (#4765).
+          ...(what.tab === undefined ? [] : [tileAllId(what.tab)]),
+          PASS_THROUGH_ID,
+        ],
         below: ["pane.close"],
       };
   }

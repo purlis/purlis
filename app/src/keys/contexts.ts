@@ -75,3 +75,12 @@ export function onARenamingTab(target: EventTarget | null): boolean {
 export function inAMenu(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[role="menu"]') !== null;
 }
+
+/** **What a view's frame is marked with** (`ui/panel/ViewFrame.tsx`): a view keeps its Back and
+ *  Forward keys. */
+export const VIEW_HOLDER = "data-view-keys";
+
+/** Whether the keystroke landed in a view, whose own keys it may be. */
+export function inAView(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(`[${VIEW_HOLDER}]`) !== null;
+}

@@ -50,7 +50,7 @@ import { opensSearch, searchKeySaid } from "./searchKey";
  *
  * **⌘J is the Panel's** (#1737, P-6), VS Code's key for its panel, on every platform. On a Mac it
  * is no byte, as every ⌘ letter is not; off a Mac Ctrl+J is a terminal's newline, so a chat with
- * the keyboard keeps it, as it keeps Ctrl+B. ⌘⇧J is the tab's chats menu (`taskKeys.ts`): Shift
+ * the keyboard keeps it, as it keeps Ctrl+B. ⌘⇧J is the focused chat's tasks (`taskKeys.ts`): Shift
  * held is never this key.
  *
  * **⌘⇧X is Skills'** (#3266), VS Code's key for its Extensions view, the side's other list of

@@ -346,7 +346,7 @@ describe("the window's strips", () => {
     expect(notTabs(screen.getByRole("tablist", { name: "Tabs" }))).toEqual([]);
   });
 
-  it("owns a tab that goes into the background while its name is open (#1204)", async () => {
+  it("owns no name box while a chat whose name is open starts wrapping up (#1204, #4760)", async () => {
     core();
     render(<App />);
     // alpha, from the title bar's ⌄ (#2916).
@@ -356,10 +356,16 @@ describe("the window's strips", () => {
     await userEvent.keyboard("{F2}");
     await within(stripNamed("Tabs")).findByRole("textbox");
 
-    // The core says the chat is wrapping up, from wherever it was asked: its tab becomes a chip,
-    // which is a tab again, so the tablist owns it (`stripNamed` holds it to that).
+    // The core says the chat is wrapping up, from wherever it was asked. Its tab no longer turns
+    // into a chip (#4760): it stays where it is, its name still open, and the tablist still owns
+    // only the tabs it draws, never the name box (`stripNamed` holds it to that).
     await act(() => emit("smart-close", { plane: PLANE, session: 1, phase: "sent", record: null }));
-    await vi.waitFor(() => expect(document.querySelector(".tab.chip")).not.toBeNull());
-    expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(2);
+    await vi.waitFor(() =>
+      expect(stripNamed("Tabs").querySelector(".tab[data-wrapping-up]")).not.toBeNull(),
+    );
+    expect(stripNamed("Tabs").querySelector(".tab[data-chip]")).toBeNull();
+    expect(within(stripNamed("Tabs")).getByRole("textbox")).toBeInTheDocument();
+    expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(1);
+    expect(notTabs(screen.getByRole("tablist", { name: "Tabs" }))).toEqual([]);
   });
 });

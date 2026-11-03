@@ -13916,6 +13916,11 @@ export type Watching = {
 	 *  keeps the terminal's own Enter.
 	 */
 	newline: string | null,
+	/**
+	 *  How many lines of history the session keeps above those the view was drawn with
+	 *  (#4742): what the pane asks for, with a larger `history`, as the person scrolls up.
+	 */
+	older: number,
 };
 
 /**  Which of the two ways the person ends a chat (#1488). */

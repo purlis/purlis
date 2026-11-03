@@ -2,12 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  type Backgrounded,
   type Content,
   closeTab,
   type FiledIn,
   type Layout,
-  nothingBackgrounded,
   nothingPinned,
   type Pane,
   panes,
@@ -68,7 +66,6 @@ export type DropContext = {
   /** What a pane's content is called in a sentence. */
   name: (content: Content) => string;
   pinned?: Pinned;
-  background?: Backgrounded;
 };
 
 /** What a drop would do, said, or why it is refused. */
@@ -368,13 +365,7 @@ function lift(tabs: Tabs, source: Source, ctx: DropContext): Lifted {
     (id) => id !== tab.id && workspaceOf(tabs, id, ctx.filedIn) === strip,
   );
   if (another || strip === undefined) {
-    const closed = closeTab(
-      tabs,
-      tab.id,
-      ctx.filedIn,
-      ctx.pinned ?? nothingPinned,
-      ctx.background ?? nothingBackgrounded,
-    );
+    const closed = closeTab(tabs, tab.id, ctx.filedIn, ctx.pinned ?? nothingPinned);
     return { tabs: closed, moved, shows };
   }
   const pane = tabs.named.panes + 1;

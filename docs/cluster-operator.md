@@ -399,8 +399,14 @@ spec:
     since, that it can neither write in nor pass through, and a folder more than 128 deep is
     said rather than looked into. The time its host first started a program is kept on the home's
     volume, so a host started again in the same pod still finds what a task saved before
-    (#4933). An image with a very large file system, or a folder its user may write in but not
-    read, keeps its fresh runners until you discard them.
+    (#4933). A file a task saved in purlis's data home outside every repository counts too; what
+    purlis keeps there itself is left out (#5029). So is each folder purlis keeps for itself,
+    wherever `PURLIS_CONFIG_HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` or `XDG_RUNTIME_DIR` puts
+    it, but not a log folder `PURLIS_LOG_DIR` moves, nor a state or cache home moved outside the
+    home: another program's files there count (#5028). Where the runner's user may write outside
+    its home is found once for each host, and each check looks through only those places, so an
+    image's own folders are looked through once, up to 2,000,000 of them (#5030). A folder its
+    user may write in but not read keeps its fresh runners until you discard them.
     Only the window of the checkout a task started from lets its runner go, so
     another checkout of the same project never takes it. Anything else missing keeps the
     Claim, and the window says what, with **Fetch again** and **Discard**, never silently. purlis
