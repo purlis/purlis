@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793703685664,
+  "lastUpdate": 1793705444478,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37506,6 +37506,48 @@ window.BENCHMARK_DATA = {
             "value": 102.34391600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.362, 102.145, 102.344, 102.401, 102.520 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "40ecba93c88a6e788788ca4ac54d0318e8463b64",
+          "message": "Runners: a host retires every message no host told its chat waits, past a part still written (#4941) (#4961)\n\n* Runners: a host retires every message no host told its chat waits, past a part still written (#4941)\n\nThe retire step listed the queue with waiting(), which stops at the\nlowest live .part, so a refused message numbered after a sender's\nunfinished part survived it and was delivered once the part died. It\nnow lists the folder itself, and removes a retired message without\nraising the floor, so the part's message is not taken for delivered.\n\nThe marker app/spool/messages/carries, which a build from before #4804\nleft in place across a downgrade and back, becomes\napp/spool/messages/waits.json: the ids of the messages whose Deliver a\nhost answered, written down before the chat is told. A host starting\nto carry keeps what is written down and retires the rest, so what a\nbuild that refused writes nothing for is never delivered, and what\nwaited across a serve restart still is (#4895).\n\nSupersedes #4944, rebased onto main after #4940.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6FTCKTGGCSX6011DWMBGSMP\nPurlis-Persona: steward\n\n* Runners: a host removes the old carries marker, and tells a Deliver its retired message was not sent (#4941)\n\nA build from #4895 to #4941 that found spool/messages/carries retired\nnothing, so a message a build from before #4804 refused in between was\ndelivered: a host now removes the marker each time it starts carrying.\n\nA sender whose connect waited in the listen backlog while its host\nstarted could find its message retired, and was told it was delivered:\nthe retired ids are kept, and their Deliver is answered nothing was sent.\n\nAn id leaves waits.json once its message is delivered, so the 256-id\ncap cannot push out one that still waits.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G03HZ84EF7ZQ6GPJVTT2KW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T08:46:49Z",
+          "tree_id": "1311a272dae1adca677b686231583927d3dd4623",
+          "url": "https://github.com/purlis/purlis/commit/40ecba93c88a6e788788ca4ac54d0318e8463b64"
+        },
+        "date": 1793705439884,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.332642,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.317, 0.326, 0.333, 0.337, 0.342 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.599103,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.476, 16.495, 16.599, 16.617, 16.745 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.067692,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.840, 101.062, 101.068, 101.551, 102.590 ms"
           }
         ]
       }
