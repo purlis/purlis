@@ -9,7 +9,7 @@ use purlis_host::protocol::browsing::BrowserReach;
 use purlis_host::protocol::session::{Layer, Listed};
 
 use super::{SiteJudge, site_of};
-use crate::sandbox::browser_reach::Site;
+use crate::sandbox::browser_reach::{LoginSites, Site};
 
 /// This machine, as the tests say it: one address on a private network.
 fn own() -> Vec<IpAddr> {
@@ -259,7 +259,7 @@ fn a_browser_holding_a_login_asks_about_no_other_site() {
     let sites = sites(&["docs.example.com"], false);
     sites
         .bound()
-        .to(&[Site::of("shop.example.test", 443)])
+        .to(&LoginSites::page(Site::of("shop.example.test", 443)))
         .unwrap();
     // Refused at the proxy, in words; never an Ask an Allow could answer.
     assert_eq!(
@@ -281,14 +281,81 @@ fn a_browser_bound_to_one_login_is_not_bound_to_another() {
         bound.lets("anything.example", 443),
         "unbound, nothing is refused here"
     );
-    bound.to(&[Site::of("shop.example.test", 443)]).unwrap();
-    bound.to(&[Site::of("shop.example.test", 443)]).unwrap();
-    let refused = bound.to(&[Site::of("mail.example.test", 443)]).unwrap_err();
+    let shop = LoginSites::page(Site::of("shop.example.test", 443));
+    bound.to(&shop).unwrap();
+    bound.to(&shop).unwrap();
+    let refused = bound
+        .to(&LoginSites::page(Site::of("mail.example.test", 443)))
+        .unwrap_err();
     assert!(
         refused.contains("holds a login at shop.example.test:443"),
         "{refused}"
     );
     assert!(!bound.lets("mail.example.test", 443));
+}
+
+/// #4995, the person's ruling of 2026-11-03: a login whose form is on another site reaches it
+/// during its sign-in alone. Over, the browser reaches its page's site alone; a later login of
+/// the same page signs in anew; a sign-in over twice, or one another replaced, changes nothing.
+#[test]
+fn a_login_whose_form_is_elsewhere_reaches_it_only_while_it_signs_in() {
+    let sites = sites(&[], false);
+    let bound = sites.bound();
+    let app = Site::of("app.example.test", 443);
+    let auth = Site::of("auth.example.test", 443);
+    let login = LoginSites {
+        page: app.clone(),
+        form: Some(auth.clone()),
+    };
+    let (first, replaced) = bound.to(&login).unwrap();
+    let first = first.expect("a sign-in opens");
+    assert_eq!(replaced, None);
+    assert!(bound.lets("auth.example.test", 443));
+    assert!(bound.lets("app.example.test", 443));
+    assert_eq!(bound.sites(), Some(vec![auth.clone(), app.clone()]));
+    assert_eq!(bound.sign_in_over(first), Some(auth.clone()));
+    assert!(
+        !bound.lets("auth.example.test", 443),
+        "over: the form's site is gone"
+    );
+    assert!(bound.lets("app.example.test", 443));
+    assert_eq!(bound.sites(), Some(vec![app.clone()]));
+    assert_eq!(bound.sign_in_over(first), None, "over once");
+    // A later login of the same page signs in anew, and only it ends its own.
+    let (second, _) = bound.to(&login).unwrap();
+    let second = second.expect("a sign-in opens again");
+    assert_ne!(second, first);
+    assert_eq!(
+        bound.sign_in_over(first),
+        None,
+        "an old sign-in ends no newer one"
+    );
+    assert!(bound.lets("auth.example.test", 443));
+    // Another form's site for the same page is refused: a browser signs in on one.
+    let refused = bound
+        .to(&LoginSites {
+            page: app.clone(),
+            form: Some(Site::of("login.other.test", 443)),
+        })
+        .unwrap_err();
+    assert!(refused.contains("on auth.example.test:443"), "{refused}");
+    assert!(!bound.lets("login.other.test", 443));
+    let (third, replaced) = bound.to(&login).unwrap();
+    assert_eq!(replaced, None, "the same form's site replaces nothing");
+    assert_eq!(bound.sign_in_over(second), None, "replaced by the third");
+    assert_eq!(bound.sign_in_over(third.unwrap()), Some(auth.clone()));
+    // Another page's login is refused, whatever its form.
+    let refused = bound
+        .to(&LoginSites {
+            page: auth.clone(),
+            form: None,
+        })
+        .unwrap_err();
+    assert!(
+        refused.contains("holds a login at app.example.test:443"),
+        "{refused}"
+    );
+    assert!(!bound.lets("auth.example.test", 443));
 }
 
 #[test]
