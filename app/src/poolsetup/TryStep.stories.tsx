@@ -7,7 +7,7 @@
  * boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolSetupCheck, PoolSetupStep } from "../bindings";
 import { expectFocusInSight, untilFocused } from "../stories.testkit";
@@ -86,7 +86,7 @@ export const Ready: Story = {
 /** The chat is starting. */
 export const Trying: Story = {
   beforeEach: faked(() => new Promise(() => undefined)),
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Start a test chat" }));
     await canvas.findByRole("heading", { name: "Trying it for real" });
@@ -102,7 +102,7 @@ export const DidntStartWithinTime: Story = {
       step: null,
     },
   })),
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Start a test chat" }));
     const again = await canvas.findByRole("button", { name: "Try again" });
@@ -120,7 +120,7 @@ export const TheChatDidntStart: Story = {
       step: "signins",
     },
   })),
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Start a test chat" }));
     const go = await canvas.findByRole("button", { name: "Go to Sign-ins" });
@@ -136,7 +136,7 @@ export const TheChatDidntStart: Story = {
 
 /** The last screen: everything passed. */
 export const EverythingPassed: Story = {
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     const open = canvas.getByRole("button", { name: "Open a chat on dev-box" });
     open.focus();
