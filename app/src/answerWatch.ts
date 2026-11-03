@@ -3,6 +3,7 @@
 
 import { useSyncExternalStore } from "react";
 import { commands } from "./bindings";
+import { debug4814 } from "./debug4814";
 
 /**
  * **A command the core has not answered for a while is said, not waited on in silence** (#1949).
@@ -119,6 +120,12 @@ type Ask = (...args: unknown[]) => Promise<unknown>;
 export function timed(command: string, ask: Ask, lateMs = LATE_MS): Ask {
   return (...args: unknown[]) => {
     const from = performance.now();
+    // [DEBUG-4814]
+    const traced =
+      /^(startOptions|startOptionsFirst|startDetails|approveProfile|startChat|startSession|harnessSetupFound)/.test(
+        command,
+      );
+    if (traced) debug4814(`ask ${command}`);
     let mine: Late | undefined;
     const timer = setTimeout(() => {
       mine = { command, at: Date.now() - lateMs, ms: undefined };
@@ -127,6 +134,7 @@ export function timed(command: string, ask: Ask, lateMs = LATE_MS): Ask {
     }, lateMs);
     return ask(...args).finally(() => {
       clearTimeout(timer);
+      if (traced) debug4814(`answered ${command} in ${Math.round(performance.now() - from)} ms`); // [DEBUG-4814]
       if (mine === undefined) return;
       // A new entry in its place, so whoever drew the old one sees it changed.
       const was = mine;
