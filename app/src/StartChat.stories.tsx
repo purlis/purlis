@@ -20,6 +20,7 @@ import {
   inAWindow,
   pictureNow,
   untilFocused,
+  untilInSight,
 } from "./stories.testkit";
 
 const PERSONAS = [
@@ -335,37 +336,24 @@ async function opened() {
   return page;
 }
 
-/** What covers the middle of `part`, where a person looks for it, or `null` when it is in sight. */
-function coveredAt(part: Element): string | null {
-  const box = part.getBoundingClientRect();
-  const [x, y] = [box.left + box.width / 2, box.top + box.height / 2];
-  if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight)
-    return "outside the window";
-  // The part itself or something inside it: an ancestor there, such as the pane that clips it, is
-  // drawn where the part is not.
-  const top = document.elementFromPoint(x, y);
-  if (top !== null && part.contains(top)) return null;
-  if (top === null) return "nothing is drawn there";
-  const name = top.tagName.toLowerCase();
-  return `under ${typeof top.className === "string" && top.className ? `${name}.${top.className.split(" ").join(".")}` : name}`;
-}
-
 /**
  * **The Runs on row in the picture** (#5016): the row sits below the harness cards, under the
  * details pane's fold as the dialog opens, so it is scrolled into the pane's sight before
- * `pictureNow`, and each of its parts (its heading, the row and the line under it that says why)
- * is held in sight.
+ * `pictureNow`, and what a person reads there is held wholly in sight: its heading, the row's
+ * control (the select, or Pool setup…) and the line under it that says why.
  */
 async function runsOnInSight(page: ReturnType<typeof within>) {
   const section = page.getByRole("region", { name: "Runs on" });
   section.scrollIntoView({ block: "center" });
-  await waitFor(() => {
-    for (const part of section.children) {
-      const covered = coveredAt(part);
-      if (covered !== null)
-        throw new Error(`Runs on: “${part.textContent}” is not in sight (${covered})`);
-    }
-  });
+  const inside = within(section);
+  await untilInSight(
+    [
+      inside.getByRole("heading", { name: "Runs on" }),
+      ...inside.queryAllByRole("button"),
+      ...section.querySelectorAll("p"),
+    ],
+    "Runs on: the row in the picture",
+  );
 }
 
 /**
