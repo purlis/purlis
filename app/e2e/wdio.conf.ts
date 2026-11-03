@@ -145,10 +145,11 @@ export const config: WebdriverIO.Config = {
   logLevel: "warn",
   waitforTimeout: 20_000,
   connectionRetryTimeout: 120_000,
-  // `chatsLeft.ts`'s root hooks run around every spec file, in every config that spreads this
-  // one: a file that leaves a chat running is ended and failed by name (#1796). Resolved against
-  // this config's own folder.
-  mochaOpts: { ui: "bdd", timeout: 180_000, require: ["./chatsLeft.ts"] },
+  // `chatsLeft.ts`'s and `tabsLeft.ts`'s root hooks run around every spec file, in every config
+  // that spreads this one: a file that leaves a chat running, or a tab open on the strip it began
+  // with, is cleaned up after and failed by name (#1796, #5111). Chats first, so a chat the file
+  // left is ended before its tab is closed. Resolved against this config's own folder.
+  mochaOpts: { ui: "bdd", timeout: 180_000, require: ["./chatsLeft.ts", "./tabsLeft.ts"] },
 
   // Every session starts from a plane with no record in it, so a spec is never handed the
   // chats of the one before it. Each config declares this for ITS OWN plane: `wdio.state.conf`

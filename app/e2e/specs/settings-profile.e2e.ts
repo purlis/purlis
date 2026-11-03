@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
+import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
 import { theProfilesWrapper } from "../harness.js";
 
 /**
@@ -24,10 +25,8 @@ import { theProfilesWrapper } from "../harness.js";
  * this spec opened is closed.
  */
 
-const TABS = '[data-strip="Tabs"]';
 const PALETTE = '[role="dialog"][aria-label="Command palette"]';
 const GROUPS = 'nav[aria-label="Groups"]';
-const SETTINGS = "Settings";
 const NAME = "e2e-profile";
 const TABLE = `[harness.${NAME}]`;
 
@@ -37,15 +36,6 @@ async function planeRoot(): Promise<string> {
   const said = await $('[data-testid="status-project"]');
   await said.waitForDisplayed({ timeout: 30_000 });
   return ((await said.getAttribute("data-directory")) ?? "").trim();
-}
-
-/** The names on the tab strip. */
-async function tabNames(): Promise<string[]> {
-  return browser.execute(() =>
-    [
-      ...(document.querySelector('[data-strip="Tabs"]')?.querySelectorAll('[role="tab"]') ?? []),
-    ].map((tab) => tab.querySelector(".tab-name")?.textContent ?? tab.textContent ?? ""),
-  );
 }
 
 /** Opens Settings at the Project level through the palette, as the operator does. */
@@ -80,13 +70,14 @@ describe("Settings › Harness & profiles", () => {
   let root = "";
   let file = "";
   let original: string | null = null;
-  let tabWasOpen = false;
+  /** The tabs on the strip before this spec, so its `after` closes only what it opened. */
+  let wereOpen: string[] = [];
 
   before(async () => {
     root = await planeRoot();
     file = join(root, "charter.local.toml");
     original = onDisk(file);
-    tabWasOpen = (await tabNames()).some((name) => name.includes(SETTINGS));
+    wereOpen = await tabNames();
   });
 
   after(async () => {
@@ -98,10 +89,8 @@ describe("Settings › Harness & profiles", () => {
         if (now !== null) rmSync(file);
       } else if (now !== original) writeFileSync(file, original);
     }
-    if (!tabWasOpen) {
-      const closer = await $(`${TABS} button[aria-label="Close ${SETTINGS}"]`);
-      if (await closer.isExisting()) await closer.click();
-    }
+    // The Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
+    await closeTheViewTabsOpenedSince(wereOpen);
   });
 
   it("adds a profile that lands in charter.local.toml with a page of its own, and removes it", async () => {
