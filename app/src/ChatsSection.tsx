@@ -1613,8 +1613,10 @@ const Row = memo(function Row({
             </span>
             {/* **Place…** (#4764): the pointer's single press for what dragging the row does,
                     placement mode's targets. As the twist, inside the row, which is a button, so
-                    no button itself and not in the accessibility tree: ⌘⇧M on the row is the
-                    keyboard's way to the same. Drawn under the pointer only, over the row's end. */}
+                    no button itself and not in the accessibility tree, as its ⋯ is not: the
+                    keyboard's way to the same is its list's Place… (Shift+F10 on the row), as
+                    for the row's other actions, and ⌘⇧M on the row. Drawn under the pointer
+                    only, over the row's end. */}
             {pickUp !== undefined && (
               <Tooltip tip={`Place ${name}… (${keySaid("pane.place")})`}>
                 <span

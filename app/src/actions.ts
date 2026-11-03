@@ -409,6 +409,8 @@ export type Does =
    * window as its front tab. The core moves it, and each window draws its share.
    */
   | { verb: "moveToWindow"; tab: number; pane: boolean; to: number | null }
+  /** Place… (#4764): picks a chat or a tab up for placement mode, the keyboard's drag. */
+  | { verb: "place"; source: PlacedFrom }
   /** Focus this pane in a split (#4765): zooms the focused pane, or brings the split back. */
   | { verb: "zoomPane" }
   /** Undo (#4763, #4765): the window's last layout change put back, once. */
@@ -1092,6 +1094,8 @@ export type Doing = {
   /** Moves `tab`, or its focused pane, to another window of the project, or a new one when
    *  `to` is null (#4768). Answers the core's refusal, where it refused. */
   moveToWindow: (tab: number, pane: boolean, to: number | null) => Promise<Ran>;
+  /** Picks `source` up for placement mode (#4764), as its grip, its row or ⌘⇧M would. */
+  place: (source: PlacedFrom) => void;
   /** Zooms the focused pane of the tab in front, or brings its split back (#4765). */
   zoomPane: () => void;
   /** Puts the last layout change back (#4763, #4765): a drop, a split or Tile all. */
@@ -1660,6 +1664,16 @@ export const TOGGLE_PANEL_ID = "view.toggle:panel";
 export const FOCUS_MODE_ID = "focus.toggle";
 /** What Focus this pane's row says while it would zoom or hide (#4765). */
 export const FOCUS_THIS_PANE = "Focus this pane";
+/** What a Place… row picks up (#4764): a chat, by its number, or a tab. A pane's own route is
+ *  its grip. */
+export type PlacedFrom = { kind: "chat"; session: number } | { kind: "tab"; tab: number };
+/** Place…'s row for chat `session` (#4764). */
+export const placeChatId = (session: number) => `chat.place:${session}`;
+/** Place…'s row for tab `tab` (#4764). */
+export const placeTabId = (tab: number) => `tab.place:${tab}`;
+/** What a Place… row says it does (#4764). */
+export const PLACE_NOTE =
+  "Picked up to place with the keys: the arrows choose a side, Tab the next pane, Enter drops.";
 /** Tile all's row for tab `tab` (#4765). */
 export function tileAllId(tab: number): string {
   return `tab.tile:${tab}`;
@@ -2248,6 +2262,22 @@ export function catalogue(now: Now): Offer[] {
     offers.push({ ...move(PANE_TO_NEW_WINDOW, "Move this pane to new window", null) });
     for (const to of windows)
       offers.push(move(paneToWindowId(to), `Move this pane to ${windowNamed(to)}`, to));
+  }
+
+  // **Place…** (#4764): the keyboard's drag of a tab, from its right-click, onto the strip or
+  // another tab's pane. The palette lists the tab in front's alone, as Close other tabs'.
+  for (const tab of now.tabs.order) {
+    const name = now.tabs.byId[tab].name;
+    offers.push({
+      ...can(
+        placeTabId(tab),
+        `Place tab ${name}…`,
+        { verb: "place", source: { kind: "tab", tab } },
+        name,
+      ),
+      note: PLACE_NOTE,
+      ...(tab === now.tabs.inFront ? {} : { menuOnly: true as const }),
+    });
   }
 
   // **Undo** (#4763, #4765): the window's last layout change, while nothing has changed since.
@@ -3486,6 +3516,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "moveToWindow":
       return doing.moveToWindow(does.tab, does.pane, does.to);
+    case "place":
+      doing.place(does.source);
+      return DID;
     case "zoomPane":
       doing.zoomPane();
       return DID;
@@ -4347,6 +4380,18 @@ function chatRows(now: Now): Offer[] {
     offers.push(
       can(renameId(session), `Rename chat ${name}…`, { verb: "renameChat", session }, name),
     );
+
+    // **Place…** (#4764): the keyboard's drag of the chat, as its row's drag is the pointer's.
+    // Every chat's, as Rename is; ⌘⇧M on its row or its pane does the same.
+    offers.push({
+      ...can(
+        placeChatId(session),
+        `Place chat ${name}…`,
+        { verb: "place", source: { kind: "chat", session } },
+        name,
+      ),
+      note: PLACE_NOTE,
+    });
 
     // **Use skill…** (#2775), behind the Skill studio's flag. It opens a picker and types
     // nothing until a skill is picked, so it sits above the line; the key registry's
@@ -5467,6 +5512,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           ownTabId(at),
           besideId(at),
           backId(at),
+          // Where it is drawn, by the keys (#4764).
+          placeChatId(at),
           briefId(at),
           activityId(at),
           networkId(at),
@@ -5496,6 +5543,7 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
         above: [
           `tab.pin:${what.tab}`,
           tileAllId(what.tab),
+          placeTabId(what.tab),
           `tab.keep:${what.tab}`,
           // Move to window ▸ follows it, one row per window (`menuModel`, `toWindowRows`).
           toNewWindowId(what.tab),

@@ -2290,7 +2290,52 @@ describe("a chat's row places its chat (#4764)", () => {
     // The keyboard is on placement mode's first target.
     await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
   });
+
+  it("picks its chat up from its list's Place…, which Shift+F10 opens, and Esc gives the row back the keyboard", async () => {
+    const { move } = core(threeTasks());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+    move(3, "running", 13);
+    const one = row(tree, "devops 3");
+    // The row's own keyboard route to its list (D10): the ⋯ is the pointer's.
+    act(() => one.focus());
+    fireEvent.keyDown(one, { key: "F10", shiftKey: true });
+    await screen.findByRole("menu");
+    const place = menuRow("Place…");
+    // Its key, which does the same from the row, said at the row's end.
+    expect(place.textContent).toMatch(/(⌘⇧M|Ctrl\+Shift\+M)/);
+    await userEvent.click(place);
+    await waitFor(() => expect(placingSaid()).toMatch(/^Picked up devops 3\. Arrow keys/));
+    await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(placingSaid()).toBe("Put back. Nothing moved."));
+    expect(document.activeElement).toBe(row(tree, "devops 3"));
+  });
 });
+
+describe("a tab's menu places its tab (#4764)", () => {
+  it("picks the tab up from its right-click's Place…, offering the strip's new place", async () => {
+    core(threeDeep());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+    const tab = within(strip()).getByRole("tab", { name: /^steward 1/ });
+    fireEvent.contextMenu(tab);
+    await screen.findByRole("menu");
+    await userEvent.click(menuRow("Place…"));
+    await waitFor(() => expect(placingSaid()).toMatch(/^Picked up steward 1\. Arrow keys/));
+    await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(placingSaid()).toBe("Put back. Nothing moved."));
+    expect(document.activeElement).toBe(within(strip()).getByRole("tab", { name: /^steward 1/ }));
+  });
+});
+
+/** What placement mode last told a reader (#4764). */
+const placingSaid = () => document.querySelector("[data-pane-drag-said]")?.textContent ?? "";
 
 describe("a chat's row is one line, with a hover card (#1675)", () => {
   it("draws its persona's badge with its state on it, and its name, and nothing more", async () => {
