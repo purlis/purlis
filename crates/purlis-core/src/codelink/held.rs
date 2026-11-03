@@ -48,6 +48,9 @@ pub const HEAD: &str = "HEAD";
 /// The ref a repository's newest stash is under.
 const STASH: &str = "refs/stash";
 
+/// The most stashes a repository lists: past it, its list is not whole.
+const MOST_STASHES: usize = 1000;
+
 /// **Every repository in the projects kept in `projects`** (1.69, #4569), each project a folder
 /// named by its id, and what could not be looked through, in sentences. No link is followed, and
 /// nothing inside a repository's own git folder is looked through.
@@ -169,98 +172,177 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
 /// The most files outside the projects a runner names: the rest are counted.
 const MOST_NAMED_OUTSIDE: usize = 5;
 
+/// The most sentences of what could not be looked at a runner's home gives: the rest are counted.
+const MOST_SAID_OUTSIDE: usize = 20;
+
+/// How long before a host first starts a program a file still counts as changed since: a file
+/// system's clock stamps a change coarsely, and nothing of a task runs before its program is
+/// asked for.
+pub const CHANGED_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Folders of a runner's home a tool keeps by its own default, by their path in it, which hold
+/// nothing a task made: Go's module and build cache under its default `GOPATH`.
+const TOOLS_KEEP: &[&str] = &["go/pkg"];
+
 /// **What a task keeps outside its project's folder on its runner** (#4781), in sentences: each
-/// file in the runner's `home` changed since `since`, when its host started, so in no repository
-/// and unable to come home. Each keeps the runner, and the window's Notice names it.
+/// file in the runner's `home` changed since `since`, when the host first started a program, so
+/// in no repository and unable to come home. Each keeps the runner, and the window's Notice names
+/// it. None where no program has started yet: nothing of a task can be there.
 ///
 /// Only what a person would look for is looked through: a hidden entry of the home (`.config`,
 /// `.cache`, `.local` and the like) is a program's own settings, cache or record by the home's
-/// convention, purlis's own data home among them, and is left out, as is every folder in
-/// `skip`. A temporary folder is outside the home and temporary on any machine. No link is
-/// followed: a link made since counts as a file. A file is known changed by its status change
-/// time, which no program can set back, so a copy that keeps its times counts too.
+/// convention, purlis's own data home among them, and is left out, as is every folder in `skip`
+/// and each one a tool keeps by its own default ([`TOOLS_KEEP`]). A temporary folder is outside
+/// the home and temporary on any machine. Only a file or a link counts, never a socket or a pipe a
+/// program left. Each folder is opened from the one it is in, never through a link, so nothing
+/// outside the home is looked through however its folders change meanwhile. A file is known
+/// changed by its status change time, which no program can set back, so a copy that keeps its
+/// times counts too.
+#[cfg(unix)]
 pub fn outside_the_projects(
     home: &Path,
     skip: &[std::path::PathBuf],
-    since: std::time::SystemTime,
+    since: Option<std::time::SystemTime>,
 ) -> Vec<String> {
-    let mut found: Vec<String> = Vec::new();
-    let mut said = Vec::new();
+    use rustix::fs::{AtFlags, CWD, Mode, OFlags};
+    let Some(since) = since else {
+        return Vec::new();
+    };
+    let folder = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    let mut named = std::collections::BTreeSet::new();
+    let mut found = 0usize;
+    let mut said: Vec<String> = Vec::new();
+    let mut unsaid = 0usize;
+    let mut say = |sentence: String, said: &mut Vec<String>| {
+        if said.len() < MOST_SAID_OUTSIDE {
+            said.push(sentence);
+        } else {
+            unsaid += 1;
+        }
+    };
+    let top = match rustix::fs::openat(CWD, home, folder, Mode::empty()) {
+        Ok(top) => top,
+        Err(rustix::io::Errno::NOENT) => return Vec::new(),
+        Err(e) => {
+            return vec![format!(
+                "the runner's home could not be read, so what a task kept outside its project \
+                 could not be looked for: {e}"
+            )];
+        }
+    };
     let mut folders = 0usize;
-    let mut stack = vec![String::new()];
-    while let Some(rel) = stack.pop() {
+    let mut stack = vec![(String::new(), top)];
+    while let Some((rel, fd)) = stack.pop() {
         folders += 1;
         if folders > MOST_FOLDERS {
-            said.push(format!(
-                "the runner's home holds more than {MOST_FOLDERS} folders, so not all were looked \
-                 through"
-            ));
+            say(
+                format!(
+                    "the runner's home holds more than {MOST_FOLDERS} folders, so not all were \
+                     looked through"
+                ),
+                &mut said,
+            );
             break;
         }
-        let dir = if rel.is_empty() {
-            home.to_path_buf()
+        let shown_dir = if rel.is_empty() {
+            "~".to_owned()
         } else {
-            home.join(&rel)
+            format!("~/{rel}")
         };
-        let entries = match std::fs::read_dir(&dir) {
-            Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+        let mut dir = match rustix::fs::Dir::read_from(&fd) {
+            Ok(dir) => dir,
             Err(e) => {
-                said.push(format!("~/{rel} on the runner could not be read: {e}"));
+                say(
+                    format!("{shown_dir} on the runner could not be read: {e}"),
+                    &mut said,
+                );
                 continue;
             }
         };
-        for entry in entries {
+        while let Some(entry) = dir.read() {
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(e) => {
-                    said.push(format!("~/{rel} on the runner could not all be read: {e}"));
-                    continue;
+                    say(
+                        format!("{shown_dir} on the runner could not all be read: {e}"),
+                        &mut said,
+                    );
+                    break;
                 }
             };
-            let Ok(name) = entry.file_name().into_string() else {
-                said.push(format!(
-                    "a file in ~/{rel} on the runner has a name that is not text, so it was not \
-                     looked at"
-                ));
+            let raw = entry.file_name();
+            let bytes = raw.to_bytes();
+            if bytes == b"." || bytes == b".." || (rel.is_empty() && bytes.starts_with(b".")) {
+                continue;
+            }
+            let Ok(name) = std::str::from_utf8(bytes) else {
+                say(
+                    format!(
+                        "a file in {shown_dir} on the runner has a name that is not text, so it \
+                         was not looked at"
+                    ),
+                    &mut said,
+                );
                 continue;
             };
-            if rel.is_empty() && name.starts_with('.') {
-                continue;
-            }
-            let path = entry.path();
-            if skip.contains(&path) {
-                continue;
-            }
             let shown = if rel.is_empty() {
-                name
+                name.to_owned()
             } else {
                 format!("{rel}/{name}")
             };
-            // `symlink_metadata` does not follow a link.
-            let meta = match std::fs::symlink_metadata(&path) {
-                Ok(meta) => meta,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            if TOOLS_KEEP.contains(&shown.as_str()) || skip.contains(&home.join(&shown)) {
+                continue;
+            }
+            // Never through a link: one made since counts as a file.
+            let stat = match rustix::fs::statat(&fd, raw, AtFlags::SYMLINK_NOFOLLOW) {
+                Ok(stat) => stat,
+                Err(rustix::io::Errno::NOENT) => continue,
                 Err(e) => {
-                    said.push(format!("~/{shown} on the runner could not be read: {e}"));
+                    say(
+                        format!("~/{shown} on the runner could not be read: {e}"),
+                        &mut said,
+                    );
                     continue;
                 }
             };
-            if meta.is_dir() {
-                stack.push(shown);
-            } else if changed_at(&meta).is_none_or(|at| at >= since) {
-                found.push(shown);
+            match rustix::fs::FileType::from_raw_mode(stat.st_mode) {
+                rustix::fs::FileType::Directory => {
+                    match rustix::fs::openat(&fd, raw, folder | OFlags::NOFOLLOW, Mode::empty()) {
+                        Ok(inner) => stack.push((shown, inner)),
+                        Err(rustix::io::Errno::NOENT) => {}
+                        Err(e) => say(
+                            format!("~/{shown} on the runner could not be read: {e}"),
+                            &mut said,
+                        ),
+                    }
+                }
+                rustix::fs::FileType::RegularFile | rustix::fs::FileType::Symlink => {
+                    let changed = u64::try_from(stat.st_ctime)
+                        .ok()
+                        .zip(u32::try_from(stat.st_ctime_nsec).ok())
+                        .and_then(|(secs, nanos)| {
+                            std::time::UNIX_EPOCH.checked_add(std::time::Duration::new(secs, nanos))
+                        });
+                    if changed.is_none_or(|at| at >= since) {
+                        found += 1;
+                        named.insert(shown);
+                        if named.len() > MOST_NAMED_OUTSIDE {
+                            named.pop_last();
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }
-    if !found.is_empty() {
-        found.sort();
-        let more = found.len().saturating_sub(MOST_NAMED_OUTSIDE);
-        let named: Vec<String> = found
-            .iter()
-            .take(MOST_NAMED_OUTSIDE)
-            .map(|one| format!("~/{one}"))
-            .collect();
+    if unsaid > 0 {
+        said.push(format!(
+            "and {unsaid} more parts of the runner's home could not be looked at"
+        ));
+    }
+    if found > 0 {
+        let more = found - named.len();
+        let named: Vec<String> = named.iter().map(|one| format!("~/{one}")).collect();
         said.insert(
             0,
             format!(
@@ -277,22 +359,6 @@ pub fn outside_the_projects(
         );
     }
     said
-}
-
-/// When the file `meta` describes last changed, data or status: its status change time, which
-/// no program can set back. None where it can't be told, which counts as changed.
-#[cfg(unix)]
-fn changed_at(meta: &std::fs::Metadata) -> Option<std::time::SystemTime> {
-    use std::os::unix::fs::MetadataExt;
-    let secs = u64::try_from(meta.ctime()).ok()?;
-    let nanos = u32::try_from(meta.ctime_nsec()).ok()?;
-    std::time::UNIX_EPOCH.checked_add(std::time::Duration::new(secs, nanos))
-}
-
-/// [`changed_at`] where there is no status change time: when its data last changed.
-#[cfg(not(unix))]
-fn changed_at(meta: &std::fs::Metadata) -> Option<std::time::SystemTime> {
-    meta.modified().ok()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -385,11 +451,21 @@ fn one(dir: &Path, project: &str, rel: &str, kind: Kind) -> Result<Held, String>
     }
     // **Every stash, not only the newest** (#4781): `refs/stash` names the last one, and those
     // under it live only in its log, which no fetch carries.
-    if refs.iter().any(|one| one.name == STASH) {
-        let logged = run(dir, &["log", "--walk-reflogs", "--format=%H", STASH])
+    // Asked of the ref itself, so a stash that is no commit, which for-each-ref passes over,
+    // still has its log read, or the list is not whole.
+    let stashed = run(dir, &["rev-parse", "--verify", "--quiet", STASH])
+        .map_err(|why| failed("read", &why.to_string()))?;
+    if stashed.ok() && !stashed.line().is_empty() {
+        let logged = run(dir, &["log", "--walk-reflogs", "--format=%H", STASH, "--"])
             .map_err(|why| failed("read", &why.to_string()))?;
         if !logged.ok() {
             return Err(failed("read", &logged.err));
+        }
+        if logged.out.lines().count() > MOST_STASHES {
+            return Err(failed(
+                "all listed",
+                &format!("it holds more than {MOST_STASHES} stashes"),
+            ));
         }
         for (n, oid) in logged.out.lines().enumerate().skip(1) {
             refs.push(Ref {
@@ -479,8 +555,10 @@ fn uncommitted(dir: &Path, project: &str, rel: &str) -> Result<Vec<Changed>, Str
     }
     // **What git is told not to look at** (#4781): `status` shows no change to a file marked
     // unchanged (`assume-unchanged`, a lower-case tag) or to skip the work tree (`skip-worktree`,
-    // `S`), so each one there is listed as it is, and is no loss only where it is the same here.
-    // One that is not there holds nothing: a sparse checkout leaves its files out so.
+    // `S`, or `s` with both), so each one is listed as it is, and is no loss only where it is the
+    // same here. One marked unchanged counts even where it is gone, since `status` does not see
+    // that either. One marked to skip the work tree that is not there holds nothing: a sparse
+    // checkout leaves its files out so.
     let flagged = run(dir, &["ls-files", "-z", "-v"]).map_err(|why| unread(why.to_string()))?;
     if !flagged.ok() {
         return Err(unread(flagged.err.trim().to_owned()));
@@ -488,7 +566,15 @@ fn uncommitted(dir: &Path, project: &str, rel: &str) -> Result<Vec<Changed>, Str
     for entry in flagged.out.split('\0').filter(|entry| entry.len() > 2) {
         let (tag, path) = entry.split_at(2);
         let tag = tag.chars().next().unwrap_or(' ');
-        if !(tag.is_ascii_lowercase() || tag == 'S') {
+        let skips_the_work_tree = tag == 'S' || tag == 's';
+        if !(tag.is_ascii_lowercase() || skips_the_work_tree) {
+            continue;
+        }
+        let top = path.split('/').next().unwrap_or(path);
+        if left_out.iter().any(|out| out == top) {
+            continue;
+        }
+        if skips_the_work_tree && std::fs::symlink_metadata(dir.join(path)).is_err() {
             continue;
         }
         if path.contains(char::REPLACEMENT_CHARACTER) {
@@ -496,13 +582,7 @@ fn uncommitted(dir: &Path, project: &str, rel: &str) -> Result<Vec<Changed>, Str
                 "a file whose name is not text, `{path}`, can't be compared"
             )));
         }
-        let top = path.split('/').next().unwrap_or(path);
-        if left_out.iter().any(|out| out == top) {
-            continue;
-        }
-        if std::fs::symlink_metadata(dir.join(path)).is_ok() {
-            paths.push(path.to_owned());
-        }
+        paths.push(path.to_owned());
     }
     paths.sort();
     paths.dedup();
@@ -632,13 +712,35 @@ pub fn not_home(root: &Path, project: &str, held: &[Held], unread: &[String]) ->
                 }
             ));
         }
+        // Stashes are said as one, in words: no fetch brings one back (#4781).
+        let mut stashes = Vec::new();
         for kept in &one.refs {
-            if !reached_here(&here, &kept.oid) {
-                missing.push(format!(
-                    "{} of {at} on the runner is at a commit no ref here reaches",
-                    kept.name
-                ));
+            if reached_here(&here, &kept.oid) {
+                continue;
             }
+            if kept.name == STASH || kept.name.starts_with(&format!("{STASH}@{{")) {
+                stashes.push(kept.name.as_str());
+                continue;
+            }
+            missing.push(format!(
+                "{} of {at} on the runner is at a commit no ref here reaches",
+                kept.name
+            ));
+        }
+        if !stashes.is_empty() {
+            missing.push(format!(
+                "{at} on the runner holds {} stashed change{} ({}), which Fetch again does not \
+                 bring back",
+                stashes.len(),
+                if stashes.len() == 1 { "" } else { "s" },
+                stashes
+                    .iter()
+                    .take(3)
+                    .copied()
+                    .chain((stashes.len() > 3).then_some("…"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
     }
     missing

@@ -118,6 +118,11 @@ pub trait Code: Send + Sync + 'static {
         Err(moves_no_chat())
     }
 
+    /// **A program is about to start on this host** (#4781): told before each, so what a task
+    /// leaves outside its project since the first is known as its own. A binary that moves no
+    /// chat hears nothing.
+    fn program_starting(&self) {}
+
     /// **Every repository in the projects this host keeps in `projects`** (1.69, #4569): each
     /// one's project, path, refs and the files of its work tree no commit has, and what
     /// could not be looked through. A binary that moves no chat refuses it.

@@ -167,6 +167,11 @@ impl AskedToRun {
         self.0.store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Its host said its program did not start, in a refusal that says so.
+    pub fn unmark(&self) {
+        self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
     /// Whether its program was asked to run.
     pub fn was(&self) -> bool {
         self.0.load(std::sync::atomic::Ordering::SeqCst)

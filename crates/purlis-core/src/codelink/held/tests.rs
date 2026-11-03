@@ -610,7 +610,9 @@ fn a_stash_under_the_newest_keeps_the_runner() {
     assert!(says(&missing, "refs/stash@{1}"), "{missing:?}");
 }
 
-/// A runner's home, with what was in it before its host started, and when that was.
+/// A runner's home, with what was in it before its host first started a program, and when that
+/// was.
+#[cfg(unix)]
 fn a_home() -> (tempfile::TempDir, PathBuf, std::time::SystemTime) {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().canonicalize().unwrap();
@@ -629,13 +631,14 @@ fn a_home() -> (tempfile::TempDir, PathBuf, std::time::SystemTime) {
 
 /// **Work a task keeps outside its project's folder keeps the runner** (#4781): a file it wrote
 /// in the runner's home is in no repository, so it can't come here, and the Notice names it.
+#[cfg(unix)]
 #[test]
 fn a_file_a_task_wrote_in_the_runners_home_keeps_the_runner() {
     let (_dir, home, started) = a_home();
     std::fs::create_dir_all(home.join("notes")).unwrap();
     std::fs::write(home.join("notes/findings.md"), "what the task found\n").unwrap();
 
-    let said = outside_the_projects(&home, &[], started);
+    let said = outside_the_projects(&home, &[], Some(started));
 
     assert!(
         says(&said, "~/notes/findings.md") && says(&said, "outside its project"),
@@ -645,6 +648,7 @@ fn a_file_a_task_wrote_in_the_runners_home_keeps_the_runner() {
 
 /// **What the runner's home held before its host started is no task's work** (#4781), and nor
 /// is what programs keep in its hidden folders: their settings, caches and records.
+#[cfg(unix)]
 #[test]
 fn what_the_home_held_before_and_what_programs_keep_hidden_keeps_no_runner() {
     let (_dir, home, started) = a_home();
@@ -652,13 +656,14 @@ fn what_the_home_held_before_and_what_programs_keep_hidden_keeps_no_runner() {
     std::fs::write(home.join(".bash_history"), "ls\n").unwrap();
 
     assert_eq!(
-        outside_the_projects(&home, &[], started),
+        outside_the_projects(&home, &[], Some(started)),
         Vec::<String>::new()
     );
 }
 
 /// **The folders purlis keeps in the home are not looked through** (#4781): its projects are
 /// listed repository by repository, wherever its data home is.
+#[cfg(unix)]
 #[test]
 fn the_folders_purlis_keeps_are_not_looked_through_outside_the_projects() {
     let (_dir, home, started) = a_home();
@@ -667,7 +672,7 @@ fn the_folders_purlis_keeps_are_not_looked_through_outside_the_projects() {
     std::fs::write(data.join("projects/one/file.txt"), "a project's\n").unwrap();
 
     assert_eq!(
-        outside_the_projects(&home, &[data], started),
+        outside_the_projects(&home, &[data], Some(started)),
         Vec::<String>::new()
     );
 }
@@ -679,7 +684,105 @@ fn a_link_a_task_made_in_the_home_keeps_the_runner() {
     let (_dir, home, started) = a_home();
     std::os::unix::fs::symlink("/etc", home.join("etc-link")).unwrap();
 
-    let said = outside_the_projects(&home, &[], started);
+    let said = outside_the_projects(&home, &[], Some(started));
 
     assert!(says(&said, "~/etc-link"), "{said:?}");
+}
+
+/// **Before any program has run, nothing outside the projects is a task's** (#4781): a start
+/// is never told its runner holds work there.
+#[cfg(unix)]
+#[test]
+fn before_any_program_has_run_nothing_outside_the_projects_counts() {
+    let (_dir, home, _started) = a_home();
+    std::fs::write(
+        home.join("written-at-boot.txt"),
+        "by the image's own start\n",
+    )
+    .unwrap();
+
+    assert_eq!(outside_the_projects(&home, &[], None), Vec::<String>::new());
+}
+
+/// **What a tool keeps by its own default is no task's work, but what is beside it is** (#4781):
+/// Go's module cache under its default `GOPATH`, and a pipe a program left.
+#[cfg(unix)]
+#[test]
+fn a_tools_own_cache_and_a_pipe_keep_no_runner_but_work_beside_them_does() {
+    let (_dir, home, started) = a_home();
+    std::fs::create_dir_all(home.join("go/pkg/mod/example.com")).unwrap();
+    std::fs::write(home.join("go/pkg/mod/example.com/lib.go"), "package lib\n").unwrap();
+    let made =
+        crate::forklock::status(std::process::Command::new("mkfifo").arg(home.join("agent.pipe")))
+            .unwrap();
+    assert!(made.success(), "a pipe is made");
+
+    assert_eq!(
+        outside_the_projects(&home, &[], Some(started)),
+        Vec::<String>::new()
+    );
+
+    std::fs::create_dir_all(home.join("go/src/tool")).unwrap();
+    std::fs::write(home.join("go/src/tool/main.go"), "package main\n").unwrap();
+    let said = outside_the_projects(&home, &[], Some(started));
+    assert!(says(&said, "~/go/src/tool/main.go"), "{said:?}");
+}
+
+/// **A link to a folder is never looked through** (#4781): only the link is named, never what
+/// it points at.
+#[cfg(unix)]
+#[test]
+fn a_link_to_a_folder_outside_the_home_is_never_looked_through() {
+    let (_dir, home, started) = a_home();
+    let outside = tempfile::tempdir().unwrap();
+    let elsewhere = outside.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(elsewhere.join("secret.txt"), "not the home's\n").unwrap();
+    let inside = home.join("from-the-image");
+    std::fs::rename(&inside, home.join("moved")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &inside).unwrap();
+
+    let said = outside_the_projects(&home, &[], Some(started));
+
+    assert!(says(&said, "~/from-the-image"), "{said:?}");
+    assert!(!says(&said, "secret.txt"), "{said:?}");
+}
+
+/// **Many files are counted, and only a few named** (#4781): what the runner says stays short
+/// however many a task left.
+#[cfg(unix)]
+#[test]
+fn many_files_outside_the_projects_are_counted_and_a_few_named() {
+    let (_dir, home, started) = a_home();
+    std::fs::create_dir_all(home.join("out")).unwrap();
+    for n in 0..40 {
+        std::fs::write(home.join(format!("out/{n:02}.txt")), "made\n").unwrap();
+    }
+
+    let said = outside_the_projects(&home, &[], Some(started));
+
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(
+        says(
+            &said,
+            "~/out/00.txt, ~/out/01.txt, ~/out/02.txt, ~/out/03.txt, ~/out/04.txt and 35 more"
+        ),
+        "{said:?}"
+    );
+}
+
+/// **A file marked as unchanged that the task removed keeps the runner** (#4781): `status`
+/// does not see the removal, and the file is still here.
+#[test]
+fn a_file_marked_as_unchanged_that_the_task_removed_keeps_the_runner() {
+    let world = World::new();
+    git(
+        &world.web(),
+        &["update-index", "--assume-unchanged", "index.html"],
+    );
+    std::fs::remove_file(world.web().join("index.html")).unwrap();
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "differ here: index.html"), "{missing:?}");
 }
