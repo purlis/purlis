@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ShortcutsView, sheetRows } from "./ShortcutsView";
 import { SHORTCUTS } from "./registry";
 
@@ -44,5 +44,24 @@ describe("the cheat sheet (N25)", () => {
     // Heard as words, not as the symbols drawn.
     expect(cap?.querySelector("[data-heard-as]")).toHaveTextContent("Command Shift Return");
     expect(screen.getByRole("searchbox", { name: "Filter shortcuts" })).toBeInTheDocument();
+  });
+
+  it("gives ⌘⇧↩ one act, Focus this pane, which its own words find alone (#4765)", () => {
+    for (const mac of [true, false]) {
+      const keyed = sheetRows(mac).filter((row) =>
+        row.keys.split(" · ").includes(mac ? "⌘⇧↩" : "Ctrl+Shift+Enter"),
+      );
+      expect(keyed.map((row) => row.id)).toEqual(["focus.toggle"]);
+    }
+    render(<ShortcutsView mac />);
+    const list = screen.getByRole("grid", { name: "Keyboard shortcuts" });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter shortcuts" }), {
+      target: { value: "zoom in a split" },
+    });
+    const acts = within(list)
+      .getAllByRole("row")
+      .filter((one) => one.getAttribute("data-part") === "root");
+    expect(acts).toHaveLength(1);
+    expect(acts[0]).toHaveAccessibleName(/^Focus this pane/);
   });
 });
