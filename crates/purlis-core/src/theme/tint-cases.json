@@ -3391,8 +3391,8 @@
    "tokens": {
     "accent.base": "#403667",
     "accent.surface": "#dedcef",
-    "accent.wash": "#000000",
-    "accent.wash-hover": "#000000",
+    "accent.wash": "#7507ff24",
+    "accent.wash-hover": "#7507ff3a",
     "accent.text": "#403667",
     "accent.fill": "#6d58bb",
     "accent.fill-hover": "#745fc3",
@@ -3414,8 +3414,8 @@
    "tokens": {
     "accent.base": "#403667",
     "accent.surface": "#d4e2d2",
-    "accent.wash": "#000000",
-    "accent.wash-hover": "#000000",
+    "accent.wash": "#7507ff24",
+    "accent.wash-hover": "#7507ff3a",
     "accent.text": "#403667",
     "accent.fill": "#137824",
     "accent.fill-hover": "#1e7f2c",
