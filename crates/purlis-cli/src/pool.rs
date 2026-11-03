@@ -11,6 +11,10 @@
 
 use clap::Subcommand;
 use purlis_core::poollimits::{self, Limit};
+use purlis_core::poolsetup::{
+    self,
+    asked::{Asked, Created},
+};
 use purlis_core::runners;
 
 #[derive(Subcommand)]
@@ -22,6 +26,38 @@ pub enum PoolCommand {
         /// One JSON object for a script.
         #[arg(long)]
         json: bool,
+    },
+    /// Add a Docker pool on this machine: its runner is made from the image and paired here.
+    ///
+    /// This is what Pool setup's Create button runs, and Pool setup picks it up. A team's own
+    /// image is checked against the runner image contract first.
+    Add {
+        /// The pool's name: lower-case letters, digits and dashes.
+        name: String,
+        /// The runner image, by its digest. See what this does in Pool setup names purlis's own.
+        #[arg(long)]
+        image: String,
+        /// How many CPUs its runner may use, to the thousandth.
+        #[arg(long)]
+        cpus: Option<String>,
+        /// The memory its runner may use, in MiB.
+        #[arg(long)]
+        memory_mib: Option<u32>,
+        /// How many processes its runner may run at once.
+        #[arg(long)]
+        processes: Option<u32>,
+        /// The size of its runner's /tmp, in MiB.
+        #[arg(long)]
+        tmp_mib: Option<u32>,
+        /// How long its runner waits without a link before it suspends: 12h, 90m.
+        #[arg(long)]
+        suspend_after: Option<String>,
+        /// The most frames a second its runner's browsers are watched at.
+        #[arg(long)]
+        frames: Option<u32>,
+        /// The widest frame its runner's browsers are watched at, in pixels.
+        #[arg(long)]
+        width: Option<u32>,
     },
     /// Pool setup: each step's state and what to do next, for a pool or a new one. It only reads.
     Setup {
@@ -73,6 +109,35 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
              purlis pool setup in your own terminal."
                 .to_owned(),
         ),
+        PoolCommand::Add { .. } if in_a_chat => Err(
+            "Adding a pool uses this machine's Docker, which a chat doesn't reach. Run it in your \
+             own terminal, or use Pool setup in the window."
+                .to_owned(),
+        ),
+        PoolCommand::Add {
+            name,
+            image,
+            cpus,
+            memory_mib,
+            processes,
+            tmp_mib,
+            suspend_after,
+            frames,
+            width,
+        } => {
+            let asked = Asked {
+                name: name.clone(),
+                image: image.clone(),
+                cpus: cpus.clone(),
+                memory_mib: *memory_mib,
+                processes: *processes,
+                tmp_mib: *tmp_mib,
+                suspend_after: suspend_after.clone(),
+                frames: *frames,
+                width: *width,
+            };
+            added(&config()?, &asked)
+        }
         PoolCommand::Setup { name, json } => {
             crate::poolsetup::answered(name.as_deref(), *json)?;
             Ok(0)
@@ -144,6 +209,30 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             crate::voice::ok(saved_said(pool, limit, value, &chosen));
             Ok(0)
         }
+    }
+}
+
+/// **Adds the pool `asked` asks for**, as Pool setup's button does.
+fn added(config: &std::path::Path, asked: &Asked) -> Result<u8, String> {
+    let docker = poolsetup::docker_here()
+        .ok_or_else(|| "purlis found no docker on this machine.".to_owned())?;
+    docker.answers().map_err(|why| why.0)?;
+    let keyring = purlis_core::linkkey::this_builds_keyring(config);
+    let desktop = purlis_core::linkkey::desktop(config, &*keyring)?.pinned();
+    match poolsetup::asked::create(config, &docker, asked, &desktop)
+        .map_err(|why| why.to_string())?
+    {
+        Created::Added => {
+            crate::voice::ok(format!(
+                "Pool {} is added, and its runner is made.",
+                asked.name
+            ));
+            Ok(0)
+        }
+        Created::Breaks(problems) => Err(format!(
+            "This image can't be a runner, and nothing was made:\n{}",
+            problems.join("\n")
+        )),
     }
 }
 

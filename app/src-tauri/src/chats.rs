@@ -5245,34 +5245,9 @@ impl Chats {
         self.looked_at().contains(&session)
     }
 
-    /// Pins or unpins one chat, and writes the record so the pin outlives the app.
-    ///
-    /// **A chat charter does not have open cannot be pinned**, and the answer says so rather
-    /// than inventing an entry: a pin is an arrangement of what is there, and the record is
-    /// the only thing that says a chat exists at all (ADR 0040). It follows that a
-    /// pinned chat that does not come back at a launch takes its pin with it, which is the
-    /// dangling-pin question answered by there being nowhere for one to dangle.
-    ///
-    /// Nothing is written when nothing changed, for the reason `bring_to_front` gives: the
-    /// record is rewritten on every write, and a write is a fingerprint the machine store
-    /// then has to vouch for.
-    pub fn pin(&self, session: u32, pinned: bool) -> Result<(), String> {
-        let mut open = lock(&self.open);
-        let Some(one) = open.get_mut(&session) else {
-            return Err(format!("purlis has no chat {session} open to pin."));
-        };
-        if one.chat.pinned == pinned {
-            return Ok(());
-        }
-        one.chat.pinned = pinned;
-        drop(open);
-        self.write_it_down();
-        Ok(())
-    }
-
     /// The person opened chat `session`'s tab (#1447, #1489): a task chat, listed until now,
     /// has a tab from here on, across a reload and a relaunch, until it is sent back
-    /// ([`Self::close_tab`]). Written only when it changes, for [`Self::pin`]'s reason, and
+    /// ([`Self::close_tab`]). Written only when it changes, for [`Self::lay_out`]'s reason, and
     /// only for a chat that had none.
     pub fn open_tab(&self, session: u32) -> Result<(), String> {
         let mut open = lock(&self.open);
@@ -5326,8 +5301,9 @@ impl Chats {
     ///
     /// **Refused whole, saying why**, where it names a chat in two panes, across every tab and
     /// window (a chat is shown once), or a chat that is not open here: one still being put
-    /// back at a launch is open. A refusal changes nothing. Written only when it changes, for
-    /// [`Self::pin`]'s reason.
+    /// back at a launch is open. A refusal changes nothing. Written only when it changes: the
+    /// record is rewritten on every write, and a write is a fingerprint the machine store then
+    /// has to vouch for.
     ///
     /// **What is kept is the window's word, and it says only where the person is looking**: the
     /// core starts and allows nothing by these numbers. A reported task's end, already due, is
@@ -5354,6 +5330,16 @@ impl Chats {
                 ));
             }
         }
+        // **The pin is the tab's from here on** (#4762): a chat's own, read from a record
+        // written before tabs were recorded, was the window's to carry onto its tab, and this
+        // layout carries it. It retires, so a chat started again does not bring back a pin
+        // its tab no longer has.
+        for one in lock(&self.coming).iter_mut() {
+            one.chat.pinned = false;
+        }
+        for running in lock(&self.open).values_mut() {
+            running.chat.pinned = false;
+        }
         let held = Some(layout.held());
         let changed = std::mem::replace(&mut *lock(&self.layout), held.clone()) != held;
         if changed {
@@ -5375,7 +5361,7 @@ impl Chats {
     /// (`Chat::name`), so a rename never reaches a program that is running. The name is held to
     /// [`purlis_core::reopen::label`], and a refusal changes nothing and says why.
     ///
-    /// Nothing is written when nothing changed, for [`Self::pin`]'s reason.
+    /// Nothing is written when nothing changed, for [`Self::lay_out`]'s reason.
     pub fn rename(&self, session: u32, raw: &str) -> Result<Option<String>, String> {
         let label = purlis_core::reopen::label(raw)?;
         let mut open = lock(&self.open);
@@ -5830,7 +5816,7 @@ impl Chats {
     /// **The board has already judged it.** This is told only what `Board::reported` adopted
     /// or followed (`Hooks::when_it_follows`), so a nested harness's report never gets here.
     ///
-    /// Written down only when the record would change, for [`Self::pin`]'s reason. Nothing for
+    /// Written down only when the record would change, for [`Self::lay_out`]'s reason. Nothing for
     /// a chat that runs no harness: a shell tab is resumed by nothing, whatever ran in it.
     ///
     /// **A report that arrives before the chat is remembered here is not kept**, which no
@@ -5872,7 +5858,7 @@ impl Chats {
     /// **Only the chat's own harness** ([`its_own_model`]): `now` is the conversation the board
     /// holds for the chat after it took `report`, and a report the board did not take as the
     /// chat's own, a sub-agent's, or any event but a `SessionStart` is no model. Written down
-    /// only when the model changed, for [`Self::pin`]'s reason.
+    /// only when the model changed, for [`Self::lay_out`]'s reason.
     pub fn heard_model(&self, report: &purlis_core::hookwire::Report, now: Option<&str>) {
         let Some(model) = its_own_model(report, now) else {
             return;
@@ -5893,7 +5879,7 @@ impl Chats {
     }
 
     /// What the window says its view tabs are now. Written down when it differs from what was
-    /// held, and not otherwise — for [`Self::pin`]'s reason: every write is a fingerprint the
+    /// held, and not otherwise — for [`Self::lay_out`]'s reason: every write is a fingerprint the
     /// machine store then has to vouch for.
     pub fn hold_views(&self, views: Vec<View>) {
         let changed = std::mem::replace(&mut *lock(&self.views), views.clone()) != views;
@@ -5953,7 +5939,7 @@ impl Chats {
     /// What order the window's strip now draws the chats in, by session (SI-6).
     ///
     /// Written down when the order the record would list them in moves, and not otherwise —
-    /// for [`Self::pin`]'s reason. Not when the list said differs from the one held: the window
+    /// for [`Self::lay_out`]'s reason. Not when the list said differs from the one held: the window
     /// says it after every change to its tabs, and a chat it has just opened is already last.
     pub fn hold_order(&self, sessions: Vec<u32>) {
         let was = self.in_order();
@@ -6504,6 +6490,8 @@ impl Chats {
                 Chat {
                     shows: None,
                     beside: None,
+                    // The tab holds the pin (#4762).
+                    pinned: false,
                     ..chat
                 }
             } else {

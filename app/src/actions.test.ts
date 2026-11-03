@@ -113,6 +113,7 @@ function doing(): Doing & { calls: string[] } {
     split: note("split"),
     closePane: note("closePane"),
     closeTab: note("closeTab"),
+    closeOtherTabs: note("closeOtherTabs"),
     selectTab: note("selectTab"),
     renameChat: note("renameChat"),
     linkWorkItem: note("linkWorkItem"),
@@ -384,9 +385,7 @@ describe("the one list of actions", () => {
         "pane.split.right",
         "pane.split.down",
         "needs.next",
-        "worktree.merge",
         "pane.close",
-        "worktree.remove",
         "charter.quit",
       ]),
     );
@@ -417,7 +416,7 @@ describe("the one list of actions", () => {
         workspaces: ["alpha", "beta"],
         focused: "alpha",
         plane: "/plane",
-        worktree: PIECE,
+        worktreeOf: () => PIECE,
         needsYou: [7],
       }),
     );
@@ -429,10 +428,10 @@ describe("the one list of actions", () => {
 
   it("puts the destructive rows last, so Enter on a fresh palette never closes a chat", () => {
     const tabs = openTab(noTabs(), 7, "one");
-    const offers = ids(catalogue(now({ tabs, plane: "/plane", worktree: PIECE })));
+    const offers = ids(catalogue(now({ tabs, plane: "/plane", worktreeOf: () => PIECE })));
 
-    for (const gentle of ["chat.new", "pane.split.right", "worktree.merge"]) {
-      for (const sharp of ["pane.close", "tab.close:1", "worktree.remove", "charter.quit"]) {
+    for (const gentle of ["chat.new", "pane.split.right", "chat.branch.merge:7"]) {
+      for (const sharp of ["pane.close", "tab.close:1", "chat.branch.remove:7", "charter.quit"]) {
         expect(offers.indexOf(gentle)).toBeLessThan(offers.indexOf(sharp));
       }
     }
@@ -835,51 +834,43 @@ describe("the one list of actions", () => {
     expect(hands.calls).toEqual(["ignoreNeedsYou:7"]);
   });
 
-  it("refuses the worktree rows with charter's reason when no chat is in front", () => {
-    const offers = catalogue(now({ plane: "/plane" }));
-
-    expect(by(offers, "worktree.remove")?.reason).toBe("No chat is in front.");
-    expect(by(offers, "worktree.merge")?.reason).toBe("No chat is in front.");
-  });
-
-  it("refuses them when the chat in front works nowhere charter cut", () => {
+  it("offers no Branch rows on a chat that works nowhere purlis cut (#4851)", () => {
     const tabs = openTab(noTabs(), 7, "one");
     const offers = catalogue(now({ tabs, plane: "/plane" }));
 
-    expect(by(offers, "worktree.remove")?.reason).toBe(
-      "The chat in front is not working in a branch purlis cut.",
-    );
+    // Its folder is what kind of chat it is, so the rows are left out, not greyed.
+    expect(ids(offers).filter((id) => id.startsWith("chat.branch."))).toEqual([]);
   });
 
   it("never sends force on the operator's behalf", async () => {
     const tabs = openTab(noTabs(), 7, "one");
     const hands = doing();
-    const offers = catalogue(now({ tabs, plane: "/plane", worktree: PIECE }));
+    const offers = catalogue(now({ tabs, plane: "/plane", worktreeOf: () => PIECE }));
 
-    await run(offers, "worktree.remove", hands);
+    await run(offers, "chat.branch.remove:7", hands);
 
-    // And it names the piece the chat in front is in, rather than leaving the window to work
-    // out what "this chat's worktree" meant after the row was pressed (charter-app#174).
+    // And it names the piece the chat is in, rather than leaving the window to work out what
+    // "this chat's worktree" meant after the row was pressed (charter-app#174).
     expect(hands.calls).toEqual(["removeWorktree:svc/fix-it,false"]);
   });
 
   it("offers no discard row until a refusal has been read", () => {
     const tabs = openTab(noTabs(), 7, "one");
-    const offers = catalogue(now({ tabs, plane: "/plane", worktree: PIECE }));
+    const offers = catalogue(now({ tabs, plane: "/plane", worktreeOf: () => PIECE }));
 
     // Absent rather than refused: a row permanently offering to throw work away is a
     // destructive action nobody was warned about, and there is nothing to warn about yet.
-    expect(by(offers, "worktree.discard")).toBeUndefined();
+    expect(by(offers, "chat.branch.discard:7")).toBeUndefined();
   });
 
   it("offers it once the core has refused, and it is the row that forces", async () => {
     const tabs = openTab(noTabs(), 7, "one");
     const hands = doing();
     const offers = catalogue(
-      now({ tabs, plane: "/plane", worktree: PIECE, refused: "worktree.remove" }),
+      now({ tabs, plane: "/plane", worktreeOf: () => PIECE, refused: "chat.branch.remove:7" }),
     );
 
-    await run(offers, "worktree.discard", hands);
+    await run(offers, "chat.branch.discard:7", hands);
 
     expect(hands.calls).toEqual(["removeWorktree:svc/fix-it,true"]);
   });
@@ -1164,8 +1155,8 @@ describe("the one list of actions", () => {
       "Discard that work and remove fix-it anyway",
     );
     expect(by(offers, "worktree.discard:svc/other")).toBeUndefined();
-    // And not the front chat's either: that row answers a refusal `worktree.remove` gave.
-    expect(by(offers, "worktree.discard")).toBeUndefined();
+    // And no chat's either: that row answers a refusal its own `chat.branch.remove` gave.
+    expect(ids(offers).filter((id) => id.startsWith("chat.branch.discard:"))).toEqual([]);
   });
 
   it("offers one row per persona, which is the only thing charter can do to one", () => {
@@ -1574,7 +1565,7 @@ describe("the one list of actions", () => {
       expect(by(catalogue(now({ tabs: withView() })), "pane.split.right")?.available).toBe(true);
     });
 
-    it("pins the tab as the view it shows, since it has no chat to pin", () => {
+    it("pins the tab as the view it shows", () => {
       const tabs = withView();
       const id = tabs.inFront as number;
 
@@ -1748,10 +1739,10 @@ describe("carrying out a row", () => {
       refused: "svc/fix-it has uncommitted changes; commit or stash them first",
     });
     const offers = catalogue(
-      now({ tabs: openTab(noTabs(), 7, "one"), plane: "/plane", worktree: PIECE }),
+      now({ tabs: openTab(noTabs(), 7, "one"), plane: "/plane", worktreeOf: () => PIECE }),
     );
 
-    expect(await run(offers, "worktree.remove", hands)).toEqual({
+    expect(await run(offers, "chat.branch.remove:7", hands)).toEqual({
       ok: false,
       refused: "svc/fix-it has uncommitted changes; commit or stash them first",
     });
@@ -1772,8 +1763,8 @@ describe("carrying out a row", () => {
           { plane: "/plane", name: "plane" },
           { plane: "/other", name: "other" },
         ],
-        worktree: PIECE,
-        refused: "worktree.remove",
+        worktreeOf: () => PIECE,
+        refused: "chat.branch.remove:7",
         // The focused workspace's own pieces and the plane's personas, so the rows
         // charter-app#174 added are reached here too.
         pieces: [PIECE],
@@ -2116,6 +2107,53 @@ describe("a chat's work link (V60, ADR 0088)", () => {
   });
 });
 
+describe("the one pin, a tab's (#4762)", () => {
+  it("is Pin tab on a chat's tab too, never Pin chat", () => {
+    const tabs = openTab(noTabs(), 7, "3 steward");
+    const id = tabs.inFront as number;
+
+    expect(by(catalogue(now({ tabs })), `tab.pin:${id}`)?.title).toBe("Pin tab 3 steward");
+    expect(
+      by(
+        catalogue(now({ tabs, pinned: { chats: [7], workspaces: [], projects: [] } })),
+        `tab.pin:${id}`,
+      )?.title,
+    ).toBe("Unpin tab 3 steward");
+  });
+});
+
+describe("Close other tabs (#4762)", () => {
+  // Three chats' tabs; the window says which of them Close other tabs would close, which is
+  // every other tab on the strip but the pinned ones (`tabs.otherTabsToClose`).
+  const three = [7, 8, 9].reduce(
+    (tabs, session) => openTab(tabs, session, `steward ${session}`),
+    noTabs(),
+  );
+
+  it("closes the tabs the window says, and asks first, since it ends their chats", () => {
+    // The tab in front is the last opened, tab 3; tab 2 is pinned, so it closes tab 1.
+    const row = by(catalogue(now({ tabs: three, otherTabs: () => [1] })), "tab.closeOthers:3");
+
+    expect(row?.title).toBe("Close other tabs");
+    expect(row?.does).toEqual({ verb: "closeOtherTabs", tab: 3, closes: [1], ends: true });
+  });
+
+  it("is one row, the tab in front's, however many tabs there are", () => {
+    const rows = catalogue(now({ tabs: three, otherTabs: () => [1, 2] })).filter((row) =>
+      row.id.startsWith("tab.closeOthers:"),
+    );
+
+    expect(rows.map((row) => row.id)).toEqual(["tab.closeOthers:3"]);
+  });
+
+  it("is not offered where there is no other tab it would close", () => {
+    const row = by(catalogue(now({ tabs: three, otherTabs: () => [] })), "tab.closeOthers:3");
+
+    expect(row?.available).toBe(false);
+    expect(row?.reason).toBe("Every other tab here is pinned, or there is none.");
+  });
+});
+
 describe("the catalogue as the tabs change", () => {
   it("grows a tab's rows per tab, and a chat's rows per chat, as tabs open", () => {
     let tabs: Tabs = noTabs();
@@ -2134,6 +2172,8 @@ describe("the catalogue as the tabs change", () => {
       "tab.pin:2",
       "tab.close:1",
       "tab.close:2",
+      // One Close other tabs, the tab in front's (#4762).
+      "tab.closeOthers:2",
     ]);
     // **A chat's rows are the chat's, by its number** (#4753): Rename… and Activity are
     // arrangements and reads, above the line; End… ends it, and is its own row.
@@ -2230,7 +2270,8 @@ describe("the palette at fifty chats", () => {
         workspaces: WORKSPACES,
         focused: "ide",
         plane: "/plane",
-        worktree: PIECE,
+        // The chat in front works in a branch folder, as it did when this was measured.
+        worktreeOf: (session) => (session === 149 ? PIECE : undefined),
         pieces: fiftyPieces(),
         clones: tenClones(),
         personas: PERSONAS,
@@ -2260,12 +2301,12 @@ describe("the palette at fifty chats", () => {
       // `Previous` has `re` in it, and the row is about the tab in front (#1487): it stands
       // with the rows about what is in front, in the catalogue's order.
       "Previous chat in this tab",
-      // **Both of the chat in front's rows, then the pieces'.** `aboutWhatIsInFront` is the
-      // second rule inside this group (charter-app#174): a row with no name in its id acts on
-      // what the operator is looking at, and fifty rows about other worktrees do not get to
-      // stand in front of it. Inside each half the catalogue's own order stands.
-      "Merge this chat's branch into its clone",
-      "Remove the folder of this chat's branch",
+      // **The chat in front's own removal, then the pieces'.** `aboutWhatIsInFront` is the
+      // second rule inside this group (charter-app#174): a row about what the operator is
+      // looking at, and fifty rows about other worktrees do not get to stand in front of it.
+      // Inside each half the catalogue's own order stands. Its merge is not here since #4851:
+      // `re` was in its old id, `worktree.merge`, and is nowhere in `chat.branch.merge`'s words.
+      "Remove charter.50's branch folder",
       // The sides' rows (#1673, #1678): about this window, and `Explorer` has `re` in it, as
       // `Repos` does (#1737). The rows about things that are not in front come after these, in
       // the catalogue's order: `ignore` has `re` in it, and it is charter's word, so the two
@@ -2275,6 +2316,7 @@ describe("the palette at fifty chats", () => {
       "Show the Repos view",
       "Put the Navigation region away",
       "Put the Attention region away",
+      "Focus the next region",
     ]);
     // Not a cap and not a filter: every name that matched is still listed, below.
     expect(rows.some((row) => row.title === "Switch to tab release.3")).toBe(true);
@@ -2314,16 +2356,15 @@ describe("the palette at fifty chats", () => {
           workspaces: WORKSPACES,
           focused: "ide",
           plane: "/plane",
-          worktree: PIECE,
+          worktreeOf: (session) => (session === 149 ? PIECE : undefined),
           needsYou: [103, 107],
           nameOf: (session) => `chat ${session}`,
         }),
       );
 
     const at = (typed: string, offers: Offer[]) =>
-      narrow(typed, offers).findIndex(
-        (row) => row.title === "Remove the folder of this chat's branch",
-      ) + 1;
+      narrow(typed, offers).findIndex((row) => row.title === "Remove charter.50's branch folder") +
+      1;
 
     it("is exactly where it was before a hundred rows were added around it", () => {
       for (const typed of ["re", "r", "rem", "worktree", "remove"]) {
@@ -2350,7 +2391,9 @@ describe("the palette at fifty chats", () => {
       // under `r` since #2921: `Keyboard shortcuts` (`keyboard` has an `r`). One more under `r`
       // since #2027: `Open browsers` (`browsers` has an `r`). One fewer under `r` since the
       // person's ruling of 2026-10-30: `Add a Docker pool…` is `Add a pool…`, with no `r`.
-      expect(at("re", loaded())).toBe(8);
+      // One up under `re` since #4851: the merge before it is `chat.branch.merge`, which has no
+      // `re` where `worktree.merge` had.
+      expect(at("re", loaded())).toBe(7);
       expect(at("r", loaded())).toBe(18);
       expect(at("rem", loaded())).toBe(1);
     });
@@ -2497,7 +2540,8 @@ describe("the palette at fifty chats", () => {
     // 2026-10-30: Your settings: Pools is offered with or without a pool, as the group is. 923
     // since #4536: the project's Runs on. 924 since #4485: Agent identity.
     // 974 since #4753: End…, each of the fifty chats' own row.
-    expect(offers).toHaveLength(974);
+    // 975 since #4762: Close other tabs, one row, the tab in front's.
+    expect(offers).toHaveLength(975);
   });
 
   /**

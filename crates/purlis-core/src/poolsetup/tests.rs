@@ -318,6 +318,7 @@ fn choices_are_kept_and_taken_back() {
     let config = tempfile::tempdir().unwrap();
     assert_eq!(read_choices(config.path()).unwrap(), Choices::default());
     choose_kind(config.path(), Kind::Docker).unwrap();
+    a_pool_kept(config.path(), "dev-box");
     skip(config.path(), "dev-box", StepId::Identity).unwrap();
     skip(config.path(), "dev-box", StepId::Identity).unwrap();
     let held = read_choices(config.path()).unwrap();
@@ -328,8 +329,16 @@ fn choices_are_kept_and_taken_back() {
 }
 
 #[test]
+fn a_pool_this_machine_doesnt_keep_is_never_skipped_on() {
+    let config = tempfile::tempdir().unwrap();
+    assert!(skip(config.path(), "nowhere", StepId::Identity).is_err());
+    assert_eq!(read_choices(config.path()).unwrap(), Choices::default());
+}
+
+#[test]
 fn a_step_later_ones_need_cannot_be_skipped() {
     let config = tempfile::tempdir().unwrap();
+    a_pool_kept(config.path(), "dev-box");
     for step in [StepId::Where, StepId::Pool, StepId::Try] {
         assert!(skip(config.path(), "dev-box", step).is_err(), "{step:?}");
     }
@@ -339,6 +348,7 @@ fn a_step_later_ones_need_cannot_be_skipped() {
 #[test]
 fn a_file_purlis_did_not_write_is_refused_and_not_read_as_no_choice() {
     let config = tempfile::tempdir().unwrap();
+    a_pool_kept(config.path(), "dev-box");
     skip(config.path(), "dev-box", StepId::Identity).unwrap();
     let path = crate::machine::dir(config.path()).join(CHOICES_FILE);
     let keep_mode = std::fs::metadata(&path).unwrap().permissions();
@@ -350,6 +360,8 @@ fn a_file_purlis_did_not_write_is_refused_and_not_read_as_no_choice() {
 #[test]
 fn forgetting_a_pool_clears_its_skips_so_a_new_pool_of_its_name_starts_clean() {
     let config = tempfile::tempdir().unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    a_pool_kept(config.path(), "other");
     skip(config.path(), "dev-box", StepId::Identity).unwrap();
     skip(config.path(), "other", StepId::Identity).unwrap();
     let locked = runners::lock(config.path());
@@ -498,13 +510,13 @@ fn coming_back_finds_the_name_given_before_the_pool_is_made() {
         docker: None,
         engine: Err("none".into()),
     };
-    let (setup, name) = resumed(&here).unwrap();
-    assert_eq!((setup.pool, name), (None, None));
+    let found = resumed(&here).unwrap();
+    assert_eq!((found.setup.pool, found.name), (None, None));
 
     choose_name(config.path(), Some("dev-box")).unwrap();
-    let (setup, name) = resumed(&here).unwrap();
-    assert_eq!(setup.pool, None, "not made yet");
-    assert_eq!(name.as_deref(), Some("dev-box"));
+    let found = resumed(&here).unwrap();
+    assert_eq!(found.setup.pool, None, "not made yet");
+    assert_eq!(found.name.as_deref(), Some("dev-box"));
 }
 
 #[test]
@@ -524,12 +536,16 @@ fn a_name_typed_never_picks_a_pool_and_the_pool_made_is_gone_on_with() {
     .unwrap();
 
     choose_name(config.path(), Some("dev-box")).unwrap();
-    assert_eq!(resumed(&here).unwrap().0.pool, None, "typed, not chosen");
+    assert_eq!(
+        resumed(&here).unwrap().setup.pool,
+        None,
+        "typed, not chosen"
+    );
 
     choose_pool(config.path(), "dev-box").unwrap();
-    let (setup, name) = resumed(&here).unwrap();
-    assert_eq!(setup.pool.as_deref(), Some("dev-box"));
-    assert_eq!(name, None);
+    let found = resumed(&here).unwrap();
+    assert_eq!(found.setup.pool.as_deref(), Some("dev-box"));
+    assert_eq!(found.name, None);
 
     let locked = runners::lock(config.path());
     runners::forget_pool_locked(config.path(), "dev-box", &locked).unwrap();
@@ -561,4 +577,174 @@ fn a_name_no_pool_could_have_is_refused_and_not_kept() {
     let config = tempfile::tempdir().unwrap();
     assert!(choose_name(config.path(), Some(&"x".repeat(70_000))).is_err());
     assert_eq!(read_choices(config.path()).unwrap().name, None);
+}
+
+fn a_pool_kept(config: &Path, name: &str) {
+    runners::record_pool(
+        config,
+        &crate::runners::tests::pool(name, runners::Set::default()),
+    )
+    .unwrap();
+}
+
+fn here(config: &Path) -> Here<'_> {
+    Here {
+        config,
+        plane: None,
+        docker: None,
+        engine: Err("no engine here".to_owned()),
+    }
+}
+
+#[test]
+fn a_pool_made_by_hand_under_the_name_typed_is_noticed() {
+    let config = tempfile::tempdir().unwrap();
+    choose_name(config.path(), Some("dev-box")).unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    let found = resumed(&here(config.path())).unwrap();
+    assert_eq!(found.setup.pool.as_deref(), Some("dev-box"));
+    assert!(found.noticed);
+}
+
+#[test]
+fn a_name_typed_never_picks_a_pool_that_was_there_before_it() {
+    let config = tempfile::tempdir().unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    choose_name(config.path(), Some("dev-box")).unwrap();
+    let found = resumed(&here(config.path())).unwrap();
+    assert_eq!(found.setup.pool, None);
+    assert!(!found.noticed);
+    assert_eq!(found.setup.others, ["dev-box"]);
+}
+
+#[test]
+fn a_pool_this_setup_went_on_with_is_not_a_notice() {
+    let config = tempfile::tempdir().unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    choose_pool(config.path(), "dev-box").unwrap();
+    let found = resumed(&here(config.path())).unwrap();
+    assert_eq!(found.setup.pool.as_deref(), Some("dev-box"));
+    assert!(!found.noticed);
+    assert!(found.setup.others.is_empty());
+}
+
+#[test]
+fn a_removed_pool_s_name_doesn_t_pick_the_next_pool_of_that_name() {
+    let config = tempfile::tempdir().unwrap();
+    choose_name(config.path(), Some("dev-box")).unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    forget_pool_locked(config.path(), "dev-box").unwrap();
+    let chose = read_choices(config.path()).unwrap();
+    assert_eq!(chose.name, None);
+    assert!(!chose.name_free);
+}
+
+#[test]
+fn signing_in_by_hand_is_the_command_the_step_shows() {
+    let setup = answer(&on_a_pool(
+        Runner::Running,
+        SignIns::Read(vec![
+            ("work".into(), Profile::Standing(Standing::SignedIn)),
+            ("oss".into(), Profile::Standing(Standing::SignedOut)),
+        ]),
+    ));
+    let see = setup
+        .step(StepId::Signins)
+        .and_then(|step| step.see.clone())
+        .expect("commands");
+    assert_eq!(see.text, "purlis profile sign-in oss --pool dev-box");
+}
+
+#[test]
+fn where_says_how_it_asks_and_that_it_only_reads() {
+    let setup = answer(&facts(Engine::Ready));
+    let see = setup
+        .step(StepId::Where)
+        .and_then(|step| step.see.clone())
+        .expect("commands");
+    assert_eq!(see.text, "docker version");
+    assert!(see.note.contains("only reads"));
+}
+
+fn tried_on(pool: &str) -> Choices {
+    let mut chose = Choices::default();
+    chose.tried.insert(pool.into(), 1);
+    chose
+}
+
+fn try_lines(setup: &Setup) -> Vec<(Verdict, String)> {
+    setup
+        .step(StepId::Try)
+        .expect("Try it")
+        .checks
+        .iter()
+        .map(|check| (check.verdict, check.title.clone()))
+        .collect()
+}
+
+#[test]
+fn setup_ends_only_once_a_real_chat_has_started_on_the_pool() {
+    let facts = on_a_pool(Runner::Running, signed_in());
+    let before = of(Kind::Docker, &facts, &Choices::default());
+    assert_ne!(before.step(StepId::Try).unwrap().state, Done);
+    let after = of(Kind::Docker, &facts, &tried_on("dev-box"));
+    assert_eq!(after.step(StepId::Try).unwrap().state, Done);
+    assert_eq!(
+        try_lines(&after)[0],
+        (Verdict::Ok, "A chat started on dev-box".into())
+    );
+}
+
+#[test]
+fn a_chat_tried_on_another_pool_proves_nothing_here() {
+    let facts = on_a_pool(Runner::Running, signed_in());
+    let setup = of(Kind::Docker, &facts, &tried_on("other"));
+    assert_ne!(setup.step(StepId::Try).unwrap().state, Done);
+}
+
+#[test]
+fn a_skipped_step_is_a_check_not_made_and_never_reads_as_done() {
+    let facts = on_a_pool(Runner::Running, signed_in());
+    let mut chose = tried_on("dev-box");
+    chose
+        .skipped
+        .insert("dev-box".into(), vec![StepId::Identity]);
+    let lines = try_lines(&of(Kind::Docker, &facts, &chose));
+    assert_eq!(
+        lines[2],
+        (
+            Verdict::Skip,
+            "gh and git push weren't checked: agent identity was skipped".into()
+        )
+    );
+    assert!(lines.iter().all(|(verdict, _)| *verdict != Verdict::Todo));
+}
+
+#[test]
+fn the_profiles_signed_in_are_said_by_name() {
+    let facts = on_a_pool(Runner::Running, signed_in());
+    let lines = try_lines(&of(Kind::Docker, &facts, &tried_on("dev-box")));
+    assert_eq!(lines[1], (Verdict::Ok, "work signed in".into()));
+}
+
+#[test]
+fn a_proof_is_kept_for_a_pool_kept_and_goes_with_the_pool() {
+    let config = tempfile::tempdir().unwrap();
+    assert!(tried(config.path(), "dev-box", 7).is_err(), "no such pool");
+    a_pool_kept(config.path(), "dev-box");
+    tried(config.path(), "dev-box", 7).unwrap();
+    assert_eq!(
+        read_choices(config.path()).unwrap().tried.get("dev-box"),
+        Some(&7)
+    );
+    forget_pool_locked(config.path(), "dev-box").unwrap();
+    assert!(read_choices(config.path()).unwrap().tried.is_empty());
+}
+
+#[test]
+fn only_a_runner_asleep_is_offered_to_be_woken() {
+    let asleep = answer(&on_a_pool(Runner::Asleep, SignIns::NotAsked));
+    assert_eq!(next(&asleep, StepId::Signins), ActionId::WakeRunner);
+    let unread = answer(&on_a_pool(Runner::Running, SignIns::NotAsked));
+    assert_eq!(next(&unread, StepId::Signins), ActionId::CheckAgain);
 }

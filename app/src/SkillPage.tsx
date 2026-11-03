@@ -60,7 +60,13 @@ import {
   runsSaid,
   UNREAD,
 } from "./SkillDetails";
-import { GradesTab, TRIGGER_TESTS_FILE, type GradingGo } from "./SkillGrades";
+import {
+  GradesTab,
+  OUTCOME_EVALS_FILE,
+  TRIGGER_TESTS_FILE,
+  type GradingGo,
+  type TestsFile,
+} from "./SkillGrades";
 import { askSkillChat } from "./skillDraftAsks";
 import { SkillPinSwitch, SkillPinnedBy } from "./SkillPins";
 import { GrantPicker } from "./SkillLevelPickers";
@@ -548,9 +554,20 @@ export function SkillPage({
   const deprecateSaid = state === "deprecated" ? "Undo deprecation" : "Deprecate…";
   const archiveSaid = state === "archived" ? "Unarchive" : "Archive…";
   const file = skillFileOf(skill);
-  // Its trigger tests' file, which Write trigger tests opens (#3925).
+  // Its checks' files: Write them yourself and Edit these checks open them (#3925).
   const tests = skillFileOf(skill, TRIGGER_TESTS_FILE);
+  const evals = skillFileOf(skill, OUTCOME_EVALS_FILE);
   const cannotChange = cannotChangeSaid(skill);
+  // A file of the skill's, opened in its own view, or why it can't be here.
+  const opened = (one: ReturnType<typeof skillFileOf>): TestsFile =>
+    "reason" in one
+      ? one
+      : onOpenView === undefined
+        ? { reason: "This window can't open the skill's files." }
+        : {
+            open: () =>
+              onOpenView(pieceFileView(one.place, one.path), pieceFileTitle(one.place, one.path)),
+          };
 
   const actions = (
     <>
@@ -812,19 +829,9 @@ export function SkillPage({
                 changed={given}
                 onGrading={onGrading ?? (() => undefined)}
                 onGraded={() => setGraded((n) => n + 1)}
-                testsFile={
-                  "reason" in tests
-                    ? tests
-                    : onOpenView === undefined
-                      ? { reason: "This window can't open the skill's files." }
-                      : {
-                          open: () =>
-                            onOpenView(
-                              pieceFileView(tests.place, tests.path),
-                              pieceFileTitle(tests.place, tests.path),
-                            ),
-                        }
-                }
+                testsFile={opened(tests)}
+                evalsFile={opened(evals)}
+                draft={review}
               />
             )}
           </div>

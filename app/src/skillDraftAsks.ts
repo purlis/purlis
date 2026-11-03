@@ -90,6 +90,9 @@ export type SkillChatAsk =
   | { plane: string; kind: "triggers"; level: SkillLevel; name: string }
   /** "Ask a chat to write outcome evals" (#2780): the outcome evals of the skill `name`. */
   | { plane: string; kind: "evals"; level: SkillLevel; name: string }
+  /** "Ask a chat to write checks" (ruling of 2026-11-02): both kinds of the skill `name`'s
+   *  checks, its trigger tests and its outcome evals, back as its one draft. */
+  | { plane: string; kind: "checks"; level: SkillLevel; name: string }
   /** "Improve from runs" (#2780): an edit of the skill `name`, drafted from its runs and grades. */
   | { plane: string; kind: "improve"; level: SkillLevel; name: string };
 

@@ -988,6 +988,8 @@ test("the outcome bars run on a pull request that touches what they measure, and
     "app/e2e/wdio.outcome.conf.ts",
     "app/e2e/specs/skill-outcome-bars.outcome.e2e.ts",
     ".github/workflows/ci.yml",
+    // The profiles the bars are built with (`dev-release`, inheriting `release`, #4351).
+    "Cargo.toml",
   ])
     assert.equal(on(path), true, path);
   for (const path of ["app/src/App.tsx", "crates/host/src/lib.rs", "app/e2e/specs/tabs.e2e.ts"])
@@ -1021,8 +1023,9 @@ test("a draft pull request runs no macOS job but app builds, and marking it read
   const onMac = names.filter((n) => /runs-on: (macos-|\$\{\{ matrix\.os \}\})/.test(body(n)) && /macos-/.test(body(n)));
   const nightly = (n) =>
     /\n    if: (github\.event_name == 'schedule'|\$\{\{ github\.event_name == 'schedule' \}\})\n/.test(body(n));
-  const gated = onMac.filter((n) => n !== "app" && !nightly(n));
-  assert.ok(gated.includes("scenario") && gated.includes("outcome-bars"), gated.join(", "));
+  // `scenario` runs on no pull request at all, the next test's claim.
+  const gated = onMac.filter((n) => n !== "app" && n !== "scenario" && !nightly(n));
+  assert.ok(gated.includes("outcome-bars") && onMac.includes("scenario"), gated.join(", "));
   // The draft clause must bind the whole condition: no `||` outside parentheses before it.
   const topLevelOr = (expr) => {
     let depth = 0;
@@ -1040,8 +1043,24 @@ test("a draft pull request runs no macOS job but app builds, and marking it read
   }
 
   assert.match(ci, /\n  pull_request:\n    types: \[opened, synchronize, reopened, ready_for_review\]\n/);
-  // The required check passes on a draft only because its legs were skipped.
-  assert.match(body("scenario-checks"), /\[ "\$DRAFT" = true \]; then want=skipped/);
+});
+
+test("the macOS scenarios run in the merge queue and on main, never on a pull request", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const job = (name, next) => ci.slice(ci.indexOf(`\n  ${name}:\n`), ci.indexOf(`\n  ${next}:\n`));
+  const scenario = job("scenario", "scenario-checks");
+  const cond = scenario.match(/\n    if: \$\{\{ (.*) \}\}\n/)[1];
+  assert.ok(cond.endsWith("&& github.event_name != 'pull_request'"), cond);
+  assert.ok(!/\|\|/.test(cond), `nothing in ${cond} lets a pull request back in`);
+  // The required check passes on a pull request only because its legs were skipped there.
+  const checks = job("scenario-checks", "scenario-linux");
+  assert.match(checks, /\n          EVENT: \$\{\{ github\.event_name \}\}\n/);
+  assert.match(
+    checks,
+    /\n          if \[ "\$SCOPE" = false \] \|\| \[ "\$EVENT" = pull_request \]; then want=skipped; else want=success; fi\n/,
+  );
+  // Linux runs the same specs on the pull request.
+  assert.doesNotMatch(job("scenario-linux", "outcome-bars"), /event_name != 'pull_request'/);
 });
 
 // A gate says what the job's own step decides: the step stays, for the merge group and the push,

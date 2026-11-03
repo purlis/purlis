@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   chatNameOf,
+  otherTabsToClose,
   byLastActivity,
   closeChat,
   closeFocusedPane,
@@ -599,6 +600,16 @@ describe("a pin on the strip", () => {
     const tabs = fourTabs();
 
     expect(showWorkspace(tabs, "alpha", oneWorkspace, undefined, holding(3)).inFront).toBe(3);
+  });
+
+  it("is skipped by Close other tabs, which closes the rest of the strip (#4762)", () => {
+    const tabs = fourTabs();
+
+    expect(otherTabsToClose(tabs, 2, oneWorkspace, holding(4))).toEqual([1, 3]);
+  });
+
+  it("keeps the tab Close other tabs was asked on, pinned or not", () => {
+    expect(otherTabsToClose(fourTabs(), 4, oneWorkspace, holding(4))).toEqual([1, 2, 3]);
   });
 
   it("is what a strip with nothing pinned always did", () => {

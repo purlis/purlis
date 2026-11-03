@@ -778,14 +778,6 @@ export const commands = {
 	 */
 	pinOnThisMachine: (path: string, workspace: string | null, pinned: boolean, at: number | null) => typedError<null, string>(__TAURI_INVOKE("pin_on_this_machine", { path, workspace, pinned, at })),
 	/**
-	 *  Pins or unpins one chat.
-	 * 
-	 *  Its own command rather than a third case of the two above, because it is written
-	 *  somewhere else entirely: a chat pin goes in the plane's own `.charter/app/reopen.json`
-	 *  and never in the machine store, which ADR 0034 forbids holding a chat's name.
-	 */
-	pinChat: (plane: PlaneId, session: number, pinned: boolean) => typedError<null, string>(__TAURI_INVOKE("pin_chat", { plane, session, pinned })),
-	/**
 	 *  The person gave a task chat a tab of its own (#1447, #1489): the record keeps it, so a
 	 *  reloaded window and the next launch draw the tab again. Sending it back is
 	 *  `close_chat_tab`. Nothing ends by either.
@@ -823,8 +815,8 @@ export const commands = {
 	 *  The order the chat strip draws this project's chats in, by session, so the record lists
 	 *  them in it and the next launch — or a reloaded window — puts them back in it (SI-6).
 	 * 
-	 *  **In the plane's own `.charter/app/reopen.json`, beside each chat's pin**, and never in the
-	 *  machine store, for [`pin_chat`]'s reason: a chat is numbered per plane, and ADR 0034 keeps
+	 *  **In the plane's own `.charter/app/reopen.json`**, and never in the machine store: a chat
+	 *  is numbered per plane, and ADR 0034 keeps
 	 *  its number out of a file every plane shares. That file is out of git, so the order is this
 	 *  machine's as a pin is.
 	 */
@@ -835,7 +827,7 @@ export const commands = {
 	 * 
 	 *  **Charter's label, never the harness's**: the program keeps the `--name` it was started
 	 *  with, so renaming a chat never disturbs one that is running. The name goes in the plane's
-	 *  own `.charter/app/reopen.json`, beside the chat's pin, so it comes back at a relaunch.
+	 *  own `.charter/app/reopen.json`, so it comes back at a relaunch.
 	 */
 	renameChat: (plane: PlaneId, session: number, label: string) => typedError<string | null, string>(__TAURI_INVOKE("rename_chat", { plane, session, label })),
 	/**
@@ -1089,6 +1081,7 @@ export const commands = {
 	skillDraftChat: __WINDOW_ONLY_START_REFUSED,
 	skillTriggerTestsChat: __WINDOW_ONLY_START_REFUSED,
 	skillOutcomeEvalsChat: __WINDOW_ONLY_START_REFUSED,
+	skillChecksChat: __WINDOW_ONLY_START_REFUSED,
 	skillImproveChat: __WINDOW_ONLY_START_REFUSED,
 	skillDraftTry: __WINDOW_ONLY_START_REFUSED,
 	skillDraftRedo: __WINDOW_ONLY_START_REFUSED,
@@ -1619,6 +1612,11 @@ export const commands = {
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
+	poolSetupCommand: __WINDOW_ONLY_RESULT,
+	poolSetupCreate: __WINDOW_ONLY_RESULT,
+	poolSetupSizes: __WINDOW_ONLY_RESULT,
+	poolSetupSkip: __WINDOW_ONLY_RESULT,
+	poolSetupWake: __WINDOW_ONLY_RESULT,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -1627,6 +1625,7 @@ export const commands = {
 	dockerPoolMakeAgain: __WINDOW_ONLY_RESULT,
 	dockerPoolReplaceRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolRemoveHeldRunner: __WINDOW_ONLY_RESULT,
+	dockerPoolBringBackHeldRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
@@ -8830,6 +8829,50 @@ export type PoolSetupAction = {
 	url: string | null,
 };
 
+/**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
+export type PoolSetupCheck = {
+	verdict: string,
+	title: string,
+	more: string | null,
+};
+
+/**
+ *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
+ *  contract; none where the pool was made.
+ */
+export type PoolSetupCreated = {
+	breaks: string[],
+};
+
+/**  A limit a profile is over. */
+export type PoolSetupOver = {
+	/**  The limit's key, as `pool_limit_set` takes it. */
+	key: string,
+	said: string,
+	/**  What to raise it to, where a value would do. */
+	raise_to: number | null,
+};
+
+/**  One of this machine's profiles against a pool's limit (#4482). */
+export type PoolSetupProfileSize = {
+	name: string,
+	/**  What a send to the runner carries, in MiB rounded up, and in files; null where unread. */
+	mib: number | null,
+	files: number | null,
+	/**  Why it could not be measured. */
+	unread: string | null,
+	/**  Each limit it is over, in words, with what to raise it to. */
+	over: PoolSetupOver[],
+	/**  The project's default, or a profile an open chat runs on. */
+	in_use: boolean,
+};
+
+/**  A step by hand: the exact commands, and what running them means (#4481). */
+export type PoolSetupSee = {
+	note: string,
+	text: string,
+};
+
 /**  What the tab draws. */
 export type PoolSetupShown = {
 	/**  The pool this setup made. */
@@ -8839,6 +8882,17 @@ export type PoolSetupShown = {
 	/**  The step the person has reached. */
 	at: string | null,
 	steps: PoolSetupStep[],
+	/**  The pool was made by hand under the name typed, and purlis noticed (#4481). */
+	noticed: boolean,
+	/**  Pools this machine keeps that this setup isn't on. */
+	others: string[],
+};
+
+/**  This machine's profiles against pool `pool`'s limits (#4482). */
+export type PoolSetupSizes = {
+	most_mib: number,
+	most_files: number,
+	profiles: PoolSetupProfileSize[],
 };
 
 /**  One step as it stands. */
@@ -8850,6 +8904,8 @@ export type PoolSetupStep = {
 	findings: string[],
 	next: PoolSetupAction | null,
 	skippable: boolean,
+	see: PoolSetupSee | null,
+	checks: PoolSetupCheck[],
 };
 
 /**  What the person is asked. */
@@ -8942,8 +8998,8 @@ export type PoolVersion = {
 	 */
 	draining: number,
 	/**
-	 *  How many of its older runners are held: each stopped during its drain, and stays with its
-	 *  home until the person removes it.
+	 *  How many of its older runners are held: each stopped with what its chats left, and stays with
+	 *  its home until the person brings their conversations back or discards them.
 	 */
 	held: number,
 	/**
@@ -10374,8 +10430,8 @@ export type RunnerAsked = {
 	 */
 	ran_this_week: number | null,
 	/**
-	 *  It stopped during its drain, so it stays with its home until the person removes it
-	 *  ([`purlis_core::pools::DrainLook::Held`]).
+	 *  It stopped with what its chats left, so it stays with its home until the person brings their
+	 *  conversations back or discards them ([`purlis_core::pools::DrainLook::Held`], #4633).
 	 */
 	held: boolean,
 };

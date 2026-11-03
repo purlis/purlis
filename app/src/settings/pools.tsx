@@ -146,8 +146,8 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
   if (version.held > 0) {
     lines.push(
       version.held === 1
-        ? "1 older runner stopped during its drain. purlis keeps it and what its chats left until you remove it in Devices."
-        : `${version.held} older runners stopped during their drain. purlis keeps them and what their chats left until you remove them in Devices.`,
+        ? "1 older runner stopped with what its chats left in its home. purlis keeps it until you bring their conversations back or discard them in Devices."
+        : `${version.held} older runners stopped with what their chats left in their homes. purlis keeps them until you bring their conversations back or discard them in Devices.`,
     );
   }
   if (version.draining > 0) {
@@ -270,27 +270,47 @@ function NamedByLine({ named }: { named: NamedBy }) {
   );
 }
 
-/** **Remove runner {name}?**, asked before a held runner goes, with what its chats left. */
-export function RemoveHeldRunner({
+/**
+ * **Discard runner {name}'s conversations?**, asked twice before a held runner goes with what its
+ * chats left (#4633, ruled 2026-11-02): `first`, then `again`, each with Cancel as the way back.
+ */
+export function DiscardHeldRunner({
   name,
-  onRemove,
+  ask,
+  onGoOn,
   onCancel,
 }: {
   name: string;
-  onRemove: () => void;
+  ask: "first" | "again";
+  onGoOn: () => void;
   onCancel: () => void;
 }) {
-  return (
+  // Each ask is a dialog of its own, so the second opens with the keyboard on its Cancel and not
+  // on the button the first was answered with: two presses never discard.
+  return ask === "first" ? (
     <AlertDialog
+      key="first"
       onClose={onCancel}
-      title={`Remove runner ${name}?`}
+      title={`Discard runner ${name}'s conversations?`}
       description={
         <p className="came-back">
-          Its container and home are removed from your Docker, with everything chats left in them.
-          There is no undo.
+          Its container and home are removed from your Docker, with every conversation and
+          everything else its chats left in them.
         </p>
       }
-      main={{ children: "Remove runner", variant: "danger", onPress: onRemove }}
+      main={{ children: "Discard…", variant: "danger", onPress: onGoOn }}
+    />
+  ) : (
+    <AlertDialog
+      key="again"
+      onClose={onCancel}
+      title="Discard them for good?"
+      description={
+        <p className="came-back">
+          {`Runner ${name}'s conversations cannot be brought back after this. There is no undo.`}
+        </p>
+      }
+      main={{ children: "Discard conversations", variant: "danger", onPress: onGoOn }}
     />
   );
 }

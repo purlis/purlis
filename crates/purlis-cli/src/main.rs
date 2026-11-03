@@ -1496,6 +1496,9 @@ enum ProfileCommand {
         /// 6 if this device has no such profile, and 1 if purlis could not ask.
         #[arg(long)]
         check: bool,
+        /// With --check, answer from what is installed, and fetch no harness a profile pins.
+        #[arg(long, requires = "check")]
+        no_fetch: bool,
         /// For an opencode profile, the plan it signs in to: openai (ChatGPT) or
         /// github-copilot. A Claude plan is never signed in through opencode.
         #[arg(long)]
@@ -4261,6 +4264,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
         ProfileCommand::Authenticate {
             name,
             check,
+            no_fetch,
             provider,
             pool,
             until_input_ends,
@@ -4295,7 +4299,12 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 None if *until_input_ends => Held::UntilInputEnds,
                 None => Held::No,
             };
-            return profile_sign_in(&store, name, *check, provider.as_deref(), held, way);
+            let check = match (*check, *no_fetch) {
+                (false, _) => Check::No,
+                (true, false) => Check::Fetching,
+                (true, true) => Check::AsInstalled,
+            };
+            return profile_sign_in(&store, name, check, provider.as_deref(), held, way);
         }
         ProfileCommand::SignOut { name } => return profile_sign_out(&store, name),
         ProfileCommand::List => unreachable!("listed in run"),
@@ -4316,15 +4325,26 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
 /// and asked by that version, fetched first where it is not installed yet, as a chat's start
 /// fetches it, with a line in this terminal saying so (#4007); a fetch that is refused says why
 /// and signs nothing in. Held to its input ([`Held`]), the login ends with it (#4043).
+/// Whether `purlis profile sign-in` only says how a profile stands, and if a pinned harness is
+/// fetched to say it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Check {
+    No,
+    Fetching,
+    /// `--no-fetch` (#4507): a read that changes nothing here.
+    AsInstalled,
+}
+
 fn profile_sign_in(
     store: &purlis_core::profilestore::Homes,
     name: &str,
-    check: bool,
+    check_only: Check,
     provider: Option<&str>,
     held: Held,
     way: purlis_core::profilestore::sign_in::Way,
 ) -> ExitCode {
     use purlis_core::profilestore::{self, installs, sign_in};
+    let check = check_only != Check::No;
     let record = match profilestore::list(store.config_root()) {
         Ok(records) => records.into_iter().find(|p| p.name == name),
         Err(why) => return refused(&why),
@@ -4351,7 +4371,12 @@ fn profile_sign_in(
     let here = profilestore::this_device();
     // Watched through a fetch too, so a sign-in cancelled meanwhile starts no login.
     let input = (!matches!(held, Held::No)).then(held_input);
-    let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
+    let fetched = if check_only == Check::AsInstalled {
+        Ok(None)
+    } else {
+        installs::on_this_runner(&record, &|line| eprintln!("{line}"))
+    };
+    let pinned = match fetched {
         Ok(pinned) => pinned,
         Err(why) if check => {
             refused(&format!(

@@ -289,9 +289,33 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/purlis-core/src/dockerpool.rs",
+        "CONVERSATIONS_WITHIN",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool.rs",
         "MOST_NAME",
         Internal,
         "what the format or a tool holds",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool.rs",
+        "FLAG_NOT_KNOWN",
+        Internal,
+        "what the format or a tool holds",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool/contract.rs",
+        "INSIDE_WITHIN",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool/contract.rs",
+        "MOST_PROBLEMS",
+        Internal,
+        "how much purlis says at once",
     ),
     (
         "crates/purlis-core/src/dockerpool.rs",

@@ -14,11 +14,18 @@
 //!   write packages and nothing more, and only `index` may mint the OIDC token cosign signs
 //!   with; no job restores a cache, since what it builds is signed;
 //! - nothing is pushed, tagged or signed except on a publishing run; nothing is pushed into a
-//!   package the packages API does not show public; nothing is tagged or signed before the
-//!   image's check passed on the pushed bytes and the images were shown public and served to a
-//!   puller who has not signed in;
-//! - each published image is then pulled and its signature checked by a job with no sign-in;
-//! - `main` is tagged only when `tools/image-registry.mjs order` says it moves forward;
+//!   package the packages API does not show public;
+//! - each image is built once, into a file; the check runs on that file's image, and only then
+//!   is the same file pushed, by the digest it was checked under (#4512), so an image that fails
+//!   its check is never pushed at all; a pull request copies the file by its digest the same way,
+//!   into a folder;
+//! - nothing is tagged or signed before the images were shown public and served to a puller
+//!   who has not signed in;
+//! - each published image is then pulled, and its signature and provenance checked, by a job
+//!   with no sign-in;
+//! - `main` is tagged last, by a job of its own after that check from outside (#4512), only
+//!   when `tools/image-registry.mjs order` says it moves forward, and only to the index that
+//!   passed;
 //! - each base image is pinned by digest, and each image's user is a number other than 0.
 
 use crate::workflow;
@@ -286,19 +293,17 @@ fn the_workflow_grants_nothing_and_each_job_only_what_it_needs() {
         let file = image.file;
         assert!(text.lines().any(|l| l == "permissions: {}"), "{file}");
         let names: Vec<&str> = jobs.iter().map(|j| j.name.as_str()).collect();
-        // The runner image's SBOM and attestations (#2191) are held to their own test,
-        // `the_runner_image_carries_its_sbom_and_provenance.rs`.
-        let attested: &[&str] = if image.released {
-            &["sbom", "attest"]
-        } else {
-            &[]
-        };
-        let made: Vec<&str> = ["plan", "binary", "image", "index"]
-            .into_iter()
-            .chain(attested.iter().copied())
-            .chain(["outside"])
-            .collect();
+        // Each image's SBOM and attestations (#2191, #4513) are held to their own test,
+        // `the_images_carry_their_sbom_and_provenance.rs`.
+        let made = [
+            "plan", "binary", "image", "index", "sbom", "attest", "outside", "tag-main",
+        ];
         assert_eq!(names, made, "{file}");
+        assert_eq!(
+            job_named(&jobs, "tag-main", file).permissions(),
+            Some(pairs(&[("contents", "read"), ("packages", "write")])),
+            "{file}: it moves a tag and signs nothing"
+        );
         assert_eq!(job_named(&jobs, "plan", file).permissions(), None);
         assert_eq!(
             job_named(&jobs, "binary", file).permissions(),
@@ -322,12 +327,7 @@ fn the_workflow_grants_nothing_and_each_job_only_what_it_needs() {
             .filter(|j| j.can_mint_an_oidc_token())
             .map(|j| j.name.as_str())
             .collect();
-        let signers: &[&str] = if image.released {
-            &["index", "attest"]
-        } else {
-            &["index"]
-        };
-        assert_eq!(minting, signers, "{file}");
+        assert_eq!(minting, ["index", "attest"], "{file}");
     }
 }
 
@@ -374,8 +374,8 @@ fn every_checkout_is_the_planned_commit_without_credentials() {
                 .into_iter()
                 .filter(|s| action(s) == Some("actions/checkout"))
                 .collect();
-            // The runner image's SBOM and attestations, and the check from outside, read the
-            // pushed image and run nothing of the commit's, so they check nothing out (#2191).
+            // Each image's SBOM and attestations, and the check from outside, read the pushed
+            // image and run nothing of the commit's, so they check nothing out (#2191, #4513).
             let checks_out = !matches!(job.name.as_str(), "sbom" | "attest" | "outside");
             assert_eq!(
                 checkouts.len(),
@@ -415,9 +415,9 @@ fn only_a_publishing_run_signs_in_pushes_or_signs() {
                 .is_some_and(|o| o.contains("push=true"))
                 || step_value(&step, "with", "push") == Some("true")
                 || action(&step) == Some("docker/login-action")
-                || run_lines(&step)
-                    .iter()
-                    .any(|l| l.contains("image-registry.mjs visibility"));
+                || run_lines(&step).iter().any(|l| {
+                    l.contains("image-registry.mjs visibility") || l.contains("docker://$IMAGE")
+                });
             if pushes {
                 assert_eq!(
                     step_condition(&step),
@@ -430,14 +430,23 @@ fn only_a_publishing_run_signs_in_pushes_or_signs() {
                 assert_ne!(step_value(&step, "with", "push"), Some("true"), "{step:#?}");
             }
         }
-        // Everything `index` does is a publishing run's: the job's own `if:` says so.
+        // Everything `index` and `tag-main` do is a publishing run's: each job's own `if:` says so.
         let index = job_named(&jobs, "index", image.file);
         assert!(index.needs().contains(&"image".to_owned()));
+        assert_eq!(
+            job_named(&jobs, "tag-main", image.file).condition(),
+            Some("needs.plan.outputs.publish == 'true'")
+        );
     }
 }
 
+/// The file every architecture's image is built into, loaded, checked and pushed from.
+const CANDIDATE: &str = "\"oci-archive:$RUNNER_TEMP/candidate.tar\"";
+
+/// #4512: the check runs before the push, on the image of the very file the push then sends,
+/// so a candidate that fails is never pullable, not even untagged by its digest.
 #[test]
-fn the_check_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
+fn the_image_is_checked_before_it_is_pushed_and_the_push_sends_the_bytes_checked() {
     for image in &IMAGES {
         let (_, jobs) = workflow(image);
         let file = image.file;
@@ -449,19 +458,113 @@ fn the_check_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
                 .position(|s| what(s))
                 .unwrap_or_else(|| panic!("{file}: no step in `image` {about}"))
         };
-        let push = position(
-            &|s| {
-                step_value(s, "with", "outputs").is_some_and(|o| o.contains("push-by-digest=true"))
-            },
-            "pushes by digest",
+        let dockerfile = if image.released {
+            "runner-image/Dockerfile"
+        } else {
+            "operator/Dockerfile"
+        };
+        let builds: Vec<&Vec<String>> = steps
+            .iter()
+            .filter(|s| step_value(s, "with", "file") == Some(dockerfile))
+            .collect();
+        assert_eq!(
+            builds.len(),
+            1,
+            "{file}: the image is built once: {builds:#?}"
         );
-        let pull = position(
+        let candidate = image.checks[0]
+            .split_whitespace()
+            .find(|w| w.ends_with(":candidate"))
+            .expect("the checks name the candidate");
+        assert_eq!(
+            step_value(builds[0], "with", "outputs"),
+            Some(
+                format!("type=docker,name={candidate},dest=${{{{ runner.temp }}}}/candidate.tar")
+                    .as_str()
+            ),
+            "{file}: built into a file and nowhere else"
+        );
+        assert!(
+            step_condition(builds[0]).is_none(),
+            "{file}: a pull request builds it the way a publishing run does"
+        );
+        for step in &steps {
+            assert!(
+                step_value(step, "with", "outputs").is_none_or(|o| !o.contains("push=true"))
+                    && step_value(step, "with", "push").is_none(),
+                "{file}: the build pushes nothing: {step:#?}"
+            );
+            assert!(
+                run_lines(step)
+                    .iter()
+                    .all(|l| !l.starts_with("docker pull")),
+                "{file}: nothing is pulled back: {step:#?}"
+            );
+        }
+        let build = position(
+            &|s| step_value(s, "with", "file") == Some(dockerfile),
+            "builds the image",
+        );
+        let load = position(
             &|s| {
                 run_lines(s)
                     .iter()
-                    .any(|l| l == "docker pull \"$IMAGE@$DIGEST\"")
+                    .any(|l| l == "docker load --input \"$RUNNER_TEMP/candidate.tar\"")
             },
-            "pulls back",
+            "loads the file",
+        );
+        // The digest is the file's own manifest's, and the image loaded is that manifest's.
+        assert!(
+            steps[load].iter().any(|l| l.trim() == "id: candidate"),
+            "{file}: the push and the record read this step's digest"
+        );
+        let loading = run_lines(&steps[load]);
+        let mut at = 0;
+        for line in [
+            "digest=$(tar -xOf \"$RUNNER_TEMP/candidate.tar\" index.json \\",
+            "[[ \"$digest\" =~ ^sha256:[0-9a-f]{64}$ ]] \\",
+            "config=$(tar -xOf \"$RUNNER_TEMP/candidate.tar\" \"blobs/sha256/${digest#sha256:}\" | jq -r .config.digest)",
+            "docker load --input \"$RUNNER_TEMP/candidate.tar\"",
+            "if [ \"$id\" != \"$digest\" ] && [ \"$id\" != \"$config\" ]; then",
+            "echo \"digest=$digest\" >> \"$GITHUB_OUTPUT\"",
+        ] {
+            at += loading[at..]
+                .iter()
+                .position(|l| l == line)
+                .unwrap_or_else(|| {
+                    panic!("{file}: `{line}` missing or out of order: {loading:#?}")
+                });
+        }
+        let push_line =
+            format!("skopeo copy --preserve-digests {CANDIDATE} \"docker://$IMAGE@$DIGEST\"");
+        let push = position(&|s| run_lines(s) == [push_line.as_str()], "pushes the file");
+        assert_eq!(step_condition(&steps[push]), Some("env.PUBLISH == 'true'"));
+        assert_eq!(
+            step_value(&steps[push], "env", "DIGEST"),
+            Some("${{ steps.candidate.outputs.digest }}"),
+            "{file}: pushed by the digest the check ran under"
+        );
+        let dry = position(
+            &|s| {
+                run_lines(s).iter().any(|l| {
+                    l.starts_with(&format!(
+                        "skopeo copy --preserve-digests {CANDIDATE} \"dir:"
+                    ))
+                })
+            },
+            "copies the file by its digest on a run that publishes nothing",
+        );
+        assert_eq!(step_condition(&steps[dry]), Some("env.PUBLISH != 'true'"));
+        assert!(
+            run_lines(&steps[dry])
+                .iter()
+                .any(|l| l == "if [ \"$copied\" != \"$DIGEST\" ]; then"),
+            "{file}: the copy is compared with the digest checked"
+        );
+        // The write credential arrives only after every check (and only to publish).
+        let login = position(
+            &|s| action(s) == Some("docker/login-action"),
+            "signs in to the registry",
         );
         let record = position(
             &|s| step_value(s, "with", "name") == Some("digest-${{ matrix.arch }}"),
@@ -469,7 +572,10 @@ fn the_check_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
         );
         for check in image.checks {
             let at = position(&|s| run_lines(s) == [*check], check);
-            assert!(push < pull && pull < at && at < record, "{file}: {check}");
+            assert!(
+                build < load && load < at && at < login && at < push && at < dry && push < record,
+                "{file}: {check}"
+            );
         }
         let public = position(
             &|s| s[0].contains("name: The package is public before the image is pushed"),
@@ -485,8 +591,8 @@ fn the_check_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
             "{file}"
         );
         assert!(
-            public < push,
-            "{file}: the package is shown public before the push"
+            login < public && public < push,
+            "{file}: the package is shown public just before the push"
         );
 
         let index = job_named(&jobs, "index", file);
@@ -511,17 +617,14 @@ fn the_check_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
         );
         let tagging = run_lines(&steps[tag]);
         assert!(
-            tagging.contains(&"order=$(node tools/image-registry.mjs order \"$SHA\")".to_owned()),
-            "{file}: {tagging:#?}"
+            tagging.contains(&"if [ \"$children\" != \"$checked\" ]; then".to_owned()),
+            "{file}: the index holds the images checked: {tagging:#?}"
         );
-        let main_tags: Vec<&String> = tagging
-            .iter()
-            .filter(|l| l.contains("$IMAGE:main"))
-            .collect();
-        assert_eq!(
-            main_tags,
-            [&"main:*) tags+=(--tag \"$IMAGE:main\") ;;".to_owned()],
-            "{file}: `main` is tagged only when the order check says it moves forward"
+        assert!(
+            tagging.contains(
+                &"docker buildx imagetools create --tag \"$IMAGE:sha-$SHA\" \\".to_owned()
+            ),
+            "{file}: {tagging:#?}"
         );
         assert_eq!(
             run_lines(&steps[sign]),
@@ -554,6 +657,62 @@ fn the_check_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
     }
 }
 
+/// #4512: `main` only ever names an image that passed every check, the one from outside
+/// included: one job, the last, moves it, to the index `index` made, and to nothing else.
+#[test]
+fn main_is_moved_last_and_only_to_the_index_that_passed_the_check_from_outside() {
+    for image in &IMAGES {
+        let (_, jobs) = workflow(image);
+        let file = image.file;
+        let job = job_named(&jobs, "tag-main", file);
+        let last = jobs.last().map(|j| j.name.as_str());
+        assert_eq!(last, Some("tag-main"), "{file}");
+        for need in ["plan", "index", "outside"] {
+            assert!(job.needs().contains(&need.to_owned()), "{file}: {need}");
+        }
+        assert!(!job.can_mint_an_oidc_token(), "{file}");
+        // No other job names the tag.
+        for other in jobs.iter().filter(|j| j.name != "tag-main") {
+            assert!(
+                other.body.iter().all(|l| !l.contains("$IMAGE:main")),
+                "{file}: `{}` names main",
+                other.name
+            );
+        }
+        let steps = job.steps();
+        let step = steps
+            .iter()
+            .find(|s| s[0].contains("name: main moves to the checked index"))
+            .unwrap_or_else(|| panic!("{file}: `tag-main` has no step that moves main"));
+        assert_eq!(
+            step_value(step, "env", "LINE"),
+            Some("${{ needs.index.outputs.image }}"),
+            "{file}"
+        );
+        let run = run_lines(step);
+        let at = |line: &str| {
+            run.iter()
+                .position(|l| l == line)
+                .unwrap_or_else(|| panic!("{file}: no `{line}` in {run:#?}"))
+        };
+        let shape = at("[[ \"$LINE\" =~ ^\"$IMAGE\"@sha256:[0-9a-f]{64}$ ]] \\");
+        let order = at("order=$(node tools/image-registry.mjs order \"$SHA\")");
+        let stay =
+            at("sha-only:*) echo \"::notice::main is not moved: ${order#sha-only: }\"; exit 0 ;;");
+        let create = at("docker buildx imagetools create --tag \"$IMAGE:main\" \"$LINE\"");
+        let read = at(
+            "tagged=$(docker buildx imagetools inspect \"$IMAGE:main\" --format '{{json .Manifest}}' | jq -r .digest)",
+        );
+        let compare = at("if [ \"$tagged\" != \"${LINE#*@}\" ]; then");
+        assert!(
+            shape < order && order < stay && stay < create && create < read && read < compare,
+            "{file}: {run:#?}"
+        );
+        let mains = run.iter().filter(|l| l.contains("--tag")).count();
+        assert_eq!(mains, 1, "{file}: one tag, main: {run:#?}");
+    }
+}
+
 /// #4498: "from outside" means it: the job that pulls and checks holds no write, can mint no
 /// token, never signs in to the registry, and runs on what a person would run.
 #[test]
@@ -562,12 +721,11 @@ fn each_published_image_is_pulled_and_checked_with_no_sign_in() {
         let (_, jobs) = workflow(image);
         let file = image.file;
         let outside = job_named(&jobs, "outside", file);
-        let held = if image.released {
-            pairs(&[("attestations", "read"), ("contents", "read")])
-        } else {
-            pairs(&[("contents", "read")])
-        };
-        assert_eq!(outside.permissions(), Some(held), "{file}");
+        assert_eq!(
+            outside.permissions(),
+            Some(pairs(&[("attestations", "read"), ("contents", "read")])),
+            "{file}"
+        );
         assert_eq!(
             outside.condition(),
             Some("needs.plan.outputs.publish == 'true'"),
@@ -580,12 +738,7 @@ fn each_published_image_is_pulled_and_checked_with_no_sign_in() {
                 .all(|s| action(s) != Some("docker/login-action")),
             "{file}: it never signs in to the registry"
         );
-        let needs: &[&str] = if image.released {
-            &["plan", "index", "attest"]
-        } else {
-            &["plan", "index"]
-        };
-        assert_eq!(outside.needs(), needs, "{file}");
+        assert_eq!(outside.needs(), ["plan", "index", "attest"], "{file}");
         let commands = steps.iter().flat_map(|s| run_lines(s)).collect::<Vec<_>>();
         // #4784: one daemon refuses to pull the same index a second time for another platform,
         // so the index is read with no sign-in and each architecture's own image is pulled by
@@ -629,24 +782,22 @@ fn each_published_image_is_pulled_and_checked_with_no_sign_in() {
                 "{file}: {step:#?}"
             );
         }
-        if image.released {
-            assert!(
-                commands.iter().any(|l| l
-                    == "--cert-identity \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF\" \\")
-                    && commands.iter().any(|l| l == "--deny-self-hosted-runners"),
-                "{file}: the provenance is pinned to the ref: {commands:#?}"
-            );
-        }
+        // The provenance, pinned to the same signer (#4513 for the operator's).
+        let identity = exact.replace("--certificate-identity", "--cert-identity");
+        assert!(
+            commands.contains(&identity)
+                && commands.iter().any(|l| l == "--deny-self-hosted-runners"),
+            "{file}: the provenance is pinned to the ref: {commands:#?}"
+        );
         assert!(
             commands.iter().all(|l| !l.contains("docker login")),
             "{file}: {commands:#?}"
         );
-        assert_eq!(
+        assert!(
             commands
                 .iter()
                 .any(|l| l.starts_with("gh attestation verify \"oci://$LINE\"")),
-            image.released,
-            "{file}: only the runner image carries attestations"
+            "{file}: each image carries its attestations"
         );
     }
 }
