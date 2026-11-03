@@ -347,8 +347,10 @@ function core(open: Listed[]) {
     if (cmd === "owed_restarts") return [];
     if (cmd === "finished_tasks") return [...finished];
     if (cmd === "stopping_chats") return [];
+    // A copy, as the core's answer reaches the window over IPC: the window keeps an answer
+    // equal to the one it holds (#4729), so one sharing this fake's chats would change with them.
     if (cmd === "plane_sidebar")
-      return {
+      return structuredClone({
         root: PLANE,
         personas: ["steward", "devops"],
         persona: "steward",
@@ -362,7 +364,7 @@ function core(open: Listed[]) {
           live: false,
           chats: open.filter((chat) => chat.workspace === name).map(asListed),
         })),
-      };
+      });
     if (cmd === "workspace_panels")
       return {
         workspace: a.workspace,
