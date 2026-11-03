@@ -123,14 +123,19 @@ export const TheChatDidntStart: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Start a test chat" }));
-    const go = await canvas.findByRole("button", { name: "Go to Sign-ins" });
-    go.focus();
-    await expect(go).toHaveFocus();
-    await expectFocusInSight();
+    // The step's heading takes the keyboard as it changes, and Tab walks on from there.
+    const heading = await canvas.findByRole("heading", { name: "Try it didn't pass" });
+    await untilFocused(() => heading, "the step's heading");
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Go to Sign-ins" }),
+      "Go to Sign-ins",
+    );
+    expectFocusInSight();
     // Try again stands beside it, the next stop of the keyboard.
     await userEvent.tab();
     await untilFocused(() => canvas.getByRole("button", { name: "Try again" }), "Try again");
-    await expectFocusInSight();
+    expectFocusInSight();
   },
 };
 
