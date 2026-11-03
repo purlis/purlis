@@ -8808,6 +8808,12 @@ fn a_task_chat_whose_real_program_is_killed_reports_failed_to_the_chat_that_aske
     }
     assert_eq!(left.len(), 1, "the asking chat was never told");
     assert_eq!(left[0].summary, "ended without a report");
+    // The record is marked once the report is kept and delivered, on that same thread: the
+    // file is there a moment before the mark is.
+    let failed = || held.chats().handed_from(task).map(|from| from.report) == Some(Owed::Failed);
+    while !failed() && Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     assert_eq!(
         held.chats().handed_from(task).map(|from| from.report),
         Some(Owed::Failed)
