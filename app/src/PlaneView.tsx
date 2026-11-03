@@ -3830,7 +3830,9 @@ export const PlaneView = memo(function PlaneView({
     if (going !== undefined && askedByNow(going.session) !== undefined) return;
     // A close is a layout change, so Undo puts it back (#4763, #4583 rule 3): it ended nothing.
     keyboardInto(
-      change((tabs) => recorded(tabs, closeFocusedPane(tabs, filedIn, isPinned), "Closed the pane.")),
+      change((tabs) =>
+        recorded(tabs, closeFocusedPane(tabs, filedIn, isPinned), "Closed the pane."),
+      ),
     );
     // Nothing ends, and its tasks stay in whatever panes they are in: a chat leaving moves no
     // other pane (#4757).
