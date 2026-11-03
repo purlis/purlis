@@ -292,7 +292,7 @@ pub struct FieldSaid {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FieldKind {
-    /// A one-line input: password, text, email, number, tel, url or search.
+    /// A one-line input: password, text, email, number, tel or url.
     OneLine,
     /// A multi-line text box.
     MultiLine,
