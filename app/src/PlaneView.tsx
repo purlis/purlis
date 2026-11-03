@@ -8772,6 +8772,7 @@ export const PlaneView = memo(function PlaneView({
             curations,
             wrappingUp: [...wrapping],
             restoring: [...restoringChats],
+            endedHere: [...endedHere.keys()],
             // Close other tabs skips the pinned ones (#4762).
             otherTabs: (tab) => otherTabsToClose(tabs, tab, filedIn, isPinned),
             // Move to window ▸ lists every other window of the project (#4768).
@@ -8846,6 +8847,7 @@ export const PlaneView = memo(function PlaneView({
       liveNames,
       wrapping,
       restoringChats,
+      endedHere,
       isPinned,
       windowsHere,
       tabWindow,

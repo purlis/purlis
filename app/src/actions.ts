@@ -946,6 +946,10 @@ export type Now = {
   /** The chats a launch has still to start (`restoring.rs`): none has a close until it has
    *  started, since there is no program yet to end. */
   restoring?: readonly number[];
+  /** The chats ended on purpose that a pane still shows, under the ended band (#5019): the core
+   *  has closed them, so they have no rows, and the band's Resume and Clear pane are their ways
+   *  out. */
+  endedHere?: readonly number[];
   /** The tabs Close other tabs on tab `tab` would close (#4762): every other tab on its strip
    *  but the pinned ones (`tabs.otherTabsToClose`). None where the window does not say. */
   otherTabs?: (tab: number) => readonly number[];
@@ -3140,7 +3144,15 @@ export function catalogue(now: Now): Offer[] {
     else offers.push({ ...can(id, title, { verb: "closeOtherTabs", tab, closes }), ...only });
   }
 
-  offers.push(...stopRows(now.listed ?? [], now.stopping ?? []));
+  // A chat ended on purpose has nothing left to stop (#5019), though the list read before its
+  // end still names it.
+  const endedHere = new Set(now.endedHere ?? []);
+  offers.push(
+    ...stopRows(
+      (now.listed ?? []).filter((chat) => !endedHere.has(chat.session)),
+      now.stopping ?? [],
+    ),
+  );
   offers.push(...taskEndRows(now.listed ?? [], now.stopping ?? []));
   offers.push(...taskRows(now.listed ?? []));
   offers.push(...handedOffRows(now.listed ?? []));
@@ -4232,8 +4244,11 @@ export type ChatHere = { session: number; name: string };
  * each, so a chat with no tab has every row a chat with one has. Named as its tab names it
  * where it is its tab's own, else as the Chats list does.
  */
-export function chatsHere(now: Pick<Now, "tabs" | "listed" | "nameOf">): ChatHere[] {
+export function chatsHere(now: Pick<Now, "tabs" | "listed" | "nameOf" | "endedHere">): ChatHere[] {
   const named = new Map<number, string>();
+  // A chat ended on purpose is here only while its pane still shows it (#5019): a list read
+  // before its end does not bring it back.
+  const ended = new Set(now.endedHere ?? []);
   for (const tab of now.tabs.order) {
     const own = chatOf(now.tabs, tab);
     for (const { session } of panesOf(now.tabs, tab)) {
@@ -4246,7 +4261,7 @@ export function chatsHere(now: Pick<Now, "tabs" | "listed" | "nameOf">): ChatHer
     }
   }
   for (const chat of now.listed ?? [])
-    if (!named.has(chat.session)) named.set(chat.session, chat.name);
+    if (!named.has(chat.session) && !ended.has(chat.session)) named.set(chat.session, chat.name);
   return [...named].map(([session, name]) => ({ session, name }));
 }
 
@@ -4274,7 +4289,15 @@ function chatRows(now: Now): Offer[] {
   // cannot run says why, in the palette, where a person looks for an action that has gone.
   const askLocked = now.ask?.locked ?? null;
   if (askLocked !== null) offers.push(cannot(ASK_LOCKED_ID, "Ask a persona…", askLocked));
+  const endedHere = new Set(now.endedHere ?? []);
   for (const { session, name } of chatsHere(now)) {
+    // **A chat ended on purpose that its pane still shows** (#5019): the core has closed it, so
+    // only what reads it is left, its Activity and its Network. The ended band's Resume and
+    // Clear pane are its ways out, and no End… is offered a second time.
+    if (endedHere.has(session)) {
+      offers.push(...readingRows(session, name));
+      continue;
+    }
     // A shell runs no harness: no tool with skills, no profile to ask a persona on.
     const harnessed = now.askable?.(session) ?? false;
     const task = askedBy(session) !== undefined;
@@ -4358,26 +4381,7 @@ function chatRows(now: Now): Offer[] {
 
     // **Its Activity** (#1495) and **its Network** (#1662), each in a tab of its own. They only
     // read, so they sit above the line.
-    offers.push(
-      {
-        ...can(
-          activityId(session),
-          `Activity of ${name}`,
-          { verb: "openView", view: activityView(session), title: activityTitle(name) },
-          name,
-        ),
-        note: `What ${name} and its tasks said to each other, in a tab of its own.`,
-      },
-      {
-        ...can(
-          networkId(session),
-          `Network of ${name}`,
-          { verb: "openView", view: chatNetworkView(session), title: chatNetworkTitle(name) },
-          name,
-        ),
-        note: `What ${name} can reach now and what it was refused, in a tab of its own.`,
-      },
-    );
+    offers.push(...readingRows(session, name));
 
     // **Restart**: the chat's program ends and starts again on the same conversation, with the
     // project's settings as they are now. Mid-turn it waits for the turn to end, and the row
@@ -4461,6 +4465,31 @@ function chatRows(now: Now): Offer[] {
   return offers;
 }
 
+/** **A chat's Activity (#1495) and Network (#1662) rows**: each opens a view in a tab of its
+ *  own, and only reads. */
+function readingRows(session: number, name: string): Offer[] {
+  return [
+    {
+      ...can(
+        activityId(session),
+        `Activity of ${name}`,
+        { verb: "openView", view: activityView(session), title: activityTitle(name) },
+        name,
+      ),
+      note: `What ${name} and its tasks said to each other, in a tab of its own.`,
+    },
+    {
+      ...can(
+        networkId(session),
+        `Network of ${name}`,
+        { verb: "openView", view: chatNetworkView(session), title: chatNetworkTitle(name) },
+        name,
+      ),
+      note: `What ${name} can reach now and what it was refused, in a tab of its own.`,
+    },
+  ];
+}
+
 /** Why a chat's Branch rows cannot run where purlis has no project to reach the branch in. */
 const NO_PROJECT_FOR_BRANCH = "purlis found no project, so it cannot reach a branch.";
 
@@ -4535,7 +4564,9 @@ function chatInFront(tabs: Tabs): number | undefined {
 function chatBranchRemoveRows(now: Now): Offer[] {
   const offers: Offer[] = [];
   const front = chatInFront(now.tabs);
+  const endedHere = new Set(now.endedHere ?? []);
   for (const { session, name } of chatsHere(now)) {
+    if (endedHere.has(session)) continue;
     const remove = branchRow(now, session, name, branchRemoveId(session), "remove", front);
     if (remove === undefined) continue;
     offers.push({ ...remove, ...(remove.available ? { note: KEEPS_THE_BRANCH } : {}) });
