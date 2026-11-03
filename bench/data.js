@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793680108684,
+  "lastUpdate": 1793682019759,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37170,6 +37170,48 @@ window.BENCHMARK_DATA = {
             "value": 101.12618499999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.083, 100.959, 101.126, 101.382, 101.685 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ab7eba4e66917f6c19dc13a4b85070642c221b4e",
+          "message": "A pool's limits: a runner holds a profile once, and a Docker pool's profile size follows its memory (#4932)\n\n* A runner holds what a profile sends once as it keeps it (#4396)\n\nThe keep takes the profile whole, the credential filter hands back a file\nit has nothing to take out of in the buffer it came in, checked settings\nare a type of their own so settings_kept never checks them twice, and a\nstaged file is trimmed to its bytes once whole. A counting-allocator test\nkeeps a 64 MiB profile within the profile and three files' worth.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FDR3NJ0K3B9BVD78WMG84Z\nPurlis-Persona: steward\n\n* A Docker pool's profile size is held to half its runner's memory (#4396)\n\nA runner holds what a profile sends in its memory as it keeps it, so on a\nDocker pool profileSize is at most half the memory of its runner (the\npool's Memory, or less where the runner was made with less). Carried in\nChosen beside a team's highest, so the page's check and its row, the\ncommand, a chat's proposal and a start's refusal read one value. A start\nover it names the Memory to set and to replace the runner.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FDR3NJ0K3B9BVD78WMG84Z\nPurlis-Persona: steward\n\n* A pool's memory words say to replace a runner made with less, and offer Memory only where it helps (#4396)\n\nFrom review: where the pool's Memory is raised and its runner waits to be\nreplaced, the check, the page and a start's refusal now say to replace it\nrather than to raise Memory again; a profile past what the limit can be at\nall is offered no Memory. The page's words for a highest live in the core.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FDR3NJ0K3B9BVD78WMG84Z\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T04:23:40Z",
+          "tree_id": "50c15e9f084d6254c12afd9be1d92b89b50621f8",
+          "url": "https://github.com/purlis/purlis/commit/ab7eba4e66917f6c19dc13a4b85070642c221b4e"
+        },
+        "date": 1793682013869,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5197435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.515, 0.518, 0.520, 0.530, 0.537 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4576135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.299, 16.333, 16.458, 16.479, 16.611 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.76019500000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.168, 100.973, 101.760, 102.058, 103.000 ms"
           }
         ]
       }
