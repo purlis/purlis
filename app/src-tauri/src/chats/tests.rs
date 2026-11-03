@@ -2610,6 +2610,9 @@ fn a_chat_still_open_never_ended_or_with_no_conversation_is_not_resumed_and_says
     let fresh = chats
         .start(&a_chat_in_with(plane.path(), None), SIZE)
         .expect("starts");
+    // A Claude Code chat is given its conversation's id as it starts: as the restart test of a
+    // chat with no conversation does, the stand-in is made one that never recorded any.
+    lock(&chats.open).get_mut(&fresh).expect("open").chat.resume = None;
     chats.close(fresh).expect("ends");
     let none = chats.resume_ended(fresh, SIZE).unwrap_err();
     assert!(none.contains("no conversation to resume"), "{none}");
