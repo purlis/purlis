@@ -295,6 +295,17 @@ pub(crate) fn cancel_starts(root: &Path) {
     }
 }
 
+/// **Whether this thread's start may wait on the person** (#5074): only a start from the
+/// person's dialog, which they can cancel. Any other may run under a lock window commands wait on.
+pub(crate) fn a_start_may_wait() -> bool {
+    can_be_cancelled()
+}
+
+/// Whether the person cancelled this thread's start (#5074).
+pub(crate) fn a_start_was_cancelled() -> bool {
+    was_cancelled()
+}
+
 fn was_cancelled() -> bool {
     CANCEL.with_borrow(|held| held.as_ref().is_some_and(|one| one.load(Ordering::SeqCst)))
 }

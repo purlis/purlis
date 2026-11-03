@@ -463,9 +463,13 @@ fn read_team(root: &Path, key: &str) -> Result<String, crate::secrets::VaultErro
 fn a_read_of_a_key_the_vault_holds_asks_nothing() {
     let project = project();
     let asks = Asks::new(project.path());
-    let got = asks.read_asking(need(7, "TOKEN"), Duration::ZERO, &mut |_| {}, &mut || {
-        read_team(project.path(), "TOKEN")
-    });
+    let got = asks.read_asking(
+        need(7, "TOKEN"),
+        Duration::ZERO,
+        &|| false,
+        &mut |_| {},
+        &mut || read_team(project.path(), "TOKEN"),
+    );
     assert_eq!(got.ok().as_deref(), Some("t0ken"));
     assert!(asks.open().is_empty());
 }
@@ -479,6 +483,7 @@ fn a_read_of_a_missing_key_waits_on_its_secret_ask_and_reads_the_value_filled() 
             asks.read_asking(
                 need(7, "MISSING"),
                 Duration::from_secs(60),
+                &|| false,
                 &mut |_| {},
                 &mut || read_team(project.path(), "MISSING"),
             )
@@ -501,9 +506,13 @@ fn a_read_of_a_missing_key_that_is_declined_or_unanswered_says_so_and_reads_noth
     let project = project();
     let asks = Asks::new(project.path());
     let unanswered = asks
-        .read_asking(need(7, "MISSING"), Duration::ZERO, &mut |_| {}, &mut || {
-            read_team(project.path(), "MISSING")
-        })
+        .read_asking(
+            need(7, "MISSING"),
+            Duration::ZERO,
+            &|| false,
+            &mut |_| {},
+            &mut || read_team(project.path(), "MISSING"),
+        )
         .unwrap_err();
     assert_eq!(
         unanswered.to_string(),
@@ -513,9 +522,13 @@ fn a_read_of_a_missing_key_that_is_declined_or_unanswered_says_so_and_reads_noth
     asks.answer(&ctx(project.path()), id, Answer::Decline, window())
         .unwrap();
     let declined = asks
-        .read_asking(need(7, "MISSING"), Duration::ZERO, &mut |_| {}, &mut || {
-            read_team(project.path(), "MISSING")
-        })
+        .read_asking(
+            need(7, "MISSING"),
+            Duration::ZERO,
+            &|| false,
+            &mut |_| {},
+            &mut || read_team(project.path(), "MISSING"),
+        )
         .unwrap_err();
     assert_eq!(declined.to_string(), "declined team/MISSING");
 }
@@ -525,11 +538,17 @@ fn a_read_the_vault_refuses_for_anything_but_a_missing_key_asks_nothing() {
     let project = project();
     let asks = Asks::new(project.path());
     let why = asks
-        .read_asking(need(7, "MISSING"), Duration::ZERO, &mut |_| {}, &mut || {
-            Err::<String, _>(crate::secrets::VaultError::unavailable(
-                "the vault is locked",
-            ))
-        })
+        .read_asking(
+            need(7, "MISSING"),
+            Duration::ZERO,
+            &|| false,
+            &mut |_| {},
+            &mut || {
+                Err::<String, _>(crate::secrets::VaultError::unavailable(
+                    "the vault is locked",
+                ))
+            },
+        )
         .unwrap_err();
     assert_eq!(why.to_string(), "the vault is locked");
     assert!(asks.open().is_empty(), "nothing asked");
@@ -567,7 +586,35 @@ fn a_start_waits_on_the_same_ask_as_a_chat_and_is_counted_but_never_named() {
     // A decline is a chat's to keep: the next start is asked afresh.
     let (held, _) = held_for_nothing(&asks, a_start("MISSING"));
     assert!(matches!(held, Held::StillOpen { .. }), "{held:?}");
-    assert_eq!(asks.open().len(), 1);
+    let open = asks.open();
+    assert_eq!(open.len(), 1);
+    assert_eq!(
+        open[0].waiting(),
+        1,
+        "a start that stopped waiting is still what the ask is for: {open:?}"
+    );
+    // One that asks again takes its place.
+    held_for_nothing(&asks, a_start("MISSING"));
+    assert_eq!(asks.open()[0].waiting(), 1);
+}
+
+#[test]
+fn a_hold_told_to_stop_stops_waiting_and_leaves_the_ask_open() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let started = std::time::Instant::now();
+    let held = asks.hold_unless(
+        a_start("MISSING"),
+        Duration::from_secs(60),
+        &|| true,
+        &mut |_| {},
+    );
+    assert!(matches!(held, Held::StillOpen { .. }), "{held:?}");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "it stopped at once"
+    );
+    assert_eq!(asks.open().len(), 1, "the ask stays open");
 }
 
 #[test]

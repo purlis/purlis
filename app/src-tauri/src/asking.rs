@@ -1658,7 +1658,7 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
     let used_by = match open.tool.as_deref() {
         Some(tool) => format!(" for {tool}"),
         None if open.chats.is_empty() && open.starts > 0 => {
-            " for a chat starting on its profile".to_owned()
+            " for a chat that is starting".to_owned()
         }
         None => String::new(),
     };

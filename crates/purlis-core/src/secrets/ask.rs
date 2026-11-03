@@ -19,8 +19,9 @@
 //!   ask stays open, and the chat is nudged when it is answered ([`Answered::nudge`]).
 //! - **One ask per vault and key** in a project, whichever chats miss it: a second chat joins
 //!   the open ask, which says how many wait ([`Open::waiting`]), and one fill settles them all.
-//! - **Every read purlis makes for a chat asks alike** (#5074): a brokered run's, a browser
-//!   login's and a profile's credential at a chat's start, each through [`Asks::read_asking`].
+//! - **Every read purlis makes for a chat asks alike** (#5074): a brokered run's, through
+//!   [`Asks::hold`] for each key its run misses, and a browser login's and a profile's
+//!   credential at a chat's start, each through [`Asks::read_asking`].
 //!   A start has no chat number yet ([`Need::chat`] is `None`): it waits as a chat's command
 //!   does and is counted among the waiting, but is never nudged, keeps no decline, and is traced
 //!   under [`crate::trace::NO_SESSION`].
@@ -75,7 +76,7 @@ pub struct Open {
     /// Each chat that needs it, the first to ask first: those holding a command, and those
     /// whose command stopped waiting and will be nudged.
     pub chats: Vec<u32>,
-    /// How many chats' starts wait on it now, which have no number yet (#5074).
+    /// How many chats' starts asked for it, which have no number yet (#5074).
     pub starts: usize,
     /// When it was raised, in seconds since 1970.
     pub since: u64,
@@ -207,10 +208,13 @@ pub fn holds_for(harness: Option<Harness>) -> Duration {
 }
 
 /// **How long a chat's start waits on a Secret ask for its profile's credential** (#5074): no
-/// harness runs yet to kill it, and the person who starts a chat is most often at the window, so
-/// five minutes. Then it is refused, saying so, and the ask stays open: a start once it is
-/// answered reads the value filled.
+/// harness runs yet to kill it, and only a start the person made from the window, which they can
+/// cancel, waits at all, so five minutes. Then it is refused, saying so, and the ask stays open:
+/// the person starts it again once it is answered, which reads the value filled.
 pub const START_HOLDS_FOR: Duration = Duration::from_secs(5 * 60);
+
+/// How often a hold looks whether it is to stop ([`Asks::hold_unless`]).
+pub const STOP_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
 
 fn vault_and_key(vault: &str, key: &str) -> String {
     format!("{vault}/{key}")
@@ -282,6 +286,18 @@ impl Asks {
     /// nothing asked, where this chat declined it before. `say` tells the command, as it starts
     /// to wait, what it waits on.
     pub fn hold(&self, need: Need, within: Duration, say: &mut dyn FnMut(&str)) -> Held {
+        self.hold_unless(need, within, &|| false, say)
+    }
+
+    /// [`Asks::hold`], which also stops waiting, as its hold running out does, once `stop` says
+    /// so: a start its person cancelled (#5074). Looked at every [`STOP_LOOKED_AT_EVERY`].
+    pub fn hold_unless(
+        &self,
+        need: Need,
+        within: Duration,
+        stop: &dyn Fn() -> bool,
+        say: &mut dyn FnMut(&str),
+    ) -> Held {
         let Need {
             chat,
             persona,
@@ -345,7 +361,16 @@ impl Asks {
                 line: declined_said(&vault, &key),
             },
         };
-        match answered.recv_timeout(within) {
+        let until = std::time::Instant::now() + within;
+        let heard = loop {
+            let left = until.saturating_duration_since(std::time::Instant::now());
+            match answered.recv_timeout(left.min(STOP_LOOKED_AT_EVERY)) {
+                Err(mpsc::RecvTimeoutError::Timeout)
+                    if std::time::Instant::now() < until && !stop() => {}
+                heard => break heard,
+            }
+        };
+        match heard {
             Ok(settled) => settled_as(settled),
             // Its chat closed meanwhile.
             Err(mpsc::RecvTimeoutError::Disconnected) => Held::StillOpen {
@@ -375,11 +400,13 @@ impl Asks {
     /// what a browser login's and a profile's credential read with, so each asks as a brokered
     /// run does. `read` is the read of exactly that key, and is read once more once the person
     /// fills it; a key still missing then is refused as the vault refuses it, never asked
-    /// twice. Any other refusal of the vault's asks nothing. `say` is [`Asks::hold`]'s.
+    /// twice. Any other refusal of the vault's asks nothing. `stop` and `say` are
+    /// [`Asks::hold_unless`]'s.
     pub fn read_asking<T>(
         &self,
         need: Need,
         within: Duration,
+        stop: &dyn Fn() -> bool,
         say: &mut dyn FnMut(&str),
         read: &mut dyn FnMut() -> Result<T, super::VaultError>,
     ) -> Result<T, Unread> {
@@ -387,7 +414,7 @@ impl Asks {
             Err(e) if e.kind == super::Kind::NotFound => {}
             got => return got.map_err(Unread::Vault),
         }
-        match self.hold(need, within, say) {
+        match self.hold_unless(need, within, stop, say) {
             Held::Filled => read().map_err(Unread::Vault),
             Held::Declined { line } | Held::StillOpen { line } => Err(Unread::Asked(line)),
         }
@@ -468,6 +495,7 @@ impl Asks {
         };
         let chats = chats_of(&asked);
         let started = asked.waiters.iter().any(|waiter| waiter.chat.is_none());
+        let waiting = waiting_on(&asked);
         let settled = if filled {
             Settled::Filled
         } else {
@@ -476,7 +504,8 @@ impl Asks {
         let mut nudge = Vec::new();
         for waiter in asked.waiters {
             let told = waiter.tell.is_some_and(|tell| tell.send(settled).is_ok());
-            // A start that stopped waiting has nobody to nudge: it is started again.
+            // A start that stopped waiting has nobody to nudge: its refusal told the person to
+            // start it again.
             if let Some(chat) = waiter.chat
                 && !told
                 && !nudge.contains(&chat)
@@ -491,7 +520,6 @@ impl Asks {
         }
         drop(inner);
         let what = if filled { "filled" } else { "declined" };
-        let waiting = chats.len() + usize::from(started);
         for &chat in &chats {
             self.trace(Some(chat), what, &vault, &key, waiting);
         }
@@ -541,13 +569,14 @@ fn chats_of(asked: &Asked) -> Vec<u32> {
     chats
 }
 
-/// How many chats' starts hold on `asked` now: one that stopped waiting is started again, and
-/// is not counted.
+/// How many chats' starts asked for `asked`: those holding on it, and one that stopped waiting,
+/// whose person was told to start it again once it is answered. A start that asks again takes
+/// the place of one that stopped ([`Asks::hold`]).
 fn starts_of(asked: &Asked) -> usize {
     asked
         .waiters
         .iter()
-        .filter(|waiter| waiter.chat.is_none() && waiter.tell.is_some())
+        .filter(|waiter| waiter.chat.is_none())
         .count()
 }
 

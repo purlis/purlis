@@ -2160,8 +2160,8 @@ fn a_credential_a_start_misses_is_a_secret_ask_of_no_chat_saying_a_start_waits()
     assert_eq!(ask.secret.as_ref().map(|s| s.waiting), Some(1));
     assert_eq!(
         ask.says,
-        "Needs anthropic from dev's vault providers for a chat starting on its profile. Fill \
-         stores it in that vault on this machine; the chat never sees it"
+        "Needs anthropic from dev's vault providers for a chat that is starting. Fill stores it \
+         in that vault on this machine; the chat never sees it"
     );
 }
 

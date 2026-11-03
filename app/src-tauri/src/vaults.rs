@@ -266,6 +266,7 @@ pub(crate) fn run_brokered(
         asks: held.secret_asks(),
         within: purlis_core::secrets::ask::holds_for(asker.harness),
         moved: &|| held.chats().asks_may_have_moved(),
+        stop: None,
     };
     brokered::serve_recording(
         &asker,

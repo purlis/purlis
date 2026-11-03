@@ -269,11 +269,13 @@ pub fn read(
                     tool: None,
                 };
                 missing
-                    .asks
-                    .read_asking(need, missing.within, &mut |_| (missing.moved)(), &mut once)
+                    .read_asking(need, &mut once)
                     .map_err(|unread| match unread {
                         crate::secrets::ask::Unread::Vault(e) => refused(&e.message),
-                        crate::secrets::ask::Unread::Asked(line) => refused(&line),
+                        // What to do: start it again, which asks afresh, or reads the fill.
+                        crate::secrets::ask::Unread::Asked(line) => {
+                            format!("{}; start the chat again to be asked again", refused(&line))
+                        }
                     })?
             }
         };

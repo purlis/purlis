@@ -1181,6 +1181,27 @@ pub struct Missing<'a> {
     pub within: Duration,
     /// Told once an ask is raised or joined, so the window lists it.
     pub moved: &'a (dyn Fn() + Sync),
+    /// Whether to stop waiting before `within` runs out: a start its person cancelled (#5074).
+    /// None for a run, which its harness ends.
+    pub stop: Option<&'a (dyn Fn() -> bool + Sync)>,
+}
+
+impl Missing<'_> {
+    /// [`super::ask::Asks::read_asking`] for `need`, holding at most [`Self::within`], or until
+    /// [`Self::stop`] says so, and telling [`Self::moved`] once it asks (#5074).
+    pub fn read_asking<T>(
+        &self,
+        need: super::ask::Need,
+        read: &mut dyn FnMut() -> Result<T, super::VaultError>,
+    ) -> Result<T, super::ask::Unread> {
+        self.asks.read_asking(
+            need,
+            self.within,
+            self.stop.unwrap_or(&|| false),
+            &mut |_| (self.moved)(),
+            read,
+        )
+    }
 }
 
 /// [`serve`], telling `reached` each connection the run made (#1667): through its proxy, and
@@ -1416,12 +1437,11 @@ fn read_login(
             tool: Some(name.to_owned()),
         };
         missing
-            .asks
-            .read_asking(need, missing.within, &mut |_| (missing.moved)(), &mut once)
+            .read_asking(need, &mut once)
             .map(Secret::new)
             .map_err(|unread| match unread {
                 super::ask::Unread::Vault(e) => refused(&e),
-                super::ask::Unread::Asked(line) => format!("{line}: nothing was filled"),
+                super::ask::Unread::Asked(line) => format!("{line}, so nothing was filled"),
             })
     };
     let identity = identity_of_ready(asker, name, ready)?;

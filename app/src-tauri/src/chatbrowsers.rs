@@ -3293,6 +3293,38 @@ fn secret_missing<'a>(
         asks: held.secret_asks(),
         within: purlis_core::secrets::ask::holds_for(asker.harness),
         moved,
+        stop: None,
+    }
+}
+
+/// **The login `tool` the person allowed chat `session`, once `read`** (#4595, #5074): Allow
+/// once goes with it as it is read, so two calls never both fill it and a read that fails leaves
+/// nothing behind, but for a read that ended waiting on a Secret ask still open for the chat,
+/// which keeps it for the chat's retry once the person answers. Refused, filling nothing, where
+/// it changed or was used meanwhile.
+fn taken_as_read<T>(
+    held: &crate::planes::Held,
+    session: u32,
+    persona: Option<&str>,
+    name: &str,
+    tool: &purlis_core::sandbox::tools::Tool,
+    read: Result<T, String>,
+) -> Result<T, String> {
+    let waits_on_a_secret = || {
+        held.secret_asks()
+            .open()
+            .iter()
+            .any(|open| open.chats.contains(&session))
+    };
+    if read.is_err() && waits_on_a_secret() {
+        return read;
+    }
+    match held.login_grants().take(session, persona, name) {
+        Some(taken) if taken == *tool => read,
+        Some(_) => Err(format!("login {name} changed, so nothing was filled")),
+        None => Err(format!(
+            "login {name} was used already, so nothing was filled"
+        )),
     }
 }
 
@@ -3309,18 +3341,22 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
     // One the person allowed from its notice (#4595): nothing of it is kept, on disk or sealed.
     if let Some(tool) = held
         .login_grants()
-        .take(session, asker.persona.as_deref(), name)
+        .granted(session, asker.persona.as_deref(), name)
     {
         // Policy changed since the press holds a grant too.
         let persona = asker.persona.as_deref().unwrap_or_default();
         if let Some(why) = crate::loginasks::refused_now(held.root(), persona, &tool) {
             return Err(why);
         }
-        let (login, identity) = purlis_core::secrets::brokered::granted_login(
+        // Read before Allow once goes with it: a read that waits on a Secret ask and is not
+        // answered in time leaves it for the chat's retry (#5074).
+        let read = purlis_core::secrets::brokered::granted_login(
             &asker,
             &tool,
             Some(&secret_missing(held, &asker, &moved)),
-        )?;
+        );
+        let (login, identity) =
+            taken_as_read(held, session, asker.persona.as_deref(), name, &tool, read)?;
         return Ok(LoginRead {
             login,
             opens: false,
@@ -3445,22 +3481,16 @@ fn pool_login_of(
     {
         return Err(why);
     }
-    let taken = grants.take(session, asker.persona.as_deref(), name);
+    // Read before Allow once goes with it: a read that waits on a Secret ask and is not
+    // answered in time leaves it for the chat's retry (#5074).
     let moved = || held.chats().asks_may_have_moved();
     let missing = secret_missing(held, &asker, &moved);
-    let (login, identity) = match (&granted, &taken) {
-        (Some(granted), Some(taken)) if granted != taken => {
-            return Err(format!("login {name} changed, so nothing was filled"));
+    let (login, identity) = match &granted {
+        Some(tool) => {
+            let read = purlis_core::secrets::brokered::granted_login(&asker, tool, Some(&missing));
+            taken_as_read(held, session, asker.persona.as_deref(), name, tool, read)?
         }
-        (Some(_), None) => {
-            return Err(format!(
-                "login {name} was used already, so nothing was filled"
-            ));
-        }
-        (Some(_), Some(tool)) => {
-            purlis_core::secrets::brokered::granted_login(&asker, tool, Some(&missing))?
-        }
-        (None, _) => purlis_core::secrets::brokered::login_and_identity_for(
+        None => purlis_core::secrets::brokered::login_and_identity_for(
             &asker,
             name,
             true,

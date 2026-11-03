@@ -1,4 +1,4 @@
-### Changed
+### Added
 
 - A browser login whose password or user name is missing from its vault, and a profile whose
   credential is missing from its vault, now ask you for it the way a missing secret for a command
