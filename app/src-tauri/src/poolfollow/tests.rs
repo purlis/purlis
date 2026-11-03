@@ -299,8 +299,11 @@ fn a_machine_whose_runners_are_suspended(config: &std::path::Path) -> Machine {
         format!(
             "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1 $2\" in\n  'container inspect') \
              echo '[{{\"State\":{{\"Running\":false,\"FinishedAt\":\"{STOPPED_AT}\"}}}}]' ;;\n\
+             'container ls') for a in \"$@\"; do case $a in id=*) echo \"${{a#id=}}\" ;; esac; done ;;\n\
+             'run --rm') cat '{conversations}' 2>/dev/null || echo 'conversations 0 0 0' ;;\n\
              esac\nexit 0\n",
-            config.join("log").display()
+            config.join("log").display(),
+            conversations = config.join("conversations").display(),
         ),
     )
     .unwrap();
@@ -354,7 +357,7 @@ fn a_runner_that_stopped_during_its_drain_keeps_its_home() {
     let said = follow_and_drain(&machine, None, &|_| panic!("a stopped runner is not asked"));
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
-    assert!(said[0].contains("removed in Devices"), "{said:?}");
+    assert!(said[0].contains("discarded in Devices"), "{said:?}");
 }
 
 /// **A link started it again, so it runs and lists no chat, and that says nothing**: what the stop
@@ -532,4 +535,133 @@ fn a_runner_carried_from_but_not_unpaired_is_still_asked() {
     follow_and_drain(&machine, None, &|_| Ok(1));
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+}
+
+/// **An update's runner that had stopped before its drain, its home holding a chat's
+/// conversation, is kept** (#4633, ruled 2026-11-02): not woken, not removed, and said once.
+#[test]
+fn a_runner_that_stopped_before_its_drain_keeps_a_home_that_holds_a_conversation() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_whose_runners_are_suspended(config.path());
+    a_pool_draining(&machine);
+    drained_having_stopped_at(&machine, STOPPED_AT_SECS);
+    std::fs::write(config.path().join("conversations"), "conversations 3 3 0\n").unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| {
+        panic!("a suspended runner is not asked")
+    });
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+    assert!(said[0].contains("conversations"), "{said:?}");
+    assert!(
+        purlis_core::runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .held
+    );
+    let log = std::fs::read_to_string(config.path().join("log")).unwrap();
+    assert!(!log.contains("start "), "{log}");
+    assert!(follow_and_drain(&machine, None, &|_| panic!("not asked")).is_empty());
+}
+
+/// **A home that could not be read keeps its runner as it is**, neither held nor removed, until a
+/// look reads it.
+#[test]
+fn a_stopped_runner_whose_home_could_not_be_read_stays() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_whose_runners_are_suspended(config.path());
+    a_pool_draining(&machine);
+    drained_having_stopped_at(&machine, STOPPED_AT_SECS);
+    std::fs::write(config.path().join("conversations"), "").unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| {
+        panic!("a suspended runner is not asked")
+    });
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+    assert!(said[0].contains("its home is read"), "{said:?}");
+    assert!(
+        !purlis_core::runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .held
+    );
+}
+
+/// A machine in `config` whose `docker` reaches engine `engine-a`, lists no container, and still
+/// lists each runner's home, made at [`HOME_MADE`], holding what `conversations` says.
+fn a_machine_whose_draining_runner_was_pruned(config: &std::path::Path) -> Machine {
+    let machine = a_machine(config);
+    std::fs::write(
+        config.join("docker"),
+        format!(
+            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  \
+             'volume ls') echo purlis-runner-first-home ;;\n  \
+             'volume inspect') echo '[{{\"CreatedAt\":\"{HOME_MADE}\"}}]' ;;\n  \
+             'info --format') echo engine-a ;;\n  \
+             'run --rm') cat '{conversations}' ;;\n  \
+             'container inspect') echo 'no such container' >&2; exit 1 ;;\n\
+             esac\nexit 0\n",
+            log = config.join("log").display(),
+            conversations = config.join("conversations").display(),
+        ),
+    )
+    .unwrap();
+    machine
+}
+
+const HOME_MADE: &str = "2026-10-01T00:00:00Z";
+
+/// Pool `first` draining its runner `first`, made on `engine-a` with its home made at
+/// [`HOME_MADE`], whose container was then removed outside purlis.
+fn a_pool_draining_a_pruned_runner(machine: &Machine) {
+    a_pool_draining(machine);
+    let locked = purlis_core::runners::lock(&machine.config);
+    purlis_core::runners::note_locked(
+        &machine.config,
+        "first",
+        |kept| {
+            kept.engine = Some("engine-a".into());
+            kept.home_created = Some(HOME_MADE.into());
+        },
+        &locked,
+    )
+    .unwrap();
+}
+
+/// **A draining runner not yet held, its container removed outside purlis, is kept where its home
+/// holds a conversation** (#4168, #4633): the same rule as after an update.
+#[test]
+fn a_pruned_draining_runner_keeps_a_home_that_holds_a_conversation() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_whose_draining_runner_was_pruned(config.path());
+    a_pool_draining_a_pruned_runner(&machine);
+    std::fs::write(config.path().join("conversations"), "conversations 1 1 0\n").unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| panic!("a pruned runner is not asked"));
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+    assert!(said[0].contains("conversations"), "{said:?}");
+    assert!(
+        purlis_core::runners::named(config.path(), "first")
+            .unwrap()
+            .unwrap()
+            .held
+    );
+    let log = std::fs::read_to_string(config.path().join("log")).unwrap();
+    assert!(!log.contains("volume rm"), "{log}");
+}
+
+/// **One whose home holds none goes as before** (#4168): forgotten, what is left removed.
+#[test]
+fn a_pruned_draining_runner_whose_home_holds_none_is_forgotten() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_whose_draining_runner_was_pruned(config.path());
+    a_pool_draining_a_pruned_runner(&machine);
+    std::fs::write(config.path().join("conversations"), "conversations 0 0 0\n").unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| panic!("a pruned runner is not asked"));
+
+    assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
+    assert!(said[0].contains("removed outside purlis"), "{said:?}");
 }
