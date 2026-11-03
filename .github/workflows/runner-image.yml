@@ -362,7 +362,7 @@ jobs:
     needs: [plan, image]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     # `id-token` mints the OIDC token cosign signs with, through Sigstore's public-good
     # instance; nothing else in the workflow can mint one. `contents: read` is for the checkout
     # of the commit's own tools and for comparing two commits of `main`.
@@ -682,7 +682,7 @@ jobs:
     needs: [plan, index, attest]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       attestations: read
       contents: read
@@ -732,7 +732,7 @@ jobs:
     needs: [plan, index, outside]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5
     # `contents: read` is for the checkout of the commit's own tools and for comparing two
     # commits of `main`; `packages: write` moves the tag. It signs nothing.
     permissions:
