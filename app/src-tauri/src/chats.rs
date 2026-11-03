@@ -5471,6 +5471,12 @@ impl Chats {
         lock(&self.layout).as_ref()?.window_showing(session)
     }
 
+    /// The window with a tab that has chat `session` in a pane (`Layout::window_naming`): where
+    /// a press on it goes. None where no tab does, or no layout is held.
+    pub fn window_naming(&self, session: u32) -> Option<u32> {
+        lock(&self.layout).as_ref()?.window_naming(session)
+    }
+
     /// **Move to new window** (`to` none) or **Move to window ▸**: the `nth` tab of window
     /// `from` goes to that window as its front tab, in one step (`Layout::move_tab`). Answers
     /// the window it is in now. Refused, saying why and changing nothing, where no layout is

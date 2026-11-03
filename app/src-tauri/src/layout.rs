@@ -170,6 +170,7 @@ impl From<core::Layout> for LaidOut {
 #[tauri::command]
 #[specta::specta]
 pub(crate) fn window_layout(
+    app: tauri::AppHandle,
     window: tauri::Window,
     showing: tauri::State<'_, crate::planes::Showing>,
     planes: tauri::State<'_, crate::planes::Planes>,
@@ -185,6 +186,10 @@ pub(crate) fn window_layout(
         None => 0,
     };
     held.chats().lay_out_window(number, layout.into())?;
+    // A tab window whose last tab the person closed goes with it.
+    if number != 0 {
+        crate::tabwindows::close_unnamed(&app, &plane, &held);
+    }
     // A reported task that was held because the person was reading it is looked at again, as
     // it is whenever what is on screen moves (#1485).
     crate::dispatched::front_moved(&held);

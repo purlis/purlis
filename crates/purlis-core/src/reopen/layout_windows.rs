@@ -111,6 +111,16 @@ impl Layout {
             .map(|tab| tab.window)
     }
 
+    /// **The window a press on chat `number` goes to** (#4768): the one with a tab that has it
+    /// in a pane, in front or not, or none where no tab does. A chat is in one pane at most, so
+    /// there is one.
+    pub fn window_naming(&self, number: u32) -> Option<u32> {
+        self.tabs
+            .iter()
+            .find(|tab| tab.tree.chats().contains(&number))
+            .map(|tab| tab.window)
+    }
+
     /// Where the `nth` tab of window `window` is among every tab: what a window, which knows
     /// only its own tabs, names a tab by.
     pub fn place_of(&self, window: u32, nth: usize) -> Option<usize> {

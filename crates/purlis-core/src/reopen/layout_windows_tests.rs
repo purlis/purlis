@@ -389,3 +389,21 @@ fn a_window_names_a_tab_by_its_place_among_its_own_tabs() {
     assert_eq!(layout.place_of(2, 0), Some(1));
     assert_eq!(layout.place_of(2, 1), None);
 }
+
+#[test]
+fn a_press_on_a_chat_in_a_tab_window_goes_to_that_window_in_front_or_behind() {
+    let layout = ops(vec![
+        tab(Some("ops"), 0, true, 1),
+        tab(Some("ops"), 2, true, 5),
+        tab(Some("ops"), 2, false, 6),
+    ]);
+
+    assert_eq!(layout.window_naming(5), Some(2));
+    assert_eq!(layout.window_naming(6), Some(2), "a tab behind there too");
+    assert_eq!(layout.window_naming(1), Some(0));
+    assert_eq!(
+        layout.window_naming(9),
+        None,
+        "in no pane: the press is this window's"
+    );
+}
