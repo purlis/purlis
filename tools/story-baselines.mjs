@@ -55,11 +55,14 @@ export const BASELINE =
 /** How much `take` takes at most: bytes in one baseline, baselines in one run, and bytes in
  *  all of them together, which bounds what one commit pushes. A story's picture is tens of
  *  kilobytes; a dialog's on the page, a few hundred. Each story has a picture in each pictured
- *  cell and each browser, twenty today (#3040). */
+ *  cell and each browser, twenty today (#3040). A run's artifact keeps every baseline, not
+ *  only those that changed: on 2026-11-03 that was 10,140 pictures and about 290 MB, so the
+ *  caps leave room for the stories to grow. A commit still pushes only the pictures that
+ *  changed, and each one is still held to `bytes`, the PNG check and the name. */
 export const LIMITS = {
   bytes: 2 * 1024 * 1024,
-  files: 12000,
-  total: 256 * 1024 * 1024,
+  files: 20000,
+  total: 512 * 1024 * 1024,
 };
 
 /** The widest and tallest picture a story is drawn at, in pixels. */

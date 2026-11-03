@@ -18,6 +18,7 @@ import { test } from "node:test";
 
 import {
   BASELINE,
+  LIMITS,
   gather,
   pictureName,
   picturedCells,
@@ -420,6 +421,19 @@ test("a compact cell's baseline is live where that cell is pictured", () => {
   const app = tree({ "src/settings/Choice.stories.tsx": "", [compact]: PNG });
   assert.deepEqual(problems(app, INDEX, ["purlis_dark_compact"]), []);
   assert.equal(problems(app, INDEX, CELLS).length, 1);
+});
+
+test("the default caps take a whole stories run, which keeps every cell's baselines", () => {
+  // A run's artifact holds every baseline, not only the changed ones: on 2026-11-03 that was
+  // 10,140 pictures and about 290 MB, which the old 256 MB cap refused on ordinary PRs
+  // (#4663, #4917). The caps leave room for the stories to grow.
+  assert.ok(LIMITS.files > 10140, `files cap ${LIMITS.files}`);
+  assert.ok(LIMITS.total > 290 * 1024 * 1024, `total cap ${LIMITS.total}`);
+  assert.deepEqual(LIMITS, {
+    bytes: 2 * 1024 * 1024,
+    files: 20000,
+    total: 512 * 1024 * 1024,
+  });
 });
 
 test("take refuses baselines over the total cap, and writes nothing", () => {
