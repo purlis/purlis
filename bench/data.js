@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793676837457,
+  "lastUpdate": 1793678439510,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37086,6 +37086,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8600385,
             "unit": "ms",
             "extra": "median of 5 runs: 101.223, 101.501, 101.860, 101.956, 102.189 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c841814f17d143649dde885d12d793922d5945e3",
+          "message": "The strip: name tabs, one pin, and room (#4762) (#4916)\n\n* The strip: name tabs, one pin, and room (#4762) — work so far\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX17DX3MEH33P6TAYFD4TW\nPurlis-Persona: steward\n\n* The strip: name tabs, one pin, and room (#4762)\n\nThe pin is the tab's: read from the layout record, carried from a chat's\nown at the upgrade, and retired from the chat once a layout is held.\npin_chat goes. Pin tab on the menu and palette, Close other tabs skips\npins, pins never collapse, narrow tabs and split faces wired in.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX17DX3MEH33P6TAYFD4TW\nPurlis-Persona: steward\n\n* The strip: Close other tabs skips pins, from the palette; N more wears the hand (#4762)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX17DX3MEH33P6TAYFD4TW\nPurlis-Persona: steward\n\n* The strip: a tab keeps its own marks inside the one icon (#4762)\n\nA chat tab wears its persona's or its shell's mark with the board state's\ndot on the corner, seen and not heard, and says its state after its name\nas before; one counted state mark per tab. A view pane with no name of\nits own is called what its tab is. Older window tests moved to the tab\nface where the ticket changed it; the sidebar's icon tests read the whole\ncascade; the split mark takes the quiet tier.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX17DX3MEH33P6TAYFD4TW\nPurlis-Persona: steward\n\n* chatPersona.css: the licence header in the form every stylesheet uses (#4762)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX17DX3MEH33P6TAYFD4TW\nPurlis-Persona: steward\n\n* The strip: a tab's one .state is the mark that says its word (#4762)\n\nThe icon's corner dot is .state-dot, seen and not heard, so the scenario\nspecs' tab.$(\".state\") reads the named mark's aria-label again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX17DX3MEH33P6TAYFD4TW\nPurlis-Persona: steward\n\n* App.css: .state keeps its own rules, the tab's dot beside them (#4762)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX17DX3MEH33P6TAYFD4TW\nPurlis-Persona: steward\n\n* The strip: review fixes (#4762)\n\nStrip tests wait on preconditions with Testing Library's waitFor; a tab's\nface is read once a draw; a narrow tab keeps its × while the keyboard is\non it; Pins.iconWidth says what it holds; ChatPersonaState's doc says the\ntab wears its look with its own marks.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EX17DX3MEH33P6TAYFD4TW\nPurlis-Persona: steward\n\n* The strip: the combined icon reads a chat's question where the asks registry says it stands (#4564, #4762)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T02:32:03Z",
+          "tree_id": "a76082109238ae2a8761b0bae28de2b81172a36a",
+          "url": "https://github.com/purlis/purlis/commit/c841814f17d143649dde885d12d793922d5945e3"
+        },
+        "date": 1793678435026,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6696169999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.654, 0.667, 0.670, 0.673, 0.676 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5374665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.495, 16.521, 16.537, 16.574, 16.669 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7732445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.242, 101.334, 101.773, 102.196, 102.263 ms"
           }
         ]
       }
