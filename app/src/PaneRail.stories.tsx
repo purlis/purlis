@@ -61,11 +61,11 @@ type Story = StoryObj<typeof meta>;
 /** **A rail, side by side**: each pane is reached by Tab and opened by Enter. */
 export const Rail: Story = {
   play: async ({ canvas, args, userEvent }) => {
-    const asks = canvas.getByRole("button", { name: "Open triage, folded, asks you" });
+    const asks = canvas.getByRole("button", { name: "triage, folded, asks you" });
     await expect(asks).toBeVisible();
     await userEvent.tab();
     await untilFocused(
-      () => canvas.getByRole("button", { name: "Open devops 2, folded, 3 notices" }),
+      () => canvas.getByRole("button", { name: "devops 2, 3 notices, folded" }),
       "Tab to the first folded pane",
     );
     expectFocusInSight();
@@ -84,7 +84,7 @@ export const Bar: Story = {
     await expect(canvas.getByText("devops 2")).toBeVisible();
     await userEvent.tab();
     await untilFocused(
-      () => canvas.getByRole("button", { name: "Open devops 2, folded, 3 notices" }),
+      () => canvas.getByRole("button", { name: "devops 2, 3 notices, folded" }),
       "Tab to the first folded pane",
     );
     expectFocusInSight();

@@ -684,9 +684,13 @@
   padding-inline: var(--space-2);
 }
 
+/* Each pane a target the pointer can't miss (WCAG 2.5.8): the rail's width, and at least a
+   control tall. */
 .pane-rail[data-fold="rail"] .pane-rail-pane {
   flex-direction: column;
+  align-self: stretch;
   block-size: auto;
+  min-block-size: var(--size-control);
   padding-block: var(--space-1);
 }
 

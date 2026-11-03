@@ -29,17 +29,12 @@ export type RailPane = {
   asks: boolean;
 };
 
-/** **What a folded pane is called aloud**: its name, that it is folded, its ask and notes. */
-export function railSays(one: RailPane): string {
-  const notes = one.holds.notes;
-  return [
-    `Open ${one.name}`,
-    "folded",
-    ...(one.asks ? ["asks you"] : []),
-    ...(notes === 0 ? [] : [`${notes} ${notes === 1 ? "notice" : "notices"}`]),
-  ].join(", ");
-}
-
+/**
+ * **A folded pane, as one button**: named by its own words, never an `aria-label` over them, so
+ * what is seen is what is heard (WCAG 2.5.3): its name (drawn on a bar, heard on a rail), its
+ * notes count, drawn, with "notices" heard after it, then "folded" and "asks you", heard. Each
+ * button is at least a control tall and the rail's width, a target the pointer can't miss.
+ */
 export function PaneRail({
   as,
   panes,
@@ -51,31 +46,41 @@ export function PaneRail({
 }) {
   return (
     <div className="pane-rail" data-fold={as} role="group" aria-label="Folded panes">
-      {panes.map((one) => (
-        <Button
-          key={one.pane}
-          variant="quiet"
-          size="sm"
-          className="pane-rail-pane"
-          data-pane={one.pane}
-          aria-label={railSays(one)}
-          tooltip={as === "rail" ? one.name : undefined}
-          icon={one.mark}
-          onPress={() => onOpen(one.pane)}
-        >
-          {as === "bar" && <span className="pane-rail-name">{one.name}</span>}
-          {one.asks && <Hand className="pane-rail-asks" data-mark="needs-you" aria-hidden="true" />}
-          {one.holds.notes > 0 && (
-            <span
-              className="pane-rail-count"
-              data-trouble={one.holds.trouble > 0 ? "" : undefined}
-              aria-hidden="true"
-            >
-              {one.holds.notes}
-            </span>
-          )}
-        </Button>
-      ))}
+      {panes.map((one) => {
+        const notes = one.holds.notes;
+        return (
+          <Button
+            key={one.pane}
+            variant="quiet"
+            size="sm"
+            className="pane-rail-pane"
+            data-pane={one.pane}
+            tooltip={`Open ${one.name}`}
+            icon={one.mark}
+            onPress={() => onOpen(one.pane)}
+          >
+            {/* The spaces are text between the words, never inside a hidden one, where a
+                name computed from it may drop them. */}
+            <span className={as === "bar" ? "pane-rail-name" : "hidden-words"}>{one.name}</span>
+            <span className="hidden-words">,</span>{" "}
+            {notes > 0 && (
+              <>
+                <span
+                  className="pane-rail-count"
+                  data-trouble={one.holds.trouble > 0 ? "" : undefined}
+                >
+                  {notes}
+                </span>{" "}
+                <span className="hidden-words">{notes === 1 ? "notice," : "notices,"}</span>{" "}
+              </>
+            )}
+            <span className="hidden-words">{one.asks ? "folded, asks you" : "folded"}</span>
+            {one.asks && (
+              <Hand className="pane-rail-asks" data-mark="needs-you" aria-hidden="true" />
+            )}
+          </Button>
+        );
+      })}
     </div>
   );
 }

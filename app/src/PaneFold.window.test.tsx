@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Offer } from "./actions";
 import type { Shown } from "./bindings";
 import { LayoutPanes } from "./LayoutPanes";
+import { PaneRail } from "./PaneRail";
 import type { Layout } from "./tabs";
 
 /**
@@ -86,6 +87,15 @@ function propsOf(layout: Layout, more: Partial<Props>): Props {
   return read as unknown as Props;
 }
 
+/**
+ * A folded pane's button by its name. jsdom's name computation drops the spaces between the
+ * name's words, which are text between spans (`PaneRail`); a browser keeps them, and axe reads
+ * them (the last test here). Matched with the spaces left out.
+ */
+const folded = (name: string) => ({
+  name: (heard: string) => heard.replace(/\s/g, "") === name.replace(/\s/g, ""),
+});
+
 const rails = () => screen.queryAllByRole("group", { name: "Folded panes" });
 
 describe("a split below the minimum (#4766)", () => {
@@ -95,7 +105,7 @@ describe("a split below the minimum (#4766)", () => {
     );
 
     expect(rails()).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Open chat 2, folded" })).toBeInTheDocument();
+    expect(screen.getByRole("button", folded("chat 2, folded"))).toBeInTheDocument();
     expect(screen.getByText("An empty pane")).toBeInTheDocument();
   });
 
@@ -106,9 +116,7 @@ describe("a split below the minimum (#4766)", () => {
     const { rerender } = render(<LayoutPanes {...props} />);
     const before = structuredClone(layout);
 
-    await userEvent.click(
-      within(rails()[0]).getByRole("button", { name: /^Open New chat, folded/ }),
-    );
+    await userEvent.click(within(rails()[0]).getByRole("button", folded("New chat, folded")));
     expect(onFocus).toHaveBeenCalledWith(2);
 
     rerender(<LayoutPanes {...props} focused={2} />);
@@ -162,9 +170,9 @@ describe("a 3 × 3 grid at 770px (#4766)", () => {
     );
 
     const second = rails()[1];
-    const asks = within(second).getByRole("button", { name: "Open chat 6, folded, asks you" });
+    const asks = within(second).getByRole("button", folded("chat 6, folded, asks you"));
     expect(asks.querySelector('[data-mark="needs-you"]')).not.toBeNull();
-    expect(within(second).getByRole("button", { name: "Open chat 5, folded" })).toBeInTheDocument();
+    expect(within(second).getByRole("button", folded("chat 5, folded"))).toBeInTheDocument();
   });
 });
 
@@ -187,5 +195,34 @@ describe("Split right and Split down below the minimum (#4766)", () => {
     expect(screen.getByRole("button", { name: /^Split right/ })).not.toHaveAttribute(
       "aria-disabled",
     );
+  });
+});
+
+describe("a folded pane's name (#4766)", () => {
+  it("is its own words, so what is seen is what is heard", async () => {
+    const { default: axe } = await import("axe-core");
+    const { container } = render(
+      <PaneRail
+        as="bar"
+        onOpen={vi.fn()}
+        panes={[
+          {
+            pane: 2,
+            name: "devops 2",
+            mark: null,
+            holds: { notes: 3, trouble: 1, asks: 0 },
+            asks: true,
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", folded("devops 2, 3 notices, folded, asks you")),
+    ).toBeInTheDocument();
+    const found = await axe.run(container, {
+      runOnly: { type: "rule", values: ["label-content-name-mismatch", "button-name"] },
+    });
+    expect(found.violations).toEqual([]);
   });
 });
