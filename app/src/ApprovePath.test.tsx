@@ -61,7 +61,8 @@ function core(options: typeof START_OPTIONS = START_OPTIONS) {
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "start_options") return options;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return options;
     if (cmd === "approve_profile") return null;
     if (cmd === "start_chat") return { session: ++opened };
     return null;

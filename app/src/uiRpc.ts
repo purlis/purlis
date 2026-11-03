@@ -1485,6 +1485,20 @@ export const commands = {
 	 */
 	startOptions: (plane: PlaneId) => typedError<StartOptions, string>(__TAURI_INVOKE("start_options", { plane })),
 	/**
+	 *  **The picker's first answer** (#4736): what [`start_options`] answers, without what takes a
+	 *  moment to read: every row's approval, sandbox and billing are none here, and
+	 *  [`start_details`] answers them. The dialog opens on this, at once, and fills its rows in as
+	 *  the details arrive. A start pressed before then goes through every gate it does today: the
+	 *  window waits for the details, and the core's start asks them again.
+	 */
+	startOptionsFirst: (plane: PlaneId) => typedError<StartOptions, string>(__TAURI_INVOKE("start_options_first", { plane })),
+	/**
+	 *  **The picker's second answer** (#4736): each row's approval, sandbox and billing, by its
+	 *  name, the slow part of [`start_options`]: a sandbox compile per harness and a check of
+	 *  each approved profile's program.
+	 */
+	startDetails: (plane: PlaneId) => typedError<RowDetails[], string>(__TAURI_INVOKE("start_details", { plane })),
+	/**
 	 *  Every harness the project has, its card at a glance (HP-19): the palette's *What <product>
 	 *  can do here* rows, one per harness, reached with no chat open (#1134).
 	 * 
@@ -10407,6 +10421,24 @@ export type RowAction = {
 	asks_first: boolean,
 	/**  Whether it says it deletes, so the question the window asks can say so. */
 	deletes: boolean,
+};
+
+/**
+ *  The facts of one picker row that take a moment to read (#4736): whether its command waits
+ *  for an approval, what the sandbox does for a chat on it (a compile per harness and its
+ *  program's check), and what it is billed to. [`start_details`] answers them after
+ *  [`start_options_first`], by the row's name, and the picker draws the row as pending until
+ *  then.
+ */
+export type RowDetails = {
+	/**  The profile's name: the row these are of. */
+	name: string,
+	/**  As [`ProfileRow::approval`]. */
+	approval: string | null,
+	/**  As [`ProfileRow::sandbox`]. */
+	sandbox: SandboxAhead | null,
+	/**  As [`ProfileRow::billed_to`]. */
+	billed_to: string | null,
 };
 
 /**  A dispatch's worktree, as its row lists it (#1453). */
