@@ -166,6 +166,8 @@ export const ATasksLine: Story = {
     );
     await userEvent.click(within(menu).getByRole("menuitem", { name: /^Stop and get its report/ }));
     await waitFor(() => expect(status).toHaveTextContent("Stop and get its report"));
+    // The press closes the list, as a person's does: the story ends on the head, not the menu.
+    await waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull());
 
     right.focus();
     await expect(right).toHaveFocus();
