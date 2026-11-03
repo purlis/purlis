@@ -34,14 +34,10 @@ export const SELECTED_TAB = `${TABS} [role="tab"][aria-selected="true"]`;
  * The number is the one session `running_sessions` lists after the start and did not before:
  * the core's answer, not a tab's words. It is answered once that chat's pane is in front.
  */
-export async function startAChat(
-  press = "New tab",
-  trace: (step: string) => Promise<void> = async () => undefined,
-): Promise<Started> {
+export async function startAChat(press = "New tab"): Promise<Started> {
   const plane = await projectInFront();
   const before = new Set(await runningIn(plane));
-  await trace("before the press");
-  await pressAndStart(press, trace);
+  await pressAndStart(press);
   let fresh: number[] = [];
   await browser.waitUntil(
     async () => {
@@ -53,9 +49,7 @@ export async function startAChat(
   if (fresh.length !== 1)
     throw new Error(`${press} started ${fresh.length} chats (${fresh.join(", ")}), not one`);
   const [session] = fresh;
-  await trace(`chat ${session} is running`);
   await untilInFront(session);
-  await trace(`chat ${session}'s pane is drawn`);
   const name = await browser.execute(
     (selected: string) =>
       document.querySelector(selected)?.querySelector(".tab-name")?.textContent ?? "",

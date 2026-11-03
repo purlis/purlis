@@ -177,18 +177,10 @@ export async function pressOnly(name: string): Promise<void> {
  * picker. A spec that asks for it wants its chat in a tab of its own, so it is what the person
  * does for that: `+`, then the empty pane's own New chat, which opens the picker for that pane.
  */
-export async function pressAndStart(
-  name: string,
-  trace: (step: string) => Promise<void> = async () => undefined,
-): Promise<void> {
+export async function pressAndStart(name: string): Promise<void> {
   await pressOnly(name);
-  await trace(`pressed ${name}`);
-  if (name === NEW_TAB) {
-    await pressTheEmptyPanesNewChat();
-    await trace("pressed the empty pane's New chat");
-  }
+  if (name === NEW_TAB) await pressTheEmptyPanesNewChat();
   await pickAndStart();
-  await trace("answered the picker");
 }
 
 /** **Opens the picker for a chat in a tab of its own**: the strip's `+`, then the new tab's
