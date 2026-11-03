@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
+import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
 
 /**
  * **Settings' editors, in the real WebView** (DS-10, #1842; spec #1832's seam 3):
@@ -16,10 +17,8 @@ import { $, browser, expect } from "@wdio/globals";
  * spec only opens and measures, and closes the Settings tab it opened.
  */
 
-const TABS = '[data-strip="Tabs"]';
 const PALETTE = '[role="dialog"][aria-label="Command palette"]';
 const GROUPS = 'nav[aria-label="Groups"]';
-const SETTINGS = "Settings";
 const LIST = "Environment passed to chats";
 
 type Box = {
@@ -30,15 +29,6 @@ type Box = {
   width: number;
   height: number;
 };
-
-/** The names on the tab strip. */
-async function tabNames(): Promise<string[]> {
-  return browser.execute(() =>
-    [
-      ...(document.querySelector('[data-strip="Tabs"]')?.querySelectorAll('[role="tab"]') ?? []),
-    ].map((tab) => tab.querySelector(".tab-name")?.textContent ?? tab.textContent ?? ""),
-  );
-}
 
 /** Opens Settings at the Project level through the palette, as the operator does. */
 async function openProjectSettings(): Promise<void> {
@@ -141,17 +131,16 @@ async function listMeasured() {
 }
 
 describe("Settings' editors, in the real WebView", () => {
-  let tabWasOpen = false;
+  /** The tabs on the strip before this spec, so its `after` closes only what it opened. */
+  let wereOpen: string[] = [];
 
   before(async () => {
-    tabWasOpen = (await tabNames()).some((name) => name.includes(SETTINGS));
+    wereOpen = await tabNames();
   });
 
   after(async () => {
-    if (!tabWasOpen) {
-      const closer = await $(`${TABS} button[aria-label="Close ${SETTINGS}"]`);
-      if (await closer.isExisting()) await closer.click();
-    }
+    // The Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
+    await closeTheViewTabsOpenedSince(wereOpen);
   });
 
   it("draws Edit as TOML as CodeMirror: numbered, coloured, the group's width, eight controls tall", async () => {
