@@ -52,6 +52,10 @@ import { scrollByDistance } from "./wheel";
 import { drawnReports, writePerFrame } from "./paneWrites";
 import { useProjectShown } from "./projectShown";
 import { viewOpening } from "./slowLog";
+import { FIRST_PAGE, keepInView, pageHistory } from "./historyPages";
+
+/** A full reset (RIS): what a pane is written before the screen of a view opened again. */
+const RESET = new TextEncoder().encode("\x1bc");
 
 /**
  * One pane, drawing one session.
@@ -368,67 +372,103 @@ export function SessionPane({
     watching.observe(where);
 
     let view: number | undefined;
+    /** The view asked for last (#4742): the one drawn before it is let go of once it answers. */
+    let asked = 0;
+    /** The view whose output the pane draws: the last asked for that answered. Until the next
+     *  one answers, the one before it is still attached and still drawn, so a page refused or
+     *  slow to answer never leaves the pane showing nothing new. */
+    let drawing = 0;
+    /** How many lines of history the view in use left out, above those it drew. */
+    let older = 0;
+    // **Older history is paged in as the person scrolls up** (#4742): the view is opened again
+    // with more, and the one before it let go of once the new one answers.
+    const paging = pageHistory(pane, (history) => void open(history));
+    // What arrives within a frame is one write to the terminal, not one per chunk (#4732): one
+    // for the pane, whichever view it came from, so a page's reset stays in its order.
+    const writes = writePerFrame((bytes, parsed) => pane.write(bytes, parsed));
+    /** Ends the stall log's note of the view being opened (`slowLog.ts`). */
+    let openingDone = () => {};
     // What the view is sent waits here until the terminal is the size that screen was drawn
     // for, so a line the session wrapped is not wrapped again somewhere else. A benchmark
     // wants to know when its text reached the grid, so what it gives back travels with the
     // text it belongs to.
-    const waiting: { bytes: Uint8Array; written?: () => void }[] = [];
-    let ready = false;
-    // What arrives within a frame is one write to the terminal, not one per chunk (#4732).
-    const writes = writePerFrame((bytes, parsed) => pane.write(bytes, parsed));
-    // What the terminal has drawn is told back, one report per write, and the session host
-    // paces the view by it (#4733): a pane that falls behind is sent a fresh screen, not a
-    // backlog.
-    const drawn = drawnReports((pieces) => {
-      if (gone || view === undefined) return;
-      void commands.sessionDrawn(plane, session, view, pieces);
-    });
-    // Each piece is the bytes the program wrote, a raw body over IPC rather than a string
-    // escaped into JSON (#4745); the terminal decodes them, a character cut between two
-    // pieces included.
-    const output = new Channel<ArrayBuffer>();
-    output.onmessage = (buffer) => {
-      if (gone) return;
-      const bytes = new Uint8Array(buffer);
-      const benched = bench.paneSent(pane, bytes);
-      const written = () => {
-        benched?.();
-        drawn.piece();
+    const open = async (history: number) => {
+      const mine = ++asked;
+      const again = view !== undefined;
+      const waiting: { bytes: Uint8Array; written?: () => void }[] = [];
+      /** Put back after each piece of a page is written, so the person keeps their place. */
+      let keep = () => {};
+      // What the terminal has drawn of this view is told back, one report per write, and the
+      // session host paces the view by it (#4733): a pane that falls behind is sent a fresh
+      // screen, not a backlog. A view a page has replaced is closed, so it is told nothing.
+      const drawn = drawnReports((pieces) => {
+        if (gone || mine !== drawing || view === undefined) return;
+        void commands.sessionDrawn(plane, session, view, pieces);
+      });
+      // Each piece is the bytes the program wrote, a raw body over IPC rather than a string
+      // escaped into JSON (#4745); the terminal decodes them, a character cut between two
+      // pieces included.
+      const output = new Channel<ArrayBuffer>();
+      output.onmessage = (buffer) => {
+        if (gone || (mine !== drawing && mine !== asked)) return;
+        const bytes = new Uint8Array(buffer);
+        const benched = bench.paneSent(pane, bytes);
+        const written = () => {
+          keep();
+          benched?.();
+          drawn.piece();
+        };
+        if (mine === drawing) writes.add(bytes, written);
+        else waiting.push({ bytes, written });
       };
-      if (ready) writes.add(bytes, written);
-      else waiting.push({ bytes, written });
-    };
-    // Opening the view, until its screen is handed to the terminal: what the stall log says was
-    // going on (`slowLog.ts`).
-    const openingDone = viewOpening();
-    // The pane's own size first: a session nobody is showing keeps whatever size it had.
-    void (async () => {
-      fit.fit();
+      // Opening the view, until its screen is handed to the terminal: what the stall log says
+      // was going on (`slowLog.ts`). A page's view opened again counts too, and ends the
+      // opening of the one it replaces, whose answer is let go of.
+      openingDone();
+      const done = viewOpening();
+      openingDone = done;
+      // The pane's own size first: a session nobody is showing keeps whatever size it had.
+      if (!again) fit.fit();
       const opened = await commands
-        .watchSession(plane, session, output)
+        .watchSession(plane, session, output, history)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       if (opened.status === "error") {
-        openingDone();
-        say(opened.error);
+        done();
+        if (again) paging.refused();
+        else say(opened.error);
         return;
       }
-      if (gone) {
-        openingDone();
+      if (gone || mine !== asked) {
+        done();
         void commands.unwatchSession(plane, session, opened.data.view);
         return;
       }
+      // From here the new view is drawn and the one before it is not.
+      drawing = mine;
+      const before = view;
       view = opened.data.view;
+      if (before !== undefined) {
+        void commands.unwatchSession(plane, session, before);
+        // The lines paged in go above the ones the person was reading.
+        const above = pane.buffer.active.viewportY + Math.max(0, older - opened.data.older);
+        keep = keepInView(pane, above);
+        // Written, not `reset()`: after whatever of the old view is still queued to be parsed,
+        // and so the full reset the core writes before a fresh snapshot of one view too.
+        writes.add(RESET);
+      }
+      older = opened.data.older;
       // The core keeps the history; the pane keeps the same, so scrolling back shows what the
       // session has rather than what this terminal happens to have seen.
       pane.options.scrollback = opened.data.scrollback;
       newline = opened.data.newline ?? undefined;
       pane.resize(opened.data.columns, opened.data.rows);
-      ready = true;
       for (const held of waiting.splice(0)) writes.add(held.bytes, held.written);
       // Now that the screen is drawn, the pane's own size applies again.
       fit.fit();
-      openingDone();
-    })();
+      done();
+      paging.opened(history, older);
+    };
+    void open(FIRST_PAGE);
 
     return () => {
       gone = true;
@@ -443,6 +483,7 @@ export function SessionPane({
       // A pane gone before the slide's end fits nothing at it.
       unqueue();
       wheeling.dispose();
+      paging.dispose();
       typed.dispose();
       bytes.dispose();
       resized.dispose();

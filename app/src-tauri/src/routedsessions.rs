@@ -847,10 +847,17 @@ impl SessionHost for RoutedSessions {
         }
     }
 
-    fn watch_drawn(&self, id: u32, sink: Sink) -> Result<Watching, String> {
+    fn watch_within(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
         match self.host_of(id) {
-            Some(host) => host.watch_drawn(id, sink),
-            None => self.here.watch_drawn(id, sink),
+            Some(host) => host.watch_within(id, sink, history),
+            None => self.here.watch_within(id, sink, history),
+        }
+    }
+
+    fn watch_drawn(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
+        match self.host_of(id) {
+            Some(host) => host.watch_drawn(id, sink, history),
+            None => self.here.watch_drawn(id, sink, history),
         }
     }
 

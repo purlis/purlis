@@ -561,6 +561,9 @@ struct Watching {
     /// (`Chats::newline`: a built-in's or a declared harness's), or none for a shell, which
     /// keeps the terminal's own Enter.
     newline: Option<String>,
+    /// How many lines of history the session keeps above those the view was drawn with
+    /// (#4742): what the pane asks for, with a larger `history`, as the person scrolls up.
+    older: u32,
 }
 
 /// When this process started, as close to it as the app can see.
@@ -2948,7 +2951,9 @@ impl specta::Type for OutputBytes {
 /// Answers with the id that closes the view.
 ///
 /// Off the window's thread, in its turn in the chat's lane (#4734, ADR 0108): after every
-/// resize the pane sent before it (#891), and answered once the host has.
+/// resize the pane sent before it (#891), and answered once the host has. `history` is the most
+/// lines of history the screen is drawn with, the newest (#4742), or all of them; the answer
+/// says how many are older.
 #[tauri::command]
 #[specta::specta]
 async fn watch_session(
@@ -2956,6 +2961,7 @@ async fn watch_session(
     plane: PlaneId,
     session: u32,
     output: Channel<OutputBytes>,
+    history: Option<u32>,
 ) -> Result<Watching, String> {
     let held = planes.held(&plane)?;
     off_the_window("opening a view of a chat", move || {
@@ -2969,6 +2975,7 @@ async fn watch_session(
             Box::new(move |bytes| {
                 let _ = output.send(OutputBytes(bytes));
             }),
+            history,
         )?;
         Ok(Watching {
             view: watching.view,
@@ -2976,6 +2983,7 @@ async fn watch_session(
             rows: watching.size.rows,
             scrollback: sessions::SCROLLBACK,
             newline,
+            older: watching.older,
         })
     })
     .await
