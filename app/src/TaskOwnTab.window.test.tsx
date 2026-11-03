@@ -711,7 +711,7 @@ describe("opening a task beside its session", () => {
 });
 
 describe("the session's close, the only close on the strip", () => {
-  it("says how many of its tasks have a tab of their own, and sends them back when they are kept", async () => {
+  it("leaves its tasks' own tabs where they are when it is kept closing (#4757)", async () => {
     const { tree, asked } = await drawn(withTasks(), {
       running: ["talk", "sweep", "probe", "deep"],
     });
@@ -723,27 +723,23 @@ describe("the session's close, the only close on the strip", () => {
     expect(ender("sweep")?.hasAttribute("data-minimise")).toBe(true);
     await userEvent.click(ender("steward 1") as HTMLElement);
 
+    // A chat leaving moves no other pane (#4757), so the question has nothing to say of them.
     const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
-    expect(question.textContent).toContain(
-      "2 of its tasks have tabs of their own. Those tabs close with this one: tasks that go on working stay in the Chats list.",
-    );
+    expect(question.textContent).not.toContain("of their own");
     // Asked once, as it always was.
     expect(within(question).getAllByRole("radio")).toHaveLength(2);
     expect(ended(asked)).toEqual([]);
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
 
-    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
-    // Only the session ended. Its tasks go on, with no tab.
+    await waitFor(() => expect(tabNames()).not.toContain("steward 1"));
+    expect([...tabNames()].sort()).toEqual(["steward 2", "sweep", "talk"]);
+    // Only the session ended. Its tasks go on, in their tabs.
     expect(ended(asked)).toEqual([{ cmd: "close_session", args: { plane: PLANE, session: 1 } }]);
-    expect(
-      commandsOf(asked, "close_chat_tab")
-        .map((one) => one.session)
-        .sort(),
-    ).toEqual([4, 5]);
+    expect(commandsOf(asked, "close_chat_tab")).toEqual([]);
     expect(row(tree, "talk")).toBeTruthy();
   });
 
-  it("takes their tabs with it when the answer is to stop them", async () => {
+  it("stops its tasks in one command when the answer is to stop them, their tabs left where they are", async () => {
     const { tree, asked } = await drawn(withTasks(), {
       running: ["talk", "sweep", "probe", "deep"],
     });
@@ -754,7 +750,9 @@ describe("the session's close, the only close on the strip", () => {
     await userEvent.click(within(question).getByRole("radio", { name: "Stop them" }));
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
 
-    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
+    // talk's tab stays until the core says it has ended, and then shows it as ended (#4757).
+    await waitFor(() => expect(tabNames()).not.toContain("steward 1"));
+    expect(tabNames()).toContain("talk");
     expect(commandsOf(asked, "close_chat_stopping")).toEqual([
       { plane: PLANE, session: 1, then: "close" },
     ]);
@@ -938,7 +936,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
   });
 });
 
-describe("a session's pane goes: its tasks' own tabs go back to the list, by every path (M3)", () => {
+describe("a session's pane goes: its tasks' own tabs stay where they are, by every path (#4757)", () => {
   /** talk in a tab of its own, and the session's tab in front. */
   async function withTalkInItsTab(how: Core = {}) {
     const held = await drawn(withTasks(), how);
@@ -947,14 +945,13 @@ describe("a session's pane goes: its tasks' own tabs go back to the list, by eve
     await waitFor(() => expect(onScreen()).toEqual([1]));
     return held;
   }
-  /** talk's tab is gone, talk is not ended, and the core is told it has no tab. */
-  async function talkWentBack({ asked, tree }: { asked: Asked[]; tree: HTMLElement }) {
-    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
+  /** steward 1's tab is gone; talk's stays, talk is not ended, and no tab of it is closed:
+   *  a chat leaving moves no other pane. */
+  async function talkStays({ asked, tree }: { asked: Asked[]; tree: HTMLElement }) {
+    await waitFor(() => expect(tabNames()).not.toContain("steward 1"));
+    expect([...tabNames()].sort()).toEqual(["steward 2", "talk"]);
     expect(row(tree, "talk")).toBeTruthy();
-    expect(commandsOf(asked, "close_chat_tab").at(-1)).toEqual({
-      plane: PLANE,
-      session: 4,
-    });
+    expect(commandsOf(asked, "close_chat_tab")).toEqual([]);
     expect(ended(asked).filter((one) => one.args.session === 4 || one.cmd === "stop_chat")).toEqual(
       [],
     );
@@ -964,10 +961,9 @@ describe("a session's pane goes: its tasks' own tabs go back to the list, by eve
     const held = await withTalkInItsTab({ running: ["talk"] });
     await userEvent.click(screen.getByRole("button", { name: "End this pane's chat" }));
     const question = await screen.findByRole("alertdialog");
-    // The sentence is said for this close too, and is true of it.
-    expect(question.textContent).toContain("1 of its tasks has a tab of its own");
+    expect(question.textContent).not.toContain("of its own");
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
-    await talkWentBack(held);
+    await talkStays(held);
     expect(commandsOf(held.asked, "close_session")).toEqual([{ plane: PLANE, session: 1 }]);
   });
 
@@ -977,14 +973,14 @@ describe("a session's pane goes: its tasks' own tabs go back to the list, by eve
     await act(() =>
       emit("smart-close", { plane: PLANE, session: 1, phase: "closed", record: null }),
     );
-    await talkWentBack(held);
+    await talkStays(held);
   });
 
   it("the session ending, as a stop ends it", async () => {
     const held = await withTalkInItsTab();
     held.open.splice(0, 1);
     await act(() => emit("chat-stop", { plane: PLANE, session: 1, phase: "stopped" }));
-    await talkWentBack(held);
+    await talkStays(held);
   });
 
   it("a close that stops what is below, for a task the core did not end", async () => {
@@ -993,14 +989,10 @@ describe("a session's pane goes: its tasks' own tabs go back to the list, by eve
     const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
     await userEvent.click(within(question).getByRole("radio", { name: "Stop them" }));
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
-    expect(commandsOf(held.asked, "close_chat_tab").at(-1)).toEqual({
-      plane: PLANE,
-      session: 4,
-    });
+    await talkStays(held);
   });
 
-  it("the session's pane closed in a split: the task beside it goes back too, and is never the tab's own chat", async () => {
+  it("the session's pane closed in a split: the task beside it takes the tab, still running", async () => {
     const { tree, asked } = await drawn(withTasks(), { running: ["talk"] });
     row(tree, "talk").focus();
     await userEvent.keyboard(" ");
@@ -1011,15 +1003,13 @@ describe("a session's pane goes: its tasks' own tabs go back to the list, by eve
       within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Close" }),
     );
 
-    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
+    // What shared the split takes its place (#4757): talk, which is not ended.
+    await waitFor(() => expect(onScreen()).toEqual([4]));
     expect(commandsOf(asked, "close_session")).toEqual([{ plane: PLANE, session: 1 }]);
-    expect(row(tree, "talk")).toBeTruthy();
-    // The core is not left believing the closed session is in front, or the task beside it.
-    await waitFor(() => expect(frontSaid(asked)).toBe(2));
-    expect(panedSaid(asked)).not.toContain(4);
+    // The core is not left believing the closed session is on screen.
+    await waitFor(() => expect(panedSaid(asked)).not.toContain(1));
   });
 });
-
 describe("what the core is told is on screen (M1, M4)", () => {
   it("says the chat in front when the tab in front comes to be another chat's without changing", async () => {
     const { open, asked } = await drawn(withTasks());

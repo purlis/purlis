@@ -591,27 +591,6 @@ describe("the chip on a session's tab", () => {
       "probe and 1 more need you. Go to probe",
     );
   });
-
-  it("is still worn, with a line for it, by a tab showing a task that has ended", async () => {
-    const { tree, ended } = await drawn([
-      chat(1, "alpha"),
-      chat(4, "alpha", { persona: "devops", label: "talk", from: taskOf(1) }),
-    ]);
-    await userEvent.click(treeRow(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    await ended(4);
-    await waitFor(() => expect(screen.queryByTestId("task-away")).not.toBeNull());
-
-    // Its program ended owing its report: it failed, and is counted so.
-    expect(theChip("steward 1").getAttribute("aria-label")).toBe("Tasks of steward 1: 1 failed");
-    press(theChip("steward 1"));
-    expect(lines()).toEqual([
-      "steward 1 running (no detail from claude)",
-      "talk, shown now ended without a report",
-    ]);
-    expect(line("talk").hasAttribute("data-current")).toBe(true);
-  });
 });
 
 describe("the menu a chip opens", () => {
@@ -1183,30 +1162,6 @@ describe("the keys for the chats inside a tab", () => {
     });
   });
 
-  it("stays, with the keyboard on the line, when Enter is pressed on a task that has ended", async () => {
-    const { tree, ended } = await drawn([
-      chat(1, "alpha"),
-      chat(4, "alpha", { persona: "devops", label: "talk", from: taskOf(1) }),
-    ]);
-    await userEvent.click(treeRow(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-    await ended(4);
-    const back = await screen.findByRole("button", { name: /^Back to/ });
-    await waitFor(() => expect(document.activeElement).toBe(back));
-
-    // The key lands the keyboard on the chat the tab shows, which is the ended task's line.
-    chord("J");
-    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
-    await userEvent.keyboard("{Enter}");
-
-    expect(menu()).not.toBeNull();
-    expect(document.activeElement).toBe(line("talk"));
-    // And Escape still gives the keyboard back to where it was.
-    await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(menu()).toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(back));
-  });
-
   describe("where the window's keys are not the window's", () => {
     /** Something on the page that the keyboard is in, taken away after the test. */
     function typingIn(html: string): HTMLElement {
@@ -1421,28 +1376,6 @@ describe("tasks that have finished", () => {
       "steward 1, shown now running (no detail from claude)",
       "Finished (1)",
     ]);
-  });
-
-  it("are one line, marked as shown, for the task the tab was left on", async () => {
-    const { tree, finishes } = await drawn(some());
-    await userEvent.click(treeRow(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    // Its finished row carries the number its chat had: what the tab was left on is found
-    // by that, never by its name.
-    await finishes(4, finishedTask(1, "talk", { ...failed, chat: 4 }));
-    await waitFor(() => expect(screen.queryByTestId("task-away")).not.toBeNull());
-
-    await waitFor(() =>
-      expect(theChip("steward 1").getAttribute("aria-label")).toBe("Tasks of steward 1: 1 failed"),
-    );
-    press(theChip("steward 1"));
-    // Not two lines for one task: the finished row is the line of what the tab shows.
-    expect(lines()).toEqual([
-      "steward 1 running (no detail from claude)",
-      "talk, shown now failed",
-    ]);
-    expect(line("talk").hasAttribute("data-current")).toBe(true);
   });
 });
 

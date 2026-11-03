@@ -9251,8 +9251,12 @@ export const PlaneView = memo(function PlaneView({
    * answered is said where every row's answer is.
    */
   const referenceChats = useMemo<ChatsForReferences>(() => {
+    // A task that ended in its pane stays there as ended (#4757), and is no open chat: the
+    // sidebar, once read, is what says which are.
     const chatsOpen = tabs.order.flatMap((id) =>
-      panesOf(tabs, id).map((pane) => ({ session: pane.session, name: tabs.byId[id].name })),
+      panesOf(tabs, id)
+        .filter((pane) => sidebar === undefined || chatsByNumber.has(pane.session))
+        .map((pane) => ({ session: pane.session, name: tabs.byId[id].name })),
     );
     return {
       plane,
@@ -9285,7 +9289,7 @@ export const PlaneView = memo(function PlaneView({
         });
       },
     };
-  }, [nameOfListed, plane, showChat, startChatHere, tabs]);
+  }, [chatsByNumber, nameOfListed, plane, showChat, sidebar, startChatHere, tabs]);
 
   /** **While you were away** (#1514): kept for this project whether or not it is in front,
    *  so a project behind another has its own summary when the person switches to it. */

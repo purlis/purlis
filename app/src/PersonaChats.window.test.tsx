@@ -174,21 +174,20 @@ describe("closing a chat with chats at work below it", () => {
     expect(asked("close_session")).toEqual([]);
   });
 
-  it("keeps them running: the chat closes, and its persona chat goes back to the list, still open", async () => {
+  it("keeps them running: the chat closes, and its persona chat stays in its tab, still open", async () => {
     const { asking, asked } = await closingTheStewardChat(ONE_RUNNING);
 
     await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
 
     await waitFor(() => expect(asked("close_session")).toEqual([{ plane: PLANE, session: 4 }]));
     expect(asked("close_chat_stopping")).toEqual([]);
-    // **Its tab goes with the session's** (#1489, V100-39): a task's own tab is sent back when
-    // the session that asked closes, and the task is not ended by that. It was never closed,
-    // and the core is told it has no tab.
-    await waitFor(() => expect(within(stripNamed("Tabs")).queryAllByRole("tab")).toEqual([]));
-    expect(asked("close_chat_tab")).toEqual([{ plane: PLANE, session: 9 }]);
+    // **Its tab stays where it is** (#4757): a chat leaving moves no other pane, so the task's
+    // own tab is not sent back with the session that asked, and nothing of it ends.
+    await waitFor(() => expect(tabNames()).toEqual(["check prod"]));
+    expect(asked("close_chat_tab")).toEqual([]);
   });
 
-  it("stops them and closes in one command to the core, and their tabs go with the chat's", async () => {
+  it("stops them and closes in one command to the core, and the chat's tab goes", async () => {
     const { asking, asked, order } = await closingTheStewardChat(ONE_RUNNING);
 
     await userEvent.click(within(asking).getByRole("radio", { name: "Stop them" }));
@@ -203,7 +202,9 @@ describe("closing a chat with chats at work below it", () => {
     // One step: the chat is never left running between the stop and its own close, and the
     // window ends nothing a second time.
     expect(order()).toEqual(["close_chat_stopping"]);
-    await waitFor(() => expect(within(stripNamed("Tabs")).queryAllByRole("tab")).toEqual([]));
+    // The chat's own tab goes; the stopped task's stays until the core says it has ended, and
+    // then shows it as ended (#4757): a chat leaving moves no other pane.
+    await waitFor(() => expect(tabNames()).toEqual(["check prod"]));
   });
 
   it("carries the answer through Smart close: stopped now, and remembered for its close", async () => {

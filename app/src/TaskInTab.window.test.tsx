@@ -801,17 +801,19 @@ describe("a shown task that ends", () => {
 
     await ended(5);
 
-    // Nothing flipped: the tab still reads the task, the breadcrumb still says the path.
+    // Nothing flipped: the pane a press put sweep in keeps it as ended (#4757), its tab named
+    // for it, and the breadcrumb still says the path.
     const pane = await screen.findByTestId("task-away");
-    expect(tab("steward 1").querySelector(".tab-task")?.textContent).toBe("sweep");
+    expect(tab("sweep")).toBeTruthy();
     expect(crumbsSay()).toBe("steward 1 › sweep · ended without a report");
     expect(pane.textContent).toContain("sweep has ended");
     // No terminal is drawn for it, so nothing typed can go anywhere.
     expect(onScreen()).toEqual([]);
     const back = within(pane).getByRole("button", { name: "Back to steward 1" });
     await waitFor(() => expect(document.activeElement).toBe(back));
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
+    expect(tabNames()).toEqual(["sweep", "steward 2"]);
 
+    // Its way back is the chat this pane showed before the press (#4757).
     await userEvent.click(back);
 
     await waitFor(() => expect(onScreen()).toEqual([1]));
@@ -962,7 +964,7 @@ describe("a shown task that ends", () => {
     expect(pane.textContent).not.toContain("Not this pane's.");
   });
 
-  it("is still what its tab shows when the tab comes back from behind", async () => {
+  it("is still what its pane shows when its tab comes back from behind", async () => {
     const { tree, ended } = await drawn(withTasks());
     await userEvent.click(row(tree, "sweep"));
     await waitFor(() => expect(onScreen()).toEqual([5]));
@@ -970,7 +972,8 @@ describe("a shown task that ends", () => {
     await waitFor(() => expect(onScreen()).toEqual([2]));
 
     await ended(5);
-    await userEvent.click(tab("steward 1"));
+    // The tab sweep was pressed into is named for it (#4757).
+    await userEvent.click(tab("sweep"));
 
     expect(await screen.findByTestId("task-away")).toBeTruthy();
     expect(crumbsSay()).toMatch(/^steward 1 › sweep · /);
