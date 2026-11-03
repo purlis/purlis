@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793702098757,
+  "lastUpdate": 1793703685664,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37464,6 +37464,48 @@ window.BENCHMARK_DATA = {
             "value": 101.715774,
             "unit": "ms",
             "extra": "median of 5 runs: 101.467, 101.533, 101.716, 101.918, 102.830 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c7c5f87d95762cbb8992447412f43bef5b155664",
+          "message": "Three flaky vitest tests wait for what they read (#4950, #4695, #4696) (#5007)\n\n* SkillGrades: wait for the grid's columns, not only the grid\n\nReact Aria draws the Grades table's grid in one commit and fills its\ncolumns and rows in the next, so a findByRole(\"grid\") can resolve on a\ngrid with no column header yet. Two tests read the grid's contents at\nonce: 'names each kind's columns apart' (getAllByRole columnheader) and\nthe scorecard press (getByRole button). Both now wait for what they\nread, and the second half of the columns test waits for the Graded\ncolumn before saying the job's columns are absent, so it can no longer\npass on an empty grid.\n\nFixes #4950\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G90PNQ6X68GWKKMKXXMJM5\nPurlis-Persona: steward\n\n* PlaneReport: say the view stays drawn by its elements, not by its asks\n\nThe test counted the view's asks to mean 'built again', but a project\nthat comes back to the front reads again by design: each part counts\none change after it is painted (usePlaneChanged, useOnShownAgain), so\nthe 7 asks of the build become 14 once that read lands, every time. A\nsingle act() usually checked before it landed; a slow runner let it in.\nA rebuild would ask 14 too, so the count could not tell the two apart.\n\nThe view is not built twice (all 320 drawn elements survive the hide and\nshow). The test now says exactly that: the .project-view element and\nevery element in it are the ones drawn before. A remount fails it.\n\nFixes #4695\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G90PNQ6X68GWKKMKXXMJM5\nPurlis-Persona: steward\n\n* AwaySummary: leave the gauge's timed chat_usage read out of Dismiss's check\n\nThe Dismiss test says Dismiss tells the core nothing, and left out only\nasks_waiting, a read on its own timer. A pane's gauge reads chat_usage on\nreal-time timers too: 2 s after a move (AFTER_A_MOVE_MS) and every 3 s\nwhile its chat runs (WHILE_RUNNING_MS), and chat 1 is running here. Only\nDate is faked, so on a slow runner the test body outlasts those timers\nand a read lands between 'before' and the check. A 2.5 s pause before\nDismiss reproduces the CI failure every time; with this change it\npasses. Every other command still fails the test.\n\nFixes #4696\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G90PNQ6X68GWKKMKXXMJM5\nPurlis-Persona: steward\n\n* PlaneReport: name a missing view instead of asserting it non-null\n\nThe repo's lint forbids non-null assertions; throw when the project's\nview is not drawn, which also says what went wrong.\n\nRefs #4695\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G90PNQ6X68GWKKMKXXMJM5\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T10:00:53Z",
+          "tree_id": "1f95730b85683eea0e1aafb730fff92815a0a90f",
+          "url": "https://github.com/purlis/purlis/commit/c7c5f87d95762cbb8992447412f43bef5b155664"
+        },
+        "date": 1793703682068,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6627065000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.649, 0.660, 0.663, 0.679, 0.692 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.509935499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.377, 16.449, 16.510, 16.691, 16.835 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.34391600000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.362, 102.145, 102.344, 102.401, 102.520 ms"
           }
         ]
       }
