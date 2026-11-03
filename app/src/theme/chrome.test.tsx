@@ -373,7 +373,15 @@ const VAULT: VaultContents = {
   provider: "1password",
   count: 1,
   health: { ok: true, detail: "1 secret in 1Password" },
-  secrets: [{ key: "API_TOKEN", size: "16–31 bytes", updated: "2026-09-24T11:32:17Z" }],
+  secrets: [
+    {
+      key: "API_TOKEN",
+      size: "16–31 bytes",
+      updated: "2026-09-24T11:32:17Z",
+      link: null,
+      linked_by: 0,
+    },
+  ],
   refused: null,
   identity_unset_elsewhere: [],
   identity: [{ variable: "service-account-token", held: "keyring", kept: true }],

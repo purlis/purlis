@@ -272,6 +272,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`.charter/vaults/<name>.json` — plain-file vault](#chartervaultsnamejson--plain-file-vault)
   - [`.charter/vaults/<name>.meta.json` — rotation sidecar](#chartervaultsnamemetajson--rotation-sidecar)
   - [`.charter/vaults/<name>.keys.json` — keyring vault's keys index](#chartervaultsnamekeysjson--keyring-vaults-keys-index)
+  - [`.charter/vault-links.json` — linked entries](#chartervault-linksjson--linked-entries)
   - [`.charter/keyring-stub.json` — a test build's keyring](#charterkeyring-stubjson--a-test-builds-keyring)
   - [`.charter/vaults/exec/` — a brokered run's credential files](#chartervaultsexec--a-brokered-runs-credential-files)
   - [`.charter/vaults/<name>.json` — reference vault (same path, different content)](#chartervaultsnamejson--reference-vault-same-path-different-content)
@@ -4622,6 +4623,43 @@ purlis only (ADR 0047); the Python charter has no keyring provider and never rea
   "service": "charter/ops/3f9a2c1b",
   "keys": {
     "API_TOKEN": { "size": "16–31 bytes", "updated": "2026-09-24T11:32:17Z", "held": true }
+  }
+}
+```
+
+### `.charter/vault-links.json` — linked entries
+
+purlis only (#5069, ADR 0109); the Python charter has no linked entries and never reads it.
+
+- **Format:** JSON object: `links`, an object `vault → {key → {"vault": <vault>, "key": <key>}}`:
+  each key named holds no value of its own and reads the entry named, its **target**. **Never a
+  value**: names only.
+- **One hop.** A target holds a value: purlis refuses to write a link whose target is a link, or
+  to make a key other keys link to into a link. A read follows one link only, whatever the file
+  says.
+- **Every provider's vaults** keep their links here, and nowhere in the vault's own storage: a
+  keyring vault stores no keyring item for a link, and no 1Password item or vault file carries
+  one, so a link never travels with a vault shared with a team.
+- **Status:** **experimental** — its first readers are the vault view and the secret ask
+  (#5054).
+- **Tier:** Clone state — one person's links between their own vault entries, kept beside the
+  keys indexes and meaningless on another machine, like the keyring values they read; nothing
+  rebuilds it.
+- **Written by:** `crates/purlis-core/src/secrets/links.rs` (`link`, `unlink`, `renamed`,
+  `forget_vault`), under the vaults' keys lock, 0600 and replaced whole, never through a link.
+  `secret set` on a linked key replaces the link with the value, `secret rm` of one takes only
+  the link away, a rename moves a link and re-points the links that read the renamed key, and
+  deleting a vault in the window takes its links away.
+- **Read by:** the same module, through `secrets::cmd` (`get_value`, `keys`, `resolves`): every
+  read of a key in any vault. `purlis vault verify` names a link whose target is gone; a read
+  through one refuses without naming the target. The app's vault view names each link's target
+  and how many links read a key.
+- **Git / encoding:** under `.charter/`, so gitignored; indent 2, trailing newline, keys sorted.
+
+```json
+{
+  "links": {
+    "ops": { "STRIPE_KEY": { "vault": "team", "key": "STRIPE" } }
   }
 }
 ```

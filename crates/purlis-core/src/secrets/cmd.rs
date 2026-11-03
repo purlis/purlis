@@ -73,8 +73,16 @@ pub fn provider(ctx: &Ctx, name: &str) -> Result<Vault, VaultError> {
 /// vault is never handed over raw, by this or any read built on it (`secret exec`, `get` and
 /// `cp`, a tool, a browser login, a profile's credentials, the Vaults tab), and only the mint
 /// reads it ([`read_to_mint`]).
+///
+/// **A linked entry is held to its target's rule too** (#5069): a link never hands over a key a
+/// read of the entry it reads would refuse.
 pub fn get_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
     use crate::sandbox::tools::mint;
+    if let Some(to) = super::links::of(ctx, &v.name, key)?
+        && let mint::Raw::Refused(why) = mint::raw(&ctx.root, &to.vault, &to.key)
+    {
+        return Err(VaultError::new(why));
+    }
     match mint::raw(&ctx.root, &v.name, key) {
         mint::Raw::Taken => provider_read(ctx, v, key),
         mint::Raw::Refused(why) => Err(VaultError::new(why)),
@@ -101,8 +109,19 @@ pub fn resolves(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
     provider_read(ctx, v, key).map(drop)
 }
 
-/// The value of `key`, through the vault's own provider, remembered as read.
+/// The value of `key`, remembered as read: through the vault's own provider, or, for a linked
+/// entry, through its target's, one hop only ([`super::links`]).
 fn provider_read(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
+    match super::links::of(ctx, &v.name, key)? {
+        None => stored_read(ctx, v, key),
+        Some(to) => super::links::read_through(ctx, v, key, &to, |target, key| {
+            stored_read(ctx, target, key)
+        }),
+    }
+}
+
+/// The value the vault's own provider holds under `key`, remembered as read.
+fn stored_read(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
     let value = match v.provider.as_str() {
         "keyring" => keyring::get(ctx, v, key),
         "plain-file" => plain_file::get(ctx, v, key),
@@ -113,8 +132,20 @@ fn provider_read(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> 
     Ok(value)
 }
 
-/// The key names, never the values.
+/// The key names, never the values: what the provider holds and the vault's linked entries.
 pub fn keys(ctx: &Ctx, v: &Vault) -> Result<Vec<String>, VaultError> {
+    let mut keys = stored_keys(ctx, v)?;
+    let links = super::links::in_vault(ctx, &v.name)?;
+    if !links.is_empty() {
+        keys.extend(links.into_keys());
+        keys.sort();
+        keys.dedup();
+    }
+    Ok(keys)
+}
+
+/// The key names the vault's own provider holds, its linked entries aside.
+pub fn stored_keys(ctx: &Ctx, v: &Vault) -> Result<Vec<String>, VaultError> {
     match v.provider.as_str() {
         "keyring" => keyring::keys(ctx, v),
         "plain-file" => plain_file::keys(ctx, v),
@@ -139,6 +170,8 @@ pub(crate) fn set_reserved(ctx: &Ctx, v: &Vault, key: &str, value: &str) -> Resu
     store_value(ctx, v, key, value)
 }
 
+/// A value stored under a linked entry's key replaces the link once it is stored, so a write
+/// that fails leaves the link reading as it did.
 fn store_value(ctx: &Ctx, v: &Vault, key: &str, value: &str) -> Result<(), VaultError> {
     if v.provider != "reference" {
         super::seen::remember(value);
@@ -148,7 +181,8 @@ fn store_value(ctx: &Ctx, v: &Vault, key: &str, value: &str) -> Result<(), Vault
         "plain-file" => plain_file::set(ctx, v, key, value, chrono::Local::now().date_naive()),
         "reference" => reference::set(ctx, v, key, value),
         _ => onepassword::set(ctx, v, key, value),
-    }
+    }?;
+    super::links::unlink(ctx, &v.name, key).map(drop)
 }
 
 /// Delete a value.
@@ -165,7 +199,11 @@ pub(crate) fn delete_reserved(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), Vau
     delete_value(ctx, v, key)
 }
 
+/// A linked entry is deleted by taking its link away: the entry it reads is left as it is.
 fn delete_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
+    if super::links::unlink(ctx, &v.name, key)? {
+        return Ok(());
+    }
     match v.provider.as_str() {
         "keyring" => keyring::delete(ctx, v, key),
         "plain-file" => plain_file::delete(ctx, v, key),
@@ -220,11 +258,16 @@ pub fn rename(ctx: &Ctx, v: &Vault, from: &str, to: &str) -> Result<(), VaultErr
             v.name
         )));
     }
+    // A linked entry moves as its link, and the links that read `from` follow it.
+    if super::links::of(ctx, &v.name, from)?.is_some() {
+        return super::links::renamed(ctx, &v.name, from, to);
+    }
     let stored = match v.provider.as_str() {
         "reference" => super::py_str(&reference::reference_for(ctx, v, from)?),
-        _ => provider_read(ctx, v, from)?,
+        _ => stored_read(ctx, v, from)?,
     };
     set_value(ctx, v, to, &stored)?;
+    super::links::renamed(ctx, &v.name, from, to)?;
     delete(ctx, v, from).map_err(|e| {
         VaultError::new(
             Markup::from(format!(

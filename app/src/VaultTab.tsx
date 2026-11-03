@@ -10,6 +10,7 @@ import {
   type UnreadFor,
   type VaultContents,
   type VaultIdentity,
+  type VaultLink,
   type VaultSecret,
 } from "./bindings";
 import { SAID } from "./menuWords";
@@ -595,6 +596,7 @@ export function VaultTab({
         <DeleteDialog
           vault={vault}
           secret={asking.secret}
+          held={said?.contents?.secrets.find((one) => one.key === asking.secret)}
           onDelete={() => write(commands.vaultSecretDelete(plane, vault, asking.secret))}
           onCancel={() => setAsking(undefined)}
         />
@@ -911,6 +913,7 @@ function SecretRow({
     >
       <TableCell>
         <span className="vault-secret-name">{key}</span>
+        {secret.link !== null && <span className="vault-secret-link">{linkedTo(secret.link)}</span>}
         {value !== undefined && <code className="vault-value">{value}</code>}
       </TableCell>
       <TableCell>{secret.size ?? "—"}</TableCell>
@@ -1096,6 +1099,27 @@ function RenameDialog({
   );
 }
 
+/** Where a linked entry reads its value from, as its row says it under its name. */
+function linkedTo(link: VaultLink): string {
+  return `Linked to ${link.key} in ${link.vault}`;
+}
+
+/**
+ * What deleting a secret does, said before it is done (#5069): a link goes and leaves the entry
+ * it reads; an entry other keys link to takes those links with it, and the count is said.
+ */
+function deleteSaid(held: VaultSecret | undefined): string {
+  if (held?.link) {
+    return `Only the link goes. ${held.link.key} in ${held.link.vault} keeps its value.`;
+  }
+  const gone = "Its value is gone from the vault for good. There is no undo.";
+  const readers = held?.linked_by ?? 0;
+  if (readers === 0) return gone;
+  const links = readers === 1 ? "1 linked entry reads it" : `${readers} linked entries read it`;
+  const they = readers === 1 ? "That link breaks" : "Those links break";
+  return `${gone} ${links}. ${they} until it is linked again.`;
+}
+
 /**
  * Asking before a secret is deleted. **Cancel has the focus**, as it has in every dialog here
  * that ends something: an Enter pressed out of habit keeps the secret.
@@ -1103,11 +1127,14 @@ function RenameDialog({
 function DeleteDialog({
   vault,
   secret,
+  held,
   onDelete,
   onCancel,
 }: {
   vault: string;
   secret: string;
+  /** The row being deleted, for whether it is a link and how many links read it (#5069). */
+  held?: VaultSecret;
   onDelete: () => Promise<string | undefined>;
   onCancel: () => void;
 }) {
@@ -1121,9 +1148,7 @@ function DeleteDialog({
         if (!busy) onCancel();
       }}
       title={`Delete ${secret} from ${vault}?`}
-      description={
-        <p className="came-back">Its value is gone from the vault for good. There is no undo.</p>
-      }
+      description={<p className="came-back">{deleteSaid(held)}</p>}
       cancel={{ isDisabled: busy }}
       main={{
         children: deleting ? "Deleting…" : "Delete",

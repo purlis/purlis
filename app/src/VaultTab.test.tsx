@@ -23,7 +23,14 @@ const TYPED = "typed-value-9f3c1e";
 const EDITED = "edited-value-4b7a20";
 
 function secret(key: string, over: Partial<VaultSecret> = {}): VaultSecret {
-  return { key, size: "16–31 bytes", updated: "2026-09-24T11:32:17Z", ...over };
+  return {
+    key,
+    size: "16–31 bytes",
+    updated: "2026-09-24T11:32:17Z",
+    link: null,
+    linked_by: 0,
+    ...over,
+  };
 }
 
 function contents(secrets: VaultSecret[], over: Partial<VaultContents> = {}): VaultContents {
@@ -318,6 +325,41 @@ describe("a vault's tab", () => {
       vault: "ops",
       key: "GONE",
     });
+  });
+
+  it("names the entry a linked entry reads under its name (#5069)", async () => {
+    core(
+      contents([
+        secret("STRIPE_KEY", { link: { vault: "team", key: "STRIPE" }, size: null, updated: null }),
+      ]),
+    );
+    draw();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0][0]).toBe("STRIPE_KEYLinked to STRIPE in team");
+  });
+
+  it("says before deleting an entry how many linked entries it breaks (#5069)", async () => {
+    core(contents([secret("STRIPE", { linked_by: 2 }), secret("ONE", { linked_by: 1 })]));
+    draw();
+    await fromTheMenuOf("STRIPE", "Delete…");
+    const asking = await screen.findByRole("alertdialog", { name: "Delete STRIPE from ops?" });
+    expect(asking).toHaveTextContent(
+      "2 linked entries read it. Those links break until it is linked again.",
+    );
+    await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
+
+    await fromTheMenuOf("ONE", "Delete…");
+    const one = await screen.findByRole("alertdialog", { name: "Delete ONE from ops?" });
+    expect(one).toHaveTextContent("1 linked entry reads it. That link breaks");
+  });
+
+  it("says deleting a linked entry leaves the entry it reads (#5069)", async () => {
+    core(contents([secret("K", { link: { vault: "team", key: "STRIPE" } })]));
+    draw();
+    await fromTheMenuOf("K", "Delete…");
+    const asking = await screen.findByRole("alertdialog", { name: "Delete K from ops?" });
+    expect(asking).toHaveTextContent("Only the link goes. STRIPE in team keeps its value.");
+    expect(asking).not.toHaveTextContent("for good");
   });
 
   it("is one Tab stop, Up and Down move along the rows, and Enter opens a row's menu", async () => {
