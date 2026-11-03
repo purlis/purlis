@@ -123,7 +123,6 @@ import {
 } from "./repoClones";
 import { StartChat } from "./StartChat";
 import { withDetails } from "./startDetails";
-import { debug4814 } from "./debug4814";
 import {
   handedSaid,
   handReference,
@@ -3065,7 +3064,6 @@ export const PlaneView = memo(function PlaneView({
     async (where: Where) => {
       setPickerTrouble(undefined);
       const asked = ++pickerAsked.current;
-      debug4814(`ask #${asked} ${JSON.stringify(where)}`); // [DEBUG-4814]
       const details = commands
         .startDetails(plane)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
@@ -3088,9 +3086,7 @@ export const PlaneView = memo(function PlaneView({
         return;
       }
       setPicking({ options: options.data, where, pending: true });
-      debug4814(`ask #${asked} opened pending, ${options.data.profiles.length} rows`); // [DEBUG-4814]
       const read = await details;
-      debug4814(`ask #${asked} details ${read.status}, current #${pickerAsked.current}`); // [DEBUG-4814]
       if (pickerAsked.current !== asked) return;
       // Details that could not be read leave the rows as the first answer drew them, and say
       // why: a start then goes to the core, whose gate asks them again.
@@ -3591,9 +3587,6 @@ export const PlaneView = memo(function PlaneView({
       newBranch: boolean,
       withoutSandbox: WithoutSandbox | null,
     ) => {
-      debug4814(
-        `startPicked ${profile} picking=${picking !== undefined} startingNow=${startingNow.current}`,
-      ); // [DEBUG-4814]
       if (picking === undefined || startingNow.current) return;
       const kind = picking.options.profiles.find((one) => one.name === profile)?.kind;
       // **One start per picker at a time** (GL-1). A start runs off the main thread for as
@@ -3618,9 +3611,6 @@ export const PlaneView = memo(function PlaneView({
         startingNow.current = false;
         setStarting(false);
       });
-      debug4814(
-        `startPicked ${profile} ended: ${started === undefined ? "started" : started.words}`,
-      ); // [DEBUG-4814]
       if (startRun.current !== thisStart || startLeft.current) return;
       if (started !== undefined) {
         // In the picker, not behind it: the operator is still choosing, and a refusal they
@@ -3671,7 +3661,6 @@ export const PlaneView = memo(function PlaneView({
       const said = await commands
         .approveProfile(plane, profile, shown)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      debug4814(`approveAndStart ${profile} said ${said.status}`); // [DEBUG-4814]
       if (said.status === "error") {
         setPickerTrouble(said.error);
         return;

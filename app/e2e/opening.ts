@@ -19,67 +19,21 @@ export async function pickAndStart(): Promise<void> {
   // The picker can take the palette's place, so it is looked for by its buttons at every look,
   // and nothing found before it is held (#2126).
   let pressing = "";
-  await browser
-    .waitUntil(
-      async () => {
-        // Not while the rows' details are read (#4736): until they arrive the button says Start
-        // chat even for a profile that asks for its approval, and a press then shows the approval
-        // instead of going, so it is chosen once the picker knows which it is. In one look, so
-        // the dialog cannot be drawn between "is it checking?" and "which button?" (#4979).
-        pressing = (await browser.execute(whatThePickerOffers, PICKER)) ?? "";
-        return pressing !== "";
-      },
-      { timeout: 20_000 },
-    )
-    .catch(async () => {
-      throw new Error(`the picker never offered Start. ${await pickerDebug4814()}`);
-    });
+  await browser.waitUntil(
+    async () => {
+      // Not while the rows' details are read (#4736): until they arrive the button says Start
+      // chat even for a profile that asks for its approval, and a press then shows the approval
+      // instead of going, so it is chosen once the picker knows which it is. In one look, so the
+      // dialog cannot be drawn between "is it checking?" and "which button?" (#4979).
+      pressing = (await browser.execute(whatThePickerOffers, PICKER)) ?? "";
+      return pressing !== "";
+    },
+    { timeout: 20_000, timeoutMsg: "the picker never offered Start" },
+  );
   const start = await $(`button=${pressing}`);
   await start.waitForClickable({ timeout: 20_000 });
   await start.click();
-  await theDialogHasGone("dialog", PICKER, "the picker never went").catch(async (why: unknown) => {
-    throw new Error(
-      `${why instanceof Error ? why.message : String(why)} ${await pickerDebug4814()}`,
-    );
-  });
-  // [DEBUG-4814] What a pass looked like, to read beside a failure.
-  console.log(`[DEBUG-4814] picker went, pressing "${pressing}". ${await pickerDebug4814()}`);
-}
-
-/**
- * [DEBUG-4814] Temporary: what the picker and the core's asks were doing, said by a failure. The
- * dialog's own state (`data-debug-4814` in `StartChat`), its buttons, its busy marks, and the
- * window's trace of the picker's events (`src/debug4814.ts`).
- */
-export async function pickerDebug4814(): Promise<string> {
-  const seen = await browser.execute(() => {
-    const dialogs = [...document.querySelectorAll('[role="dialog"]')].map((dialog) => ({
-      title: dialog.getAttribute("aria-labelledby"),
-      state: dialog.querySelector("[data-debug-4814]")?.getAttribute("data-debug-4814") ?? null,
-      busy: [...dialog.querySelectorAll("[aria-busy]")].map((one) => one.getAttribute("aria-busy")),
-      buttons: [...dialog.querySelectorAll("button")]
-        .map((one) => {
-          const said = (one.textContent ?? "").trim().slice(0, 30);
-          const off = one.disabled || one.getAttribute("aria-disabled") === "true";
-          return off ? `${said}(off)` : said;
-        })
-        .filter((said) => said !== ""),
-      checked: [
-        ...dialog.querySelectorAll(
-          'input[type="radio"]:checked, [role="radio"][aria-checked="true"]',
-        ),
-      ].map((one) => (one as HTMLInputElement).value || one.getAttribute("aria-label")),
-    }));
-    const trace = (globalThis as { __debug4814?: () => unknown }).__debug4814?.() ?? null;
-    const late =
-      (globalThis as { __purlisLateAnswers?: () => unknown }).__purlisLateAnswers?.() ?? null;
-    return JSON.stringify({
-      dialogs,
-      late,
-      trace: Array.isArray(trace) ? trace.slice(-40) : trace,
-    });
-  });
-  return `[DEBUG-4814] ${seen}`;
+  await theDialogHasGone("dialog", PICKER, "the picker never went");
 }
 
 /** The picker's title (`StartChat`). */
@@ -207,13 +161,10 @@ export async function harnessRowCount(): Promise<number> {
 
 /** Waits until the picker has drawn the harness it is offering. */
 export async function harnessRowsDrawn(): Promise<void> {
-  await browser
-    .waitUntil(async () => (await harnessRowCount()) > 0, {
-      timeout: 20_000,
-    })
-    .catch(async () => {
-      throw new Error(`the picker drew no harness rows in 20 seconds. ${await pickerDebug4814()}`);
-    });
+  await browser.waitUntil(async () => (await harnessRowCount()) > 0, {
+    timeout: 20_000,
+    timeoutMsg: "the picker drew no harness rows in 20 seconds",
+  });
 }
 
 /**

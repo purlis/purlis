@@ -38,7 +38,6 @@ import { FILTERED_FROM, ListFilter, noMatchSaid, type Noun } from "./ui/list/Lis
 import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 import { reachableWords, startAnswer } from "./StartChatApproval";
 import { RaiseLimit } from "./RaiseLimit";
-import { debug4814 } from "./debug4814";
 
 /**
  * The key of the row that stands for "no persona at all".
@@ -385,19 +384,9 @@ export function StartChat({
     cancelled.current = true;
     onCancel();
   };
-  // [DEBUG-4814]
-  useEffect(() => {
-    debug4814(`StartChat mounted pending=${pending}`);
-    return () => debug4814("StartChat unmounted");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useEffect(() => debug4814(`StartChat pending=${pending}`), [pending]);
   // A Start pressed before the details arrived (#4736): it waits for them.
   const [pressedEarly, setPressedEarly] = useState(false);
   const start = () => {
-    debug4814(
-      `StartChat press: pending=${pending} approval=${String(picked?.approval ?? null)} profile=${String(profile)}`,
-    ); // [DEBUG-4814]
     if (pending) {
       setPressedEarly(true);
       return;
@@ -427,7 +416,6 @@ export function StartChat({
   useEffect(() => {
     if (pending || !pressedEarly || wentEarly.current) return;
     wentEarly.current = true;
-    debug4814(`StartChat early press resolves: byKey=${byKey}`); // [DEBUG-4814]
     if (byKey) plainStart();
   });
   // Raising a limit starts the chat too, so it is offered only where that is a plain start of the
@@ -626,22 +614,6 @@ export function StartChat({
     >
       <div
         className="start-chat-panes"
-        // [DEBUG-4814] The dialog's own state, read by a failing scenario spec.
-        data-debug-4814={JSON.stringify({
-          pending,
-          openedPending,
-          pressedEarly,
-          profile,
-          approval: picked?.approval ?? null,
-          sandbox: picked?.sandbox?.state ?? null,
-          approves,
-          byKey,
-          starting,
-          savingLimit,
-          unavailable: Boolean(unavailable),
-          withoutSandbox: withoutSandbox !== null,
-          trouble: trouble ?? null,
-        })}
         ref={panes}
         onKeyDownCapture={enterDown}
         onKeyUpCapture={enterUp}
