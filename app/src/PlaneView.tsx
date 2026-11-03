@@ -4741,7 +4741,6 @@ export const PlaneView = memo(function PlaneView({
       const pane = at ?? front?.focused;
       if (findView(tabs, view) !== undefined || pane === undefined) {
         showView(view, title);
-        viewOpened(plane, view);
         return;
       }
       const beside = viewBesideOf(paneSize(at));

@@ -27,7 +27,6 @@ function Heading({ width, onOpen }: { width: number; onOpen: (how: "tab" | "besi
         <ViewOpenButton
           view={VIEW}
           name="Statistics · steward"
-          where="this"
           pane={7}
           tooltip="Asks statistics, in a tab of its own"
           icon={<ChartColumn className="node-icon" aria-hidden="true" />}

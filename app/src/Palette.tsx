@@ -581,7 +581,7 @@ export function Palette({
             // ⌥Enter (#4769): a row that opens an extension's view opens it beside the focused
             // pane; any other row runs as Enter runs it.
             e.preventDefault();
-            const row = aimed >= 0 && aimed < rows.length ? rows[aimed] : undefined;
+            const row = aimedRow;
             if (row?.beside !== undefined && row.available) runOffer({ ...row, does: row.beside });
             else runRow(aimed);
           } else if (isKey(e.nativeEvent, "palette.run", mac)) {

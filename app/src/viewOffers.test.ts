@@ -11,7 +11,6 @@ import {
   offerSaid,
   offered,
   opened,
-  placeOfOffer,
   stopped,
   type ViewOffer,
   withdrawn,
@@ -109,18 +108,7 @@ describe("an extension's offer (#4769)", () => {
   });
 });
 
-describe("where an offer is drawn (#4769, #4584's notice rules)", () => {
-  const shownIn = (chat: number) => (chat === 4 ? 12 : undefined);
-
-  it("goes on the pane band of the chat it is about while that chat is on screen", () => {
-    expect(placeOfOffer(about("steward", 4), shownIn)).toEqual({ at: "pane", pane: 12 });
-  });
-
-  it("goes to the Notices centre alone for a chat not on screen, or about no chat", () => {
-    expect(placeOfOffer(about("steward", 9), shownIn)).toEqual({ at: "centre" });
-    expect(placeOfOffer(about("steward"), shownIn)).toEqual({ at: "centre" });
-  });
-
+describe("what an offer says (#4769)", () => {
   it("says who offers which view, about what", () => {
     expect(offerSaid(about("steward"), [STATS])).toBe(
       "statistics offers a view · Statistics · steward",

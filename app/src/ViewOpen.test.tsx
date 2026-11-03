@@ -54,13 +54,7 @@ function inPane(pane: number, size: { width: number; height: number }) {
 
 function button(onOpen = vi.fn(), pane = 7) {
   render(
-    <ViewOpenButton
-      view={VIEW}
-      name="Statistics · steward"
-      where="this"
-      pane={pane}
-      onOpen={onOpen}
-    >
+    <ViewOpenButton view={VIEW} name="Statistics · steward" pane={pane} onOpen={onOpen}>
       Statistics
     </ViewOpenButton>,
     { container: document.querySelector(`[${PANE}="${pane}"]`) as HTMLElement },

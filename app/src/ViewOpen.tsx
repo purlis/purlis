@@ -58,9 +58,8 @@ function openMenu(view: ViewRef, name: string, beside: Beside): GroupDrawn[] {
 }
 
 /**
- * **A view's button, with its beside icon after it** (#4769 Q1 A). `where` is the pane Open
- * beside goes beside: `this`, the pane `pane` the button sits on (a view's heading), or
- * `focused` (a panel row), whose icon shows on hover and focus.
+ * **A view's button, with its beside icon after it** (#4769 Q1 A), on a view's heading: Open
+ * beside goes beside `pane`, the pane the button sits on.
  */
 export function ViewOpenButton({
   view,
@@ -68,7 +67,6 @@ export function ViewOpenButton({
   icon,
   children,
   tooltip,
-  where,
   pane,
   onOpen,
 }: {
@@ -79,14 +77,13 @@ export function ViewOpenButton({
   /** The button's words. */
   children: ReactNode;
   tooltip?: string;
-  where: "this" | "focused";
-  /** The pane the button sits on, for `this`. */
+  /** The pane the button sits on. */
   pane?: number;
   onOpen: (how: OpenHow) => void;
 }) {
-  const beside = useBeside(where === "this" ? pane : undefined);
+  const beside = useBeside(pane);
   return (
-    <span className="view-open" data-where={where}>
+    <span className="view-open">
       <ContextMenu
         menu={() => (
           <Menu aria-label={name} className="item-menu">
@@ -111,7 +108,7 @@ export function ViewOpenButton({
         size="sm"
         variant="ghost"
         className="view-open-beside"
-        aria-label={besideLabel(name, where, beside)}
+        aria-label={besideLabel(name, beside)}
         isDisabled={!beside.ok}
         icon={<PanelRight aria-hidden="true" />}
         onPress={() => onOpen("beside")}

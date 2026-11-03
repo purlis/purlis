@@ -251,15 +251,17 @@ function viewsWent(was: readonly ExtensionView[], now: readonly ExtensionView[])
   if (changed) for (const listener of [...wentListeners]) listener();
 }
 
+function subscribeWent(listener: () => void) {
+  wentListeners.add(listener);
+  return () => {
+    wentListeners.delete(listener);
+  };
+}
+
 /** Whether `view` is an extension's view that went while this window was open. */
 function useViewWent(view: ViewRef): boolean {
   return useSyncExternalStore(
-    (listener) => {
-      wentListeners.add(listener);
-      return () => {
-        wentListeners.delete(listener);
-      };
-    },
+    subscribeWent,
     () => view.from !== null && wentThisSession.has(wentKey(view.from, view.view)),
   );
 }
@@ -543,7 +545,7 @@ export function ViewPane({
         <EmptyState
           mark={Puzzle}
           headline={`${title} is not here any more`}
-          body={`${view.from} was removed, so there is nothing left to ask.`}
+          body={`${view.from} no longer offers this view: it was turned off or removed.`}
           action={
             onClosePane === undefined ? undefined : (
               <Button onPress={onClosePane}>Close pane</Button>
@@ -650,7 +652,6 @@ export function ViewPane({
                 key={`${one.extension}/${one.id}`}
                 view={opens}
                 name={called}
-                where="this"
                 pane={pane}
                 tooltip={`Asks ${one.extension}, in a tab of its own`}
                 icon={<ChartColumn className="node-icon" aria-hidden="true" />}

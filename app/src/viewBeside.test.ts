@@ -2,13 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import {
-  besideHint,
-  besideLabel,
-  besideOf,
-  besideRefusedSaid,
-  openedBesideSaid,
-} from "./viewBeside";
+import { besideHint, besideLabel, besideOf, besideRefusedSaid } from "./viewBeside";
 import { PANE_FLOOR } from "./paneDrop";
 import {
   contentsOf,
@@ -39,6 +33,7 @@ describe("where a view opens beside a pane (#4769)", () => {
       ok: false,
       direction: "row",
       why: "Too narrow to open beside: each side needs 40 columns",
+      need: "each side needs 40 columns",
     });
   });
 
@@ -48,6 +43,7 @@ describe("where a view opens beside a pane (#4769)", () => {
       ok: false,
       direction: "column",
       why: "Too short to open beside: each side needs 8 rows",
+      need: "each side needs 8 rows",
     });
   });
 
@@ -63,14 +59,11 @@ describe("where a view opens beside a pane (#4769)", () => {
 describe("what Open beside says (#4769)", () => {
   it("labels the beside icon by where it opens, and by its reason when refused", () => {
     const ok = besideOf({ width: 1000, height: 600 });
-    expect(besideLabel("Statistics · steward", "this", ok)).toBe(
+    expect(besideLabel("Statistics · steward", ok)).toBe(
       "Open Statistics · steward beside this pane (⌥-press)",
     );
-    expect(besideLabel("Statistics · steward", "focused", ok)).toBe(
-      "Open Statistics · steward beside the focused pane (⌥-press)",
-    );
     const refused = besideOf({ width: 400, height: 100 });
-    expect(besideLabel("Statistics · steward", "this", refused)).toBe(
+    expect(besideLabel("Statistics · steward", refused)).toBe(
       "Too narrow to open beside: each side needs 40 columns",
     );
   });
@@ -88,15 +81,6 @@ describe("what Open beside says (#4769)", () => {
     );
     expect(besideHint(besideOf({ width: 400, height: 100 }), false)).toBe(
       "Enter Open in a tab · Alt+Enter Too narrow to open beside: each side needs 40 columns",
-    );
-  });
-
-  it("says where it opened, for the reader, by the split's direction", () => {
-    expect(openedBesideSaid("Statistics · steward", "steward 4", "row")).toBe(
-      "Opened Statistics · steward right of steward 4. Focus is in it.",
-    );
-    expect(openedBesideSaid("Statistics · steward", "steward 4", "column")).toBe(
-      "Opened Statistics · steward below steward 4. Focus is in it.",
     );
   });
 });

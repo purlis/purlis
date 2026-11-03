@@ -20,7 +20,8 @@ import type { Direction } from "./tabs";
 
 /** Whether a view can open beside a pane, and how its split would go. */
 export type Beside =
-  { ok: true; direction: Direction } | { ok: false; direction: Direction; why: string };
+  | { ok: true; direction: Direction }
+  | { ok: false; direction: Direction; why: string; need: string };
 
 /** **Open beside, for a pane of `size`**; a pane not measured yet splits side by side. */
 export function besideOf(size: Size | undefined): Beside {
@@ -29,31 +30,26 @@ export function besideOf(size: Size | undefined): Beside {
   const across = direction === "row";
   const fits = across ? size.width / 2 >= PANE_FLOOR.width : size.height / 2 >= PANE_FLOOR.height;
   if (fits) return { ok: true, direction };
+  // PANE_FLOOR is about 40 columns by 8 rows of the terminal's text (#4583), said as such.
+  const need = across ? "each side needs 40 columns" : "each side needs 8 rows";
   return {
     ok: false,
     direction,
-    why: across
-      ? "Too narrow to open beside: each side needs 40 columns"
-      : "Too short to open beside: each side needs 8 rows",
+    need,
+    why: `${across ? "Too narrow" : "Too short"} to open beside: ${need}`,
   };
 }
 
-/** The beside icon's label: where it opens `name`, or why it can't. `where` is the pane the
- *  icon sits on (a button on a view, an offer on a band) or the focused pane (a panel row, the
- *  palette, the Notices centre). */
-export function besideLabel(name: string, where: "this" | "focused", beside: Beside): string {
+/** The beside icon's label, on the pane the button sits on: where it opens `name`, or why it
+ *  can't. */
+export function besideLabel(name: string, beside: Beside): string {
   if (!beside.ok) return beside.why;
-  return `Open ${name} beside ${where === "this" ? "this pane" : "the focused pane"} (⌥-press)`;
+  return `Open ${name} beside this pane (⌥-press)`;
 }
 
 /** What an ⌥-press on a refused Open beside says, beside its Open in a tab. */
 export function besideRefusedSaid(beside: Extract<Beside, { ok: false }>): string {
-  return `Not opened beside: ${beside.why.replace(/^Too (narrow|short) to open beside: /, "")}.`;
-}
-
-/** What is announced once `name` opened beside `there`. */
-export function openedBesideSaid(name: string, there: string, direction: Direction): string {
-  return `Opened ${name} ${direction === "row" ? "right of" : "below"} ${there}. Focus is in it.`;
+  return `Not opened beside: ${beside.need}.`;
 }
 
 /** **What a view row's two keys do** (#4769): Enter opens it in a tab, ⌥Enter beside the

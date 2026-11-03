@@ -5,7 +5,7 @@ import { layoutPref } from "./layoutPref";
 
 /**
  * **The extensions whose offers the person stopped** (#4769, prototype `view-open-beside` Q3 A):
- * an offer note's ⋯ has Stop offers from <extension>, which holds every offer from it until
+ * an offer note has Stop offers from <extension>, which holds every offer from it until
  * Settings › Extensions turns its offers back on. It is the person's preference and no new
  * capability (ADR 0041): it only holds notes back. Kept in the layout file under `offers`
  * (`layout.json`, `regions.ts`), beside the window's other choices on this machine; an empty

@@ -114,19 +114,6 @@ export function withdrawn(state: OfferState, declared: readonly ExtensionView[])
   return standing.length === state.standing.length ? state : { ...state, standing };
 }
 
-/** Where an offer is drawn besides the Notices centre, which lists every one. */
-export type OfferPlace = { at: "pane"; pane: number } | { at: "centre" };
-
-/** **The pane band of the chat it is about, while a pane shows it** (`paneOf`), else the
- *  Notices centre alone. */
-export function placeOfOffer(
-  offer: ViewOffer,
-  paneOf: (chat: number) => number | undefined,
-): OfferPlace {
-  const pane = offer.chat === undefined ? undefined : paneOf(offer.chat);
-  return pane === undefined ? { at: "centre" } : { at: "pane", pane };
-}
-
 /** The view's name as its tab says it: its title, and the subject after a dot. */
 export function offerTitle(offer: ViewOffer, declared: readonly ExtensionView[]): string {
   const title = declares(declared, offer)?.title ?? offer.view;
