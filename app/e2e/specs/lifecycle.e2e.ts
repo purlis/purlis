@@ -43,14 +43,20 @@ async function showing(): Promise<boolean> {
   });
 }
 
-/** The names on the tab strip, left to right. Scoped to that strip: the strip above lists
- *  workspaces as a tablist too, and a query across the window would mix the two. */
+/** What a strip's kept empty tab is called (`tabs.EMPTY_TAB`, #4755). */
+const KEPT_EMPTY = "New chat";
+
+/** The names on the tab strip, left to right, of the tabs that show something: an empty tab
+ *  every strip keeps (#4758) is no session's, and earlier files can leave one. Scoped to that
+ *  strip: the strip above lists workspaces as a tablist too, and a query across the window
+ *  would mix the two. */
 async function tabNames(): Promise<string[]> {
-  return browser.execute(() =>
+  const names = await browser.execute(() =>
     [
       ...(document.querySelector('[data-strip="Tabs"]')?.querySelectorAll('[role="tab"]') ?? []),
     ].map((tab) => tab.textContent ?? ""),
   );
+  return names.filter((name) => name !== KEPT_EMPTY);
 }
 
 /**

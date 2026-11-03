@@ -3,8 +3,9 @@
 
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { pressAndStart, openThePicker } from "../opening.js";
+import { pressAndStart } from "../opening.js";
 import { roomForTwoPanes } from "../paneRoom.js";
+import { runFromThePalette } from "../reach.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { openedSince } from "../reach.js";
 
@@ -1045,8 +1046,9 @@ describe("a Notice in a pane", () => {
     offTheTerminal(await measured(1));
 
     // A real dialog, portaled to the body as every dialog is: the picker. It was drawn UNDER
-    // the pane's corner, so a Notice sat on the dialog's top edge.
-    await openThePicker();
+    // the pane's corner, so a Notice sat on the dialog's top edge. Asked for by New chat, which
+    // opens it over this pane: the strip's `+` would go to a tab of its own first (#4758).
+    await runFromThePalette("new chat", "chat.new");
     const picker = await $('[role="dialog"][aria-labelledby="start-chat"]');
     await picker.waitForDisplayed({ timeout: 20_000 });
     expect(["the scrim", "the dialog"]).toContain(await atTheNotice());

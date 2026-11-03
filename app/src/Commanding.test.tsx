@@ -275,6 +275,30 @@ describe("the palette reaching what the window can do", () => {
     expect(tabNames()).toEqual(["steward 1"]);
   });
 
+  it("starts the chat New chat runs in the + tab's empty pane, and End then names that chat (#4758)", async () => {
+    // The scenario's palette route, by the keyboard alone: New tab for a tab of one empty pane,
+    // New chat for the picker, Start. The chat takes that tab, the one before keeps its chat,
+    // and End… in the palette is the started chat's.
+    const { asked } = core();
+    render(<App />);
+    await openAChat();
+    await runFromPalette("new tab");
+    await screen.findByTestId("empty-pane");
+
+    await runFromPalette("new chat");
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
+
+    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "steward 2"]));
+    expect(screen.getAllByTestId("pane").map((pane) => pane.textContent)).toEqual(["session 2"]);
+    await runFromPalette("end chat steward 2");
+    await answerTheAsk("End chat steward 2…");
+    await waitFor(() =>
+      expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
+        expect.objectContaining({ session: 2 }),
+      ]),
+    );
+  });
+
   it("switches tab", async () => {
     core();
     render(<App />);

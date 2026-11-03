@@ -88,6 +88,17 @@ async function tabTexts(): Promise<string[]> {
   );
 }
 
+/** The tabs on the strip drawn: the ones it draws, and the ones its "Show N tabs" hides. */
+async function onThisStrip(): Promise<number> {
+  return browser.execute(() => {
+    const drawn = document.querySelectorAll('[data-strip="Tabs"] [role="tab"]').length;
+    const said = document
+      .querySelector('.bar button[aria-label^="Show "]')
+      ?.getAttribute("aria-label");
+    return drawn + Number(/^Show (\d+) tabs? /.exec(said ?? "")?.[1] ?? 0);
+  });
+}
+
 /**
  * How many tabs charter itself says are open, counted from the palette.
  *
@@ -210,8 +221,13 @@ describe("the window", function () {
   // The fifty chats below are ended again through the window, each by its number: one app
   // process serves the whole run, and a spec file leaves no chat running (#1796, `chatsLeft.ts`).
   let wereOpen: Running = {};
+  // **The tabs on other strips**, which the palette's count holds and this strip does not:
+  // every workspace keeps one tab (#4758), so a strip an earlier file was on keeps its empty
+  // tab. Counted once here, before this file opens anything on its own strip.
+  let elsewhere = 0;
   before(async () => {
     wereOpen = await chatsRunning();
+    elsewhere = (await tabsOpen()) - (await onThisStrip());
   });
   // **A test that runs out of time is not stopped by it** (#2367): mocha and WebdriverIO move
   // on, and the body goes on pressing New tab under the tests and the `after` that follow. The
@@ -256,7 +272,13 @@ describe("the window", function () {
   it("draws a session's screen again when its tab comes back to the front", async () => {
     // The pane that was showing it is gone, and with it its terminal: what comes back can
     // only come from the screen the core kept.
-    const [first] = await tabTexts();
+    // The tab in front, which shows the chat above: not the strip's first tab, which can be
+    // an empty one a strip keeps (#4758).
+    const first = await browser.execute(
+      () =>
+        document.querySelector('[data-strip="Tabs"] [role="tab"][aria-selected="true"]')
+          ?.textContent ?? "",
+    );
 
     await pressAndStart("New tab");
     // Chained, not one selector: WebdriverIO's `=text` shorthand is a whole selector and
@@ -320,7 +342,7 @@ describe("the window", function () {
     // collapse owes and the assertion the scroller could not make: nothing is both drawn and
     // hidden, and nothing is neither. `open` is charter's own count and not the strip's —
     // see `tabsOpen`, and why it is tabs rather than sessions.
-    expect(drawn.length + counted).toBe(open);
+    expect(drawn.length + counted).toBe(open - elsewhere);
     expect(drawn.length).toBeGreaterThan(0);
     expect(counted).toBeGreaterThan(0);
 
