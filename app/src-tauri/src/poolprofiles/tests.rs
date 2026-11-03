@@ -854,6 +854,78 @@ fn a_pools_page_says_which_limit_the_file_got_wrong() {
     }
 }
 
+/// #4287: the page shows the team's default and highest, and says a value kept above it holds to it.
+#[test]
+fn a_pools_page_shows_what_the_team_set() {
+    use purlis_core::poollimits::{Chosen, LimitId};
+    let team = serde_json::json!({
+        "signInWait": {"default": 10, "highest": 40},
+        "codeSize": {"default": 2048},
+    });
+    let chosen = Chosen::default()
+        .under_team(Some(&team))
+        .with(LimitId::SignInWait, Some(100));
+    let shown = limits_shown(&chosen, &[], false, &[]);
+    let rows: Vec<&PoolLimitRow> = shown
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .collect();
+    let row = rows.iter().find(|row| row.key == "signInWait").unwrap();
+    assert_eq!(row.default, 10);
+    assert_eq!(row.suggested, None);
+    assert_eq!(
+        row.highest_said.as_deref(),
+        Some("The team allows up to 40 minutes.")
+    );
+    assert!(
+        row.refused
+            .as_deref()
+            .unwrap_or("")
+            .contains("at most 40 minutes")
+    );
+    let code = rows.iter().find(|row| row.key == "codeSize").unwrap();
+    assert_eq!(code.default, 1024, "a higher default raises nothing");
+    assert_eq!(code.suggested, Some(2048));
+    let other = rows.iter().find(|row| row.key == "profileSize").unwrap();
+    assert_eq!(other.highest_said, None);
+}
+
+/// #4396: on a Docker pool whose runner has little memory, the page says how much of a profile it
+/// holds and why, and a size kept from before says it holds to that.
+#[test]
+fn a_pools_page_says_what_its_runners_memory_holds_of_a_profile() {
+    use purlis_core::poollimits::{Chosen, LimitId};
+    let chosen = Chosen::default()
+        .with(LimitId::Memory, Some(1024))
+        .on_a_runner_of(1024)
+        .with(LimitId::ProfileSize, Some(1000));
+    let shown = limits_shown(&chosen, &[], true, &[]);
+    let rows: Vec<&PoolLimitRow> = shown
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .collect();
+    let size = rows.iter().find(|row| row.key == "profileSize").unwrap();
+    let says = size.highest_said.as_deref().unwrap_or("");
+    assert!(says.starts_with("Up to 512 MiB"), "{says}");
+    assert!(says.contains("half of the runner's memory"), "{says}");
+    assert!(says.ends_with("Raise Memory to allow more."), "{says}");
+    let refused = size.refused.as_deref().unwrap_or("");
+    assert!(refused.contains("holds at 512 MiB"), "{refused}");
+    let files = rows.iter().find(|row| row.key == "profileFiles").unwrap();
+    assert_eq!(files.highest_said, None);
+
+    let roomy = limits_shown(&Chosen::default().on_a_runner_of(4096), &[], true, &[]);
+    assert!(
+        roomy
+            .groups
+            .iter()
+            .flat_map(|group| &group.limits)
+            .all(|row| row.highest_said.is_none())
+    );
+}
+
 /// Q15: the window's check and the file's refusal are one, word for word.
 #[test]
 fn the_windows_check_refuses_as_the_file_does() {
@@ -863,9 +935,8 @@ fn the_windows_check_refuses_as_the_file_does() {
         ("signInWait", "121", serde_json::json!(121)),
         ("codeSize", "lots", serde_json::json!("lots")),
     ] {
-        let by_window =
-            tauri::async_runtime::block_on(pool_limit_check(key.to_owned(), typed.to_owned()))
-                .unwrap_err();
+        let config = tempfile::tempdir().unwrap();
+        let by_window = limit_checked_on(config.path(), "builds", key, typed).unwrap_err();
         let row = serde_json::json!({ key: held });
         let (_, refused) = Chosen::read_row(row.as_object().unwrap(), None);
         assert_eq!(by_window, refused[0].why);
@@ -918,7 +989,13 @@ fn a_pools_page_lists_every_limit_once_with_what_the_person_set() {
 #[test]
 fn a_sign_in_that_ran_out_offers_double_and_the_page_leaves_out_the_vouch_wait() {
     use purlis_core::poollimits::{Chosen, LimitId, attempt};
-    let (said, refused) = attempt(|| sign_in_ran_out("ran-out-signing-in", 15));
+    let (said, refused) = attempt(|| {
+        sign_in_ran_out(
+            "ran-out-signing-in",
+            15,
+            &purlis_core::poollimits::Chosen::default(),
+        )
+    });
     assert!(said.starts_with(driven::TOOK_TOO_LONG), "{said}");
     assert!(said.contains("raise it to 30 minutes"), "{said}");
     let refused = refused.expect("the wait it ran out of");
@@ -1000,14 +1077,24 @@ fn a_keep_the_command_asks_is_held_to_the_strips_gate_and_named_on_the_pool() {
 #[test]
 fn a_profile_row_late_by_the_pools_wait_offers_double_and_no_other_does() {
     use purlis_core::poollimits::{LimitId, attempt};
-    let (said, refused) =
-        attempt(|| late_said("late-on-a-row", 30, crate::runnerlinks::ANSWER_LATE.into()));
+    let (said, refused) = attempt(|| {
+        late_said(
+            "late-on-a-row",
+            &purlis_core::poollimits::Chosen::default(),
+            crate::runnerlinks::ANSWER_LATE.into(),
+        )
+    });
     assert!(said.contains("raise it to 60 seconds"), "{said}");
     let refused = refused.expect("the wait it ran out of");
     assert_eq!(refused.pool, "late-on-a-row");
     assert_eq!(refused.hits[0].limit, LimitId::AnswerWait);
-    let (other, refused) =
-        attempt(|| late_said("other-on-a-row", 30, "the runner said: no".into()));
+    let (other, refused) = attempt(|| {
+        late_said(
+            "other-on-a-row",
+            &purlis_core::poollimits::Chosen::default(),
+            "the runner said: no".into(),
+        )
+    });
     assert_eq!(other, "the runner said: no");
     assert_eq!(refused, None);
 }
@@ -1017,7 +1104,13 @@ fn a_profile_row_late_by_the_pools_wait_offers_double_and_no_other_does() {
 fn a_refusal_in_a_limits_words_with_no_hit_offers_nothing() {
     use purlis_core::poollimits::{LimitId, attempt};
     let said_alike = LimitId::ProfileSize.limit().hit(128, 151, None).said();
-    let (said, refused) = attempt(|| late_said("alike-on-a-row", 30, said_alike.clone().into()));
+    let (said, refused) = attempt(|| {
+        late_said(
+            "alike-on-a-row",
+            &purlis_core::poollimits::Chosen::default(),
+            said_alike.clone().into(),
+        )
+    });
     assert_eq!(said, said_alike);
     assert_eq!(refused, None);
 }
@@ -1031,7 +1124,7 @@ fn a_profile_over_its_pools_limit_offers_what_it_hit_on_that_pool() {
     let (said, refused) = attempt(|| {
         late_said(
             "over-on-a-row",
-            30,
+            &purlis_core::poollimits::Chosen::default(),
             onrunner::NotSent {
                 said: hit.said(),
                 hits: vec![hit],
@@ -1109,5 +1202,34 @@ fn a_stop_between_two_asks_says_its_reason() {
     assert_eq!(
         still_driving(u32::MAX).map(|_| ()).unwrap_err(),
         "that sign-in is over"
+    );
+}
+
+/// **A pool not reached is offered beside its own refusal alone** (#4536): a step the attempt got
+/// past marks nothing on a later refusal, and an attempt outside [`offering_limits`] keeps none.
+#[test]
+fn a_pool_not_reached_is_offered_only_beside_the_refusal_it_made() {
+    let refused = offering_limits(|| -> Result<(), String> {
+        Err(unavailable(
+            "builds",
+            "pool builds is not reached".to_owned(),
+        ))
+    })
+    .unwrap_err();
+    assert_eq!(refused.pool_unavailable.as_deref(), Some("builds"));
+
+    let got_past = offering_limits(|| -> Result<(), String> {
+        let _ = unavailable("builds", "pool builds is not reached".to_owned());
+        Err("its profile is signed out".to_owned())
+    })
+    .unwrap_err();
+    assert_eq!(got_past.pool_unavailable, None);
+
+    let _ = unavailable("builds", "outside any attempt".to_owned());
+    let later = offering_limits(|| -> Result<(), String> { Err("outside any attempt".to_owned()) })
+        .unwrap_err();
+    assert_eq!(
+        later.pool_unavailable, None,
+        "nothing kept outside an attempt"
     );
 }

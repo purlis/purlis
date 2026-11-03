@@ -33,7 +33,8 @@ import type { AtLimit, FinishedTask } from "./bindings";
 import { HelpersSaid } from "./ExplorerChats";
 import { ChatDoingLine } from "./ChatRowActivity";
 import { aCardIsUp, cardDown, cardUp, skipsTheRest, useCardUp } from "./chatCard";
-import { ChatPersonaState, ChatShownState } from "./ChatRows";
+import { ChatShownState } from "./ChatRows";
+import { ChatPersonaState } from "./ChatPersonaState";
 import { sameList, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { useTokensOnHover } from "./tasksUsed";
 import {
@@ -81,10 +82,12 @@ import { useTaskCount, useTaskCountSaid } from "./TasksBelow";
 import { BrowserRows, type BrowserShown } from "./ChatBrowsersShown";
 import { HeadingOffer } from "./PanelSection";
 import { tasksIn } from "./taskBuckets";
-import { Menued } from "./Menus";
+import { Menued, moreForSaid } from "./Menus";
+import { menuIsEmpty } from "./menuModel";
+import { askForAMenu } from "./ui/menu/ContextMenu";
 import { useRevealedTask, type Reveal } from "./revealTask";
 import { useTabStop } from "./roving";
-import { stateClock, useStateSince, type StateClock } from "./stateClock";
+import { stateClock, useNow, useStateSince, type StateClock } from "./stateClock";
 import { deletes } from "./tabKeys";
 import { askSettingsLink } from "./settings/links";
 import { DISPATCH } from "./settings/dispatch";
@@ -92,6 +95,14 @@ import { Button, IconButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
+import { useQuestionStanding, useQuestionsHere } from "./QuestionsHere";
+import {
+  askingBelow,
+  askingSaid,
+  questionWords,
+  waitingOnYou,
+  type QuestionStanding,
+} from "./taskQuestions";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { useWindowLeft } from "./ui/windowLeft";
 import { useHeldStill } from "./heldStill";
@@ -103,7 +114,6 @@ type ShownFacts = {
   shell: boolean;
   report: TaskFacts["report"] | null;
   outcome: string | null;
-  asking: string | null;
   harness: string | null;
 };
 
@@ -160,9 +170,6 @@ type Moving = {
 
 const sameAsked = (one: readonly number[] | null, other: readonly number[] | null) =>
   one === other || (one !== null && other !== null && sameList(one, other));
-
-/** The chats a chat that handed nothing off handed off to. */
-const NOT_HANDED_OFF: readonly number[] = [];
 
 /** No restart has anything to say. */
 const NO_RESTARTS: Readonly<Record<number, string>> = {};
@@ -621,8 +628,19 @@ export function ChatsSection({
     }
     return of;
   }, [drawn]);
-  const needsYou = useChatsSelect(chats, (states) => states.needsYou);
+  const queue = useChatsSelect(chats, (states) => states.needsYou);
+  /** The project's task questions, as the asks registry lists them (#4564). */
+  const questions = useQuestionsHere();
+  /** **Who waits on the person**: the core's queue, and each task question that has reached
+   *  them. A question with its asking chat is in neither, so it draws no hand above its row
+   *  and opens no fold. */
+  const needsYou = useMemo(() => {
+    const reached = waitingOnYou(questions).filter((session) => !queue.includes(session));
+    return reached.length === 0 ? queue : [...queue, ...reached];
+  }, [queue, questions]);
   const leads = useMemo(() => needing(rows, needsYou), [rows, needsYou]);
+  /** How many task questions are with their asking chat under each row: a folded row says so. */
+  const askingUnder = useMemo(() => askingBelow(rows, questions), [rows, questions]);
   const byNumber = useMemo(() => new Map(rows.map((row) => [row.session, row])), [rows]);
   /**
    * **A task that comes to need you opens the rows above it** (#1675, B-6), so it is never
@@ -658,11 +676,6 @@ export function ChatsSection({
   }
   /** Where each chat's work went by a handoff, the newest first (#1492). */
   const went = useMemo(() => handedOff(rows), [rows]);
-  /** The same by number, for each row's menu: held, so a row is drawn again only for its own. */
-  const wentTo = useMemo(
-    () => new Map([...went].map(([from, chats]) => [from, chats.map((chat) => chat.session)])),
-    [went],
-  );
   /**
    * **The chats that need the person and that the filter hides**, longest waiting first
    * (#1499): their own rows and every row above them are filtered out, so no hand is drawn
@@ -1112,7 +1125,6 @@ export function ChatsSection({
                       shell={row.shell}
                       report={row.report}
                       outcome={row.outcome}
-                      asking={row.asking}
                       harness={row.harness}
                       runsOn={row.runsOn}
                       level={row.level}
@@ -1131,12 +1143,12 @@ export function ChatsSection({
                       byYou={row.byYou === true}
                       handedToName={handed?.[0].name ?? null}
                       handedMore={handed === undefined ? 0 : handed.length - 1}
-                      handedAll={wentTo.get(row.session) ?? NOT_HANDED_OFF}
                       askerWaiting={row.askerWaiting === true}
                       tab={row.tab}
                       current={row.session === front}
                       open={open ?? null}
                       needs={lead === undefined ? null : lead}
+                      askingUnder={askingUnder.get(row.session) ?? 0}
                       needsName={
                         lead === undefined || lead === row.session
                           ? null
@@ -1343,7 +1355,6 @@ const Row = memo(function Row({
   shell,
   report,
   outcome,
-  asking,
   harness,
   runsOn,
   level,
@@ -1353,12 +1364,12 @@ const Row = memo(function Row({
   byYou,
   handedToName,
   handedMore,
-  handedAll,
   askerWaiting,
   tab,
   current,
   open,
   needs,
+  askingUnder,
   needsName,
   stopping,
   restartSaid,
@@ -1390,7 +1401,6 @@ const Row = memo(function Row({
   /** What its state is derived from beside the board's word for it (`ChatShownState`). */
   report: TaskFacts["report"] | null;
   outcome: string | null;
-  asking: string | null;
   harness: string | null;
   /** What it runs on (`ListedChat.runsOn`), said in its card (#1673). */
   runsOn?: string | null;
@@ -1407,8 +1417,6 @@ const Row = memo(function Row({
   handedToName: string | null;
   /** How many other open chats it handed off to. */
   handedMore: number;
-  /** Every open chat it handed off to, the newest first: its menu has a row to go to each. */
-  handedAll: readonly number[];
   /** That chat waits to start after a launch, and has not closed (#1513). */
   askerWaiting: boolean;
   tab: boolean;
@@ -1417,6 +1425,8 @@ const Row = memo(function Row({
   open: boolean | null;
   /** The chat its hand leads to: itself, a chat below it, or none when it wears no hand. */
   needs: number | null;
+  /** How many task questions under it are with their asking chat (#4564): said while folded. */
+  askingUnder: number;
   /** That chat's name, when it is a chat below this one. */
   needsName: string | null;
   stopping: boolean;
@@ -1447,6 +1457,8 @@ const Row = memo(function Row({
   /** Whether the pointer, and not the keyboard, was what the person used last. */
   pointedLast: () => boolean;
 }) {
+  /** Its question's words may give way at the row's end (#4564): the trail shrinks for them. */
+  const questioned = useQuestionStanding(session) !== undefined;
   // The keys of a row. Enter is the button's own press, which opens it. Space opens a task
   // beside its session, and Delete (Backspace on a Mac, `tabKeys.deletes`) asks to stop
   // a task: the catalogue's rows, which ask
@@ -1470,7 +1482,7 @@ const Row = memo(function Row({
   // A task's tokens, in its card (#1500): read as the pointer or the keyboard rests on the
   // row, never polled.
   const used = useTokensOnHover({ chat: session });
-  const state: ShownFacts = { session, shell, report, outcome, asking, harness };
+  const state: ShownFacts = { session, shell, report, outcome, harness };
   // **What the row says** (#3658, #3759, #3886): a chat below it needs you, its task limit, its
   // dispatches waiting on memory and where they are named, and what its restart says. Said in
   // the row's description, which is where a screen reader is, since what is drawn beside it
@@ -1554,7 +1566,7 @@ const Row = memo(function Row({
   });
   return (
     <li role="none" data-level={level}>
-      <Menued on={{ on: "listed", session, handed: handedAll }} offers={offers} onPress={onPress}>
+      <Menued on={{ on: "chat", session }} offers={offers} onPress={onPress}>
         <RovingFocusGroup.Item asChild tabStopId={rowId(session)}>
           <button
             type="button"
@@ -1629,19 +1641,42 @@ const Row = memo(function Row({
             <span className="ui-row-lead">
               <ChatPersonaState persona={persona} {...state} changed={changed} />
             </span>
-            <span className="ui-row-trail">
+            <span className="ui-row-trail" data-gives-way={questioned || undefined}>
               {open === false && (
                 <>
                   {" "}
                   <TasksFolded session={session} />
+                  {askingUnder > 0 && (
+                    <span className="question-asking ui-text-meta">{askingSaid(askingUnder)}</span>
+                  )}
                 </>
               )}
               {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
-              <RowTime clock={clock} session={session} />
+              <QuestionOrTime clock={clock} session={session} />
             </span>
           </button>
         </RovingFocusGroup.Item>
       </Menued>
+      {/* **The row's ⋯** (#4753, the person's ruling on #4585): the chat's one list, the menu a
+          right-click, Shift+F10 or the menu key on the row opens, asked for at the row so the
+          two are never two menus. Drawn on hover and while the row has the keyboard, in room
+          kept for it, so nothing moves. **The pointer's and the eye's, as the at-limit line
+          is**: what the row's `li` holds is the tree's, so it is out of the accessibility tree
+          and the tab order, and the keyboard opens the same list with Shift+F10 on the row. */}
+      {!menuIsEmpty({ on: "chat", session }, offers) && (
+        <span className="chat-more" aria-hidden="true">
+          <IconButton
+            size="sm"
+            variant="ghost"
+            aria-label={moreForSaid(name)}
+            excludeFromTabOrder
+            icon={<Ellipsis aria-hidden="true" />}
+            onPress={() => {
+              if (self.current !== null) askForAMenu(self.current);
+            }}
+          />
+        </span>
+      )}
       {/* The popover family's card, held up by the row and standing beside it, never opened
           by a press: a press on a row opens its chat. Beside the row, over the centre, in the
           default arrangement; it turns to the other side where there is no room, as a region
@@ -1891,6 +1926,35 @@ function Fact({ term, children }: { term: string; children: ReactNode }) {
  * row. Seen and not heard: the row's card says how long in words (`StateSince`). None where the
  * window did not see the chat come into its state.
  */
+/**
+ * **What a task's question waits on, and for how long** (#4564), where it has one: `asking
+ * steward 2 · 1m` or `needs you · now`, timed from when it was asked or reached the person, on
+ * the row's own clock. Otherwise how long the chat has been in its state ({@link RowTime}).
+ */
+const QuestionOrTime = memo(function QuestionOrTime({
+  clock,
+  session,
+}: {
+  clock: StateClock;
+  session: number;
+}) {
+  const question = useQuestionStanding(session);
+  if (question === undefined) return <RowTime clock={clock} session={session} />;
+  return <QuestionWaits question={question} />;
+});
+
+function QuestionWaits({ question }: { question: QuestionStanding }) {
+  const now = useNow();
+  const { who, since } = questionWords(question, new Date(now));
+  // The asker's name gives way, as the row's name does; the time stays whole (#1675).
+  return (
+    <span className="question-waits chat-time ui-text-meta" aria-hidden="true">
+      <span className="question-who">{who}</span>
+      {since !== null && <span className="question-since">{` · ${since}`}</span>}
+    </span>
+  );
+}
+
 const RowTime = memo(function RowTime({ clock, session }: { clock: StateClock; session: number }) {
   const seconds = useStateSince(clock, session);
   if (seconds === null) return null;

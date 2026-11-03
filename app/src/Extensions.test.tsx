@@ -8,6 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import {
+  compareWithKept,
   drawThemeFor,
   Extensions,
   forgetExtensionThemes,
@@ -30,6 +31,7 @@ import { forgetProjectThemes } from "./projectTheme";
 import { forgetYourEditor, setYourEditor } from "./yourEditor";
 import { aboutThisMachine, sayAboutThisMachine } from "./windowprefs";
 import { PURLIS_LIGHT } from "./theme/handed.testkit";
+import { inForceSettled, partsLand, STAND_IN_WAITS_FOR_AN_ANSWER } from "./theme/partsLater";
 
 /**
  * A colour for a theme an extension contributes, taken out of charter's own light theme
@@ -103,6 +105,8 @@ type InForce = {
   floors?: string | null;
 };
 const KEEPS: InForce = { theme: null, complaints: [], follows_system: false };
+/** The parts the core measured for a first frame drawn without them (#4410). */
+const STAND_IN_PARTS = "@layer parts {}";
 
 /** A theme as the core resolves one: complete, `over` laid on the dark built-in. */
 function resolved(name: string, over: Partial<Theme["values"]> = {}): Theme {
@@ -111,7 +115,7 @@ function resolved(name: string, over: Partial<Theme["values"]> = {}): Theme {
 
 function core({
   rows = [] as Row[],
-  inForce: answer = (() => KEEPS) as (asked: Record<string, unknown>) => InForce,
+  inForce: answer = (() => KEEPS) as (asked: Record<string, unknown>) => InForce | Promise<InForce>,
   unreadable = null as string | null,
   dropped = [] as string[],
   picks = null as string | null,
@@ -128,6 +132,7 @@ function core({
         dropped,
       };
     if (cmd === "theme_in_force") return answer((args ?? {}) as Record<string, unknown>);
+    if (cmd === "first_frame_parts") return STAND_IN_PARTS;
     if (cmd === "extension_icon_themes") return iconThemes;
     if (cmd === "pick_extension") return picks;
     if (cmd === "install_extension") return ASK;
@@ -975,6 +980,148 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
       });
       expect(drawnThere().name).toBe("Raised");
       created.forgetExtensionThemes();
+    });
+  });
+
+  describe("a first frame standing in for an extension's theme (#4722)", () => {
+    /** The person's own theme, drawn in the first frame without its parts while the levels
+     *  chose an extension's theme: the window's ask of what is in force draws that over it. */
+    const standIn = () => ({
+      light: false,
+      more: false,
+      theme: { ...resolved("Mine"), parts: "" },
+      floors: null,
+      mine: [],
+      parts_later: 4,
+      stands_in: true,
+    });
+
+    afterEach(async () => {
+      await inForceSettled();
+      forgetExtensionThemes();
+    });
+
+    it("is drawn over in a window with no project in front, which asks what is in force", async () => {
+      const frame = standIn();
+      drawIn(frame.theme);
+      const asked = core({ inForce: () => ({ ...KEEPS, theme: resolved("Solarized Dark") }) });
+      void partsLand(frame);
+
+      await drawThemeFor("every");
+      await vi.waitFor(() => expect(inForce().name).toBe("Solarized Dark"));
+
+      const asks = asked.filter((call) => call.cmd === "theme_in_force");
+      expect(asks.map((call) => [call.args.on, call.args.at])).toEqual([[null, null]]);
+      expect(asked.some((call) => call.cmd === "first_frame_parts")).toBe(false);
+    });
+
+    it("lands its own parts when the in-force answer fails, with no project in front", async () => {
+      const frame = standIn();
+      drawIn(frame.theme);
+      const asked = core({
+        inForce: () => {
+          throw new Error("the core could not answer");
+        },
+      });
+      void partsLand(frame);
+
+      await drawThemeFor("every");
+
+      await vi.waitFor(() => expect(inForce().parts).toBe(STAND_IN_PARTS));
+      expect(inForce().name).toBe("Mine");
+      expect(
+        asked.filter((call) => call.cmd === "first_frame_parts").map((call) => call.args.ticket),
+      ).toEqual([4]);
+    });
+
+    it("lands its own parts when the answer keeps the window as it is", async () => {
+      const frame = standIn();
+      drawIn(frame.theme);
+      core({ inForce: () => KEEPS });
+      void partsLand(frame);
+
+      await drawThemeFor(new Set(["solarized"]), "acme/sharp", { plane: "p-1" as PlaneId });
+
+      await vi.waitFor(() => expect(inForce().parts).toBe(STAND_IN_PARTS));
+    });
+
+    it("lands its own parts when the in-force answer never comes (#4822)", async () => {
+      vi.useFakeTimers();
+      try {
+        const frame = standIn();
+        drawIn(frame.theme);
+        core({ inForce: () => new Promise<InForce>(() => {}) });
+        void partsLand(frame);
+
+        void drawThemeFor(new Set(["solarized"]), "acme/sharp", { plane: "p-1" as PlaneId });
+        await vi.advanceTimersByTimeAsync(STAND_IN_WAITS_FOR_AN_ANSWER);
+
+        expect(inForce().parts).toBe(STAND_IN_PARTS);
+        expect(inForce().name).toBe("Mine");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("lands its own parts when Compare overtakes the launch's ask and keeps the window (#4822)", async () => {
+      const frame = standIn();
+      drawIn(frame.theme);
+      let answerTheLaunch: (answer: InForce) => void = () => {};
+      let asks = 0;
+      core({
+        inForce: () =>
+          asks++ === 0
+            ? new Promise<InForce>((answer) => {
+                answerTheLaunch = answer;
+              })
+            : KEEPS,
+      });
+      void partsLand(frame);
+
+      const launch = drawThemeFor(new Set(["solarized"]), "acme/sharp", {
+        plane: "p-1" as PlaneId,
+      });
+      await compareWithKept(true);
+      answerTheLaunch(KEEPS);
+      await launch;
+
+      await vi.waitFor(() => expect(inForce().parts).toBe(STAND_IN_PARTS), { timeout: 1000 });
+    });
+  });
+
+  describe("a project whose extensions could not be read (#4822)", () => {
+    afterEach(() => {
+      forgetExtensionThemes();
+    });
+
+    it("still asks what is in force, with none of its extensions on, and says why", async () => {
+      const asked = core({ inForce: () => ({ ...KEEPS, theme: resolved("Mine") }) });
+
+      await drawThemeFor(
+        new Set(),
+        "acme/sharp",
+        { plane: "p-1" as PlaneId },
+        "the record is unreadable",
+      );
+
+      const asks = asked.filter((call) => call.cmd === "theme_in_force");
+      expect(asks.map((call) => call.args.on)).toEqual([[]]);
+      expect(inForce().name).toBe("Mine");
+      const said = aboutThisMachine().filter((one) => one.subject === "extensions unread");
+      expect(said).toHaveLength(1);
+      expect(said[0].detail).toContain("the record is unreadable");
+      // Its pick is an extension's theme, so that theme is surely not drawn.
+      expect(said[0].detail).toContain("The extension's theme this project picked is not drawn");
+      expect(said[0].severity).toBe("warn");
+    });
+
+    it("takes the Notice back once they are read", async () => {
+      core({ inForce: () => ({ ...KEEPS, theme: resolved("Mine") }) });
+      await drawThemeFor(new Set(), "acme/sharp", { plane: "p-1" as PlaneId }, "unreadable");
+
+      await drawThemeFor(new Set(["acme"]), "acme/sharp", { plane: "p-1" as PlaneId });
+
+      expect(aboutThisMachine().some((one) => one.subject === "extensions unread")).toBe(false);
     });
   });
 

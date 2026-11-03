@@ -308,7 +308,7 @@ async function theAppRuns(name, plane, done, answer, extra = {}) {
       setTimeout(gone, 3_000);
     });
     for (const host of hosts) {
-      if (alive(host)) process.kill(host, "SIGTERM");
+      end(host);
     }
     const until = Date.now() + 5_000;
     while (hosts.some(alive) && Date.now() < until) {
@@ -332,6 +332,17 @@ function hostsOf(pid) {
 }
 
 /** Whether a process of this user's is still there at `pid`. */
+// SIGTERM to a pid, and one already gone is ended too. The host can exit between a check that
+// it is alive and the signal, as the app's own SIGTERM takes it down: `kill ESRCH` failed the
+// relaunch step on 2026-11-02 (job 125109161396, merge queue) and before (#2695).
+function end(pid) {
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch (error) {
+    if (error?.code !== "ESRCH") throw error;
+  }
+}
+
 function alive(pid) {
   try {
     process.kill(pid, 0);

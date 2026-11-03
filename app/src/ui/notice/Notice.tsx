@@ -42,6 +42,7 @@ export function NoticeBox({
   placement,
   opened,
   asks,
+  waits = false,
   layout,
   children,
 }: {
@@ -53,8 +54,11 @@ export function NoticeBox({
   placement: NoticePlacement;
   /** A way out opened something under the line: in a pane the box takes a sentence's width. */
   opened: boolean;
-  /** It has something to do about it (a fix or a link): what a pane's row stands first. */
+  /** It has something to do about it (a fix or a link). */
   asks: boolean;
+  /** **An ask, in a pane** (#4754): it stays when the pane's notices are minimised, and its
+   *  bell never counts it. */
+  waits?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -65,6 +69,7 @@ export function NoticeBox({
       data-placement={placement}
       data-opened={opened ? "" : undefined}
       data-asks={asks ? "" : undefined}
+      data-waits={waits ? "" : undefined}
       data-layout={layout}
     >
       {children}
@@ -183,8 +188,8 @@ export function NoticeRow({
   );
 }
 
-/** **The Notices of a pane's row, one under another**: two stand, the rest wait behind +N more.
- *  Past its room it scrolls, and marks the edge it has more past for its fade (#3168). */
+/** **The Notices of a pane's row, one under another**: the asks, and the notes unless the band
+ *  is minimised (#4754). Past its room it scrolls, and marks the edge it has more past for its fade (#3168). */
 export function NoticeStack({
   children,
   ref,
@@ -199,25 +204,15 @@ export function NoticeStack({
   );
 }
 
-/** **What a pane row's "+N more" says**, open or closed (#3142): both are drawn in one cell, the
- *  one not said hidden, so the button is as wide as the longer whichever it says. */
-export function NoticeMoreSays({
-  open,
-  closed,
-  opened,
-}: {
-  open: boolean;
-  closed: string;
-  opened: string;
-}) {
+/** **An expanded band's head row** (#4754): what it holds, then its ways (Dismiss all,
+ *  Minimise), above its Notices. */
+export function NoticeRowHead({ says, children }: { says: string; children: ReactNode }) {
   return (
-    <span data-scope="notice-row" data-part="says">
-      <span aria-hidden={open || undefined} data-off={open || undefined}>
-        {closed}
+    <div data-scope="notice-row" data-part="head">
+      <span data-scope="notice-row" data-part="says">
+        {says}
       </span>
-      <span aria-hidden={!open || undefined} data-off={!open || undefined}>
-        {opened}
-      </span>
-    </span>
+      {children}
+    </div>
   );
 }

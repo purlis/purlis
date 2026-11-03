@@ -15,16 +15,20 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { chatList } from "./menus.testkit";
 import type {
   ChatBlocked,
   DispatchPending,
   FinishedTask,
+  LaidOut,
   Moved,
   OpenChat,
   Shown,
   VaultRefused,
 } from "./bindings";
 import type { State } from "./chatState";
+import { chatsOf } from "./laidOut";
+import { leadOf, onScreenOf } from "./laidOut.testkit";
 import { cardOf as cardOfRow } from "./chatCard.testkit";
 import { forgetKeyboard } from "./paneKeyboard";
 import { REFERENCE_TYPE } from "./references";
@@ -150,6 +154,7 @@ function held(session: number, id: number): DispatchPending {
     task_cut: false,
     profile: null,
     mode: "task",
+    runs_on: null,
   };
 }
 
@@ -205,8 +210,8 @@ function blockedOnHost(session: number, host = "registry.npmjs.org"): ChatBlocke
 }
 
 /**
- * The core, holding `open` chats in two workspaces. It keeps what each session's tab shows
- * (`tab_shows`) on that chat, as the record does, and what it holds for the person: dispatches
+ * The core, holding `open` chats in two workspaces. It keeps the tabs the window tells it
+ * (`window_layout`, #4751), as the record does, and what it holds for the person: dispatches
  * waiting for a grant and vaults it refused, by chat.
  */
 function core(open: Listed[]) {
@@ -216,8 +221,10 @@ function core(open: Listed[]) {
   const refusals = new Map<number, VaultRefused[]>();
   /** The finished rows the core lists, as it reads them from its dispatch records (#1485). */
   const finished: FinishedTask[] = [];
-  /** How many of the next `tab_shows` the core refuses. */
-  const refusing = { shows: 0 };
+  /** How many of the next `window_layout`s the core refuses. */
+  const refusing = { layouts: 0, calls: 0 };
+  /** Every tab as the window last said it, and the core took it: a reload is answered it. */
+  const laid: { now: LaidOut | null } = { now: null };
   /** The tasks the core's next answer to several allows, where keeping fails part way. */
   const answering: { only?: number[] } = {};
   /** The queue the core said last: what its asks registry says waits on a reply (#1690). */
@@ -268,19 +275,24 @@ function core(open: Listed[]) {
       if (one?.from) one.from = { ...one.from, tab: true };
       return null;
     }
-    if (cmd === "chat_in_front") {
-      for (const one of open) one.in_front = one.session === a.session;
-      return null;
-    }
-    if (cmd === "tab_shows") {
-      if (refusing.shows > 0) {
-        refusing.shows -= 1;
-        throw new Error("the record could not be written");
+    if (cmd === "window_layout") {
+      if (refusing.calls > 0) {
+        refusing.calls -= 1;
+        // A call that never reached the core: no answer of its at all.
+        throw new Error("the link to the core went away");
       }
-      const one = open.find((chat) => chat.session === a.session);
-      if (one) one.shows = (a.shown as number | null) ?? null;
+      if (refusing.layouts > 0) {
+        refusing.layouts -= 1;
+        // The core's own refusal, as a command answers one: its sentence.
+        throw "purlis did not keep that layout: it shows chat 5 in two panes.";
+      }
+      // The first chat of the front tab is the one the core takes to be in front.
+      laid.now = a.layout as LaidOut;
+      const lead = leadOf(laid.now);
+      for (const one of open) one.in_front = one.session === lead;
       return null;
     }
+    if (cmd === "reopened_layout") return laid.now;
     if (cmd === "dispatch_grants_needed") return dispatches.get(a.session as number) ?? [];
     if (cmd === "allow_dispatch" || cmd === "keep_dispatch_blocked") {
       for (const [session, waiting] of dispatches)
@@ -394,6 +406,7 @@ function core(open: Listed[]) {
     open,
     finished,
     refusing,
+    laid,
     answering,
     rowsChanged,
     /** The core says chat `session`'s stop has ended it: it is gone from what the core lists. */
@@ -502,6 +515,20 @@ const crumbsSay = () => crumbs()?.textContent?.replace(/\s+/g, " ").trim();
 
 const commandsOf = (asked: Asked[], cmd: string) =>
   asked.filter((one) => one.cmd === cmd).map((one) => one.args);
+
+/** The tabs the window last told the core (#4751), or none. */
+const laidSaid = (asked: Asked[]) =>
+  commandsOf(asked, "window_layout").at(-1)?.layout as LaidOut | undefined;
+
+/** What the core takes to be on screen from the tabs it was last told (`Chats::looked_at`). */
+const onScreenSaid = (asked: Asked[]) => {
+  const laid = laidSaid(asked);
+  return laid === undefined ? [] : onScreenOf(laid);
+};
+
+/** Every chat in any pane of `laid`. */
+const panedIn = (laid: LaidOut | null | undefined) =>
+  laid === null || laid === undefined ? [] : laid.tabs.flatMap((tab) => chatsOf(tab.tree));
 
 /**
  * steward 1 in alpha dispatched three tasks: talk (4) and sweep (5) in alpha, probe (6) in
@@ -643,14 +670,9 @@ describe("a tab remembers which chat it shows", () => {
     await waitFor(() => expect(onScreen()).toEqual([8]));
     await userEvent.click(row(tree, "sweep"));
     await waitFor(() => expect(onScreen()).toEqual([5]));
-    await waitFor(() =>
-      expect(commandsOf(first.asked, "tab_shows")).toEqual([
-        { plane: PLANE, session: 2, shown: 8, beside: null },
-        { plane: PLANE, session: 1, shown: 5, beside: null },
-      ]),
-    );
-    // The chat in front is the tab's own, as it always was: the task is not a tab.
-    expect(commandsOf(first.asked, "chat_in_front").at(-1)).toEqual({ plane: PLANE, session: 1 });
+    // Every tab is told with what its pane shows (#4751): the front tab's task is on screen.
+    await waitFor(() => expect(onScreenSaid(first.asked)).toEqual([5]));
+    expect(panedIn(laidSaid(first.asked)).sort()).toEqual([5, 8]);
     window.unmount();
     forgetThisLaunch();
 
@@ -676,14 +698,8 @@ describe("a tab remembers which chat it shows", () => {
     await userEvent.click(row(tree, "steward 1"));
 
     await waitFor(() => expect(onScreen()).toEqual([1]));
-    await waitFor(() =>
-      expect(commandsOf(asked, "tab_shows").at(-1)).toEqual({
-        plane: PLANE,
-        session: 1,
-        shown: null,
-        beside: null,
-      }),
-    );
+    await waitFor(() => expect(onScreenSaid(asked)).toEqual([1]));
+    expect(panedIn(laidSaid(asked))).not.toContain(5);
   });
 
   it("comes back on the session's own chat when the task the record names is gone, or is not below it", async () => {
@@ -701,7 +717,7 @@ describe("a tab remembers which chat it shows", () => {
     expect(tab("steward 2").querySelector(".tab-task")).toBeNull();
   });
 
-  it("tells the core a tab shows its own chat where what the record said it showed was not put back", async () => {
+  it("tells the core each tab is on its own chat where what the record said it showed was not put back", async () => {
     // The core takes the chat a tab shows for the one the person is looking at. A number
     // left in the record for a chat that is gone would have it take them to be looking at
     // nothing, and notify them about the session on their screen.
@@ -710,44 +726,62 @@ describe("a tab remembers which chat it shows", () => {
     open[1].shows = 4;
     const { asked } = await drawn(open);
 
-    await waitFor(() =>
-      expect(commandsOf(asked, "tab_shows")).toEqual([
-        { plane: PLANE, session: 1, shown: null, beside: null },
-        { plane: PLANE, session: 2, shown: null, beside: null },
-      ]),
-    );
-    expect(open[0].shows).toBeNull();
-    expect(open[1].shows).toBeNull();
+    await waitFor(() => expect(onScreenSaid(asked)).toEqual([1]));
+    expect(panedIn(laidSaid(asked))).toEqual([1, 2]);
   });
 
-  it("says nothing to the core of a tab that came back on the task the record said it showed", async () => {
+  it("tells the core the task a tab came back on, as the record said it showed", async () => {
     const open = withTasks();
     open[0].shows = 5;
     const { asked } = await drawn(open);
 
     await waitFor(() => expect(onScreen()).toEqual([5]));
-    expect(commandsOf(asked, "tab_shows")).toEqual([]);
+    await waitFor(() => expect(onScreenSaid(asked)).toEqual([5]));
   });
 
-  it("says what a tab shows again where the core did not take it", async () => {
-    const { tree, asked, refusing, open } = await drawn(withTasks());
-    refusing.shows = 1;
+  it("says the tabs again where the core did not take them, at the next change", async () => {
+    const { tree, refusing, laid } = await drawn(withTasks());
+    refusing.layouts = 1;
     await userEvent.click(row(tree, "sweep"));
     await waitFor(() => expect(onScreen()).toEqual([5]));
-    await waitFor(() => expect(commandsOf(asked, "tab_shows")).toHaveLength(1));
-    expect(open[0].shows ?? null).toBeNull();
+    expect(panedIn(laid.now)).not.toContain(5);
 
-    // The next change to the tabs says it again, with what else changed.
+    // The next change to the tabs says them again, with what else changed.
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
 
-    await waitFor(() =>
-      expect(commandsOf(asked, "tab_shows")).toEqual([
-        { plane: PLANE, session: 1, shown: 5, beside: null },
-        { plane: PLANE, session: 1, shown: 5, beside: null },
-      ]),
-    );
-    expect(open[0].shows).toBe(5);
+    await waitFor(() => expect(panedIn(laid.now)).toContain(5));
+    expect(onScreenOf(laid.now as LaidOut)).toEqual([2]);
+  });
+
+  it("says the tabs again at the next draw where the call never reached the core", async () => {
+    // A failed call is no verdict on the layout, unlike a refusal: nothing waits for a change.
+    const { tree, refusing, laid, rowsChanged } = await drawn(withTasks());
+    refusing.calls = 1;
+    await userEvent.click(row(tree, "sweep"));
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+
+    await rowsChanged();
+
+    await waitFor(() => expect(panedIn(laid.now)).toContain(5));
+  });
+
+  it("never says a layout the core refused again unchanged, however often the window draws", async () => {
+    // A refusal is the core's verdict on that layout (#4751): said again unchanged it would be
+    // refused again, for as long as the window kept drawing.
+    const { tree, asked, refusing, rowsChanged } = await drawn(withTasks());
+    const before = commandsOf(asked, "window_layout").length;
+    refusing.layouts = Number.POSITIVE_INFINITY;
+    await userEvent.click(row(tree, "sweep"));
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+    await waitFor(() => expect(commandsOf(asked, "window_layout")).toHaveLength(before + 1));
+
+    // The window draws again (the plane changes, the sidebar is read again) and says nothing.
+    await rowsChanged();
+    await rowsChanged();
+    await new Promise((settled) => setTimeout(settled, 300));
+
+    expect(commandsOf(asked, "window_layout")).toHaveLength(before + 1);
   });
 });
 
@@ -975,9 +1009,9 @@ describe("a pane never shows a task without its breadcrumb", () => {
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
 
-    // steward 1 is restarted from its tab's menu: it is chat 21 now. The tabs know at once;
+    // steward 1 is restarted from its list (#4753): it is chat 21 now. The tabs know at once;
     // the core's list still says talk is a task of chat 1.
-    fireEvent.contextMenu(tab("steward 1"));
+    await chatList("steward 1");
     await userEvent.click(await screen.findByRole("menuitem", { name: "Restart" }));
     await waitFor(() => expect(open[0].session).toBe(21));
     await userEvent.click(tab("steward 1"));
@@ -1220,8 +1254,9 @@ describe("a task that needs you and is not on screen", () => {
     await waitFor(() => expect(onScreen()).toEqual([2]));
 
     expect(handSays("steward 1")).toBe("talk needs you");
-    // And the tab's own state mark is still the session's, not the task's.
-    expect(within(tab("steward 1")).queryByRole("img", { name: "waiting on you" })).toBeNull();
+    // And the tab's own state mark is still the session's, not the task's, which needs you
+    // (the word the tab says is its row's, #4935).
+    expect(within(tab("steward 1")).queryByRole("img", { name: "needs you" })).toBeNull();
   });
 
   it("puts the hand on the tab for the session's own chat, while the tab shows a task", async () => {
@@ -1633,7 +1668,8 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
     expect(tabNames()).toEqual(["steward 1", "drop commons"]);
     expect(crumbs()).toBeNull();
     expect(commandsOf(asked, "open_chat_tab")).toEqual([]);
-    expect(commandsOf(asked, "tab_shows").filter((one) => one.shown === 3)).toEqual([]);
+    expect(onScreenSaid(asked)).toEqual([3]);
+    expect(laidSaid(asked)?.tabs.map((tab) => chatsOf(tab.tree))).toEqual([[1], [3]]);
 
     // And a task of the chat it came from still opens in that chat's tab, not in this one.
     await userEvent.click(row(tree, "talk").querySelector(".session") as HTMLElement);
@@ -1680,7 +1716,7 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
     expect(await cardOf(tree, "talk")).not.toContain("from steward 1");
   });
 
-  it("is gone to from the keyboard: the row's menu has a row for each chat the work went to", async () => {
+  it("is gone to from the row's menu, which has a row for each chat the work went to", async () => {
     const { tree } = await drawn([
       ...moved(),
       chat(5, "alpha", { label: "release notes", from: handoffFrom(1) }),
@@ -1698,7 +1734,7 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
         .map((item) => item.getAttribute("aria-label"))
         .filter((said) => said?.startsWith("Go to ")),
     ).toEqual(["Go to release notes", "Go to drop commons"]);
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Go to drop commons" }));
 
     await waitFor(() => expect(onScreen()).toEqual([3]));
     expect(inFront()).toBe("drop commons");

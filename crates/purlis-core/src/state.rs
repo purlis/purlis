@@ -421,6 +421,12 @@ pub struct Waits {
     /// once (#3878). Not something other than the person, so never [`Waits::on_something`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_a_notice: bool,
+    /// **Whether the turn that begins now is a background turn** (#4562): a line of purlis's own
+    /// or the chat's own work began it, and the person sent nothing since. Asked of a
+    /// `UserPromptSubmit`. A wait on the person holds through such a turn ([`Chat::over_a_wait`]);
+    /// any other begun turn is their reply, and ends the wait.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub background_turn: bool,
     /// **The app's clock as it applies this**, in seconds since 1970, or 0 where it said none
     /// (#3878): what a turn's end on work of its own is stamped at ([`crate::ownwork::Said::at`]).
     /// The board reads no clock of its own, so a move replayed elsewhere stamps the same.
@@ -614,6 +620,18 @@ pub struct Chat {
     /// into what it would have been once the wait's limit passes with no wake.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     own_work: Option<crate::ownwork::OwnWork>,
+    /// **The turn it is in is a background turn, begun over a wait on the person** (#4562): the
+    /// needs-you item it stood in stays, with its reasons, until the person answers. Meaningful
+    /// only while the turn runs ([`Chat::background_turn`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    over_a_wait: bool,
+    /// **Its own work is still out, though the wait on it ended for the person** (#4647): the
+    /// wait lapsed ([`Chat::own_work_lapsed`]), a sandbox block's Notice went up during it
+    /// ([`Chat::blocked_while_waiting`]), or one went up in the turn that ended on it. A turn
+    /// that work wakes later is its own, not the person's reply ([`Chat::wakes_on_its_own_work`]).
+    /// A turn that is no background turn, a turn's end and a new session forget it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    own_work_out: bool,
     /// The tasks it asked for that came to nothing and the person has not looked at yet
     /// ([`FailedTask`], #1491), oldest first. **Each is a needs-you item of its own kind, and
     /// its next prompt does not clear it**: the chat is typed a line when a report lands, so a
@@ -627,6 +645,7 @@ pub struct Chat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Seen {
     state: State,
+    background_turn: bool,
     needs_you: bool,
     waits_on_its_prompt: bool,
     reports: usize,
@@ -707,6 +726,8 @@ impl Chat {
             children: children::Children::default(),
             held: false,
             own_work: None,
+            over_a_wait: false,
+            own_work_out: false,
             failed: Vec::new(),
         }
     }
@@ -780,6 +801,23 @@ impl Chat {
         self.state
     }
 
+    /// **The state as the person reads it** (#4562): `waiting` through a background turn, whose
+    /// wait on them holds. [`Chat::state`] stays the truth about the turn, which is what a stop,
+    /// a task's end and a typed line go by.
+    pub fn shown_state(&self) -> State {
+        if self.background_turn() {
+            State::Waiting
+        } else {
+            self.state
+        }
+    }
+
+    /// **Whether a background turn is running over its wait on the person** (#4562): it works,
+    /// and they still have the next move.
+    pub fn background_turn(&self) -> bool {
+        self.over_a_wait && self.needs_you && self.state == State::Running
+    }
+
     /// Whether this chat belongs in the "needs you" queue.
     ///
     /// **The queue's rules, in one place** (#1448, #1491):
@@ -810,6 +848,10 @@ impl Chat {
     ///   question asked mid-turn ([`Chat::asking`]), a reason the app found ([`Need`]), a
     ///   refused commit, and a task of its that failed, ended without a report or did not
     ///   start ([`FailedTask`]). A task that finished as done, or was cancelled, is none.
+    /// - **A background turn leaves it as it was** (#4562): a turn a line of purlis's own or the
+    ///   chat's own work began is no reply, so the item, its reasons and the state the person
+    ///   reads stand through it ([`Chat::background_turn`]). Only their line ends the wait: the
+    ///   turn it begins, or at once where it waits behind a background turn ([`Chat::replied`]).
     /// - **The person's Ignore drops the item until the chat asks again** ([`Chat::ignored`]),
     ///   and a chat whose program has ended asks for nobody.
     pub fn needs_you(&self) -> bool {
@@ -899,6 +941,7 @@ impl Chat {
     fn seen(&self) -> Seen {
         Seen {
             state: self.state,
+            background_turn: self.background_turn(),
             needs_you: self.needs_you(),
             waits_on_its_prompt: self.waits_on_its_prompt(),
             reports: self.reports.len(),
@@ -1027,16 +1070,24 @@ impl Chat {
                 self.state = State::Waiting;
                 self.asking = false;
                 self.own_work = None;
+                self.own_work_out = false;
             }
             // The turn that begins now is the one a waiting report is handed to, as context
             // (`handback`), so it is read and no longer waiting.
+            //
+            // **A background turn is no reply** (#4562): a line of purlis's own or the chat's own
+            // work began it, so what it was handed goes, and what the person owes stays.
             Said::Turn(Turn::Began) => {
+                self.over_a_wait = waits.background_turn && self.needs_you;
                 self.state = State::Running;
-                self.needs_you = false;
+                if !self.over_a_wait {
+                    self.needs_you = false;
+                    self.refusals.clear();
+                    self.needs.clear();
+                    self.own_work_out = false;
+                }
                 self.reports.clear();
                 self.stopped.clear();
-                self.refusals.clear();
-                self.needs.clear();
                 self.reported = false;
                 self.asking = false;
                 self.began_past_its_prompt = false;
@@ -1092,6 +1143,7 @@ impl Chat {
                 if waits.on_a_notice || work.at(waits.now).is_none() =>
             {
                 self.turn_ended(waits);
+                self.own_work_out = true;
             }
             // **Not the falling edge: waiting** (#1626, #3878). Its turn has ended while work of
             // its own is in flight, which wakes it, so the next move is nobody's yet: no item is
@@ -1102,9 +1154,11 @@ impl Chat {
             Said::Turn(Turn::WaitsOnItsOwnWork(work)) => {
                 if !self.waits_on_its_prompt() {
                     self.state = State::Waiting;
+                    self.over_a_wait = false;
                     self.asking = false;
                     self.held = false;
                     self.own_work = work.at(waits.now);
+                    self.own_work_out = false;
                 }
             }
             // Emphatically not `Stop`: a dispatched sub-agent finishing does not end the
@@ -1124,7 +1178,7 @@ impl Chat {
                     )
                 {
                     self.state = State::Running;
-                    self.needs_you = false;
+                    self.needs_you = self.over_a_wait;
                 }
             }
             // **`/clear` ends a CONVERSATION, not the session** — measured on claude 2.1.276,
@@ -1137,6 +1191,7 @@ impl Chat {
                 self.needs_you = false;
                 self.asking = false;
                 self.own_work = None;
+                self.own_work_out = false;
             }
             // Neither is a state a reader is shown, at any level.
             Said::Plan(_) | Said::Usage(_) => {}
@@ -1162,7 +1217,9 @@ impl Chat {
     /// The falling edge: its turn has ended with nothing of its own it waits on.
     fn turn_ended(&mut self, waits: Waits) {
         self.state = State::Waiting;
+        self.over_a_wait = false;
         self.own_work = None;
+        self.own_work_out = false;
         self.turn_over(waits);
         self.asking = false;
     }
@@ -1177,6 +1234,7 @@ impl Chat {
         }
         let was = self.seen();
         self.own_work = None;
+        self.own_work_out = true;
         self.needs_you = true;
         was != self.seen()
     }
@@ -1197,6 +1255,13 @@ impl Chat {
         self.own_work
     }
 
+    /// **Whether a turn that begins now may be its own work's wake** (#4647): it waits on its own
+    /// work, or that work is still out though the wait ended for the person. What tells a wake
+    /// from the person's reply ([`Waits::background_turn`]); read before the turn begins.
+    pub fn wakes_on_its_own_work(&self) -> bool {
+        self.own_work.is_some() || self.own_work_out
+    }
+
     /// **The wait on its own work has passed its limit at `now`** (seconds since 1970), and
     /// nothing woke it (#3878): its turn's end is what it would have been with nothing in
     /// flight, read with `waits`, what it waits on beside the person now. Nothing for a chat
@@ -1208,6 +1273,7 @@ impl Chat {
         }
         let was = self.seen();
         self.own_work = None;
+        self.own_work_out = true;
         self.turn_over(waits);
         was != self.seen()
     }
@@ -1284,6 +1350,7 @@ impl Chat {
         self.reports.clear();
         self.refusals.clear();
         self.needs.clear();
+        self.over_a_wait = false;
         std::mem::replace(&mut self.needs_you, false) || had_reports
     }
 
@@ -1297,7 +1364,24 @@ impl Chat {
         }
         let was = self.seen();
         self.state = State::Running;
+        // A prompt a background turn asked is not what the wait under it waited on (#4562).
+        self.needs_you = self.over_a_wait;
+        was != self.seen()
+    }
+
+    /// **The person sent the chat a line while a background turn runs** (#4562): their reply
+    /// ends the wait now, because their line waits behind that turn and may begin no turn of its
+    /// own. Nothing for a chat in no such turn, where the turn their line begins says so. Answers
+    /// whether anything a reader can see changed.
+    pub fn replied(&mut self) -> bool {
+        if self.ended || !self.background_turn() {
+            return false;
+        }
+        let was = self.seen();
+        self.over_a_wait = false;
         self.needs_you = false;
+        self.refusals.clear();
+        self.needs.clear();
         was != self.seen()
     }
 
@@ -1772,6 +1856,14 @@ impl Board {
             .and_then(|tracked| tracked.chat.own_work())
     }
 
+    /// Whether a turn chat `number` begins now may be its own work's wake
+    /// ([`Chat::wakes_on_its_own_work`], #4647).
+    pub fn wakes_on_its_own_work(&self, number: u32) -> bool {
+        self.chats
+            .get(&number)
+            .is_some_and(|tracked| tracked.chat.wakes_on_its_own_work())
+    }
+
     /// The chats waiting on their own work with a limit, each with when its wait lapses, in
     /// seconds since 1970 (#3878): what a process that takes this board whole ends on time.
     pub fn own_work_limits(&self) -> Vec<(u32, i64)> {
@@ -1902,6 +1994,32 @@ impl Board {
             .get(&number)
             .map(|tracked| tracked.chat.children().to_vec())
             .unwrap_or_default()
+    }
+
+    /// Chat `number` as the person reads it ([`Chat::shown_state`], #4562).
+    pub fn shown_state(&self, number: u32) -> State {
+        self.chats
+            .get(&number)
+            .map_or_else(|| self.state(number), |tracked| tracked.chat.shown_state())
+    }
+
+    /// Whether a background turn runs over chat `number`'s wait on the person
+    /// ([`Chat::background_turn`], #4562).
+    pub fn background_turn(&self, number: u32) -> bool {
+        self.chats
+            .get(&number)
+            .is_some_and(|tracked| tracked.chat.background_turn())
+    }
+
+    /// The person sent chat `number` a line ([`Chat::replied`], #4562). Answers whether anything
+    /// a reader can see changed.
+    pub fn replied(&mut self, number: u32) -> bool {
+        self.tell(number, || Move::Replied);
+        let changed = self
+            .chats
+            .get_mut(&number)
+            .is_some_and(|tracked| tracked.chat.replied());
+        self.stamp(number, changed)
     }
 
     /// The operator ignored this chat's request (charter-app#248). Answers whether anything a
@@ -2235,6 +2353,9 @@ impl Board {
 }
 
 #[cfg(test)]
+mod background_turn_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -2436,6 +2557,7 @@ mod tests {
 
     /// What the app says as it applies a turn's end at [`NOW`], with nothing else waited on.
     const AT_NOW: Waits = Waits {
+        background_turn: false,
         tasks: 0,
         its_asker: false,
         line_coming: false,
@@ -4818,6 +4940,7 @@ mod tests {
     /// A chat with `tasks` tasks below it still working, asking or owing a report.
     fn with_tasks(tasks: u32) -> Waits {
         Waits {
+            background_turn: false,
             tasks,
             its_asker: false,
             line_coming: false,
@@ -4828,6 +4951,7 @@ mod tests {
 
     /// A task paused on a question to the chat that dispatched it.
     const ASKS_ITS_ASKER: Waits = Waits {
+        background_turn: false,
         tasks: 0,
         its_asker: true,
         line_coming: false,
@@ -4837,6 +4961,7 @@ mod tests {
 
     /// A chat a line of purlis's own is about to start a turn of.
     const A_LINE_IS_COMING: Waits = Waits {
+        background_turn: false,
         tasks: 0,
         its_asker: false,
         line_coming: true,

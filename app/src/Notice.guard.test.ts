@@ -72,6 +72,14 @@ const READING =
  * progress) is not a standing line.
  */
 const NOT_NOTICES: Record<string, { count: number; why: string }> = {
+  "AgentIdentityFlow.tsx": {
+    count: 1,
+    why: READING,
+  },
+  "AgentIdentityTab.tsx": {
+    count: 1,
+    why: READING,
+  },
   "About.tsx": {
     count: 1,
     why:
@@ -337,6 +345,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "LayoutPanes.tsx": {
+    count: 1,
+    why:
+      "the pane bell's polite count, said once as a notice arrives (#4754): it announces how " +
+      "many the band holds, and each Notice in the band is its own",
+  },
   "LiveDialog.tsx": {
     count: 4,
     why:
@@ -420,6 +434,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "RenameChat.tsx": {
+    count: 1,
+    why: ACTION,
+  },
   "RenameWorkspace.tsx": {
     count: 1,
     why: ACTION,
@@ -445,10 +463,26 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   },
   "SandboxOffer.tsx": { count: 1, why: "the answer's refusal, inside the sandbox offer's Notice" },
   "PoolSetupTab.tsx": {
-    count: 3,
+    count: 2,
     why:
-      "Pool setup's progress, said politely as it goes (#4480): reading what this machine has, " +
-      "rechecking by itself, and making a pool. Nothing to do about any of them, so no way out.",
+      "Pool setup's progress, said politely as it goes (#4480): reading what this machine has " +
+      "and rechecking by itself. Nothing to do about either, so no way out.",
+  },
+  "poolsetup/PoolStep.tsx": {
+    count: 1,
+    why: "Pool setup making a pool, said politely as it goes (#4480). Nothing to do, so no way out.",
+  },
+  "poolsetup/SignInsStep.tsx": {
+    count: 1,
+    why: "what the core said of the profiles just recorded on a pool (#4482), inside the step",
+  },
+  "poolsetup/parts.tsx": {
+    count: 1,
+    why: "a Pool setup step's own wait, said politely as it goes (#4481). Nothing to do, so no way out.",
+  },
+  "ui/code/CodeBlock.tsx": {
+    count: 1,
+    why: "the code family's Copy saying it copied or couldn't (#4481), heard once and never seen twice",
   },
   "SavingView.tsx": {
     count: 3,
@@ -691,6 +725,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why:
       "a field's error line under its box, why its value is refused, in either of the family's " +
       "boxes (#2905), polite; and a form's one alert summary of a refused send (#3291)",
+  },
+  "ui/status/StatusBar.tsx": {
+    count: 1,
+    why: "what a move from the bar's menu did: the keyboard stays on the row, so it is said (#3030)",
   },
   "ui/table/TableBar.tsx": {
     count: 1,

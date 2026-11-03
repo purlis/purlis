@@ -114,8 +114,14 @@ export const READ_BY_CODE = [
 
 // Docs that Rust's tests read and no window file does, so a change to one needs what a change to
 // Rust needs: `docs/plane-format.md` was in 35 of the last 199 merged pull requests, most of them
-// otherwise Rust alone (#3596). `ci-scope.test.mjs` fails when a window file comes to read one.
-export const DOCS_READ_BY_RUST = ["docs/plane-format.md", "docs/schema/"];
+// otherwise Rust alone (#3596). ADR 0083's amendment on a task question's counts is the table
+// `eventlog::questions`'s test holds a question's steps to (#4634). `ci-scope.test.mjs` fails
+// when a window file comes to read one.
+export const DOCS_READ_BY_RUST = [
+  "docs/plane-format.md",
+  "docs/schema/",
+  "docs/adr/0083/2026-11-02-a-task-question-is-counted-from-its-steps-and-never-read.md",
+];
 
 // The files of the window's sources that Rust reads by name, so a change to one is a change to a
 // Rust build or test: the generated bindings and RPC table (held to what the Rust makes of them),
@@ -191,6 +197,7 @@ export const RUST_READERS = [
   "src/theme/themeIds.test.ts",
   "src/theme/tint.test.ts",
   "src/ui/buildingSkill.test.ts",
+  "src/ui/field/fieldHelp.guard.test.ts",
   "src/ui/field/refusingFields.guard.test.ts",
   "src/ui/menu/submenuRows.guard.test.ts",
   "src/ui/notice/noticeCardFill.test.ts",
@@ -214,7 +221,7 @@ export const GATES = {
   // No step of its own greps this one: the job's steps are the scenario legs'. What the Skill
   // studio's outcome bars measure, and the suite and its stand-ins (#4343).
   "outcome-bars":
-    "^(app/src/(Skill|UseSkill|skill|chatSkill|personaSkills)|app/src/ui/list/|app/src-tauri/src/(skill|useskill|personaskills)|crates/skills/|crates/purlis-core/src/(skills|skillspan|skilltools|skilluse)(\\.rs|/)|crates/fake-harness/|app/e2e/(outcomeBars|harness\\.ts|wdio\\.outcome\\.conf|specs/skill-outcome-bars)|\\.github/workflows/ci\\.yml$)",
+    "^(app/src/(Skill|UseSkill|skill|chatSkill|personaSkills)|app/src/ui/list/|app/src-tauri/src/(skill|useskill|personaskills)|crates/skills/|crates/purlis-core/src/(skills|skillspan|skilltools|skilluse)(\\.rs|/)|crates/fake-harness/|app/e2e/(outcomeBars|harness\\.ts|wdio\\.outcome\\.conf|specs/skill-outcome-bars)|Cargo\\.toml$|\\.github/workflows/ci\\.yml$)",
   "bench":
     "^(crates/session-protocol/|Cargo\\.toml$|Cargo\\.lock$|rust-toolchain\\.toml$|fixtures/corpora/|tools/bench\\.mjs$|tools/latency-gate\\.mjs$|\\.github/workflows/ci\\.yml$)",
 };

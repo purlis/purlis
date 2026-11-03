@@ -372,7 +372,10 @@ A while after each launch, and as often as it looks for updates, the app reads i
 manifest for **its own** version and checks the image in it the same way. A Docker pool of
 purlis's own image then gets a runner of that image beside its old one. New chats start on the
 new runner, and the old one keeps its chats until they end, then is removed. If it stops during that, it is
-kept with its home until you remove it in Devices. A pool of a team's
+kept with its home. If it had stopped already, for a suspend, or its container was removed outside
+purlis, it is kept only where its home holds a chat's conversation. Devices then offers to bring
+those conversations back to the new runner, where their chats pick up again, or to discard them,
+which asks twice. A pool of a team's
 own image is never moved: its row in the window says its runner is behind. A manifest of another
 version, or one from before the image was named, moves nothing.
 

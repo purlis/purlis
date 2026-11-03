@@ -624,6 +624,46 @@ fn every_chat_keeps_what_its_turn_ended_on_until_its_next_turn_begins() {
 }
 
 #[test]
+fn every_chat_keeps_the_few_messages_before_its_last_oldest_first() {
+    let mut ledger = Ledger::default();
+    for n in 0..(SAID_KEPT + 2) {
+        ledger.said_last(OWN_CHAT, format!("message {n}"));
+    }
+    assert_eq!(ledger.last_said(OWN_CHAT), Some("message 5"));
+    assert_eq!(
+        ledger.said_before(OWN_CHAT),
+        ["message 2", "message 3", "message 4"]
+    );
+    // A chat that said one message has none before it, and one that said none, neither.
+    ledger.said_last(OWN_CHAT + 1, "Only this.".to_owned());
+    assert!(ledger.said_before(OWN_CHAT + 1).is_empty());
+    assert!(ledger.said_before(OWN_CHAT + 2).is_empty());
+}
+
+#[test]
+fn a_background_turn_keeps_what_the_chat_said_and_the_person_s_turn_clears_it() {
+    let mut ledger = Ledger::default();
+    ledger.said_last(OWN_CHAT, "Should I open the pull request now?".to_owned());
+    // A turn the person did not begin is no answer (#4562): the wait, and its words, stand.
+    ledger.turn_began_as(OWN_CHAT, true);
+    assert_eq!(
+        ledger.last_said(OWN_CHAT),
+        Some("Should I open the pull request now?")
+    );
+    // It ends on a message of its own, which is the last now; the question is the one before.
+    ledger.said_last(OWN_CHAT, "developer 7 reported.".to_owned());
+    assert_eq!(ledger.last_said(OWN_CHAT), Some("developer 7 reported."));
+    assert_eq!(
+        ledger.said_before(OWN_CHAT),
+        ["Should I open the pull request now?"]
+    );
+    // The turn their answer begins clears every one.
+    ledger.turn_began_as(OWN_CHAT, false);
+    assert_eq!(ledger.last_said(OWN_CHAT), None);
+    assert!(ledger.said_before(OWN_CHAT).is_empty());
+}
+
+#[test]
 fn a_chat_s_last_message_follows_it_to_a_new_number_and_goes_when_it_closes() {
     let mut ledger = Ledger::default();
     ledger.said_last(OWN_CHAT, "Which branch should I use?".to_owned());
@@ -3165,4 +3205,36 @@ fn an_ask_held_open_in_the_window_is_a_prompt_whatever_the_harness_said() {
         ledger.end_step(TASK, RUNNING, false, Looked::WaitedOut),
         Ends::End
     );
+}
+
+#[test]
+fn a_turn_begun_by_purlis_s_line_or_the_chat_s_own_work_is_a_background_turn() {
+    let mut ledger = Ledger::default();
+    assert!(
+        !ledger.background_turn(5, false),
+        "a turn nobody named is the person's"
+    );
+    assert!(ledger.background_turn(5, true), "its own work woke it");
+
+    ledger.line_typed(5);
+
+    assert!(ledger.background_turn(5, false));
+}
+
+#[test]
+fn a_line_the_person_sent_makes_the_next_turn_theirs_until_a_turn_begins_or_ends() {
+    let mut ledger = Ledger::default();
+    ledger.line_typed(5);
+    ledger.person_sent(5);
+    assert!(!ledger.background_turn(5, true));
+
+    ledger.turn_began(5);
+    assert!(
+        ledger.background_turn(5, true),
+        "the next wake is its own again"
+    );
+
+    ledger.person_sent(5);
+    ledger.turn_ended(5);
+    assert!(ledger.background_turn(5, true));
 }

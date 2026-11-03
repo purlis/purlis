@@ -234,8 +234,8 @@ describe("the palette reaching what the window can do", () => {
         "End this pane's chat",
         "End chat steward 1",
         "Focus workspace beta",
-        "Merge this chat's branch into its clone",
-        "Remove the folder of this chat's branch",
+        "Merge steward 1's branch into its clone",
+        "Remove steward 1's branch folder",
         "Quit purlis",
       ]),
     );
@@ -349,7 +349,7 @@ describe("the palette reaching what the window can do", () => {
     render(<App />);
     await openAChat();
 
-    await runFromPalette("merge this chat");
+    await runFromPalette("branch into its clone");
 
     // Said on the status bar's card (#3653), wherever that stands among the window's statuses.
     expect(await findResult("charter/fix-it landed: abc1234 → def5678")).toBeInTheDocument();
@@ -370,7 +370,7 @@ describe("the palette reaching what the window can do", () => {
     render(<App />);
     await openAChat();
 
-    await runFromPalette("remove the folder of this chat");
+    await runFromPalette("branch folder");
 
     // Verbatim, beside the rows rather than behind them, and the palette is still up: a polite
     // status, told as a refusal in words (#3344).
@@ -399,7 +399,7 @@ describe("the palette reaching what the window can do", () => {
     expect(screen.queryAllByRole("option")).toHaveLength(0);
     await userEvent.keyboard("{Escape}");
 
-    await runFromPalette("remove the folder of this chat");
+    await runFromPalette("branch folder");
     const refused = await within(
       await screen.findByRole("dialog", { name: "Command palette" }),
     ).findByText((text) => text.includes("svc/fix-it has uncommitted changes"));

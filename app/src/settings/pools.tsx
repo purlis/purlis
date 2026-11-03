@@ -14,7 +14,9 @@ import {
   removedSaid,
   removePool,
   startAddingAPool,
+  useNamedBy,
   usePools,
+  type NamedBy,
 } from "../pools";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button } from "../ui/button/Button";
@@ -144,8 +146,8 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
   if (version.held > 0) {
     lines.push(
       version.held === 1
-        ? "1 older runner stopped during its drain. purlis keeps it and what its chats left until you remove it in Devices."
-        : `${version.held} older runners stopped during their drain. purlis keeps them and what their chats left until you remove them in Devices.`,
+        ? "1 older runner stopped with what its chats left in its home. purlis keeps it until you bring their conversations back or discard them in Devices."
+        : `${version.held} older runners stopped with what their chats left in their homes. purlis keeps them until you bring their conversations back or discard them in Devices.`,
     );
   }
   if (version.draining > 0) {
@@ -173,7 +175,12 @@ function linkOnAnotherEngine(link: PoolLink | "asking" | undefined): boolean {
 
 /**
  * **Remove pool {name}?**, asked before any pool is removed: what goes, and that there is no
- * undo. Cancel changes nothing.
+ * undo. Cancel changes nothing. It is the one question Pools settings and the Devices view ask.
+ *
+ * **It names what goes back to this machine** (#4678, the person's ruling of 2026-11-02): each
+ * project and workspace that names the pool, by name, which removing it sets to This machine
+ * (ADR 0078, D-4536-3). Where none does, it says nothing of them. Remove pool waits for the
+ * read, and where purlis could not read them it says what is true of any, and why.
  */
 export function RemovePool({
   name,
@@ -190,46 +197,120 @@ export function RemovePool({
   onRemove: () => void;
   onCancel: () => void;
 }) {
+  const named = useNamedBy(name);
   return (
     <AlertDialog
       onClose={onCancel}
       title={`Remove pool ${name}?`}
       description={
-        <p className="came-back">
-          {elsewhere
-            ? "Its runner is on another Docker engine, which Docker doesn't reach now, so its container and home stay there, with everything chats left in them. purlis forgets the pool, and says what to remove once Docker points back. There is no undo."
-            : cluster
-              ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
-              : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
-          {" Workspaces and projects set to run on it go back to this machine."}
-        </p>
+        <>
+          <p className="came-back">
+            {elsewhere
+              ? "Its runner is on another Docker engine, which Docker doesn't reach now, so its container and home stay there, with everything chats left in them. purlis forgets the pool, and says what to remove once Docker points back. There is no undo."
+              : cluster
+                ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
+                : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
+          </p>
+          <NamedByLine named={named} />
+        </>
       }
-      main={{ children: "Remove pool", variant: "danger", onPress: onRemove }}
+      // Pressed only once the question names what goes back (#4678).
+      main={{
+        children: "Remove pool",
+        variant: "danger",
+        onPress: onRemove,
+        isDisabled: named.state === "reading",
+      }}
     />
   );
 }
 
-/** **Remove runner {name}?**, asked before a held runner goes, with what its chats left. */
-export function RemoveHeldRunner({
+/** What Remove pool's question says of the projects and workspaces that name the pool. */
+function NamedByLine({ named }: { named: NamedBy }) {
+  const said = useId();
+  // The one local file is read in a moment: nothing is said before it is.
+  if (named.state === "reading") return null;
+  if (named.state === "trouble")
+    return (
+      <p className="came-back">
+        {
+          "Workspaces and projects set to run on it go back to this machine. purlis could not read which: "
+        }
+        <bdi>{named.why}</bdi>
+      </p>
+    );
+  if (named.named.length === 0) return null;
+  return (
+    <>
+      <p className="came-back pool-named-lead" id={said}>
+        These go back to this machine:
+      </p>
+      <ul className="came-back pool-named-by" aria-labelledby={said}>
+        {named.named.flatMap((one) => [
+          ...(one.project
+            ? [
+                <li key={`${one.path}\0p`}>
+                  {"Project "}
+                  <bdi>{one.name}</bdi>
+                  {", and the workspaces that follow it"}
+                </li>,
+              ]
+            : []),
+          ...one.workspaces.map((workspace) => (
+            <li key={`${one.path}\0w\0${workspace}`}>
+              {"Workspace "}
+              <bdi>{workspace}</bdi>
+              {" in "}
+              <bdi>{one.name}</bdi>
+            </li>
+          )),
+        ])}
+      </ul>
+    </>
+  );
+}
+
+/**
+ * **Discard runner {name}'s conversations?**, asked twice before a held runner goes with what its
+ * chats left (#4633, ruled 2026-11-02): `first`, then `again`, each with Cancel as the way back.
+ */
+export function DiscardHeldRunner({
   name,
-  onRemove,
+  ask,
+  onGoOn,
   onCancel,
 }: {
   name: string;
-  onRemove: () => void;
+  ask: "first" | "again";
+  onGoOn: () => void;
   onCancel: () => void;
 }) {
-  return (
+  // Each ask is a dialog of its own, so the second opens with the keyboard on its Cancel and not
+  // on the button the first was answered with: two presses never discard.
+  return ask === "first" ? (
     <AlertDialog
+      key="first"
       onClose={onCancel}
-      title={`Remove runner ${name}?`}
+      title={`Discard runner ${name}'s conversations?`}
       description={
         <p className="came-back">
-          Its container and home are removed from your Docker, with everything chats left in them.
-          There is no undo.
+          Its container and home are removed from your Docker, with every conversation and
+          everything else its chats left in them.
         </p>
       }
-      main={{ children: "Remove runner", variant: "danger", onPress: onRemove }}
+      main={{ children: "Discard…", variant: "danger", onPress: onGoOn }}
+    />
+  ) : (
+    <AlertDialog
+      key="again"
+      onClose={onCancel}
+      title="Discard them for good?"
+      description={
+        <p className="came-back">
+          {`Runner ${name}'s conversations cannot be brought back after this. There is no undo.`}
+        </p>
+      }
+      main={{ children: "Discard conversations", variant: "danger", onPress: onGoOn }}
     />
   );
 }

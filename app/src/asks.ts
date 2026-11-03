@@ -19,8 +19,9 @@
  * **What an ask says is data**: its chain of names, its line, a host. The window draws each as
  * text; none of it is ever markup or a control.
  */
-import { useEffect, useState } from "react";
-import { commands, type Asking, type GrantLevel, type Shown } from "./bindings";
+import { useEffect, useMemo, useState } from "react";
+import { commands, type Asking, type GrantLevel, type Press, type Shown } from "./bindings";
+import type { QuestionsHeld } from "./taskQuestions";
 import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
@@ -73,10 +74,17 @@ export function onAsksMoved(reader: (plane: string) => void): () => void {
 /** Each project's asks, by its id: the last whole list the core derived for it. */
 export function useAsks(planes: readonly string[]): {
   held: Record<string, readonly Shown[]>;
+  /** **Each project's asks with its task questions still with their asking chat** (#4564):
+   *  what a task question's one state is derived from (`taskQuestions.standingOf`). */
+  questions: Record<string, QuestionsHeld>;
   /** Reads `plane`'s list again: after an answer, whatever it answered. */
   reread: (plane: string) => void;
 } {
-  const [held, setHeld] = useState<Record<string, readonly Shown[]>>({});
+  const [questions, setHeld] = useState<Record<string, QuestionsHeld>>({});
+  const held = useMemo(
+    () => Object.fromEntries(Object.entries(questions).map(([plane, one]) => [plane, one.asks])),
+    [questions],
+  );
   const [reader] = useState(() => listReader(setHeld));
   const key = planes.join("\n");
   useEffect(() => {
@@ -101,14 +109,12 @@ export function useAsks(planes: readonly string[]): {
       for (const stop of stops) void stop.then((off) => off?.()).catch(() => undefined);
     };
   }, [reader]);
-  return { held, reread: reader.read };
+  return { held, questions, reread: reader.read };
 }
 
 /** Reads each watched project's list, at once or once a burst has settled. */
 function listReader(
-  setHeld: (
-    change: (was: Record<string, readonly Shown[]>) => Record<string, readonly Shown[]>,
-  ) => void,
+  setHeld: (change: (was: Record<string, QuestionsHeld>) => Record<string, QuestionsHeld>) => void,
 ) {
   let watched = new Set<string>();
   let live = true;
@@ -120,9 +126,12 @@ function listReader(
     void commands.asksWaiting(plane).then(
       (answer) => {
         // A core that answers nothing for it (an older build, a test's mock) holds none.
-        const asks = answer.status === "ok" ? (answer.data as Asking | null)?.asks : undefined;
+        const listed = answer.status === "ok" ? (answer.data as Asking | null) : undefined;
+        const asks = listed?.asks;
         if (!(live && watched.has(plane) && asks)) return;
-        setHeld((was) => ({ ...was, [plane]: asks }));
+        // An older core lists no task question with its asking chat: none is.
+        const with_asking_chat = listed?.with_asking_chat ?? [];
+        setHeld((was) => ({ ...was, [plane]: { asks, with_asking_chat } }));
         lookAtHoldsEnd(plane, asks);
       },
       () => {},
@@ -204,6 +213,14 @@ export async function answerThrough(
   return (await answerTaken(plane, ask, option)).refused;
 }
 
+/** The press a login notice's option sends (#4595), by the option's id. */
+const PRESS_OF: Readonly<Record<string, Press | undefined>> = {
+  once: "once",
+  chat: "chat",
+  you: "always",
+  keep: "keep",
+};
+
 /**
  * {@link answerThrough}, and **whether the chat took the answer live** (#1666): a sandbox
  * host's Allow that the chat's proxy took while the command waited, so the command carries on
@@ -219,6 +236,7 @@ export async function answerTaken(
   ask: Shown,
   option: string,
   reason?: string,
+  typed?: string,
 ): Promise<{ refused: string | undefined; live: boolean; opened?: boolean }> {
   const path = ask.answer;
   if (path.via === "in-its-pane") return { refused: IN_ITS_CHAT, live: false };
@@ -356,6 +374,25 @@ export async function answerTaken(
         if (option === "keep")
           return commands.answerPoolLogin(plane, ask.session, false, reason?.trim() || null);
         break;
+      case "browser-login": {
+        // A login a chat suggested (#4595): the press names what the notice drew, with what the
+        // person typed. A site that isn't what they typed is drawn again, for another press.
+        const press = PRESS_OF[option];
+        if (press === undefined) break;
+        const pressed = await commands.answerBrowserLogin(
+          plane,
+          ask.session,
+          path.id,
+          press,
+          path.shown,
+          typed ?? null,
+          reason?.trim() || null,
+        );
+        if (pressed.status === "error") return pressed;
+        if (pressed.data.kind === "drawn-again")
+          return { status: "error", error: pressed.data.said };
+        return { status: "ok" };
+      }
       case "pool-tool":
         // One run of a runner chat's declared tool (#2047): Allow this run has this desktop send
         // the tool its vault values on the pool's runner for that run alone; Keep off refuses it.

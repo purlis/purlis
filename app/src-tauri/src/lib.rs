@@ -45,6 +45,8 @@ mod chats;
 mod clipath;
 mod createproject;
 mod curation;
+mod layout;
+mod questiontrail;
 // The Devices view (#2052).
 mod clusterpools;
 mod devices;
@@ -98,6 +100,7 @@ mod useskill;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
 #[cfg(all(test, unix))]
 mod behaviour;
+mod freshkept;
 #[cfg(unix)]
 mod hostedconfinement;
 #[cfg(unix)]
@@ -106,6 +109,7 @@ mod hostfailing;
 mod hostlost;
 #[cfg(unix)]
 mod hostsaving;
+mod inputlanes;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod instance;
 mod ipc;
@@ -113,6 +117,7 @@ mod killswitch;
 mod kubectl;
 mod lifecycle;
 mod live;
+mod loginasks;
 mod mcpfailed;
 mod memories;
 mod nativewindow;
@@ -860,10 +865,6 @@ pub struct HandedFromNote {
     /// report, and where no record says how.
     #[specta(optional)]
     pub outcome: Option<String>,
-    /// Whether, as a task, it has a question open with the chat that dispatched it, and is
-    /// paused until that chat answers (#1484): its row says whom it is asking.
-    #[specta(optional)]
-    pub asking: Option<bool>,
     /// Whether, as a task, the person asked for it themselves from that chat's tab (#1492,
     /// V100-70): its row and its breadcrumb say `asked by you`. The app's own record of how it
     /// was started, never a word a chat said.
@@ -891,7 +892,6 @@ impl HandedFromNote {
             // What the project's own records say of it, which a list of rows asks for
             // ([`with_task_standing`]): not the chat's record, so not read here.
             outcome: None,
-            asking: None,
             by_person: (from.mode == purlis_core::reopen::Mode::Task && from.by_person)
                 .then_some(true),
             asker_waiting: None,
@@ -919,7 +919,9 @@ fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
 /// for a chat its sandbox holds nothing of, whose browser is given none.
 fn browser_sites_of(held: &planes::Held, session: u32) -> Option<u32> {
     held.chats().confines_now(session)?;
-    let count = network::browser_sites_here(held.root(), &held.browsers().chat_sites(), session);
+    let count = held
+        .browser_sites_in_force()
+        .of_chat(&held.browsers().chat_sites(), session);
     u32::try_from(count).ok().filter(|count| *count > 0)
 }
 
@@ -940,12 +942,10 @@ fn with_task_standing(
     if let Some(from) = drawn.from.as_mut() {
         from.asker_waiting = held.chats().waits_to_start(from.chat).then_some(true);
     }
-    if let Some(from) = drawn.from.as_mut().filter(|from| from.task) {
-        if from.reported || from.unreported {
-            from.outcome = outcomes.of_task(session).map(str::to_owned);
-        } else {
-            from.asking = dispatched::asks_its_asker(held, session).then_some(true);
-        }
+    if let Some(from) = drawn.from.as_mut().filter(|from| from.task)
+        && (from.reported || from.unreported)
+    {
+        from.outcome = outcomes.of_task(session).map(str::to_owned);
     }
     drawn
 }
@@ -1690,6 +1690,7 @@ async fn start_chat(
     tauri::async_runtime::spawn_blocking(move || {
         let named = label.clone();
         let show_footer = boxes.show_footer;
+        let runs_on = boxes.runs_on.map(RunsOnPick::choice).transpose()?;
         let without_sandbox = boxes
             .without_sandbox
             .map(|asked| purlis_core::sandbox::OptOut {
@@ -1716,6 +1717,7 @@ async fn start_chat(
                                 Picked {
                                     show_footer,
                                     without_sandbox,
+                                    runs_on,
                                 },
                                 columns,
                                 rows,
@@ -1757,6 +1759,32 @@ struct Boxes {
     /// opt-out is made: it reaches the core here, on the window's own human scope, and nothing
     /// a chat, a file or the CLI sends can carry one.
     without_sandbox: Option<WithoutSandbox>,
+    /// Where the person chose to run this chat, for this start only (#4536): a pool, or this
+    /// machine (a null pool), before its workspace's and its project's own. Absent follows them.
+    /// It never writes a setting.
+    #[specta(optional)]
+    runs_on: Option<RunsOnPick>,
+}
+
+/// The Runs on row's choice for one start (#4536): `pool` names a pool this machine keeps, and
+/// null is this machine.
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
+pub(crate) struct RunsOnPick {
+    pool: Option<String>,
+}
+
+impl RunsOnPick {
+    /// The start's choice, or why a name can't be one.
+    pub(crate) fn choice(self) -> Result<purlis_core::machine::StartChoice, String> {
+        use purlis_core::machine::StartChoice;
+        match self.pool {
+            None => Ok(StartChoice::ThisMachine),
+            Some(pool) => {
+                purlis_core::runners::usable_pool_name(&pool)?;
+                Ok(StartChoice::Pool(pool))
+            }
+        }
+    }
 }
 
 /// A person's opt-out, as the picker sends it.
@@ -1770,6 +1798,7 @@ struct WithoutSandbox {
 struct Picked {
     show_footer: bool,
     without_sandbox: Option<purlis_core::sandbox::OptOut>,
+    runs_on: Option<purlis_core::machine::StartChoice>,
 }
 
 /// The start itself, in the directory `on_a_branch` settled on.
@@ -1784,6 +1813,7 @@ fn start_chat_in(
     Picked {
         show_footer,
         without_sandbox,
+        runs_on,
     }: Picked,
     columns: u16,
     rows: u16,
@@ -1826,6 +1856,7 @@ fn start_chat_in(
         label: label.clone(),
         from: None,
         renamed_from: None,
+        runs_on,
         ..Default::default()
     };
     let session = held
@@ -2034,10 +2065,19 @@ fn task_failure_seen(
 /// starts, when it asks this again.
 #[tauri::command]
 #[specta::specta]
-fn opened_chats(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Vec<OpenChat>, String> {
+// On a blocking thread (#4739): a launch asks it at each chat it brings back, and a confined
+// chat's browser sites are counted against the policy ([`planes::Held::browser_sites_in_force`]).
+async fn opened_chats(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<OpenChat>, String> {
     let held = planes.held(&plane)?;
-    Ok(held
-        .chats()
+    off_the_window("listing the open chats", move || Ok(opened_chats_of(&held))).await
+}
+
+/// [`opened_chats`] of the plane `held`.
+fn opened_chats_of(held: &planes::Held) -> Vec<OpenChat> {
+    held.chats()
         .drawn_now()
         .into_iter()
         .map(|(open, restoring)| {
@@ -2052,10 +2092,10 @@ fn opened_chats(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Vec<
                     ..OpenChat::from(open)
                 }
             } else {
-                drawn_of(&held, open)
+                drawn_of(held, open)
             }
         })
-        .collect())
+        .collect()
 }
 
 /// The chats this launch could not start, by id, name and reason. They are still recorded, and
@@ -2436,26 +2476,17 @@ async fn restart_chat_without_sandbox(
 /// again whenever the plane changes on disk.
 #[tauri::command]
 #[specta::specta]
-fn chats_plane_updated(
+// On a blocking thread (#4738): it reads the plane's instructions, and each chat's skill
+// folders where its stamp is not kept.
+async fn chats_plane_updated(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<Vec<planes::PlaneUpdated>, String> {
-    Ok(planes.held(&plane)?.plane_updated())
-}
-
-/// Says which chat is in front, so the record brings that one back in front.
-#[tauri::command]
-#[specta::specta]
-fn chat_in_front(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-    session: Option<u32>,
-) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    held.chats().bring_to_front(session);
-    // A reported task that was held because the person had it in front is looked at again.
-    dispatched::front_moved(&held);
-    Ok(())
+    off_the_window("reading which chats run on older instructions", move || {
+        Ok(held.plane_updated())
+    })
+    .await
 }
 
 /// What the operator has pinned in one project (ADR 0039, stored per ADR 0040).
@@ -2609,22 +2640,6 @@ async fn arrange_workspace_pins(
     .await
 }
 
-/// Pins or unpins one chat.
-///
-/// Its own command rather than a third case of the two above, because it is written
-/// somewhere else entirely: a chat pin goes in the plane's own `.charter/app/reopen.json`
-/// and never in the machine store, which ADR 0034 forbids holding a chat's name.
-#[tauri::command]
-#[specta::specta]
-fn pin_chat(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-    session: u32,
-    pinned: bool,
-) -> Result<(), String> {
-    planes.held(&plane)?.chats().pin(session, pinned)
-}
-
 /// The person gave a task chat a tab of its own (#1447, #1489): the record keeps it, so a
 /// reloaded window and the next launch draw the tab again. Sending it back is
 /// `close_chat_tab`. Nothing ends by either.
@@ -2655,37 +2670,11 @@ fn close_chat_tab(
     Ok(())
 }
 
-/// **Where chat `session`'s pane is and what it shows**: chat `shown` in place of its own, or
-/// its own again with none (#1486); and the chat whose tab the pane is in, `beside`, or none
-/// for a chat that is its tab's own or has no pane (#1489). The record keeps both on that
-/// chat's entry, so a reloaded window and the next launch put each pane back.
-///
-/// **The one way the window says what is on screen** beside which chat is in front
-/// (`chat_in_front`): `Chats::looked_at` reads these, so a reported task is not ended under
-/// the person in any pane of the tab in front, and none of them is notified about. A window
-/// command only: no chat can call it.
-#[tauri::command]
-#[specta::specta]
-fn tab_shows(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-    session: u32,
-    shown: Option<u32>,
-    beside: Option<u32>,
-) -> Result<(), String> {
-    let held = planes.held(&plane)?;
-    held.chats().tab_shows(session, shown, beside)?;
-    // A reported task that was held because the person was reading it in this tab is looked
-    // at again, as it is when another chat is brought in front (#1485).
-    dispatched::front_moved(&held);
-    Ok(())
-}
-
 /// The order the chat strip draws this project's chats in, by session, so the record lists
 /// them in it and the next launch — or a reloaded window — puts them back in it (SI-6).
 ///
-/// **In the plane's own `.charter/app/reopen.json`, beside each chat's pin**, and never in the
-/// machine store, for [`pin_chat`]'s reason: a chat is numbered per plane, and ADR 0034 keeps
+/// **In the plane's own `.charter/app/reopen.json`**, and never in the machine store: a chat
+/// is numbered per plane, and ADR 0034 keeps
 /// its number out of a file every plane shares. That file is out of git, so the order is this
 /// machine's as a pin is.
 #[tauri::command]
@@ -2704,7 +2693,7 @@ fn chat_order(
 ///
 /// **Charter's label, never the harness's**: the program keeps the `--name` it was started
 /// with, so renaming a chat never disturbs one that is running. The name goes in the plane's
-/// own `.charter/app/reopen.json`, beside the chat's pin, so it comes back at a relaunch.
+/// own `.charter/app/reopen.json`, so it comes back at a relaunch.
 #[tauri::command]
 #[specta::specta]
 fn rename_chat(
@@ -2885,8 +2874,10 @@ fn chat_doings(
     Ok(planes.held(&plane)?.hooks().doing_now())
 }
 
-/// Sends what a pane typed to the session's program. Anything but the terminal's own answer
-/// drops a curation prompt still waiting to be typed into it (`Held::operator_input`).
+/// Sends what a pane typed to the session's program, in the chat's lane: it answers at once,
+/// and a send the host refuses is said on the chat's pane (#4734, ADR 0108). Anything but the
+/// terminal's own answer drops a curation prompt still waiting to be typed into it
+/// (`Held::queue_operator_input`).
 #[tauri::command]
 #[specta::specta]
 fn send_input(
@@ -2897,7 +2888,8 @@ fn send_input(
 ) -> Result<(), String> {
     planes
         .held(&plane)?
-        .operator_input(session, text.as_bytes())
+        .queue_operator_input(session, text.into_bytes());
+    Ok(())
 }
 
 /// Sends a pane's bytes that are not text to the session's program, each as the one byte it
@@ -2911,10 +2903,12 @@ fn send_input_bytes(
     session: u32,
     bytes: Vec<u8>,
 ) -> Result<(), String> {
-    planes.held(&plane)?.operator_input(session, &bytes)
+    planes.held(&plane)?.queue_operator_input(session, bytes);
+    Ok(())
 }
 
-/// Tells a session how big the pane showing it now is.
+/// Tells a session how big the pane showing it now is, in the chat's lane: it answers at once
+/// (#4734, ADR 0108).
 #[tauri::command]
 #[specta::specta]
 fn resize_session(
@@ -2926,41 +2920,47 @@ fn resize_session(
 ) -> Result<(), String> {
     planes
         .held(&plane)?
-        .chats()
-        .resize(session, Size { columns, rows })
+        .queue_resize(session, Size { columns, rows });
+    Ok(())
 }
 
 /// Opens a view of a session for a pane that is now on screen: the channel is sent the screen
 /// as it already is, and then the session's output. Answers with the id that closes the view.
+///
+/// Off the window's thread, in its turn in the chat's lane (#4734, ADR 0108): after every
+/// resize the pane sent before it (#891), and answered once the host has.
 #[tauri::command]
 #[specta::specta]
-fn watch_session(
+async fn watch_session(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
     output: Channel<String>,
 ) -> Result<Watching, String> {
     let held = planes.held(&plane)?;
-    let chats = held.chats();
-    let newline = chats.newline(session);
-    let watching = chats.sessions().watch(
-        session,
-        // A view whose window has gone is closed by the pane that owned it; until then, text
-        // it cannot take is dropped rather than held, and the session keeps running.
-        Box::new(move |text| {
-            let _ = output.send(text);
-        }),
-    )?;
-    Ok(Watching {
-        view: watching.view,
-        columns: watching.size.columns,
-        rows: watching.size.rows,
-        scrollback: sessions::SCROLLBACK,
-        newline,
+    off_the_window("opening a view of a chat", move || {
+        let newline = held.chats().newline(session);
+        let watching = held.watch_in_turn(
+            session,
+            // A view whose window has gone is closed by the pane that owned it; until then,
+            // text it cannot take is dropped rather than held, and the session keeps running.
+            Box::new(move |text| {
+                let _ = output.send(text);
+            }),
+        )?;
+        Ok(Watching {
+            view: watching.view,
+            columns: watching.size.columns,
+            rows: watching.size.rows,
+            scrollback: sessions::SCROLLBACK,
+            newline,
+        })
     })
+    .await
 }
 
-/// Closes a view, for a pane that has gone off screen. The session keeps running.
+/// Closes a view, for a pane that has gone off screen, in the chat's lane: it answers at once
+/// (#4734, ADR 0108). The session keeps running.
 #[tauri::command]
 #[specta::specta]
 fn unwatch_session(
@@ -2969,11 +2969,8 @@ fn unwatch_session(
     session: u32,
     view: u32,
 ) -> Result<(), String> {
-    planes
-        .held(&plane)?
-        .chats()
-        .sessions()
-        .unwatch(session, view)
+    planes.held(&plane)?.queue_unwatch(session, view);
+    Ok(())
 }
 
 /// The sessions that are running, in the order they were opened.
@@ -3017,6 +3014,8 @@ fn commands() -> Builder<tauri::Wry> {
         // What `update://checked` carries. It crosses on an event rather than a command, so it
         // is named here or the window would have to write the shape out by hand.
         .typ::<updates::Offer>()
+        // What `chat-input-refused` carries (#4734).
+        .typ::<inputlanes::InputRefused>()
         // What `plane-changed` carries, for the same reason.
         .typ::<planewatch::PlaneChanged>()
         // What `files-changed` carries (FM-1).
@@ -3056,6 +3055,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<smartclose::SmartClosing>()
         // What `chats-reconnecting` carries (#2496).
         .typ::<reconnecting::ChatsReconnecting>()
+        // What `fresh-runners-kept` carries (#4569).
+        .typ::<freshkept::FreshRunnersKept>()
         // What `projects_not_held` answers, read again on `projects-not-held` (#2846).
         .typ::<notheld::ProjectNotHeld>()
         // What `chat-stop` carries (#1448).
@@ -3097,6 +3098,12 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<skillgrade::after_edit::SkillGradeAfterEditStep>()
         .constant("SKILL_GRADE_AFTER_EDIT", skillgrade::after_edit::EVENT)
         .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
+        // How long a task's question waits on its asking chat (#4841): a question's trail says
+        // it from the rule, never from a number of its own.
+        .constant(
+            "A_QUESTION_WAITS_SECS",
+            purlis_core::dispatchtalk::A_QUESTION_WAITS_SECS,
+        )
         // The one rule for a character a reader does not see (SK-51, #3202): the window marks
         // what it draws itself from the core's own tables, never from a list of its own.
         .constant(unicoderule::UNICODE_RULE, unicoderule::rule())
@@ -4318,6 +4325,19 @@ pub fn run() {
                         );
                     })
                 })
+                // What a pane sent its chat that was refused: the window says so on its pane
+                // (#4734).
+                .telling_input_refused({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: inputlanes::InputRefused| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            inputlanes::REFUSED,
+                            &told,
+                        );
+                    })
+                })
                 // A chat whose program ended with its session host: the window says so on its
                 // pane, with Resume (#2007).
                 .telling_lost_chats({
@@ -4340,6 +4360,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             reconnecting::EVENT,
+                            &told,
+                        );
+                    })
+                })
+                // A task's fresh runner kept since its work is not all here: the window's Notice
+                // offers Fetch again and Discard (#4569).
+                .telling_fresh_kept({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: freshkept::FreshRunnersKept| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            freshkept::EVENT,
                             &told,
                         );
                     })

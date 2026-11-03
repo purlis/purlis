@@ -101,7 +101,7 @@ import {
 } from "./settings/links";
 import { enterSettings } from "./settings/entering";
 import { machineChanged, whenRecentSettled } from "./settings/thisMachine";
-import { useExtensionsOn } from "./extensionsOn";
+import { useExtensionsOn, useExtensionsOnUnread } from "./extensionsOn";
 import { useProjectTheme } from "./projectTheme";
 import { drawTint, facesAfterTheFirstFrame } from "./theme/theme";
 import { useContributedPanels } from "./Panels";
@@ -158,6 +158,10 @@ async function installCli(): Promise<Ran> {
     ? { ok: true, said: answer.data }
     : { ok: false, refused: answer.error };
 }
+
+/** None of a project's extensions, for a theme asked while what it has on could not be read
+ *  (#4822): one set, so the draw is not asked again on every render. */
+const NONE_ON: ReadonlySet<string> = new Set();
 
 /** What the window says while an open waits for its own close of the same project (#1949). */
 const STILL_CLOSING =
@@ -1373,6 +1377,9 @@ function App() {
   /** What the project in front has on in that workspace (charter-app#253, #280), for the one
    *  thing that is the window's and not a project's to draw: the theme. */
   const onInFront = useExtensionsOn(settledInFront, workspaceInFront);
+  /** Why that could not be read, asked twice (#4822): the theme is still asked for, with none of
+   *  its extensions on, and the window says why an extension's theme may not be drawn. */
+  const unreadInFront = useExtensionsOnUnread(settledInFront, workspaceInFront);
   /** The theme the project in front picked there (charter-app#273, #281): `null` when nothing
    *  picked one. */
   const pickInFront = useProjectTheme(settledInFront, workspaceInFront);
@@ -1391,7 +1398,14 @@ function App() {
         plane: inFront,
         workspace: workspaceInFront,
       });
-  }, [inFront, onInFront, pickInFront, workspaceInFront, restoring]);
+    else if (unreadInFront !== undefined && pickInFront !== undefined)
+      void drawThemeFor(
+        NONE_ON,
+        pickInFront,
+        { plane: inFront, workspace: workspaceInFront },
+        unreadInFront,
+      );
+  }, [inFront, onInFront, unreadInFront, pickInFront, workspaceInFront, restoring]);
   // And the workspace in front's colour on the window's accent and focus ring (charter-app#281),
   // live on every switch. The terminal is not told: nothing it draws is tinted.
   const colourInFront = saying?.colour ?? null;
@@ -1723,13 +1737,14 @@ function App() {
       split: () => undefined,
       closePane: () => undefined,
       closeTab: () => undefined,
+      closeOtherTabs: () => undefined,
       selectTab: () => undefined,
-      renameTab: () => undefined,
+      renameChat: () => undefined,
       linkWorkItem: () => undefined,
       startFresh: () => undefined,
       restartChat: () => undefined,
       moveChat: () => undefined,
-      restartListed: () => undefined,
+      endChat: () => undefined,
       askPersona: () => undefined,
       useSkill: () => undefined,
       unlinkWorkItem: async () => nowhere(),
@@ -2013,7 +2028,7 @@ function App() {
         workspaces: [],
         projects: drawn,
         needsYou: [],
-        pinned: { chats: [], workspaces: [], projects: pinnedProjects },
+        pinned: { workspaces: [], projects: pinnedProjects },
         nameOf: String,
         split,
         screenReader,
@@ -2726,6 +2741,7 @@ function App() {
               awayRefused={awayRefusals.held[plane]}
               onAway={answerAway}
               waiting={registry.held[plane]}
+              questions={registry.questions[plane]}
               inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
               inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
               elsewhere={elsewhere}

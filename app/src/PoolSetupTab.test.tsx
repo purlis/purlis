@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +17,8 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     findings: [],
     next: null,
     skippable: false,
+    see: null,
+    checks: [],
     ...more,
   }) as PoolSetupStep;
 
@@ -33,6 +35,8 @@ const setup = (at: string, steps: PoolSetupStep[], pool: string | null = null): 
   name: pool,
   at,
   steps,
+  noticed: false,
+  others: [],
 });
 
 const READY = setup("where", [
@@ -131,9 +135,9 @@ describe("PoolSetupTab", () => {
   it("makes a real pool on the step's own button and goes on", async () => {
     let now = CHOSEN;
     const calls = core(() => now, {
-      add_docker_pool: () => {
+      pool_setup_create: () => {
         now = MADE;
-        return null;
+        return { breaks: [] };
       },
     });
     render(<PoolSetupTab plane="p" />);
@@ -144,16 +148,18 @@ describe("PoolSetupTab", () => {
         false,
       ),
     );
-    expect(calls.some((call) => call.cmd === "add_docker_pool")).toBe(false);
+    expect(calls.some((call) => call.cmd === "pool_setup_create")).toBe(false);
     await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
-    expect(await screen.findByRole("heading", { name: "Sign-ins" })).toBeTruthy();
-    const added = calls.find((call) => call.cmd === "add_docker_pool");
+    expect(
+      await screen.findByRole("heading", { name: "Choose the profiles for this pool" }),
+    ).toBeTruthy();
+    const added = calls.find((call) => call.cmd === "pool_setup_create");
     expect(added?.args).toMatchObject({ adding: { name: "dev-box", image: "img@sha256:a" } });
   });
 
   it("keeps what was typed when the pool is refused, and says why", async () => {
     const calls = core(() => CHOSEN, {
-      add_docker_pool: () => {
+      pool_setup_create: () => {
         throw "a pool named dev-box is on this machine";
       },
     });
@@ -169,7 +175,7 @@ describe("PoolSetupTab", () => {
     await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
     expect(await screen.findByText("a pool named dev-box is on this machine")).toBeTruthy();
     expect(screen.getByRole("textbox", { name: /Name/ })).toHaveProperty("value", "dev-box");
-    expect(calls.filter((call) => call.cmd === "add_docker_pool")).toHaveLength(1);
+    expect(calls.filter((call) => call.cmd === "pool_setup_create")).toHaveLength(1);
   });
 
   it("says when the image is a newer version's, and why it couldn't name one", async () => {
@@ -181,13 +187,13 @@ describe("PoolSetupTab", () => {
       }),
     });
     const { unmount } = render(<PoolSetupTab plane="p" />);
-    expect(await screen.findByText(/new@sha256:b, from purlis 9\.9/)).toBeTruthy();
+    expect(await screen.findByText(/from purlis 9\.9\. An update to it is waiting/)).toBeTruthy();
     unmount();
     core(() => CHOSEN, {
       runner_image_of_this_version: () => ({ state: "none_named" }),
     });
     render(<PoolSetupTab plane="p" />);
-    expect(await screen.findByRole("textbox", { name: /Runner image/ })).toBeTruthy();
+    expect(await screen.findByRole("textbox", { name: /Image, by digest/ })).toBeTruthy();
   });
 
   it("makes nothing where Docker changed since the step was read", async () => {
@@ -204,7 +210,7 @@ describe("PoolSetupTab", () => {
     now = MISSING;
     await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
     expect(await screen.findByRole("button", { name: "Open Docker's install page" })).toBeTruthy();
-    expect(calls.some((call) => call.cmd === "add_docker_pool")).toBe(false);
+    expect(calls.some((call) => call.cmd === "pool_setup_create")).toBe(false);
   });
 
   it("keeps the name as it is typed, without waiting to leave the box", async () => {
@@ -214,12 +220,25 @@ describe("PoolSetupTab", () => {
     await waitFor(() => expect(calls.some((call) => call.cmd === "pool_setup_name")).toBe(true));
   });
 
+  it("keeps a name typed just before the tab closes, at once, and leaves no wait behind (#4823)", async () => {
+    const calls = core(() => CHOSEN);
+    const { unmount } = render(<PoolSetupTab plane="p" />);
+    const box = await screen.findByRole("textbox", { name: /Name/ });
+    vi.useFakeTimers();
+    fireEvent.change(box, { target: { value: "dev" } });
+    const kept = () => calls.filter((call) => call.cmd === "pool_setup_name");
+    expect(kept()).toEqual([]);
+    unmount();
+    expect(kept().map((call) => call.args)).toEqual([{ name: "dev" }]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("tells the rest of the window a pool was made", async () => {
     let now = CHOSEN;
     const calls = core(() => now, {
-      add_docker_pool: () => {
+      pool_setup_create: () => {
         now = MADE;
-        return null;
+        return { breaks: [] };
       },
     });
     render(<PoolSetupTab plane="p" />);
@@ -231,16 +250,16 @@ describe("PoolSetupTab", () => {
       ),
     );
     await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
-    await screen.findByRole("heading", { name: "Sign-ins" });
+    await screen.findByRole("heading", { name: "Choose the profiles for this pool" });
     expect(calls.some((call) => call.cmd === "docker_pools")).toBe(true);
   });
 
   it("goes on with the pool it made, and only then", async () => {
     let now = CHOSEN;
     const calls = core(() => now, {
-      add_docker_pool: () => {
+      pool_setup_create: () => {
         now = MADE;
-        return null;
+        return { breaks: [] };
       },
     });
     render(<PoolSetupTab plane="p" />);
@@ -253,7 +272,7 @@ describe("PoolSetupTab", () => {
     );
     expect(calls.some((call) => call.cmd === "pool_setup_pool")).toBe(false);
     await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
-    await screen.findByRole("heading", { name: "Sign-ins" });
+    await screen.findByRole("heading", { name: "Choose the profiles for this pool" });
     expect(calls.find((call) => call.cmd === "pool_setup_pool")?.args).toMatchObject({
       name: "dev-box",
     });
@@ -313,5 +332,202 @@ describe("PoolSetupTab", () => {
     fails = false;
     await userEvent.click(screen.getByRole("button", { name: "Check again" }));
     expect(await screen.findByRole("button", { name: "Continue with Docker" })).toBeTruthy();
+  });
+});
+
+describe("Options and See what this does (#4481)", () => {
+  const typeName = async () => {
+    await userEvent.type(await screen.findByRole("textbox", { name: /^Name/ }), "dev-box");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create the pool" })).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
+  };
+
+  it("offers purlis's image as recommended and a team's own under Options", async () => {
+    core(() => CHOSEN);
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Options" }));
+    const ours = screen.getByRole("radio", { name: /purlis's image/ });
+    expect((ours as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText("Recommended")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /My team's own image/ })).toBeTruthy();
+  });
+
+  it("shows the command for what the button would send", async () => {
+    const calls = core(() => CHOSEN, {
+      pool_setup_command: () => "purlis pool add dev-box --image img@sha256:a",
+    });
+    render(<PoolSetupTab plane="p" />);
+    await typeName();
+    await userEvent.click(screen.getByRole("button", { name: "See what this does" }));
+    expect(await screen.findByText("purlis pool add dev-box --image img@sha256:a")).toBeTruthy();
+    const asked = calls.filter((call) => call.cmd === "pool_setup_command").pop();
+    expect(asked?.args).toMatchObject({ adding: { name: "dev-box", image: "img@sha256:a" } });
+  });
+
+  it("sends the button exactly what the shown command was made from", async () => {
+    let now = CHOSEN;
+    const calls = core(() => now, {
+      pool_setup_command: () => "shown",
+      pool_setup_create: () => {
+        now = MADE;
+        return { breaks: [] };
+      },
+    });
+    render(<PoolSetupTab plane="p" />);
+    await typeName();
+    await userEvent.click(screen.getByRole("button", { name: "Options" }));
+    await userEvent.type(screen.getByRole("textbox", { name: /^Memory/ }), "8192");
+    await waitFor(() => {
+      const shown = calls.filter((call) => call.cmd === "pool_setup_command").pop();
+      expect(shown?.args).toMatchObject({ adding: { memory_mib: 8192 } });
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
+    await screen.findByRole("heading", { name: "Choose the profiles for this pool" });
+    const shown = calls.filter((call) => call.cmd === "pool_setup_command").pop();
+    const sent = calls.find((call) => call.cmd === "pool_setup_create");
+    expect(sent?.args).toEqual(shown?.args);
+  });
+
+  it("refuses a limit that isn't a number before anything is sent", async () => {
+    const calls = core(() => CHOSEN);
+    render(<PoolSetupTab plane="p" />);
+    await typeName();
+    await userEvent.click(screen.getByRole("button", { name: "Options" }));
+    await userEvent.type(screen.getByRole("textbox", { name: /^Memory/ }), "lots");
+    await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
+    expect(await screen.findByText("A limit under Options isn't a whole number.")).toBeTruthy();
+    expect(calls.some((call) => call.cmd === "pool_setup_create")).toBe(false);
+  });
+
+  it("names a team's image, and says what it breaks with nothing made", async () => {
+    const calls = core(() => CHOSEN, {
+      pool_setup_create: () => ({ breaks: ["It runs as root.", "It has no HOME."] }),
+    });
+    render(<PoolSetupTab plane="p" />);
+    await typeName();
+    await userEvent.click(screen.getByRole("button", { name: "Options" }));
+    await userEvent.click(screen.getByRole("radio", { name: /My team's own image/ }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: /Image, by digest/ }),
+      "reg.example/r@sha256:b",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
+    expect(await screen.findByText("This image is missing 2 things a runner needs")).toBeTruthy();
+    // Create is at the page's foot: why nothing was made is moved to, not left out of sight.
+    await waitFor(() =>
+      expect(document.activeElement?.textContent).toContain("This image is missing 2 things"),
+    );
+    const line = screen.getByRole("list", { name: "What the image is missing" });
+    expect(line.textContent).toContain("It runs as root.");
+    expect(calls.some((call) => call.cmd === "pool_setup_pool")).toBe(false);
+    expect(calls.find((call) => call.cmd === "pool_setup_create")?.args).toMatchObject({
+      adding: { image: "reg.example/r@sha256:b" },
+    });
+  });
+
+  it("goes back to purlis's image from a team's that breaks the contract", async () => {
+    core(() => CHOSEN, { pool_setup_create: () => ({ breaks: ["It runs as root."] }) });
+    render(<PoolSetupTab plane="p" />);
+    await typeName();
+    await userEvent.click(screen.getByRole("button", { name: "Options" }));
+    await userEvent.click(screen.getByRole("radio", { name: /My team's own image/ }));
+    await userEvent.type(screen.getByRole("textbox", { name: /Image, by digest/ }), "r@sha256:b");
+    await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Use purlis's image instead" }),
+    );
+    expect(screen.queryByRole("list", { name: "What the image is missing" })).toBeNull();
+    const ours = screen.getByRole("radio", { name: /purlis's image/ });
+    expect((ours as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("notices a pool made by hand, and follows it on a press", async () => {
+    let now: PoolSetupShown = {
+      ...setup(
+        "signins",
+        [
+          step("where", "Where chats run", "done"),
+          step("pool", "Pool", "done", { line: "dev-box" }),
+          step("signins", "Sign-ins", "current"),
+        ],
+        "dev-box",
+      ),
+      noticed: true,
+    };
+    const calls = core(() => now, {
+      pool_setup_pool: () => {
+        now = { ...now, noticed: false };
+        return null;
+      },
+    });
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: /^Pool/ }));
+    expect(await screen.findByRole("heading", { name: "Your pool is ready" })).toBeTruthy();
+    expect(screen.getByText("Found pool dev-box")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Continue to sign-ins" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.cmd === "pool_setup_pool")?.args).toEqual({
+        name: "dev-box",
+      }),
+    );
+  });
+
+  it("says a name is taken, and a pool already there is picked only by a press", async () => {
+    const calls = core(() => ({ ...CHOSEN, others: ["dev-box"] }));
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.type(await screen.findByRole("textbox", { name: /^Name/ }), "dev-box");
+    expect(await screen.findByText("You already have a pool called dev-box.")).toBeTruthy();
+    expect(calls.some((call) => call.cmd === "pool_setup_pool")).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Use pool dev-box" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.cmd === "pool_setup_pool")?.args).toEqual({
+        name: "dev-box",
+      }),
+    );
+  });
+
+  it("shows a step's own commands and what running them means", async () => {
+    const withCommands = setup("where", [
+      step("where", "Where chats run", "current", {
+        next: action("use-docker", "Continue with Docker"),
+        see: { note: "It only reads.", text: "docker version" },
+      }),
+    ]);
+    core(() => withCommands);
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "See what this does" }));
+    expect(screen.getByText("It only reads.")).toBeTruthy();
+    expect(screen.getByText("docker version")).toBeTruthy();
+  });
+});
+
+describe("work done elsewhere (#4481)", () => {
+  it("reads again as the person comes back to the window", async () => {
+    const calls = core(() => CHOSEN);
+    render(<PoolSetupTab plane="p" />);
+    await screen.findByRole("heading", { name: "Name your pool" });
+    const before = calls.filter((call) => call.cmd === "pool_setup").length;
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() =>
+      expect(calls.filter((call) => call.cmd === "pool_setup").length).toBe(before + 1),
+    );
+  });
+
+  it("shows no command while a box holds what no pool could have", async () => {
+    core(() => CHOSEN, {
+      pool_setup_command: () => "purlis pool add dev-box --image img@sha256:a",
+    });
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.type(await screen.findByRole("textbox", { name: /^Name/ }), "dev-box");
+    expect(await screen.findByRole("button", { name: "See what this does" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Options" }));
+    await userEvent.type(screen.getByRole("textbox", { name: /^Memory/ }), "lots");
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "See what this does" })).toBeNull(),
+    );
   });
 });

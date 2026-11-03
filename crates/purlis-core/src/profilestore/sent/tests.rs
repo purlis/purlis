@@ -717,3 +717,29 @@ fn only_the_harnesss_own_plain_endpoint_variables_are_named() {
     .unwrap();
     assert_eq!(sent.variables, ["AWS_REGION"]);
 }
+
+/// **A runner keeps a file it has nothing to take out of in the memory it came in** (#4396): the
+/// desktop filtered it already, so filtering it again on the runner copies none of it, and a
+/// profile near the top of its limit is held there once. Only a file something is taken out of is
+/// written again.
+#[test]
+fn a_file_with_nothing_to_take_out_is_kept_in_the_memory_it_came_in() {
+    for (path, written) in [
+        (
+            "skills/x/SKILL.md",
+            &b"---\nname: x\ndescription: y\n---\nhttps://host/x\n"[..],
+        ),
+        ("CLAUDE.md", b"no frontmatter, https://host/x\n"),
+        ("skills/x/notes.txt", b"plain text\n"),
+        ("skills/x/a.bin", b"\xff\xfe\x00"),
+    ] {
+        let came = written.to_vec();
+        let at = came.as_ptr();
+        let kept = kept_without_credentials("claude", path, came).unwrap();
+        assert_eq!(kept, written, "{path}");
+        assert_eq!(kept.as_ptr(), at, "{path} was copied");
+    }
+    let kept = kept_without_credentials("claude", "agents/a.md", b"https://u:p@host/x\n".to_vec())
+        .unwrap();
+    assert_eq!(kept, b"https://host/x\n");
+}

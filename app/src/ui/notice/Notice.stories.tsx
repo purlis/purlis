@@ -3,7 +3,7 @@
 
 /**
  * **The notice family** (#2912): a pane's row of Notices with an Allow beside Keep blocked and
- * the rest behind +N more, the Inbox's list with news and trouble, and a Notice standing alone on
+ * every other Notice under it (#4754: no cap), the Inbox's list with news and trouble, and a Notice standing alone on
  * a page, each walked by the keyboard. Each held to axe and compared with its baseline
  * (`docs/component-stories.md`).
  */
@@ -57,8 +57,8 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Tab reaches Allow, then Keep blocked, then the next Notice's Dismiss, then +1 more; Enter on
- *  it shows the third, and Escape puts it back behind +1 more with the focus on it. */
+/** Tab reaches Allow, then Keep blocked, then each next Notice's Dismiss: every one stands, with
+ *  no "+N more" (#4754), and Esc on a Notice puts it away, the keyboard going on to the next. */
 export const InAPane: Story = {
   play: async ({ canvas, userEvent }) => {
     const allow = await canvas.findByRole("button", { name: "Allow for this chat" });
@@ -70,14 +70,10 @@ export const InAPane: Story = {
     await userEvent.tab();
     await expect(canvas.getAllByRole("button", { name: "Dismiss" })[0]).toHaveFocus();
     await userEvent.tab();
-    const more = canvas.getByRole("button", { name: "+1 more" });
-    await expect(more).toHaveFocus();
+    await expect(canvas.getAllByRole("button", { name: "Dismiss" })[1]).toHaveFocus();
     expectFocusInSight();
-    await userEvent.keyboard("{Enter}");
-    await waitFor(() => expect(canvas.getByRole("status", { name: "Guessed" })).toBeVisible());
-    await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(canvas.queryByRole("status", { name: "Guessed" })).toBeNull());
-    await expect(more).toHaveFocus();
+    await expect(canvas.getByRole("status", { name: "Guessed" })).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: /more/ })).toBeNull();
   },
 };
 

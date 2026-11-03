@@ -304,6 +304,84 @@ pub fn refused_with(source: Source, message: &str) -> Option<String> {
     )
 }
 
+/// The word after `purlis hook` that Codex's own question prompt runs (#4558), on its
+/// `PreToolUse` for [`CODEX_QUESTION_TOOL`] (`harness::codex`, `question_group`).
+pub const QUESTION_WORD: &str = "taskquestion";
+
+/// Codex's own question tool, by the name its `PreToolUse` carries and matches
+/// (`core/src/tools/handlers/request_user_input_spec.rs`, `rust-v0.163.0`).
+pub const CODEX_QUESTION_TOOL: &str = "request_user_input";
+
+/// How long Codex waits on [`QUESTION_WORD`]: the app routes a question at once (a ticket
+/// takes two seconds at most), and a hook Codex has stopped waiting on asks in the pane.
+pub const QUESTION_HOOK_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// **Codex's own question, as a task's asking chat is to read it** (#4558): each question of
+/// `request_user_input` in its own words, under it the answers it offers, as Claude Code's is
+/// read ([`asked_text`]). None for any other tool, and for one with no question in it, which
+/// Codex then asks in its pane.
+///
+/// **None, too, where any of its questions is secret** (`isSecret` on Codex 0.163.0's
+/// `RequestUserInputQuestion`, which its pane masks): such a question is never read into a
+/// message, so it never reaches an asking chat, a model's context or the Inbox, and Codex asks
+/// it masked in its pane. The flag is not in the tool's schema, but its arguments are read into
+/// that type, so a model can set it; `is_secret` is read too, against a rename.
+pub fn codex_asked_text(payload: &Value) -> Option<String> {
+    if payload["tool_name"].as_str() != Some(CODEX_QUESTION_TOOL) {
+        return None;
+    }
+    let input = &payload["tool_input"];
+    let secret = input["questions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|question| {
+            ["isSecret", "is_secret"]
+                .iter()
+                .any(|flag| question[*flag].as_bool() == Some(true))
+        });
+    if secret {
+        return None;
+    }
+    super::asked::question::questions_said(input)
+}
+
+/// opencode's own question tool, by the id its plugin's `tool.execute.before` is handed and
+/// purlis's shim passes on as `tool_name` (#4559, measured on opencode 1.18.33).
+pub const OPENCODE_QUESTION_TOOL: &str = "question";
+
+/// **A harness's own question prompt, read on [`QUESTION_WORD`]** (#4558, #4559): Codex's
+/// `request_user_input` ([`codex_asked_text`]) and opencode's `question`, which hold
+/// `questions` of a `question` and `options` of a `label` and a `description`, as Claude Code's
+/// does. None for any other tool, a question with nothing in it, and Claude Code, whose prompt
+/// is read on its permission hook ([`asked_text`]): the harness then asks in its pane.
+///
+/// opencode 1.18.33's `QuestionInfo` has no secret flag (only `question`, `header`, `options`,
+/// `multiple` and `custom`), and its pane masks no answer, so none is read for it.
+pub fn own_question_text(source: Source, payload: &Value) -> Option<String> {
+    match source {
+        Source::Codex => codex_asked_text(payload),
+        Source::Opencode => (payload["tool_name"].as_str() == Some(OPENCODE_QUESTION_TOOL))
+            .then(|| super::asked::question::questions_said(&payload["tool_input"]))
+            .flatten(),
+        Source::ClaudeCode => None,
+    }
+}
+
+/// **The hook's refusal of a Codex question it redirected**, in `message` (#4558): `PreToolUse`'s
+/// `deny`, whose reason Codex hands the model as the tool's result, and its turn goes on
+/// (`hooks/src/events/pre_tool_use.rs`, `rust-v0.163.0`).
+pub fn codex_question_refused(message: &str) -> String {
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": message,
+        }
+    })
+    .to_string()
+}
+
 /// Codex's `decision` for `choice`: `allow` or `deny` and nothing else, since codex-cli
 /// 0.147.0's schema fails closed on `updatedPermissions` and on `interrupt` (#1691).
 fn codex_decision(choice: &Choice) -> Value {

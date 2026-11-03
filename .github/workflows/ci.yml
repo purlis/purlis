@@ -4,7 +4,10 @@
 name: ci
 
 on:
+  # `ready_for_review` too: a draft runs no macOS job but the app's (below), so marking it ready
+  # starts the run with the scoped macOS jobs and the outcome bars.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   # The merge queue's run of the group a pull request joins: main, or the entries ahead of it, with
@@ -59,10 +62,36 @@ on:
 # (`web-parts`). A job that only asks whether it is needed is not started on a pull request (`GATES`
 # in `tools/ci-scope.mjs`): those were 18 of a pull request's 38 jobs, for 3 of its 281 minutes.
 #
-# **macOS's scenarios stay on the pull request**, though they are the largest cost: 75 of those 281
-# minutes. In the 2.5 days to 2026-10-31, 24 pull request runs failed them with Linux's passing,
+# **macOS's scenarios stayed on the pull request until 2026-11-02** (below), the largest cost: 75
+# of those 281 minutes. In the 2.5 days to 2026-10-31, 24 pull request runs failed them with Linux's passing,
 # about 10 a day. In the queue each would fail a 275-minute run and every group behind it, where
 # about 8 groups a day failed in those days, 14 of those 19 on macOS's scenarios alone.
+#
+# **A draft pull request runs no macOS job (2026-11-02).** The repository gets 50 macOS runners at
+# once. At 14:56 UTC on 2026-11-02 all 50 were busy, 35 of them on pull request runs, and 98 macOS
+# jobs waited, 19 of them the merge queue's: nothing had merged for over an hour. Runners start
+# jobs first come, first served, so a pull request's run holds the queue back. 8 of the 22 pull
+# requests with a run going were drafts, which are pushed again and again while their author works
+# and cannot be merged. So the macOS scenarios, the scoped macOS jobs and the outcome bars (both
+# legs: one matrix) wait for the pull request to be marked ready (`ready_for_review` starts that
+# run), and `scenario tests (macos-latest)` passes on a draft with its legs skipped. That green is
+# the draft run's, so `tools/land.mjs` waits for the ready's run to finish before it reads the
+# checks.
+# `app builds (macos-latest)` still runs on a draft: one job, against the scenarios' six.
+#
+# **The macOS scenarios run in the merge queue, not on a pull request (2026-11-02).** Drafts were
+# not enough: at 22:50 UTC 26 pull requests had a run going, 21 of them ready, holding 35 macOS
+# runners with 112 of their macOS jobs waiting, while the queue's head waited 50 minutes for its
+# own. A ready pull request asks about 7 macOS jobs; the queue builds 5 groups at once, about 35,
+# so with 50 runners two pull requests at a time can run them and the queue still wait. So, as
+# bors and its kin do, a pull request runs the scenarios on Linux, and the six macOS legs run once,
+# on the merge group, where a failure drops the pull request from the queue. On macOS a pull
+# request still builds the app, and runs the scoped jobs (`browser-engine-macos`,
+# `studio-confinement-macos`, the outcome bars' leg) when what they guard changes: rare, and the
+# change's own proof. The Seatbelt checks (`tools/seatbelt-case.sh`, ADR 0067) are the sandbox
+# leg's, so a Seatbelt regression now first shows as a dropped queue group. `scenario tests (macos-latest)` passes on a pull request with its legs skipped. The cost
+# is the macOS-only failures above: found in the queue, each fails its group. Measured for a day
+# after this lands; walking it back is this `if:` and `scenario-checks`'s `want`.
 
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
@@ -82,6 +111,14 @@ env:
   RUSTFLAGS: -D warnings
   # The test runner the `rust` job installs, one exact version (`.config/nextest.toml`).
   NEXTEST_VERSION: "0.9.146"
+  # Cargo's network retries, 10 instead of its default 3, for every cargo run in every job, the
+  # `cargo metadata` that `npm run build:e2e`'s notices plugin runs among them. On 2026-11-02
+  # (job 125136983810, macOS scenario part 2, in the merge queue) the runner could not resolve
+  # index.crates.io: cargo tried each index file 4 times inside a few seconds, gave up, and the
+  # queue started its 5 pull requests again, about 45 minutes each. Cargo's pause grows by 3.5 s a
+  # try up to 10 s, so 10 tries ride out about a minute of a dead resolver; a run with a network
+  # that works never waits on it.
+  CARGO_NET_RETRY: "10"
 
 # **Every job that runs on a push to main has chosen what its red means (#4471).** `ci` ending
 # `failure` on main stops both `release.yml` and `tools/land.mjs`, whichever job did it. So a job
@@ -153,7 +190,7 @@ jobs:
       # From a cache of their .deb files, and bounded: a slow mirror fails the step in minutes,
       # and the job summary says how long the install took (#1477, `.github/actions/linux-packages`).
       - name: Tauri's Linux build dependencies, and the sandbox's programs
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -289,7 +326,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: git-lfs
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           packages: git-lfs
@@ -327,7 +364,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tauri's Linux build dependencies
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -385,7 +422,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tauri's Linux build dependencies
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -423,8 +460,9 @@ jobs:
   # The local targets of the same suite run in `rust` on every pull request. A pull request that
   # touches the host, the protocol, the sandbox or the browsers is gated on both; any other runs a
   # check of a few seconds and nothing else, scoped like `bench`, so the check's name is posted on
-  # every pull request and can be required. A push to `main` is scoped the same way; each night
-  # runs it whole.
+  # every pull request, and it is one of main's required checks (#4335, 2026-11-02: it passed 60 of
+  # 60 merge-queue runs and 40 of 40 pushes on 11-01 and 11-02, and always ended before the
+  # slowest other job). A push to `main` is scoped the same way; each night runs it whole.
   #
   # The runner image is `runner-image/Dockerfile` around the `purlis` this job built, with the
   # fake harness and `purlis` added at the folder the tests' build keeps them in
@@ -469,7 +507,7 @@ jobs:
           fi
       - name: Tauri's Linux build dependencies, and the sandbox's programs
         if: steps.scope.outputs.run == 'true'
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -691,8 +729,8 @@ jobs:
             src/allowLabels.test.ts src/copy.rust.test.ts src/layoutProjects.test.ts src/settings/linkedGroups.test.ts \
             src/specimen/Specimen.test.tsx src/theme/consentToggles.test.ts src/theme/contrast.test.ts src/theme/core.test.ts \
             src/theme/forced-colors.test.ts src/theme/grounds.test.ts src/theme/railIcons.vendor.test.ts src/theme/registry.test.ts \
-            src/theme/theme.test.ts src/theme/themeIds.test.ts src/theme/tint.test.ts src/ui/buildingSkill.test.ts src/ui/field/refusingFields.guard.test.ts \
-            src/ui/menu/submenuRows.guard.test.ts src/ui/notice/noticeCardFill.test.ts src/windowprefs.test.ts
+            src/theme/theme.test.ts src/theme/themeIds.test.ts src/theme/tint.test.ts src/ui/buildingSkill.test.ts src/ui/field/fieldHelp.guard.test.ts \
+            src/ui/field/refusingFields.guard.test.ts src/ui/menu/submenuRows.guard.test.ts src/ui/notice/noticeCardFill.test.ts src/windowprefs.test.ts
       # The tools' own tests (node:test), such as the cold-start gate's decision.
       - run: node --test "../tools/*.test.mjs"
         if: matrix.part == 2
@@ -944,7 +982,7 @@ jobs:
       # Cached and bounded, as the `rust` job's (#1477).
       - name: Tauri's Linux build dependencies, an X server and i3 to start it in, and the sandbox's programs
         if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -1214,15 +1252,28 @@ jobs:
   # with no parent-death signal, is where an engine outliving its host would show (#2009).
   #
   # **In three parts, as `rust` is in two (#2458).** One runner ran out of its 45 minutes on
-  # 2026-10-13, -14, -16 and -17: the build alone took 9 to 22 minutes, since no night had ever
-  # saved a cache (rust-cache saves after a green job only, and this one was never green), and
-  # the tests are some 6,000 s of test time on a runner that runs three at once. Each part
-  # builds every test binary and runs a third of each one's tests (`count:`), and a red night
-  # still saves its build (`cache-on-failure`), so the next night starts from it.
+  # 2026-10-13, -14, -16 and -17: the tests are some 6,000 s of test time on a runner that runs
+  # three at once. Each part builds every test binary and runs a third of each one's tests
+  # (`count:`).
   #
-  # Each part has 60 minutes, and the app's `behaviour` tests are left out here until #2464: on
-  # macOS each takes some 160 s where Linux takes under 10, and the Linux `rust` job runs them
-  # on every pull request. What each part took, measured, is in #2468.
+  # **One build job at a time, on a 7 GB machine (#2458).** `macos-latest` is one of two machines,
+  # by lot: an M1 with 3 CPUs and 7 GB, or an M2 Pro with 5 and 15. In the week to 2026-11-01 the
+  # build took 24 to 53 minutes where the runner was the M1, and 5 where it was the M2 Pro, on
+  # one commit. The third-party crates are 3 of those minutes. The rest is the workspace's own test
+  # targets, each `rustc` of them 2 to 4 GB: side by side they swap (70-80 % of the CPU in the
+  # system, 1.2 million swapouts, 41 to 56 minutes, with `-j 2` or `debug = none` as well). One at a
+  # time they do not (5,900 swapouts, 26 to 34 minutes), and Spotlight is off because it has nothing
+  # to find here. So `CARGO_BUILD_JOBS` is 1, and each part has 100 minutes: on 2026-11-01 three
+  # parts on the M1 took 69, 72 and 80, the last ended by a limit of 80 as its final test passed.
+  # `The machine` says which of the two a part drew.
+  #
+  # **No build is kept.** The nights' caches were saved and never restored: they are read once a
+  # day, and the repository's caches are over their 10 GB, so the next night found none. Saving one
+  # pushed out caches that the jobs a pull request waits on do read.
+  #
+  # The app's `behaviour` tests are left out here until #2464: on macOS each takes some 160 s
+  # where Linux takes under 10, and the Linux `rust` job runs them on every pull request. What
+  # each part took, measured, is in #2468 and #2458.
   macos-tests:
     name: macos (core and app tests, no orphans, evidence only, part ${{ matrix.part }} of 3)
     if: github.event_name == 'schedule'
@@ -1232,14 +1283,19 @@ jobs:
       matrix:
         part: [1, 2, 3]
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 100
+    env:
+      CARGO_BUILD_JOBS: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          cache-on-failure: true
+          save-if: false
+      - name: The machine
+        run: sysctl hw.ncpu hw.memsize machdep.cpu.brand_string
+      - name: Spotlight off
+        run: sudo mdutil -a -i off
       # tauri::generate_context! reads the built frontend, as in the `rust` job.
       - run: mkdir -p app/dist
       - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
@@ -1267,7 +1323,7 @@ jobs:
   browser-engine-macos:
     name: browser engine on macos (real Chrome, when the engine changes)
     needs: changes
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.browser-engine != 'false') }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.browser-engine != 'false') && !github.event.pull_request.draft }}
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -1310,7 +1366,7 @@ jobs:
   studio-confinement-macos:
     name: studio confinement on macos (Seatbelt, when the confinement changes)
     needs: changes
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.confinement != 'false') }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.confinement != 'false') && !github.event.pull_request.draft }}
     runs-on: macos-latest
     timeout-minutes: 40
     steps:
@@ -1512,11 +1568,11 @@ jobs:
   # `scenario-linux`.
   #
   # Skipped whole, and no macOS runner held, when nothing the scenarios run has changed
-  # (`changes`); `scenario-checks` says so.
+  # (`changes`), and on a pull request (above: the merge queue runs them); `scenario-checks` says so.
   scenario:
     name: scenario tests (${{ matrix.os }}, ${{ matrix.specs && format('part {0} of {1}', matrix.shard, matrix.shards) || matrix.sandbox && 'the sandbox runs' || 'the single-app runs' }})
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' && github.event_name != 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
@@ -1549,7 +1605,7 @@ jobs:
       # 2026-10-07 and held `main` for over an hour.
       - name: Tauri's Linux build dependencies, a display to run in, and the sandbox's programs
         if: runner.os == 'Linux'
-        timeout-minutes: 9
+        timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
@@ -1558,6 +1614,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # The outcome bars build `dev-release` (#4351): a cache of their own, since main's
+          # debug one would be an exact hit, and rust-cache writes nothing over an exact hit.
+          key: ${{ matrix.outcome && 'dev-release' || '' }}
       # **sccache for the workspace's own crates, on macOS** (2026-10-12, an experiment kept only
       # if it pays). rust-cache keeps the dependencies but never the workspace's crates, so each
       # macOS part compiled purlis-core and the app afresh: 3.5 to 4 of its minutes on the
@@ -1663,7 +1722,13 @@ jobs:
       # workspace's crates change with every pull request that runs this job).
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
-        run: npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings
+        # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
+        # #4351): `dev-release`, release with thin LTO over sixteen codegen units, what the dev
+        # channel ships. Every other leg builds debug.
+        run: >-
+          npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e
+          --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
+          --timings ${{ matrix.outcome && '--profile dev-release' || '' }}
         working-directory: app
       # Cargo's own account of that build, unit by unit (`--timings`), kept a week: what a slow
       # build spent its time on, read without rerunning it (#3742).
@@ -1882,10 +1947,12 @@ jobs:
       - name: Every leg passed
         env:
           SCOPE: ${{ needs.changes.outputs.scenario }}
+          EVENT: ${{ github.event_name }}
           RESULT: ${{ needs.scenario.result }}
         run: |
-          if [ "$SCOPE" = false ]; then want=skipped; else want=success; fi
-          echo "scope: ${SCOPE:-unknown}, result: $RESULT"
+          if [ "$SCOPE" = false ] || [ "$EVENT" = pull_request ]; then want=skipped; else want=success; fi
+          echo "scope: ${SCOPE:-unknown}, event: $EVENT, result: $RESULT"
+          if [ "$EVENT" = pull_request ]; then echo "::notice::the macOS scenarios run in the merge queue; Linux's run here"; fi
           test "$RESULT" = "$want"
 
   # Its own job, not a leg of `scenario`'s matrix, so that `scenario-checks` waits on macOS
@@ -1916,13 +1983,14 @@ jobs:
     steps: *scenario-steps
 
   # **The Skill studio's outcome bars** (SK-23, #4343): the scenario legs' steps, with every leg's
-  # own flag off and `outcome` on, so it builds as they do and runs the three runs alone. Not
-  # required, and no `scenario-checks` waits on it: its 300 ms is measured on a debug build on a
-  # shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not a block on
-  # every merge. It becomes required with the flag's flip (#2786).
+  # own flag off and `outcome` on, so it runs the three runs alone, on a `dev-release` build
+  # (2026-11-03, #4351). Not required, and no `scenario-checks` waits on it: its 300 ms is
+  # measured on a shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not
+  # a block on every merge. It becomes required with the flag's flip (#2786).
   #
   # On main's push, and on a pull request that touches what the bars measure (`GATES`), by the
-  # operator's choice of 2026-11-01: it takes a macOS and a Linux runner for 11 to 17 minutes. A
+  # operator's choice of 2026-11-01: it takes a macOS and a Linux runner, for 11 to 17 minutes on
+  # the debug build it used to make, and for about 31 on the release build warm (#4351). A
   # regression from anywhere else shows on main, not on its pull request.
   outcome-bars:
     name: outcome bars (${{ matrix.os }})
@@ -1931,11 +1999,18 @@ jobs:
     # which refuses to land while main's newest finished `ci` run failed. This line goes once #4351
     # and #4352 are fixed, and the job is made required before the flag's flip (#2786).
     continue-on-error: true
-    # Twice the slowest seen (9 to 18 minutes). A timed-out job still turns the run `cancelled`,
-    # which skips the release: this bounds that, and main's queue behind it, from the 6 hours a job
-    # gets by default.
-    timeout-minutes: 40
-    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) }}
+    # A timed-out job still turns the run `cancelled`, which skips the release: this bounds that,
+    # and main's queue behind it, from the 6 hours a job gets by default. 75, not the 40 the debug
+    # build had (twice its slowest, 9 to 18 minutes), for the release build (the operator's ruling
+    # of 2026-11-03, #4351): cold, with no cache, it ran past 40 twice and was cut off before
+    # rust-cache saved anything, so the cache main writes was never warm. Warm, a release run took
+    # 31 minutes.
+    timeout-minutes: 75
+    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) && !github.event.pull_request.draft }}
+    # Where the specs find the build: the profile the build step names for `outcome` (one place
+    # for the path, so no harness's run can take another build's program).
+    env:
+      CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
     strategy:
       fail-fast: false
       matrix:

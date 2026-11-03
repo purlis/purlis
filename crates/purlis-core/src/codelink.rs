@@ -34,6 +34,7 @@ use std::path::{Path, PathBuf};
 
 use crate::worktree::git;
 
+pub mod held;
 mod moving;
 
 pub use moving::{
@@ -43,6 +44,10 @@ pub use moving::{
 
 /// Where a branch's snapshot of uncommitted work is kept, in a repository either end holds.
 pub const SNAPSHOTS: &str = "refs/purlis/snapshots/";
+
+/// What a runner answers for a clone it does not hold: nothing there to fetch.
+pub const NO_REPOSITORY_THERE: &str =
+    "the runner holds no repository there, so there is no code to send";
 
 /// Where a branch is.
 pub const HEADS: &str = "refs/heads/";
@@ -178,9 +183,62 @@ fn a_remote_of(repo: &Path, name: &str) -> bool {
     })
 }
 
-/// Whether `pool` is a pool's name a remote ref may be kept under, `refs/remotes/<pool>/`.
+/// Whether `pool` is a name a remote ref may be kept under, `refs/remotes/<pool>/`: a pool's, or a
+/// chat's fresh runner's, `<pool>/fresh-<hash>` (#4569).
 fn pool_ok(pool: &str) -> bool {
-    crate::contain::workspace_name_ok(pool) && ref_format_ok(&format!("refs/remotes/{pool}/x"))
+    let of = match pool.split_once('/') {
+        Some((of, runner)) if a_fresh_runner(runner) => of,
+        _ => pool,
+    };
+    crate::contain::workspace_name_ok(of) && ref_format_ok(&format!("refs/remotes/{pool}/x"))
+}
+
+/// Whether `name` is a chat's fresh runner's name under its pool,
+/// [`crate::runners::ClusterKept::runner_name`]: `fresh-` and sixteen hex digits.
+fn a_fresh_runner(name: &str) -> bool {
+    name.strip_prefix("fresh-")
+        .is_some_and(|hash| hash.len() == 16 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()))
+}
+
+/// Whether `branch`, as it reads under `refs/remotes/<pool>/`, is one a chat's fresh runner left
+/// there (#4569). **Those outlive their runner**: no fetch of the pool's own runner writes over
+/// one or removes one, since that runner never had it.
+fn of_a_fresh_runner(branch: &str) -> bool {
+    branch
+        .split_once('/')
+        .is_some_and(|(runner, _)| a_fresh_runner(runner))
+}
+
+/// **What a fresh runner left in `repo` that this machine holds anyway goes** (#4569), so a task
+/// leaves only the branches with work of their own: its copy of `main` does not stay for ever.
+/// A branch with any commit no branch here has stays, for the person to take. `runner` is
+/// `<pool>/fresh-<hash>`. Run as its runner goes, once its last fetch has come.
+pub fn keep_only_whats_new(repo: &Path, runner: &str) -> Result<(), Refused> {
+    if !pool_ok(runner) || !a_repository(repo) {
+        return Ok(());
+    }
+    for kept in refs_under(repo, &[format!("refs/remotes/{runner}/").as_str()])? {
+        let new = run(
+            repo,
+            &[
+                "rev-list",
+                "--max-count=1",
+                &kept.oid,
+                "--not",
+                "--branches",
+            ],
+        )?;
+        if !new.ok() {
+            return Err(git_failed("read a runner's branch", &new));
+        }
+        if new.out.trim().is_empty() {
+            let ran = run(repo, &["update-ref", "-d", &kept.name])?;
+            if !ran.ok() {
+                return Err(git_failed("remove a branch this machine holds", &ran));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// **The folder of a project's repository a transfer is for**: `repo` is empty for the
@@ -972,9 +1030,7 @@ fn refs_under(repo: &Path, under: &[&str]) -> Result<Vec<Ref>, Refused> {
 /// anything to send.
 pub fn give(repo: &Path, have: &[String], into: &Path) -> Result<(Vec<Ref>, Bundled), Refused> {
     if !repo.join(".git").exists() {
-        return Err(not_allowed(
-            "the runner holds no repository there, so there is no code to send",
-        ));
+        return Err(not_allowed(NO_REPOSITORY_THERE));
     }
     let heads = refs_under(repo, &[HEADS])?;
     if heads.is_empty() {
@@ -1013,12 +1069,23 @@ fn take_back_as(
             "`{pool}` is not a pool's name refs can be kept under, so nothing was fetched"
         )));
     }
-    if a_remote_of(repo, pool) {
+    let pool_itself = pool.split_once('/').map_or(pool, |(pool, _)| pool);
+    if a_remote_of(repo, pool_itself) {
         return Err(not_allowed(format!(
-            "this repository has a remote named {pool}, whose branches a pool of that name would \
-             write over, so nothing was fetched: rename the pool or the remote"
+            "this repository has a remote named {pool_itself}, whose branches a pool of that name \
+             would write over, so nothing was fetched: rename the pool or the remote"
         )));
     }
+    // The pool's own runner never writes where a chat's fresh runner's branches are kept (#4569).
+    let own = |name: &str| {
+        pool != pool_itself || !name.strip_prefix(HEADS).is_some_and(of_a_fresh_runner)
+    };
+    let heads: Vec<Ref> = heads
+        .iter()
+        .filter(|head| own(&head.name))
+        .cloned()
+        .collect();
+    let heads = heads.as_slice();
     let remote = |name: &str| -> Result<String, Refused> {
         match name.strip_prefix(HEADS) {
             Some(branch) if carried(name).is_ok() => Ok(format!("refs/remotes/{pool}/{branch}")),
@@ -1038,7 +1105,8 @@ fn take_back_as(
     }
     let carried_by_bundle = match bundle {
         Some(path) => {
-            let carries = heads_of(repo, path)?;
+            let mut carries = heads_of(repo, path)?;
+            carries.retain(|one| own(&one.name));
             for one in &carries {
                 if !heads.contains(one) {
                     return Err(not_allowed(format!(
@@ -1098,7 +1166,12 @@ fn take_back_as(
         .map(|head| remote(&head.name))
         .collect::<Result<_, _>>()?;
     for kept in refs_under(repo, &[prefix.as_str()])? {
-        if !beside && !wanted.contains(&kept.name) {
+        let a_fresh_runners = pool == pool_itself
+            && kept
+                .name
+                .strip_prefix(&prefix)
+                .is_some_and(of_a_fresh_runner);
+        if !beside && !a_fresh_runners && !wanted.contains(&kept.name) {
             let ran = run(repo, &["update-ref", "-d", &kept.name])?;
             if !ran.ok() {
                 return Err(git_failed("remove a branch the runner no longer has", &ran));
@@ -1176,7 +1249,7 @@ pub fn fetch_back(
     scratch: &Path,
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
 ) -> Result<Vec<Ref>, Refused> {
-    fetch_back_as(repo, pool, false, scratch, through)
+    fetch_back_as(repo, pool, false, HEADS, scratch, through)
 }
 
 /// [`fetch_back`] from a draining runner: what it has comes back beside what the pool's runner
@@ -1187,20 +1260,34 @@ pub fn fetch_back_beside(
     scratch: &Path,
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
 ) -> Result<Vec<Ref>, Refused> {
-    fetch_back_as(repo, pool, true, scratch, through)
+    fetch_back_as(repo, pool, true, HEADS, scratch, through)
 }
 
-fn fetch_back_as(
+/// [`fetch_back`] from a pool the clone's workspace no longer runs on (#4590): the pool is told
+/// only what came back from it, and nothing of what happened here since.
+pub fn fetch_back_left(
     repo: &Path,
     pool: &str,
     beside: bool,
     scratch: &Path,
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
 ) -> Result<Vec<Ref>, Refused> {
+    let its_own = format!("refs/remotes/{pool}/");
+    fetch_back_as(repo, pool, beside, &its_own, scratch, through)
+}
+
+fn fetch_back_as(
+    repo: &Path,
+    pool: &str,
+    beside: bool,
+    held_here: &str,
+    scratch: &Path,
+    through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
+) -> Result<Vec<Ref>, Refused> {
     if !a_repository(repo) {
         return Ok(Vec::new());
     }
-    let mut have: Vec<String> = refs_under(repo, &[HEADS, &format!("refs/remotes/{pool}/")])?
+    let mut have: Vec<String> = refs_under(repo, &[held_here, &format!("refs/remotes/{pool}/")])?
         .into_iter()
         .map(|one| one.oid)
         .collect();
@@ -1262,6 +1349,19 @@ pub fn on_a_runner(repo: &Path, pool: &str) -> Vec<OnARunner> {
             })
         })
         .collect()
+}
+
+/// **[`on_a_runner`], for a pool `repo`'s workspace no longer runs on** (#4590): what came back
+/// before it moved. Nothing where the clone has a remote of the pool's own name, whose branches
+/// are the remote's and not a runner's.
+pub fn on_a_pool_left(repo: &Path, pool: &str) -> Vec<OnARunner> {
+    if !pool_ok(pool) {
+        return Vec::new();
+    }
+    if !a_repository(repo) || a_remote_of(repo, pool) {
+        return Vec::new();
+    }
+    on_a_runner(repo, pool)
 }
 
 fn holds_ref(repo: &Path, name: &str) -> bool {
@@ -1419,6 +1519,33 @@ impl purlis_host::Code for Moves {
         repos: &[String],
     ) -> std::collections::BTreeMap<String, String> {
         origins_in(project, workspace, repos)
+    }
+
+    fn repos_held(
+        &self,
+        projects: &Path,
+    ) -> Result<
+        (Vec<purlis_host::protocol::session::RepoHeld>, Vec<String>),
+        purlis_host::protocol::session::Refusal,
+    > {
+        let (repos, unread) = held::repos_held(projects);
+        let repos = repos
+            .into_iter()
+            .map(|one| purlis_host::protocol::session::RepoHeld {
+                project: one.project,
+                path: one.path,
+                refs: wire_refs(one.refs),
+                changed: one
+                    .changed
+                    .into_iter()
+                    .map(|change| purlis_host::protocol::session::ChangedFile {
+                        path: change.path,
+                        now: change.now,
+                    })
+                    .collect(),
+            })
+            .collect();
+        Ok((repos, unread))
     }
 }
 

@@ -380,6 +380,8 @@ enum Runs {
     /// window's host relays the project's links to, and which holds the project where it keeps
     /// its projects and is sent its code (#2046).
     OnAPoolsRunner { pool: String, config: PathBuf },
+    /// Each where this machine's store under `config` says, as the app routes them.
+    AsRouted { config: PathBuf },
 }
 
 /// The variable naming the runner image a Docker pool's target runs, by digest: the parity
@@ -392,8 +394,11 @@ const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
 /// so an image that went missing never passes as nothing run.
 const PARITY: &str = "PURLIS_PARITY";
 
+#[path = "behaviour/tests/fresh_runner.rs"]
+mod fresh_runner;
 mod pool_journey;
 mod pool_setup;
+mod runs_on_order;
 
 /// **A chat on a Docker pool's runner** (#2045, spec #2041): a pool added on this machine as
 /// the window adds one ([`a_pool_on`]). The window speaks to its own host, which relays to the
@@ -453,6 +458,11 @@ impl AWindowAgain {
 
     /// The project at `root` as the window started again routes it, every start on the pool.
     pub(crate) fn sessions_of(&self, root: &Path) -> crate::routedsessions::RoutedSessions {
+        self.routed_sessions_of(root).every_start_on(&self.pool)
+    }
+
+    /// The project at `root` as the window started again routes it, as the settings say (#4590).
+    pub(crate) fn routed_sessions_of(&self, root: &Path) -> crate::routedsessions::RoutedSessions {
         let connection = (self.connection)();
         crate::routedsessions::RoutedSessions::of_the_project(
             Box::new(HostedSessions::new(Arc::clone(&connection), root)),
@@ -460,7 +470,6 @@ impl AWindowAgain {
             &self.config,
             root,
         )
-        .every_start_on(&self.pool)
         .taking_back_from({
             let (docker, config) = (self.docker.clone(), self.config.clone());
             Arc::new(move |pool: &str| {
@@ -470,25 +479,21 @@ impl AWindowAgain {
     }
 }
 
-/// [`a_window_on_a_pool_of`], and what cuts that window and starts it again.
-pub(crate) fn a_window_again_on_a_pool_of(
-    image: &str,
-    docker: purlis_core::dockerpool::Docker,
-) -> (Target, crate::runnerlinks::Machine, String, AWindowAgain) {
-    let config = tempfile::tempdir().expect("the desktop's config home");
-    let docker = docker.with_settings_in(config.path().join("docker-settings"));
-    let machine = crate::runnerlinks::Machine {
-        config: config.path().to_path_buf(),
-        docker: docker.clone(),
-        keyring: Arc::new(purlis_core::secrets::keyring::FileStore::at(
-            config.path().join("keyring.json"),
-        )),
-    };
-    let (name, removes) = a_pool_on(&machine, image);
-    let made = purlis_core::runners::runner_for(config.path(), &name)
-        .expect("its runner is kept")
-        .made;
-    let inherited = environment_in(&docker, made.container.as_str());
+/// The window's own host and what links a window to it, relaying a project's links to the runners
+/// of `machine`'s pools.
+pub(crate) struct WindowsHost {
+    pub(crate) runtime: tokio::runtime::Runtime,
+    pub(crate) folder: tempfile::TempDir,
+    pub(crate) data: tempfile::TempDir,
+    cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
+    pub(crate) a_connection: Arc<dyn Fn() -> Arc<Connection> + Send + Sync>,
+}
+
+/// [`WindowsHost`], on `machine`.
+pub(crate) fn a_windows_host_for(
+    machine: &crate::runnerlinks::Machine,
+    relays: purlis_host::RelaysTo,
+) -> WindowsHost {
     // The window's own host, as the window's binary composes it, relaying the project's links
     // to the pool's runner as the app's does (`crate::runnerlinks::relays_to`); it keeps the
     // device's event log in `data`.
@@ -503,11 +508,8 @@ pub(crate) fn a_window_again_on_a_pool_of(
         .expect("a runtime");
     let host = runtime.block_on(async {
         a_host(folder.path(), data.path())
-            .relaying_with(crate::runnerlinks::relaying({
-                let machine = machine.clone();
-                move || Ok(machine.clone())
-            }))
-            .draining_with(crate::runnerlinks::drains_to(config.path().to_path_buf()))
+            .relaying_with(relays)
+            .draining_with(crate::runnerlinks::drains_to(machine.config.clone()))
     });
     // The window's links to it, as the window's binary dials them: its own, and each relayed
     // to a pool's runner by the host.
@@ -531,7 +533,7 @@ pub(crate) fn a_window_again_on_a_pool_of(
     };
     // Made once for the window, and once for each time it is started again.
     let a_connection: Arc<dyn Fn() -> Arc<Connection> + Send + Sync> = {
-        let kept_in = config.path().to_path_buf();
+        let kept_in = machine.config.clone();
         Arc::new(move || {
             let connection = Arc::new(Connection::default());
             // The pool's runners are kept where this target added them, as the window keeps its
@@ -550,6 +552,47 @@ pub(crate) fn a_window_again_on_a_pool_of(
             connection
         })
     };
+    WindowsHost {
+        runtime,
+        folder,
+        data,
+        cuts,
+        a_connection,
+    }
+}
+
+/// [`a_window_on_a_pool_of`], and what cuts that window and starts it again.
+pub(crate) fn a_window_again_on_a_pool_of(
+    image: &str,
+    docker: purlis_core::dockerpool::Docker,
+) -> (Target, crate::runnerlinks::Machine, String, AWindowAgain) {
+    let config = tempfile::tempdir().expect("the desktop's config home");
+    let docker = docker.with_settings_in(config.path().join("docker-settings"));
+    let machine = crate::runnerlinks::Machine {
+        config: config.path().to_path_buf(),
+        docker: docker.clone(),
+        keyring: Arc::new(purlis_core::secrets::keyring::FileStore::at(
+            config.path().join("keyring.json"),
+        )),
+    };
+    let (name, removes) = a_pool_on(&machine, image);
+    let made = purlis_core::runners::runner_for(config.path(), &name)
+        .expect("its runner is kept")
+        .made;
+    let inherited = environment_in(&docker, made.container.as_str());
+    let WindowsHost {
+        runtime,
+        folder,
+        data,
+        cuts,
+        a_connection,
+    } = a_windows_host_for(
+        &machine,
+        crate::runnerlinks::relaying({
+            let machine = machine.clone();
+            move || Ok(machine.clone())
+        }),
+    );
     let again = AWindowAgain {
         cuts,
         connection: Arc::clone(&a_connection),
@@ -1136,6 +1179,14 @@ fn a_window_over(
             )
             .every_start_on(&pool),
         ),
+        Runs::AsRouted { config } => {
+            Box::new(crate::routedsessions::RoutedSessions::of_the_project(
+                Box::new(HostedSessions::new(Arc::clone(&connection), &root)),
+                &connection,
+                &config,
+                &root,
+            ))
+        }
     };
     sessions.hear_through(hooks.relayed_from_the_host().expect("heard from the host"));
     sessions.stopped_by(Arc::clone(&switch));
@@ -1763,6 +1814,9 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
 /// A chat named by the profile `work` and the persona `steward`, told `first_message`.
 fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
     crate::host::Named {
+        runner: None,
+        its_code_is_there: false,
+        runs_on: None,
         tools_allowed: None,
         plane_skills: false,
         chat: None,
@@ -2049,7 +2103,7 @@ fn a_plane_saved_after_a_second(root: &Path) {
     git(root, &["commit", "-q", "-m", "one"]);
 }
 
-fn git(dir: &Path, args: &[&str]) {
+fn git(dir: &Path, args: &[&str]) -> String {
     let mut command = std::process::Command::new("git");
     command
         .arg("-C")
@@ -2064,6 +2118,7 @@ fn git(dir: &Path, args: &[&str]) {
         "git {args:?}: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
 }
 
 /// What the window was told each look did.
@@ -3816,6 +3871,8 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
             .open_named(
                 None,
                 &crate::host::Named {
+                    runner: None,
+                    its_code_is_there: false,
                     tools_allowed,
                     ..named("run them", false)
                 },

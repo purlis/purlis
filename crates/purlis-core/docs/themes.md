@@ -307,6 +307,8 @@ says what each family, part and variant is):
 | `card` (since the next release) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`, `padding`, `gap`), `title` (`text`, `font-size`, `font-weight`), `facts-label` (`text`, `font-size`, `font-weight`), `facts-value` (`text`, `font-size`, `font-weight`), `tile` (`border-colour`, `border-width`, `corner-radius`, `padding`, `gap`), `tile-value` (`text`, `font-size`, `font-weight`) | `raised`, `ask` | none |
 | `card-button` (since the next release) | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`), `mark` (`text`), `title` (`text`, `font-size`, `font-weight`), `line` (`text`, `font-size`) | `door`, `pick` | `hover`, `pressed`, `focused`, `disabled` |
 | `checkbox` (since the next release) | `root` (`fill`, `text`, `corner-radius`, `gap`), `box` (`fill`, `border-colour`, `border-width`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`), `description` (`text`, `font-size`) | `box`, `chip` | `hover`, `selected`, `focused`, `disabled` |
+| `checks` (since the next release) | `root` (`text`), `mark` (`text`), `title` (`text`, `font-size`, `font-weight`), `more` (`text`, `font-size`, `font-weight`), `trail` (`text`, `font-size`, `font-weight`) | `ok`, `missing`, `running`, `todo`, `warn`, `skip` | none |
+| `code` (since the next release) | `root` (`fill`, `border-colour`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`), `body` (`text`, `font-size`, `padding`) | none | none |
 | `combobox` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `chevron` (`text`) | none | `hover`, `focused`, `disabled`, `open`, `invalid` |
 | `count` (since the next release) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `padding`, `font-size`, `font-weight`), `group` (`corner-radius`) | `neutral`, `accent`, `waiting`, `hot` | none |
 | `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle` (`text`), `description` (`text`), `separator` (`fill`), `summary` (`text`) | `dialog`, `alert` | `hover`, `pressed`, `selected`, `focused`, `disabled`, `open` |
@@ -958,6 +960,18 @@ follows the value the theme gives the old one (`vocabulary::KIN`):
 Later, `accent.wash-hover` came in (#3345): the chosen title-bar chip's ground under the pointer,
 a step stronger than `accent.wash`, which is the chosen chip's ground at rest; both hold the
 primary words at 4.5:1 over the title bar.
+
+`accent.text` is the one token here that follows whatever the parent draws: a theme, an option or
+a person's colour that gives `accent.base` without it draws it in that accent, over Purlis too, so
+what a chosen item says never stays in the parent's accent (#3100). It draws everything chosen in
+the accent: an activity button, a page's mark, a chosen option card's check and icon, a chosen
+chip's check, a pinned switcher row's pin, the update pill's words and the current row's icon in
+the explorer, held to 4.5:1 on each ground. Drawn alike, the two fall together when a floor takes
+either and are raised together, and a recipe that turns `accent.base` turns `accent.text` with it,
+giving it the colour it gives the accent. A tint gives the words that colour only where they stay
+apart from the waiting and danger colours there; where they would not (Purlis's lavender words in
+a yellow or green workspace), they keep the theme's colour, and the accent keeps its tint. The
+words are measured after the accent, so they never cost it colour.
 
 Later still, the hot count (#3098): `needs-you.count` and `needs-you.count-text`, the fill and the
 words of the Needs-you count on an activity bar. Each follows `needs-you.base` and `needs-you.text`

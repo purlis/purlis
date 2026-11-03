@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   commands,
   type ClusterContexts,
@@ -10,10 +10,12 @@ import {
   type LimitRefused,
   type PlaneId,
   type RunnerStage,
+  type RunsOnPick,
   type PoolAdding,
   type PoolLink,
   type PoolLimitRow,
   type PoolLimitsPage,
+  type PoolNamedBy,
   type PoolProfiles as PoolProfilesAnswered,
   type PoolRemoved,
   type PoolVersion,
@@ -209,8 +211,9 @@ export async function addPool(adding: PoolAdding): Promise<string | undefined> {
 export async function readRunnerStage(
   plane: PlaneId,
   workspace: string | undefined,
+  runsOn: RunsOnPick | null = null,
 ): Promise<RunnerStage | undefined> {
-  const said = await caught(commands.runnerStage(plane, workspace ?? null));
+  const said = await caught(commands.runnerStage(plane, workspace ?? null, runsOn));
   return said.status === "ok" && said.data !== null ? said.data : undefined;
 }
 
@@ -302,11 +305,20 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
 }
 
 /**
- * **Removes the held runner `runner`**, a draining one that stopped during its drain, and what its
- * chats left with it. Why not, in the core's words.
+ * **Removes the held runner `runner`**, and what its chats left with it, once the person discarded
+ * them. Why not, in the core's words.
  */
 export async function removeHeldRunner(runner: string): Promise<string | undefined> {
   const said = await caught(commands.dockerPoolRemoveHeldRunner(runner));
+  return said.status === "error" ? said.error : undefined;
+}
+
+/**
+ * **Brings back the held runner `runner`'s conversations to its pool's runner** (#4633), and then
+ * removes it, once none is left behind. Why not, or what is left, in the core's words.
+ */
+export async function bringBackHeldRunner(runner: string): Promise<string | undefined> {
+  const said = await caught(commands.dockerPoolBringBackHeldRunner(runner));
   return said.status === "error" ? said.error : undefined;
 }
 
@@ -353,8 +365,8 @@ export async function askLimits(name: string) {
 }
 
 /** **The value in the words `typed` for limit `key`**, or why they aren't one: the core's check. */
-export function checkLimit(key: string, typed: string) {
-  return caught(commands.poolLimitCheck(key, typed));
+export function checkLimit(pool: string, key: string, typed: string) {
+  return caught(commands.poolLimitCheck(pool, key, typed));
 }
 
 /** Limit `key` of pool `name` as it was just saved, in what is shown of the pool's limits. */
@@ -498,6 +510,37 @@ export async function removePool(name: string, elsewhere = false): Promise<strin
   });
   await rereadPools();
   return left;
+}
+
+/** **What names a pool** (#4678): the projects and workspaces its removal sets back to this
+ *  machine, while purlis reads them, or why it could not. */
+export type NamedBy =
+  | { state: "reading" }
+  | { state: "read"; named: readonly PoolNamedBy[] }
+  | { state: "trouble"; why: string };
+
+/** Reads what names pool `name`, once for each name asked about. */
+export function useNamedBy(name: string): NamedBy {
+  const [read, setRead] = useState<{ name: string; said: NamedBy }>();
+  useEffect(() => {
+    let gone = false;
+    void caught(commands.poolNamedBy(name)).then((said) => {
+      if (gone) return;
+      setRead({
+        name,
+        said:
+          said.status === "error"
+            ? { state: "trouble", why: said.error }
+            : Array.isArray(said.data)
+              ? { state: "read", named: said.data }
+              : { state: "trouble", why: "purlis did not say what names it." },
+      });
+    });
+    return () => {
+      gone = true;
+    };
+  }, [name]);
+  return read?.name === name ? read.said : { state: "reading" };
 }
 
 /** **The Docker pools whose runner was removed outside purlis** (#4149): what a refused start's

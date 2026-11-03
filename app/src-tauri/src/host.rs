@@ -128,6 +128,12 @@ impl Default for Opening {
 /// where its own sandbox does not give them, and asks about (#2590).
 #[derive(Debug, Clone)]
 pub struct Named {
+    /// The runner it starts on where that is not its pool's own: a chat's fresh runner, by the
+    /// name a link reaches it by (#3818).
+    pub runner: Option<String>,
+    /// Whether its runner holds its code from an earlier start: a chat's fresh runner holds the
+    /// only copy of its work, which sending this machine's branches over would undo (#4569).
+    pub its_code_is_there: bool,
     pub chat: Option<String>,
     pub run: Option<String>,
     pub profile: Option<String>,
@@ -136,6 +142,8 @@ pub struct Named {
     pub resume: Option<String>,
     pub first_message: Option<String>,
     pub without_sandbox: bool,
+    /// Where its start chose to run it (#4536): what the router asks before the levels.
+    pub runs_on: Option<purlis_core::machine::StartChoice>,
     /// What the person allowed of its persona here, as its digest: what arms its tools on a
     /// runner (1.55, #4071).
     pub tools_allowed: Option<String>,
@@ -201,6 +209,10 @@ pub const NOT_COMPOSED_HERE: &str =
 
 /// Where a view's text goes. It is called on the view's own thread, one batch at a time.
 pub type Sink = Box<dyn FnMut(String) + Send>;
+
+/// What a fresh runner's end is told once its work came back or did not (#4569): what did not, in
+/// sentences. It answers whether the runner went.
+pub type FreshDone = Box<dyn FnOnce(Vec<String>) -> bool + Send>;
 
 /// Told how each session ended, as it ends, with the session's id. An `Arc` so each session
 /// can hold it for as long as its program runs.
@@ -295,11 +307,15 @@ pub trait SessionHost: Send + Sync {
     }
 
     /// **Whether a harness chat started in `workspace` is composed by the host it runs on**
-    /// (#2046): where the window routes each workspace's chats to the host that runs them, a
-    /// workspace whose chats run on a pool's runner is started by its names there. Every other
+    /// (#2046), with what its `start` chose (#4536): where the window routes each chat to the
+    /// host that runs it, a chat that runs on a pool's runner is started by its names there. Every other
     /// host answers as [`Self::composes_its_harness_chats`] does.
-    fn composes_its_harness_chats_in(&self, workspace: Option<&str>) -> bool {
-        let _ = workspace;
+    fn composes_its_harness_chats_in(
+        &self,
+        workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
+    ) -> bool {
+        let _ = (workspace, start);
         self.composes_its_harness_chats()
     }
 
@@ -313,11 +329,15 @@ pub trait SessionHost: Send + Sync {
         self.composes_its_harness_chats()
     }
 
-    /// **The pool a chat started in `workspace` runs on** (#2049), where the window routes that
-    /// workspace's chats to a pool's runner: what the profile it starts on is kept on, and
-    /// signed in on, before it starts. None, where it starts on this machine.
-    fn pool_for(&self, workspace: Option<&str>) -> Option<String> {
-        let _ = workspace;
+    /// **The pool a chat started in `workspace` runs on** (#2049), with what its `start` chose
+    /// (#4536), where the window routes chats to a pool's runner: what the profile it starts on
+    /// is kept on, and signed in on, before it starts. None, where it starts on this machine.
+    fn pool_for(
+        &self,
+        workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
+    ) -> Option<String> {
+        let _ = (workspace, start);
         None
     }
 
@@ -367,6 +387,36 @@ pub trait SessionHost: Send + Sync {
         let _ = (workspace, pool);
         Vec::new()
     }
+
+    /// [`Self::fetch_back`] from a pool `workspace` no longer runs on (#4590): it is told nothing
+    /// of what this machine has but what came back from it.
+    fn fetch_back_left(&self, workspace: &str, pool: &str) -> Vec<String> {
+        self.fetch_back(workspace, pool)
+    }
+
+    /// **Everything a chat's fresh runner `runner` (`<pool>/fresh-…`) has of `workspace` comes
+    /// back to stay** (#4569): each clone it holds, one made there among them, each clone's
+    /// branches kept under `refs/remotes/<runner>/`, as the runner is about to go. Answers what
+    /// did not come, in sentences. A runner goes only on none, so a host that reaches no runner
+    /// says so.
+    fn fetch_back_whole(&self, workspace: &str, runner: &str) -> Vec<String> {
+        vec![format!(
+            "this host does not reach runner {runner}, so nothing of {workspace} came back"
+        )]
+    }
+
+    /// **A chat's fresh runner `runner` is finished with** (#4569): what it has of `workspace`
+    /// comes back ([`Self::fetch_back_whole`]), off this thread where it crosses a link, and
+    /// `done` is told what did not. No workspace is a runner nothing ran on: `done` is told at
+    /// once, and nothing is sent or asked of it.
+    fn take_back_fresh(&self, runner: &str, workspace: Option<&str>, done: FreshDone) {
+        done(workspace.map_or_else(Vec::new, |workspace| {
+            self.fetch_back_whole(workspace, runner)
+        }));
+    }
+
+    /// **The way to a runner kept no more goes** (#4569): its link ends.
+    fn let_go_of_runner(&self) {}
 
     /// **Readies the runner of `pool` for a chat in `workspace` to move there** (#2048): the
     /// project held there, and each clone's branch sent ahead, while the chat keeps working
@@ -560,12 +610,37 @@ pub trait SessionHost: Send + Sync {
         false
     }
 
+    /// [`Self::left_running`], asked of `runner` (`<pool>/fresh-…`), the chat's own fresh runner
+    /// (#4569): a chat found there is kept as that runner's.
+    fn left_running_on(&self, number: u32, runner: &str) -> bool {
+        let _ = (number, runner);
+        false
+    }
+
     /// [`Self::left_running`], of a chat that worked in `workspace` (#2046): where the
-    /// project's chats are routed, it is asked of this machine's host and of the one pool the
-    /// workspace runs its chats on, and no other.
+    /// project's chats are routed, it is asked of this machine's host and of one pool, the one it
+    /// was kept on or else the one the workspace runs its chats on, and no other (#4590).
     fn left_running_in(&self, number: u32, workspace: Option<&str>) -> bool {
         let _ = workspace;
         self.left_running(number)
+    }
+
+    /// [`Self::left_running_in`], of a chat whose start chose where it runs (#4536): the pool it
+    /// chose is the one asked where no record names one, never the one its workspace names.
+    fn left_running_as_started(
+        &self,
+        number: u32,
+        workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
+    ) -> bool {
+        let _ = start;
+        self.left_running_in(number, workspace)
+    }
+
+    /// [`Self::left_running`], `None` where this host could not say (#4590): what settles a
+    /// record of a chat, which an unanswered question must not.
+    fn left_known(&self, number: u32) -> Option<bool> {
+        Some(self.left_running(number))
     }
 
     /// **Reattaches chat `number`** as a chat of this window (#2006): what [`Self::open`] does,
@@ -639,6 +714,11 @@ pub trait SessionHost: Send + Sync {
     /// (#2006): what a put back that settled leaves no tab for, so nothing runs unseen.
     fn close_what_was_not_reattached(&self) {}
 
+    /// [`Self::close_what_was_not_reattached`], of these chats alone (#4590).
+    fn close_left(&self, numbers: &[u32]) {
+        let _ = numbers;
+    }
+
     /// **The browsers this plane left in the host from before this window** (#2025), running
     /// or ended, each answered once: what the put back takes back with their chats
     /// (`crate::chatbrowsers::take_back`). A host in the window's own process outlives no window,
@@ -661,6 +741,10 @@ pub struct Glance {
     /// Whether its turn ended waiting on work of its own (#3878,
     /// `purlis_core::state::Chat::own_work`): it is still at work through it.
     pub own_work: bool,
+    /// Whether a turn it begins now may be its own work's wake (#4647,
+    /// `purlis_core::state::Chat::wakes_on_its_own_work`): it waits on that work, or the work is
+    /// still out though the wait on it ended for the person.
+    pub wakes_on_its_own_work: bool,
 }
 
 impl Glance {
@@ -703,6 +787,10 @@ pub trait ChatBoard: Send + Sync {
     /// Answered whether or not the board changed: a window that asked to ignore a chat believes
     /// it is asking, and the board's answer is the one to leave it with either way.
     fn ignored(&self, session: u32) -> Moved;
+
+    /// The person sent chat `session` a line, while a background turn ran over its wait on them
+    /// (#4562). Nothing where none did.
+    fn replied(&self, session: u32) -> Option<Moved>;
 
     /// A chat `session` handed work to, shown as `from`, has reported back to it
     /// (charter-app#259). Nothing when no reader would see a difference.
@@ -806,6 +894,9 @@ pub(crate) mod pretend {
         /// The sessions whose program ended with a runner gone for good
         /// ([`Pretend::program_ends_with_its_runner`]).
         lost_with_runner: Mutex<Vec<u32>>,
+        /// The sessions reconnecting while the link to their runner is down
+        /// ([`Pretend::link_down`], #2496).
+        reconnecting: Mutex<Vec<u32>>,
         /// The sessions whose program ended with their host ([`Pretend::program_ends_with_its_host`]).
         lost: Mutex<Vec<u32>>,
         /// The chats left running from before this window, and the plan each ran in
@@ -827,6 +918,12 @@ pub(crate) mod pretend {
         /// Each fetch back it was asked for, by workspace and pool, and how many ran at once
         /// at most (#2046).
         fetched: Mutex<Vec<(String, String)>>,
+        /// Why a fetch back fails, while a test says one does: a fresh runner's whole fetch too.
+        fetch_fails: Mutex<Option<String>>,
+        /// Whether it can't say what it has left ([`Pretend::cannot_say_what_it_left`]).
+        says_nothing_left: std::sync::atomic::AtomicBool,
+        /// How many times the way to this runner was let go of.
+        let_go: Mutex<usize>,
         /// Each move asked of it (#2048): `ahead`, `in` or `out`, the pool and the workspace.
         moved: Mutex<Vec<(&'static str, String, String)>>,
         fetching: AtomicU32,
@@ -838,6 +935,11 @@ pub(crate) mod pretend {
         composed_ran: Mutex<Option<Option<purlis_session_protocol::session::RunSandbox>>>,
         /// The chats it says run on a pool's runner, and the pool ([`Pretend::runs_on_pool`]).
         pools: Mutex<Vec<(u32, String)>>,
+        /// Every input, resize and view of a terminal, in the order it reached the host
+        /// ([`Pretend::terminal`], #4734).
+        terminal: Mutex<Vec<String>>,
+        /// How long each input, resize and view takes ([`Pretend::terminal_takes`]).
+        terminal_taking: Mutex<Duration>,
     }
 
     impl Pretend {
@@ -865,6 +967,26 @@ pub(crate) mod pretend {
 
         pub fn fetched(&self) -> Vec<(String, String)> {
             lock(&self.seen.fetched).clone()
+        }
+
+        /// Each fetch back fails with `why` from now on, or none where it is `None`.
+        pub fn fetch_fails_with(&self, why: Option<&str>) {
+            *lock(&self.seen.fetch_fails) = why.map(str::to_owned);
+        }
+
+        /// It can't say what it left running from now on (#4590).
+        pub fn cannot_say_what_it_left(&self) {
+            self.seen.says_nothing_left.store(true, Ordering::SeqCst);
+        }
+
+        /// A fetch of a fresh runner's work fails with `why`.
+        pub fn fetch_fails(&self, why: &str) {
+            *lock(&self.seen.fetch_fails) = Some(why.to_owned());
+        }
+
+        /// How many times the way to this runner was let go of.
+        pub fn let_go(&self) -> usize {
+            *lock(&self.seen.let_go)
         }
 
         /// The most fetches back that ran at once.
@@ -1027,6 +1149,17 @@ pub(crate) mod pretend {
             self.program_ends(id, Exit::Signal("Hangup".to_owned()));
         }
 
+        /// The link to the runner sessions `ids` run on is down: they are reconnecting (#2496),
+        /// their programs still running there.
+        pub fn link_down(&self, ids: &[u32]) {
+            lock(&self.seen.reconnecting).extend_from_slice(ids);
+        }
+
+        /// The link to the runner sessions `ids` run on is back: they are reconnecting no more.
+        pub fn link_back(&self, ids: &[u32]) {
+            lock(&self.seen.reconnecting).retain(|id| !ids.contains(id));
+        }
+
         /// Session `id`'s program ends with a pool's runner gone for good (#4350).
         pub fn program_ends_with_its_runner(&self, id: u32) {
             lock(&self.seen.lost_with_runner).push(id);
@@ -1041,6 +1174,26 @@ pub(crate) mod pretend {
                 id,
                 Exit::Signal(crate::hostedsessions::ITS_RUNNER_WENT.to_owned()),
             );
+        }
+
+        /// Every input, resize and view of a terminal it was asked for, in the order each
+        /// reached it: `typed 7 <bytes>`, `resized 7 100x30`, `watched 7`, `unwatched 7 1`.
+        pub fn terminal(&self) -> Vec<String> {
+            lock(&self.seen.terminal).clone()
+        }
+
+        /// Each input, resize and view takes `long` from now on, as a host far away does.
+        pub fn terminal_takes(&self, long: Duration) {
+            *lock(&self.seen.terminal_taking) = long;
+        }
+
+        /// Takes as long as [`Self::terminal_takes`] says, then notes `what` reached it.
+        fn reached(&self, what: String) {
+            let long = *lock(&self.seen.terminal_taking);
+            if !long.is_zero() {
+                std::thread::sleep(long);
+            }
+            lock(&self.seen.terminal).push(what);
         }
 
         fn here(&self, id: u32) -> Result<(), String> {
@@ -1145,13 +1298,23 @@ pub(crate) mod pretend {
             }
             Ok(super::CameBack::default())
         }
+        fn fetch_back_whole(&self, workspace: &str, runner: &str) -> Vec<String> {
+            if let Some(why) = lock(&self.seen.fetch_fails).clone() {
+                return vec![why];
+            }
+            lock(&self.seen.fetched).push((workspace.to_owned(), runner.to_owned()));
+            Vec::new()
+        }
+        fn let_go_of_runner(&self) {
+            *lock(&self.seen.let_go) += 1;
+        }
         fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
             let now = self.seen.fetching.fetch_add(1, Ordering::SeqCst) + 1;
             self.seen.most_fetching.fetch_max(now, Ordering::SeqCst);
             std::thread::sleep(Duration::from_millis(50));
             lock(&self.seen.fetched).push((workspace.to_owned(), pool.to_owned()));
             self.seen.fetching.fetch_sub(1, Ordering::SeqCst);
-            Vec::new()
+            lock(&self.seen.fetch_fails).iter().cloned().collect()
         }
         fn composes_its_harness_chats(&self) -> bool {
             self.seen.on_a_runner.load(Ordering::SeqCst)
@@ -1162,19 +1325,27 @@ pub(crate) mod pretend {
                 .find(|(chat, _)| *chat == id)
                 .map(|(_, pool)| pool.clone())
         }
-        fn pool_for(&self, _workspace: Option<&str>) -> Option<String> {
+        fn pool_for(
+            &self,
+            _workspace: Option<&str>,
+            _start: Option<&purlis_core::machine::StartChoice>,
+        ) -> Option<String> {
             lock(&self.seen.pool).clone()
         }
         fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {
             self.here(id)?;
+            self.reached(format!("typed {id} {}", String::from_utf8_lossy(bytes)));
             lock(&self.seen.typed).push((id, bytes.to_vec()));
             Ok(())
         }
-        fn resize(&self, id: u32, _size: Size) -> Result<(), String> {
-            self.here(id)
+        fn resize(&self, id: u32, size: Size) -> Result<(), String> {
+            self.here(id)?;
+            self.reached(format!("resized {id} {}x{}", size.columns, size.rows));
+            Ok(())
         }
         fn watch(&self, id: u32, _sink: Sink) -> Result<Watching, String> {
             self.here(id)?;
+            self.reached(format!("watched {id}"));
             Ok(Watching {
                 view: 1,
                 size: Size {
@@ -1183,8 +1354,10 @@ pub(crate) mod pretend {
                 },
             })
         }
-        fn unwatch(&self, id: u32, _view: u32) -> Result<(), String> {
-            self.here(id)
+        fn unwatch(&self, id: u32, view: u32) -> Result<(), String> {
+            self.here(id)?;
+            self.reached(format!("unwatched {id} {view}"));
+            Ok(())
         }
         fn close(&self, id: u32) -> Result<(), String> {
             self.here(id)?;
@@ -1221,6 +1394,9 @@ pub(crate) mod pretend {
         fn lost_with_its_runner(&self, id: u32) -> bool {
             lock(&self.seen.lost_with_runner).contains(&id)
         }
+        fn reconnecting(&self) -> Vec<u32> {
+            lock(&self.seen.reconnecting).clone()
+        }
         fn running(&self) -> Vec<u32> {
             lock(&self.seen.running).clone()
         }
@@ -1244,6 +1420,9 @@ pub(crate) mod pretend {
         }
         fn left_running(&self, number: u32) -> bool {
             lock(&self.seen.left).iter().any(|(one, _)| *one == number)
+        }
+        fn left_known(&self, number: u32) -> Option<bool> {
+            (!self.seen.says_nothing_left.load(Ordering::SeqCst)).then(|| self.left_running(number))
         }
         fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
             self.left_running(number)
@@ -1282,6 +1461,10 @@ pub(crate) mod pretend {
                 .map(|(one, _)| one)
                 .collect();
             lock(&self.seen.closed_left).extend(left);
+        }
+        fn close_left(&self, numbers: &[u32]) {
+            lock(&self.seen.left).retain(|(one, _)| !numbers.contains(one));
+            lock(&self.seen.closed_left).extend_from_slice(numbers);
         }
         fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
             std::mem::take(&mut *lock(&self.seen.browsers_left))

@@ -6,14 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
-  fireEvent,
   render as renderBare,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { openSubmenus, pressMenuPath } from "./menus.testkit";
+import { chatList, openSubmenus, pressMenuPath } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
@@ -139,6 +138,7 @@ const HELD: DispatchPending = {
   task_cut: false,
   profile: null,
   mode: "task",
+  runs_on: null,
 };
 
 function core(now: Core) {
@@ -205,11 +205,12 @@ async function aStewardChat(now: Partial<Core> = {}) {
   return said;
 }
 
-/** The menu on the steward chat's tab, as a right-click opens it. */
-async function tabMenu() {
+/** The steward chat's one list (#4753), as a right-click on its row opens it: the list its
+ *  pane's ⋯ and the palette have too. */
+async function chatMenu() {
   const strip = stripNamed("Tabs");
-  fireEvent.contextMenu(within(strip).getAllByRole("tab")[0]);
-  return screen.findByRole("menu");
+  const tab = await waitFor(() => within(strip).getAllByRole("tab")[0]);
+  return chatList(tab.querySelector(".tab-name")?.textContent ?? "");
 }
 
 describe("Ask a persona from a chat's tab", () => {
@@ -217,7 +218,7 @@ describe("Ask a persona from a chat's tab", () => {
     await aStewardChat();
 
     // One *Ask* row on the tab's menu, which opens a row per persona, named by the persona.
-    await tabMenu();
+    await chatMenu();
     const sub = await openSubmenus("Ask");
 
     expect(within(sub).getByRole("menuitem", { name: "devops…" })).toBeEnabled();
@@ -227,7 +228,7 @@ describe("Ask a persona from a chat's tab", () => {
   it("asks for a task name and what to ask, and starts a devops chat under this one", async () => {
     const { asked } = await aStewardChat();
 
-    await tabMenu();
+    await chatMenu();
     await pressMenuPath("Ask", "devops…");
 
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
@@ -290,7 +291,7 @@ describe("Ask a persona from a chat's tab", () => {
     // #1453: this chat's folder, a branch of its own, or another workspace. The window says
     // branch and folder, never worktree (ADR 0072 §4); the core's word for it is `worktree`.
     const { asked } = await aStewardChat();
-    await tabMenu();
+    await chatMenu();
     await pressMenuPath("Ask", "devops…");
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
     await userEvent.type(within(dialog).getByLabelText("Task name"), "check prod");
@@ -327,7 +328,7 @@ describe("Ask a persona from a chat's tab", () => {
     const HERE =
       "'lint' is already working in workspaces/alpha with no branch of its own. There are no file locks between tasks: a file two of them change cannot be told apart afterwards. To keep them apart, choose a branch of its own for this one.";
     const { asked } = await aStewardChat({ shared: { here: HERE } });
-    await tabMenu();
+    await chatMenu();
     await pressMenuPath("Ask", "devops…");
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
 
@@ -355,7 +356,7 @@ describe("Ask a persona from a chat's tab", () => {
 
   it("asks which workspace before it sends a chat into another one", async () => {
     const { asked } = await aStewardChat();
-    await tabMenu();
+    await chatMenu();
     await pressMenuPath("Ask", "devops…");
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
     await userEvent.type(within(dialog).getByLabelText("Task name"), "check prod");
@@ -382,7 +383,7 @@ describe("Ask a persona from a chat's tab", () => {
     const why =
       "this chat already has 6 persona chats running, which is as many as it may have at once. Wait for one to report, then dispatch again.";
     await aStewardChat({ refused: why });
-    await tabMenu();
+    await chatMenu();
     await pressMenuPath("Ask", "devops…");
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
     await userEvent.type(within(dialog).getByLabelText("Task name"), "check prod");
@@ -397,7 +398,7 @@ describe("Ask a persona from a chat's tab", () => {
 
   it("starts nothing on Cancel", async () => {
     const { asked } = await aStewardChat();
-    await tabMenu();
+    await chatMenu();
     await pressMenuPath("Ask", "devops…");
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
 
@@ -474,7 +475,8 @@ describe("a refused vault, on a pane whose chat has already asked that persona",
       [...(frame?.firstElementChild?.children ?? [])].map(
         (one) => one.getAttribute("data-scope") ?? one.className,
       ),
-    ).toEqual(["notice-row", "pane-head"]);
+      // The header first and the band under it (#4754), so a Notice arriving never moves it.
+    ).toEqual(["pane-head", "notice-row"]);
   });
 
   it("reads the request top to bottom: the sentence, the answers in order, then the brief", async () => {
@@ -545,7 +547,7 @@ describe("a refused vault, on a pane whose chat has not asked", () => {
   it("does not say so when you open it yourself, from the tab's menu", async () => {
     await aStewardChat();
 
-    await tabMenu();
+    await chatMenu();
     await pressMenuPath("Ask", "devops…");
 
     const dialog = await screen.findByRole("dialog", { name: "Ask devops" });
@@ -557,7 +559,7 @@ describe("where policy locks all dispatch", () => {
   it("has no Ask row on the tab's menu, and the palette says why", async () => {
     await aStewardChat({ offer: { personas: [], locked: LOCKED, locked_for: [] } });
 
-    const menu = await tabMenu();
+    const menu = await chatMenu();
     expect(within(menu).queryByRole("menuitem", { name: "Ask" })).toBeNull();
     await userEvent.keyboard("{Escape}");
 
@@ -575,7 +577,7 @@ describe("where policy locks all dispatch", () => {
       offer: { ...OPEN, locked_for: [{ session: 4, persona: "devops", why }] },
     });
 
-    await tabMenu();
+    await chatMenu();
     const sub = await openSubmenus("Ask");
     expect(within(sub).queryByRole("menuitem", { name: "devops…" })).toBeNull();
     expect(within(sub).getByRole("menuitem", { name: "steward…" })).toBeEnabled();
@@ -583,7 +585,7 @@ describe("where policy locks all dispatch", () => {
 
     await userEvent.keyboard("{F2}");
     await userEvent.type(screen.getByRole("combobox"), "Ask devops");
-    const row = await screen.findByRole("option", { name: /Ask devops…/ });
+    const row = await screen.findByRole("option", { name: /^Ask devops from .*…/ });
     expect(row).toHaveTextContent(why);
     expect(row).toHaveAttribute("aria-disabled", "true");
   });
@@ -612,6 +614,6 @@ describe("where policy locks all dispatch", () => {
     await screen.findByTestId("pane");
     await settled();
 
-    expect(within(await tabMenu()).queryByRole("menuitem", { name: "Ask" })).toBeNull();
+    expect(within(await chatMenu()).queryByRole("menuitem", { name: "Ask" })).toBeNull();
   });
 });

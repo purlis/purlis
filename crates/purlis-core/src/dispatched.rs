@@ -155,6 +155,15 @@ pub enum What {
     /// **Deliver what this chat queued** (#3902, [`crate::dispatchqueue`]), oldest first: `id` is
     /// the message the asking command has just queued, whose fate it is answered with.
     Deliver { id: String },
+    /// **Deliver message `id`, which this chat queued on a pool's runner** (#4804), carried by
+    /// that runner's host, which reads the queue there where the app cannot. Answered as the
+    /// message itself would be, or [`Answered::Queued`] `delivered: false` where a limit holds
+    /// it back, and it stays queued there. The app delivers one id once: a message carried
+    /// again, because its answer was lost with the link, is answered as delivered.
+    Carried {
+        id: String,
+        message: crate::dispatchqueue::Queued,
+    },
 }
 
 /// What the app answers an [`Asked`] with.
@@ -636,13 +645,17 @@ pub struct Ledger {
     /// `UserPromptSubmit` or `Stop`. They may have a harness's own picker open, which no hook
     /// reports, so nothing is typed into one until its harness says a turn began or ended.
     keyed: std::collections::HashSet<u32>,
+    /// The chats the person sent a line since their last `UserPromptSubmit` or `Stop` (#4562):
+    /// the turn that begins next is theirs, and no background turn.
+    sent: std::collections::HashSet<u32>,
     /// Tasks whose chats have closed, oldest first: who asked, what it was called, and its
     /// report where it sent one. So a wait on one says how it ended.
     gone: std::collections::VecDeque<(u32, Gone)>,
-    /// By chat, every chat's and not a task's alone (#4550): the last message its harness said a
-    /// turn of its ended on (#1981), masked by the app before it is kept, until its next turn
-    /// begins. **In memory only.** The one source of what a chat waiting on the person said.
-    last: HashMap<u32, String>,
+    /// By chat, every chat's and not a task's alone (#4550): the last [`SAID_KEPT`] messages its
+    /// harness said a turn of its ended on (#1981), oldest first, masked by the app before they
+    /// are kept, until a turn begins that is no background turn (#4563). **In memory only.** The
+    /// one source of what a chat waiting on the person said.
+    last: HashMap<u32, std::collections::VecDeque<String>>,
 }
 
 /// A task whose chat has closed.
@@ -755,6 +768,10 @@ pub fn output_text(name: &str, of: u32, finals: &[String], ran: &[Ran]) -> Strin
 
 /// How many of a task's last messages are kept for `purlis dispatch read` (#1981).
 pub const FINALS_KEPT: usize = 3;
+
+/// How many of a chat's turn-end messages are kept for the person (#4563): its last, and the
+/// few before it, which the waiting strip lets them read back.
+pub const SAID_KEPT: usize = 4;
 
 /// How many of a task's commands are kept for `purlis dispatch read` (#1981).
 pub const RAN_KEPT: usize = 20;
@@ -1527,7 +1544,11 @@ impl Ledger {
             }
             entry.heard.finals.push_back(text.clone());
         }
-        self.last.insert(chat, text);
+        let said = self.last.entry(chat).or_default();
+        if said.len() >= SAID_KEPT {
+            said.pop_front();
+        }
+        said.push_back(text);
     }
 
     /// Task `task` ran `ran` (#1981), masked by the app already. Kept for a task alone, the
@@ -1552,7 +1573,23 @@ impl Ledger {
 
     /// The last message chat `chat`'s turn ended on, as kept ([`Self::said_last`]).
     pub fn last_said(&self, chat: u32) -> Option<&str> {
-        self.last.get(&chat).map(String::as_str)
+        self.last
+            .get(&chat)
+            .and_then(|said| said.back())
+            .map(String::as_str)
+    }
+
+    /// **The few messages chat `chat`'s turns ended on before its last** (#4563), oldest first,
+    /// at most [`SAID_KEPT`] less one: what a question pushed aside by a later turn is read back
+    /// from.
+    pub fn said_before(&self, chat: u32) -> Vec<&str> {
+        let Some(said) = self.last.get(&chat) else {
+            return Vec::new();
+        };
+        said.iter()
+            .take(said.len().saturating_sub(1))
+            .map(String::as_str)
+            .collect()
     }
 
     /// **Task `task`'s turn ended** (#1981), and what is done about its report: `owes` says it
@@ -1578,7 +1615,7 @@ impl Ledger {
         if entry.report_asked {
             entry.report_asked = false;
             return Owing::Make {
-                last: self.last.get(&task).cloned(),
+                last: self.last_said(task).map(str::to_owned),
             };
         }
         self.landed(task, Landed::ReportOwed);
@@ -1757,6 +1794,20 @@ impl Ledger {
             entry.end = Some(End::Reported);
             entry.later_turn = true;
         }
+    }
+
+    /// **The person sent chat `chat` a line of theirs** (#4562): the next turn it begins is
+    /// theirs, whatever else is about to begin one. Forgotten as that turn begins or the one it
+    /// waited behind ends.
+    pub fn person_sent(&mut self, chat: u32) {
+        self.sent.insert(chat);
+    }
+
+    /// **Whether the turn chat `chat` begins now is a background turn** (#4562): purlis typed its
+    /// line, or `own_work` wakes it, and the person has sent nothing since. Asked before
+    /// [`Self::turn_began`] forgets either.
+    pub fn background_turn(&self, chat: u32, own_work: bool) -> bool {
+        !self.sent.contains(&chat) && (own_work || self.typed.contains(&chat))
     }
 
     /// **What the app does next for task `task`, which has reported** (#1485): its program is
@@ -2139,6 +2190,13 @@ impl Ledger {
     /// handed every report that waited. And whatever the person had open in its pane is
     /// behind it.
     pub fn turn_began(&mut self, chat: u32) {
+        self.turn_began_as(chat, false);
+    }
+
+    /// [`Self::turn_began`], where `background` says the turn is a background turn over the
+    /// chat's wait on the person (#4562): no reply, so what its turns ended saying stays for the
+    /// person to read (#4563). Every other turn clears it.
+    pub fn turn_began_as(&mut self, chat: u32, background: bool) {
         // A turn after its report: the bound on the reporting turn ends nothing from here. A
         // prompt the person typed while it waited on its own work is one too (#3921): the hook
         // does not say whether its own work or a person began a turn, so every one is later.
@@ -2150,11 +2208,15 @@ impl Ledger {
                 entry.end = Some(End::Reported);
             }
         }
-        // What the last turn ended saying is not this turn's (#1981).
-        self.last.remove(&chat);
+        // What the last turn ended saying is not this turn's (#1981), unless the person has
+        // still to answer it (#4563).
+        if !background {
+            self.last.remove(&chat);
+        }
         self.landed.remove(&chat);
         self.typed.remove(&chat);
         self.keyed.remove(&chat);
+        self.sent.remove(&chat);
         self.talk.turn_began(chat);
     }
 
@@ -2188,6 +2250,7 @@ impl Ledger {
     /// behind it.
     pub fn turn_ended(&mut self, chat: u32) {
         self.keyed.remove(&chat);
+        self.sent.remove(&chat);
     }
 
     /// What chat `chat` is typed a line about now, or nothing: something was left for its next

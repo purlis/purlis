@@ -57,9 +57,18 @@ fn falls(drawn: &ResolvedTheme) -> Vec<String> {
 /// **What the search answered before #3388**: every rule measured with every side at one chroma,
 /// so a side drawn at the shared chroma was measured at the alone one.
 fn at_one_chroma(theme: &ResolvedTheme, hue: f64) -> Most {
-    Most {
+    let alone = tint::apart_chroma_of(&tint::held_rules(theme), hue);
+    let one = Most {
         shared: tint::apart_chroma(theme, hue),
-        alone: tint::apart_chroma_of(&tint::held_rules(theme), hue),
+        alone,
+        words: None,
+    };
+    // The accent's words take their own answer since #3100: where they would land on waiting or
+    // danger they keep the theme's colour, and the accent keeps its tint. That move is meant, and
+    // tint_tests measures it, so the record here asks the same of the words.
+    Most {
+        words: tint::words_chroma_of(&tint::words_rules(theme), hue, one),
+        ..one
     }
 }
 
@@ -260,6 +269,7 @@ fn the_sweep_reads_what_it_says_it_holds() {
     let whole = Most {
         shared: Some(f64::INFINITY),
         alone: Some(f64::INFINITY),
+        words: Some(f64::INFINITY),
     };
     let close = themed(
         &json!({ "danger.base": tint::tint_hex(ours.value("accent.base"), 25.0) }),

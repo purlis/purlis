@@ -389,6 +389,10 @@ pub struct Relaying {
     /// The window's socket each slot a chat's server dials in is handed on over (#3316), where
     /// it was told one; none, and every slot is refused.
     slots_to: Mutex<Option<std::path::PathBuf>>,
+    /// The queues of its chats' messages it carries to the window, where it does (#4804).
+    carrying: carrying::Carrying,
+    /// Whether a message waits to be carried once a window hears this host again.
+    carry_waits: std::sync::atomic::AtomicBool,
 }
 
 /// **How the host keeps what its hook channel hears** (#2003): it writes the event log, and
@@ -443,6 +447,8 @@ impl Relaying {
             asks_paced: hosted::Paced::default(),
             ask_turns: hosted::Turns::default(),
             slots_to: Mutex::default(),
+            carrying: carrying::Carrying::default(),
+            carry_waits: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -568,6 +574,7 @@ impl Relaying {
             return Err(io::Error::other(NOBODY_HEARS));
         };
         self.hand_on_the_logins_that_waited();
+        self.carry_what_waited();
         let reply = replied.recv_timeout(A_RELAYED_LINE_IS_TAKEN_WITHIN);
         self.done(id);
         if let (Err(mpsc::RecvTimeoutError::Disconnected), Some(keeping)) = (&reply, &self.keeping)
@@ -621,6 +628,10 @@ impl Relaying {
         if let Ask::Browse(browse) = &mut ask {
             browse.waited = false;
         }
+        // A runner's host delivers what its chats queued itself (#4804).
+        if let Some(answer) = self.carried(connection, &ask) {
+            return answer;
+        }
         let browsing = match &ask {
             Ask::Browse(browse) => Some((**browse).clone()),
             _ => None,
@@ -638,6 +649,7 @@ impl Relaying {
             };
         };
         self.hand_on_the_logins_that_waited();
+        self.carry_what_waited();
         let answer = self.answered(tokens, connection, id, &replied);
         match browsing {
             Some(browse) => self.told_first(browse.chat, answer),
@@ -681,7 +693,7 @@ impl Relaying {
     /// (#2050): a login waits for the window, and is said to; any other is answered as a line
     /// nobody heard.
     fn wait_for_the_window(&self, connection: u64, browse: BrowseAsk) -> Answer {
-        let Browsing::LogIn { login } = &browse.asked else {
+        let Browsing::LogIn { login, .. } = &browse.asked else {
             return nobody();
         };
         let login = login.clone();
@@ -768,7 +780,7 @@ impl Relaying {
             if !self.still_there(one.browse.chat) {
                 continue;
             }
-            let Browsing::LogIn { login } = &one.browse.asked else {
+            let Browsing::LogIn { login, .. } = &one.browse.asked else {
                 continue;
             };
             if one.since.elapsed() > A_HANDED_LINE_WAITS_AT_MOST {
@@ -793,7 +805,7 @@ impl Relaying {
             mut browse,
             since,
         } = one;
-        let Browsing::LogIn { login } = browse.asked.clone() else {
+        let Browsing::LogIn { login, .. } = browse.asked.clone() else {
             return;
         };
         browse.waited = true;
@@ -1762,6 +1774,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+mod carrying;
 mod hosted;
 
 pub use hosted::exec_waits_said;

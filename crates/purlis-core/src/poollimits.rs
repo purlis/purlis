@@ -500,7 +500,7 @@ impl Limit {
         }
         match highest {
             Some(highest) if value > highest => Err(format!(
-                "{} is at most {} on this pool",
+                "{} is at most {} on this pool: {TEAM_SET}",
                 self.plain,
                 self.unit.said(highest)
             )),
@@ -547,6 +547,10 @@ impl Limit {
             needed,
             suggested: self.suggested(in_force, needed, highest),
             highest,
+            by_team: false,
+            runner_memory: None,
+            memory_on_replace: None,
+            team_suggested: false,
         }
     }
 
@@ -572,6 +576,26 @@ impl Limit {
     }
 }
 
+/// **The most a profile may send to a runner of `memory_mib` of memory**, in MiB (#4396): half of
+/// it. A runner holds what a profile sends in memory, once, as it keeps it, and the rest is its
+/// own and its chats'. Measured on 2026-11-01 (#4314): a default runner taking a 999 MiB profile
+/// peaked at 3.26 of its 4 GiB while it held three copies; it holds one since #4396.
+#[must_use]
+pub fn profile_room(memory_mib: u64) -> u64 {
+    memory_mib / 2
+}
+
+/// The least memory, in MiB, a runner needs to hold a profile of `needed` MiB ([`profile_room`]),
+/// rounded up to half a GiB, a round number a person sets Memory to.
+fn memory_holding(needed: u64) -> u64 {
+    const STEP: u64 = 512;
+    needed.saturating_mul(2).div_ceil(STEP).saturating_mul(STEP)
+}
+
+/// What a person at a team's highest is told: who set it, and where to go (#4287).
+const TEAM_SET: &str = "the team that defines this pool set that: ask whoever looks after its \
+                        Pool in the cluster to raise it";
+
 /// **A limit that was hit** (spec #4275's typed refusal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimitHit {
@@ -580,6 +604,15 @@ pub struct LimitHit {
     pub needed: u64,
     pub suggested: Option<u64>,
     pub highest: Option<u64>,
+    /// That highest is what the team defining the pool set (#4287).
+    pub by_team: bool,
+    /// That highest is what the memory of the pool's runner holds, in MiB (#4396): this many.
+    pub runner_memory: Option<u64>,
+    /// The pool's Memory, in MiB, where it is more than its runner was made with and holds what is
+    /// needed: replacing the runner is all it takes (#4396).
+    pub memory_on_replace: Option<u64>,
+    /// The value suggested is what the team defining the pool suggests (#4287).
+    pub team_suggested: bool,
 }
 
 impl LimitHit {
@@ -595,6 +628,11 @@ impl LimitHit {
                     limit.plain,
                     limit.unit.said(value)
                 ),
+                None if self.by_team => format!(
+                    "it took longer than this pool's limit of {in_force} ({}), the most it can be: \
+                     {TEAM_SET}",
+                    limit.plain
+                ),
                 None => format!(
                     "it took longer than this pool's limit of {in_force} ({}), the most it can \
                      be: try again when the runner and the link to it are less busy",
@@ -602,9 +640,31 @@ impl LimitHit {
                 ),
             };
         }
-        let offer = match self.suggested {
-            Some(value) => format!(": raise it to {}", limit.unit.said(value)),
-            None => format!(", more than this limit can be: send less than {}", {
+        let offer = match (self.suggested, self.runner_memory) {
+            (Some(value), _) => format!(": raise it to {}", limit.unit.said(value)),
+            (None, Some(memory)) => {
+                let what = match self.memory_on_replace {
+                    Some(pool) => format!(
+                        "replace its runner, which then has this pool's {} of Memory",
+                        Unit::Mib.said(pool)
+                    ),
+                    None => format!(
+                        "raise this pool's Memory to {} and replace its runner",
+                        Unit::Mib.said(memory_holding(self.needed))
+                    ),
+                };
+                format!(
+                    ", and this pool's runner holds at most {} of a profile, half its {} of \
+                     memory: {what}, or send less",
+                    limit.unit.said(self.highest.unwrap_or(limit.most)),
+                    Unit::Mib.said(memory),
+                )
+            }
+            (None, None) if self.by_team => format!(
+                ", and this pool allows at most {}: {TEAM_SET}, or send less",
+                limit.unit.said(self.highest.unwrap_or(limit.most))
+            ),
+            (None, None) => format!(", more than this limit can be: send less than {}", {
                 limit.unit.said(self.highest.unwrap_or(limit.most))
             }),
         };
@@ -695,15 +755,23 @@ pub fn hits_on(pool: &str, hits: &[LimitHit]) {
     });
 }
 
-/// **The values the person chose for a pool's limits**, each unset where purlis's default holds.
+/// **The values the person chose for a pool's limits**, each unset where the default holds; and,
+/// on a cluster pool, **what the team defining it set** (#4287): each limit's default and highest
+/// allowed, read from the cluster's Pool and never chosen here.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Chosen([Option<u64>; ALL.len()]);
+pub struct Chosen {
+    set: [Option<u64>; ALL.len()],
+    team_default: [Option<u32>; ALL.len()],
+    team_highest: [Option<u32>; ALL.len()],
+    /// The memory of a Docker pool's runner, in MiB, where this machine knows it (#4396).
+    runner_memory: Option<u64>,
+}
 
 impl Chosen {
     /// What the person set, if they did: the mark of a value as theirs.
     #[must_use]
     pub fn get(&self, id: LimitId) -> Option<u64> {
-        self.0[id as usize]
+        self.set[id as usize]
     }
 
     /// The time that holds for a wait, as [`Self::in_force`] says it; none for a size.
@@ -712,17 +780,259 @@ impl Chosen {
         id.limit().unit.as_time(self.in_force(id))
     }
 
-    /// The value that holds: what the person set, or purlis's default.
+    /// **The default this pool's limit follows**: purlis's, or the team's where it is lower, and
+    /// never above the highest the team allows. A team's default never raises a limit unasked
+    /// (the person's ruling of 2026-11-01): a higher one is [`Self::team_suggests`].
+    #[must_use]
+    pub fn default_of(&self, id: LimitId) -> u64 {
+        let ours = id.limit().default;
+        let default = self.team_default[id as usize].map_or(ours, |team| u64::from(team).min(ours));
+        self.highest(id).map_or(default, |top| top.min(default))
+    }
+
+    /// **The value the team suggests**: its default, where that is above what holds now. Only the
+    /// person's press sets it.
+    #[must_use]
+    pub fn team_suggests(&self, id: LimitId) -> Option<u64> {
+        self.team_default[id as usize]
+            .map(u64::from)
+            .filter(|team| *team > self.in_force(id) && *team > id.limit().default)
+    }
+
+    /// Whether the default this limit follows is the team's doing.
+    #[must_use]
+    pub fn default_by_team(&self, id: LimitId) -> bool {
+        self.default_of(id) != id.limit().default
+    }
+
+    /// **What is said of a value the person set above the highest this pool allows** ([`Self::highest`]),
+    /// which holds to it.
+    #[must_use]
+    pub fn over_highest_said(&self, id: LimitId) -> Option<String> {
+        let top = self.highest(id)?;
+        let set = self.get(id)?;
+        if set <= top {
+            return None;
+        }
+        let top_said = id.limit().unit.said(top);
+        Some(match self.memory_holds(id) {
+            Some((memory, room)) if room == top => format!(
+                "This pool's runner has {} of memory, and holds a profile in it as it keeps it, so \
+                 this holds at {top_said}, half of it. {}, or set a value within it.",
+                Unit::Mib.said(memory),
+                self.memory_remedy()
+            ),
+            _ => format!(
+                "The team that defines this pool allows at most {top_said}, so that holds. Set a \
+                 value within it or reset this."
+            ),
+        })
+    }
+
+    /// **The highest this pool's limit `id` can be**: what the team defining it allows, and, for
+    /// what a profile may send to a Docker pool's runner, what that runner's memory holds
+    /// ([`profile_room`], #4396), whichever is lower. `None` where nothing holds it below what the
+    /// limit can be anywhere.
+    #[must_use]
+    pub fn highest(&self, id: LimitId) -> Option<u64> {
+        let memory = self.memory_holds(id).map(|(_, room)| room);
+        match (self.team_highest(id), memory) {
+            (Some(team), Some(memory)) => Some(team.min(memory)),
+            (team, memory) => team.or(memory),
+        }
+    }
+
+    /// The memory of this pool's runner and the most of limit `id` it holds, where that is below
+    /// what the limit can be.
+    fn memory_holds(&self, id: LimitId) -> Option<(u64, u64)> {
+        let memory = self.runner_memory.filter(|_| id == LimitId::ProfileSize)?;
+        let room = profile_room(memory).max(id.limit().least);
+        (room < id.limit().most).then_some((memory, room))
+    }
+
+    /// **What the pool's page says of the highest of limit `id`**, where something holds it below
+    /// what the limit can be: the team, or its runner's memory (#4396).
+    #[must_use]
+    pub fn highest_said(&self, id: LimitId) -> Option<String> {
+        let top = self.highest(id)?;
+        let top_said = id.limit().unit.said(top);
+        if self.team_highest(id) == Some(top) {
+            return Some(format!("The team allows up to {top_said}."));
+        }
+        Some(format!(
+            "Up to {top_said}, half of the runner's memory, which holds a profile as it is sent. \
+             {}.",
+            self.memory_remedy()
+        ))
+    }
+
+    /// The pool's Memory, where it is more than its runner was made with: the runner waits to
+    /// be replaced (#4286).
+    fn memory_waiting(&self) -> Option<u64> {
+        let runner = self.runner_memory?;
+        let pool = self.in_force(LimitId::Memory);
+        (pool > runner).then_some(pool)
+    }
+
+    /// What lets the runner hold more of a profile: raising Memory, or, where it is raised
+    /// already, replacing the runner.
+    fn memory_remedy(&self) -> String {
+        match self.memory_waiting() {
+            Some(pool) => format!(
+                "Replace the runner to allow more: this pool's {} of Memory applies then",
+                Unit::Mib.said(pool)
+            ),
+            None => "Raise Memory to allow more".to_owned(),
+        }
+    }
+
+    /// These values, on a Docker pool whose runner has `memory_mib` of memory (#4396).
+    #[must_use]
+    pub fn on_a_runner_of(mut self, memory_mib: u64) -> Chosen {
+        self.runner_memory = Some(memory_mib);
+        self
+    }
+
+    /// **Whether `value` can be this pool's limit `id`**: [`Limit::check`] under the highest the
+    /// team allows, and no more than its runner's memory holds. The one check the file's writes,
+    /// the command and the window share.
+    pub fn check(&self, id: LimitId, value: u64) -> Result<(), String> {
+        let limit = id.limit();
+        limit.check(value, self.team_highest(id))?;
+        match self.memory_holds(id) {
+            Some((memory, room)) if value > room => Err(format!(
+                "{} is at most {} on this pool: its runner has {} of memory, and holds what a \
+                 profile sends in it as it keeps it. {}",
+                limit.plain,
+                limit.unit.said(room),
+                Unit::Mib.said(memory),
+                self.memory_remedy()
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    /// [`Self::check`], for what a person types: [`Limit::check_typed`].
+    pub fn check_typed(&self, id: LimitId, typed: &str) -> Result<u64, String> {
+        let value = id.limit().check_typed(typed, self.team_highest(id))?;
+        self.check(id, value).map(|()| value)
+    }
+
+    /// The highest the team defining this pool allows, where it set one.
+    #[must_use]
+    pub fn team_highest(&self, id: LimitId) -> Option<u64> {
+        self.team_highest[id as usize].map(u64::from)
+    }
+
+    /// The value that holds: what the person set, or the default, and never above the highest the
+    /// team allows, so a value kept from before the team lowered it holds to it too.
     #[must_use]
     pub fn in_force(&self, id: LimitId) -> u64 {
-        self.get(id).unwrap_or(id.limit().default)
+        let value = self.get(id).unwrap_or(self.default_of(id));
+        self.highest(id).map_or(value, |top| top.min(value))
     }
 
     /// These values, with `id` set to `value`, or back to the default.
     #[must_use]
     pub fn with(mut self, id: LimitId, value: Option<u64>) -> Chosen {
-        self.0[id as usize] = value;
+        self.set[id as usize] = value;
         self
+    }
+
+    /// **These values, under what the team set**, from the shape a Pool's `spec.limits` and a
+    /// pool's row hold: `{key: {default, highest}}`. An entry that is no limit, or a value its
+    /// limit can't be, says nothing; a default above the highest is dropped. A highest below what
+    /// the limit can be holds at the least it can be, so what asked for strictness still gets it.
+    /// A limit only a cluster pool has isn't a Pool's to set: it's the wait to be vouched for, and
+    /// the wait for a thing shouldn't be set by that thing. A limit shaping a runner isn't either:
+    /// a cluster pool's runner is shaped in its cluster. So a Pool can't make a limit more than
+    /// purlis can carry.
+    #[must_use]
+    pub fn under_team(mut self, team: Option<&Value>) -> Chosen {
+        self.team_default = [None; ALL.len()];
+        self.team_highest = [None; ALL.len()];
+        let a_pools = |limit: &&Limit| !limit.clusters_only && !limit.shapes_runner();
+        for limit in all().iter().filter(a_pools) {
+            let Some(entry) = team.and_then(|team| team.get(limit.key)) else {
+                continue;
+            };
+            let value = |key: &str| {
+                entry
+                    .get(key)
+                    .and_then(Value::as_u64)
+                    .filter(|value| limit.check(*value, None).is_ok())
+                    .and_then(|value| u32::try_from(value).ok())
+            };
+            let highest = entry
+                .get("highest")
+                .and_then(Value::as_u64)
+                .map(|highest| highest.max(limit.least))
+                .filter(|highest| limit.check(*highest, None).is_ok())
+                .and_then(|highest| u32::try_from(highest).ok());
+            self.team_highest[limit.id as usize] = highest;
+            self.team_default[limit.id as usize] = value("default")
+                .filter(|default| highest.is_none_or(|highest| *default <= highest));
+        }
+        self
+    }
+
+    /// Writes what the team set into a pool's `row`, as [`Self::under_team`] reads it.
+    pub fn team_to_row(&self, row: &mut Value) {
+        let mut team = Map::new();
+        for limit in all() {
+            let mut entry = Map::new();
+            if let Some(default) = self.team_default[limit.id as usize] {
+                entry.insert("default".to_owned(), default.into());
+            }
+            if let Some(highest) = self.team_highest[limit.id as usize] {
+                entry.insert("highest".to_owned(), highest.into());
+            }
+            if !entry.is_empty() {
+                team.insert(limit.key.to_owned(), entry.into());
+            }
+        }
+        if !team.is_empty() {
+            row["teamLimits"] = team.into();
+        }
+    }
+
+    /// **Limit `id` hit** at `in_force`, needing `needed`: under the team's highest, what its
+    /// runner's memory holds, and any `older` runner's, whichever is lowest.
+    #[must_use]
+    pub fn hit(&self, id: LimitId, in_force: u64, needed: u64, older: Option<u64>) -> LimitHit {
+        let team = self.team_highest(id);
+        let memory = self.memory_holds(id);
+        let highest = [team, memory.map(|(_, room)| room), older]
+            .into_iter()
+            .flatten()
+            .min();
+        let hit = id.limit().hit(in_force, needed, highest);
+        // What the team suggests is offered where it holds what is needed.
+        let team_says = self.team_default[id as usize]
+            .map(u64::from)
+            .filter(|team| *team > in_force && *team >= needed)
+            .filter(|team| highest.is_none_or(|top| *team <= top));
+        let by_team = team.is_some() && team == highest;
+        // Memory is the way only to what the limit can be at all.
+        let runner_memory = memory
+            .filter(|(_, room)| !by_team && Some(*room) == highest && needed <= id.limit().most)
+            .map(|(memory, _)| memory);
+        LimitHit {
+            by_team,
+            runner_memory,
+            memory_on_replace: runner_memory
+                .and(self.memory_waiting())
+                .filter(|pool| profile_room(*pool) >= needed),
+            team_suggested: team_says.is_some(),
+            suggested: team_says.or(hit.suggested),
+            ..hit
+        }
+    }
+
+    /// **Wait `id` run out** at `in_force`, as [`Self::hit`].
+    #[must_use]
+    pub fn waited(&self, id: LimitId, in_force: u64, older: Option<u64>) -> LimitHit {
+        self.hit(id, in_force, in_force, older)
     }
 
     /// Writes the values set into a pool's `row`; one unset is left out.
@@ -790,7 +1100,7 @@ impl RefusedValue {
     #[must_use]
     pub fn said(&self) -> String {
         format!(
-            "The value in this pool's file can't be used, so this follows purlis's default. {}. \
+            "The value in this pool's file can't be used, so this follows the default. {}. \
              Set a value or reset it.",
             self.why
         )
@@ -1160,6 +1470,139 @@ mod tests {
         );
     }
 
+    /// #4287: what the team set is the default, the top, and what a suggestion stops at.
+    #[test]
+    fn a_teams_default_and_highest_hold_and_a_suggestion_stops_at_the_highest() {
+        let team = json!({
+            "signInWait": {"default": 10, "highest": 40},
+            "profileSize": {"highest": 160},
+        });
+        let chosen = Chosen::default().under_team(Some(&team));
+        assert_eq!(chosen.in_force(LimitId::SignInWait), 10);
+        assert_eq!(chosen.team_highest(LimitId::SignInWait), Some(40));
+        // A value kept from before the team lowered it holds to it.
+        let high = chosen.with(LimitId::SignInWait, Some(100));
+        assert_eq!(high.in_force(LimitId::SignInWait), 40);
+        assert_eq!(
+            high.get(LimitId::SignInWait),
+            Some(100),
+            "still the person's"
+        );
+
+        let hit = chosen.waited(LimitId::SignInWait, 30, None);
+        assert_eq!(hit.suggested, Some(40));
+        let top = chosen.waited(LimitId::SignInWait, 40, None);
+        assert_eq!(top.suggested, None);
+        assert!(
+            top.said().contains("team that defines this pool"),
+            "{}",
+            top.said()
+        );
+        assert!(
+            top.said().contains("its Pool in the cluster"),
+            "{}",
+            top.said()
+        );
+
+        let over = chosen.hit(LimitId::ProfileSize, 128, 170, None);
+        assert_eq!(over.suggested, None);
+        assert!(
+            over.said().contains("team that defines this pool"),
+            "{}",
+            over.said()
+        );
+
+        assert!(over.said().contains("at most 160 MiB"), "{}", over.said());
+
+        // Only a highest set: the default holds to it.
+        let low = Chosen::default().under_team(Some(&json!({"profileSize": {"highest": 64}})));
+        assert_eq!(low.default_of(LimitId::ProfileSize), 64);
+        assert!(low.default_by_team(LimitId::ProfileSize));
+
+        // A highest below what the limit can be holds at the least; the vouch wait is no Pool's.
+        let odd = Chosen::default().under_team(Some(&json!({
+            "answerWait": {"highest": 3},
+            "vouchWait": {"default": 60, "highest": 60},
+            "memory": {"highest": 1024},
+        })));
+        assert_eq!(odd.team_highest(LimitId::Memory), None);
+        assert_eq!(odd.team_highest(LimitId::AnswerWait), Some(5));
+        assert_eq!(odd.in_force(LimitId::VouchWait), 5);
+        assert_eq!(odd.team_highest(LimitId::VouchWait), None);
+
+        // An older runner's lower top is no team's.
+        let older = chosen.waited(LimitId::SignInWait, 10, Some(10));
+        assert!(!older.by_team);
+
+        let why = LimitId::SignInWait.limit().check(41, Some(40)).unwrap_err();
+        assert!(why.contains("team that defines this pool"), "{why}");
+    }
+
+    /// The person's ruling of 2026-11-01: a team's default only lowers unasked. A higher one is an
+    /// offer, on the page and on a hit, and holds nothing until the person sets it.
+    #[test]
+    fn a_teams_higher_default_is_an_offer_and_raises_nothing() {
+        let team = json!({"profileSize": {"default": 256, "highest": 512}});
+        let chosen = Chosen::default().under_team(Some(&team));
+        assert_eq!(
+            chosen.in_force(LimitId::ProfileSize),
+            128,
+            "purlis's default holds"
+        );
+        assert_eq!(chosen.default_of(LimitId::ProfileSize), 128);
+        assert!(!chosen.default_by_team(LimitId::ProfileSize));
+        assert_eq!(chosen.team_suggests(LimitId::ProfileSize), Some(256));
+
+        // Offered where it holds what is needed; the usual suggestion where it doesn't.
+        let hit = chosen.hit(LimitId::ProfileSize, 128, 150, None);
+        assert_eq!(hit.suggested, Some(256));
+        assert!(hit.team_suggested);
+        assert!(hit.said().contains("raise it to 256 MiB"), "{}", hit.said());
+        let more = chosen.hit(LimitId::ProfileSize, 128, 300, None);
+        assert_eq!(more.suggested, Some(384));
+        assert!(!more.team_suggested);
+
+        // Once the person is there, nothing is offered.
+        let set = chosen.with(LimitId::ProfileSize, Some(256));
+        assert_eq!(set.in_force(LimitId::ProfileSize), 256);
+        assert_eq!(set.team_suggests(LimitId::ProfileSize), None);
+
+        // A lower one holds with no prompt, and offers nothing.
+        let lower = Chosen::default().under_team(Some(&json!({"profileSize": {"default": 64}})));
+        assert_eq!(lower.in_force(LimitId::ProfileSize), 64);
+        assert_eq!(lower.team_suggests(LimitId::ProfileSize), None);
+    }
+
+    /// A Pool can't make a limit more than purlis carries, and what it set round-trips a row.
+    #[test]
+    fn what_a_team_set_is_checked_as_read_and_round_trips() {
+        let team = json!({
+            "signInWait": {"default": 5000, "highest": 100000},
+            "codeSize": {"default": 2048, "highest": 1024},
+            "answerWait": {"default": "lots", "highest": 90},
+            "nothing": {"default": 1},
+        });
+        let chosen = Chosen::default().under_team(Some(&team));
+        assert_eq!(chosen.in_force(LimitId::SignInWait), 15, "purlis's default");
+        assert_eq!(chosen.team_highest(LimitId::SignInWait), None);
+        assert_eq!(
+            chosen.in_force(LimitId::CodeSize),
+            1024,
+            "a default over the top"
+        );
+        assert_eq!(chosen.team_highest(LimitId::AnswerWait), Some(90));
+        let mut row = json!({});
+        chosen.team_to_row(&mut row);
+        assert_eq!(
+            Chosen::default().under_team(row.get("teamLimits")),
+            chosen,
+            "{row}"
+        );
+        let mut none = json!({});
+        Chosen::default().team_to_row(&mut none);
+        assert_eq!(none, json!({}), "nothing written for a pool with none");
+    }
+
     /// #4381: a bad value costs that limit alone, and the file's refusal is the command's and the
     /// window's, word for word.
     #[test]
@@ -1180,7 +1623,7 @@ mod tests {
             assert_eq!(refused.len(), 1, "{bad}");
             assert_eq!(refused[0].held, bad);
             assert_eq!(Err(refused[0].why.clone()), size.check_typed(typed, None));
-            assert!(refused[0].said().contains("follows purlis's default"));
+            assert!(refused[0].said().contains("follows the default"));
         }
     }
 
@@ -1198,5 +1641,108 @@ mod tests {
         let (on_a_cluster, none) = Chosen::read_row(row, None);
         assert_eq!(on_a_cluster.get(LimitId::VouchWait), Some(10));
         assert!(none.is_empty());
+    }
+
+    /// **A profile may send a Docker pool's runner at most half its memory** (#4396): the runner
+    /// holds it in memory as it keeps it. Every surface reads the one highest, so a value the
+    /// runner couldn't hold is refused as it is typed, and one kept from before holds to it.
+    #[test]
+    fn a_profile_may_send_a_docker_runner_at_most_half_its_memory() {
+        let small = Chosen::default()
+            .with(LimitId::Memory, Some(1024))
+            .on_a_runner_of(1024);
+        assert_eq!(small.highest(LimitId::ProfileSize), Some(512));
+        assert_eq!(small.check(LimitId::ProfileSize, 512), Ok(()));
+        let refused = small.check(LimitId::ProfileSize, 513).unwrap_err();
+        assert!(refused.contains("at most 512 MiB"), "{refused}");
+        assert!(refused.contains("1024 MiB of memory"), "{refused}");
+        assert!(refused.contains("Raise Memory"), "{refused}");
+        assert!(small.check_typed(LimitId::ProfileSize, "600").is_err());
+
+        let kept_from_before = small.with(LimitId::ProfileSize, Some(1000));
+        assert_eq!(kept_from_before.in_force(LimitId::ProfileSize), 512);
+        let said = kept_from_before
+            .over_highest_said(LimitId::ProfileSize)
+            .unwrap();
+        assert!(said.contains("half of it"), "{said}");
+        assert_eq!(small.over_highest_said(LimitId::ProfileSize), None);
+
+        // Only what a profile sends is held to it, and a default runner holds the most it can be.
+        assert_eq!(small.highest(LimitId::ProfileFiles), None);
+        assert_eq!(small.highest(LimitId::CodeSize), None);
+        let default = Chosen::default().on_a_runner_of(LimitId::Memory.limit().default);
+        assert_eq!(default.highest(LimitId::ProfileSize), None);
+        // The least memory a runner can have still holds what a profile sends by default.
+        let least = Chosen::default().on_a_runner_of(LimitId::Memory.limit().least);
+        assert!(least.in_force(LimitId::ProfileSize) >= LimitId::ProfileSize.limit().default);
+        // A cluster pool's runner is shaped in its cluster: this machine holds it to nothing.
+        assert_eq!(Chosen::default().highest(LimitId::ProfileSize), None);
+    }
+
+    /// **A profile over what its runner's memory holds says what Memory to set** (#4396), and
+    /// offers no size the runner couldn't hold; within it, the offer is a size as before.
+    #[test]
+    fn a_profile_over_what_its_runner_holds_says_what_memory_to_set() {
+        let small = Chosen::default()
+            .with(LimitId::Memory, Some(1024))
+            .on_a_runner_of(1024);
+        let over = small.hit(LimitId::ProfileSize, 512, 700, None);
+        assert_eq!(over.suggested, None);
+        assert_eq!(over.runner_memory, Some(1024));
+        assert!(!over.by_team);
+        let said = over.said();
+        assert!(
+            said.contains("raise this pool's Memory to 1536 MiB and replace its runner"),
+            "{said}"
+        );
+
+        let within = small.hit(LimitId::ProfileSize, 128, 300, None);
+        assert_eq!(within.suggested, Some(384));
+        assert!(
+            within.said().ends_with("raise it to 384 MiB"),
+            "{}",
+            within.said()
+        );
+
+        // A team's highest below it is the team's to say.
+        let team = small.under_team(Some(&json!({"profileSize": {"highest": 160}})));
+        let over_team = team.hit(LimitId::ProfileSize, 160, 300, None);
+        assert!(over_team.by_team);
+        assert_eq!(over_team.runner_memory, None);
+
+        // Past what the limit can be at all, no Memory would hold it.
+        let past = small.hit(LimitId::ProfileSize, 512, 1500, None);
+        assert_eq!(past.runner_memory, None);
+        assert!(!past.said().contains("Memory"), "{}", past.said());
+    }
+
+    /// **Where Memory is raised and the runner waits to be replaced** (#4396), every word says to
+    /// replace it, never to raise Memory again.
+    #[test]
+    fn a_runner_made_with_less_memory_than_its_pool_says_to_replace_it() {
+        let waiting = Chosen::default()
+            .with(LimitId::Memory, Some(4096))
+            .on_a_runner_of(1024);
+        assert_eq!(waiting.highest(LimitId::ProfileSize), Some(512));
+        let refused = waiting.check(LimitId::ProfileSize, 600).unwrap_err();
+        assert!(refused.contains("Replace the runner"), "{refused}");
+        assert!(!refused.contains("Raise Memory"), "{refused}");
+        let page = waiting.highest_said(LimitId::ProfileSize).unwrap();
+        assert!(page.contains("4096 MiB of Memory applies then"), "{page}");
+
+        let said = waiting.hit(LimitId::ProfileSize, 512, 700, None).said();
+        assert!(
+            said.contains("replace its runner, which then has this pool's 4096 MiB of Memory"),
+            "{said}"
+        );
+        // Where the pool's Memory would not hold it either, raising it is still the way.
+        let short = Chosen::default()
+            .with(LimitId::Memory, Some(1200))
+            .on_a_runner_of(1024);
+        let said = short.hit(LimitId::ProfileSize, 512, 700, None).said();
+        assert!(
+            said.contains("raise this pool's Memory to 1536 MiB"),
+            "{said}"
+        );
     }
 }

@@ -33,13 +33,16 @@ run-name: ${{ github.event_name == 'workflow_run' && format('cluster operator {0
 # **Each architecture is built on a runner of its own architecture** (`ubuntu-24.04` and
 # `ubuntu-24.04-arm`), with no emulation, with the pinned toolchain, `cargo auditable` and the
 # operator's `release` profile, and no cache. The compile runs in a job that holds no write
-# permission; the image jobs hold `packages: write`, and only `index`, which signs, can mint an
-# OIDC token. What the registry and the forge are asked before a push, a tag or a signature is
-# `tools/image-registry.mjs`, the runner image's own, which fails closed.
+# permission; the image jobs hold `packages: write`, and only `index`, which signs, and `attest`,
+# which attests, can mint an OIDC token. What the registry and the forge are asked before a push,
+# a tag or a signature is `tools/image-registry.mjs`, the runner image's own, which fails closed.
 #
-# **Nothing is tagged or signed that was not checked.** `image` pushes each architecture's image
-# by digest only, untagged, pulls that digest back, and checks exactly those bytes
-# (`tools/operator-image-check.mjs`). `index` runs only when both passed.
+# **Nothing is pushed, tagged or signed that was not checked** (#4512). `image` builds each
+# architecture's image once, into a file, checks the image loaded from that file
+# (`tools/operator-image-check.mjs`), and only then pushes the same file by its digest,
+# untagged; an image that fails is never pushed. `index` runs only when both passed. `sbom` and
+# `attest` give the image an SBOM of each architecture and build provenance (#4513), and `main`
+# moves last, in `tag-main`, once `outside` has pulled and checked the index.
 
 on:
   pull_request:
@@ -153,8 +156,10 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-24.04
+            syft_sha256: caeedb81fb0491615f1ebd1761e4145d41ee86dd2cc7bf80669f9f5ad9d6133d
           - arch: arm64
             runner: ubuntu-24.04-arm
+            syft_sha256: c46d5e4c28e12aa4c5becfaa343ef1c7f89045b6b895f2c21d471c62db09c706
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -180,38 +185,9 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Sign in to the registry
-        if: env.PUBLISH == 'true'
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      # **No image is pushed into a package that is not public.** The packages API says so
-      # immediately before the push, so a release never names an image a newcomer cannot pull
-      # (#4498). A package that is not there is refused too: a new one starts private, and
-      # someone has to choose to publish it. Anything else stops the job here.
-      - name: The package is public before the image is pushed
-        if: env.PUBLISH == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node tools/image-registry.mjs visibility
-
-      - name: Build the operator's image, to check it here
-        if: env.PUBLISH != 'true'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: ${{ runner.temp }}/context
-          file: operator/Dockerfile
-          platforms: linux/${{ matrix.arch }}
-          provenance: false
-          load: true
-          tags: purlis-cluster-operator:candidate
-      # Pushed by digest only: an untagged image nothing names until `index` does, after the
-      # check has passed on the very bytes pushed.
-      - name: Build the operator's image and push it by digest
-        id: push
-        if: env.PUBLISH == 'true'
+      # Built once, into a file, on every run alike (#4512): the image the checks below run on is
+      # loaded from this file, and a publishing run pushes this same file after they pass.
+      - name: Build the operator's image into a file
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ runner.temp }}/context
@@ -224,23 +200,92 @@ jobs:
             org.opencontainers.image.title=purlis cluster operator
             org.opencontainers.image.description=purlis in your cluster: turns Pools and Claims into runners
             org.opencontainers.image.licenses=Apache-2.0
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-      - name: Pull back what was pushed, to check exactly that
-        if: env.PUBLISH == 'true'
-        env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+          outputs: type=docker,name=purlis-cluster-operator:candidate,dest=${{ runner.temp }}/candidate.tar
+      # The file's one manifest names the image by its digest; the image loaded has to be that
+      # manifest's (its config's digest, or the manifest's own on a containerd image store).
+      - name: Load the file, and name its digest
+        id: candidate
         run: |
           set -euo pipefail
-          docker pull "$IMAGE@$DIGEST"
-          docker tag "$IMAGE@$DIGEST" purlis-cluster-operator:candidate
+          digest=$(tar -xOf "$RUNNER_TEMP/candidate.tar" index.json \
+            | jq -r '.manifests | if length == 1 then .[0].digest else error("the file holds \(length) manifests") end')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] \
+            || { echo "::error::the file's manifest is '$digest'"; exit 1; }
+          config=$(tar -xOf "$RUNNER_TEMP/candidate.tar" "blobs/sha256/${digest#sha256:}" | jq -r .config.digest)
+          docker load --input "$RUNNER_TEMP/candidate.tar"
+          id=$(docker image inspect --format '{{.Id}}' purlis-cluster-operator:candidate)
+          if [ "$id" != "$digest" ] && [ "$id" != "$config" ]; then
+            echo "::error::the image loaded is $id, not the file's $digest (config $config)"
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: The operator's image is what the cluster runs, and its binary starts
         run: node tools/operator-image-check.mjs purlis-cluster-operator:candidate "$ARCH"
+      # What `sbom` asks of the pushed images, asked of a run that pushes nothing, so a change
+      # that loses them is seen on its pull request (#4513). syft is the version `sbom` pins, for
+      # this architecture.
+      - name: This architecture's SBOM names the operator's binary and its packages
+        if: env.PUBLISH != 'true'
+        env:
+          SYFT_VERSION: 1.52.0
+          SYFT_SHA256: ${{ matrix.syft_sha256 }}
+          REQUIRED_PURLS: pkg:cargo/purlis-cluster-operator@ pkg:deb/ pkg:deb/ubuntu/ca-certificates@
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' -o "$RUNNER_TEMP/syft.tar.gz" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_${ARCH}.tar.gz"
+          echo "$SYFT_SHA256  $RUNNER_TEMP/syft.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/syft.tar.gz" -C "$RUNNER_TEMP" syft
+          purls=$("$RUNNER_TEMP/syft" scan docker:purlis-cluster-operator:candidate -o cyclonedx-json | jq -r '.components[]?.purl // empty')
+          for want in $REQUIRED_PURLS; do
+            grep -m1 "^$want" <<<"$purls" || { echo "::error::the SBOM has no $want component"; exit 1; }
+          done
+
+      - name: Sign in to the registry
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # **No image is pushed into a package that is not public.** The packages API says so
+      # immediately before the push (and the registry sign-in comes only now, after the checks, so
+      # no write credential sits on the runner while the image under check runs), so a release
+      # never names an image a newcomer cannot pull (#4498). A package that is not there is
+      # refused too: a new one starts private, and someone has to choose to publish it. Anything
+      # else stops the job here.
+      - name: The package is public before the image is pushed
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/image-registry.mjs visibility
+      # Pushed only now, after every check above passed, by digest only: an untagged image
+      # nothing names until `index` does. skopeo sends the file as it is: it refuses a push to a
+      # digest the manifest does not have, and `--preserve-digests` refuses to change one.
+      - name: Push the checked file by its digest
+        if: env.PUBLISH == 'true'
+        env:
+          DIGEST: ${{ steps.candidate.outputs.digest }}
+        run: skopeo copy --preserve-digests "oci-archive:$RUNNER_TEMP/candidate.tar" "docker://$IMAGE@$DIGEST"
+      # What a run that publishes nothing can do of the push: the same copy of the same file,
+      # into a folder, and the manifest copied is the digest's.
+      - name: The checked file copies by its digest unchanged
+        if: env.PUBLISH != 'true'
+        env:
+          DIGEST: ${{ steps.candidate.outputs.digest }}
+        run: |
+          set -euo pipefail
+          skopeo copy --preserve-digests "oci-archive:$RUNNER_TEMP/candidate.tar" "dir:$RUNNER_TEMP/copied"
+          copied="sha256:$(sha256sum "$RUNNER_TEMP/copied/manifest.json" | cut -d' ' -f1)"
+          if [ "$copied" != "$DIGEST" ]; then
+            echo "::error::the copy's manifest is $copied, not $DIGEST"
+            exit 1
+          fi
 
       - name: Record this architecture's digest
         if: env.PUBLISH == 'true'
         env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+          DIGEST: ${{ steps.candidate.outputs.digest }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/digests"
@@ -291,6 +336,14 @@ jobs:
         with:
           name: digest-arm64
           path: ${{ runner.temp }}/digests
+      # Each is a digest and nothing else, before anything names an image by it.
+      - name: Each architecture's digest is a sha256 digest
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            [[ "$(cat "$RUNNER_TEMP/digests/$arch")" =~ ^sha256:[0-9a-f]{64}$ ]] \
+              || { echo "::error::digests/$arch holds no sha256 digest"; exit 1; }
+          done
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
@@ -315,23 +368,13 @@ jobs:
           node tools/image-registry.mjs anonymous \
             "$(cat "$RUNNER_TEMP/digests/amd64")" "$(cat "$RUNNER_TEMP/digests/arm64")"
 
-      # `main` only moves forward, as the runner image's does: the image of an older commit can
-      # finish last. It is still tagged `sha-<commit>` and signed; `main` stays on the later one.
-      - name: One index for both architectures, tagged sha-<commit>, and main when it moves forward
+      # Tagged `sha-<commit>` only: `main` moves last, in `tag-main`, once `outside` has pulled
+      # and checked this index with no sign-in (#4512).
+      - name: One index for both architectures, tagged sha-<commit>
         id: index
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          order=$(node tools/image-registry.mjs order "$SHA")
-          echo "$order"
-          tags=(--tag "$IMAGE:sha-$SHA")
-          case "$order" in
-            main:*) tags+=(--tag "$IMAGE:main") ;;
-            sha-only:*) echo "::notice::main is not moved: ${order#sha-only: }" ;;
-            *) echo "::error::tools/image-registry.mjs answered neither main nor sha-only: $order"; exit 1 ;;
-          esac
-          docker buildx imagetools create "${tags[@]}" \
+          docker buildx imagetools create --tag "$IMAGE:sha-$SHA" \
             "$IMAGE@$(cat "$RUNNER_TEMP/digests/amd64")" \
             "$IMAGE@$(cat "$RUNNER_TEMP/digests/arm64")"
           digest=$(docker buildx imagetools inspect "$IMAGE:sha-$SHA" --format '{{json .Manifest}}' | jq -r .digest)
@@ -341,8 +384,15 @@ jobs:
             echo "::error::the index holds $platforms"
             exit 1
           fi
+          # The index holds exactly the two images checked, whatever the tag was moved to.
+          children=$(docker buildx imagetools inspect "$IMAGE@$digest" --format '{{json .Manifest}}' \
+            | jq -r '[.manifests[].digest] | sort | join(" ")')
+          checked=$(printf '%s\n' "$(cat "$RUNNER_TEMP/digests/amd64")" "$(cat "$RUNNER_TEMP/digests/arm64")" | sort | paste -sd' ' -)
+          if [ "$children" != "$checked" ]; then
+            echo "::error::the index holds $children, not the images checked, $checked"
+            exit 1
+          fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          case "$order" in main:*) echo "main=true" ;; *) echo "main=false" ;; esac >> "$GITHUB_OUTPUT"
 
       # Keyless: the certificate names this workflow on `main` as the signer, and the
       # signature goes in Sigstore's public transparency log. `--recursive` signs each
@@ -373,11 +423,8 @@ jobs:
       - name: Record the digest
         env:
           DIGEST: ${{ steps.index.outputs.digest }}
-          MAIN: ${{ steps.index.outputs.main }}
         run: |
           set -euo pipefail
-          tags="\`sha-$SHA\`"
-          if [ "$MAIN" = true ]; then tags="$tags and \`main\`"; fi
           mkdir -p "$RUNNER_TEMP/record"
           echo "$IMAGE@$DIGEST" > "$RUNNER_TEMP/record/operator-image.txt"
           node tools/operator-install.mjs "$RUNNER_TEMP/record/install" "$IMAGE@$DIGEST"
@@ -387,7 +434,7 @@ jobs:
             echo
             echo "\`$IMAGE@$DIGEST\`"
             echo
-            echo "Commit \`$SHA\`, tagged $tags, linux/amd64 and linux/arm64, signed and verified."
+            echo "Commit \`$SHA\`, tagged \`sha-$SHA\`, linux/amd64 and linux/arm64, signed and verified."
             echo "The run's \`operator-image\` artifact holds the install naming it: \`install/\`, the plain manifests and the chart."
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -399,27 +446,281 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  # **What someone outside does, done here** (#4498): no registry login, no permission on the
-  # package, no token at all. The image is pulled and its signature checked by the commands
-  # docs/cluster-operator.md gives.
-  outside:
-    name: pulled and checked with no sign-in
-    needs: [plan, index]
+  # **An SBOM of each architecture's image, read from the pushed bytes** (#4513), as the runner
+  # image's `sbom` reads it (#2191): the image's packages, and the crates the operator's binary
+  # was built from, which `cargo auditable` embeds in it. syft is the
+  # version `release.yml` pins, checked against the same sha256 before it is unpacked, and it
+  # runs in a job that can read the package and write nothing: no OIDC token, no
+  # attestation, no secret but the run's own token for the pull. It reads the images `image`
+  # pushed by digest, beside `index`. The SBOMs are handed to `attest` under one exact name.
+  sbom:
+    name: SBOM of each architecture's image
+    needs: [plan, image]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
+      packages: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: digest-amd64
+          path: ${{ runner.temp }}/digests
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: digest-arm64
+          path: ${{ runner.temp }}/digests
+      # Each is a digest and nothing else, before anything names an image by it.
+      - name: Each architecture's digest is a sha256 digest
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            [[ "$(cat "$RUNNER_TEMP/digests/$arch")" =~ ^sha256:[0-9a-f]{64}$ ]] \
+              || { echo "::error::digests/$arch holds no sha256 digest"; exit 1; }
+          done
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The same two lines as `release.yml`'s `sbom` and the runner image's: a new syft moves
+      # all three.
+      - name: syft, at one version and checksum, reads each architecture's image
+        env:
+          SYFT_VERSION: 1.52.0
+          SYFT_SHA256: caeedb81fb0491615f1ebd1761e4145d41ee86dd2cc7bf80669f9f5ad9d6133d
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' -o "$RUNNER_TEMP/syft.tar.gz" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          echo "$SYFT_SHA256  $RUNNER_TEMP/syft.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/syft.tar.gz" -C "$RUNNER_TEMP" syft
+          "$RUNNER_TEMP/syft" version
+          mkdir -p out
+          "$RUNNER_TEMP/syft" scan "registry:$IMAGE@$(cat "$RUNNER_TEMP/digests/amd64")" -o "cyclonedx-json=out/purlis-cluster-operator-amd64.cdx.json"
+          "$RUNNER_TEMP/syft" scan "registry:$IMAGE@$(cat "$RUNNER_TEMP/digests/arm64")" -o "cyclonedx-json=out/purlis-cluster-operator-arm64.cdx.json"
+      # An SBOM that lists nothing looks like one that lists everything until someone reads it:
+      # each has to name the binary's own crate, which it does only when the binary was built
+      # with cargo auditable, and the base image's packages, the certificates among them.
+      - name: Each SBOM names the operator's binary and the image's packages
+        env:
+          REQUIRED_PURLS: pkg:cargo/purlis-cluster-operator@ pkg:deb/ pkg:deb/ubuntu/ca-certificates@
+        run: |
+          set -euo pipefail
+          for sbom in out/*.cdx.json; do
+            purls=$(jq -r '.components[]?.purl // empty' "$sbom")
+            for want in $REQUIRED_PURLS; do
+              grep -q "^$want" <<<"$purls" \
+                || { echo "::error::$sbom has no $want component"; exit 1; }
+            done
+            echo "$sbom: $(grep -c '^pkg:cargo/' <<<"$purls") crates, $(grep -c '^pkg:deb/' <<<"$purls") packages"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: operator-image-sbom
+          path: out/
+          if-no-files-found: error
+          retention-days: 90
+
+  # **Build provenance and the SBOMs, attached to the image and verified here** (#4513), as the
+  # runner image's `attest` does (#2191). SLSA provenance on the index the run records, and each
+  # architecture's SBOM on that architecture's image, each stored by GitHub and pushed to the
+  # registry beside the image (`push-to-registry`), into the same package. Then each is checked as
+  # a person would check it: signed by this workflow, for the run's commit, on a GitHub-hosted
+  # runner. An attestation that does not verify fails the run, so `main` is not moved to the
+  # image. The one job of the workflow that may store an attestation; it builds and runs nothing
+  # of the commit's.
+  attest:
+    name: provenance and SBOM, attested and verified
+    needs: [plan, index, sbom]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: digest-amd64
+          path: ${{ runner.temp }}/digests
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: digest-arm64
+          path: ${{ runner.temp }}/digests
+      # Each is a digest and nothing else, before anything names an image by it.
+      - name: Each architecture's digest is a sha256 digest
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            [[ "$(cat "$RUNNER_TEMP/digests/$arch")" =~ ^sha256:[0-9a-f]{64}$ ]] \
+              || { echo "::error::digests/$arch holds no sha256 digest"; exit 1; }
+          done
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: operator-image-sbom
+          path: ${{ runner.temp }}/sbom
+      - name: The digests attested
+        id: digests
+        env:
+          LINE: ${{ needs.index.outputs.image }}
+        run: |
+          set -euo pipefail
+          [[ "$LINE" =~ ^"$IMAGE"@sha256:[0-9a-f]{64}$ ]] \
+            || { echo "::error::index handed back '$LINE'"; exit 1; }
+          {
+            echo "index=${LINE#*@}"
+            echo "amd64=$(cat "$RUNNER_TEMP/digests/amd64")"
+            echo "arm64=$(cat "$RUNNER_TEMP/digests/arm64")"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.digests.outputs.index }}
+          push-to-registry: true
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.digests.outputs.amd64 }}
+          predicate-type: https://cyclonedx.org/bom
+          predicate-path: ${{ runner.temp }}/sbom/purlis-cluster-operator-amd64.cdx.json
+          push-to-registry: true
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.digests.outputs.arm64 }}
+          predicate-type: https://cyclonedx.org/bom
+          predicate-path: ${{ runner.temp }}/sbom/purlis-cluster-operator-arm64.cdx.json
+          push-to-registry: true
+      # What a person checking the image runs (docs/cluster-operator.md), run here first and pinned
+      # to this workflow, the run's commit and a GitHub-hosted runner.
+      - name: The provenance and each SBOM verify against this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INDEX: ${{ steps.digests.outputs.index }}
+          AMD64: ${{ steps.digests.outputs.amd64 }}
+          ARM64: ${{ steps.digests.outputs.arm64 }}
+        run: |
+          set -euo pipefail
+          pinned=(--repo "$GITHUB_REPOSITORY"
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/operator-image.yml"
+            --signer-digest "$GITHUB_WORKFLOW_SHA"
+            --source-digest "$GITHUB_SHA"
+            --deny-self-hosted-runners)
+          gh attestation verify "oci://$IMAGE@$INDEX" "${pinned[@]}"
+          for digest in "$AMD64" "$ARM64"; do
+            gh attestation verify "oci://$IMAGE@$digest" "${pinned[@]}" --predicate-type https://cyclonedx.org/bom
+          done
+          {
+            echo "### Operator image attestations"
+            echo
+            echo "Build provenance on \`$IMAGE@$INDEX\`; an SBOM on each architecture's image. Verified."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # **What someone outside does, done here** (#4498): no registry login and no permission on the
+  # package. The image is pulled, its signature checked, and its provenance checked (#4513), by
+  # the commands docs/cluster-operator.md gives, the SBOMs apart. Only the attestation step holds
+  # a token, for the forge's attestation API, and it has no permission on the package.
+  outside:
+    name: pulled and checked with no sign-in
+    needs: [plan, index, attest]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      attestations: read
+      contents: read
     steps:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      # The index is read with no sign-in and each architecture's own image is pulled by its digest
+      # in it: one daemon refuses a second pull of the index for another platform (#4784).
       - name: Both architectures pull and the signature verifies, with no token
         env:
           LINE: ${{ needs.index.outputs.image }}
         run: |
           set -euo pipefail
-          docker pull --platform linux/amd64 "$LINE"
-          docker pull --platform linux/arm64 "$LINE"
+          index=$(docker buildx imagetools inspect "$LINE" --format '{{json .Manifest}}')
+          for platform in linux/amd64 linux/arm64; do
+            digest=$(jq -r --arg platform "$platform" \
+              '[.manifests[] | select("\(.platform.os)/\(.platform.architecture)" == $platform) | .digest]
+                | if length == 1 then .[0] else error("the index holds \(length) images for \($platform)") end' \
+              <<< "$index")
+            docker pull --platform "$platform" "${LINE%@*}@$digest"
+          done
           cosign verify "$LINE" \
             --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/operator-image.yml@refs/heads/main" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > /dev/null
+      - name: The provenance verifies, for this workflow on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LINE: ${{ needs.index.outputs.image }}
+        run: |
+          set -euo pipefail
+          gh attestation verify "oci://$LINE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --cert-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/operator-image.yml@refs/heads/main" \
+            --deny-self-hosted-runners
+
+  # **`main`, moved last** (#4512): only once `outside` has pulled the index and checked it as
+  # someone outside would, so `:main` only ever names an image that passed. `main` only moves
+  # forward, as the runner image's does: the image of an older commit can finish last. It is still
+  # tagged `sha-<commit>` and signed; `main` stays on the later one. The tag is put on the index
+  # `index` handed on, by its digest, and read back: it has to name that digest.
+  tag-main:
+    name: main, moved last
+    needs: [plan, index, outside]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # `contents: read` is for the checkout of the commit's own tools and for comparing two
+    # commits of `main`; `packages: write` moves the tag. It signs nothing.
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SHA: ${{ needs.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: main moves to the checked index, when that moves it forward
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LINE: ${{ needs.index.outputs.image }}
+        run: |
+          set -euo pipefail
+          [[ "$LINE" =~ ^"$IMAGE"@sha256:[0-9a-f]{64}$ ]] \
+            || { echo "::error::index handed back '$LINE'"; exit 1; }
+          order=$(node tools/image-registry.mjs order "$SHA")
+          echo "$order"
+          case "$order" in
+            main:*) ;;
+            sha-only:*) echo "::notice::main is not moved: ${order#sha-only: }"; exit 0 ;;
+            *) echo "::error::tools/image-registry.mjs answered neither main nor sha-only: $order"; exit 1 ;;
+          esac
+          docker buildx imagetools create --tag "$IMAGE:main" "$LINE"
+          tagged=$(docker buildx imagetools inspect "$IMAGE:main" --format '{{json .Manifest}}' | jq -r .digest)
+          if [ "$tagged" != "${LINE#*@}" ]; then
+            echo "::error::main names $tagged, not ${LINE#*@}"
+            exit 1
+          fi
+          echo "\`main\` names \`$LINE\`." >> "$GITHUB_STEP_SUMMARY"

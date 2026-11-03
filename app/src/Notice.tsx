@@ -16,6 +16,13 @@ import {
 import { createPortal } from "react-dom";
 import { PersonaMark } from "./PersonaMark";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
+import {
+  bandHeadSays,
+  dismissAllSays,
+  HOLDS_NOTHING,
+  sameHolds,
+  type BandHolds,
+} from "./paneNotices";
 import { X } from "lucide-react";
 import { Twist } from "./ui/disclosure/Disclosure";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
@@ -24,8 +31,8 @@ import {
   NoticeListBox,
   NoticeMark,
   NoticeMessage,
-  NoticeMoreSays,
   NoticeRow,
+  NoticeRowHead,
   NoticeStack,
   NoticeTitle,
   NoticeUnder,
@@ -154,6 +161,11 @@ type LineProps = WayOut &
     /** The persona the line names, when it names one: its mark is drawn before the sentence
      *  (#1449). */
     persona?: string | null;
+    /** **An ask, in a pane** (#4754): a blocking question the person answers, which stays a
+     *  full card when the pane's notices are minimised, is never counted on its bell, and has
+     *  no Dismiss beside its answers, so Dismiss all and Esc leave it standing. A consent (a
+     *  way out that `allows`) is one whether or not it says so. */
+    waits?: boolean;
     title?: never;
     quiet?: never;
   };
@@ -224,7 +236,13 @@ export function Notice(props: NoticeProps) {
     title,
     quiet,
   } = props;
-  const { fixes, link, copy, onDismiss, dismissSays } = props as Ways;
+  const { fixes, link, copy, dismissSays } = props as Ways;
+  // **An ask in a pane is answered, never put away** (#4754): it has no Dismiss beside an answer.
+  const waits =
+    at === "pane" &&
+    ((props as { waits?: boolean }).waits === true || fixes?.some((fix) => fix.allows) === true);
+  const onDismiss =
+    waits && (fixes !== undefined || link !== undefined) ? undefined : (props as Ways).onDismiss;
   const list = useContext(Listed);
   const provided = useContext(NoticeOf);
   // A granting way out waits for the list it is drawn in to say it has settled (#1695).
@@ -405,9 +423,8 @@ export function Notice(props: NoticeProps) {
       tone={tone}
       placement={placement}
       opened={under !== undefined}
-      // What the pane's row stands first (`NoticePaneRow`): a Notice with something to do
-      // about it, before one whose only way out is to put it away.
       asks={fixes !== undefined || link !== undefined || under !== undefined}
+      waits={waits}
     >
       {line}
       {under !== undefined && <NoticeUnder>{under}</NoticeUnder>}
@@ -450,9 +467,6 @@ export const IMPORTANCE: readonly string[] = [
   "chat-guessed",
   "chat-resumed",
 ];
-
-/** How many Notices stand in a pane's row; the rest are behind "+N more" (V91i, #1647). */
-export const SHOWN = 2;
 
 /** A pane Notice's own Dismiss, on its line (not one inside what a way out opened): by its
  *  class here, or by the way out it is once the notice family draws it (#2912). */
@@ -607,81 +621,127 @@ export function NoticeList({
   );
 }
 
-/** **Whether a pane's row of Notices is drawn**: not while it holds none (the row's `data-empty`
+/** **Whether a pane's row of Notices is drawn**: not while it shows none (the row's `data-empty`
  *  is `display: none`), which is how it starts, until it has counted what it holds (#3302). */
 const rowDrawn = (row: HTMLElement) => !row.hasAttribute("data-empty");
 
+/** The Notices of a pane's stack, read off the stack itself: each is one element of it (the
+ *  notice family's root), however deep in the pane's components it is written. */
+const boxesOf = (stack: HTMLElement) => [...stack.children] as HTMLElement[];
+
+/** An ask (`waits`), which stays when the band is minimised and is never counted. */
+const waitsOn = (box: Element) => box.hasAttribute("data-waits");
+
+/** **What a band read off its stack**: what it holds, as its bell says it, how many notes
+ *  Dismiss all clears, and how many Notices it shows. */
+type BandRead = BandHolds & { clears: number; drawn: number };
+
+const sameRead = (one: BandRead, other: BandRead): boolean =>
+  sameHolds(one, other) && one.clears === other.clears && one.drawn === other.drawn;
+
+/** What a pane's stack holds, as its bell says it, and how many notes Dismiss all clears. */
+function heldIn(boxes: readonly HTMLElement[]): Omit<BandRead, "drawn"> {
+  const notes = boxes.filter((box) => !waitsOn(box));
+  return {
+    notes: notes.length,
+    trouble: notes.filter((box) => box.getAttribute("data-variant") === "trouble").length,
+    asks: boxes.length - notes.length,
+    clears: notes.filter((box) => box.querySelector(DISMISS) !== null).length,
+  };
+}
+
+/** **The bell a pane's band folds into** (#4754, `NoticePaneRow`). */
+export type PaneBandBell = {
+  /** Whether every pane's notices are minimised now. */
+  minimised: boolean;
+  /** Minimises every pane's notices: the head row's Minimise. */
+  minimise: () => void;
+  /** Told what the band holds whenever that changes. */
+  onHolds: (holds: BandHolds) => void;
+  /** Hands the keyboard to the bell: where Dismiss all leaves it once the band is empty. */
+  focus: () => void;
+};
+
 /**
- * **A pane's Notices: a row of their own at the top of the pane, above its terminal** (#1647).
+ * **A pane's band: its Notices, under the pane's header and above its terminal** (#1647, #3142,
+ * #4754, spec #4750 stories 33 to 39).
  *
- * The operator's screenshot (2026-10-10): three Notices stacked over a chat's terminal and hid
- * the conversation. They had been drawn in the pane's corner, over the terminal and taking no
- * row (#1481). Now they take a row, and the terminal gives that height up, so nothing purlis
- * says is ever drawn over what the chat wrote.
+ * Nothing purlis says is drawn over what the chat wrote: the band takes a row, and the terminal,
+ * pinned to its bottom, gives that height up. The header is above it, so a Notice arriving never
+ * moves the header.
  *
- * **Two at a time** (V91i): the rest are behind **+N more**, which opens them in the row, with
- * their ways out, and closes on Escape or a press outside the row. The order is the pane's own, the order its Notices are written in (`ChatNotices`):
- * the one that waits for an answer first, then the hidden chats'. **The two that stand are the
- * first two that ask something** (a fix or a link, `data-asks`), and only then the first that
- * only say something (Dismiss alone): an "Allowed." the person can read later never keeps a
- * question that waits for them behind "+N more". Every Notice is drawn where it is written, and
- * the row only hides the others (`hidden`), so the order on screen is still the pane's, React
- * keeps each one's state, and nothing is moved out from under the keyboard.
+ * **Minimised or expanded, one choice for every pane** (`paneNotices.ts`), where the band has a
+ * bell to fold into (`bell`, the pane header's bell, `PaneBell`):
  *
- * **The terminal is refitted on every change of the row's height** (its `ResizeObserver`), and
- * that resizes the chat's pty and redraws its harness. With two at most, the row's height
- * changes when a pane goes from none to one or from one to two, and when one that stands is
- * answered or opens something; a third and every one after it changes nothing but the count.
+ * - **minimised** (the default), the notes fold into the bell's count, and only the asks stand,
+ *   as full cards (`waits`: a consent or a blocking question keeps its words);
+ * - **expanded**, every Notice stands, with a head row that says how many it holds, **Dismiss
+ *   all**, which skips the asks and counts what it clears, and **Minimise**.
  *
- * **A Notice the keyboard is on is never hidden** (as the Inbox's list never moves one): one that
- * arrives above it stands as a third until the focus leaves it.
+ * A band with no bell (a browser's pane) shows every Notice and has no head row. There is no cap:
+ * past its room the band scrolls inside. A new Notice never opens the band or takes the focus:
+ * the bell says the count, politely.
+ *
+ * The order is the pane's own, the order its Notices are written in (`ChatNotices`). Every
+ * Notice is drawn where it is written, and the band only hides the notes it folds (`hidden`), so
+ * React keeps each one's state and nothing is moved out from under the keyboard. **A Notice the
+ * keyboard is on is never hidden**: it folds once the focus leaves it.
+ *
+ * **The terminal is refitted on every change of the band's height** (its `ResizeObserver`), so
+ * minimised, a note arriving changes only the bell's count.
  */
 export function NoticePaneRow({
   children,
   band,
+  bell,
 }: {
   children: ReactNode;
   /** The pane this band is (`paneBand`): what stood in it is remembered when it is drawn anew. */
   band?: string;
+  /** The bell the band folds into: whether every pane's notices are minimised now, how to
+   *  minimise them (the head row's Minimise), and what to tell it the band holds whenever that
+   *  changes. Without one the band never folds. The pane hands it what the window keeps
+   *  (`paneNoticesPref.ts`), so the notice family reads no state of the window's. */
+  bell?: PaneBandBell;
 }) {
   const stackAt = useRef<HTMLDivElement>(null);
-  const moreAt = useRef<HTMLButtonElement>(null);
+  const minimiseAt = useRef<HTMLButtonElement>(null);
   // **A granting Notice's ways out wait for it to settle once it moved** (#1695, train 54's
   // review): a Notice above it answered or gone can move another's way out under the pointer.
   const { at: rowAt, allows, said } = useNoticeSettle<HTMLDivElement>("stands", band, rowDrawn);
-  const [count, setCount] = useState(0);
-  const [open, setOpen] = useState(false);
-  const behind = Math.max(count - SHOWN, 0);
-  // Nothing behind it: the list closes, so the next one to fall behind does not open it again.
-  if (behind === 0 && open) setOpen(false);
+  const onHolds = bell?.onHolds;
+  const folds = bell?.minimised === true;
+  const [held, setHeld] = useState<BandRead>({ ...HOLDS_NOTHING, clears: 0, drawn: 0 });
 
-  // Each Notice is one element of the stack (the notice family's root). Read off the stack itself, so
-  // a Notice is counted however deep in the pane's components it is written.
+  // Read off the stack: what it holds, and which notes the band folds.
   useLayoutEffect(() => {
     const stack = stackAt.current;
     if (stack === null) return;
     const place = () => {
-      const boxes = [...stack.children] as HTMLElement[];
-      setCount(boxes.length);
-      // The pane's order, those that ask first: a stable sort keeps the pane's order in each.
-      const asks = (box: HTMLElement) => (box.hasAttribute("data-asks") ? 0 : 1);
-      const stand = new Set([...boxes].sort((a, b) => asks(a) - asks(b)).slice(0, SHOWN));
+      const boxes = boxesOf(stack);
       const on = document.activeElement;
+      let drawn = 0;
       for (const box of boxes) {
-        const hide = !open && !stand.has(box) && !(on !== null && box.contains(on));
+        const hide = folds && !waitsOn(box) && !(on !== null && box.contains(on));
         if (box.hidden !== hide) box.hidden = hide;
+        if (!hide) drawn += 1;
       }
+      const now = { ...heldIn(boxes), drawn };
+      setHeld((was) => (sameRead(was, now) ? was : now));
     };
     place();
-    // A Notice that comes or goes, and one that comes to ask something or stops asking where it
-    // stands (an answered question says what was done in the same box): either changes the two.
-    // (`data-asks` is on each Notice's box, so the subtree is watched for that one attribute.)
+    // A Notice that comes or goes, and one that comes to ask or changes its tone or its ways out
+    // where it stands (an answered question says what was done in the same box).
     const watching = new MutationObserver(place);
     watching.observe(stack, { childList: true });
-    const asking = new MutationObserver(place);
-    asking.observe(stack, { subtree: true, attributeFilter: ["data-asks"] });
-    // A Notice kept for the keyboard goes behind "+N more" once the keyboard has left it: after
-    // the focus has moved, which is after `focusout`.
+    const changing = new MutationObserver(place);
+    changing.observe(stack, {
+      subtree: true,
+      childList: true,
+      attributeFilter: ["data-waits", "data-variant", "data-way"],
+    });
+    // A note kept for the keyboard folds once the keyboard has left it: after the focus has
+    // moved, which is after `focusout`.
     let later: ReturnType<typeof setTimeout> | undefined;
     const left = () => {
       clearTimeout(later);
@@ -690,28 +750,30 @@ export function NoticePaneRow({
     stack.addEventListener("focusout", left);
     return () => {
       watching.disconnect();
-      asking.disconnect();
+      changing.disconnect();
       stack.removeEventListener("focusout", left);
       clearTimeout(later);
     };
-  }, [open]);
+  }, [folds]);
+
+  const { notes, trouble, asks } = held;
+  useEffect(() => onHolds?.({ notes, trouble, asks }), [onHolds, notes, trouble, asks]);
 
   // **Esc puts away the warning the keyboard is on, and the keyboard goes on to the next**
   // (#3142, rule 14): to the warning that took its place, or to the pane's terminal when it was
-  // the last. Only a warning with a Dismiss: a consent has none, and Esc leaves it standing
-  // (rule 9). While "+N more" is open, Esc closes the list first (F3, below).
+  // the last. Only a warning with a Dismiss: an ask has none, and Esc leaves it standing.
   useEffect(() => {
     const row = rowAt.current;
     const stack = stackAt.current;
     if (row === null || stack === null) return;
-    const shown = () => [...stack.children].filter((box) => !(box as HTMLElement).hidden);
+    const shownNow = () => boxesOf(stack).filter((box) => !box.hidden);
     const boxOf = (node: EventTarget | null) =>
-      node instanceof Node ? [...stack.children].find((box) => box.contains(node)) : undefined;
+      node instanceof Node ? boxesOf(stack).find((box) => box.contains(node)) : undefined;
     /** The warning the keyboard was last in, and where it stood among those shown. */
     let was: { box: Element; at: number } | undefined;
     const into = (event: FocusEvent) => {
       const box = boxOf(event.target);
-      was = box === undefined ? undefined : { box, at: shown().indexOf(box) };
+      was = box === undefined ? undefined : { box, at: shownNow().indexOf(box) };
     };
     // A warning answered, dismissed or put away by Esc leaves the page with the focus on it:
     // the keyboard goes on from where it stood, never to the top of the window.
@@ -721,7 +783,7 @@ export function NoticePaneRow({
       was = undefined;
       const on = document.activeElement;
       if (on !== null && on !== document.body) return;
-      const left = shown();
+      const left = shownNow();
       const next = left[Math.min(at, left.length - 1)];
       // **Never onto an answer that grants** (ADR 0097 §6): a consent is landed on by its line,
       // as "Show the request" lands on it, so an Enter after a Dismiss allows nothing.
@@ -737,7 +799,7 @@ export function NoticePaneRow({
       to?.focus();
     };
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || open) return;
+      if (event.key !== "Escape") return;
       // On the warning's own line only: Esc in what a way out opened (a field being written)
       // is that field's, and never puts the warning away.
       const box = boxOf(event.target);
@@ -758,38 +820,49 @@ export function NoticePaneRow({
       stack.removeEventListener("focusin", into);
       row.removeEventListener("keydown", escape);
     };
-  }, [open, rowAt]);
+  }, [rowAt]);
 
-  // **The list closes on Escape and on a press outside the row** (F3).
-  useEffect(() => {
-    const row = rowAt.current;
-    if (!open || row === null) return;
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.stopPropagation();
-      // The focus first, so the Notice it was on is not kept for it.
-      moreAt.current?.focus();
-      setOpen(false);
-    };
-    const outside = (event: PointerEvent) => {
-      if (!row.contains(event.target as Node)) setOpen(false);
-    };
-    row.addEventListener("keydown", escape);
-    document.addEventListener("pointerdown", outside);
-    return () => {
-      row.removeEventListener("keydown", escape);
-      document.removeEventListener("pointerdown", outside);
-    };
-  }, [open, rowAt]);
+  /** **Dismiss all**: every note's own Dismiss, the asks left standing. The keyboard stays on
+   *  the band's head while it is drawn, and goes to the pane's bell once it is not. */
+  const dismissAll = () => {
+    const stack = stackAt.current;
+    if (stack === null) return;
+    for (const box of boxesOf(stack))
+      if (!waitsOn(box)) box.querySelector<HTMLElement>(DISMISS)?.click();
+    setTimeout(() => {
+      if (minimiseAt.current?.isConnected) minimiseAt.current.focus();
+      else bell?.focus();
+    }, 0);
+  };
 
+  const headed = bell !== undefined && !folds && notes + asks > 0;
+  const empty = held.drawn === 0;
   return (
     <NoticeRow
-      empty={count === 0}
-      // The pane's warnings, named as one place (#3142), while it has any.
-      role={count === 0 ? undefined : "region"}
-      aria-label={count === 0 ? undefined : "Warnings for this pane"}
+      empty={empty}
+      // The pane's notices, named as one place (#3142), while it shows any.
+      role={empty ? undefined : "region"}
+      aria-label={empty ? undefined : "Pane notices"}
       ref={rowAt}
     >
+      {headed && (
+        <NoticeRowHead says={bandHeadSays({ notes, trouble, asks })}>
+          {held.clears > 0 && (
+            <Button size="sm" variant="ghost" onPress={dismissAll} data-way="dismiss-all">
+              {dismissAllSays(held.clears)}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            ref={minimiseAt}
+            onPress={() => bell?.minimise()}
+            data-way="minimise"
+          >
+            Minimise
+          </Button>
+        </NoticeRowHead>
+      )}
       <NoticeStack ref={stackAt}>
         <NoticeWayGuard value={allows}>{children}</NoticeWayGuard>
       </NoticeStack>
@@ -797,18 +870,6 @@ export function NoticePaneRow({
         <p className="inbox-refused" role="status">
           {said}
         </p>
-      )}
-      {behind > 0 && (
-        <Button
-          size="sm"
-          ref={moreAt}
-          aria-expanded={open}
-          onPress={() => setOpen((was) => !was)}
-          data-way="more"
-        >
-          {/* Open, it says how to close it again (#3142). */}
-          <NoticeMoreSays open={open} closed={`+${behind} more`} opened="Show fewer" />
-        </Button>
       )}
     </NoticeRow>
   );

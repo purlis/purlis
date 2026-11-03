@@ -70,6 +70,21 @@ pub const EVENT: &str = "asks-changed";
 pub struct Asking {
     pub plane: PlaneId,
     pub asks: Vec<Shown>,
+    /// **Each task question still with its asking chat** (#4564, ADR 0107): in progress, so
+    /// its task's row alone says it, and nothing here is counted by the ✋ or listed in the
+    /// Inbox, which read [`Asking::asks`].
+    pub with_asking_chat: Vec<WithAskingChat>,
+}
+
+/// A task question its asking chat has, as the task's row says it: `asking steward 2 · 1m`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct WithAskingChat {
+    /// The task that asked.
+    pub session: u32,
+    /// The chat it asks, by name as its own row names it.
+    pub asker: String,
+    /// When it was asked, in seconds since 1970.
+    pub since: u32,
 }
 
 /// One ask, as the registry lists it and its row draws it.
@@ -115,6 +130,39 @@ pub struct Shown {
     /// never markup. Absent where the app heard none, and on every other ask.
     #[specta(optional)]
     pub last_message: Option<String>,
+    /// **The site a login would be filled on** (#4595): drawn large and editable. Absent for any
+    /// other ask.
+    #[specta(optional)]
+    pub login: Option<LoginShown>,
+    /// **The few messages its chat's turns ended on before its last** (#4563), oldest first,
+    /// kept as [`Shown::last_message`] is: on a chat waiting on the person's reply, where it said
+    /// any, so a question a later turn pushed aside can be read back. Absent otherwise.
+    #[specta(optional)]
+    pub earlier_messages: Option<Vec<String>>,
+}
+
+/// **A suggested login, as its notice draws it** (#4595). The vault and key names, and never a
+/// value: purlis hasn't read one.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct LoginShown {
+    /// The domain, with a port where it has one, exactly as it's filled: `shop.example.com`.
+    pub domain: String,
+    /// The page's path on it.
+    pub path: String,
+    pub vault: String,
+    #[specta(optional)]
+    pub user_key: Option<String>,
+    pub key: String,
+    /// Plain warnings, said above the choices.
+    pub warnings: Vec<String>,
+    /// The line Always writes, shown before it's pressed, and where.
+    pub line: String,
+    pub under: String,
+    /// Why Always isn't offered, where it isn't.
+    #[specta(optional)]
+    pub no_always: Option<String>,
+    /// The persona's chats get the vault too with Always.
+    pub vault_too: bool,
 }
 
 /// The lines an action runs over, as a row draws them under its line (#3502). An action whose
@@ -186,6 +234,9 @@ pub enum AskSource {
     /// One run of a runner chat's declared tool, which waits on the person (#2047): an Allow
     /// lets this desktop send that tool its vault values on the pool's runner for that run alone.
     PoolTool,
+    /// A browser login a chat suggested, which its persona doesn't declare (#4595): an Allow
+    /// lets purlis fill it on the one origin the person confirmed.
+    BrowserLogin,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -263,6 +314,9 @@ pub enum AnswerPath {
         from: String,
         note: Option<String>,
     },
+    /// `answer_browser_login` at the press an option names, on held login `id`, for the proposal
+    /// whose digest is `shown`, with the domain the person typed (#4595).
+    BrowserLogin { id: u32, shown: String },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -320,6 +374,8 @@ pub fn asking(plane: &PlaneId, hooks: &HookAsks) -> Asking {
             .into_iter()
             .filter_map(permission)
             .collect(),
+        // A hook holds no task question: `every_ask` lists those.
+        with_asking_chat: Vec::new(),
     }
 }
 
@@ -366,6 +422,8 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         writes,
         lines,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     })
 }
 
@@ -562,6 +620,8 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -604,6 +664,8 @@ pub fn sandbox_host(
             writes: None,
             lines: None,
             last_message: None,
+            login: None,
+            earlier_messages: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -638,6 +700,8 @@ pub fn sandbox_host(
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     })
 }
 
@@ -675,15 +739,36 @@ pub fn sandbox_write(
         return None;
     }
     let folder = What::Write(std::path::PathBuf::from(&block.target));
-    // A held folder is answered on its own Notice, which has room for what allowing it means.
-    if purlis_core::sandbox::names_what_may_be_lifted(std::path::Path::new(&block.target)) {
-        return None;
-    }
+    // A held folder is answered on its own Notice alone, which has room for what allowing it
+    // means, and only ever for this chat: the ask is listed so the Notice is drawn, and nothing
+    // here sends its answer.
+    let held = purlis_core::sandbox::names_what_may_be_lifted(std::path::Path::new(&block.target));
     let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
         .into_iter()
+        .filter(|level| !held || *level == GrantLevel::Chat)
         .filter(|level| locks.refuses_grant(&folder, (*level).into()).is_none())
         .collect();
     let says = format!("The sandbox refused a write in {}", block.target);
+    if held {
+        return Some(Shown {
+            session,
+            ask: block_key(session, block),
+            says: said_inertly(&says),
+            options: allows(&levels, true)
+                .chain([refuses(KEEP, KEEP_SAID)])
+                .collect(),
+            source: AskSource::SandboxWrite,
+            chain: Vec::new(),
+            answer: AnswerPath::InItsPane,
+            since: None,
+            held_until: None,
+            writes: None,
+            lines: None,
+            last_message: None,
+            login: None,
+            earlier_messages: None,
+        });
+    }
     Some(Shown {
         session,
         ask: block_key(session, block),
@@ -706,6 +791,8 @@ pub fn sandbox_write(
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     })
 }
 
@@ -770,6 +857,8 @@ pub fn sandbox_runner(
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     })
 }
 
@@ -845,6 +934,8 @@ pub fn sandbox_port(
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     })
 }
 
@@ -917,6 +1008,8 @@ pub fn sandbox_local(
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     })
 }
 
@@ -938,13 +1031,15 @@ pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Sh
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
 /// **The question adapter**: chat `session` is in the needs-you queue with no prompt open,
 /// its turn over and the next move the person's. Answered by replying in the chat. `says` is
 /// its kind; what its chat said is `last_message`, where the app heard any (#4550).
-pub fn question(session: u32, last_message: Option<String>) -> Shown {
+pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>) -> Shown {
     Shown {
         session,
         ask: format!("question:{session}"),
@@ -958,6 +1053,8 @@ pub fn question(session: u32, last_message: Option<String>) -> Shown {
         writes: None,
         lines: None,
         last_message,
+        login: None,
+        earlier_messages: (!earlier.is_empty()).then_some(earlier),
     }
 }
 
@@ -987,6 +1084,8 @@ pub fn task_question(
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1043,6 +1142,8 @@ pub fn workspace_removal(
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1156,6 +1257,8 @@ pub fn browser_posture(
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1221,6 +1324,79 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
+    }
+}
+
+/// The key of the login ask numbered `id` (#4595).
+fn browser_login_key(id: u32) -> String {
+    format!("browser-login:{id}")
+}
+
+/// **The browser login adapter** (#4595): one notice naming what a chat suggests, with the
+/// sandbox's own answers. Allow once and Allow for this chat, each unless policy leaves its scope
+/// out; Always allow; Keep blocked.
+pub fn browser_login(
+    wait: &crate::loginasks::LoginWait,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Shown {
+    use purlis_core::sandbox::grant::Level;
+    let proposal = &wait.proposal;
+    let allow = |level: Level, label: &str| Offered {
+        id: level.word().to_owned(),
+        label: label.to_owned(),
+        allows: true,
+        preselected: None,
+    };
+    let mut options = Vec::new();
+    if locks.scope_removed(Level::Once).is_none() {
+        options.push(allow(Level::Once, "Allow once"));
+    }
+    if locks.scope_removed(Level::Chat).is_none() {
+        options.push(allow(Level::Chat, "Allow for this chat"));
+    }
+    if wait.no_always.is_none() {
+        options.push(allow(Level::You, "Always allow"));
+    }
+    options.push(refuses(KEEP, KEEP_SAID));
+    let domain = proposal
+        .origin
+        .strip_prefix("https://")
+        .unwrap_or(&proposal.origin)
+        .to_owned();
+    Shown {
+        session: wait.session,
+        ask: browser_login_key(wait.id),
+        says: said_inertly(&format!(
+            "Wants to log its browser in as {}, from vault {}",
+            proposal.persona, proposal.vault
+        )),
+        options,
+        source: AskSource::BrowserLogin,
+        chain: Vec::new(),
+        answer: AnswerPath::BrowserLogin {
+            id: wait.id,
+            shown: proposal.digest(),
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: Some(LoginShown {
+            path: proposal.page[proposal.origin.len()..].to_owned(),
+            domain,
+            vault: proposal.vault.clone(),
+            user_key: proposal.user_key.clone(),
+            key: proposal.key.clone(),
+            warnings: proposal.warnings.iter().map(|one| one.said()).collect(),
+            line: proposal.line(),
+            under: format!("[sandbox.personas.{}] tools", proposal.persona),
+            no_always: wait.no_always.clone(),
+            vault_too: wait.vault_too,
+        }),
+        earlier_messages: None,
     }
 }
 
@@ -1287,6 +1463,8 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1349,6 +1527,8 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1392,6 +1572,8 @@ pub fn browser_sites(
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1562,6 +1744,8 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         writes,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1588,6 +1772,8 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1642,6 +1828,8 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1697,6 +1885,8 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1752,6 +1942,8 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1808,6 +2000,8 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1837,6 +2031,8 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         writes: None,
         lines: None,
         last_message: None,
+        login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1916,6 +2112,8 @@ pub struct Waiting<'a> {
     pub pool_logins: Vec<crate::chatbrowsers::PoolLoginWaits>,
     /// The runs of runner chats' declared tools that wait on the person (#2047).
     pub pool_tools: Vec<crate::pooltools::PoolToolWaits>,
+    /// The logins chats suggested that wait on the person (#4595).
+    pub browser_logins: Vec<crate::loginasks::LoginWait>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// Whether a browser site for everyone in the project reaches a browser here: only where the
@@ -1933,6 +2131,8 @@ pub struct Waiting<'a> {
     pub only_updates: &'a dyn Fn(u32) -> bool,
     /// What a chat's turn last ended on, as kept (#4550): what a question shows.
     pub last_message: &'a dyn Fn(u32) -> Option<String>,
+    /// What its turns ended on before that, oldest first (#4563).
+    pub earlier_messages: &'a dyn Fn(u32) -> Vec<String>,
     /// Until when a chat's proxy holds a connection to a host, where it holds one now, asking
     /// the person (#1709), given when the ask began.
     pub held: &'a HoldEnds<'a>,
@@ -1995,6 +2195,13 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // A runner chat whose browser login waits on the person's opt-in for its pool (#2050).
     asks.extend(waiting.pool_logins.iter().map(pool_login));
+    // A login a chat suggested (#4595).
+    asks.extend(
+        waiting
+            .browser_logins
+            .iter()
+            .map(|wait| browser_login(wait, waiting.locks)),
+    );
     // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
     asks.extend(waiting.pool_tools.iter().map(pool_tool));
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
@@ -2010,7 +2217,11 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .filter(|session| !said.contains(session) && !(waiting.only_updates)(**session))
             .map(|&session| match (waiting.at_its_prompt)(session) {
                 Some(prompt) => terminal(session, prompt),
-                None => question(session, (waiting.last_message)(session)),
+                None => question(
+                    session,
+                    (waiting.last_message)(session),
+                    (waiting.earlier_messages)(session),
+                ),
             }),
     );
     asks.extend(waiting.blocks.iter().filter_map(|(session, block)| {
@@ -2197,6 +2408,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &pool_logins {
         since.insert(pool_login_key(one.session), one.since);
     }
+    let browser_logins = held.login_grants().waiting();
+    for one in &browser_logins {
+        since.insert(browser_login_key(one.id), one.since);
+    }
     let pool_tools = held.pool_tools().waiting();
     for one in &pool_tools {
         since.insert(pool_tool_key(one.session, one.run), one.since);
@@ -2209,6 +2424,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         browser_sites,
         pool_logins,
         pool_tools,
+        browser_logins,
         sandbox_only,
         sign_ins,
         pool_sign_ins,
@@ -2240,11 +2456,19 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                 failed: !hooks.failed_tasks(session).is_empty(),
                 for_itself: hooks.needs_you_for_itself(session),
                 reasons,
-                waiting: hooks.state(session) == purlis_core::state::State::Waiting,
+                waiting: hooks.shown_state(session) == purlis_core::state::State::Waiting,
                 at_its_prompt: hooks.waits_on_its_prompt(session),
             })
         },
         last_message: &|session| tasks.ledger().last_said(session).map(str::to_owned),
+        earlier_messages: &|session| {
+            tasks
+                .ledger()
+                .said_before(session)
+                .into_iter()
+                .map(str::to_owned)
+                .collect()
+        },
         held: &|session, target, began| {
             chats.asking(session, Some(target)).then(|| {
                 let ends = hold_ends(began.map(u64::from), now_secs);
@@ -2265,8 +2489,18 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             task_question(reached, question.asked, chain)
         })
         .collect();
+    let with_asking_chat = crate::dispatched::with_asking_chat(held)
+        .into_iter()
+        .filter(|one| !chats.kept_from_the_window(one.task))
+        .map(|one| WithAskingChat {
+            session: one.task,
+            asker: (waiting.name_of)(one.asker).unwrap_or_default(),
+            since: u32::try_from(one.since).unwrap_or(u32::MAX),
+        })
+        .collect();
     Asking {
         plane: plane.clone(),
+        with_asking_chat,
         // A grade's chat is drawn nowhere, and asks nobody (SK-16): the grade ends it at its
         // first ask, with that end, and none of its asks is listed.
         asks: derive(&waiting)

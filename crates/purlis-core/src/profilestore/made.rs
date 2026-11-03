@@ -1268,15 +1268,43 @@ pub fn held_digests<'a>(
     Some(digests)
 }
 
+/// **Settings a runner checked as it may keep them** (#4396): only [`settings_checked`] makes
+/// them, so [`settings_kept`] writes nothing unchecked and checks nothing twice, and a runner holds
+/// what a profile sends once while it keeps it.
+pub struct CheckedSettings {
+    /// The harness they were checked for.
+    harness: String,
+    files: Vec<(String, Vec<u8>)>,
+}
+
+impl CheckedSettings {
+    /// Each file, by its path, `/`-separated, and its bytes as they are to be kept.
+    #[must_use]
+    pub fn files(&self) -> &[(String, Vec<u8>)] {
+        &self.files
+    }
+}
+
+/// A settings file may carry a secret, so its bytes are never written to a log through `Debug`.
+impl std::fmt::Debug for CheckedSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CheckedSettings")
+            .field("harness", &self.harness)
+            .field("files", &self.files.len())
+            .finish()
+    }
+}
+
 /// **`files`, sent by a desktop for its `kind` profile `name`, as a runner may keep them**:
 /// every path one an import would write ([`a_settings_path`]), none twice, and each file with no
-/// sign-in in it ([`super::sent::without_credentials`], D-3448-8). One that is not refuses all
-/// of them, in words. What a runner checks before it keeps anything of the profile.
+/// sign-in in it ([`super::sent::kept_without_credentials`], D-3448-8), taken out where it is and
+/// never copied (#4396). One that is not refuses all of them, in words. What a runner checks before
+/// it keeps anything of the profile.
 pub fn settings_checked(
     kind: &str,
     name: &str,
-    files: &[(String, Vec<u8>)],
-) -> Result<Vec<(String, Vec<u8>)>, String> {
+    files: Vec<(String, Vec<u8>)>,
+) -> Result<CheckedSettings, String> {
     let name = crate::shown::short(name);
     let (_, allowed) = harness_of(kind)?;
     let mut seen = std::collections::HashSet::new();
@@ -1290,13 +1318,18 @@ pub fn settings_checked(
             crate::shown::short(bad)
         ));
     }
+    drop(seen);
     // Whatever sent them, no sign-in is kept in them here (D-3448-8).
-    files
-        .iter()
+    let files = files
+        .into_iter()
         .map(|(path, bytes)| {
-            super::sent::without_credentials(kind, path, bytes).map(|b| (path.clone(), b))
+            super::sent::kept_without_credentials(kind, &path, bytes).map(|bytes| (path, bytes))
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+    Ok(CheckedSettings {
+        harness: kind.to_owned(),
+        files,
+    })
 }
 
 /// The folder settings are staged in, in the folder of the profiles purlis makes: no chat may
@@ -1482,17 +1515,17 @@ fn settings_swapped_in(
     Err(io::Error::other("settings are kept only on a Unix system"))
 }
 
-/// **Keeps `files`, sent by a desktop, as the settings of `record`, a profile this runner keeps
-/// for it** (#3448), in place of the ones it kept: `files` are written, private, through no
+/// **Keeps `checked`, sent by a desktop, as the settings of `record`, a profile this runner keeps
+/// for it** (#3448), in place of the ones it kept: they are written, private, through no
 /// link, apart from the settings they replace, and only once they are all written does each listed
 /// file and folder go ([`settings_swapped_in`], #4081), so a keep that fails leaves the settings
 /// as they were, or says that it could not. Only a made profile's own folder ([`own_folder`]) or an adopted record's
-/// settings folder is written. Every path is checked first ([`a_settings_path`]): one an import
-/// would not write refuses all of them, and nothing is written.
+/// settings folder is written. Only settings [`settings_checked`] took, for `record`'s harness,
+/// are written, and nothing is checked twice (#4396).
 pub fn settings_kept(
     homes: &Homes,
     record: &MachineProfile,
-    files: &[(String, Vec<u8>)],
+    checked: &CheckedSettings,
 ) -> Result<(), String> {
     let name = crate::shown::short(&record.name);
     let (_, allowed) = harness_of(&record.harness)?;
@@ -1502,7 +1535,12 @@ pub fn settings_kept(
              this runner keeps no settings sent for it"
         ));
     }
-    let checked = settings_checked(&record.harness, &record.name, files)?;
+    if checked.harness != record.harness {
+        return Err(format!(
+            "the settings sent for the profile '{name}' were checked as another harness's, so \
+             this runner kept none of them"
+        ));
+    }
     let dest = settings_dest(allowed, &record.folders.config);
     // A made profile is written within its own folder; an adopted one within its settings
     // folder, which is made where it is missing and never a link.
@@ -1522,7 +1560,7 @@ pub fn settings_kept(
         }
         crate::contain::no_link_on_the_way(&folder, &dest)?;
         private_dirs_within(&folder, &dest)?;
-        settings_swapped_in(homes, allowed, &dest, &checked)
+        settings_swapped_in(homes, allowed, &dest, checked.files())
     })();
     written.map_err(|e| {
         format!(

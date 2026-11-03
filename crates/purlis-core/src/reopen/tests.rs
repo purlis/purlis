@@ -703,6 +703,7 @@ fn one_chat() -> Record {
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
         chats: vec![Chat {
             program: "/bin/sh".into(),
@@ -927,6 +928,7 @@ fn a_pinned_chat_comes_back_pinned() {
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
         chats: vec![
             Chat {
@@ -1002,6 +1004,7 @@ fn a_chat_comes_back_under_the_number_it_was_recorded_with() {
         dealt: 5,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
     };
 
@@ -1063,6 +1066,7 @@ fn the_counter_written_down_is_never_below_a_number_the_record_names() {
             dealt: 1,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
     )
@@ -1120,6 +1124,7 @@ fn a_vault_s_tab_comes_back_under_any_name_charter_gives_a_vault() {
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
     };
 
@@ -1150,6 +1155,7 @@ fn a_view_tab_comes_back_as_it_was_recorded() {
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
     };
 
@@ -2932,4 +2938,40 @@ fn a_task_s_level_is_never_written_and_a_chat_read_back_asks_3787() {
     let back = read(plane.path()).chats;
     assert_eq!(back.len(), 1);
     assert_eq!(back[0].task_level, crate::dispatchmode::Level::Asks);
+}
+
+#[test]
+fn where_a_start_chose_to_run_survives_a_quit_and_a_word_it_cannot_read_follows_the_levels() {
+    use crate::machine::StartChoice;
+    let plane = tempfile::tempdir().unwrap();
+    let on_a_pool = Chat {
+        runs_on: Some(StartChoice::Pool("gpu-1".to_owned())),
+        ..claude("ide.7", None)
+    };
+    let here = Chat {
+        runs_on: Some(StartChoice::ThisMachine),
+        ..claude("ide.8", None)
+    };
+    write(
+        plane.path(),
+        &Record {
+            chats: vec![on_a_pool.clone(), here.clone(), claude("ide.9", Some(ID))],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let text = fs::read_to_string(path(plane.path())).unwrap();
+    assert!(text.contains("\"runs_on\": \"pool:gpu-1\""), "{text}");
+    assert!(text.contains("\"runs_on\": \"this-machine\""), "{text}");
+    assert_eq!(text.matches("runs_on").count(), 2, "{text}");
+
+    let read_back = read(plane.path());
+    assert_eq!(read_back.chats[0], on_a_pool);
+    assert_eq!(read_back.chats[1], here);
+    assert_eq!(read_back.chats[2].runs_on, None);
+
+    for unreadable in ["pool:Not A Pool", "pool:", "here", "pool:../x"] {
+        fs::write(path(plane.path()), text.replace("pool:gpu-1", unreadable)).unwrap();
+        assert_eq!(read(plane.path()).chats[0].runs_on, None, "{unreadable}");
+    }
 }

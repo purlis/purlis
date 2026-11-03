@@ -15,7 +15,8 @@
 //!   are reached from, with the core's prompt typed and never sent, as a curation chat is opened.
 //!   **"Ask a chat to write them"** ([`skill_trigger_tests_chat`]) opens one the same way, asked
 //!   for a skill's trigger tests (#3925); [`skill_outcome_evals_chat`] for its outcome evals, and
-//!   [`skill_improve_chat`] for an edit from its recent runs and grades (#2780).
+//!   [`skill_improve_chat`] for an edit from its recent runs and grades (#2780);
+//!   [`skill_checks_chat`] for both kinds of a skill's checks, in one draft (ruling of 2026-11-02).
 //! - **Try it** opens a scratch chat in a throwaway piece, armed with the built-in skills and the
 //!   draft alone, on the profile the person picked or the project's default; the piece goes when
 //!   the chat closes (`Chats::close`).
@@ -186,6 +187,7 @@ pub(crate) async fn skill_draft_accept(
     crate::off_the_window("accepting the draft", move || {
         crate::skillchange::flag_on()?;
         let changed = crate::skillchange::heard(held.root(), |cx| drafts::accept(cx, &id))?;
+        crate::skillgrade::drafted::stop(&plane, &id);
         held.chats().asks_may_have_moved();
         Ok(changed)
     })
@@ -204,7 +206,7 @@ pub(crate) async fn skill_level_accept(
     let held = planes.held(&plane)?;
     crate::off_the_window("accepting the folder", move || {
         crate::skillchange::flag_on()?;
-        purlis_core::skills::levels::accept(held.root(), &folder)?;
+        level_accepted(held.root(), &held.chats().skills_now(), &folder)?;
         Ok(SkillChanged::default())
     })
     .await
@@ -223,10 +225,36 @@ pub(crate) async fn skill_levels_confirm(
     let held = planes.held(&plane)?;
     crate::off_the_window("accepting the project's folders", move || {
         crate::skillchange::flag_on()?;
-        purlis_core::skills::levels::confirm(held.root(), &folders)?;
+        levels_confirmed(held.root(), &held.chats().skills_now(), &folders)?;
         Ok(SkillChanged::default())
     })
     .await
+}
+
+/// [`purlis_core::skills::levels::accept`], and then each open chat's kept skill stamp is read
+/// again (#4813 review): which folders were accepted is part of what a chat would start on now,
+/// and it is kept in the app state, which the plane's watch never tells of. Forgotten whether or
+/// not the accept wrote all it meant to.
+fn level_accepted(
+    root: &std::path::Path,
+    skills_now: &crate::chats::SkillsNow,
+    folder: &str,
+) -> Result<(), String> {
+    let accepted = purlis_core::skills::levels::accept(root, folder);
+    skills_now.forget();
+    accepted
+}
+
+/// [`purlis_core::skills::levels::confirm`], and then each open chat's kept skill stamp is read
+/// again, as [`level_accepted`].
+fn levels_confirmed(
+    root: &std::path::Path,
+    skills_now: &crate::chats::SkillsNow,
+    folders: &[String],
+) -> Result<(), String> {
+    let confirmed = purlis_core::skills::levels::confirm(root, folders);
+    skills_now.forget();
+    confirmed
 }
 
 /// **Rejects a draft**: deletes it.
@@ -241,6 +269,7 @@ pub(crate) async fn skill_draft_reject(
     crate::off_the_window("rejecting the draft", move || {
         crate::skillchange::flag_on()?;
         drafts::reject(held.root(), &id)?;
+        crate::skillgrade::drafted::stop(&plane, &id);
         held.chats().asks_may_have_moved();
         Ok(())
     })
@@ -337,6 +366,36 @@ pub(crate) async fn skill_outcome_evals_chat(
             &held,
             &level,
             format!("Outcome evals of {name}"),
+            prompt,
+            purlis_core::engine::Size { columns, rows },
+        )
+    })
+    .await
+}
+
+/// **"Ask a chat to write checks"** (ruling of 2026-11-02): a chat where `level`'s skills are
+/// reached from, with the core's prompt for both kinds of checks of the skill `name`, its trigger
+/// tests and its outcome evals, typed and never sent ([`drafts::asking_for_checks`]). Both files
+/// come back in the skill's one draft, accepted whole.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_checks_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    level: SkillLevel,
+    name: String,
+    columns: u16,
+    rows: u16,
+) -> Result<Curating, StartRefused> {
+    let held = planes.held(&plane)?;
+    crate::curation::off_the_window_refused("starting the chat", move || {
+        crate::skillchange::flag_on()?;
+        let level: purlis_core::skills::verbs::Level = (&level).into();
+        let prompt = drafts::asking_for_checks(held.root(), &level, &name)?;
+        open_on_a_skill(
+            &held,
+            &level,
+            format!("Checks of {name}"),
             prompt,
             purlis_core::engine::Size { columns, rows },
         )
@@ -648,4 +707,40 @@ pub(crate) fn sweep(root: &std::path::Path, record: &purlis_core::reopen::Record
         &ids,
     );
     drafts::sweep_tries(root, &cwds);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A plane with the workspace `ops`.
+    fn a_plane() -> tempfile::TempDir {
+        let plane = tempfile::tempdir().expect("a plane");
+        std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").expect("a manifest");
+        std::fs::create_dir_all(plane.path().join("workspaces/ops")).expect("a workspace");
+        plane
+    }
+
+    #[test]
+    fn the_studios_accept_of_a_folder_makes_the_chats_read_their_skills_again() {
+        // #4813 review: what a chat would start on now reads which folders were accepted, from
+        // the app state the plane's watch never tells of.
+        let plane = a_plane();
+        let skills_now = crate::chats::SkillsNow::default();
+
+        level_accepted(plane.path(), &skills_now, "workspaces/ops").expect("accepted");
+
+        assert_eq!(skills_now.forgotten(), 1);
+    }
+
+    #[test]
+    fn the_studios_accept_of_the_projects_folders_makes_the_chats_read_their_skills_again() {
+        let plane = a_plane();
+        let skills_now = crate::chats::SkillsNow::default();
+
+        levels_confirmed(plane.path(), &skills_now, &["workspaces/ops".to_owned()])
+            .expect("confirmed");
+
+        assert_eq!(skills_now.forgotten(), 1);
+    }
 }

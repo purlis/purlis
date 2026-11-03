@@ -58,7 +58,9 @@ import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { AddDockerPoolHost } from "../AddDockerPool";
 import { startAddingAPool } from "../pools";
 import { ReplaceRunner } from "../settings/PoolLimits";
-import { RemoveHeldRunner, RemovePool } from "../settings/pools";
+import { DiscardHeldRunner, RemovePool } from "../settings/pools";
+import { StartOverAsk } from "../AgentIdentityFlow";
+import { RemoveIdentity } from "../AgentIdentityTab";
 import { RemoveProfile } from "../settings/profiles";
 import { SpecimenDialog } from "../specimen/Specimen";
 import { LinkWorkItem } from "../LinkWorkItem";
@@ -78,6 +80,7 @@ import { MidTurn, QuitWarning, type Ending } from "../QuitWarning";
 import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
+import { RenameChat } from "../RenameChat";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
@@ -992,10 +995,31 @@ const DIALOGS: Opened[] = [
     open: async () => render(<RemovePool name="builds" onRemove={nothing} onCancel={nothing} />),
   },
   {
-    name: "removing a held runner",
+    name: "discarding a held runner's conversations",
     file: "settings/pools.tsx",
     open: async () =>
-      render(<RemoveHeldRunner name="builds-old" onRemove={nothing} onCancel={nothing} />),
+      render(
+        <DiscardHeldRunner name="builds-old" ask="first" onGoOn={nothing} onCancel={nothing} />,
+      ),
+  },
+  {
+    name: "discarding a held runner's conversations, asked again",
+    file: "settings/pools.tsx",
+    open: async () =>
+      render(
+        <DiscardHeldRunner name="builds-old" ask="again" onGoOn={nothing} onCancel={nothing} />,
+      ),
+  },
+  {
+    name: "starting an agent identity over",
+    file: "AgentIdentityFlow.tsx",
+    open: async () => render(<StartOverAsk onClose={nothing} onStartOver={nothing} />),
+  },
+  {
+    name: "removing an agent identity",
+    file: "AgentIdentityTab.tsx",
+    open: async () =>
+      render(<RemoveIdentity host="github.com" onClose={nothing} onRemove={nothing} />),
   },
   {
     name: "adding a pool",
@@ -1249,6 +1273,20 @@ const DIALOGS: Opened[] = [
           trouble="devops has chats open"
           deleting={false}
           onDelete={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "renaming a chat with no tab of its own (#4753)",
+    file: "RenameChat.tsx",
+    open: async () =>
+      render(
+        <RenameChat
+          name="qa 9"
+          trouble="That name is too long."
+          renaming={false}
+          onRename={nothing}
           onCancel={nothing}
         />,
       ),

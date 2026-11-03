@@ -63,6 +63,7 @@ fn a_dispatch(id: u32, session: u32, target: &str, levels: Vec<GrantLevel>) -> D
         task_cut: false,
         profile: None,
         mode: "task".to_owned(),
+        runs_on: None,
     }
 }
 
@@ -182,6 +183,7 @@ impl World {
             browser_sites: self.browser_sites.clone(),
             pool_logins: self.pool_logins.clone(),
             pool_tools: self.pool_tools.clone(),
+            browser_logins: Vec::new(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
@@ -200,6 +202,7 @@ impl World {
                     .find(|(one, _)| *one == session)
                     .map(|(_, said)| (*said).to_owned())
             },
+            earlier_messages: &|_| Vec::new(),
             held: &|session, target, _| {
                 self.held
                     .iter()
@@ -652,6 +655,31 @@ fn a_refused_folder_write_offers_its_notice_s_allow_and_keep_blocked_bound_to_th
                 target: "/w/out".to_owned(),
             }
         }
+    );
+}
+
+/// A held folder (ADR 0067, amended 2026-11-02) is an ask, so its chat's Notice is drawn, and it is
+/// answered there alone: the Notice says what allowing it means. Only ever for this chat.
+#[test]
+fn a_held_folder_is_an_ask_answered_on_its_own_notice_for_this_chat_alone() {
+    let block = HeldBlock {
+        kind: "protected-file".to_owned(),
+        ..a_write_block("/Users/a/.config/gh")
+    };
+    let shown = sandbox_block(5, &block, &Locks::none(), &Default::default()).expect("an ask");
+    assert_eq!(shown.source, AskSource::SandboxWrite);
+    assert_eq!(shown.answer, AnswerPath::InItsPane);
+    assert_eq!(
+        shown.ask,
+        "block:5:write:protected-file:/Users/a/.config/gh"
+    );
+    assert_eq!(
+        shown
+            .options
+            .iter()
+            .map(|one| one.id.as_str())
+            .collect::<Vec<_>>(),
+        ["chat", KEEP]
     );
 }
 

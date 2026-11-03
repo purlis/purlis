@@ -36,6 +36,8 @@ const CONTROL_GROUNDS: &[&str] = &[
     "tab.active",
     "danger.surface",
     "danger.wash",
+    // A pane's warning and its consent, which hold their ways out (#4795).
+    "wash.warning",
     "layer.project",
     "layer.workspace",
     "layer.chat",
@@ -530,7 +532,7 @@ pub(super) const OPTION_CARD: Family = Family {
     defaults: option_card_look,
     states: CHOSEN,
     focused: "[data-focus-visible]",
-    words: &[("detail", "text.quiet"), ("check", "accent.base")],
+    words: &[("detail", "text.quiet"), ("check", "accent.text")],
     corner_most: None,
     around: &[],
     fills: &[],

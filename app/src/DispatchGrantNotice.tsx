@@ -466,6 +466,7 @@ export function DispatchGrantNotice({
       label={label}
       persona={first.target}
       fixes={fixes}
+      waits
       under={
         <>
           {where}
@@ -484,6 +485,7 @@ export function DispatchGrantNotice({
       {holds}
       {first.profile !== null &&
         ` Its ${first.target} chat would start on profile ${first.profile}.`}
+      {first.runs_on != null && ` It asks to run on ${first.runs_on}.`}
       {first.also.length > 0 &&
         " Under the answers are boxes for more personas: tick any you want before you press Allow."}
       {first.never_unread !== null &&

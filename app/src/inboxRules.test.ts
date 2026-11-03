@@ -4,15 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import type { Shown } from "./bindings";
-import {
-  agoSaid,
-  MOST_ON_A_PANE,
-  forgetInbox,
-  offItsPane,
-  onItsPane,
-  useAnswered,
-  useAnsweredWhenGone,
-} from "./inboxRules";
+import { agoSaid, forgetInbox, onItsPane, useAnswered, useAnsweredWhenGone } from "./inboxRules";
 
 /**
  * **A chat's pane draws at most two of its asks** (spec #1688, #1695): its in-context copy of
@@ -31,18 +23,18 @@ const ask = (session: number, key: string, source: Shown["source"], since?: numb
 });
 
 describe("the asks a pane draws", () => {
-  it("draws the chat's two longest waiting, and leaves the rest to the Inbox", () => {
+  it("draws every one of the chat's asks, the longest waiting first, with no cap (#4754)", () => {
     const asks = [
       ask(3, "block:3:a", "sandbox-host", 300),
       ask(3, "dispatch:1", "dispatch", 100),
       ask(4, "dispatch:2", "dispatch", 50),
       ask(3, "block:3:b", "sandbox-write", 200),
     ];
-    expect(MOST_ON_A_PANE).toBe(2);
-    expect(onItsPane(asks, 3).map((one) => one.ask)).toEqual(["dispatch:1", "block:3:b"]);
-    // The one the cap keeps off is counted, so the pane can say it waits in the Inbox.
-    expect(offItsPane(asks, 3)).toBe(1);
-    expect(offItsPane(asks, 4)).toBe(0);
+    expect(onItsPane(asks, 3).map((one) => one.ask)).toEqual([
+      "dispatch:1",
+      "block:3:b",
+      "block:3:a",
+    ]);
   });
 
   it("keeps the registry's order where no time is known, after every ask that has one", () => {
@@ -51,10 +43,14 @@ describe("the asks a pane draws", () => {
       ask(3, "terminal:3", "terminal"),
       ask(3, "dispatch:1", "dispatch", 100),
     ];
-    expect(onItsPane(asks, 3).map((one) => one.ask)).toEqual(["dispatch:1", "permission-a"]);
+    expect(onItsPane(asks, 3).map((one) => one.ask)).toEqual([
+      "dispatch:1",
+      "permission-a",
+      "terminal:3",
+    ]);
   });
 
-  it("counts the hosts one block's Notice lists as that one Notice", () => {
+  it("draws every host one block's Notice lists, beside the chat's other asks", () => {
     const host = (target: string, since: number): Shown => ({
       ...ask(3, `block:3:connect:host:${target}`, "sandbox-host", since),
       answer: {
@@ -72,8 +68,8 @@ describe("the asks a pane draws", () => {
       "block:3:connect:host:a.example.com",
       "block:3:connect:host:b.example.com",
       "dispatch:1",
+      "block:3:write:home:/w",
     ]);
-    expect(offItsPane(asks, 3)).toBe(1);
   });
 
   it("draws a workspace the chat asked to have removed on its pane (qw356)", () => {

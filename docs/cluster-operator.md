@@ -46,17 +46,18 @@ step. This page is the reference behind it.
 - **What:** `linux/amd64` and `linux/arm64` under one index, each built on a GitHub runner of
   that architecture with the pinned toolchain, `cargo auditable` and the operator's `release`
   profile, no cache, into [`operator/Dockerfile`](../operator/Dockerfile). Each architecture's
-  image is pushed untagged, by digest, and pulled back; nothing is tagged or signed until
-  `tools/operator-image-check.mjs` has passed on exactly those bytes: Linux on that
-  architecture, a numbered user who is not root, the operator as the whole default command,
-  and a binary that starts there.
+  image is built once, into a file, and `tools/operator-image-check.mjs` runs on the image
+  loaded from it: Linux on that architecture, a numbered user who is not root, the operator as
+  the whole default command, and a binary that starts there. Only then is the same file pushed,
+  untagged, by its digest, so an image that fails is never pushed; nothing is tagged or signed
+  until both architectures passed.
 - **Tags:** `sha-<commit>`, and `main` for the image of the latest commit; `main` only moves
-  forward. Tags can move, so name the image by its **digest**. The run's summary records it.
-  Its `operator-image` artifact holds the digest and `install/`: this commit's plain
-  manifests and chart, with `operator.yaml`'s image and the chart's default `image.repository`
-  and `image.digest` set to that image (#2281). So an install from it names the image built
-  from the same commit as the manifests, with nothing to set.
-  `tools/operator-install.mjs` makes it, and the kind tests install from what it makes.
+  forward, and only once the image has been pulled and checked with no sign-in. Tags can move, so
+  name the image by its **digest**. The run's summary records it. Its `operator-image` artifact
+  holds the digest and `install/`: this commit's plain manifests and chart, with `operator.yaml`'s
+  image and the chart's default `image.repository` and `image.digest` set to that image (#2281).
+  So an install from it names the image built from the same commit as the manifests, with nothing
+  to set. `tools/operator-install.mjs` makes it, and the kind tests install from what it makes.
 - **Signed:** keyless with [cosign](https://docs.sigstore.dev/), by the `operator-image.yml`
   workflow on `main`, through GitHub's OIDC identity, as the runner image is: no key is stored
   anywhere, and the signature's entry in Sigstore's public transparency log names the image
@@ -67,6 +68,28 @@ step. This page is the reference behind it.
   cosign verify ghcr.io/purlis/purlis-cluster-operator@sha256:<digest> \
     --certificate-identity https://github.com/purlis/purlis/.github/workflows/operator-image.yml@refs/heads/main \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  ```
+
+- **Build provenance and an SBOM:** each published image carries SLSA build provenance,
+  attached to its multi-architecture index, and a CycloneDX SBOM of each architecture's image,
+  listing the image's Ubuntu packages and the crates the operator's binary was built from. Each
+  is stored by GitHub and pushed to the registry beside the image, and the run verifies each one
+  before it moves `main`. To check them yourself (`gh attestation` needs `gh` signed in to any
+  GitHub account, to read GitHub's attestation API; the registry needs no sign-in):
+
+  ```bash
+  # Provenance: built by operator-image.yml in purlis/purlis, on a GitHub-hosted runner.
+  gh attestation verify oci://ghcr.io/purlis/purlis-cluster-operator@sha256:<digest> \
+    --repo purlis/purlis \
+    --cert-identity https://github.com/purlis/purlis/.github/workflows/operator-image.yml@refs/heads/main \
+    --deny-self-hosted-runners
+
+  # The SBOM of one architecture's image: its digest is in `docker buildx imagetools inspect`.
+  gh attestation verify oci://ghcr.io/purlis/purlis-cluster-operator@sha256:<arch digest> \
+    --repo purlis/purlis \
+    --cert-identity https://github.com/purlis/purlis/.github/workflows/operator-image.yml@refs/heads/main \
+    --predicate-type https://cyclonedx.org/bom \
+    --format json | jq '.[0].verificationResult.statement.predicate'
   ```
 
 ## Before you install: doctor
@@ -232,6 +255,8 @@ spec:
   deleteSuspendedAfter: 720h
   noticeBeforeDelete: 168h
   maxAge: 336h
+  # limits:                # optional; see "What a team sets for a pool's limits"
+  #   signInWait: { default: 20, highest: 60 }
   # forge:                 # optional; see "Minting GitHub App tokens in the cluster"
   #   appKeySecretRef: { name: org-app }
   #   repos: [acme/*]
@@ -286,10 +311,11 @@ spec:
     the project held while its runner comes back says so at once.
     A look at a project already held wakes nothing. A runner
     with anything else on its Claim, an upstream object in the way among it, is not waited for.
-    **A fresh Claim's runner keeps nothing**, so it comes back with a new key, which its desktop
-    refuses as it does after `stopped`: make its Claim again. This reaches no one through purlis
-    today, since a desktop makes only kept Claims, and #4404 settles it as purlis starts making
-    fresh ones (#3709). A Pool or
+    **A fresh Claim's runner is never suspended for being idle**: its home ends with its pod, and
+    may hold what its task committed while its desktop was away. It keeps saying it is idle, and
+    serves again each time, until its desktop has that work and deletes the Claim. A desktop that
+    never comes back leaves it running: delete such a Claim by hand once its work no longer
+    matters. A Pool or
     Claim set `stopped` and back leaves an idle runner suspended. An idle Claim keeps no runner
     warm. A runner that says it is idle waits up to five minutes, serving nothing, for the
     operator to suspend it, and serves again if it does not. A running runner takes a change to
@@ -347,10 +373,46 @@ spec:
   - **A fresh Claim** (the default) takes a runner the pool keeps warm, when there is one, and
     keeps nothing past its pod: its home is a folder of the node's, as big as a kept Claim's
     volume.
-  - A desktop makes only kept Claims today. Its choice between them is written and not yet used
-    (#3709): kept for a chat a person works in and for any chat of a subscription profile, whose
-    sign-in lives on the volume; fresh for a short dispatched task, and a chat's "Keep this
-    runner's work" either way.
+  - purlis chooses between them (#3818): the pool's own kept Claim for a chat a person works in
+    and for any chat of a subscription profile, whose sign-in lives on the volume. **A short
+    dispatched task gets a fresh Claim of its own**, made as it starts. As it closes, purlis waits
+    for every program of the project on that runner to end, fetches the branches of the project
+    and of each clone of its workspace back to the desktop, under
+    `refs/remotes/<pool>/fresh-<hash>/`, and a clone made there as a clone here. **Then it deletes
+    the Claim only on proof** (#4569): the runner lists every repository in every project it
+    keeps (on no branch, mid-rebase, nested, a submodule's or worktree's, a bare one, one under an
+    older project id), with each ref and each file no commit has, and the desktop checks that its
+    own project reaches every one of those commits from a ref and holds each of those files as
+    the runner does. Another repository's branches as last fetched (`refs/remotes/…`) and what the
+    desktop sent (`refs/purlis/…`) are not the runner's work. What a clone's git ignores is left
+    out, as git leaves it out; a file in no clone, such as one a task wrote in its workspace's
+    folder, counts. Only the window of the checkout a task started from lets its runner go, so
+    another checkout of the same project never takes it. Anything else missing keeps the
+    Claim, and the window says what, with **Fetch again** and **Discard**, never silently. purlis
+    tries again as the window comes into focus and at its next launch. A long task and a handoff
+    stay on the pool's own runner.
+  - **A task gets a fresh runner only where that is safe.** The pool must be marked as your own,
+    its profile must have no credentials to hand (vault credentials reach no pool's runner in
+    this version), the project's own folder must be a git repository, and its operator's signed
+    word must say `fresh-runners-stay`: `status.capabilitiesVouch`, a statement
+    signed by the operator's key, made in the Pool's cluster and holding for ten minutes, which
+    the operator signs again with five left. The desktop reads it as a task starts and again
+    before it lets a fresh runner go, and counts it only while it holds, so an operator rolled
+    back to one that does not sign it stops counting within ten minutes. Without any of these, the
+    task runs on the pool's own runner and its tab says why, and a fresh runner whose work looks
+    home is kept while its operator gives no word. The pool's runner image must list what it holds
+    (session protocol 1.69): an older image refuses the task's start, saying to update it. Vault
+    values and tokens reach a fresh runner under the pool's checks, each made of that runner, and a check that can't be made refuses. A restart of the window holds the
+    project on the task's runner again and sends no code there. The window of the project the
+    task ran in does all this, so a project left closed keeps its task's Claim until it's next
+    opened. A fresh Claim of this desktop that no record holds, which a crash between the claim
+    and its record leaves, is deleted at the window's next launch once it is an hour old.
+  - **`stopped`, a lost node and a Pool's change reach a fresh runner too.** `stopped`, or a node
+    lost, ends its pod and what its home held that hadn't come back: the window says the runner
+    is gone, with what it held that is not here, until you forget it. After a change to the
+    Pool's image or template, the runner is no longer vouched for, so purlis can't fetch from it:
+    its Claim stays, the window says so, and its work is reached by `kubectl exec` until you
+    discard it.
 - **A Claim** lives in a namespace and names its `pool`, which never changes: another pool is
   another claim. Its `Ready` condition says whether its runner is running, and if not, why:
   `PoolNotFound` when there is no such pool, `PoolDeleted` when it was deleted after the
@@ -433,6 +495,35 @@ above. Upstream's own objects that are not a pool's are left to upstream. This h
 Kubernetes' usual boundary goes: whoever may act as the operator's service account (impersonate
 it, mint its tokens, or run a pod as it in the operator's namespace), or change the policy and its
 binding, passes it. Rights in the operator's namespace are the operator's rights.
+
+
+## What a team sets for a pool's limits
+
+A Pool's `spec.limits` sets the default and the highest allowed of any of a pool's limits, by the key
+each has in `docs/plane-format.md` (`profileSize`, `profileFiles`, `codeSize`, `codeSendTime`,
+`signInWait`, `answerWait`), each in that limit's unit. `vouchWait` isn't a Pool's to set: it is the wait for the cluster to vouch. Each person then chooses within it, in the
+window, in `purlis pool limit`, or in their pool's file.
+
+```yaml
+spec:
+  limits:
+    profileSize: { default: 256, highest: 512 }  # MiB
+    signInWait: { highest: 60 }                  # minutes
+```
+
+- **A `default` only lowers a limit on its own.** Below purlis's default, it holds for anyone who chose
+  no value. Above it, it is an offer: the window says "The team suggests X", the offer on a limit that
+  was hit uses it, and one press sets it as the person's value. Nothing rises unasked.
+- **A desktop reads them as the pool is added and at each link**, so a change reaches a person at their
+  next link. A value above the highest is refused as it is typed and everywhere else, a suggestion stops
+  at it, and a value kept from before holds to it.
+- **At the highest**, the error says the team set it and to ask whoever looks after the Pool.
+- **A value above what a limit can carry, or a key a desktop doesn't know, says nothing**, so a Pool can't
+  make a limit more than purlis can carry. A highest below what a limit can be holds at the least it can
+  be, and a default above the highest is dropped.
+- **These bound a person's own desktop, which they run.** They are an agreement a team keeps, not a
+  boundary against that person. What the cluster itself enforces is the quota and the Pool's other
+  settings. These are the Pool's, not the chart's: the chart installs the operator and defines no Pool.
 
 ## Who the runner is
 

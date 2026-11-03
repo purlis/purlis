@@ -155,8 +155,13 @@ function finishedTask(asker: number, name: string, more: Partial<FinishedTask> =
   };
 }
 
+/** The task questions the asks registry lists as with their asking chat (#4564). */
+let withAskingChat: { session: number; asker: string; since: number }[] = [];
+
 function core(open: Listed[], finished: FinishedTask[] = []) {
   const asked: Asked[] = [];
+  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it. */
+  let laidOut: unknown = null;
   const listeners = new Map<string, number[]>();
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
@@ -167,19 +172,21 @@ function core(open: Listed[], finished: FinishedTask[] = []) {
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+    if (cmd === "asks_waiting") return { plane: PLANE, asks: [], with_asking_chat: withAskingChat };
     if (cmd === "opened_chats") return open.map(asListed);
-    if (cmd === "tab_shows") {
-      const one = open.find((chat) => chat.session === a.session);
-      if (one) one.shows = (a.shown as number | null) ?? null;
+    if (cmd === "window_layout") {
+      // The core keeps every tab as the window last said it (#4751), and a reload asks for it.
+      laidOut = a.layout;
       return null;
     }
+    if (cmd === "reopened_layout") return laidOut;
     if (cmd === "dispatch_grants_needed") return [];
     // The Brief panel's read (#1494): this core holds no dispatch records.
     if (cmd === "task_brief") throw "This project holds no record of that task.";
     // The question a task asking its asker is paused on (#1551).
     if (cmd === "task_question") {
       const one = open.find((chat) => chat.session === a.session);
-      return one?.from?.asking === true
+      return withAskingChat.some((asking) => asking.session === one?.session) && one?.from
         ? { task: one.label, asked: one.from.name, number: 2, question: "Which branch?" }
         : null;
     }
@@ -446,6 +453,7 @@ beforeEach(() => {
   chips.drawn.length = 0;
 });
 afterEach(() => {
+  withAskingChat = [];
   vi.useRealTimers();
   cleanup();
   clearMocks();
@@ -780,11 +788,13 @@ describe("what the menu says of the work (#1493, #1494, #1495)", () => {
   });
 
   it("answers an asking task's question from the end of its line, and offers it on no other", async () => {
-    const asking = withTasks().map((one) =>
-      one.session === 4 && one.from ? { ...one, from: { ...one.from, asking: true } } : one,
-    );
-    const { asked } = await drawn(asking);
+    // The registry says task 4's question is with its asking chat (#4564).
+    withAskingChat = [{ session: 4, asker: "steward 1", since: 1 }];
+    const { asked } = await drawn(withTasks());
     press(theChip("steward 1"));
+    await waitFor(() =>
+      expect(line("talk").querySelector(`[data-says="Answer talk's question"]`)).not.toBeNull(),
+    );
 
     expect(line("sweep").querySelector('[data-says^="Answer"]')).toBeNull();
     expect(line("steward 1").querySelector('[data-says^="Answer"]')).toBeNull();

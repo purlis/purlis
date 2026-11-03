@@ -55,7 +55,12 @@ export function restoredSince(
   named: number | null,
   shown: (session: number) => boolean,
 ): { still: Set<number>; started: OpenChat[]; gone: number[]; arrived: OpenChat[] } {
-  const still = new Set(open.filter(isRestoring).map((chat) => chat.session));
+  // Only ever fewer: the launch draws every one at once, and a chat that has started never
+  // restores again. So an answer older than one already read, which `opened_chats` answering
+  // off the window's thread can land late (#4739), draws no started chat as restoring again.
+  const still = new Set(
+    open.filter((chat) => isRestoring(chat) && was.has(chat.session)).map((chat) => chat.session),
+  );
   const started = open.filter((chat) => !isRestoring(chat) && was.has(chat.session));
   const gone = [...was].filter((number) => !open.some((chat) => chat.session === number));
   const arrived =

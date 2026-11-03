@@ -89,6 +89,10 @@ pub struct Moved {
     /// `null` for every other chat.
     #[specta(optional)]
     pub own_work: Option<OwnWork>,
+    /// **A background turn runs over its wait on the person** (#4562): `state` says `waiting`,
+    /// as it did, and the chat is at work, so a restart or a move owed it waits. Absent otherwise.
+    #[specta(optional)]
+    pub background_turn: Option<bool>,
     /// Which snapshot of the board this is — bigger was taken later (charter-app#248).
     ///
     /// **What lets the window put its events back in order.** Every `Moved` is built under the
@@ -1048,13 +1052,22 @@ pub type BlockTeller = Arc<dyn Fn(ChatBlocked) + Send + Sync + 'static>;
 /// What the window is told of a block a chat's hook sent on `plane`'s socket, or a brokered
 /// run's proxy refused. A harness word the app does not start is no harness: the line is the
 /// chat's own. `has_check`: whether the chat's sandbox was compiled with the system's
-/// certificate check, by the app's own record of its start ([`blocked_on`]).
-pub fn blocked_holding(plane: &PlaneId, heard: &HeardBlock, has_check: bool) -> ChatBlocked {
+/// certificate check, and `started`: what it started as (a harness, or a shell), each by the
+/// app's own record of its start ([`blocked_on`]). Where the app has the chat open, the line's
+/// word is never read: what a Notice says an Allow reaches turns on it.
+pub fn blocked_holding(
+    plane: &PlaneId,
+    heard: &HeardBlock,
+    has_check: bool,
+    started: Option<Option<purlis_core::harness::Harness>>,
+) -> ChatBlocked {
     let blocked = &heard.line;
-    let harness = blocked
-        .harness
-        .as_deref()
-        .and_then(purlis_core::harness::Harness::of_kind);
+    let harness = started.unwrap_or_else(|| {
+        blocked
+            .harness
+            .as_deref()
+            .and_then(purlis_core::harness::Harness::of_kind)
+    });
     let told = blocked_on(
         plane,
         blocked.chat,
@@ -1095,7 +1108,7 @@ fn suggested_port(told: &ChatBlocked, suggested: Option<&str>) -> Option<String>
 /// [`blocked_holding`] for a chat that started without the certificate check.
 #[cfg(test)]
 pub fn blocked(plane: &PlaneId, heard: &HeardBlock) -> ChatBlocked {
-    blocked_holding(plane, heard, false)
+    blocked_holding(plane, heard, false, None)
 }
 
 /// **What the window is told of `block`, refused chat `session` of `harness` on `target`**: what
@@ -1662,8 +1675,9 @@ fn kept_in_place(
 
 /// **A refused write of a held folder a person may lift** ([`purlis_core::sandbox::grant::lift`]):
 /// Allow, naming the folder whole, for this chat alone, where purlis can write that into the
-/// chat's sandbox: a Seatbelt profile, which can name one path. `None` for any other block, for
-/// a wrap on Linux, and for Claude Code's own sandbox, whose globs can't.
+/// chat's sandbox. A Seatbelt profile lifts that one path; Claude Code's own sandbox drops the
+/// name's glob, so its Notice says the chat may write that name anywhere. `None` for any other
+/// block, and where a wrap on Linux holds the chat.
 fn lifted_here(
     harness: Option<purlis_core::harness::Harness>,
     root: &Path,
@@ -1678,17 +1692,21 @@ fn lifted_here(
         || block.kind != Kind::ProtectedFile
         || !matches!(block.operation, Operation::Write | Operation::File)
         || machine.purlis_wraps(harness)
-        || harness == purlis_core::harness::Harness::ClaudeCode
     {
         return None;
     }
     let ground = grant::Ground::of(root, root, &machine);
     let folder = grant::liftable(Path::new(target?), &ground.place())?;
     let folder = grant::lift(&folder.display().to_string(), &ground).ok()?;
+    let said = if harness == purlis_core::harness::Harness::ClaudeCode {
+        grant::lift_said_by_name(&folder)
+    } else {
+        grant::LIFT_SAID.to_owned()
+    };
     Some((
         BlockOffer::Write,
         Some(folder.display().to_string()),
-        Some(grant::LIFT_SAID.to_owned()),
+        Some(said),
     ))
 }
 
@@ -3415,6 +3433,7 @@ impl ChatBoard for Hooks {
             turns: board.turns(session),
             prompt: board.its_prompt(session),
             own_work: board.own_work(session).is_some(),
+            wakes_on_its_own_work: board.wakes_on_its_own_work(session),
         }
     }
 
@@ -3443,6 +3462,13 @@ impl ChatBoard for Hooks {
         let mut board = self.board();
         board.ignored(session);
         seen_by(&board, &self.plane, session)
+    }
+
+    fn replied(&self, session: u32) -> Option<Moved> {
+        let mut board = self.board();
+        board
+            .replied(session)
+            .then(|| seen_by(&board, &self.plane, session))
     }
 
     fn reported_back(&self, session: u32, from: &str) -> Option<Moved> {
@@ -3582,9 +3608,10 @@ fn moving(
 }
 
 /// What the chat `report` names waits on, asked only of a report that can end its turn or
-/// nudge it after one: a `Stop` or a `Notification` of the chat's own. Every other report
-/// raises no needs-you item this could hold back, so the project's records are not read for
-/// it. **Asked before the board is taken**, never under it: the answer reads the chats, the
+/// nudge it after one, a `Stop` or a `Notification` of the chat's own, or begin one, a
+/// `UserPromptSubmit`, whose cause says whether it is the person's reply (#4562). Every other
+/// report moves no needs-you item this could bear on, so the project's records are not read
+/// for it. **Asked before the board is taken**, never under it: the answer reads the chats, the
 /// board and the tasks' ledger in turn.
 ///
 /// **Every report carries the app's clock** (`Waits::now`, #3878): what a turn's end on work of
@@ -3592,7 +3619,12 @@ fn moving(
 fn waits_at(waits: &Mutex<Option<WaitsOf>>, report: &Report) -> purlis_core::state::Waits {
     use purlis_core::state::Event;
     let now = chrono::Utc::now().timestamp();
-    if report.agent.is_some() || !matches!(report.event, Event::Stop | Event::Notification) {
+    if report.agent.is_some()
+        || !matches!(
+            report.event,
+            Event::Stop | Event::Notification | Event::UserPromptSubmit
+        )
+    {
         return purlis_core::state::Waits {
             now,
             ..purlis_core::state::Waits::default()
@@ -3689,7 +3721,7 @@ fn seen_by(board: &Board, plane: &PlaneId, session: u32) -> Moved {
         sequence: sequence(),
         plane: plane.clone(),
         session,
-        state: word(board.state(session)),
+        state: word(board.shown_state(session)),
         needs_you: queue.contains(&session),
         queue,
         moved_at: board.moved_at(session),
@@ -3709,6 +3741,7 @@ fn seen_by(board: &Board, plane: &PlaneId, session: u32) -> Moved {
         .filter(|needs| !needs.is_empty()),
         asking: board.waits_on_its_prompt(session).then_some(true),
         own_work: board.own_work(session).map(OwnWork::from),
+        background_turn: board.background_turn(session).then_some(true),
         counts_only: false,
         raised: false,
         children: board

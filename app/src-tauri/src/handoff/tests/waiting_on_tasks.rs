@@ -607,6 +607,7 @@ fn the_session_s_own_stop_racing_the_last_report_is_looked_at_once_it_is_applied
             its_asker: false,
             line_coming: false,
             on_a_notice: false,
+            background_turn: false,
             now: 0,
         },
     );
@@ -821,4 +822,387 @@ fn a_session_at_its_limit_is_listed_with_the_count_a_dispatch_is_decided_over() 
     reports_as(&held, &id, one, Outcome::Done);
 
     assert_eq!(running_of(steward), Some(1));
+}
+
+/// A steward whose turn ended on the person, with a task that is about to report: it was
+/// dispatched after that turn, so nothing holds the end, and the chat is in the queue.
+fn a_steward_waiting_on_the_person_with_a_task()
+-> (Plane, Pretend, Planes, PlaneId, Arc<Held>, u32, u32, Told) {
+    let (plane, host, planes, id, held, steward, told) = a_steward_chat_telling();
+    has_a_turn(&held, &told, steward);
+    assert_eq!(queue(&held), vec![steward]);
+    let task = a_task_of(&held, &id, steward, "check the queue");
+    hears(&held, &told, task, Event::UserPromptSubmit);
+    (plane, host, planes, id, held, steward, task, told)
+}
+
+/// Whether chat `chat`'s reply is an ask in the registry, as the Inbox and the ✋ read it.
+fn asks_for_a_reply(held: &Held, chat: u32) -> bool {
+    let ask = format!("question:{chat}");
+    crate::asking::every_ask(held)
+        .asks
+        .iter()
+        .any(|shown| shown.ask == ask)
+}
+
+#[test]
+fn a_task_reporting_while_the_chat_waits_on_the_person_leaves_the_wait_as_it_was() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    assert!(asks_for_a_reply(&held, steward));
+    let before = told_so_far(&told);
+
+    // The report lands, purlis types the line, and the turn it begins runs and ends.
+    reports_as(&held, &id, task, Outcome::Done);
+    assert!(held.tasks().ledger().line_coming(
+        steward,
+        crate::dispatched::seen_now(&held, steward),
+        false
+    ));
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+
+    assert_eq!(queue(&held), vec![steward], "the turn cleared the wait");
+    assert!(asks_for_a_reply(&held, steward));
+    assert_eq!(held.board().glance(steward).state, State::Running);
+    assert_eq!(held.board().now(steward).state, "waiting");
+
+    hears(&held, &told, steward, Event::Stop);
+
+    assert_eq!(queue(&held), vec![steward]);
+    assert!(asks_for_a_reply(&held, steward));
+    assert_eq!(
+        interruptions(&told, before, steward),
+        0,
+        "the wait never left, so nothing is raised again"
+    );
+}
+
+#[test]
+fn the_person_s_reply_after_a_background_turn_clears_the_wait() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    reports_as(&held, &id, task, Outcome::Done);
+    has_a_turn(&held, &told, steward);
+
+    held.operator_input(steward, b"the second one\r")
+        .expect("sent");
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+
+    assert!(queue(&held).is_empty());
+    assert!(!asks_for_a_reply(&held, steward));
+}
+
+#[test]
+fn the_person_s_reply_during_a_background_turn_clears_the_wait_at_once() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    reports_as(&held, &id, task, Outcome::Done);
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    assert_eq!(queue(&held), vec![steward]);
+
+    held.operator_input(steward, b"the second one\r")
+        .expect("sent");
+
+    assert!(queue(&held).is_empty(), "no hook says their line was taken");
+    assert!(!asks_for_a_reply(&held, steward));
+    assert_eq!(held.board().now(steward).state, "running");
+}
+
+#[test]
+fn a_line_of_the_person_s_that_beats_purlis_s_own_to_the_harness_is_their_reply() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    reports_as(&held, &id, task, Outcome::Done);
+
+    // purlis's line is typed and not yet heard; the person's arrives in the same moment.
+    held.operator_input(steward, b"the second one\r")
+        .expect("sent");
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+
+    assert!(queue(&held).is_empty());
+}
+
+#[test]
+fn a_half_typed_reply_during_a_background_turn_is_no_reply() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    reports_as(&held, &id, task, Outcome::Done);
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+
+    held.operator_input(steward, b"the sec").expect("sent");
+
+    assert_eq!(queue(&held), vec![steward]);
+}
+
+#[test]
+fn a_reply_after_the_background_turn_s_prompt_was_answered_clears_the_wait() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    reports_as(&held, &id, task, Outcome::Done);
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    hears(&held, &told, steward, Event::Notification);
+    assert!(held.hooks().board().waits_on_its_prompt(steward));
+
+    // Picking an option answers the prompt, which isn't what the wait under it waited on.
+    held.operator_input(steward, b"1\r").expect("sent");
+    held.hooks().board().answered(steward);
+    assert_eq!(queue(&held), vec![steward]);
+
+    held.operator_input(steward, b"the second one\r")
+        .expect("sent");
+
+    assert!(
+        queue(&held).is_empty(),
+        "the bell stayed through their line"
+    );
+    assert!(!asks_for_a_reply(&held, steward));
+}
+
+#[test]
+fn the_person_s_answer_to_a_task_whose_asking_chat_closed_clears_its_wait() {
+    let (_plane, _host, _planes, id, held, steward, told) = a_steward_chat_telling();
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    let task = a_task_of(&held, &id, steward, "check the queue");
+    hears(&held, &told, task, Event::UserPromptSubmit);
+    let asked = asks(&held, &id, task, question("Which queue?"));
+    assert!(matches!(asked, Answer::Task(_)), "{asked:?}");
+    hears(&held, &told, task, Event::Stop);
+    held.close_chat(steward).expect("closed");
+    assert!(queue(&held).contains(&task));
+
+    crate::dispatched::person_answers(&held, task, asked_number(&held, task), "Which queue?", "b")
+        .expect("the person's answer is taken");
+    hears(&held, &told, task, Event::UserPromptSubmit);
+
+    assert!(!queue(&held).contains(&task), "the answer left the wait");
+    assert!(!asks_for_a_reply(&held, task));
+
+    // Its report ends its turn without raising anything of the person's.
+    reports_as(&held, &id, task, Outcome::Done);
+    hears(&held, &told, task, Event::Stop);
+    assert!(!queue(&held).contains(&task));
+}
+
+#[test]
+fn the_person_s_answer_during_a_background_turn_clears_the_wait_at_once() {
+    let (_plane, _host, _planes, id, held, steward, told) = a_steward_chat_telling();
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    let task = a_task_of(&held, &id, steward, "check the queue");
+    hears(&held, &told, task, Event::UserPromptSubmit);
+    let asked = asks(&held, &id, task, question("Which queue?"));
+    assert!(matches!(asked, Answer::Task(_)), "{asked:?}");
+    hears(&held, &told, task, Event::Stop);
+    held.close_chat(steward).expect("closed");
+    assert!(queue(&held).contains(&task));
+    // Something else of purlis's own began a turn of the task, over the wait.
+    held.tasks().ledger().line_typed(task);
+    hears(&held, &told, task, Event::UserPromptSubmit);
+    assert!(held.hooks().board().background_turn(task));
+
+    crate::dispatched::person_answers(&held, task, asked_number(&held, task), "Which queue?", "b")
+        .expect("the person's answer is taken");
+
+    assert!(!queue(&held).contains(&task));
+}
+
+/// A chat on the board alone, with no program behind it, in a project that keeps every move it
+/// tells the window: what a hook reaching the board needs, and nothing a sandboxed start asks.
+fn a_chat_on_the_board_telling() -> (Plane, Planes, Arc<Held>, u32, Told) {
+    let plane = a_plane_with_personas();
+    let told: Told = Arc::default();
+    let planes = Planes::telling(
+        Arc::new({
+            let told = Arc::clone(&told);
+            move |moved| told.lock().expect("the moves told").push(moved)
+        }),
+        crate::Shipped::default(),
+        None,
+    );
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = 41;
+    held.hooks().board().opened(
+        chat,
+        Some(purlis_core::harness::Harness::ClaudeCode),
+        Some("0b6f1f9e-1c1a-4c43-9d65-1f4b5b6c7d8e".to_owned()),
+    );
+    (plane, planes, held, chat, Told::clone(&told))
+}
+
+/// Chat `chat`'s turn ends while a background command of its own runs, with a limit on the
+/// wait (#3878).
+fn ends_on_its_own_shell(held: &Held, told: &Told, chat: u32) {
+    let report = purlis_core::hookwire::Report {
+        chat,
+        event: Event::Stop,
+        conversation: held
+            .board()
+            .conversation(chat)
+            .map_or(purlis_core::hookwire::Conversation::Unknown, |said| {
+                purlis_core::hookwire::Conversation::Named(said)
+            }),
+        pid: Some(4000 + chat),
+        agent: None,
+        detail: purlis_core::state::Detail {
+            own_work: purlis_core::ownwork::Said {
+                shells: 1,
+                lapses_in: Some(60),
+                ..purlis_core::ownwork::Said::default()
+            },
+            ..purlis_core::state::Detail::default()
+        },
+    };
+    if let Some(moved) = held.hooks().hear(&report) {
+        told.lock().expect("the moves told").push(moved);
+    }
+    crate::dispatched::heard(held, &report);
+    assert!(
+        held.hooks().board().own_work(chat).is_some(),
+        "it waits on its shell"
+    );
+}
+
+/// The wait on chat `chat`'s own work passes its limit with no wake, as the app's clock ends it.
+fn its_wait_lapses(held: &Held, chat: u32) {
+    let until = held
+        .hooks()
+        .board()
+        .own_work(chat)
+        .and_then(|work| work.until)
+        .expect("a wait with a limit");
+    let waits = crate::dispatched::waits_as(held, chat, true);
+    assert!(held.hooks().board().own_work_lapsed(chat, until, waits));
+}
+
+/// The person sends chat `chat` a line from its pane.
+fn the_person_sends_a_line(held: &Held, chat: u32) {
+    crate::dispatched::person_typed(held, chat, b"carry on\r", Some(None));
+}
+
+#[test]
+fn a_late_wake_after_a_lapsed_wait_on_its_own_work_leaves_the_wait_as_it_was() {
+    let (_plane, _planes, held, chat, told) = a_chat_on_the_board_telling();
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+    ends_on_its_own_shell(&held, &told, chat);
+    its_wait_lapses(&held, chat);
+    assert_eq!(queue(&held), vec![chat]);
+    let before = told_so_far(&told);
+
+    // The shell ends after all, and wakes the chat.
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+
+    assert_eq!(queue(&held), vec![chat], "the wake cleared the wait");
+    assert_eq!(held.board().now(chat).state, "waiting");
+    hears(&held, &told, chat, Event::Stop);
+    assert_eq!(queue(&held), vec![chat]);
+    assert_eq!(
+        interruptions(&told, before, chat),
+        0,
+        "the wait never left, so nothing is raised again"
+    );
+}
+
+#[test]
+fn a_late_wake_after_a_block_ended_the_wait_on_its_own_work_leaves_the_wait_as_it_was() {
+    let (_plane, _planes, held, chat, told) = a_chat_on_the_board_telling();
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+    ends_on_its_own_shell(&held, &told, chat);
+    held.blocked_while_waiting(chat);
+    assert_eq!(queue(&held), vec![chat]);
+    let before = told_so_far(&told);
+
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+
+    assert_eq!(queue(&held), vec![chat], "the wake cleared the wait");
+    assert_eq!(held.board().now(chat).state, "waiting");
+    hears(&held, &told, chat, Event::Stop);
+    assert_eq!(interruptions(&told, before, chat), 0);
+}
+
+#[test]
+fn the_person_s_reply_after_a_lapsed_wait_on_its_own_work_clears_the_wait() {
+    let (_plane, _planes, held, chat, told) = a_chat_on_the_board_telling();
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+    ends_on_its_own_shell(&held, &told, chat);
+    its_wait_lapses(&held, chat);
+
+    the_person_sends_a_line(&held, chat);
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+
+    assert!(queue(&held).is_empty());
+}
+
+#[test]
+fn the_person_s_reply_after_a_block_ended_the_wait_on_its_own_work_clears_the_wait() {
+    let (_plane, _planes, held, chat, told) = a_chat_on_the_board_telling();
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+    ends_on_its_own_shell(&held, &told, chat);
+    held.blocked_while_waiting(chat);
+
+    the_person_sends_a_line(&held, chat);
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+
+    assert!(queue(&held).is_empty());
+}
+
+/// What chat `chat`'s turn ended saying, as its harness's `Stop` hook hands it on (#4550).
+fn says(held: &Held, chat: u32, last: &str) {
+    crate::dispatched::said(
+        held,
+        purlis_core::hookwire::TurnOutput {
+            chat,
+            turn_output: purlis_core::hookwire::Output::last_message(last).expect("a message"),
+            speaker: purlis_core::hookwire::Speaker::default(),
+        },
+    );
+}
+
+/// The ask the registry lists for chat `chat`'s reply.
+fn reply_ask(held: &Held, chat: u32) -> Option<crate::asking::Shown> {
+    let ask = format!("question:{chat}");
+    crate::asking::every_ask(held)
+        .asks
+        .into_iter()
+        .find(|shown| shown.ask == ask)
+}
+
+#[test]
+fn a_background_turn_keeps_what_the_chat_asked_and_lists_it_before_its_newer_message() {
+    let (_plane, _host, _planes, id, held, steward, task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    says(&held, steward, "Should I open the pull request now?");
+    let asked = reply_ask(&held, steward).expect("it waits on the person");
+    assert_eq!(
+        asked.last_message.as_deref(),
+        Some("Should I open the pull request now?")
+    );
+    assert_eq!(asked.earlier_messages, None);
+
+    // The task reports, and the turn purlis's line begins runs over the wait (#4562).
+    reports_as(&held, &id, task, Outcome::Done);
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    assert_eq!(
+        reply_ask(&held, steward).and_then(|ask| ask.last_message),
+        Some("Should I open the pull request now?".to_owned()),
+        "the turn took the question away while it ran"
+    );
+
+    // It ends on a message of its own: the last now, with the question just before it.
+    says(&held, steward, "check the queue reported.");
+    hears(&held, &told, steward, Event::Stop);
+    let after = reply_ask(&held, steward).expect("still waits on the person");
+    assert_eq!(
+        after.last_message.as_deref(),
+        Some("check the queue reported.")
+    );
+    assert_eq!(
+        after.earlier_messages,
+        Some(vec!["Should I open the pull request now?".to_owned()])
+    );
+
+    // Their reply clears every one.
+    held.operator_input(steward, b"open it\r").expect("sent");
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    assert_eq!(held.tasks().ledger().last_said(steward), None);
+    assert!(held.tasks().ledger().said_before(steward).is_empty());
 }

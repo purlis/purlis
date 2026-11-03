@@ -140,7 +140,9 @@ export function Onboarding({
 
   // Where the person has got to: one line, on a first run only. Someone back on a machine that has
   // been through the steps has nothing to be counted through (the harness step still counts).
-  const stepSaid = (!progress.finished_once || step === "harness") && (
+  // Whether this is a first run is the kept place's to say, and a window with no project draws
+  // before it has: nothing is counted until then, or that person sees a count come and go.
+  const stepSaid = steps.placeKnown && (!progress.finished_once || step === "harness") && (
     <nav className="onboarding-steps" aria-label="Setting up">
       <p className="onboarding-count">
         Step {counted.at + 1} of {counted.steps.length}: {STEP_NAMES[counted.steps[counted.at]]}

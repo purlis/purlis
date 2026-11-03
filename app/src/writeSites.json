@@ -25,6 +25,18 @@
       "why": "The behaviour suite's own fixture: it gives a test service to a test project on the machine its chats run on, as a person would in Settings; no window command calls it."
     },
     {
+      "at": "behaviour/pool_journey.rs in_a_docker_pool",
+      "writes": "this machine's store: the pins",
+      "by": [],
+      "why": "The Docker pool journey's own fixture: it sets where a test workspace's chats run, as a person would in its settings; no window command calls it."
+    },
+    {
+      "at": "behaviour/runs_on_order.rs in_a_docker_pool",
+      "writes": "this machine's store: the pins",
+      "by": [],
+      "why": "The Runs on order's parity fixture: it sets where a test project and workspace run their chats, as a person would in their settings; no window command calls it."
+    },
+    {
       "at": "chatbrowsers.rs allow_chat_browser",
       "writes": "this machine's network record",
       "by": ["allowChatBrowser"]
@@ -259,6 +271,16 @@
       "at": "planes.rs write_arrangement",
       "writes": null,
       "why": "It writes the window's tabs, which no lane's read draws."
+    },
+    {
+      "at": "loginasks.rs pressed",
+      "writes": "this machine's network record",
+      "by": ["answerBrowserLogin"]
+    },
+    {
+      "at": "loginasks.rs written",
+      "writes": "the project's manifest and its local settings",
+      "by": ["answerBrowserLogin"]
     },
     {
       "at": "proposals.rs apply_in",

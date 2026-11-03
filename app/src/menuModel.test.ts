@@ -7,6 +7,7 @@ import {
   catalogue,
   catalogued,
   ENDS_IT,
+  FRESH_UNCHANGED,
   memoryOffers,
   menuRows,
   sessionOffers,
@@ -31,7 +32,7 @@ import { memoryKey } from "./memories";
 import { SAID, SUBMENU, WARNS } from "./menuWords";
 import { terminalGroup, terminalRows } from "./terminalRows";
 import { GRANT_WORDS } from "../eslint.ui-rules.js";
-import { noTabs, openTab, openView, selectTab } from "./tabs";
+import { noTabs, openTab, openView, selectTab, setPinned } from "./tabs";
 
 /**
  * **How every context menu is drawn** (`menuModel.ts`; `docs/ui-primitives.md`, "Menus").
@@ -119,7 +120,7 @@ function world(over: Partial<Now> = {}): { now: Now; offers: Catalogued; tabs: N
       chat(11, { name: names[11], mode: "task", parent: 7, from: names[7], tab: false }),
       chat(12, { name: names[12], mode: "handoff", parent: 7, from: names[7], tab: false }),
     ],
-    pinned: { chats: [], workspaces: ["alpha"], projects: [] },
+    pinned: { workspaces: ["alpha"], projects: [] },
     projects: [
       { plane: "/plane", name: "charter" },
       { plane: "/other", name: "umbrella" },
@@ -150,10 +151,10 @@ function everyMenu(): { said: string; on: MenuOn; offers: Catalogued }[] {
   const { offers, tabs } = world();
   const [behind, front] = tabs.order;
   return [
-    { said: "a chat's tab behind", on: { on: "chat", tab: behind, session: 7 }, offers },
-    { said: "the chat's tab in front", on: { on: "chat", tab: front, session: 9 }, offers },
-    { said: "a chat's row", on: { on: "listed", session: 7, handed: [12] }, offers },
-    { said: "a task's row", on: { on: "listed", session: 11 }, offers },
+    { said: "a chat's tab behind", on: { on: "tab", tab: behind }, offers },
+    { said: "the chat's tab in front", on: { on: "tab", tab: front }, offers },
+    { said: "a chat's list", on: { on: "chat", session: 7 }, offers },
+    { said: "a task's list", on: { on: "chat", session: 11 }, offers },
     { said: "a workspace's tab", on: { on: "workspace", workspace: "alpha" }, offers },
     { said: "the focused workspace's tab", on: { on: "workspace", workspace: "beta" }, offers },
     { said: "the plane root's tab", on: { on: "root" }, offers },
@@ -293,8 +294,8 @@ describe("every menu", () => {
     expect(named).toEqual([
       "a chat's tab behind",
       "the chat's tab in front",
-      "a chat's row",
-      "a task's row",
+      "a chat's list",
+      "a task's list",
       "a workspace's tab",
       "the focused workspace's tab",
       "a project's tab",
@@ -316,7 +317,7 @@ describe("every menu", () => {
       ["chat.back", "chat.beside", "chat.handed", "tab.close", "worktree.merge"].sort(),
     );
     const { offers } = world();
-    const rows = rowsOf(menuOf({ on: "listed", session: 7, handed: [12] }, offers));
+    const rows = rowsOf(menuOf({ on: "chat", session: 7 }, offers));
     // The chat its work was handed to is another chat, and the row goes to it.
     expect(rows.map((row) => row.said)).toContain("Go to qa 12");
     const branch = rowsOf(menuOf({ on: "worktree", repo: "svc", piece: "fix-it" }, offers));
@@ -353,8 +354,8 @@ describe("every menu", () => {
         which,
       ).toBe(true);
     }
-    // The ways to stop a chat are such a submenu, on its tab and on its row.
-    expect(folded).toBeGreaterThanOrEqual(3);
+    // The ways to stop a chat are such a submenu, on its list (#4753), and on no tab's.
+    expect(folded).toBeGreaterThanOrEqual(1);
   });
 
   it("colours only what cannot be undone: a program ended, a thing deleted", () => {
@@ -367,6 +368,8 @@ describe("every menu", () => {
     expect([...danger].sort()).toEqual(
       [
         // Ends the program a chat runs, or every chat of a project.
+        "chat.end",
+        "chat.fresh",
         "tab.close",
         "pane.close",
         "project.close",
@@ -386,7 +389,7 @@ describe("every menu", () => {
     );
     // Restart keeps the conversation; a branch's folder goes and its branch stays; a repo
     // taken out of a workspace is deleted nowhere.
-    for (const stem of ["tab.restart", "chat.restart", "worktree.remove", "absent.drop"])
+    for (const stem of ["chat.restart", "worktree.remove", "absent.drop"])
       expect(plain, stem).toContain(stem);
   });
 
@@ -436,37 +439,43 @@ describe("every menu", () => {
   });
 });
 
-describe("a chat tab's menu", () => {
+describe("a chat's list (#4753)", () => {
   const { offers, tabs } = world();
-  const [behind, front] = tabs.order;
+  const [behind] = tabs.order;
 
-  it("is nine rows in four groups with twelve personas, and Ask is one of them", () => {
-    const menu = menuOf({ on: "chat", tab: behind, session: 7 }, offers);
+  it("is the chat's rows in the table's order, with Ask one row however many personas", () => {
+    const menu = menuOf({ on: "chat", session: 7 }, offers);
 
     expect(said(menu)).toEqual([
-      ["Switch to", "Rename…", "Pinned", "Link to work item…", "Unlink work item"],
-      [`Open ▸ [Activity, Network]`, `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`],
+      [
+        "Rename…",
+        `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`,
+        "Link to work item…",
+        "Unlink work item",
+      ],
+      // Its work went to qa 12, and chat 7 needs you, so it can be ignored until it asks again.
+      ["Go to qa 12", "Open ▸ [Activity, Network]", "Ignore until it asks again"],
       ["Restart"],
       // The ways to stop it end something too: in the last group, above the row that ends it.
-      ["Stop ▸ [Stop, Stop and everything below it, Stop all tasks]", "End"],
+      ["Stop ▸ [Stop, Stop and everything below it, Stop all tasks]", "Start fresh", "End…"],
     ]);
     const top = menu.groups.flatMap((group) => group.entries);
-    expect(top.length).toBeLessThanOrEqual(10);
-    // With no persona at all there is no Ask row, and with fifty there is still one.
+    // With fifty personas there is still one Ask row, and with none there is no Ask row.
     const many = world({ ask: { personas: [...Array(50)].map((_, i) => `p${i}`), locked: null } });
     expect(
-      menuOf({ on: "chat", tab: behind, session: 7 }, many.offers).groups.flatMap(
-        (group) => group.entries,
-      ).length,
+      menuOf({ on: "chat", session: 7 }, many.offers).groups.flatMap((group) => group.entries)
+        .length,
     ).toBe(top.length);
     const none = world({ ask: { personas: [], locked: null } });
-    expect(said(menuOf({ on: "chat", tab: behind, session: 7 }, none.offers))[1]).toEqual([
-      "Open ▸ [Activity, Network]",
+    expect(said(menuOf({ on: "chat", session: 7 }, none.offers))[0]).toEqual([
+      "Rename…",
+      "Link to work item…",
+      "Unlink work item",
     ]);
   });
 
   it("names a persona's row by the persona alone, and says what asking does once", () => {
-    const menu = menuOf({ on: "chat", tab: behind, session: 7 }, offers);
+    const menu = menuOf({ on: "chat", session: 7 }, offers);
     const ask = menu.groups
       .flatMap((group) => group.entries)
       .find((entry) => entry.kind === "sub" && entry.key === "ask");
@@ -474,46 +483,33 @@ describe("a chat tab's menu", () => {
 
     expect(ask.tip).toMatch(/^A task starts as the persona you pick/);
     const rows = rowsOf(ask);
-    expect(rows.map((row) => row.offer.id)).toEqual(
-      askRows(behind, offers).map((offer) => offer.id),
-    );
+    expect(rows.map((row) => row.offer.id)).toEqual(askRows(7, offers).map((offer) => offer.id));
     for (const row of rows) {
       expect(row.untipped).toBe(true);
       expect(row.said).not.toMatch(/^Ask /);
     }
   });
 
-  it("has no Switch to row on the tab in front, and it is first on any other", () => {
-    expect(said(menuOf({ on: "chat", tab: behind, session: 7 }, offers))[0][0]).toBe(SAID.switchTo);
-    const inFront = rowsOf(menuOf({ on: "chat", tab: front, session: 9 }, offers));
-    expect(inFront.map((row) => row.said)).not.toContain(SAID.switchTo);
-    expect(inFront[0].said).toBe(SAID.rename);
-  });
+  it("is the same list for a chat with no tab: a handoff's row has every row a tab's chat has", () => {
+    const rows = (session: number) =>
+      rowsOf(menuOf({ on: "chat", session }, offers)).map((row) => row.said);
 
-  it("draws Pinned as one row with a tick while it is on", () => {
-    const pin = (from: Catalogued) =>
-      rowsOf(menuOf({ on: "chat", tab: behind, session: 7 }, from)).find(
-        (row) => row.said === SAID.pinned,
-      );
-
-    expect(pin(offers)?.checked).toBe(false);
-    const held = world({ pinned: { chats: [7], workspaces: [], projects: [] } });
-    expect(pin(held.offers)?.checked).toBe(true);
-    // The catalogue's row is the one that would unpin it.
-    expect(pin(held.offers)?.offer.title).toMatch(/^Unpin /);
+    // Less what is chat 7's own now: its work link, and the Ignore of a chat that needs you.
+    const mine = new Set(["Unlink work item", "Go to qa 12", "Ignore until it asks again"]);
+    expect(rows(12)).toEqual(rows(7).filter((one) => !mine.has(one)));
   });
 
   it("says the key that does the same from the tab, at the row's end", () => {
-    const rows = rowsOf(menuOf({ on: "chat", tab: behind, session: 7 }, offers));
+    const rows = rowsOf(menuOf({ on: "chat", session: 7 }, offers));
     const keys = Object.fromEntries(
       rows.filter((row) => row.keys !== undefined).map((row) => [row.said, row.keys]),
     );
 
-    expect(keys).toEqual({ "Rename…": "F2", End: expect.stringMatching(/^(⌫|Delete)$/) });
+    expect(keys).toEqual({ "Rename…": "F2" });
   });
 
   it("says Restart waits for the turn while its chat is mid-turn, and names no chat doing it", () => {
-    const restart = rowsOf(menuOf({ on: "chat", tab: behind, session: 7 }, offers)).find(
+    const restart = rowsOf(menuOf({ on: "chat", session: 7 }, offers)).find(
       (row) => row.said === SAID.restart,
     );
 
@@ -521,25 +517,74 @@ describe("a chat tab's menu", () => {
     expect(restart?.danger).toBe(false);
   });
 
-  it("colours Start fresh, which starts again with no conversation, and puts it last with End", () => {
-    const changed = world({ planeUpdated: { 7: ["CLAUDE.md"] } });
-    const menu = menuOf({ on: "chat", tab: behind, session: 7 }, changed.offers);
+  it("greys Start fresh with its reason until the instructions change, then colours it", () => {
+    const quiet = rowsOf(menuOf({ on: "chat", session: 7 }, offers)).find(
+      (row) => row.said === SAID.startFresh,
+    );
+    expect(quiet?.offer.available).toBe(false);
+    expect(quiet?.offer.reason).toBe(FRESH_UNCHANGED);
 
-    expect(said(menu).at(-1)).toEqual([
-      "Stop ▸ [Stop, Stop and everything below it, Stop all tasks]",
-      "Start fresh",
-      "End",
-    ]);
-    const fresh = rowsOf(menu).find((row) => row.said === SAID.startFresh);
+    const changed = world({ planeUpdated: { 7: ["CLAUDE.md"] } });
+    const fresh = rowsOf(menuOf({ on: "chat", session: 7 }, changed.offers)).find(
+      (row) => row.said === SAID.startFresh,
+    );
+    expect(fresh?.offer.available).toBe(true);
     expect(fresh?.danger).toBe(true);
     expect(fresh?.warns).toBe(WARNS.fresh);
+  });
+
+  it("colours End…, which ends the chat's program, and puts it last", () => {
+    const menu = menuOf({ on: "chat", session: 7 }, offers);
+    const end = rowsOf(menu).at(-1);
+
+    expect(end?.said).toBe(SAID.end);
+    expect(end?.danger).toBe(true);
+    expect(end?.warns).toBe(WARNS.ends);
+  });
+
+  it("names the menu for the chat, once", () => {
+    const menu = menuOf({ on: "chat", session: 7 }, offers);
+    expect(menu.about).toBe(`Chat ${tabs.byId[behind].name}`);
+  });
+});
+
+describe("a tab's menu (#4753)", () => {
+  const { offers, tabs } = world();
+  const [behind, front] = tabs.order;
+
+  it("holds the tab's own rows and no chat's", () => {
+    expect(said(menuOf({ on: "tab", tab: behind }, offers))).toEqual([
+      ["Switch to", "Pinned"],
+      ["End"],
+    ]);
+    const inFront = rowsOf(menuOf({ on: "tab", tab: front }, offers));
+    expect(inFront.map((row) => row.said)).not.toContain(SAID.switchTo);
+  });
+
+  it("draws Pinned as one row with a tick while it is on", () => {
+    const pin = (from: Catalogued) =>
+      rowsOf(menuOf({ on: "tab", tab: behind }, from)).find((row) => row.said === SAID.pinned);
+
+    expect(pin(offers)?.checked).toBe(false);
+    const held = world({ tabs: setPinned(world().tabs, behind, true) });
+    expect(pin(held.offers)?.checked).toBe(true);
+    // The catalogue's row is the one that would unpin it.
+    expect(pin(held.offers)?.offer.title).toMatch(/^Unpin /);
+  });
+
+  it("says the tab's close key at the row's end", () => {
+    const rows = rowsOf(menuOf({ on: "tab", tab: behind }, offers));
+    const keys = Object.fromEntries(
+      rows.filter((row) => row.keys !== undefined).map((row) => [row.said, row.keys]),
+    );
+    expect(keys).toEqual({ End: expect.stringMatching(/^(⌫|Delete)$/) });
   });
 
   it("on a view's tab is Pinned and Close, and Close is not coloured", () => {
     const withView = openView(tabs, { from: null, view: "vault", key: "forge" }, "forge", "beta");
     const view = withView.order[withView.order.length - 1];
     const menu = menuOf(
-      { on: "chat", tab: view },
+      { on: "tab", tab: view },
       catalogued(catalogue({ ...world().now, tabs: withView })),
     );
     const rows = rowsOf(menu);
@@ -580,11 +625,17 @@ describe("the other tabs' menus", () => {
     expect(said(menuOf({ on: "project", plane: "/plane" }, offers))[0][0]).toBe("Pinned");
   });
 
-  it("a task's row in the Chats list", () => {
-    expect(said(menuOf({ on: "listed", session: 11 }, offers))).toEqual([
-      ["Brief", "Move to its own tab", "Open beside console-developer 16"],
+  it("a task's list, which has its own two ends and no End…", () => {
+    expect(said(menuOf({ on: "chat", session: 11 }, offers))).toEqual([
+      ["Rename…", `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`, "Link to work item…"],
+      [
+        "Move to its own tab",
+        "Open beside console-developer 16",
+        "Brief",
+        "Open ▸ [Activity, Network]",
+      ],
       ["Restart"],
-      ["Stop and get its report", "Close now"],
+      ["Start fresh", "Stop and get its report", "Close now"],
     ]);
   });
 
@@ -631,7 +682,7 @@ describe("a menu with nothing to draw", () => {
 
 /** The rows of the submenus the catalogue decides the length of (Ask, Move to, Curate), which
  *  `menuRows` does not list and their submenu names. */
-const GROWN = /^(tab\.ask|memory\.move|curate)[:.]/;
+const GROWN = /^(chat\.ask|chat\.move|memory\.move|curate)[:.]/;
 
 /** The rows left out while they cannot run. */
 const QUIET = new Set(["tab.select", "workspace.focus", "project.select"]);

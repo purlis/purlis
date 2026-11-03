@@ -1,0 +1,28 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# CodeQL's configuration, read by both jobs of `workflows/codeql.yml`.
+#
+# Test code is not scanned. On 2026-11-01 and 2026-11-03 every one of the ~330 Rust and JS alerts
+# found in tests was a false positive: a `panic!`/`assert!` message printing a test's own values
+# (rust/cleartext-logging), a fake token in a fixture (rust/hard-coded-cryptographic-value), or an
+# `http://` iframe between local fixture hosts (js/functionality-from-untrusted-source). Each new
+# batch of tests brought a new batch, and each had to be dismissed by hand.
+#
+# What that costs: a real finding in test code is no longer reported. Test code never ships, and
+# shipped code is scanned exactly as before. A `#[cfg(test)] mod tests { … }` written inline in a
+# source file is still scanned, since paths can't separate it from the code around it.
+name: purlis
+
+paths-ignore:
+  # Rust: integration tests, test modules split into their own files, and fixtures.
+  - '**/tests/**'
+  - '**/tests.rs'
+  - '**/*_tests.rs'
+  # JavaScript / TypeScript unit and end-to-end tests.
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
+  - '**/*.test.js'
+  - '**/*.test.mjs'
+  - '**/*.spec.ts'
+  - '**/*.spec.js'

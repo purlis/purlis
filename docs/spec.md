@@ -422,7 +422,9 @@ how it is cited and nothing here is renumbered.
     each of the chat's browser tools by name (`browser_open` to `browser_login`): the person's
     answer to the chat's browser Ask, which the app asks at the first call, is the consent, so
     the harness does not ask beside it; for `browser_login` (#2016), so is this machine's Allow
-    of the persona's tools, without which the login is not armed and nothing is filled. Codex's approval and
+    of the persona's tools, without which the login is not armed and nothing is filled, or, for a
+    login the persona doesn't declare, the person's answer to its one notice (#4595), which
+    confirms the exact site. Codex's approval and
     sandbox are whole-session switches, so it carries none (ADR 0064's measurements). A record's tab resumes that record whichever place is
     in front. **Smart close puts the chat into the background** (SI-8f): its tab shrinks to a
     fixed chip — the chat's icon and the breathing mark, the name in its tooltip — at the chat
@@ -566,7 +568,7 @@ confirm it (D-0082b). A row is added in the pull request that adds its job.
 | L7 | reattach with `purlisd` up: first paint of the focused pane | ≤ 1 s | CI relative (`bench`); release absolute | FD-5, FD-7 | — |
 | L8 | relaunch with the hot target's chats to put back: interactive | ≤ 3 s | CI relative (`bench`); release absolute; evidence only (`app builds`, Linux: `tools/coldstart-linux.sh restore` launches with 1, 10 and 40 chats to put back and reports when the window could be used and when the chats had started; the first must not grow with the chats, `tools/restore-case.mjs`) | SC-20 | — |
 | L9 | project switch among 10 open projects, one chat each: the press of the switcher's row to the paint of that project's chat, p95 of 30 | ≤ 200 ms | release absolute; CI relative (`bench`) is #875 and #931; evidence only (`scenario tests`, macOS and Linux) | FR-27 | — |
-| L10 | the Skill studio opening at 200 skills: the press of the palette's row to the frame after the Library's first row, p95 of 20, a new tab each time | < 300 ms | release absolute; CI absolute in `outcome bars` (macOS and Linux, debug build, stand-ins, each harness): on main and on pull requests that touch what it measures; a miss turns that job red, which no pull request requires until the flag's flip (#2786) | SK-23, #4343 | — |
+| L10 | the Skill studio opening at 200 skills: the press of the palette's row to the frame after the Library's first row, p95 of 20, a new tab each time | < 300 ms | release absolute; CI absolute in `outcome bars` (macOS and Linux, `dev-release` build, stand-ins, each harness): on main and on pull requests that touch what it measures; a miss turns that job red, which no pull request requires until the flag's flip (#2786) | SK-23, #4343 | — |
 | T1 | event log throughput | ≥ 1,000 events/s sustained, L5 inside its budget | CI absolute (`stress`) | FD-9 | — |
 | T2 | audit throughput and group commit | 1,000 entries/s; ≤ 100 ms between commits (ADR 0075) | CI absolute (`stress`) | AU-3 | — |
 | G1 | git standing at 300,000 files: git processes in one repo at once while the four pollers (auto-save's look, the title bar, the Saving tab, the alerts) read it; eight reads against one | 1 at a time; eight reads cost no more git processes than one standing, and one `status` | CI absolute (`stress`, *shared standing at 300,000 files*) | FD-11 | — |

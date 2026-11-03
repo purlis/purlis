@@ -11,6 +11,10 @@
 
 use clap::Subcommand;
 use purlis_core::poollimits::{self, Limit};
+use purlis_core::poolsetup::{
+    self,
+    asked::{Asked, Created},
+};
 use purlis_core::runners;
 
 #[derive(Subcommand)]
@@ -23,6 +27,38 @@ pub enum PoolCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Add a Docker pool on this machine: its runner is made from the image and paired here.
+    ///
+    /// This is what Pool setup's Create button runs, and Pool setup picks it up. A team's own
+    /// image is checked against the runner image contract first.
+    Add {
+        /// The pool's name: lower-case letters, digits and dashes.
+        name: String,
+        /// The runner image, by its digest. See what this does in Pool setup names purlis's own.
+        #[arg(long)]
+        image: String,
+        /// How many CPUs its runner may use, to the thousandth.
+        #[arg(long)]
+        cpus: Option<String>,
+        /// The memory its runner may use, in MiB.
+        #[arg(long)]
+        memory_mib: Option<u32>,
+        /// How many processes its runner may run at once.
+        #[arg(long)]
+        processes: Option<u32>,
+        /// The size of its runner's /tmp, in MiB.
+        #[arg(long)]
+        tmp_mib: Option<u32>,
+        /// How long its runner waits without a link before it suspends: 12h, 90m.
+        #[arg(long)]
+        suspend_after: Option<String>,
+        /// The most frames a second its runner's browsers are watched at.
+        #[arg(long)]
+        frames: Option<u32>,
+        /// The widest frame its runner's browsers are watched at, in pixels.
+        #[arg(long)]
+        width: Option<u32>,
+    },
     /// Pool setup: each step's state and what to do next, for a pool or a new one. It only reads.
     Setup {
         /// The pool. Without it, a new Docker pool.
@@ -31,7 +67,7 @@ pub enum PoolCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Set one of a pool's limits, or return it to purlis's default with `--reset`.
+    /// Set one of a pool's limits, or return it to the default with `--reset`.
     ///
     /// In a chat the app started, this writes nothing: the person is asked in the window, and
     /// only they apply it.
@@ -43,7 +79,7 @@ pub enum PoolCommand {
         /// The new value, a whole number in the limit's unit.
         #[arg(allow_hyphen_values = true, required_unless_present = "reset")]
         value: Option<String>,
-        /// Return it to following purlis's default.
+        /// Return it to following the default.
         #[arg(long, conflicts_with = "value")]
         reset: bool,
     },
@@ -73,6 +109,35 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
              purlis pool setup in your own terminal."
                 .to_owned(),
         ),
+        PoolCommand::Add { .. } if in_a_chat => Err(
+            "Adding a pool uses this machine's Docker, which a chat doesn't reach. Run it in your \
+             own terminal, or use Pool setup in the window."
+                .to_owned(),
+        ),
+        PoolCommand::Add {
+            name,
+            image,
+            cpus,
+            memory_mib,
+            processes,
+            tmp_mib,
+            suspend_after,
+            frames,
+            width,
+        } => {
+            let asked = Asked {
+                name: name.clone(),
+                image: image.clone(),
+                cpus: cpus.clone(),
+                memory_mib: *memory_mib,
+                processes: *processes,
+                tmp_mib: *tmp_mib,
+                suspend_after: suspend_after.clone(),
+                frames: *frames,
+                width: *width,
+            };
+            added(&config()?, &asked)
+        }
         PoolCommand::Setup { name, json } => {
             crate::poolsetup::answered(name.as_deref(), *json)?;
             Ok(0)
@@ -140,19 +205,49 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             }
             runners::set_pool_limit(&config()?, pool, limit.id, value)
                 .map_err(|why| why.to_string())?;
-            crate::voice::ok(saved_said(pool, limit, value));
+            let chosen = runners::chosen_limits_of(&config()?, pool).unwrap_or_default();
+            crate::voice::ok(saved_said(pool, limit, value, &chosen));
             Ok(0)
         }
     }
 }
 
+/// **Adds the pool `asked` asks for**, as Pool setup's button does.
+fn added(config: &std::path::Path, asked: &Asked) -> Result<u8, String> {
+    let docker = poolsetup::docker_here()
+        .ok_or_else(|| "purlis found no docker on this machine.".to_owned())?;
+    docker.answers().map_err(|why| why.0)?;
+    let keyring = purlis_core::linkkey::this_builds_keyring(config);
+    let desktop = purlis_core::linkkey::desktop(config, &*keyring)?.pinned();
+    match poolsetup::asked::create(config, &docker, asked, &desktop)
+        .map_err(|why| why.to_string())?
+    {
+        Created::Added => {
+            crate::voice::ok(format!(
+                "Pool {} is added, and its runner is made.",
+                asked.name
+            ));
+            Ok(0)
+        }
+        Created::Breaks(problems) => Err(format!(
+            "This image can't be a runner, and nothing was made:\n{}",
+            problems.join("\n")
+        )),
+    }
+}
+
 /// What a save says.
-fn saved_said(pool: &str, limit: &Limit, value: Option<u64>) -> String {
+fn saved_said(
+    pool: &str,
+    limit: &Limit,
+    value: Option<u64>,
+    chosen: &poollimits::Chosen,
+) -> String {
     let now = value.map_or_else(
         || {
             format!(
-                "back to purlis's default, {}",
-                limit.unit.said(limit.default)
+                "back to the default, {}",
+                limit.unit.said(chosen.default_of(limit.id))
             )
         },
         |value| limit.unit.said(value),
@@ -187,7 +282,9 @@ fn limits_lines(held: &runners::PoolLimitsHeld) -> Vec<String> {
             .refused
             .iter()
             .find(|one| one.limit == limit.id)
-            .map_or_else(String::new, poollimits::RefusedValue::said);
+            .map(poollimits::RefusedValue::said)
+            .or_else(|| held.chosen.over_highest_said(limit.id))
+            .unwrap_or_default();
         lines.push(format!(
             "{}\t{}\t{whose}\t{}\t{refused}",
             limit.key,
@@ -205,12 +302,15 @@ fn limits_json(held: &runners::PoolLimitsHeld) -> serde_json::Value {
                 "key": limit.key,
                 "plain": limit.plain,
                 "unit": limit.unit.word(),
-                "default": limit.default,
+                "default": held.chosen.default_of(limit.id),
+                "defaultByTeam": held.chosen.default_by_team(limit.id),
+                "highest": held.chosen.highest(limit.id),
                 "set": held.chosen.get(limit.id),
                 "inForce": held.chosen.in_force(limit.id),
                 "applies": limit.takes_effect.said(),
                 "refused": held.refused.iter().find(|one| one.limit == limit.id)
-                    .map(purlis_core::poollimits::RefusedValue::said),
+                    .map(purlis_core::poollimits::RefusedValue::said)
+                    .or_else(|| held.chosen.over_highest_said(limit.id)),
             })
         })
         .collect();

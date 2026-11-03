@@ -875,6 +875,41 @@ fn a_clone_is_sent_on_its_branch_with_its_work_and_its_runner_commits_come_back(
         }]
     );
     assert_eq!(on_a_runner(&world.desktop, "other"), Vec::new());
+    // And once the workspace has moved off that pool, while no remote has the pool's name.
+    assert_eq!(on_a_pool_left(&world.desktop, "builds").len(), 1);
+    git(
+        &world.desktop,
+        &["remote", "add", "builds", "https://example.invalid/app.git"],
+    );
+    assert_eq!(on_a_pool_left(&world.desktop, "builds"), Vec::new());
+}
+
+#[test]
+fn a_pool_a_workspace_left_is_told_only_what_came_back_from_it() {
+    let world = World::new();
+    let runner = world.runner_repo();
+    send(&world.desktop, &[], &[], &world.scratch(), sent_to(&runner)).unwrap();
+    let back = commit(&runner, "fix.txt", "done on the runner\n");
+    let scratch = world.scratch();
+    fetch_back(&world.desktop, "builds", &scratch, |have, into| {
+        give(&runner, &have, into)
+            .map(|(heads, bundled)| (heads, bundled == Bundled::Wrote))
+            .map_err(|why| why.to_string())
+    })
+    .unwrap();
+    let since = commit(&world.desktop, "since.txt", "made here since\n");
+
+    let told = std::cell::RefCell::new(Vec::new());
+    let scratch = world.scratch();
+    fetch_back_left(&world.desktop, "builds", false, &scratch, |have, into| {
+        told.borrow_mut().clone_from(&have);
+        give(&runner, &have, into)
+            .map(|(heads, bundled)| (heads, bundled == Bundled::Wrote))
+            .map_err(|why| why.to_string())
+    })
+    .unwrap();
+    assert!(told.borrow().contains(&back), "{told:?}");
+    assert!(!told.borrow().contains(&since), "{told:?}");
 }
 
 #[test]
@@ -1210,4 +1245,120 @@ fn a_tracked_file_the_repository_ignores_is_still_left_out_by_name() {
     .unwrap();
     // Its change stays here: the snapshot carries nothing else, so there is none.
     assert_eq!(snapshot, None);
+}
+
+const FRESH: &str = "builds/fresh-0123456789abcdef";
+
+/// A runner of `world` whose task committed on `fix`, and that commit.
+fn a_task_committed_on_a_runner(world: &World) -> (PathBuf, String) {
+    world.push_fix(&[]);
+    let runner = world.runner_repo();
+    let tree = world.project.join("workspaces/app/.worktrees/web/fix");
+    git(
+        &runner,
+        &["worktree", "add", "-q", tree.to_str().unwrap(), "fix"],
+    );
+    let work = commit(&tree, "task.txt", "the task's commit\n");
+    (runner, work)
+}
+
+/// The branches a runner at `runner` has, taken back into the desktop under `pool`.
+fn fetched_back_as(world: &World, runner: &Path, pool: &str) -> Vec<Ref> {
+    let into = world.bundle_path("fresh.bundle");
+    let (heads, bundled) = give(runner, &[], &into).unwrap();
+    let bundle = (bundled == Bundled::Wrote).then_some(into.as_path());
+    take_back(&world.desktop, pool, bundle, &heads).unwrap()
+}
+
+#[test]
+fn a_fresh_runners_branches_come_back_under_its_name_and_no_fetch_of_its_pool_touches_them() {
+    let world = World::new();
+    let (runner, work) = a_task_committed_on_a_runner(&world);
+
+    let kept = fetched_back_as(&world, &runner, FRESH);
+    assert_eq!(
+        named(&kept, &format!("refs/remotes/{FRESH}/fix")).map(|r| r.oid.as_str()),
+        Some(work.as_str())
+    );
+
+    // The pool's own runner never had that branch, and its fetch removes only what it had.
+    let kept = take_back(&world.desktop, "builds", None, &[]).unwrap();
+    assert_eq!(
+        named(&kept, &format!("refs/remotes/{FRESH}/fix")).map(|r| r.oid.as_str()),
+        Some(work.as_str()),
+        "the fetch of the pool's own runner removed a fresh runner's branch"
+    );
+
+    // Nor may a branch of that name on the pool's own runner write over it.
+    let main = git(&world.desktop, &["rev-parse", "HEAD"]);
+    let posing = Ref {
+        name: "refs/heads/fresh-0123456789abcdef/fix".into(),
+        oid: main,
+    };
+    let kept = take_back(&world.desktop, "builds", None, &[posing]).unwrap();
+    assert_eq!(
+        named(&kept, &format!("refs/remotes/{FRESH}/fix")).map(|r| r.oid.as_str()),
+        Some(work.as_str()),
+        "the pool's own runner wrote over a fresh runner's branch"
+    );
+}
+
+#[test]
+fn a_branch_named_like_a_runner_but_not_one_is_the_pools_as_any_other() {
+    let world = World::new();
+    let main = git(&world.desktop, &["rev-parse", "HEAD"]);
+    let branch = Ref {
+        name: "refs/heads/fresh-ideas/one".into(),
+        oid: main.clone(),
+    };
+    let kept = take_back(&world.desktop, "builds", None, &[branch]).unwrap();
+    assert_eq!(
+        named(&kept, "refs/remotes/builds/fresh-ideas/one").map(|r| r.oid.as_str()),
+        Some(main.as_str())
+    );
+    let kept = take_back(&world.desktop, "builds", None, &[]).unwrap();
+    assert_eq!(kept, Vec::new());
+}
+
+#[test]
+fn only_a_fresh_runner_may_be_named_under_a_pool() {
+    let world = World::new();
+    for pool in [
+        "builds/fresh-",
+        "builds/fresh-0123",
+        "builds/other",
+        "builds/fresh-0123456789abcdeg",
+        "builds/fresh-0123456789abcdef/more",
+    ] {
+        assert!(
+            matches!(
+                take_back(&world.desktop, pool, None, &[]),
+                Err(Refused::NotAllowed(_))
+            ),
+            "{pool}"
+        );
+    }
+}
+
+#[test]
+fn what_a_fresh_runner_left_stays_only_where_this_machine_has_it_nowhere_else() {
+    let world = World::new();
+    let (runner, work) = a_task_committed_on_a_runner(&world);
+    git(&runner, &["branch", "copy-of-fix", "fix~1"]);
+    fetched_back_as(&world, &runner, FRESH);
+
+    keep_only_whats_new(&world.desktop, FRESH).unwrap();
+
+    let left = refs_under(&world.desktop, &[format!("refs/remotes/{FRESH}/").as_str()]).unwrap();
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert_eq!(left[0].name, format!("refs/remotes/{FRESH}/fix"));
+    assert_eq!(left[0].oid, work);
+
+    // Once a branch here has the commit, nothing is left to keep.
+    git(&world.desktop, &["branch", "landed", &work]);
+    keep_only_whats_new(&world.desktop, FRESH).unwrap();
+    assert_eq!(
+        refs_under(&world.desktop, &[format!("refs/remotes/{FRESH}/").as_str()]).unwrap(),
+        Vec::new()
+    );
 }

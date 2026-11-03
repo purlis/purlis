@@ -955,6 +955,7 @@ fn a_chat_is_announced_with_the_harness_and_conversation_it_was_started_under() 
 }
 use purlis_core::harness::SessionId;
 use purlis_core::reopen::Fresh;
+use purlis_core::reopen::layout::{Direction, EVEN, Layout, Node, Pane, PaneView, Tab};
 
 use super::*;
 use crate::host::pretend::Pretend;
@@ -3686,6 +3687,7 @@ fn putting_a_record_back_writes_it_once_when_every_chat_is_back() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -3965,6 +3967,7 @@ fn the_chat_that_was_in_front_comes_back_in_front() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -3996,6 +3999,7 @@ fn a_record_is_put_back_as_one_session_for_each_chat_it_holds() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4019,6 +4023,7 @@ fn a_chat_put_back_with_a_conversation_is_resumed_by_it() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4056,6 +4061,7 @@ fn the_chat_that_was_in_front_is_the_one_the_window_is_told_to_show() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4081,6 +4087,7 @@ fn a_chat_put_back_with_no_conversation_says_so_and_starts_a_new_one() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4106,6 +4113,7 @@ fn the_record_names_the_process_each_chat_runs_as_now_and_not_the_one_it_was_put
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4170,6 +4178,7 @@ fn a_claude_chat_reopened_after_its_workspace_was_renamed_starts_fresh_and_says_
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
     };
     // What `charter workspace rename alpha beta` does to the record.
@@ -4212,6 +4221,7 @@ fn a_chat_that_could_not_be_started_stays_in_the_record_for_the_next_launch() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4253,6 +4263,7 @@ fn a_record_cannot_ask_a_launch_to_start_an_unbounded_number_of_programs() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4285,6 +4296,7 @@ fn a_chat_that_could_not_be_started_is_named_with_the_reason() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4310,6 +4322,7 @@ fn a_chat_that_could_not_be_started_is_still_recorded_after_a_later_change() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4330,6 +4343,7 @@ fn one_recorded(program: &str) -> Record {
         dealt: 0,
         relaunch_after_update: false,
         clone_seat: None,
+        layout: None,
         focus: None,
     }
 }
@@ -4729,6 +4743,7 @@ fn of_two_waiting_chats_with_one_name_forget_drops_only_the_one_named_by_its_id(
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4776,6 +4791,7 @@ fn a_record_holding_one_id_twice_puts_back_two_chats_with_their_own_ids_and_keep
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -4964,6 +4980,7 @@ fn a_chat_whose_program_has_gone_is_left_out_and_the_others_still_come_back() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -5188,6 +5205,7 @@ fn a_record_written_before_chats_kept_their_numbers_is_put_back_as_it_always_was
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -5210,6 +5228,7 @@ fn a_chat_put_back_is_one_the_next_quit_records_again() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -5221,140 +5240,437 @@ fn a_chat_put_back_is_one_the_next_quit_records_again() {
     assert_eq!(again.chats[0].resume, Some(SessionId::new(ID).unwrap()));
 }
 
-// ----- a pinned chat (ADR 0039, stored per ADR 0040) -----
+// ----- the pin is a tab's (#4762, ADR 0039 amended 2026-11-02) -----
 
 #[test]
-fn a_pin_is_written_into_the_record_so_it_outlives_the_app() {
-    // The record is the only thing that says a chat exists at all, which is why the pin
-    // is kept there and not in the machine store: a pin cannot outlive its chat.
+fn a_chat_pin_is_read_once_from_a_record_with_no_tabs_and_then_the_tab_holds_it() {
+    // The upgrade: a record written before tabs were recorded keeps each chat's pin until the
+    // window reports its layout, which carries it on the tab. From then on the chat's own
+    // field is never written again.
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
-        .unwrap();
+    let old = Record {
+        chats: vec![
+            Chat {
+                number: Some(3),
+                active: true,
+                ..chat(&a_claude(dir.path()), "ide.3", None)
+            },
+            Chat {
+                number: Some(4),
+                pinned: true,
+                ..chat(&a_claude(dir.path()), "ide.4", None)
+            },
+        ],
+        ..Record::default()
+    };
+    chats.put_back(&old, SIZE);
+    assert!(chats.record().chats[1].pinned, "carried until a layout");
 
-    chats.pin(session, true).expect("the chat is open");
+    let mut pinned = front_tab(Node::chat(4));
+    pinned.pinned = true;
+    chats.lay_out(on_ops(vec![pinned])).unwrap();
 
-    assert!(chats.record().chats[0].pinned);
-    let _ = chats.close(session);
+    let record = chats.record();
+    assert!(
+        record.chats.iter().all(|one| !one.pinned),
+        "the chat's pin retired"
+    );
+    assert!(record.layout.expect("a layout").tabs[0].pinned);
+    chats.end_all();
+}
+
+// ----- every tab as a tree of panes (#4751) -----
+
+/// A tab on `ops`'s strip in the project window, in front, holding `tree`, its first pane
+/// focused.
+fn front_tab(tree: Node) -> Tab {
+    Tab {
+        workspace: Some("ops".to_owned()),
+        pinned: false,
+        window: 0,
+        front: true,
+        focused: tree.to_a_pane(&[]),
+        tree,
+    }
+}
+
+/// The project window drawing `ops`'s strip, holding `tabs`.
+fn on_ops(tabs: Vec<Tab>) -> Layout {
+    Layout {
+        strip: Some("ops".to_owned()),
+        tabs,
+    }
+}
+
+/// Two chats split side by side, the first holding a third of the tab.
+fn split_of(one: u32, other: u32) -> Layout {
+    on_ops(vec![front_tab(Node::split(
+        Direction::Row,
+        333,
+        Node::chat(one),
+        Node::chat(other),
+    ))])
 }
 
 #[test]
-fn a_pin_can_be_taken_off_again() {
+fn two_chats_split_together_with_their_sizes_come_back_the_same_after_a_relaunch() {
     let dir = tempfile::tempdir().unwrap();
-    let chats = Chats::new();
-    let session = chats
+    let plane = tempfile::tempdir().unwrap();
+    let before = Chats::new();
+    let one = before
         .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
         .unwrap();
-    chats.pin(session, true).unwrap();
+    let other = before
+        .start(&chat(&a_claude(dir.path()), "ide.8", None), SIZE)
+        .unwrap();
+    before.lay_out(split_of(one, other)).expect("both are open");
+    purlis_core::reopen::write(plane.path(), &before.record()).unwrap();
+    before.end_all();
 
-    chats.pin(session, false).unwrap();
+    let after = Chats::new();
+    let record = purlis_core::reopen::read_or_refusal(plane.path()).unwrap();
+    after.put_back(&record, SIZE);
 
-    assert!(!chats.record().chats[0].pinned);
-    let _ = chats.close(session);
+    assert_eq!(after.layout(), Some(split_of(one, other)));
+    assert_eq!(after.looked_at(), vec![one, other]);
+    after.end_all();
 }
 
-// ----- what a session's tab shows (#1486) -----
-
 #[test]
-fn what_a_tab_shows_is_written_into_the_record_and_taken_out_again() {
+fn view_tabs_and_a_file_tab_s_divider_are_still_written_beside_a_layout() {
+    // #4751 keeps `views[]` beside the tree: which view tab was in front and where a file
+    // tab's divider was are read from it, and the switch (#4758) retires it.
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
-    let session = chats
+    let one = chats
         .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
         .unwrap();
+    let devops = View {
+        from: None,
+        view: "persona".to_owned(),
+        key: "devops".to_owned(),
+        title: "devops".to_owned(),
+        workspace: Some("ops".to_owned()),
+        at: 1,
+        active: true,
+        pinned: false,
+        split: None,
+    };
+    let files = View {
+        view: "piece-files".to_owned(),
+        key: "ops/svc/fix-login".to_owned(),
+        title: "fix-login".to_owned(),
+        at: 2,
+        active: false,
+        split: Some(31),
+        ..devops.clone()
+    };
+    chats.hold_views(vec![devops.clone(), files.clone()]);
 
     chats
-        .tab_shows(session, Some(41), None)
-        .expect("the chat is open");
-    assert_eq!(chats.record().chats[0].shows, Some(41));
-    assert_eq!(chats.open_now()[0].shows, Some(41));
-
-    chats.tab_shows(session, None, None).unwrap();
-    assert_eq!(chats.record().chats[0].shows, None);
-    let _ = chats.close(session);
-}
-
-#[test]
-fn a_tab_is_never_said_to_show_its_own_chat_and_a_chat_not_open_shows_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let chats = Chats::new();
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .lay_out(on_ops(vec![front_tab(Node::chat(one))]))
         .unwrap();
 
-    chats.tab_shows(session, Some(session), None).unwrap();
-    assert_eq!(chats.record().chats[0].shows, None);
-    assert!(chats.tab_shows(session + 100, Some(3), None).is_err());
-    let _ = chats.close(session);
+    let record = chats.record();
+    assert!(record.layout.is_some());
+    assert_eq!(record.views, vec![devops, files]);
+    let _ = chats.close(one);
 }
 
 #[test]
-fn a_tab_follows_the_chat_it_shows_when_that_chat_is_started_again_under_a_new_number() {
+fn a_view_beside_a_chat_comes_back_after_a_relaunch() {
     let dir = tempfile::tempdir().unwrap();
-    let chats = Chats::new();
-    let session = chats
+    let plane = tempfile::tempdir().unwrap();
+    let before = Chats::new();
+    let one = before
         .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
         .unwrap();
-    chats.tab_shows(session, Some(41), None).unwrap();
+    let view = Node::Pane(Pane::View(PaneView {
+        from: None,
+        view: "persona".to_owned(),
+        key: "steward".to_owned(),
+        title: "steward".to_owned(),
+        split: None,
+    }));
+    let laid = on_ops(vec![front_tab(Node::split(
+        Direction::Row,
+        EVEN,
+        Node::chat(one),
+        view,
+    ))]);
+    before.lay_out(laid.clone()).unwrap();
+    purlis_core::reopen::write(plane.path(), &before.record()).unwrap();
+    before.end_all();
 
-    chats.followed(41, 52);
+    let after = Chats::new();
+    let record = purlis_core::reopen::read_or_refusal(plane.path()).unwrap();
+    assert!(record.holds_anything());
+    after.put_back(&record, SIZE);
 
-    assert_eq!(chats.record().chats[0].shows, Some(52));
-    let _ = chats.close(session);
+    assert_eq!(after.layout(), Some(laid));
+    assert_eq!(after.looked_at(), vec![one], "a view counts as nothing");
+    after.end_all();
 }
 
 #[test]
-fn showing_what_a_tab_already_shows_writes_nothing() {
+fn a_layout_that_names_a_chat_twice_is_refused_says_why_and_changes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let one = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    // In a tab window too: a chat is shown once across every window of the project.
+    let mut elsewhere = Tab::of_chat(Some("ops"), one);
+    elsewhere.window = 2;
+    elsewhere.front = true;
+    let twice = on_ops(vec![front_tab(Node::chat(one)), elsewhere]);
+
+    let refused = chats.lay_out(twice).unwrap_err();
+
+    assert!(
+        refused.starts_with("purlis did not keep that layout")
+            && refused.contains(&format!("chat {one} in two panes")),
+        "{refused}"
+    );
+    assert_eq!(chats.layout(), None);
+    assert_eq!(chats.record().layout, None);
+    let _ = chats.close(one);
+}
+
+#[test]
+fn a_layout_that_names_a_chat_not_open_is_refused_and_says_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let one = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(one))]))
+        .unwrap();
+
+    let refused = chats.lay_out(split_of(one, one + 100)).unwrap_err();
+
+    assert!(
+        refused.contains(&format!("chat {}, which is not open", one + 100)),
+        "{refused}"
+    );
+    assert_eq!(chats.looked_at(), vec![one], "the layout held stands");
+    let _ = chats.close(one);
+}
+
+#[test]
+fn what_is_on_screen_is_every_chat_in_the_front_tab_of_the_drawn_strip_and_each_tab_window() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let mut numbers = Vec::new();
+    for name in ["ide.1", "ide.2", "ide.3", "ide.4", "ide.5"] {
+        numbers.push(
+            chats
+                .start(&chat(&a_claude(dir.path()), name, None), SIZE)
+                .unwrap(),
+        );
+    }
+    let [split_a, split_b, behind, other_strip, torn_off] = numbers[..] else {
+        unreachable!("five chats")
+    };
+    let mut behind_tab = Tab::of_chat(Some("ops"), behind);
+    behind_tab.front = false;
+    let mut other = Tab::of_chat(None, other_strip);
+    other.front = true;
+    let mut window = Tab::of_chat(Some("ops"), torn_off);
+    window.window = 2;
+    window.front = true;
+    let with_empty = front_tab(Node::split(
+        Direction::Column,
+        EVEN,
+        Node::split(
+            Direction::Row,
+            EVEN,
+            Node::chat(split_a),
+            Node::chat(split_b),
+        ),
+        Node::Pane(Pane::Empty),
+    ));
+
+    chats
+        .lay_out(on_ops(vec![with_empty, behind_tab, other, window]))
+        .unwrap();
+
+    assert_eq!(chats.looked_at(), vec![split_a, split_b, torn_off]);
+    assert_eq!(
+        chats.front(),
+        Some(split_a),
+        "the first chat of the front tab"
+    );
+    chats.end_all();
+}
+
+#[test]
+fn a_pane_shows_a_chat_that_is_not_its_tab_s_own_beside_an_empty_pane_and_the_core_keeps_it() {
+    // #4755: a pane shows any open chat. Here a task sits on another strip's tab, its asker in
+    // no pane at all, beside an empty pane; the core holds it, says it is on screen, and a
+    // relaunch reads it back as it was.
+    use purlis_core::reopen::{HandedFrom, Mode, Owed};
+    let dir = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let before = Chats::new();
+    let asker = before
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let task = before
+        .start(
+            &Chat {
+                from: Some(HandedFrom {
+                    id: None,
+                    chat: asker,
+                    name: "ide.7".to_owned(),
+                    workspace: purlis_core::active::Place::Workspace("alpha".to_owned()),
+                    report: Owed::Due,
+                    mode: Mode::Task,
+                    depth: 1,
+                    root: None,
+                    above: None,
+                    by_person: false,
+                    long: false,
+                }),
+                ..chat(&a_claude(dir.path()), "talk", None)
+            },
+            SIZE,
+        )
+        .unwrap();
+    let laid = on_ops(vec![front_tab(Node::split(
+        Direction::Row,
+        EVEN,
+        Node::Pane(Pane::Empty),
+        Node::chat(task),
+    ))]);
+
+    before
+        .lay_out(laid.clone())
+        .expect("any open chat may be in a pane");
+
+    assert_eq!(before.looked_at(), vec![task]);
+    purlis_core::reopen::write(plane.path(), &before.record()).unwrap();
+    before.end_all();
+    let after = Chats::new();
+    let record = purlis_core::reopen::read_or_refusal(plane.path()).unwrap();
+    after.put_back(&record, SIZE);
+    assert_eq!(after.layout(), Some(laid));
+    after.end_all();
+}
+
+#[test]
+fn a_pane_follows_its_chat_when_that_chat_is_started_again_under_a_new_number() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let one = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let other = chats
+        .start(&chat(&a_claude(dir.path()), "ide.8", None), SIZE)
+        .unwrap();
+    chats.lay_out(split_of(one, other)).unwrap();
+
+    chats.followed(other, 52);
+
+    assert_eq!(chats.layout(), Some(split_of(one, 52)));
+    assert_eq!(chats.record().layout, Some(split_of(one, 52)));
+    chats.end_all();
+}
+
+#[test]
+fn a_focused_path_that_stops_at_a_split_is_held_as_the_pane_a_relaunch_reads() {
+    // The record reads a focused path on to a pane, so the core holds it so too: what it holds
+    // is what the next launch reads back.
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let one = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let other = chats
+        .start(&chat(&a_claude(dir.path()), "ide.8", None), SIZE)
+        .unwrap();
+    let mut laid = split_of(one, other);
+    laid.tabs[0].focused = Vec::new();
+
+    chats.lay_out(laid).unwrap();
+
+    assert_eq!(
+        chats.layout().map(|held| held.tabs[0].focused.clone()),
+        Some(vec![purlis_core::reopen::layout::Side::A])
+    );
+    chats.end_all();
+}
+
+#[test]
+fn laying_out_what_is_already_laid_out_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let written = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counting = std::sync::Arc::clone(&written);
     let chats = Chats::recorded_by(Box::new(move |_| {
         counting.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }));
-    let session = chats
+    let one = chats
         .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
         .unwrap();
-    chats.tab_shows(session, Some(41), None).unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(one))]))
+        .unwrap();
     let before = written.load(std::sync::atomic::Ordering::SeqCst);
 
-    chats.tab_shows(session, Some(41), None).unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(one))]))
+        .unwrap();
 
     assert_eq!(written.load(std::sync::atomic::Ordering::SeqCst), before);
-    let _ = chats.close(session);
+    let _ = chats.close(one);
 }
 
 #[test]
-fn a_chat_charter_does_not_have_open_cannot_be_pinned() {
-    // A pin is an arrangement of what is there. Inventing an entry to hold one would put
-    // a chat in the record that no start ever put there.
-    let chats = Chats::new();
-
-    assert!(chats.pin(7, true).is_err());
-    assert_eq!(chats.record(), Record::default());
-}
-
-#[test]
-fn pinning_what_is_already_pinned_writes_nothing() {
-    // The record is rewritten on every write and every write is a fingerprint the
-    // machine store then has to vouch for — `bring_to_front` skips a no-op for the same
-    // reason, and a pin pressed twice must not cost two writes.
+fn a_record_with_no_tabs_list_is_read_the_old_way_until_the_window_reports_and_then_its_old_fields_retire()
+ {
+    // Today's records keep working: a chat beside the one in front is on screen, as before.
     let dir = tempfile::tempdir().unwrap();
-    let written = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let counting = std::sync::Arc::clone(&written);
-    let chats = Chats::recorded_by(Box::new(move |_| {
-        counting.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    }));
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+    let chats = Chats::new();
+    let old = Record {
+        chats: vec![
+            Chat {
+                number: Some(3),
+                active: true,
+                ..chat(&a_claude(dir.path()), "ide.3", None)
+            },
+            Chat {
+                number: Some(4),
+                beside: Some(3),
+                ..chat(&a_claude(dir.path()), "ide.4", None)
+            },
+        ],
+        ..Record::default()
+    };
+    chats.put_back(&old, SIZE);
+    assert_eq!(chats.layout(), None);
+    assert_eq!(chats.looked_at(), vec![3, 4]);
+    assert_eq!(
+        chats.record().chats[1].beside,
+        Some(3),
+        "carried until a layout"
+    );
+
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(4))]))
         .unwrap();
-    chats.pin(session, true).unwrap();
-    let after_one = written.load(std::sync::atomic::Ordering::SeqCst);
 
-    chats.pin(session, true).unwrap();
-
-    assert_eq!(written.load(std::sync::atomic::Ordering::SeqCst), after_one);
-    let _ = chats.close(session);
+    assert_eq!(chats.looked_at(), vec![4]);
+    let record = chats.record();
+    assert!(
+        record
+            .chats
+            .iter()
+            .all(|one| one.beside.is_none() && one.shows.is_none())
+    );
+    assert!(record.layout.is_some());
+    chats.end_all();
 }
 
 // ----- a task chat is listed with no tab until the person opens it (#1447) -----
@@ -5445,27 +5761,6 @@ fn a_task_chat_sent_back_out_of_its_tab_has_none_in_the_record_and_is_still_open
     assert!(!chats.record().chats[0].has_tab());
     assert_eq!(chats.open_now().len(), 1, "sending it back ends nothing");
     assert!(!chats.open_now()[0].tab);
-    let _ = chats.close(session);
-}
-
-#[test]
-fn the_tab_a_chat_has_a_pane_in_is_written_into_the_record_and_follows_a_restart() {
-    // #1489: what puts a task back beside its session, and says what is on screen.
-    let dir = tempfile::tempdir().unwrap();
-    let chats = Chats::new();
-    let session = chats
-        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
-        .unwrap();
-
-    chats.tab_shows(session, None, Some(41)).unwrap();
-    assert_eq!(chats.record().chats[0].beside, Some(41));
-    assert_eq!(chats.open_now()[0].beside, Some(41));
-    chats.followed(41, 52);
-    assert_eq!(chats.record().chats[0].beside, Some(52));
-
-    // Never beside itself, and its own tab's chat again with none.
-    chats.tab_shows(session, None, Some(session)).unwrap();
-    assert_eq!(chats.record().chats[0].beside, None);
     let _ = chats.close(session);
 }
 
@@ -5824,7 +6119,7 @@ fn a_ulid(id: Option<&String>) -> bool {
 }
 
 /// What the core's start answers for a shell on no profile.
-fn a_shell_ready() -> purlis_core::start::Ready {
+pub(crate) fn a_shell_ready() -> purlis_core::start::Ready {
     purlis_core::start::Ready {
         program: "/bin/sh".to_owned(),
         command: Vec::new(),
@@ -6575,6 +6870,7 @@ fn a_chat_put_back_keeps_the_name_it_was_given() {
             dealt: 0,
             relaunch_after_update: false,
             clone_seat: None,
+            layout: None,
             focus: None,
         },
         SIZE,
@@ -8565,6 +8861,83 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     assert!(first.gone.is_empty());
 }
 
+/// #4738: **a tab mount with no instruction change reads no skill folders**. Once the plane is
+/// watched, each open chat's stamp is read once and kept: a skill edited on disk that the watch
+/// has not told of is not seen, because nothing read the folder again. The watch's word that the
+/// instructions changed refreshes every open chat's stamp.
+#[test]
+fn a_chat_skill_stamp_is_read_again_only_once_the_instructions_change() {
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").expect("a manifest");
+    let skill = |name: &str, body: &str| {
+        let folder = plane.path().join("skills").join(name);
+        std::fs::create_dir_all(&folder).expect("a skill folder");
+        std::fs::write(
+            folder.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n\n{body}\n"),
+        )
+        .expect("a skill");
+    };
+    skill("deploy", "one");
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    chats.skills_now().watched(true);
+    for session in [1, 2] {
+        let harness = Harness::ClaudeCode;
+        lock(&chats.open).insert(
+            session,
+            Running {
+                chat: a_resumable_chat_in(plane.path()),
+                how: Reopened::Fresh(Fresh::NoConversationRecorded),
+                harness: Some(harness),
+                declared: None,
+                workspace: None,
+                confinement: None,
+                confines: None,
+                started_with: StartedWith::default(),
+                composed_by_its_host: false,
+                ran: None,
+                grants_as: None,
+                skills: Some(purlis_core::skills::stamp_now(
+                    &purlis_core::skills::Running {
+                        plane: plane.path(),
+                        workspace: None,
+                        persona: None,
+                        harness,
+                        built_in: None,
+                        plane_skills: true,
+                        start: None,
+                    },
+                )),
+                plane_skills: true,
+                skills_read: Default::default(),
+                last_prompt: None,
+                runs_as: None,
+                clones_at_start: None,
+                prompt_key: None,
+            },
+        );
+    }
+    let sessions = |chats: &Chats| -> Vec<u32> {
+        chats
+            .skills_changed_while_on()
+            .into_iter()
+            .map(|(session, _)| session)
+            .collect()
+    };
+    assert!(sessions(&chats).is_empty(), "nothing has changed yet");
+
+    // Written behind the watch's back: a mount asks again, and reads no skill folder.
+    skill("deploy", "two");
+    assert!(
+        sessions(&chats).is_empty(),
+        "a skill folder was read again with no instruction change"
+    );
+
+    // The watch says the instructions changed: every open chat's stamp is read again.
+    chats.skills_now().forget();
+    assert_eq!(sessions(&chats), [1, 2]);
+}
+
 /// #2019: a chat serving on a port is not told its sandbox is older once its own door listens
 /// there: a compile then finds the port in use, which changes no grant.
 #[test]
@@ -9265,4 +9638,183 @@ fn a_prompt_answered_after_its_chat_started_again_is_not_kept_by_the_new_start_4
     chats.keep_last_prompt(session, &Arc::new((*was).clone()), Some(&was.record));
     assert_eq!(lock(&chats.open)[&session].last_prompt, None);
     let _ = chats.close(session);
+}
+
+#[test]
+fn a_notification_is_not_lost_to_a_stale_layout_while_the_window_is_in_the_background() {
+    // #4751: after a launch the record's layout stands until the window reports one, so it can
+    // say a chat is on screen that nobody has drawn yet. What keeps the notification is the
+    // window's own answer: `asknotify::looking` asks whether its window is on screen, focused
+    // and showing the project (`window_in_front`), and holds a notification back only when that
+    // and the chat on screen are both true. A stale layout is the second; a window in the
+    // background is never the first.
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let record = Record {
+        chats: vec![Chat {
+            number: Some(3),
+            ..chat(&a_claude(dir.path()), "ide.3", None)
+        }],
+        layout: Some(on_ops(vec![front_tab(Node::chat(3))])),
+        ..Record::default()
+    };
+    chats.put_back(&record, SIZE);
+    assert!(
+        chats.looks_at(3),
+        "the stored layout stands until the window reports"
+    );
+
+    let in_the_background = crate::asknotify::Looking {
+        window_in_front: false,
+        inbox_open: false,
+        chat_on_screen: chats.looks_at(3),
+    };
+
+    assert!(
+        !in_the_background.is_looking(),
+        "a notification about chat 3 is held back by a layout nobody is looking at"
+    );
+    let in_front = crate::asknotify::Looking {
+        window_in_front: true,
+        ..in_the_background
+    };
+    assert!(
+        in_front.is_looking(),
+        "and only held back while the window is in front"
+    );
+    chats.end_all();
+}
+
+/// **A start that chose a pool that is gone starts nothing, and says the pool can't be reached**
+/// (#4536, ruled 2026-11-01): the window then offers this machine for it, and nothing runs here
+/// before that press. A start that chose this machine runs here whatever its workspace names.
+#[cfg(unix)]
+#[test]
+fn a_start_on_a_pool_that_is_gone_starts_nothing_and_one_that_chose_this_machine_runs_here() {
+    use purlis_core::machine::StartChoice;
+    let plane = a_sandboxed_plane();
+    let workspace = plane.path().join("workspaces/w");
+    std::fs::create_dir_all(&workspace).expect("the workspace");
+    let config = tempfile::tempdir().expect("this machine's config");
+    purlis_core::machine::update(config.path(), |store| {
+        store.remember(plane.path(), 1);
+        store
+            .set_chats_run_on(plane.path(), "w", Some("builds"))
+            .expect("the workspace names a pool");
+    })
+    .expect("kept");
+    let host = Pretend::default();
+    let mut chats = restartable_chats_of(plane.path(), host.clone());
+    chats.keeping_pools_in(Some(config.path().to_path_buf()));
+
+    let on_a_gone_pool = Chat {
+        runs_on: Some(StartChoice::Pool("gone".to_owned())),
+        ..a_resumable_chat_in(&workspace)
+    };
+    let refused = crate::poolprofiles::offering_limits(|| chats.start(&on_a_gone_pool, SIZE))
+        .expect_err("a pool that is gone starts nothing");
+    assert_eq!(
+        refused.pool_unavailable.as_deref(),
+        Some("gone"),
+        "{refused:?}"
+    );
+    assert!(refused.words.contains("pool gone"), "{}", refused.words);
+    assert!(host.running().is_empty(), "never run here in its place");
+
+    let by_its_workspace = crate::poolprofiles::offering_limits(|| {
+        chats.start(&a_resumable_chat_in(&workspace), SIZE)
+    })
+    .expect_err("its workspace's pool is not kept either");
+    assert_eq!(by_its_workspace.pool_unavailable.as_deref(), Some("builds"));
+
+    // A shell, which writes no harness settings: what is asked here is only where it runs.
+    let here = Chat {
+        runs_on: Some(StartChoice::ThisMachine),
+        ..a_chat_in(&workspace, "/bin/sh")
+    };
+    let session = crate::poolprofiles::offering_limits(|| chats.start(&here, SIZE))
+        .expect("this machine, chosen for this start");
+    assert_eq!(host.running(), vec![session]);
+}
+
+/// **A move takes a chat's one-off choice of where it runs** (#4536): the record then follows its
+/// workspace, which the move just set, and the choice comes back where the move doesn't happen.
+#[test]
+fn a_chats_one_off_choice_of_where_it_runs_is_taken_and_given_back() {
+    use purlis_core::machine::StartChoice;
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let session = chats
+        .start(
+            &Chat {
+                runs_on: Some(StartChoice::ThisMachine),
+                ..a_chat_in(plane.path(), "/bin/sh")
+            },
+            SIZE,
+        )
+        .expect("a shell starts");
+    let recorded = |chats: &Chats| {
+        chats
+            .record()
+            .chats
+            .into_iter()
+            .find(|chat| chat.number == Some(session))
+            .and_then(|chat| chat.runs_on)
+    };
+    assert_eq!(recorded(&chats), Some(StartChoice::ThisMachine));
+
+    let was = chats.choose_runs_on(session, None);
+    assert_eq!(was, Some(StartChoice::ThisMachine));
+    assert_eq!(recorded(&chats), None, "it follows its workspace now");
+
+    chats.choose_runs_on(session, was);
+    assert_eq!(recorded(&chats), Some(StartChoice::ThisMachine));
+    let _ = chats.close(session);
+}
+
+/// **A start's own choice adds to a Claim only where the person made it in the window** (#4536,
+/// the person's ruling of 2026-11-02): a dispatched chat that chose where it runs adds nothing,
+/// and one that chose nothing follows its levels as every chat does.
+#[test]
+fn a_dispatched_chats_choice_of_where_it_runs_puts_nothing_on_a_claim() {
+    use purlis_core::machine::StartChoice;
+    use purlis_core::reopen::{HandedFrom, Mode, Owed};
+    let on_builds = Some(StartChoice::Pool("builds".to_owned()));
+    let from_a_chat = Some(HandedFrom {
+        id: None,
+        chat: 3,
+        name: "steward 3".to_owned(),
+        workspace: purlis_core::active::Place::Workspace("alpha".to_owned()),
+        report: Owed::Due,
+        mode: Mode::Task,
+        depth: 1,
+        root: None,
+        above: None,
+        by_person: false,
+        long: false,
+    });
+    let window = Chat {
+        runs_on: on_builds.clone(),
+        ..Default::default()
+    };
+    let dispatched = Chat {
+        runs_on: on_builds.clone(),
+        from: from_a_chat.clone(),
+        ..Default::default()
+    };
+    let following = Chat {
+        from: from_a_chat,
+        ..Default::default()
+    };
+    assert_eq!(claim_follows(&window), Some(on_builds.as_ref()));
+    assert_eq!(
+        claim_follows(&dispatched),
+        None,
+        "a dispatch's choice adds nothing"
+    );
+    assert_eq!(
+        claim_follows(&following),
+        Some(None),
+        "it follows the levels"
+    );
 }

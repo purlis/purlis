@@ -12,7 +12,8 @@
 //   1. refuses unless the pull request is open, from a branch of this repository (approving a
 //      fork's runs is a person's call), and based on `main`;
 //   2. refuses when its head is not `--sha`, the commit the review approved;
-//   3. refuses while main is red: the newest finished `ci` run of a push to main failed. A pull
+//   3. refuses while main is red: the newest `ci` run of a push to main that ended green or red
+//      (a cancelled or skipped run gives no verdict) failed. A pull
 //      request labelled `fixes-main` lands past a red main, and only it goes to the front of the
 //      queue (`jump`), since a jump restarts every group being built;
 //   4. stops when any run of the head is held for approval (`action_required`), naming each by
@@ -25,9 +26,11 @@
 //      can only end in GitHub's refusal stops early: when the only checks left are required ones
 //      that have not posted, and no run of the head is still going to post them, for a few polls
 //      running (a job renamed while protection still names it, or a run waiting on approval);
-//   6. marks a draft ready (`gh pr ready`), which the queue needs, and reads the checks again. No
-//      workflow here starts on `ready_for_review` today; the second read is a safety net for one
-//      that does;
+//   6. marks a draft ready (`gh pr ready`), which the queue needs. A draft runs no macOS job but the
+//      app's, and `ready_for_review` starts the `ci` run with the scoped macOS jobs and the outcome
+//      bars (#4849), so it waits for that run to finish and pass, then reads the checks again: the
+//      draft run's are not the ready head's claim. A ready that starts no run in a few minutes is
+//      refused;
 //   7. reads main once more, then enqueues through GraphQL `enqueuePullRequest` with the head it
 //      checked as `expectedHeadOid`, so a push since is refused by GitHub;
 //   8. prints the queue position, and with `--watch` waits until the pull request merges, or
@@ -94,16 +97,24 @@ export function fixesMain(pr) {
 }
 
 const RED = new Set(["failure", "timed_out", "startup_failure"]);
+/** The conclusions that say what main is: green, or one of `RED`. */
+const VERDICT = new Set(["success", ...RED]);
 
 /**
  * The run that makes main red, of `runs` (the `ci` workflow's runs of pushes to main), or
- * `undefined`. Main's colour is its newest *finished* push run: a run still going says nothing
- * yet, so a red main stays red until a run goes green, however busy the queue is. A rerun that
- * went green clears it, and a nightly or merge-queue run is not main's.
+ * `undefined`. Main's colour is its newest push run that gave a verdict: it ended green or red.
+ * A run still going says nothing yet, and nor does a cancelled or skipped one: main keeps one
+ * pending `ci` run, so each merge cancels the run waiting behind it, and a job that hits its time
+ * limit ends `failure`, not `cancelled`. So a red main stays red until a run goes green, however
+ * busy the queue is (#4578: from 2026-10-20 to 11-01, reading only the newest finished run called
+ * a red main green for 9.4 of its 48.8 red hours, 170 of 575 push runs being cancelled). A rerun
+ * that went green clears it, and a nightly or merge-queue run is not main's.
  */
 export function redRun(runs) {
   const newest = [...runs]
-    .filter((run) => run.event === "push" && run.status === "completed")
+    .filter(
+      (run) => run.event === "push" && run.status === "completed" && VERDICT.has(run.conclusion),
+    )
     .sort((a, b) => b.run_number - a.run_number || b.run_attempt - a.run_attempt)[0];
   return newest && RED.has(newest.conclusion) ? newest : undefined;
 }
@@ -157,6 +168,23 @@ export function unposted(checks, runs) {
   if (missing.length === 0 || missing.length < checks.pending.length) return [];
   if ((runs ?? []).some(going)) return [];
   return missing.map((check) => check.name);
+}
+
+/** The newest id of the `ci` runs a pull request started, of `runs` (the head's runs), or 0. */
+export function lastCiRun(runs) {
+  const ci = (runs ?? []).filter((run) => run.name === "ci" && run.event === "pull_request");
+  return Math.max(0, ...ci.map((run) => run.id));
+}
+
+/**
+ * The `ci` run marking a draft ready started, of `runs` (the head's runs): the newest pull request
+ * run newer than `after` (`lastCiRun` before the ready), or undefined while none has shown.
+ */
+export function readyRun(runs, after) {
+  const ci = (runs ?? []).filter(
+    (run) => run.name === "ci" && run.event === "pull_request" && run.id > after,
+  );
+  return [...ci].sort((a, b) => b.id - a.id)[0];
 }
 
 /** Whether GitHub's `reason` for a drop is a merge conflict, which builds no queue run. */
@@ -278,7 +306,9 @@ function main(options) {
       "-f",
       "status=completed",
       "-f",
-      "per_page=1",
+      // A page, not one run: the newest may be cancelled, which gives no verdict. The longest row
+      // of cancelled push runs from 2026-10-20 to 11-01 was 5 (#4578).
+      "per_page=30",
       "--jq",
       ".workflow_runs",
     ]);
@@ -427,11 +457,42 @@ function main(options) {
   };
   checksGate(options.watch);
 
+  // A draft runs no macOS job but the app's, and `ready_for_review` starts the `ci` run with the
+  // scoped macOS jobs (not required checks, so only the run's conclusion speaks for them): so the
+  // checks are read again only once the head's newest `ci` run is done, and passed. That holds for a pull request marked ready by hand just
+  // before this, too, and for one whose ready run was cancelled, which posts nothing of its own.
+  let after = 0;
   if (pr.isDraft) {
+    after = lastCiRun(headRuns());
     gh(["pr", "ready", options.pr, "--repo", repo], false);
-    console.log(`marked #${options.pr} ready for review; reading its checks again`);
-    pause(SETTLE);
-    checksGate(true);
+    console.log(`marked #${options.pr} ready for review; waiting for the ci run that starts`);
+  }
+  for (let waited = 0; ; waited += Math.max(POLL, 1)) {
+    if (pr.isDraft) pause(waited === 0 ? SETTLE : POLL);
+    const run = readyRun(headRuns(), after);
+    if (!run && !pr.isDraft) break;
+    if (run && !going(run)) {
+      // Its failing required checks are named first, when it has any.
+      if (pr.isDraft || waited > 0) checksGate(true);
+      if (run.conclusion !== "success")
+        stop(
+          `the head's newest ci run ended ${run.conclusion}, so its macOS jobs have not passed: ${run.html_url}. Rerun it or push again, and land again.`,
+        );
+      break;
+    }
+    if (run && !pr.isDraft && !options.watch)
+      stop(
+        `pull request #${options.pr}'s newest ci run is still going; run again when it finishes, or with --watch: ${run.html_url}`,
+      );
+    if (!run && waited >= UNPOSTED_FOR)
+      stop(
+        `marking #${options.pr} ready started no ci run in ${waitedFor(UNPOSTED_FOR)}; its macOS jobs have not run. Push again or rerun ci, and land again.`,
+      );
+    if (waited >= CHECKS_FOR)
+      stop(
+        `the head's newest ci run is still going after ${waitedFor(CHECKS_FOR)}${run ? `: ${run.html_url}` : ""}`,
+      );
+    if (!pr.isDraft) pause(POLL);
   }
 
   // 7. Enqueue.

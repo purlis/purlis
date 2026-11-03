@@ -124,9 +124,10 @@ import {
   sessionOf,
   SHORTCUTS_TITLE,
   SHORTCUTS_VIEW,
+  AGENT_IDENTITY_TITLE,
+  AGENT_IDENTITY_VIEW,
   DEVICES_TITLE,
   DEVICES_VIEW,
-  viewKey,
   type AskedBy,
   type Direction,
   type Tabs,
@@ -354,28 +355,35 @@ export type Does =
    *  nothing, and only a row that ends a chat is asked about first (`PlaneView.ENDS_A_CHAT`). */
   | { verb: "closePane"; ends: boolean }
   | { verb: "closeTab"; tab: number; ends: boolean }
+  /** Close other tabs (#4762): `closes` is the tabs it closes, every other tab on the strip of
+   *  `tab` but the pinned ones, and `ends` whether any of them holds a chat it would end. */
+  | { verb: "closeOtherTabs"; tab: number; closes: readonly number[]; ends: boolean }
   | { verb: "selectTab"; tab: number }
-  /** Opens the name of a chat's tab for editing, in place on the strip (charter-app#254). */
-  | { verb: "renameTab"; tab: number }
+  /** Opens a chat's name for editing (charter-app#254, #4753): in place on the strip where the
+   *  chat is its tab's own, and in a dialog where it has no tab. By the chat's number. */
+  | { verb: "renameChat"; session: number }
   /** Asks which work item a chat works on, and links it (V60, ADR 0088). */
-  | { verb: "linkWorkItem"; tab: number }
+  | { verb: "linkWorkItem"; session: number }
   /** Ends a chat's work link. */
-  | { verb: "unlinkWorkItem"; tab: number }
+  | { verb: "unlinkWorkItem"; session: number }
   /** Asks, then starts a chat again on the project's instructions as they are now (NO-3): the
    *  same chat, in a new run with no conversation resumed. */
-  | { verb: "startFresh"; tab: number }
-  | { verb: "restartChat"; tab: number }
-  /** Moves the tab's chat to pool `to`'s runner, or here for `null` (#2048): prepared now, it
-   *  moves at the chat's next pause. */
-  | { verb: "moveChat"; tab: number; to: string | null }
-  /** Restart chat on a row of the Chats list, for a chat with no tab (#1462): by its number. */
-  | { verb: "restartListed"; session: number }
-  /** Opens the dialog that asks a persona for something from a chat's tab. It starts nothing
-   *  by itself: the dialog's answer does, through `ask_persona_chat`. */
-  | { verb: "askPersona"; tab: number; persona: string }
-  /** Opens **Use skill…** for a chat's tab (#2775): its skills, to type one into it unsent. It
-   *  types nothing by itself: the pick does, through `use_skill`. */
-  | { verb: "useSkill"; tab: number }
+  | { verb: "startFresh"; session: number }
+  /** Restarts a chat on its conversation (#1462): by its number, with a tab or without. */
+  | { verb: "restartChat"; session: number }
+  /** Moves a chat to pool `to`'s runner, or here for `null` (#2048): prepared now, it moves at
+   *  the chat's next pause. */
+  | { verb: "moveChat"; session: number; to: string | null }
+  /** Opens the dialog that asks a persona for something from a chat. It starts nothing by
+   *  itself: the dialog's answer does, through `ask_persona_chat`. */
+  | { verb: "askPersona"; session: number; persona: string }
+  /** Opens **Use skill…** for a chat (#2775): its skills, to type one into it unsent. It types
+   *  nothing by itself: the pick does, through `use_skill`. */
+  | { verb: "useSkill"; session: number }
+  /** **End…, a chat's own row** (#4753): asks first (`EndingChat`), then ends the chat's
+   *  program and takes it off the board, wherever it is drawn. Never a task's: a task ends by
+   *  Stop and get its report or Close now. */
+  | { verb: "endChat"; session: number }
   /** Pins or unpins a chat, a workspace or a project (ADR 0039).
    *
    *  Three verbs and not one, because they are three stores: a project's pin and a
@@ -686,7 +694,7 @@ export type Offer = {
    *
    * It is a field rather than something read back out of the title, because what is a name
    * and what is charter's own word is not recoverable from the finished sentence: `Switch to
-   * tab release.3` and `Remove the folder of this chat's branch` both contain `re`. `narrow`
+   * tab release.3` and `Remove steward 1's branch folder` both contain `re`. `narrow`
    * uses it to put a row the operator's words FOUND ahead of a row that merely has those
    * letters in somebody's name — which at fifty chats is the whole difference (charter-app#48).
    */
@@ -726,6 +734,13 @@ export type Offer = {
    * each tab's menu keeps its own ({@link inPalette}).
    */
   menuOnly?: true;
+  /**
+   * **A row about the chat in front, though its id names it** (#4851): the palette ranks it
+   * with the rows that name nothing ({@link aboutWhatIsInFront}). A chat's Branch rows used to
+   * be `worktree.merge` and `worktree.remove`, about the chat in front alone, and at fifty
+   * pieces `remove` must still find this chat's folder before fifty others (charter-app#174).
+   */
+  inFront?: true;
 };
 
 /** The window as it now stands: everything an offer's availability is decided from. */
@@ -744,8 +759,12 @@ export type Now = {
   live?: readonly string[];
   /** The workspace the panels are showing. */
   focused?: string;
-  /** Where the chat in front is working, when it is working in a charter worktree. */
-  worktree?: ChatWorktree;
+  /**
+   * **The branch folder each chat works in**, by its number, where it works in one purlis cut
+   * (#4851): what its Branch rows on its list act on. None for a chat working anywhere else, and
+   * none not yet asked about, so a chat has no Branch rows until the core has said where it is.
+   */
+  worktreeOf?: (session: number) => ChatWorktree | undefined;
   /**
    * The focused workspace's worktrees, as the explorer lists them (charter-app#174).
    *
@@ -867,14 +886,12 @@ export type Now = {
   /**
    * What this operator has pinned (ADR 0039).
    *
-   * Three lists rather than a flag on each thing, because a pin is not a property of the
-   * chat, the workspace or the plane — it is the operator's arrangement of them, held
-   * somewhere else entirely (ADR 0040), and a copy on the thing would be a second answer.
+   * Lists rather than a flag on each thing, because a pin is not a property of the workspace
+   * or the plane — it is the operator's arrangement of them, held somewhere else entirely (ADR
+   * 0040), and a copy on the thing would be a second answer. A tab's pin is the tab's own
+   * (`Tab.pinned`, #4935), so it is read off {@link Now.tabs}.
    */
   pinned?: {
-    readonly chats: readonly number[];
-    /** View tabs, by `tabs.viewKey`. A tab with no chat is pinned as the view it shows. */
-    readonly views?: readonly string[];
     readonly workspaces: readonly string[];
     readonly projects: readonly string[];
   };
@@ -901,6 +918,9 @@ export type Now = {
   /** The chats a launch has still to start (`restoring.rs`): none has a close until it has
    *  started, since there is no program yet to end. */
   restoring?: readonly number[];
+  /** The tabs Close other tabs on tab `tab` would close (#4762): every other tab on its strip
+   *  but the pinned ones (`tabs.otherTabsToClose`). None where the window does not say. */
+  otherTabs?: (tab: number) => readonly number[];
   /** The work item each chat works on, by session, as `chat_work_item` answered (ADR 0088). */
   workItems?: Readonly<Record<number, string>>;
   /** Whether a chat can have a work link: it is filed in a workspace. A chat at the project
@@ -995,26 +1015,28 @@ export type Doing = {
   split: (direction: Direction) => void;
   closePane: () => void;
   closeTab: (tab: number) => void;
+  /** Closes each of `tabs`, as its own close does (#4762). */
+  closeOtherTabs: (tabs: readonly number[]) => void;
   selectTab: (tab: number) => void;
-  /** Brings the tab forward with its name open for editing. Nothing is renamed until the
-   *  operator says the name, so it answers no `Ran`. */
-  renameTab: (tab: number) => void;
+  /** Opens the chat's name for editing: on its tab where it has one, else in a dialog.
+   *  Nothing is renamed until the operator says the name, so it answers no `Ran`. */
+  renameChat: (session: number) => void;
   /** Opens the dialog that asks for the work item. Nothing is linked until it is answered. */
-  linkWorkItem: (tab: number) => void;
-  /** Asks whether to start the tab's chat fresh, and does on a yes (NO-3). */
-  startFresh: (tab: number) => void;
-  /** Restarts the tab's chat on its conversation, once its turn has ended. */
-  restartChat: (tab: number) => void;
-  /** Asks for the tab's chat to move to pool `to`'s runner, or here (#2048). */
-  moveChat: (tab: number, to: string | null) => void;
-  /** The same for a chat with no tab, from its row in the Chats list (#1462). */
-  restartListed: (session: number) => void;
-  /** Opens the dialog that asks `persona` for something from the tab's chat. */
-  askPersona: (tab: number, persona: string) => void;
-  /** Opens Use skill… for the tab's chat (#2775). */
-  useSkill: (tab: number) => void;
+  linkWorkItem: (session: number) => void;
+  /** Asks whether to start the chat fresh, and does on a yes (NO-3). */
+  startFresh: (session: number) => void;
+  /** Restarts the chat on its conversation, once its turn has ended. A task is asked first. */
+  restartChat: (session: number) => void;
+  /** Asks for the chat to move to pool `to`'s runner, or here (#2048). */
+  moveChat: (session: number, to: string | null) => void;
+  /** Opens the dialog that asks `persona` for something from the chat. */
+  askPersona: (session: number, persona: string) => void;
+  /** Opens Use skill… for the chat (#2775). */
+  useSkill: (session: number) => void;
   /** Ends the chat's work link, through `chat_work_unlink`; a refusal is the core's sentence. */
-  unlinkWorkItem: (tab: number) => Promise<Ran>;
+  unlinkWorkItem: (session: number) => Promise<Ran>;
+  /** Ends the chat, once the person has answered End… (`EndingChat`). */
+  endChat: (session: number) => void;
   /** Each answers a `Ran`, because a pin can be refused: the stores are bounded, and
    *  "charter pins at most 32 projects — unpin one first" is a sentence the operator can act
    *  on and must therefore reach them. */
@@ -1469,13 +1491,32 @@ function isPinned<T>(held: readonly T[], one: T): boolean {
   return held.includes(one);
 }
 
-/** The catalogue's id for the row that opens the Activity of `tab`'s chat (#1495). */
-export const activityId = (tab: number) => `tab.activity:${tab}`;
-
-/** The catalogue's id for the row that opens the Network view of `tab`'s chat (#1662). */
-export const networkId = (tab: number) => `tab.network:${tab}`;
-/** The id of the row that opens Use skill… for chat tab `tab` (#2775). */
-export const usingSkillId = (tab: number) => `tab.useskill:${tab}`;
+/**
+ * **A chat's rows are keyed by the chat, never by a tab** (#4753): `chat.<act>:<session>`. A
+ * chat's number is what every surface that draws it has (its pane, its sidebar row, the
+ * palette), and a chat with no tab has every row a chat with one has.
+ */
+/** The catalogue's id for the row that opens chat `session`'s Activity (#1495). */
+export const activityId = (session: number) => `chat.activity:${session}`;
+/** The catalogue's id for the row that opens chat `session`'s Network view (#1662). */
+export const networkId = (session: number) => `chat.network:${session}`;
+/** The id of the row that opens Use skill… for chat `session` (#2775). */
+export const usingSkillId = (session: number) => `chat.useskill:${session}`;
+/** The id of Rename… for chat `session`. */
+export const renameId = (session: number) => `chat.rename:${session}`;
+/** The id of Link to work item… for chat `session` (V60). */
+export const workLinkId = (session: number) => `chat.worklink:${session}`;
+/** The id of Unlink work item for chat `session` (V60). */
+export const workUnlinkId = (session: number) => `chat.workunlink:${session}`;
+/** The id of Start fresh for chat `session` (NO-3). */
+export const freshId = (session: number) => `chat.fresh:${session}`;
+/** What starts the id of every Move to row of chat `session` (#2048). */
+export const chatMovePrefix = (session: number) => `chat.move:${session}:`;
+/** The id of Move to for chat `session` (#2048): one per place, `""` for this machine. */
+export const moveId = (session: number, to: string | null) =>
+  `${chatMovePrefix(session)}${to ?? ""}`;
+/** The id of End… for chat `session` (#4753). */
+export const endId = (session: number) => `chat.end:${session}`;
 
 /** The catalogue's id for the row that opens the project's Dispatches tab (#1452). */
 export const DISPATCHES_SHOW = "dispatches.show";
@@ -1483,6 +1524,9 @@ export const DISPATCHES_SHOW = "dispatches.show";
 export const BROWSERS_SHOW = "browsers.show";
 /** The Skill studio (#2765), offered only while its flag is on: `skillStudio.ts` spells it. */
 export { SKILL_STUDIO_SHOW };
+
+/** Why Close other tabs is not offered on a tab (#4762). */
+const NO_OTHER_TAB = "Every other tab here is pinned, or there is none.";
 
 /** An offer that can run, spelled once so `reason` cannot drift from `available`. */
 function can(id: string, title: string, does: Does, name?: string): Offer {
@@ -1552,6 +1596,7 @@ export const FOCUS_MODE_ID = "focus.toggle";
 export const SHORTCUTS_ID = "shortcuts.show";
 /** The Devices view's row (#2052). */
 export const DEVICES_ID = "devices.show";
+export const AGENT_IDENTITY_ID = "agent-identity.show";
 /** The right sidebar's own views, as the region's palette row names them: "Inbox, Personas and
  *  Vaults" (#1738). */
 const RIGHT_VIEWS_SAID = ((names: string[]) =>
@@ -2013,7 +2058,7 @@ export function catalogue(now: Now): Offer[] {
   );
   offers.push(...stoppedRows(now.stopped ?? {}, now.needsYou, now.nameOf, now.tabs));
 
-  const pinned = now.pinned ?? { chats: [], workspaces: [], projects: [] };
+  const pinned = now.pinned ?? { workspaces: [], projects: [] };
 
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
@@ -2031,19 +2076,13 @@ export function catalogue(now: Now): Offer[] {
   // thing gets on its strip is a mark, and pressing the mark runs this same row.
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
-    // A tab is pinned as its own chat, or — a tab with none — as the view it opened on. The
-    // pin is stored with whichever it is (the chat's record, or the view tab's), so it goes
-    // away with the thing it pins.
-    const chat = chatOf(now.tabs, tab);
-    const first = contentsOf(now.tabs, tab)[0]?.content;
-    const held =
-      chat !== undefined
-        ? isPinned(pinned.chats, chat)
-        : first?.kind === "view" && isPinned(pinned.views ?? [], viewKey(first.view));
+    // **The one pin is the tab's** (#4762, #4935): its own, whatever its panes hold, so a tab
+    // whose only pane is empty is pinned as any other.
+    const held = now.tabs.byId[tab].pinned === true;
     offers.push({
       ...can(
         `tab.pin:${tab}`,
-        `${held ? "Unpin" : "Pin"} ${chat === undefined ? "tab" : "chat"} ${name}`,
+        `${held ? "Unpin" : "Pin"} tab ${name}`,
         { verb: "pinTab", tab, pinned: !held },
         name,
       ),
@@ -2051,211 +2090,7 @@ export function catalogue(now: Now): Offer[] {
     });
   }
 
-  // **Renaming is a row, so the tab's menu and the palette are one surface** (charter-app#254),
-  // and a double-click on the tab's name runs the same thing. Above the line: it ends nothing.
-  // A tab that opened on a view is named after what it shows, and has none.
-  for (const tab of now.tabs.order) {
-    if (chatOf(now.tabs, tab) === undefined) continue;
-    const name = now.tabs.byId[tab].name;
-    offers.push(can(`tab.rename:${tab}`, `Rename chat ${name}…`, { verb: "renameTab", tab }, name));
-  }
-
-  // **A chat's Activity** (#1495, V100-44): what it and its tasks said to each other, in a tab
-  // of its own. One row per chat, so the tab's menu and the palette are one surface; the words
-  // are the same on every tab, as a work link's are, so the note names the chat. It only reads,
-  // so it sits above the line.
-  for (const tab of now.tabs.order) {
-    const chat = chatOf(now.tabs, tab);
-    if (chat === undefined) continue;
-    const name = now.tabs.byId[tab].name;
-    offers.push({
-      ...can(activityId(tab), "Activity", {
-        verb: "openView",
-        view: activityView(chat),
-        title: activityTitle(name),
-      }),
-      note: `Chat ${name}: what it and its tasks said to each other, in a tab of its own.`,
-    });
-  }
-
-  // **A chat's Network** (#1662): what it can reach now and what it was refused, in a tab of
-  // its own. One row per chat, as Activity's; it only reads, so it sits above the line.
-  for (const tab of now.tabs.order) {
-    const chat = chatOf(now.tabs, tab);
-    if (chat === undefined) continue;
-    const name = now.tabs.byId[tab].name;
-    offers.push({
-      ...can(networkId(tab), "Network", {
-        verb: "openView",
-        view: chatNetworkView(chat),
-        title: chatNetworkTitle(name),
-      }),
-      note: `Chat ${name}: what it can reach now and what it was refused, in a tab of its own.`,
-    });
-  }
-
-  // **Use skill… on a chat's tab** (#2775): one row per chat, behind the Skill studio's flag.
-  // The palette lists the chat in front's alone (`menuOnly`, as Ask's); each tab's menu has its
-  // own, and the key registry's `chat.useSkill` presses the one in front. It opens a picker and
-  // types nothing until a skill is picked, so it sits above the line. It says no budget: the
-  // chat's budget is the Skills view's to say (spec #3679 S8, #3954), which the pane's Skills
-  // chip opens.
-  if (now.skillStudio) {
-    for (const tab of now.tabs.order) {
-      const chat = chatOf(now.tabs, tab);
-      // A shell runs no tool with skills, as it has no profile to ask a persona on.
-      if (chat === undefined || !(now.askable?.(chat) ?? false)) continue;
-      const name = now.tabs.byId[tab].name;
-      offers.push({
-        ...can(usingSkillId(tab), "Use skill…", { verb: "useSkill", tab }),
-        note: `Chat ${name}: one of its skills, typed into it for you to send.`,
-        ...(tab === now.tabs.inFront ? {} : { menuOnly: true as const }),
-      });
-    }
-  }
-
-  // **Ask a persona from a chat's tab**: one row per chat per persona the project has
-  // finished, so the tab's menu and the palette are one surface. The palette lists only the
-  // rows of the tab in front (#1468, `menuOnly`). The words are the same on
-  // every tab, as a work link's are, so the note names the chat. It opens a dialog and starts
-  // nothing until that is answered, so it sits above the line.
-  //
-  // **Where policy locks all dispatch there is no such row on any tab**, and one row that
-  // cannot run says why, in the palette, where a person looks for an action that has gone.
-  if (now.ask !== undefined && now.ask.locked !== null) {
-    offers.push(cannot(ASK_LOCKED_ID, "Ask a persona…", now.ask.locked));
-  } else if (now.ask !== undefined) {
-    for (const tab of now.tabs.order) {
-      const chat = chatOf(now.tabs, tab);
-      if (chat === undefined || !(now.askable?.(chat) ?? false)) continue;
-      const name = now.tabs.byId[tab].name;
-      for (const persona of now.ask.personas) {
-        // A pair policy locks: off this chat's tab ({@link askRows} lists what can run), and
-        // a row here that cannot, with policy's own sentence, so the palette says why.
-        const locked = now.ask.locked_for?.find(
-          (one) => one.session === chat && one.persona === persona,
-        );
-        if (locked !== undefined) {
-          offers.push({
-            ...cannot(askId(tab, persona), `Ask ${persona}…`, locked.why, name),
-            ...(tab === now.tabs.inFront ? {} : { menuOnly: true as const }),
-          });
-          continue;
-        }
-        offers.push({
-          ...can(askId(tab, persona), `Ask ${persona}…`, { verb: "askPersona", tab, persona }),
-          note: `From chat ${name}. A task starts as ${persona}, and its report comes back to this one.`,
-          // One set in the palette, the chat in front's; each tab's menu has its own (#1468).
-          ...(tab === now.tabs.inFront ? {} : { menuOnly: true as const }),
-        });
-      }
-    }
-  }
-
-  // **Start fresh** (NO-3, charter#369): a chat the project's instructions changed under since it
-  // started runs on what it read until it is started again. Only such a chat has the row, and
-  // its tab's mark presses the same one. It ends the chat's program, so it is asked about first
-  // (`PlaneView`'s `ChatAsk`), and it is in the last group of the tab's menu, in the danger
-  // colour (`menuModel.ts`).
-  for (const tab of now.tabs.order) {
-    const chat = chatOf(now.tabs, tab);
-    const files = chat === undefined ? undefined : now.planeUpdated?.[chat];
-    if (files === undefined || files.length === 0) continue;
-    const name = now.tabs.byId[tab].name;
-    // **A task** (#1489, #1609): a fresh start is a new conversation, and a task's brief is in
-    // the one it has. Where the core hands the brief again it runs, and says so; a refusal (a
-    // brief purlis cannot confirm) is said in its question as any refused act is. Until the core
-    // does, the row stays and says why, so its tab's menu answers the question instead of
-    // losing the row.
-    if (chat !== undefined && (now.askedBy ?? askedByOf(now.listed ?? []))(chat) !== undefined) {
-      offers.push(
-        (now.tasksStartFresh ?? TASKS_START_FRESH)
-          ? {
-              ...can(
-                `tab.fresh:${tab}`,
-                `Start chat ${name} fresh`,
-                { verb: "startFresh", tab },
-                name,
-              ),
-              note: `Changed since it started: ${files.join(", ")}. ${TASK_FRESH_NOTE}`,
-            }
-          : cannot(`tab.fresh:${tab}`, `Start chat ${name} fresh`, TASK_NOT_FRESH, name),
-      );
-      continue;
-    }
-    offers.push({
-      ...can(`tab.fresh:${tab}`, `Start chat ${name} fresh`, { verb: "startFresh", tab }, name),
-      note: `Changed since it started: ${files.join(", ")}`,
-    });
-  }
-
-  // **Restart chat**: the chat's program ends and starts again on the same conversation, with
-  // the project's settings as they are now — what a chat needs after a sandbox setting changed.
-  // Mid-turn the restart waits for the turn to end, and the row says so (`midTurn`, and the
-  // note everywhere). A chat that reports no state restarts at once, and its note says that
-  // instead (`noState`). Asking twice asks for one restart. It is listed after the rows above
-  // the line; a menu draws it uncoloured, since the chat keeps its conversation
-  // (`menuModel.ts`).
-  for (const tab of now.tabs.order) {
-    const chat = chatOf(now.tabs, tab);
-    if (chat === undefined || !(now.restartable?.(chat) ?? false)) continue;
-    const name = now.tabs.byId[tab].name;
-    offers.push({
-      ...can(`tab.restart:${tab}`, `Restart chat ${name}`, { verb: "restartChat", tab }, name),
-      note: RESTART_NOTE,
-      midTurn: { session: chat, title: `Restart chat ${name} when this turn ends` },
-      noState: { session: chat, note: restartNoteNoState(name) },
-    });
-  }
-
-  // **Move to runner and Move here** (#2048): one row per place the chat can move, under its
-  // restart. It ends nothing by itself: the move is prepared while the chat works, and happens
-  // at its next pause, which the row's note says.
-  for (const tab of now.tabs.order) {
-    const chat = chatOf(now.tabs, tab);
-    if (chat === undefined) continue;
-    const name = now.tabs.byId[tab].name;
-    // The other chats of its workspace move with it (#3453), so the row names them.
-    const others = now.movesWith?.(chat) ?? [];
-    const together = others.length === 0 ? "" : ` with ${namesListed(others)}`;
-    for (const to of now.movesTo?.(chat) ?? []) {
-      const here =
-        (now.clonesComeBack?.(chat) ?? false) ? MOVE_HERE_WITH_CLONES_NOTE : MOVE_HERE_NOTE;
-      const note = to === null ? here : MOVE_TO_RUNNER_NOTE;
-      offers.push({
-        ...can(
-          `tab.move:${tab}:${to ?? ""}`,
-          to === null
-            ? `Move chat ${name}${together} here`
-            : `Move chat ${name}${together} to pool ${to}`,
-          { verb: "moveChat", tab, to },
-          name,
-        ),
-        note: others.length === 0 ? note : `${note} ${MOVE_TOGETHER_NOTE}`,
-      });
-    }
-  }
-
-  // **A chat's work link** (V60, ADR 0088 §3): which work item it works on. Above the line: it
-  // ends nothing, and an unlink only ends the link. The words are the operator's ruling, the
-  // same on every tab, so the note names the chat; a chat that is not in a workspace has no row,
-  // because the window does not offer it there (§4).
-  for (const tab of now.tabs.order) {
-    const chat = chatOf(now.tabs, tab);
-    if (chat === undefined || !(now.linkable?.(chat) ?? false)) continue;
-    const said = `Chat ${now.tabs.byId[tab].name}`;
-    offers.push({
-      ...can(`tab.worklink:${tab}`, "Link to work item…", { verb: "linkWorkItem", tab }),
-      note: said,
-    });
-    const item = now.workItems?.[chat];
-    if (item !== undefined) {
-      offers.push({
-        ...can(`tab.workunlink:${tab}`, "Unlink work item", { verb: "unlinkWorkItem", tab }),
-        note: `${said} · ${workItemSaid(item)}`,
-      });
-    }
-  }
+  offers.push(...chatRows(now));
 
   // **A preview tab can be kept** (SI-9b, ADR 0065 Q1): the next single click on a memory then
   // previews in a tab of its own. A double-click on the tab runs this same row, as VS Code's
@@ -2267,25 +2102,6 @@ export function catalogue(now: Now): Offer[] {
     offers.push({
       ...can(`tab.keep:${tab}`, `Keep tab ${name} open`, { verb: "keepTab", tab }, name),
       note: "The next memory you click opens in a tab of its own instead of replacing this one.",
-    });
-  }
-
-  // **A tab wrapping up offers to stop** (ADR 0064): the chat was asked to write its record and
-  // close. Cancelling ends nothing, so it is above the line, and first on the tab's menu.
-  for (const tab of now.tabs.order) {
-    const session = panesOf(now.tabs, tab).find((one) =>
-      (now.wrappingUp ?? []).includes(one.session),
-    )?.session;
-    if (session === undefined) continue;
-    const name = now.tabs.byId[tab].name;
-    offers.push({
-      ...can(
-        smartCloseCancelId(tab),
-        `Cancel smart close of ${name}`,
-        { verb: "cancelSmartClose", session },
-        name,
-      ),
-      note: "The chat stays open and running.",
     });
   }
 
@@ -2475,6 +2291,15 @@ export function catalogue(now: Now): Offer[] {
   offers.push({
     ...can("pool.add", "Add a pool…", { verb: "addDockerPool" }),
     note: "A runner on your Docker, or one claimed in your team's cluster.",
+  });
+  // **Agent identity** (#4485): what a chat acts as on a forge, always one row away.
+  offers.push({
+    ...can(AGENT_IDENTITY_ID, AGENT_IDENTITY_TITLE, {
+      verb: "openView",
+      view: AGENT_IDENTITY_VIEW,
+      title: AGENT_IDENTITY_TITLE,
+    }),
+    note: "What chats act as on GitHub. Your own sign-in never reaches a chat.",
   });
   // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
   // so nothing about runners shows before the first is added (spec #2041 story 6).
@@ -3032,16 +2857,6 @@ export function catalogue(now: Now): Offer[] {
   // front and above the line: none of them ends anything.
   offers.push(...tabChatRows(now));
 
-  // The worktree of the chat in front. Merging is not destructive — it is fast-forward only
-  // and never pushes — so it sits above the line; removing is below it.
-  const inFront = frontWorktree(now, chatInFocus);
-  const merge = "Merge this chat's branch into its clone";
-  offers.push(
-    "cut" in inFront
-      ? can("worktree.merge", merge, { verb: "mergeWorktree", cut: inFront.cut })
-      : cannot("worktree.merge", merge, inFront.why),
-  );
-
   // **And one row per piece of the focused workspace** (charter-app#174). The explorer's rows
   // had no menu because the two rows above are about THE CHAT IN FRONT, and a piece nothing
   // is running in is not in front of anything. These name the piece, exactly as
@@ -3162,6 +2977,31 @@ export function catalogue(now: Now): Offer[] {
     });
   }
 
+  // **Close other tabs skips the pinned ones** (#4762): a pin is the operator saying a tab
+  // stays. One row, the tab in front's, however many tabs there are: a row per tab would be
+  // fifty more at fifty chats, all saying the same verb. It closes each tab as that tab's own
+  // close would, so the chats it ends are asked about first, and the tasks in them go back to
+  // the Chats list.
+  if (now.tabs.inFront !== undefined && now.tabs.byId[now.tabs.inFront] !== undefined) {
+    const tab = now.tabs.inFront;
+    const id = `tab.closeOthers:${tab}`;
+    const title = "Close other tabs";
+    const closes = now.otherTabs?.(tab) ?? [];
+    const restoring = (one: number) =>
+      panesOf(now.tabs, one).some((pane) => (now.restoring ?? []).includes(pane.session));
+    if (closes.length === 0) offers.push(cannot(id, title, NO_OTHER_TAB));
+    else if (closes.some(restoring)) offers.push(cannot(id, title, RESTORING_HAS_NO_CLOSE));
+    else {
+      const ends = closes.some((one) =>
+        panesOf(now.tabs, one).some((pane) => askedBy(pane.session) === undefined),
+      );
+      offers.push({
+        ...can(id, title, { verb: "closeOtherTabs", tab, closes, ends }),
+        ...(ends ? { note: ENDS_IT } : {}),
+      });
+    }
+  }
+
   offers.push(...stopRows(now.listed ?? [], now.stopping ?? []));
   offers.push(...taskEndRows(now.listed ?? [], now.stopping ?? []));
   offers.push(...taskRows(now.listed ?? []));
@@ -3170,21 +3010,9 @@ export function catalogue(now: Now): Offer[] {
   offers.push(besideInFront(now.tabs, now.listed ?? [], now.nameOf));
   offers.push(...briefRows(now.listed ?? []));
   offers.push(...answerRows(now.listed ?? []));
-  offers.push(...restartRows(now.listed ?? [], now.restartable));
 
-  const remove = "Remove the folder of this chat's branch";
-  offers.push(
-    "cut" in inFront
-      ? {
-          ...can("worktree.remove", remove, {
-            verb: "removeWorktree",
-            cut: inFront.cut,
-            force: false,
-          }),
-          note: KEEPS_THE_BRANCH,
-        }
-      : cannot("worktree.remove", remove, inFront.why),
-  );
+  // Each chat's own branch folder goes from its list (#4851): below the line, with the rest.
+  offers.push(...chatBranchRemoveRows(now));
 
   for (const cut of pieces) {
     // The folder goes and the branch stays (ADR 0072 §4), so the row names the folder.
@@ -3214,15 +3042,6 @@ export function catalogue(now: Now): Offer[] {
   // **And it is beside THE ROW THAT WAS REFUSED**, not beside every removal there is. With
   // one removal per piece, a discard row that appeared for all of them would be fifty offers
   // to throw work away raised by one refusal about one piece.
-  if (now.refused === "worktree.remove" && "cut" in inFront) {
-    offers.push(
-      can("worktree.discard", "Discard that work and remove the folder anyway", {
-        verb: "removeWorktree",
-        cut: inFront.cut,
-        force: true,
-      }),
-    );
-  }
   for (const cut of pieces) {
     if (now.refused !== `worktree.remove:${idOf(cut)}` || noPlane !== undefined) continue;
     offers.push(
@@ -3453,35 +3272,38 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "closeTab":
       doing.closeTab(does.tab);
       return DID;
+    case "closeOtherTabs":
+      doing.closeOtherTabs(does.closes);
+      return DID;
     case "selectTab":
       doing.selectTab(does.tab);
       return DID;
-    case "renameTab":
-      doing.renameTab(does.tab);
+    case "renameChat":
+      doing.renameChat(does.session);
       return DID;
     case "linkWorkItem":
-      doing.linkWorkItem(does.tab);
+      doing.linkWorkItem(does.session);
       return DID;
     case "startFresh":
-      doing.startFresh(does.tab);
+      doing.startFresh(does.session);
       return DID;
     case "restartChat":
-      doing.restartChat(does.tab);
+      doing.restartChat(does.session);
       return DID;
     case "moveChat":
-      doing.moveChat(does.tab, does.to);
-      return DID;
-    case "restartListed":
-      doing.restartListed(does.session);
+      doing.moveChat(does.session, does.to);
       return DID;
     case "askPersona":
-      doing.askPersona(does.tab, does.persona);
+      doing.askPersona(does.session, does.persona);
       return DID;
     case "useSkill":
-      doing.useSkill(does.tab);
+      doing.useSkill(does.session);
       return DID;
     case "unlinkWorkItem":
-      return doing.unlinkWorkItem(does.tab);
+      return doing.unlinkWorkItem(does.session);
+    case "endChat":
+      doing.endChat(does.session);
+      return DID;
     case "pinTab":
       return doing.pinTab(does.tab, does.pinned);
     case "pinWorkspace":
@@ -4218,7 +4040,12 @@ export function handedOffRows(listed: readonly ListedChat[]): Offer[] {
 
 /** The catalogue's id for the row that goes to chat `to`, which chat `from` handed off to. */
 export function handedOffId(from: number, to: number): string {
-  return `chat.handed:${from}:${to}`;
+  return `${handedPrefix(from)}${to}`;
+}
+
+/** What starts the id of every Go to row of chat `from`'s, the chats its work went to. */
+function handedPrefix(from: number): string {
+  return `chat.handed:${from}:`;
 }
 
 /** The catalogue's id for the row that shows a task. */
@@ -4231,25 +4058,327 @@ export function restartId(session: number): string {
   return `chat.restart:${session}`;
 }
 
+/** One open chat the catalogue offers a chat's rows for (#4753), by its number. */
+export type ChatHere = { session: number; name: string };
+
 /**
- * **Restart chat, for a chat with no tab** (#1462): `chat.restart:<session>`, on its row in the
- * Chats list and in the palette. A task shown inside its session's tab, or not shown at all,
- * has no tab whose menu has the row (`tab.restart:<tab>`), so its own row offers it, with the
- * same words and the same wait for a turn to end. A chat with a tab is restarted from there,
- * so it is not offered twice. It ends a program, so it is under a menu's line.
+ * **Every open chat of the project, with a tab or without** (#4753): each pane's chat, in the
+ * strip's order, then every chat of the Chats list no pane shows. A chat's rows are built for
+ * each, so a chat with no tab has every row a chat with one has. Named as its tab names it
+ * where it is its tab's own, else as the Chats list does.
  */
-export function restartRows(
-  listed: readonly ListedChat[],
-  restartable: ((session: number) => boolean) | undefined,
-): Offer[] {
-  return listed
-    .filter((chat) => !chat.tab && !chat.shell && (restartable?.(chat.session) ?? false))
-    .map(({ session, name }) => ({
-      ...can(restartId(session), `Restart chat ${name}`, { verb: "restartListed", session }, name),
-      note: RESTART_NOTE,
-      midTurn: { session, title: `Restart chat ${name} when this turn ends` },
-      noState: { session, note: restartNoteNoState(name) },
-    }));
+export function chatsHere(now: Pick<Now, "tabs" | "listed" | "nameOf">): ChatHere[] {
+  const named = new Map<number, string>();
+  for (const tab of now.tabs.order) {
+    const own = chatOf(now.tabs, tab);
+    for (const { session } of panesOf(now.tabs, tab)) {
+      if (named.has(session)) continue;
+      const listed = now.listed?.find((chat) => chat.session === session)?.name;
+      named.set(
+        session,
+        session === own ? now.tabs.byId[tab].name : (listed ?? now.nameOf(session)),
+      );
+    }
+  }
+  for (const chat of now.listed ?? [])
+    if (!named.has(chat.session)) named.set(chat.session, chat.name);
+  return [...named].map(([session, name]) => ({ session, name }));
+}
+
+/** Why Start fresh cannot run on a chat nothing it read has changed under (NO-3, #4753). */
+export const FRESH_UNCHANGED =
+  "Nothing it read at its start has changed in the project since, so there is nothing new to start on.";
+
+/**
+ * **A chat's rows, one set per chat, keyed by its number** (#4753, spec #4750). The rows a
+ * chat's pane head's ⋯, its sidebar row's ⋯ and right-click, and the palette all read
+ * (`menuOn({ on: "chat" })`), so a chat with no tab has the whole list, and one in a split acts
+ * on itself, never on its tab's first pane. The palette's words are the menu's with the chat's
+ * name put in.
+ *
+ * **Kind hides, state disables** (`command-table.md`, rule 2): a row that cannot mean anything
+ * for this kind of chat is not made (a shell has no Use skill, Ask, Restart, Start fresh or
+ * Move to; a task has no End…), and a row that applies but cannot run now is made unavailable
+ * with its reason (Start fresh while nothing it read has changed; End… while it restores).
+ */
+function chatRows(now: Now): Offer[] {
+  const offers: Offer[] = [];
+  const askedBy = now.askedBy ?? askedByOf(now.listed ?? []);
+  const front = chatInFront(now.tabs);
+  // **Where policy locks all dispatch there is no Ask row on any chat**, and one row that
+  // cannot run says why, in the palette, where a person looks for an action that has gone.
+  const askLocked = now.ask?.locked ?? null;
+  if (askLocked !== null) offers.push(cannot(ASK_LOCKED_ID, "Ask a persona…", askLocked));
+  for (const { session, name } of chatsHere(now)) {
+    // A shell runs no harness: no tool with skills, no profile to ask a persona on.
+    const harnessed = now.askable?.(session) ?? false;
+    const task = askedBy(session) !== undefined;
+
+    // **Its state now, first** (ADR 0064): a chat wrapping up offers to stop. Cancelling ends
+    // nothing, so it is above the line.
+    if ((now.wrappingUp ?? []).includes(session))
+      offers.push({
+        ...can(
+          smartCloseCancelId(session),
+          `Cancel smart close of ${name}`,
+          { verb: "cancelSmartClose", session },
+          name,
+        ),
+        note: "The chat stays open and running.",
+      });
+
+    // **Rename…** (charter-app#254): on its tab in place where it is its tab's own, else in a
+    // dialog. A double-click on the tab's name and F2 on it run this same row.
+    offers.push(
+      can(renameId(session), `Rename chat ${name}…`, { verb: "renameChat", session }, name),
+    );
+
+    // **Use skill…** (#2775), behind the Skill studio's flag. It opens a picker and types
+    // nothing until a skill is picked, so it sits above the line; the key registry's
+    // `chat.useSkill` presses the focused chat's.
+    if (now.skillStudio && harnessed)
+      offers.push({
+        ...can(usingSkillId(session), `Use skill in ${name}…`, { verb: "useSkill", session }, name),
+        note: "One of its skills, typed into it for you to send.",
+      });
+
+    // **Ask {persona}…**: one row per persona the project has finished. It opens a dialog and
+    // starts nothing until that is answered. A pair policy locks is a row that cannot run, with
+    // policy's own sentence, off the menu ({@link askRows} lists what can run).
+    if (now.ask !== undefined && askLocked === null && harnessed)
+      for (const persona of now.ask.personas) {
+        const title = `Ask ${persona} from ${name}…`;
+        const locked = now.ask.locked_for?.find(
+          (one) => one.session === session && one.persona === persona,
+        );
+        offers.push(
+          locked !== undefined
+            ? cannot(askId(session, persona), title, locked.why, name)
+            : {
+                ...can(
+                  askId(session, persona),
+                  title,
+                  { verb: "askPersona", session, persona },
+                  name,
+                ),
+                note: `A task starts as ${persona}, and its report comes back to ${name}.`,
+              },
+        );
+      }
+
+    // **Its work link** (V60, ADR 0088 §3). Above the line: it ends nothing, and an unlink only
+    // ends the link. A chat that is not in a workspace has no row (§4).
+    if (now.linkable?.(session) ?? false) {
+      offers.push({
+        ...can(
+          workLinkId(session),
+          `Link ${name} to a work item…`,
+          { verb: "linkWorkItem", session },
+          name,
+        ),
+        note: `Chat ${name}`,
+      });
+      const item = now.workItems?.[session];
+      if (item !== undefined)
+        offers.push({
+          ...can(
+            workUnlinkId(session),
+            `Unlink ${name} from ${item}`,
+            { verb: "unlinkWorkItem", session },
+            name,
+          ),
+          note: `Chat ${name} · ${workItemSaid(item)}`,
+        });
+    }
+
+    // **Its Activity** (#1495) and **its Network** (#1662), each in a tab of its own. They only
+    // read, so they sit above the line.
+    offers.push(
+      {
+        ...can(
+          activityId(session),
+          `Activity of ${name}`,
+          { verb: "openView", view: activityView(session), title: activityTitle(name) },
+          name,
+        ),
+        note: `What ${name} and its tasks said to each other, in a tab of its own.`,
+      },
+      {
+        ...can(
+          networkId(session),
+          `Network of ${name}`,
+          { verb: "openView", view: chatNetworkView(session), title: chatNetworkTitle(name) },
+          name,
+        ),
+        note: `What ${name} can reach now and what it was refused, in a tab of its own.`,
+      },
+    );
+
+    // **Restart**: the chat's program ends and starts again on the same conversation, with the
+    // project's settings as they are now. Mid-turn it waits for the turn to end, and the row
+    // says so (`midTurn`); a chat that reports no state restarts at once (`noState`). A shell
+    // has no conversation, and no row. A task is asked first, where the person is.
+    const restartable = now.restartable?.(session) ?? false;
+    if (restartable)
+      offers.push({
+        ...can(restartId(session), `Restart chat ${name}`, { verb: "restartChat", session }, name),
+        note: RESTART_NOTE,
+        midTurn: { session, title: `Restart chat ${name} when this turn ends` },
+        noState: { session, note: restartNoteNoState(name) },
+      });
+
+    // **Start fresh** (NO-3, charter#369): for a chat the project's instructions changed under
+    // since it started, and greyed with its reason for any other chat with a conversation. It
+    // ends the chat's program, so it is asked about first and drawn in the danger colour.
+    const files = now.planeUpdated?.[session] ?? [];
+    if (files.length > 0 || restartable) {
+      const title = `Start chat ${name} fresh`;
+      if (files.length === 0) offers.push(cannot(freshId(session), title, FRESH_UNCHANGED, name));
+      // **A task** (#1489, #1609): a fresh start is a new conversation, and a task's brief is
+      // in the one it has. Where the core hands the brief again it runs, and says so.
+      else if (task)
+        offers.push(
+          (now.tasksStartFresh ?? TASKS_START_FRESH)
+            ? {
+                ...can(freshId(session), title, { verb: "startFresh", session }, name),
+                note: `Changed since it started: ${files.join(", ")}. ${TASK_FRESH_NOTE}`,
+              }
+            : cannot(freshId(session), title, TASK_NOT_FRESH, name),
+        );
+      else
+        offers.push({
+          ...can(freshId(session), title, { verb: "startFresh", session }, name),
+          note: `Changed since it started: ${files.join(", ")}`,
+        });
+    }
+
+    // **Move to runner and Move here** (#2048): one row per place the chat can move. It ends
+    // nothing by itself: the move is prepared while the chat works and happens at its next
+    // pause. The other chats of its workspace move with it (#3453), so the row names them.
+    const others = now.movesWith?.(session) ?? [];
+    const together = others.length === 0 ? "" : ` with ${namesListed(others)}`;
+    for (const to of now.movesTo?.(session) ?? []) {
+      const here =
+        (now.clonesComeBack?.(session) ?? false) ? MOVE_HERE_WITH_CLONES_NOTE : MOVE_HERE_NOTE;
+      const note = to === null ? here : MOVE_TO_RUNNER_NOTE;
+      offers.push({
+        ...can(
+          moveId(session, to),
+          to === null
+            ? `Move chat ${name}${together} here`
+            : `Move chat ${name}${together} to pool ${to}`,
+          { verb: "moveChat", session, to },
+          name,
+        ),
+        note: others.length === 0 ? note : `${note} ${MOVE_TOGETHER_NOTE}`,
+      });
+    }
+
+    // **Merge its branch** (#4851, `command-table.md` row 24): for a chat working in a branch
+    // folder purlis cut, whatever its kind. Merging is fast-forward only and never pushes, so it
+    // is above the line; its folder's removal is below it ({@link chatBranchRemoveRows}).
+    const merge = branchRow(now, session, name, branchMergeId(session), "merge", front);
+    if (merge !== undefined) offers.push(merge);
+
+    // **End…** (#4753): the chat's own row, never a tab's. It asks first (`EndingChat`: Cancel,
+    // End, Smart close). A task ends by its own two rows instead, and a chat still restoring has
+    // no program to end yet.
+    if (!task)
+      offers.push(
+        (now.restoring ?? []).includes(session)
+          ? cannot(endId(session), `End chat ${name}…`, RESTORING_HAS_NO_CLOSE, name)
+          : {
+              ...can(endId(session), `End chat ${name}…`, { verb: "endChat", session }, name),
+              note: ENDS_IT,
+            },
+      );
+  }
+  return offers;
+}
+
+/** Why a chat's Branch rows cannot run where purlis has no project to reach the branch in. */
+const NO_PROJECT_FOR_BRANCH = "purlis found no project, so it cannot reach a branch.";
+
+/**
+ * **The branch folder chat `session` works in, or why its Branch rows cannot run** (#4851).
+ * `undefined` where it works in none, and has no Branch rows at all: a chat's folder is what
+ * kind of chat it is, not a state it passes through (`command-table.md`, rule 2).
+ */
+function branchFolderOf(now: Now, session: number): { cut: Cut } | { why: string } | undefined {
+  const at = now.worktreeOf?.(session);
+  if (at === undefined) return undefined;
+  if (now.plane === undefined) return { why: NO_PROJECT_FOR_BRANCH };
+  return {
+    cut: { workspace: at.workspace, repo: at.repo, piece: at.piece, branch: at.branch },
+  };
+}
+
+/** What each of a chat's Branch rows does, and its words in the palette. */
+const BRANCH_ROWS = {
+  merge: {
+    title: (name: string) => `Merge ${name}'s branch into its clone`,
+    does: (cut: Cut): Does => ({ verb: "mergeWorktree", cut }),
+  },
+  remove: {
+    title: (name: string) => `Remove ${name}'s branch folder`,
+    does: (cut: Cut): Does => ({ verb: "removeWorktree", cut, force: false }),
+  },
+  discard: {
+    title: (name: string) => `Discard that work and remove ${name}'s branch folder anyway`,
+    does: (cut: Cut): Does => ({ verb: "removeWorktree", cut, force: true }),
+  },
+} as const;
+
+/**
+ * **One of chat `session`'s Branch rows** (#4851), or `undefined` where it works in no branch
+ * folder. Greyed with its reason where it cannot run, and marked {@link Offer.inFront} where its
+ * chat is the one the keyboard is in.
+ */
+function branchRow(
+  now: Now,
+  session: number,
+  name: string,
+  id: string,
+  row: keyof typeof BRANCH_ROWS,
+  /** The chat the keyboard is in ({@link chatInFront}), worked out once per catalogue. */
+  front: number | undefined,
+): Offer | undefined {
+  const folder = branchFolderOf(now, session);
+  if (folder === undefined) return undefined;
+  const { title, does } = BRANCH_ROWS[row];
+  const offer =
+    "cut" in folder
+      ? can(id, title(name), does(folder.cut), name)
+      : cannot(id, title(name), folder.why, name);
+  return front === session ? { ...offer, inFront: true } : offer;
+}
+
+/** The chat shown in the pane that has the keyboard, if it shows one. */
+function chatInFront(tabs: Tabs): number | undefined {
+  const focused = focusedContent(tabs);
+  return focused?.kind === "session" ? focused.session : undefined;
+}
+
+/**
+ * **Remove its branch folder** (#4851, `command-table.md` row 25), for each chat working in
+ * one: the folder goes and the branch stays (ADR 0072 §4). Below the line, with the rest that
+ * takes something away, while its Merge is above it in {@link chatRows}: the catalogue's line
+ * is what keeps Enter on a fresh palette off a removal. And **Discard and remove anyway** (row
+ * 26) on the one chat whose removal the core has just refused, beside the row it refused and
+ * nowhere before: absent rather than refused, for the reason `worktree.discard:<piece>` is.
+ */
+function chatBranchRemoveRows(now: Now): Offer[] {
+  const offers: Offer[] = [];
+  const front = chatInFront(now.tabs);
+  for (const { session, name } of chatsHere(now)) {
+    const remove = branchRow(now, session, name, branchRemoveId(session), "remove", front);
+    if (remove === undefined) continue;
+    offers.push({ ...remove, ...(remove.available ? { note: KEEPS_THE_BRANCH } : {}) });
+    const discard = branchRow(now, session, name, branchDiscardId(session), "discard", front);
+    if (now.refused === branchRemoveId(session) && discard?.available === true)
+      offers.push(discard);
+  }
+  return offers;
 }
 
 /**
@@ -4277,13 +4406,14 @@ export function briefRows(listed: readonly ListedChat[]): Offer[] {
  * **Answer, for a task paused on a question to its asking chat** (#1496, #1551):
  * `chat.answer:<session>`, which opens a form that answers it as the person. On the task's row
  * menu in the Chats list, on its own tab's menu, and in the palette; a tab's menu offers it at
- * the end of the task's line. **Only while the task is asking**: the row is gone once it is
- * answered or has moved on, and a form opened just before says so itself. It sends nothing:
+ * the end of the task's line. **Only while the task has an open question**, with its asking
+ * chat or waiting on the person (#4564, spec #4551 story 30): the row is gone once it is
+ * answered, and a form opened just before says so itself. It sends nothing:
  * the form's Send does, so it is among a menu's ordinary rows.
  */
 export function answerRows(listed: readonly ListedChat[]): Offer[] {
   return listed
-    .filter((chat) => chat.mode === "task" && chat.asking !== null)
+    .filter((chat) => chat.mode === "task" && (chat.question ?? null) !== null)
     .map((chat) => ({
       ...can(
         answerId(chat.session),
@@ -4485,6 +4615,21 @@ export const BELOW_TOO =
 export const STOPS_IT =
   "A chat another chat started gets one short turn to write what it did, then it ends. The chat that asked is told you stopped it.";
 
+/** A chat's Merge its branch row (#4851). */
+export function branchMergeId(session: number): string {
+  return `chat.branch.merge:${session}`;
+}
+
+/** A chat's Remove its branch folder row (#4851). */
+export function branchRemoveId(session: number): string {
+  return `chat.branch.remove:${session}`;
+}
+
+/** A chat's Discard and remove anyway, once its removal was refused (#4851). */
+export function branchDiscardId(session: number): string {
+  return `chat.branch.discard:${session}`;
+}
+
 /** The catalogue's id for a chat's Stop row (#1448). */
 export function stopId(session: number): string {
   return `chat.stop:${session}`;
@@ -4509,7 +4654,6 @@ export function dismissId(session: number): string {
   return `needs.dismiss:${session}`;
 }
 
-/** The catalogue's id for a wrapping-up tab's Cancel smart close row (ADR 0064). */
 /** What starts the id of every Move row of the memory `key` (#1190). */
 const movePrefix = (key: string) => `memory.move:${key}:`;
 
@@ -4640,8 +4784,9 @@ export function workItemSaid(key: string): string {
   return `Work item: ${key}`;
 }
 
-export function smartCloseCancelId(tab: number): string {
-  return `tab.smartclose.cancel:${tab}`;
+/** The catalogue's id for Cancel smart close of chat `session` (ADR 0064). */
+export function smartCloseCancelId(session: number): string {
+  return `chat.smartclose.cancel:${session}`;
 }
 
 /** The catalogue's id for a queued chat's Go row, for a surface drawing that row. */
@@ -4669,24 +4814,6 @@ function nothingSaidSoFar(quiet: readonly string[]): string {
       ? `${quiet[0]} can be waiting on you without saying so`
       : `${quiet.length} chats can be waiting on you without saying so`;
   return `Nothing has said it needs you — and ${who}.`;
-}
-
-/**
- * The worktree the chat in front is working in, or why there is none.
- *
- * **The piece and the reason in one answer, rather than a reason and a second look at
- * `now.worktree`** (charter-app#174). A row about a worktree now carries the worktree, so
- * "can this row run" and "which piece does it mean" are the same question asked once — two
- * checks would let a row be available while carrying no piece, which is a defect nothing on
- * screen could show.
- */
-function frontWorktree(now: Now, inFront: boolean): { cut: Cut } | { why: string } {
-  if (!inFront) return { why: "No chat is in front." };
-  if (now.plane === undefined)
-    return { why: "purlis found no project, so it cannot reach a branch." };
-  if (now.worktree === undefined)
-    return { why: "The chat in front is not working in a branch purlis cut." };
-  return { cut: now.worktree };
 }
 
 /**
@@ -4718,6 +4845,9 @@ export function paneCloseOf(
       : contentsOf(tabs, front.id).find((one) => one.pane === pane)?.content;
   if (content?.kind === "view")
     return can("pane.close", "Close this view", { verb: "closePane", ends: false });
+  // An empty pane holds nothing to end (#4755): closing it only takes it away.
+  if (content?.kind === "empty")
+    return can("pane.close", "Close this pane", { verb: "closePane", ends: false });
   if (front === undefined || content === undefined || pane === undefined)
     return cannot(
       "pane.close",
@@ -4867,8 +4997,8 @@ export function matches(query: string, offer: Offer): boolean {
  * happens to carry.
  *
  * The title with the row's `name` taken out of it, plus charter's part of the id. `Switch to
- * tab release.3` answers no to `re` and yes to `switch`; `Remove the folder of this chat's
- * branch` has no name in it and answers yes to both. A row with no name is always its own words.
+ * tab release.3` answers no to `re` and yes to `switch`; `Search in files` has no name in it
+ * and answers yes to `re`. A row with no name is always its own words.
  */
 function byItsWords(query: string, offer: Offer): boolean {
   const want = query.toLowerCase();
@@ -4895,7 +5025,7 @@ function byItsWords(query: string, offer: Offer): boolean {
  * shape on screen; the operator does not get to care about the difference.
  */
 function aboutWhatIsInFront(offer: Offer): boolean {
-  return !offer.id.includes(":");
+  return !offer.id.includes(":") || offer.inFront === true;
 }
 
 /**
@@ -4969,17 +5099,15 @@ export function aim(rows: readonly Offer[]): number {
  * carried its own copy would be the second answer this module exists to not have.
  */
 export type MenuOn =
-  /** One chat, by the tab that holds it. Its rows are the same rows the tab strip draws. The
-   *  chat's own number, where the tab holds one, is what its Stop rows are named by (#1448). */
-  | { on: "chat"; tab: number; session?: number }
-  /** One running chat, by its number: a row of the Chats section (#1447), which a task chat
-   *  has before it has a tab. */
-  | {
-      on: "listed";
-      session: number;
-      /** The chats its work was handed off to, the newest first (#1492). */
-      handed?: readonly number[];
-    }
+  /**
+   * **One chat, by its number** (#4753): its one ordered list, which its pane head's ⋯, its
+   * sidebar row's ⋯ and right-click, and the palette all show. A chat with no tab has it whole.
+   */
+  | { on: "chat"; session: number }
+  /** **One tab, by its number**: the tab's own rows and no chat's (#4753, spec #4750). A tab
+   *  holds a layout, and a chat's rows are the chat's, so a split tab never acts on the wrong
+   *  chat. */
+  | { on: "tab"; tab: number }
   | { on: "workspace"; workspace: string }
   /** The plane root's tab (SI-1): not a workspace, so a menu of its own. */
   | { on: "root" }
@@ -5054,60 +5182,51 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
       return { above: fileRows(what).map((row) => row.id), below: [] };
     case "view":
       return { above: viewRows(what).map((row) => row.id), below: [] };
-    case "chat":
+    case "chat": {
+      const at = what.session;
       return {
+        // **The list's order** (`command-table.md`, rule 3): the rows for its state now, then
+        // the chat, what it opens, how it runs, and last what ends it. An id the catalogue
+        // does not have for this chat (a kind it cannot apply to) is not in the menu.
         above: [
-          smartCloseCancelId(what.tab),
-          `tab.select:${what.tab}`,
-          `tab.rename:${what.tab}`,
-          `tab.pin:${what.tab}`,
-          `tab.worklink:${what.tab}`,
-          `tab.workunlink:${what.tab}`,
-          // A task's own tab: beside its session instead (#1489). No row for a session.
-          ...(what.session === undefined ? [] : [besideId(what.session)]),
-          // A task: its Brief (#1494). An id the catalogue lacks is not in the menu.
-          ...(what.session === undefined ? [] : [briefId(what.session)]),
-          // A task asking its asking chat: the person may answer it (#1551).
-          ...(what.session === undefined ? [] : [answerId(what.session)]),
-          activityId(what.tab),
-          networkId(what.tab),
-          usingSkillId(what.tab),
+          answerId(at),
+          smartCloseCancelId(at),
+          dismissId(at),
+          renameId(at),
+          usingSkillId(at),
+          // Where policy locks all dispatch: the one Ask row, which cannot run and says why.
+          ASK_LOCKED_ID,
+          workLinkId(at),
+          workUnlinkId(at),
+          // Where a task is drawn (#1489): a tab of its own, beside its session, or back.
+          ownTabId(at),
+          besideId(at),
+          backId(at),
+          briefId(at),
+          activityId(at),
+          networkId(at),
+          ignoreId(at),
         ],
         below: [
-          `tab.restart:${what.tab}`,
-          `tab.fresh:${what.tab}`,
-          `tab.close:${what.tab}`,
-          // A task has its own two rows and no Stop rows, and every other chat the reverse:
-          // an id the catalogue does not have is not in the menu.
-          ...(what.session === undefined
-            ? []
-            : [
-                stopId(what.session),
-                stopBelowId(what.session),
-                stopAllId(what.session),
-                ...taskEndIds(what.session),
-              ]),
+          restartId(at),
+          freshId(at),
+          stopId(at),
+          stopBelowId(at),
+          stopAllId(at),
+          // **Branch** (#4851): after how it runs and before what ends it (rule 3). Merging
+          // takes nothing away, but it folds into one Branch ▸ with the removal.
+          branchMergeId(at),
+          branchRemoveId(at),
+          branchDiscardId(at),
+          endId(at),
+          ...taskEndIds(at),
         ],
       };
-    case "listed":
+    }
+    case "tab":
       return {
-        above: [
-          showId(what.session),
-          briefId(what.session),
-          answerId(what.session),
-          ...(what.handed ?? []).map((to) => handedOffId(what.session, to)),
-          // Where a task is drawn (#1489): a tab of its own, beside its session, or back.
-          ownTabId(what.session),
-          besideId(what.session),
-          backId(what.session),
-        ],
-        below: [
-          restartId(what.session),
-          stopId(what.session),
-          stopBelowId(what.session),
-          stopAllId(what.session),
-          ...taskEndIds(what.session),
-        ],
+        above: [`tab.select:${what.tab}`, `tab.pin:${what.tab}`, `tab.keep:${what.tab}`],
+        below: [`tab.close:${what.tab}`],
       };
     case "workspace":
       return {
@@ -5300,25 +5419,43 @@ export function curateRows(
 export const ASK_LOCKED_ID = "chat.ask";
 
 /** What starts the id of every **Ask {persona}…** row of one tab. */
-const askPrefix = (tab: number) => `tab.ask:${tab}:`;
+const askPrefix = (session: number) => `chat.ask:${session}:`;
 
-/** The id of the row that asks `persona` from `tab`'s chat. */
-export const askId = (tab: number, persona: string) => `${askPrefix(tab)}${persona}`;
+/** The id of the row that asks `persona` from chat `session`. */
+export const askId = (session: number, persona: string) => `${askPrefix(session)}${persona}`;
 
 /**
- * The **Ask {persona}…** rows of one chat tab's menu, in the catalogue's order: one per
- * persona the project has finished that this chat may ask, and none where dispatch is locked
- * or the tab is a shell.
+ * The **Ask {persona}…** rows of one chat's list, in the catalogue's order: one per persona the
+ * project has finished that this chat may ask, and none where dispatch is locked or the chat is
+ * a shell.
  *
  * A scan, as {@link curateRows} is and for its reason: which personas a project has is not
  * something a list of ids can name ahead of time. It is made by a menu that is open, never by
- * every tab on a strip per render.
+ * every row of a list per render.
  */
-export function askRows(tab: number, offers: Catalogued): Offer[] {
-  const prefix = askPrefix(tab);
+export function askRows(session: number, offers: Catalogued): Offer[] {
+  return scanned(askPrefix(session), offers);
+}
+
+/**
+ * The **Move to ▸** rows of one chat's list (#2048, #4753): one per place it can move, by the
+ * same scan, since which pools a chat may move to is not known ahead of time either.
+ */
+export function moveChatRows(session: number, offers: Catalogued): Offer[] {
+  return scanned(chatMovePrefix(session), offers);
+}
+
+/** The ids of chat `session`'s Go to rows, the chats its work was handed to, newest first. */
+function handedTo(session: number, offers: Catalogued): string[] {
+  return [...offers.keys()].filter((id) => id.startsWith(handedPrefix(session)));
+}
+
+/** The rows whose ids start `prefix`, in the catalogue's order. **A row that cannot run is one
+ *  of them**, drawn greyed with its reason (`command-table.md`, rule 2: state disables): an Ask
+ *  policy locks says who locked it on the chat's list as in the palette (#4753). */
+function scanned(prefix: string, offers: Catalogued): Offer[] {
   const rows: Offer[] = [];
-  // Only what can run: an ask policy locks is absent from the tab, and said in the palette.
-  for (const [id, offer] of offers) if (id.startsWith(prefix) && offer.available) rows.push(offer);
+  for (const [id, offer] of offers) if (id.startsWith(prefix)) rows.push(offer);
   return rows;
 }
 
@@ -5378,6 +5515,13 @@ export function menuRows(what: MenuOn, offers: Catalogued): { above: Offer[]; be
   const found = (ids: readonly string[]) =>
     ids.map((id) => offers.get(id)).filter((row) => row !== undefined);
   const { above, below } = menuOn(what);
+  // **A chat's Go to rows** (#1492): one per chat its work was handed off to, the newest first,
+  // as the catalogue lists them. Found in it, so every surface of the chat's list has them
+  // without knowing who it handed to: its pane's ⋯ as its sidebar row (#4753).
+  if (what.on === "chat") {
+    const at = above.indexOf(ownTabId(what.session));
+    above.splice(at, 0, ...handedTo(what.session, offers));
+  }
   // **A row that sends a task back ends nothing, so it is above the line** (#1489): a task's
   // own tab keeps the close's id for its minimise, and the close's id is listed below.
   const under = found(below);

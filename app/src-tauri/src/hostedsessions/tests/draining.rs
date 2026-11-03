@@ -177,7 +177,8 @@ impl Pool {
 /// A window on `desktop_host`, keeping its runners and link names in `config`.
 struct RefusesItsPrograms<H> {
     inner: H,
-    refused: bool,
+    /// The code `programs_of` is refused with, where it is.
+    refused: Option<&'static str>,
 }
 
 impl<H: session::Host> session::Host for RefusesItsPrograms<H> {
@@ -186,9 +187,11 @@ impl<H: session::Host> session::Host for RefusesItsPrograms<H> {
         command: session::Command,
         peer: &session::Peer,
     ) -> Result<Answer, session::Refusal> {
-        if self.refused && matches!(command, session::Command::ProgramsOf { .. }) {
+        if let Some(code) = self.refused
+            && matches!(command, session::Command::ProgramsOf { .. })
+        {
             return Err(session::Refusal {
-                code: session::NOT_ALLOWED.into(),
+                code: code.into(),
                 why: "this runner does not say".into(),
             });
         }
@@ -214,17 +217,17 @@ fn a_window(
     config: &Path,
     runtime: &tokio::runtime::Runtime,
 ) -> Arc<Connection> {
-    a_window_told(desktop_host, handle, config, runtime, false)
+    a_window_told(desktop_host, handle, config, runtime, None)
 }
 
-/// [`a_window`], its relayed links refused `programs_of` where `refused`, as a runner that does
-/// not say its programs refuses it.
+/// [`a_window`], its relayed links refused `programs_of` with the code `refused` names, as a runner
+/// that does not say its programs refuses it, or as a relay answers for one it does not ask.
 fn a_window_told(
     desktop_host: &Hosting,
     handle: &tokio::runtime::Handle,
     config: &Path,
     runtime: &tokio::runtime::Runtime,
-    refused: bool,
+    refused: Option<&'static str>,
 ) -> Arc<Connection> {
     let window = Arc::new(
         runtime
@@ -280,7 +283,7 @@ fn routed_on(window: &Arc<Connection>, root: &Path) -> crate::routedsessions::Ro
     crate::routedsessions::RoutedSessions::new(
         root,
         Box::new(HostedSessions::new(Arc::clone(window), root)),
-        Arc::new(|_| Ok(Some("builds".to_owned()))),
+        Arc::new(|_, _| Ok(Some("builds".to_owned()))),
         Arc::new(Default::default),
         Arc::new(move |name| {
             Ok(Box::new(HostedSessions::on_a_runner(
@@ -356,7 +359,7 @@ fn a_window_that_restarts_during_a_drain_takes_back_both_runners_chats() {
     let window = pool.window_restarts(&runtime);
     let sessions = routed_on(&window, &root)
         .every_start_on("builds")
-        .taking_back_from(Arc::new(|_| vec![format!("{OLD}/{OLD}")]));
+        .taking_back_from(Arc::new(|_| vec![Ok::<_, String>(format!("{OLD}/{OLD}"))]));
     until("the pool's runner gives its chat back", || {
         sessions.left_running_in(moved_on, None)
     });
@@ -475,7 +478,7 @@ fn a_runner_that_does_not_say_its_programs_marks_its_pool() {
         &pool.handle,
         pool.config.path(),
         &runtime,
-        true,
+        Some(session::NOT_ALLOWED),
     );
     let (_project, root) = a_project();
 
@@ -485,6 +488,35 @@ fn a_runner_that_does_not_say_its_programs_marks_its_pool() {
         pool.config.path(),
         "builds"
     ));
+}
+
+/// **A runner too old to be asked its programs leaves them unknown** (#4684): its relay says it
+/// was not asked, so no chat a window kept there is settled as gone, and its pool is marked no
+/// more than it was when such a runner was answered for with none.
+#[test]
+fn a_runner_its_relay_did_not_ask_leaves_its_programs_unknown_and_its_pool_unmarked() {
+    let runtime = a_runtime();
+    for (refused, known) in [
+        (None, Some(false)),
+        (Some(session::PROGRAMS_NOT_KNOWN), None),
+    ] {
+        let pool = Pool::on(&runtime);
+        let (_project, root) = a_project();
+        let window = a_window_told(
+            &pool.desktop_host,
+            &pool.handle,
+            pool.config.path(),
+            &runtime,
+            refused,
+        );
+        let sessions = HostedSessions::on_a_runner(window.to_a_pool("builds"), &root);
+        sessions.hold().expect("held on the runner");
+        assert_eq!(sessions.left_known(7), known, "refused {refused:?}");
+        assert!(
+            !purlis_core::runnertaint::pool_ran_unsandboxed(pool.config.path(), "builds"),
+            "refused {refused:?}"
+        );
+    }
 }
 
 /// **A pool's removal ends a draining runner's links too** (#4271), and a link to a runner kept no
@@ -997,4 +1029,15 @@ fn a_gone_runner_tells_only_the_chats_lost_on_it_and_only_once() {
 fn a_hosts_signal_is_never_the_windows_word_for_a_gone_runner() {
     assert_ne!(a_hosts_signal(ITS_RUNNER_WENT.to_owned()), ITS_RUNNER_WENT);
     assert_eq!(a_hosts_signal("Hangup".to_owned()), "Hangup");
+}
+
+/// **Only a short task's start is one** (#3818), and the word ends with it, on a thread the next
+/// start may share.
+#[test]
+fn a_short_tasks_start_says_so_only_while_it_runs() {
+    assert!(!is_a_short_task());
+    assert!(a_short_task(is_a_short_task));
+    assert!(!is_a_short_task());
+    let _ = std::panic::catch_unwind(|| a_short_task(|| panic!("a start that fails")));
+    assert!(!is_a_short_task());
 }

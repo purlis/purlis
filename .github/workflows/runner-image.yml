@@ -36,10 +36,12 @@ run-name: ${{ github.event_name == 'workflow_run' && format('ci {0} ({1}) of {2}
 # and the forge are asked before a push, a tag or a signature is `tools/image-registry.mjs`,
 # which fails closed.
 #
-# **Nothing is tagged or signed that was not checked.** `image` pushes each architecture's
-# image by digest only, untagged, pulls that digest back, and runs the contract
-# (`tools/runner-image-contract.mjs`, docs/runner-image.md) on exactly those bytes. `index`
-# runs only when both passed.
+# **Nothing is pushed, tagged or signed that was not checked** (#4512). `image` builds each
+# architecture's image once, into a file, runs the contract (`tools/runner-image-contract.mjs`,
+# docs/runner-image.md) on the image loaded from that file, and only then pushes the same file
+# by its digest, untagged; an image that fails is never pushed. `index` runs only when both
+# passed, and `main` moves last, in `tag-main`, once `outside` has pulled and checked the
+# index too.
 
 on:
   pull_request:
@@ -216,38 +218,9 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Sign in to the registry
-        if: env.PUBLISH == 'true'
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      # **No image is pushed into a package that is not public.** The packages API says so
-      # immediately before the push, so a release never names an image a newcomer cannot pull
-      # (#4498). A package that is not there is refused too: a new one starts private, and
-      # someone has to choose to publish it. Anything else stops the job here.
-      - name: The package is public before the image is pushed
-        if: env.PUBLISH == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node tools/image-registry.mjs visibility
-
-      - name: Build the runner image, to check it here
-        if: env.PUBLISH != 'true'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: ${{ runner.temp }}/context
-          file: runner-image/Dockerfile
-          platforms: linux/${{ matrix.arch }}
-          provenance: false
-          load: true
-          tags: purlis-runner:candidate
-      # Pushed by digest only: an untagged image nothing names until `index` does, after the
-      # contract has passed on the very bytes pushed.
-      - name: Build the runner image and push it by digest
-        id: push
-        if: env.PUBLISH == 'true'
+      # Built once, into a file, on every run alike (#4512): the image the checks below run on is
+      # loaded from this file, and a publishing run pushes this same file after they pass.
+      - name: Build the runner image into a file
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ runner.temp }}/context
@@ -260,15 +233,25 @@ jobs:
             org.opencontainers.image.title=purlis runner
             org.opencontainers.image.description=purlis serve, the session host of a runner
             org.opencontainers.image.licenses=Apache-2.0
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-      - name: Pull back what was pushed, to check exactly that
-        if: env.PUBLISH == 'true'
-        env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+          outputs: type=docker,name=purlis-runner:candidate,dest=${{ runner.temp }}/candidate.tar
+      # The file's one manifest names the image by its digest; the image loaded has to be that
+      # manifest's (its config's digest, or the manifest's own on a containerd image store).
+      - name: Load the file, and name its digest
+        id: candidate
         run: |
           set -euo pipefail
-          docker pull "$IMAGE@$DIGEST"
-          docker tag "$IMAGE@$DIGEST" purlis-runner:candidate
+          digest=$(tar -xOf "$RUNNER_TEMP/candidate.tar" index.json \
+            | jq -r '.manifests | if length == 1 then .[0].digest else error("the file holds \(length) manifests") end')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] \
+            || { echo "::error::the file's manifest is '$digest'"; exit 1; }
+          config=$(tar -xOf "$RUNNER_TEMP/candidate.tar" "blobs/sha256/${digest#sha256:}" | jq -r .config.digest)
+          docker load --input "$RUNNER_TEMP/candidate.tar"
+          id=$(docker image inspect --format '{{.Id}}' purlis-runner:candidate)
+          if [ "$id" != "$digest" ] && [ "$id" != "$config" ]; then
+            echo "::error::the image loaded is $id, not the file's $digest (config $config)"
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Build the example of a team's own image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -316,10 +299,51 @@ jobs:
       - name: The example of a team's own image keeps the contract
         run: node tools/runner-image-contract.mjs purlis-runner-team-example:candidate
 
+      - name: Sign in to the registry
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # **No image is pushed into a package that is not public.** The packages API says so
+      # immediately before the push (and the registry sign-in comes only now, after the checks, so
+      # no write credential sits on the runner while the image under check runs), so a release
+      # never names an image a newcomer cannot pull (#4498). A package that is not there is
+      # refused too: a new one starts private, and someone has to choose to publish it. Anything
+      # else stops the job here.
+      - name: The package is public before the image is pushed
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/image-registry.mjs visibility
+      # Pushed only now, after every check above passed, by digest only: an untagged image
+      # nothing names until `index` does. skopeo sends the file as it is: it refuses a push to a
+      # digest the manifest does not have, and `--preserve-digests` refuses to change one.
+      - name: Push the checked file by its digest
+        if: env.PUBLISH == 'true'
+        env:
+          DIGEST: ${{ steps.candidate.outputs.digest }}
+        run: skopeo copy --preserve-digests "oci-archive:$RUNNER_TEMP/candidate.tar" "docker://$IMAGE@$DIGEST"
+      # What a run that publishes nothing can do of the push: the same copy of the same file,
+      # into a folder, and the manifest copied is the digest's.
+      - name: The checked file copies by its digest unchanged
+        if: env.PUBLISH != 'true'
+        env:
+          DIGEST: ${{ steps.candidate.outputs.digest }}
+        run: |
+          set -euo pipefail
+          skopeo copy --preserve-digests "oci-archive:$RUNNER_TEMP/candidate.tar" "dir:$RUNNER_TEMP/copied"
+          copied="sha256:$(sha256sum "$RUNNER_TEMP/copied/manifest.json" | cut -d' ' -f1)"
+          if [ "$copied" != "$DIGEST" ]; then
+            echo "::error::the copy's manifest is $copied, not $DIGEST"
+            exit 1
+          fi
+
       - name: Record this architecture's digest
         if: env.PUBLISH == 'true'
         env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+          DIGEST: ${{ steps.candidate.outputs.digest }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/digests"
@@ -338,7 +362,7 @@ jobs:
     needs: [plan, image]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     # `id-token` mints the OIDC token cosign signs with, through Sigstore's public-good
     # instance; nothing else in the workflow can mint one. `contents: read` is for the checkout
     # of the commit's own tools and for comparing two commits of `main`.
@@ -401,24 +425,13 @@ jobs:
           node tools/image-registry.mjs anonymous \
             "$(cat "$RUNNER_TEMP/digests/amd64")" "$(cat "$RUNNER_TEMP/digests/arm64")"
 
-      # `main` only moves forward, as the dev channel does (`tools/dev-build-order.mjs`): `ci`
-      # runs end out of commit order, so the image of an older commit can finish last. It is
-      # still tagged `sha-<commit>` and signed; `main` stays on the later one.
-      - name: One index for both architectures, tagged sha-<commit>, and main when it moves forward
+      # Tagged `sha-<commit>` only: `main` moves last, in `tag-main`, once `outside` has pulled
+      # and checked this index with no sign-in (#4512).
+      - name: One index for both architectures, tagged sha-<commit>
         id: index
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          order=$(node tools/image-registry.mjs order "$SHA")
-          echo "$order"
-          tags=(--tag "$IMAGE:sha-$SHA")
-          case "$order" in
-            main:*) tags+=(--tag "$IMAGE:main") ;;
-            sha-only:*) echo "::notice::main is not moved: ${order#sha-only: }" ;;
-            *) echo "::error::tools/image-registry.mjs answered neither main nor sha-only: $order"; exit 1 ;;
-          esac
-          docker buildx imagetools create "${tags[@]}" \
+          docker buildx imagetools create --tag "$IMAGE:sha-$SHA" \
             "$IMAGE@$(cat "$RUNNER_TEMP/digests/amd64")" \
             "$IMAGE@$(cat "$RUNNER_TEMP/digests/arm64")"
           digest=$(docker buildx imagetools inspect "$IMAGE:sha-$SHA" --format '{{json .Manifest}}' | jq -r .digest)
@@ -428,9 +441,16 @@ jobs:
             echo "::error::the index holds $platforms"
             exit 1
           fi
+          # The index holds exactly the two images checked, whatever the tag was moved to.
+          children=$(docker buildx imagetools inspect "$IMAGE@$digest" --format '{{json .Manifest}}' \
+            | jq -r '[.manifests[].digest] | sort | join(" ")')
+          checked=$(printf '%s\n' "$(cat "$RUNNER_TEMP/digests/amd64")" "$(cat "$RUNNER_TEMP/digests/arm64")" | sort | paste -sd' ' -)
+          if [ "$children" != "$checked" ]; then
+            echo "::error::the index holds $children, not the images checked, $checked"
+            exit 1
+          fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           echo "image=$IMAGE@$digest" >> "$GITHUB_OUTPUT"
-          case "$order" in main:*) echo "main=true" ;; *) echo "main=false" ;; esac >> "$GITHUB_OUTPUT"
 
       # Keyless: the certificate names this workflow on `main` as the signer, and the
       # signature goes in Sigstore's public transparency log. `--recursive` signs each
@@ -456,11 +476,8 @@ jobs:
       - name: Record the digest
         env:
           DIGEST: ${{ steps.index.outputs.digest }}
-          MAIN: ${{ steps.index.outputs.main }}
         run: |
           set -euo pipefail
-          tags="\`sha-$SHA\`"
-          if [ "$MAIN" = true ]; then tags="$tags and \`main\`"; fi
           mkdir -p "$RUNNER_TEMP/record"
           echo "$IMAGE@$DIGEST" > "$RUNNER_TEMP/record/runner-image.txt"
           {
@@ -468,7 +485,7 @@ jobs:
             echo
             echo "\`$IMAGE@$DIGEST\`"
             echo
-            echo "Commit \`$SHA\`, tagged $tags, linux/amd64 and linux/arm64, signed and verified."
+            echo "Commit \`$SHA\`, tagged \`sha-$SHA\`, linux/amd64 and linux/arm64, signed and verified."
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -599,10 +616,8 @@ jobs:
           LINE: ${{ needs.index.outputs.image }}
         run: |
           set -euo pipefail
-          case "$LINE" in
-            "$IMAGE"@sha256:*) ;;
-            *) echo "::error::index handed back '$LINE'"; exit 1 ;;
-          esac
+          [[ "$LINE" =~ ^"$IMAGE"@sha256:[0-9a-f]{64}$ ]] \
+            || { echo "::error::index handed back '$LINE'"; exit 1; }
           {
             echo "index=${LINE#*@}"
             echo "amd64=$(cat "$RUNNER_TEMP/digests/amd64")"
@@ -667,20 +682,28 @@ jobs:
     needs: [plan, index, attest]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       attestations: read
       contents: read
     steps:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      # The index is read with no sign-in and each architecture's own image is pulled by its digest
+      # in it: one daemon refuses a second pull of the index for another platform (#4784).
       - name: Both architectures pull and the signature verifies, with no token
         env:
           LINE: ${{ needs.index.outputs.image }}
           RELEASED_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          docker pull --platform linux/amd64 "$LINE"
-          docker pull --platform linux/arm64 "$LINE"
+          index=$(docker buildx imagetools inspect "$LINE" --format '{{json .Manifest}}')
+          for platform in linux/amd64 linux/arm64; do
+            digest=$(jq -r --arg platform "$platform" \
+              '[.manifests[] | select("\(.platform.os)/\(.platform.architecture)" == $platform) | .digest]
+                | if length == 1 then .[0] else error("the index holds \(length) images for \($platform)") end' \
+              <<< "$index")
+            docker pull --platform "$platform" "${LINE%@*}@$digest"
+          done
           cosign verify "$LINE" \
             --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF" \
             --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
@@ -697,3 +720,60 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --cert-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF" \
             --deny-self-hosted-runners
+
+  # **`main`, moved last** (#4512): only once `outside` has pulled the index and checked it as
+  # someone outside would, so `:main` only ever names an image that passed. `main` only moves
+  # forward, as the dev channel does (`tools/dev-build-order.mjs`): `ci` runs end out of commit
+  # order, so the image of an older commit can finish last. It is still tagged `sha-<commit>` and
+  # signed; `main` stays on the later one. The tag is put on the index `index` handed on, by its
+  # digest, and read back: it has to name that digest.
+  tag-main:
+    name: main, moved last
+    needs: [plan, index, outside]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # `contents: read` is for the checkout of the commit's own tools and for comparing two
+    # commits of `main`; `packages: write` moves the tag. It signs nothing.
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SHA: ${{ needs.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: main moves to the checked index, when that moves it forward
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LINE: ${{ needs.index.outputs.image }}
+        run: |
+          set -euo pipefail
+          [[ "$LINE" =~ ^"$IMAGE"@sha256:[0-9a-f]{64}$ ]] \
+            || { echo "::error::index handed back '$LINE'"; exit 1; }
+          order=$(node tools/image-registry.mjs order "$SHA")
+          echo "$order"
+          case "$order" in
+            main:*) ;;
+            sha-only:*) echo "::notice::main is not moved: ${order#sha-only: }"; exit 0 ;;
+            *) echo "::error::tools/image-registry.mjs answered neither main nor sha-only: $order"; exit 1 ;;
+          esac
+          docker buildx imagetools create --tag "$IMAGE:main" "$LINE"
+          tagged=$(docker buildx imagetools inspect "$IMAGE:main" --format '{{json .Manifest}}' | jq -r .digest)
+          if [ "$tagged" != "${LINE#*@}" ]; then
+            echo "::error::main names $tagged, not ${LINE#*@}"
+            exit 1
+          fi
+          echo "\`main\` names \`$LINE\`." >> "$GITHUB_STEP_SUMMARY"

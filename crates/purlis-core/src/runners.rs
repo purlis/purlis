@@ -365,8 +365,9 @@ pub struct Kept {
     /// is held ([`crate::pools::drain_look`]). `None` where this was not read, a row from before
     /// it among them, which says nothing of when it stopped.
     pub last_stop: Option<u64>,
-    /// **It is held** ([`crate::pools::DrainLook::Held`]): it stays with its home until the person
-    /// removes it, whatever it answers, and running again changes nothing.
+    /// **It is held** ([`crate::pools::DrainLook::Held`], [`crate::pools::held_for_its_conversations`]):
+    /// it stays with its home until the person brings its chats' conversations back or discards
+    /// them, whatever it answers, and running again changes nothing.
     pub held: bool,
     /// The engine that made it, as `docker info` prints its id (#4166): only that engine's word
     /// says it was removed. `None` for a runner kept before this, or an engine that prints none.
@@ -561,8 +562,7 @@ pub fn runner_for(config_root: &Path, pool: &str) -> Result<Kept, Refused> {
     let held = load(config_root)?;
     if !held.pools.iter().any(|kept| kept.name() == pool) {
         return Err(Refused::Other(format!(
-            "this workspace's chats run on pool {pool}, which is not on this machine, so \
-             nothing was started"
+            "pool {pool} is not on this machine, so nothing was started"
         )));
     }
     let image = held
@@ -805,7 +805,9 @@ fn limits_in(held: &Held, name: &str) -> Option<PoolLimitsHeld> {
     let cluster = held.clusters.iter().find(|pool| pool.name() == name);
     docker
         .map(|pool| PoolLimitsHeld {
-            chosen: pool.with_shape_in(pool.set.chosen),
+            chosen: pool
+                .with_shape_in(pool.set.chosen)
+                .on_a_runner_of(runner_memory_of(held, pool)),
             refused: pool.refused_limits.clone(),
             docker: true,
         })
@@ -823,6 +825,20 @@ pub fn limits_held_of(config_root: &Path, name: &str) -> Result<PoolLimitsHeld, 
     limits_in(&load(config_root)?, name).ok_or_else(|| no_such_pool(name))
 }
 
+/// **The memory a Docker pool's runner has**, in MiB (#4396): what its pool says, or less where
+/// the runner new chats start on was made with less and waits to be replaced.
+fn runner_memory_of(held: &Held, pool: &Pool) -> u64 {
+    let says = pool.limits().memory_mib();
+    held.runners
+        .iter()
+        .find(|kept| {
+            kept.pool() == pool.name() && !kept.draining && kept.made.runner.image() == pool.image()
+        })
+        .map_or(says, |kept| {
+            kept.made.runner.limits().memory_mib().min(says)
+        })
+}
+
 fn no_such_pool(name: &str) -> Refused {
     Refused::Other(format!(
         "there is no pool named {} on this machine",
@@ -838,10 +854,10 @@ fn limit_may_be(
     id: crate::poollimits::LimitId,
     value: Option<u64>,
 ) -> Result<PoolLimitsHeld, Refused> {
-    if let Some(value) = value {
-        id.limit().check(value, None).map_err(Refused::Other)?;
-    }
     let limits = limits_in(held, name).ok_or_else(|| no_such_pool(name))?;
+    if let Some(value) = value {
+        limits.chosen.check(id, value).map_err(Refused::Other)?;
+    }
     // A runner's own shape is this machine's to make: never a cluster pool's, and checked with
     // the pool's other values, as a new pool's are.
     if id.limit().shapes_runner() {
@@ -2102,6 +2118,13 @@ impl ClusterPool {
         })
     }
 
+    /// This pool, under what its team set for its limits as it was added (#4287).
+    #[must_use]
+    pub fn under_team(mut self, team: Option<&serde_json::Value>) -> ClusterPool {
+        *self.chosen = self.chosen.under_team(team);
+        self
+    }
+
     /// This pool, as the cluster's Pool `opted_in` to minting there as it was added (#4204).
     pub fn minting_in_cluster(self, opted_in: bool) -> ClusterPool {
         ClusterPool {
@@ -2260,6 +2283,34 @@ pub struct ClusterKept {
     /// The chat this is the fresh runner of, by its stable id (#3709); none on the pool's own
     /// runner, which keeps its work and every other chat's.
     pub chat: Option<String>,
+    /// **Where a fresh runner's work goes back to** (#4569): the project its chat runs in and its
+    /// workspace. None on the pool's own runner.
+    pub of: Option<Box<FreshOf>>,
+}
+
+/// The project and workspace of a chat's fresh runner (#4569): read once its chat is gone, to say
+/// which project takes its branches back. The window of no other project touches the runner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FreshOf {
+    /// The project's id ([`crate::scaffold::planefile::id_to_hold_by`]), which holds if it moves.
+    pub plane: String,
+    pub workspace: String,
+    /// **The checkout its chat started from**, as an absolute path (#4569, the person's ruling of
+    /// 2026-11-02): only that checkout's window lets the runner go or sweeps it, since another
+    /// checkout of the project holds the same id. None on a row written before it.
+    pub root: Option<String>,
+}
+
+impl FreshOf {
+    /// **Whether the window of the checkout at `root`, of the project `plane`, may let this
+    /// runner go** (#4569): its own checkout's, or any of its project's where the row names none.
+    pub fn is_of(&self, plane: &str, root: &Path) -> bool {
+        self.plane == plane
+            && self
+                .root
+                .as_deref()
+                .is_none_or(|own| Path::new(own) == root)
+    }
 }
 
 impl ClusterKept {
@@ -2637,6 +2688,26 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
     write(config_root, &held)
 }
 
+/// **Keeps what the team set for the cluster pool `name`'s limits** (#4287), as its Pool says now:
+/// the person's own values stay, and hold to it from the next attempt.
+pub fn keep_cluster_team_limits(
+    config_root: &Path,
+    name: &str,
+    team: Option<&serde_json::Value>,
+) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(pool) = held.clusters.iter_mut().find(|pool| pool.name == name) else {
+        return Ok(());
+    };
+    let under = pool.chosen.under_team(team);
+    if *pool.chosen == under {
+        return Ok(());
+    }
+    *pool.chosen = under;
+    write(config_root, &held)
+}
+
 /// **Keeps whether the cluster pool `name`'s Pool opts in to minting now** (#4330): a Pool may opt in
 /// after it was added. Read only to say whether a chat's repos are sent to the Claim, so it decides
 /// nothing the cluster's own policy and operator do not.
@@ -2715,6 +2786,7 @@ fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
         row["profiles"] = profiles.into();
     }
     pool.chosen.to_row(&mut row);
+    pool.chosen.team_to_row(&mut row);
     for refused in &pool.refused_limits {
         refused.to_row(&mut row);
     }
@@ -2735,6 +2807,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         "cluster",
         "holds",
         "owned",
+        "teamLimits",
         "mintInCluster",
         "mintNoticeDue",
         "profiles",
@@ -2753,6 +2826,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         return None;
     }
     let (chosen, refused_limits) = crate::poollimits::Chosen::read_row(fields, None);
+    let chosen = chosen.under_team(fields.get("teamLimits"));
     let profiles = match fields.get("profiles") {
         None => None,
         Some(profiles) => Some(profiles_from_row(profiles)?),
@@ -2811,7 +2885,8 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
 }
 
 /// A cluster runner's row (#3292): `{"name", "pool": "cluster", "namespace", "claim",
-/// "claimUid", "requester", "pod", "device", "key", "paired"}`.
+/// "claimUid", "requester", "pod", "device", "key", "paired"}`, and a chat's fresh runner's
+/// `"chat"`, `"plane"` and `"workspace"` (#3709, #4569), and `"root"` where it names its checkout.
 fn cluster_runner_to_row(kept: &ClusterKept) -> serde_json::Value {
     let mut row = serde_json::json!({
         "name": kept.name,
@@ -2828,6 +2903,13 @@ fn cluster_runner_to_row(kept: &ClusterKept) -> serde_json::Value {
     if let Some(chat) = &kept.chat {
         row["chat"] = serde_json::Value::String(chat.clone());
     }
+    if let Some(of) = &kept.of {
+        row["plane"] = serde_json::Value::String(of.plane.clone());
+        row["workspace"] = serde_json::Value::String(of.workspace.clone());
+        if let Some(root) = &of.root {
+            row["root"] = serde_json::Value::String(root.clone());
+        }
+    }
     row
 }
 
@@ -2842,6 +2924,47 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         ),
         None => None,
     };
+    // A fresh runner names all three, and no other runner any.
+    let of = match (fields.get("plane"), fields.get("workspace")) {
+        (Some(plane), Some(workspace)) => {
+            let plane = plane
+                .as_str()
+                .filter(|plane| plain_text(plane) && !plane.is_empty() && plane.len() <= 128)?;
+            let workspace = workspace
+                .as_str()
+                .filter(|workspace| crate::contain::workspace_name_ok(workspace))?;
+            let root = match fields.get("root") {
+                Some(root) => Some(
+                    root.as_str()
+                        .filter(|root| {
+                            plain_text(root) && root.len() <= 4096 && Path::new(root).is_absolute()
+                        })?
+                        .to_owned(),
+                ),
+                None => None,
+            };
+            FreshOf {
+                plane: plane.to_owned(),
+                workspace: workspace.to_owned(),
+                root,
+            }
+        }
+        _ if chat.is_some() => return None,
+        (None, None) => return from_kept_row(row, None),
+        _ => return None,
+    };
+    chat?;
+    from_kept_row(row, Some(Box::new(of)))
+}
+
+/// [`cluster_runner_from_row`], past a fresh runner's own keys.
+fn from_kept_row(row: &serde_json::Value, of: Option<Box<FreshOf>>) -> Option<ClusterKept> {
+    let fields = row.as_object()?;
+    let chat = fields
+        .get("chat")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    let fresh_keys = ["chat", "plane", "workspace", "root"];
     let known = [
         "name",
         "pool",
@@ -2854,10 +2977,18 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         "key",
         "paired",
     ];
-    let mut rest = fields.keys().filter(|key| key.as_str() != "chat");
-    if fields.len() - usize::from(chat.is_some()) != known.len()
-        || rest.any(|key| !known.contains(&key.as_str()))
-    {
+    let mut rest = fields
+        .keys()
+        .filter(|key| !fresh_keys.contains(&key.as_str()));
+    let fresh = fields
+        .keys()
+        .filter(|key| fresh_keys.contains(&key.as_str()))
+        .count();
+    if of.is_none() && fresh > 0 {
+        return None;
+    }
+    let own = fields.len() - fresh;
+    if own != known.len() || rest.any(|key| !known.contains(&key.as_str())) {
         return None;
     }
     let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
@@ -2895,6 +3026,7 @@ fn cluster_runner_from_row(row: &serde_json::Value) -> Option<ClusterKept> {
         pinned,
         paired: fields.get("paired")?.as_u64()?,
         chat,
+        of,
     })
 }
 

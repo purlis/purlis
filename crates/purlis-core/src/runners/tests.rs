@@ -1330,6 +1330,68 @@ fn a_pools_limit_is_saved_marked_as_the_persons_and_makes_no_new_runner() {
     assert_eq!(chosen(config.path()).get(ProfileFiles), None, "a reset");
 }
 
+/// **#4396**: a Docker pool's runner holds at most half its memory of a profile, so a size above
+/// it is refused as it is set, a size kept from before holds to it, and raising Memory raises it.
+#[test]
+fn a_docker_pools_profile_size_is_held_to_half_its_memory() {
+    use crate::poollimits::LimitId::{Memory, ProfileSize};
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &Pool::new("builds", Image::pinned(IMAGE).unwrap(), Set::default()).unwrap(),
+    )
+    .unwrap();
+    let chosen = |config: &Path| chosen_limits_of(config, "builds").unwrap();
+    set_pool_limit(config.path(), "builds", ProfileSize, Some(1000)).unwrap();
+    set_pool_limit(config.path(), "builds", Memory, Some(1024)).unwrap();
+
+    assert_eq!(chosen(config.path()).in_force(ProfileSize), 512);
+    let refused = set_pool_limit(config.path(), "builds", ProfileSize, Some(600))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("Raise Memory"), "{refused}");
+    set_pool_limit(config.path(), "builds", ProfileSize, Some(512)).unwrap();
+
+    set_pool_limit(config.path(), "builds", Memory, Some(4096)).unwrap();
+    set_pool_limit(config.path(), "builds", ProfileSize, Some(1024)).unwrap();
+    assert_eq!(chosen(config.path()).in_force(ProfileSize), 1024);
+}
+
+/// **#4287**: what the team set is kept with the pool, refuses a value above it in the command's
+/// words, keeps the person's own value, and follows the Pool at each link.
+#[test]
+fn a_cluster_pool_holds_to_what_the_team_set_and_follows_its_pool() {
+    use crate::poollimits::LimitId::SignInWait;
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool_in(config.path());
+    let name = "team";
+    let team = serde_json::json!({"signInWait": {"default": 10, "highest": 40}});
+    keep_cluster_team_limits(config.path(), name, Some(&team)).unwrap();
+
+    let chosen = |config: &Path| chosen_limits_of(config, name).unwrap();
+    assert_eq!(
+        chosen(config.path()).in_force(SignInWait),
+        10,
+        "kept in its row"
+    );
+    let refused = set_pool_limit(config.path(), name, SignInWait, Some(41))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("team that defines this pool"), "{refused}");
+    set_pool_limit(config.path(), name, SignInWait, Some(40)).unwrap();
+
+    // The team lowers it: the person's value stays theirs, and holds to it.
+    let lower = serde_json::json!({"signInWait": {"highest": 30}});
+    keep_cluster_team_limits(config.path(), name, Some(&lower)).unwrap();
+    assert_eq!(chosen(config.path()).get(SignInWait), Some(40));
+    assert_eq!(chosen(config.path()).in_force(SignInWait), 30);
+
+    // The team takes it away.
+    keep_cluster_team_limits(config.path(), name, None).unwrap();
+    assert_eq!(chosen(config.path()).in_force(SignInWait), 40);
+    assert_eq!(chosen(config.path()).team_highest(SignInWait), None);
+}
+
 /// **Only a cluster pool waits to be vouched for** (spec #4275): a Docker pool refuses a value,
 /// and keeps what it had.
 #[test]
@@ -1490,4 +1552,93 @@ fn a_set_held_to_what_was_there_writes_nothing_where_it_changed() {
     a_limit_typed_into_the_file(dir.path(), "signInWait", "\"lots\"");
     assert!(!set_pool_limit_if(dir.path(), "builds", SignInWait, None, None, false).unwrap());
     assert!(set_pool_limit_if(dir.path(), "builds", SignInWait, None, None, true).unwrap());
+}
+
+/// **A fresh runner's row says where its work goes back to** (#4569), and one that does not, or a
+/// pool's own runner that says so, is not as purlis writes it.
+#[test]
+fn a_fresh_runners_row_keeps_its_project_and_workspace_and_no_other_row_has_them() {
+    let row = |extra: serde_json::Value| {
+        let mut row = serde_json::json!({
+            "name": "team", "pool": "cluster", "namespace": "ada", "claim": "team-abc",
+            "claimUid": "0b2f1a54-4d7b-4a64-9c0e-2f3b6c0a1d11", "requester": "ada@example.com",
+            "pod": "team-abc-0", "device": "01JB0RUNNER0000000000000000",
+            "key": "11".repeat(32), "paired": 1,
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            row[key] = value.clone();
+        }
+        row
+    };
+    let fresh = row(serde_json::json!({
+        "chat": "01CHAT", "plane": "01PROJECT", "workspace": "app",
+    }));
+    let kept = cluster_runner_from_row(&fresh).expect("a fresh runner's row");
+    let of = kept.of.clone().expect("where its work goes");
+    assert_eq!(of.plane, "01PROJECT");
+    assert_eq!(of.workspace, "app");
+    assert_eq!(cluster_runner_to_row(&kept), fresh);
+
+    assert!(cluster_runner_from_row(&row(serde_json::json!({}))).is_some());
+    for not in [
+        serde_json::json!({ "chat": "01CHAT" }),
+        serde_json::json!({ "chat": "01CHAT", "plane": "01PROJECT" }),
+        serde_json::json!({ "plane": "01PROJECT", "workspace": "app" }),
+        serde_json::json!({ "chat": "01CHAT", "plane": "", "workspace": "app" }),
+        serde_json::json!({ "chat": "01CHAT", "plane": "01PROJECT", "workspace": "../up" }),
+    ] {
+        assert!(
+            cluster_runner_from_row(&row(not.clone())).is_none(),
+            "{not}"
+        );
+    }
+}
+
+/// **A fresh runner's row names the checkout its chat started from** (#4569, the person's ruling
+/// of 2026-11-02): only that checkout's window lets it go; a row from before names none, and any
+/// window of its project does.
+#[test]
+fn a_fresh_runners_row_names_its_checkout_and_only_that_checkouts_window_lets_it_go() {
+    let row = |extra: serde_json::Value| {
+        let mut row = serde_json::json!({
+            "name": "team", "pool": "cluster", "namespace": "ada", "claim": "team-abc",
+            "claimUid": "0b2f1a54-4d7b-4a64-9c0e-2f3b6c0a1d11", "requester": "ada@example.com",
+            "pod": "team-abc-0", "device": "01JB0RUNNER0000000000000000",
+            "key": "11".repeat(32), "paired": 1,
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            row[key] = value.clone();
+        }
+        row
+    };
+    let fresh = row(serde_json::json!({
+        "chat": "01CHAT", "plane": "01PROJECT", "workspace": "app", "root": "/work/one",
+    }));
+    let kept = cluster_runner_from_row(&fresh).expect("a fresh runner's row");
+    assert_eq!(cluster_runner_to_row(&kept), fresh);
+    let of = kept.of.expect("where its work goes");
+    assert!(of.is_of("01PROJECT", Path::new("/work/one")));
+    assert!(
+        !of.is_of("01PROJECT", Path::new("/work/two")),
+        "another checkout's"
+    );
+    assert!(!of.is_of("01OTHER", Path::new("/work/one")));
+
+    let older = FreshOf { root: None, ..*of };
+    assert!(older.is_of("01PROJECT", Path::new("/work/two")));
+
+    for not in [
+        serde_json::json!({ "root": "/work/one" }),
+        serde_json::json!({
+            "chat": "01CHAT", "plane": "01PROJECT", "workspace": "app", "root": "relative",
+        }),
+        serde_json::json!({
+            "chat": "01CHAT", "plane": "01PROJECT", "workspace": "app", "root": 7,
+        }),
+    ] {
+        assert!(
+            cluster_runner_from_row(&row(not.clone())).is_none(),
+            "{not}"
+        );
+    }
 }

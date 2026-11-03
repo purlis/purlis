@@ -31,6 +31,14 @@ const known = new Map<string, ReadonlySet<string>>();
  *  before it. */
 const latest = new Map<string, number>();
 const listeners = new Set<() => void>();
+/** Why the newest question, asked twice, failed per project and workspace (#4822); taken back
+ *  once one is answered. */
+const unread = new Map<string, string>();
+
+/** How long, in milliseconds, after a question that failed it is asked once more (#4822): a
+ *  launch's first question can meet the record mid-write, and a project on an extension's
+ *  theme would go without it for the whole session. */
+export const EXTENSIONS_ON_ASKED_AGAIN_AFTER = 500;
 
 function keyOf(plane: PlaneId, workspace: string | undefined): string {
   return `${plane}\u0000${workspace ?? ""}`;
@@ -45,21 +53,35 @@ function ask(plane: PlaneId, workspace: string | undefined) {
   whereOf.set(key, { plane, workspace });
   const mine = (latest.get(key) ?? 0) + 1;
   latest.set(key, mine);
-  void commands
-    .extensionsOn(plane, workspace ?? null)
-    .then((said) => (said.status === "ok" ? (said.data ?? []) : undefined))
-    .catch(() => undefined)
-    .then((ids) => {
+  const question = () =>
+    commands
+      .extensionsOn(plane, workspace ?? null)
+      .then((said): string[] | Error =>
+        said.status === "ok" ? (said.data ?? []) : new Error(String(said.error)),
+      )
+      .catch((thrown: unknown) => (thrown instanceof Error ? thrown : new Error(String(thrown))));
+  void (async () => {
+    let ids = await question();
+    // Asked once more after a short wait (#4822), unless a newer question was asked meanwhile.
+    if (ids instanceof Error && latest.get(key) === mine) {
+      await new Promise((waited) => setTimeout(waited, EXTENSIONS_ON_ASKED_AGAIN_AFTER));
       if (latest.get(key) !== mine) return;
-      // A question that failed is not an answer: nothing is kept, so the next component to ask
-      // asks again rather than a project going without its extensions until something is saved.
-      if (ids === undefined) {
-        latest.delete(key);
-        return;
-      }
-      known.set(key, new Set(ids));
+      ids = await question();
+    }
+    if (latest.get(key) !== mine) return;
+    // A question that failed twice is not an answer: nothing is kept, so the next component to
+    // ask asks again, and so does a save. Why is kept, so the window can say it and still draw
+    // what it can meanwhile.
+    if (ids instanceof Error) {
+      latest.delete(key);
+      unread.set(key, ids.message);
       tell();
-    });
+      return;
+    }
+    unread.delete(key);
+    known.set(key, new Set(ids));
+    tell();
+  })();
 }
 
 /** Ask `plane` again, for every workspace it was asked about — after its settings or a
@@ -87,6 +109,15 @@ export function extensionsOnIn(
   return plane === undefined ? undefined : known.get(keyOf(plane, workspace));
 }
 
+/** Why what `plane` has on in `workspace` could not be read, asked twice (#4822), until a
+ *  question is answered; `undefined` when none failed. */
+export function extensionsOnUnreadIn(
+  plane: PlaneId | undefined,
+  workspace?: string,
+): string | undefined {
+  return plane === undefined ? undefined : unread.get(keyOf(plane, workspace));
+}
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => {
@@ -105,9 +136,19 @@ export function useExtensionsOn(
   return useSyncExternalStore(subscribe, () => extensionsOnIn(plane, workspace));
 }
 
+/** {@link extensionsOnUnreadIn}, for a component that redraws when it changes. It asks
+ *  nothing: {@link useExtensionsOn} asks. */
+export function useExtensionsOnUnread(
+  plane: PlaneId | undefined,
+  workspace?: string,
+): string | undefined {
+  return useSyncExternalStore(subscribe, () => extensionsOnUnreadIn(plane, workspace));
+}
+
 /** For tests: forget every answer. */
 export function forgetExtensionsOn() {
   known.clear();
+  unread.clear();
   latest.clear();
   whereOf.clear();
 }

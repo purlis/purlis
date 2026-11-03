@@ -303,7 +303,6 @@ where
     let answer = specimens
         .iter()
         .map(|specimen| {
-            let started = Instant::now();
             let looked = look(specimen)?;
             // No picture is begun that could end past the turn's time: the caller has stopped
             // waiting by then.
@@ -311,6 +310,9 @@ where
                 return Err(over_budget());
             }
             began = true;
+            // Timed as the budget is (#3022): from asking for the window, after the lookup,
+            // which [`themepreview::LOOKUP`] bounds on its own.
+            let started = Instant::now();
             let picture = painter.paint(&looked.handed, &held)?;
             Ok(Painted {
                 preview: purlis_core::theme::is_preview(&specimen.theme),
@@ -474,9 +476,11 @@ pub async fn theme_specimen(
             )?;
             let painter = painter().ok_or_else(|| NO_PAINTER.to_owned())?;
             let turn = turn_of(painter.as_ref(), Who::Gallery)?;
-            let started = Instant::now();
             // A card is drawn as the gallery draws it: untinted, in its own fonts.
-            let picture = painter.paint(&Handed::of(theme.clone())?, &turn)?;
+            let handed = Handed::of(theme.clone())?;
+            // Timed as the budget is (#3022): the drawing, not the font read before it.
+            let started = Instant::now();
+            let picture = painter.paint(&handed, &turn)?;
             let appearance = if theme.appearance == "light" {
                 purlis_core::theme::Appearance::Light
             } else {

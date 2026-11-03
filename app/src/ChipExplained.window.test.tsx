@@ -18,6 +18,7 @@ import type { OpenChat } from "./bindings";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
+import { PANE_NOTICES } from "./paneNoticesPref";
 import { stripNamed } from "./test-strips";
 
 /**
@@ -127,11 +128,16 @@ function launch() {
           },
     theme: { path: "", found: false, document: null, trouble: null },
   };
+  // A task's prompt on its session's pane is a note, folded into the bell while the band is
+  // minimised (#4754): these tests read it on the band, expanded, as a test's machine has it.
+  PANE_NOTICES.keep("expanded");
 }
 
 /** A core that lists `open`, and answers which chats a person is at by `attended`. */
 function core(open: Listed[], attended: (session: number) => boolean = () => true) {
   const asked: Asked[] = [];
+  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it. */
+  let laidOut: unknown = null;
   const listeners = new Map<string, number[]>();
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
@@ -150,11 +156,12 @@ function core(open: Listed[], attended: (session: number) => boolean = () => tru
       return null;
     }
     if (cmd === "seen_on_this_machine") return disk.seen.includes(a.cause as string);
-    if (cmd === "tab_shows") {
-      const one = open.find((chat) => chat.session === a.session);
-      if (one) one.shows = (a.shown as number | null) ?? null;
+    if (cmd === "window_layout") {
+      // The core keeps every tab as the window last said it (#4751), and a reload asks for it.
+      laidOut = a.layout;
       return null;
     }
+    if (cmd === "reopened_layout") return laidOut;
     if (cmd === "dispatch_grants_needed") return [];
     if (cmd === "vault_refusals") return [];
     if (cmd === "owed_restarts") return [];

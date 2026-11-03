@@ -82,7 +82,8 @@
   gap: var(--space-4);
   flex: var(--tabs-grow) 1 var(--tabs-basis);
   min-inline-size: var(--least, 0);
-  max-inline-size: calc(240rem / 14);
+  /* A strip may cap its tabs narrower (`--most`): the chat strip's 230px (#4762). */
+  max-inline-size: var(--most, calc(240rem / 14));
   block-size: calc(var(--size-control) + calc(3rem / 14));
   box-sizing: border-box;
   padding-block: 0;
@@ -122,6 +123,35 @@
   max-inline-size: var(--chip);
   padding-inline: 0;
   justify-content: center;
+}
+
+/* **A crowded strip** (#4762): where the tabs' equal share is under 140px, a tab shows its `×`
+   only when it is the front tab or under the pointer, or the keyboard is on it or on its `×`, so
+   a row of names is not a row of close buttons. The `×` keeps its room, so nothing moves when it
+   appears. */
+[data-scope="tabs"][data-part="tab"][data-narrow]:not(
+    [data-selected],
+    [data-hovered],
+    :focus-within
+  )
+  [data-part="closer"][data-scope="tabs"] {
+  visibility: hidden;
+}
+
+/* **A pinned tab at its icon only** (#4762): where the pins alone would take over half the strip,
+   a pin is its mark and its icon, a chip's width, and its name is in its tooltip. */
+[data-scope="tabs"][data-part="tab"][data-icon-only] {
+  flex: none;
+  inline-size: var(--chip);
+  min-inline-size: var(--chip);
+  max-inline-size: var(--chip);
+  padding-inline: 0;
+  justify-content: center;
+}
+
+[data-scope="tabs"][data-part="tab"][data-icon-only] :is([data-part="label"], .tab-split-more),
+[data-scope="tabs"][data-part="tab"][data-icon-only] [data-part="closer"][data-scope="tabs"] {
+  display: none;
 }
 
 /* The tab's own button fills its cell, beside its marks and its `×`: the cell is the shape. */

@@ -15,7 +15,15 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { askId, catalogue, catalogued, menuRows, OUTSIDE, type Now } from "./actions";
+import {
+  askId,
+  catalogue,
+  catalogued,
+  FRESH_UNCHANGED,
+  menuRows,
+  OUTSIDE,
+  type Now,
+} from "./actions";
 import { Menued, useNoBrowserMenu } from "./Menus";
 import { TIP_AFTER_MS } from "./ui/menu/MenuTip";
 import { noTabs, openTab, selectTab } from "./tabs";
@@ -110,17 +118,19 @@ describe("what a menu lists", () => {
   });
 
   it("puts everything that destroys something below the line and nothing else", () => {
-    const chat = titles({ on: "chat", tab: 1 }, { tabs: openTab(noTabs(), 7, "3 steward") });
-
+    const tabs = openTab(noTabs(), 7, "3 steward");
+    // A tab's own rows (#4753), and its close.
+    const tab = titles({ on: "tab", tab: 1 }, { tabs });
+    expect(tab.above).toEqual(["Switch to tab 3 steward", "Pin tab 3 steward"]);
+    expect(tab.below).toEqual(["End chat 3 steward"]);
+    // The chat's own list: its Activity only reads (#1495), and End… ends it.
+    const chat = titles({ on: "chat", session: 7 }, { tabs });
     expect(chat.above).toEqual([
-      "Switch to tab 3 steward",
       "Rename chat 3 steward…",
-      "Pin chat 3 steward",
-      // Its Activity only reads (#1495).
-      "Activity",
-      "Network",
+      "Activity of 3 steward",
+      "Network of 3 steward",
     ]);
-    expect(chat.below).toEqual(["End chat 3 steward"]);
+    expect(chat.below).toEqual(["End chat 3 steward…"]);
   });
 
   it("offers a worktree's own verbs on the explorer's rows (charter-app#174)", () => {
@@ -246,9 +256,10 @@ const TWELVE = [
 describe("a menu on screen", () => {
   const NAME = "console-developer 16";
 
-  /** A trigger with a chat's rows on it, and what was pressed: the chat's tab is behind another,
-   *  the project has twelve personas, and the chat is listed, so it has its Stop rows. */
-  function aMenu() {
+  /** A trigger with a chat's list on it (#4753), or its tab's menu, and what was pressed: the
+   *  chat's tab is behind another, the project has twelve personas, and the chat is listed, so
+   *  it has its Stop rows. */
+  function aMenu(of: "chat" | "tab" = "chat") {
     const pressed: string[] = [];
     const tabs = openTab(openTab(noTabs(), 7, "16", "console-developer"), 9, "1", "smart-ide");
     const listed = (session: number, name: string) => ({
@@ -280,7 +291,7 @@ describe("a menu on screen", () => {
     );
     render(
       <Menued
-        on={{ on: "chat", tab: tabs.order[0], session: 7 }}
+        on={of === "chat" ? { on: "chat", session: 7 } : { on: "tab", tab: tabs.order[0] }}
         offers={offers}
         onPress={(offer) => pressed.push(offer.id)}
       >
@@ -308,22 +319,21 @@ describe("a menu on screen", () => {
     return menus[menus.length - 1];
   }
 
-  it("opens on a right-click, named for the tab, and draws short rows", async () => {
+  it("opens on a right-click, named for the chat, and draws short rows", async () => {
     aMenu();
 
     const menu = await open();
 
-    // **The tab is named once, by the menu**, and by no row of it.
-    expect(menu).toHaveAccessibleName(`Tab ${NAME}`);
+    // **The chat is named once, by the menu**, and by no row of it.
+    expect(menu).toHaveAccessibleName(`Chat ${NAME}`);
     expect(rowsIn(menu).map((row) => row.getAttribute("aria-label"))).toEqual([
-      "Switch to",
       "Rename…",
-      "Pinned",
-      "Open",
       "Ask",
+      "Open",
       "Restart",
       "Stop",
-      "End",
+      "Start fresh",
+      "End…",
     ]);
     // What a row draws: its words, and the one line that may stand under them.
     for (const row of rowsIn(menu))
@@ -353,8 +363,10 @@ describe("a menu on screen", () => {
     const menu = await open();
 
     const noted = rowsIn(menu).filter((row) => row.querySelector('[data-part="description"]'));
-    expect(noted.map((row) => row.getAttribute("aria-label"))).toEqual(["End"]);
-    expect(noted[0].querySelector('[data-part="description"]')).toHaveTextContent(
+    expect(noted.map((row) => row.getAttribute("aria-label"))).toEqual(["Start fresh", "End…"]);
+    // Start fresh cannot run until the instructions change, and says why under its words.
+    expect(noted[0].querySelector('[data-part="description"]')).toHaveTextContent(FRESH_UNCHANGED);
+    expect(noted[1].querySelector('[data-part="description"]')).toHaveTextContent(
       "Ends the program it runs. There is no undo.",
     );
 
@@ -387,12 +399,10 @@ describe("a menu on screen", () => {
       if (found === undefined) throw new Error(`no row ${name}`);
       return found;
     };
-    expect(row("Pinned")).toHaveAccessibleDescription(
-      "Draws it first on its strip. Yours, on this machine only.",
-    );
     // The catalogue's note as it reads now: this chat reports no state, and the note says so.
     expect(row("Restart")).toHaveAccessibleDescription(/It keeps its conversation/);
-    expect(row("End")).toHaveAccessibleDescription("Ends the program it runs. There is no undo.");
+    expect(row("Start fresh")).toHaveAccessibleDescription(FRESH_UNCHANGED);
+    expect(row("End…")).toHaveAccessibleDescription("Ends the program it runs. There is no undo.");
     // A row with nothing more to say than its words has none.
     expect(row("Rename…")).not.toHaveAttribute("aria-describedby");
 
@@ -403,7 +413,7 @@ describe("a menu on screen", () => {
   });
 
   it("raises no row's note for the focus a menu puts on a row as it opens", async () => {
-    aMenu();
+    aMenu("tab");
     const menu = await open();
     const pinned = within(menu).getByRole("menuitemcheckbox", { name: "Pinned" });
     vi.useFakeTimers();
@@ -421,7 +431,7 @@ describe("a menu on screen", () => {
   });
 
   it("shows a row's note as its tooltip once the keyboard has rested on it, and not before", async () => {
-    aMenu();
+    aMenu("tab");
     const menu = await open();
     const pinned = within(menu).getByRole("menuitemcheckbox", { name: "Pinned" });
     vi.useFakeTimers();
@@ -449,7 +459,7 @@ describe("a menu on screen", () => {
       // it, which keeps it (WCAG 1.4.13, hoverable).
       // A key moved the keyboard here, as a person's does.
       fireEvent.keyDown(document.body, { key: "ArrowDown" });
-      act(() => within(menu).getByRole("menuitem", { name: "Rename…" }).focus());
+      act(() => within(menu).getByRole("menuitem", { name: "Switch to" }).focus());
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY);
       });
@@ -460,7 +470,7 @@ describe("a menu on screen", () => {
   });
 
   it("keeps a row's note while the pointer is on it, and lets it go once the pointer leaves", async () => {
-    aMenu();
+    aMenu("tab");
     const menu = await open();
     vi.useFakeTimers();
     try {
@@ -476,7 +486,7 @@ describe("a menu on screen", () => {
       fireEvent.pointerEnter(tip as Element);
       // A key moved the keyboard here, as a person's does.
       fireEvent.keyDown(document.body, { key: "ArrowDown" });
-      act(() => within(menu).getByRole("menuitem", { name: "Rename…" }).focus());
+      act(() => within(menu).getByRole("menuitem", { name: "Switch to" }).focus());
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY * 10);
       });
@@ -492,7 +502,7 @@ describe("a menu on screen", () => {
   });
 
   it("takes the first Escape for the row's note, and the next one closes the menu", async () => {
-    aMenu();
+    aMenu("tab");
     const menu = await open();
     vi.useFakeTimers();
     try {
@@ -531,13 +541,13 @@ describe("a menu on screen", () => {
       rowsIn(menu)
         .filter((row) => row.getAttribute("data-variant") === "danger")
         .map((row) => row.getAttribute("aria-label")),
-    ).toEqual(["End"]);
-    const ends = within(menu).getByRole("menuitem", { name: "End" });
+    ).toEqual(["Start fresh", "End…"]);
+    const ends = within(menu).getByRole("menuitem", { name: "End…" });
     expect(ends).toHaveClass("ends-it");
     expect(ends).toHaveAttribute("data-scope", "menu");
     expect(ends).toHaveAttribute("data-variant", "danger");
     // Restart keeps the conversation, and Stop only opens the ways to stop.
-    for (const name of ["Restart", "Stop", "Switch to"]) {
+    for (const name of ["Restart", "Stop", "Rename…"]) {
       const row = within(menu).getByRole("menuitem", { name });
       expect(row).not.toHaveClass("ends-it");
       expect(row).toHaveAttribute("data-variant", "default");
@@ -547,13 +557,23 @@ describe("a menu on screen", () => {
   it("says the key that does the same at the row's end, and ticks a toggle that is on", async () => {
     aMenu();
     const menu = await open();
-
     const keys = (name: string) =>
       within(menu).getByRole("menuitem", { name }).querySelector('[data-part="shortcut"]');
     expect(keys("Rename…")).toHaveTextContent("F2");
-    expect(keys("End")).toHaveTextContent(/^(⌫|Delete)$/);
     expect(keys("Restart")).toBeNull();
-    expect(within(menu).getByRole("menuitemcheckbox", { name: "Pinned" })).toHaveAttribute(
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+    // The tab's close key and its pin are the tab menu's (#4753).
+    cleanup();
+    aMenu("tab");
+    const tabMenu = await open();
+    expect(
+      within(tabMenu)
+        .getByRole("menuitem", { name: "End" })
+        .querySelector('[data-part="shortcut"]'),
+    ).toHaveTextContent(/^(⌫|Delete)$/);
+    expect(within(tabMenu).getByRole("menuitemcheckbox", { name: "Pinned" })).toHaveAttribute(
       "aria-checked",
       "false",
     );
@@ -569,10 +589,11 @@ describe("a menu on screen", () => {
 
     // Opened from the keyboard, so the first row has it; the arrows move on from there.
     await waitFor(() =>
-      expect(within(menu).getByRole("menuitem", { name: "Switch to" })).toHaveFocus(),
+      expect(within(menu).getByRole("menuitem", { name: "Rename…" })).toHaveFocus(),
     );
     await user.keyboard("{ArrowDown}");
-    expect(within(menu).getByRole("menuitem", { name: "Rename…" })).toHaveFocus();
+    expect(within(menu).getByRole("menuitem", { name: "Ask" })).toHaveFocus();
+    await user.keyboard("{ArrowUp}");
     // Type-ahead reads a row's words, not its note.
     await user.keyboard("a");
     const ask = within(menu).getByRole("menuitem", { name: "Ask" });
@@ -590,7 +611,7 @@ describe("a menu on screen", () => {
     await waitFor(() => expect(ask).toHaveFocus());
 
     await user.keyboard("{ArrowRight}q{Enter}");
-    expect(pressed).toEqual([askId(1, "qa")]);
+    expect(pressed).toEqual([askId(7, "qa")]);
     expect(screen.queryByRole("menu")).toBeNull();
 
     fireEvent.keyDown(tab, { key: "F10", shiftKey: true });
@@ -603,9 +624,9 @@ describe("a menu on screen", () => {
     const pressed = aMenu();
     const menu = await open();
 
-    await userEvent.click(within(menu).getByRole("menuitem", { name: "End" }));
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "End…" }));
 
-    expect(pressed).toEqual(["tab.close:1"]);
+    expect(pressed).toEqual(["chat.end:7"]);
   });
 
   it("adds no element of its own to the strip it is on", () => {
@@ -869,7 +890,7 @@ describe("a menu from the keyboard (charter-app#174)", () => {
         >
           <button type="button">svc</button>
         </Menued>
-        <Menued on={{ on: "chat", tab: 1 }} offers={catalogued(offers)} onPress={() => {}}>
+        <Menued on={{ on: "tab", tab: 1 }} offers={catalogued(offers)} onPress={() => {}}>
           <div data-testid="panes">
             <textarea aria-label="terminal" />
           </div>

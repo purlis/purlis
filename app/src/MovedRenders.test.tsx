@@ -191,7 +191,7 @@ describe("a chat moving", () => {
     // **And the project view is not redrawn for it** (#1034): the counts read the queue
     // themselves, so the pane in front is not drawn again.
     expect(drawn.panes).toEqual([]);
-    expect(screen.getAllByRole("img", { name: /waiting/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("img", { name: /needs you/i }).length).toBeGreaterThan(0);
   });
 
   it("still updates the counts and the title bar's list when the queue changes", async () => {
