@@ -155,6 +155,7 @@ mod removalasks;
 mod repolist;
 mod restored;
 mod restoring;
+mod starttiming;
 #[cfg(unix)]
 mod routedsessions;
 #[cfg(unix)]
