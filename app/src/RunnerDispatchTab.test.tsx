@@ -97,5 +97,10 @@ describe("a chat's dispatch that moves work, in its own tab", () => {
     expect(screen.getByTestId("runner-dispatch-facts")).toHaveTextContent(
       "Runs onPool builds, as the chat asks",
     );
+    expect(
+      screen.getByText(
+        /If you refuse, this chat can't ask you again to run its work there while it's open\./,
+      ),
+    ).toBeInTheDocument();
   });
 });
