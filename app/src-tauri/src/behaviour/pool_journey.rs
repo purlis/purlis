@@ -1108,6 +1108,13 @@ mod a_stopped_runners_conversation_comes_back {
             .expect("the old runner is kept");
         assert!(held.draining && held.held, "{held:?}");
 
+        // The pool's runner has the places they go to, as once the window keeps the pool's
+        // profile there and Claude Code ran: bring back makes none of them (#4633).
+        the_runner(&machine, &pool).runs(
+            false,
+            "umask 077 && mkdir -p \"$HOME/.local/share/purlis/profiles/work/config\" \"$HOME/.claude\"",
+            b"",
+        );
         let brought =
             purlis_core::pools::bring_back(&machine.config, &machine.docker, &old_name, None)
                 .expect("its conversations are brought back");
