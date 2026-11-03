@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793711550970,
+  "lastUpdate": 1793714939308,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37632,6 +37632,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1133125,
             "unit": "ms",
             "extra": "median of 5 runs: 101.396, 101.982, 102.113, 102.450, 102.973 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "2c8c44f96c539fbb6a05c92a383d40b1b045a8ef",
+          "message": "The waiting strip's follow-ups: what a chat said outlives a relaunch, a question in its own words, a short pane (#4709, #4710, #4843) (#4972)\n\n* The waiting strip: what a chat said outlives a relaunch, kept in the host's board (#4709)\n\nThe window's ledger stays the one source of a chat's last turn-end messages. Each change\nto them is told to the board the session host keeps (Move::Said), and a window that holds\nthe project again takes them back with that board and keeps them, masked again. With no\nwindow there, the host keeps what a turn ended saying itself, masked as a report's text,\nand a turn the person began clears it. A board too large for one answer drops what chats\nsaid before it drops any chat's state.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F0HQM7TC2R4GSSS2ERVM9W\nPurlis-Persona: steward\n\n* The waiting strip: an ask_operator question in its own words (#4710)\n\npurlis's MCP server says the question it asks the person on the chat's hook socket, as a\nturn's output (Output::Asking), masked as a report's text, before it hands the harness its\nform, and says its end (Output::Asked) on every way out. The app keeps the words with the\nchat, masked again, until that end, a turn of the person's or the chat's close; no later\nturn's message replaces them. A form the chat waits on then shows them: the strip, the Inbox\ncard and the quiz all read the same ask. Like every turn output, it is heard only from the\nchat's adopted run and never recorded, so no audit entry or telemetry holds the words.\n\nA task's plain ask_operator already takes the task route (#4555), so this is the person's\nown chats and any harness whose question still comes as a form.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F0HQM7TC2R4GSSS2ERVM9W\nPurlis-Persona: steward\n\n* The waiting strip and trail: a short pane, a late secret, a taken question (#4843)\n\n1. An opened long message in a short pane stays inside the pane top's 46% cap: the strip\n   gives way to the cap, as the band does, and its text scrolls inside it. A story at a\n   short pane height holds it, from the keyboard.\n2. A kept message is masked again once a vault value is remembered after it was kept: the\n   ledger re-masks what it keeps of chats' words (last messages, the question asked in a\n   form, a task's finals) before anything kept is next read, once for each change of what\n   is remembered.\n3. A question restored from a file a turn took before the app recorded it now writes its\n   question.shown step: that turn had it. Its time starts at the restart, or stays where a\n   stuck chat's clock started it, and its asking chat is not told it again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F0HQM7TC2R4GSSS2ERVM9W\nPurlis-Persona: steward\n\n* The waiting strip: the ledger hands on what it masked again, for the host's board (review of #4905)\n\nLedger::said_masked_again names each chat whose kept messages masked_again\nchanged, once. The app test that a relaunched window's board shows a value\nremembered after the turn masked is added before the app tells the board,\nso CI shows it red (the Claude Code stand-in cannot run in this sandbox).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G14PVH51K724ZG7FS1BQJD\nPurlis-Persona: steward\n\n* The waiting strip: a vault value remembered is masked in the host's board at once (review of #4905)\n\nseen::when_remembered tells each holder when what is remembered changes,\nafter it has and with no lock of seen held. Each held project is told and\nhands Ledger::said_masked_again to the board the session host keeps\n(dispatched::said_masked_kept), the ledger's lock let go of before the\nboard's is taken. asking::every_ask calls it too, as a backstop. The app\ntest now relaunches from the board with the window never having read\nthat chat. cargo fmt on purlis-cli's mcp.rs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G4KB8AGG096AYHPWR4H2XF\nPurlis-Persona: steward\n\n* The waiting strip: what a chat said is read again when a vault value came between the read and the write (review of #4972)\n\nsaid_kept and said_masked_kept read the ledger, let its lock go, then\nwrite the board. A value remembered on another thread in between was\nmasked and told to the board, and the text read before overwrote it\nunmasked. keep_said_masked reads and writes again until\nseen::generation stays the same across the write. Its test remembers\nthe value inside the write and was red with one pass (left: the value\nin the clear).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G4KB8AGG096AYHPWR4H2XF\nPurlis-Persona: steward\n\n* The waiting strip: baselines of ALongMessageOpenedInAShortPane, from #4972's stories run\n\nTaken from stories run 41598995007 with tools/story-baselines.mjs's take,\nits total cap raised for this take alone (#4973: main's whole set is\nalready near the 256 MiB cap). The run also drew InputRefusedNotice,\na story main added after this branch's base; those pictures are main's\nand are left out. Reviewed against prototype/task-question-surfaces.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G4KB8AGG096AYHPWR4H2XF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T12:15:13Z",
+          "tree_id": "b89a2419b02f0f32ce9aecb04a124213a0c87860",
+          "url": "https://github.com/purlis/purlis/commit/2c8c44f96c539fbb6a05c92a383d40b1b045a8ef"
+        },
+        "date": 1793714935108,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.372393,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.352, 0.362, 0.372, 0.373, 0.377 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7342445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.305, 16.600, 16.734, 16.757, 16.799 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.531662,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.313, 101.530, 101.532, 101.929, 102.353 ms"
           }
         ]
       }
