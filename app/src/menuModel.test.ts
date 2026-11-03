@@ -558,7 +558,8 @@ describe("a tab's menu (#4753)", () => {
 
   it("holds the tab's own rows and no chat's", () => {
     expect(said(menuOf({ on: "tab", tab: behind }, offers))).toEqual([
-      ["Switch to", "Pinned", "Tile all"],
+      // Move to new window (#4768): a tab into a tab window of its project.
+      ["Switch to", "Pinned", "Tile all", "Move to new window"],
       ["Close"],
     ]);
     const inFront = rowsOf(menuOf({ on: "tab", tab: front }, offers));
@@ -584,7 +585,7 @@ describe("a tab's menu (#4753)", () => {
     expect(keys).toEqual({ Close: expect.stringMatching(/^(⌫|Delete)$/) });
   });
 
-  it("on a view's tab is Pinned, Tile all and Close, and Close is not coloured", () => {
+  it("on a view's tab is Pinned, Tile all, Move to new window and Close, and Close is not coloured", () => {
     const withView = openView(tabs, { from: null, view: "vault", key: "forge" }, "forge", "beta");
     const view = withView.order[withView.order.length - 1];
     const menu = menuOf(
@@ -597,6 +598,7 @@ describe("a tab's menu (#4753)", () => {
       ["Pinned", false],
       // Greyed: a tab of one pane has nothing to tile (#4765).
       ["Tile all", false],
+      ["Move to new window", false],
       ["Close", false],
     ]);
   });
@@ -650,7 +652,7 @@ describe("the other tabs' menus", () => {
 
     expect(said(menuOf({ on: "pane" }, offers))).toEqual([
       ["New tab", "New shell"],
-      ["Split right", "Split down", "Send F2 to the chat in front"],
+      ["Split right", "Split down", "Move to new window", "Send F2 to the chat in front"],
       ["Close this pane"],
     ]);
     expect(rows.find((row) => row.said === "New shell")?.keys).toMatch(/^(⌘⇧T|Ctrl\+Shift\+T)$/);

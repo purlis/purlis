@@ -125,6 +125,8 @@ describe("what a menu lists", () => {
       "Switch to tab 3 steward",
       "Pin tab 3 steward",
       "Tile all in 3 steward",
+      // Into a tab window of the project (#4768).
+      "Move tab 3 steward to new window",
     ]);
     expect(tab.below).toEqual(["Close 3 steward"]);
     // The chat's own list: its Activity only reads (#1495), and End… ends it.
@@ -222,6 +224,8 @@ describe("what a menu lists", () => {
       "New shell",
       "Split right",
       "Split down",
+      // The focused pane into a tab window of the project (#4768).
+      "Move this pane to new window",
       "Send F2 to the chat in front",
     ]);
     expect(pane.below).toEqual(["Close this pane"]);

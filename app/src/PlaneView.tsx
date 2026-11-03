@@ -55,6 +55,7 @@ import {
   type NeedsApproval,
   type NotStarted,
   type FinishedTask,
+  type LaidOut,
   type OpenChat,
   type PlaneId,
   type LimitRefused,
@@ -356,7 +357,7 @@ import {
 } from "./tabs";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
-import { layoutOf, type Reopening, tabsOf, withShare } from "./laidOut";
+import { layoutOf, pathTo, type Reopening, tabsOf, withShare } from "./laidOut";
 import { LAYOUT_MOVED, type LayoutMoved, movedBetweenWindows, PRESS_HERE } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -1612,6 +1613,14 @@ export const PlaneView = memo(function PlaneView({
   /** **Whether the project has a tab window** (#4768), as the record and the core's last move
    *  said: a press asks the core where the chat is only then. */
   const otherWindows = useRef(false);
+  /** **Every window of the project** (#4768): its project window (`0`) and each tab window, as
+   *  the record and the core's last move said. What Move to window ▸ lists, less this one. */
+  const [windowsHere, setWindowsHere] = useState<readonly number[]>([0]);
+  const windowsOf = useCallback((laid: LaidOut) => {
+    const each = [...new Set([0, ...laid.tabs.map((one) => one.window)])].sort((a, b) => a - b);
+    otherWindows.current = each.length > 1;
+    setWindowsHere((was) => (was.join() === each.join() ? was : each));
+  }, []);
   const change = useCallback(
     (how: (tabs: Tabs) => Tabs): Tabs => {
       const done = how(now.current);
@@ -1780,6 +1789,7 @@ export const PlaneView = memo(function PlaneView({
           // **A tab window draws its own tabs and nothing more** (#4768): every other chat is
           // the project window's.
           if (tabWindow !== undefined) {
+            windowsOf(laid);
             layoutHeard.current = true;
             if (back.tabs.order.length > 0)
               change(() =>
@@ -1814,7 +1824,7 @@ export const PlaneView = memo(function PlaneView({
             change(() => (inFront === undefined ? all : selectTab(all, inFront)));
           setViewsHeard(true);
           // **Each tab window the record names comes back** (#4768), in its place on screen.
-          otherWindows.current = laid.tabs.some((one) => one.window !== 0);
+          windowsOf(laid);
           if (otherWindows.current) void commands.tabWindowsBack(plane).catch(() => undefined);
           return;
         }
@@ -1909,7 +1919,7 @@ export const PlaneView = memo(function PlaneView({
         layoutHeard.current = true;
         setViewsHeard(true);
       });
-  }, [change, plane, reopeningOf, settleChatNotes, tabWindow]);
+  }, [change, plane, reopeningOf, settleChatNotes, tabWindow, windowsOf]);
 
   /**
    * The window's view tabs, told to the core whenever they change — so the record brings them
@@ -3221,7 +3231,7 @@ export const PlaneView = memo(function PlaneView({
     const listening = listen<LayoutMoved>(LAYOUT_MOVED, (event) => {
       const moved = event.payload;
       if (moved.plane !== plane) return;
-      otherWindows.current = moved.layout.tabs.some((one) => one.window !== 0);
+      windowsOf(moved.layout);
       void commands
         .openedChats(plane)
         .then((answer) => {
@@ -3235,7 +3245,7 @@ export const PlaneView = memo(function PlaneView({
         .catch(() => undefined);
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
-  }, [change, filedIn, plane, reopeningOf, tabWindow]);
+  }, [change, filedIn, plane, reopeningOf, tabWindow, windowsOf]);
 
   /** **A press in another of the project's windows landed on a chat this one has in a pane**
    *  (#4768): it is shown here, in its pane, and this window has come forward. */
@@ -4180,6 +4190,25 @@ export const PlaneView = memo(function PlaneView({
     showChatHere.current = (session) =>
       landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
   }, [landOn, pressedOf, pressing]);
+  /**
+   * **Move to new window, or Move to window ▸** (#4768): tab `tab`, or its focused pane, goes to
+   * another window of the project in one step of the core's, which tells every window what it
+   * holds now (`layout-moved`). This window changes nothing itself: it draws its share then.
+   */
+  const moveToWindow = useCallback(
+    async (tab: number, pane: boolean, to: number | null): Promise<Ran> => {
+      const tabs = now.current;
+      const nth = tabs.order.indexOf(tab);
+      const held = tabs.byId[tab];
+      if (nth < 0 || held === undefined) return { ok: false, refused: "That tab is not open." };
+      const path = pane ? (pathTo(held.layout, held.focused) ?? "") : "";
+      const answer = await commands
+        .moveToWindow(plane, nth, path === "" ? null : path, to)
+        .catch((why: unknown) => ({ status: "error" as const, error: String(why) }));
+      return answer.status === "ok" ? { ok: true } : { ok: false, refused: answer.error };
+    },
+    [plane],
+  );
   /**
    * **⌘⇧H: the focused pane goes back to the chat it showed before** (#4757), and again to
    * come back; where that chat is on screen in another pane, that pane comes forward instead.
@@ -7410,6 +7439,7 @@ export const PlaneView = memo(function PlaneView({
       split,
       closePane,
       tileAll: tileAllIn,
+      moveToWindow,
       zoomPane,
       undoLayout: undoLayoutIn,
       closeTab: close,
@@ -7565,6 +7595,7 @@ export const PlaneView = memo(function PlaneView({
       close,
       closePane,
       tileAllIn,
+      moveToWindow,
       undoLayoutIn,
       zoomPane,
       curate,
@@ -8375,6 +8406,8 @@ export const PlaneView = memo(function PlaneView({
             restoring: [...restoringChats],
             // Close other tabs skips the pinned ones (#4762).
             otherTabs: (tab) => otherTabsToClose(tabs, tab, filedIn, isPinned),
+            // Move to window ▸ lists every other window of the project (#4768).
+            otherWindows: windowsHere.filter((one) => one !== (tabWindow ?? 0)),
             workItems,
             // A chat filed in a workspace; one at the project root, or outside the project, is
             // offered no work link (ADR 0088 §4).
@@ -8444,6 +8477,8 @@ export const PlaneView = memo(function PlaneView({
       wrapping,
       restoringChats,
       isPinned,
+      windowsHere,
+      tabWindow,
       workItems,
       filedIn,
       planeUpdates,

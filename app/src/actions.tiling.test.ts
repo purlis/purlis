@@ -73,7 +73,13 @@ describe("Tile all as a row (#4765)", () => {
   it("is on the tab's menu, after Pin tab and before Keep open, and on no other surface's", () => {
     const rows = menuRows({ on: "tab", tab: 1 }, catalogued(catalogue(now(two()))));
 
-    expect(rows.above.map((row) => row.id)).toEqual(["tab.select:1", "tab.pin:1", "tab.tile:1"]);
+    expect(rows.above.map((row) => row.id)).toEqual([
+      "tab.select:1",
+      "tab.pin:1",
+      "tab.tile:1",
+      // Move to new window follows it (#4768).
+      "tab.newWindow:1",
+    ]);
     expect(rows.below.map((row) => row.id)).not.toContain("tab.tile:1");
   });
 });

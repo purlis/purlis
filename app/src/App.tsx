@@ -1849,6 +1849,7 @@ function App() {
       stopBrowser: async () => nowhere(),
       openBrowserTimeline: () => undefined,
       pinTab: async () => nowhere(),
+      moveToWindow: async () => nowhere(),
       tileAll: () => undefined,
       zoomPane: () => undefined,
       undoLayout: () => undefined,
