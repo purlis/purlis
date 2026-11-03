@@ -514,17 +514,26 @@ fn the_image_is_checked_before_it_is_pushed_and_the_push_sends_the_bytes_checked
             "loads the file",
         );
         // The digest is the file's own manifest's, and the image loaded is that manifest's.
-        let loading = run_lines(&steps[load]).join("\n");
+        assert!(
+            steps[load].iter().any(|l| l.trim() == "id: candidate"),
+            "{file}: the push and the record read this step's digest"
+        );
+        let loading = run_lines(&steps[load]);
+        let mut at = 0;
         for line in [
             "digest=$(tar -xOf \"$RUNNER_TEMP/candidate.tar\" index.json \\",
-            "config=$(tar -xOf \"$RUNNER_TEMP/candidate.tar\" \"blobs/sha256/${digest#sha256:}\" | jq -r .config.digest)",
             "[[ \"$digest\" =~ ^sha256:[0-9a-f]{64}$ ]] \\",
+            "config=$(tar -xOf \"$RUNNER_TEMP/candidate.tar\" \"blobs/sha256/${digest#sha256:}\" | jq -r .config.digest)",
+            "docker load --input \"$RUNNER_TEMP/candidate.tar\"",
             "if [ \"$id\" != \"$digest\" ] && [ \"$id\" != \"$config\" ]; then",
+            "echo \"digest=$digest\" >> \"$GITHUB_OUTPUT\"",
         ] {
-            assert!(
-                loading.lines().any(|l| l == line),
-                "{file}: {line}\n{loading}"
-            );
+            at += loading[at..]
+                .iter()
+                .position(|l| l == line)
+                .unwrap_or_else(|| {
+                    panic!("{file}: `{line}` missing or out of order: {loading:#?}")
+                });
         }
         let push_line =
             format!("skopeo copy --preserve-digests {CANDIDATE} \"docker://$IMAGE@$DIGEST\"");
@@ -546,6 +555,17 @@ fn the_image_is_checked_before_it_is_pushed_and_the_push_sends_the_bytes_checked
             "copies the file by its digest on a run that publishes nothing",
         );
         assert_eq!(step_condition(&steps[dry]), Some("env.PUBLISH != 'true'"));
+        assert!(
+            run_lines(&steps[dry])
+                .iter()
+                .any(|l| l == "if [ \"$copied\" != \"$DIGEST\" ]; then"),
+            "{file}: the copy is compared with the digest checked"
+        );
+        // The write credential arrives only after every check (and only to publish).
+        let login = position(
+            &|s| action(s) == Some("docker/login-action"),
+            "signs in to the registry",
+        );
         let record = position(
             &|s| step_value(s, "with", "name") == Some("digest-${{ matrix.arch }}"),
             "records the digest",
@@ -553,7 +573,7 @@ fn the_image_is_checked_before_it_is_pushed_and_the_push_sends_the_bytes_checked
         for check in image.checks {
             let at = position(&|s| run_lines(s) == [*check], check);
             assert!(
-                build < load && load < at && at < push && at < dry && push < record,
+                build < load && load < at && at < login && at < push && at < dry && push < record,
                 "{file}: {check}"
             );
         }
@@ -571,8 +591,8 @@ fn the_image_is_checked_before_it_is_pushed_and_the_push_sends_the_bytes_checked
             "{file}"
         );
         assert!(
-            public < push,
-            "{file}: the package is shown public before the push"
+            login < public && public < push,
+            "{file}: the package is shown public just before the push"
         );
 
         let index = job_named(&jobs, "index", file);
@@ -596,6 +616,10 @@ fn the_image_is_checked_before_it_is_pushed_and_the_push_sends_the_bytes_checked
             "{file}: {checks:#?}"
         );
         let tagging = run_lines(&steps[tag]);
+        assert!(
+            tagging.contains(&"if [ \"$children\" != \"$checked\" ]; then".to_owned()),
+            "{file}: the index holds the images checked: {tagging:#?}"
+        );
         assert!(
             tagging.contains(
                 &"docker buildx imagetools create --tag \"$IMAGE:sha-$SHA\" \\".to_owned()
@@ -650,7 +674,7 @@ fn main_is_moved_last_and_only_to_the_index_that_passed_the_check_from_outside()
         // No other job names the tag.
         for other in jobs.iter().filter(|j| j.name != "tag-main") {
             assert!(
-                other.body.iter().all(|l| !l.contains(":main\"")),
+                other.body.iter().all(|l| !l.contains("$IMAGE:main")),
                 "{file}: `{}` names main",
                 other.name
             );
@@ -671,7 +695,7 @@ fn main_is_moved_last_and_only_to_the_index_that_passed_the_check_from_outside()
                 .position(|l| l == line)
                 .unwrap_or_else(|| panic!("{file}: no `{line}` in {run:#?}"))
         };
-        let shape = at("\"$IMAGE\"@sha256:*) ;;");
+        let shape = at("[[ \"$LINE\" =~ ^\"$IMAGE\"@sha256:[0-9a-f]{64}$ ]] \\");
         let order = at("order=$(node tools/image-registry.mjs order \"$SHA\")");
         let stay =
             at("sha-only:*) echo \"::notice::main is not moved: ${order#sha-only: }\"; exit 0 ;;");

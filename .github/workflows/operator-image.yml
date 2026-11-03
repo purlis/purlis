@@ -33,9 +33,9 @@ run-name: ${{ github.event_name == 'workflow_run' && format('cluster operator {0
 # **Each architecture is built on a runner of its own architecture** (`ubuntu-24.04` and
 # `ubuntu-24.04-arm`), with no emulation, with the pinned toolchain, `cargo auditable` and the
 # operator's `release` profile, and no cache. The compile runs in a job that holds no write
-# permission; the image jobs hold `packages: write`, and only `index`, which signs, and
-# `attest`, which attests, can mint an OIDC token. What the registry and the forge are asked before a push, a tag or a signature is
-# `tools/image-registry.mjs`, the runner image's own, which fails closed.
+# permission; the image jobs hold `packages: write`, and only `index`, which signs, and `attest`,
+# which attests, can mint an OIDC token. What the registry and the forge are asked before a push,
+# a tag or a signature is `tools/image-registry.mjs`, the runner image's own, which fails closed.
 #
 # **Nothing is pushed, tagged or signed that was not checked** (#4512). `image` builds each
 # architecture's image once, into a file, checks the image loaded from that file
@@ -185,23 +185,6 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Sign in to the registry
-        if: env.PUBLISH == 'true'
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      # **No image is pushed into a package that is not public.** The packages API says so
-      # immediately before the push, so a release never names an image a newcomer cannot pull
-      # (#4498). A package that is not there is refused too: a new one starts private, and
-      # someone has to choose to publish it. Anything else stops the job here.
-      - name: The package is public before the image is pushed
-        if: env.PUBLISH == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node tools/image-registry.mjs visibility
-
       # Built once, into a file, on every run alike (#4512): the image the checks below run on is
       # loaded from this file, and a publishing run pushes this same file after they pass.
       - name: Build the operator's image into a file
@@ -258,6 +241,24 @@ jobs:
             grep -m1 "^$want" <<<"$purls" || { echo "::error::the SBOM has no $want component"; exit 1; }
           done
 
+      - name: Sign in to the registry
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # **No image is pushed into a package that is not public.** The packages API says so
+      # immediately before the push (and the registry sign-in comes only now, after the checks, so
+      # no write credential sits on the runner while the image under check runs), so a release
+      # never names an image a newcomer cannot pull (#4498). A package that is not there is
+      # refused too: a new one starts private, and someone has to choose to publish it. Anything
+      # else stops the job here.
+      - name: The package is public before the image is pushed
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/image-registry.mjs visibility
       # Pushed only now, after every check above passed, by digest only: an untagged image
       # nothing names until `index` does. skopeo sends the file as it is: it refuses a push to a
       # digest the manifest does not have, and `--preserve-digests` refuses to change one.
@@ -381,6 +382,14 @@ jobs:
             | jq -r '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort | join(" ")')
           if [ "$platforms" != "linux/amd64 linux/arm64" ]; then
             echo "::error::the index holds $platforms"
+            exit 1
+          fi
+          # The index holds exactly the two images checked, whatever the tag was moved to.
+          children=$(docker buildx imagetools inspect "$IMAGE@$digest" --format '{{json .Manifest}}' \
+            | jq -r '[.manifests[].digest] | sort | join(" ")')
+          checked=$(printf '%s\n' "$(cat "$RUNNER_TEMP/digests/amd64")" "$(cat "$RUNNER_TEMP/digests/arm64")" | sort | paste -sd' ' -)
+          if [ "$children" != "$checked" ]; then
+            echo "::error::the index holds $children, not the images checked, $checked"
             exit 1
           fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
@@ -514,12 +523,13 @@ jobs:
           retention-days: 90
 
   # **Build provenance and the SBOMs, attached to the image and verified here** (#4513), as the
-  # runner image's `attest` does (#2191). SLSA provenance on the index the run records, and each architecture's SBOM on that architecture's image, each stored by
-  # GitHub and pushed to the registry beside the image (`push-to-registry`), into the same
-  # package. Then each is checked as a person would check it: signed by this workflow,
-  # for this commit, on a GitHub-hosted runner. An attestation that does not verify fails the
-  # run, so `main` is not moved to the image. The one job of the workflow that may store an
-  # attestation; it builds and runs nothing of the commit's.
+  # runner image's `attest` does (#2191). SLSA provenance on the index the run records, and each
+  # architecture's SBOM on that architecture's image, each stored by GitHub and pushed to the
+  # registry beside the image (`push-to-registry`), into the same package. Then each is checked as
+  # a person would check it: signed by this workflow, for the run's commit, on a GitHub-hosted
+  # runner. An attestation that does not verify fails the run, so `main` is not moved to the
+  # image. The one job of the workflow that may store an attestation; it builds and runs nothing
+  # of the commit's.
   attest:
     name: provenance and SBOM, attested and verified
     needs: [plan, index, sbom]
@@ -558,10 +568,8 @@ jobs:
           LINE: ${{ needs.index.outputs.image }}
         run: |
           set -euo pipefail
-          case "$LINE" in
-            "$IMAGE"@sha256:*) ;;
-            *) echo "::error::index handed back '$LINE'"; exit 1 ;;
-          esac
+          [[ "$LINE" =~ ^"$IMAGE"@sha256:[0-9a-f]{64}$ ]] \
+            || { echo "::error::index handed back '$LINE'"; exit 1; }
           {
             echo "index=${LINE#*@}"
             echo "amd64=$(cat "$RUNNER_TEMP/digests/amd64")"
@@ -592,7 +600,7 @@ jobs:
           predicate-path: ${{ runner.temp }}/sbom/purlis-cluster-operator-arm64.cdx.json
           push-to-registry: true
       # What a person checking the image runs (docs/cluster-operator.md), run here first and pinned
-      # to this workflow, this commit and a GitHub-hosted runner.
+      # to this workflow, the run's commit and a GitHub-hosted runner.
       - name: The provenance and each SBOM verify against this run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -700,10 +708,8 @@ jobs:
           LINE: ${{ needs.index.outputs.image }}
         run: |
           set -euo pipefail
-          case "$LINE" in
-            "$IMAGE"@sha256:*) ;;
-            *) echo "::error::index handed back '$LINE'"; exit 1 ;;
-          esac
+          [[ "$LINE" =~ ^"$IMAGE"@sha256:[0-9a-f]{64}$ ]] \
+            || { echo "::error::index handed back '$LINE'"; exit 1; }
           order=$(node tools/image-registry.mjs order "$SHA")
           echo "$order"
           case "$order" in

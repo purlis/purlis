@@ -52,12 +52,12 @@ step. This page is the reference behind it.
   untagged, by its digest, so an image that fails is never pushed; nothing is tagged or signed
   until both architectures passed.
 - **Tags:** `sha-<commit>`, and `main` for the image of the latest commit; `main` only moves
-  forward, and only once the image has been pulled and checked with no sign-in. Tags can move, so name the image by its **digest**. The run's summary records it.
-  Its `operator-image` artifact holds the digest and `install/`: this commit's plain
-  manifests and chart, with `operator.yaml`'s image and the chart's default `image.repository`
-  and `image.digest` set to that image (#2281). So an install from it names the image built
-  from the same commit as the manifests, with nothing to set.
-  `tools/operator-install.mjs` makes it, and the kind tests install from what it makes.
+  forward, and only once the image has been pulled and checked with no sign-in. Tags can move, so
+  name the image by its **digest**. The run's summary records it. Its `operator-image` artifact
+  holds the digest and `install/`: this commit's plain manifests and chart, with `operator.yaml`'s
+  image and the chart's default `image.repository` and `image.digest` set to that image (#2281).
+  So an install from it names the image built from the same commit as the manifests, with nothing
+  to set. `tools/operator-install.mjs` makes it, and the kind tests install from what it makes.
 - **Signed:** keyless with [cosign](https://docs.sigstore.dev/), by the `operator-image.yml`
   workflow on `main`, through GitHub's OIDC identity, as the runner image is: no key is stored
   anywhere, and the signature's entry in Sigstore's public transparency log names the image
