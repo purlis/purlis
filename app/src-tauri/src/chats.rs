@@ -6928,7 +6928,7 @@ impl Chats {
     fn start_what_is_coming(&self, size: Size, opened: &Mutex<Vec<u32>>) {
         PUTTING_BACK_HERE.set(true);
         loop {
-            let place = self.gate.enter(&|| crate::restoring::Rank {
+            let place = self.gate.enter(&self.project, &|| crate::restoring::Rank {
                 behind: crate::restoring::is_behind(&self.project),
                 hidden: !self.front_is_coming(),
             });
