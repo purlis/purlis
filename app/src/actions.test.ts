@@ -23,6 +23,7 @@ import {
   matches,
   menuOn,
   PASS_THROUGH_ID,
+  PANE_TO_NEW_WINDOW,
   memoryOffers,
   menuRows,
   narrow,
@@ -3752,9 +3753,10 @@ describe("stopping a chat (#1448)", () => {
   });
 
   describe("a tab's right-click and a pane's rows (#4760)", () => {
-    it("holds Pin tab, Tile all, Keep open, Close other tabs and Close tab, and nothing else", () => {
+    it("holds Pin tab, Tile all, Keep open, Move to new window, Close other tabs and Close tab, and nothing else", () => {
       expect(menuOn({ on: "tab", tab: 7 })).toEqual({
-        above: ["tab.pin:7", "tab.tile:7", "tab.keep:7"],
+        // Move to new window (#4768): the tab into a tab window of its project.
+        above: ["tab.pin:7", "tab.tile:7", "tab.keep:7", "tab.newWindow:7"],
         below: ["tab.closeOthers:7", "tab.close:7"],
       });
     });
@@ -3765,10 +3767,17 @@ describe("stopping a chat (#1448)", () => {
       expect([...above, ...below]).not.toContain("tab.select:7");
     });
 
-    it("are the splits, Tile all and Send F2, then Close pane, and not the window's New tab or New shell", () => {
-      // Tile all is the tab's own row, the one its right-click lists (#4765).
+    it("are the splits, Tile all, Move to new window and Send F2, then Close pane, and not the window's New tab or New shell", () => {
+      // Tile all is the tab's own row, the one its right-click lists (#4765); Move to new window
+      // takes the focused pane into a tab window of the project (#4768).
       expect(menuOn({ on: "pane", tab: 7 })).toEqual({
-        above: ["pane.split.right", "pane.split.down", "tab.tile:7", PASS_THROUGH_ID],
+        above: [
+          "pane.split.right",
+          "pane.split.down",
+          "tab.tile:7",
+          PANE_TO_NEW_WINDOW,
+          PASS_THROUGH_ID,
+        ],
         below: ["pane.close"],
       });
     });
@@ -3777,6 +3786,7 @@ describe("stopping a chat (#1448)", () => {
       expect(menuOn({ on: "pane" }).above).toEqual([
         "pane.split.right",
         "pane.split.down",
+        PANE_TO_NEW_WINDOW,
         PASS_THROUGH_ID,
       ]);
     });
