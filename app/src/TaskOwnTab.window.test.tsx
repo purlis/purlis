@@ -922,8 +922,8 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
     fireEvent.contextMenu(tab("talk"));
     const menu = await screen.findByRole("menu");
     // Uncoloured: a tab's menu holds the tab's own rows (#4753), and on a task's own tab none
-    // of them ends its task. Only Close other tabs (#4762, on this menu since #4760) is in the
-    // danger colour: it closes the session's tab, which ends the session's chat.
+    // of them ends its task. Close other tabs (#4762, on this menu since #4760) is not coloured
+    // either: closing a tab ends no chat (#4756).
     const items = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')];
     const back = items.findIndex((one) =>
       one.getAttribute("aria-label")?.startsWith("Send back into"),
@@ -934,7 +934,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
       items
         .filter((one) => one.getAttribute("data-variant") === "danger")
         .map((one) => one.getAttribute("aria-label") ?? one.textContent),
-    ).toEqual([expect.stringMatching(/^Close other tabs/)]);
+    ).toEqual([]);
   });
 });
 
