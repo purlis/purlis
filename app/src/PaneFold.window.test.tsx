@@ -88,9 +88,10 @@ function propsOf(layout: Layout, more: Partial<Props>): Props {
 }
 
 /**
- * A folded pane's button by its name. jsdom's name computation drops the spaces between the
- * name's words, which are text between spans (`PaneRail`); a browser keeps them, and axe reads
- * them (the last test here). Matched with the spaces left out.
+ * A folded pane's button by its name, matched with the spaces left out: the name's words are
+ * spans (`PaneRail`), and how a name computation spaces them depends on how each is laid out
+ * (jsdom drops spaces; a browser puts one either side of a `.hidden-words` piece). The words
+ * and their order are what is checked, and axe reads them (the last test here).
  */
 const folded = (name: string) => ({
   name: (heard: string) => heard.replace(/\s/g, "") === name.replace(/\s/g, ""),

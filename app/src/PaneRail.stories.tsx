@@ -36,6 +36,15 @@ const FOLDED: RailPane[] = [
   },
 ];
 
+/**
+ * A folded pane's button by its name, matched with the spaces left out: each `.hidden-words`
+ * piece is placed absolutely, so it lays out as a block and the name computation puts a space
+ * either side of it ("triage , folded, asks you"). What is heard is the same.
+ */
+const folded = (name: string) => ({
+  name: (heard: string) => heard.replace(/\s/g, "") === name.replace(/\s/g, ""),
+});
+
 function Folded(props: Parameters<typeof PaneRail>[0]) {
   return (
     <div
@@ -61,11 +70,11 @@ type Story = StoryObj<typeof meta>;
 /** **A rail, side by side**: each pane is reached by Tab and opened by Enter. */
 export const Rail: Story = {
   play: async ({ canvas, args, userEvent }) => {
-    const asks = canvas.getByRole("button", { name: "triage, folded, asks you" });
+    const asks = canvas.getByRole("button", folded("triage, folded, asks you"));
     await expect(asks).toBeVisible();
     await userEvent.tab();
     await untilFocused(
-      () => canvas.getByRole("button", { name: "devops 2, 3 notices, folded" }),
+      () => canvas.getByRole("button", folded("devops 2, 3 notices, folded")),
       "Tab to the first folded pane",
     );
     expectFocusInSight();
@@ -84,7 +93,7 @@ export const Bar: Story = {
     await expect(canvas.getByText("devops 2")).toBeVisible();
     await userEvent.tab();
     await untilFocused(
-      () => canvas.getByRole("button", { name: "devops 2, 3 notices, folded" }),
+      () => canvas.getByRole("button", folded("devops 2, 3 notices, folded")),
       "Tab to the first folded pane",
     );
     expectFocusInSight();
