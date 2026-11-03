@@ -141,6 +141,52 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     await closeTheViewTabsOpenedSince(wereOpen);
     const already = await $('[data-testid="skill-studio"]').isExisting();
     if (already) throw new Error("the studio's tab is still open, so this would time no opening");
+    // [DEBUG-4351] A/B: 1 drops the tabs layout's :has() rule, 2 keeps #root from going inert, 3 both.
+    const variant = n % 4; // [DEBUG-4351]
+    await browser.execute((v: number) => {
+      const g = globalThis as {
+        __variant4351?: number;
+        __inertPatched4351?: boolean;
+        __dropped4351?: { sheet: CSSStyleSheet | CSSGroupingRule; at: number; text: string }[];
+      };
+      g.__variant4351 = v;
+      if (!g.__inertPatched4351) {
+        g.__inertPatched4351 = true;
+        const d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "inert");
+        if (d?.set !== undefined) {
+          const set = d.set;
+          Object.defineProperty(HTMLElement.prototype, "inert", {
+            ...d,
+            set(this: HTMLElement, on: boolean) {
+              const w = (globalThis as { __variant4351?: number }).__variant4351 ?? 0;
+              if (this.id === "root" && w >= 2) return;
+              set.call(this, on);
+            },
+          });
+        }
+      }
+      for (const one of (g.__dropped4351 ?? []).reverse()) one.sheet.insertRule(one.text, one.at);
+      g.__dropped4351 = [];
+      if (v % 2 === 1) {
+        const walk = (list: CSSRuleList, owner: CSSStyleSheet | CSSGroupingRule) => {
+          for (let i = list.length - 1; i >= 0; i--) {
+            const r = list[i];
+            if (r instanceof CSSStyleRule && r.selectorText.includes('[data-part="layout"]:has(')) {
+              g.__dropped4351?.push({ sheet: owner, at: i, text: r.cssText });
+              owner.deleteRule(i);
+            } else if ("cssRules" in r) walk((r as CSSGroupingRule).cssRules, r as CSSGroupingRule);
+          }
+        };
+        for (const sheet of Array.from(document.styleSheets)) {
+          try {
+            walk(sheet.cssRules, sheet);
+          } catch {
+            // a sheet from elsewhere
+          }
+        }
+      }
+      return (g.__dropped4351 ?? []).length;
+    }, variant); // [DEBUG-4351]
     await browser.keys(["F2"]);
     const box = await $("#palette-query");
     await box.waitForDisplayed({ timeout: 10_000 });
@@ -421,7 +467,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       },
       STUDIO_OF_ALPHA,
       `[data-testid="skill-${crowd(0)}"]`,
-      n === 2, // [DEBUG-4351]
+      false, // [DEBUG-4351] no snapshots this run
     );
     expect(armed).toBe(true);
     let took: number | undefined;
@@ -435,7 +481,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     samples.push(took as number);
     const tl = await browser.execute(() => (globalThis as { __tl4351?: string[] }).__tl4351 ?? []); // [DEBUG-4351]
     console.log(
-      `[DEBUG-4351] opening ${n} took ${Math.round(took as number)} ms: ${(tl as string[]).join(" | ")}`,
+      `[DEBUG-4351] opening ${n} variant ${variant} took ${Math.round(took as number)} ms: ${(tl as string[]).join(" | ")}`,
     ); // [DEBUG-4351]
     if (n === 2) {
       const got = (await browser.execute(() => {
