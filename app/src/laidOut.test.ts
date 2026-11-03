@@ -123,14 +123,21 @@ describe("the window's tabs as the core holds them (#4751)", () => {
     expect(back.inFront).toBe(back.tabs.order[1]);
   });
 
-  it("a chat the core does not have open is an empty pane, and an empty pane comes back as nothing", () => {
+  it("a chat the core does not have open is an empty pane, and an empty pane comes back empty (#4755)", () => {
     const laid = layoutOf(twoSplit(), { ...onOps, told: (session) => session !== 4 });
     expect(laid.tabs[0].tree).toMatchObject({ b: { kind: "empty" } });
 
     const back = tabsOf(laid, noTabs(), allBack);
 
     const layout = back.tabs.byId[back.tabs.order[0]].layout;
-    expect(layout).toMatchObject({ kind: "pane", content: { session: 3 } });
+    expect(layout).toMatchObject({
+      kind: "split",
+      share: 333,
+      children: [
+        { kind: "pane", content: { session: 3 } },
+        { kind: "pane", content: { kind: "empty", workspace: "ops" } },
+      ],
+    });
   });
 
   it("a chat that did not come back leaves its split to the other side, and a tab of nothing is not put back", () => {
