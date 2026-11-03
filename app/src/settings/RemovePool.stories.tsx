@@ -5,7 +5,8 @@
  * **Remove pool {name}?** (#4678, the person's ruling of 2026-11-02): the one question Pools
  * settings and the Devices view ask before a pool goes. With a project and a workspace naming the
  * pool, it names both, since removing the pool sets them back to this machine; with neither, it
- * says nothing of them. Each is drawn, held to axe, walked by the keyboard, and pictured in every
+ * says nothing of them. With a held runner, it names it and asks again before its conversations
+ * go (#4860). Each is drawn, held to axe, walked by the keyboard, and pictured in every
  * pictured theme cell (`docs/component-stories.md`). The core is faked at its command boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
@@ -27,11 +28,18 @@ function Asking() {
 const meta = {
   component: Asking,
   parameters: { screenshot: "page" },
-  // What names the pool, as the faked core answers: a story's `parameters.namedBy`, none by
-  // default.
+  // What names the pool and its held runners, as the faked core answers: a story's
+  // `parameters.namedBy` and `parameters.heldRunners`, none by default.
   beforeEach: ({ parameters }) => {
     const named = (parameters.namedBy as PoolNamedBy[] | undefined) ?? [];
-    mockIPC((cmd) => (cmd === "pool_named_by" ? structuredClone(named) : null));
+    const held = (parameters.heldRunners as string[] | undefined) ?? [];
+    mockIPC((cmd) =>
+      cmd === "pool_named_by"
+        ? structuredClone(named)
+        : cmd === "pool_held_runners"
+          ? structuredClone(held)
+          : null,
+    );
     return () => clearMocks();
   },
 } satisfies Meta<typeof Asking>;
@@ -111,5 +119,46 @@ export const NothingNamesIt: Story = {
     await walked(alert, userEvent);
     await pictureNow();
     await dismissed(userEvent);
+  },
+};
+
+/**
+ * **A held runner's conversations go with the pool** (#4860): the question names the runner, its
+ * button says another ask follows, and the second ask opens on Cancel.
+ */
+export const NamesHeldRunnersAndAsksAgain: Story = {
+  parameters: { heldRunners: ["builds-0a0b0c0d"] },
+  play: async ({ userEvent }) => {
+    const page = within(document.body);
+    const alert = await page.findByRole("alertdialog", { name: "Remove pool builds?" });
+    const list = await within(alert).findByRole("list", {
+      name: /These older runners still hold conversations/,
+    });
+    await expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["Runner builds-0a0b0c0d"]);
+    await untilFocused(
+      () => within(alert).getByRole("button", { name: "Cancel" }),
+      "Remove pool: the keyboard starts on Cancel",
+    );
+    await userEvent.tab();
+    await untilFocused(
+      () => within(alert).getByRole("button", { name: "Remove pool…" }),
+      "Tab goes on to Remove pool…",
+    );
+    await userEvent.keyboard("{Enter}");
+    const again = await page.findByRole("alertdialog", {
+      name: "Discard their conversations for good?",
+    });
+    await untilFocused(
+      () => within(again).getByRole("button", { name: "Cancel" }),
+      "The second ask starts on Cancel",
+    );
+    expectFocusInSight();
+    await pictureNow();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(page.queryByRole("alertdialog")).toBeNull());
   },
 };

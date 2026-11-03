@@ -347,12 +347,15 @@ pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
 /// the chats on them with them ([`links_end_once_gone`]). `elsewhere` is what the person was told
 /// before they agreed: that its runner is on an engine Docker no longer reaches, so nothing there
 /// goes. Where that is no longer so, or the other way round, nothing is done (#4325).
+/// `discarding` names the held runners whose conversations the person was asked about, and agreed
+/// to discard with the pool (#4860): a runner held now that it does not name removes nothing.
 #[tauri::command]
 #[specta::specta]
 pub async fn remove_docker_pool(
     app: tauri::AppHandle,
     name: String,
     elsewhere: bool,
+    discarding: Vec<String>,
 ) -> Result<Option<String>, String> {
     #[cfg(unix)]
     {
@@ -365,7 +368,7 @@ pub async fn remove_docker_pool(
                 let machine = Machine::here(&config)?;
                 as_the_person_was_told(&machine, &name, elsewhere)?;
                 elsewhere_only_from_your_own(&name, elsewhere, crate::poolprofiles::owned)?;
-                remove_on(&machine, &name)
+                remove_on(&machine, &name, &discarding)
             };
             if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
                 links_end_once_gone(&host.connection(), &config, &name);
@@ -376,7 +379,7 @@ pub async fn remove_docker_pool(
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, name, elsewhere);
+        let _ = (app, name, elsewhere, discarding);
         Err(NOT_HERE.to_owned())
     }
 }
@@ -440,15 +443,25 @@ fn links_end_once_gone(
 }
 
 #[cfg(unix)]
-/// [`remove_docker_pool`], on `machine`.
-pub fn remove_on(machine: &Machine, name: &str) -> Result<Option<String>, String> {
+/// [`remove_docker_pool`], on `machine`, discarding the held runners `discarding` names.
+pub fn remove_on(
+    machine: &Machine,
+    name: &str,
+    discarding: &[String],
+) -> Result<Option<String>, String> {
     // Each runner of the pool is unpaired over a link to it, a draining one too (#2749).
     let unpair = |kept: &purlis_core::runners::Kept| {
         let to = ToARunner::of_kept(machine, kept)?;
         crate::runnerlinks::unpair(&to)
     };
-    let removed = purlis_core::pools::remove(&machine.config, &machine.docker, name, Some(&unpair))
-        .map_err(|why| refused_said(&why.to_string()))?;
+    let removed = purlis_core::pools::remove_discarding(
+        &machine.config,
+        &machine.docker,
+        name,
+        Some(&unpair),
+        discarding,
+    )
+    .map_err(|why| refused_said(&why.to_string()))?;
     // The projects that ran their chats on it run them on no pool now: their marks go (#2846).
     crate::notheld::recheck(&machine.config);
     // Nothing of it waits on chats any more (#2865).
@@ -1258,6 +1271,28 @@ pub async fn pool_named_by(name: String) -> Result<Vec<PoolNamedBy>, String> {
     {
         crate::off_the_window("reading what names the pool", move || {
             pool_named_by_on(&config_root()?, &name)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = name;
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+/// **The held runners of a pool** (#4860), by name: each an older runner kept with its chats'
+/// conversations, which removing the pool discards, so its question names them and asks again.
+/// None for a cluster pool, whose runners are never held.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_held_runners(name: String) -> Result<Vec<String>, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading a pool's held runners", move || {
+            let machine = Machine::here(&config_root()?)?;
+            purlis_core::pools::held_of(&machine.config, &machine.docker, &name)
+                .map_err(|why| refused_said(&why.to_string()))
         })
         .await
     }

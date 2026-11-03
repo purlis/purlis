@@ -139,12 +139,28 @@ pub fn on_another_engine(config_root: &Path, docker: &Docker, name: &str) -> boo
 /// **Removes the pool `name`**: its runner whole ([`runners::remove`]), with `unpair` taking
 /// this desktop out of its peers when its link is up, then the pool's record once its runner is
 /// gone. A pool whose runner was never kept is forgotten at once. What [`runners::remove`] did,
-/// where it ran.
+/// where it ran. Refused, with nothing removed, where a runner of the pool is held for its chats'
+/// conversations ([`held_of`]): only [`remove_discarding`], naming it, discards them.
 pub fn remove(
     config_root: &Path,
     docker: &Docker,
     name: &str,
     unpair: Option<&Unpair<'_>>,
+) -> Result<Option<Removed>, Refused> {
+    remove_discarding(config_root, docker, name, unpair, &[])
+}
+
+/// **[`remove`], discarding the conversations of the held runners `discarding` names** (#4860,
+/// D-4860-1): the runners the person's question named, and asked again about, as Discard does. A
+/// runner of the pool held now that it does not name, one held since the question was asked among
+/// them, refuses the whole removal, with nothing removed, so no conversation goes that the person
+/// was not asked about. A held runner is never kept once its pool is gone.
+pub fn remove_discarding(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    unpair: Option<&Unpair<'_>>,
+    discarding: &[String],
 ) -> Result<Option<Removed>, Refused> {
     let locked = runners::lock(config_root);
     if !runners::pools(config_root)?
@@ -160,6 +176,17 @@ pub fn remove(
         .into_iter()
         .filter(|kept| kept.pool() == name)
         .collect();
+    let unasked: Vec<String> = held_among(docker, &of_it)
+        .into_iter()
+        .filter(|held| !discarding.contains(held))
+        .collect();
+    if !unasked.is_empty() {
+        return Err(Refused::Other(format!(
+            "runner {} of pool {name} holds what its chats left, and removing the pool was not \
+             asked about it, so nothing was removed; remove the pool again to be asked",
+            unasked.join(" and runner ")
+        )));
+    }
     of_it.sort_by_key(|kept| !kept.draining);
     let mut removed = None;
     let mut all_gone = true;
@@ -185,6 +212,31 @@ pub fn remove(
         })?;
     }
     Ok(removed)
+}
+
+/// **The runners of pool `pool` held for their chats' conversations** (#4860), by name, as the
+/// window shows them: noted held, or draining and found as a look would hold them
+/// ([`DrainLook::Held`]). What removing the pool asks about before it discards them.
+pub fn held_of(config_root: &Path, docker: &Docker, pool: &str) -> Result<Vec<String>, Refused> {
+    let of_it: Vec<Kept> = runners::read(config_root)?
+        .into_iter()
+        .filter(|kept| kept.pool() == pool)
+        .collect();
+    Ok(held_among(docker, &of_it))
+}
+
+/// The held runners among `kept` ([`held_of`]).
+fn held_among(docker: &Docker, kept: &[Kept]) -> Vec<String> {
+    kept.iter()
+        .filter(|kept| {
+            kept.draining
+                && (kept.held
+                    || docker
+                        .ran(&kept.made)
+                        .is_ok_and(|ran| drain_look(kept, ran) == DrainLook::Held))
+        })
+        .map(|kept| kept.name().to_owned())
+        .collect()
 }
 
 /// **What names pool `name` on this machine** (#4678), plane by plane in the order this machine

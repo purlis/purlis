@@ -3259,8 +3259,10 @@ export const commands = {
 	 *  the chats on them with them ([`links_end_once_gone`]). `elsewhere` is what the person was told
 	 *  before they agreed: that its runner is on an engine Docker no longer reaches, so nothing there
 	 *  goes. Where that is no longer so, or the other way round, nothing is done (#4325).
+	 *  `discarding` names the held runners whose conversations the person was asked about, and agreed
+	 *  to discard with the pool (#4860): a runner held now that it does not name removes nothing.
 	 */
-	removeDockerPool: (name: string, elsewhere: boolean) => typedError<string | null, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere })),
+	removeDockerPool: (name: string, elsewhere: boolean, discarding: string[]) => typedError<string | null, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere, discarding })),
 	/**
 	 *  **Whether the pool `name`'s runner answers with the key pinned for it**: one link, made and
 	 *  let go of.
@@ -3528,6 +3530,12 @@ export const commands = {
 	setProjectChatsRunOn: (plane: PlaneId, pool: string | null) => typedError<ProjectChatsRunOn, string>(__TAURI_INVOKE("set_project_chats_run_on", { plane, pool })),
 	/**  **What names a pool** (#4678): the projects and workspaces its removal sets back to this machine. */
 	poolNamedBy: (name: string) => typedError<PoolNamedBy[], string>(__TAURI_INVOKE("pool_named_by", { name })),
+	/**
+	 *  **The held runners of a pool** (#4860), by name: each an older runner kept with its chats'
+	 *  conversations, which removing the pool discards, so its question names them and asks again.
+	 *  None for a cluster pool, whose runners are never held.
+	 */
+	poolHeldRunners: (name: string) => typedError<string[], string>(__TAURI_INVOKE("pool_held_runners", { name })),
 	/**
 	 *  **What a workspace's sends to a pool's runner leave out** besides what a save to the forge
 	 *  refuses (#2046, the operator's ruling of 2026-10-25): `settings.runners.leave_out` in its

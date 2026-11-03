@@ -263,11 +263,11 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
   const [asking, setAsking] = useState<string | undefined>();
   const [removing, setRemoving] = useState<string | undefined>();
   const [left, setLeft] = useState<{ pool: string; said: string } | undefined>();
-  const remove = (pool: string) => {
+  const remove = (pool: string, discarding: readonly string[]) => {
     setAsking(undefined);
     setRemoving(pool);
     setLeft(undefined);
-    void removePool(pool).then((said) => {
+    void removePool(pool, false, discarding).then((said) => {
       setRemoving(undefined);
       if (said !== undefined) setLeft({ pool, said });
       return rereadDevices();
@@ -345,7 +345,7 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
         <RemovePool
           name={asking}
           onCancel={() => setAsking(undefined)}
-          onRemove={() => remove(asking)}
+          onRemove={(discarding) => remove(asking, discarding)}
         />
       )}
       {use.length > 0 && (

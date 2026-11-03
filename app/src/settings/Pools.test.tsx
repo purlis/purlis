@@ -82,6 +82,10 @@ let profileAnswers: PoolProfileRow[][] | undefined;
 let freshClaim: boolean;
 /** What `pool_named_by` says names a pool (#4678). */
 let namedBy: PoolNamedBy[];
+/** The held runners `pool_held_runners` names (#4860). */
+let heldRunners: string[];
+/** What each removal was told to discard (#4860). */
+let discarded: unknown[];
 
 const a_profile = (name: string, standing: string): PoolProfileRow => ({
   name,
@@ -127,6 +131,8 @@ beforeEach(() => {
   freshClaim = false;
   profileAnswers = undefined;
   namedBy = [];
+  heldRunners = [];
+  discarded = [];
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -173,6 +179,7 @@ beforeEach(() => {
       }
       if (cmd === "docker_pool_version") return version;
       if (cmd === "pool_named_by") return structuredClone(namedBy);
+      if (cmd === "pool_held_runners") return structuredClone(heldRunners);
       if (cmd === "projects_not_held") return structuredClone(notHeld);
       if (cmd === "pool_profiles") {
         profilesAsked.push(a.pool);
@@ -211,6 +218,7 @@ beforeEach(() => {
       }
       if (cmd === "remove_docker_pool") {
         removed.push(a.name);
+        discarded.push(a.discarding);
         pools = pools.filter((one) => one.name !== a.name);
         clusters = clusters.filter((one) => one.name !== a.name);
         return null;
@@ -314,6 +322,64 @@ describe("You › This machine › Pools", () => {
     expect(removed).toEqual([]);
   });
 
+  it("names the held runners whose conversations go with the pool, and asks again before they do (#4860)", async () => {
+    pools = [a_pool("builds")];
+    heldRunners = ["builds-0a0b0c0d"];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await userEvent.click(await within(group).findByRole("button", { name: "Remove pool builds" }));
+    const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    const list = await within(asked).findByRole("list", {
+      name: /These older runners still hold conversations from chats that ran on them/,
+    });
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["Runner builds-0a0b0c0d"]);
+
+    await userEvent.click(within(asked).getByRole("button", { name: "Remove pool…" }));
+
+    const again = await screen.findByRole("alertdialog", {
+      name: "Discard their conversations for good?",
+    });
+    expect(again).toHaveTextContent(
+      "The conversations kept on runner builds-0a0b0c0d are deleted with pool builds, and cannot be brought back. There is no undo.",
+    );
+    // The second ask opens on Cancel, so two presses on one spot remove nothing.
+    await waitFor(() =>
+      expect(within(again).getByRole("button", { name: "Cancel" })).toHaveFocus(),
+    );
+    expect(removed).toEqual([]);
+    await userEvent.click(
+      within(again).getByRole("button", { name: "Remove pool and conversations" }),
+    );
+    await waitFor(() => expect(removed).toEqual(["builds"]));
+    expect(discarded).toEqual([["builds-0a0b0c0d"]]);
+  });
+
+  it("removes nothing when the second ask about the held runners is cancelled (#4860)", async () => {
+    pools = [a_pool("builds")];
+    heldRunners = ["builds-0a0b0c0d"];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await userEvent.click(await within(group).findByRole("button", { name: "Remove pool builds" }));
+    const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await userEvent.click(await within(asked).findByRole("button", { name: "Remove pool…" }));
+    const again = await screen.findByRole("alertdialog", {
+      name: "Discard their conversations for good?",
+    });
+
+    await userEvent.click(within(again).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(removed).toEqual([]);
+  });
+
   it("says nothing of workspaces or projects where none name the pool", async () => {
     pools = [a_pool("builds")];
     render(<App />);
@@ -327,6 +393,7 @@ describe("You › This machine › Pools", () => {
       expect(within(asked).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
     );
     expect(within(asked).queryByText(/go back to this machine/)).toBeNull();
+    expect(within(asked).queryByText(/still hold conversations/)).toBeNull();
     expect(within(asked).getByText(/There is no undo\./)).toBeInTheDocument();
   });
 

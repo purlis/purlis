@@ -112,6 +112,7 @@ beforeEach(() => {
     }
     if (cmd === "devices_disk") return structuredClone(disk);
     if (cmd === "pool_named_by") return structuredClone(namedBy);
+    if (cmd === "pool_held_runners") return [];
     if (cmd === "remove_docker_pool") {
       removed.push(a.name ?? "");
       return removeSays;

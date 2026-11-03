@@ -14,8 +14,10 @@ import {
   removedSaid,
   removePool,
   startAddingAPool,
+  useHeldRunners,
   useNamedBy,
   usePools,
+  type HeldRunners,
   type NamedBy,
 } from "../pools";
 import type { LiveSetting, SettingsGroup } from "./groups";
@@ -181,6 +183,11 @@ function linkOnAnotherEngine(link: PoolLink | "asking" | undefined): boolean {
  * project and workspace that names the pool, by name, which removing it sets to This machine
  * (ADR 0078, D-4536-3). Where none does, it says nothing of them. Remove pool waits for the
  * read, and where purlis could not read them it says what is true of any, and why.
+ *
+ * **It names the held runners, and then asks again** (#4860, D-4860-1): each older runner kept
+ * with its chats' conversations, which go with the pool, and a second question, as Discard asks
+ * one, before they do. With none, it is one question. `onRemove` is told the runners it named, and
+ * a runner held since then removes nothing.
  */
 export function RemovePool({
   name,
@@ -194,12 +201,36 @@ export function RemovePool({
   cluster?: boolean;
   /** Its runner is on a Docker engine that Docker no longer reaches (#4325): nothing there goes. */
   elsewhere?: boolean;
-  onRemove: () => void;
+  onRemove: (discarding: readonly string[]) => void;
   onCancel: () => void;
 }) {
   const named = useNamedBy(name);
+  const held = useHeldRunners(name, cluster);
+  const [again, setAgain] = useState(false);
+  const discarding = held.state === "read" ? held.held : [];
+  // Each ask is a dialog of its own, so the second opens with the keyboard on its Cancel and not
+  // on the button the first was answered with: two presses never discard.
+  if (again)
+    return (
+      <AlertDialog
+        key="again"
+        onClose={onCancel}
+        title="Discard their conversations for good?"
+        description={
+          <p className="came-back">
+            {`The conversations kept on ${runnersSaid(discarding)} are deleted with pool ${name}, and cannot be brought back. There is no undo.`}
+          </p>
+        }
+        main={{
+          children: "Remove pool and conversations",
+          variant: "danger",
+          onPress: () => onRemove(discarding),
+        }}
+      />
+    );
   return (
     <AlertDialog
+      key="first"
       onClose={onCancel}
       title={`Remove pool ${name}?`}
       description={
@@ -211,17 +242,56 @@ export function RemovePool({
                 ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
                 : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
           </p>
+          <HeldLine held={held} />
           <NamedByLine named={named} />
         </>
       }
-      // Pressed only once the question names what goes back (#4678).
+      // Pressed only once the question names what goes back (#4678) and what is discarded (#4860).
       main={{
-        children: "Remove pool",
+        children: discarding.length > 0 ? "Remove pool…" : "Remove pool",
         variant: "danger",
-        onPress: onRemove,
-        isDisabled: named.state === "reading",
+        onPress: () => (discarding.length > 0 ? setAgain(true) : onRemove([])),
+        isDisabled: named.state === "reading" || held.state === "reading",
       }}
     />
+  );
+}
+
+/** `runner a`, or `runners a, b and c`. */
+function runnersSaid(runners: readonly string[]): string {
+  return runners.length < 2
+    ? `runner ${runners.join("")}`
+    : `runners ${runners.slice(0, -1).join(", ")} and ${runners[runners.length - 1]}`;
+}
+
+/** What Remove pool's question says of the held runners whose conversations go with the pool. */
+function HeldLine({ held }: { held: HeldRunners }) {
+  const said = useId();
+  if (held.state === "reading") return null;
+  if (held.state === "trouble")
+    return (
+      <p className="came-back">
+        {"purlis could not read whether its older runners still hold chats' conversations: "}
+        <bdi>{held.why}</bdi>
+        {". If one does, nothing is removed, and you are asked again."}
+      </p>
+    );
+  if (held.held.length === 0) return null;
+  return (
+    <>
+      <p className="came-back pool-named-lead" id={said}>
+        These older runners still hold conversations from chats that ran on them, and they are
+        deleted with the pool:
+      </p>
+      <ul className="came-back pool-named-by" aria-labelledby={said}>
+        {held.held.map((runner) => (
+          <li key={runner}>
+            {"Runner "}
+            <bdi>{runner}</bdi>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -654,9 +724,9 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
               cluster={clusters.some((one) => one.name === asking)}
               elsewhere={linkOnAnotherEngine(now.links[asking])}
               onCancel={() => setAsking(undefined)}
-              onRemove={() => {
+              onRemove={(discarding) => {
                 setAsking(undefined);
-                void removePool(asking, linkOnAnotherEngine(now.links[asking]));
+                void removePool(asking, linkOnAnotherEngine(now.links[asking]), discarding);
               }}
             />
           )}

@@ -482,12 +482,18 @@ export async function askVersion(name: string) {
 /** Removes pool `name`, its runner, its container and its home; answers what could not be
  *  removed, or why nothing was, in purlis's or Docker's words already shown safely. `elsewhere`
  *  is what the person was told: that its runner is on an engine Docker no longer reaches, so nothing
- *  there goes. Where that no longer holds, or the other way round, nothing is done (#4325). */
-export async function removePool(name: string, elsewhere = false): Promise<string | undefined> {
+ *  there goes. Where that no longer holds, or the other way round, nothing is done (#4325).
+ *  `discarding` names the held runners the person agreed to discard with it (#4860): a runner held
+ *  now that it does not name removes nothing. */
+export async function removePool(
+  name: string,
+  elsewhere = false,
+  discarding: readonly string[] = [],
+): Promise<string | undefined> {
   if (held.removing !== undefined)
     return `purlis is removing pool ${held.removing}: remove ${name} once it is gone.`;
   set((was) => ({ ...was, removing: name, said: undefined }));
-  const said = await caught(commands.removeDockerPool(name, elsewhere));
+  const said = await caught(commands.removeDockerPool(name, elsewhere, [...discarding]));
   const left = said.status === "error" ? said.error : (said.data ?? undefined);
   set((was) => {
     const links = { ...was.links };
@@ -540,6 +546,39 @@ export function useNamedBy(name: string): NamedBy {
       gone = true;
     };
   }, [name]);
+  return read?.name === name ? read.said : { state: "reading" };
+}
+
+/** **A pool's held runners** (#4860): the older runners kept with their chats' conversations,
+ *  which removing the pool discards, while purlis reads them, or why it could not. */
+export type HeldRunners =
+  | { state: "reading" }
+  | { state: "read"; held: readonly string[] }
+  | { state: "trouble"; why: string };
+
+/** Reads pool `name`'s held runners, once for each name asked about; a cluster pool has none. */
+export function useHeldRunners(name: string, cluster: boolean): HeldRunners {
+  const [read, setRead] = useState<{ name: string; said: HeldRunners }>();
+  useEffect(() => {
+    if (cluster) return;
+    let gone = false;
+    void caught(commands.poolHeldRunners(name)).then((said) => {
+      if (gone) return;
+      setRead({
+        name,
+        said:
+          said.status === "error"
+            ? { state: "trouble", why: said.error }
+            : Array.isArray(said.data)
+              ? { state: "read", held: said.data }
+              : { state: "trouble", why: "purlis did not say which runners it holds." },
+      });
+    });
+    return () => {
+      gone = true;
+    };
+  }, [name, cluster]);
+  if (cluster) return { state: "read", held: [] };
   return read?.name === name ? read.said : { state: "reading" };
 }
 

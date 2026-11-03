@@ -3928,6 +3928,76 @@ fn a_home_that_could_not_be_read_leaves_its_runner_as_it_was() {
     assert!(kept.draining && !kept.held, "{kept:?}");
 }
 
+/// **Removing a pool discards a held runner's conversations only where the person was asked about
+/// that runner** (#4860, D-4860-1): its question names each held runner, and a removal that names
+/// none, or not this one, removes nothing. Named, the held runner goes with the pool.
+#[test]
+fn a_pool_with_a_held_runner_is_removed_only_once_the_person_was_asked_about_it() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_stopped_runner_draining(config.path(), &fake, 2);
+    assert!(held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap());
+    assert_eq!(
+        held_of(config.path(), &fake.docker(), "first").unwrap(),
+        ["first"]
+    );
+
+    let refused = remove(config.path(), &fake.docker(), "first", None).unwrap_err();
+    assert!(refused.to_string().contains("runner first"), "{refused}");
+    let refused = remove_discarding(
+        config.path(),
+        &fake.docker(),
+        "first",
+        None,
+        &["another".to_owned()],
+    )
+    .unwrap_err();
+    assert!(refused.to_string().contains("runner first"), "{refused}");
+    assert_eq!(runners::read(config.path()).unwrap().len(), 2);
+    assert!(
+        !fake.file("log").contains("volume rm"),
+        "{}",
+        fake.file("log")
+    );
+
+    remove_discarding(
+        config.path(),
+        &fake.docker(),
+        "first",
+        None,
+        &["first".to_owned()],
+    )
+    .unwrap();
+
+    assert!(runners::read(config.path()).unwrap().is_empty());
+    assert!(runners::pools(config.path()).unwrap().is_empty());
+}
+
+/// **A runner that stopped during its drain is held as the window shows it**, before any look
+/// noted it, so removing its pool asks about it too.
+#[test]
+fn a_runner_a_look_would_hold_is_named_among_the_held_before_it_is_noted() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    let mut stopped = inspected();
+    stopped[0]["State"]["Running"] = false.into();
+    stopped[0]["State"]["FinishedAt"] = "2026-11-01T00:00:00Z".into();
+    fake.set("inspect", &stopped.to_string());
+    runners::note_locked(
+        config.path(),
+        "first",
+        |kept| kept.last_stop = Some(1),
+        &runners::lock(config.path()),
+    )
+    .unwrap();
+
+    assert_eq!(
+        held_of(config.path(), &fake.docker(), "first").unwrap(),
+        ["first"]
+    );
+}
+
 /// **A runner discarded while its home was read is not said to be held** (#4861): the home is
 /// read outside the runners lock, so what changed meanwhile is looked at again under it, and a
 /// runner that no longer stands as it did is left to the next look.
