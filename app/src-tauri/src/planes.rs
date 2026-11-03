@@ -1709,6 +1709,11 @@ impl Held {
             .take()
     }
 
+    /// [`crate::chats::Chats::sweeps_fresh_runners`].
+    pub fn sweeps_fresh_runners(&self) {
+        self.chats.sweeps_fresh_runners();
+    }
+
     /// Tell the plane's auto-save worker something, if it has one.
     pub fn poke_autosave(&self, poke: crate::autosave::Poke) {
         if let Some(worker) = self
@@ -2177,6 +2182,8 @@ pub struct Planes {
     lost_with_the_host: crate::hostlost::Teller,
     /// Told each plane's chats that start or stop reconnecting to their runner (#2496).
     reconnecting: crate::reconnecting::Teller,
+    /// Told each plane's fresh runners kept since their work is not all here (#4569).
+    fresh_kept: crate::freshkept::Teller,
     /// Told each step of a smart close in any plane (ADR 0064).
     smart: crate::smartclose::Teller,
     /// Told each step of a stop in any plane (#1448).
@@ -2452,6 +2459,7 @@ impl Planes {
             browser_driver: None,
             lost_with_the_host: Arc::new(|_| {}),
             reconnecting: Arc::new(|_| {}),
+            fresh_kept: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
             activity: Arc::new(|_| {}),
@@ -2784,6 +2792,13 @@ impl Planes {
     /// the runner they run on is down, so the window can say so over each one's screen (#2496).
     pub fn telling_reconnecting(mut self, reconnecting: crate::reconnecting::Teller) -> Self {
         self.reconnecting = reconnecting;
+        self
+    }
+
+    /// Tells `fresh_kept` each plane's fresh runners kept since their work is not all here, each
+    /// time they change, so the window's Notice offers Fetch again and Discard (#4569).
+    pub fn telling_fresh_kept(mut self, fresh_kept: crate::freshkept::Teller) -> Self {
+        self.fresh_kept = fresh_kept;
         self
     }
 
@@ -3265,7 +3280,10 @@ impl Planes {
                 let has_check = strong
                     .as_ref()
                     .is_some_and(|held| held.chats().has_certificate_check(block.line.chat));
-                let mut told = hooks::blocked_holding(&plane, &block, has_check);
+                let started = strong
+                    .as_ref()
+                    .and_then(|held| held.chats().started_as(block.line.chat));
+                let mut told = hooks::blocked_holding(&plane, &block, has_check, started);
                 if let Some(strong) = strong {
                     // A runner's service is said with that runner's name (#2510).
                     told = hooks::on_its_runner(
@@ -4492,6 +4510,17 @@ impl Planes {
                         reconnection,
                     });
                 }));
+        }
+        // A task's fresh runner kept since its work is not all here (#4569).
+        {
+            let tell = Arc::clone(&self.fresh_kept);
+            let plane = id.clone();
+            chats.tells_fresh_kept(Arc::new(move |kept| {
+                tell(crate::freshkept::FreshRunnersKept {
+                    plane: plane.clone(),
+                    kept,
+                });
+            }));
         }
         // A pool runner's chats' skill runs, logged in this plane's skill log (SK-20b, #3084).
         {

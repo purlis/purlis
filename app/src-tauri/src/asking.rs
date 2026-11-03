@@ -722,15 +722,35 @@ pub fn sandbox_write(
         return None;
     }
     let folder = What::Write(std::path::PathBuf::from(&block.target));
-    // A held folder is answered on its own Notice, which has room for what allowing it means.
-    if purlis_core::sandbox::names_what_may_be_lifted(std::path::Path::new(&block.target)) {
-        return None;
-    }
+    // A held folder is answered on its own Notice alone, which has room for what allowing it
+    // means, and only ever for this chat: the ask is listed so the Notice is drawn, and nothing
+    // here sends its answer.
+    let held = purlis_core::sandbox::names_what_may_be_lifted(std::path::Path::new(&block.target));
     let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
         .into_iter()
+        .filter(|level| !held || *level == GrantLevel::Chat)
         .filter(|level| locks.refuses_grant(&folder, (*level).into()).is_none())
         .collect();
     let says = format!("The sandbox refused a write in {}", block.target);
+    if held {
+        return Some(Shown {
+            session,
+            ask: block_key(session, block),
+            says: said_inertly(&says),
+            options: allows(&levels, true)
+                .chain([refuses(KEEP, KEEP_SAID)])
+                .collect(),
+            source: AskSource::SandboxWrite,
+            chain: Vec::new(),
+            answer: AnswerPath::InItsPane,
+            since: None,
+            held_until: None,
+            writes: None,
+            lines: None,
+            last_message: None,
+            login: None,
+        });
+    }
     Some(Shown {
         session,
         ask: block_key(session, block),

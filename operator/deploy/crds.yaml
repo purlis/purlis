@@ -199,6 +199,26 @@ spec:
             description: What the operator says about a Pool.
             nullable: true
             properties:
+              capabilitiesVouch:
+                description: |-
+                  The operator's signed word for what it does that an older one does not (#4569), holding
+                  for ten minutes and signed again before it ends. `fresh-runners-stay`: a fresh Claim's
+                  runner is not suspended for being idle. A desktop counts it only while it holds, so an
+                  operator rolled back stops counting soon.
+                nullable: true
+                properties:
+                  signature:
+                    description: Its Ed25519 signature, 128 lower-case hex, by the key `signingKey` names.
+                    type: string
+                  statement:
+                    description: |-
+                      The statement, exactly as signed (crate::vouch::capabilities_statement): the cluster, what
+                      the operator does, and until when it holds.
+                    type: string
+                required:
+                - signature
+                - statement
+                type: object
               cluster:
                 description: |-
                   The cluster the Pool is in: the uid of its `kube-system` namespace. A desktop pins it with

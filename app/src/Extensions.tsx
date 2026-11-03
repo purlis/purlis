@@ -442,12 +442,18 @@ let drawing = 0;
  * Draws the theme the project in front has — `on` is what that project has on
  * (`extensionsOn.ts`, the core's `extension::project::resolve`), or `"every"` with no project in
  * front; `pick` is what it picked (`projectTheme.ts`, the core's `extension::project::theme`).
+ *
+ * `unread` is why what the project has on could not be read (#4822): `on` is then none of its
+ * extensions, so the window still asks what is in force and draws what it can, and a Notice says
+ * why an extension's theme the project may be on is not drawn.
  */
 export function drawThemeFor(
   on: ReadonlySet<string> | "every",
   pick: string | null = null,
   at?: { plane: PlaneId; workspace?: string },
+  unread?: string,
 ) {
+  sayTheUnread(unread, pick);
   const next = at === undefined ? null : { plane: at.plane, workspace: at.workspace ?? null };
   // A switch to another workspace (or project) repaints with a short crossfade; the first draw
   // of the launch is at once.
@@ -458,6 +464,24 @@ export function drawThemeFor(
   where = next;
   if (next !== null) adoptOnce(next.plane, next.workspace);
   return drawWhatIsInForce();
+}
+
+/** Says, or takes back, why the project in front's extensions were not read (#4822). Only a
+ *  pick of an extension's theme (`<extension>/<theme>`) is surely not drawn; with any other pick,
+ *  or none, an extension's theme is drawn only where the levels come to one, so it may not be. */
+function sayTheUnread(unread: string | undefined, pick: string | null) {
+  const surely = pick !== null && pick.includes("/");
+  sayAboutThisMachine(
+    "extensions unread",
+    unread === undefined
+      ? undefined
+      : {
+          severity: "warn",
+          detail: `${surely ? "The extension's theme this project picked is not drawn" : "An extension's theme this project is on may not be drawn"}: purlis could not read which extensions it has on (${plainLine(unread)}).`,
+          remedy:
+            "save the project's settings, or turn an extension on or off, and purlis reads them again",
+        },
+  );
 }
 
 /**
@@ -878,8 +902,10 @@ export async function compareWithKept(held: boolean): Promise<void> {
     return;
   }
   const mine = ++drawing;
+  // It overtakes any ask out, so it is the one a stand-in waits on now (#4822).
+  inForceAsked();
   const on = allowed === "every" ? null : [...allowed];
-  let answered: Awaited<ReturnType<typeof commands.themeInForce>>;
+  let answered: Awaited<ReturnType<typeof commands.themeInForce>> | undefined;
   try {
     answered = await commands.themeInForce(
       picked,
@@ -892,9 +918,11 @@ export async function compareWithKept(held: boolean): Promise<void> {
       personAsked(),
     );
   } catch {
-    return;
+    answered = undefined;
   }
-  const given = answered.status === "ok" ? (answered.data as typeof answered.data | null) : null;
-  if (mine !== drawing || given === null || typeof given !== "object" || !given.theme) return;
-  draw(given.theme as unknown as Theme);
+  if (mine !== drawing) return;
+  const given = answered?.status === "ok" ? (answered.data as typeof answered.data | null) : null;
+  if (given !== null && typeof given === "object" && given.theme)
+    draw(given.theme as unknown as Theme);
+  void inForceSettled();
 }

@@ -442,6 +442,36 @@ pub fn fixtures_of(root: &Path, skill_rel: &Path, name: &str) -> Fixtures {
     }
 }
 
+/// **`under`, with the file's text where a draft holds its own** (#2780): `triggers` and
+/// `outcomes` are read as the folder's are, held to the same size, and what the draft does not
+/// hold stays as the folder has it.
+pub fn fixtures_over(
+    under: Fixtures,
+    triggers: Option<&str>,
+    outcomes: Option<&str>,
+    name: &str,
+) -> Fixtures {
+    let read = |file: FixtureFile, text: &str| -> Read<String> {
+        if text.len() as u64 > MOST_FIXTURE_BYTES {
+            Read::Refused(Refused::of(file, Wrong::TooLarge))
+        } else {
+            Read::Read(text.to_owned())
+        }
+    };
+    Fixtures {
+        triggers: match triggers {
+            Some(text) => parsed(read(FixtureFile::Triggers, text), triggers_of),
+            None => under.triggers,
+        },
+        outcomes: match outcomes {
+            Some(text) => parsed(read(FixtureFile::Outcomes, text), |text| {
+                outcomes_of(text, name)
+            }),
+            None => under.outcomes,
+        },
+    }
+}
+
 /// What `read` came to once its text is parsed by `parse`.
 fn parsed<T>(read: Read<String>, parse: impl FnOnce(&str) -> Result<T, Refused>) -> Read<T> {
     match read {

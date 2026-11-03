@@ -1082,6 +1082,21 @@ fn a_held_folder_is_lifted_only_by_its_whole_name_below_the_home_at_the_floor() 
     ));
 }
 
+/// What a Claude Code chat's Notice says names what its Allow opens, and only there.
+#[test]
+fn a_lift_by_name_says_the_name_it_opens() {
+    let said = lift_said_by_name(Path::new("/Users/a/.local/share/nvim/site/pack"));
+    assert!(
+        said.contains("any .local/share/nvim/site/pack, in any folder"),
+        "{said}"
+    );
+    assert!(
+        said.contains("only be allowed for this chat, never always"),
+        "{said}"
+    );
+    assert!(!LIFT_SAID.contains("any folder"), "{LIFT_SAID}");
+}
+
 #[cfg(unix)]
 #[test]
 fn a_held_folder_reached_through_a_link_is_not_lifted() {

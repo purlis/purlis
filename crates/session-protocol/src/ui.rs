@@ -379,6 +379,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Put away on the Inbox's Notice of a chat's undelivered messages (#3958): the person's
     // answer that they have read it.
     "put_away_left_messages",
+    // Fetch again and Discard on the Notice of a task's runner kept since its work is not all
+    // here (#4569): Discard lets that work go, so only the person's own press in their window.
+    "fetch_fresh_runner_again",
+    "discard_fresh_runner",
     // Try again on the Notice that the session host is failing (#2007): it starts the host
     // every chat runs in, on the person's word.
     "start_the_session_host_again",
@@ -707,6 +711,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // window.
     "router_grade_set_cap",
     "skill_grade_set_cap",
+    // A draft's grade started, and the cap set from its plan (#2780): as a skill's grade's.
+    "skill_draft_grade_start",
+    "skill_draft_grade_set_cap",
     // Grading after each edit turned on or off (SK-58, #3238): on, it spends the person's
     // account at each edit they save, within what the plan showed. The person's own press in
     // their window, never a link's.
@@ -1125,6 +1132,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "first_frame",
     "first_run_found",
     "forge_token_help",
+    // A project's task runners kept since their work is not all here (#4569): what the window's
+    // Notice starts from.
+    "fresh_runners_kept",
     "get_project",
     "git_presence",
     "grantable_folders",
@@ -1241,8 +1251,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_grade_plan",
     "skill_grade_running",
     "skill_grade_scorecard",
-    // A skill's grades, for its Grades tab (S6, #3688): read only.
+    // A skill's grades, for its Grades tab (S6, #3688), and a draft's (#2780): read only.
     "skill_grades",
+    "skill_draft_grade",
+    "skill_draft_grade_plan",
     "skill_lint",
     "skill_move_needs_grant",
     "skill_panels",

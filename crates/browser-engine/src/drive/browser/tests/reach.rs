@@ -857,6 +857,7 @@ fn a_frame_at_no_web_address_is_judged_by_its_nearest_web_ancestor_and_an_unknow
         );
         std::thread::sleep(Duration::from_millis(5));
     }
+    browser.read_sandboxes("PAGE-1");
     let state = super::super::lock(&browser.inner.state);
     assert_eq!(
         state.documents_of("PAGE-1", "BLANK").unwrap(),
@@ -1010,6 +1011,7 @@ fn a_frames_origin_follows_the_webs_rules_for_its_address() {
         told: 0,
         unread: false,
         security_origin: origin.to_owned(),
+        sandboxed: None,
     };
     let web = |address: &str| Origin::Web(address.to_owned());
     for (url, origin, document, judged) in [
@@ -1274,6 +1276,7 @@ fn a_srcdoc_frame_in_the_pages_session_whose_document_has_ended_is_judged_by_the
             .origin("S-PAGE-1", "SRCDOC")
             .is_none()
     });
+    browser.read_sandboxes("PAGE-1");
     assert_eq!(
         super::super::lock(&browser.inner.state)
             .documents_of("PAGE-1", "SRCDOC")
@@ -1289,6 +1292,7 @@ fn past_the_most_origins_kept_none_kept_is_forgotten_and_a_blank_frame_with_none
     the_page_shows_a_frame(&engine, &browser, "KEPT", "PAGE-1", "about:blank");
     the_pages_frame_has(&engine, &browser, "KEPT", 90, "http://kept.test");
     the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:srcdoc");
+    browser.read_sandboxes("PAGE-1");
     assert_eq!(
         super::super::lock(&browser.inner.state)
             .documents_of("PAGE-1", "SRCDOC")
@@ -1413,4 +1417,286 @@ fn a_browser_with_no_judge_types_into_a_frame_with_no_web_origin() {
         typed_into_the_frame(&browser).err(),
         Some(crate::drive::Refusal::FrameOpaque)
     );
+}
+
+/// The page's own document is now at `url`, as Chrome tells it, with `origin` as its
+/// `securityOrigin`.
+fn the_page_shows(
+    engine: &super::Engine,
+    browser: &crate::drive::Browser,
+    url: &str,
+    origin: &str,
+) {
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame": {"id": "PAGE-1", "loaderId": "LOADER-T", "name": "", "url": url, "securityOrigin": origin, "mimeType": "text/html"}, "type": "Navigation"}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the page's new document is seen", || {
+        frame_address(browser, "PAGE-1") == url
+    });
+}
+
+/// Types into the page's own Name field, by calls `n` and `n + 1`.
+fn typed_on_the_page(
+    browser: &crate::drive::Browser,
+    n: u32,
+) -> Result<crate::drive::Answer, crate::drive::Refusal> {
+    let text = snapshot(browser, n);
+    let name = ref_of(&text, "- textbox \"Name\"");
+    browser.call(
+        &id(n + 1),
+        Call::Type {
+            page: None,
+            fields: vec![Field {
+                into: Some(name),
+                text: "Grace".into(),
+                replace: true,
+            }],
+        },
+    )
+}
+
+#[test]
+fn a_blank_page_is_judged_by_the_origin_its_own_context_has() {
+    let (judge, told) = judge(&["http://third.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    the_page_shows(&engine, &browser, "about:blank", "://");
+    the_pages_frame_has(&engine, &browser, "PAGE-1", 61, "http://third.test");
+    let answer = typed_on_the_page(&browser, 10).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert!(engine.sent("Input.insertText").is_empty());
+    assert_eq!(whys(&told).last().unwrap().0, "http://third.test/");
+    assert_eq!(
+        super::super::lock(&browser.inner.state)
+            .every_document("PAGE-1")
+            .unwrap()[0],
+        "http://third.test/",
+        "a key with no known focus goes by it too"
+    );
+}
+
+#[test]
+fn a_blank_page_with_no_word_of_its_own_context_is_not_known() {
+    let (judge, told) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    the_page_shows(&engine, &browser, "about:blank", "://");
+    assert_eq!(
+        typed_on_the_page(&browser, 10).err(),
+        Some(crate::drive::Refusal::FrameUnread)
+    );
+    assert!(engine.sent("Input.insertText").is_empty());
+    assert!(
+        !whys(&told)
+            .iter()
+            .any(|(address, ..)| address == "about:blank"),
+        "the judge is never told an address it cannot place"
+    );
+    let state = super::super::lock(&browser.inner.state);
+    assert_eq!(state.every_document("PAGE-1"), Err(Unjudged::Unread));
+}
+
+#[test]
+fn a_page_with_no_web_origin_is_opaque_and_nothing_is_typed_into_it() {
+    for (url, origin, context) in [
+        ("about:blank", "://", Some("null")),
+        ("data:text/html,<input aria-label=Name>", "://", None),
+        ("blob:null/4d2c", "null", None),
+    ] {
+        let (judge, told) = judge(&[]);
+        let (browser, engine) = browser_judged(judge);
+        the_page_shows(&engine, &browser, url, origin);
+        if let Some(context) = context {
+            the_pages_frame_has(&engine, &browser, "PAGE-1", 62, context);
+        }
+        assert_eq!(
+            typed_on_the_page(&browser, 10).err(),
+            Some(crate::drive::Refusal::FrameOpaque),
+            "{url}"
+        );
+        assert!(engine.sent("Input.insertText").is_empty(), "{url}");
+        assert!(
+            whys(&told)
+                .iter()
+                .all(|(address, ..)| address.starts_with("http")),
+            "{url}: the judge is never told an address it cannot place"
+        );
+    }
+}
+
+#[test]
+fn a_blob_page_is_judged_by_the_origin_that_made_it() {
+    let (judge, told) = judge(&["http://third.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    the_page_shows(
+        &engine,
+        &browser,
+        "blob:http://third.test/4d2c",
+        "http://third.test",
+    );
+    let answer = typed_on_the_page(&browser, 10).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert!(engine.sent("Input.insertText").is_empty());
+    assert_eq!(whys(&told).last().unwrap().0, "http://third.test/");
+}
+
+#[test]
+fn a_frame_in_a_blank_page_is_judged_by_the_pages_own_origin() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    the_page_shows(&engine, &browser, "about:blank", "://");
+    the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:srcdoc");
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(
+        super::super::lock(&browser.inner.state).documents_of("PAGE-1", "SRCDOC"),
+        Err(Unjudged::Unread),
+        "the page's address says nothing of its origin"
+    );
+    the_pages_frame_has(&engine, &browser, "PAGE-1", 63, "http://third.test");
+    assert_eq!(
+        super::super::lock(&browser.inner.state)
+            .documents_of("PAGE-1", "SRCDOC")
+            .unwrap(),
+        ["http://third.test/"]
+    );
+}
+
+#[test]
+fn the_engines_own_page_sends_nowhere() {
+    let (judge, told) = judge(&["http://fixture.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    the_page_shows(&engine, &browser, "chrome-error://chromewebdata/", "null");
+    let state = super::super::lock(&browser.inner.state);
+    assert_eq!(state.documents_of("PAGE-1", "PAGE-1"), Ok(Vec::new()));
+    drop(state);
+    assert!(
+        !whys(&told)
+            .iter()
+            .any(|(address, ..)| address.starts_with("chrome-error")),
+        "the judge is never told an address it cannot place"
+    );
+}
+
+/// The engine answers that the element of every frame has `attributes`.
+fn frame_elements_have(engine: &super::Engine, attributes: serde_json::Value) {
+    engine.on(move |sent, _| {
+        (sent.method == "DOM.describeNode" && sent.params["backendNodeId"] == 50).then(|| {
+            Ok(json!({"node": {"nodeId": 0, "backendNodeId": 50, "nodeType": 1, "nodeName": "IFRAME", "localName": "iframe", "nodeValue": "", "attributes": attributes}}))
+        })
+    });
+}
+
+#[test]
+fn a_sandboxed_srcdoc_frame_with_no_word_of_its_own_context_is_opaque() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    frame_elements_have(
+        &engine,
+        json!(["srcdoc", "<input>", "SANDBOX", "allow-forms"]),
+    );
+    the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:srcdoc");
+    browser.read_sandboxes("PAGE-1");
+    let state = super::super::lock(&browser.inner.state);
+    assert_eq!(
+        state.documents_of("PAGE-1", "SRCDOC"),
+        Err(Unjudged::Opaque)
+    );
+    assert_eq!(
+        state.every_document("PAGE-1"),
+        Err(Unjudged::Opaque),
+        "a key with no known focus may land in it"
+    );
+    drop(state);
+    let owners = engine.sent("DOM.getFrameOwner");
+    assert!(
+        owners
+            .iter()
+            .any(|s| s.params["frameId"] == "SRCDOC" && s.session.as_deref() == Some("S-PAGE-1")),
+        "{owners:?}"
+    );
+}
+
+#[test]
+fn a_srcdoc_frame_sandboxed_with_its_origin_allowed_takes_the_page_origin() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    frame_elements_have(&engine, json!(["sandbox", "allow-forms Allow-Same-Origin"]));
+    the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:srcdoc");
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(
+        super::super::lock(&browser.inner.state)
+            .documents_of("PAGE-1", "SRCDOC")
+            .unwrap(),
+        ["http://fixture.test/frames.html"]
+    );
+}
+
+#[test]
+fn a_srcdoc_frame_whose_element_cannot_be_read_is_not_known() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    engine.on(|sent, _| {
+        (sent.method == "DOM.getFrameOwner").then_some(Err(crate::cdp::CallError::TimedOut))
+    });
+    the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:srcdoc");
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(
+        super::super::lock(&browser.inner.state).documents_of("PAGE-1", "SRCDOC"),
+        Err(Unjudged::Unread)
+    );
+}
+
+#[test]
+fn a_frames_sandbox_is_read_again_for_its_next_document() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    frame_elements_have(&engine, json!(["sandbox", ""]));
+    the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:srcdoc");
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(
+        super::super::lock(&browser.inner.state).documents_of("PAGE-1", "SRCDOC"),
+        Err(Unjudged::Opaque)
+    );
+    frame_elements_have(&engine, json!([]));
+    the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:blank");
+    assert_eq!(
+        super::super::lock(&browser.inner.state).documents_of("PAGE-1", "SRCDOC"),
+        Err(Unjudged::Unread),
+        "the old document's sandbox says nothing of the new one"
+    );
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(
+        super::super::lock(&browser.inner.state)
+            .documents_of("PAGE-1", "SRCDOC")
+            .unwrap(),
+        ["http://fixture.test/frames.html"]
+    );
+}
+
+#[test]
+fn keys_with_no_known_focus_on_a_page_with_a_sandboxed_srcdoc_frame_are_held_back() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    frame_elements_have(&engine, json!(["sandbox", ""]));
+    the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:srcdoc");
+    // Nothing the page shows says it has the focus.
+    {
+        let mut model = super::super::lock(&engine.model);
+        for nodes in model.ax.values_mut() {
+            for node in nodes.as_array_mut().unwrap() {
+                if let Some(properties) = node["properties"].as_array_mut() {
+                    properties.retain(|one| one["name"] != "focused");
+                }
+            }
+        }
+    }
+    let answer = browser.call(
+        &id(10),
+        Call::Press {
+            page: None,
+            keys: vec!["Enter".into()],
+        },
+    );
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+    assert_eq!(answer.err(), Some(crate::drive::Refusal::FrameOpaque));
 }

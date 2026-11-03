@@ -427,6 +427,7 @@ import {
 import { SandboxOffer } from "./SandboxOffer";
 import { ProjectHostsNotice } from "./ProjectHostsNotice";
 import { RunnerGoneNotice } from "./RunnerGoneNotice";
+import { FreshRunnerKeptNotice } from "./FreshRunnerKeptNotice";
 import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
@@ -9360,6 +9361,9 @@ export const PlaneView = memo(function PlaneView({
         plane={plane}
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
       />
+      {/* **A task's runner kept, since its work is not all here** (#4569): never silent, with
+          Fetch again and Discard. */}
+      <FreshRunnerKeptNotice plane={plane} />
       {/* **The project's Internet access presets changed** (#1385): told once to each
           teammate, so a preset that widens never widens unseen. */}
       <ProjectPresetsNotice

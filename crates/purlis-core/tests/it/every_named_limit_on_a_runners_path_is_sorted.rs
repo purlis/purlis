@@ -223,6 +223,30 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/purlis-core/src/clusterpool.rs",
+        "CAPABILITIES_MOST_AHEAD",
+        Security,
+        "bounds what signed or untrusted input can claim",
+    ),
+    (
+        "crates/purlis-core/src/pools.rs",
+        "ORPHAN_AFTER",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/pools.rs",
+        "SKEW",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "app/src-tauri/src/runnercode.rs",
+        "PROGRAMS_END_WITHIN",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/clusterpool.rs",
         "MOST_PRINTED",
         Fixed,
         "fixedlimits::RUNNER_OUTPUT",

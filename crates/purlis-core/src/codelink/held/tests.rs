@@ -1,0 +1,518 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! What a runner holds, against real repositories, and the proof that a desktop has it (#4569).
+//! Each case a review found a task's work could be missed in is here, and each ends with the
+//! runner kept: [`not_home`] says what the desktop lacks.
+
+use std::path::{Path, PathBuf};
+
+use super::*;
+
+const PROJECT: &str = "01J9PRJCT00000000000000000";
+
+fn git(dir: &Path, args: &[&str]) -> String {
+    let done = crate::testgit::run(dir, args);
+    assert!(done.ok(), "git {args:?} failed: {done:?}");
+    done.out.trim().to_string()
+}
+
+fn commit(dir: &Path, file: &str, text: &str) -> String {
+    std::fs::write(dir.join(file), text).unwrap();
+    git(dir, &["add", file]);
+    git(
+        dir,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            text,
+        ],
+    );
+    git(dir, &["rev-parse", "HEAD"])
+}
+
+fn init(dir: &Path) {
+    std::fs::create_dir_all(dir).unwrap();
+    git(dir, &["init", "-q", "-b", "main", "."]);
+}
+
+fn path(dir: &Path) -> &str {
+    dir.to_str().unwrap()
+}
+
+/// A runner keeping one project, and a desktop's copy of that project.
+struct World {
+    _dir: tempfile::TempDir,
+    /// Where the runner keeps its projects.
+    projects: PathBuf,
+    /// The runner's copy of the project.
+    runner: PathBuf,
+    /// The desktop's copy of the project.
+    desktop: PathBuf,
+}
+
+impl World {
+    /// The project's own repository on both ends, the desktop's a clone of the runner's, and a
+    /// clone `workspaces/app/web` the same way: everything the runner holds is home.
+    fn new() -> World {
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path().canonicalize().unwrap();
+        let projects = top.join("runner/projects");
+        let runner = projects.join(PROJECT);
+        init(&runner);
+        std::fs::write(runner.join(".gitignore"), "workspaces/\n").unwrap();
+        commit(&runner, ".gitignore", "workspaces/\n");
+        let web = runner.join("workspaces/app/web");
+        init(&web);
+        commit(&web, "index.html", "web\n");
+        let desktop = top.join("desktop");
+        git(&top, &["clone", "-q", path(&runner), "desktop"]);
+        let app = desktop.join("workspaces/app");
+        std::fs::create_dir_all(&app).unwrap();
+        git(&app, &["clone", "-q", path(&web), "web"]);
+        World {
+            _dir: dir,
+            projects,
+            runner,
+            desktop,
+        }
+    }
+
+    fn web(&self) -> PathBuf {
+        self.runner.join("workspaces/app/web")
+    }
+
+    fn not_home(&self) -> Vec<String> {
+        let (held, unread) = repos_held(&self.projects);
+        not_home(&self.desktop, PROJECT, &held, &unread)
+    }
+}
+
+fn says(missing: &[String], words: &str) -> bool {
+    missing.iter().any(|one| one.contains(words))
+}
+
+#[test]
+fn a_runner_whose_every_commit_is_home_is_proved_home() {
+    let world = World::new();
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
+}
+
+#[test]
+fn a_runner_that_keeps_no_projects_holds_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let (held, unread) = repos_held(&dir.path().join("none"));
+
+    assert!(held.is_empty() && unread.is_empty());
+}
+
+#[test]
+fn a_commit_on_a_branch_the_desktop_never_fetched_keeps_the_runner() {
+    let world = World::new();
+    commit(&world.web(), "fix.txt", "fixed on the runner\n");
+
+    let missing = world.not_home();
+
+    assert!(
+        says(
+            &missing,
+            "refs/heads/main of the repository workspaces/app/web"
+        ),
+        "{missing:?}"
+    );
+}
+
+#[test]
+fn a_commit_on_no_branch_keeps_the_runner() {
+    let world = World::new();
+    git(&world.web(), &["checkout", "-q", "--detach"]);
+    commit(&world.web(), "detached.txt", "on no branch\n");
+
+    let missing = world.not_home();
+
+    assert!(
+        says(&missing, "HEAD of the repository workspaces/app/web"),
+        "{missing:?}"
+    );
+}
+
+#[test]
+fn a_clone_stopped_mid_rebase_is_listed_and_keeps_the_runner() {
+    let world = World::new();
+    let web = world.web();
+    git(&web, &["checkout", "-q", "-b", "fix"]);
+    commit(&web, "index.html", "the fix\n");
+    git(&web, &["checkout", "-q", "main"]);
+    commit(&web, "index.html", "main moved\n");
+    git(&web, &["checkout", "-q", "fix"]);
+    let stopped = crate::testgit::run(
+        &web,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "rebase",
+            "main",
+        ],
+    );
+    assert!(
+        !stopped.ok(),
+        "the rebase was meant to stop on its conflict"
+    );
+
+    let (held, unread) = repos_held(&world.projects);
+    let missing = not_home(&world.desktop, PROJECT, &held, &unread);
+
+    let listed = held
+        .iter()
+        .find(|one| one.path == "workspaces/app/web")
+        .expect("the clone mid-rebase is listed");
+    assert!(listed.refs.iter().any(|one| one.name == "refs/heads/fix"));
+    assert!(
+        says(
+            &missing,
+            "refs/heads/fix of the repository workspaces/app/web"
+        ),
+        "{missing:?}"
+    );
+}
+
+#[test]
+fn a_repository_nested_in_a_clone_keeps_the_runner() {
+    let world = World::new();
+    let nested = world.web().join("vendor/lib");
+    init(&nested);
+    commit(&nested, "lib.rs", "nested\n");
+
+    let missing = world.not_home();
+
+    assert!(
+        says(
+            &missing,
+            "the repository workspaces/app/web/vendor/lib on the runner has no repository here"
+        ),
+        "{missing:?}"
+    );
+    // Its folder is the nested repository's own, not uncommitted work of the clone around it.
+    assert!(
+        !says(&missing, "workspaces/app/web on the runner holds changes"),
+        "{missing:?}"
+    );
+}
+
+#[test]
+fn a_work_tree_whose_git_folder_is_elsewhere_is_listed() {
+    let world = World::new();
+    git(
+        &world.web(),
+        &["worktree", "add", "-q", "-b", "side", "side"],
+    );
+    commit(
+        &world.web().join("side"),
+        "side.txt",
+        "a submodule's or a worktree's\n",
+    );
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "workspaces/app/web/side"), "{missing:?}");
+}
+
+#[test]
+fn a_clone_named_like_a_folder_a_workspace_keeps_keeps_the_runner() {
+    let world = World::new();
+    let named = world.runner.join("workspaces/app/memory");
+    init(&named);
+    commit(&named, "notes.md", "made on the runner\n");
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "workspaces/app/memory"), "{missing:?}");
+}
+
+#[test]
+fn a_bare_repository_keeps_the_runner() {
+    let world = World::new();
+    let bare = world.runner.join("workspaces/app/mirror.git");
+    git(
+        &world.runner,
+        &["clone", "-q", "--bare", path(&world.web()), path(&bare)],
+    );
+    commit(&world.web(), "more.txt", "in the bare one too\n");
+    git(&world.web(), &["push", "-q", path(&bare), "main"]);
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "workspaces/app/mirror.git"), "{missing:?}");
+}
+
+#[test]
+fn a_project_kept_under_another_id_keeps_the_runner() {
+    // A project moved on the desktop, its id read again: the runner holds the old one too.
+    let world = World::new();
+    let old = world.projects.join("01J9PRJCT0000000000000OLD0");
+    init(&old);
+    commit(&old, "work.txt", "the task's work under the old id\n");
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "kept under another id"), "{missing:?}");
+}
+
+#[test]
+fn a_stash_keeps_the_runner() {
+    let world = World::new();
+    std::fs::write(world.web().join("index.html"), "stashed\n").unwrap();
+    git(
+        &world.web(),
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "stash",
+            "-q",
+        ],
+    );
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "refs/stash"), "{missing:?}");
+}
+
+#[test]
+fn uncommitted_work_keeps_the_runner() {
+    let world = World::new();
+    std::fs::write(world.web().join("new.txt"), "not committed\n").unwrap();
+
+    let missing = world.not_home();
+
+    assert!(
+        says(
+            &missing,
+            "the repository workspaces/app/web on the runner holds changes no commit has, which \
+             differ here: new.txt"
+        ),
+        "{missing:?}"
+    );
+}
+
+#[test]
+fn the_desktops_own_uncommitted_work_sent_to_the_runner_is_no_loss() {
+    // Sent as the chat started, and left as it was beside a commit the desktop fetched.
+    let world = World::new();
+    let desktop_web = world.desktop.join("workspaces/app/web");
+    std::fs::write(desktop_web.join("index.html"), "not committed here\n").unwrap();
+    std::fs::write(world.web().join("index.html"), "not committed here\n").unwrap();
+    std::fs::write(desktop_web.join("draft.txt"), "a draft\n").unwrap();
+    std::fs::write(world.web().join("draft.txt"), "a draft\n").unwrap();
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
+}
+
+#[test]
+fn a_file_the_task_changed_further_keeps_the_runner() {
+    let world = World::new();
+    let desktop_web = world.desktop.join("workspaces/app/web");
+    std::fs::write(desktop_web.join("index.html"), "not committed here\n").unwrap();
+    std::fs::write(world.web().join("index.html"), "and changed by the task\n").unwrap();
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "differ here: index.html"), "{missing:?}");
+}
+
+#[test]
+fn a_file_the_task_removed_keeps_the_runner() {
+    let world = World::new();
+    std::fs::remove_file(world.web().join("index.html")).unwrap();
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "differ here: index.html"), "{missing:?}");
+}
+
+/// **A file in no repository keeps the runner** (#4569, the person's ruling of 2026-11-02): one a
+/// task wrote in its workspace's folder, which the project's own repository ignores.
+#[test]
+fn a_file_in_a_workspaces_folder_outside_any_clone_keeps_the_runner() {
+    let world = World::new();
+    std::fs::write(
+        world.runner.join("workspaces/app/report.md"),
+        "the task's report\n",
+    )
+    .unwrap();
+
+    let missing = world.not_home();
+
+    assert!(
+        says(&missing, "differ here: workspaces/app/report.md"),
+        "{missing:?}"
+    );
+}
+
+/// The same file, here as it is there, is no loss.
+#[test]
+fn a_file_outside_any_clone_that_is_here_too_is_no_loss() {
+    let world = World::new();
+    for root in [&world.runner, &world.desktop] {
+        std::fs::write(root.join("workspaces/app/report.md"), "the task's report\n").unwrap();
+    }
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
+}
+
+/// **What a clone ignores is left out, as git leaves it out** (the person's ruling of
+/// 2026-11-02): its build output keeps no runner.
+#[test]
+fn what_a_clone_ignores_keeps_no_runner() {
+    let world = World::new();
+    let web = world.web();
+    commit(&web, ".gitignore", "out/\n");
+    git(
+        &world.desktop.join("workspaces/app/web"),
+        &["pull", "-q", "origin", "main"],
+    );
+    std::fs::create_dir_all(web.join("out")).unwrap();
+    std::fs::write(web.join("out/bundle.js"), "built\n").unwrap();
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
+}
+
+#[test]
+fn the_state_folder_of_the_project_is_not_uncommitted_work() {
+    let world = World::new();
+    let state = world
+        .runner
+        .join(crate::names::STATE_DIR.spellings().next().unwrap());
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(state.join("sessions.json"), "{}").unwrap();
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
+}
+
+#[test]
+fn branches_fetched_from_elsewhere_are_not_the_runners_work() {
+    let world = World::new();
+    let top = world.projects.parent().unwrap().to_path_buf();
+    git(&top, &["clone", "-q", path(&world.web()), "elsewhere"]);
+    let elsewhere = top.join("elsewhere");
+    commit(&elsewhere, "theirs.txt", "on the forge\n");
+    git(
+        &world.web(),
+        &[
+            "fetch",
+            "-q",
+            path(&elsewhere),
+            "main:refs/remotes/origin/main",
+        ],
+    );
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
+}
+
+#[test]
+fn two_clones_differing_in_case_alone_keep_the_runner() {
+    let world = World::new();
+    let other = world.runner.join("workspaces/app/Web");
+    if other.exists() {
+        // A file system that ignores case holds one folder for both: nothing to tell apart.
+        return;
+    }
+    init(&other);
+    commit(&other, "index.html", "the other clone\n");
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "workspaces/app/Web"), "{missing:?}");
+}
+
+#[test]
+fn a_list_that_is_not_whole_keeps_the_runner() {
+    let world = World::new();
+    let (held, _) = repos_held(&world.projects);
+
+    let missing = not_home(
+        &world.desktop,
+        PROJECT,
+        &held,
+        &["too many folders".to_owned()],
+    );
+
+    assert_eq!(missing, vec!["too many folders".to_owned()]);
+}
+
+#[test]
+fn a_path_that_leaves_the_project_is_never_one_here() {
+    let world = World::new();
+    let held = vec![Held {
+        project: PROJECT.to_owned(),
+        path: "../elsewhere".to_owned(),
+        refs: vec![Ref {
+            name: "refs/heads/main".to_owned(),
+            oid: "0".repeat(40),
+        }],
+        changed: Vec::new(),
+    }];
+
+    let missing = not_home(&world.desktop, PROJECT, &held, &[]);
+
+    assert!(says(&missing, "can't be one here"), "{missing:?}");
+}
+
+/// **A file whose name is not text keeps the runner** (D-4569-22): it can't be found again on
+/// either end, so it is never taken for one that matches.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_file_whose_name_is_not_text_keeps_the_runner() {
+    use std::os::unix::ffi::OsStrExt;
+    let world = World::new();
+    let name = std::ffi::OsStr::from_bytes(b"made-\xff.txt");
+    std::fs::write(world.web().join(name), "the task's\n").unwrap();
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "whose name is not text"), "{missing:?}");
+}
+
+/// **A runner that no longer holds the project's own repository keeps it** (D-4569-21): a task
+/// that removed it could hold, outside every clone, files no list shows.
+#[test]
+fn a_runner_whose_project_lost_its_own_repository_keeps_the_runner() {
+    let world = World::new();
+    std::fs::remove_dir_all(world.runner.join(".git")).unwrap();
+    std::fs::write(
+        world.runner.join("workspaces/app/report.md"),
+        "the task's\n",
+    )
+    .unwrap();
+
+    let missing = world.not_home();
+
+    assert!(
+        says(&missing, "no longer holds the project's own repository"),
+        "{missing:?}"
+    );
+}
+
+/// **What a host keeps beside its projects holds no task's work** (#4569): a transfer's scratch,
+/// which comes and goes, is not looked through.
+#[test]
+fn what_is_kept_beside_the_projects_is_not_looked_through() {
+    let world = World::new();
+    let scratch = world.projects.join(".tmpAbC123");
+    std::fs::create_dir_all(&scratch).unwrap();
+    std::fs::write(scratch.join("transfer.bundle"), "bytes\n").unwrap();
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
+}

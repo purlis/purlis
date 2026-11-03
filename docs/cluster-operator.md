@@ -288,10 +288,11 @@ spec:
     the project held while its runner comes back says so at once.
     A look at a project already held wakes nothing. A runner
     with anything else on its Claim, an upstream object in the way among it, is not waited for.
-    **A fresh Claim's runner keeps nothing**, so it comes back with a new key, which its desktop
-    refuses as it does after `stopped`: make its Claim again. This reaches no one through purlis
-    today, since a desktop makes only kept Claims, and #4404 settles it as purlis starts making
-    fresh ones (#3709). A Pool or
+    **A fresh Claim's runner is never suspended for being idle**: its home ends with its pod, and
+    may hold what its task committed while its desktop was away. It keeps saying it is idle, and
+    serves again each time, until its desktop has that work and deletes the Claim. A desktop that
+    never comes back leaves it running: delete such a Claim by hand once its work no longer
+    matters. A Pool or
     Claim set `stopped` and back leaves an idle runner suspended. An idle Claim keeps no runner
     warm. A runner that says it is idle waits up to five minutes, serving nothing, for the
     operator to suspend it, and serves again if it does not. A running runner takes a change to
@@ -349,10 +350,46 @@ spec:
   - **A fresh Claim** (the default) takes a runner the pool keeps warm, when there is one, and
     keeps nothing past its pod: its home is a folder of the node's, as big as a kept Claim's
     volume.
-  - A desktop makes only kept Claims today. Its choice between them is written and not yet used
-    (#3709): kept for a chat a person works in and for any chat of a subscription profile, whose
-    sign-in lives on the volume; fresh for a short dispatched task, and a chat's "Keep this
-    runner's work" either way.
+  - purlis chooses between them (#3818): the pool's own kept Claim for a chat a person works in
+    and for any chat of a subscription profile, whose sign-in lives on the volume. **A short
+    dispatched task gets a fresh Claim of its own**, made as it starts. As it closes, purlis waits
+    for every program of the project on that runner to end, fetches the branches of the project
+    and of each clone of its workspace back to the desktop, under
+    `refs/remotes/<pool>/fresh-<hash>/`, and a clone made there as a clone here. **Then it deletes
+    the Claim only on proof** (#4569): the runner lists every repository in every project it
+    keeps (on no branch, mid-rebase, nested, a submodule's or worktree's, a bare one, one under an
+    older project id), with each ref and each file no commit has, and the desktop checks that its
+    own project reaches every one of those commits from a ref and holds each of those files as
+    the runner does. Another repository's branches as last fetched (`refs/remotes/…`) and what the
+    desktop sent (`refs/purlis/…`) are not the runner's work. What a clone's git ignores is left
+    out, as git leaves it out; a file in no clone, such as one a task wrote in its workspace's
+    folder, counts. Only the window of the checkout a task started from lets its runner go, so
+    another checkout of the same project never takes it. Anything else missing keeps the
+    Claim, and the window says what, with **Fetch again** and **Discard**, never silently. purlis
+    tries again as the window comes into focus and at its next launch. A long task and a handoff
+    stay on the pool's own runner.
+  - **A task gets a fresh runner only where that is safe.** The pool must be marked as your own,
+    its profile must have no credentials to hand (vault credentials reach no pool's runner in
+    this version), the project's own folder must be a git repository, and its operator's signed
+    word must say `fresh-runners-stay`: `status.capabilitiesVouch`, a statement
+    signed by the operator's key, made in the Pool's cluster and holding for ten minutes, which
+    the operator signs again with five left. The desktop reads it as a task starts and again
+    before it lets a fresh runner go, and counts it only while it holds, so an operator rolled
+    back to one that does not sign it stops counting within ten minutes. Without any of these, the
+    task runs on the pool's own runner and its tab says why, and a fresh runner whose work looks
+    home is kept while its operator gives no word. The pool's runner image must list what it holds
+    (session protocol 1.69): an older image refuses the task's start, saying to update it. Vault
+    values and tokens reach a fresh runner under the pool's checks, each made of that runner, and a check that can't be made refuses. A restart of the window holds the
+    project on the task's runner again and sends no code there. The window of the project the
+    task ran in does all this, so a project left closed keeps its task's Claim until it's next
+    opened. A fresh Claim of this desktop that no record holds, which a crash between the claim
+    and its record leaves, is deleted at the window's next launch once it is an hour old.
+  - **`stopped`, a lost node and a Pool's change reach a fresh runner too.** `stopped`, or a node
+    lost, ends its pod and what its home held that hadn't come back: the window says the runner
+    is gone, with what it held that is not here, until you forget it. After a change to the
+    Pool's image or template, the runner is no longer vouched for, so purlis can't fetch from it:
+    its Claim stays, the window says so, and its work is reached by `kubectl exec` until you
+    discard it.
 - **A Claim** lives in a namespace and names its `pool`, which never changes: another pool is
   another claim. Its `Ready` condition says whether its runner is running, and if not, why:
   `PoolNotFound` when there is no such pool, `PoolDeleted` when it was deleted after the

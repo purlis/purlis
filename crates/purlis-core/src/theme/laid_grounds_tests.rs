@@ -197,3 +197,40 @@ fn a_wash_is_laid_only_on_opaque_grounds_a_family_stands_on() {
         }
     }
 }
+
+/// The looks of `family`'s parts that fell in `theme`.
+fn fell_in(theme: &ResolvedTheme, family: &str) -> Vec<String> {
+    fallen(theme)
+        .into_iter()
+        .filter(|one| one.part.starts_with(&format!("{family}.")))
+        .map(|one| format!("{}: {}", one.part, one.floor))
+        .collect()
+}
+
+#[test]
+fn a_heavy_warning_wash_takes_the_look_of_a_notice_s_buttons() {
+    // A pane's warning and its consent are drawn on the warning wash over the terminal's fill
+    // (`paneFrame.css`), and hold their ways out (#4795). A wash heavy enough to take a ghost
+    // button's words' contrast fails the look a theme gave it, as the danger wash does.
+    let ghost = json!({
+        "button.root.ghost.fill": "transparent",
+        "button.root.ghost.text": "text.primary",
+    });
+    let theme = shaped(json!({ "wash.warning": "#e8e8e8e6" }), ghost.clone());
+    let said = fell_in(&theme, "button");
+    assert!(!said.is_empty(), "{said:?}");
+    // The control: the same look on the wash as purlis ships it stands.
+    assert_eq!(
+        fell_in(&shaped(json!({}), ghost), "button"),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn the_warning_wash_is_laid_where_a_pane_s_warnings_are_drawn() {
+    let (_, under) = WASH_LAID_ON
+        .iter()
+        .find(|(wash, _)| *wash == "wash.warning")
+        .expect("wash.warning in WASH_LAID_ON");
+    assert_eq!(*under, &["terminal.background"]);
+}
