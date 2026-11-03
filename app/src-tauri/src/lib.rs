@@ -180,6 +180,7 @@ mod slowstart;
 mod smartclose;
 mod specimen;
 mod staleclones;
+mod starttiming;
 mod stopping;
 #[cfg(test)]
 mod storythemes;
