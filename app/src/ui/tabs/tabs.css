@@ -126,9 +126,14 @@
 }
 
 /* **A crowded strip** (#4762): where the tabs' equal share is under 140px, a tab shows its `×`
-   only when it is the front tab or under the pointer, so a row of names is not a row of close
-   buttons. The `×` keeps its room, so nothing moves when it appears. */
-[data-scope="tabs"][data-part="tab"][data-narrow]:not([data-selected], [data-hovered])
+   only when it is the front tab or under the pointer, or the keyboard is on it or on its `×`, so
+   a row of names is not a row of close buttons. The `×` keeps its room, so nothing moves when it
+   appears. */
+[data-scope="tabs"][data-part="tab"][data-narrow]:not(
+    [data-selected],
+    [data-hovered],
+    :focus-within
+  )
   [data-part="closer"][data-scope="tabs"] {
   visibility: hidden;
 }

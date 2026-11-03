@@ -194,7 +194,7 @@ export function narrowTabs(
 }
 
 /** Which of a strip's tabs are pinned, and how wide one is drawn when it shows its icon only. */
-export type Pins<T> = { is: (one: T) => boolean; icon: number };
+export type Pins<T> = { is: (one: T) => boolean; iconWidth: number };
 
 /**
  * {@link fitting}, with **pinned tabs taken out of the collapse** (ADR 0039, amended 2026-11-02):
@@ -216,7 +216,7 @@ export function pinnedFirst<T>(
   if (all.hidden.length === 0) return { ...all, pinsIconOnly: false };
   const pinned = order.filter(pins.is);
   const pinsIconOnly = pinned.length * least > width / 2;
-  const taken = pinned.length * (pinsIconOnly ? pins.icon : least);
+  const taken = pinned.length * (pinsIconOnly ? pins.iconWidth : least);
   const rest = fitting(
     order.filter((one) => !pins.is(one)),
     selected !== undefined && pins.is(selected) ? undefined : selected,

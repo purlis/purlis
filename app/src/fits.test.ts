@@ -135,7 +135,7 @@ describe("a strip holding chips (SI-8f)", () => {
 describe("a pinned tab never collapses (ADR 0039, amended 2026-11-02)", () => {
   // Two pins, first on the strip where `tabs.tabsIn` puts them, and six tabs after them.
   const strip = ["p", "q", "a", "b", "c", "d", "e", "f"];
-  const pins = { is: (one: string) => one === "p" || one === "q", icon: LEAST_CHIP };
+  const pins = { is: (one: string) => one === "p" || one === "q", iconWidth: LEAST_CHIP };
 
   it("draws everything at the floor when everything fits", () => {
     expect(pinnedFirst(strip, "a", 8 * 120, 120, pins)).toEqual({

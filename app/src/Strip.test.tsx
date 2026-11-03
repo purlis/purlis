@@ -516,7 +516,7 @@ describe("the strip's tabs (#4762)", () => {
     core([chat(1)]);
     render(<App />);
 
-    await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
+    await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
     expect(within(strip()).getByRole("button", { name: "New tab" })).toBeInTheDocument();
   });
 
@@ -543,7 +543,7 @@ describe("the strip's tabs (#4762)", () => {
     });
     render(<App />);
 
-    await vi.waitFor(() => expect(tabNames()).toEqual(["ide.2"]));
+    await waitFor(() => expect(tabNames()).toEqual(["ide.2"]));
     const tab = tabNamed("ide.2");
     expect(tab?.querySelector(".tab-split-more")?.textContent).toBe("+1, split, 2 panes");
     expect(await hoverTipOf(tab)).toBe("ide.1 · ide.2");
@@ -553,18 +553,18 @@ describe("the strip's tabs (#4762)", () => {
     // `chat()` puts chat 1 in front; here the core says 4 is.
     core([{ ...chat(1), in_front: false }, chat(2), chat(3), { ...chat(4), in_front: true }]);
     render(<App />);
-    await vi.waitFor(() => expect(tabNames()).toHaveLength(4));
+    await waitFor(() => expect(tabNames()).toHaveLength(4));
 
     room.roomFor(2);
 
-    await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.4"]));
+    await waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.4"]));
   });
 
   it("says its state on its first `.state` mark, the corner dot being only seen", async () => {
     // The scenario specs read `tab.$(".state")` for the state's word (`chat.state.e2e.ts`).
     const { move } = core([chat(1)]);
     render(<App />);
-    await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
+    await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
 
     move(moving(1, 5));
 
@@ -579,7 +579,7 @@ describe("the strip's tabs (#4762)", () => {
     core([chat(1), { ...chat(2), pinned: true }]);
     render(<App />);
 
-    await vi.waitFor(() => expect(tabNames()).toHaveLength(2));
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
     const marks = [...(tabNamed("ide.2")?.querySelectorAll(".pinned, .chat-persona") ?? [])];
     expect(marks.map((one) => one.classList[0])).toEqual(["pinned", "chat-persona"]);
   });
@@ -589,11 +589,11 @@ describe("the strip's tabs (#4762)", () => {
     // keeps its place, and the room left draws the tab in front.
     core([chat(1), chat(2), chat(3), { ...chat(4), pinned: true }]);
     render(<App />);
-    await vi.waitFor(() => expect(tabNames()).toHaveLength(4));
+    await waitFor(() => expect(tabNames()).toHaveLength(4));
 
     room.roomFor(2);
 
-    await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.4"]));
+    await waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.4"]));
     expect(
       await screen.findByRole("button", { name: "Show 2 tabs the strip is not showing" }),
     ).toBeInTheDocument();
@@ -602,14 +602,14 @@ describe("the strip's tabs (#4762)", () => {
   it("draws pins as their icons only when they alone would take over half the strip", async () => {
     core([chat(1), chat(2), { ...chat(3), pinned: true }, { ...chat(4), pinned: true }]);
     render(<App />);
-    await vi.waitFor(() => expect(tabNames()).toHaveLength(4));
+    await waitFor(() => expect(tabNames()).toHaveLength(4));
 
     room.roomFor(4);
-    await vi.waitFor(() => expect(tabNames()).toHaveLength(4));
+    await waitFor(() => expect(tabNames()).toHaveLength(4));
     expect(within(strip()).getAllByRole("tab").filter(iconOnly)).toEqual([]);
 
     room.roomFor(3);
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(within(strip()).getAllByRole("tab").filter(iconOnly).map(nameIn)).toEqual([
         "ide.3",
         "ide.4",
@@ -639,13 +639,13 @@ describe("the strip's tabs (#4762)", () => {
     // stylesheet (`tabs.css`), and the mark it keys on is what a test can read.
     core([chat(1), chat(2)]);
     render(<App />);
-    await vi.waitFor(() => expect(tabNames()).toHaveLength(2));
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
 
     room.roomFor(2);
-    await vi.waitFor(() => expect(strip().querySelectorAll("[data-narrow]")).toHaveLength(2));
+    await waitFor(() => expect(strip().querySelectorAll("[data-narrow]")).toHaveLength(2));
 
     room.roomFor(4);
-    await vi.waitFor(() => expect(strip().querySelector("[data-narrow]")).toBeNull());
+    await waitFor(() => expect(strip().querySelector("[data-narrow]")).toBeNull());
   });
 });
 

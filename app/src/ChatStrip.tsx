@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { type CSSProperties } from "react";
+import { type CSSProperties, useMemo } from "react";
 import { QueueRead } from "./QueueRead";
 import { closestCenter, DndContext } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
@@ -162,6 +162,12 @@ export function ChatStrip({
     return own === undefined ? undefined : by(renameId(own));
   };
   const drawn = shown.filter((id) => !nameBoxFor(id)).map(String);
+  // What each tab wears (#4762), read once a draw for every tab it is drawn or listed by.
+  const faces = useMemo(
+    () => new Map([...shown, ...notShowing].map((id) => [id, faceOf(tabs, id, naming)])),
+    [naming, notShowing, shown, tabs],
+  );
+  const faceAt = (id: number) => faces.get(id) ?? faceOf(tabs, id, naming);
   const along = useTabStrip({
     keys: drawn,
     selected: tabs.inFront === undefined ? undefined : String(tabs.inFront),
@@ -336,7 +342,7 @@ export function ChatStrip({
                                 : panesOf(tabs, id).some((one) => restoring.has(one.session))
                                   ? RESTORING
                                   : // A split lists its panes on hover, in reading order (#4762).
-                                    (splitTip(faceOf(tabs, id, naming)) ??
+                                    (splitTip(faceAt(id)) ??
                                     tabTip(
                                       handedFrom[chatOf(tabs, id) ?? -1],
                                       workItems[chatOf(tabs, id) ?? -1],
@@ -413,7 +419,7 @@ export function ChatStrip({
                             <TabMarks
                               tabs={tabs}
                               id={id}
-                              face={faceOf(tabs, id, naming)}
+                              face={faceAt(id)}
                               personaOf={personaOf}
                               sandbox={sandboxOf?.(chatOf(tabs, id))}
                               shells={shells}
@@ -524,7 +530,7 @@ export function ChatStrip({
                   <TabMarks
                     tabs={tabs}
                     id={id}
-                    face={faceOf(tabs, id, naming)}
+                    face={faceAt(id)}
                     personaOf={personaOf}
                     sandbox={sandboxOf?.(chatOf(tabs, id))}
                     updates={planeUpdates}

@@ -3007,7 +3007,7 @@ export const PlaneView = memo(function PlaneView({
         tabs.inFront,
         room,
         chatLeast + chatGap,
-        { is: (id) => isPinned(id) && !isBackground(id), icon: chipWidth + chatGap },
+        { is: (id) => isPinned(id) && !isBackground(id), iconWidth: chipWidth + chatGap },
         { is: isBackground, width: chipWidth + chatGap },
       ),
     [onStrip, room, tabs.inFront, chatLeast, chatGap, isBackground, isPinned, chipWidth],

@@ -199,6 +199,7 @@ export function TabMarks({
   }
   const chat = lead.session;
   const shell = shells.has(chat);
+  const persona = personaOf(chat);
   return (
     <>
       {/* **A pinned tab shows its pin before its icon** (#4762), and the pin is the tab's. */}
@@ -216,9 +217,7 @@ export function TabMarks({
           {shell ? (
             <SquareTerminal className="tab-mark" data-mark="shell" aria-hidden="true" />
           ) : (
-            personaOf(chat) != null && (
-              <PersonaMark persona={personaOf(chat) as string} className="tab-mark" />
-            )
+            persona != null && <PersonaMark persona={persona} className="tab-mark" />
           )}
           <StateBadge session={chat} shell={shell} />
         </span>

@@ -24,10 +24,11 @@ export function sameShown(one: Shown | undefined, other: Shown | undefined): boo
  * wears the terminal's mark. Its tooltip and what a screen reader hears both say the two:
  * `steward, needs you`.
  *
- * **One icon wherever a chat is drawn** (#4762): the sidebar's row, a tab on the strip (its
- * focused pane's chat), a pane's head and a folded pane's rail. Its look is `chatPersona.css`'s;
- * the place it stands sets only its size (`--chat-persona-size`) and the ground its badge is
- * ringed in (`--chat-badge-ground`).
+ * **Its look is shared** (#4762): `chatPersona.css` holds it, and the place it stands sets only
+ * its size (`--chat-persona-size`) and the ground its badge is ringed in (`--chat-badge-ground`).
+ * The sidebar's row draws this component. A tab on the strip wears the same look with its own
+ * marks (`ChatRows.TabMarks`): its persona's or its shell's, and the board state's dot, so the
+ * state it says after its name is the one its dot shows.
  */
 export const ChatPersonaState = memo(function ChatPersonaState({
   persona,
