@@ -4606,7 +4606,7 @@ impl SessionHost for HostedSessions {
         self.watch_within(id, sink, u32::MAX)
     }
 
-    /// A host before 1.70 draws all of its history, and says nothing is older (#4742).
+    /// A host before 1.71 draws all of its history, and says nothing is older (#4742).
     fn watch_within(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
         self.watch_paced(id, sink, history, false)
     }
