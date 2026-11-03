@@ -7,6 +7,7 @@ import { browser, expect, $ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { harnessRowsDrawn, pressOnly } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { keptEmpty } from "../reach.js";
 
 /**
  * Charter's footer inside a chat's pane, per chat, against the real app (ADR 0029).
@@ -133,7 +134,8 @@ describe("charter's footer inside a chat", () => {
     // one an older chat has too.
     await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
-      async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
+      async () =>
+        (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab) || keptEmpty(tab)),
       { timeout: 20_000, timeoutMsg: "the footer spec left a chat open behind it" },
     );
   });

@@ -6,6 +6,7 @@ import { READY } from "../harness.js";
 import { pressAndStart } from "../opening.js";
 import { roomForTwoPanes } from "../paneRoom.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { keptEmpty } from "../reach.js";
 
 /**
  * **A pane's warnings live inside the pane, and keep the tab joined** (#3142, the operator's
@@ -274,7 +275,8 @@ describe("a pane's warnings, inside the pane", () => {
     await browser.setWindowSize(was.width, was.height);
     await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
-      async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
+      async () =>
+        (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab) || keptEmpty(tab)),
       { timeout: 20_000, timeoutMsg: "the pane-warnings spec left a chat open behind it" },
     );
   });

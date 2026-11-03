@@ -6,6 +6,7 @@ import { openChatList, pressMenuPath, ROW, SUB } from "../menus.js";
 import { READY } from "../harness.js";
 import { bringChatForward, endChatsStartedHere, startAChat, type Started } from "../started.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
+import { keptEmpty } from "../reach.js";
 
 /**
  * **A chat's Activity tab, measured in the real WebView** (#1457, the follow-ups of #1495).
@@ -359,7 +360,8 @@ describe("a chat's Activity tab", () => {
     }
     await endChatsStartedHere([mine]);
     await browser.waitUntil(
-      async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
+      async () =>
+        (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab) || keptEmpty(tab)),
       { timeout: 20_000, timeoutMsg: "the activity spec left a tab open behind it" },
     );
   });

@@ -106,8 +106,12 @@ async function tabsOpen(): Promise<number> {
   await palette.waitForDisplayed({ timeout: 20_000 });
   const counted = await browser.execute(
     () =>
-      // A tab's close, by its row's id (#4756): one per tab, and never a chat's End….
-      document.querySelectorAll('[id^="palette-row-tab.close:"]').length,
+      // A tab's close, by its row's id (#4756): one per tab, and never a chat's End…. Not a
+      // strip's kept empty tab, "New chat" (#4756, #5019): one an ended chat's Clear pane left
+      // on another workspace's strip is a tab this strip never draws, and holds no chat.
+      [...document.querySelectorAll('[id^="palette-row-tab.close:"]')].filter(
+        (row) => !(row.textContent ?? "").includes("Close New chat"),
+      ).length,
   );
   await browser.keys(["Escape"]);
   await expect(palette).not.toBeDisplayed();

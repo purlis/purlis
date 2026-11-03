@@ -6,6 +6,7 @@ import { READY } from "../harness.js";
 import { pressAndStart } from "../opening.js";
 import { roomForTwoPanes } from "../paneRoom.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { keptEmpty } from "../reach.js";
 
 /**
  * **A pane's breadcrumb fits its pane's one top line, measured** (#1486).
@@ -497,7 +498,8 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
     // one an older chat has too.
     await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
-      async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
+      async () =>
+        (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab) || keptEmpty(tab)),
       { timeout: 20_000, timeoutMsg: "the pane-crumbs spec left a chat open behind it" },
     );
   });
