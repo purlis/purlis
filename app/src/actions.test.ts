@@ -22,6 +22,7 @@ import {
   KEEPS_THE_BRANCH,
   matches,
   menuOn,
+  PASS_THROUGH_ID,
   memoryOffers,
   menuRows,
   narrow,
@@ -1939,10 +1940,11 @@ describe("a plain shell tab (SI-5)", () => {
     expect(by(read, `shell.new:${OUTSIDE}`)?.available).toBe(true);
   });
 
-  it("puts a new shell on a workspace's menu and on the panes' menu, beside a new tab", () => {
+  it("puts a new shell on a workspace's menu, and not on a pane's, which holds the pane's rows (#4760)", () => {
     expect(menuOn({ on: "workspace", workspace: "alpha" }).above).toContain("shell.new:alpha");
     const pane = menuOn({ on: "pane" }).above;
-    expect(pane.indexOf("shell.new")).toBe(pane.indexOf("chat.new") + 1);
+    expect(pane).not.toContain("shell.new");
+    expect(pane).not.toContain("chat.new");
   });
 
   it("says the key that opens one on the row, so the palette teaches it", () => {
@@ -2155,12 +2157,23 @@ describe("Close other tabs (#4762)", () => {
     expect(row?.does).toEqual({ verb: "closeOtherTabs", tab: 3, closes: [1] });
   });
 
-  it("is one row, the tab in front's, however many tabs there are", () => {
-    const rows = catalogue(now({ tabs: three, otherTabs: () => [1, 2] })).filter((row) =>
+  it("is one row in the palette, the tab in front's, however many tabs there are", () => {
+    const rows = inPalette(catalogue(now({ tabs: three, otherTabs: () => [1, 2] }))).filter((row) =>
       row.id.startsWith("tab.closeOthers:"),
     );
 
     expect(rows.map((row) => row.id)).toEqual(["tab.closeOthers:3"]);
+  });
+
+  it("is on every tab's own right-click, closing the tabs beside that one (#4760)", () => {
+    const beside = (tab: number) => [1, 2, 3].filter((one) => one !== tab);
+    const offers = catalogue(now({ tabs: three, otherTabs: beside }));
+
+    // A tab behind has its own row, for its menu only: the palette keeps the one.
+    const behind = by(offers, "tab.closeOthers:1");
+    expect(behind?.does).toEqual({ verb: "closeOtherTabs", tab: 1, closes: [2, 3] });
+    expect(behind?.menuOnly).toBe(true);
+    expect(by(offers, "tab.closeOthers:3")?.menuOnly).toBeUndefined();
   });
 
   it("is not offered where there is no other tab it would close", () => {
@@ -2192,7 +2205,9 @@ describe("the catalogue as the tabs change", () => {
       "tab.tile:2",
       "tab.close:1",
       "tab.close:2",
-      // One Close other tabs, the tab in front's (#4762).
+      // Close other tabs on each tab's right-click (#4760); the palette lists the tab in
+      // front's alone (#4762).
+      "tab.closeOthers:1",
       "tab.closeOthers:2",
     ]);
     // **A chat's rows are the chat's, by its number** (#4753): Rename… and Activity are
@@ -2566,7 +2581,12 @@ describe("the palette at fifty chats", () => {
     // 975 since #4762: Close other tabs, one row, the tab in front's.
     // 1025 since #4765: Tile all, each of the fifty tabs' own row, as Pin tab is.
     // 1023 since #4767: a tab's next and previous chat went with the tab a chat no longer has.
-    expect(offers).toHaveLength(1023);
+    // 1072 since #4760: Close other tabs on each of the fifty tabs' own right-click. The other
+    // forty-nine are menu-only rows, so the palette still lists one.
+    expect(offers).toHaveLength(1072);
+    expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
+      1,
+    );
   });
 
   /**
@@ -2611,8 +2631,8 @@ describe("the palette at fifty chats", () => {
     it("asks for five rows per tab and never walks the list", () => {
       const offers = new Counting(loaded().map((offer) => [offer.id, offer]));
 
-      // 50 tabs × the five ids a tab's menu lists: Switch to, Pin, Tile all (#4765), Keep open
-      // and Close. A
+      // 50 tabs × the five ids a tab's menu lists: Pin, Tile all (#4765), Keep open, Close other
+      // tabs and Close (#4760). A
       // chat's rows are its own list's since #4753, which a strip never draws.
       // **Not fifty scans of 291 rows**, which is
       // what this cost before the lookup was built once for the window — and the number that
@@ -3714,7 +3734,38 @@ describe("stopping a chat (#1448)", () => {
     expect(ids(task.above)).toEqual(expect.arrayContaining([ownTabId(3), besideId(3)]));
     expect(ids(task.below)).toEqual(taskEndIds(3));
     // A tab holds a layout: it has no chat to stop (#4753).
-    expect(menuOn({ on: "tab", tab: 7 }).below).toEqual(["tab.close:7"]);
+    expect(menuOn({ on: "tab", tab: 7 }).below).toEqual(["tab.closeOthers:7", "tab.close:7"]);
+  });
+
+  describe("a tab's right-click and a pane's rows (#4760)", () => {
+    it("holds Pin tab, Tile all, Keep open, Close other tabs and Close tab, and nothing else", () => {
+      expect(menuOn({ on: "tab", tab: 7 })).toEqual({
+        above: ["tab.pin:7", "tab.tile:7", "tab.keep:7"],
+        below: ["tab.closeOthers:7", "tab.close:7"],
+      });
+    });
+
+    it("lists no chat's row and no Switch to: the tab's press switches to it", () => {
+      const { above, below } = menuOn({ on: "tab", tab: 7 });
+      for (const id of [...above, ...below]) expect(id).not.toMatch(/^(chat|task|needs)\./);
+      expect([...above, ...below]).not.toContain("tab.select:7");
+    });
+
+    it("are the splits, Tile all and Send F2, then Close pane, and not the window's New tab or New shell", () => {
+      // Tile all is the tab's own row, the one its right-click lists (#4765).
+      expect(menuOn({ on: "pane", tab: 7 })).toEqual({
+        above: ["pane.split.right", "pane.split.down", "tab.tile:7", PASS_THROUGH_ID],
+        below: ["pane.close"],
+      });
+    });
+
+    it("lists no Tile all where the window has no tab in front to tile", () => {
+      expect(menuOn({ on: "pane" }).above).toEqual([
+        "pane.split.right",
+        "pane.split.down",
+        PASS_THROUGH_ID,
+      ]);
+    });
   });
 
   it("offers no stop for a chat that is not running", () => {

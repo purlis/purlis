@@ -989,13 +989,12 @@ export function closeTab(
   id: number,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
 ): Tabs {
   if (!(id in tabs.byId)) return tabs;
   const order = tabs.order.filter((tab) => tab !== id);
   const byId = Object.fromEntries(order.map((tab) => [tab, tabs.byId[tab]]));
   if (tabs.inFront !== id) return { ...tabs, byId, order };
-  return { ...tabs, byId, order, inFront: frontWithout(tabs, id, filedIn, pinned, background) };
+  return { ...tabs, byId, order, inFront: frontWithout(tabs, id, filedIn, pinned) };
 }
 
 /** What a tab whose first pane is empty is called (#4755), as the empty pane's own button
@@ -1024,14 +1023,13 @@ export function closeLayout(
   id: number,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
 ): Tabs {
   const tab = tabs.byId[id];
   if (tab === undefined) return tabs;
   const workspace = workspaceOf(tabs, id, filedIn);
-  const strip = tabsIn(tabs, workspace, filedIn, pinned, background);
+  const strip = tabsIn(tabs, workspace, filedIn, pinned);
   if (workspace === undefined || strip.some((other) => other !== id))
-    return closeTab(tabs, id, filedIn, pinned, background);
+    return closeTab(tabs, id, filedIn, pinned);
   if (isEmptyTab(tab, workspace)) return tabs;
   const pane = tabs.named.panes + 1;
   const emptied: Tab = {
@@ -1049,44 +1047,19 @@ export function closeLayout(
 }
 
 /**
- * **Where the front goes when tab `id` leaves it** — closed, or put into the background by
- * Smart close (SI-8f). One answer for both, because the operator's ruling is that a smart close
- * sends the front exactly where a close would.
- *
- * The tab before it on its strip as the strip draws it without the background, or the first
- * one after it when it was first, or nothing when it was the only one. A tab in the background
- * is never where the front goes: it is leaving too.
+ * **Where the front goes when tab `id` leaves it**: the tab before it on its strip as the strip
+ * draws it, or the first one after it when it was first, or nothing when it was the only one.
  */
 function frontWithout(
   tabs: Tabs,
   id: number,
   filedIn: FiledIn,
   pinned: Pinned,
-  background: Backgrounded,
 ): number | undefined {
-  const strip = tabsIn(tabs, workspaceOf(tabs, id, filedIn), filedIn, pinned).filter(
-    (tab) => tab === id || !background(tab),
-  );
+  const strip = tabsIn(tabs, workspaceOf(tabs, id, filedIn), filedIn, pinned);
   const at = strip.indexOf(id);
   const beside = strip.filter((tab) => tab !== id);
   return at > 0 ? strip[at - 1] : beside[0];
-}
-
-/**
- * **Tab `id` put into the background**: its chat is wrapping up (Smart close, SI-8f), so the
- * front goes where closing it would have sent it ({@link frontWithout}) and the tab stays, drawn
- * as a chip at the strip's left edge ({@link tabsIn}). Nothing else changes — not `tabs.order`,
- * which is where it goes back to if the smart close does not end in a record.
- */
-export function sendToBackground(
-  tabs: Tabs,
-  id: number,
-  filedIn: FiledIn,
-  pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
-): Tabs {
-  if (!(id in tabs.byId) || tabs.inFront !== id) return tabs;
-  return { ...tabs, inFront: frontWithout(tabs, id, filedIn, pinned, background) };
 }
 
 /**
@@ -1129,16 +1102,6 @@ export function setPinned(tabs: Tabs, id: number, pinned: boolean): Tabs {
 export const nothingPinned: Pinned = () => false;
 
 /**
- * Whether a tab is in the background: every pane of it is a chat that is wrapping up (Smart
- * close, SI-8f). The core's answer, as `Pinned` is somebody else's — the window is told which
- * chats are being smart-closed (`smartClose.ts`), and a copy on the tab would be a second one.
- */
-export type Backgrounded = (id: number) => boolean;
-
-/** Nothing in the background. */
-export const nothingBackgrounded: Backgrounded = () => false;
-
-/**
  * The tabs on one workspace's strip, left to right — **pinned ones first** (ADR 0039).
  *
  * **This is not the strip re-ordering itself.** The rule ADR 0039 fixed is that a tab does not
@@ -1157,26 +1120,18 @@ export const nothingBackgrounded: Backgrounded = () => false;
  * mechanism deciding what is on screen, and the one thing the strip owes is that nothing in
  * it is unreachable.
  *
- * **A tab in the background goes before the pinned ones** (SI-8f; ADR 0039, amended
- * 2026-09-28). Its chat is wrapping up after the operator's own Smart close click, and that
- * click is what moved it — the rule that nothing moves the operator did not move still holds.
- * It is drawn here and nowhere else: `tabs.order` keeps its place, which is where it is drawn
- * again when the smart close ends without a record.
+ * **No tab goes into the background any more** (#4760, spec #4750): a chat wrapping up keeps its
+ * pane, where its head breathes, so the Smart close chip that went before the pinned tabs
+ * (SI-8f) is gone.
  */
 export function tabsIn(
   tabs: Tabs,
   workspace: string | undefined,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
 ): number[] {
   const here = tabs.order.filter((id) => workspaceOf(tabs, id, filedIn) === workspace);
-  const front = here.filter((id) => !background(id));
-  return [
-    ...here.filter(background),
-    ...front.filter(pinned),
-    ...front.filter((id) => !pinned(id)),
-  ];
+  return [...here.filter(pinned), ...here.filter((id) => !pinned(id))];
 }
 
 /**
@@ -1579,12 +1534,11 @@ export function closeFocusedPane(
   tabs: Tabs,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
 ): Tabs {
   const tab = frontTab(tabs);
   if (!tab) return tabs;
   const left = without(tab.layout, tab.focused);
-  if (!left) return closeLayout(tabs, tab.id, filedIn, pinned, background);
+  if (!left) return closeLayout(tabs, tab.id, filedIn, pinned);
   // **The keyboard goes to the pane that takes the space** (spec #4750): the nearest pane of
   // the sibling that takes the closed pane's place.
   const focused = takesTheSpace(tab.layout, tab.focused) ?? panes(left)[0].pane;
@@ -1603,7 +1557,6 @@ export function closeChat(
   session: number,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
   keeps: (session: number) => boolean = () => false,
 ): Tabs {
   const found = tabs.order
@@ -1619,7 +1572,7 @@ export function closeChat(
   const { id, pane } = found;
   const tab = tabs.byId[id];
   const left = without(tab.layout, pane);
-  if (!left) return closeTab(tabs, id, filedIn, pinned, background);
+  if (!left) return closeTab(tabs, id, filedIn, pinned);
   const focused = tab.focused === pane ? panes(left)[0].pane : tab.focused;
   const kept = showing({ ...tab, layout: left, focused }, tab.shows);
   return { ...tabs, byId: { ...tabs.byId, [id]: kept } };
@@ -2077,9 +2030,8 @@ export function sendBack(
   task: number,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
 ): Tabs {
-  return closeChat(tabs, task, filedIn, pinned, background);
+  return closeChat(tabs, task, filedIn, pinned);
 }
 
 /**

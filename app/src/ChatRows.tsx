@@ -1,7 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { SandboxMark, type SandboxSaid } from "./SandboxMark";
 import { memo, useMemo, type ReactNode } from "react";
 import { Columns2, Hand, ListTodo, Maximize2, Plus, SquareTerminal } from "lucide-react";
 import { PersonaMark } from "./PersonaMark";
@@ -35,13 +34,18 @@ import { tabPart } from "./ui/tabs/Tabs";
  */
 export const ChatShownState = memo(function ChatShownState({
   changed = false,
+  markOnly = false,
   ...of
 }: ShownOf & {
   /** Its state changed while its row was not drawn, so it arrives in it (`StateShown`). */
   changed?: boolean;
+  /** Its mark alone, its word said only to a screen reader: a narrow pane's head (#4760). */
+  markOnly?: boolean;
 }) {
   const shown = useShownState(of);
-  return shown === undefined ? null : <StateShown shown={shown} changed={changed} />;
+  return shown === undefined ? null : (
+    <StateShown shown={shown} changed={changed} markOnly={markOnly} />
+  );
 });
 
 /**
@@ -101,7 +105,6 @@ export function TabMarks({
   face,
   personaOf,
   factsOf,
-  sandbox,
   task,
   taskOf,
   needs = NO_NAMES,
@@ -130,8 +133,6 @@ export function TabMarks({
   /** What a chat's row reads its state from beside the board ({@link TabFacts}), so its tab
    *  says the row's word (#4935). A chat it knows nothing of is a chat that is no task. */
   factsOf?: (session: number) => TabFacts | undefined;
-  /** How much the tab's chat's sandbox holds (#2071): its mark is drawn after the name. */
-  sandbox?: SandboxSaid | null;
   /** The chats wrapping up — being smart-closed (ADR 0064). */
   wrapping: ReadonlySet<number>;
   /** The chats being stopped (#1459): a tab that shows one says so, as its row does. */
@@ -196,7 +197,7 @@ export function TabMarks({
         {face.name}
       </span>
       <SplitMore more={face.more} zoomed={face.zoomed} />
-      <SandboxMark level={sandbox?.level} why={sandbox?.why} sites={sandbox?.sites} />
+      {/* No sandbox badge: it moved to the chat's pane head and its row (#4760). */}
       <PlaneUpdatedMark files={updates?.[chat]} />
       {/* **What the tab is doing, said after what it is**: its own element, so a tab whose text
           changed every time a turn began would not be unreadable, and before the task's name

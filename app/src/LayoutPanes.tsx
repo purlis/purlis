@@ -24,18 +24,15 @@ import {
   type MemoryView,
 } from "./bindings";
 import {
-  besideId,
+  briefId,
   menuOn,
-  ownTabId,
-  restartId,
   OUTSIDE,
-  taskCloseId,
-  taskStopId,
+  restartId,
   workItemSaid,
   type Catalogued,
   type Offer,
 } from "./actions";
-import { ChatMenuButton, Menued } from "./Menus";
+import { ChatMenuButton, PaneHeadMenued } from "./Menus";
 import { RestoringPane } from "./RestoringPane";
 import { NONE_RESTORING } from "./restoringChats";
 import { SessionPane } from "./SessionPane";
@@ -55,7 +52,8 @@ import { type Crumbs } from "./tabChats";
 import { BriefButton, type BriefAsk } from "./Brief";
 import { PaneCrumbs } from "./PaneCrumbs";
 import { ChipExplained, type ChipToExplain } from "./ChipExplained";
-import { TaskEnds } from "./TaskEnd";
+import { TaskEndAsked } from "./TaskEnd";
+import { SAID } from "./menuWords";
 import { giveKeyboardTo } from "./paneKeyboard";
 import { StateShown } from "./StateShown";
 import { ViewPane } from "./Views";
@@ -75,7 +73,14 @@ import {
   ChatNotices,
 } from "./ChatNotices";
 import { Button, IconButton } from "./ui/button/Button";
-import { Bell } from "lucide-react";
+import { Bell, Reply, ScrollText, Square, Undo2 } from "lucide-react";
+import { droppedAt, stateButtonOf, type ChatHead, type HeadPart } from "./paneHead";
+import { PaneTerminalAt, type PaneTerminal } from "./paneTerminal";
+import { stemOf } from "./menuModel";
+import { ChatShownState } from "./ChatRows";
+import { ChatPersonaState } from "./ChatPersonaState";
+import { SandboxMark } from "./SandboxMark";
+import { WrappingUp } from "./NeedsYou";
 import { bellCount, bellSays, HOLDS_NOTHING, type BandHolds } from "./paneNotices";
 import { showNotices, useNoticesMinimised } from "./paneNoticesPref";
 import { useSaidAtMost } from "./ui/said";
@@ -89,16 +94,38 @@ import { useSaidAtMost } from "./ui/said";
 /**
  * **The rows of the panes' menu, for a terminal to list under its own** (`TerminalMenu.tsx`):
  * a right-click on a terminal opens the terminal's menu, and what the panes' menu offered
- * there before — a new tab, the splits, ending the chat — is the same catalogue rows, picked
+ * there — the splits, Tile all, Send F2 and Close pane — is the same catalogue rows, picked
  * out by the ids that menu lists (`actions.menuOn`).
  */
-export function paneMenuOf(offerFor: (id: string) => Offer | undefined): Catalogued {
-  const { above, below } = menuOn({ on: "pane" });
+export function paneMenuOf(
+  offerFor: (id: string) => Offer | undefined,
+  /** The tab the panes are of: its Tile all is one of the rows (#4765). */
+  tab?: number,
+): Catalogued {
+  const { above, below } = menuOn({ on: "pane", tab });
   return new Map(
     [...above, ...below].flatMap((id) => {
       const offer = offerFor(id);
       return offer === undefined ? [] : [[id, offer] as const];
     }),
+  );
+}
+
+/** **One pane's own rows, for its head's right-click** (#4760): the panes' menu's rows, with
+ *  this pane's close in place of the focused pane's, and none where its head draws no close (a
+ *  pane showing a task of its session, `PaneDoing`'s `task`), so the two never disagree. */
+function paneRowsOf(
+  pane: number,
+  tab: number,
+  offerFor: (id: string) => Offer | undefined,
+  closeOf: (pane: number) => Offer | undefined,
+  task: boolean,
+): Catalogued {
+  const close = closeOf(pane);
+  const drawn = !task || close?.does.verb === "sendBack";
+  return paneMenuOf(
+    (id) => (id === "pane.close" ? (drawn ? close : undefined) : offerFor(id)),
+    tab,
   );
 }
 
@@ -126,8 +153,6 @@ export function PaneFrame({
   tab,
   session,
   crumbs,
-  ending,
-  crumbMenu,
   onShowChat,
   from,
   harness,
@@ -138,6 +163,8 @@ export function PaneFrame({
   asked,
   others,
   doing,
+  head,
+  headMenu,
   ended,
   said,
   focused = false,
@@ -145,9 +172,8 @@ export function PaneFrame({
 }: {
   plane: PlaneId;
   /** **How the path is said for a task that has ended** (#4757, #4756): its state after the
-   *  path, the names of chats no longer open, and its Brief, which a task read by its finished
-   *  row's record has (#1494) and one whose row is gone has not (`null`). */
-  said?: { state?: ReactNode; gone?: (session: number) => boolean; brief?: BriefAsk | null };
+   *  path and the names of chats no longer open. Its Brief is its state button's (#4760). */
+  said?: { state?: ReactNode; gone?: (session: number) => boolean };
   /** **The chat's program has ended** (#4756): the ended band, under the header and the
    *  notices, above the last screen. */
   ended?: ReactNode;
@@ -161,11 +187,17 @@ export function PaneFrame({
   /** While the pane shows a task of its tab's session: the path to it (#1486). Also for a task
    *  in a pane of its own, and the session it is beside (#1489). */
   crumbs?: Crumbs;
-  /** While it does: the two ways to end that task, beside the path (#1488). The only ending
-   *  control a pane showing a task has. */
-  ending?: ReactNode;
-  /** The menu a right-click on a task's breadcrumb opens: its row's in the Chats list. */
-  crumbMenu?: { session: number; offers: Catalogued; onPress: (offer: Offer) => void };
+  /** What the head says of the chat (#4760): its name, state, "harness · workspace", its
+   *  sandbox and whether it wraps up. None where the plane has not listed it yet. */
+  head?: ChatHead;
+  /** The head's right-click (#4760): the chat's list, then this pane's rows. */
+  headMenu?: {
+    offers: Catalogued;
+    pane: Catalogued;
+    /** The tab the pane is in, whose Tile all is among the pane's rows (#4765). */
+    tab?: number;
+    onPress: (offer: Offer) => void;
+  };
   /** Goes to a chat: what a name in the breadcrumb does, in this pane (#4757), and a hidden
    *  chat's Notice. */
   onShowChat: (session: number, pane?: number) => void;
@@ -198,11 +230,17 @@ export function PaneFrame({
   const usage = useChatUsage(plane, session, moved, running);
   const lent = useReferenceChats();
   const frame = useRef<HTMLDivElement>(null);
-  const roomy = useRoomy(frame);
+  // **What a narrow pane drops, in the ruled order** (#4760, `paneHead.ts`), and whether the
+  // line has room for the Skills chip too (#2775).
+  const width = usePaneWidth(frame);
+  const drops = droppedAt(width);
+  const roomy = width === undefined || width > NARROW_REM * remPx();
   /** What the band holds, for the bell in the pane's header (#4754), and the bell itself, which
    *  the band's Dismiss all hands the keyboard to once it has cleared the band. */
   const [holds, setHolds] = useState<BandHolds>(HOLDS_NOTHING);
   const bellAt = useRef<HTMLButtonElement>(null);
+  /** The terminal the pane draws, for Copy and Paste on its head's right-click (#4760). */
+  const terminalAt = useRef<PaneTerminal | null>(null);
   const focusBell = useCallback(() => bellAt.current?.focus(), []);
   return (
     <div
@@ -224,18 +262,47 @@ export function PaneFrame({
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
         {strip}
-        <PaneHead
-          doing={
-            <PaneBellAt.Provider value={bellAt}>
-              <PaneBellOf.Provider value={holds}>{doing}</PaneBellOf.Provider>
-            </PaneBellAt.Provider>
-          }
-        >
-          <div className="pane-chips">
-            {/* **Which chat this is, while the tab shows a task** (#1486): first in the line, and
-            in no row of its own. */}
-            {crumbs &&
-              (crumbMenu === undefined ? (
+        <PaneDropsOf.Provider value={drops}>
+          <PaneHead
+            menu={
+              headMenu &&
+              ((element) => (
+                <PaneHeadMenued
+                  session={session}
+                  offers={headMenu.offers}
+                  pane={headMenu.pane}
+                  tab={headMenu.tab}
+                  terminal={terminalAt}
+                  onPress={headMenu.onPress}
+                >
+                  {element}
+                </PaneHeadMenued>
+              ))
+            }
+            doing={
+              <PaneBellAt.Provider value={bellAt}>
+                <PaneBellOf.Provider value={holds}>{doing}</PaneBellOf.Provider>
+              </PaneBellAt.Provider>
+            }
+          >
+            <div className="pane-chips">
+              {/* **Who it runs as, with its state on it** (#4760, #4762): the one icon its row
+              and its tab wear, first on the head. */}
+              {head && (
+                <span className="pane-persona">
+                  <ChatPersonaState
+                    persona={head.chat.persona}
+                    session={session}
+                    shell={head.chat.shell}
+                    report={head.chat.report}
+                    outcome={head.chat.outcome}
+                    harness={head.chat.harness}
+                  />
+                </span>
+              )}
+              {/* **Which chat this is** (#4760): its name, or, while the pane shows a task, the
+              path to it (#1486), which ends with the task's name and says its state. */}
+              {crumbs ? (
                 <PaneCrumbs
                   crumbs={crumbs}
                   onShow={(chat) => onShowChat(chat, pane)}
@@ -243,34 +310,76 @@ export function PaneFrame({
                   gone={said?.gone}
                 />
               ) : (
-                <Menued
-                  on={{ on: "chat", session: crumbMenu.session }}
-                  offers={crumbMenu.offers}
-                  onPress={crumbMenu.onPress}
-                >
-                  <PaneCrumbs crumbs={crumbs} onShow={(chat) => onShowChat(chat, pane)} />
-                </Menued>
-              ))}
-            {/* **Brief** (#1494): what the task on screen was sent. Right after the breadcrumb,
-            before anything else the line holds for a task. */}
-            {crumbs && said?.brief !== null && (
-              <BriefButton of={said?.brief ?? briefOfShown(crumbs)} />
-            )}
-            {crumbs && ending}
-            {/* The chat's skills, and the way to them in the Skills view (#2775, S8). */}
-            {/* Not beside a task's breadcrumb: that line is the fullest a pane has, and the
-              state in it is read whole before anything else (`pane-crumbs.e2e.ts`); nor in a
-              narrow pane, for the same line. The palette and the tab's menu still have Use
-              skill… there. */}
-            {!crumbs && roomy && <SkillsChip plane={plane} session={session} />}
-            {harness && <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />}
-            {from && <span className="pane-from">{from}</span>}
-            {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}
-            {/* **The gauge last** (#3142, rule 15): it is drawn once the chat's first usage
-              arrives, and last on the line its arrival moves nothing already there. */}
-            <ChatGauge usage={usage} />
-          </div>
-        </PaneHead>
+                head && <span className="pane-name">{head.chat.name}</span>
+              )}
+              {/* A task's end, or its restart, asked on its line from its ⋯ (#1488). */}
+              {crumbs && (
+                <TaskEndAsked
+                  session={crumbs.path[crumbs.path.length - 1].session}
+                  focusBack={() => giveKeyboardTo(plane, session)}
+                />
+              )}
+              {/* **Its sandbox** (#4760): moved from the tab, which no longer is the chat. It says
+              how the chat runs, as "harness · workspace" does, and a narrow pane drops it with
+              that, so a task's path and the ways to end it keep their room. */}
+              {head && !drops.has("where") && (
+                <SandboxMark
+                  level={head.sandbox?.level}
+                  why={head.sandbox?.why}
+                  sites={head.sandbox?.sites}
+                />
+              )}
+              {/* **Its state**, as its row says it: the mark and its word, the word going
+              first in a narrow pane and then the mark (`paneHead.ts`). */}
+              {head && !crumbs && !drops.has("mark") && (
+                <span className="pane-state-mark">
+                  <ChatShownState
+                    session={session}
+                    shell={head.chat.shell}
+                    report={head.chat.report}
+                    outcome={head.chat.outcome}
+                    harness={head.chat.harness}
+                    markOnly={drops.has("markWord")}
+                  />
+                </span>
+              )}
+              {/* **Wrapping up** (ADR 0064, #4760): the breathing mark, where the strip's chip
+              was. */}
+              {head?.wrapping === true && (
+                <span className="pane-wrapping">
+                  <WrappingUp held />
+                </span>
+              )}
+              {!drops.has("where") && (
+                <>
+                  {/* **harness · workspace** (#4760): the harness opens its card (HP-19). */}
+                  {head && (head.chat.workspace !== "" || harnessWord(head, harness) !== "") && (
+                    <span className="pane-where">
+                      {harness ? (
+                        <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />
+                      ) : (
+                        head.chat.harness
+                      )}
+                      {harnessWord(head, harness) !== "" && head.chat.workspace !== "" && " · "}
+                      {head.chat.workspace}
+                    </span>
+                  )}
+                  {!head && harness && (
+                    <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />
+                  )}
+                  {/* The chat's skills (#2775, S8): not beside a task's path, which is the
+                  fullest line a pane has, nor in a narrow pane. */}
+                  {!crumbs && roomy && <SkillsChip plane={plane} session={session} />}
+                  {from && <span className="pane-from">{from}</span>}
+                  {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}
+                  {/* **The gauge last** (#3142, rule 15): it is drawn once the chat's first
+                  usage arrives, and last on the line its arrival moves nothing already there. */}
+                  <ChatGauge usage={usage} />
+                </>
+              )}
+            </div>
+          </PaneHead>
+        </PaneDropsOf.Provider>
         {/* **The band under the header** (#4754): a Notice arriving never moves the header. */}
         <PaneNotices
           band={pane === undefined ? undefined : paneBand(plane, pane)}
@@ -283,7 +392,9 @@ export function PaneFrame({
         />
         {ended}
       </div>
-      <div className="pane-body">{children}</div>
+      <PaneTerminalAt.Provider value={terminalAt}>
+        <div className="pane-body">{children}</div>
+      </PaneTerminalAt.Provider>
     </div>
   );
 }
@@ -299,64 +410,178 @@ export function PaneFrame({
  */
 export function PaneHead({
   doing,
+  menu,
   children,
   grip = true,
 }: {
   doing: ReactNode;
+  /** Puts the head's right-click around it (#4760): the chat's list, then the pane's rows. */
+  menu?: (head: ReactNode) => ReactNode;
   children?: ReactNode;
   /** Whether a press on it, outside its controls, picks the pane up to drag (#4763). */
   grip?: boolean;
 }) {
-  return (
+  const drawn = (
     <div className="pane-head" {...(grip ? { [GRIP]: "" } : {})}>
       {children}
       {doing}
     </div>
   );
+  return menu === undefined ? drawn : menu(drawn);
 }
 
 /**
- * **A pane's actions** (#3142, #3147): the bell of a chat's pane (#4754), then split it side by
- * side, split it stacked, and close it, as one cluster in its own place, the top right of the pane (`.pane-actions`, `paneFrame.css`).
- * A chat's pane draws it at the end of its header; a view's pane draws the same component, so
- * every pane's actions look and behave as one. What it offers is `PaneDoing`'s: the catalogue's
- * own rows, and the window's rule for when they are drawn.
+ * **A pane's actions** (#3142, #3147, #4760): on a chat's pane its one state button, its ⋯ and
+ * its bell (#4754), then split it side by side, split it stacked, and close it, as one cluster
+ * in its own place, the top right of the pane (`.pane-actions`, `paneFrame.css`). A chat's pane
+ * draws it at the end of its header; a view's pane draws the same component with no chat, so
+ * every pane's split and close look and behave as one. What it offers is the catalogue's own
+ * rows, and the window's rule for when they are drawn.
  */
-export function PaneActions(props: Parameters<typeof PaneDoing>[0]) {
+export function PaneActions({
+  chat,
+  state,
+  ...props
+}: Parameters<typeof PaneDoing>[0] & {
+  /** The chat the pane shows, and the catalogue its ⋯ reads (#4753): the chat's one list, the
+   *  same its sidebar row's menu and the palette have. None for a pane showing a view. */
+  chat?: { session: number; offers: Catalogued };
+  /** Its one state button (#4760, `PaneStateButton`), where its state has one. */
+  state?: ReactNode;
+}) {
   return (
     <div className="pane-actions">
-      {/* **The bell, in a fixed slot before split and close** (#4754): drawn in a chat's pane,
-          with its count or none, and always, where the controls after it are drawn only under
-          the pointer or the keyboard (`.pane-doing`, `App.css`): they keep their room hidden,
-          so nothing beside the bell moves when a notice arrives or they are drawn. */}
+      {/* **The state button, then ⋯, then the bell** (#4760, spec #4750 story 54), each always
+          drawn: a chat's part of the head, before the pane's own controls. The bell keeps a
+          fixed slot with its count or none (#4754); the controls after it are drawn only under
+          the pointer or the keyboard (`.pane-doing`, `App.css`), and keep their room hidden, so
+          nothing beside them moves when a notice arrives or they are drawn. */}
+      {state}
+      {chat !== undefined && (
+        <ChatMenuButton
+          session={chat.session}
+          offers={chat.offers}
+          onPress={(offer) => props.onPaneDoes(props.pane, offer)}
+        />
+      )}
       <PaneBell />
       <PaneDoing {...props} />
     </div>
   );
 }
 
+/** The harness a pane head names, by its card's word or the core's: none for a shell. */
+function harnessWord(head: ChatHead, glance: HarnessGlance | undefined): string {
+  return glance?.title ?? head.chat.harness ?? "";
+}
+
+/** The parts of its head a pane drops for its width (#4760, `paneHead.droppedAt`): none where it
+ *  is not measured, and none in a view's pane, whose head is its actions alone. */
+export const PaneDropsOf = createContext<ReadonlySet<HeadPart>>(new Set());
+
 /** The widest a pane may be and still be narrow (#2775): 40rem, past which its top line has
  *  room for the Skills chip beside everything else it holds. */
 const NARROW_REM = 40;
 
-/** Whether the pane frame in `frame` is wider than {@link NARROW_REM}, as it is resized: true
- *  where it cannot be measured, as in a test with no layout. */
-function useRoomy(frame: RefObject<HTMLDivElement | null>): boolean {
-  const [roomy, setRoomy] = useState(true);
+/** The root font size, in pixels: what a rem is here. */
+function remPx(): number {
+  return Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+}
+
+/** How wide the pane frame in `frame` is, in CSS pixels, as it is resized: none where it cannot
+ *  be measured, or is not laid out, as in a test with no layout. */
+function usePaneWidth(frame: RefObject<HTMLDivElement | null>): number | undefined {
+  const [width, setWidth] = useState<number>();
   useLayoutEffect(() => {
     const element = frame.current;
     if (element === null || typeof ResizeObserver === "undefined") return;
-    const measure = () => {
-      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      setRoomy(element.getBoundingClientRect().width > NARROW_REM * rem);
-    };
+    // Nothing laid out (a pane not drawn yet, or a test with no layout) is not narrow.
+    const measure = () => setWidth(element.getBoundingClientRect().width || undefined);
     measure();
     const watching = new ResizeObserver(measure);
     watching.observe(element);
     return () => watching.disconnect();
   }, [frame]);
-  return roomy;
+  return width;
 }
+
+/**
+ * **A chat's one state button on its pane head** (#4760, spec #4750 story 55): Stop while it
+ * works, Answer while a task asks, Cancel smart close while it wraps up, Brief on a task, and
+ * nothing on a quiet chat (`paneHead.stateButtonOf`). It is the chat's own row of its list, so
+ * it says the catalogue's title to a screen reader and runs what that row runs; on screen its
+ * one word, and in a narrow pane its icon alone, named all the same.
+ */
+export function PaneStateButton({
+  session,
+  task,
+  offers,
+  brief,
+  ended = false,
+  onPress,
+}: {
+  session: number;
+  task: boolean;
+  offers: Catalogued;
+  /** Where the pane can open the task's brief itself (`BriefButton`), which hands the keyboard
+   *  back to the button. */
+  brief?: BriefAsk;
+  /** **The pane is left on a task that has ended** (#4757): nothing of it runs or is listed, so
+   *  its one button is its Brief, read by its finished row's record, and none once that row is
+   *  gone (#1494). */
+  ended?: boolean;
+  onPress: (offer: Offer) => void;
+}) {
+  const working = useChatsSelect(
+    useChatsHere(),
+    (states) => stateOf(states, session) === "running",
+  );
+  const drops = useContext(PaneDropsOf);
+  if (ended)
+    return brief === undefined ? null : (
+      <BriefButton of={brief} word={drops.has("buttonWord") ? undefined : SAID.brief} />
+    );
+  const pick = stateButtonOf({ session, task, working, has: (id) => offers.has(id) });
+  const offer = pick === undefined ? undefined : offers.get(pick.id);
+  if (pick === undefined || offer === undefined) return null;
+  const worded = !drops.has("buttonWord");
+  if (pick.id === briefId(session) && brief !== undefined)
+    return <BriefButton of={brief} word={worded ? pick.word : undefined} />;
+  const Icon = STATE_ICONS[stemOf(pick.id)] ?? Square;
+  const said = {
+    "aria-label": offer.title,
+    tooltip: offer.reason || offer.note || undefined,
+    isDisabled: !offer.available,
+    onPress: () => onPress(offer),
+  };
+  return worded ? (
+    <Button
+      variant="quiet"
+      size="sm"
+      className="pane-state"
+      icon={<Icon aria-hidden="true" />}
+      {...said}
+    >
+      {pick.word}
+    </Button>
+  ) : (
+    <IconButton
+      variant="quiet"
+      size="sm"
+      className="pane-state"
+      icon={<Icon aria-hidden="true" />}
+      {...said}
+    />
+  );
+}
+
+/** Each state button's icon, by its row's act. */
+const STATE_ICONS: Readonly<Record<string, typeof Square>> = {
+  "chat.stop": Square,
+  "chat.answer": Reply,
+  "chat.smartclose.cancel": Undo2,
+  "chat.brief": ScrollText,
+};
 
 /** The task a breadcrumb's pane shows, as the Brief panel is asked for it: the last chat of
  *  the path, by its number. */
@@ -465,6 +690,9 @@ export function NoticeOfChat({
   return <NoticeOf.Provider value={of}>{children}</NoticeOf.Provider>;
 }
 
+/** No chat's head facts: a pane head then says what its pane line says without them. */
+const NO_HEADS = (): ChatHead | undefined => undefined;
+
 /** A tab's layout, as panes with a handle between each split. */
 export function LayoutPanes({
   plane,
@@ -488,6 +716,7 @@ export function LayoutPanes({
   onFocus,
   offerFor,
   offers,
+  heads = NO_HEADS,
   onPaneDoes,
   name,
   handedFrom,
@@ -572,6 +801,9 @@ export function LayoutPanes({
   /** The same catalogue, whole: what a chat's ⋯ reads, whose Ask ▸ and Move to ▸ are scans
    *  of it (#4753). */
   offers: Catalogued;
+  /** What each chat's pane head says of it (#4760), by session: none where the plane has not
+   *  listed it. */
+  heads?: (session: number) => ChatHead | undefined;
   onPaneDoes: (pane: number, offer: Offer | undefined) => void;
   /** The tab's name, which is the title of the view it opened on. */
   name: string;
@@ -783,6 +1015,7 @@ export function LayoutPanes({
     // **Or its own chat, with a path to say** (#1489): a task in a pane of its own, and the
     // session it is beside. The same line, so each side of a split says which chat it is.
     const path = crumb ?? placed[layout.pane];
+    const head = heads(content.session);
     // A task the list of chats has not been read for yet: nothing is known of it, so nothing
     // is drawn (#1486).
     if (unread.has(layout.pane))
@@ -808,10 +1041,27 @@ export function LayoutPanes({
         // No close on a pane showing a task: nothing on screen ends the task, and the
         // session's close is its tab's (#1486).
         task={crumb !== undefined || endedTask !== undefined}
-        // The task it shows inside its session's tab, which can be given a tab of its own or
-        // opened beside its session from here (#1489).
-        shows={crumb === undefined ? undefined : content.session}
-        // Its ⋯: the list of the chat it shows (#4753).
+        // Its one state button and its ⋯: rows of the list of the chat it shows (#4753, #4760).
+        // A task that has ended is read by its finished row's record (#1494), and has no Brief
+        // of its own once that row is gone (#4757).
+        state={
+          <PaneStateButton
+            session={content.session}
+            task={head?.chat.mode === "task"}
+            offers={offers}
+            brief={
+              endedTask !== undefined
+                ? row === undefined
+                  ? undefined
+                  : { dispatch: row.id, name: row.name }
+                : path === undefined
+                  ? undefined
+                  : briefOfShown(path)
+            }
+            ended={endedTask !== undefined}
+            onPress={(offer) => onPaneDoes(layout.pane, offer)}
+          />
+        }
         chat={{ session: content.session, offers }}
       />
     );
@@ -829,37 +1079,24 @@ export function LayoutPanes({
             : {
                 state: endedAs === undefined ? undefined : <StateShown shown={endedAs} />,
                 gone: (session) => !hidden.some((other) => other.session === session),
-                // Read by its finished row's record (#1494): none once that row is gone.
-                brief: row === undefined ? null : { dispatch: row.id, name: row.name },
               }
         }
-        // **The two ways to end the task this pane shows**, beside its path (#1488): on a
-        // session's pane switched to a task, and on a task's own pane, in a tab of its own or
-        // beside its session (#1489). Never on the session's own one-name path beside a task.
-        // Nothing is left to end on a task that has ended.
-        ending={
-          endedTask === undefined &&
-          path !== undefined &&
-          path.path[path.path.length - 1].mode === "task" && (
-            <TaskEnds
-              session={path.path[path.path.length - 1].session}
-              stop={offerFor(taskStopId(path.path[path.path.length - 1].session))}
-              close={offerFor(taskCloseId(path.path[path.path.length - 1].session))}
-              // Keep gives the keyboard back to the task's terminal.
-              focusBack={() => giveKeyboardTo(plane, content.session)}
-            />
-          )
-        }
-        // Right-click on a task's breadcrumb is its row's menu in the Chats list (#1489).
-        crumbMenu={
-          path !== undefined && path.path[path.path.length - 1].mode === "task"
-            ? {
-                session: path.path[path.path.length - 1].session,
-                offers,
-                onPress: (offer) => onPaneDoes(layout.pane, offer),
-              }
-            : undefined
-        }
+        // **What the head says of the chat, and its right-click** (#4760): the chat's list,
+        // then this pane's rows, its close its own. A task's two ways to end are rows of its
+        // list (`command-table.md`, rule 4), no longer buttons beside its path (#1488).
+        head={head}
+        headMenu={{
+          offers,
+          tab,
+          pane: paneRowsOf(
+            layout.pane,
+            tab,
+            offerFor,
+            closeOf,
+            crumb !== undefined || endedTask !== undefined,
+          ),
+          onPress: (offer) => onPaneDoes(layout.pane, offer),
+        }}
         onShowChat={onShowChat}
         from={shownPath === undefined ? handedFrom[content.session] : undefined}
         harness={glances[content.session]}
@@ -915,7 +1152,8 @@ export function LayoutPanes({
             focused={layout.pane === focused}
             onFocus={() => onFocus(layout.pane)}
             menu={{
-              offers: paneMenuOf(offerFor),
+              offers: paneMenuOf(offerFor, tab),
+              tab,
               onPress: (offer) => onPaneDoes(layout.pane, offer),
             }}
             readOnly={ended || endedTask !== undefined}
@@ -1008,6 +1246,7 @@ export function LayoutPanes({
               onFocus={onFocus}
               offerFor={offerFor}
               offers={offers}
+              heads={heads}
               onPaneDoes={onPaneDoes}
               name={name}
               handedFrom={handedFrom}
@@ -1106,13 +1345,8 @@ export function PaneDoing({
   closeOf,
   onPaneDoes,
   task = false,
-  shows,
-  chat,
 }: {
   pane: number;
-  /** The chat the pane shows, and the catalogue its ⋯ reads (#4753): the chat's one list, the
-   *  same its sidebar row's menu and the palette have. None for a pane showing a view. */
-  chat?: { session: number; offers: Catalogued };
   offerFor: (id: string) => Offer | undefined;
   /** This pane's close, which is not the focused pane's where the two differ (#1486): a pane
    *  beside one that shows a task still closes. For a task's own pane it is the minimise
@@ -1122,31 +1356,20 @@ export function PaneDoing({
   /** The pane shows a task of its tab's session (#1486): it draws no close. A close here
    *  would read as ending the task, and what it would end is the session under it. */
   task?: boolean;
-  /** That task, where the pane can draw it: the pane offers it a tab of its own, and a pane
-   *  beside its session (#1489). The task's own rows, not the focused pane's. */
-  shows?: number;
 }) {
   // **A task's own pane keeps its minimise whatever it shows** (#1489): switched to a task of
   // its own, it is still the pane that is sent back. Only a close is not drawn over a task.
   const minimise = closeOf(pane)?.does.verb === "sendBack";
+  // **A narrow pane drops Split down last of its head's parts** (#4760, `paneHead.ts`); Split
+  // right and the close never go. A task's own tab and its pane beside its session are rows of
+  // its ⋯ now (`command-table.md`, rule 4), not buttons here.
+  const drops = useContext(PaneDropsOf);
   const rows = [
-    ...(shows === undefined ? [] : [ownTabId(shows), besideId(shows)]),
     "pane.split.right",
-    "pane.split.down",
+    ...(drops.has("splitDown") ? [] : ["pane.split.down"]),
     ...(task && !minimise ? [] : ["pane.close"]),
   ];
-  return (
-    <div className="pane-doing">
-      {chat !== undefined && (
-        <ChatMenuButton
-          session={chat.session}
-          offers={chat.offers}
-          onPress={(offer) => onPaneDoes(pane, offer)}
-        />
-      )}
-      {rows.map(draw)}
-    </div>
-  );
+  return <div className="pane-doing">{rows.map(draw)}</div>;
   function draw(id: string) {
     const offer = id === "pane.close" ? closeOf(pane) : offerFor(id);
     if (!offer) return null;

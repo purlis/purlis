@@ -1,8 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -458,29 +456,25 @@ describe("Brief, on a finished task's row", () => {
   });
 });
 
-describe("Brief, on the breadcrumb line while a tab shows a task", () => {
-  it("is one small named button after the breadcrumb, opens the panel, and takes the keyboard back", async () => {
+describe("Brief, as the head's state button while a pane shows a task (#4760)", () => {
+  it("is the one state button, named for the task, opens the panel, and takes the keyboard back", async () => {
     const said = core();
     render(<App />);
     const tree = await section();
-    // No task on screen: the line has no breadcrumb, and no Brief.
+    // No task on screen: the head has no Brief.
     expect(screen.queryByRole("button", { name: "Brief of read the logs" })).toBeNull();
 
     await userEvent.click(row(tree, "read the logs"));
     const crumbs = await screen.findByRole("navigation", { name: "Chat path" });
 
-    // An item of the line and not of the breadcrumb, right after it.
+    // The head's state button, first of its actions, and no item of the breadcrumb's line.
     const button = screen.getByRole("button", { name: "Brief of read the logs" });
-    expect(button.className).toBe("pane-brief");
+    expect(button).toHaveClass("pane-brief");
     expect(crumbs.contains(button)).toBe(false);
-    expect(crumbs.nextElementSibling).toBe(button);
-    expect(button.parentElement?.className).toBe("pane-chips");
-    // The class the stylesheet and the geometry spec name (`pane-crumbs.e2e.ts` draws this
-    // button by hand beside its breadcrumb, and measures the line with it there).
-    const spec = readFileSync(resolve(process.cwd(), "e2e/specs/pane-crumbs.e2e.ts"), "utf8");
-    expect(spec).toContain("pane-brief");
-    // An icon and no words; its name is the label, and Tab reaches it.
-    expect(button.textContent).toBe("");
+    expect(button.parentElement).toHaveClass("pane-actions");
+    expect(button.parentElement?.firstElementChild).toBe(button);
+    // Its word beside its icon; its name is the label, and Tab reaches it.
+    expect(button.textContent).toBe("Brief");
     expect(button.getAttribute("tabindex")).toBe("0");
 
     button.focus();
