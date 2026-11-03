@@ -45,16 +45,25 @@ export function isRestoring(chat: Pick<OpenChat, "restoring">): boolean {
  * restoring: which have started, which are gone from the list (they did not start, and are
  * among the chats that would not), and which are restoring still.
  *
- * `named` is the session an event said a chat started as. Where that is not the number its tab
- * was drawn under, the chat is `arrived`: it is drawn as a chat that has just been started,
- * and the tab under the old number goes with the ones that are gone.
+ * `said` is what an event said of one chat: the number its tab was drawn under and the session
+ * it started as. Where those differ and the tab is still drawn under the old number, the chat is
+ * `renumbered`: the same chat under a new number, put into the tab it was drawn in (#4962), so
+ * the tab keeps its pin, its place and its panes. Where the old number's tab is gone already
+ * (an earlier read found it gone), the chat is `arrived`: it is drawn as a chat that has just
+ * been started.
  */
 export function restoredSince(
   was: ReadonlySet<number>,
   open: readonly OpenChat[],
-  named: number | null,
+  said: Pick<ChatRestored, "number" | "session"> | null,
   shown: (session: number) => boolean,
-): { still: Set<number>; started: OpenChat[]; gone: number[]; arrived: OpenChat[] } {
+): {
+  still: Set<number>;
+  started: OpenChat[];
+  gone: number[];
+  arrived: OpenChat[];
+  renumbered: { from: number; chat: OpenChat }[];
+} {
   // Only ever fewer: the launch draws every one at once, and a chat that has started never
   // restores again. So an answer older than one already read, which `opened_chats` answering
   // off the window's thread can land late (#4739), draws no started chat as restoring again.
@@ -62,10 +71,17 @@ export function restoredSince(
     open.filter((chat) => isRestoring(chat) && was.has(chat.session)).map((chat) => chat.session),
   );
   const started = open.filter((chat) => !isRestoring(chat) && was.has(chat.session));
-  const gone = [...was].filter((number) => !open.some((chat) => chat.session === number));
-  const arrived =
+  const listed = (number: number) => open.some((chat) => chat.session === number);
+  const named = said?.session ?? null;
+  const now =
     named === null || was.has(named)
       ? []
       : open.filter((chat) => chat.session === named && !isRestoring(chat) && !shown(chat.session));
-  return { still, started, gone, arrived };
+  const from = said !== null && was.has(said.number) && !listed(said.number) ? said.number : null;
+  const renumbered = from === null ? [] : now.map((chat) => ({ from, chat }));
+  const gone = [...was].filter(
+    (number) => !listed(number) && !renumbered.some((one) => one.from === number),
+  );
+  const arrived = renumbered.length > 0 ? [] : now;
+  return { still, started, gone, arrived, renumbered };
 }

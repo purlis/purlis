@@ -105,6 +105,16 @@ function core(first: OpenChat[]) {
       const left = held.chats.filter((one) => one.restoring != null).length;
       await act(() => emit("chat-restored", { plane: PLANE, number, session: number, left }));
     },
+    /** Chat `number` started, but under `session`: the core lists that and not `number`. */
+    async startsAs(number: number, session: number, more: Partial<OpenChat> = {}) {
+      held.chats = held.chats.map((one) =>
+        one.session === number
+          ? chat(session, { name: one.name, in_front: one.in_front, ...more })
+          : one,
+      );
+      const left = held.chats.filter((one) => one.restoring != null).length;
+      await act(() => emit("chat-restored", { plane: PLANE, number, session, left }));
+    },
     /** Chat `number` did not start: it is no longer listed, and waits with the reason. */
     async doesNotStart(number: number, why: string) {
       const gone = held.chats.find((one) => one.session === number);
@@ -124,6 +134,7 @@ const tabs = () =>
   [...document.querySelectorAll<HTMLElement>('.tabs [role="tab"]')].map((tab) => ({
     name: tab.textContent,
     restoring: tab.closest(".tab")?.hasAttribute("data-restoring") ?? false,
+    pinned: tab.closest(".tab")?.querySelector(".pinned") != null,
   }));
 const restoringTabs = () => tabs().filter((tab) => tab.restoring).length;
 
@@ -196,6 +207,26 @@ describe("a launch's chats, coming back behind the window", () => {
     expect(tabs()).toHaveLength(2);
   });
 
+  it("one that starts under a new number keeps its tab: its pin and its place (#4962)", async () => {
+    const the = core([
+      restoring(4, { in_front: true }),
+      restoring(5, { name: "five", pinned: true }),
+      restoring(6),
+    ]);
+    render(<App />);
+    await waitFor(() => expect(tabs()).toHaveLength(3));
+    await waitFor(() => expect(tabs().filter((tab) => tab.pinned)).toHaveLength(1));
+    const before = tabs();
+    const five = before.findIndex((tab) => tab.pinned);
+
+    // The core has cleared the chat's own pin by now: the pin is the tab's.
+    await the.startsAs(5, 9, { pinned: false });
+    await waitFor(() => expect(restoringTabs()).toBe(2));
+    expect(tabs()).toEqual(
+      before.map((tab, at) => (at === five ? { ...tab, restoring: false } : tab)),
+    );
+  });
+
   it("an event about another project's chat reads nothing of this one", async () => {
     const the = core([restoring(4, { in_front: true })]);
     render(<App />);
@@ -235,26 +266,46 @@ describe("what a read says has become of the restoring chats", () => {
 
   it("tells the started from the ones still restoring and the ones that are gone", () => {
     const open = [chat(4), restoring(5)];
-    const said = restoredSince(was, open, 4, shown);
+    const said = restoredSince(was, open, { number: 4, session: 4 }, shown);
     expect(said.started.map((one) => one.session)).toEqual([4]);
     expect([...said.still]).toEqual([5]);
     expect(said.gone).toEqual([6]);
     expect(said.arrived).toEqual([]);
   });
 
-  it("takes a chat that started under another number as one that has just arrived", () => {
-    const said = restoredSince(was, [chat(4), chat(5), chat(9)], 9, shown);
-    expect(said.gone).toEqual([6]);
+  it("takes a chat that started under another number as the same chat, in its tab", () => {
+    const said = restoredSince(was, [chat(4), chat(5), chat(9)], { number: 6, session: 9 }, shown);
+    expect(said.gone).toEqual([]);
+    expect(said.arrived).toEqual([]);
+    expect(said.renumbered.map(({ from, chat }) => [from, chat.session])).toEqual([[6, 9]]);
+  });
+
+  it("takes one whose old tab is gone already as one that has just arrived", () => {
+    // An earlier read found 6 gone and closed its tab, before the event said what became of it.
+    const said = restoredSince(
+      new Set([4, 5]),
+      [chat(4), chat(5), chat(9)],
+      { number: 6, session: 9 },
+      shown,
+    );
+    expect(said.renumbered).toEqual([]);
     expect(said.arrived.map((one) => one.session)).toEqual([9]);
     // And not twice: a chat a tab already shows is not drawn again.
-    expect(restoredSince(was, [chat(9)], 9, () => true).arrived).toEqual([]);
+    expect(restoredSince(was, [chat(9)], { number: 6, session: 9 }, () => true).arrived).toEqual(
+      [],
+    );
   });
 
   it("never draws a chat as restoring again from an answer older than one already read", () => {
     // #4739: `opened_chats` answers off the window's thread, so two asks a launch makes close
     // together can be answered out of order. Chat 4 started in the answer read first; the
     // older one landing after it still lists 4 as restoring.
-    const after = restoredSince(was, [chat(4), restoring(5), restoring(6)], 4, shown).still;
+    const after = restoredSince(
+      was,
+      [chat(4), restoring(5), restoring(6)],
+      { number: 4, session: 4 },
+      shown,
+    ).still;
     const older = restoredSince(after, [restoring(4), restoring(5), restoring(6)], null, shown);
     expect([...older.still]).toEqual([5, 6]);
     expect(older.started).toEqual([]);

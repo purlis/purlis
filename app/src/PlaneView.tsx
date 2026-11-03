@@ -6605,21 +6605,28 @@ export const PlaneView = memo(function PlaneView({
    * start loses its tab and is listed with the chats that did not, with Retry now.
    *
    * The whole list is read again each time, so an event this window missed is made up by the
-   * next. `named` is the session an event said a chat started as.
+   * next. `said` is what an event said of one chat: the number its tab was drawn under and the
+   * session it started as.
    */
   const readRestored = useCallback(
-    async (named: number | null) => {
-      if (restoringNow.current.size === 0 && named === null) return;
+    async (said: Pick<ChatRestored, "number" | "session"> | null) => {
+      if (restoringNow.current.size === 0 && said === null) return;
       const answer = await commands.openedChats(plane).catch(() => undefined);
       if (answer?.status !== "ok") return;
       const open = answer.data ?? [];
-      const { still, started, gone, arrived } = restoredSince(
+      const { still, started, gone, arrived, renumbered } = restoredSince(
         restoringNow.current,
         open,
-        named,
+        said,
         (session) => alreadyShows(now.current, session),
       );
-      if (started.length === 0 && gone.length === 0 && arrived.length === 0) return;
+      if (
+        started.length === 0 &&
+        gone.length === 0 &&
+        arrived.length === 0 &&
+        renumbered.length === 0
+      )
+        return;
       restoringNow.current = still;
       setRestoringChats(still);
       for (const chat of started) {
@@ -6629,7 +6636,14 @@ export const PlaneView = memo(function PlaneView({
       // Filed where they were, and said again: the sidebar is read once more, now that the
       // core lists them among the open chats (the Chats section, the workspace's count).
       if (started.length > 0) setStartedIn((was) => ({ ...was }));
-      // Started under another number than its tab was drawn under: a chat just started.
+      // Started under another number than its tab was drawn under, which is still drawn: the
+      // new number goes into that tab, as Restart's does, and the tab keeps its pin, its place
+      // and its panes (#4962).
+      for (const { from, chat } of renumbered) {
+        noteStarted(chat);
+        change((tabs) => replaceSession(tabs, from, chat.session));
+      }
+      // Started under another number, its old tab gone already: a chat just started.
       for (const chat of arrived) {
         noteStarted(chat);
         if (chat.from?.tab === false) continue;
@@ -6675,7 +6689,7 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     const listening = listen<ChatRestored>(CHAT_RESTORED, (event) => {
       if (event.payload.plane !== plane) return;
-      void readRestoredNow.current(event.payload.session);
+      void readRestoredNow.current(event.payload);
     })
       .then((stop) => {
         void readRestoredNow.current(null);
