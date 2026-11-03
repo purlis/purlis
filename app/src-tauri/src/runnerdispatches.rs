@@ -239,6 +239,8 @@ impl RunnerDispatches {
     }
 
     /// Whether the person refused chat `session`'s dispatch to run at `runs_on` while it runs.
+    /// [`Self::note`] asks it under the same lock as it holds; this is for the tests.
+    #[cfg(test)]
     pub fn refused_before(&self, session: u32, runs_on: &StartChoice) -> bool {
         self.lock().refused_before(session, runs_on)
     }
