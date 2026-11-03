@@ -377,37 +377,6 @@ describe("the explorer", () => {
         $('[role="listbox"][aria-label="Search results"] [role="group"]'),
       ).toHaveAttribute("aria-label", expect.stringContaining("notes.md, found-by-content"));
 
-      // DIAGNOSIS (#4799, temporary): each light editor as it comes and goes, from before Enter.
-      await browser.execute(() => {
-        type Watched = { log: string[]; seen: number; start: number };
-        const w: Watched = { log: [], seen: 0, start: performance.now() };
-        (window as unknown as { editorWatch: Watched }).editorWatch = w;
-        const live = new Map<Element, number>();
-        const tick = () => {
-          const at = Math.round(performance.now() - w.start);
-          const now = new Set(document.querySelectorAll('[data-testid="light-editor"]'));
-          for (const el of now)
-            if (!live.has(el)) {
-              const n = ++w.seen;
-              live.set(el, n);
-              (el as HTMLElement).dataset.watch = String(n);
-              const tab = document.querySelector(
-                '[data-strip="Tabs"] [role="tab"][aria-selected="true"] .tab-name',
-              );
-              w.log.push(
-                `${at}ms +${n} in front=${tab?.textContent ?? "?"} text=${(el.textContent ?? "").slice(0, 30)}`,
-              );
-            }
-          for (const [el, n] of live)
-            if (!now.has(el)) {
-              live.delete(el);
-              w.log.push(`${at}ms -${n} connected=${el.isConnected}`);
-            }
-          if (at < 30_000) requestAnimationFrame(tick);
-        };
-        tick();
-      });
-
       // Into the hits from the box, and the one stepped to opens.
       await browser.keys(["ArrowDown"]);
       await browser.keys(["Enter"]);
@@ -417,34 +386,7 @@ describe("the explorer", () => {
         timeoutMsg: `the file tab never came forward; in front is ${await tabInFront()}`,
       });
       const editor = await $('[data-testid="light-editor"]');
-      const held = await browser
-        .execute(
-          (el: HTMLElement) =>
-            `held: watch=${el.dataset.watch ?? "none"} connected=${el.isConnected}`,
-          editor as unknown as HTMLElement,
-        )
-        .catch((e: unknown) => `held: ${String(e).slice(0, 80)}`);
-      try {
-        await editor.waitForDisplayed({ timeout: 20_000 });
-      } catch (err) {
-        const later = await browser
-          .execute(
-            (el: HTMLElement) =>
-              `held later: watch=${el.dataset.watch ?? "none"} connected=${el.isConnected}`,
-            editor as unknown as HTMLElement,
-          )
-          .catch((e: unknown) => `held later: ${String(e).slice(0, 80)}`);
-        const log = await browser.execute(
-          () =>
-            (window as unknown as { editorWatch?: { log: string[] } }).editorWatch?.log.join(
-              "\n",
-            ) ?? "no watch",
-        );
-        const said = `${held}\n${later}\n${log}`;
-        console.error(`DIAGNOSIS #4799\n${said}`);
-        if (err instanceof Error) err.message += `\nDIAGNOSIS #4799\n${said}`;
-        throw err;
-      }
+      await editor.waitForDisplayed({ timeout: 20_000 });
       await expect(editor).toHaveText(expect.stringContaining("quokka-sentinel"));
       // The cursor is on the hit's line, which the gutter marks.
       const marked = await $('[data-testid="light-editor"] .cm-activeLineGutter');
