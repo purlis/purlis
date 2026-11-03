@@ -2,20 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The buttons on a pane's top line, drawn by the button family** (#3129): a task's Brief, the
- * two ways to end it (one that cannot run, with its reason), and the harness the chat runs. Each
- * is the window's own component in the window's own header (`PaneHead`, `.pane-chips`), so what
- * is drawn is what a pane draws: no control on the line takes a border in Purlis, and each is
- * reached by Tab with its ring in sight.
+ * **The head of a pane showing a task, drawn by the button family** (#3129, #4760): at its start
+ * the task's path and "harness · workspace", the harness its card's button; at its end the one
+ * state button (Brief, on a task), the chat's ⋯ and the pane's splits. Each is the window's own
+ * component in the window's own header (`PaneHead`, `.pane-chips`, `PaneDoing`), so what is
+ * drawn is what a pane draws: no control on the head takes a border in Purlis, and each is
+ * reached by Tab with its ring in sight. A task's two ways to end it are rows of its ⋯ since
+ * #4760, one of them unavailable here, with its reason.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { expect, waitFor } from "storybook/test";
-import type { Offer, TaskEndWay } from "./actions";
+import { expect, waitFor, within } from "storybook/test";
+import { catalogued, type Offer } from "./actions";
 import { BriefButton, BriefOpener, type BriefAsk } from "./Brief";
 import { HarnessChip } from "./HarnessCard";
-import { PaneHead } from "./LayoutPanes";
-import { TaskEndContext, TaskEnds } from "./TaskEnd";
+import { PaneDoing, PaneHead } from "./LayoutPanes";
+import { ChatMenuButton } from "./Menus";
 import { expectFocusInSight } from "./stories.testkit";
 
 const SESSION = 7;
@@ -36,7 +38,28 @@ const CLOSE: Offer = {
   does: { verb: "endTask", session: SESSION, way: "now" },
 };
 
-/** The line of a pane showing a task, with what was last pressed on it said under it. */
+/** The pane's two splits, as the catalogue offers them. */
+const SPLITS: Offer[] = [
+  {
+    id: "pane.split.right",
+    title: "Split right",
+    available: true,
+    reason: "",
+    does: { verb: "split", direction: "row" },
+  },
+  {
+    id: "pane.split.down",
+    title: "Split down",
+    available: true,
+    reason: "",
+    does: { verb: "split", direction: "column" },
+  },
+];
+
+/** The task's list, which its ⋯ opens. */
+const LIST = catalogued([STOP, CLOSE]);
+
+/** The head of a pane showing a task, with what was last pressed on it said under it. */
 function PaneLine() {
   const [said, setSaid] = useState("Nothing pressed");
   const pressed = (what: string) => () => setSaid(what);
@@ -46,17 +69,28 @@ function PaneLine() {
       <div className="pane-frame pane-headed" style={{ blockSize: 160 }}>
         <div className="pane-top">
           <BriefOpener value={(of: BriefAsk) => setSaid(`Brief of ${of.name}`)}>
-            <TaskEndContext.Provider
-              value={{
-                onEnd: (_session: number, way: TaskEndWay) => setSaid(`Ended by ${way}`),
-                onConfirm: () => undefined,
-              }}
+            <PaneHead
+              doing={
+                <div className="pane-actions">
+                  <BriefButton of={{ name: "fix-login", chat: SESSION }} word="Brief" />
+                  <ChatMenuButton
+                    session={SESSION}
+                    offers={LIST}
+                    onPress={(offer) => setSaid(offer.title)}
+                  />
+                  <PaneDoing
+                    pane={1}
+                    offerFor={(id) => SPLITS.find((offer) => offer.id === id)}
+                    closeOf={() => undefined}
+                    onPaneDoes={(_pane, offer) => setSaid(offer?.title ?? "")}
+                    task
+                  />
+                </div>
+              }
             >
-              <PaneHead doing={null}>
-                <div className="pane-chips">
-                  <span className="pane-crumbs">steward 2 › fix-login</span>
-                  <BriefButton of={{ name: "fix-login", chat: SESSION }} />
-                  <TaskEnds session={SESSION} stop={STOP} close={CLOSE} />
+              <div className="pane-chips">
+                <span className="pane-crumbs">steward 2 › fix-login</span>
+                <span className="pane-where">
                   <HarnessChip
                     glance={{
                       name: "claude",
@@ -67,9 +101,10 @@ function PaneLine() {
                     }}
                     onOpen={pressed("Harness card")}
                   />
-                </div>
-              </PaneHead>
-            </TaskEndContext.Provider>
+                  {" · alpha"}
+                </span>
+              </div>
+            </PaneHead>
           </BriefOpener>
         </div>
       </div>
@@ -88,42 +123,52 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /**
- * **The task's line**: Tab reaches Brief, Stop, the unavailable Close now (which keeps the focus
- * and says why) and the harness, in that order, each with its ring in sight; Enter presses the
- * ones that can run and nothing presses Close now. The picture is the line at rest.
+ * **The task's head**: Tab reaches the harness, Brief, ⋯ and the two splits, in that order, each
+ * with its ring in sight; Enter presses each. ⋯ lists the task's two ways to end it, the
+ * unavailable Close now saying why. The picture is the head at rest.
  */
 export const ATasksLine: Story = {
   play: async ({ canvas, userEvent }) => {
     const status = canvas.getByRole("status");
-    const brief = canvas.getByRole("button", { name: "Brief of fix-login" });
-    const stop = canvas.getByRole("button", { name: "Stop and get its report" });
-    const close = canvas.getByRole("button", { name: "Close now" });
     const harness = canvas.getByRole("button", { name: "What Claude Code can do here" });
-
-    await userEvent.tab();
-    await expect(brief).toHaveFocus();
-    expectFocusInSight();
-    await userEvent.keyboard("{Enter}");
-    await waitFor(() => expect(status).toHaveTextContent("Brief of fix-login"));
-
-    await userEvent.tab();
-    await expect(stop).toHaveFocus();
-    expectFocusInSight();
-    await userEvent.keyboard("{Enter}");
-    await waitFor(() => expect(status).toHaveTextContent("Ended by report"));
-
-    await userEvent.tab();
-    await expect(close).toHaveFocus();
-    await expect(close).toHaveAttribute("aria-disabled", "true");
-    await expect(close).toHaveAccessibleDescription("It is ending already.");
-    await userEvent.keyboard("{Enter}");
-    await expect(status).toHaveTextContent("Ended by report");
+    const brief = canvas.getByRole("button", { name: "Brief of fix-login" });
+    const more = canvas.getByRole("button", { name: /^More for / });
+    const right = canvas.getByRole("button", { name: "Split right" });
+    const down = canvas.getByRole("button", { name: "Split down" });
 
     await userEvent.tab();
     await expect(harness).toHaveFocus();
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(status).toHaveTextContent("Harness card"));
+
+    await userEvent.tab();
+    await expect(brief).toHaveFocus();
+    await expect(brief).toHaveTextContent("Brief");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(status).toHaveTextContent("Brief of fix-login"));
+
+    await userEvent.tab();
+    await expect(more).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    const menu = await within(document.body).findByRole("menu");
+    await expect(within(menu).getByRole("menuitem", { name: /^Close now/ })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await userEvent.click(within(menu).getByRole("menuitem", { name: /^Stop and get its report/ }));
+    await waitFor(() => expect(status).toHaveTextContent("Stop and get its report"));
+
+    right.focus();
+    await expect(right).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(status).toHaveTextContent("Split right"));
+
+    await userEvent.tab();
+    await expect(down).toHaveFocus();
+    expectFocusInSight();
 
     (document.activeElement as HTMLElement | null)?.blur();
   },
