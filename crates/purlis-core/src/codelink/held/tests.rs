@@ -609,3 +609,77 @@ fn a_stash_under_the_newest_keeps_the_runner() {
 
     assert!(says(&missing, "refs/stash@{1}"), "{missing:?}");
 }
+
+/// A runner's home, with what was in it before its host started, and when that was.
+fn a_home() -> (tempfile::TempDir, PathBuf, std::time::SystemTime) {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    std::fs::create_dir_all(home.join("from-the-image")).unwrap();
+    std::fs::write(
+        home.join("from-the-image/readme.txt"),
+        "made with the image\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(home.join(".config")).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let started = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    (dir, home, started)
+}
+
+/// **Work a task keeps outside its project's folder keeps the runner** (#4781): a file it wrote
+/// in the runner's home is in no repository, so it can't come here, and the Notice names it.
+#[test]
+fn a_file_a_task_wrote_in_the_runners_home_keeps_the_runner() {
+    let (_dir, home, started) = a_home();
+    std::fs::create_dir_all(home.join("notes")).unwrap();
+    std::fs::write(home.join("notes/findings.md"), "what the task found\n").unwrap();
+
+    let said = outside_the_projects(&home, &[], started);
+
+    assert!(
+        says(&said, "~/notes/findings.md") && says(&said, "outside the project's folder"),
+        "{said:?}"
+    );
+}
+
+/// **What the runner's home held before its host started is no task's work** (#4781), and nor
+/// is what programs keep in its hidden folders: their settings, caches and records.
+#[test]
+fn what_the_home_held_before_and_what_programs_keep_hidden_keeps_no_runner() {
+    let (_dir, home, started) = a_home();
+    std::fs::write(home.join(".config/tool.toml"), "a program's settings\n").unwrap();
+    std::fs::write(home.join(".bash_history"), "ls\n").unwrap();
+
+    assert_eq!(
+        outside_the_projects(&home, &[], started),
+        Vec::<String>::new()
+    );
+}
+
+/// **The folders purlis keeps in the home are not looked through** (#4781): its projects are
+/// listed repository by repository, wherever its data home is.
+#[test]
+fn the_folders_purlis_keeps_are_not_looked_through_outside_the_projects() {
+    let (_dir, home, started) = a_home();
+    let data = home.join("purlis-data");
+    std::fs::create_dir_all(data.join("projects/one")).unwrap();
+    std::fs::write(data.join("projects/one/file.txt"), "a project's\n").unwrap();
+
+    assert_eq!(
+        outside_the_projects(&home, &[data], started),
+        Vec::<String>::new()
+    );
+}
+
+/// **A link a task made in the home counts, and is never followed** (#4781).
+#[cfg(unix)]
+#[test]
+fn a_link_a_task_made_in_the_home_keeps_the_runner() {
+    let (_dir, home, started) = a_home();
+    std::os::unix::fs::symlink("/etc", home.join("etc-link")).unwrap();
+
+    let said = outside_the_projects(&home, &[], started);
+
+    assert!(says(&said, "~/etc-link"), "{said:?}");
+}

@@ -1373,7 +1373,33 @@ fn holds_ref(repo: &Path, name: &str) -> bool {
 /// holds, which is never anywhere but the project's own folder or a workspace's repository in it
 /// ([`repo_in`]). What `purlis serve` gives its host.
 #[cfg(unix)]
-pub struct Moves;
+pub struct Moves {
+    /// When its host started: what a task wrote outside its project since is its work
+    /// ([`held::outside_the_projects`], #4781).
+    since: std::time::SystemTime,
+    /// The runner's home, where a task may keep work outside its project: none where no home
+    /// is named, which proves nothing.
+    home: Option<std::path::PathBuf>,
+}
+
+#[cfg(unix)]
+impl Moves {
+    /// For a host starting now, before any program of it has run, in the home `HOME` names.
+    pub fn from_now() -> Moves {
+        Moves {
+            since: std::time::SystemTime::now(),
+            home: std::env::var_os("HOME").map(std::path::PathBuf::from),
+        }
+    }
+
+    /// [`Self::from_now`], in the home `home`.
+    pub fn in_home(home: std::path::PathBuf) -> Moves {
+        Moves {
+            home: Some(home),
+            ..Moves::from_now()
+        }
+    }
+}
 
 #[cfg(unix)]
 fn code_refused(why: Refused) -> purlis_host::protocol::session::Refusal {
@@ -1528,7 +1554,21 @@ impl purlis_host::Code for Moves {
         (Vec<purlis_host::protocol::session::RepoHeld>, Vec<String>),
         purlis_host::protocol::session::Refusal,
     > {
-        let (repos, unread) = held::repos_held(projects);
+        let (repos, mut unread) = held::repos_held(projects);
+        // **And what a task kept outside them** (#4781), in the runner's home: the projects and
+        // purlis's data home they are in are left out by name, wherever they are.
+        if let Some(home) = &self.home {
+            let kept: Vec<std::path::PathBuf> = std::iter::once(projects.to_path_buf())
+                .chain(projects.parent().map(Path::to_path_buf))
+                .collect();
+            unread.extend(held::outside_the_projects(home, &kept, self.since));
+        } else {
+            unread.push(
+                "the runner has no home folder named, so what a task kept outside its project \
+                 could not be looked for"
+                    .to_owned(),
+            );
+        }
         let repos = repos
             .into_iter()
             .map(|one| purlis_host::protocol::session::RepoHeld {

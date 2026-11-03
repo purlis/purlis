@@ -166,6 +166,134 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
     (held, unread)
 }
 
+/// The most files outside the projects a runner names: the rest are counted.
+const MOST_NAMED_OUTSIDE: usize = 5;
+
+/// **What a task keeps outside its project's folder on its runner** (#4781), in sentences: each
+/// file in the runner's `home` changed since `since`, when its host started, so in no repository
+/// and unable to come home. Each keeps the runner, and the window's Notice names it.
+///
+/// Only what a person would look for is looked through: a hidden entry of the home (`.config`,
+/// `.cache`, `.local` and the like) is a program's own settings, cache or record by the home's
+/// convention, purlis's own data home among them, and is left out, as is every folder in
+/// `skip`. A temporary folder is outside the home and temporary on any machine. No link is
+/// followed: a link made since counts as a file. A file is known changed by its status change
+/// time, which no program can set back, so a copy that keeps its times counts too.
+pub fn outside_the_projects(
+    home: &Path,
+    skip: &[std::path::PathBuf],
+    since: std::time::SystemTime,
+) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let mut said = Vec::new();
+    let mut folders = 0usize;
+    let mut stack = vec![String::new()];
+    while let Some(rel) = stack.pop() {
+        folders += 1;
+        if folders > MOST_FOLDERS {
+            said.push(format!(
+                "the runner's home holds more than {MOST_FOLDERS} folders, so not all were looked \
+                 through"
+            ));
+            break;
+        }
+        let dir = if rel.is_empty() {
+            home.to_path_buf()
+        } else {
+            home.join(&rel)
+        };
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                said.push(format!("~/{rel} on the runner could not be read: {e}"));
+                continue;
+            }
+        };
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => {
+                    said.push(format!("~/{rel} on the runner could not all be read: {e}"));
+                    continue;
+                }
+            };
+            let Ok(name) = entry.file_name().into_string() else {
+                said.push(format!(
+                    "a file in ~/{rel} on the runner has a name that is not text, so it was not \
+                     looked at"
+                ));
+                continue;
+            };
+            if rel.is_empty() && name.starts_with('.') {
+                continue;
+            }
+            let path = entry.path();
+            if skip.contains(&path) {
+                continue;
+            }
+            let shown = if rel.is_empty() {
+                name
+            } else {
+                format!("{rel}/{name}")
+            };
+            // `symlink_metadata` does not follow a link.
+            let meta = match std::fs::symlink_metadata(&path) {
+                Ok(meta) => meta,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => {
+                    said.push(format!("~/{shown} on the runner could not be read: {e}"));
+                    continue;
+                }
+            };
+            if meta.is_dir() {
+                stack.push(shown);
+            } else if changed_at(&meta).is_none_or(|at| at >= since) {
+                found.push(shown);
+            }
+        }
+    }
+    if !found.is_empty() {
+        found.sort();
+        let more = found.len().saturating_sub(MOST_NAMED_OUTSIDE);
+        let named: Vec<String> = found
+            .iter()
+            .take(MOST_NAMED_OUTSIDE)
+            .map(|one| format!("~/{one}"))
+            .collect();
+        said.insert(
+            0,
+            format!(
+                "the runner holds files a task wrote outside the project's folder, which can't \
+                 come here: {}{}",
+                named.join(", "),
+                if more > 0 {
+                    format!(" and {more} more")
+                } else {
+                    String::new()
+                }
+            ),
+        );
+    }
+    said
+}
+
+/// When the file `meta` describes last changed, data or status: its status change time, which
+/// no program can set back. None where it can't be told, which counts as changed.
+#[cfg(unix)]
+fn changed_at(meta: &std::fs::Metadata) -> Option<std::time::SystemTime> {
+    use std::os::unix::fs::MetadataExt;
+    let secs = u64::try_from(meta.ctime()).ok()?;
+    let nanos = u32::try_from(meta.ctime_nsec()).ok()?;
+    std::time::UNIX_EPOCH.checked_add(std::time::Duration::new(secs, nanos))
+}
+
+/// [`changed_at`] where there is no status change time: when its data last changed.
+#[cfg(not(unix))]
+fn changed_at(meta: &std::fs::Metadata) -> Option<std::time::SystemTime> {
+    meta.modified().ok()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
     None,
