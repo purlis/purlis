@@ -887,7 +887,7 @@ export const Actions: Story = {
     await userEvent.tab();
     expect(canvas.getByRole("button", { name: "Split down" })).toHaveFocus();
     await userEvent.tab();
-    expect(canvas.getByRole("button", { name: "End this pane's chat" })).toHaveFocus();
+    expect(canvas.getByRole("button", { name: "Close this pane" })).toHaveFocus();
     expectFocusInSight();
     // At the pane's top right, in the header's row.
     const { frame, head } = rowsOf(canvasElement);
