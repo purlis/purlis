@@ -515,3 +515,11 @@
 .pane-top > .waiting-strip {
   margin: var(--space-4) var(--space-4) 0;
 }
+
+/* **Opened, it stays inside the top's cap** (#4843): in a short pane the top is 46% of it, and
+   the strip gives way to it like the band does, its text scrolling inside it, so the terminal
+   below keeps its room whatever the message holds. */
+.pane-top > .waiting-strip[data-open] {
+  flex: 0 1 auto;
+  min-block-size: 0;
+}

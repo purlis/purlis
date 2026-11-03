@@ -3238,3 +3238,78 @@ fn a_line_the_person_sent_makes_the_next_turn_theirs_until_a_turn_begins_or_ends
     ledger.turn_ended(5);
     assert!(ledger.background_turn(5, true));
 }
+
+#[test]
+fn a_question_asked_in_a_form_stands_past_a_later_turn_and_goes_once_answered() {
+    // #4710: the words purlis's server said it asks, held with that ask.
+    let mut ledger = Ledger::default();
+    ledger.asks_the_person(OWN_CHAT, "Which host do I deploy to?".to_owned());
+    ledger.said_last(OWN_CHAT, "Three tasks are at work.".to_owned());
+    ledger.turn_began_as(OWN_CHAT, true);
+    assert_eq!(ledger.asking(OWN_CHAT), Some("Which host do I deploy to?"));
+    ledger.asked_the_person(OWN_CHAT);
+    assert_eq!(ledger.asking(OWN_CHAT), None);
+
+    // A turn of the person's is their answer too, and so is the chat's close.
+    ledger.asks_the_person(OWN_CHAT, "Push now?".to_owned());
+    ledger.turn_began_as(OWN_CHAT, false);
+    assert_eq!(ledger.asking(OWN_CHAT), None);
+    ledger.asks_the_person(OWN_CHAT, "Push now?".to_owned());
+    ledger.forget(OWN_CHAT, None);
+    assert_eq!(ledger.asking(OWN_CHAT), None);
+}
+
+#[test]
+fn a_secret_remembered_after_a_message_was_kept_is_masked_where_it_is_read() {
+    // #4843: kept masked, then a vault value it holds was read; the strip, the Inbox card and
+    // the quiz read it masked from then on.
+    let value = "late-remembered vault value 4843";
+    let mut ledger = Ledger::default();
+    ledger.said_last(
+        OWN_CHAT,
+        format!("The password was {value}, is that right?"),
+    );
+    ledger.said_last(OWN_CHAT, format!("Again: {value}."));
+    ledger.asks_the_person(OWN_CHAT, format!("Use {value}?"));
+    assert!(
+        ledger
+            .last_said(OWN_CHAT)
+            .is_some_and(|said| said.contains(value))
+    );
+
+    crate::secrets::seen::remember(value);
+
+    let last = ledger.last_said(OWN_CHAT).expect("kept").to_owned();
+    assert_eq!(last, "Again: ***.");
+    assert_eq!(
+        ledger.said_before(OWN_CHAT),
+        ["The password was ***, is that right?"]
+    );
+    assert_eq!(ledger.asking(OWN_CHAT), Some("Use ***?"));
+    assert!(
+        ledger
+            .said(OWN_CHAT)
+            .iter()
+            .all(|said| !said.contains(value))
+    );
+}
+
+#[test]
+fn what_a_chat_said_masked_again_is_handed_once_to_whoever_keeps_it_past_the_window() {
+    // The review of #4905: the host's board keeps what each chat said for a relaunched window,
+    // so what is masked again here has to reach it, once, and only for the chats it changed.
+    let value = "vault value remembered after the turn 4905 core";
+    let mut ledger = Ledger::default();
+    ledger.said_last(OWN_CHAT, format!("Is {value} right?"));
+    ledger.said_last(OWN_CHAT + 1, "Nothing secret here.".to_owned());
+    assert!(ledger.said_masked_again().is_empty());
+
+    crate::secrets::seen::remember(value);
+    let _ = ledger.last_said(OWN_CHAT + 1);
+
+    assert_eq!(
+        ledger.said_masked_again(),
+        [(OWN_CHAT, vec!["Is *** right?".to_owned()])]
+    );
+    assert!(ledger.said_masked_again().is_empty());
+}

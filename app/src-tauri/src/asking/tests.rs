@@ -101,6 +101,8 @@ struct World {
     only_updates: Vec<u32>,
     /// What each chat's turn last ended on.
     last_messages: Vec<(u32, &'static str)>,
+    /// What purlis's MCP server said each chat asks the person in its form (#4710).
+    asking: Vec<(u32, &'static str)>,
     /// The hosts a chat's proxy holds a connection to now, and when that hold ends (#1709).
     held: Vec<(u32, &'static str, u32)>,
     /// When each ask began, by its key (#1700).
@@ -137,6 +139,7 @@ impl World {
             askers: Vec::new(),
             only_updates: Vec::new(),
             last_messages: Vec::new(),
+            asking: Vec::new(),
             held: Vec::new(),
             since: Vec::new(),
             sign_ins: Vec::new(),
@@ -203,6 +206,12 @@ impl World {
                     .map(|(_, said)| (*said).to_owned())
             },
             earlier_messages: &|_| Vec::new(),
+            asking: &|session| {
+                self.asking
+                    .iter()
+                    .find(|(one, _)| *one == session)
+                    .map(|(_, said)| (*said).to_owned())
+            },
             held: &|session, target, _| {
                 self.held
                     .iter()
@@ -869,6 +878,41 @@ fn a_terminal_prompt_says_which_prompt_waits_there_and_is_answered_only_in_its_c
         assert!(ask.options.is_empty());
         assert_eq!(ask.answer, AnswerPath::InItsPane);
     }
+}
+
+#[test]
+fn a_form_purlis_s_server_asks_shows_the_question_in_its_own_words() {
+    // #4710: `ask_operator` asks through the harness's form, and the server said its words.
+    let mut world = World::new();
+    world.queue = vec![2, 3];
+    world.prompts = vec![(2, Prompt::Permission), (3, Prompt::Form)];
+    world.asking = vec![
+        (2, "Not this prompt's words."),
+        (
+            3,
+            "Which host do I deploy to?\nThe blue one or the green one?",
+        ),
+    ];
+
+    let asks = world.asks();
+
+    let form = asks.iter().find(|ask| ask.session == 3).expect("its ask");
+    assert_eq!(form.source, AskSource::Terminal);
+    assert_eq!(
+        form.says,
+        "Which host do I deploy to? The blue one or the green one?"
+    );
+    assert_eq!(
+        form.last_message.as_deref(),
+        Some("Which host do I deploy to?\nThe blue one or the green one?")
+    );
+    // Only a form is what the server asked through: another prompt keeps its kind.
+    let permission = asks.iter().find(|ask| ask.session == 2).expect("its ask");
+    assert_eq!(
+        permission.says,
+        "Waiting in its terminal: a permission prompt"
+    );
+    assert_eq!(permission.last_message, None);
 }
 
 #[test]

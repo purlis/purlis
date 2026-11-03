@@ -1206,3 +1206,46 @@ fn a_background_turn_keeps_what_the_chat_asked_and_lists_it_before_its_newer_mes
     assert_eq!(held.tasks().ledger().last_said(steward), None);
     assert!(held.tasks().ledger().said_before(steward).is_empty());
 }
+
+#[test]
+fn what_a_waiting_chat_said_is_told_to_the_board_the_host_keeps_until_the_person_answers() {
+    // #4709: the host's copy is what a relaunched window shows in the strip.
+    let (_plane, _host, _planes, _id, held, steward, _task, told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    says(&held, steward, "Should I open the pull request now?");
+    assert_eq!(
+        held.hooks().board().said_of(steward),
+        ["Should I open the pull request now?"]
+    );
+
+    held.operator_input(steward, b"open it\r").expect("sent");
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    assert!(held.hooks().board().said_of(steward).is_empty());
+}
+
+#[test]
+fn a_vault_value_remembered_after_the_turn_is_masked_in_the_board_a_relaunched_window_takes() {
+    // #4843, the review of #4905: the window masks what a chat said again once it learns a
+    // vault value the message holds, and the host's board must have it masked too. A window
+    // relaunched from that board may not have read the value yet, so it cannot mask it itself.
+    let (_plane, _host, _planes, _id, held, steward, _task, _told) =
+        a_steward_waiting_on_the_person_with_a_task();
+    let value = "vault value remembered after the turn 4905";
+    says(&held, steward, &format!("Is {value} the right password?"));
+    assert_eq!(
+        held.hooks().board().said_of(steward),
+        [format!("Is {value} the right password?")]
+    );
+
+    purlis_core::secrets::seen::remember(value);
+    // The window never reads that chat again: it relaunches and takes the board the host kept,
+    // which has it masked from the moment the value was remembered.
+    let mut relaunched = purlis_core::state::Board::new();
+    relaunched.keep(held.hooks().board().kept());
+    assert_eq!(relaunched.said_of(steward), ["Is *** the right password?"]);
+    // And the strip of the window that was told reads it masked too.
+    assert_eq!(
+        reply_ask(&held, steward).and_then(|ask| ask.last_message),
+        Some("Is *** the right password?".to_owned())
+    );
+}

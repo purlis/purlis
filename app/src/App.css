@@ -8841,6 +8841,10 @@ nav.piece-files-head {
 .waiting-strip[data-open] .waiting-strip-words {
   flex-direction: column;
   gap: var(--space-1);
+  /* The strip's height where its pane holds less than they would take (#4843): they shrink
+     to it, and their text scrolls. */
+  align-self: stretch;
+  min-block-size: 0;
 }
 .waiting-strip-label {
   flex: none;
@@ -8856,6 +8860,7 @@ nav.piece-files-head {
   white-space: nowrap;
 }
 .waiting-strip[data-open] .waiting-strip-says {
+  min-block-size: 0;
   max-block-size: 10lh;
   overflow: auto;
   white-space: pre-wrap;

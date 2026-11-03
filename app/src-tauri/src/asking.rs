@@ -1017,11 +1017,29 @@ pub fn sandbox_local(
 /// shown in its own terminal, and purlis holds nothing it could answer it by. Named, so it
 /// does not wait unseen, with the kind of prompt its harness's nudge said (#1691); the person
 /// answers it in the chat.
-pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Shown {
+///
+/// **A form purlis's own server asks through says its question** (#4710): `asking` is what the
+/// server said it asks the person, held with the ask, masked. A form is the one prompt it asks
+/// through, so another prompt keeps its kind. Its words are `says`, on one line, and in full in
+/// `last_message`, as a question's are, so the strip, the Inbox card and the quiz show the ask as
+/// asked; no later turn replaces them.
+pub fn terminal(
+    session: u32,
+    prompt: purlis_core::harness::model::Prompt,
+    asking: Option<String>,
+) -> Shown {
+    let asked = asking.filter(|_| prompt == purlis_core::harness::model::Prompt::Form);
+    let says = match &asked {
+        Some(question) => purlis_core::shown::one_line(
+            &question.split_whitespace().collect::<Vec<_>>().join(" "),
+            purlis_core::shown::NO_CLIP,
+        ),
+        None => prompt.says().to_owned(),
+    };
     Shown {
         session,
         ask: format!("terminal:{session}"),
-        says: prompt.says().to_owned(),
+        says,
         options: Vec::new(),
         source: AskSource::Terminal,
         chain: Vec::new(),
@@ -1030,7 +1048,7 @@ pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Sh
         held_until: None,
         writes: None,
         lines: None,
-        last_message: None,
+        last_message: asked,
         login: None,
         earlier_messages: None,
     }
@@ -2133,6 +2151,8 @@ pub struct Waiting<'a> {
     pub last_message: &'a dyn Fn(u32) -> Option<String>,
     /// What its turns ended on before that, oldest first (#4563).
     pub earlier_messages: &'a dyn Fn(u32) -> Vec<String>,
+    /// What purlis's MCP server said a chat asks the person in its harness's form (#4710).
+    pub asking: &'a dyn Fn(u32) -> Option<String>,
     /// Until when a chat's proxy holds a connection to a host, where it holds one now, asking
     /// the person (#1709), given when the ask began.
     pub held: &'a HoldEnds<'a>,
@@ -2216,7 +2236,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .iter()
             .filter(|session| !said.contains(session) && !(waiting.only_updates)(**session))
             .map(|&session| match (waiting.at_its_prompt)(session) {
-                Some(prompt) => terminal(session, prompt),
+                Some(prompt) => terminal(session, prompt, (waiting.asking)(session)),
                 None => question(
                     session,
                     (waiting.last_message)(session),
@@ -2321,6 +2341,9 @@ fn asker_in(chats: &crate::chats::Chats, session: u32) -> Option<u32> {
 
 /// Every ask project `held` has waiting now, as the window lists them.
 pub fn every_ask(held: &crate::planes::Held) -> Asking {
+    // A backstop for the host's board (the review of #4905): told when a vault value is
+    // remembered already, so this is nothing unless a value came since and no one was told.
+    crate::dispatched::said_masked_kept(held);
     let plane = held.plane_id();
     let root = held.root();
     let locks = purlis_core::sandbox::policy::Locks::of(root);
@@ -2461,6 +2484,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             })
         },
         last_message: &|session| tasks.ledger().last_said(session).map(str::to_owned),
+        asking: &|session| tasks.ledger().asking(session).map(str::to_owned),
         earlier_messages: &|session| {
             tasks
                 .ledger()

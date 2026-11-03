@@ -126,11 +126,12 @@ fn place_of(moved: &crate::state::Move) -> usize {
         Move::OwnWorkLapsed { .. } => 19,
         Move::BlockedWhileWaiting => 20,
         Move::Replied => 21,
+        Move::Said { .. } => 22,
     }
 }
 
 /// How many places [`place_of`] names.
-const EVERY_MOVE: usize = 22;
+const EVERY_MOVE: usize = 23;
 
 /// One of every move, in an order in which each moves something a reader can see: chat 1 takes
 /// them all, and chat 2 is opened only to be closed.
@@ -314,6 +315,12 @@ fn one_of_every_move() -> Vec<(u32, crate::state::Move)> {
             },
         ),
         (1, Move::ReportedToItsAsker),
+        (
+            1,
+            Move::Said {
+                said: vec!["Which host?".into(), "Should I push?".into()],
+            },
+        ),
         (1, Move::Ignored),
         (1, Move::Rested),
         (1, Move::Exited { code: Some(0) }),
