@@ -128,8 +128,10 @@ function core(over: (cmd: string, args: unknown) => unknown = () => undefined) {
   return { asked };
 }
 
+/** The empty pane's New chat, then Start (#4758): the started chat takes that pane. */
 async function openAChat() {
-  await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  const empty = await screen.findByTestId("empty-pane");
+  await userEvent.click(within(empty).getByRole("button", { name: "New chat" }));
   await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
@@ -264,7 +266,8 @@ describe("the palette reaching what the window can do", () => {
     const { asked } = core();
     render(<App />);
 
-    await runFromPalette("new tab");
+    // New chat is the row that starts one (#4758); New tab opens an empty tab.
+    await runFromPalette("new chat");
 
     expect(await screen.findByRole("dialog", { name: /Start a chat/i })).toBeInTheDocument();
     expect(asked.map(({ cmd }) => cmd)).not.toContain("start_chat");
@@ -276,6 +279,9 @@ describe("the palette reaching what the window can do", () => {
     core();
     render(<App />);
     await openAChat();
+    // A started chat takes the focused pane (#4758), so the second one gets a tab of its own
+    // from the strip's `+` first.
+    await userEvent.click(within(stripNamed("Tabs")).getByRole("button", { name: "New tab" }));
     await openAChat();
     expect(screen.getAllByTestId("pane").map((pane) => pane.textContent)).toEqual(["session 2"]);
 
@@ -492,24 +498,24 @@ describe("one list, two surfaces", () => {
 
   it("lists a row that cannot run, with its reason, where the button for it has gone", async () => {
     // **This used to be about a disabled `Split right` button on the bar**, and the bar has
-    // no such button any more: the splits and the pane close are on the panes now, and with
-    // no chat in front there are no panes to put them on. That is right, and it is also the
-    // moment the guarantee could have been lost — *"an operator cannot ask about an option
-    // they cannot see"* (`actions.ts`).
+    // no such button any more: the splits and the pane close are on the panes now. That is
+    // right, and it is also the moment the guarantee could have been lost — *"an operator
+    // cannot ask about an option they cannot see"* (`actions.ts`).
     //
     // It is not lost, and this is where it now lives: the palette lists every unavailable
-    // row with the reason it cannot run. The palette is also the keyboard's route to these
-    // three, which is the other half of moving them onto a hover surface.
+    // row with the reason it cannot run. Since the window always keeps one pane (#4758), an
+    // empty one splits like any other, so the row asked here is the tab's tasks: its button
+    // is a chat tab's chip, and the one tab here is an empty pane's, which wears none.
     core();
     render(<App />);
-    await screen.findByTestId("empty-window");
+    await screen.findByTestId("empty-pane");
 
-    await palette("split right");
+    await palette("tab's tasks");
 
-    const row = screen.getByRole("option", { name: /Split right/ });
+    const row = screen.getByRole("option", { name: /Show this tab's tasks/ });
     expect(row).toHaveAttribute("aria-disabled", "true");
-    expect(row).toHaveTextContent("No chat is in front, so there is no pane to split.");
-    expect(screen.queryByRole("button", { name: "Split right" })).toBeNull();
+    expect(row).toHaveTextContent("The pane in focus shows nothing, so it has no tasks.");
+    expect(screen.queryByRole("button", { name: /tasks/ })).toBeNull();
   });
 
   it("ends in the same state whether a split came from the palette or from its button", async () => {
@@ -607,9 +613,10 @@ describe("handing F2 to the chat in front", () => {
     await userEvent.keyboard("{F2}");
 
     expect(commandsSent(asked).some(({ cmd }) => cmd === "send_input")).toBe(false);
-    // Said where the operator is looking, and not only on the row further down the list.
+    // Said where the operator is looking, and not only on the row further down the list. A
+    // window with no chat shows its strip's empty pane (#4758), and says so.
     expect(document.querySelector(".held")?.textContent).toBe(
-      "No chat is in front, so there is nowhere to send it.",
+      "The pane in focus shows nothing, so there is nowhere to send it.",
     );
     expect(screen.getByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
   });

@@ -931,7 +931,7 @@ describe("a repo row's menu", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Focus", "New tab", "New branch…", "Start new chats here"]);
+    ).toEqual(["Focus", "New chat", "New branch…", "Start new chats here"]);
   });
 
   it("hands the catalogue's offer back when a row is pressed", async () => {
@@ -940,7 +940,7 @@ describe("a repo row's menu", () => {
 
     rightClick(within(heading("tool")).getByText("tool"));
     await screen.findByRole("menu");
-    await userEvent.click(screen.getByRole("menuitem", { name: "New tab" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "New chat" }));
 
     expect(pressed).toEqual(["clone.chat:tool"]);
   });
@@ -972,7 +972,7 @@ describe("a repo row's menu", () => {
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
 
     expect(
-      within(await screen.findByRole("menu")).getByRole("menuitem", { name: "New tab" }),
+      within(await screen.findByRole("menu")).getByRole("menuitem", { name: "New chat" }),
     ).toBeInTheDocument();
   });
 
@@ -982,7 +982,7 @@ describe("a repo row's menu", () => {
     rightClick(screen.getByTestId("ci-svc"));
 
     expect(
-      within(await screen.findByRole("menu")).getByRole("menuitem", { name: "New tab" }),
+      within(await screen.findByRole("menu")).getByRole("menuitem", { name: "New chat" }),
     ).toBeInTheDocument();
   });
 

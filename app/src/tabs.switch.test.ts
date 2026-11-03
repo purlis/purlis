@@ -2,7 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { EMPTY_TAB, noTabs, openEmptyTab, openTab, press, workspaceOf, type Tabs } from "./tabs";
+import {
+  EMPTY_TAB,
+  chatNamed,
+  closeLayout,
+  dropEmptyTabsOfGoneWorkspaces,
+  newChatNumber,
+  noTabs,
+  openEmptyTab,
+  openTab,
+  press,
+  workspaceOf,
+  type Tabs,
+} from "./tabs";
 
 /**
  * **The switch: a chat isn't a tab** (#4758). The strip's `+` opens a tab with one empty pane
@@ -41,5 +53,47 @@ describe("the strip's + (#4758; spec story 13)", () => {
     expect(landed.tabs.order).toEqual(tabs.order);
     const front = landed.tabs.byId[landed.tabs.inFront ?? -1];
     expect(front.layout).toMatchObject({ kind: "pane", content: { session: 2 } });
+  });
+});
+
+describe("a new chat's number (#4758)", () => {
+  it("is 1 for a fresh window's first chat, though its empty tab is tab 1", () => {
+    const tabs = openEmptyTab(noTabs(), "ops");
+
+    expect(newChatNumber(tabs)).toBe(1);
+  });
+
+  it("counts every chat the window named, so the next is 2 though it takes the same pane", () => {
+    const tabs = chatNamed(openEmptyTab(noTabs(), "ops"), 1);
+
+    expect(newChatNumber(tabs)).toBe(2);
+  });
+
+  it("is never one a chat still running has, after a close empties that chat's tab", () => {
+    const first = press(
+      chatNamed(openEmptyTab(noTabs(), "ops"), 1),
+      { session: 1, chat: "1", who: "steward" },
+      at(),
+    );
+    const emptied = closeLayout(first.tabs, first.tabs.inFront ?? -1, filedIn({}));
+
+    expect(newChatNumber(emptied)).toBe(2);
+  });
+});
+
+describe("an empty tab of a workspace the plane no longer has (#4758)", () => {
+  it("goes, and the tabs of the workspaces still there stay", () => {
+    const tabs = openEmptyTab(openEmptyTab(noTabs(), "alpha"), "beta");
+
+    const left = dropEmptyTabsOfGoneWorkspaces(tabs, (workspace) => workspace === "beta");
+
+    expect(left.order).toEqual([2]);
+    expect(left.inFront).toBe(2);
+  });
+
+  it("is the same tabs where every workspace is still there", () => {
+    const tabs = openEmptyTab(noTabs(), "alpha");
+
+    expect(dropEmptyTabsOfGoneWorkspaces(tabs, () => true)).toBe(tabs);
   });
 });

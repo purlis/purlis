@@ -321,9 +321,24 @@ afterEach(() => {
   clearMocks();
 });
 
-/** Opens a chat where the operator is standing: New tab, a row, Start. */
+/**
+ * New chat in the empty pane in front (#4758): a chat takes the focused pane, so where a chat
+ * shows already the strip's `+` opens a new tab first, and the chat gets a tab of its own as it
+ * did when `+` started one. The sidebar's `+` is called New chat too, so the empty pane's is
+ * asked for by where it is.
+ */
+async function pressNewChat() {
+  const empty = await screen.findByTestId("empty-pane").catch(() => undefined);
+  if (empty === undefined)
+    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await userEvent.click(
+    within(await screen.findByTestId("empty-pane")).getByRole("button", { name: "New chat" }),
+  );
+}
+
+/** Opens a chat where the operator is standing: New chat, a row, Start. */
 async function openAChat() {
-  await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await pressNewChat();
   await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
@@ -435,7 +450,7 @@ describe("the four regions", () => {
     const row = await screen.findByTestId("repo-svc");
 
     fireEvent.contextMenu(row);
-    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "New chat" }));
     await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 
     expect(startedIn(asked)).toEqual([`${ALPHA}/svc`]);
@@ -448,11 +463,11 @@ describe("the four regions", () => {
       asked.filter((one) => one.cmd === "start_chat").map((one) => one.args.boxes);
 
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "New chat" }));
     await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(boxes()).toHaveLength(1));
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "New chat" }));
     await userEvent.click(await screen.findByRole("checkbox", { name: /new branch in svc/ }));
     await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(boxes()).toHaveLength(2));
@@ -503,7 +518,7 @@ describe("the four regions", () => {
     const { asked } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await pressNewChat();
     await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     const starting = await screen.findByRole("button", { name: "Starting…" });
     expect(starting).toBeDisabled();
@@ -516,13 +531,13 @@ describe("the four regions", () => {
     expect(asked.filter((one) => one.cmd === "start_chat")).toHaveLength(1);
   });
 
-  it("starts only that tab in the clone, and the next New tab where it always did", async () => {
+  it("starts only that tab in the clone, and the next New chat where it always did", async () => {
     // The review of #174: `New chat in svc` had set the explorer's pick, which made it the
     // same row as `Start new chats in svc` under another name.
     const { asked } = core();
     render(<App />);
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "New chat" }));
     await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(startedIn(asked)).toHaveLength(1));
 

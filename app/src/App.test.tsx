@@ -90,7 +90,10 @@ const START_OPTIONS = {
   declares_none: true,
 };
 
-/** Opens a chat the way the operator does now: New tab, then a row, then Start.
+/** Opens a chat the way the operator does now: New chat, then a row, then Start.
+ *
+ *  New chat takes the focused pane (#4758), so a chat wanted beside the one in front gets a
+ *  tab of its own first, from the strip's `+`, whose one pane is empty.
  *
  *  A harness starts only once a row is picked (ADR 0022) — the dialog shows even when one
  *  profile is available, because skipping it would bring back the harness nobody picked on
@@ -99,7 +102,16 @@ const START_OPTIONS = {
  *  every one of these fails.
  */
 async function openAChat() {
-  await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await waitFor(() =>
+    expect([
+      ...screen.queryAllByTestId("pane"),
+      ...screen.queryAllByTestId("empty-pane"),
+    ]).not.toEqual([]),
+  );
+  if (screen.queryByTestId("empty-pane") === null)
+    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+  const empty = await screen.findByTestId("empty-pane");
+  await userEvent.click(within(empty).getByRole("button", { name: "New chat" }));
   await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
@@ -434,14 +446,15 @@ describe("App", () => {
     render(<App />);
 
     expect(await projectAt("/home/dev/plane")).toBeInTheDocument();
-    expect(await screen.findByTestId("empty-window")).toBeInTheDocument();
+    // The one empty pane every strip keeps (#4758), where the old empty window was.
+    expect(await screen.findByTestId("empty-pane")).toBeInTheDocument();
   });
 
   // What the window does with sessions the core is already holding is in
   // `lifecycle.test.tsx`: it draws them as tabs. It used to end them, which a relaunch and a
   // reload both now depend on it not doing.
 
-  it("opens a session in a new tab", async () => {
+  it("opens a session in the empty tab's pane", async () => {
     const { asked } = core();
     render(<App />);
 
@@ -487,24 +500,24 @@ describe("App", () => {
       expect(screen.queryByRole("dialog", { name: "Start a chat" })).not.toBeInTheDocument();
     }
 
-    it("opens the setup tab from the +, not a picker that cannot start anything", async () => {
+    it("opens the setup tab from New chat, not a picker that cannot start anything", async () => {
       const { asked } = core(START_OPTIONS, () => harnessesHere());
       render(<App />);
 
-      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+      await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
 
       await expectTheSetupTab();
       expect(asked.filter(({ cmd }) => cmd === "start_chat")).toEqual([]);
     });
 
-    it("opens the setup tab from the palette's New tab", async () => {
+    it("opens the setup tab from the palette's New chat", async () => {
       core(START_OPTIONS, () => harnessesHere());
       render(<App />);
-      await screen.findByRole("button", { name: "New tab" });
+      await screen.findByRole("button", { name: "New chat" });
 
       await userEvent.keyboard("{F2}");
       await screen.findByRole("dialog", { name: "Command palette" });
-      await userEvent.keyboard("New tab{Enter}");
+      await userEvent.keyboard("New chat{Enter}");
 
       await expectTheSetupTab();
     });
@@ -529,7 +542,7 @@ describe("App", () => {
       core(START_OPTIONS, () => harnessesHere("codex"));
       render(<App />);
 
-      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+      await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
 
       expect(await screen.findByRole("dialog", { name: "Start a chat" })).toBeInTheDocument();
     });
@@ -541,7 +554,7 @@ describe("App", () => {
       core({ ...START_OPTIONS, profiles: [own], declares_none: false }, () => harnessesHere());
       render(<App />);
 
-      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+      await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
 
       expect(await screen.findByRole("dialog", { name: "Start a chat" })).toBeInTheDocument();
     });
@@ -813,6 +826,22 @@ describe("App", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(panes()).toEqual(["session 1"]);
     expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
+  });
+
+  it("draws its empty pane when the plane's sidebar cannot be read (#4758)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plane_at_launch")
+        return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
+      if (cmd === "plane_sidebar") throw new Error("the plane could not be read");
+      if (cmd === "running_sessions") return [];
+      if (cmd === "opened_chats") return [];
+      if (cmd === "chat_states") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      return null;
+    });
+    render(<App />);
+
+    expect(await screen.findByTestId("empty-pane")).toBeInTheDocument();
   });
 
   it("keeps a chat it opened for a split whose tab went while it was starting (#4756)", async () => {
