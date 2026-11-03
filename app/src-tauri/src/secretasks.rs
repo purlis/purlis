@@ -77,6 +77,9 @@ pub fn secret_answered(
         answered.key,
     );
     nudge(held, &answered);
+    // A first fill of a key the persona does not declare, or into a vault it did not name, is
+    // offered to the person as a change to the persona (#5076).
+    crate::proposals::offer_need(held, &answered);
     Ok(())
 }
 

@@ -42,7 +42,8 @@ fn need(chat: u32, key: &str) -> Need {
         key: key.into(),
         tool: Some("kubectl".into()),
         purpose: None,
-        declared: false,
+        declared: None,
+        names_no_vault: false,
     }
 }
 
@@ -742,7 +743,7 @@ fn a_key_the_persona_does_not_declare_is_tagged_and_a_declared_one_is_not() {
     let declared: Vec<(String, bool)> = asks
         .open()
         .into_iter()
-        .map(|one| (one.key, one.declared))
+        .map(|one| (one.key, one.declared.is_some()))
         .collect();
     assert_eq!(
         declared,
@@ -932,4 +933,90 @@ fn no_value_is_in_what_a_chat_hears_or_the_trace() {
         );
     });
     assert!(!traced(root).contains(VALUE));
+}
+
+// ----------------------------------------------------------------------------------------
+// A persona's Secret needs, and a vault made at the first fill (#5076)
+
+#[test]
+fn a_declared_keys_ask_carries_the_purpose_its_persona_declares() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    raised_now(project.path(), &asks, &line(7, "DECLARED", None)).unwrap();
+    assert_eq!(
+        asks.open()[0].declared.as_deref(),
+        Some("deploy to staging")
+    );
+}
+
+#[test]
+fn a_persona_that_names_no_vault_is_asked_into_one_named_after_it_made_at_the_first_fill() {
+    let project = project_with_needs();
+    let root = project.path();
+    std::fs::create_dir_all(root.join("personas/shop")).unwrap();
+    std::fs::write(
+        root.join("personas/shop/persona.md"),
+        "---\nrole: Shop\nvault: none\n---\n",
+    )
+    .unwrap();
+    let asks = Asks::new(root);
+    let shop = |chat| Chat {
+        chat,
+        persona: Some("shop"),
+        harness: None,
+    };
+    let (waits, waiting) = std::sync::mpsc::channel();
+    let answered = std::thread::scope(|scope| {
+        let asked = &asks;
+        let chat = scope.spawn(move || {
+            raised_within(
+                &ctx(root),
+                asked,
+                shop(7),
+                &line(7, "STRIPE_KEY", None),
+                Duration::from_secs(60),
+                &|| {
+                    let _ = waits.send(());
+                },
+            )
+        });
+        waiting.recv().unwrap();
+        let open = asks.open();
+        assert_eq!(
+            (open[0].vault.as_str(), open[0].names_no_vault),
+            ("shop", true)
+        );
+        let answered = asks
+            .answer(
+                &ctx(root),
+                open[0].id,
+                Answer::Fill(VALUE.to_owned().into()),
+                window(),
+            )
+            .expect("filled, the vault made");
+        assert_eq!(
+            chat.join().unwrap(),
+            Ok(Said::Filled {
+                vault: "shop".into(),
+                key: "STRIPE_KEY".into()
+            })
+        );
+        answered
+    });
+    assert!(answered.made_vault && answered.names_no_vault && !answered.declared);
+    assert_eq!(answered.persona, "shop");
+    let ctx = ctx(root);
+    let made = crate::secrets::cmd::provider(&ctx, "shop").expect("registered");
+    assert_eq!(made.provider, MADE_ON);
+    assert_eq!(
+        crate::secrets::cmd::get_value(&ctx, &made, "STRIPE_KEY").ok(),
+        Some(VALUE.to_owned())
+    );
+    // Tagged for the persona, so its chats may use it.
+    assert!(crate::secrets::brokered::authorise(&ctx, Some("shop"), "shop").is_ok());
+    // Nothing about the secret in the definition: that is the person's proposed change.
+    assert_eq!(
+        std::fs::read_to_string(root.join("personas/shop/persona.md")).unwrap(),
+        "---\nrole: Shop\nvault: none\n---\n"
+    );
 }

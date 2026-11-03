@@ -135,8 +135,9 @@ pub fn proposable(root: &Path, path: &Path) -> Result<PathBuf, String> {
 
 /// **Whether `path` is a file purlis itself may propose a change to** (#3467), for the person
 /// to apply as a chat's proposal is applied: one of the project's two settings files at its
-/// root, as the project spells them, or a workspace's manifest (#3486), there, and no link from
-/// the root down. What a chat may propose ([`proposable`]) is not widened by it: no chat's
+/// root, as the project spells them, a workspace's manifest (#3486), or a persona's definition
+/// (`personas/<name>/persona.md`, for a Secret need, #5076), there, and no link from the root
+/// down. What a chat may propose ([`proposable`]) is not widened by it: no chat's
 /// proposal is judged here.
 pub fn proposable_by_purlis(root: &Path, path: &Path) -> Result<PathBuf, String> {
     let rel = relative_to(root, path).ok_or_else(|| not_proposable(path))?;
@@ -147,7 +148,9 @@ pub fn proposable_by_purlis(root: &Path, path: &Path) -> Result<PathBuf, String>
     .into_iter()
     .any(|which| rel == Path::new(which.file_at(root)));
     let manifest = manifest_of(root, &rel).is_some();
-    if !settings && !manifest {
+    // A persona's definition, for the Secret need a first fill offers (#5076, ADR 0109).
+    let persona = definition_of(&rel);
+    if !settings && !manifest && !persona {
         return Err(not_proposable(path));
     }
     let mut at = root.to_path_buf();
@@ -162,6 +165,18 @@ pub fn proposable_by_purlis(root: &Path, path: &Path) -> Result<PathBuf, String>
         Ok(meta) if meta.file_type().is_file() => Ok(rel),
         _ => Err(not_proposable(path)),
     }
+}
+
+/// Whether `rel` is a persona's definition, `personas/<name>/persona.md`, of a persona's name.
+fn definition_of(rel: &Path) -> bool {
+    let parts: Vec<&str> = rel
+        .components()
+        .map(|part| match part {
+            Component::Normal(name) => name.to_str().unwrap_or(""),
+            _ => "",
+        })
+        .collect();
+    matches!(parts.as_slice(), ["personas", name, "persona.md"] if crate::personas::valid_name(name))
 }
 
 /// The workspace of the plane at `root` whose manifest `rel` names, `workspaces/<ws>/workspace.json`,

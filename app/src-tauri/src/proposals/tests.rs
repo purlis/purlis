@@ -765,3 +765,91 @@ mod limit {
         assert!(proposals.every().is_empty());
     }
 }
+
+/// What the person's fill of `key` came to, for persona `devops`, in vault `vault`.
+fn filled(
+    key: &str,
+    vault: &str,
+    declared: bool,
+    names_no_vault: bool,
+) -> purlis_core::secrets::ask::Answered {
+    purlis_core::secrets::ask::Answered {
+        vault: vault.to_owned(),
+        key: key.to_owned(),
+        filled: true,
+        persona: "devops".to_owned(),
+        declared,
+        purpose: Some("charge test cards".to_owned()),
+        names_no_vault,
+        made_vault: names_no_vault,
+        nudge: Vec::new(),
+        told: purlis_core::askoutcome::Outcome {
+            about: purlis_core::askoutcome::About::Secret {
+                vault: vault.to_owned(),
+                key: key.to_owned(),
+            },
+            answer: purlis_core::askoutcome::Answer::Filled,
+        },
+    }
+}
+
+fn definition(root: &Path) -> String {
+    std::fs::read_to_string(root.join("personas/devops/persona.md")).expect("the definition")
+}
+
+/// #5076: a first fill of a key the persona does not declare is offered as a proposed change
+/// adding it as a Secret need, purlis's own, and nothing is written until the person applies
+/// it. A second fill's need joins the first's offer; a declared key offers nothing.
+#[test]
+fn a_first_undeclared_fill_is_offered_as_a_need_and_written_only_when_applied() {
+    let (_dir, root) = project();
+    let before = "---\nrole: Ops\nvault: none\n---\n\nThe charter.\n";
+    std::fs::write(root.join("personas/devops/persona.md"), before).unwrap();
+    let held = Proposals::default();
+
+    assert_eq!(
+        need_offered_in(&root, &held, &filled("DECLARED", "team", true, false), 1),
+        Ok(None),
+        "a declared key into a vault the persona names offers nothing"
+    );
+    let first = need_offered_in(
+        &root,
+        &held,
+        &filled("STRIPE_KEY", "devops", false, true),
+        2,
+    )
+    .expect("offered")
+    .expect("one proposal");
+    let again = need_offered_in(
+        &root,
+        &held,
+        &filled("GITHUB_TOKEN", "devops", false, true),
+        3,
+    )
+    .expect("offered")
+    .expect("one proposal");
+    assert_eq!(definition(&root), before, "nothing written by an offer");
+    let every = held.every();
+    assert_eq!(every.len(), 1, "one offer for the file: {every:?}");
+    assert!(held.get(first).is_none() && held.get(again).is_some());
+    let one = &every[0];
+    assert_eq!(
+        (one.session, one.path.as_str()),
+        (BY_PURLIS, "personas/devops/persona.md")
+    );
+
+    let audit = |_: &proposed::Applied<'_>| Ok(());
+    apply_in(&root, one, None, &audit, &Mutex::new(()), From::Row).expect("applied");
+    assert_eq!(
+        definition(&root),
+        "---\nrole: Ops\nvault: devops\nsecret-need.STRIPE_KEY: charge test cards\n\
+         secret-need.GITHUB_TOKEN: charge test cards\n---\n\nThe charter.\n"
+    );
+    assert_eq!(
+        purlis_core::secrets::needs::of(&root, "devops")
+            .into_iter()
+            .map(|need| need.key)
+            .collect::<Vec<_>>(),
+        ["STRIPE_KEY", "GITHUB_TOKEN"]
+    );
+}

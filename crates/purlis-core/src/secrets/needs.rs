@@ -73,6 +73,43 @@ pub fn declared(root: &Path, persona: &str, key: &str) -> Option<Need> {
     of(root, persona).into_iter().find(|need| need.key == key)
 }
 
+/// **What a persona's definition reads with a need added**, as purlis proposes it after a
+/// first fill of a key the persona does not declare (#5076): `text` with a
+/// `secret-need.<key>: <purpose>` line, and a `vault: <vault>` line where the persona named
+/// none. Every other line is left as written ([`purlis_skills::fence::with_keys`]). Refused
+/// for a key no need takes, or a definition with no frontmatter to hold the lines.
+pub fn with_need(
+    text: &str,
+    need: Option<(&str, &str)>,
+    vault: Option<&str>,
+) -> Result<String, String> {
+    let mut keys: Vec<(String, Option<String>)> = Vec::new();
+    if let Some((key, purpose)) = need {
+        if !is_key(key) {
+            return Err(format!("{key} is no key a Secret need takes"));
+        }
+        let purpose = crate::shown::one_line(purpose.trim(), super::ask::MOST_PURPOSE_CHARS);
+        let purpose = if purpose.is_empty() {
+            NO_PURPOSE_SAID.to_owned()
+        } else {
+            purpose
+        };
+        keys.push((format!("{PREFIX}{key}"), Some(purpose)));
+    }
+    if let Some(vault) = vault {
+        keys.push(("vault".to_owned(), Some(vault.to_owned())));
+    }
+    let keys: Vec<(&str, Option<&str>)> = keys
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_deref()))
+        .collect();
+    purlis_skills::fence::with_keys(text, &keys).map_err(|why| format!("the definition {why}"))
+}
+
+/// The purpose a need is proposed with where the chat said none: the person edits it before
+/// applying, or after.
+pub const NO_PURPOSE_SAID: &str = "asked for by a chat; say what for";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,5 +178,26 @@ mod tests {
         ] {
             assert!(!is_key(key), "{key}");
         }
+    }
+
+    #[test]
+    fn a_need_is_proposed_as_one_line_and_a_vault_where_the_persona_named_none() {
+        let text = "---\nrole: Shop\nvault: none\n---\n\nThe charter.\n";
+        let changed = with_need(
+            text,
+            Some(("STRIPE_KEY", "charge\ntest cards")),
+            Some("shop"),
+        )
+        .expect("made");
+        assert_eq!(
+            changed,
+            "---\nrole: Shop\nvault: shop\nsecret-need.STRIPE_KEY: charge⟦U+000A⟧test cards\n---\n\nThe charter.\n"
+        );
+        assert_eq!(
+            with_need("---\nrole: Shop\n---\n", Some(("K", " ")), None).unwrap(),
+            format!("---\nrole: Shop\nsecret-need.K: {NO_PURPOSE_SAID}\n---\n")
+        );
+        assert!(with_need("no frontmatter\n", Some(("K", "p")), None).is_err());
+        assert!(with_need("---\n---\n", Some(("1K", "p")), None).is_err());
     }
 }

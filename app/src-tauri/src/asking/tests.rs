@@ -2095,7 +2095,8 @@ fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
         key: "KUBECONFIG".into(),
         tool: Some("kubectl".into()),
         purpose: None,
-        declared: true,
+        declared: Some(String::new()),
+        names_no_vault: false,
         chats: vec![6, 9, 11],
         starts: 0,
         since: 1_700_000_000,
@@ -2122,6 +2123,7 @@ fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
             tool: Some("kubectl".into()),
             purpose: None,
             declared: true,
+            declared_purpose: Some(String::new()),
             waiting: 3,
         })
     );
@@ -2184,7 +2186,8 @@ fn a_chats_secret_ask_quotes_its_purpose_and_tags_an_undeclared_key() {
         key: "STRIPE_KEY".into(),
         tool: None,
         purpose: Some("charge test cards".into()),
-        declared: false,
+        declared: None,
+        names_no_vault: false,
         chats: vec![6],
         starts: 0,
         since: 1_700_000_000,
@@ -2204,6 +2207,41 @@ fn a_chats_secret_ask_quotes_its_purpose_and_tags_an_undeclared_key() {
     assert_eq!(
         (shown.purpose.as_deref(), shown.declared),
         (Some("charge test cards"), false)
+    );
+}
+
+/// #5076: a key the persona declares shows what its definition says it is for, quoted as the
+/// definition's, and no "not declared" tag.
+#[test]
+fn a_declared_keys_ask_shows_the_purpose_its_persona_declares() {
+    let mut world = World::new();
+    world.queue = vec![6];
+    world.secrets = vec![purlis_core::secrets::ask::Open {
+        id: 5,
+        persona: "shop".into(),
+        vault: "shop".into(),
+        key: "STRIPE_KEY".into(),
+        tool: None,
+        purpose: None,
+        declared: Some("charge test cards".into()),
+        names_no_vault: false,
+        chats: vec![6],
+        since: 1_700_000_000,
+    }];
+    let asks = world.asks();
+    let ask = asks
+        .iter()
+        .find(|one| one.source == AskSource::Secret)
+        .expect("the Secret ask");
+    assert_eq!(
+        ask.says,
+        "Needs STRIPE_KEY from shop's vault shop. Fill stores it in that vault on this machine; \
+         the chat never sees it. shop declares it for: “charge test cards”"
+    );
+    let shown = ask.secret.as_ref().expect("its names");
+    assert_eq!(
+        (shown.declared, shown.declared_purpose.as_deref()),
+        (true, Some("charge test cards"))
     );
 }
 

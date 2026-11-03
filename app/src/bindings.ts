@@ -13794,6 +13794,11 @@ export type SecretShown = {
 	 *  quiet "not declared by this persona" tag (#5072).
 	 */
 	declared: boolean,
+	/**
+	 *  **What the persona's committed definition says the key is for** (#5076), where it
+	 *  declares it: the maintainers' words, quoted as theirs.
+	 */
+	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
 };

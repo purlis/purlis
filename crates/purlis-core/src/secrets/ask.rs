@@ -66,9 +66,14 @@ pub struct Need {
     /// **The chat's own words for what it needs the key for** (#5072), one line and bounded
     /// ([`purpose_said`]): shown as the chat's, never as purlis's. None for a broker miss.
     pub purpose: Option<String>,
-    /// Whether the persona declares the key as a Secret need ([`super::needs`]): an ask for one
-    /// it does not is shown with a quiet "not declared by this persona" tag (#5072).
-    pub declared: bool,
+    /// **What the persona's definition says the key is for**, where it declares the key as a
+    /// Secret need ([`super::needs`], #5076). None for a key it does not declare, which is shown
+    /// with a quiet "not declared by this persona" tag (#5072).
+    pub declared: Option<String>,
+    /// **The persona names no vault** (`vault: none`, or nothing at all, #5076): the ask is for
+    /// a vault named after it, made at the first fill, and the fill offers a proposed change
+    /// setting the persona's `vault`.
+    pub names_no_vault: bool,
 }
 
 /// The longest purpose a Secret ask carries, in characters: about a line of the ask.
@@ -91,8 +96,11 @@ pub struct Open {
     pub tool: Option<String>,
     /// The chat's own words for what it needs the key for, where one said ([`Need::purpose`]).
     pub purpose: Option<String>,
-    /// Whether the persona declares the key as a Secret need ([`Need::declared`]).
-    pub declared: bool,
+    /// What the persona's definition says the key is for, where it declares it
+    /// ([`Need::declared`]).
+    pub declared: Option<String>,
+    /// The persona names no vault ([`Need::names_no_vault`]).
+    pub names_no_vault: bool,
     /// Each chat that needs it, the first to ask first: those holding a command, and those
     /// whose command stopped waiting and will be nudged.
     pub chats: Vec<u32>,
@@ -158,6 +166,18 @@ pub struct Answered {
     pub vault: String,
     pub key: String,
     pub filled: bool,
+    /// The persona the ask was raised for.
+    pub persona: String,
+    /// Whether the persona declares the asked key as a Secret need: a fill of one it does not
+    /// is offered to the person as a proposed change adding it (#5076).
+    pub declared: bool,
+    /// The chat's words for what the key is for, where one said.
+    pub purpose: Option<String>,
+    /// The persona names no vault: a fill is offered as a proposed change setting its
+    /// `vault` to [`Self::vault`] (#5076).
+    pub names_no_vault: bool,
+    /// The vault was made by this fill, on the default provider (#5076).
+    pub made_vault: bool,
     pub nudge: Vec<u32>,
     pub told: crate::askoutcome::Outcome,
 }
@@ -206,7 +226,8 @@ struct Asked {
     persona: String,
     tool: Option<String>,
     purpose: Option<String>,
-    declared: bool,
+    declared: Option<String>,
+    names_no_vault: bool,
     since: u64,
     waiters: Vec<Waiter>,
     /// An answer is being written: a second is refused, as any ask's second answer is.
@@ -329,6 +350,7 @@ impl Asks {
             tool,
             purpose,
             declared,
+            names_no_vault,
         } = need;
         let (answered, n) = {
             let mut inner = self.inner();
@@ -371,6 +393,7 @@ impl Asks {
                         tool,
                         purpose,
                         declared,
+                        names_no_vault,
                         since: now_secs(),
                         waiters: vec![waiter],
                         answering: false,
@@ -454,7 +477,8 @@ impl Asks {
                 key: key.clone(),
                 tool: asked.tool.clone(),
                 purpose: asked.purpose.clone(),
-                declared: asked.declared,
+                declared: asked.declared.clone(),
+                names_no_vault: asked.names_no_vault,
                 chats: chats_of(asked),
                 starts: starts_of(asked),
                 since: asked.since,
@@ -518,6 +542,7 @@ impl Asks {
             }
         };
         let into_vault = named.vault.clone().unwrap_or_else(|| vault.clone());
+        let mut made_vault = false;
         let into_key = named.key.clone().unwrap_or_else(|| key.clone());
         let filled = match &answer {
             Answer::Fill(value) => {
@@ -529,6 +554,19 @@ impl Asks {
                         crate::shown::one_line(&into_key, 40)
                     ));
                 }
+                let persona = self
+                    .inner()
+                    .open
+                    .get(&(vault.clone(), key.clone()))
+                    .map(|asked| asked.persona.clone())
+                    .unwrap_or_default();
+                made_vault = match made_if_missing(ctx, &into_vault, &persona) {
+                    Ok(made) => made,
+                    Err(why) => {
+                        still_open();
+                        return Err(why);
+                    }
+                };
                 let written = cmd::provider(ctx, &into_vault)
                     .and_then(|v| cmd::set_value(ctx, &v, &into_key, value));
                 if let Err(e) = written {
@@ -603,6 +641,11 @@ impl Asks {
             vault,
             key,
             filled,
+            persona: asked.persona,
+            declared: asked.declared.is_some(),
+            purpose: asked.purpose,
+            names_no_vault: asked.names_no_vault,
+            made_vault,
             nudge,
             told,
         })
@@ -753,9 +796,13 @@ pub fn raised_within(
                 .to_owned(),
         );
     };
-    let vault = match line.vault.as_deref().filter(|vault| !vault.is_empty()) {
-        Some(vault) => vault.to_owned(),
-        None => persona_vault(ctx, persona)?,
+    let (vault, names_no_vault) = match line.vault.as_deref().filter(|vault| !vault.is_empty()) {
+        Some(vault) => (vault.to_owned(), false),
+        None => match persona_vault(ctx, persona)? {
+            Some(vault) => (vault, false),
+            // A persona that names no vault is asked into one named after it (#5076).
+            None => (persona.to_owned(), true),
+        },
     };
     if holds_already(ctx, persona, &vault, &line.key) {
         return Ok(Said::Filled {
@@ -770,7 +817,8 @@ pub fn raised_within(
         key: line.key.clone(),
         tool: None,
         purpose: Some(purpose),
-        declared: super::needs::declared(&ctx.root, persona, &line.key).is_some(),
+        declared: super::needs::declared(&ctx.root, persona, &line.key).map(|need| need.purpose),
+        names_no_vault,
     };
     Ok(match asks.hold(need, within, &mut |_: &str| moved()) {
         Held::Filled { vault, key } => Said::Filled { vault, key },
@@ -786,17 +834,67 @@ pub fn raised_within(
     })
 }
 
-/// The vault persona `persona` uses, as its definition or the registry names it, or why none.
-fn persona_vault(ctx: &Ctx, persona: &str) -> Result<String, String> {
+/// The vault persona `persona` uses, as its definition or the registry names it; none where
+/// it names none (`vault: none`, or nothing at all); or why the registry could not be read.
+fn persona_vault(ctx: &Ctx, persona: &str) -> Result<Option<String>, String> {
     let state = crate::plane::state_dir(&ctx.root);
     match crate::personaverbs::vault(&ctx.root, &state, persona) {
         crate::personas::Vault::Named(vault) | crate::personas::Vault::Registered(vault) => {
-            Ok(vault)
+            Ok(Some(vault))
         }
         crate::personas::Vault::RegistryUnreadable(why) => Err(why),
-        crate::personas::Vault::DeclaredNone | crate::personas::Vault::Unnamed => Err(format!(
-            "persona '{persona}' names no vault to ask into: name one with `vault`"
-        )),
+        crate::personas::Vault::DeclaredNone | crate::personas::Vault::Unnamed => Ok(None),
+    }
+}
+
+/// The provider a vault made by a first fill is kept by: the system's credential store, as a
+/// new vault in the window is (#5076).
+pub const MADE_ON: &str = "keyring";
+
+/// **Makes vault `vault` where the project does not have it** (#5076): on [`MADE_ON`], tagged
+/// for `persona` so its chats may use it, as `purlis vault add` makes one. Whether it was made;
+/// the refusal is the command's own sentence.
+fn made_if_missing(ctx: &Ctx, vault: &str, persona: &str) -> Result<bool, String> {
+    let doc = super::registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
+    if super::registry::vault_in(&doc, vault).is_ok() {
+        return Ok(false);
+    }
+    let req = super::vaultcmd::AddRequest {
+        name: vault.to_owned(),
+        provider: MADE_ON.to_owned(),
+        persona: Some(persona.to_owned()).filter(|persona| !persona.is_empty()),
+        ..Default::default()
+    };
+    let mut kept = Kept::default();
+    if super::vaultcmd::add(ctx, &req, &mut kept) != 0 {
+        return Err(kept.0.join(" "));
+    }
+    Ok(true)
+}
+
+/// What `purlis vault add` said, kept: its refusal is the fill's.
+#[derive(Default)]
+struct Kept(Vec<String>);
+
+impl super::cmd::Io for Kept {
+    fn say(&mut self, line: super::cmd::Say) {
+        if let super::cmd::Say::Err(text) | super::cmd::Say::Info(text) = line {
+            self.0.push(text.to_string());
+        }
+    }
+    fn out(&mut self, _bytes: &[u8]) {}
+    fn err(&mut self, _bytes: &[u8]) {}
+    fn stdout_is_terminal(&self) -> bool {
+        false
+    }
+    fn stdin_is_terminal(&self) -> bool {
+        false
+    }
+    fn read_stdin(&mut self) -> String {
+        String::new()
+    }
+    fn read_hidden(&mut self, _prompt: &str) -> String {
+        String::new()
     }
 }
 

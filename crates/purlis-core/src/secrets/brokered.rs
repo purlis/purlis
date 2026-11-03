@@ -2515,7 +2515,9 @@ pub(crate) fn serve_recorded(
                     key: key.clone(),
                     tool: its_repository.as_ref().map(|ready| ready.tool.name.clone()),
                     purpose: None,
-                    declared: super::needs::declared(&ctx.root, persona, &key).is_some(),
+                    declared: super::needs::declared(&ctx.root, persona, &key)
+                        .map(|need| need.purpose),
+                    names_no_vault: false,
                 };
                 let held = missing.asks.hold(need, missing.within, &mut |line: &str| {
                     (missing.moved)();
