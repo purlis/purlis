@@ -50,6 +50,7 @@ import { harnessCardView, type Layout, type ViewRef } from "./tabs";
 import { EVEN, shareOf, WHOLE } from "./laidOut";
 import { floorAlong } from "./paneDrop";
 import { dropPane, GRIP } from "./paneDrag";
+import { paneNamesOf } from "./panePlaces";
 import { type Crumbs } from "./tabChats";
 import { BriefButton, type BriefAsk } from "./Brief";
 import { PaneCrumbs } from "./PaneCrumbs";
@@ -516,6 +517,7 @@ export function LayoutPanes({
   chatName,
   onClearPane,
   onResumeTask,
+  names,
   path = "",
 }: {
   /** The chats the launch has still to start (`restoring.rs`): each one's pane says so, in the
@@ -639,6 +641,9 @@ export function LayoutPanes({
   /** Resume, on the band of pane `pane` left on a task that ended: its finished row reopened
    *  in that pane (#1485, #4756). */
   onResumeTask: (pane: number, task: FinishedTask) => void;
+  /** What a reader calls each pane of the tab, by where it is (#4767, `panePlaces.ts`): worked
+   *  out once at the tab's root and handed down. */
+  names?: ReadonlyMap<number, string>;
   /** This layout's path from its tab's root: `a` for a split's first child, `b` for its
    *  second. The tab's own layout is `""`. */
   path?: string;
@@ -925,6 +930,15 @@ export function LayoutPanes({
   // on mount too, which is a measurement purlis caused.
   const share = shareOf(layout);
   const sideOf = (side: number) => `${path}${side === 0 ? "a" : "b"}`;
+  // **Each pane of a split is a region named by where it is** (#4767, ruled on #4699): "Left
+  // pane", "Top right pane". What it holds says its chat's name and state.
+  const named = names ?? paneNamesOf(layout);
+  const regionOf = (child: Layout) => {
+    const said = child.kind === "pane" ? named.get(child.pane) : undefined;
+    return said === undefined
+      ? {}
+      : { role: "region", "aria-label": `${said[0].toUpperCase()}${said.slice(1)}` };
+  };
   const settled = (sizes: Record<string, number>, meta: { isUserInteraction: boolean }) => {
     if (!meta.isUserInteraction) return;
     const first = sizes[`pane-${sideOf(0)}`];
@@ -969,6 +983,7 @@ export function LayoutPanes({
             // **A separator keeps the floor a drop keeps** (#4763): about 40 columns by 8 rows
             // for each pane on this side, in pixels.
             minSize={floorAlong(child, layout.direction)}
+            {...regionOf(child)}
           >
             <LayoutPanes
               path={sideOf(side)}
@@ -1022,6 +1037,7 @@ export function LayoutPanes({
               chatName={chatName}
               onClearPane={onClearPane}
               onResumeTask={onResumeTask}
+              names={named}
             />
           </Panel>
         </Fragment>

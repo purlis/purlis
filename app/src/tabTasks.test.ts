@@ -12,7 +12,6 @@ import {
   kindsOf,
   menuOf,
   needsSaid,
-  neighbour,
   wearsChip,
   type Ended,
 } from "./tabTasks";
@@ -277,25 +276,5 @@ describe("what a tab's menu lists", () => {
       ["steward 1", 1],
       ["orphan", 2],
     ]);
-  });
-});
-
-describe("the next and the previous chat in a tab", () => {
-  const rows = [row(1, 1), row(2, 2), row(3, 2)];
-
-  it("are the neighbours in the menu's order, round the ends", () => {
-    expect(neighbour(rows, 1, 1)).toBe(2);
-    expect(neighbour(rows, 3, 1)).toBe(1);
-    expect(neighbour(rows, 1, -1)).toBe(3);
-    expect(neighbour(rows, 2, -1)).toBe(1);
-  });
-
-  it("start from the ends when the tab shows a chat that is not listed any more", () => {
-    expect(neighbour(rows, 9, 1)).toBe(1);
-    expect(neighbour(rows, 9, -1)).toBe(3);
-  });
-
-  it("are nothing in a tab with one chat", () => {
-    expect(neighbour([row(1, 1)], 1, 1)).toBeUndefined();
   });
 });

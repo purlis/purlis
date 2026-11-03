@@ -463,6 +463,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "is not logged in offers its login, typed in a shell tab; the rest are the forge's sentence",
   },
   "SandboxOffer.tsx": { count: 1, why: "the answer's refusal, inside the sandbox offer's Notice" },
+  "PlaneView.tsx": {
+    count: 1,
+    why: "a screen reader's one polite line about a pane the keyboard did not ask for (#4767): heard, never drawn, with nothing to do",
+  },
   "PoolSetupTab.tsx": {
     count: 2,
     why:

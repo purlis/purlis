@@ -33,6 +33,7 @@ import { pinOfKey, opensTheWorkspaces, workspacesKeySaid } from "../workspaceSwi
 import { opensTheSwitcher, switcherKeySaid } from "../switcherKey";
 import { sideKeyOf, sideKeysSaid, type SideKey } from "../sideKeys";
 import { TASK_KEY_ROW, taskKeyOf, taskKeySaid, type TaskKey } from "../taskKeys";
+import { paneStepOf, paneStepSaid, tabStepOf, tabStepSaid } from "../moveKeys";
 import { f6Of } from "../regionCycle";
 import { opensAShell, shellKeySaid } from "../shellKey";
 import { sizeKey, type SizeKey } from "../textSize";
@@ -50,6 +51,7 @@ import {
   inAChat,
   inAMenu,
   inAnEditor,
+  inAView,
   onARenamingTab,
   typedInto,
 } from "./contexts";
@@ -87,6 +89,8 @@ export type Yield =
   | "terminal-ctrl"
   /** …off a Mac, where this chord is a Ctrl chord a terminal has a use for. */
   | "terminal-off-mac"
+  /** Off a Mac, the keystroke landed in a view, whose Back and Forward are Alt and an arrow. */
+  | "view-off-mac"
   /** The keystroke landed on a tab that answers the key itself (`F2` renames it). */
   | "tab"
   /** The keystroke landed in a text editor, whose keymap has it. */
@@ -172,6 +176,8 @@ const ctl = (key: string, more: Omit<Chord, "key" | "ctrl"> = {}): Chord => ({
 const bare = (key: string, more: Omit<Chord, "key"> = {}): Chord => ({ key, ...more });
 /** The same chords on both keyboards. */
 const both = (...chords: Chord[]) => ({ mac: chords, other: chords });
+/** The four arrows, for the pane keys (`moveKeys.ts`). */
+const ARROW_KEYS = ["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"];
 /** The keys every list, tree and menu walks its rows with (React Aria's). */
 const NAVIGATION = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"];
 /** The same spelling on both keyboards. */
@@ -564,7 +570,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "tasks.menu",
-    does: "The menu of this tab's chats",
+    does: "The focused chat's tasks",
     group: "Tabs and chats",
     where: "window",
     kind: "key",
@@ -575,46 +581,60 @@ export const SHORTCUTS: readonly Shortcut[] = [
     matches: isTask("menu"),
   },
   {
-    id: "tasks.next",
-    does: "The next chat in this tab",
-    group: "Tabs and chats",
-    where: "window",
-    kind: "key",
-    chords: {
-      mac: [cmd("ArrowDown", { alt: true })],
-      other: [ctl("]", { shift: true, code: "BracketRight" })],
-    },
-    said: (mac) => taskKeySaid("next", mac),
-    yields: ["dialog", "typing"],
-    rows: [TASK_KEY_ROW.next],
-    matches: isTask("next"),
-  },
-  {
-    id: "tasks.previous",
-    does: "The previous chat in this tab",
-    group: "Tabs and chats",
-    where: "window",
-    kind: "key",
-    chords: {
-      mac: [cmd("ArrowUp", { alt: true })],
-      other: [ctl("[", { shift: true, code: "BracketLeft" })],
-    },
-    said: (mac) => taskKeySaid("previous", mac),
-    yields: ["dialog", "typing"],
-    rows: [TASK_KEY_ROW.previous],
-    matches: isTask("previous"),
-  },
-  {
-    id: "tasks.own",
-    does: "Back to the session's own chat",
+    id: "pane.back",
+    does: "Back to the chat this pane showed before",
     group: "Tabs and chats",
     where: "window",
     kind: "key",
     chords: { mac: [cmd("H", { shift: true })], other: [ctl("H", { shift: true })] },
-    said: (mac) => taskKeySaid("own", mac),
+    said: (mac) => taskKeySaid("back", mac),
     yields: ["dialog", "typing"],
-    rows: [TASK_KEY_ROW.own],
-    matches: isTask("own"),
+    rows: [TASK_KEY_ROW.back],
+    matches: isTask("back"),
+  },
+  {
+    id: "pane.focus",
+    does: "Move to the pane in that direction",
+    group: "Tabs and chats",
+    where: "window",
+    kind: "key",
+    chords: {
+      mac: ARROW_KEYS.map((key) => cmd(key, { alt: true })),
+      other: ARROW_KEYS.map((key) => bare(key, { alt: true })),
+    },
+    said: paneStepSaid,
+    // Off a Mac Alt and an arrow is a byte to a terminal (word movement) and a view's Back and
+    // Forward (`moveKeys.ts`), and an editor moves a line on Alt with Up and Down.
+    yields: ["dialog", "menu", "terminal-off-mac", "view-off-mac", "editor", "typing"],
+    matches: (e, mac) => paneStepOf(e, mac) !== undefined,
+  },
+  {
+    id: "tab.next",
+    does: "The next tab",
+    group: "Tabs and chats",
+    where: "window",
+    kind: "key",
+    chords: {
+      mac: [cmd("]", { shift: true, code: "BracketRight" })],
+      other: [ctl("]", { shift: true, code: "BracketRight" })],
+    },
+    said: (mac) => tabStepSaid("next", mac),
+    yields: ["dialog", "typing"],
+    matches: (e, mac) => tabStepOf(e, mac) === "next",
+  },
+  {
+    id: "tab.previous",
+    does: "The previous tab",
+    group: "Tabs and chats",
+    where: "window",
+    kind: "key",
+    chords: {
+      mac: [cmd("[", { shift: true, code: "BracketLeft" })],
+      other: [ctl("[", { shift: true, code: "BracketLeft" })],
+    },
+    said: (mac) => tabStepSaid("previous", mac),
+    yields: ["dialog", "typing"],
+    matches: (e, mac) => tabStepOf(e, mac) === "previous",
   },
   {
     id: "layout.undo",
@@ -1061,6 +1081,8 @@ export function yieldsTo(entry: Shortcut, e: KeyboardEvent, held: Held = {}): Yi
         return e.ctrlKey && !e.metaKey && inAChat(on);
       case "terminal-off-mac":
         return !mac && inAChat(on);
+      case "view-off-mac":
+        return !mac && inAView(on);
       case "tab":
         return e.key === "F2" && onARenamingTab(on);
       case "editor":
@@ -1144,6 +1166,8 @@ function covers(rule: Yield, platform: Platform, chord: Chord): readonly Scope[]
       return chord.ctrl === true && chord.meta !== true ? ["terminal"] : [];
     case "terminal-off-mac":
       return platform === "other" ? ["terminal"] : [];
+    case "view-off-mac":
+      return platform === "other" ? ["view"] : [];
     case "tab":
       return ["tab"];
     case "editor":
