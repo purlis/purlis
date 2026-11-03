@@ -156,6 +156,7 @@ export function Doer({
  */
 export const MARKS: Record<string, typeof Plus> = {
   "chat.new": Plus,
+  "tab.new": Plus,
   "workspace.create": Plus,
   "pane.split.right": SquareSplitHorizontal,
   "pane.split.down": SquareSplitVertical,

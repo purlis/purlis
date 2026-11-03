@@ -147,7 +147,7 @@ the branch (ADR 0072).
 _Avoid_: the chat's branch (singular: a chat may work in several repos), piece, worktree (in UI text)
 
 **Writing chat**:
-A chat that starts in a repo's shared clone (`workspaces/<ws>/<repo>`), which is what _New tab
+A chat that starts in a repo's shared clone (`workspaces/<ws>/<repo>`), which is what _New chat
 in <repo>_ and _Start new chats in <repo>_ point at. By default it starts on a new branch of its
 own instead: a piece named after the chat, or `chat-<n>`, cut before it starts and taken back if
 the start is refused. The picker's _start on a new branch_ box, ticked by default, is the

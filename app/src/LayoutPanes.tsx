@@ -847,6 +847,7 @@ export function LayoutPanes({
   onNewChatOn,
   split,
   runningIn,
+  noWorkspace = false,
   tab,
   chatName,
   onClearPane,
@@ -979,6 +980,8 @@ export function LayoutPanes({
   };
   /** How many chats run in `workspace`: what an empty pane says (#4755). */
   runningIn: (workspace: string) => number;
+  /** The plane has no workspace yet: an empty pane offers Create a workspace (#4758). */
+  noWorkspace?: boolean;
   /** The tab this is the layout of. Its splits are its own: another tab's never carry over
    *  (#4755). */
   tab: number;
@@ -1054,6 +1057,7 @@ export function LayoutPanes({
               newChat={offerFor("chat.new")}
               onPress={(offer) => onPaneDoes(layout.pane, offer)}
               inSplit={inSplit}
+              createWorkspace={noWorkspace ? offerFor("workspace.create") : undefined}
             />
           </div>
         </div>
@@ -1391,6 +1395,7 @@ export function LayoutPanes({
       onNewChatOn={onNewChatOn}
       split={split}
       runningIn={runningIn}
+      noWorkspace={noWorkspace}
       tab={tab}
       faceOf={faceOf}
       onOpenFolded={onOpenFolded}

@@ -344,6 +344,8 @@ export const SHORTCUTS_KEY_SAID = shortcutsKeySaid(onAMac());
 /** What a row does, as a value the window can carry out. */
 export type Does =
   | { verb: "chat.new" }
+  /** The strip's `+` (#4758; spec story 13): a new tab holding one empty pane. */
+  | { verb: "tab.new" }
   /** Opens a plain shell tab (SI-5): the operator's own `$SHELL`, no harness, no profile —
    *  in `workspace`'s directory and filed under it, or where a new chat would start when it
    *  names none. Nothing asks first: a shell starts no harness, so ADR 0022's picker has
@@ -1052,6 +1054,8 @@ export type ViewPlaced = { view: ViewId; name: string; region: RegionId; to?: Vi
 /** What the window does when a row is run. One function per verb, whichever surface asked. */
 export type Doing = {
   newChat: () => void;
+  /** The strip's `+` (#4758): a new tab with one empty pane, on the strip in front. */
+  newTab: () => void;
   /** A shell tab, in `workspace` when a row names one, else where a new chat would start. */
   newShell: (workspace?: string) => void;
   /** A browser, in a view tab of its own (#2012). */
@@ -1906,8 +1910,12 @@ export function catalogue(now: Now): Offer[] {
   const offers: Offer[] = [];
 
   // A chat starts through the picker, which is the only path ADR 0022 admits. The palette
-  // opens that question; it never answers it.
-  offers.push(can("chat.new", "New tab", { verb: "chat.new" }));
+  // opens that question; it never answers it. **The chat takes the focused pane** (#4758): a
+  // chat is never a tab of its own.
+  offers.push(can("chat.new", SAID.newChat, { verb: "chat.new" }));
+  // **The strip's `+`** (#4758; spec story 13): a tab with one empty pane, which New chat then
+  // fills. "New tab" still means a tab.
+  offers.push(can("tab.new", SAID.newTab, { verb: "tab.new" }));
 
   // **Beside it, and never inside the picker** (SI-5). A shell tab runs no harness, so there
   // is no profile to pick and nothing for ADR 0022 to ask. It is still a chat to the core — a
@@ -2881,7 +2889,7 @@ export function catalogue(now: Now): Offer[] {
       can(`clone.focus:${repo}`, `Focus on repo ${repo}`, { verb: "focusRepo", repo }, repo),
     );
     offers.push(
-      can(`clone.chat:${repo}`, `New tab in ${repo}`, { verb: "newTabIn", repo, path }, repo),
+      can(`clone.chat:${repo}`, `New chat in ${repo}`, { verb: "newTabIn", repo, path }, repo),
     );
     // The cut itself is a dialog away, so the row writes nothing either (GL-1).
     offers.push(
@@ -3420,6 +3428,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
   switch (does.verb) {
     case "chat.new":
       doing.newChat();
+      return DID;
+    case "tab.new":
+      doing.newTab();
       return DID;
     case "newShell":
       doing.newShell(...(does.workspace === undefined ? [] : [does.workspace]));
