@@ -1399,6 +1399,9 @@ pub struct Moves {
     /// time for a host started again; this keeps it from a mark a task touched or removed
     /// since, the earlier of the two being the one taken (#4933).
     first: std::sync::OnceLock<std::time::SystemTime>,
+    /// Every folder purlis keeps for itself on the runner, wherever its environment puts it,
+    /// left out of every walk outside the projects (#5028).
+    own: Vec<std::path::PathBuf>,
 }
 
 #[cfg(unix)]
@@ -1406,8 +1409,13 @@ impl Moves {
     /// For `purlis serve` on a runner: its home as `HOME` names it, and on Linux the rest of
     /// its file system from `/` too.
     pub fn on_this_runner() -> Moves {
+        let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
         Moves {
-            home: std::env::var_os("HOME").map(std::path::PathBuf::from),
+            own: home
+                .as_deref()
+                .map(|home| held::purlis_keeps_for_itself(&crate::envvar::var, home))
+                .unwrap_or_default(),
+            home,
             beyond: cfg!(target_os = "linux").then(|| std::path::PathBuf::from("/")),
             first: std::sync::OnceLock::new(),
         }
@@ -1419,6 +1427,7 @@ impl Moves {
             home: Some(home),
             beyond: None,
             first: std::sync::OnceLock::new(),
+            own: Vec::new(),
         }
     }
 
@@ -1600,8 +1609,9 @@ impl purlis_host::Code for Moves {
     > {
         let (repos, mut unread) = held::repos_held(projects);
         // **And what a task kept outside them** (#4781), in the runner's home and, where it is
-        // looked through, the rest of its file system (#4933): the projects and purlis's data
-        // home they are in are left out by name, wherever they are. Since the first program,
+        // looked through, the rest of its file system (#4933): the projects, purlis's data home
+        // they are in and every other folder purlis keeps for itself are left out by name,
+        // wherever they are (#5028). Since the first program,
         // as marked beside them, so a host started again keeps that time.
         let marked = held::first_program_at(projects).unwrap_or_else(|why| {
             unread.push(why);
@@ -1623,6 +1633,7 @@ impl purlis_host::Code for Moves {
                     let home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
                     let kept: Vec<std::path::PathBuf> = std::iter::once(projects.to_path_buf())
                         .chain(projects.parent().map(Path::to_path_buf))
+                        .chain(self.own.iter().cloned())
                         .flat_map(|one| {
                             let real = std::fs::canonicalize(&one).ok();
                             std::iter::once(one).chain(real)

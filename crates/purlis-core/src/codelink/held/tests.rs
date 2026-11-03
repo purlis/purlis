@@ -1027,3 +1027,86 @@ fn a_mark_that_is_not_the_file_purlis_made_keeps_the_runner_and_refuses_a_start(
     let refused = first_program_starting(&projects).unwrap_err();
     assert!(refused.contains("not a file purlis made"), "{refused}");
 }
+
+/// **Each folder purlis keeps for itself is left out wherever the environment puts it** (#5028):
+/// its config, data, log and socket homes moved outside the runner's home keep no runner, and a
+/// file of another program's beside them still does.
+#[cfg(unix)]
+#[test]
+fn each_home_purlis_keeps_moved_outside_the_runners_home_keeps_no_runner() {
+    let looked_through = |env: &[(&str, &str)], written: &[&str]| {
+        let (_dir, root, home, started) = a_runners_root();
+        for file in written {
+            std::fs::create_dir_all(root.join(file).parent().unwrap()).unwrap();
+            std::fs::write(root.join(file), "written\n").unwrap();
+        }
+        let var = |name: &str| {
+            env.iter()
+                .find(|(set, _)| *set == name)
+                .map(|(_, rel)| root.join(rel).to_string_lossy().into_owned())
+        };
+        outside_the_projects_and_beyond(
+            &home,
+            &purlis_keeps_for_itself(&var, &home),
+            Some(started),
+            Some(Beyond {
+                root: &root,
+                owner: the_runners_user(),
+            }),
+        )
+    };
+    let by_xdg = [
+        ("XDG_CONFIG_HOME", "srv/config"),
+        ("XDG_DATA_HOME", "srv/data"),
+        ("XDG_RUNTIME_DIR", "srv/run"),
+        ("XDG_STATE_HOME", "srv/state"),
+        ("XDG_CACHE_HOME", "srv/cache"),
+    ];
+
+    let said = looked_through(
+        &by_xdg,
+        &[
+            "srv/config/purlis/machine.json",
+            "srv/config/charter/old.json",
+            "srv/data/purlis/events/device/events.jsonl",
+            "srv/data/dev.purlis.app/logs/purlis.log",
+            "srv/run/purlis/host.lock",
+        ],
+    );
+    assert_eq!(said, Vec::<String>::new());
+
+    let said = looked_through(
+        &[("PURLIS_CONFIG_HOME", "opt/purlis-config")],
+        &[
+            "opt/purlis-config/purlis/machine.json",
+            "opt/purlis-config/.purlis.lock",
+        ],
+    );
+    assert_eq!(said, Vec::<String>::new());
+
+    // A folder a variable names as it is could be one others share: it is never left out
+    // whole, nor is a folder holding the home.
+    let said = looked_through(
+        &[
+            ("PURLIS_LOG_DIR", "srv"),
+            ("PURLIS_DATA_HOME", "srv"),
+            ("XDG_RUNTIME_DIR", "var/lib"),
+        ],
+        &["srv/work/out.txt", "var/lib/purlis/findings.md"],
+    );
+    assert!(
+        says(&said, "/srv/work/out.txt") && says(&said, "/var/lib/purlis/findings.md"),
+        "{said:?}"
+    );
+
+    // purlis keeps nothing of its own in a state or cache home, nor beside its folders: another
+    // program's file there is the runner's user's like any other.
+    let said = looked_through(
+        &by_xdg,
+        &["srv/state/tool/history", "srv/config/tool/settings.toml"],
+    );
+    assert!(
+        says(&said, "/srv/state/tool/history") && says(&said, "/srv/config/tool/settings.toml"),
+        "{said:?}"
+    );
+}

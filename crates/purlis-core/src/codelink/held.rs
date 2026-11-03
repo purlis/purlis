@@ -202,6 +202,76 @@ pub const FIRST_PROGRAM: &str = ".first-program";
 /// folder in the home is.
 const NO_TASKS_WORK: &[&str] = &["proc", "sys", "dev", "run", "tmp", "var/tmp"];
 
+/// **Every folder purlis keeps for itself on a runner whose home is `home`** (#5028), wherever
+/// the environment `var` puts it, under each name it has had: its config home's folder (as
+/// `$PURLIS_CONFIG_HOME` or `$XDG_CONFIG_HOME` places it, and as the session host finds its
+/// default), its data home (as `$PURLIS_DATA_HOME` or `$XDG_DATA_HOME` places it, or under the
+/// home), the app's own folder under the data folder (its logs among them), the lock it holds
+/// beside the config home's folder, and the folder of its session host's socket in
+/// `$XDG_RUNTIME_DIR`. purlis keeps nothing of its own in a state or cache home. Each is left
+/// out of the walks outside the projects; the data home in use is looked through by its own
+/// rules ([`outside_with`]).
+///
+/// Only a folder purlis names is left out, never one a variable names as it is: a variable
+/// naming a folder others share (`$PURLIS_LOG_DIR=/srv`) would hide all of it. So a log folder
+/// moved by `$PURLIS_LOG_DIR` holds files that count, and keeps a fresh runner (`purlis serve`
+/// logs to its standard error). Nor is the home, or a folder holding it, ever one.
+pub fn purlis_keeps_for_itself(
+    var: &dyn Fn(&str) -> Option<String>,
+    home: &Path,
+) -> Vec<std::path::PathBuf> {
+    use std::path::PathBuf;
+    let named = |name: &str| {
+        var(name)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+    };
+    let mut kept: Vec<PathBuf> = Vec::new();
+    // The config home's folder, and the one the session host takes for its default.
+    for root in [
+        crate::machine::rooted(
+            var(crate::machine::HOME_VAR).map(Into::into),
+            var("XDG_CONFIG_HOME").map(Into::into),
+            Some(home.to_path_buf()),
+        ),
+        crate::machine::rooted(
+            None,
+            var("XDG_CONFIG_HOME").map(Into::into),
+            Some(home.to_path_buf()),
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        kept.extend(crate::machine::dirs_spelled(&root));
+        kept.push(root.join(crate::renamelocal::busy::LOCK));
+    }
+    // The data home and its log folder: each data folder the ladder can name, under each name.
+    let system = [
+        home.join(".local/share"),
+        home.join("Library/Application Support"),
+    ];
+    for base in named("XDG_DATA_HOME").into_iter().chain(system) {
+        for spelling in crate::names::DATA_HOME.spellings() {
+            kept.push(base.join(spelling));
+        }
+        for app in crate::names::BUNDLE_ID.spellings() {
+            kept.push(base.join(app));
+        }
+    }
+    for app in crate::names::BUNDLE_ID.spellings() {
+        kept.push(home.join("Library/Logs").join(app));
+    }
+    if let Some(runtime) = named("XDG_RUNTIME_DIR") {
+        kept.push(runtime.join("purlis"));
+    }
+    kept.retain(|folder| !home.starts_with(folder));
+    kept.sort();
+    kept.dedup();
+    kept
+}
+
 /// **A program is about to start on a host keeping its projects in `projects`** (#4933): the
 /// first one's start is marked by making [`FIRST_PROGRAM`] there, which is never made again
 /// while it is there. Never through a link. Why it could not be is said: the program does not
