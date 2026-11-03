@@ -858,6 +858,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Where a new chat would run and why, for Start chat's Runs on row (#4536): this machine's
     // pools and settings, read for the person's own start in their window.
     "start_runs_on",
+    // A pool's held runners (#4860): named in the person's question before Remove pool discards
+    // their chats' conversations, in their window.
+    "pool_held_runners",
     // What a workspace's sends to a runner leave out (#2046): the person's list, in their window.
     "send_leaves_out",
     "set_send_leaves_out",

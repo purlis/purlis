@@ -1670,6 +1670,7 @@ export const commands = {
 	startRunsOn: __WINDOW_ONLY_RESULT,
 	setProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	poolNamedBy: __WINDOW_ONLY_RESULT,
+	poolHeldRunners: __WINDOW_ONLY_RESULT,
 	sendLeavesOut: __WINDOW_ONLY_RESULT,
 	setSendLeavesOut: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
@@ -6937,6 +6938,8 @@ export type MachineWorkspacePin = {
  */
 export type MadeAgain = {
 	sign_ins_kept: boolean,
+	/**  What became of the gone runner's home (#4859). */
+	old_home: OldHome,
 };
 
 /**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */
@@ -7426,6 +7429,21 @@ export type OfferedSource = {
 	why: string,
 	source: SkillSource,
 };
+
+/**
+ *  **What Make the runner again did with the gone runner's home** (#4859), for the pool's row to
+ *  say.
+ */
+export type OldHome = 
+/**  It held no conversation, or was gone too: it was removed. */
+"removed" | 
+/**
+ *  It holds its chats' conversations, so it is kept, held: Devices offers to bring them back
+ *  or discard them.
+ */
+"held" | 
+/**  It could not be read, so it is kept, held, all the same. */
+"unread";
 
 /**
  *  The chats of a project still running under an older sandbox (#1428), for the Notice after

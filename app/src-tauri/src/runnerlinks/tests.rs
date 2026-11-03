@@ -199,7 +199,7 @@ fn a_window_reaches_a_pool_added_on_this_machine_through_its_own_host() {
     );
     let to = ToARunner::of(&machine, &name).unwrap();
     assert_eq!(
-        crate::dockerpools::remove_on(&machine, &name),
+        crate::dockerpools::remove_on(&machine, &name, &[]),
         Ok(None),
         "the pool is removed whole"
     );
