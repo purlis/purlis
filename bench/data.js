@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793672480434,
+  "lastUpdate": 1793673808175,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36960,6 +36960,48 @@ window.BENCHMARK_DATA = {
             "value": 101.373194,
             "unit": "ms",
             "extra": "median of 5 runs: 100.620, 101.337, 101.373, 102.809, 103.498 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f779481658a317687d38cac2479f9a4d0e85516c",
+          "message": "SK-17b: a draft's per-eval table names its arms as its tiles do (#4923) (#4927)\n\n* SK-17b: a draft's per-eval table names its arms as its tiles do (#4923)\n\nIn a draft's grade the scorecard's tiles say The draft and Current\nversion, but the outcome eval table under them, and the lines under it,\nstill said With the skill and Its previous version. They now say the\ntiles' words; a skill's ordinary grade is unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F8VB7G4ZH2CP46EX9J46CX\nPurlis-Persona: steward\n\n* SK-17b: the current version keeps its article in a sentence (#4923)\n\nFrom review: a draft's eval table said \"Open current version, chat 1\"\nwhere the trigger table says \"the current version\". draft is optional\non OutcomeEvalsTable as on TriggerTestsTable, and the fragment says only\nwhat changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F8VB7G4ZH2CP46EX9J46CX\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T00:45:37Z",
+          "tree_id": "88ae0cbc3d1d48ccf8cc4ae5a5726ad67be323df",
+          "url": "https://github.com/purlis/purlis/commit/f779481658a317687d38cac2479f9a4d0e85516c"
+        },
+        "date": 1793673804237,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6752445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.633, 0.661, 0.675, 0.682, 0.695 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.623924000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.476, 16.550, 16.624, 16.632, 16.729 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9593005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.726, 101.863, 101.959, 102.083, 102.243 ms"
           }
         ]
       }
