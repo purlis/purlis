@@ -4097,6 +4097,7 @@ impl HostedSessions {
         start: StartProgram,
         operator_shell: bool,
         announce: &dyn Fn(u32),
+        asked_to_run: &crate::host::AskedToRun,
     ) -> Result<Begun, String> {
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);
@@ -4148,6 +4149,8 @@ impl HostedSessions {
                 }
             }
         };
+        // From here its program may run there, whatever the window hears (#4781).
+        asked_to_run.mark();
         let started = match link.call_start(start, late) {
             // The host runs it under the number the window announced, or the window would key
             // it under one its hooks do not carry: it is closed, and the start fails.
@@ -4188,6 +4191,10 @@ impl HostedSessions {
                 if refused.code == CANCELLED
                     || NOTHING_STARTED.contains(&refused.code.as_str()) =>
             {
+                // A cancel is this window giving up on the answer: the host may start it yet.
+                if refused.code != CANCELLED {
+                    asked_to_run.unmark();
+                }
                 return Err(refused.why);
             }
             Err(refused) => return Err(unclear(refused.why)),
@@ -4283,11 +4290,18 @@ impl SessionHost for HostedSessions {
             ends_with_its_window: opening.ends_with_its_window,
             ..StartProgram::of(project, kind_of(opening))
         };
-        self.started(&link, id, start, opening.operator_shell, announce)
-            .map(|begun| {
-                lock(&self.keys_started).insert(begun.id, begun.prompt_key);
-                begun.id
-            })
+        self.started(
+            &link,
+            id,
+            start,
+            opening.operator_shell,
+            announce,
+            &crate::host::AskedToRun::default(),
+        )
+        .map(|begun| {
+            lock(&self.keys_started).insert(begun.id, begun.prompt_key);
+            begun.id
+        })
     }
 
     fn open_named(
@@ -4358,7 +4372,7 @@ impl SessionHost for HostedSessions {
             ran,
             prompt_key,
         } = self
-            .started(&link, id, start, false, announce)
+            .started(&link, id, start, false, announce, &named.asked_to_run)
             .inspect_err(|_| unheard(&confinement))?;
         // Held from here, where the host named it to this window: dropping it, on any path, lets
         // the host end it. A host that named none tells this window nothing of it.

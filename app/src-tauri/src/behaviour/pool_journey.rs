@@ -292,6 +292,7 @@ fn a_chat(first_message: Option<&str>, resume: Option<String>) -> Named {
     Named {
         runner: None,
         its_code_is_there: false,
+        asked_to_run: crate::host::AskedToRun::default(),
         workspace: Some(WORKSPACE.to_owned()),
         first_message: first_message.map(str::to_owned),
         resume,

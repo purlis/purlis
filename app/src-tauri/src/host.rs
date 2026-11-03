@@ -152,6 +152,30 @@ pub struct Named {
     pub plane_skills: bool,
     pub alone: Vec<u16>,
     pub size: Size,
+    /// Marked as its program is asked to run there (#4781), shared with whoever started it.
+    pub asked_to_run: AskedToRun,
+}
+
+/// **Whether a start's program was asked to run** (#4781): marked before the host's answer, so
+/// a start that fails after it counts as one that may have run, and wrote work, there.
+#[derive(Debug, Clone, Default)]
+pub struct AskedToRun(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl AskedToRun {
+    /// Its program is asked to run now.
+    pub fn mark(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Its host said its program did not start, in a refusal that says so.
+    pub fn unmark(&self) {
+        self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Whether its program was asked to run.
+    pub fn was(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
 }
 
 /// **A chat its host composed by its names, as the host answered its start** (#2692): its

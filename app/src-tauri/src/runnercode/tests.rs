@@ -100,7 +100,7 @@ impl World {
             StandIns::default(),
         )
         .keeping_projects_in(projects.clone())
-        .moving_code_with(purlis_core::codelink::Moves);
+        .moving_code_with(purlis_core::codelink::Moves::in_home(top.join("runner")));
         let relay = runtime.block_on(async move {
             purlis_host::Relay::new(Arc::new(move || {
                 let runner = runner.clone();
@@ -128,7 +128,13 @@ impl World {
             StandIns::default(),
         )
         .keeping_projects_in(world.projects.clone())
-        .moving_code_with(purlis_core::codelink::Moves);
+        .moving_code_with(purlis_core::codelink::Moves::in_home(
+            world
+                .projects
+                .parent()
+                .expect("the runner's home")
+                .to_path_buf(),
+        ));
         let connection = crate::hostedsessions::tests::in_memory_with_a_runner(
             runner.clone(),
             runner.clone(),

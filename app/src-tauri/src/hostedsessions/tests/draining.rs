@@ -822,10 +822,9 @@ fn on_an_idle_runner(takes: Duration) -> OnAnIdleRunner {
     let projects = top.join("runner");
     std::fs::create_dir_all(&projects).unwrap();
     let mut host = a_host_slow_by(Duration::ZERO, &runtime);
-    host.inner = host
-        .inner
-        .keeping_projects_in(projects)
-        .moving_code_with(purlis_core::codelink::Moves);
+    host.inner = host.inner.keeping_projects_in(projects).moving_code_with(
+        purlis_core::codelink::Moves::in_home(top.join("runner-home")),
+    );
     *host.next_hold_takes.lock().unwrap() = Some(takes);
     let holds = Arc::clone(&host.holds);
     let code_taken = Arc::clone(&host.code_taken);
