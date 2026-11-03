@@ -643,6 +643,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "mcp__purlis__browser_new",
             "mcp__purlis__browser_close",
             "mcp__purlis__browser_login",
+            "mcp__purlis__browser_fill_secret",
             "mcp__purlis__browser_downloads",
         ]})
     );
@@ -835,6 +836,7 @@ fn a_claude_code_chat_runs_its_browser_tools_on_its_browser_ask_not_the_harness_
             "mcp__purlis__browser_new",
             "mcp__purlis__browser_close",
             "mcp__purlis__browser_login",
+            "mcp__purlis__browser_fill_secret",
             "mcp__purlis__browser_downloads",
         ]
     );
