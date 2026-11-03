@@ -1364,6 +1364,21 @@ pub fn on_a_pool_left(repo: &Path, pool: &str) -> Vec<OnARunner> {
     on_a_runner(repo, pool)
 }
 
+/// **Whether `repo` holds any branch that came back from `pool`'s runner** (#4591): what
+/// [`on_a_pool_left`] would list something for, asked with one ref at most. False for a clone with
+/// a remote of the pool's own name, whose branches are the remote's.
+pub fn holds_branches_of(repo: &Path, pool: &str) -> bool {
+    if !pool_ok(pool) || !a_repository(repo) || a_remote_of(repo, pool) {
+        return false;
+    }
+    let prefix = format!("refs/remotes/{pool}/");
+    run(
+        repo,
+        &["for-each-ref", "--count=1", "--format=%(refname)", &prefix],
+    )
+    .is_ok_and(|ran| ran.ok() && !ran.out.trim().is_empty())
+}
+
 fn holds_ref(repo: &Path, name: &str) -> bool {
     run(repo, &["rev-parse", "--verify", "--quiet", name]).is_ok_and(|ran| ran.ok())
 }

@@ -411,9 +411,26 @@ fn where_a_new_chat_would_run_names_the_pools_its_workspace_has_run_on() {
     let config = tempfile::tempdir().unwrap();
     let plane = tempfile::tempdir().unwrap();
     let plane = plane.path();
+    // `app` and `new` each have a clone to send; `notes` has none.
     for workspace in ["app", "new"] {
-        std::fs::create_dir_all(plane.join("workspaces").join(workspace)).unwrap();
+        let clone = plane.join("workspaces").join(workspace).join("web");
+        std::fs::create_dir_all(&clone).unwrap();
+        let git = |args: &[&str]| {
+            let ran = purlis_core::forklock::output(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&clone)
+                    .args(["-c", "user.email=t@e.invalid", "-c", "user.name=t"])
+                    .args(["-c", "commit.gpgsign=false"])
+                    .args(args),
+            )
+            .unwrap();
+            assert!(ran.status.success(), "git {args:?}: {ran:?}");
+        };
+        git(&["init", "-q", "-b", "main", "."]);
+        git(&["commit", "-q", "--allow-empty", "-m", "one"]);
     }
+    std::fs::create_dir_all(plane.join("workspaces").join("notes")).unwrap();
     for pool in ["builds", "gpus"] {
         purlis_core::runners::record_pool(
             config.path(),
@@ -450,6 +467,11 @@ fn where_a_new_chat_would_run_names_the_pools_its_workspace_has_run_on() {
     assert!(
         ran_on("new").is_empty(),
         "its first chat there is still to come"
+    );
+    assert_eq!(
+        ran_on("notes"),
+        ["builds".to_owned(), "gpus".to_owned()],
+        "nothing of it is sent anywhere"
     );
     assert!(
         start_runs_on_at(config.path(), plane, None)

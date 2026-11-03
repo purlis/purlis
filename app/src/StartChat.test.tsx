@@ -2150,8 +2150,8 @@ describe("Runs on: where this chat runs, and why (#4536)", () => {
 
   // A workspace's first chat on a pool says what that does, before anything is sent (#4591).
   const FIRST_ON_BUILDS =
-    "This workspace hasn't run a chat on pool builds before: its clones are copied to that " +
-    "pool's runner, and the chat's work comes back here when it ends.";
+    "This is this workspace's first chat on pool builds. Its code is copied to that pool's " +
+    "runner. The chat's work comes back here when it ends.";
 
   it("says plainly what a workspace's first start on its project's pool does", () => {
     showRunsOn(runsOn({ ran_on: ["gpu"] }));

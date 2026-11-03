@@ -12514,8 +12514,8 @@ export type StartRefused = {
  *  shows before the person picks anything, and every pool this machine keeps, which the row
  *  offers for this start only. `at_root` is a chat at the project's root, which runs here and is
  *  offered no pool. Nothing here is checked against the pool's runner: the start does that.
- *  `ran_on` is each of those pools the workspace has run a chat on, so the row can say a first
- *  start anywhere else (#4591).
+ *  `ran_on` is each of those pools the workspace has run a chat on, or every one where it has no
+ *  clone to send, so the row can say a first start anywhere else (#4591).
  */
 export type StartRunsOn = {
 	pool: string | null,

@@ -337,8 +337,8 @@ async function opened() {
 
 /**
  * **A workspace's first chat on its project's pool** (#4591): before anything is sent there, the
- * row says plainly that the workspace's clones go to that pool's runner and the chat's work comes
- * back here.
+ * row says plainly that the workspace's code is copied to that pool's runner and the chat's work
+ * comes back here.
  */
 export const RunsOnFirstOnThePool: Story = {
   args: { runsOn: { pool: "builds", level: "project", at_root: false, pools: POOLS, ran_on: [] } },
@@ -346,9 +346,9 @@ export const RunsOnFirstOnThePool: Story = {
     const page = await opened();
     const runsOn = page.getByRole("button", { name: /Runs on$/ });
     await expect(runsOn).toHaveAccessibleDescription(
-      "Pool builds, as this project's chats run. This workspace hasn't run a chat on pool " +
-        "builds before: its clones are copied to that pool's runner, and the chat's work " +
-        "comes back here when it ends.",
+      "Pool builds, as this project's chats run. This is this workspace's first chat on " +
+        "pool builds. Its code is copied to that pool's runner. The chat's work comes back " +
+        "here when it ends.",
     );
     await pictureNow();
   },

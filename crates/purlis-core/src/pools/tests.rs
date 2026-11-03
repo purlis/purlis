@@ -4041,31 +4041,36 @@ fn fetch_back_asks_a_workspace_following_the_projects_pool_only_once_it_ran_ther
 }
 
 #[test]
-fn a_workspace_has_run_on_a_pool_once_a_chat_of_it_is_kept_there_or_its_branches_came_back() {
+fn a_first_chat_on_a_pool_is_one_nothing_of_the_workspace_has_run_or_come_back_from() {
     let config = tempfile::tempdir().unwrap();
     let plane = tempfile::tempdir().unwrap();
     let plane = plane.path();
-    let clone = plane.join("workspaces").join("ide").join("web");
-    std::fs::create_dir_all(&clone).unwrap();
-    std::fs::create_dir_all(plane.join("workspaces").join("docs")).unwrap();
-    let git = |args: &[&str]| {
-        let done = crate::testgit::run(&clone, args);
-        assert!(done.ok(), "git {args:?} failed: {done:?}");
+    let a_clone = |workspace: &str, clone: &str| {
+        let at = plane.join("workspaces").join(workspace).join(clone);
+        std::fs::create_dir_all(&at).unwrap();
+        let git = move |args: &[&str]| {
+            let done = crate::testgit::run(&at, args);
+            assert!(done.ok(), "git {args:?} failed: {done:?}");
+        };
+        git(&["init", "-q", "-b", "main", "."]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "one",
+        ]);
+        git
     };
-    git(&["init", "-q", "-b", "main", "."]);
-    git(&[
-        "-c",
-        "user.name=Test",
-        "-c",
-        "user.email=test@example.invalid",
-        "-c",
-        "commit.gpgsign=false",
-        "commit",
-        "-q",
-        "--allow-empty",
-        "-m",
-        "one",
-    ]);
+    let _ide = a_clone("ide", "web");
+    let app = a_clone("app", "api");
+    std::fs::create_dir_all(plane.join("workspaces").join("notes")).unwrap();
     crate::machine::update(config.path(), |store| {
         store.remember(plane, 1);
         store.keep_chat_on_pool(
@@ -4073,16 +4078,21 @@ fn a_workspace_has_run_on_a_pool_once_a_chat_of_it_is_kept_there_or_its_branches
             1,
             crate::machine::ChatOnPool {
                 pool: "first".to_owned(),
-                workspace: "docs".to_owned(),
+                workspace: "ide".to_owned(),
             },
         );
     })
     .unwrap();
-    assert!(has_run_on(config.path(), plane, "docs", "first"));
-    assert!(!has_run_on(config.path(), plane, "docs", "second"));
-    assert!(!has_run_on(config.path(), plane, "ide", "first"));
     // What came back from a pool's runner stays in the clone once nothing is owed.
-    git(&["update-ref", "refs/remotes/first/main", "HEAD"]);
-    assert!(has_run_on(config.path(), plane, "ide", "first"));
-    assert!(!has_run_on(config.path(), plane, "ide", "second"));
+    app(&["update-ref", "refs/remotes/second/main", "HEAD"]);
+    let pools = ["first".to_owned(), "second".to_owned()];
+    let run_on = |workspace| pools_run_on(config.path(), plane, workspace, &pools);
+    assert_eq!(run_on("ide"), ["first"], "a chat of it is kept there");
+    assert_eq!(
+        run_on("app"),
+        ["second"],
+        "its branches came back from there"
+    );
+    // A workspace with no clone has nothing to send, so no chat of it is a first anywhere.
+    assert_eq!(run_on("notes"), ["first", "second"]);
 }

@@ -452,27 +452,31 @@ pub fn fresh_runners_of_plane(
         .collect()
 }
 
-/// **Whether `workspace` of the plane at `plane` has run a chat on `pool`** (#4591): one is kept
-/// there, its branches are still owed from there, or a clone of it keeps branches that came back
-/// from there ([`codelink::on_a_pool_left`]). What Start chat's row reads to say a first start
-/// there.
-pub fn has_run_on(config_root: &Path, plane: &Path, workspace: &str, pool: &str) -> bool {
-    if crate::machine::read(config_root)
-        .store
-        .ran_on(plane, workspace, pool)
-    {
-        return true;
-    }
-    let Ok(clones) = crate::codelink::clones_in(plane, workspace) else {
-        return false;
-    };
-    clones.iter().any(|clone| {
-        !crate::codelink::on_a_pool_left(
-            &plane.join("workspaces").join(workspace).join(clone),
-            pool,
-        )
-        .is_empty()
-    })
+/// **Which of `pools` a first chat of `workspace` would send nothing new to** (#4591): each one
+/// a chat of it is kept on, its branches are still owed from, or a clone of it holds branches
+/// that came back from ([`crate::codelink::holds_branches_of`]), and every one where the
+/// workspace has no clone to send. What Start chat's row reads to say a first start anywhere
+/// else. The store is read once and each clone asked once a pool.
+pub fn pools_run_on(
+    config_root: &Path,
+    plane: &Path,
+    workspace: &str,
+    pools: &[String],
+) -> Vec<String> {
+    let store = crate::machine::read(config_root).store;
+    let clones = crate::codelink::clones_in(plane, workspace).unwrap_or_default();
+    let folder = plane.join("workspaces").join(workspace);
+    pools
+        .iter()
+        .filter(|pool| {
+            clones.is_empty()
+                || store.ran_on(plane, workspace, pool)
+                || clones
+                    .iter()
+                    .any(|clone| crate::codelink::holds_branches_of(&folder.join(clone), pool))
+        })
+        .cloned()
+        .collect()
 }
 
 /// **Moves the pool `name` to `image`, the runner image of the desktop's version** (#2749): a

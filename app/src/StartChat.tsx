@@ -1004,8 +1004,8 @@ export function runsOnReason(runsOn: StartRunsOn): string {
 export function firstOnPoolSaid(runsOn: StartRunsOn, pool: string | null): string | undefined {
   if (pool === null || runsOn.at_root || runsOn.ran_on.includes(pool)) return undefined;
   return (
-    `This workspace hasn't run a chat on pool ${pool} before: its clones are copied to that ` +
-    "pool's runner, and the chat's work comes back here when it ends."
+    `This is this workspace's first chat on pool ${pool}. Its code is copied to that pool's ` +
+    "runner. The chat's work comes back here when it ends."
   );
 }
 
