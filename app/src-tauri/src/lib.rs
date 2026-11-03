@@ -109,6 +109,7 @@ mod hostfailing;
 mod hostlost;
 #[cfg(unix)]
 mod hostsaving;
+mod inputlanes;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod instance;
 mod ipc;
@@ -2873,8 +2874,10 @@ fn chat_doings(
     Ok(planes.held(&plane)?.hooks().doing_now())
 }
 
-/// Sends what a pane typed to the session's program. Anything but the terminal's own answer
-/// drops a curation prompt still waiting to be typed into it (`Held::operator_input`).
+/// Sends what a pane typed to the session's program, in the chat's lane: it answers at once,
+/// and a send the host refuses is said on the chat's pane (#4734, ADR 0108). Anything but the
+/// terminal's own answer drops a curation prompt still waiting to be typed into it
+/// (`Held::queue_operator_input`).
 #[tauri::command]
 #[specta::specta]
 fn send_input(
@@ -2885,7 +2888,8 @@ fn send_input(
 ) -> Result<(), String> {
     planes
         .held(&plane)?
-        .operator_input(session, text.as_bytes())
+        .queue_operator_input(session, text.into_bytes());
+    Ok(())
 }
 
 /// Sends a pane's bytes that are not text to the session's program, each as the one byte it
@@ -2899,10 +2903,12 @@ fn send_input_bytes(
     session: u32,
     bytes: Vec<u8>,
 ) -> Result<(), String> {
-    planes.held(&plane)?.operator_input(session, &bytes)
+    planes.held(&plane)?.queue_operator_input(session, bytes);
+    Ok(())
 }
 
-/// Tells a session how big the pane showing it now is.
+/// Tells a session how big the pane showing it now is, in the chat's lane: it answers at once
+/// (#4734, ADR 0108).
 #[tauri::command]
 #[specta::specta]
 fn resize_session(
@@ -2914,41 +2920,47 @@ fn resize_session(
 ) -> Result<(), String> {
     planes
         .held(&plane)?
-        .chats()
-        .resize(session, Size { columns, rows })
+        .queue_resize(session, Size { columns, rows });
+    Ok(())
 }
 
 /// Opens a view of a session for a pane that is now on screen: the channel is sent the screen
 /// as it already is, and then the session's output. Answers with the id that closes the view.
+///
+/// Off the window's thread, in its turn in the chat's lane (#4734, ADR 0108): after every
+/// resize the pane sent before it (#891), and answered once the host has.
 #[tauri::command]
 #[specta::specta]
-fn watch_session(
+async fn watch_session(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
     output: Channel<String>,
 ) -> Result<Watching, String> {
     let held = planes.held(&plane)?;
-    let chats = held.chats();
-    let newline = chats.newline(session);
-    let watching = chats.sessions().watch(
-        session,
-        // A view whose window has gone is closed by the pane that owned it; until then, text
-        // it cannot take is dropped rather than held, and the session keeps running.
-        Box::new(move |text| {
-            let _ = output.send(text);
-        }),
-    )?;
-    Ok(Watching {
-        view: watching.view,
-        columns: watching.size.columns,
-        rows: watching.size.rows,
-        scrollback: sessions::SCROLLBACK,
-        newline,
+    off_the_window("opening a view of a chat", move || {
+        let newline = held.chats().newline(session);
+        let watching = held.watch_in_turn(
+            session,
+            // A view whose window has gone is closed by the pane that owned it; until then,
+            // text it cannot take is dropped rather than held, and the session keeps running.
+            Box::new(move |text| {
+                let _ = output.send(text);
+            }),
+        )?;
+        Ok(Watching {
+            view: watching.view,
+            columns: watching.size.columns,
+            rows: watching.size.rows,
+            scrollback: sessions::SCROLLBACK,
+            newline,
+        })
     })
+    .await
 }
 
-/// Closes a view, for a pane that has gone off screen. The session keeps running.
+/// Closes a view, for a pane that has gone off screen, in the chat's lane: it answers at once
+/// (#4734, ADR 0108). The session keeps running.
 #[tauri::command]
 #[specta::specta]
 fn unwatch_session(
@@ -2957,11 +2969,8 @@ fn unwatch_session(
     session: u32,
     view: u32,
 ) -> Result<(), String> {
-    planes
-        .held(&plane)?
-        .chats()
-        .sessions()
-        .unwatch(session, view)
+    planes.held(&plane)?.queue_unwatch(session, view);
+    Ok(())
 }
 
 /// The sessions that are running, in the order they were opened.
@@ -3005,6 +3014,8 @@ fn commands() -> Builder<tauri::Wry> {
         // What `update://checked` carries. It crosses on an event rather than a command, so it
         // is named here or the window would have to write the shape out by hand.
         .typ::<updates::Offer>()
+        // What `chat-input-refused` carries (#4734).
+        .typ::<inputlanes::InputRefused>()
         // What `plane-changed` carries, for the same reason.
         .typ::<planewatch::PlaneChanged>()
         // What `files-changed` carries (FM-1).
@@ -4310,6 +4321,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             mcpfailed::FAILED,
+                            &told,
+                        );
+                    })
+                })
+                // What a pane sent its chat that was refused: the window says so on its pane
+                // (#4734).
+                .telling_input_refused({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: inputlanes::InputRefused| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            inputlanes::REFUSED,
                             &told,
                         );
                     })

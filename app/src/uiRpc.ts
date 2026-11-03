@@ -589,9 +589,15 @@ export const commands = {
 	inboxShown: (plane: PlaneId, open: boolean) => __TAURI_INVOKE<void>("inbox_shown", { plane, open }),
 	sendInput: __WINDOW_ONLY_RESULT,
 	sendInputBytes: __WINDOW_ONLY_RESULT,
-	/**  Tells a session how big the pane showing it now is. */
+	/**
+	 *  Tells a session how big the pane showing it now is, in the chat's lane: it answers at once
+	 *  (#4734, ADR 0108).
+	 */
 	resizeSession: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("resize_session", { plane, session, columns, rows })),
-	/**  Closes a view, for a pane that has gone off screen. The session keeps running. */
+	/**
+	 *  Closes a view, for a pane that has gone off screen, in the chat's lane: it answers at once
+	 *  (#4734, ADR 0108). The session keeps running.
+	 */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
 	openBrowser: __WINDOW_ONLY_RESULT,
 	unwatchBrowser: __WINDOW_ONLY_RESULT,
@@ -6398,6 +6404,13 @@ export type InboxUpdate = {
  *  page having moved on from the frame it was aimed at; or it was refused, in words to show.
  */
 export type InputOutcome = { outcome: "taken" } | { outcome: "missed" } | { outcome: "refused"; why: string };
+
+/**  What a pane sent its chat that was refused, and why, as the Notice on its pane says it. */
+export type InputRefused = {
+	plane: PlaneId,
+	session: number,
+	why: string,
+};
 
 /**  **An install review**, summary first, and what accepting it says. */
 export type InstallReview = {

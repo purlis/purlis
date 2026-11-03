@@ -15,6 +15,7 @@ import { SandboxBlockNotice } from "./SandboxBlockNotice";
 import { PolicyRequiresNotice } from "./SandboxChanged";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { McpFailedNotice } from "./McpFailedNotice";
+import { InputRefusedNotice } from "./InputRefusedNotice";
 import { SkillsMissingNotice } from "./SkillsMissingNotice";
 import { DraftReadyNotice } from "./DraftReadyNotice";
 import { HostLostNotice } from "./HostLostNotice";
@@ -426,6 +427,8 @@ export function ChatNotices({
         onShowInbox={onShowInbox}
       />
       <McpFailedNotice plane={plane} session={session} onRestart={onRestart} />
+      {/* What its pane sent that did not reach it (#4734). */}
+      <InputRefusedNotice plane={plane} session={session} />
       {/* A skill its persona names that it started without (#2768). */}
       <SkillsMissingNotice plane={plane} session={session} />
       <HostLostNotice plane={plane} session={session} onRestart={onRestart} />
