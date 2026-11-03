@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { paneNamesOf, paneTakingTheSpace, paneToward } from "./panePlaces";
+import { paneNamesOf, paneToward } from "./panePlaces";
 import type { Layout } from "./tabs";
 
 /**
@@ -127,24 +127,5 @@ describe("panes are named by where they are", () => {
       "middle pane 2",
       "right pane",
     ]);
-  });
-});
-
-describe("the pane that takes a closed one's space", () => {
-  it("is the pane beside it across the split it leaves", () => {
-    expect(paneTakingTheSpace(row(pane(1), pane(2)), 1)).toBe(2);
-    expect(paneTakingTheSpace(row(pane(1), pane(2)), 2)).toBe(1);
-  });
-
-  it("is the nearest pane of the half that grows, not the tab's first pane", () => {
-    // Closing 4 grows 2 into its space: 2 is the pane that was beside it, though 1 comes first.
-    expect(paneTakingTheSpace(grid, 4)).toBe(2);
-    // Closing 1, the whole bottom row grows upwards; 2 is the first pane under it.
-    expect(paneTakingTheSpace(topAndTwo, 1)).toBe(2);
-  });
-
-  it("is nothing for the only pane, or one not in the tab", () => {
-    expect(paneTakingTheSpace(pane(1), 1)).toBeUndefined();
-    expect(paneTakingTheSpace(grid, 9)).toBeUndefined();
   });
 });

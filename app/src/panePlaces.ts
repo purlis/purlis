@@ -11,8 +11,8 @@ import type { Layout } from "./tabs";
  *   Mac). There is no wrap, as in iTerm2: at the edge nothing moves.
  * - {@link paneNamesOf}: what a screen reader calls each pane ("left pane", "top right pane"),
  *   so a line about a pane it did not follow says where that pane is.
- * - {@link paneTakingTheSpace}: the pane the keyboard goes to when a pane closes, which is the
- *   one that grows into its space.
+ *
+ * Where the keyboard goes when a pane closes is `tabs.ts`'s `closeFocusedPane` (#4756).
  */
 
 /** The four ways ⌘⌥ and an arrow move. */
@@ -60,12 +60,6 @@ const MEETING: Readonly<Record<Toward, readonly [Edge, Edge]>> = {
   up: ["bottom", "top"],
 };
 type Edge = "left" | "top" | "right" | "bottom";
-
-/** Which way the pane beside a split's child is: after the first child, before the second. */
-const ACROSS: Readonly<Record<"row" | "column", readonly [Toward, Toward]>> = {
-  row: ["right", "left"],
-  column: ["down", "up"],
-};
 
 /** How much of two spans lie over each other. */
 const overlap = (a0: number, a1: number, b0: number, b1: number) =>
@@ -136,28 +130,4 @@ export function paneNamesOf(layout: Layout): Map<number, string> {
     numbered.set(one.pane, `${one.name} ${n}`);
   }
   return new Map(named.map((one) => [one.pane, numbered.get(one.pane) ?? one.name]));
-}
-
-/**
- * **The pane that grows into pane `closed`'s space** when it closes (ruled on #4699: the
- * keyboard goes there): the pane beside it across the split it leaves, the one alongside most
- * of it. Nothing for a tab's only pane, or a pane not in the tab.
- */
-export function paneTakingTheSpace(layout: Layout, closed: number): number | undefined {
-  const found = splitHolding(layout, closed);
-  if (found === undefined) return undefined;
-  const { split, first } = found;
-  return paneToward(layout, closed, ACROSS[split.direction][first ? 0 : 1]);
-}
-
-/** The split pane `pane` is a direct child of, and whether it is the first child. */
-function splitHolding(
-  layout: Layout,
-  pane: number,
-): { split: Extract<Layout, { kind: "split" }>; first: boolean } | undefined {
-  if (layout.kind === "pane") return undefined;
-  const [a, b] = layout.children;
-  if (a.kind === "pane" && a.pane === pane) return { split: layout, first: true };
-  if (b.kind === "pane" && b.pane === pane) return { split: layout, first: false };
-  return splitHolding(a, pane) ?? splitHolding(b, pane);
 }
