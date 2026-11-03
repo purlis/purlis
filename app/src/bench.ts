@@ -37,6 +37,9 @@ type Pane = {
   /** Set while a job is waiting for text to be painted. `seen` is whether the text has been
    *  parsed into the grid; the draw after that is the paint being timed. */
   waiting?: { needle: string; seen: boolean; found: (at: number) => void };
+  /** Set as a kept terminal is put back on screen (`keptTerminals.ts`), until a switch job
+   *  has read it: its screen is already drawn, so there is nothing to wait for but a frame. */
+  shownAgain?: boolean;
 };
 
 const TAIL = 4096;
@@ -86,6 +89,17 @@ export function paneOpened(session: number, terminal: Terminal): void {
     pane.waiting = undefined;
     requestAnimationFrame(() => found(performance.now()));
   });
+  awaited?.(session);
+}
+
+/**
+ * A kept terminal, back on screen (`keptTerminals.ts`): no pane was opened for it, and what
+ * it shows is already drawn. A job waiting for the next pane takes this one.
+ */
+export function paneShownAgain(session: number, terminal: Terminal): void {
+  if (!measuring) return;
+  const pane = open.get(terminal);
+  if (pane) pane.shownAgain = true;
   awaited?.(session);
 }
 
@@ -478,6 +492,16 @@ async function work(plan: Plan): Promise<unknown> {
       }
       const session = await opened;
       const tab = selectedTab();
+      const back = pane(session);
+      if (back.shownAgain) {
+        // **A kept chat comes back drawn** (`keptTerminals.ts`): its screen is the one it had,
+        // so the switch is over at the first frame that shows it.
+        back.shownAgain = false;
+        const shownAt = await new Promise<number>((found) =>
+          requestAnimationFrame(() => found(performance.now())),
+        );
+        return { session, tab, ms: shownAt - from, kept: true };
+      }
       const at = await Promise.race([
         painted(session, plan.sentinel),
         sleep(30_000).then(() => undefined),

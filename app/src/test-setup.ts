@@ -16,6 +16,7 @@ import { forgetProjectThemes } from "./projectTheme";
 import { forgetSwitches } from "./switchClock";
 import { forgetUnappliedRepos } from "./unappliedRepos";
 import { forgetPaneBands } from "./noticeSettle";
+import { letGoOfKeptTerminals } from "./keptTerminals";
 import { PANE_NOTICES } from "./paneNoticesPref";
 
 // What each project has on is kept per plane for the window's life (`extensionsOn.ts`); every
@@ -42,6 +43,9 @@ afterEach(() => {
   // Minimised or expanded is the machine's choice (`layout.json`, #4754); every test's machine
   // is a new one (below).
   PANE_NOTICES.forget();
+  // The last chats shown keep their terminals for the window's life (#4735); every test's window
+  // is a new one, and most of them show chat 1 of one plane.
+  letGoOfKeptTerminals();
 });
 
 // **A test's machine has its panes' notices expanded** (#4754): a test of a note on a pane reads
