@@ -526,26 +526,47 @@ fn a_chat_moves_only_to_a_runner_shown_to_be_the_persons_own_and_says_why_not() 
 }
 
 /// The pane says where the chat still runs (#3646), so the core's sentence does not say it
-/// again; where the setting could not be put back, it says how to set it back.
+/// again; where the setting could not be put back, it says how to set it back: to what the
+/// workspace itself said before the move, by the name its settings give it (#4591).
 #[test]
 fn a_move_that_did_not_start_says_why_and_how_to_set_its_workspace_back() {
+    use purlis_core::machine::WorkspacePlace;
     let to: Place = Some("builds".into());
-    let put_back = did_not_start_said("the runner refused it.", Ok(()), &None, &to, "app");
+    let put_back = did_not_start_said(
+        "the runner refused it.",
+        Ok(()),
+        &WorkspacePlace::Project,
+        &to,
+        "app",
+    );
     assert_eq!(
         put_back,
         "It did not start on pool builds: the runner refused it."
     );
 
-    let stuck = did_not_start_said(
-        "the runner refused it.",
-        Err("machine.json could not be written".into()),
-        &None,
-        &to,
-        "app",
+    let stuck = |before: &WorkspacePlace| {
+        did_not_start_said(
+            "the runner refused it.",
+            Err("machine.json could not be written".into()),
+            before,
+            &to,
+            "app",
+        )
+    };
+    let following = stuck(&WorkspacePlace::Project);
+    assert!(!following.contains("runs on this machine"), "{following}");
+    assert!(
+        following.contains("still set to run on pool builds"),
+        "{following}"
     );
-    assert!(!stuck.contains("runs on this machine"), "{stuck}");
-    assert!(stuck.contains("still set to run on pool builds"), "{stuck}");
-    assert!(stuck.contains("set Runs on to this machine"), "{stuck}");
+    assert!(
+        following.contains("set Runs on to Same as the project"),
+        "{following}"
+    );
+    let here = stuck(&WorkspacePlace::ThisMachine);
+    assert!(here.contains("set Runs on to This machine"), "{here}");
+    let pool = stuck(&WorkspacePlace::Pool("tests".into()));
+    assert!(pool.contains("set Runs on to pool tests"), "{pool}");
 }
 
 /// A move refused for a pool that is not ready says the pool's own reason (#3646), both ways,

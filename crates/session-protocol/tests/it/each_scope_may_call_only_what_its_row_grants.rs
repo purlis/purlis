@@ -366,20 +366,21 @@ fn every_command() -> Vec<Command> {
         // A login purlis performs carries a vault's values (1.18, #2016): the window's alone.
         Command::LogIn {
             program: CHAT.into(),
-            login: purlis_session_protocol::browsing::LogIn {
+            login: Box::new(purlis_session_protocol::browsing::LogIn {
                 address: "https://shop.example.test/login".into(),
                 user: None,
                 password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
                 keep: None,
                 identity: None,
                 suggested: false,
-            },
+                form: None,
+            }),
         },
         // A login that keeps its login on this device once the browser ends (1.27, #2021): the
         // window's alone, never relayed to a runner (1.38, #2050).
         Command::LogIn {
             program: CHAT.into(),
-            login: purlis_session_protocol::browsing::LogIn {
+            login: Box::new(purlis_session_protocol::browsing::LogIn {
                 address: "https://shop.example.test/login".into(),
                 user: None,
                 password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
@@ -392,7 +393,8 @@ fn every_command() -> Vec<Command> {
                 }),
                 identity: None,
                 suggested: false,
-            },
+                form: None,
+            }),
         },
         // A browser opened from kept logins (1.27, #2021): the window's alone, as a login is.
         Command::StartProgram(Box::new(session::StartProgram {

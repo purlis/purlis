@@ -2865,6 +2865,16 @@ pub enum Output {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         failed: bool,
     },
+    /// **The question purlis's MCP server asks the person through the harness's prompt**
+    /// (#4710, `ask_operator`): its words, masked by the server and again by the app, held with
+    /// the prompt it waits on, so the waiting strip, the Inbox card and the quiz show the ask as
+    /// asked. Never recorded: no audit entry or telemetry holds a question's words (ADR 0075).
+    Asking {
+        /// The question, cut to [`Output::MOST_BYTES`] by the server.
+        question: String,
+    },
+    /// The question the server said it asks is answered, refused or let go of (#4710).
+    Asked,
 }
 
 impl Output {

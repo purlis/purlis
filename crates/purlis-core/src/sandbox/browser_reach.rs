@@ -364,17 +364,19 @@ impl Bound {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// **Binds the browser to `site`**, or why it may not be: one already bound to another
-    /// site stays bound to that one, since a browser holds one login's session at a time.
-    /// Binding again to the same site changes nothing.
-    pub fn to(&self, site: &Site) -> Result<(), String> {
+    /// **Binds the browser to `at`**, one login's sites (its form's, and its page's where that is
+    /// another, #4995), or why it may not be: one already bound to other sites stays bound to
+    /// those, since a browser holds one login's session at a time. Binding again to sites it
+    /// holds changes nothing.
+    pub fn to(&self, at: &[Site]) -> Result<(), String> {
         let mut bound = self.lock();
         match bound.as_ref() {
-            None => {
-                *bound = Some(vec![site.clone()]);
+            None if !at.is_empty() => {
+                *bound = Some(at.to_vec());
                 Ok(())
             }
-            Some(sites) if sites.contains(site) => Ok(()),
+            None => Err("a login names no site to hold the browser to".to_owned()),
+            Some(sites) if at.iter().all(|site| sites.contains(site)) => Ok(()),
             Some(sites) => Err(format!(
                 "this browser holds a login at {}, and reaches nothing else",
                 sites
@@ -584,10 +586,10 @@ impl ReachProxy {
         Self::serving(lane, new_sites, Bound::default(), limits)
     }
 
-    /// **Binds the browser to `site`** ([`Bound::to`]), and ends every connection it carries
-    /// now: from this moment it carries `site` alone, for as long as it runs.
-    pub fn bind(&self, site: &Site) -> Result<(), String> {
-        self.bound.to(site)?;
+    /// **Binds the browser to `at`** ([`Bound::to`]), and ends every connection it carries
+    /// now: from this moment it carries those sites alone, for as long as it runs.
+    pub fn bind(&self, at: &[Site]) -> Result<(), String> {
+        self.bound.to(at)?;
         self.live.end_open();
         Ok(())
     }

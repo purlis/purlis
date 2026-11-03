@@ -10,7 +10,7 @@ import { sizeKey } from "./textSize";
  * |---|---|---|
  * | The menu of this tab's chats | ⌘⇧J | Ctrl+Shift+J |
  * | The next / previous chat in this tab | ⌘⌥↓ / ⌘⌥↑ | Ctrl+Shift+] / Ctrl+Shift+[ |
- * | Back to the session's own chat | ⌘⇧H | Ctrl+Shift+H |
+ * | Back to this pane's previous chat (#4757) | ⌘⇧H | Ctrl+Shift+H |
  *
  * **Why these.** A tab's chats hang under it: the menu lists them top to bottom and Down on a
  * tab opens it, so on a Mac the next and the previous chat are Down and Up. Left and right are

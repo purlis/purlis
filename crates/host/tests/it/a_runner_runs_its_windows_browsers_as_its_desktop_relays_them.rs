@@ -172,6 +172,7 @@ fn a_login(keep: Option<KeptLogin>) -> LogIn {
         keep,
         identity: None,
         suggested: false,
+        form: None,
     }
 }
 

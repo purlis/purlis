@@ -20,7 +20,6 @@ import { TASKS_START_FRESH } from "./actions";
 import type { LaidOut, OpenChat } from "./bindings";
 import { chatsOf } from "./laidOut";
 import { leadOf, onScreenOf } from "./laidOut.testkit";
-import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
@@ -405,7 +404,7 @@ describe("moving a task to a tab of its own", () => {
     expect(ender("steward 1")?.hasAttribute("data-minimise")).toBe(false);
   });
 
-  it("is sent back by the minimise, which ends nothing: the task is in its session's tab again", async () => {
+  it("is sent back by the minimise, which ends nothing: the task is in the list again", async () => {
     const { tree, asked } = await drawn(withTasks());
     await toOwnTab(tree, "talk");
 
@@ -423,10 +422,11 @@ describe("moving a task to a tab of its own", () => {
     expect(row(tree, "talk")).toBeTruthy();
     await userEvent.click(tab("steward 1"));
     await waitFor(() => expect(onScreen()).toEqual([1]));
-    // Pressed again, it is shown inside its session's tab, as any task is.
+    // Pressed again, it is shown in the focused pane, as any chat is (#4757): no tab is added,
+    // and the tab is named for what its pane shows.
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
+    expect(tabNames()).toEqual(["talk", "steward 2"]);
   });
 
   it("is minimised by the key that closes a tab, and by its pane's control", async () => {
@@ -528,30 +528,19 @@ describe("moving a task to a tab of its own", () => {
     expect(ended(asked)).toEqual([]);
   });
 
-  it("is offered on the breadcrumb's line while its session's tab shows it", async () => {
-    const { tree } = await drawn(withTasks());
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    // The pane's controls, on the line the breadcrumb is in.
-    await userEvent.click(screen.getByRole("button", { name: "Move talk to its own tab" }));
-
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "steward 2", "talk"]));
-    // The session's tab does not go on showing it: one chat, one place.
-    await userEvent.click(tab("steward 1"));
-    await waitFor(() => expect(onScreen()).toEqual([1]));
-    expect(screen.queryByTestId("task-away")).toBeNull();
-  });
-
   it("has the task's menu on a right-click of its breadcrumb", async () => {
     const { tree } = await drawn(withTasks());
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
 
     fireEvent.contextMenu(screen.getByRole("navigation", { name: "Chat path" }));
-    await pick("Open beside steward 1");
+    // The task's own menu: its ends and its Send back. A press put it in the focused pane as
+    // its own chat (#4757), so it has a pane and goes back to the list from it.
+    expect(await screen.findByRole("menuitem", { name: /^Stop and get its report/ })).toBeTruthy();
+    await pick(/^Send back to the Chats list/);
 
-    await waitFor(() => expect(onScreen()).toEqual([1, 4]));
+    await waitFor(() => expect(onScreen()).not.toContain(4));
+    expect(row(tree, "talk")).toBeTruthy();
   });
 
   it("says its path in its own pane's top line, so the pane is not read as a session's", async () => {
@@ -590,7 +579,9 @@ describe("moving a task to a tab of its own", () => {
       chat(12, "alpha", { persona: "devops", label: "left behind", from: taskOf(9) }),
     ]);
     await userEvent.click(row(tree, "left behind"));
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "left behind"]));
+    // A press shows it in the focused pane (#4757): no tab is added, and the one tab is named
+    // for it now.
+    await waitFor(() => expect(tabNames()).toEqual(["left behind"]));
 
     // Its tab is a task's too: a minimise, never a close.
     expect(ender("left behind")?.getAttribute("aria-label")).toBe(
@@ -598,7 +589,7 @@ describe("moving a task to a tab of its own", () => {
     );
     await userEvent.click(ender("left behind") as HTMLElement);
 
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1"]));
+    await waitFor(() => expect(tabNames()).not.toContain("left behind"));
     expect(row(tree, "left behind")).toBeTruthy();
     expect(ended(asked)).toEqual([]);
   });
@@ -719,38 +710,8 @@ describe("opening a task beside its session", () => {
   });
 });
 
-describe("the setting that opens tasks in their own tabs", () => {
-  it("is off until the person turns it on: a pressed task switches its session's tab", async () => {
-    const { tree } = await drawn(withTasks());
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
-  });
-
-  it("opens a pressed task as its own tab, with the minimise, and the chip and menu stay", async () => {
-    const { tree, asked } = await drawn(withTasks());
-    act(() => setChatsListPrefs({ tabbed: true }));
-
-    await userEvent.click(row(tree, "talk"));
-
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "steward 2", "talk"]));
-    expect(onScreen()).toEqual([4]);
-    expect(ender("talk")?.hasAttribute("data-minimise")).toBe(true);
-    expect(commandsOf(asked, "open_chat_tab")).toEqual([{ plane: PLANE, session: 4 }]);
-    // The session's tab still wears its chip, and its menu still lists the task.
-    const chip = within(cell("steward 1")).getByRole("button", { name: /^Tasks of steward 1/ });
-    press(chip);
-    const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
-    expect(within(menu).getByText(", in its own tab")).toBeTruthy();
-    // A session's own chat is still its tab.
-    await userEvent.click(row(tree, "steward 2"));
-    await waitFor(() => expect(onScreen()).toEqual([2]));
-    expect(tabNames()).toEqual(["steward 1", "steward 2", "talk"]);
-  });
-});
-
 describe("the session's close, the only close on the strip", () => {
-  it("says how many of its tasks have a tab of their own, and sends them back when they are kept", async () => {
+  it("leaves its tasks' own tabs where they are when it is kept closing (#4757)", async () => {
     const { tree, asked } = await drawn(withTasks(), {
       running: ["talk", "sweep", "probe", "deep"],
     });
@@ -762,27 +723,23 @@ describe("the session's close, the only close on the strip", () => {
     expect(ender("sweep")?.hasAttribute("data-minimise")).toBe(true);
     await userEvent.click(ender("steward 1") as HTMLElement);
 
+    // A chat leaving moves no other pane (#4757), so the question has nothing to say of them.
     const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
-    expect(question.textContent).toContain(
-      "2 of its tasks have tabs of their own. Those tabs close with this one: tasks that go on working stay in the Chats list.",
-    );
+    expect(question.textContent).not.toContain("of their own");
     // Asked once, as it always was.
     expect(within(question).getAllByRole("radio")).toHaveLength(2);
     expect(ended(asked)).toEqual([]);
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
 
-    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
-    // Only the session ended. Its tasks go on, with no tab.
+    await waitFor(() => expect(tabNames()).not.toContain("steward 1"));
+    expect([...tabNames()].sort()).toEqual(["steward 2", "sweep", "talk"]);
+    // Only the session ended. Its tasks go on, in their tabs.
     expect(ended(asked)).toEqual([{ cmd: "close_session", args: { plane: PLANE, session: 1 } }]);
-    expect(
-      commandsOf(asked, "close_chat_tab")
-        .map((one) => one.session)
-        .sort(),
-    ).toEqual([4, 5]);
+    expect(commandsOf(asked, "close_chat_tab")).toEqual([]);
     expect(row(tree, "talk")).toBeTruthy();
   });
 
-  it("takes their tabs with it when the answer is to stop them", async () => {
+  it("stops its tasks in one command when the answer is to stop them, their tabs left where they are", async () => {
     const { tree, asked } = await drawn(withTasks(), {
       running: ["talk", "sweep", "probe", "deep"],
     });
@@ -793,7 +750,9 @@ describe("the session's close, the only close on the strip", () => {
     await userEvent.click(within(question).getByRole("radio", { name: "Stop them" }));
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
 
-    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
+    // talk's tab stays until the core says it has ended, and then shows it as ended (#4757).
+    await waitFor(() => expect(tabNames()).not.toContain("steward 1"));
+    expect(tabNames()).toContain("talk");
     expect(commandsOf(asked, "close_chat_stopping")).toEqual([
       { plane: PLANE, session: 1, then: "close" },
     ]);
@@ -936,7 +895,8 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
       chat(12, "alpha", { persona: "devops", label: "left behind", from: taskOf(9) }),
     ]);
     await userEvent.click(row(tree, "left behind"));
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "left behind"]));
+    // In the focused pane, as any press (#4757).
+    await waitFor(() => expect(tabNames()).toEqual(["left behind"]));
     expect(crumbsSaid()).toEqual([]);
 
     await userEvent.click(screen.getByRole("button", { name: "More for left behind" }));
@@ -976,7 +936,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
   });
 });
 
-describe("a session's pane goes: its tasks' own tabs go back to the list, by every path (M3)", () => {
+describe("a session's pane goes: its tasks' own tabs stay where they are, by every path (#4757)", () => {
   /** talk in a tab of its own, and the session's tab in front. */
   async function withTalkInItsTab(how: Core = {}) {
     const held = await drawn(withTasks(), how);
@@ -985,14 +945,13 @@ describe("a session's pane goes: its tasks' own tabs go back to the list, by eve
     await waitFor(() => expect(onScreen()).toEqual([1]));
     return held;
   }
-  /** talk's tab is gone, talk is not ended, and the core is told it has no tab. */
-  async function talkWentBack({ asked, tree }: { asked: Asked[]; tree: HTMLElement }) {
-    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
+  /** steward 1's tab is gone; talk's stays, talk is not ended, and no tab of it is closed:
+   *  a chat leaving moves no other pane. */
+  async function talkStays({ asked, tree }: { asked: Asked[]; tree: HTMLElement }) {
+    await waitFor(() => expect(tabNames()).not.toContain("steward 1"));
+    expect([...tabNames()].sort()).toEqual(["steward 2", "talk"]);
     expect(row(tree, "talk")).toBeTruthy();
-    expect(commandsOf(asked, "close_chat_tab").at(-1)).toEqual({
-      plane: PLANE,
-      session: 4,
-    });
+    expect(commandsOf(asked, "close_chat_tab")).toEqual([]);
     expect(ended(asked).filter((one) => one.args.session === 4 || one.cmd === "stop_chat")).toEqual(
       [],
     );
@@ -1002,10 +961,9 @@ describe("a session's pane goes: its tasks' own tabs go back to the list, by eve
     const held = await withTalkInItsTab({ running: ["talk"] });
     await userEvent.click(screen.getByRole("button", { name: "End this pane's chat" }));
     const question = await screen.findByRole("alertdialog");
-    // The sentence is said for this close too, and is true of it.
-    expect(question.textContent).toContain("1 of its tasks has a tab of its own");
+    expect(question.textContent).not.toContain("of its own");
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
-    await talkWentBack(held);
+    await talkStays(held);
     expect(commandsOf(held.asked, "close_session")).toEqual([{ plane: PLANE, session: 1 }]);
   });
 
@@ -1015,14 +973,14 @@ describe("a session's pane goes: its tasks' own tabs go back to the list, by eve
     await act(() =>
       emit("smart-close", { plane: PLANE, session: 1, phase: "closed", record: null }),
     );
-    await talkWentBack(held);
+    await talkStays(held);
   });
 
   it("the session ending, as a stop ends it", async () => {
     const held = await withTalkInItsTab();
     held.open.splice(0, 1);
     await act(() => emit("chat-stop", { plane: PLANE, session: 1, phase: "stopped" }));
-    await talkWentBack(held);
+    await talkStays(held);
   });
 
   it("a close that stops what is below, for a task the core did not end", async () => {
@@ -1031,14 +989,10 @@ describe("a session's pane goes: its tasks' own tabs go back to the list, by eve
     const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
     await userEvent.click(within(question).getByRole("radio", { name: "Stop them" }));
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
-    expect(commandsOf(held.asked, "close_chat_tab").at(-1)).toEqual({
-      plane: PLANE,
-      session: 4,
-    });
+    await talkStays(held);
   });
 
-  it("the session's pane closed in a split: the task beside it goes back too, and is never the tab's own chat", async () => {
+  it("the session's pane closed in a split: the task beside it takes the tab, still running", async () => {
     const { tree, asked } = await drawn(withTasks(), { running: ["talk"] });
     row(tree, "talk").focus();
     await userEvent.keyboard(" ");
@@ -1049,15 +1003,13 @@ describe("a session's pane goes: its tasks' own tabs go back to the list, by eve
       within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Close" }),
     );
 
-    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
+    // What shared the split takes its place (#4757): talk, which is not ended.
+    await waitFor(() => expect(onScreen()).toEqual([4]));
     expect(commandsOf(asked, "close_session")).toEqual([{ plane: PLANE, session: 1 }]);
-    expect(row(tree, "talk")).toBeTruthy();
-    // The core is not left believing the closed session is in front, or the task beside it.
-    await waitFor(() => expect(frontSaid(asked)).toBe(2));
-    expect(panedSaid(asked)).not.toContain(4);
+    // The core is not left believing the closed session is on screen.
+    await waitFor(() => expect(panedSaid(asked)).not.toContain(1));
   });
 });
-
 describe("what the core is told is on screen (M1, M4)", () => {
   it("says the chat in front when the tab in front comes to be another chat's without changing", async () => {
     const { open, asked } = await drawn(withTasks());
@@ -1070,37 +1022,6 @@ describe("what the core is told is on screen (M1, M4)", () => {
 
     await waitFor(() => expect(frontSaid(asked)).toBe(21));
     expect(tabNames()).toEqual(["steward 1", "steward 2"]);
-  });
-
-  it("stops the session's pane showing a task of the task that is moved, and tells the core", async () => {
-    const { tree, asked } = await drawn(withTasks());
-    // steward 1's tab shows deep, a task of talk.
-    await userEvent.click(row(tree, "deep"));
-    await waitFor(() => expect(onScreen()).toEqual([7]));
-    await waitFor(() => expect(onScreenSaid(asked)).toEqual([7]));
-
-    await toOwnTab(tree, "talk");
-
-    // deep went with talk: the session's pane shows its own chat, and the core is told so.
-    await waitFor(() => expect(panedSaid(asked)).toContain(1));
-    expect(panedSaid(asked)).not.toContain(7);
-    await userEvent.click(tab("steward 1"));
-    await waitFor(() => expect(onScreen()).toEqual([1]));
-    expect(screen.queryByTestId("task-away")).toBeNull();
-  });
-
-  it("keeps the minimise on a task's own pane while that pane shows a task of its own", async () => {
-    const { tree } = await drawn(withTasks());
-    row(tree, "talk").focus();
-    await userEvent.keyboard(" ");
-    await waitFor(() => expect(onScreen()).toEqual([1, 4]));
-
-    await userEvent.click(row(tree, "deep"));
-    await waitFor(() => expect(onScreen()).toEqual([1, 7]));
-
-    expect(
-      screen.getByRole("button", { name: "Send talk back among steward 1's tasks" }),
-    ).toBeTruthy();
   });
 
   it("draws a task's tab as a task's from the launch's own word, before the list is read", async () => {

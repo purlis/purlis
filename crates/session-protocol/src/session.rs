@@ -449,15 +449,28 @@ use crate::view::{Limits, Views};
 /// each one's refs and each file of its work tree that no commit has, for a desktop to prove a
 /// chat's fresh runner holds nothing it lacks before it lets that runner go. The window's alone.
 /// A window does not ask a host before 1.69, and lets go of no fresh runner of one.
+///
+/// 1.70 has a browser find where a page sends it to sign in (`find_login_form`, #4995): a page of
+/// purlis's own followed to its login form, nothing typed, before the person is asked about a
+/// login there; and a login says the origin of its form where it isn't the page's (`form`). A
+/// host before 1.70 refuses the first, so nothing is recorded, and fills a login on its page's
+/// origin alone, so a login whose form is elsewhere fills nothing there.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 69,
+    minor: 70,
 };
 
 /// The version that is first told a runner's programs are not known (#4684).
 pub const KNOWS_PROGRAMS_NOT_KNOWN: Version = Version {
     major: 1,
     minor: 68,
+};
+
+/// The version that first fills a login on its form's origin and follows a page to its form
+/// (#4995): a login with a `form` is sent to no host before it.
+pub const KNOWS_LOGIN_FORMS: Version = Version {
+    major: 1,
+    minor: 70,
 };
 
 /// The version that first answers `repos_held` (#4569).
@@ -1014,7 +1027,8 @@ pub enum Command {
     /// ([`crate::grants::Power::KeptLogin`]).
     LogIn {
         program: String,
-        login: crate::browsing::LogIn,
+        /// Boxed: a login is far larger than the rest of a command (1.70 gave it a `form`).
+        login: Box<crate::browsing::LogIn>,
     },
     /// A relaying host's word on each link it makes to another host for one window (1.22,
     /// #2511): this link is `window`'s, by the name the relaying host gives that window on
@@ -4314,7 +4328,7 @@ impl Client {
         match self
             .call(Command::LogIn {
                 program: program.into(),
-                login,
+                login: Box::new(login),
             })
             .await?
         {

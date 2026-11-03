@@ -155,6 +155,8 @@ fn a_pool_takes_the_time_typed_before_its_runner_suspends_and_a_day_when_empty()
 #[cfg(unix)]
 #[test]
 fn a_workspace_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
+    // A change of Runs on rechecks the marks other tests read (#4591).
+    let _marks = crate::notheld::rechecking();
     let config = tempfile::tempdir().unwrap();
     let plane = std::path::Path::new("/planes/a");
     purlis_core::machine::update(config.path(), |store| store.remember(plane, 1)).unwrap();
@@ -184,6 +186,8 @@ fn a_workspace_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
 
 #[test]
 fn a_project_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
+    // A change of Runs on rechecks the marks other tests read (#4591).
+    let _marks = crate::notheld::rechecking();
     let config = tempfile::tempdir().unwrap();
     let plane = std::path::Path::new("/planes/a");
     purlis_core::machine::update(config.path(), |store| store.remember(plane, 1)).unwrap();
@@ -364,5 +368,115 @@ fn where_a_new_chat_would_run_is_said_with_the_level_that_decides_it() {
     assert_eq!(
         (fresh.pool, fresh.level, fresh.pools),
         (None, RunsOnLevel::ThisMachine, Vec::<String>::new())
+    );
+}
+
+#[test]
+fn a_projects_mark_goes_once_its_last_workspace_following_its_pool_runs_here() {
+    let _marks = crate::notheld::rechecking();
+    let config = tempfile::tempdir().unwrap();
+    let plane = config.path().join("shop");
+    std::fs::create_dir_all(plane.join("workspaces").join("app")).unwrap();
+    purlis_core::runners::record_pool(
+        config.path(),
+        &purlis_core::runners::Pool::new(
+            "builds",
+            purlis_core::dockerpool::Image::pinned(IMAGE).unwrap(),
+            purlis_core::runners::Set::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    purlis_core::machine::update(config.path(), |store| {
+        store.remember(&plane, 1);
+        store
+            .set_project_chats_run_on(&plane, Some("builds"))
+            .unwrap();
+    })
+    .unwrap();
+    crate::notheld::not_held(&plane, "the runner is stopped");
+
+    set_chats_run_on_at(config.path(), &plane, "app", None).unwrap();
+    let marked = crate::notheld::now(Some(config.path()))
+        .into_iter()
+        .any(|one| std::path::Path::new(&one.root) == plane);
+    crate::notheld::held(&plane);
+    assert!(!marked, "nothing follows the project's pool now");
+}
+
+/// **Start chat's row knows where a workspace has run a chat** (#4591), so it can say a first
+/// start on a pool, the project's or any other, before anything is sent there.
+#[test]
+fn where_a_new_chat_would_run_names_the_pools_its_workspace_has_run_on() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let plane = plane.path();
+    // `app` and `new` each have a clone to send; `notes` has none.
+    for workspace in ["app", "new"] {
+        let clone = plane.join("workspaces").join(workspace).join("web");
+        std::fs::create_dir_all(&clone).unwrap();
+        let git = |args: &[&str]| {
+            let ran = purlis_core::forklock::output(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&clone)
+                    .args(["-c", "user.email=t@e.invalid", "-c", "user.name=t"])
+                    .args(["-c", "commit.gpgsign=false"])
+                    .args(args),
+            )
+            .unwrap();
+            assert!(ran.status.success(), "git {args:?}: {ran:?}");
+        };
+        git(&["init", "-q", "-b", "main", "."]);
+        git(&["commit", "-q", "--allow-empty", "-m", "one"]);
+    }
+    std::fs::create_dir_all(plane.join("workspaces").join("notes")).unwrap();
+    for pool in ["builds", "gpus"] {
+        purlis_core::runners::record_pool(
+            config.path(),
+            &purlis_core::runners::Pool::new(
+                pool,
+                purlis_core::dockerpool::Image::pinned(IMAGE).unwrap(),
+                purlis_core::runners::Set::default(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    }
+    purlis_core::machine::update(config.path(), |store| {
+        store.remember(plane, 1);
+        store
+            .set_project_chats_run_on(plane, Some("builds"))
+            .unwrap();
+        store.keep_chat_on_pool(
+            plane,
+            1,
+            purlis_core::machine::ChatOnPool {
+                pool: "builds".to_owned(),
+                workspace: "app".to_owned(),
+            },
+        );
+    })
+    .unwrap();
+    let ran_on = |workspace| {
+        start_runs_on_at(config.path(), plane, Some(workspace))
+            .unwrap()
+            .ran_on
+    };
+    assert_eq!(ran_on("app"), ["builds".to_owned()]);
+    assert!(
+        ran_on("new").is_empty(),
+        "its first chat there is still to come"
+    );
+    assert_eq!(
+        ran_on("notes"),
+        ["builds".to_owned(), "gpus".to_owned()],
+        "nothing of it is sent anywhere"
+    );
+    assert!(
+        start_runs_on_at(config.path(), plane, None)
+            .unwrap()
+            .ran_on
+            .is_empty()
     );
 }

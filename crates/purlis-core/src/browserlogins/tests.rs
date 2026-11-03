@@ -40,6 +40,7 @@ const SHOP: Declared<'static> = Declared {
     user_key: Some("user"),
     password_key: "pass",
     page: "https://shop.test/login",
+    form: None,
 };
 
 /// `profile`'s `shop-login` of `persona`, declared as `declared`.
@@ -298,6 +299,11 @@ fn an_identity_is_of_the_declarations_fields_and_none_run_together() {
         },
         Declared {
             page: "https://shop.test/login2",
+            ..SHOP
+        },
+        // A form on another origin is another declaration (#4995).
+        Declared {
+            form: Some("https://auth.shop.test"),
             ..SHOP
         },
         // The same bytes moved from one field to the next are another declaration.

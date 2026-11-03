@@ -1377,6 +1377,7 @@ fn read_login(
             keep: None,
             identity: Some(identity.clone()),
             suggested: false,
+            form: login.form.clone(),
         },
         identity,
     ))
@@ -1412,6 +1413,7 @@ fn identity_of_ready(
             user_key,
             password_key: pass_key,
             page: &login.url,
+            form: login.form.as_deref(),
         },
     ))
 }

@@ -91,16 +91,17 @@ pub const KEY: &str = "tools";
 /// The key of a tool's table that names several values ([`Value`]).
 pub const VALUES_KEY: &str = "values";
 
-/// The keys one tool's table holds: `as` and `key`, or `values`, for a program's; `browser` and
-/// `user` for a browser login's ([`login`]); `args` for any program's ([`args`]); `mint` and
+/// The keys one tool's table holds: `as` and `key`, or `values`, for a program's; `browser`,
+/// `user` and `form` for a browser login's ([`login`]); `args` for any program's ([`args`]); `mint` and
 /// `app` for a GitHub App's token's ([`mint`]); `host` for a forge's ([`host`]).
-const TOOL_KEYS: [&str; 10] = [
+const TOOL_KEYS: [&str; 11] = [
     "vault",
     "as",
     "key",
     VALUES_KEY,
     login::KEY,
     login::USER_KEY,
+    login::FORM_KEY,
     args::KEY,
     mint::KEY,
     mint::APP_KEY,
@@ -256,13 +257,18 @@ impl Tool {
             let user = self
                 .key_in(login::USER_VAR)
                 .map_or_else(String::new, |user| format!("{user:?} and "));
-            return format!(
+            let line = format!(
                 "{} logs in to {} with {user}{:?} from vault {} in a browser",
                 self.name,
                 login.url,
                 self.key_in(login::PASS_VAR).unwrap_or_default(),
                 self.vault
             );
+            // A login with no form of its own keeps the line, and the Allow, it had (#4995).
+            return match &login.form {
+                Some(form) => format!("{line}, typed on {form}"),
+                None => line,
+            };
         }
         if let (Some(mint), [one]) = (&self.mint, self.values.as_slice()) {
             return format!(
@@ -822,6 +828,7 @@ pub fn keyed(
                 "as",
                 login::KEY,
                 login::USER_KEY,
+                login::FORM_KEY,
                 mint::KEY,
                 mint::APP_KEY,
             ]
@@ -891,6 +898,14 @@ pub fn keyed(
                 }
                 Err(why) => fault(why),
             }
+            continue;
+        }
+        if tool.contains_key(login::FORM_KEY) {
+            fault(format!(
+                "{} is a browser login's key — a tool that logs a browser in names its page with \
+                 browser = \"https://…\"",
+                login::FORM_KEY
+            ));
             continue;
         }
         if tool.contains_key(login::USER_KEY) {
@@ -1036,7 +1051,16 @@ fn login_of(
                 .ok_or_else(|| "user names no key of the vault".to_owned())?,
         ),
     };
-    Ok((login::Login { url, origin }, user))
+    // The form's origin, where it is not the page's own (#4995).
+    let form = match tool.get(login::FORM_KEY) {
+        None => None,
+        Some(_) => {
+            let form = text(login::FORM_KEY)
+                .ok_or_else(|| "form names no origin — form = \"https://…\"".to_owned())?;
+            Some(login::form_of(&form)?).filter(|form| *form != origin)
+        }
+    };
+    Ok((login::Login { url, origin, form }, user))
 }
 
 /// The folder a persona's tools are written in, in the project at `root`: under the app's

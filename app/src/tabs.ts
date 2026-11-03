@@ -41,9 +41,10 @@ import { archiveTitle } from "./memories";
  * list you read, the strip is a surface you aim at, and the boundary is whether the thing
  * moves under your hand.
  *
- * **A session's tab shows one of several chats** (#1486): the session's own, or a task below
- * it. Which one is the tab's own state (`Tab.shows`), and who asked whom is the core's, handed
- * in as `AskedBy`. `switchTabTo` is the one way a tab is switched to a chat.
+ * **A press shows a chat in the focused pane** (#4757): `press` is the one way a pane is given
+ * a chat, and `back` the way to the one it showed before. Who asked whom is the core's, handed
+ * in as `AskedBy`. A tab switched to a task in its chat's place (`Tab.shows`, #1486) is only
+ * what a record from before layouts were kept puts back, until #4758's upgrade reads those.
  *
  * Everything here is a plain value, so the window's whole arrangement is one state to test.
  */
@@ -371,6 +372,19 @@ export type Tab = {
   /** **What Undo puts back** (#4765): the tab's last tree and focus, kept while the tab's
    *  layout is still `after`, in memory only (`tiling.ts` `undoLayout`). */
   undo?: LayoutUndo;
+  /**
+   * **The strip this tab is on** (#4757; spec #4750, "A tab records its workspace"), once a
+   * press has shown a chat in it. Absent until then, and the tab is on its first pane's strip
+   * ({@link workspaceOf}). A pane may show a chat of another workspace (a breadcrumb walks up to
+   * an asker filed elsewhere, ⌘⇧H goes back to one), and the tab does not move strip for it: a
+   * chat is still filed by the plane's answer, never by the tab it sits in.
+   */
+  workspace?: string;
+  /**
+   * **The one chat each pane showed before**, by pane (#4757): what ⌘⇧H goes back to
+   * ({@link back}). Written by a press that replaces a chat, and only then.
+   */
+  previous?: Readonly<Record<number, number>>;
 };
 
 /** **What Undo puts back** (#4765): a tab's tree and focus before a move, and the tree the move
@@ -402,6 +416,12 @@ export type Tabs = {
    * open at a quit (`reopen::View::split`).
    */
   splits?: Readonly<Record<string, number>>;
+  /**
+   * **When each pane was last the one with the keyboard**, by pane (#4757): bigger is more
+   * recent. What a press reads when the focused pane holds a view, to find the pane the person
+   * used last that shows a chat or nothing ({@link press}). Stamped by {@link noteUsed}.
+   */
+  used?: Readonly<Record<number, number>>;
 };
 
 /** Where `view`'s divider was, or `undefined` when it never moved. */
@@ -841,7 +861,19 @@ export function followRename(tabs: Tabs, from: string, to: string, root?: string
         lead !== contents(tab.layout)[0]?.content &&
         tab.name === title(from);
       const name = retitle ? title(to) : tab.name;
-      return [id, { ...tab, layout, name, defaultName: retitle ? name : tab.defaultName }];
+      // A tab's own strip follows its workspace's new name, as a view's does (#4757).
+      const strip = tab.workspace === from;
+      if (strip) moved = true;
+      return [
+        id,
+        {
+          ...tab,
+          layout,
+          name,
+          defaultName: retitle ? name : tab.defaultName,
+          ...(strip ? { workspace: to } : {}),
+        },
+      ];
     }),
   );
   return moved ? { ...tabs, byId } : tabs;
@@ -872,8 +904,15 @@ export function refileViews(
     moved = true;
     return { ...layout, content: { ...content, workspace: outside } };
   };
+  // A tab's own strip goes the same way (#4757).
+  const strip = (tab: Tab): Tab => {
+    if (tab.workspace === undefined || tab.workspace === outside || stands(tab.workspace))
+      return tab;
+    moved = true;
+    return { ...tab, workspace: outside };
+  };
   const byId = Object.fromEntries(
-    tabs.order.map((id) => [id, { ...tabs.byId[id], layout: refile(tabs.byId[id].layout) }]),
+    tabs.order.map((id) => [id, strip({ ...tabs.byId[id], layout: refile(tabs.byId[id].layout) })]),
   );
   return moved ? { ...tabs, byId } : tabs;
 }
@@ -970,10 +1009,13 @@ export function sendToBackground(
 }
 
 /**
- * Which workspace a tab belongs to: **its first pane's.** A chat is filed where it works — the
+ * Which workspace a tab belongs to: **its own** once a press gave it one ({@link Tab.workspace}),
+ * and otherwise **its first pane's.** A chat is filed where it works — the
  * plane's answer — and a view where it was opened, which it carries.
  */
 export function workspaceOf(tabs: Tabs, id: number, filedIn: FiledIn): string | undefined {
+  const own = tabs.byId[id]?.workspace;
+  if (own !== undefined) return own;
   const first = contentsOf(tabs, id)[0]?.content;
   if (first === undefined) return undefined;
   return first.kind === "session" ? filedIn(first.session) : first.workspace;
@@ -1251,6 +1293,196 @@ function shownElsewhere(tabs: Tabs, session: number, tab?: number, pane?: number
   );
 }
 
+/** A chat a press shows: its number, its own name, and what a tab named after it says. */
+export type PressedChat = {
+  session: number;
+  /** The chat's own name ({@link Content}'s `chat`). */
+  chat: string;
+  /** What its default name puts first: its persona, or its program. */
+  who?: string | null;
+  /** The name the person gave it, where they gave one. */
+  label?: string | null;
+};
+
+/** Each strip's front tab, by workspace, as the window last left it. */
+export type Fronts = Readonly<Record<string, number>>;
+
+/** What a press needs that the tabs do not hold. */
+export type Pressing = {
+  filedIn: FiledIn;
+  /** The tab last in front on a workspace's strip, where the window remembers one. */
+  frontOf: (workspace: string) => number | undefined;
+};
+
+/** What a press leaves: the tabs, and the strip in front now, which the window draws. */
+export type Press = { tabs: Tabs; workspace: string | undefined };
+
+/** A pane of a tab. */
+export type PaneAt = { tab: number; pane: number };
+
+/**
+ * **The pane in front now was used** (#4757): the focused pane of the tab in front is stamped
+ * as the most recent, which is what a press with a view focused reads ({@link press}). The
+ * window calls it on every change; it answers `tabs` itself when that pane is already the
+ * latest, so a change that moved nothing stays one.
+ */
+export function noteUsed(tabs: Tabs): Tabs {
+  const tab = frontTab(tabs);
+  if (tab === undefined) return tabs;
+  const used = tabs.used ?? {};
+  const latest = Math.max(0, ...Object.values(used));
+  if (latest > 0 && used[tab.focused] === latest) return tabs;
+  return { ...tabs, used: { ...used, [tab.focused]: latest + 1 } };
+}
+
+/**
+ * **A press shows chat `chat`** (#4757; spec #4750 stories 1 to 8): a sidebar row, a task, a
+ * Go, a name in a breadcrumb. It never adds a tab where a pane can take it, never shows a chat
+ * twice and never replaces a view. The chat a pane showed before keeps running: nothing here
+ * ends anything, and the pane remembers it for ⌘⇧H ({@link back}).
+ *
+ * - **A chat on screen in a pane is jumped to**: its tab comes forward and its pane has the
+ *   keyboard. Nothing is replaced.
+ * - **Otherwise it lands in `into`**, the pane a breadcrumb was pressed in, where there is one.
+ * - **Otherwise on its own workspace's strip**: the tab in front there (the one in front of
+ *   the window where that is on the strip, else the one last left in front, else its first),
+ *   in its focused pane. **Where that pane holds a view**, the most recently used pane on the
+ *   strip that shows a chat or nothing takes it instead, and its tab comes forward.
+ * - **A strip with no pane but views** gets a tab for the chat, the one case a press adds a
+ *   tab, until every workspace keeps a tab of its own (#4758).
+ *
+ * A tab whose pane is given a chat keeps its strip ({@link Tab.workspace}), and a tab whose
+ * first pane is given one is named after it, as a tab opened on it would be.
+ */
+export function press(tabs: Tabs, chat: PressedChat, at: Pressing, into?: PaneAt): Press {
+  const on = whereShown(tabs, chat.session);
+  const target = on ?? into ?? pressTarget(tabs, at.filedIn(chat.session), at);
+  const next =
+    on !== undefined
+      ? focusAt(tabs, on)
+      : target === undefined
+        ? openTab(tabs, chat.session, chat.chat, chat.who ?? null, chat.label ?? null)
+        : showChatAt(tabs, target, chat, at.filedIn);
+  const used = noteUsed(next);
+  return { tabs: used, workspace: stripInFront(used, at.filedIn) };
+}
+
+/** The strip of the tab in front, which the window draws, or none with nothing in front. */
+function stripInFront(tabs: Tabs, filedIn: FiledIn): string | undefined {
+  return tabs.inFront === undefined ? undefined : workspaceOf(tabs, tabs.inFront, filedIn);
+}
+
+/**
+ * **⌘⇧H: the focused pane goes back to the chat it showed before** (#4757; spec story 86), and
+ * a second press comes back again. Where that chat is on screen in another pane now, that pane
+ * is jumped to instead. `chat` names a chat that is still open, and nothing for one that has
+ * ended; answers `tabs` itself where the pane showed nothing else, or that chat has ended.
+ */
+export function back(
+  tabs: Tabs,
+  at: Pressing,
+  chat: (session: number) => PressedChat | undefined,
+): Press {
+  const tab = frontTab(tabs);
+  const before = tab?.previous?.[tab.focused];
+  const named = before === undefined ? undefined : chat(before);
+  if (tab === undefined || named === undefined)
+    return { tabs, workspace: stripInFront(tabs, at.filedIn) };
+  return press(tabs, named, at, { tab: tab.id, pane: tab.focused });
+}
+
+/**
+ * **The chats the tab in front shows in its other panes** (#4757; spec story 15): what the
+ * sidebar marks faintly, beside the focused pane's chat ({@link focusedChat}) it highlights.
+ */
+export function shownBeside(tabs: Tabs): number[] {
+  const tab = frontTab(tabs);
+  if (tab === undefined) return [];
+  return shownIn(tabs, tab.id)
+    .filter((one) => one.pane !== tab.focused)
+    .map((one) => one.session);
+}
+
+/** The pane that shows chat `session`, in any tab. */
+function whereShown(tabs: Tabs, session: number): PaneAt | undefined {
+  for (const id of tabs.order) {
+    const one = shownIn(tabs, id).find((each) => each.session === session);
+    if (one !== undefined) return { tab: id, pane: one.pane };
+  }
+  return undefined;
+}
+
+/** Tab `at.tab` in front, with pane `at.pane` focused. */
+function focusAt(tabs: Tabs, at: PaneAt): Tabs {
+  const tab = tabs.byId[at.tab];
+  if (tab.focused === at.pane && tabs.inFront === at.tab) return tabs;
+  return {
+    ...tabs,
+    byId: { ...tabs.byId, [at.tab]: { ...tab, focused: at.pane } },
+    inFront: at.tab,
+  };
+}
+
+/** Where a press lands on `workspace`'s strip ({@link press}), or nothing where the strip has
+ *  no pane that shows a chat or nothing. */
+function pressTarget(tabs: Tabs, workspace: string, at: Pressing): PaneAt | undefined {
+  const here = tabsIn(tabs, workspace, at.filedIn);
+  if (here.length === 0) return undefined;
+  const remembered = at.frontOf(workspace);
+  const front =
+    tabs.inFront !== undefined && here.includes(tabs.inFront)
+      ? tabs.inFront
+      : remembered !== undefined && here.includes(remembered)
+        ? remembered
+        : here[0];
+  const tab = tabs.byId[front];
+  if (contents(tab.layout).find((one) => one.pane === tab.focused)?.content.kind !== "view")
+    return { tab: front, pane: tab.focused };
+  const used = tabs.used ?? {};
+  const candidates = here.flatMap((id) =>
+    contents(tabs.byId[id].layout)
+      .filter((one) => one.content.kind !== "view")
+      .map((one) => ({ tab: id, pane: one.pane })),
+  );
+  // Stable, so panes never used keep the strip's order.
+  return [...candidates].sort((one, other) => (used[other.pane] ?? 0) - (used[one.pane] ?? 0))[0];
+}
+
+/** Pane `at.pane` of tab `at.tab` shows `chat`, has the keyboard, and its tab is in front. */
+function showChatAt(tabs: Tabs, at: PaneAt, chat: PressedChat, filedIn: FiledIn): Tabs {
+  const tab = tabs.byId[at.tab];
+  if (tab === undefined) return tabs;
+  const before = shownIn(tabs, at.tab).find((one) => one.pane === at.pane)?.session;
+  const strip = workspaceOf(tabs, at.tab, filedIn);
+  const shown = showIn(tabs, at.tab, at.pane, {
+    kind: "session",
+    session: chat.session,
+    chat: chat.chat,
+  });
+  const after = shown.byId[at.tab];
+  const previous =
+    before !== undefined && before !== chat.session
+      ? { ...after.previous, [at.pane]: before }
+      : after.previous;
+  const lead = contents(after.layout)[0]?.pane === at.pane;
+  const workspace = after.workspace ?? strip;
+  const named = chat.who ? `${chat.who} ${chat.chat}` : chat.chat;
+  return {
+    ...shown,
+    byId: {
+      ...shown.byId,
+      [at.tab]: {
+        ...after,
+        focused: at.pane,
+        ...(workspace !== undefined ? { workspace } : {}),
+        ...(previous !== undefined ? { previous } : {}),
+        ...(lead && shown !== tabs ? { name: chat.label ?? named, defaultName: named } : {}),
+      },
+    },
+    inFront: at.tab,
+  };
+}
+
 function sameContent(a: Content, b: Content): boolean {
   if (a.kind === "session" && b.kind === "session") return a.session === b.session;
   if (a.kind === "view" && b.kind === "view") return viewKey(a.view) === viewKey(b.view);
@@ -1280,7 +1512,7 @@ export function closeFocusedPane(
  * Takes chat `session`'s pane away, wherever it is — **the window catching up with a chat the core
  * has already closed**: a smart close whose record landed (ADR 0064). What shared its split takes
  * its place; when it was its tab's only pane, the tab closes by `closeTab`'s rule. A session no
- * tab shows changes nothing.
+ * tab shows changes nothing, and nor does one `keeps` says stays in its pane as ended.
  */
 export function closeChat(
   tabs: Tabs,
@@ -1288,6 +1520,7 @@ export function closeChat(
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
   background: Backgrounded = nothingBackgrounded,
+  keeps: (session: number) => boolean = () => false,
 ): Tabs {
   const found = tabs.order
     .flatMap((id) => panesOf(tabs, id).map((one) => ({ id, ...one })))
@@ -1296,6 +1529,9 @@ export function closeChat(
   // V100-37): a pane never changes what it shows by itself. The tab keeps showing it, as
   // ended ({@link shownLive}), until the person leaves it.
   if (found === undefined) return tabs;
+  // **A chat `keeps` says stays in its pane, as ended** (#4757): a task a press put there. The
+  // pane does not change what it shows by itself (V100-37); the person leaves it.
+  if (keeps(session)) return tabs;
   const { id, pane } = found;
   const tab = tabs.byId[id];
   const left = without(tab.layout, pane);
@@ -1478,13 +1714,14 @@ export function showOwnIn(tabs: Tabs, id: number, pane: number): Tabs {
 
 /**
  * **Switches a tab to chat `chat`** (#1486): the tab that is the chat's home ({@link homeOf})
- * comes to the front, the pane of the session that asked shows the chat and takes the
- * keyboard. **No tab is added.** The session's own chat is a chat like any other here, so
- * this is also the way back to it.
+ * comes to the front, the pane of the session that asked shows the chat in its own chat's
+ * place (`Tab.shows`) and takes the keyboard. Answers `tabs` itself when the chat has no home
+ * in this window, or when it is already what is on screen.
  *
- * The one function every way of going to a chat inside a tab calls: a row of the Chats list,
- * a name in the pane's breadcrumb, an item of the needs-you list. Answers `tabs` itself when
- * the chat has no home in this window, or when it is already what is on screen.
+ * **No press calls it since #4757**, which shows a chat in the pane itself ({@link press}).
+ * It stays as the one way to build the state a record from before layouts were kept puts back
+ * (`restoreShown`), which the readers of `Tab.shows` are tested against; it goes with that
+ * field once #4758's upgrade reads those records.
  */
 export function switchTabTo(tabs: Tabs, chat: number, askedBy: AskedBy): Tabs {
   const home = homeOf(tabs, chat, askedBy);

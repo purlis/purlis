@@ -272,6 +272,9 @@ pub struct Held {
     closing: Arc<crate::smartclose::Closing>,
     /// What the app remembers of the tasks its chats dispatched, and who waits on them (#1441).
     tasks: Arc<crate::dispatched::Tasks>,
+    /// Told each time a vault value is remembered, to mask what the host's board keeps of what
+    /// the chats said (the review of #4905). Kept here so it is told while the project is held.
+    _masked_kept: purlis_core::secrets::seen::Remembered,
     /// The window, for each step of a smart close.
     smart: crate::smartclose::Teller,
     /// Each chat's lane, which everything typed into a chat, its resizes and its views take in
@@ -3287,6 +3290,21 @@ impl Planes {
                 }
             })
         });
+        // What each chat last said, as the board the host kept had it (#4709): kept again,
+        // masked again under what this window knows, where the ledger heard nothing since.
+        // Weak for the handoff's reason.
+        held.hooks.when_said_taken({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat, said| {
+                if let Some(held) = held.upgrade() {
+                    let said = said
+                        .iter()
+                        .map(|one| purlis_core::secrets::mcpstart::masked(one))
+                        .collect();
+                    held.tasks().ledger().said_again(chat, said);
+                }
+            })
+        });
         // What a chat's turn ended saying (#1981, #4550): kept in memory, for every chat. Weak
         // for the handoff's reason.
         held.hooks.when_output({
@@ -4030,6 +4048,12 @@ impl Planes {
         if let Err(why) = machine::update(config, move |store| {
             store.remember(&plane, when);
             store.pin_the_most_active(&plane);
+            // A workspace removed or renamed outside purlis leaves its Runs on under a name no
+            // folder has: a pool there becomes This machine (#4591). Read under the store's lock,
+            // so a rename's carry can't fall between the list and the write.
+            if let Some(there) = machine::workspaces_surely_there(&plane) {
+                store.tidy_workspaces(&plane, &there);
+            }
         }) && why.kind() != std::io::ErrorKind::Unsupported
         {
             tracing::warn!(
@@ -4747,6 +4771,9 @@ impl Planes {
             let (plane, told) = (id.clone(), Arc::clone(&self.moves_told));
             Arc::new(move |one| told(plane.clone(), one))
         });
+        let tasks: Arc<crate::dispatched::Tasks> = Arc::default();
+        let masked_kept =
+            crate::dispatched::masked_kept_when_remembered(&tasks, hooks.shared_board());
         Held {
             id,
             root,
@@ -4761,7 +4788,8 @@ impl Planes {
             started_on,
             typed,
             closing,
-            tasks: Arc::default(),
+            tasks,
+            _masked_kept: masked_kept,
             smart: Arc::clone(&self.smart),
             lanes,
             stopping: crate::stopping::Stopping::default(),

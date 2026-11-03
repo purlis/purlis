@@ -505,6 +505,7 @@ fn a_chat_that_ends_comes_back_from_its_own_pool_alone_and_only_a_clean_fetch_se
     let failed = fetch_back_all(
         &window.shared,
         &window.on_pools,
+        &window.fetch_from,
         &window.to_a_pool,
         &window.chats_kept,
     );
@@ -1202,4 +1203,36 @@ fn a_chat_its_start_put_on_a_pool_is_taken_back_from_that_pool() {
     ));
     assert_eq!(world.sessions.reattach(7, &|_| {}).unwrap(), 7);
     assert_eq!(world.builds.reattached(), vec![7]);
+}
+
+/// **A chat's end asks only about what can come back** (#4591): `docs` follows the pool too, by
+/// the settings a put-back closes by, and never ran a chat there, so its end asks nothing of it.
+#[test]
+fn a_chats_end_asks_nothing_about_a_workspace_that_never_ran_on_its_pool() {
+    let machine = AMachine::new();
+    machine
+        .setting
+        .lock()
+        .unwrap()
+        .insert("docs".to_owned(), "builds".to_owned());
+    let window = machine.window().fetching_from(Arc::new(|| {
+        BTreeMap::from([("builds".to_owned(), vec!["app".to_owned()])])
+    }));
+    window.when_one_ends(Arc::new(|_, _| {}));
+    let number = window
+        .open_named(None, &named_in("app"), Default::default(), &|_| {})
+        .unwrap()
+        .number;
+    machine.builds.program_ends(number, Exit::Code(0));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while machine.builds.fetched().is_empty() || !lock(&window.shared.ending).is_empty() {
+        assert!(std::time::Instant::now() < deadline, "never fetched");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let _one_at_a_time = lock(&window.shared.fetching);
+    assert_eq!(
+        machine.builds.fetched(),
+        vec![("app".to_owned(), "builds".to_owned())]
+    );
+    assert!(window.routed_pools().contains("builds"));
 }

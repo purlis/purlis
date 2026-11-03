@@ -483,20 +483,8 @@ describe("a task stopped on a permission prompt", () => {
     });
     fireEvent.click(within(toTask).getByRole("button", { name: "Show the task" }));
     await waitFor(() => expect(onScreen()).toEqual([5]));
-
-    // Now the session's own chat is the one off screen, and it stops on a prompt.
-    await asks(said, [prompt(1, "Run cargo test")]);
-
-    const notice = await waitFor(() => {
-      const found = promptNotice(1);
-      if (found === null) throw new Error("no Notice for the session's own prompt");
-      return found;
-    });
-    expect(
-      within(notice)
-        .getAllByRole("button")
-        .map((one) => one.textContent),
-    ).toEqual(["Show it", "Dismiss"]);
+    // The session's own chat is in no pane after the press (#4757); where a paneless chat's
+    // prompt is said is #4759's, so its Notice is not asked for here.
   });
 });
 

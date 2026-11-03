@@ -153,6 +153,44 @@ jobs:
         id: scope
         uses: ./.github/actions/change-scope
 
+  # A merge group's run that no longer counts ends itself. When an entry leaves the queue (red,
+  # conflict, removed) the queue deletes the groups behind it and builds them again, but GitHub
+  # leaves their runs going: each group's ref is its own, so the concurrency group above never
+  # supersedes them. On 2026-11-03 nine such runs held runners for up to an hour while the five
+  # live groups waited for one from 10:01 to past 10:30, and twice that day the person had to
+  # cancel them by hand. This job asks every minute whether its group's branch is still there and
+  # cancels its own run when it is gone; it ends when every other job of the run has.
+  stale-group:
+    name: a merge group that left the queue stops
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel this run once its group's branch is deleted
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          RUN: ${{ github.run_id }}
+          ME: a merge group that left the queue stops
+        run: |
+          while :; do
+            sleep 60
+            # Only a 404 says the group is gone; a failed call says nothing and is asked again.
+            status=$(gh api -i "repos/$REPO/git/ref/heads/$BRANCH" 2>/dev/null | head -1 | awk '{print $2}')
+            if [ "$status" = 404 ]; then
+              echo "::notice::$BRANCH left the merge queue; cancelling run $RUN"
+              gh run cancel "$RUN" -R "$REPO"
+              exit 0
+            fi
+            left=$(gh api --paginate "repos/$REPO/actions/runs/$RUN/jobs?per_page=100" \
+              -q "[.jobs[] | select(.name != \"$ME\" and .status != \"completed\")] | length" 2>/dev/null \
+              | awk '{s += $1} END {print (NR ? s : -1)}')
+            [ "$left" = 0 ] && exit 0
+          done
+
   # The Rust suite in four parts on four runners, each building the tests and running a quarter
   # of them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
   # request waits on (2026-10-10), and each of two took 15 to 16 minutes by 2026-10-27. Runners
@@ -228,7 +266,11 @@ jobs:
         uses: ./.github/actions/studio-probe-names
       # Built in a step of its own, so the run's step timings say how much of this job is
       # compiling and linking the test binaries and how much is running them, with no log to read.
+      # It takes 5 to 9 minutes. On 2026-11-03 (job 125815923694, in the merge queue) it finished
+      # building and then hung for 36 minutes listing a binary's tests, until the job's 45-minute
+      # limit cancelled it and the queue waited on it; twenty minutes ends such a hang sooner.
       - name: Build the tests
+        timeout-minutes: 20
         run: cargo nextest run --workspace --locked --no-run
       # Every test's result, never the first red only (`fail-fast = false` in the profile): a
       # flake in one test (charter-app#39) must not hide the rest of the suite.
@@ -604,9 +646,17 @@ jobs:
           # A thread's own descriptor table is tried on the host (`rust`): a container's
           # default profile refuses `unshare`, so no thread makes one there.
           contained default a_socket_never_bound_does_not_listen
-          if contained default a_server_on_a_socket_the_chat_bound_listens; then
+          # Either answer passes: this one is an observation, not a check. Its output is kept in a
+          # folded group, since a refusal there prints the test's panic (`left: "EACCES"`), which
+          # was read as the parity job's failure in #3766 and #4894 when the job had failed
+          # elsewhere: Docker's default profile lets `pidfd_getfd` only a process holding
+          # CAP_SYS_PTRACE, so the wrap cannot take the socket and refuses the listen.
+          if observed=$(contained default a_server_on_a_socket_the_chat_bound_listens 2>&1); then
             echo "::notice title=Listening in a container::Docker's own default profile lets the chat's socket be taken now"
           else
+            echo "::group::Under Docker's own default profile (expected to refuse; not a failure)"
+            echo "$observed"
+            echo "::endgroup::"
             echo "::notice title=Listening in a container::under Docker's own default profile nothing listens (fail closed)"
           fi
       # Under `tools/no-orphans.sh`, as `rust` is: a test ends what it started, its pool's

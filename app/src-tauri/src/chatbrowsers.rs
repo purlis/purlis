@@ -724,7 +724,7 @@ fn called(asked: &Browsing) -> Called {
         Browsing::NeedsYou { .. } => Called::NeedsYou,
         Browsing::LogIn { .. } => Called::LogIn,
         Browsing::Act(act) => match act {
-            Act::Open { .. } => Called::Open,
+            Act::Open { .. } | Act::FindLoginForm { .. } => Called::Open,
             Act::Navigate { .. } => Called::Navigate,
             Act::Snapshot { .. } => Called::Snapshot,
             Act::Find { .. } => Called::Find,
@@ -1615,6 +1615,13 @@ impl ChatBrowsers {
         true
     }
 
+    /// Whether the person kept chat `session`'s browser off: Always answers it no more.
+    pub fn is_kept_off(&self, session: u32) -> bool {
+        self.lock()
+            .get(&session)
+            .is_some_and(|chat| chat.posture == Posture::Off)
+    }
+
     /// **Whether chat `session`'s browser may be used now**: the person allowed it, or `always`
     /// answers for its persona. A login's notice waits behind the browser's own Ask (#4595).
     pub fn may_browse(&self, session: u32, always: bool) -> bool {
@@ -1623,6 +1630,87 @@ impl ChatBrowsers {
                 .lock()
                 .get(&session)
                 .is_some_and(|chat| matches!(chat.posture, Posture::Allowed { .. }))
+    }
+
+    /// **Where `page` sends chat `session`'s browser to sign in** (#4995): a browser of purlis's
+    /// own, started where the chat's would be and reaching what the chat's reaches now, never
+    /// more, opened at `page`, followed to its login form, and ended. Nothing is typed, and the
+    /// chat never sees it. Answers the address the form showed on, as the engine recorded it, or
+    /// why there is none. `always` is the open web of the persona's Always, where it answers the
+    /// chat's Ask.
+    #[allow(clippy::too_many_arguments)]
+    pub fn find_login_form(
+        &self,
+        driver: Option<&Arc<dyn Driver>>,
+        root: &Path,
+        pool: Option<&str>,
+        session: u32,
+        reach: BrowserReach,
+        always: Option<bool>,
+        page: &str,
+    ) -> Result<String, String> {
+        let not_followed = |why: &str| {
+            format!(
+                "purlis could not follow {page} to its login form ({why}), so nothing was recorded \
+                 or filled. Give the address of the login page itself; where it sends the browser \
+                 to a site this chat's browser doesn't reach yet, open it with browser_open first \
+                 so the person is asked about that site, then call browser_login again"
+            )
+        };
+        let (open_web, sites) = {
+            let chats = self.lock();
+            let chat = chats.get(&session);
+            // Always answers only an Ask not yet answered, as on every browser call: a browser
+            // the person kept off follows nothing.
+            let open_web = match chat.map(|chat| &chat.posture) {
+                Some(Posture::Allowed { open_web }) => Some(*open_web),
+                Some(Posture::Off) => None,
+                None | Some(Posture::Unasked | Posture::Asked) => always,
+            };
+            (
+                open_web,
+                chat.map(|chat| chat.sites.clone()).unwrap_or_default(),
+            )
+        };
+        let Some(open_web) = open_web else {
+            return Err(not_followed("this chat's browser isn't allowed"));
+        };
+        let Some(driver) = driver else {
+            return Err(not_followed(NO_HOST));
+        };
+        let reach = with_sites(
+            reach,
+            open_web,
+            &sites,
+            &purlis_core::sandbox::policy::Locks::of(root),
+        );
+        let program = driver
+            .start(root, pool, reach.clone(), None)
+            .map_err(|not| match not {
+                NotStarted::Failed(why) => not_followed(&why),
+                _ => not_followed("no browser could be started for it"),
+            })?;
+        // The browser is its own, so its one call needs no id of its own.
+        let found = driver.act(
+            &program,
+            "login-form",
+            Act::FindLoginForm {
+                address: page.to_owned(),
+            },
+            reach,
+        );
+        // It holds nothing, so it ends now, whatever it found.
+        if driver.close(&program).is_err() {
+            let _ = driver.stop(&program);
+        }
+        match found {
+            Ok(browsed) => browsed
+                .page
+                .map(|page| page.address)
+                .ok_or_else(|| not_followed("the browser showed no page")),
+            Err(Refused::Said(why)) => Err(not_followed(&why)),
+            Err(Refused::Gone) => Err(not_followed("the browser ended")),
+        }
     }
 
     /// **Allow** on chat `session`'s Ask, with the open web or not. Answers whether it waited.
@@ -2557,7 +2645,7 @@ impl ChatBrowsers {
             }
             Browsing::Act(act) => Doing::Act(act.clone()),
             Browsing::LogIn { login, .. } => match read {
-                Some(Ok(read)) => Doing::LogIn(login.clone(), read),
+                Some(Ok(read)) => Doing::LogIn(login.clone(), Box::new(read)),
                 Some(Err(why)) => return (no(&why), false),
                 None => {
                     return (
@@ -2638,12 +2726,10 @@ impl ChatBrowsers {
             }
             // The login was read before the lock, for the browser it goes into, and is handed on
             // whole.
-            Doing::LogIn(
-                declared,
-                LoginRead {
+            Doing::LogIn(declared, read) => {
+                let LoginRead {
                     login, identity, ..
-                },
-            ) => {
+                } = *read;
                 // Bound to the runner the chat's link reached, so it goes into a browser on no
                 // other: a project's chats and browsers may be on two runners during a drain
                 // (#4248).
@@ -2761,8 +2847,8 @@ fn pool_login_kept_off_said(persona: &str, login: &str, pool: &str) -> String {
 /// purlis's by the login's name (#2016).
 enum Doing {
     Act(Act),
-    /// A login by its name, as read.
-    LogIn(String, LoginRead),
+    /// A login by its name, as read: boxed, as it is far larger than an act.
+    LogIn(String, Box<LoginRead>),
 }
 
 /// What the chat is told once purlis performed its browser login `name` (#2016): that its
@@ -3160,6 +3246,9 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
         )
         .ok()
     });
+    // A login whose form is on another origin keeps none yet (#4995): a kept login holds its
+    // browser to one site.
+    let store = store.filter(|_| login.form.is_none());
     let opens = match (&store, purlis_core::datahome::root()) {
         (Some(store), Some(data)) => store.exists(&data),
         _ => false,
@@ -3345,7 +3434,7 @@ pub(crate) fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPerso
 /// sandboxed chat reattached under a sandbox whose compile was not recorded (D-2006-11) lists
 /// nothing. Its own
 /// sites, for this chat alone, are added by [`ChatBrowsers::answer`].
-fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
+pub(crate) fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
     let Some(confines) = held.chats().confines_now(session) else {
         // Held by a sandbox whose compile was not recorded (D-2006-11): nothing is listed.
         if !held.chats().started_unsandboxed(session) {

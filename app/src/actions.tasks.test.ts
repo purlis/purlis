@@ -232,10 +232,10 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
 });
 
 describe("the next and the previous chat in a tab (fix round 1)", () => {
-  it("move inside the tab whatever the person set for a pressed task", async () => {
+  it("are a press like any other, which never gives a chat a tab (#4757)", async () => {
     const rows = rowsOf(sessions());
     const next = rows.get("tasks.next");
-    expect(next?.does).toEqual({ verb: "showChat", session: 2, inside: true });
+    expect(next?.does).toEqual({ verb: "showChat", session: 2 });
     const calls: unknown[][] = [];
     const doing = new Proxy({} as Doing, {
       get:
@@ -246,7 +246,7 @@ describe("the next and the previous chat in a tab (fix round 1)", () => {
     });
     if (next === undefined) throw new Error("no row");
     await perform(next, doing);
-    expect(calls).toEqual([["showChat", 2, true]]);
+    expect(calls).toEqual([["showChat", 2]]);
   });
 });
 

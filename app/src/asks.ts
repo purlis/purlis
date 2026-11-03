@@ -131,7 +131,16 @@ function listReader(
         if (!(live && watched.has(plane) && asks)) return;
         // An older core lists no task question with its asking chat: none is.
         const with_asking_chat = listed?.with_asking_chat ?? [];
-        setHeld((was) => ({ ...was, [plane]: { asks, with_asking_chat } }));
+        const next = { asks, with_asking_chat };
+        // **An answer that says what the last one said changes nothing** (#4727): every burst of
+        // a busy chat's moves reads the list again, and a fresh list each time drew the whole
+        // window again for asks that had not moved. The core's answer is plain data, written
+        // the same way each time, so its text is the comparison.
+        setHeld((was) =>
+          was[plane] !== undefined && JSON.stringify(was[plane]) === JSON.stringify(next)
+            ? was
+            : { ...was, [plane]: next },
+        );
         lookAtHoldsEnd(plane, asks);
       },
       () => {},

@@ -61,7 +61,7 @@ struct Now {
     open_web: bool,
     let_on: HashSet<Site>,
     /// The site of the login purlis performs or performed in the browser (#2016).
-    login: Option<Site>,
+    login: Vec<Site>,
 }
 
 impl std::fmt::Debug for SiteJudge {
@@ -78,7 +78,7 @@ impl SiteJudge {
                 lane: Lane::of(read(reach)?),
                 open_web: reach.open_web,
                 let_on: HashSet::new(),
-                login: None,
+                login: Vec::new(),
             }),
             bound: Bound::default(),
             own: None,
@@ -98,12 +98,13 @@ impl SiteJudge {
         &self.bound
     }
 
-    /// **purlis is about to perform a login at `site`** (#2016): while it runs, what purlis
-    /// sends there goes, and the proxy carries the site. The site is let on for good only once
-    /// the browser is bound to it ([`Self::bound_to`]); a login that never filled leaves nothing
-    /// let on ([`Self::done_logging_in`]).
-    pub fn logging_in(&self, site: &Site) {
-        self.lock().login = Some(site.clone());
+    /// **purlis is about to perform a login at `sites`** (#2016): its form's site, and its
+    /// page's where that is another (#4995). While it runs, what purlis sends there goes, and the
+    /// proxy carries them. Each is let on for good only once the browser is bound to it
+    /// ([`Self::bound_to`]); a login that never filled leaves nothing let on
+    /// ([`Self::done_logging_in`]).
+    pub fn logging_in(&self, sites: &[Site]) {
+        self.lock().login = sites.to_vec();
     }
 
     /// The browser is bound to its login's `site` (#2016): it is let on from now.
@@ -117,7 +118,7 @@ impl SiteJudge {
     /// The login has answered (#2016): its site is carried from now only where the browser was
     /// bound to it, or its reach carries it anyway.
     pub fn done_logging_in(&self) {
-        self.lock().login = None;
+        self.lock().login.clear();
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Now> {
@@ -156,7 +157,7 @@ impl SiteJudge {
         }
         let own = self.own();
         let mut now = self.lock();
-        if out.by == Driver::Purlis && now.login.as_ref() == Some(&Site::of(&host, port)) {
+        if out.by == Driver::Purlis && now.login.contains(&Site::of(&host, port)) {
             return Gate::Go;
         }
         let new = match now.lane.decide_here(&host, port, tunnel, own.as_deref()) {
@@ -193,7 +194,7 @@ impl SiteJudge {
         let now = self.lock();
         now.open_web
             || now.let_on.contains(site)
-            || now.login.as_ref() == Some(site)
+            || now.login.contains(site)
             || [true, false].into_iter().any(|tunnel| {
                 matches!(
                     now.lane

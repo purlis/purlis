@@ -6810,10 +6810,15 @@ export type LocalModelRow = {
  *  value: purlis hasn't read one.
  */
 export type LoginShown = {
-	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
+	/**  The domain of the page it opens, with a port where it has one: `shop.example.com`. */
 	domain: string,
 	/**  The page's path on it. */
 	path: string,
+	/**
+	 *  **The host the password is typed on** (#4995), with a port where it has one: the login
+	 *  form's, which the page may have sent the browser to. The domain where they're one.
+	 */
+	form: string,
 	vault: string,
 	user_key?: string | null,
 	key: string,
@@ -6826,6 +6831,10 @@ export type LoginShown = {
 	no_always?: string | null,
 	/**  The persona's chats get the vault too with Always. */
 	vault_too: boolean,
+	/**  **The page the declared login opens now, which this replaces** (#4996). */
+	replaces?: string | null,
+	/**  The host its password is typed on now, with a port where it has one. */
+	replaces_form?: string | null,
 };
 
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
@@ -9559,6 +9568,11 @@ export type PublishReviewView = {
 	grades: PublishGrade[],
 	/**  The request's description, whole. */
 	body: string,
+	/**
+	 *  Whether the forge says the person's account may not push to the source (#4342). The page
+	 *  says so up front and offers Export, and never refuses on it: the push answers for itself.
+	 */
+	forge_says_no_push: boolean,
 	accepted: PublishAccepted,
 };
 
@@ -12552,12 +12566,15 @@ export type StartRefused = {
  *  shows before the person picks anything, and every pool this machine keeps, which the row
  *  offers for this start only. `at_root` is a chat at the project's root, which runs here and is
  *  offered no pool. Nothing here is checked against the pool's runner: the start does that.
+ *  `ran_on` is each of those pools the workspace has run a chat on, or every one where it has no
+ *  clone to send, so the row can say a first start anywhere else (#4591).
  */
 export type StartRunsOn = {
 	pool: string | null,
 	level: RunsOnLevel,
 	at_root: boolean,
 	pools: string[],
+	ran_on: string[],
 };
 
 /**  A chat that started: its session, and the name it was given as charter holds it. */

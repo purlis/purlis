@@ -60,6 +60,7 @@ export function TaskAway({
   finished,
   onBack,
   onOpenAlone,
+  backTo,
 }: {
   away: Exclude<Away, { why: "unread" }>;
   /** Whether this is the pane with the keyboard: its button takes it. */
@@ -73,6 +74,12 @@ export function TaskAway({
   onBack: () => void;
   /** Opens the task, which is still running, in a tab of its own. */
   onOpenAlone: () => void;
+  /**
+   * Where {@link onBack} goes, for a task a press put in this pane (#4757): the chat the pane
+   * showed before, by name, or `null` where there is none and the pane is cleared. Left out,
+   * it is the session's own chat, the first name of the path.
+   */
+  backTo?: string | null;
 }) {
   const back = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -110,7 +117,7 @@ export function TaskAway({
       </div>
       <div className="task-away-ways">
         <Button ref={back} onPress={onBack}>
-          Back to {own.name}
+          {backTo === null ? "Clear pane" : `Back to ${backTo ?? own.name}`}
         </Button>
         {away.why === "moved" && (
           <Button onPress={onOpenAlone}>Open {task.name} in a tab of its own</Button>

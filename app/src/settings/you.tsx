@@ -85,7 +85,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
       id: "you.chats",
       label: "Chats list",
       help: "How chats are listed and summed up, on this machine.",
-      settings: [chatsGrouped, tasksTabbed, awaySummary, browsersBeside],
+      settings: [chatsGrouped, awaySummary, browsersBeside],
     },
     notificationsGroup(),
     thisMachineGroup(),
@@ -221,26 +221,6 @@ const editor: Setting = {
         />
       ),
       grouped: true,
-    };
-  },
-};
-
-/** Whether a pressed task opens in a tab of its own (#1489, V100-74). */
-const tasksTabbed: Setting = {
-  id: "you.chats.tabbed",
-  label: "Open tasks in their own tabs",
-  help: "A task you press opens as a tab of its own, with − in place of ×: − sends it back into its session's tab and ends nothing. Off, the session's tab is switched to the task. Either way the session's tab lists its tasks.",
-  useControl: function useTasksTabbed() {
-    const { tabbed } = useChatsListPrefs();
-    return {
-      control: (ids) => (
-        <Choice
-          kind="switch"
-          ids={ids}
-          checked={tabbed}
-          onCheckedChange={(to) => setChatsListPrefs({ tabbed: to })}
-        />
-      ),
     };
   },
 };

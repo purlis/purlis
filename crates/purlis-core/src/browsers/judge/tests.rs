@@ -222,7 +222,7 @@ fn by(address: &str, why: Why, by: Driver) -> Outbound {
 #[test]
 fn what_purlis_sends_to_its_logins_site_goes_and_nothing_else_it_sends_does() {
     let sites = sites(&["docs.example.com"], false);
-    sites.logging_in(&Site::of("shop.example.test", 443));
+    sites.logging_in(&[Site::of("shop.example.test", 443)]);
     for why in [Why::Addressed, Why::Sends] {
         assert_eq!(
             sites.judge(&by("https://shop.example.test/login", why, Driver::Purlis)),
@@ -259,7 +259,7 @@ fn a_browser_holding_a_login_asks_about_no_other_site() {
     let sites = sites(&["docs.example.com"], false);
     sites
         .bound()
-        .to(&Site::of("shop.example.test", 443))
+        .to(&[Site::of("shop.example.test", 443)])
         .unwrap();
     // Refused at the proxy, in words; never an Ask an Allow could answer.
     assert_eq!(
@@ -281,9 +281,9 @@ fn a_browser_bound_to_one_login_is_not_bound_to_another() {
         bound.lets("anything.example", 443),
         "unbound, nothing is refused here"
     );
-    bound.to(&Site::of("shop.example.test", 443)).unwrap();
-    bound.to(&Site::of("shop.example.test", 443)).unwrap();
-    let refused = bound.to(&Site::of("mail.example.test", 443)).unwrap_err();
+    bound.to(&[Site::of("shop.example.test", 443)]).unwrap();
+    bound.to(&[Site::of("shop.example.test", 443)]).unwrap();
+    let refused = bound.to(&[Site::of("mail.example.test", 443)]).unwrap_err();
     assert!(
         refused.contains("holds a login at shop.example.test:443"),
         "{refused}"
@@ -295,7 +295,7 @@ fn a_browser_bound_to_one_login_is_not_bound_to_another() {
 fn a_logins_site_is_let_on_for_good_only_once_the_browser_is_bound_to_it() {
     let shop = Site::of("shop.example.test", 443);
     let sites = sites(&["docs.example.com"], false);
-    sites.logging_in(&shop);
+    sites.logging_in(std::slice::from_ref(&shop));
     assert!(sites.new_sites().carries(&shop), "while the login runs");
     sites.done_logging_in();
     assert!(
@@ -306,7 +306,7 @@ fn a_logins_site_is_let_on_for_good_only_once_the_browser_is_bound_to_it() {
         sites.judge(&out("https://shop.example.test/?q=1", Why::Addressed)),
         ask("shop.example.test:443")
     );
-    sites.logging_in(&shop);
+    sites.logging_in(std::slice::from_ref(&shop));
     sites.bound_to(&shop);
     sites.done_logging_in();
     assert!(
