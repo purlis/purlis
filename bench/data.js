@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793714939308,
+  "lastUpdate": 1793717577907,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37674,6 +37674,48 @@ window.BENCHMARK_DATA = {
             "value": 101.531662,
             "unit": "ms",
             "extra": "median of 5 runs: 101.313, 101.530, 101.532, 101.929, 102.353 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "132746885961321cf5b46bd0a2815a7a90c71773",
+          "message": "Runners: a project's pool asks only about workspaces that ran there (#4925)\n\n* Runners: a workspace following the project's pool is asked about there once it ran a chat there (#4591)\n\nFetch-back, the away list and a put-back listed every workspace that follows\nthe project's pool, so a chat's end asked about workspaces that never ran\nthere. A follower is now listed once a chat of it is kept on that pool or its\nbranches are still owed from there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Runners: a project's pool marks it not held only while a workspace follows that pool (#4591)\n\nThe not-held mark counted the project's pool even when every workspace named\nits own place, and a change of Runs on never rechecked it. The pool counts now\nonly while a workspace follows it (or the list of workspaces can't be read),\nand each change of Runs on rechecks the marks.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Runners: Runs on under a workspace name no folder has is forgotten as the project opens (#4591)\n\nA workspace removed or renamed outside purlis left its Runs on, This machine\nor a pool, under a name no folder has, and a workspace made later under that\nname took it up unasked. The window forgets those names as it opens the\nproject. A chat's record and branches still owed stay for a put-back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Runners: a move that can't put Runs on back names the setting the workspace had (#4591)\n\nWhen a move didn't start and the workspace's setting couldn't be put back, the\nwords told the person to set Runs on to the place the chat came from. For a\nworkspace on Same as the project that pinned This machine, a place it never\nhad. They name the setting it had now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Changelog: a project's pool asks only about workspaces that ran there (#4591)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Runners: core says whether a workspace has run a chat on a pool (#4591)\n\nA chat kept there, branches owed from there, or branches that came back into a\nclone from there. Start chat's row reads it to say a workspace's first start on\na pool.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Runners: a put-back still closes by the settings; only fetch-back narrows to what ran (#4591)\n\nNarrowing workspaces_on_pools also narrowed which pools a put-back closes\nleftover chats on, so a chat found with no record and not taken back could be\nleft running on the project's pool. The settings-wide list stays for that, and\nfetch-back and the away list read workspaces_to_fetch instead.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Runners: a pool named for a workspace with no folder becomes This machine, and This machine stays (#4591)\n\nForgetting stale names failed open: a This machine name dropped while a folder\nwas briefly gone, a listing was partial or a rename was under way let that\nworkspace's code go to the project's pool. Now a stale pool name moves to This\nmachine, This machine is never dropped, and nothing is tidied unless every\nworkspace could be read and no rename is under way, all under the store's lock.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Tests: every test that rechecks or reads the not-held marks holds them alone (#4591)\n\nA change of Runs on now rechecks the marks, which lets go of every mark its\nown store doesn't name, so a parallel test could drop another's mark.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* ADR 0078: a project's pool is asked about a workspace once it ran there (#4591)\n\nDecided in implementation, to be confirmed: D-4591-1 to D-4591-5.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Start chat: a workspace's first chat on a pool says what that does (#4591)\n\nThe Runs on row now says, before anything is sent, when a workspace has never\nrun a chat on the pool this start would use: its clones are copied to that\npool's runner, and the chat's work comes back here when it ends. That pool can\nbe the project's, the workspace's own, or one picked for this start. It is\nalso the word a workspace renamed outside purlis gets before its new name\nfollows the project's pool. StartRunsOn gains ran_on, the pools the workspace\nhas run a chat on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Start chat: the first-start check reads the store once and asks git one ref; a workspace with no clone says nothing (#4591)\n\nReview fixes. The Runs on row's check re-read the machine store and listed every\nbranch of each pool in each clone on every picker open; it now reads the store\nonce and asks each clone for one ref of the pool at most. A workspace with no\nclone sends nothing, so it is never told its first chat copies code. The line\nis three short sentences, one claim each.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Runners: a tidy asks again after its listing whether a rename began (#4591)\n\nA rename writes its journal, then moves its folder, then carries Runs on. One\nthat began between the tidy's first look and its listing could have its old\nname's pool turned into This machine and carried to the new name. The tidy now\nasks again after the listing and does nothing if a rename is under way.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n* Start chat: the first-start story's baselines, from this pull request's stories run (#4591)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6F6JY4AJKJT0EEB0B30PHG9\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T13:14:54Z",
+          "tree_id": "edcf289a472d645a09874a1c32ee0cf0981712ed",
+          "url": "https://github.com/purlis/purlis/commit/132746885961321cf5b46bd0a2815a7a90c71773"
+        },
+        "date": 1793717574323,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6919875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.674, 0.689, 0.692, 0.697, 0.701 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.661412499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.593, 16.647, 16.661, 16.702, 16.852 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4094575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.519, 101.941, 102.409, 102.625, 102.806 ms"
           }
         ]
       }
