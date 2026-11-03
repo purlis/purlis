@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793688247174,
+  "lastUpdate": 1793691075467,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37296,6 +37296,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2106685,
             "unit": "ms",
             "extra": "median of 5 runs: 101.557, 101.704, 102.211, 102.707, 103.628 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b7a494cc29d470d5e598760f2ce10d2d494b69dd",
+          "message": "chats_plane_updated answers off the window; skill stamps kept until the instructions change (#4813)\n\n* chats_plane_updated answers off the window; each chat's skill stamp is kept until the instructions change (#4738)\n\nThe command ran on the window's thread and read every open chat's skill\nfolders on each ask, which every tab mount makes. It now runs off the\nwindow's thread, and each chat's stamp is kept in Chats (SkillsNow) until\nthe plane's watch tells a change that concerns the instructions, or one it\ncould not place. Nothing is kept while the watch is not whole, nor for a\nTry it's chat, whose try folder the watch does not tell of.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6E1FSYWCQA2AGP0FQXPCFFR\nPurlis-Persona: steward\n\n* A workspace's skill settings and the studio's Accept refresh each chat's kept skill stamp (#4738) (#4854)\n\nReview finding on #4813: a chat's kept skill stamp was forgotten only on a\nchange answering Instructions, but the stamp also reads each workspace.json's\nskill settings (turned off, pinned, budget) and which folders the person\naccepted in the Skill studio (app state, never told by the plane's watch).\nA workspace.json change now concerns Instructions in planechange, which also\ncloses the window's own INSTRUCTIONS re-ask gap, and the studio's Accept and\nConfirm forget the kept stamps.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EBG85BQSXSYW7KVA7AJSFR\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T06:02:33Z",
+          "tree_id": "e8f1e16d2e395371d180b4962e11486609b55944",
+          "url": "https://github.com/purlis/purlis/commit/b7a494cc29d470d5e598760f2ce10d2d494b69dd"
+        },
+        "date": 1793691071390,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6923085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.674, 0.687, 0.692, 0.699, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.600140500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.431, 16.456, 16.600, 16.615, 16.653 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.503282,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.821, 101.479, 101.503, 102.396, 102.511 ms"
           }
         ]
       }
