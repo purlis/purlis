@@ -4,51 +4,50 @@
 name: image leftovers
 
 # The untagged images a failed publishing run left in the runner's and the operator's packages
-# (#4930). Since #4512 an image is pushed only after its check passed, by digest and untagged, and
-# `index` names it; when a later step of the same run fails, an image it pushed stays behind,
-# checked but named by nothing and never signed. The registry has no retention rule to set by
-# hand, so this removes them, once a day.
+# (#4930), listed once a day for a person to delete. Since #4512 an image is pushed only after its
+# check passed, by digest and untagged, and `index` names it; when a later step of the same run
+# fails, an image it pushed stays behind, checked but named by nothing and never signed. The
+# registry has no retention rule to set by hand.
 #
-# What may be removed is `tools/image-leftovers.mjs`, tested on recorded answers in
+# **It reports, and deletes nothing** (the person's ruling of 2026-11-03, D-4930-7): deleting with
+# the job's token would need the repository to hold the Admin role on the packages, which every
+# job of the repository holding `packages: write` would then hold too. The run's summary links
+# each version it lists to its page in the package's settings, where a person deletes it.
+#
+# What it lists is `tools/image-leftovers.mjs`, tested on recorded answers in
 # `tools/image-leftovers.test.mjs`: only an untagged plain image that a failed, cancelled or
-# timed-out run of the publishing workflow recorded as its own push, that nothing any tag reaches
-# holds (an index's own images, its signatures and attestations are untagged too), pushed while
-# that run ran, three days after it ended, while no publishing run is under way, and at most four
-# at a time. Any answer it cannot read removes nothing.
+# timed-out run of the publishing workflow (this repository's own, from `main` or a `v*` tag)
+# recorded as its own push, that nothing any tag reaches holds (an index's own images, its
+# signatures and attestations are untagged too) and nothing refers to, pushed while that run ran,
+# three days after it ended, and at most four at a time. An answer it cannot read lists nothing.
 #
-# **It can never hold a release back or turn `main` red.** Both jobs `continue-on-error`, it is in
-# no release's chain, and no branch protection names it. A pull request touching it runs `plan`
-# only, which can read the package and never write it; `remove` runs on the schedule, on `main`,
-# or by hand when asked to.
+# It gates nothing: the job `continue-on-error`, so the run never fails, it is in no release's
+# chain, and no branch protection names it. A pull request touching it runs it too, which is how
+# a change to the selection is seen working.
 
 on:
   schedule:
-    # Every day at 04:41 UTC.
-    - cron: "41 4 * * *"
+    # Every day at 06:41 UTC.
+    - cron: "41 6 * * *"
   workflow_dispatch:
-    inputs:
-      remove:
-        description: "Remove what the plan names (off: only say what it would remove)"
-        type: boolean
-        default: false
   pull_request:
     paths:
       - tools/image-leftovers*
+      - tools/image-leftovers-fixtures/**
       - tools/image-registry.mjs
       - .github/workflows/image-leftovers.yml
 
 permissions: {}
 
 concurrency:
-  group: image-leftovers-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  group: image-leftovers-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # What would be removed, and why each other untagged version stays. Removes nothing.
-  plan:
-    name: plan (${{ matrix.package }})
+  report:
+    name: report (${{ matrix.package }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -60,6 +59,7 @@ jobs:
             workflow: release.yml
           - package: purlis-cluster-operator
             workflow: operator-image.yml
+    # Read the runs, their artifacts and the package; write nothing.
     permissions:
       contents: read
       actions: read
@@ -72,55 +72,15 @@ jobs:
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-      - name: What would be removed
+      - name: What a failed run left
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.package }}
           WORKFLOW: ${{ matrix.workflow }}
         run: |
           set -euo pipefail
-          node tools/image-leftovers.mjs plan "$WORKFLOW" | tee "$RUNNER_TEMP/plan.txt"
-          { echo "### $IMAGE"; echo; echo '```'; cat "$RUNNER_TEMP/plan.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-
-  # The same selection, asked again, then each version removed, after asking once more that no
-  # publishing run is under way and no tag reaches it.
-  remove:
-    name: remove (${{ matrix.package }})
-    needs: plan
-    if: >-
-      github.ref == 'refs/heads/main' && (
-        github.event_name == 'schedule' ||
-        (github.event_name == 'workflow_dispatch' && inputs.remove)
-      )
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - package: purlis-runner
-            workflow: release.yml
-          - package: purlis-cluster-operator
-            workflow: operator-image.yml
-    permissions:
-      contents: read
-      actions: read
-      packages: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-      - name: Remove what a failed run left
-        env:
-          GH_TOKEN: ${{ github.token }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.package }}
-          WORKFLOW: ${{ matrix.workflow }}
-        run: |
-          set -euo pipefail
-          node tools/image-leftovers.mjs remove "$WORKFLOW" | tee "$RUNNER_TEMP/removed.txt"
-          { echo "### $IMAGE"; echo; echo '```'; cat "$RUNNER_TEMP/removed.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          node tools/image-leftovers.mjs "$WORKFLOW" | tee "$RUNNER_TEMP/report.txt"
+          { echo "### $IMAGE"; echo; echo '```'; cat "$RUNNER_TEMP/report.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if grep -q '^safe to delete ' "$RUNNER_TEMP/report.txt"; then
+            echo "::notice::$IMAGE holds untagged images a failed run left: see this run's summary"
+          fi

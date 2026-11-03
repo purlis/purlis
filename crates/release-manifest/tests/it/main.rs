@@ -20,7 +20,7 @@
 mod workflow;
 
 mod a_dev_channel_build_is_lighter_and_a_stable_build_is_not;
-mod a_failed_runs_leftover_images_are_removed_only_from_main;
+mod a_failed_runs_leftover_images_are_listed_and_never_deleted;
 mod a_release_checks_the_notices_its_own_source_ships;
 mod a_runner_image_failure_never_holds_back_a_release;
 mod every_channel_publishes_its_weekly_manifest;
