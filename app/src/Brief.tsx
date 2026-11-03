@@ -115,7 +115,7 @@ function Facts({ said }: { said: TaskBrief }) {
       Sent by{" "}
       {said.by_person ? (
         <>
-          you, from the tab of <bdi>{said.asker}</bdi>
+          you, from <bdi>{said.asker}</bdi>
         </>
       ) : (
         <bdi>{said.asker}</bdi>

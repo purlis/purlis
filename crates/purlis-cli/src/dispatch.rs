@@ -137,7 +137,7 @@ pub enum DispatchCommand {
     /// Read what a task this chat dispatched said last and the commands it ran, with their
     /// exit codes, as its harness handed them to purlis: quoted as data, credential shapes
     /// masked. Only a task this chat dispatched can be read by it; the whole conversation is
-    /// the person's, in the task's tab.
+    /// the person's, to read in the window.
     Read {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
@@ -750,7 +750,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             to,
             kept_for: Some(kept),
         }) if kept == purlis_core::handback::FOR_THE_PERSON => Ok(format!(
-            "{REPORT_SAYS} '{}' has closed, and the person started this task from its tab, so \
+            "{REPORT_SAYS} '{}' has closed, and the person started this task from it, so \
              the report is theirs: this chat is marked as needing them, and they read it here.",
             purlis_core::personas::one_line(&to),
         )),

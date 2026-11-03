@@ -398,7 +398,7 @@ describe("the Brief panel", () => {
     await waitFor(() => expect(box(dialog).textContent).toBe(BRIEF));
 
     const facts = dialog.querySelector(".brief-facts")?.textContent ?? "";
-    expect(facts).toContain("Sent by you, from the tab of steward 4, to devops, ");
+    expect(facts).toContain("Sent by you, from steward 4, to devops, ");
     expect(facts).toContain("on its own branch task/read-01.");
     expect(within(dialog).getByText("The brief, as you wrote it.")).toBeInTheDocument();
   });
