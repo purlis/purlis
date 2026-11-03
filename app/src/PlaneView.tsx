@@ -3974,9 +3974,11 @@ export const PlaneView = memo(function PlaneView({
       setStartedIn((was) => ({ ...was, [session]: filed }));
       if ("tab" in where) {
         // **It takes the focused pane** (#4758; spec story 12), and the chat it replaces keeps
-        // running in the sidebar.
+        // running in the sidebar. A start that names its place, a directory or a strip the
+        // caller chose, keeps that place's strip.
         const label = started.data.label ?? null;
-        showStarted({ session, chat: name, who: whoOf(persona, kind), label }, filed);
+        const named = where.in !== undefined || filedIn !== undefined;
+        showStarted({ session, chat: name, who: whoOf(persona, kind), label }, filed, named);
         return undefined;
       }
       // The tab that was to be split can have gone while the picker was open: the chat goes on
@@ -4799,6 +4801,8 @@ export const PlaneView = memo(function PlaneView({
           label: chat.label,
         },
         chat.workspace ?? OUTSIDE,
+        // Where the core put it: the start names its place (#4758).
+        true,
       );
     };
     window.addEventListener(FIX_STARTED, started);
@@ -6296,6 +6300,8 @@ export const PlaneView = memo(function PlaneView({
             label: chat.label,
           },
           chat.workspace ?? OUTSIDE,
+          // Where the core put it: the start names its place (#4758).
+          true,
         );
         return { ok: true };
       };
@@ -6347,6 +6353,8 @@ export const PlaneView = memo(function PlaneView({
               label: chat.label,
             },
             chat.workspace ?? OUTSIDE,
+            // Where the core put it: the start names its place (#4758).
+            true,
           );
         });
     };
@@ -6447,6 +6455,8 @@ export const PlaneView = memo(function PlaneView({
               label: chat.label,
             },
             chat.workspace ?? OUTSIDE,
+            // Where the core put it: the start names its place (#4758).
+            true,
           );
         });
     };
@@ -6499,6 +6509,8 @@ export const PlaneView = memo(function PlaneView({
             label: chat.label,
           },
           chat.workspace ?? OUTSIDE,
+          // Where the core put it: the start names its place (#4758).
+          true,
         );
         if (chat.copied === null) return { ok: true };
         const why = chat.copied.charAt(0).toUpperCase() + chat.copied.slice(1);
@@ -6543,6 +6555,8 @@ export const PlaneView = memo(function PlaneView({
             label: chat.label,
           },
           chat.workspace ?? OUTSIDE,
+          // Where the core put it: the start names its place (#4758).
+          true,
         );
         return chat;
       },
