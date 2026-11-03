@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793670057412,
+  "lastUpdate": 1793672480434,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36918,6 +36918,48 @@ window.BENCHMARK_DATA = {
             "value": 102.236532,
             "unit": "ms",
             "extra": "median of 5 runs: 101.224, 101.631, 102.237, 103.006, 103.470 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c7f7087d7daa0cc98acad5b88c8de7bdcf757904",
+          "message": "Runners: keep a stopped runner's home where it holds a chat's conversation (#4633) (#4924)\n\nThe person's ruling of 2026-11-02: before an update, a Replace or an outside prune removes a stopped runner's home, purlis reads whether it holds any chat's conversation. If it does, the runner is held, and a Notice in Devices offers Bring back conversations or Discard (asked twice). A home with none goes as before.\n\nCarried from #4857 onto main after #4716, as one commit.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6F6JRQ7N6G8X3FZYD6EBR2D\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T00:36:01Z",
+          "tree_id": "6a6e6bb50cf9f1b6700a37bd1f5872d78b416a8a",
+          "url": "https://github.com/purlis/purlis/commit/c7f7087d7daa0cc98acad5b88c8de7bdcf757904"
+        },
+        "date": 1793672475666,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6545945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.643, 0.646, 0.655, 0.672, 0.678 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.804751500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.368, 16.658, 16.805, 16.823, 16.964 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.373194,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.620, 101.337, 101.373, 102.809, 103.498 ms"
           }
         ]
       }
