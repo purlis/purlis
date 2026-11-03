@@ -128,7 +128,8 @@ export function QuizClosing({
           </Button>
         )}
       </div>
-      <p className="ui-text-meta quiz-closing-how" id={`${formId}-how`}>
+      {/* Secondary, not meta: the quiet role falls under 4.5:1 on the Notice's own ground. */}
+      <p className="ui-text-secondary quiz-closing-how" id={`${formId}-how`}>
         {refused ?? otherwiseHowSaid(task, from)}
       </p>
     </Form>
@@ -137,7 +138,7 @@ export function QuizClosing({
   const goToTask = { label: GO_TO_TASK, onPress: () => onGoToTask(session) };
   if (kept)
     return (
-      <Notice at="pane" cause={cause} link={goToTask} onDismiss={onDismiss} under={form}>
+      <Notice at="pane" cause={cause} fixes={[goToTask]} onDismiss={onDismiss} under={form}>
         {typedKeptSaid(from, said)}
       </Notice>
     );
@@ -145,8 +146,9 @@ export function QuizClosing({
     <Notice
       at="pane"
       cause={cause}
-      link={goToTask}
+      // Go to task first, as the prototype draws them: the Notice puts its fixes before a link.
       fixes={[
+        goToTask,
         {
           label: SAY_OTHERWISE,
           onPress: () => setSaying((open) => !open),
