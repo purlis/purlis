@@ -651,7 +651,7 @@ describe("a skill's Grades tab (S6)", () => {
       },
     });
     renderTab();
-    await screen.findByRole("group", { name: "The latest grade of deploy" });
+    await screen.findByRole("group", { name: "Does it get picked? The latest grade of deploy" });
     const before = reads;
     await emit("skill-grade", { ...step("01DRAFT"), draft: "d1" });
     await emit("skill-grade", { ...step("01OWN") });
