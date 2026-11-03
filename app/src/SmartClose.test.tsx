@@ -536,7 +536,7 @@ describe("a chat wrapping up among several (#4760: no tab goes into the backgrou
     expect(strip()).toEqual(["only"]);
   });
 
-  it("goes when its record lands, and a quiet notice offers to open the record", async () => {
+  it("ends like End… when its record lands: its tab stays on the ended band, and a quiet notice offers to open the record (#5019)", async () => {
     coreWith();
     render(<App />);
     await waitFor(() => expect(strip()).toEqual(["one", "two", "three"]));
@@ -548,7 +548,8 @@ describe("a chat wrapping up among several (#4760: no tab goes into the backgrou
 
     await step(2, "closed", PLANE, record);
 
-    await waitFor(() => expect(tabOf("two")).toBeUndefined());
+    // Its pane is left on the ended band (spec #4750 story 62), its tab where it was.
+    expect(strip()).toEqual(["one", "two", "three"]);
     const notice = (await screen.findByText(/^Session saved — Ship it/)).closest<HTMLElement>(
       '[role="status"]',
     );
