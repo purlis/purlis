@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793665764242,
+  "lastUpdate": 1793668164565,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36834,6 +36834,48 @@ window.BENCHMARK_DATA = {
             "value": 101.879211,
             "unit": "ms",
             "extra": "median of 5 runs: 101.497, 101.780, 101.879, 102.907, 102.988 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "54e593d4b1afd4f85b79ccd92a4788fd5b659220",
+          "message": "Theme: tie WASH_LAID_ON to the CSS, and read the warning wash as a ground (#4796, #4795) (#4870)\n\n* App guard: tie WASH_LAID_ON to the CSS that draws each wash (#4796)\n\ngrounds.test.ts now reads every rule that paints a token purlis ships\nsee-through, follows the element it paints out through its component to\nthe first ground that covers what is under it, and holds the grounds\nfound to WASH_LAID_ON in parts.rs, exactly. A rule the reader cannot\nfollow (portaled dialog content, a class a placing component carries) is\nlisted with the ground it is laid on; a part's own fill is listed with\nwhy nothing else stands on it. A danger-wash box over surface.raised\nfails until the table names it.\n\nwash.warning is held apart (NOT_YET_LAID) for #4795.\n\nRefs #4648, #4723.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EPPAZ566MK097YHXS4BB2F\nPurlis-Persona: steward\n\n* Theme check: read a pane's warning buttons on the warning wash (#4795)\n\nwash.warning is see-through in every shipped appearance and is the\nground of a pane's warning and its consent, which hold their ways out.\nNo family named it, so the parts check never read a control there.\n\nIt joins the control grounds beside danger.wash (parts.rs, the choice\nand select lists) and WASH_LAID_ON, over the terminal's fill. Badge,\ncount and status-item fill a waiting variant with it and hold only their\nown words, so HOLDS_NO_CONSENT says so. The vitest guard now walks every\nsee-through token a stylesheet paints and loses its NOT_YET_LAID\nexemption; the button reader counts a see-through ground a family names\nwhere a class around its component scopes the rule.\n\nA theme with a heavy wash.warning has its notice buttons' look fall.\nAcross the five shipped appearances each control family gains one\nground (the wash over the terminal's fill), loses none, and nothing\nfalls before or after: no shipped colour or picture moves.\n\nRefs #4648, #4723.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EPPAZ566MK097YHXS4BB2F\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T22:57:17Z",
+          "tree_id": "bec8ce2b838b2c640c03910f84195b56721ea8e8",
+          "url": "https://github.com/purlis/purlis/commit/54e593d4b1afd4f85b79ccd92a4788fd5b659220"
+        },
+        "date": 1793668160470,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6535545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.644, 0.647, 0.654, 0.659, 0.670 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.375398,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.361, 16.369, 16.375, 16.626, 16.738 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.976816,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.136, 101.472, 101.977, 102.510, 102.797 ms"
           }
         ]
       }
