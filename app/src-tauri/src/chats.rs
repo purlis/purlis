@@ -1876,9 +1876,11 @@ impl Chats {
                 stays_because: None,
             });
         }
-        let (Some(config), Some(workspace), Some(pool)) =
-            (&self.pools_in, workspace, self.sessions.pool_for(workspace, start))
-        else {
+        let (Some(config), Some(workspace), Some(pool)) = (
+            &self.pools_in,
+            workspace,
+            self.sessions.pool_for(workspace, start),
+        ) else {
             return Ok(OwnRunnerOrNot::default());
         };
         let Ok(Some((held, _))) = purlis_core::runners::cluster_runner_for(config, &pool) else {
