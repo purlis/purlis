@@ -10361,6 +10361,7 @@ export const PlaneView = memo(function PlaneView({
                     dragSensors={dragSensors}
                     chatDragWords={chatDragWords}
                     dragTab={dragTab}
+                    tearOff={(tab) => void moveToWindow(tab, false, null)}
                     draggingRef={dragging}
                     draggedAtRef={draggedAt}
                     notGoingBack={notGoingBack}
