@@ -747,3 +747,116 @@ fn a_page_that_cant_be_followed_to_its_form_is_refused_and_a_bad_name_never_open
         "nothing is opened for a suggestion that's refused"
     );
 }
+
+// ---- A call naming another site for a declared login (#4996) ----
+
+/// The project file of #4996: login `shop-login` recorded on the app's address.
+const RECORDED: &str = "# ours\n[sandbox]\nmode = \"on\"\n[sandbox.personas.qa]\ntools = { \
+                        shop-login = { vault = \"qa\", browser = \"https://app.example.test/\", \
+                        user = \"username\", key = \"password\" }, other = { vault = \"v\", \
+                        browser = \"https://o.test/\", key = \"k\" } }\n";
+
+fn declared(text: &str) -> Tool {
+    super::declared_in(text, "qa", "shop-login").expect("declared")
+}
+
+fn replacing(root: &Path, text: &str) -> Proposal {
+    signs_in_elsewhere(root)
+        .replacing(root, &declared(text), &[])
+        .expect("a replacement")
+}
+
+#[test]
+fn a_replacement_names_the_site_it_replaces_and_moves_the_digest() {
+    let dir = project(RECORDED);
+    let one = replacing(dir.path(), RECORDED);
+    assert_eq!(
+        one.replaces,
+        Some(Replaced {
+            page: "https://app.example.test/".into(),
+            form: "https://app.example.test".into(),
+        })
+    );
+    assert_ne!(one.digest(), signs_in_elsewhere(dir.path()).digest());
+    // The site it replaces is not another site the password is on.
+    assert!(
+        one.warnings
+            .iter()
+            .all(|warning| !matches!(warning, Warning::KeyElsewhere { .. })),
+        "{:?}",
+        one.warnings
+    );
+    assert!(!signs_in_elsewhere(dir.path()).is_where(&declared(RECORDED)));
+    let same = proposed(dir.path(), "https://app.example.test/");
+    assert!(same.is_where(&declared(RECORDED)));
+}
+
+#[test]
+fn a_call_never_changes_a_declared_login_s_vault_or_keys() {
+    let dir = project(RECORDED);
+    for other in [
+        Suggested {
+            vault: "prod".into(),
+            ..suggested("https://app.example.test/")
+        },
+        Suggested {
+            key: "other".into(),
+            ..suggested("https://app.example.test/")
+        },
+        Suggested {
+            user_key: None,
+            ..suggested("https://app.example.test/")
+        },
+    ] {
+        let one = proposal(dir.path(), "qa", "shop-login", &other, &[]).expect("a proposal");
+        let refused = one
+            .replacing(dir.path(), &declared(RECORDED), &[])
+            .expect_err("refused");
+        assert!(refused.contains("change its site alone"), "{refused}");
+    }
+}
+
+#[test]
+fn always_replaces_that_one_line_and_keeps_the_rest_of_the_file() {
+    let dir = project(RECORDED);
+    let one = replacing(dir.path(), RECORDED);
+    let after = with_line(RECORDED, &one).expect("written");
+    assert!(after.contains("# ours"), "{after}");
+    let table: toml::Table = after.parse().expect("TOML");
+    let tools = &table["sandbox"]["personas"]["qa"]["tools"];
+    assert_eq!(
+        tools["shop-login"]["form"].as_str(),
+        Some("https://auth.example.test")
+    );
+    assert_eq!(tools["other"]["browser"].as_str(), Some("https://o.test/"));
+    let plane = crate::sandbox::Plane::of(Some(&after));
+    let said = plane.said();
+    let policy = said.policy.or(said.unset).expect("a policy");
+    let read = &policy.personas["qa"].tools;
+    assert!(read.contains(&one.tool().expect("a tool")), "{read:?}");
+    assert_eq!(read.len(), 2);
+    // As a table of its own, too.
+    let table_form = "[sandbox.personas.qa.tools.shop-login]\nvault = \"qa\"\nbrowser = \
+                      \"https://app.example.test/\"\nuser = \"username\"\nkey = \"password\"\n";
+    let one = replacing(dir.path(), table_form);
+    let after = with_line(table_form, &one).expect("written");
+    assert!(after.contains("auth.example.test"), "{after}");
+}
+
+/// A line that moved since the notice was drawn is not the one the person was shown: nothing is
+/// written over it.
+#[test]
+fn always_writes_nothing_over_a_line_that_changed_since_it_was_shown() {
+    let dir = project(RECORDED);
+    let one = replacing(dir.path(), RECORDED);
+    for changed in [
+        RECORDED.replace(
+            "https://app.example.test/",
+            "https://elsewhere.example.test/",
+        ),
+        RECORDED.replace("key = \"password\"", "key = \"other\""),
+        RECORDED.replace("shop-login = ", "renamed = "),
+    ] {
+        assert!(with_line(&changed, &one).is_err(), "{changed}");
+    }
+}

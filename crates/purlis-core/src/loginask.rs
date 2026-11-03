@@ -24,6 +24,10 @@
 //!   project's file are one thing.
 //! - **Always writes that line and nothing else** ([`with_line`]): the file is edited in place,
 //!   then read back and compared whole.
+//! - **A call naming another site for a login already declared asks to replace it**
+//!   ([`Proposal::replacing`], #4996, the person's ruling of 2026-11-03): the notice shows the
+//!   site it has and the one proposed. Only the site moves: the vault and the keys stay the
+//!   declared line's, and Always swaps that one line, and only while it still reads as shown.
 //!
 //! Nothing here reads a value, and nothing here asks: `crate::secrets::brokered` fills and the
 //! app holds the notice.
@@ -145,7 +149,17 @@ pub struct Proposal {
     /// **The origin the login form showed on** (#4995): the one place the password is typed.
     /// [`Self::origin`] where the form is on the page's own.
     pub form: String,
+    /// **The site the declared login has now, which this one replaces** (#4996).
+    pub replaces: Option<Replaced>,
     pub warnings: Vec<Warning>,
+}
+
+/// **The site a declared login has, which a proposal replaces** (#4996): its page, and the origin
+/// its password is typed on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Replaced {
+    pub page: String,
+    pub form: String,
 }
 
 /// **A suggested site, as purlis will fill it**: its origin and its page, or why it's not one the
@@ -321,6 +335,7 @@ pub fn proposal(
         origin,
         page,
         form,
+        replaces: None,
         warnings: Vec::new(),
     };
     proposal.warnings = warnings_of(root, &proposal, granted);
@@ -406,7 +421,17 @@ fn declared_tools(root: &Path) -> Vec<Tool> {
 
 /// The other origins either of the proposal's keys is on, in any spelling: a password named as a
 /// user name goes to the site all the same. Each persona's logins, and `granted`.
+///
+/// The very login a proposal replaces is not another site.
 fn elsewhere(declared: &[Tool], proposal: &Proposal, granted: &[Tool]) -> Vec<String> {
+    let replaced = |tool: &Tool| {
+        tool.name == proposal.login
+            && proposal.replaces.as_ref().is_some_and(|old| {
+                tool.login
+                    .as_ref()
+                    .is_some_and(|login| login.url == old.page && login.fills_on() == old.form)
+            })
+    };
     let same = |key: &str| {
         key.eq_ignore_ascii_case(&proposal.key)
             || proposal
@@ -417,7 +442,7 @@ fn elsewhere(declared: &[Tool], proposal: &Proposal, granted: &[Tool]) -> Vec<St
     let mut origins: Vec<String> = declared
         .iter()
         .chain(granted)
-        .filter(|tool| tool.vault == proposal.vault)
+        .filter(|tool| tool.vault == proposal.vault && !replaced(tool))
         .filter(|tool| {
             tool.login_keys()
                 .is_some_and(|(user, key)| same(key) || user.is_some_and(same))
@@ -431,6 +456,41 @@ fn elsewhere(declared: &[Tool], proposal: &Proposal, granted: &[Tool]) -> Vec<St
 }
 
 impl Proposal {
+    /// **This proposal as a replacement of `declared`'s site** (#4996), its warnings worked out
+    /// again, or why it can't be one: `declared` is no browser login, or names another vault or
+    /// other keys, which a call never changes. Its line in the project's file stays as it is.
+    pub fn replacing(self, root: &Path, declared: &Tool, granted: &[Tool]) -> Result<Self, String> {
+        let keys = declared.login_keys();
+        let Some(login) = declared.login.as_ref().filter(|_| {
+            declared.vault == self.vault
+                && keys == Some((self.user_key.as_deref(), self.key.as_str()))
+        }) else {
+            return Err(format!(
+                "{} is declared with another vault or other keys, and a call may change its site \
+                 alone, so nothing was filled. Call browser_login without site to log in as it \
+                 is declared",
+                self.login
+            ));
+        };
+        let mut replacing = Self {
+            replaces: Some(Replaced {
+                page: login.url.clone(),
+                form: login.fills_on().to_owned(),
+            }),
+            ..self
+        };
+        replacing.warnings = warnings_of(root, &replacing, granted);
+        Ok(replacing)
+    }
+
+    /// Whether this proposal names the very site `declared` has: nothing to replace.
+    pub fn is_where(&self, declared: &Tool) -> bool {
+        declared
+            .login
+            .as_ref()
+            .is_some_and(|login| login.url == self.page && login.fills_on() == self.form)
+    }
+
     /// **The same login where the person typed**: read as a suggestion is, a typed page taking the
     /// place of the page and a bare domain keeping it, its warnings worked out again, and the
     /// page followed to its form again with `finds`.
@@ -464,7 +524,7 @@ impl Proposal {
     /// length-prefixed, so a press on one proposal never answers another.
     pub fn digest(&self) -> String {
         let mut digest = sha2::Sha256::new();
-        digest.update(b"purlis proposed browser login v2\0");
+        digest.update(b"purlis proposed browser login v3\0");
         let warnings: Vec<String> = self.warnings.iter().map(Warning::said).collect();
         let warnings = warnings.join("\n");
         for field in [
@@ -476,6 +536,8 @@ impl Proposal {
             self.origin.as_str(),
             self.page.as_str(),
             self.form.as_str(),
+            self.replaces.as_ref().map_or("\0", |old| old.page.as_str()),
+            self.replaces.as_ref().map_or("\0", |old| old.form.as_str()),
             warnings.as_str(),
         ] {
             digest.update((field.len() as u64).to_be_bytes());
@@ -537,7 +599,8 @@ impl Proposal {
 /// not: a login of that name there already, a file whose parts aren't tables, or one with no
 /// `[sandbox]`, which an added table would turn into a project that says something about its
 /// sandbox. Read back and compared: the file after it holds what it held, and this login, and
-/// nothing else moved.
+/// nothing else moved. A proposal that replaces a login's site (#4996) swaps that login's line,
+/// only while it reads as the site the notice showed it had.
 pub fn with_line(text: &str, proposal: &Proposal) -> Result<String, String> {
     let unwritten = || {
         format!(
@@ -567,6 +630,36 @@ pub fn with_line(text: &str, proposal: &Proposal) -> Result<String, String> {
         .ok_or_else(unwritten)?;
     let name = proposal.login.as_str();
     let line = toml_edit::Value::InlineTable(proposal.table());
+    if let Some(old) = &proposal.replaces {
+        let declared = declared_in(text, &proposal.persona, name).ok_or_else(unwritten)?;
+        let still = declared.vault == proposal.vault
+            && declared.login_keys() == Some((proposal.user_key.as_deref(), proposal.key.as_str()))
+            && declared
+                .login
+                .as_ref()
+                .is_some_and(|login| login.url == old.page && login.fills_on() == old.form);
+        if !still {
+            return Err(unwritten());
+        }
+        match persona.get_mut(tools::KEY) {
+            Some(toml_edit::Item::Table(tools)) if tools.contains_key(name) => {
+                tools.insert(name, toml_edit::Item::Value(line));
+            }
+            Some(toml_edit::Item::Value(toml_edit::Value::InlineTable(tools)))
+                if tools.contains_key(name) =>
+            {
+                tools.insert(name, line);
+                tools.fmt();
+            }
+            _ => return Err(unwritten()),
+        }
+        let after = doc.to_string();
+        return if only_this_login(text, &after, proposal) {
+            Ok(after)
+        } else {
+            Err(unwritten())
+        };
+    }
     match persona.get_mut(tools::KEY) {
         None => {
             let mut tools = toml_edit::InlineTable::new();
@@ -586,11 +679,33 @@ pub fn with_line(text: &str, proposal: &Proposal) -> Result<String, String> {
         Some(_) => return Err(unwritten()),
     }
     let after = doc.to_string();
-    if only_added(text, &after, proposal) {
+    if only_this_login(text, &after, proposal) {
         Ok(after)
     } else {
         Err(unwritten())
     }
+}
+
+/// Login `name` as `persona`'s list in the project's file `text` declares it, read by the reader
+/// every declaration goes through.
+fn declared_in(text: &str, persona: &str, name: &str) -> Option<Tool> {
+    let top: toml::Table = text.parse().ok()?;
+    let line = top
+        .get("sandbox")?
+        .get("personas")?
+        .get(persona)?
+        .get(tools::KEY)?
+        .get(name)?
+        .clone();
+    let mut one = toml::Table::new();
+    one.insert(name.to_owned(), line);
+    let (tools, _) = tools::keyed(
+        Some(&toml::Value::Table(one)),
+        "login",
+        "the project's settings",
+        &[],
+    );
+    tools.into_iter().next()
 }
 
 /// Whether the project's file `text` has the `[sandbox]` [`with_line`] writes in.
@@ -599,8 +714,8 @@ pub fn has_a_sandbox(text: &str) -> bool {
         .is_ok_and(|top| top.get("sandbox").is_some_and(toml::Value::is_table))
 }
 
-/// Whether `after` is `before` and this one login, whole.
-fn only_added(before: &str, after: &str, proposal: &Proposal) -> bool {
+/// Whether `after` is `before` with this one login, whole, added or in place of its old line.
+fn only_this_login(before: &str, after: &str, proposal: &Proposal) -> bool {
     let (Ok(mut expected), Ok(after)) =
         (before.parse::<toml::Table>(), after.parse::<toml::Table>())
     else {

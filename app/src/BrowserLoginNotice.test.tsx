@@ -95,6 +95,29 @@ describe("BrowserLoginNotice", () => {
     expect(screen.getByTestId("login-site")).toHaveTextContent("this site alone");
   });
 
+  it("shows the site recorded now beside the one a replacement asks for", () => {
+    render(
+      <BrowserLoginNotice
+        plane="p"
+        session={7}
+        asks={[
+          ask({
+            domain: "app.example.test",
+            path: "/",
+            form: "auth.example.test",
+            replaces: "https://app.example.test/",
+            replaces_form: "app.example.test",
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("login-site-replaces")).toHaveTextContent(
+      "https://app.example.test/, password typed on https://app.example.test",
+    );
+    expect(screen.getByTestId("login-site-form")).toHaveTextContent("https://auth.example.test");
+    expect(screen.getByTestId("login-site")).toHaveTextContent("Always replace swaps its line");
+  });
+
   it("draws nothing for another chat", () => {
     render(<BrowserLoginNotice plane="p" session={8} asks={[ask()]} />);
     expect(screen.queryByTestId("login-site")).toBeNull();

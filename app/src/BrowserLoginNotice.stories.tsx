@@ -62,3 +62,23 @@ export const SignsInElsewhere: Story = {
     onTyped: () => {},
   },
 };
+
+/** #4996: a chat names another site for a login already recorded, and asks to replace it. */
+export const ReplacesTheRecordedSite: Story = {
+  args: {
+    login: {
+      ...login,
+      domain: "app.example.test",
+      path: "/",
+      form: "auth.example.test",
+      replaces: "https://app.example.test/",
+      replaces_form: "app.example.test",
+      warnings: [
+        "The password goes to auth.example.test, not app.example.test: app.example.test sent the browser there to sign in. Allow only if you know auth.example.test as this site's sign-in.",
+      ],
+      line: 'shop-login = { vault = "qa", browser = "https://app.example.test/", form = "https://auth.example.test", user = "username", key = "password" }',
+    },
+    typed: undefined,
+    onTyped: () => {},
+  },
+};

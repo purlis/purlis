@@ -9249,6 +9249,10 @@ export type LoginShown = {
 	no_always?: string | null,
 	/**  The persona's chats get the vault too with Always. */
 	vault_too: boolean,
+	/**  **The page the declared login opens now, which this replaces** (#4996). */
+	replaces?: string | null,
+	/**  The host its password is typed on now, with a port where it has one. */
+	replaces_form?: string | null,
 };
 
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */

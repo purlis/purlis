@@ -46,7 +46,8 @@ fn judged(
     suggested: &Suggested,
     held: &[Tool],
 ) -> Result<Judged, String> {
-    super::judged(root, persona, login, suggested, &on_its_page, held)
+    super::judged(root, persona, login, suggested, &on_its_page, None, held)
+        .map(|judged| judged.expect("an undeclared login is asked about"))
 }
 
 fn raised(root: &Path, grants: &Grants, site: &str) -> (u32, Proposal, mpsc::Receiver<Heard>) {
@@ -60,8 +61,9 @@ fn raised_finding(
     site: &str,
     finds: FindsForm<'_>,
 ) -> (u32, Proposal, mpsc::Receiver<Heard>) {
-    let judged =
-        super::judged(root, "qa", "shop-login", &suggested(site), finds, &[]).expect("asked");
+    let judged = super::judged(root, "qa", "shop-login", &suggested(site), finds, None, &[])
+        .expect("asked")
+        .expect("an ask");
     let proposal = judged.proposal.clone();
     let (id, heard) = grants
         .raise(LoginWait {
@@ -607,6 +609,7 @@ fn a_page_that_cant_be_followed_to_its_form_is_never_asked_about() {
         "shop-login",
         &suggested("https://app.example.test/"),
         &|_| Ok("http://auth.example.test/login".to_owned()),
+        None,
         &[],
     )
     .expect_err("refused");
@@ -680,4 +683,194 @@ fn always_writes_the_form_the_notice_showed() {
         "{file}"
     );
     assert!(!file.contains("state=s"), "{file}");
+}
+
+// ---- A call naming another site for a declared login (#4996) ----
+
+/// The project of #4996: `shop-login` recorded on the app's address, allowed on this machine.
+const RECORDED: &str = "[sandbox]\nmode = \"on\"\n[sandbox.personas.qa]\ntools = { shop-login = { \
+                        vault = \"qa\", browser = \"https://app.example.test/\", user = \
+                        \"username\", key = \"password\" } }\n";
+
+/// A project that records `shop-login` on the app's address, with qa's list allowed here.
+fn recorded() -> tempfile::TempDir {
+    let dir = project(RECORDED);
+    let locks = Locks::of(dir.path());
+    let digest = sandbox::persona::digest_in(dir.path(), RECORDED, "qa", &locks).expect("a digest");
+    sandbox::local::allow_persona_hosts(dir.path(), "qa", &digest).expect("allowed");
+    dir
+}
+
+fn declared_shop(root: &Path) -> Tool {
+    declared_now(root, "qa", "shop-login").expect("declared")
+}
+
+/// The replace notice of #4996, raised for chat 7.
+fn raised_replacing(root: &Path, grants: &Grants) -> (u32, Proposal, mpsc::Receiver<Heard>) {
+    let judged = super::judged(
+        root,
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &on_auth,
+        Some(&declared_shop(root)),
+        &[],
+    )
+    .expect("asked")
+    .expect("a replacement");
+    let proposal = judged.proposal.clone();
+    let (id, heard) = grants
+        .raise(LoginWait {
+            id: 0,
+            session: 7,
+            proposal: judged.proposal,
+            since: 1,
+            vault_too: judged.vault_too,
+            no_always: judged.no_always,
+            pool: None,
+        })
+        .expect("raised");
+    (id, proposal, heard)
+}
+
+#[test]
+fn a_call_naming_the_site_a_login_has_is_no_ask() {
+    let dir = recorded();
+    let judged = super::judged(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &on_its_page,
+        Some(&declared_shop(dir.path())),
+        &[],
+    )
+    .expect("judged");
+    assert!(judged.is_none());
+}
+
+#[test]
+fn a_call_naming_another_site_asks_to_replace_the_recorded_one() {
+    let dir = recorded();
+    let grants = Grants::default();
+    let (_, proposal, _heard) = raised_replacing(dir.path(), &grants);
+    let old = proposal.replaces.expect("it replaces");
+    assert_eq!(old.page, "https://app.example.test/");
+    assert_eq!(old.form, "https://app.example.test");
+    assert_eq!(proposal.form, "https://auth.example.test");
+    assert_eq!(
+        file_of(dir.path()),
+        RECORDED,
+        "nothing changes before a press"
+    );
+}
+
+#[test]
+fn once_and_this_chat_write_nothing_and_the_next_login_fills_on_the_new_host() {
+    for press_it in [Press::Once, Press::Chat] {
+        let dir = recorded();
+        let grants = Grants::default();
+        let (id, proposal, heard) = raised_replacing(dir.path(), &grants);
+        let audited = Audited::default();
+        answered(
+            dir.path(),
+            &grants,
+            &audited,
+            &press(id, press_it, &proposal.digest()),
+        )
+        .expect("allowed");
+        assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
+        assert_eq!(file_of(dir.path()), RECORDED);
+        let login = tool_of(&grants, "shop-login")
+            .and_then(|tool| tool.login)
+            .expect("held for the chat");
+        assert_eq!(login.fills_on(), "https://auth.example.test");
+    }
+}
+
+#[test]
+fn always_replaces_the_recorded_line_and_allows_it_here() {
+    let dir = recorded();
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised_replacing(dir.path(), &grants);
+    let audited = Audited::default();
+    let done = answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Always, &proposal.digest()),
+    )
+    .expect("replaced");
+    assert!(
+        matches!(&done, Pressed::Done { said } if said.starts_with("Replaced")),
+        "{done:?}"
+    );
+    let file = file_of(dir.path());
+    assert!(
+        file.contains("form = \"https://auth.example.test\""),
+        "{file}"
+    );
+    let (declared, allowed) = sandbox::tools::declared_and_allowed_here(dir.path(), "qa");
+    let tool = declared
+        .iter()
+        .find(|tool| tool.name == "shop-login")
+        .expect("declared");
+    assert_eq!(
+        tool.login.as_ref().map(|login| login.fills_on()),
+        Some("https://auth.example.test")
+    );
+    assert!(
+        allowed.iter().any(|one| one.name == "shop-login"),
+        "{allowed:?}"
+    );
+}
+
+#[test]
+fn keep_leaves_the_recorded_site_and_tells_the_chat_plainly() {
+    let dir = recorded();
+    let grants = Grants::default();
+    let (id, proposal, heard) = raised_replacing(dir.path(), &grants);
+    let audited = Audited::default();
+    let done = answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Keep, &proposal.digest()),
+    )
+    .expect("kept");
+    assert!(
+        matches!(&done, Pressed::Done { said } if said.contains("recorded site")),
+        "{done:?}"
+    );
+    assert_eq!(heard.try_recv(), Ok(Heard::Kept(None)));
+    assert_eq!(file_of(dir.path()), RECORDED);
+    assert!(tool_of(&grants, "shop-login").is_none());
+    let told = kept_where_it_is_said("shop-login", "https://app.example.test/", None);
+    assert!(
+        told.contains("kept login shop-login on https://app.example.test/"),
+        "{told}"
+    );
+}
+
+#[test]
+fn always_is_held_back_by_proposals_off_for_a_replacement_too() {
+    let dir = recorded();
+    sandbox::policy::set_for_this_test(Locks::parse(
+        r#"{"sandbox": {"proposed-changes": "off"}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised_replacing(dir.path(), &grants);
+    assert!(grants.waiting()[0].no_always.is_some());
+    let audited = Audited::default();
+    assert!(
+        answered(
+            dir.path(),
+            &grants,
+            &audited,
+            &press(id, Press::Always, &proposal.digest()),
+        )
+        .is_err()
+    );
+    assert_eq!(file_of(dir.path()), RECORDED);
 }

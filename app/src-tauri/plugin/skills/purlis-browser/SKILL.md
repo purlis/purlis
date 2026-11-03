@@ -33,7 +33,9 @@ vault or list its keys beforehand: that raises a second notice. If your persona 
 the site, call `browser_login` with a short new `login` name, `site` (the login page's https
 address), `vault` and `key`, plus `user_key` if the page asks for a user name. Give the site's own
 address even where it signs in on another host: purlis follows it to its login form and shows the
-person both hosts. The person sees one notice and confirms the site, which they may change. Your call waits for their answer; on Allow it
+person both hosts. The person sees one notice and confirms the site, which they may change. If a
+login your persona declares is on the wrong site, call `browser_login` again with its name, its
+`vault` and keys, and the right `site`: the person is asked whether to replace the recorded one. Your call waits for their answer; on Allow it
 goes on to log in. Fill in only what you know, never guess a key name, and if they keep it blocked,
 tell them what needs the login and don't suggest it again.
 

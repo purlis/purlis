@@ -278,6 +278,24 @@ pub fn kept_said(login: &str, reason: Option<&str>) -> String {
     )
 }
 
+/// What a chat is told where the person kept a declared login's site as it is (#4996).
+pub fn kept_where_it_is_said(login: &str, page: &str, reason: Option<&str>) -> String {
+    let why = reason.map_or_else(String::new, |why| {
+        format!(": {}", purlis_core::shown::short(why))
+    });
+    format!(
+        "the person kept login {login} on {page}, so nothing changed and nothing was filled{why}. \
+         Call browser_login without site to log in there, or tell them what needs another site"
+    )
+}
+
+/// **Login `login` as `persona`'s list in the project's file declares it now**, allowed here or
+/// not: the site a call naming another would replace (#4996).
+fn declared_now(root: &Path, persona: &str, login: &str) -> Option<Tool> {
+    let (declared, _) = sandbox::tools::declared_and_allowed_here(root, persona);
+    declared.into_iter().find(|tool| tool.name == login)
+}
+
 /// What a chat is told where nobody answered in time.
 pub const NOT_ANSWERED: &str = "nobody answered about this login in time, so nothing was filled \
                                 and the notice went. Tell the person what needs the login, or \
@@ -319,10 +337,8 @@ pub fn before_the_login(
     if grants.granted(session, Some(&persona), login).is_some() {
         return None;
     }
-    let (declared, _) = sandbox::tools::declared_and_allowed_here(held.root(), &persona);
-    if declared.iter().any(|tool| tool.name == *login) {
-        return None;
-    }
+    // A declared login a call names another site for asks to replace that site (#4996).
+    let declared = declared_now(held.root(), &persona, login);
     if let Some(pool) = pool {
         // Only a runner shown to be yours is ever asked about, as for a declared login.
         let config = held.chats().pools_in()?;
@@ -350,12 +366,15 @@ pub fn before_the_login(
         login,
         suggested,
         &finds,
+        declared.as_ref(),
         &grants.held(),
     ) {
-        Ok(judged) if grants.kept(session, login, &judged.proposal.origin) => {
+        // The site the call names is the one declared: the declared login fills it.
+        Ok(None) => return None,
+        Ok(Some(judged)) if grants.kept(session, login, &judged.proposal.origin) => {
             return no(kept_said(login, None));
         }
-        Ok(judged) => LoginWait {
+        Ok(Some(judged)) => LoginWait {
             id: 0,
             session,
             since: now,
@@ -366,6 +385,7 @@ pub fn before_the_login(
         },
         Err(why) => return no(why),
     };
+    let replaces = wait.proposal.replaces.clone();
     let (id, heard) = match grants.raise(wait) {
         Ok(raised) => raised,
         Err(why) => return no(why),
@@ -377,7 +397,10 @@ pub fn before_the_login(
     }
     match heard.recv_timeout(loginask::THE_PERSON_IS_WAITED_FOR) {
         Ok(Heard::Allowed) => None,
-        Ok(Heard::Kept(reason)) => no(kept_said(login, reason.as_deref())),
+        Ok(Heard::Kept(reason)) => no(match &replaces {
+            Some(old) => kept_where_it_is_said(login, &old.page, reason.as_deref()),
+            None => kept_said(login, reason.as_deref()),
+        }),
         Ok(Heard::Gone) | Err(mpsc::RecvTimeoutError::Disconnected) => no(NOT_ANSWERED.to_owned()),
         Err(mpsc::RecvTimeoutError::Timeout) => {
             // A press in that very moment has ended it, and its answer is waiting here.
@@ -430,20 +453,29 @@ struct Judged {
 /// **Whether a suggestion is one the person is asked about**, and what they're offered: no tool
 /// where policy forbids it, a vault the project has, and one the persona may use or that policy
 /// lets the person allow it.
+///
+/// Where `persona` declares `login` already (#4996), a suggestion of another site replaces its
+/// site, and one of the very site it has is no ask at all: `None`.
 fn judged(
     root: &Path,
     persona: &str,
     login: &str,
     suggested: &Suggested,
     finds: FindsForm<'_>,
+    declared: Option<&Tool>,
     held: &[Tool],
-) -> Result<Judged, String> {
+) -> Result<Option<Judged>, String> {
     let locks = Locks::of(root);
     if let Some(why) = locks.refuses_tool(persona, login) {
         return Err(why);
     }
     let proposal = loginask::proposal(root, persona, login, suggested, finds, held)?;
-    finish(root, &locks, proposal)
+    let proposal = match declared {
+        None => proposal,
+        Some(declared) if proposal.is_where(declared) => return Ok(None),
+        Some(declared) => proposal.replacing(root, declared, held)?,
+    };
+    finish(root, &locks, proposal).map(Some)
 }
 
 /// What the person is offered on `proposal`, under `locks`.
@@ -560,8 +592,13 @@ pub fn answer(
     if press == Press::Keep {
         grants.keep(session, &wait.proposal.login, &wait.proposal.origin);
         grants.end(id, Heard::Kept(reason.map(str::to_owned)));
+        let said = if wait.proposal.replaces.is_some() {
+            "Kept the recorded site. Nothing changed or was filled."
+        } else {
+            "Kept blocked. Nothing was filled."
+        };
         return Ok(Pressed::Done {
-            said: "Kept blocked. Nothing was filled.".to_owned(),
+            said: said.to_owned(),
         });
     }
     // A field left empty names no site: it never falls back to the one the chat suggested.
@@ -599,6 +636,20 @@ pub fn answer(
         &|_| Ok(form.clone()),
         &grants.held(),
     )?;
+    // A replacement is judged against the login as it's declared now (#4996): a line changed
+    // since is a new notice, and one that has this site already leaves nothing to replace.
+    let fresh = match &proposal.replaces {
+        None => fresh,
+        Some(_) => {
+            let declared = declared_now(root, &proposal.persona, &proposal.login).ok_or(
+                "That login is no longer in the project's settings, so nothing was changed.",
+            )?;
+            if fresh.is_where(&declared) {
+                return Err("That login has this site already, so nothing was changed.".to_owned());
+            }
+            fresh.replacing(root, &declared, &grants.held())?
+        }
+    };
     let judged = finish(root, &locks, fresh)?;
     let changed = judged.proposal.digest() != wait.proposal.digest();
     // Always writes a line, and the line is shown before it's written.
@@ -638,10 +689,18 @@ pub fn answer(
     )?;
     let said = if press == Press::Always {
         written(root, &locks, &proposal, judged.vault_too, session, audit)?;
-        format!(
-            "Allowed. {} is in the project's settings, and allowed on this machine.",
-            proposal.login
-        )
+        if proposal.replaces.is_some() {
+            format!(
+                "Replaced. {} opens {} in the project's settings now, and is allowed on this \
+                 machine.",
+                proposal.login, proposal.page
+            )
+        } else {
+            format!(
+                "Allowed. {} is in the project's settings, and allowed on this machine.",
+                proposal.login
+            )
+        }
     } else {
         format!(
             "Allowed. Nothing was written. It fills on {}.",

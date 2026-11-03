@@ -36,6 +36,17 @@ export function LoginSite({
 }) {
   return (
     <div className="login-site" data-testid="login-site">
+      {login.replaces != null && (
+        <div data-testid="login-site-replaces">
+          <p className="ui-text-meta">Recorded now</p>
+          <p className="login-site-domain ui-text-body">
+            {login.replaces}, password typed on https://{login.replaces_form}
+          </p>
+          <p className="ui-text-meta">
+            The chat asks to change it. Nothing changes until you choose.
+          </p>
+        </div>
+      )}
       <p className="ui-text-meta">Opens</p>
       <p className="login-site-domain ui-text-title">
         https://{login.domain}
@@ -73,8 +84,12 @@ export function LoginSite({
         <p className="ui-text-meta">{login.no_always}.</p>
       ) : (
         <p className="ui-text-meta">
-          Always allow adds this to <code>{login.under}</code>
-          {login.vault_too ? ", and lets this persona use the vault" : ""}:{" "}
+          {login.replaces != null
+            ? "Always replace swaps its line in "
+            : "Always allow adds this to "}
+          <code>{login.under}</code>
+          {login.vault_too ? ", and lets this persona use the vault" : ""}
+          {login.replaces != null ? " for" : ""}:{" "}
           <code className="login-site-line">{login.line}</code>
         </p>
       )}

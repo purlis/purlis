@@ -166,6 +166,12 @@ pub struct LoginShown {
     pub no_always: Option<String>,
     /// The persona's chats get the vault too with Always.
     pub vault_too: bool,
+    /// **The page the declared login opens now, which this replaces** (#4996).
+    #[specta(optional)]
+    pub replaces: Option<String>,
+    /// The host its password is typed on now, with a port where it has one.
+    #[specta(optional)]
+    pub replaces_form: Option<String>,
 }
 
 /// The lines an action runs over, as a row draws them under its line (#3502). An action whose
@@ -1359,10 +1365,26 @@ pub fn browser_login(
     if locks.scope_removed(Level::Chat).is_none() {
         options.push(allow(Level::Chat, "Allow for this chat"));
     }
+    // A replacement of a declared login's site says what Always and Keep do to it (#4996).
+    let replaces = proposal.replaces.is_some();
     if wait.no_always.is_none() {
-        options.push(allow(Level::You, "Always allow"));
+        options.push(allow(
+            Level::You,
+            if replaces {
+                "Always replace"
+            } else {
+                "Always allow"
+            },
+        ));
     }
-    options.push(refuses(KEEP, KEEP_SAID));
+    options.push(refuses(
+        KEEP,
+        if replaces {
+            "Keep the recorded site"
+        } else {
+            KEEP_SAID
+        },
+    ));
     let domain = proposal
         .origin
         .strip_prefix("https://")
@@ -1371,10 +1393,17 @@ pub fn browser_login(
     Shown {
         session: wait.session,
         ask: browser_login_key(wait.id),
-        says: said_inertly(&format!(
-            "Wants to log its browser in as {}, from vault {}",
-            proposal.persona, proposal.vault
-        )),
+        says: said_inertly(&if replaces {
+            format!(
+                "Wants login {} of {} to sign in on another site",
+                proposal.login, proposal.persona
+            )
+        } else {
+            format!(
+                "Wants to log its browser in as {}, from vault {}",
+                proposal.persona, proposal.vault
+            )
+        }),
         options,
         source: AskSource::BrowserLogin,
         chain: Vec::new(),
@@ -1403,6 +1432,13 @@ pub fn browser_login(
             under: format!("[sandbox.personas.{}] tools", proposal.persona),
             no_always: wait.no_always.clone(),
             vault_too: wait.vault_too,
+            replaces: proposal.replaces.as_ref().map(|old| old.page.clone()),
+            replaces_form: proposal.replaces.as_ref().map(|old| {
+                old.form
+                    .strip_prefix("https://")
+                    .unwrap_or(&old.form)
+                    .to_owned()
+            }),
         }),
         earlier_messages: None,
     }
