@@ -16,7 +16,7 @@ export const PAGE = 1000;
 /**
  * **Asks for an older page once the person scrolls to the top of the history a view drew**
  * (#4742). `more` is called with the history the next view is to be drawn with, at most once
- * per view: a host with nothing older, such as one before 1.69, which draws all of it, is asked
+ * per view: a host with nothing older, such as one before 1.70, which draws all of it, is asked
  * for nothing.
  */
 export function pageHistory(pane: Terminal, more: (history: number) => void) {

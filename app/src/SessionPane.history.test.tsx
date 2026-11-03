@@ -57,7 +57,7 @@ let opened: { history: number | null; output: Channel<string> }[] = [];
 let unwatched: number[] = [];
 
 /** A host that keeps `LAST` lines and draws a view with the newest `history` of its history,
- *  or every line where it pages none, as a host before 1.69 does. `again`, when given, is what
+ *  or every line where it pages none, as a host before 1.70 does. `again`, when given, is what
  *  it does before answering a view after the first: refuse it, or wait to be let answer. */
 function aHost(pages: boolean, again?: () => Promise<void>) {
   opened = [];

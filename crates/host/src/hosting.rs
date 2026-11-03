@@ -273,7 +273,7 @@ pub trait Running: Send + Sync + 'static {
         let _ = (role, rate, reads);
         (kind == ViewKind::Terminal).then(|| self.source())
     }
-    /// **Its terminal view, drawn with at most `history` lines of history** (1.69, #4742), and
+    /// **Its terminal view, drawn with at most `history` lines of history** (1.70, #4742), and
     /// where each attach of it counts the lines its terminal keeps above them. `None` where it
     /// pages none: a view of it then draws all of its history.
     fn paged_view(&self, history: u32) -> Option<(Arc<dyn Source>, Older)> {
@@ -493,7 +493,7 @@ impl Running for Terminal {
 }
 
 /// How a view is asked to show its program: as `role`, at most `rate` frames a second, and
-/// with at most `history` lines of a terminal's history (1.69, #4742).
+/// with at most `history` lines of a terminal's history (1.70, #4742).
 struct Shown {
     role: Option<ViewRole>,
     rate: Option<u32>,
