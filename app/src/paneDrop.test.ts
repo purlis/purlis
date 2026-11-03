@@ -11,8 +11,8 @@ import {
   placeAt,
   previewOf,
   type Source,
-  undone,
 } from "./paneDrop";
+import { undone } from "./layoutUndo";
 import {
   type Content,
   contentsOf,

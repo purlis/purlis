@@ -353,7 +353,8 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
-import { tileAll, undoLayout, zoomedLayout, zoomFocusedPane } from "./tiling";
+import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
+import { recorded } from "./layoutUndo";
 import { layoutOf, tabsOf, withShare } from "./laidOut";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -3642,7 +3643,10 @@ export const PlaneView = memo(function PlaneView({
       const before = now.current;
       // The tab that was to be split can have closed while the picker was open. Nothing
       // would show that session, so it is ended rather than left running unseen.
-      if (change((tabs) => splitFocusedPane(tabs, where.split, session, name)) === before) {
+      // A split is a layout change, so Undo puts it back (#4763); its chat runs on in the sidebar.
+      const split = (tabs: Tabs) =>
+        recorded(tabs, splitFocusedPane(tabs, where.split, session, name), "Split the pane.");
+      if (change(split) === before) {
         void commands.closeSession(plane, session);
       }
       return undefined;
@@ -3772,10 +3776,6 @@ export const PlaneView = memo(function PlaneView({
   // Tile all, its Undo and Focus this pane (#4765): the tab's own panes rearranged, nothing
   // started or ended.
   const tileAllIn = useCallback((tab: number) => change((tabs) => tileAll(tabs, tab)), [change]);
-  const undoLayoutIn = useCallback(
-    (tab: number) => change((tabs) => undoLayout(tabs, tab)),
-    [change],
-  );
   const zoomPane = useCallback(() => change(zoomFocusedPane), [change]);
 
   useEffect(() => {
@@ -4648,6 +4648,8 @@ export const PlaneView = memo(function PlaneView({
     onHoldTab: holdTab,
     chatNameOf: ownNameOf,
   });
+  /** The window's one Undo (#4763, #4765): the palette's row runs the toast's and ⌘Z's. */
+  const undoLayoutIn = paneDrag.undo;
 
   /**
    * **What a tab's panes are called on the strip** (#4762): a chat by its own name, never the

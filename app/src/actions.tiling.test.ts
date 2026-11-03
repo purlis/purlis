@@ -79,7 +79,7 @@ describe("Tile all as a row (#4765)", () => {
 });
 
 describe("Undo after Tile all, as a row (#4765)", () => {
-  it("is offered only while the tab in front is as Tile all left it", async () => {
+  it("is offered only while the tabs are as Tile all left them", async () => {
     expect(by(catalogue(now(two())), UNDO_LAYOUT_ID)).toBeUndefined();
 
     const tiled = tileAll(two(), 1);
@@ -87,7 +87,7 @@ describe("Undo after Tile all, as a row (#4765)", () => {
     const { doing, calls } = hands();
     await perform(row(offers, UNDO_LAYOUT_ID), doing);
 
-    expect(calls).toEqual(["undoLayout:1"]);
+    expect(calls).toEqual(["undoLayout"]);
     expect(by(catalogue(now(splitFocusedPane(tiled, "row", 9, "9"))), UNDO_LAYOUT_ID)).toBe(
       undefined,
     );

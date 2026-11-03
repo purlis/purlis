@@ -15,11 +15,11 @@ import {
   type Source,
   sourceName,
   type Target,
-  undone,
   type Verdict,
 } from "./paneDrop";
+import { canUndoLayout, recorded, undoLayout } from "./layoutUndo";
 import { UNDO_MS } from "./MemoryEdits";
-import type { Tabs } from "./tabs";
+import type { LayoutUndo, Tabs } from "./tabs";
 
 /**
  * **Dragging panes in the window** (#4763): the pointer half of `paneDrop.ts`. Everything a drop
@@ -37,6 +37,9 @@ import type { Tabs } from "./tabs";
  *
  * Esc cancels a drag. Holding over a tab for {@link HOLD_MS} brings it forward, so a pane can
  * land in another tab's layout. A refused place is drawn dashed, with its reason.
+ *
+ * **The window's one Undo** is drawn and heard here too (`layoutUndo.ts`): the line after a drop,
+ * a split or Tile all, and ⌘Z, which put back the same last change as the palette's row.
  */
 
 /** The pane a drop lands in: `data-drop-pane` holds its number, `data-drop-tab` its tab's. */
@@ -74,14 +77,13 @@ type Over = {
 
 type Dragging = { source: Source; x: number; y: number; over?: Over };
 
-/** A drop that can still be undone: the tabs before it and after it, and what it did. */
-type Undoable = { before: Tabs; after: Tabs; did: string };
-
 export type PaneDragging = {
   /** The preview, the sentence by the pointer, and what a reader hears. */
   layer: ReactNode;
-  /** The Undo line after a drop. */
+  /** The Undo line after a layout change. */
   undoLine: ReactNode;
+  /** Puts the last layout change back, and says so: the line's Undo, ⌘Z and the palette's row. */
+  undo: () => void;
 };
 
 /**
@@ -104,33 +106,35 @@ export function usePaneDrag({
 }): PaneDragging {
   const [dragging, setDragging] = useState<Dragging>();
   const [said, setSaid] = useState("");
-  const [undo, setUndo] = useState<Undoable>();
-  /** Whether the Undo line is drawn: for {@link UNDO_MS} after a drop. ⌘Z works on while the
-   *  layout is still what the drop left. */
-  const [lineUp, setLineUp] = useState(false);
+  /** The last change whose Undo line went, by its time ({@link UNDO_MS}) or its Dismiss. ⌘Z and
+   *  the palette's row work on while the tabs are as it left them. */
+  const [lineGone, setLineGone] = useState<LayoutUndo>();
+  const last = tabs.undo;
   useEffect(() => {
-    if (undo === undefined) return;
-    const timer = window.setTimeout(() => setLineUp(false), UNDO_MS);
+    if (last === undefined) return;
+    const timer = window.setTimeout(() => setLineGone(last), UNDO_MS);
     return () => window.clearTimeout(timer);
-  }, [undo]);
+  }, [last]);
   const now = useRef({ tabs, ctx, change, onHoldTab, chatNameOf });
   useEffect(() => {
     now.current = { tabs, ctx, change, onHoldTab, chatNameOf };
   }, [tabs, ctx, change, onHoldTab, chatNameOf]);
 
-  // The Undo goes once the layout moves on without it (`undone`): it is drawn and heard only
-  // while it can still put the drop's layout back.
-  const undoable = undo !== undefined && undone(tabs, undo.before, undo.after) !== undefined;
+  // The Undo goes once the layout moves on without it: it is drawn and heard only while it can
+  // still put the last change back.
+  const undoable = canUndoLayout(tabs);
 
   const takeBack = useCallback(() => {
-    if (undo === undefined) return;
-    const was = undo;
-    now.current.change((current) => undone(current, was.before, was.after) ?? current);
-    setUndo(undefined);
-    setSaid("Undone. The layout is back as it was.");
-  }, [undo]);
+    let back = false;
+    now.current.change((current) => {
+      const was = undoLayout(current);
+      back = was !== current;
+      return was;
+    });
+    if (back) setSaid("Undone. The layout is back as it was.");
+  }, []);
 
-  // ⌘Z, while there is a drop to undo: a field's own Undo comes first.
+  // ⌘Z, while there is a change to undo: a field's own Undo comes first.
   useEffect(() => {
     if (!undoable) return;
     const heard = (event: KeyboardEvent) => {
@@ -217,14 +221,9 @@ export function usePaneDrag({
           return;
         }
         const did = over.verdict.did;
-        const before = now.current.tabs;
-        const after = now.current.change((current) =>
-          dropOn(current, source, over.target, now.current.ctx, over.size),
+        now.current.change((current) =>
+          recorded(current, dropOn(current, source, over.target, now.current.ctx, over.size), did),
         );
-        if (after !== before) {
-          setUndo({ before, after, did });
-          setLineUp(true);
-        }
         setSaid(did);
       };
       const esc = (key: KeyboardEvent) => {
@@ -306,18 +305,18 @@ export function usePaneDrag({
   );
 
   const undoLine =
-    undoable && lineUp ? (
+    undoable && last !== undefined && lineGone !== last ? (
       <Notice
         cause="layout-changed"
         tone="news"
         fixes={[{ label: "Undo", onPress: takeBack }]}
-        onDismiss={() => setLineUp(false)}
+        onDismiss={() => setLineGone(last)}
       >
-        {undo.did}
+        {last.did}
       </Notice>
     ) : null;
 
-  return { layer, undoLine };
+  return { layer, undoLine, undo: takeBack };
 }
 
 /** What a press on `target` picks up, if anything: a pane by its grip, a sidebar row's chat, or

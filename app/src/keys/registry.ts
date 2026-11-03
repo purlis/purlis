@@ -627,6 +627,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
     // A field's and an editor's own Undo come first, and off a Mac Ctrl+Z is the chat's
     // (#4763): its handler holds it as not runnable in a field, so the field keeps the key.
     yields: ["modal", "dialog", "palette", "editor", "terminal-off-mac", "typing"],
+    // The palette's Undo row (`UNDO_LAYOUT_ID`) runs the same Undo.
+    rows: ["layout.undo"],
     matches: (e, mac) => isChord(e, mac ? cmd("z") : ctl("z")),
   },
   {

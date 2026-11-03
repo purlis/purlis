@@ -516,34 +516,3 @@ export function floorAlong(layout: Layout, direction: "row" | "column"): number 
   const [a, b] = layout.children.map((child) => floorAlong(child, direction));
   return layout.direction === direction ? a + b : Math.max(a, b);
 }
-
-/**
- * **The tabs a drop's Undo puts back** (#4583: Undo after every layout change, ⌘Z), or nothing
- * once the tabs have moved on from what the drop left: what was dragged since, or a chat opened
- * or closed, is not taken back by an Undo it never saw. Focus and the front tab moving are no
- * such change.
- */
-export function undone(now: Tabs, before: Tabs, after: Tabs): Tabs | undefined {
-  const same =
-    now.order.length === after.order.length &&
-    now.order.every(
-      (id, at) => after.order[at] === id && now.byId[id]?.layout === after.byId[id]?.layout,
-    );
-  if (!same) return undefined;
-  // Only the layout goes back: a tab renamed since keeps its new name. A tab the drop closed
-  // comes back as it was.
-  const byId = Object.fromEntries(
-    before.order.map((id) => {
-      const was = before.byId[id];
-      const is = now.byId[id];
-      return [
-        id,
-        is === undefined
-          ? was
-          : withShows({ ...is, layout: was.layout, focused: was.focused }, was.shows),
-      ];
-    }),
-  );
-  // Numbers handed out since stay handed out: a pane or a tab never reuses one.
-  return { ...now, byId, order: before.order, inFront: before.inFront, named: now.named };
-}

@@ -7,7 +7,17 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { UNDO_MS } from "./MemoryEdits";
 import { CHAT_ROW, dropPane, GRIP, HOLD_MS, STRIP, TAB, usePaneDrag } from "./paneDrag";
 import type { DropContext } from "./paneDrop";
-import { contentsOf, insertPane, type Layout, noTabs, openTab, selectTab, type Tabs } from "./tabs";
+import { recorded } from "./layoutUndo";
+import {
+  contentsOf,
+  insertPane,
+  type Layout,
+  noTabs,
+  openTab,
+  selectTab,
+  splitFocusedPane,
+  type Tabs,
+} from "./tabs";
 
 /**
  * **Dragging panes in the window** (#4763): the pointer half of `paneDrop.ts`, which decides
@@ -82,6 +92,14 @@ function Window({ first, heard }: { first: Tabs; heard: (tabs: Tabs) => void }) 
       ))}
       <button type="button" {...{ [CHAT_ROW]: "7" }} data-box="0,700,200,20">
         chat 7
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          change((t) => recorded(t, splitFocusedPane(t, "column", 9, "9"), "Split the pane."))
+        }
+      >
+        Split down
       </button>
       {drag.layer}
       {drag.undoLine}
@@ -272,6 +290,18 @@ describe("dragging a pane in the window (#4763)", () => {
     fireEvent.keyDown(document.body, { key: "z", metaKey: true });
     fireEvent.keyDown(document.body, { key: "z", ctrlKey: true });
     expect(shape(window.tabs().byId[front].layout)).toBe("row(1 3)");
+  });
+
+  it("offers the same Undo, toast and ⌘Z, after a split as after a drop", async () => {
+    const window = shown();
+    const front = window.tabs().order[0];
+    fireEvent.click(screen.getByRole("button", { name: "Split down" }));
+    expect(shape(window.tabs().byId[front].layout)).not.toBe("row(1 3)");
+    await screen.findByText("Split the pane.");
+    fireEvent.keyDown(document.body, { key: "z", metaKey: true });
+    fireEvent.keyDown(document.body, { key: "z", ctrlKey: true });
+    await waitFor(() => expect(shape(window.tabs().byId[front].layout)).toBe("row(1 3)"));
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
   });
 
   it("brings a tab forward when a drag holds over it", () => {
