@@ -160,6 +160,7 @@ pub mod opencode;
 pub mod openfiles;
 pub mod ownwork;
 pub mod panel;
+pub mod panicend;
 pub mod personacmd;
 pub mod personagate;
 pub mod personagrant;

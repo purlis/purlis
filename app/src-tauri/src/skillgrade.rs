@@ -734,8 +734,8 @@ pub(crate) fn running() -> std::sync::MutexGuard<'static, HashMap<String, Runnin
 /// **Runs the grade `grade`'s `body`, and the grade is not running after it, whatever happened
 /// in it** (#3353): a panic in it is handed to `failed` once the grade is no longer running, so
 /// a grade never stays running with nothing left to end it. That catch works in dev and test
-/// builds alone: every shipped build aborts on a panic (`panic = "abort"` in the release
-/// profile), so there the app ends with it, and the project's next start recording the grade as
+/// builds alone: every shipped build aborts on a panic (`purlis_core::panicend::fatal`,
+/// first in `main`), so there the app ends with it, and the project's next start recording the grade as
 /// interrupted (`grades::underway`) is the floor, by decision (#3443).
 pub(crate) fn held_to_its_end(grade: &str, body: impl FnOnce(), failed: impl FnOnce()) {
     let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
@@ -2614,11 +2614,12 @@ const A_SCREEN_IS_WHOLE_AFTER: Duration = Duration::from_millis(300);
 /// `grades::kept::MOST_SCREEN_BYTES`. `None` where no view could be opened or nothing came.
 fn screen_of(host: &dyn crate::host::SessionHost, session: u32) -> Option<String> {
     let (send, pieces) = std::sync::mpsc::channel();
+    let mut text = crate::sessions::Utf8Stream::default();
     let view = host
         .watch(
             session,
-            Box::new(move |text| {
-                let _ = send.send(text);
+            Box::new(move |bytes: Vec<u8>| {
+                let _ = send.send(text.push(&bytes));
             }),
         )
         .ok()?;

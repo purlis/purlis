@@ -1415,6 +1415,8 @@ struct Pane {
 /// What a pane's view has been sent, and its terminal drawing it.
 struct Seen {
     sent: String,
+    /// What it was sent, decoded as the pane's terminal decodes it.
+    text: crate::sessions::Utf8Stream,
     terminal: AlacrittyEngine,
 }
 
@@ -1422,13 +1424,14 @@ impl Seen {
     fn new(size: Size) -> Seen {
         Seen {
             sent: String::new(),
+            text: crate::sessions::Utf8Stream::default(),
             terminal: AlacrittyEngine::new(size, crate::sessions::SCROLLBACK as usize),
         }
     }
 
-    fn take(&mut self, text: &str) {
-        self.sent.push_str(text);
-        self.terminal.advance(text.as_bytes());
+    fn take(&mut self, bytes: &[u8]) {
+        self.sent.push_str(&self.text.push(bytes));
+        self.terminal.advance(bytes);
     }
 
     /// Whether `wanted`, as text, is drawn: in what the pane was sent, or on its terminal,
@@ -1451,7 +1454,7 @@ impl Pane {
         let seen = Arc::new(Mutex::new(Seen::new(SIZE)));
         let sink: Sink = {
             let seen = Arc::clone(&seen);
-            Box::new(move |text: String| seen.lock().expect("the pane").take(&text))
+            Box::new(move |bytes: Vec<u8>| seen.lock().expect("the pane").take(&bytes))
         };
         sessions.watch(id, sink).expect("a view opens");
         Pane { seen }
@@ -1461,7 +1464,7 @@ impl Pane {
     #[cfg(test)]
     fn sent(bytes: &str) -> Pane {
         let mut seen = Seen::new(SIZE);
-        seen.take(bytes);
+        seen.take(bytes.as_bytes());
         Pane {
             seen: Arc::new(Mutex::new(seen)),
         }

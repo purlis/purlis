@@ -2045,6 +2045,12 @@ impl Chats {
         self.shipped = shipped;
     }
 
+    /// Keeps each open chat's skill stamp in `skills_now`, which the app's sweep of the levels'
+    /// records shares (#4884): set before any chat is started.
+    pub fn keeping_skills_in(&mut self, skills_now: Arc<SkillsNow>) {
+        self.skills_now = skills_now;
+    }
+
     /// The arguments and the environment that arm this harness on this session alone, if any.
     ///
     /// `cwd` is the chat's own directory, which decides whether charter may also fill Claude
@@ -2470,6 +2476,7 @@ impl Chats {
             ..ready
         };
         let ready = told_first(ready, told);
+        crate::starttiming::mark(crate::starttiming::Phase::Ready);
         self.start_ready_as(chat, &ready, size, why)
     }
 
@@ -4675,6 +4682,7 @@ impl Chats {
             })?),
             None => None,
         };
+        crate::starttiming::mark(crate::starttiming::Phase::Proxy);
         // The doors to the servers this chat may run (#2019), opened in this process wherever
         // its proxy runs, before its line is compiled: a socket for each, in its own folder. A
         // port it serves on none of is told, and withdrawn from its proxy where only its listen
@@ -4788,6 +4796,7 @@ impl Chats {
                 Vec::new(),
             ),
         };
+        crate::starttiming::mark(crate::starttiming::Phase::Line);
         // Settings too long for one word of a command line go through a file of their own (SK-9).
         let all = match identity.id.as_deref() {
             Some(id) if !reattaching => purlis_core::hoststart::settings_in_a_file(
@@ -5033,6 +5042,7 @@ impl Chats {
                 &announce,
             ),
         };
+        crate::starttiming::mark(crate::starttiming::Phase::Host);
         let session = opened.inspect_err(|_| {
             // The chat was announced and then did not start. Take it back, or the board
             // holds one entry per failed start for the life of the app.
@@ -6895,16 +6905,18 @@ impl Chats {
             .filter(|one| !one.starting)
             .count();
         let opened: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+        // Every chat coming back was asked for now, however long it waits at the gate (#4988).
+        let asked = std::time::Instant::now();
         // Twice the starts the gate lets through at once: a start that hangs holds its
         // thread, and the ones behind it need one to go on with.
         let hands = wanted.min(crate::restoring::at_once() * 2);
         if hands <= 1 {
             // One chat, or none: on this thread, in turn.
-            self.start_what_is_coming(size, &opened);
+            self.start_what_is_coming(size, asked, &opened);
         } else {
             std::thread::scope(|scope| {
                 for _ in 0..hands {
-                    scope.spawn(|| self.start_what_is_coming(size, &opened));
+                    scope.spawn(|| self.start_what_is_coming(size, asked, &opened));
                 }
             });
         }
@@ -6925,10 +6937,15 @@ impl Chats {
 
     /// One hand of [`Self::finish_put_back`]: takes a place at the gate, then the chat that
     /// matters most among the ones still to start, until none is left.
-    fn start_what_is_coming(&self, size: Size, opened: &Mutex<Vec<u32>>) {
+    fn start_what_is_coming(
+        &self,
+        size: Size,
+        asked: std::time::Instant,
+        opened: &Mutex<Vec<u32>>,
+    ) {
         PUTTING_BACK_HERE.set(true);
         loop {
-            let place = self.gate.enter(&|| crate::restoring::Rank {
+            let place = self.gate.enter(&self.project, &|| crate::restoring::Rank {
                 behind: crate::restoring::is_behind(&self.project),
                 hidden: !self.front_is_coming(),
             });
@@ -6940,9 +6957,12 @@ impl Chats {
             let Some(next) = self.take_coming() else {
                 break;
             };
+            let gate = std::time::Instant::now();
             let first = self.told_put_back(&next.chat, next.told);
-            let started =
-                self.start_recorded_told(&next.chat, size, next.why, first.as_deref(), None);
+            // Each phase of it timed, into the app's log (#4988).
+            let started = crate::starttiming::timed(&next.chat.name, asked, gate, || {
+                self.start_recorded_told(&next.chat, size, next.why, first.as_deref(), None)
+            });
             let session = match started {
                 Ok(session) => {
                     lock(opened).push(session);

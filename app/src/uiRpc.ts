@@ -599,6 +599,12 @@ export const commands = {
 	 *  (#4734, ADR 0108). The session keeps running.
 	 */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
+	/**
+	 *  The pane drawing view `view` of session `session` has drawn `pieces` more of what its
+	 *  channel was sent, in order (#4733). Only what is drawn is acknowledged to the session host,
+	 *  so a pane that cannot keep up is sent a fresh screen rather than a backlog.
+	 */
+	sessionDrawn: (plane: PlaneId, session: number, view: number, pieces: number) => typedError<null, string>(__TAURI_INVOKE("session_drawn", { plane, session, view, pieces })),
 	openBrowser: __WINDOW_ONLY_RESULT,
 	unwatchBrowser: __WINDOW_ONLY_RESULT,
 	closeBrowser: __WINDOW_ONLY_RESULT,
@@ -2248,6 +2254,7 @@ export const commands = {
 	 *  holds no project for the first moments of every launch.
 	 */
 	aboutCharter: () => __TAURI_INVOKE<About>("about_charter"),
+	diagnosticsHere: __WINDOW_ONLY,
 	installCliOnPath: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Keeps the window's layout, replacing what the file held.
@@ -4190,6 +4197,19 @@ export type DevicesShown = {
 	 *  row names its project.
 	 */
 	projects: number,
+};
+
+/**  What the report says about where purlis runs and how many chats it holds. */
+export type DiagnosticsHere = {
+	/**  The system, as [`purlis_core::adopt::system`] says it: `Darwin 27.2.0, aarch64`. */
+	os: string,
+	/**  The chats open in every project this app holds, a shell tab not among them. */
+	open: number,
+	/**
+	 *  The open chats whose run has a program (the glossary's **hot chat**): any not done or
+	 *  failed.
+	 */
+	hot: number,
 };
 
 /**  **The disk each pool's runners hold**, as the use table says it (#3493). */
@@ -13999,6 +14019,17 @@ export type WindowMotion = {
 };
 
 /**
+ *  **A ground of the accent's words comes no nearer a signal's wash than it was** (#4666,
+ *  `purlis_core::theme::NoNearer`): each of `tokens`, turned and laid on each of `over`, is no
+ *  nearer any of `from` laid on the same ground than the value it was turned from.
+ */
+export type WindowNoNearer = {
+	tokens: string[],
+	from: string[],
+	over: string[],
+};
+
+/**
  *  One option of the theme drawn (#2325), as Settings shows it: what it is called, its values,
  *  the value drawn and whether a choice made it (`false`: the theme's default).
  */
@@ -14093,6 +14124,13 @@ export type WindowTint = {
 	hues: WindowHue[],
 	/**  The rules every tint holds, whatever the hue. */
 	apart: WindowApart[],
+	/**  The washes that take the accent's words' answer (#4666). */
+	with_words: string[],
+	/**
+	 *  The grounds a tint keeps as written where turning would bring them nearer the waiting or
+	 *  danger wash, as drawn (#4666, `purlis_core::theme::NO_NEARER`).
+	 */
+	no_nearer: WindowNoNearer,
 };
 
 /**  A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers. */

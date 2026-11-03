@@ -344,7 +344,11 @@ fn a_pane() -> (Sink, Arc<Mutex<String>>) {
     let seen = Arc::new(Mutex::new(String::new()));
     let sink = {
         let seen = Arc::clone(&seen);
-        Box::new(move |text: String| seen.lock().unwrap().push_str(&text)) as Sink
+        Box::new(move |bytes: Vec<u8>| {
+            seen.lock()
+                .unwrap()
+                .push_str(&String::from_utf8_lossy(&bytes));
+        }) as Sink
     };
     (sink, seen)
 }
@@ -647,6 +651,191 @@ fn a_pane_draws_the_screen_then_what_follows_and_is_told_when_the_program_ends()
     );
     assert_eq!(hosted.sessions.process_id(id), None);
     assert_eq!(hosted.sessions.running(), [id], "the tab stays");
+}
+
+/// What a pane that reports its drawing is handed, one piece at a time.
+fn a_pane_of_pieces() -> (Sink, Arc<Mutex<Vec<String>>>) {
+    let pieces = Arc::new(Mutex::new(Vec::new()));
+    let sink = {
+        let pieces = Arc::clone(&pieces);
+        Box::new(move |bytes: Vec<u8>| {
+            pieces
+                .lock()
+                .unwrap()
+                .push(String::from_utf8_lossy(&bytes).into_owned());
+        }) as Sink
+    };
+    (sink, pieces)
+}
+
+/// What a pane that reports its drawing is handed, each piece as the bytes it is.
+fn a_pane_of_bytes() -> (Sink, Arc<Mutex<Vec<Vec<u8>>>>) {
+    let pieces = Arc::new(Mutex::new(Vec::new()));
+    let sink = {
+        let pieces = Arc::clone(&pieces);
+        Box::new(move |bytes: Vec<u8>| pieces.lock().unwrap().push(bytes)) as Sink
+    };
+    (sink, pieces)
+}
+
+#[test]
+fn a_pane_is_handed_the_bytes_its_program_wrote_and_acknowledges_every_one_it_drew() {
+    let hosted = hosted();
+    let id = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .unwrap();
+    let program = hosted.runs.last();
+    let (sink, pieces) = a_pane_of_bytes();
+    let watching = hosted.sessions.watch_drawn(id, sink).expect("a view opens");
+    // A character cut between two writes, and a byte that is no character at all: the pane's
+    // terminal decodes them, not the core (#4745).
+    let wrote: [&[u8]; 2] = [b"caf\xc3", b"\xa9 \xff\x1b[0m done\r\n"];
+    let mut reported = 0;
+    for write in wrote {
+        program.writes(write);
+        until("the write reaches the pane", || {
+            pieces.lock().unwrap().concat().ends_with(write)
+        });
+        // Each piece is drawn as it is handed, so every byte of it is acknowledged.
+        let handed = pieces.lock().unwrap().len();
+        hosted
+            .sessions
+            .drawn(id, watching.view, u32::try_from(handed - reported).unwrap())
+            .expect("the pane reports");
+        reported = handed;
+    }
+
+    assert_eq!(pieces.lock().unwrap().concat(), wrote.concat());
+    // What it drew of those pieces is acknowledged as the bytes they carry, and a burst past the
+    // host's high watermark (64 KiB) reaches the pane whole: pieces that acknowledged nothing
+    // would stall it there.
+    let last = line(1_999);
+    let writing = std::thread::spawn(move || {
+        for piece in (0..2_000).collect::<Vec<_>>().chunks(200) {
+            let text: String = piece.iter().map(|n| line(*n)).collect();
+            program.writes(text.as_bytes());
+        }
+    });
+    let deadline = Instant::now() + PATIENCE;
+    while !String::from_utf8_lossy(&pieces.lock().unwrap().concat()).contains(&last) {
+        assert!(
+            Instant::now() < deadline,
+            "the burst never reached the pane"
+        );
+        let handed = pieces.lock().unwrap().len();
+        if handed > reported {
+            hosted
+                .sessions
+                .drawn(id, watching.view, u32::try_from(handed - reported).unwrap())
+                .expect("the pane reports");
+            reported = handed;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    writing.join().unwrap();
+}
+
+/// Line `n` of a program that writes numbered lines, one of a burst.
+fn line(n: usize) -> String {
+    format!("line {n:06} {}\r\n", "x".repeat(64))
+}
+
+/// A burst well past what a view may queue ([`purlis_session_protocol::view::Limits`]), written
+/// a piece at a time, as a harness streams it, from line `from`.
+fn a_burst_from(program: &purlis_host::standin::StandIn, from: usize) {
+    for piece in (from..from + 24_000).collect::<Vec<_>>().chunks(200) {
+        let text: String = piece.iter().map(|n| line(*n)).collect();
+        program.writes(text.as_bytes());
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn a_pane_that_stops_reporting_what_it_drew_is_dropped_and_opened_again_from_a_fresh_snapshot() {
+    let hosted = hosted();
+    let id = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .unwrap();
+    let program = hosted.runs.last();
+    program.writes(line(0).as_bytes());
+    let (sink, pieces) = a_pane_of_pieces();
+    let watching = hosted.sessions.watch_drawn(id, sink).expect("a view opens");
+    until("the screen is drawn", || {
+        pieces.lock().unwrap().concat().contains(&line(0))
+    });
+    // It draws the screen, and nothing after it.
+    hosted
+        .sessions
+        .drawn(id, watching.view, 1)
+        .expect("the pane reports");
+
+    a_burst_from(&program, 1);
+
+    until("the pane is started over", || {
+        pieces
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|piece| piece.contains(RESET))
+    });
+    let seen = pieces.lock().unwrap().concat();
+    let (before, after) = seen.split_once(RESET).unwrap();
+    assert!(
+        before.len() < 1 << 20,
+        "a pane that stopped drawing was handed {} bytes before it was started over",
+        before.len()
+    );
+    assert!(
+        after.starts_with(&line(0)),
+        "what follows is the program's whole screen again, from its first line"
+    );
+}
+
+#[test]
+fn a_pane_that_reports_what_it_drew_is_sent_the_whole_burst_and_never_started_over() {
+    let hosted = hosted();
+    let id = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .unwrap();
+    let program = hosted.runs.last();
+    let (sink, pieces) = a_pane_of_pieces();
+    let watching = hosted.sessions.watch_drawn(id, sink).expect("a view opens");
+    let last = line(200 * 8 - 1);
+    let writing = std::thread::spawn(move || {
+        for piece in (0..200 * 8).collect::<Vec<_>>().chunks(200) {
+            let text: String = piece.iter().map(|n| line(*n)).collect();
+            program.writes(text.as_bytes());
+        }
+    });
+
+    let deadline = Instant::now() + PATIENCE;
+    let mut reported = 0;
+    while !pieces.lock().unwrap().concat().contains(&last) {
+        assert!(
+            Instant::now() < deadline,
+            "the burst never reached the pane"
+        );
+        let handed = pieces.lock().unwrap().len();
+        if handed > reported {
+            hosted
+                .sessions
+                .drawn(id, watching.view, u32::try_from(handed - reported).unwrap())
+                .expect("the pane reports");
+            reported = handed;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    writing.join().unwrap();
+
+    let seen = pieces.lock().unwrap().concat();
+    assert!(
+        !seen.contains(RESET),
+        "a pane that keeps up is never started over"
+    );
+    assert!(seen.starts_with(&line(0)));
 }
 
 #[test]
@@ -3177,13 +3366,15 @@ impl KeptKey {
 
 /// The runner's connector, in memory: each connection is answered by the runner's host.
 #[derive(Clone)]
-struct ToTheRunner {
-    runner_host: Hosting,
+struct ToTheRunner<H = Hosting> {
+    runner_host: H,
     runner: Arc<KeptKey>,
     desktop: purlis_session_protocol::hostlink::Pinned,
 }
 
-impl purlis_session_protocol::hostlink::Connector for ToTheRunner {
+impl<H: session::Host + Clone + Send + Sync + 'static> purlis_session_protocol::hostlink::Connector
+    for ToTheRunner<H>
+{
     type Io = tokio::io::DuplexStream;
 
     fn connect(

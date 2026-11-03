@@ -257,6 +257,22 @@ fn levels_confirmed(
     confirmed
 }
 
+/// [`purlis_core::skills::levels::vouch_if_made`], after the person's own create of the workspace
+/// or persona folder `owner`, and then each open chat's kept skill stamp is read again (#4884):
+/// the folders vouched for are part of what a chat would start on now, kept in the app state,
+/// which the plane's watch never tells of. Forgotten whether or not it vouched, as
+/// [`level_accepted`].
+pub(crate) fn vouched_if_made(
+    root: &std::path::Path,
+    skills_now: &crate::chats::SkillsNow,
+    owner: &str,
+    was_there: bool,
+) -> Option<String> {
+    let note = purlis_core::skills::levels::vouch_if_made(root, owner, was_there);
+    skills_now.forget();
+    note
+}
+
 /// **Rejects a draft**: deletes it.
 #[tauri::command]
 #[specta::specta]
@@ -689,7 +705,12 @@ pub(crate) fn closed_in(root: &std::path::Path, cwd: &std::path::Path) {
 /// record of the open chats in the project at `root`: the record of the levels a sandboxed chat
 /// that is no longer on it could have made, and every Try it no chat on it stands in. At a launch
 /// that is every one a quit or a crash left.
-pub(crate) fn sweep(root: &std::path::Path, record: &purlis_core::reopen::Record) {
+/// Where a record went, each open chat's kept skill stamp in `skills_now` is read again (#4884).
+pub(crate) fn sweep(
+    root: &std::path::Path,
+    record: &purlis_core::reopen::Record,
+    skills_now: &crate::chats::SkillsNow,
+) {
     let ids: Vec<String> = record
         .chats
         .iter()
@@ -700,7 +721,10 @@ pub(crate) fn sweep(root: &std::path::Path, record: &purlis_core::reopen::Record
         .iter()
         .filter_map(|chat| chat.cwd.clone())
         .collect();
-    purlis_core::skills::levels::sweep(root, &ids);
+    // A closed chat's record gone: what it could have made is left out of every chat now (#4884).
+    if purlis_core::skills::levels::sweep(root, &ids) {
+        skills_now.forget();
+    }
     purlis_core::hoststart::sweep_settings(
         purlis_core::hoststart::chat_settings_here().as_deref(),
         root,
@@ -742,5 +766,55 @@ mod tests {
             .expect("confirmed");
 
         assert_eq!(skills_now.forgotten(), 1);
+    }
+
+    const CHAT: &str = "01J0000000000000000000000A";
+
+    #[test]
+    fn a_vouch_after_the_persons_create_makes_the_chats_read_their_skills_again() {
+        // #4884: the folder is vouched for in every open chat's record of the levels it could
+        // have made, which is what a chat would start on now.
+        let plane = a_plane();
+        let skills_now = crate::chats::SkillsNow::default();
+        purlis_core::skills::levels::note(plane.path(), CHAT, "7").expect("noted");
+        std::fs::create_dir_all(plane.path().join("workspaces/new")).expect("made");
+
+        vouched_if_made(plane.path(), &skills_now, "workspaces/new", false);
+
+        assert_eq!(skills_now.forgotten(), 1);
+    }
+
+    #[test]
+    fn a_sweep_that_takes_a_closed_chats_record_makes_the_chats_read_their_skills_again() {
+        // #4884: what the closed chat could have made is left out of every chat from then on,
+        // in the app state the plane's watch never tells of.
+        let plane = a_plane();
+        let skills_now = crate::chats::SkillsNow::default();
+        purlis_core::skills::levels::note(plane.path(), CHAT, "7").expect("noted");
+        let none_open = purlis_core::reopen::Record::default();
+
+        // Just noted, so not swept yet: nothing changed, and the stamps are kept.
+        sweep(plane.path(), &none_open, &skills_now);
+        assert_eq!(skills_now.forgotten(), 0);
+
+        noted_long_ago(plane.path(), CHAT);
+        sweep(plane.path(), &none_open, &skills_now);
+        assert_eq!(skills_now.forgotten(), 1);
+    }
+
+    /// Makes the record of `id` look as if it was written long ago, past the sweep's grace.
+    fn noted_long_ago(root: &std::path::Path, id: &str) {
+        let record = purlis_core::appstate::dir(root)
+            .expect("the app state")
+            .join(purlis_core::skills::levels::DIR)
+            .join(format!("{id}.json"));
+        let old =
+            std::time::SystemTime::now() - purlis_core::skills::verbs::drafts::SWEEP_GRACE * 2;
+        std::fs::File::options()
+            .write(true)
+            .open(record)
+            .expect("the record")
+            .set_modified(old)
+            .expect("made old");
     }
 }

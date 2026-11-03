@@ -3,8 +3,8 @@
 
 //! A panic is written down before the process goes.
 //!
-//! A shipped build aborts on any panic (`panic = "abort"`), and so does a debug build on a
-//! panic inside a call from the window, which reaches Rust through the webview's own code and
+//! A shipped build aborts on any panic (`purlis_core::panicend::fatal`), and so does a debug
+//! build on a panic inside a call from the window, which reaches Rust through the webview's own code and
 //! cannot unwind back through it. Either way the process is gone before anything else can
 //! look, and Rust's own hook says what happened only on standard error — which, for an app
 //! started from the Dock or a desktop launcher, goes nowhere. So the one line that names the

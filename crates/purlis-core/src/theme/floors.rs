@@ -309,11 +309,18 @@ struct Failure {
 #[derive(Default)]
 struct Chromas {
     rules: Vec<(String, bool, String, bool)>,
+    /// What [`tint::most_of`] answers at each degree, for [`Self::rules`].
+    raw: Vec<tint::Most>,
+    /// [`Self::raw`] finished for the theme last asked of ([`tint::finished`]): the accent's
+    /// words answered and the grounds kept as written, which hang on more than the rules (#4666).
     at: Vec<tint::Most>,
+    /// The values and recipe [`Self::at`] was finished for.
+    finished: Option<(std::collections::BTreeMap<&'static str, String>, tint::Tint)>,
 }
 
 impl Chromas {
-    /// Each whole degree's chroma for `theme`, found again only when its rules are not the last.
+    /// Each whole degree's chroma for `theme`, as the window draws it (`tint::most_at`), found
+    /// again only when its rules are not the last.
     fn of(&mut self, theme: &ResolvedTheme) -> &[tint::Most] {
         let held = tint::held_rules(theme);
         let shared = tint::shared_rules(theme);
@@ -328,8 +335,8 @@ impl Chromas {
                 )
             })
             .collect();
-        if self.at.is_empty() || rules != self.rules {
-            self.at = KNOWN.with(|known| {
+        if self.raw.is_empty() || rules != self.rules {
+            self.raw = KNOWN.with(|known| {
                 let mut known = known.borrow_mut();
                 if let Some((_, at)) = known.iter().find(|(them, _)| *them == rules) {
                     return at.clone();
@@ -344,6 +351,18 @@ impl Chromas {
                 at
             });
             self.rules = rules;
+            self.finished = None;
+        }
+        let current = self
+            .finished
+            .as_ref()
+            .is_some_and(|(values, recipe)| *values == theme.values && *recipe == theme.tint);
+        if !current {
+            self.at = (0_u32..)
+                .zip(&self.raw)
+                .map(|(degree, most)| tint::finished(theme, f64::from(degree), *most))
+                .collect();
+            self.finished = Some((theme.values.clone(), theme.tint.clone()));
         }
         &self.at
     }

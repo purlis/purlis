@@ -78,6 +78,17 @@ struct Args {
     #[arg(long, requires = "interactive")]
     raw: bool,
 
+    /// With `--interactive`: a typed line that is this writes the output, the sentinel and runs
+    /// the hooks again, as the first time, instead of being answered, so a benchmark can burst
+    /// the same chat each time it comes back to it (`felt.bench.ts`, row L12).
+    #[arg(
+        long,
+        requires = "interactive",
+        conflicts_with = "raw",
+        value_name = "LINE"
+    )]
+    again: Option<String>,
+
     /// The exit code once everything else has run.
     #[arg(long, default_value_t = 0)]
     exit_code: u8,
@@ -246,6 +257,32 @@ fn run(args: &Args) -> Result<(), String> {
             .read_line(&mut line)
             .map_err(|err| format!("cannot read input: {err}"))?;
     }
+    play(args, &output, &mut stdout)?;
+
+    if args.interactive && args.raw {
+        return answer_raw(&mut stdout);
+    }
+    if args.interactive {
+        for line in io::stdin().lock().lines() {
+            let line = line.map_err(|err| format!("cannot read input: {err}"))?;
+            if line.trim() == "/quit" {
+                break;
+            }
+            if args.again.as_deref() == Some(line.trim()) {
+                play(args, &output, &mut stdout)?;
+                continue;
+            }
+            writeln!(stdout, "you said: {line}")
+                .and_then(|()| stdout.flush())
+                .map_err(write_err)?;
+        }
+    }
+    Ok(())
+}
+
+/// The output, `loops` times, then the sentinel, then the hooks in order.
+fn play(args: &Args, output: &[u8], stdout: &mut impl Write) -> Result<(), String> {
+    let write_err = |err: io::Error| format!("cannot write output: {err}");
     for _ in 0..args.loops {
         for chunk in output.chunks(args.chunk.max(1)) {
             stdout.write_all(chunk).map_err(write_err)?;
@@ -260,7 +297,6 @@ fn run(args: &Args) -> Result<(), String> {
             .and_then(|()| stdout.flush())
             .map_err(write_err)?;
     }
-
     for hook in &args.hooks {
         let status = Command::new("/bin/sh")
             .args(["-c", hook])
@@ -268,21 +304,6 @@ fn run(args: &Args) -> Result<(), String> {
             .map_err(|err| format!("cannot run hook {hook:?}: {err}"))?;
         if !status.success() {
             return Err(format!("hook {hook:?} failed: {status}"));
-        }
-    }
-
-    if args.interactive && args.raw {
-        return answer_raw(&mut stdout);
-    }
-    if args.interactive {
-        for line in io::stdin().lock().lines() {
-            let line = line.map_err(|err| format!("cannot read input: {err}"))?;
-            if line.trim() == "/quit" {
-                break;
-            }
-            writeln!(stdout, "you said: {line}")
-                .and_then(|()| stdout.flush())
-                .map_err(write_err)?;
         }
     }
     Ok(())

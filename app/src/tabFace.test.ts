@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { faceOf, type Naming } from "./tabFace";
 import { focusPane, noTabs, openTab, openView, splitFocusedPane, type Tabs } from "./tabs";
+import { zoomFocusedPane } from "./tiling";
 
 /**
  * **What a tab wears on the strip** (#4762, `prototype/one-tab-strip` variant A): its focused
@@ -43,6 +44,15 @@ describe("a tab's face", () => {
     expect(face.lead).toEqual({ kind: "chat", session: 3 });
     expect(face.name).toBe("talk");
     expect(face.more).toBe(2);
+  });
+
+  it("wears the zoom mark while a pane is zoomed, and not once the split is back (#4765)", () => {
+    const split = splitFocusedPane(openTab(noTabs(), 1, "steward 1"), "row", 2);
+    const zoomed = zoomFocusedPane(split);
+
+    expect(faceOf(split, front(split), naming).zoomed).toBeUndefined();
+    expect(faceOf(zoomed, front(zoomed), naming)).toMatchObject({ zoomed: true, more: 1 });
+    expect(faceOf(zoomFocusedPane(zoomed), front(zoomed), naming).zoomed).toBeUndefined();
   });
 
   it("follows the focus to another pane", () => {

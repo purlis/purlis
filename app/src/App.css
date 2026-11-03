@@ -1780,6 +1780,19 @@ body {
   block-size: var(--space-5);
 }
 
+/* **A zoomed pane's mark** (#4765): after `⊟+N`, quiet like it, and never cut. */
+.tabs .tab-zoomed {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--text-quiet);
+}
+
+.tabs .tab-zoomed > svg {
+  inline-size: var(--space-5);
+  block-size: var(--space-5);
+}
+
 /* The narrowest tab that also wears the hand has no room for a count beside it (the third
    step above). Asked of the tab's own cell, and only of a cell that wears the hand, so no
    other tab is measured any differently than it was. */

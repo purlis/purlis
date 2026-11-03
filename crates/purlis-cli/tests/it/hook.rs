@@ -615,7 +615,7 @@ const PANICS: (&str, &str) = ("CHARTER_TEST_HOOK_PANICS", "1");
 #[test]
 fn a_bash_guard_that_crashes_refuses_the_call_under_every_harness_that_runs_it() {
     // **A crashed guard is a refusal, never an allow** (#349). A panic ends the process with
-    // 101, or with SIGABRT under the release profile's `panic = "abort"`, and a harness reads
+    // 101, or with SIGABRT where `purlis_core::panicend` makes it fatal, and a harness reads
     // either as a non-blocking error and runs the tool. Exit 2 is the one status Claude Code
     // and Codex both read as "block", with stderr handed to the model as the reason (Codex's
     // hooks page: "you can also use exit code `2` and write the blocking reason to `stderr`").

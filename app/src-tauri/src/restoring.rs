@@ -33,13 +33,15 @@ pub(crate) const LENDS_AFTER: Duration = Duration::from_secs(20);
 const LOOKS_AGAIN: Duration = Duration::from_millis(100);
 
 /// How many chats start at once, across every project: as many as the machine has cores for,
-/// never fewer than two (so one slow start is not everyone's) and never more than four (each
-/// start is a harness, its sandbox and its proxy coming up).
+/// never fewer than three and never more than four (each start is a harness, its sandbox and
+/// its proxy coming up). One project takes all of them but one ([`Gate::enter`]), so three is
+/// the fewest where one slow start is neither its own project's other chats' nor another
+/// project's.
 pub(crate) fn at_once() -> usize {
     std::thread::available_parallelism()
         .map(std::num::NonZero::get)
-        .unwrap_or(2)
-        .clamp(2, 4)
+        .unwrap_or(3)
+        .clamp(3, 4)
 }
 
 /// Where a start stands among the ones waiting: the least goes first.
@@ -61,11 +63,21 @@ pub(crate) struct Gate {
 
 #[derive(Default)]
 struct State {
-    /// The places taken, by the turn that took each, and when.
-    held: Vec<(u64, Instant)>,
-    /// Who waits, by turn, and where each last said it stands.
-    waiting: Vec<(u64, Rank)>,
+    /// The places taken, by the turn that took each, when, and for which project.
+    held: Vec<(u64, Instant, PathBuf)>,
+    /// Who waits, by turn, where each last said it stands, and for which project.
+    waiting: Vec<(u64, Rank, PathBuf)>,
     turns: u64,
+}
+
+impl State {
+    /// How many places `project`'s starts hold that are not lent yet.
+    fn holding(&self, project: &Path, now: Instant, lends_after: Duration) -> usize {
+        self.held
+            .iter()
+            .filter(|(_, since, of)| of == project && now.duration_since(*since) < lends_after)
+            .count()
+    }
 }
 
 /// A place at the gate, given back when it is dropped.
@@ -77,7 +89,7 @@ pub(crate) struct Place<'a> {
 impl Drop for Place<'_> {
     fn drop(&mut self) {
         let mut state = self.gate.lock();
-        state.held.retain(|(turn, _)| *turn != self.turn);
+        state.held.retain(|(turn, ..)| *turn != self.turn);
         drop(state);
         self.gate.moved.notify_all();
     }
@@ -97,6 +109,10 @@ impl Gate {
     /// of its own, so a start one test holds takes no place from another test's chats.
     pub(crate) fn shared() -> Arc<Self> {
         static SHARED: OnceLock<Arc<Gate>> = OnceLock::new();
+        #[cfg(test)]
+        if let Some(gate) = ONE_GATE_IN_THIS_TEST.with_borrow(Clone::clone) {
+            return gate;
+        }
         if cfg!(test) {
             return Arc::new(Self::letting(at_once(), LENDS_AFTER));
         }
@@ -107,35 +123,44 @@ impl Gate {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Waits for a place. `rank` is asked each time this looks, so a project brought to the
-    /// front while its chats wait moves ahead. Among equals, the one that asked first goes
-    /// first.
-    pub(crate) fn enter(&self, rank: &dyn Fn() -> Rank) -> Place<'_> {
+    /// The most places one project's starts hold at once: all but one, so a project whose starts
+    /// hang leaves a place for every other project's chats (the operator's report of
+    /// 2026-11-03). Never fewer than one.
+    fn most_for_one(&self) -> usize {
+        self.most.saturating_sub(1).max(1)
+    }
+
+    /// Waits for a place for a start of the project at `project`. `rank` is asked each time this
+    /// looks, so a project brought to the front while its chats wait moves ahead. Among equals,
+    /// the one that asked first goes first, of the projects that hold fewer places than
+    /// [`Self::most_for_one`].
+    pub(crate) fn enter(&self, project: &Path, rank: &dyn Fn() -> Rank) -> Place<'_> {
         let mut state = self.lock();
         state.turns += 1;
         let turn = state.turns;
-        state.waiting.push((turn, rank()));
+        state.waiting.push((turn, rank(), project.to_path_buf()));
         loop {
             let now = Instant::now();
             let stands = rank();
-            if let Some(mine) = state.waiting.iter_mut().find(|(one, _)| *one == turn) {
+            if let Some(mine) = state.waiting.iter_mut().find(|(one, ..)| *one == turn) {
                 mine.1 = stands;
             }
             // A place held longer than a start should take is lent: it is not counted.
             let taken = state
                 .held
                 .iter()
-                .filter(|(_, since)| now.duration_since(*since) < self.lends_after)
+                .filter(|(_, since, _)| now.duration_since(*since) < self.lends_after)
                 .count();
             let first = state
                 .waiting
                 .iter()
-                .map(|(one, stands)| (*stands, *one))
+                .filter(|(.., of)| state.holding(of, now, self.lends_after) < self.most_for_one())
+                .map(|(one, stands, _)| (*stands, *one))
                 .min()
                 .is_some_and(|(_, one)| one == turn);
             if taken < self.most && first {
-                state.waiting.retain(|(one, _)| *one != turn);
-                state.held.push((turn, now));
+                state.waiting.retain(|(one, ..)| *one != turn);
+                state.held.push((turn, now, project.to_path_buf()));
                 drop(state);
                 // Whoever is next looks at once, where another place is free.
                 self.moved.notify_all();
@@ -148,6 +173,21 @@ impl Gate {
                 .0;
         }
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The gate every project opened on this thread shares, as the app's do, where a test
+    /// said so ([`one_gate_in_this_test`]).
+    static ONE_GATE_IN_THIS_TEST: std::cell::RefCell<Option<Arc<Gate>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// In a test: every project opened on this thread from here starts its chats through `gate`,
+/// one gate for all of them as in the app, and not one each.
+#[cfg(test)]
+pub(crate) fn one_gate_in_this_test(gate: Arc<Gate>) {
+    ONE_GATE_IN_THIS_TEST.with_borrow_mut(|one| *one = Some(gate));
 }
 
 /// The project the main window has in front, as it last said (`window_holds_planes`): its
@@ -270,9 +310,12 @@ mod tests {
         let gate = Gate::letting(2, Duration::from_secs(60));
         let (inside, most) = (AtomicUsize::new(0), AtomicUsize::new(0));
         std::thread::scope(|scope| {
-            for _ in 0..8 {
-                scope.spawn(|| {
-                    let _place = gate.enter(&|| REST);
+            for each in 0..8 {
+                let (gate, inside, most) = (&gate, &inside, &most);
+                scope.spawn(move || {
+                    // A project each: one project alone takes all places but one.
+                    let project = PathBuf::from(format!("/restoring/{each}"));
+                    let _place = gate.enter(&project, &|| REST);
                     let now = inside.fetch_add(1, Ordering::SeqCst) + 1;
                     most.fetch_max(now, Ordering::SeqCst);
                     std::thread::sleep(Duration::from_millis(20));
@@ -287,12 +330,12 @@ mod tests {
     fn the_one_in_front_goes_before_the_ones_that_asked_earlier() {
         let gate = Gate::letting(1, Duration::from_secs(60));
         let order = Mutex::new(Vec::new());
-        let held = gate.enter(&|| REST);
+        let held = gate.enter(Path::new("/restoring/one"), &|| REST);
         std::thread::scope(|scope| {
             for name in ["rest 1", "rest 2"] {
                 let (gate, order) = (&gate, &order);
                 scope.spawn(move || {
-                    let _place = gate.enter(&|| REST);
+                    let _place = gate.enter(Path::new("/restoring/one"), &|| REST);
                     order.lock().unwrap().push(name);
                 });
                 // Each has asked before the next does.
@@ -302,7 +345,7 @@ mod tests {
             }
             let (gate, order) = (&gate, &order);
             scope.spawn(move || {
-                let _place = gate.enter(&|| FRONT);
+                let _place = gate.enter(Path::new("/restoring/one"), &|| FRONT);
                 order.lock().unwrap().push("front");
             });
             while gate.lock().waiting.len() < 3 {
@@ -317,13 +360,67 @@ mod tests {
         if name == "rest 1" { 1 } else { 2 }
     }
 
+    /// The operator's report of 2026-11-03: one project of three came back. A project whose
+    /// starts hang takes every place it can, and another project's chats then waited until
+    /// each was lent; one place is always left for another project.
+    #[test]
+    fn a_project_never_holds_every_place_while_another_waits() {
+        let gate = Gate::letting(2, Duration::from_secs(60));
+        let (stuck, other) = (Path::new("/restoring/stuck"), Path::new("/restoring/other"));
+        // The stuck project's first start hangs, and holds its place.
+        let _hung = gate.enter(stuck, &|| REST);
+        let order = Mutex::new(Vec::new());
+        std::thread::scope(|scope| {
+            // Its next start asks first, and the other project's after it.
+            let (gate, order) = (&gate, &order);
+            scope.spawn(move || {
+                let _place = gate.enter(stuck, &|| REST);
+                order.lock().unwrap().push("stuck");
+            });
+            while gate.lock().waiting.is_empty() {
+                std::thread::yield_now();
+            }
+            scope.spawn(move || {
+                let _place = gate.enter(other, &|| REST);
+                order.lock().unwrap().push("other");
+            });
+            // The other project's start goes in, past the one that asked first.
+            let began = Instant::now();
+            while order.lock().unwrap().is_empty() {
+                assert!(began.elapsed() < Duration::from_secs(5), "nobody went in");
+                std::thread::yield_now();
+            }
+            assert_eq!(*order.lock().unwrap(), ["other"]);
+            drop(_hung);
+        });
+        assert_eq!(*order.lock().unwrap(), ["other", "stuck"]);
+    }
+
+    /// Projects open one after another, so the first has asked for every place before the next
+    /// asks for any: it takes all but one, and the last waits for a project that comes later.
+    #[test]
+    fn a_project_takes_all_places_but_one() {
+        let gate = Gate::letting(3, Duration::from_secs(60));
+        let (one, later) = (Path::new("/restoring/first"), Path::new("/restoring/later"));
+        let _held: Vec<_> = (0..2).map(|_| gate.enter(one, &|| REST)).collect();
+        let began = Instant::now();
+        let _later = gate.enter(later, &|| REST);
+        assert!(
+            began.elapsed() < Duration::from_secs(5),
+            "the place left was taken"
+        );
+        // And one place of a gate of one is the project's: nothing is ever left unused.
+        let alone = Gate::letting(1, Duration::from_secs(60));
+        drop(alone.enter(one, &|| REST));
+    }
+
     #[test]
     fn a_start_that_takes_too_long_lends_its_place() {
         let gate = Gate::letting(1, Duration::from_millis(50));
-        let _hung = gate.enter(&|| REST);
+        let _hung = gate.enter(Path::new("/restoring/one"), &|| REST);
         let began = Instant::now();
         // The one place is held and never given back, and the next still gets in.
-        let _next = gate.enter(&|| REST);
+        let _next = gate.enter(Path::new("/restoring/one"), &|| REST);
         assert!(began.elapsed() >= Duration::from_millis(50));
         assert!(began.elapsed() < Duration::from_secs(5));
     }

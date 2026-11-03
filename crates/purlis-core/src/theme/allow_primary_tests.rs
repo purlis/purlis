@@ -210,7 +210,9 @@ fn the_floor_holds_on_the_final_token_set_whatever_layer_set_it() {
 fn a_hue_no_named_tint_takes_is_measured_too() {
     // Clears the floor as written and in every named tint, and falls under it at a hue a
     // workspace's own colour can take: the two fills are drawn untinted there.
-    let theme = dark(json!({ "accent.surface": "#222b1f", "tab.active": "#222b1f" }));
+    // A green whose turn toward Allow comes no nearer the waiting and danger washes, so a tint
+    // turns it (#4666): it meets Allow at 126°.
+    let theme = dark(json!({ "accent.surface": "#2c3020", "tab.active": "#2c3020" }));
     let one = theme.first();
     assert!(nearest(one) >= ALLOW_FROM_PRIMARY);
     for hue in &one.tint.hues {

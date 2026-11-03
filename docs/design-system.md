@@ -274,7 +274,7 @@ resolves and hands the window with the theme (`purlis_core::theme::Tint`, `theme
 window keeps no list of its own (#2393). Purlis Classic's recipe, the one a theme starts from:
 
 - on the whole window, from the workspace in front: `accent.base`, `accent.surface`,
-  `accent.text` (which a recipe turning the accent turns with it where the words stay apart from waiting and danger, #3100), `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
+  `accent.text` and the washes it stands on, `accent.wash` and `accent.wash-hover` (which a recipe turning the accent turns with it where the words stay apart from waiting and danger, #3100; the washes take the words' answer, #4666), `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
   `drawTint`);
 - on that workspace's own tab and on the chat strip, which holds its chats, the same and
   `layer.workspace`, `layer.chat`, `layer.selected` (`tint.tabs`), set on the element as
@@ -455,7 +455,19 @@ asked for), whatever the system's appearance. Where its values come from:
   switcher row's pin and the current explorer row's icon. **The chosen title-bar chip**
   takes the same wash with the primary words, and `accent.wash-hover` (the record's .23
   lavender) under the pointer, while any other chip under the pointer takes the card's fill, so
-  chosen never reads as hovered (R101 as amended by #3345). Section labels are tracked at
+  chosen never reads as hovered (R101 as amended by #3345). **An accent given over Purlis
+  takes its grounds with it** (#4666): a theme or a person that gives `accent.base` and not
+  `accent.surface`, `accent.wash` or `accent.wash-hover` draws Purlis's turned to that accent's
+  hue, at no more chroma than it has and at the luminance and alpha Purlis gave them
+  (`tint::toward`), so a teal says its words on a teal wash and every contrast on it stays where
+  Purlis put it. **No ground of the accent's words comes nearer the waiting or danger wash than
+  the theme's own** (#4666, `tint::NO_NEARER`): each of `accent.surface`, `accent.wash` and
+  `accent.wash-hover`, laid on `surface.base` and `surface.deep` as the screen draws it, is
+  measured in OKLab against `wash.warning` and `danger.wash` laid on the same ground. Where the
+  turned ground would come nearer than the theme's own does, the theme's is drawn, whether the
+  turn comes from an accent given over it or from a workspace's colour; a workspace's colour
+  keeps every token drawn in that ground's value with it, so what a theme draws alike stays
+  alike. Section labels are tracked at
   .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
   that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its
   update pill's primary words.

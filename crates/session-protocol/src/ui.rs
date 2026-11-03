@@ -928,6 +928,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "theme_drafts_revert_here",
     "theme_move_to_project",
     "theme_copy_to_machine",
+    // Copy diagnostics' facts about this machine (#4774): its system and how many chats it
+    // holds, for a bug report the person copies from About in their own window. The report
+    // carries the slow-answer log, which is the window's alone, so the facts beside it are too.
+    "diagnostics_here",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -1249,6 +1253,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "see_on_this_machine",
     "seen_on_this_machine",
     "session_bus",
+    // How much of a view its pane has drawn, which paces the view (#4733): beside
+    // `watch_session`, a link's pane reports its own.
+    "session_drawn",
     // Whether the session host is failing, and what the window says of it (#2007).
     "session_host_failing",
     "session_record",

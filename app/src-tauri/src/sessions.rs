@@ -305,11 +305,11 @@ impl SessionHost for Sessions {
             std::thread::Builder::new()
                 .name("charter-view".into())
                 .spawn(move || {
-                    let mut text = Utf8Stream::default();
+                    // As the program wrote them: the pane's terminal decodes them (#4745).
                     for bytes in output {
-                        sink(text.push(&bytes));
+                        sink(bytes.to_vec());
                     }
-                    sink(ENDED.to_owned());
+                    sink(ENDED.as_bytes().to_vec());
                 })
                 .map_err(|err| format!("cannot read the session: {err}"))?;
             running.watched += 1;
@@ -422,13 +422,11 @@ pub fn shell() -> String {
 }
 
 /// Bytes turned into text, holding back the start of a character split across two reads for
-/// the read that finishes it. Bytes that are no character at all become `U+FFFD`, which is
-/// what a terminal shows for them.
+/// the read that finishes it. Bytes that are no character at all become `U+FFFD`. A pane's
+/// terminal draws nothing for them instead: xterm's decoder skips them (#4745).
 ///
-/// This is not byte-for-byte: a program that writes eight-bit control codes (`0x80`–`0x9f`,
-/// the seven-bit escape sequences in one byte) has them shown as replacements by the pane,
-/// where the core's own terminal reads them as the controls they are. No harness is known to
-/// write them; the alternative is sending every chunk as an array of numbers over IPC.
+/// For what reads a view's output as text (a behaviour's pane, a grade's screen). A pane in the
+/// window is never handed text: it is sent the bytes, and its terminal decodes them (#4745).
 #[derive(Default)]
 pub(crate) struct Utf8Stream {
     waiting: Vec<u8>,
@@ -580,7 +578,7 @@ mod tests {
         let seen = Arc::new(Mutex::new(String::new()));
         let collect = {
             let seen = Arc::clone(&seen);
-            move |text: String| lock(&seen).push_str(&text)
+            move |bytes: Vec<u8>| lock(&seen).push_str(&String::from_utf8_lossy(&bytes))
         };
         let watching = sessions
             .watch(id, Box::new(collect))

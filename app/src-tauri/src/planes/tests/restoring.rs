@@ -260,3 +260,70 @@ fn no_chat_is_put_back_before_the_gate_lets_it_and_none_when_it_refuses() {
     names.sort();
     assert_eq!(names, ["chat 1", "chat 2"], "the record lost a chat");
 }
+
+/// **One project's chats that hang as they start hold up no other project's, nor a Retry**
+/// (the operator's report of 2026-11-03: one project of three came back, and Retry seemed
+/// stuck). The projects share one gate, as the app's do.
+#[cfg(unix)]
+#[test]
+fn a_project_whose_chats_hang_holds_up_neither_the_other_projects_nor_a_retry() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let stuck = a_plane_with_chats(&dir.path().join("stuck"), 4);
+    let second = a_plane_with_chats(&dir.path().join("second"), 3);
+    let third = a_plane_with_chats(&dir.path().join("third"), 3);
+    let (stuck_host, second_host, third_host) =
+        (Pretend::default(), Pretend::default(), Pretend::default());
+    // Every chat of the first project hangs as it starts, for as long as the test looks.
+    for number in 1..=4 {
+        stuck_host.hangs_number(number);
+    }
+    // One chat of the second does not start, and is retried.
+    second_host.refuses_number(3, "its program went");
+    crate::restoring::one_gate_in_this_test(Arc::new(crate::restoring::Gate::letting(
+        2,
+        crate::restoring::LENDS_AFTER,
+    )));
+    let planes = planes_on(
+        &[&stuck_host, &second_host, &third_host],
+        &dir.path().join("config"),
+    );
+    let began = Instant::now();
+
+    let _stuck = approve_and_open(&planes, &stuck);
+    let second = planes
+        .held(&approve_and_open(&planes, &second))
+        .expect("it is held");
+    let third = planes
+        .held(&approve_and_open(&planes, &third))
+        .expect("it is held");
+    let others_back = || {
+        second.chats().open_now().len() == 2
+            && second.chats().would_not_start().len() == 1
+            && third.chats().open_now().len() == 3
+    };
+    // Far longer than five starts on this host take, and far shorter than a place is lent after.
+    while !others_back() && began.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let back_after = began.elapsed();
+    assert!(
+        others_back() && back_after < Duration::from_secs(5),
+        "the other projects' chats waited {back_after:?} behind the stuck project's"
+    );
+
+    second_host.starts_number(3);
+    let id = second.chats().would_not_start()[0].id.clone();
+    let retried = Instant::now();
+    let session = second.chats().retry(&id, super::STARTING);
+    assert!(session.is_ok(), "the retry did not start it: {session:?}");
+    assert!(
+        retried.elapsed() < Duration::from_secs(5),
+        "the retry waited {:?}",
+        retried.elapsed()
+    );
+
+    for number in 1..=4 {
+        stuck_host.lets_go(number);
+    }
+    planes.let_go_of_all();
+}

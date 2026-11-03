@@ -31,6 +31,9 @@ type Pane = {
   /** Everything the pane has been sent since it was armed, in a window big enough to match
    *  a sentinel that arrives split across two chunks. */
   tail: string;
+  /** What the pane is sent is bytes (#4745): decoded here, as its terminal decodes them, only
+   *  while measuring, so a character cut between two chunks is counted once, whole. */
+  text: TextDecoder;
   chunks: number;
   characters: number;
   firstChunkAt?: number;
@@ -75,7 +78,14 @@ export const measuring = Boolean(import.meta.env.VITE_E2E);
 /** A pane's terminal, now on screen. */
 export function paneOpened(session: number, terminal: Terminal): void {
   if (!measuring) return;
-  const pane: Pane = { session, terminal, tail: "", chunks: 0, characters: 0 };
+  const pane: Pane = {
+    session,
+    terminal,
+    tail: "",
+    text: new TextDecoder(),
+    chunks: 0,
+    characters: 0,
+  };
   open.set(terminal, pane);
   opens += 1;
   terminal.onRender(() => {
@@ -103,17 +113,18 @@ export function paneDrawing(terminal: Terminal, drawing: Drawing): void {
 }
 
 /**
- * Text a pane has been sent, before it writes it to its terminal.
+ * Output a pane has been sent, the bytes its program wrote, before it writes it to its terminal.
  *
  * The answer, where there is one, is for the pane to hand to `Terminal.write` as its
  * callback: that is called once this text has been parsed into the grid, which is where the
  * row a job waits for becomes real. Arrival over IPC is not that — xterm.js parses its write
  * queue on its own schedule — so a job that timed from arrival would be timing delivery.
  */
-export function paneSent(terminal: Terminal, text: string): (() => void) | undefined {
+export function paneSent(terminal: Terminal, bytes: Uint8Array): (() => void) | undefined {
   if (!measuring) return undefined;
   const pane = open.get(terminal);
   if (!pane) return undefined;
+  const text = pane.text.decode(bytes, { stream: true });
   pane.chunks += 1;
   pane.characters += text.length;
   pane.firstChunkAt ??= performance.now();
@@ -130,12 +141,15 @@ export function paneSent(terminal: Terminal, text: string): (() => void) | undef
 
 /** How long a rAF frame has been from the one before it, over a whole phase. One loop runs
  *  at a time: restarting watches from zero rather than adding a second loop. */
-const frames = { loop: 0, from: 0, count: 0, longestGapMs: 0, last: 0 };
+const frames = { loop: 0, from: 0, count: 0, longestGapMs: 0, last: 0, gaps: [] as number[] };
 
 function watch(loop: number): FrameRequestCallback {
   const tick = (now: number) => {
     if (frames.loop !== loop) return;
-    if (frames.last) frames.longestGapMs = Math.max(frames.longestGapMs, now - frames.last);
+    if (frames.last) {
+      frames.longestGapMs = Math.max(frames.longestGapMs, now - frames.last);
+      frames.gaps.push(now - frames.last);
+    }
     frames.last = now;
     frames.count += 1;
     requestAnimationFrame(tick);
@@ -259,6 +273,18 @@ function until<T>(find: () => T | null | undefined): Promise<T> {
   });
 }
 
+/** A row of the new-chat dialog's Harness group, found by the words that name the group. */
+function harnessRow(): Element | null {
+  for (const group of document.querySelectorAll('[role="radiogroup"]')) {
+    const named = (group.getAttribute("aria-labelledby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+      .join(" ");
+    if (named === "Harness") return group.querySelector('input[type="radio"]');
+  }
+  return null;
+}
+
 /** The jobs the benchmark can ask for. Each answers with numbers, never with an element. */
 export type Plan =
   /** The next pane to open is what the jobs below measure. Then press `press`, if given. */
@@ -287,7 +313,13 @@ export type Plan =
    */
   | { kind: "project switch"; plane: string; sentinel: string }
   /** How many times the pane's terminal draws, over `ms`. */
-  | { kind: "draw rate"; ms: number; session?: number };
+  | { kind: "draw rate"; ms: number; session?: number }
+  /**
+   * Press `press`, which opens the new-chat dialog, and measure until the frame after its
+   * Harness group lists a row (row L14, #4744): the person can choose from then on. The dialog
+   * is left open for the caller to close.
+   */
+  | { kind: "dialog open"; press: string };
 
 async function work(plan: Plan): Promise<unknown> {
   switch (plan.kind) {
@@ -486,6 +518,16 @@ async function work(plan: Plan): Promise<unknown> {
       return { session, tab, ms: at - from };
     }
 
+    case "dialog open": {
+      const from = performance.now();
+      button(plan.press).click();
+      await until(() => harnessRow());
+      const at = await new Promise<number>((done) =>
+        requestAnimationFrame(() => done(performance.now())),
+      );
+      return { ms: at - from };
+    }
+
     case "draw rate": {
       const one = pane(plan.session);
       let draws = 0;
@@ -518,6 +560,8 @@ export type Bench = {
     seconds: number;
     count: number;
     longestGapMs: number;
+    /** Every gap between two frames, in the order they came. */
+    gapsMs: number[];
     framesPerSecond: number;
     /** A window that is not visible draws no frames at all, which is no measurement. */
     visible: boolean;
@@ -582,6 +626,7 @@ const bench: Bench = {
     frames.count = 0;
     frames.longestGapMs = 0;
     frames.last = 0;
+    frames.gaps = [];
     requestAnimationFrame(watch(frames.loop));
   },
   frames() {
@@ -590,6 +635,7 @@ const bench: Bench = {
       seconds,
       count: frames.count,
       longestGapMs: frames.longestGapMs,
+      gapsMs: [...frames.gaps],
       framesPerSecond: frames.count / seconds,
       visible: document.visibilityState === "visible",
     };
