@@ -18,7 +18,16 @@ import {
 import { keystroke, shortcut } from "./keys/registry";
 import { type DropContext, dropOn, judgeDrop } from "./paneDrop";
 import { onAMac } from "./tabKeys";
-import { contentsOf, insertPane, type Layout, noTabs, openTab, selectTab, type Tabs } from "./tabs";
+import {
+  contentsOf,
+  insertPane,
+  type Layout,
+  noTabs,
+  openTab,
+  selectTab,
+  type Tabs,
+  without,
+} from "./tabs";
 
 /**
  * **Placement mode in the window** (#4764): the keyboard and single-press route for every drag.
@@ -83,7 +92,12 @@ function Window({
       <div {...{ [STRIP]: "" }} data-box="0,0,1600,30">
         {tabs.order.map((id, at) => (
           <div key={id} {...{ [TAB]: String(id) }} data-box={`${at * 100},0,100,30`}>
-            <span role="tab" tabIndex={0} aria-selected={id === tabs.inFront}>{`tab ${id}`}</span>
+            <span
+              role="tab"
+              tabIndex={0}
+              aria-selected={id === tabs.inFront}
+              onClick={() => change((t) => selectTab(t, id))}
+            >{`tab ${id}`}</span>
           </div>
         ))}
       </div>
@@ -100,6 +114,22 @@ function Window({
         chat 7
       </button>
       <button type="button">elsewhere</button>
+      <button
+        type="button"
+        onClick={() =>
+          change((t) => {
+            const tab = t.byId[front];
+            const left = without(tab.layout, panes[0].pane);
+            if (left === undefined) return t;
+            return {
+              ...t,
+              byId: { ...t.byId, [front]: { ...tab, layout: left, focused: panes[1].pane } },
+            };
+          })
+        }
+      >
+        close the first pane
+      </button>
       {drag.layer}
       {drag.undoLine}
     </PlacingHere>
@@ -309,5 +339,71 @@ describe("placement mode: the keyboard route for every drag (#4764)", () => {
     expect(said()).toBe("Put back. Nothing moved.");
     expect(tabs()).toBe(first);
     expect(screen.queryAllByRole("group", { name: /^Places by / })).toEqual([]);
+  });
+});
+
+describe("placement mode while the window changes under it (#4764)", () => {
+  it("says a second refusal again, though its words are the same", async () => {
+    const user = userEvent.setup();
+    shown(400);
+    screen.getByRole("button", { name: "Move chat 1" }).focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(said()).toBe(PICKED_1));
+    await user.keyboard("{ArrowRight}{Enter}");
+    const first = document.querySelector("[data-pane-drag-said] > *");
+    await user.keyboard("{Enter}");
+    const second = document.querySelector("[data-pane-drag-said] > *");
+    expect(second?.textContent).toMatch(/^Not dropped: Too narrow/);
+    // A new node, which a screen reader reads as new words.
+    expect(second).not.toBe(first);
+  });
+
+  it("offers the tab brought forward while a pane is held, with the keyboard on its first target", async () => {
+    const user = userEvent.setup();
+    const { tabs, first } = shown();
+    await user.click(screen.getByRole("button", { name: "Move chat 1" }));
+    await waitFor(() => expect(said()).toBe(PICKED_1));
+    await user.click(screen.getByRole("tab", { name: `tab ${first.order[1]}` }));
+    // Pressing a tab on the strip brings it forward, as holding a drag over it does.
+    expect(tabs().inFront).toBe(first.order[1]);
+    expect(said()).toBe(PICKED_1);
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute("aria-label")).toBe("Swap chat 1 and chat 4."),
+    );
+    await user.keyboard("{Enter}");
+    expect(said()).toBe("Dropped. Swapped chat 1 and chat 4.");
+  });
+
+  it("puts nothing back when the pane it holds closes, and says so", async () => {
+    const user = userEvent.setup();
+    shown();
+    await user.click(screen.getByRole("button", { name: "Move chat 1" }));
+    await waitFor(() => expect(said()).toBe(PICKED_1));
+    fireEvent.click(screen.getByRole("button", { name: "close the first pane" }));
+    await waitFor(() => expect(said()).toBe("Not placed: that pane has closed."));
+    expect(screen.queryAllByRole("group", { name: /^Places by / })).toEqual([]);
+  });
+
+  it("shows a tab picked up in front no targets on its own panes, only the strip's", async () => {
+    shown();
+    act(() => screen.getByRole("tab", { name: /^tab /, selected: true }).focus());
+    pressPlace();
+    await waitFor(() => expect(said()).toMatch(/^Picked up chat 1\./));
+    expect(screen.queryAllByRole("group", { name: /^Places by / })).toEqual([]);
+    expect(screen.getByRole("button", { name: "Move the tab here." })).toBeTruthy();
+  });
+
+  it("picks another pane up on a press of its grip while one is held", async () => {
+    const user = userEvent.setup();
+    shown();
+    await user.click(screen.getByRole("button", { name: "Move chat 1" }));
+    await waitFor(() => expect(said()).toBe(PICKED_1));
+    await user.click(screen.getByRole("button", { name: "Move chat 3" }));
+    await waitFor(() => expect(said()).toMatch(/^Picked up chat 3\./));
+    expect(
+      screen
+        .getAllByRole("group", { name: /^Places by / })
+        .map((g) => g.getAttribute("aria-label")),
+    ).toEqual(["Places by chat 1"]);
   });
 });

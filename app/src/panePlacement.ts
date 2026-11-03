@@ -27,7 +27,7 @@ import { contentsOf, type Tabs } from "./tabs";
  */
 
 /** A pane's five targets, in the order they are drawn and read: a cross, top to bottom. */
-export const PLACES: readonly Place[] = ["top", "left", "middle", "right", "bottom"];
+const PLACES: readonly Place[] = ["top", "left", "middle", "right", "bottom"];
 
 /** Where targets are drawn: on a pane of the tab in front, or on the strip. */
 export type Group = { kind: "pane"; tab: number; pane: number } | { kind: "strip"; at: number };
@@ -44,6 +44,10 @@ export type Step = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Tab" 
 export function groupsOf(tabs: Tabs, source: Source): Group[] {
   const front = tabs.inFront;
   const held = heldPane(tabs, source);
+  // A tab held while it is in front is dropped on another tab's pane or the strip: none of its
+  // own panes takes it.
+  if (source.kind === "tab" && source.tab === front)
+    return [{ kind: "strip", at: tabs.order.length }];
   const panes: Group[] =
     front === undefined
       ? []
@@ -77,6 +81,11 @@ const ON_THE_CROSS: Record<Place, readonly [number, number]> = {
   right: [1, 0],
   bottom: [0, 1],
 };
+/** Whether `key` is one of the arrows that walk a pane's cross. */
+export function isArrow(key: string): key is keyof typeof ARROWS {
+  return Object.prototype.hasOwnProperty.call(ARROWS, key);
+}
+
 const ARROWS: Record<Exclude<Step, "Tab" | "ShiftTab">, readonly [number, number]> = {
   ArrowUp: [0, -1],
   ArrowDown: [0, 1],
@@ -103,16 +112,17 @@ export function stepFrom(groups: readonly Group[], at: Target, step: Step): Targ
   const [x, y] = ON_THE_CROSS[at.place];
   const place: Place =
     at.place === "middle"
-      ? placeOn(dx, dy)
+      ? placeToward(dx, dy)
       : x + dx === 0 && y + dy === 0
         ? "middle"
         : x === dx && y === dy
           ? at.place
-          : placeOn(dx, dy);
+          : placeToward(dx, dy);
   return { ...at, place };
 }
 
-function placeOn(dx: number, dy: number): Place {
+/** The place on the cross an arrow from the middle points at. */
+function placeToward(dx: number, dy: number): Place {
   return (Object.keys(ON_THE_CROSS) as Place[]).find(
     (place) => ON_THE_CROSS[place][0] === dx && ON_THE_CROSS[place][1] === dy,
   ) as Place;
@@ -126,10 +136,8 @@ function holds(group: Group, at: Target): boolean {
 
 /** Whether two targets are the same place. */
 export function sameTarget(a: Target, b: Target): boolean {
-  return (
-    holds(a.kind === "strip" ? a : { kind: "pane", tab: a.tab, pane: a.pane }, b) &&
-    (a.kind === "strip" || (b.kind === "pane" && a.place === b.place))
-  );
+  if (a.kind === "strip" || b.kind === "strip") return a.kind === b.kind;
+  return a.tab === b.tab && a.pane === b.pane && a.place === b.place;
 }
 
 /**
@@ -150,6 +158,27 @@ export function targetSaid(target: Target, there: string): string {
     case "middle":
       return `In place of ${there}`;
   }
+}
+
+/**
+ * **What is held, as the tabs change under it**: the target the keyboard is on, or the first
+ * one offered where that one is no longer (its pane closed, another tab came forward); or why
+ * nothing can be placed any more, when what is held has closed.
+ */
+export function stillHeld(
+  tabs: Tabs,
+  source: Source,
+  at: Target,
+): { at: Target } | { gone: string } {
+  if (
+    source.kind === "pane" &&
+    !contentsOf(tabs, source.tab).some(({ pane }) => pane === source.pane)
+  )
+    return { gone: "Not placed: that pane has closed." };
+  if (source.kind === "tab" && tabs.byId[source.tab] === undefined)
+    return { gone: "Not placed: that tab has closed." };
+  const groups = groupsOf(tabs, source);
+  return { at: groups.some((group) => holds(group, at)) ? at : firstTarget(groups) };
 }
 
 /** **What is said as something is picked up** (#4583's ruling, politely). */

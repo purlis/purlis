@@ -2276,7 +2276,7 @@ describe("a chat's row places its chat (#4764)", () => {
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
     move(3, "running", 13);
     const one = row(tree, "devops 3");
-    const place = one.querySelector<HTMLElement>(".ui-row-place");
+    const place = one.querySelector<HTMLElement>(".chat-row-place");
     expect(place).not.toBeNull();
     fireEvent.click(place as HTMLElement);
     await waitFor(() =>
@@ -2307,14 +2307,14 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
       expect(one.querySelector(".line.two")).toBeNull();
       // The twist and Place… are the pointer's, out of the accessibility tree (#4764).
       const parts = [...one.children].filter(
-        (part) => !part.matches(".ui-tree-twist, .ui-row-place"),
+        (part) => !part.matches(".ui-tree-twist, .chat-row-place"),
       );
       expect(parts.map((part) => part.className)).toEqual([
         "ui-row-label session ui-text-body",
         "ui-row-lead",
         "ui-row-trail",
       ]);
-      expect(one.querySelector(".ui-row-place")).toHaveAttribute("aria-hidden", "true");
+      expect(one.querySelector(".chat-row-place")).toHaveAttribute("aria-hidden", "true");
       expect(drawnAs(parts[1], "order")).toBe("-1");
       // The persona's mark leads, with the state on it, and both are said (#3342).
       expect(parts[1].children[0]).toHaveClass("chat-persona");

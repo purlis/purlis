@@ -245,9 +245,13 @@ function asDropped(tabs: Tabs, from: Source, to: Target): Source {
  */
 export function heldPane(tabs: Tabs, source: Source): At | undefined {
   if (source.kind === "tab") return undefined;
-  const dropped = asDropped(tabs, source, { kind: "pane", tab: -1, pane: -1, place: "middle" });
+  // What moves when it lands on a pane: `asDropped` reads only that the target is a pane.
+  const dropped = asDropped(tabs, source, ON_A_PANE);
   return dropped.kind === "pane" ? { tab: dropped.tab, pane: dropped.pane } : undefined;
 }
+
+/** Any drop on a pane, for asking what moves there. */
+const ON_A_PANE: Target = { kind: "pane", tab: 0, pane: 0, place: "middle" };
 
 /** **What a dragged thing is called** in a sentence: its chat, its view, or its tab's first. */
 export function sourceName(tabs: Tabs, source: Source, ctx: DropContext): string {

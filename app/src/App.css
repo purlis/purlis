@@ -8868,7 +8868,7 @@ nav.piece-files-head {
 
 /* **A chat row's Place…** (#4764): under the pointer only, over the row's end on the row's own
    ground, so nothing on the row moves as it comes and goes. The keyboard's way is ⌘⇧M. */
-.chats-section .ui-row-place {
+.chats-section .chat-row-place {
   display: none;
   position: absolute;
   inset-block: 0;
@@ -8881,12 +8881,12 @@ nav.piece-files-head {
 }
 
 @media (hover: hover) {
-  .chats-section .chat:hover .ui-row-place {
+  .chats-section .chat:hover .chat-row-place {
     display: flex;
   }
 }
 
-.chats-section .ui-row-place > svg {
+.chats-section .chat-row-place > svg {
   flex: none;
   inline-size: var(--ui-tree-step);
   block-size: var(--ui-tree-step);
