@@ -665,3 +665,29 @@ export const PlanNarrow: Story = {
     await expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth + 1);
   },
 };
+
+// [DEBUG-4672] Temporary: the Grades play again, freshly mounted, to sample the WebKit failure.
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672a: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672b: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672c: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672d: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672e: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672f: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672g: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672h: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672i: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672j: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672k: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672l: Story = { ...Grades, parameters: { screenshot: false } };
