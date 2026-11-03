@@ -48,6 +48,13 @@ impl From<&str> for SecretValue {
     }
 }
 
+impl SecretValue {
+    /// The value, held from now on in memory wiped as it is dropped.
+    pub(crate) fn into_value(self) -> purlis_core::secrets::Zeroizing<String> {
+        purlis_core::secrets::Zeroizing::new(self.0)
+    }
+}
+
 impl std::fmt::Debug for SecretValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("SecretValue(***)")
@@ -253,7 +260,22 @@ pub(crate) fn run_brokered(
         }
         None => (writer, None),
     };
-    brokered::serve_recording(&asker, ask.secret_exec, reader, writer, blocked, reached);
+    // A key its vault holds no value under is asked of the person, and the run waits until
+    // just before its harness would kill it (#5068, #5071, ADR 0109).
+    let missing = brokered::Missing {
+        asks: held.secret_asks(),
+        within: purlis_core::secrets::ask::holds_for(asker.harness),
+        moved: &|| held.chats().asks_may_have_moved(),
+    };
+    brokered::serve_recording(
+        &asker,
+        ask.secret_exec,
+        reader,
+        writer,
+        blocked,
+        reached,
+        missing,
+    );
     let (Some(start), Some(seen), Some(persona)) = (start, seen, asker.persona) else {
         return;
     };

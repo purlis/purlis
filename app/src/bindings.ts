@@ -714,6 +714,12 @@ export const commands = {
 	 */
 	answerPoolTool: (plane: PlaneId, session: number, run: number, allow: boolean) => typedError<null, string>(__TAURI_INVOKE("answer_pool_tool", { plane, session, run, allow })),
 	/**
+	 *  **The person fills Secret ask `id`, or with no `value` says Not now** (#5068): a fill is
+	 *  stored in the vault and every command that waits on it runs; Not now tells them it was
+	 *  declined. Each chat that stopped waiting is nudged.
+	 */
+	answerSecretAsk: (plane: PlaneId, id: number, value: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value })),
+	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
 	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone
 	 *  in the project, committed (#2443). A grant for the browser alone (ruled 2026-10-17): the
@@ -5161,6 +5167,11 @@ export type AnswerPath =
  *  whose digest is `shown`, with the domain the person typed (#4595).
  */
 { via: "browser-login"; id: number; shown: string } | 
+/**
+ *  `answer_secret_ask` on Secret ask `id` (#5068): Fill with the value typed in the ask's
+ *  masked field, Not now with none.
+ */
+{ via: "secret"; id: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -5342,7 +5353,12 @@ export type AskSource =
  *  A browser login a chat suggested, which its persona doesn't declare (#4595): an Allow
  *  lets purlis fill it on the one origin the person confirmed.
  */
-"browser-login";
+"browser-login" | 
+/**
+ *  A key a chat's brokered run found missing from its persona's vault (#5068, ADR 0109):
+ *  answered by a value typed in the window, or Not now.
+ */
+"secret";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -13647,6 +13663,20 @@ export type SecretAt = {
 };
 
 /**
+ *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
+ *  its chats miss, and how many wait on it. Names only: no value is ever here.
+ */
+export type SecretShown = {
+	persona: string,
+	vault: string,
+	key: string,
+	/**  The declared tool whose run missed it, where it is one. */
+	tool?: string | null,
+	/**  How many chats wait on it. */
+	waiting: number,
+};
+
+/**
  *  A value the window hands over to be stored, and the one a reveal hands back
  *  ([`vault_secret_reveal`], the only command whose answer holds one).
  */
@@ -14016,6 +14046,11 @@ export type Shown = {
 	 *  any, so a question a later turn pushed aside can be read back. Absent otherwise.
 	 */
 	earlier_messages?: string[] | null,
+	/**
+	 *  **The key a Secret ask asks for** (#5068, ADR 0109): drawn with a masked field the value
+	 *  is typed in. Absent for any other ask.
+	 */
+	secret?: SecretShown | null,
 };
 
 /**

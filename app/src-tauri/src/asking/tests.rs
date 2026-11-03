@@ -119,6 +119,7 @@ struct World {
     browser_sites: Vec<crate::chatbrowsers::SitesWait>,
     pool_logins: Vec<crate::chatbrowsers::PoolLoginWaits>,
     pool_tools: Vec<crate::pooltools::PoolToolWaits>,
+    secrets: Vec<purlis_core::secrets::ask::Open>,
     /// What the project's committed file declares it expects (ADR 0093).
     declared: purlis_core::sandbox::services::Declared,
 }
@@ -150,6 +151,7 @@ impl World {
             browser_sites: Vec::new(),
             pool_logins: Vec::new(),
             pool_tools: Vec::new(),
+            secrets: Vec::new(),
             declared: purlis_core::sandbox::services::Declared::default(),
         }
     }
@@ -187,6 +189,7 @@ impl World {
             pool_logins: self.pool_logins.clone(),
             pool_tools: self.pool_tools.clone(),
             browser_logins: Vec::new(),
+            secrets: self.secrets.clone(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
@@ -2076,6 +2079,56 @@ fn each_run_of_a_runner_chats_tool_asks_whether_its_values_may_be_sent_for_that_
         tools[1].says.starts_with("Asked while you were away. "),
         "{}",
         tools[1].says
+    );
+}
+
+/// #5068, #5071: a key chats' brokered runs miss is one Ask, under the first chat to ask, with
+/// a masked field to fill and Not now, saying how many wait on it, and never a value.
+#[test]
+fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
+    let mut world = World::new();
+    world.queue = vec![6];
+    world.secrets = vec![purlis_core::secrets::ask::Open {
+        id: 3,
+        persona: "devops".into(),
+        vault: "team".into(),
+        key: "KUBECONFIG".into(),
+        tool: Some("kubectl".into()),
+        chats: vec![6, 9, 11],
+        since: 1_700_000_000,
+    }];
+
+    let asks = world.asks();
+
+    let secret: Vec<&Shown> = asks
+        .iter()
+        .filter(|one| one.source == AskSource::Secret)
+        .collect();
+    assert_eq!(secret.len(), 1, "one Ask for every chat that misses it");
+    let ask = secret[0];
+    assert_eq!(ask.session, 6);
+    assert_eq!(ask.answer, AnswerPath::Secret { id: 3 });
+    assert_eq!(ids(ask), [super::SECRET_FILL, KEEP]);
+    assert_eq!(ask.options[1].label, "Not now");
+    assert_eq!(
+        ask.secret,
+        Some(super::SecretShown {
+            persona: "devops".into(),
+            vault: "team".into(),
+            key: "KUBECONFIG".into(),
+            tool: Some("kubectl".into()),
+            waiting: 3,
+        })
+    );
+    assert_eq!(
+        ask.says,
+        "Needs KUBECONFIG from devops's vault team for kubectl. Fill stores it in that vault on \
+         this machine; the chat never sees it. 3 chats wait on it"
+    );
+    assert!(
+        asks.iter()
+            .all(|one| one.session != 6 || one.source == AskSource::Secret),
+        "the chat waits on the Secret ask, and no question of its own beside it: {asks:?}"
     );
 }
 

@@ -74,6 +74,7 @@ import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { LoginSite, useTypedSite } from "./LoginSite";
+import { SecretFill } from "./SecretFill";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
@@ -802,6 +803,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "browser-site": "Asks to let its browser reach a new site",
   "pool-login": "Asks to log its browser in on a pool's runner",
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
+  secret: "Asks you for a secret its vault doesn't hold",
   "browser-login": "Asks to log its browser in to a site with vault credentials",
   terminal: "In its terminal",
   question: "Waiting on your reply",
@@ -852,6 +854,8 @@ function Ask({
   const [reason, setReason] = useState("");
   /** The site as the person changed it, on a login's ask (#4595). */
   const [typed, setTyped] = useTypedSite(ask);
+  /** The box a Secret ask's value is typed in (#5068): it holds its own words, read on Fill. */
+  const secretBox = useRef<HTMLInputElement>(null);
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
   const openAnswer = useOpenAnswer();
@@ -884,7 +888,10 @@ function Ask({
     }
     setBusy(true);
     setSaid(undefined);
-    void answerTaken(plane, ask, option.id, option.id === "keep" ? reason : undefined, typed)
+    // A Secret ask's value is read from its box as Fill is pressed, and the box emptied.
+    const given = ask.secret != null && option.allows ? (secretBox.current?.value ?? "") : typed;
+    if (ask.secret != null && secretBox.current) secretBox.current.value = "";
+    void answerTaken(plane, ask, option.id, option.id === "keep" ? reason : undefined, given)
       .then(({ refused, live, opened }) => {
         if (refused !== undefined) {
           setSaid(refused);
@@ -937,6 +944,11 @@ function Ask({
         {ask.login != null && (
           <Stop id={`${key}:site`}>
             <LoginSite login={ask.login} typed={typed} onTyped={setTyped} />
+          </Stop>
+        )}
+        {ask.secret != null && (
+          <Stop id={`${key}:secret`}>
+            <SecretFill secret={ask.secret} box={secretBox} />
           </Stop>
         )}
         {shape.reason && (
