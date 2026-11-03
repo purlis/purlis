@@ -477,6 +477,7 @@ export function LayoutPanes({
   onVaultChanged,
   memory,
   firstTask,
+  onNewChatOn,
   split,
   runningIn,
   tab,
@@ -583,6 +584,9 @@ export function LayoutPanes({
   };
   /** What the first task's tab asks the plane to do (FR-28). */
   firstTask: FirstTaskDoes;
+  /** Asks for a new chat on pool `pool`, in workspace `workspace` where one is named: the picker,
+   *  with the pool chosen on its Runs on row (#4483). */
+  onNewChatOn?: (pool: string, workspace?: string) => void;
   /** Where a view's divider was, and where the operator moved it to (FM-2); and where a
    *  split's handle was dragged to, by the split's path in the tab (#4751). */
   split: {
@@ -681,6 +685,7 @@ export function LayoutPanes({
               onCloseView={memory.onClose}
               onShowInstead={memory.showInstead}
               firstTask={firstTask}
+              onNewChatOn={onNewChatOn}
               split={split.of(content.view)}
               onSplit={(to) => split.moved(content.view, to)}
             />
@@ -963,6 +968,7 @@ export function LayoutPanes({
               onVaultChanged={onVaultChanged}
               memory={memory}
               firstTask={firstTask}
+              onNewChatOn={onNewChatOn}
               split={split}
               runningIn={runningIn}
               tab={tab}

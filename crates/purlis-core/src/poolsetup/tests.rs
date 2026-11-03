@@ -721,6 +721,29 @@ fn a_skipped_step_is_a_check_not_made_and_never_reads_as_done() {
 }
 
 #[test]
+fn an_identity_set_up_is_a_check_that_passed_and_one_not_set_up_is_not() {
+    let mut set = on_a_pool(Runner::Running, signed_in());
+    set.identity = Identity::Set {
+        persona: "steward".into(),
+        tool: "gh".into(),
+    };
+    let lines = try_lines(&of(Kind::Docker, &set, &tried_on("dev-box")));
+    assert_eq!(
+        lines[2],
+        (
+            Verdict::Ok,
+            "The agent's identity is set: gh through steward".into()
+        )
+    );
+    let unset = try_lines(&of(
+        Kind::Docker,
+        &on_a_pool(Runner::Running, signed_in()),
+        &tried_on("dev-box"),
+    ));
+    assert_ne!(unset[2].0, Verdict::Ok);
+}
+
+#[test]
 fn the_profiles_signed_in_are_said_by_name() {
     let facts = on_a_pool(Runner::Running, signed_in());
     let lines = try_lines(&of(Kind::Docker, &facts, &tried_on("dev-box")));
