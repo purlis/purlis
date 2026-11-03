@@ -41,6 +41,7 @@ pub mod keyhold;
 pub mod keyring;
 pub mod links;
 pub mod mcpstart;
+pub mod needs;
 pub mod onepassword;
 pub mod persons_own;
 pub mod plain_file;

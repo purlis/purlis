@@ -60,6 +60,18 @@ pub enum SecretCommand {
         #[command(flatten)]
         exec: ExecArgs,
     },
+    /// Ask the person, in purlis's window, for a credential this chat lacks. Never prints a
+    /// value: only filled, declined or still waiting, with the vault and key it is under.
+    Ask {
+        /// The key, as you will hand it to `purlis secret exec`.
+        key: String,
+        /// What it is for, in one line: the person reads it before filling it.
+        #[arg(long)]
+        purpose: String,
+        /// The vault, where not your persona's.
+        #[arg(long)]
+        vault: Option<String>,
+    },
 }
 
 /// `purlis persona secret …`: the same verbs, on the ACTIVE persona's vault.
@@ -366,8 +378,43 @@ pub fn secret(here: &crate::Here, command: SecretCommand, graft: Option<Vec<Stri
         SecretCommand::Rm { vault, key } => cmd::rm(&ctx, &vault, &key, io),
         SecretCommand::Cp { vault, cp } => cmd::cp(&ctx, &vault, &cp.key, &cp.dest, cp.force, io),
         SecretCommand::Exec { vault, exec } => exec::exec(&ctx, &request(vault, exec, graft), io),
+        SecretCommand::Ask {
+            key,
+            purpose,
+            vault,
+        } => match ask(&ctx, &key, &purpose, vault.as_deref()) {
+            Ok((line, code)) => {
+                println!("{line}");
+                code
+            }
+            Err(why) => {
+                io.say(Say::Err(why.into()));
+                1
+            }
+        },
     };
     status(code)
+}
+
+/// **A Secret ask, as `purlis secret ask` and the `secret_ask` tool both raise it** (#5072): the
+/// one line the app is sent ([`purlis_core::secrets::ask::ask_the_window`]), and what the chat
+/// is told of its answer with the status the command ends with. Never a value.
+pub fn ask(
+    ctx: &Ctx,
+    key: &str,
+    purpose: &str,
+    vault: Option<&str>,
+) -> Result<(String, i32), String> {
+    purlis_core::secrets::ask::ask_the_window(ctx, key, purpose, vault).map(|said| said.line())
+}
+
+/// [`ask`] for the `secret_ask` tool: its arguments `key`, `purpose` and `vault`.
+pub fn ask_tool(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
+    let text = |name: &str| args.get(name).and_then(serde_json::Value::as_str);
+    let key = text("key").ok_or("secret_ask needs the key")?;
+    let purpose = text("purpose").ok_or("secret_ask needs what the key is for, as purpose")?;
+    let here = crate::Here::read()?;
+    ask(&ctx(&here), key, purpose, text("vault")).map(|(line, _)| line)
 }
 
 /// `purlis persona secret <verb> …`: the persona's vault, then the same verb.

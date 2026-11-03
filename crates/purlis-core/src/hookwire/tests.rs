@@ -2817,6 +2817,7 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Commit(_)
                 | Ask::Vaults { .. }
                 | Ask::Keys { .. }
+                | Ask::Secret(_)
                 | Ask::WhereWorking(_)
                 | Ask::Dispatch(_)
                 | Ask::Task(_)

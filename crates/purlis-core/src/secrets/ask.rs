@@ -63,6 +63,21 @@ pub struct Need {
     pub key: String,
     /// The declared tool the run is of, where it is one: what the person reads the key is for.
     pub tool: Option<String>,
+    /// **The chat's own words for what it needs the key for** (#5072), one line and bounded
+    /// ([`purpose_said`]): shown as the chat's, never as purlis's. None for a broker miss.
+    pub purpose: Option<String>,
+    /// Whether the persona declares the key as a Secret need ([`super::needs`]): an ask for one
+    /// it does not is shown with a quiet "not declared by this persona" tag (#5072).
+    pub declared: bool,
+}
+
+/// The longest purpose a Secret ask carries, in characters: about a line of the ask.
+pub const MOST_PURPOSE_CHARS: usize = 200;
+
+/// **A chat's purpose as an ask carries it** (#5072): one line, at most
+/// [`MOST_PURPOSE_CHARS`].
+pub fn purpose_said(purpose: &str) -> String {
+    crate::shown::one_line(purpose.trim(), MOST_PURPOSE_CHARS)
 }
 
 /// **An open Secret ask, as the window shows it**: names only, never a value.
@@ -74,6 +89,10 @@ pub struct Open {
     pub vault: String,
     pub key: String,
     pub tool: Option<String>,
+    /// The chat's own words for what it needs the key for, where one said ([`Need::purpose`]).
+    pub purpose: Option<String>,
+    /// Whether the persona declares the key as a Secret need ([`Need::declared`]).
+    pub declared: bool,
     /// Each chat that needs it, the first to ask first: those holding a command, and those
     /// whose command stopped waiting and will be nudged.
     pub chats: Vec<u32>,
@@ -93,8 +112,9 @@ impl Open {
 /// What a command that missed a key comes to ([`Asks::hold`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Held {
-    /// The person filled it: read the vault again.
-    Filled,
+    /// The person filled it: read the vault again. Under the vault and key it was filled as,
+    /// which the person may have chosen in place of the asked ones (#5072).
+    Filled { vault: String, key: String },
     /// The person declined it, now or earlier in this chat. `line` is what the chat is told.
     Declined { line: String },
     /// Nobody answered before the hold ran out: the ask stays open and the chat is nudged when
@@ -143,10 +163,31 @@ pub struct Answered {
 }
 
 /// How a waiter is settled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Settled {
-    Filled,
+    /// Filled, as this vault and key.
+    Filled {
+        vault: String,
+        key: String,
+    },
     Declined,
+}
+
+/// **Where the person stores a fill** (#5072): the asked vault and key, or another vault or
+/// key name they chose before filling. The chat hears the name it ends up under.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Named {
+    /// Another vault of the project's, where the person chose one.
+    pub vault: Option<String>,
+    /// Another key name, where the person renamed it.
+    pub key: Option<String>,
+}
+
+impl Named {
+    /// As the ask asked.
+    pub fn as_asked() -> Self {
+        Self::default()
+    }
 }
 
 #[derive(Debug)]
@@ -164,6 +205,8 @@ struct Asked {
     id: u32,
     persona: String,
     tool: Option<String>,
+    purpose: Option<String>,
+    declared: bool,
     since: u64,
     waiters: Vec<Waiter>,
     /// An answer is being written: a second is refused, as any ask's second answer is.
@@ -284,6 +327,8 @@ impl Asks {
             vault,
             key,
             tool,
+            purpose,
+            declared,
         } = need;
         let (answered, n) = {
             let mut inner = self.inner();
@@ -310,6 +355,10 @@ impl Asks {
                     .waiters
                     .retain(|one| one.chat != chat || one.tell.is_some());
                 asked.waiters.push(waiter);
+                // A chat that says what for, joining a broker miss that could not, says it.
+                if asked.purpose.is_none() {
+                    asked.purpose = purpose;
+                }
                 Some(waiting_on(asked))
             } else {
                 inner.next += 1;
@@ -320,6 +369,8 @@ impl Asks {
                         id,
                         persona,
                         tool,
+                        purpose,
+                        declared,
                         since: now_secs(),
                         waiters: vec![waiter],
                         answering: false,
@@ -336,7 +387,7 @@ impl Asks {
         };
         say(&asked_said(&vault, &key, within));
         let settled_as = |settled: Settled| match settled {
-            Settled::Filled => Held::Filled,
+            Settled::Filled { vault, key } => Held::Filled { vault, key },
             Settled::Declined => Held::Declined {
                 line: declined_said(&vault, &key),
             },
@@ -385,7 +436,7 @@ impl Asks {
             got => return got.map_err(Unread::Vault),
         }
         match self.hold(need, within, say) {
-            Held::Filled => read().map_err(Unread::Vault),
+            Held::Filled { .. } => read().map_err(Unread::Vault),
             Held::Declined { line } | Held::StillOpen { line } => Err(Unread::Asked(line)),
         }
     }
@@ -402,6 +453,8 @@ impl Asks {
                 vault: vault.clone(),
                 key: key.clone(),
                 tool: asked.tool.clone(),
+                purpose: asked.purpose.clone(),
+                declared: asked.declared,
                 chats: chats_of(asked),
                 starts: starts_of(asked),
                 since: asked.since,
@@ -421,6 +474,21 @@ impl Asks {
         ctx: &Ctx,
         id: u32,
         answer: Answer,
+        by: Answerer,
+    ) -> Result<Answered, String> {
+        self.answer_as(ctx, id, answer, Named::as_asked(), by)
+    }
+
+    /// **[`Self::answer`], storing a fill as `named`** (#5072): in another vault of the
+    /// project's or under another key name, which the person chose before filling. Every chat
+    /// that waits hears the name it is stored under. Refused, leaving the ask open, for a key
+    /// name no Secret ask takes or a vault the project does not have.
+    pub fn answer_as(
+        &self,
+        ctx: &Ctx,
+        id: u32,
+        answer: Answer,
+        named: Named,
         by: Answerer,
     ) -> Result<Answered, String> {
         if by.scope() != HumanScope::LocalUi {
@@ -444,36 +512,60 @@ impl Asks {
             asked.answering = true;
             (vault.clone(), key.clone())
         };
+        let still_open = || {
+            if let Some(asked) = self.inner().open.get_mut(&(vault.clone(), key.clone())) {
+                asked.answering = false;
+            }
+        };
+        let into_vault = named.vault.clone().unwrap_or_else(|| vault.clone());
+        let into_key = named.key.clone().unwrap_or_else(|| key.clone());
         let filled = match &answer {
             Answer::Fill(value) => {
-                let written =
-                    cmd::provider(ctx, &vault).and_then(|v| cmd::set_value(ctx, &v, &key, value));
+                if !super::needs::is_key(&into_key) {
+                    still_open();
+                    return Err(format!(
+                        "{} is not a key name purlis stores: use letters, digits, _, - and ., \
+                         starting with a letter or _",
+                        crate::shown::one_line(&into_key, 40)
+                    ));
+                }
+                let written = cmd::provider(ctx, &into_vault)
+                    .and_then(|v| cmd::set_value(ctx, &v, &into_key, value));
                 if let Err(e) = written {
-                    if let Some(asked) = self.inner().open.get_mut(&(vault.clone(), key.clone())) {
-                        asked.answering = false;
-                    }
+                    still_open();
                     return Err(e.message.to_string());
                 }
                 true
             }
             Answer::Decline => false,
         };
+        // A decline stores nothing, so the chat hears the names it asked for.
+        let (vault, key, asked_at) = if filled {
+            (into_vault, into_key, (vault, key))
+        } else {
+            (vault.clone(), key.clone(), (vault, key))
+        };
         drop(answer);
         let mut inner = self.inner();
-        let Some(asked) = inner.open.remove(&(vault.clone(), key.clone())) else {
+        let Some(asked) = inner.open.remove(&asked_at) else {
             return Err(format!("secret ask {id} is no longer open"));
         };
         let chats = chats_of(&asked);
         let started = asked.waiters.iter().any(|waiter| waiter.chat.is_none());
         let waiting = waiting_on(&asked);
         let settled = if filled {
-            Settled::Filled
+            Settled::Filled {
+                vault: vault.clone(),
+                key: key.clone(),
+            }
         } else {
             Settled::Declined
         };
         let mut nudge = Vec::new();
         for waiter in asked.waiters {
-            let told = waiter.tell.is_some_and(|tell| tell.send(settled).is_ok());
+            let told = waiter
+                .tell
+                .is_some_and(|tell| tell.send(settled.clone()).is_ok());
             // A start that stopped waiting has nobody to nudge: its refusal told the person to
             // start it again.
             if let Some(chat) = waiter.chat
@@ -526,6 +618,264 @@ impl Asks {
             !asked.waiters.is_empty() || asked.answering
         });
     }
+}
+
+/// What a brokered command is told where the person stored its key under another vault or
+/// name than it reads (#5072).
+pub fn filled_elsewhere(vault: &str, key: &str) -> String {
+    format!(
+        "filled as {}, which this command does not read: run it again naming that key",
+        vault_and_key(vault, key)
+    )
+}
+
+// ----------------------------------------------------------------------------------------
+// A chat asks: the `secret_ask` line (#5072)
+
+/// **A chat asks for a credential it lacks** (#5072, ADR 0109): the `secret_ask` line on the
+/// hook socket, sent by the `secret_ask` tool and `purlis secret ask` alike
+/// ([`ask_the_window`]). Neither reads a vault. **It names no persona**: which persona's vault
+/// is the app's record of the chat whose token the line carries, and whether the persona may
+/// use a vault the line names is the broker's, as for a brokered run.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SecretAsk {
+    /// The chat asking, from [`crate::hookwire::CHAT_ENV`]: the chat whose token the line must
+    /// carry.
+    pub chat: u32,
+    /// The key it needs, as it will hand it to `purlis secret exec`.
+    pub key: String,
+    /// What for, in the chat's own words: shown to the person as the chat's.
+    pub purpose: String,
+    /// The vault, where the chat names one: its persona's otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault: Option<String>,
+}
+
+/// **What a chat hears of its Secret ask** (#5072): never a value, and never where it lives
+/// but the vault and key it is stored under.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum Said {
+    /// Filled: by the person now, or before the chat asked. Use this vault and key.
+    Filled { vault: String, key: String },
+    /// Declined, and why: the person said Not now, now or earlier in this chat.
+    Declined {
+        vault: String,
+        key: String,
+        reason: String,
+    },
+    /// Nobody answered before the chat's harness would end the wait: the ask stays open, and
+    /// the chat is nudged when it is answered.
+    Pending { vault: String, key: String },
+}
+
+/// Why a decline the person made is said to be one.
+pub const DECLINED_BY_THE_PERSON: &str = "the person";
+
+impl Said {
+    /// What the command prints of it, and the status it ends with: 0 filled, 1 declined, and
+    /// [`super::brokered::WAITING_ON_THE_PERSON`] still open.
+    pub fn line(&self) -> (String, i32) {
+        match self {
+            Self::Filled { vault, key } => (
+                format!(
+                    "filled {}: run your command with `purlis secret exec {vault}` handing {key}",
+                    vault_and_key(vault, key)
+                ),
+                0,
+            ),
+            Self::Declined { vault, key, reason } => (
+                format!(
+                    "declined {} by {reason}: don't ask for it again in this chat; go on without \
+                     it",
+                    vault_and_key(vault, key)
+                ),
+                1,
+            ),
+            Self::Pending { vault, key } => (
+                still_open_said(vault, key),
+                super::brokered::WAITING_ON_THE_PERSON,
+            ),
+        }
+    }
+}
+
+/// The asking chat, by the app's own record of it: never anything the line says.
+#[derive(Debug, Clone, Copy)]
+pub struct Chat<'a> {
+    pub chat: u32,
+    /// The persona the app started it as.
+    pub persona: Option<&'a str>,
+    pub harness: Option<Harness>,
+}
+
+/// **The app's answer to a chat's `secret_ask` line** (#5072): the persona's vault unless the
+/// line names one; a key the vault holds already answers filled at once, with nothing asked;
+/// otherwise a Secret ask is raised or joined, and held to the chat's harness's timeout margin
+/// ([`holds_for`]). `moved` is told once the ask is listed. The refusal is a sentence.
+pub fn raised(
+    ctx: &Ctx,
+    asks: &Asks,
+    chat: Chat<'_>,
+    line: &SecretAsk,
+    moved: &dyn Fn(),
+) -> Result<Said, String> {
+    raised_within(ctx, asks, chat, line, holds_for(chat.harness), moved)
+}
+
+/// [`raised`], held at most `within`.
+pub fn raised_within(
+    ctx: &Ctx,
+    asks: &Asks,
+    chat: Chat<'_>,
+    line: &SecretAsk,
+    within: Duration,
+    moved: &dyn Fn(),
+) -> Result<Said, String> {
+    if line.chat != chat.chat {
+        return Err(format!("this line is not chat {}'s", chat.chat));
+    }
+    if !super::needs::is_key(&line.key) {
+        return Err(format!(
+            "{} is not a key name a secret ask takes: use letters, digits, _, - and ., starting \
+             with a letter or _",
+            crate::shown::one_line(&line.key, 40)
+        ));
+    }
+    let purpose = purpose_said(&line.purpose);
+    if purpose.is_empty() {
+        return Err("say what the key is for: the person reads it before filling it".to_owned());
+    }
+    let Some(persona) = chat.persona.filter(|persona| !persona.is_empty()) else {
+        return Err(
+            "this chat runs as no persona, so it has no vault to ask into: start the chat as \
+             the persona whose work needs the key"
+                .to_owned(),
+        );
+    };
+    let vault = match line.vault.as_deref().filter(|vault| !vault.is_empty()) {
+        Some(vault) => vault.to_owned(),
+        None => persona_vault(ctx, persona)?,
+    };
+    if holds_already(ctx, persona, &vault, &line.key) {
+        return Ok(Said::Filled {
+            vault,
+            key: line.key.clone(),
+        });
+    }
+    let need = Need {
+        chat: Some(chat.chat),
+        persona: persona.to_owned(),
+        vault: vault.clone(),
+        key: line.key.clone(),
+        tool: None,
+        purpose: Some(purpose),
+        declared: super::needs::declared(&ctx.root, persona, &line.key).is_some(),
+    };
+    Ok(match asks.hold(need, within, &mut |_: &str| moved()) {
+        Held::Filled { vault, key } => Said::Filled { vault, key },
+        Held::Declined { .. } => Said::Declined {
+            vault,
+            key: line.key.clone(),
+            reason: DECLINED_BY_THE_PERSON.to_owned(),
+        },
+        Held::StillOpen { .. } => Said::Pending {
+            vault,
+            key: line.key.clone(),
+        },
+    })
+}
+
+/// The vault persona `persona` uses, as its definition or the registry names it, or why none.
+fn persona_vault(ctx: &Ctx, persona: &str) -> Result<String, String> {
+    let state = crate::plane::state_dir(&ctx.root);
+    match crate::personaverbs::vault(&ctx.root, &state, persona) {
+        crate::personas::Vault::Named(vault) | crate::personas::Vault::Registered(vault) => {
+            Ok(vault)
+        }
+        crate::personas::Vault::RegistryUnreadable(why) => Err(why),
+        crate::personas::Vault::DeclaredNone | crate::personas::Vault::Unnamed => Err(format!(
+            "persona '{persona}' names no vault to ask into: name one with `vault`"
+        )),
+    }
+}
+
+/// **Whether vault `vault` holds `key` already, for a chat as `persona`**: only where the
+/// persona may use the vault, so a chat learns nothing of a vault's keys it could not list
+/// itself. Read by the key names alone, never a value.
+fn holds_already(ctx: &Ctx, persona: &str, vault: &str, key: &str) -> bool {
+    super::brokered::authorise(ctx, Some(persona), vault).is_ok()
+        && cmd::provider(ctx, vault)
+            .and_then(|v| cmd::keys(ctx, &v))
+            .is_ok_and(|keys| keys.iter().any(|one| one == key))
+}
+
+/// How much longer than the app holds an ask its asker waits for the answer: the app answers
+/// pending at its margin, and the line comes back after it.
+const ASKER_WAITS_PAST_THE_HOLD: Duration = Duration::from_secs(15);
+
+/// **What `purlis secret ask` and the `secret_ask` tool both send** (#5072): the
+/// `secret_ask` line to the app that started this chat, and its answer. Refused, with a
+/// sentence, in a chat purlis did not start: only its window asks the person.
+#[cfg(unix)]
+pub fn ask_the_window(
+    ctx: &Ctx,
+    key: &str,
+    purpose: &str,
+    vault: Option<&str>,
+) -> Result<Said, String> {
+    use crate::hookwire::{Answer, Ask, Asking, ChatToken, NOTHING_ANSWERS, UNKNOWN_LINE};
+    let env = |name: &str| ctx.env.get(name);
+    let not_here = || {
+        "a secret ask is answered in purlis's window, and this chat was not started by purlis: \
+         ask the person to add the key to the vault themselves"
+            .to_owned()
+    };
+    let socket = env(crate::hookwire::SOCKET_ENV)
+        .filter(|socket| !socket.is_empty())
+        .ok_or_else(not_here)?;
+    let chat = [crate::hookwire::CHAT_ENV, crate::active::SESSION_ID_ENV]
+        .into_iter()
+        .filter_map(env)
+        .find_map(|n| n.trim().parse::<u32>().ok().filter(|n| *n > 0))
+        .ok_or_else(not_here)?;
+    let harness = env(crate::hookwire::HARNESS_ENV).and_then(|word| Harness::of_kind(&word));
+    let mut asking =
+        Asking::on(Path::new(&socket), ChatToken::read(&env)).map_err(|_| not_here())?;
+    let line = Ask::Secret(Box::new(SecretAsk {
+        chat,
+        key: key.to_owned(),
+        purpose: purpose.to_owned(),
+        vault: vault.map(str::to_owned),
+    }));
+    match asking.ask(&line, command_timeout(harness) + ASKER_WAITS_PAST_THE_HOLD) {
+        Ok(Answer::Secret(said)) => Ok(said),
+        Ok(Answer::No { why }) if why == NOTHING_ANSWERS || why == UNKNOWN_LINE => {
+            Err(super::brokered::OLDER_APP.to_owned())
+        }
+        Ok(Answer::No { why }) => Err(why),
+        Ok(_) => Err(super::brokered::OLDER_APP.to_owned()),
+        Err(e) => Err(match e.kind() {
+            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => {
+                super::brokered::NOT_IN_TIME.to_owned()
+            }
+            _ => super::brokered::OLDER_APP.to_owned(),
+        }),
+    }
+}
+
+/// Where there is no unix socket there is no window to ask.
+#[cfg(not(unix))]
+pub fn ask_the_window(
+    _ctx: &Ctx,
+    _key: &str,
+    _purpose: &str,
+    _vault: Option<&str>,
+) -> Result<Said, String> {
+    Err(
+        "a secret ask is answered in purlis's window, which this platform does not reach yet"
+            .to_owned(),
+    )
 }
 
 /// Each chat waiting on `asked`, once, the first to ask first.

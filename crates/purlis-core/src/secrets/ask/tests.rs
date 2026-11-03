@@ -41,6 +41,16 @@ fn need(chat: u32, key: &str) -> Need {
         vault: "team".into(),
         key: key.into(),
         tool: Some("kubectl".into()),
+        purpose: None,
+        declared: false,
+    }
+}
+
+/// Filled as asked: vault `team`, under `key`.
+fn filled(key: &str) -> Held {
+    Held::Filled {
+        vault: "team".into(),
+        key: key.into(),
     }
 }
 
@@ -139,7 +149,7 @@ fn a_quick_fill_resumes_the_waiting_command_and_is_written_through_the_vaults_pr
             answered.nudge.is_empty(),
             "nobody stopped waiting: {answered:?}"
         );
-        assert_eq!(waiting.join().unwrap(), Held::Filled);
+        assert_eq!(waiting.join().unwrap(), filled("MISSING"));
         id
     });
     assert_eq!(stored(project.path(), "MISSING").as_deref(), Some(VALUE));
@@ -255,7 +265,7 @@ fn a_chat_that_tries_again_while_its_ask_is_open_is_not_nudged_once_its_retry_he
             )
             .unwrap();
         assert!(answered.nudge.is_empty(), "{answered:?}");
-        assert_eq!(retry.join().unwrap(), Held::Filled);
+        assert_eq!(retry.join().unwrap(), filled("MISSING"));
     });
 }
 
@@ -292,7 +302,7 @@ fn three_chats_missing_one_key_join_one_ask_and_one_fill_resumes_them_all() {
         )
         .unwrap();
         for one in waiting {
-            assert_eq!(one.join().unwrap(), Held::Filled);
+            assert_eq!(one.join().unwrap(), filled("MISSING"));
         }
     });
 }
@@ -590,4 +600,336 @@ fn a_starts_ask_is_traced_under_no_session() {
         trace.contains("\"secret.ask\"") && trace.contains("raised"),
         "{file:?}: {trace}"
     );
+}
+
+// ----------------------------------------------------------------------------------------
+// A chat asks: the `secret_ask` line (#5072)
+
+/// [`project`], with persona `devops` declaring `DECLARED` as a Secret need, a second vault
+/// `mine` (a plain file of its own, tagged for nobody) and `charter.toml`.
+fn project_with_needs() -> tempfile::TempDir {
+    let tmp = project();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "").unwrap();
+    std::fs::create_dir_all(root.join("personas/devops")).unwrap();
+    std::fs::write(
+        root.join("personas/devops/persona.md"),
+        "---\nrole: Ops\nsecret-need.DECLARED: deploy to staging\n---\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+            "mine": {"provider": "plain-file", "config": {"file": "mine.json"}},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(root.join("mine.json"), "{}").unwrap();
+    tmp
+}
+
+fn devops(chat: u32) -> Chat<'static> {
+    Chat {
+        chat,
+        persona: Some("devops"),
+        harness: None,
+    }
+}
+
+fn line(chat: u32, key: &str, vault: Option<&str>) -> SecretAsk {
+    SecretAsk {
+        chat,
+        key: key.into(),
+        purpose: "  charge test cards\nin the checkout e2e ".into(),
+        vault: vault.map(str::to_owned),
+    }
+}
+
+/// [`raised_within`] for nothing at all.
+fn raised_now(root: &Path, asks: &Asks, line: &SecretAsk) -> Result<Said, String> {
+    raised_within(
+        &ctx(root),
+        asks,
+        devops(line.chat),
+        line,
+        Duration::ZERO,
+        &|| {},
+    )
+}
+
+/// [`raised_within`] for a minute, telling `waits` once the ask is listed.
+fn raised_telling(
+    root: &Path,
+    asks: &Asks,
+    line: &SecretAsk,
+    waits: &std::sync::mpsc::Sender<()>,
+) -> Result<Said, String> {
+    raised_within(
+        &ctx(root),
+        asks,
+        devops(line.chat),
+        line,
+        Duration::from_secs(60),
+        &|| {
+            let _ = waits.send(());
+        },
+    )
+}
+
+#[test]
+fn a_chats_ask_goes_to_its_personas_vault_with_its_purpose_as_one_line_and_waits_on_the_person() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    let said = raised_now(project.path(), &asks, &line(7, "STRIPE_KEY", None));
+    assert_eq!(
+        said,
+        Ok(Said::Pending {
+            vault: "team".into(),
+            key: "STRIPE_KEY".into()
+        }),
+        "the vault defaults to the persona's"
+    );
+    let open = asks.open();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!(
+        (
+            open[0].vault.as_str(),
+            open[0].key.as_str(),
+            open[0].chats.as_slice()
+        ),
+        ("team", "STRIPE_KEY", &[7][..])
+    );
+    assert_eq!(
+        open[0].purpose.as_deref(),
+        Some("charge test cards⟦U+000A⟧in the checkout e2e"),
+        "the chat's words, on one line"
+    );
+    assert_eq!(open[0].tool, None);
+    let (told, code) = said.unwrap().line();
+    assert_eq!(code, super::super::brokered::WAITING_ON_THE_PERSON);
+    assert_eq!(
+        told,
+        "waiting on you for team/STRIPE_KEY; retry once answered"
+    );
+}
+
+#[test]
+fn a_key_the_vault_holds_already_answers_filled_at_once_and_asks_nothing() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    assert_eq!(
+        raised_now(project.path(), &asks, &line(7, "TOKEN", None)),
+        Ok(Said::Filled {
+            vault: "team".into(),
+            key: "TOKEN".into()
+        })
+    );
+    assert!(asks.open().is_empty(), "nothing was asked");
+    assert!(
+        !traced(project.path()).contains("raised"),
+        "and nothing raised in the trace"
+    );
+}
+
+#[test]
+fn a_key_the_persona_does_not_declare_is_tagged_and_a_declared_one_is_not() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    raised_now(project.path(), &asks, &line(7, "UNDECLARED", None)).unwrap();
+    raised_now(project.path(), &asks, &line(7, "DECLARED", None)).unwrap();
+    let declared: Vec<(String, bool)> = asks
+        .open()
+        .into_iter()
+        .map(|one| (one.key, one.declared))
+        .collect();
+    assert_eq!(
+        declared,
+        [("UNDECLARED".into(), false), ("DECLARED".into(), true)]
+    );
+}
+
+#[test]
+fn a_fill_the_person_renamed_or_put_in_another_vault_is_heard_under_its_final_name() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let (waits, waiting) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let asked = &asks;
+        let chat =
+            scope.spawn(move || raised_telling(root, asked, &line(7, "STRIPE", None), &waits));
+        waiting.recv().unwrap();
+        let id = asks.open()[0].id;
+        asks.answer_as(
+            &ctx(root),
+            id,
+            Answer::Fill(VALUE.to_owned().into()),
+            Named {
+                vault: Some("mine".into()),
+                key: Some("STRIPE_TEST_KEY".into()),
+            },
+            window(),
+        )
+        .unwrap();
+        assert_eq!(
+            chat.join().unwrap(),
+            Ok(Said::Filled {
+                vault: "mine".into(),
+                key: "STRIPE_TEST_KEY".into()
+            })
+        );
+    });
+    let ctx = ctx(root);
+    let mine = crate::secrets::cmd::provider(&ctx, "mine").unwrap();
+    assert_eq!(
+        crate::secrets::cmd::get_value(&ctx, &mine, "STRIPE_TEST_KEY").ok(),
+        Some(VALUE.to_owned())
+    );
+    assert_eq!(stored(root, "STRIPE"), None, "nothing under the asked name");
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn a_rename_no_key_takes_is_refused_and_leaves_the_ask_open() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    raised_now(project.path(), &asks, &line(7, "STRIPE", None)).unwrap();
+    let id = asks.open()[0].id;
+    let refused = asks
+        .answer_as(
+            &ctx(project.path()),
+            id,
+            Answer::Fill(VALUE.to_owned().into()),
+            Named {
+                vault: None,
+                key: Some("not a key".into()),
+            },
+            window(),
+        )
+        .expect_err("no such key name");
+    assert!(refused.contains("is not a key name"), "{refused}");
+    assert_eq!(asks.open().len(), 1, "still open");
+}
+
+#[test]
+fn a_declined_ask_is_said_as_declined_and_the_chat_is_not_asked_again() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let (waits, waiting) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let asked = &asks;
+        let chat =
+            scope.spawn(move || raised_telling(root, asked, &line(7, "STRIPE", None), &waits));
+        waiting.recv().unwrap();
+        let id = asks.open()[0].id;
+        asks.answer(&ctx(root), id, Answer::Decline, window())
+            .unwrap();
+        let said = chat.join().unwrap().unwrap();
+        assert_eq!(
+            said,
+            Said::Declined {
+                vault: "team".into(),
+                key: "STRIPE".into(),
+                reason: DECLINED_BY_THE_PERSON.into()
+            }
+        );
+        assert_eq!(said.line().1, 1);
+    });
+    assert!(matches!(
+        raised_now(root, &asks, &line(7, "STRIPE", None)),
+        Ok(Said::Declined { .. })
+    ));
+    assert!(asks.open().is_empty(), "the same chat is not asked again");
+    assert!(matches!(
+        raised_now(root, &asks, &line(8, "STRIPE", None)),
+        Ok(Said::Pending { .. })
+    ));
+}
+
+#[test]
+fn a_line_that_is_not_one_is_refused_before_anything_is_asked() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let no_key = raised_now(root, &asks, &line(7, "A B", None)).unwrap_err();
+    assert!(no_key.contains("is not a key name"), "{no_key}");
+    let mut blank = line(7, "KEY", None);
+    blank.purpose = " \n ".into();
+    assert!(raised_now(root, &asks, &blank).is_err());
+    let nobody = raised_within(
+        &ctx(root),
+        &asks,
+        Chat {
+            chat: 7,
+            persona: None,
+            harness: None,
+        },
+        &line(7, "KEY", None),
+        Duration::ZERO,
+        &|| {},
+    )
+    .unwrap_err();
+    assert!(nobody.contains("no persona"), "{nobody}");
+    // A line naming another chat than the app's record of the asking one.
+    assert!(
+        raised_within(
+            &ctx(root),
+            &asks,
+            devops(8),
+            &line(7, "KEY", None),
+            Duration::ZERO,
+            &|| {}
+        )
+        .is_err()
+    );
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn a_vault_the_persona_may_not_use_is_still_asked_and_never_answered_filled_at_once() {
+    // `mine` holds the key, and the persona may not use it: a chat learns nothing of what a
+    // vault it could not list holds. The person decides what to put where.
+    let project = project_with_needs();
+    let root = project.path();
+    std::fs::write(root.join("mine.json"), r#"{"HELD": "x"}"#).unwrap();
+    let asks = Asks::new(root);
+    assert_eq!(
+        raised_now(root, &asks, &line(7, "HELD", Some("mine"))),
+        Ok(Said::Pending {
+            vault: "mine".into(),
+            key: "HELD".into()
+        })
+    );
+}
+
+#[test]
+fn no_value_is_in_what_a_chat_hears_or_the_trace() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let (waits, waiting) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let asked = &asks;
+        let chat =
+            scope.spawn(move || raised_telling(root, asked, &line(7, "STRIPE", None), &waits));
+        waiting.recv().unwrap();
+        let id = asks.open()[0].id;
+        asks.answer(
+            &ctx(root),
+            id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+        let said = chat.join().unwrap().unwrap();
+        let wire = serde_json::to_string(&crate::hookwire::Answer::Secret(said.clone())).unwrap();
+        assert!(
+            !wire.contains(VALUE) && !said.line().0.contains(VALUE),
+            "{wire}"
+        );
+    });
+    assert!(!traced(root).contains(VALUE));
 }

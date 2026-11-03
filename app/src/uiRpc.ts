@@ -11315,6 +11315,16 @@ export type SecretShown = {
 	key: string,
 	/**  The declared tool whose run missed it, where it is one. */
 	tool?: string | null,
+	/**
+	 *  **What the chat says it is for** (#5072), in its own words: drawn as the chat's, never
+	 *  as purlis's. Absent for a broker miss.
+	 */
+	purpose?: string | null,
+	/**
+	 *  Whether the persona declares the key as a Secret need: one it does not is drawn with a
+	 *  quiet "not declared by this persona" tag (#5072).
+	 */
+	declared: boolean,
 	/**  How many chats wait on it. */
 	waiting: number,
 };
