@@ -269,6 +269,9 @@ pub struct Held {
     closing: Arc<crate::smartclose::Closing>,
     /// What the app remembers of the tasks its chats dispatched, and who waits on them (#1441).
     tasks: Arc<crate::dispatched::Tasks>,
+    /// Told each time a vault value is remembered, to mask what the host's board keeps of what
+    /// the chats said (the review of #4905). Kept here so it is told while the project is held.
+    _masked_kept: purlis_core::secrets::seen::Remembered,
     /// The window, for each step of a smart close.
     smart: crate::smartclose::Teller,
     /// The chats the person is stopping (#1448).
@@ -4592,6 +4595,9 @@ impl Planes {
             let (plane, told) = (id.clone(), Arc::clone(&self.moves_told));
             Arc::new(move |one| told(plane.clone(), one))
         });
+        let tasks: Arc<crate::dispatched::Tasks> = Arc::default();
+        let masked_kept =
+            crate::dispatched::masked_kept_when_remembered(&tasks, hooks.shared_board());
         Held {
             id,
             root,
@@ -4606,7 +4612,8 @@ impl Planes {
             started_on,
             typed,
             closing,
-            tasks: Arc::default(),
+            tasks,
+            _masked_kept: masked_kept,
             smart: Arc::clone(&self.smart),
             stopping: crate::stopping::Stopping::default(),
             stops: Arc::clone(&self.stops),

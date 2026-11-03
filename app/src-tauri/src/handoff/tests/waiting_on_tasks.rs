@@ -1238,14 +1238,14 @@ fn a_vault_value_remembered_after_the_turn_is_masked_in_the_board_a_relaunched_w
     );
 
     purlis_core::secrets::seen::remember(value);
-    // The strip reads what the chat said, masked now.
+    // The window never reads that chat again: it relaunches and takes the board the host kept,
+    // which has it masked from the moment the value was remembered.
+    let mut relaunched = purlis_core::state::Board::new();
+    relaunched.keep(held.hooks().board().kept());
+    assert_eq!(relaunched.said_of(steward), ["Is *** the right password?"]);
+    // And the strip of the window that was told reads it masked too.
     assert_eq!(
         reply_ask(&held, steward).and_then(|ask| ask.last_message),
         Some("Is *** the right password?".to_owned())
     );
-
-    // The window relaunches and takes the board the host kept.
-    let mut relaunched = purlis_core::state::Board::new();
-    relaunched.keep(held.hooks().board().kept());
-    assert_eq!(relaunched.said_of(steward), ["Is *** the right password?"]);
 }

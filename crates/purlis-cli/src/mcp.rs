@@ -883,10 +883,7 @@ impl Waiting {
         Self::telling_words(tell, Box::new(|_| {}))
     }
 
-    fn telling_words(
-        tell: Box<dyn Fn(bool) + Send + Sync>,
-        words: SaysWords,
-    ) -> Self {
+    fn telling_words(tell: Box<dyn Fn(bool) + Send + Sync>, words: SaysWords) -> Self {
         Self {
             open: std::sync::Mutex::new(Open::default()),
             tell,

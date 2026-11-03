@@ -2341,6 +2341,9 @@ fn asker_in(chats: &crate::chats::Chats, session: u32) -> Option<u32> {
 
 /// Every ask project `held` has waiting now, as the window lists them.
 pub fn every_ask(held: &crate::planes::Held) -> Asking {
+    // A backstop for the host's board (the review of #4905): told when a vault value is
+    // remembered already, so this is nothing unless a value came since and no one was told.
+    crate::dispatched::said_masked_kept(held);
     let plane = held.plane_id();
     let root = held.root();
     let locks = purlis_core::sandbox::policy::Locks::of(root);

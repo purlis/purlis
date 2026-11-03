@@ -2958,6 +2958,43 @@ fn said_kept(held: &Held, chat: u32) {
     held.hooks().board().keep_said(chat, &said);
 }
 
+/// **What each chat last said, masked again for a vault value read since, told to the board the
+/// session host keeps** (the review of #4905): a window relaunched from that board may not know
+/// the value, so it could not mask it itself. Told when the value is remembered
+/// ([`masked_kept_when_remembered`]), and again where the asks are read, which costs nothing
+/// when no value came since. The ledger's lock is let go of before the board's is taken.
+pub fn said_masked_kept(held: &Held) {
+    said_masked_kept_in(held.tasks(), &held.hooks().shared_board());
+}
+
+fn said_masked_kept_in(tasks: &Tasks, board: &Mutex<purlis_core::state::Board>) {
+    let remasked = tasks.ledger().said_masked_again();
+    if remasked.is_empty() {
+        return;
+    }
+    let mut board = crate::hooks::held_board(board);
+    for (chat, said) in remasked {
+        board.keep_said(chat, &said);
+    }
+}
+
+/// **What [`said_masked_kept`] does for a project, each time a vault value is remembered**
+/// (the review of #4905), so a chat the window never read since is masked in the host's board
+/// too. Told only while the project's [`Held`] keeps what this returns.
+pub fn masked_kept_when_remembered(
+    tasks: &Arc<Tasks>,
+    board: Arc<Mutex<purlis_core::state::Board>>,
+) -> purlis_core::secrets::seen::Remembered {
+    let tasks = Arc::downgrade(tasks);
+    let told: purlis_core::secrets::seen::Remembered = Arc::new(move || {
+        if let Some(tasks) = tasks.upgrade() {
+            said_masked_kept_in(&tasks, &board);
+        }
+    });
+    purlis_core::secrets::seen::when_remembered(&told);
+    told
+}
+
 /// **What chat `output.chat`'s turn put out** (#1981), heard on its own line before the turn's
 /// end. The message it ended on is kept for every chat, masked and made a report's text
 /// (`handback::last_message_summary`), in memory, until its next turn begins: what a question in
