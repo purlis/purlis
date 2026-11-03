@@ -394,6 +394,12 @@ export type Does =
   | { verb: "pinTab"; tab: number; pinned: boolean }
   /** Tile all (#4765): evens `tab`'s own panes into a grid, with Undo. */
   | { verb: "tileAll"; tab: number }
+  /**
+   * **Move to new window** (`to` null) or **Move to window ▸** (`to` a window of the project,
+   * `0` its project window) (#4768): tab `tab`, or its focused pane where `pane`, goes to that
+   * window as its front tab. The core moves it, and each window draws its share.
+   */
+  | { verb: "moveToWindow"; tab: number; pane: boolean; to: number | null }
   /** Focus this pane in a split (#4765): zooms the focused pane, or brings the split back. */
   | { verb: "zoomPane" }
   /** Undo (#4763, #4765): the window's last layout change put back, once. */
@@ -929,6 +935,11 @@ export type Now = {
   /** The tabs Close other tabs on tab `tab` would close (#4762): every other tab on its strip
    *  but the pinned ones (`tabs.otherTabsToClose`). None where the window does not say. */
   otherTabs?: (tab: number) => readonly number[];
+  /**
+   * **The project's other windows** (#4768): its project window (`0`) and its tab windows,
+   * less this one, which Move to window ▸ lists. None for a project of one window.
+   */
+  otherWindows?: readonly number[];
   /** The work item each chat works on, by session, as `chat_work_item` answered (ADR 0088). */
   workItems?: Readonly<Record<number, string>>;
   /** Whether a chat can have a work link: it is filed in a workspace. A chat at the project
@@ -1051,6 +1062,9 @@ export type Doing = {
   pinTab: (tab: number, pinned: boolean) => Promise<Ran>;
   /** Tiles `tab`'s own panes into an even grid (#4765). */
   tileAll: (tab: number) => void;
+  /** Moves `tab`, or its focused pane, to another window of the project, or a new one when
+   *  `to` is null (#4768). Answers the core's refusal, where it refused. */
+  moveToWindow: (tab: number, pane: boolean, to: number | null) => Promise<Ran>;
   /** Zooms the focused pane of the tab in front, or brings its split back (#4765). */
   zoomPane: () => void;
   /** Puts the last layout change back (#4763, #4765): a drop, a split or Tile all. */
@@ -2154,6 +2168,46 @@ export function catalogue(now: Now): Offer[] {
           }
         : cannot(id, title, ONE_PANE_TO_TILE, name),
     );
+  }
+
+  // **Move to new window and Move to window ▸** (#4768, ruled on #4701): a tab, or the focused
+  // pane, into another window of the project as a tab of its own there. One set per tab, as Pin
+  // tab's, so a tab's menu has its own; the palette lists the tab in front's. Nothing ends.
+  const windows = now.otherWindows ?? [];
+  for (const tab of now.tabs.order) {
+    const name = now.tabs.byId[tab].name;
+    const behind = tab !== now.tabs.inFront ? { menuOnly: true as const } : {};
+    offers.push({
+      ...can(
+        toNewWindowId(tab),
+        `Move tab ${name} to new window`,
+        { verb: "moveToWindow", tab, pane: false, to: null },
+        name,
+      ),
+      note: TO_WINDOW_NOTE,
+      ...behind,
+    });
+    for (const to of windows)
+      offers.push({
+        ...can(
+          toWindowId(tab, to),
+          `Move tab ${name} to ${windowNamed(to)}`,
+          { verb: "moveToWindow", tab, pane: false, to },
+          name,
+        ),
+        ...behind,
+      });
+  }
+  if (front !== undefined) {
+    const content = contentsOf(now.tabs, front.id).find((one) => one.pane === front.focused);
+    const movable = content?.content.kind === "session" || content?.content.kind === "view";
+    const move = (id: string, title: string, to: number | null): Offer =>
+      movable
+        ? { ...can(id, title, { verb: "moveToWindow", tab: front.id, pane: true, to }) }
+        : cannot(id, title, EMPTY_PANE_STAYS);
+    offers.push({ ...move(PANE_TO_NEW_WINDOW, "Move this pane to new window", null) });
+    for (const to of windows)
+      offers.push(move(paneToWindowId(to), `Move this pane to ${windowNamed(to)}`, to));
   }
 
   // **Undo** (#4763, #4765): the window's last layout change, while nothing has changed since.
@@ -3360,6 +3414,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "tileAll":
       doing.tileAll(does.tab);
       return DID;
+    case "moveToWindow":
+      return doing.moveToWindow(does.tab, does.pane, does.to);
     case "zoomPane":
       doing.zoomPane();
       return DID;
@@ -4678,6 +4734,37 @@ export const STOPS_IT =
   "A chat another chat started gets one short turn to write what it did, then it ends. The chat that asked is told you stopped it.";
 
 /** A chat's Merge its branch row (#4851). */
+/** **Move to new window** on tab `tab` (#4768). */
+export function toNewWindowId(tab: number): string {
+  return `tab.newWindow:${tab}`;
+}
+
+/** **Move to window ▸ <window>** on tab `tab` (#4768). */
+export function toWindowId(tab: number, to: number): string {
+  return `tab.toWindow:${tab}:${to}`;
+}
+
+/** **Move to new window** on the focused pane (#4768). */
+export const PANE_TO_NEW_WINDOW = "pane.newWindow";
+
+/** **Move to window ▸ <window>** on the focused pane (#4768). */
+export function paneToWindowId(to: number): string {
+  return `pane.toWindow:${to}`;
+}
+
+/** **A window of the project, as a Move to window row names it** (#4768): its project window,
+ *  or a tab window by its number. */
+export function windowNamed(window: number): string {
+  return window === 0 ? "the project window" : `tab window ${window}`;
+}
+
+/** What Move to new window does, which its title cannot fit. */
+const TO_WINDOW_NOTE =
+  "Its panes, in a tab window of this project. Closing that window brings it back, and nothing ends.";
+
+/** Why an empty pane has no Move to window row (#4768). */
+const EMPTY_PANE_STAYS = "An empty pane has nothing to move.";
+
 export function branchMergeId(session: number): string {
   return `chat.branch.merge:${session}`;
 }
@@ -5277,7 +5364,13 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
       // no Switch to, which the tab's press does. Close other tabs is on every tab's own menu;
       // the palette lists the tab in front's alone (#4762).
       return {
-        above: [`tab.pin:${what.tab}`, tileAllId(what.tab), `tab.keep:${what.tab}`],
+        above: [
+          `tab.pin:${what.tab}`,
+          tileAllId(what.tab),
+          `tab.keep:${what.tab}`,
+          // Move to window ▸ follows it, one row per window (`menuModel`, `toWindowRows`).
+          toNewWindowId(what.tab),
+        ],
         below: [`tab.closeOthers:${what.tab}`, `tab.close:${what.tab}`],
       };
     case "workspace":
@@ -5417,6 +5510,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           // **Tile all** (spec #4750, decision 6): the tab's own row, the one its right-click
           // and the palette list (#4765).
           ...(what.tab === undefined ? [] : [tileAllId(what.tab)]),
+          // Move to window ▸ follows it, one row per window (`menuModel`, `toWindowRows`).
+          PANE_TO_NEW_WINDOW,
           PASS_THROUGH_ID,
         ],
         below: ["pane.close"],
@@ -5504,6 +5599,15 @@ export function askRows(session: number, offers: Catalogued): Offer[] {
  */
 export function moveChatRows(session: number, offers: Catalogued): Offer[] {
   return scanned(chatMovePrefix(session), offers);
+}
+
+/**
+ * The **Move to window ▸** rows of tab `tab`'s menu, or of the panes' where `tab` is none
+ * (#4768): one per other window of the project, by the same scan, since which windows a project
+ * has is not known ahead of time.
+ */
+export function toWindowRows(tab: number | undefined, offers: Catalogued): Offer[] {
+  return scanned(tab === undefined ? "pane.toWindow:" : `tab.toWindow:${tab}:`, offers);
 }
 
 /** The ids of chat `session`'s Go to rows, the chats its work was handed to, newest first. */

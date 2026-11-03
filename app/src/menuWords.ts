@@ -52,6 +52,9 @@ export const SAID = {
   newBranch: "New branch…",
   startChatsHere: "Start new chats here",
   toNewWindow: "Move to a new window",
+  // A tab's and a pane's (#4768), in the ruling's words: into a tab window of the project.
+  tabToNewWindow: "Move to new window",
+  projectWindow: "Project window",
   toMainWindow: "Move to the main window",
   // A view's icon (`actions.ts`, `viewRows`): to its half of the Panel, or back to its sidebar.
   toPanel: "Move to panel",
@@ -98,6 +101,10 @@ export const SUBMENU = {
   stop: { said: "Stop", tip: "Ways to stop this chat, or the tasks it asked for." },
   curate: { said: "Curate", tip: undefined },
   moveTo: { said: "Move to", tip: undefined },
+  toWindow: {
+    said: "Move to window",
+    tip: "Each moves it into that window of this project, as a tab of its own. Nothing ends.",
+  },
   branch: { said: "Branch", tip: "Each acts on the branch folder purlis cut for this chat." },
 } as const;
 
