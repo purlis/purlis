@@ -1031,7 +1031,16 @@ _Avoid_: link (unqualified: that is a runner's), channel, subscription
 **Split window**:
 An OS window a project tab was moved into, beside the main window. It holds its own projects,
 and closing it moves them back to the main window with every chat still running.
-_Avoid_: detached tab, pop-out, secondary window
+_Avoid_: detached tab, pop-out, secondary window, tab window (that holds one project's torn-off
+tabs)
+
+**Tab window**:
+An OS window that holds tabs torn off one project's strip: the strip and its panes, with no
+sidebar and no project strip. It belongs to the window that holds the project, its **project
+window**, and never holds a project of its own. Closing it sends its tabs back to the project
+window, behind its front tab, and every chat keeps running. Its last tab leaving closes it, and
+it comes back at the next launch, in its place on screen (#4701, #4768, ADR 0033 as amended).
+_Avoid_: detached tab, pop-out, split window (that holds whole projects)
 
 **Welcome**:
 What a window with no project open shows, always, whatever the machine remembers: three doors
