@@ -576,13 +576,17 @@ describe("while you were away (#1514)", () => {
     // The chats still need the person, on the title bar's list, as they did before.
     expect(screen.getByTestId("needs-you-button")).toHaveAccessibleName("3 chats need you");
     // And Dismiss told the core nothing: nothing was answered, ignored or looked at.
-    // The asks registry reading its list again is a read, on its own timer (#1692), not an answer.
+    // Two reads run on their own real-time timers through the whole test, and a slow runner
+    // lands them inside this window (#4696): the asks registry reading its list again (#1692),
+    // and a pane's gauge reading its chat's usage after a move and on the running chat's beat
+    // (`ChatGauge.tsx`, `AFTER_A_MOVE_MS`, `WHILE_RUNNING_MS`). Neither is an answer.
+    const ON_THEIR_OWN_TIMERS = ["asks_waiting", "chat_usage"];
     await settle();
     expect(
       held
         .commands()
         .slice(before)
-        .filter((cmd) => cmd !== "asks_waiting"),
+        .filter((cmd) => !ON_THEIR_OWN_TIMERS.includes(cmd)),
     ).toEqual([]);
   });
 
