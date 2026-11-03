@@ -142,6 +142,7 @@ import {
   useRepoClones,
 } from "./repoClones";
 import { StartChat } from "./StartChat";
+import { withDetails } from "./startDetails";
 import {
   handedSaid,
   handReference,
@@ -1078,7 +1079,13 @@ export const PlaneView = memo(function PlaneView({
     where: Where;
     /** Where a chat started here would run, and why (#4536): the picker's Runs on row. */
     runsOn?: StartRunsOn;
+    /** Whether the rows' details (approval, sandbox, billing) are still to come (#4736): the
+     *  picker opens on the first answer and draws those rows as pending. */
+    pending?: boolean;
   }>();
+  /** The picker the details being read are for (#4736): a details answer for a picker since
+   *  closed, or opened again, fills in nothing. */
+  const pickerAsked = useRef(0);
   /** Why the last start did not happen, shown in the picker rather than behind it. */
   const [pickerTrouble, setPickerTrouble] = useState<string>();
   /** The profile of this machine's a start was refused on because its harness says it is not
@@ -3296,6 +3303,12 @@ export const PlaneView = memo(function PlaneView({
    * split brings forward the harness setup tab for the directory it would have started in, as
    * the first chat does (FR-29). A split splits nothing then (D-963-2). The machine is looked
    * at beside the options, so the picker waits for no extra round trip.
+   *
+   * **It opens on the cheap first answer** (#4736): the personas, the profiles and the default
+   * persona. Each row's approval, sandbox and billing take a moment more (a sandbox compile per
+   * harness, a check of each approved profile's program), so they are asked at the same time and
+   * fill the rows in as they arrive. A start pressed before then waits for them (`StartChat`),
+   * and the core's start asks every gate again whatever the picker drew.
    */
   const ask = useCallback(
     async (where: Where) => {
@@ -3303,9 +3316,13 @@ export const PlaneView = memo(function PlaneView({
       const cwd = ("in" in where ? where.in : undefined) ?? startIn;
       // The workspace the chat would be filed in, or none at the project's root.
       const filed = "pool" in where && where.pool ? where.pool.workspace : filedFor(cwd, focused);
+      const asked = ++pickerAsked.current;
+      const details = commands
+        .startDetails(plane)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       const [options, found, runsOn] = await Promise.all([
         commands
-          .startOptions(plane)
+          .startOptionsFirst(plane)
           .catch((err: unknown) => ({ status: "error" as const, error: String(err) })),
         commands.harnessSetupFound().catch(() => undefined),
         readRunsOn(filed === OUTSIDE ? null : filed),
@@ -3320,7 +3337,21 @@ export const PlaneView = memo(function PlaneView({
         change((tabs) => openView(tabs, harnessSetupView(cwd), title, filed));
         return;
       }
-      setPicking({ options: options.data, where, runsOn });
+      setPicking({ options: options.data, where, runsOn, pending: true });
+      const read = await details;
+      if (pickerAsked.current !== asked) return;
+      // Details that could not be read leave the rows as the first answer drew them, and say
+      // why: a start then goes to the core, whose gate asks them again.
+      if (read.status === "error") setPickerTrouble(read.error);
+      setPicking((was) =>
+        was === undefined || was.pending !== true
+          ? was
+          : {
+              ...was,
+              options: read.status === "ok" ? withDetails(was.options, read.data) : was.options,
+              pending: false,
+            },
+      );
     },
     [change, focused, plane, readRunsOn, refusedBy, startIn, succeeded],
   );
@@ -3366,8 +3397,14 @@ export const PlaneView = memo(function PlaneView({
         .startOptions(plane)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       setPickerFixing(false);
-      if (options.status === "ok")
-        setPicking((was) => (was === undefined ? was : { ...was, options: options.data }));
+      if (options.status === "ok") {
+        // The whole answer, details and all: any details still being read are for what was
+        // true before the fix.
+        pickerAsked.current++;
+        setPicking((was) =>
+          was === undefined ? was : { ...was, options: options.data, pending: false },
+        );
+      }
       setPickerTrouble(refused ?? (options.status === "error" ? options.error : undefined));
     },
     [plane],
@@ -11378,6 +11415,7 @@ export const PlaneView = memo(function PlaneView({
               {picking && (
                 <StartChat
                   options={picking.options}
+                  pending={picking.pending}
                   repo={pickingInRepo}
                   // Where it starts, by name (R8): the workspace in front, else the project.
                   place={pickingIn ?? projectName(plane)}

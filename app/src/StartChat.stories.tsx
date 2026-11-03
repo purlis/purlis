@@ -104,12 +104,14 @@ function Window({
   runsOn,
   trouble,
   poolUnavailable,
+  pending = false,
 }: {
   options?: StartOptions;
   /** Where a new chat would run, and why: the Runs on row (#4536). */
   runsOn?: StartRunsOn;
   trouble?: string;
   poolUnavailable?: string;
+  pending?: boolean;
 }) {
   const [open, setOpen] = useState(true);
   const [said, setSaid] = useState("Nothing started");
@@ -121,6 +123,7 @@ function Window({
       {open && (
         <StartChat
           options={options}
+          pending={pending}
           place="smart-ide"
           runsOn={runsOn}
           trouble={trouble}
@@ -479,5 +482,31 @@ export const PoolUnavailable: Story = {
         "Started steward as steward on claude on this machine",
       ),
     );
+  },
+};
+
+/**
+ * **The dialog before each row's details arrive** (#4736): it opens on the personas and the
+ * profiles, and every card says its billing and approval are being checked. The keyboard path is
+ * the dialog's own, the same as with the details in.
+ */
+export const DetailsPending: Story = {
+  args: { pending: true },
+  play: async ({ userEvent }) => {
+    const page = within(document.body);
+    await page.findByRole("dialog", { name: "Start a chat" });
+    await untilFocused(
+      () => page.getByRole("button", { name: "Cancel" }),
+      "Start a chat: the keyboard starts on Cancel",
+    );
+    await waitFor(() =>
+      expect(page.getAllByText(/Checking billing and approval…/)[0]).toBeVisible(),
+    );
+    // Held while the dialog is open: once Escape closes it, the story has no opener for the
+    // focus to go back to.
+    expectFocusInSight();
+    await pictureNow();
+    await userEvent.keyboard("{Escape}");
+    await expect(page.getByRole("status")).toHaveTextContent("Cancelled");
   },
 };

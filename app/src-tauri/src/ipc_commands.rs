@@ -470,6 +470,8 @@ macro_rules! app_commands {
                 workspace_repos,
                 alerts_everywhere,
                 start_options,
+                start_options_first,
+                start_details,
                 harness_cards,
                 approve_profile,
                 start_chat,

@@ -2022,6 +2022,66 @@ fn ahead_here(
     .flatten()
 }
 
+/// #4736: **the picker's first answer compiles no sandbox and runs no program**: its rows' sandbox,
+/// approval and billing are none, and the second answer gives each row's by its name, as the
+/// whole answer has them.
+#[test]
+fn the_pickers_first_answer_leaves_the_slow_details_to_the_second() {
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(
+        plane.path().join(purlis_core::plane::MANIFEST),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .expect("written");
+    std::fs::write(
+        plane.path().join(purlis_core::profiles::LOCAL_FILE),
+        "[harness.work]\nkind = \"claude\"\ncommand = [\"claude\"]\n",
+    )
+    .expect("written");
+    let machine = purlis_core::sandbox::Machine {
+        env: purlis_core::secrets::Env::of(&[]),
+        home: None,
+        os: purlis_core::sandbox::Os::MacOs,
+    };
+    let (set, check) = purlis_core::profiles::for_launch(plane.path());
+
+    let first = crate::start_first_of(plane.path(), &set, &check).expect("read");
+    assert!(first.profiles.iter().any(|row| row.name == "work"));
+    assert!(
+        first
+            .profiles
+            .iter()
+            .all(|row| row.sandbox.is_none() && row.approval.is_none() && row.billed_to.is_none())
+    );
+
+    let details = crate::start_details_of(plane.path(), &set, &machine, &|_| true);
+    let whole = crate::start_options_on(plane.path(), &machine, &|_| true).expect("read");
+    assert_eq!(
+        details
+            .iter()
+            .map(|row| row.name.as_str())
+            .collect::<Vec<_>>(),
+        whole
+            .profiles
+            .iter()
+            .map(|row| row.name.as_str())
+            .collect::<Vec<_>>()
+    );
+    for (row, said) in whole.profiles.iter().zip(&details) {
+        assert!(said.sandbox.is_some(), "{}", said.name);
+        assert_eq!(row.approval, said.approval, "{}", said.name);
+        assert_eq!(row.billed_to, said.billed_to, "{}", said.name);
+    }
+    // A profile nobody approved asks, in the second answer.
+    assert_eq!(
+        details
+            .iter()
+            .find(|row| row.name == "work")
+            .and_then(|row| row.approval.as_deref()),
+        Some("new")
+    );
+}
+
 /// #2179: **one picker compiles each harness's sandbox once**, however many profiles it
 /// lists of that harness. Every New tab asks for the picker, and a compile per row made
 /// each open pay one per profile (about 200 ms a compile on the macOS runner). A compile

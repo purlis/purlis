@@ -155,7 +155,8 @@ function core(
     }
     if (cmd === "plane_at_launch")
       return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat") return { session: ++opened };
     if (cmd === "opened_chats") return open;
     if (cmd === "chat_states") return states;

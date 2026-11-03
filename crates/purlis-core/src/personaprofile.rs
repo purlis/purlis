@@ -581,6 +581,36 @@ pub fn preselected(persona: &Named, offered: &[Offer]) -> Option<String> {
     }
 }
 
+/// What the new-chat picker says of each persona: its own profile, by its name, where its
+/// definition names one the project offers ([`preselected`], #1445), and its one-line
+/// description, where it declares one (#1460).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ForThePicker {
+    /// The harness row the picker moves to when that persona is picked.
+    pub profiles: std::collections::BTreeMap<String, String>,
+    /// What is shown under the persona's row.
+    pub descriptions: std::collections::BTreeMap<String, String>,
+}
+
+/// [`ForThePicker`] of `personas`, among the profiles the project `offered`, with each
+/// persona's definition read once for the whole answer ([`crate::personas::read_once`],
+/// #4736).
+pub fn for_the_picker(root: &Path, personas: &[String], offered: &[Offer]) -> ForThePicker {
+    crate::personas::read_once(|| ForThePicker {
+        profiles: personas
+            .iter()
+            .filter_map(|who| Some((who.clone(), preselected(&named_by(root, who), offered)?)))
+            .collect(),
+        descriptions: personas
+            .iter()
+            .filter_map(|who| {
+                crate::personaverbs::retired::description_of(root, who)
+                    .map(|said| (who.clone(), said))
+            })
+            .collect(),
+    })
+}
+
 /// What the persona view says of `persona`'s profile, in one line.
 pub fn line(persona: &Named, offered: &[Offer]) -> String {
     let inherited = persona
@@ -748,6 +778,43 @@ mod tests {
             persona: "ops".to_owned(),
             listed: listed.iter().map(|name| (*name).to_owned()).collect(),
         })
+    }
+
+    // ----- the new-chat picker (#4736) ------------------------------------------------------
+
+    #[test]
+    fn the_picker_reads_each_persona_definition_once_for_its_answer() {
+        let plane = tempfile::tempdir().expect("a plane");
+        let personas = plane.path().join("personas");
+        std::fs::create_dir_all(&personas).expect("personas");
+        std::fs::write(
+            personas.join("base.md"),
+            "---\nprofile: codex\ndescription: The base\n---\nCharter.\n",
+        )
+        .expect("written");
+        std::fs::write(
+            personas.join("ops.md"),
+            "---\nextends: base\nagent-description: Runs the deploys\n---\nCharter.\n",
+        )
+        .expect("written");
+        let who = vec!["base".to_owned(), "ops".to_owned()];
+
+        let before = crate::personas::DEFINITION_READS.with(std::cell::Cell::get);
+        let said = for_the_picker(plane.path(), &who, &project());
+        let reads = crate::personas::DEFINITION_READS.with(std::cell::Cell::get) - before;
+
+        assert_eq!(said.profiles.get("ops").map(String::as_str), Some("codex"));
+        assert_eq!(
+            said.descriptions.get("ops").map(String::as_str),
+            Some("Runs the deploys")
+        );
+        assert_eq!(reads, 2, "two definitions, each read once");
+        // The next answer reads them again: a definition is a file the person edits.
+        for_the_picker(plane.path(), &who, &project());
+        assert_eq!(
+            crate::personas::DEFINITION_READS.with(std::cell::Cell::get) - before,
+            4
+        );
     }
 
     // ----- the profiles the project lists for a persona (#1509, V100-60) --------------------
