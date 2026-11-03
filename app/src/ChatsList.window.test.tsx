@@ -21,6 +21,7 @@ import { cardOf, theCard } from "./chatCard.testkit";
 import type { State } from "./chatState";
 import { forgetThisLaunch } from "./regions";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { theFrameNow } from "./frame.testkit";
 
 /**
  * **The Chats list at fifty chats, against the whole window** (#1499, V100-47 to V100-50): the
@@ -56,6 +57,13 @@ declare global {
   interface Window {
     __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
   }
+}
+
+/** An event from the core, and the frame the window draws it in: the chat stores tell their
+ *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
+function heard(handler: number, message: unknown) {
+  window.__TAURI_INTERNALS__.runCallback(handler, message);
+  theFrameNow();
 }
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
@@ -217,7 +225,7 @@ function core(open: Filed[], ended: FinishedTask[] = []) {
     const handler = listeners.get(event);
     if (handler === undefined) throw new Error(`the window is not listening for ${event}`);
     act(() => {
-      window.__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload });
+      heard(handler, { event, id: 1, payload });
     });
   };
   return {
@@ -264,7 +272,7 @@ function core(open: Filed[], ended: FinishedTask[] = []) {
         stopped: null,
       };
       act(() => {
-        window.__TAURI_INTERNALS__.runCallback(handler, {
+        heard(handler, {
           event: "chat-moved",
           id: 1,
           payload: moved,

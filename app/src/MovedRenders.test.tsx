@@ -8,6 +8,7 @@ import App from "./App";
 import type { Moved, OpenChat } from "./bindings";
 import type { State } from "./chatState";
 import { chipSays, stripNamed } from "./test-strips";
+import { theFrameNow } from "./frame.testkit";
 
 /**
  * **A chat moving re-renders that chat's row and nothing else** (SC-3, research 02 §5.6).
@@ -47,6 +48,13 @@ declare global {
   interface Window {
     __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
   }
+}
+
+/** An event from the core, and the frame the window draws it in: the chat stores tell their
+ *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
+function heard(handler: number, message: unknown) {
+  window.__TAURI_INTERNALS__.runCallback(handler, message);
+  theFrameNow();
 }
 
 const PLANE = "/home/dev/plane";
@@ -110,7 +118,7 @@ function core(open: OpenChat[]): (moved: Moved) => void {
     const handler = listeners.get("chat-moved");
     if (handler === undefined) throw new Error("the window is not listening for moves");
     act(() => {
-      window.__TAURI_INTERNALS__.runCallback(handler, {
+      heard(handler, {
         event: "chat-moved",
         id: 1,
         payload: moved,
