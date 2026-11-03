@@ -266,7 +266,11 @@ jobs:
         uses: ./.github/actions/studio-probe-names
       # Built in a step of its own, so the run's step timings say how much of this job is
       # compiling and linking the test binaries and how much is running them, with no log to read.
+      # It takes 5 to 9 minutes. On 2026-11-03 (job 125815923694, in the merge queue) it finished
+      # building and then hung for 36 minutes listing a binary's tests, until the job's 45-minute
+      # limit cancelled it and the queue waited on it; twenty minutes ends such a hang sooner.
       - name: Build the tests
+        timeout-minutes: 20
         run: cargo nextest run --workspace --locked --no-run
       # Every test's result, never the first red only (`fail-fast = false` in the profile): a
       # flake in one test (charter-app#39) must not hide the rest of the suite.
