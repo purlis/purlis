@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793735010119,
+  "lastUpdate": 1793737798653,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37968,6 +37968,48 @@ window.BENCHMARK_DATA = {
             "value": 101.29807149999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.049, 101.213, 101.298, 101.765, 101.972 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c0c504d8555c6c4fa6ccca67be59791270c94230",
+          "message": "Keys and focus once a chat isn't a tab (#4767) (#5045)\n\n* Keys and focus once a chat isn't a tab (#4767)\n\nWhere each pane is in its tab: the pane in a direction, names by position, and the pane that\ntakes a closed one's space, which now has the keyboard.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GTXVHCX7K3FVF4V6C7JPD5\nPurlis-Persona: steward\n\n* Keys and focus once a chat isn't a tab: the keys (#4767)\n\n⌘⌥ and an arrow (Alt and an arrow off a Mac, left to a chat's terminal and a view) moves to the\npane in that direction; ⌘⇧] and ⌘⇧[ go to the next and previous tab; ⌘⇧J is the focused chat's\ntasks and ⌘⇧H (pane.back) the pane's previous chat. tasks.next, tasks.previous and tasks.own go.\nkeys/harnessBytes.test.ts reads each chord through the pinned xterm.js's evaluateKeyboardEvent.\nEach pane of a split is a region named by place, a press that jumps to another pane says one\npolite line, closing a pane gives the keyboard to the pane that takes its space, and Ctrl+Tab out\nof a terminal passes the split's handle to land on the next pane's head.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GTXVHCX7K3FVF4V6C7JPD5\nPurlis-Persona: steward\n\n* Keys and focus: review fixes and the Shortcuts baselines (#4767)\n\nThe pane keys leave an editor its own chords (Alt and an arrow off a Mac, ⌘⌥ with Up and Down\non one) rather than every editor key on both; one ⌘⇧ chord helper for the tab and task keys; a\ntable for the pane edges; the registry header names the view yield. Shortcuts baselines from\nthe PR's stories run (\"Filter 56 shortcuts\").\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GTXVHCX7K3FVF4V6C7JPD5\nPurlis-Persona: steward\n\n* Keys and focus: one close-focus, #4756's takesTheSpace (#4767)\n\n#4957 brought its own focus after a close. panePlaces keeps the\ndirections and the names; paneTakingTheSpace and its tests go.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GTXVHCX7K3FVF4V6C7JPD5\nPurlis-Persona: steward\n\n* test(stories): baselines for #4767's keys and focus (pulled from run 41689961096)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T19:35:49Z",
+          "tree_id": "34df1331a1985f3175b139bef07b80107e2158e8",
+          "url": "https://github.com/purlis/purlis/commit/c0c504d8555c6c4fa6ccca67be59791270c94230"
+        },
+        "date": 1793737778523,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6782299999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.672, 0.676, 0.678, 0.687, 0.697 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.541684,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.464, 16.512, 16.542, 16.558, 16.580 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.747109,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.223, 101.474, 102.747, 102.770, 104.175 ms"
           }
         ]
       }
