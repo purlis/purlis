@@ -45,6 +45,8 @@ export const BOUND_MS = 3 * DAY_MS;
 export const CAP = 4;
 /** The conclusions of a run that failed. */
 export const FAILED = new Set(["failure", "cancelled", "timed_out"]);
+/** Why an untagged version nothing reaches stays when no failed run in the window recorded it. */
+const UNRECORDED = "no failed publishing run recorded it";
 /** How many registry requests are in flight at once. */
 const PARALLEL = 8;
 
@@ -182,7 +184,7 @@ export function leftovers({ versions, kept, runs, repo, workflow, now, bound = B
       continue;
     }
     if (recorders.length === 0) {
-      stay("no failed publishing run recorded it");
+      stay(UNRECORDED);
       continue;
     }
     const run = recorders.find((r) => r.started <= created && created <= r.ended);
@@ -431,7 +433,11 @@ async function main(args) {
   if (args.length !== 1 || !/^[a-z0-9-]+\.yml$/.test(args[0])) throw new Error("usage: image-leftovers.mjs WORKFLOW");
   const pkg = packageOf({ image: process.env.IMAGE, owner: org });
   const found = await report({ ...pkg, repo, workflow: args[0], now: Date.now(), api: ghApi, get: httpGet, download: ghDownload(repo) });
-  for (const { digest, why } of found.keep) console.log(`keep ${digest}: ${why}`);
+  // Untagged versions no run in the window recorded are older than this report can tell about
+  // (#4512 came before them, or their run's artifacts are gone): counted, not listed one by one.
+  const unrecorded = found.keep.filter(({ why }) => why === UNRECORDED);
+  for (const { digest, why } of found.keep) if (why !== UNRECORDED) console.log(`keep ${digest}: ${why}`);
+  if (unrecorded.length > 0) console.log(`keep ${unrecorded.length} other untagged versions nothing reaches: ${UNRECORDED}`);
   for (const { id, digest, run } of found.removable) {
     console.log(`safe to delete ${digest}: left by run ${run}; https://github.com/orgs/${pkg.org}/packages/container/${pkg.name}/${id}`);
   }
