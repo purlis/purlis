@@ -79,9 +79,9 @@ pub fn provider(ctx: &Ctx, name: &str) -> Result<Vault, VaultError> {
 pub fn get_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
     use crate::sandbox::tools::mint;
     if let Some(to) = super::links::of(ctx, &v.name, key)?
-        && let mint::Raw::Refused(why) = mint::raw(&ctx.root, &to.vault, &to.key)
+        && let mint::Raw::Refused(_) = mint::raw(&ctx.root, &to.vault, &to.key)
     {
-        return Err(VaultError::new(why));
+        return Err(super::links::reads_an_app_key(v, key));
     }
     match mint::raw(&ctx.root, &v.name, key) {
         mint::Raw::Taken => provider_read(ctx, v, key),
@@ -271,7 +271,8 @@ pub fn rename(ctx: &Ctx, v: &Vault, from: &str, to: &str) -> Result<(), VaultErr
     delete(ctx, v, from).map_err(|e| {
         VaultError::new(
             Markup::from(format!(
-                "'{to}' now holds the secret, but '{from}' could not be removed and holds it too: "
+                "'{to}' now holds the secret, and the linked entries that read '{from}' read \
+                 '{to}', but '{from}' could not be removed and holds it too: "
             ))
             .then(e.message),
         )

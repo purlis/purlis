@@ -4629,7 +4629,7 @@ purlis only (ADR 0047); the Python charter has no keyring provider and never rea
 
 ### `.charter/vault-links.json` — linked entries
 
-purlis only (#5069, ADR 0109); the Python charter has no linked entries and never reads it.
+purlis only (#5069; ADR 0109, #5055); the Python charter has no linked entries and never reads it.
 
 - **Format:** JSON object: `links`, an object `vault → {key → {"vault": <vault>, "key": <key>}}`:
   each key named holds no value of its own and reads the entry named, its **target**. **Never a
@@ -4642,11 +4642,10 @@ purlis only (#5069, ADR 0109); the Python charter has no linked entries and neve
   one, so a link never travels with a vault shared with a team.
 - **Status:** **experimental** — its first readers are the vault view and the secret ask
   (#5054).
-- **Tier:** Clone state — one person's links between their own vault entries, kept beside the
-  keys indexes and meaningless on another machine, like the keyring values they read; nothing
-  rebuilds it.
+- **Tier:** Clone state — under the project's state folder beside the keys indexes, never
+  committed; one person's links between their own entries, and nothing rebuilds it.
 - **Written by:** `crates/purlis-core/src/secrets/links.rs` (`link`, `unlink`, `renamed`,
-  `forget_vault`), under the vaults' keys lock, 0600 and replaced whole, never through a link.
+  `forget_vault`), under the vaults' folder lock, 0600 and replaced whole, never through a link.
   `secret set` on a linked key replaces the link with the value, `secret rm` of one takes only
   the link away, a rename moves a link and re-points the links that read the renamed key, and
   deleting a vault in the window takes its links away.

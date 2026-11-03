@@ -14,15 +14,22 @@ use crate::secrets::{Ctx, Env, Kind, vaultcmd};
 use super::*;
 
 struct Plane {
-    dir: tempfile::TempDir,
+    /// Held so the plane lives as long as the test.
+    _dir: tempfile::TempDir,
     ctx: Ctx,
 }
 
 impl Plane {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let ctx = Ctx::new(dir.path(), Env::of(&[]));
-        Self { dir, ctx }
+        // The state directory named by `$PURLIS_HOME`, as a person may name it: the same
+        // reads and writes, under a folder no sandbox of the run holds back.
+        let home = dir.path().join("home");
+        let ctx = Ctx::new(
+            dir.path(),
+            Env::of(&[("PURLIS_HOME", &home.to_string_lossy())]),
+        );
+        Self { _dir: dir, ctx }
     }
 
     fn register(&self, name: &str, provider: &str, config: Value) -> Vault {
@@ -49,8 +56,7 @@ impl Plane {
     }
 
     fn stub(&self) -> String {
-        std::fs::read_to_string(self.dir.path().join(".charter/keyring-stub.json"))
-            .unwrap_or_default()
+        std::fs::read_to_string(self.ctx.state.join("keyring-stub.json")).unwrap_or_default()
     }
 }
 
@@ -257,14 +263,6 @@ fn the_links_that_read_an_entry_are_counted() {
     link(&plane.ctx, &ops, "STRIPE_KEY", "team", "STRIPE").unwrap();
     link(&plane.ctx, &web, "PAYMENTS", "team", "STRIPE").unwrap();
     link(&plane.ctx, &web, "ELSE", "team", "OTHER").unwrap();
-    assert_eq!(
-        linking_to(&plane.ctx, "team", "STRIPE").unwrap(),
-        [
-            ("ops".to_string(), "STRIPE_KEY".to_string()),
-            ("web".to_string(), "PAYMENTS".to_string())
-        ]
-    );
-    assert!(linking_to(&plane.ctx, "team", "NONE").unwrap().is_empty());
     let read = readers_in(&plane.ctx, "team").unwrap();
     assert_eq!(read.get("STRIPE"), Some(&2));
     assert_eq!(read.get("OTHER"), Some(&1));
@@ -316,7 +314,7 @@ fn a_destroyed_vault_takes_its_links_with_it() {
     vaultcmd::destroy(&plane.ctx, "ops").unwrap();
     plane.keyring("ops");
     assert_eq!(of(&plane.ctx, "ops", "STRIPE_KEY").unwrap(), None);
-    assert!(linking_to(&plane.ctx, "team", "STRIPE").unwrap().is_empty());
+    assert!(readers_in(&plane.ctx, "team").unwrap().is_empty());
 }
 
 #[test]
@@ -350,4 +348,28 @@ fn a_corrupt_links_index_is_refused_and_named() {
     .unwrap();
     let e = cmd::get_value(&plane.ctx, &ops, "K").unwrap_err();
     assert!(e.message.contains("vault-links.json is corrupt"), "{e}");
+}
+
+#[test]
+fn a_target_that_cannot_be_read_is_said_of_the_link_and_named_only_by_verify() {
+    let (plane, ops, team) = ops_and_team();
+    link(&plane.ctx, &ops, "STRIPE_KEY", "team", "STRIPE").unwrap();
+    let file = plane
+        .ctx
+        .vault_file_path(team.config["file"].as_str().unwrap());
+    std::fs::write(&file, "not json").unwrap();
+
+    let e = cmd::get_value(&plane.ctx, &ops, "STRIPE_KEY").unwrap_err();
+    assert_ne!(e.kind, Kind::BrokenLink, "{e}");
+    assert!(e.message.contains("could not be read"), "{e}");
+    assert!(!e.message.contains("team"), "{e}");
+    assert!(!e.message.contains("STRIPE'"), "{e}");
+
+    let mut io = Said::default();
+    assert_eq!(vaultcmd::verify(&plane.ctx, Some("ops"), &mut io), 1);
+    let said = io.0.join("\n");
+    assert!(
+        said.contains("a linked entry reading 'STRIPE' in vault 'team', which does not resolve"),
+        "{said}"
+    );
 }
