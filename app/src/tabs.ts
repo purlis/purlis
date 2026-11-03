@@ -1525,6 +1525,18 @@ export type Press = { tabs: Tabs; workspace: string | undefined };
 export type PaneAt = { tab: number; pane: number };
 
 /**
+ * **Where a chat the person starts goes** (#4758; spec story 12): the focused pane of the tab in
+ * front, whichever strip the chat is filed on, since a pane may show a chat of another workspace
+ * (#4757). None where nothing is in front or the focused pane shows a view, and then the start
+ * goes where a press would.
+ */
+export function startedInto(tabs: Tabs): PaneAt | undefined {
+  const tab = frontTab(tabs);
+  if (tab === undefined || focusedContent(tabs)?.kind === "view") return undefined;
+  return { tab: tab.id, pane: tab.focused };
+}
+
+/**
  * **The pane in front now was used** (#4757): the focused pane of the tab in front is stamped
  * as the most recent, which is what a press with a view focused reads ({@link press}). The
  * window calls it on every change; it answers `tabs` itself when that pane is already the

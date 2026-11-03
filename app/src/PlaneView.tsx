@@ -278,6 +278,7 @@ import {
   focusPane,
   chatNamed,
   dropEmptyTabsOfGoneWorkspaces,
+  startedInto,
   newChatNumber,
   noTabs,
   chatNameOf,
@@ -2372,12 +2373,20 @@ export const PlaneView = memo(function PlaneView({
    * no pane but views.
    */
   const showStarted = useCallback(
-    (chat: PressedChat, workspace: string) => {
+    (chat: PressedChat, workspace: string, named = false) => {
       landOn((tabs) =>
-        pressChat(tabs, chat, {
-          ...pressing,
-          filedIn: (session) => (session === chat.session ? workspace : pressing.filedIn(session)),
-        }),
+        pressChat(
+          tabs,
+          chat,
+          {
+            ...pressing,
+            filedIn: (session) =>
+              session === chat.session ? workspace : pressing.filedIn(session),
+          },
+          // The focused pane, whichever strip the chat is filed on (#4758), unless the start
+          // named its workspace: "New shell in beta" goes to beta's strip.
+          named ? undefined : startedInto(tabs),
+        ),
       );
     },
     [landOn, pressing],
@@ -3523,6 +3532,7 @@ export const PlaneView = memo(function PlaneView({
       start: (name: string) => ReturnType<typeof commands.openSession>,
       filed: string,
       typed?: Typed,
+      named = false,
       oneJob = false,
     ) => {
       const name =
@@ -3545,7 +3555,7 @@ export const PlaneView = memo(function PlaneView({
             giveKeyboardTo(plane, session);
           }
           // A shell follows a chat's rules (#4758; spec story 63): it takes the focused pane.
-          else showStarted({ session, chat: name }, filed);
+          else showStarted({ session, chat: name }, filed, named);
           // A command typed in for the operator, run as if they had typed it: the shell reads
           // it once it is up, and the tab is theirs to leave. A harness's installer is named,
           // never spelled: the core types its own compiled-in line (FR-29, V65).
@@ -3598,7 +3608,7 @@ export const PlaneView = memo(function PlaneView({
     [change, plane, refusedBy, showStarted, signingOutIn, succeeded, takeChatNumber],
   );
   const openShell = useCallback(
-    (cwd: string | null, filed: string, typed?: Typed) =>
+    (cwd: string | null, filed: string, typed?: Typed, named = false) =>
       startShell(
         (name) =>
           commands.openSession(
@@ -3612,6 +3622,7 @@ export const PlaneView = memo(function PlaneView({
           ),
         filed,
         typed,
+        named,
       ),
     [plane, startShell],
   );
@@ -3628,6 +3639,7 @@ export const PlaneView = memo(function PlaneView({
           commands.openOneJobShell(plane, cwd, name, STARTING_SIZE.columns, STARTING_SIZE.rows),
         OUTSIDE,
         { line, held },
+        false,
         true,
       ),
     [plane, startShell],
@@ -3653,6 +3665,8 @@ export const PlaneView = memo(function PlaneView({
             STARTING_SIZE.rows,
           ),
         at.workspace,
+        undefined,
+        true,
       ),
     [plane, startShell],
   );
@@ -3739,7 +3753,7 @@ export const PlaneView = memo(function PlaneView({
         return;
       }
       const path = sidebar?.workspaces.find((ws) => ws.name === workspace)?.path;
-      if (path !== undefined) openShell(path, workspace);
+      if (path !== undefined) openShell(path, workspace, undefined, true);
     },
     [focused, openShell, sidebar, startIn],
   );

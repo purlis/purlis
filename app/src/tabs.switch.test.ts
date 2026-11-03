@@ -12,6 +12,7 @@ import {
   openEmptyTab,
   openTab,
   press,
+  startedInto,
   workspaceOf,
   type Tabs,
 } from "./tabs";
@@ -95,5 +96,30 @@ describe("an empty tab of a workspace the plane no longer has (#4758)", () => {
     const tabs = openEmptyTab(noTabs(), "alpha");
 
     expect(dropEmptyTabsOfGoneWorkspaces(tabs, () => true)).toBe(tabs);
+  });
+});
+
+describe("a chat the person starts takes the focused pane (#4758; spec story 12)", () => {
+  it("lands in the + tab's empty pane, though the chat is filed on another strip", () => {
+    const before = openTab(noTabs(), 1, "1", "steward");
+    const tabs = openEmptyTab(before, "ops");
+    const plus = tabs.inFront ?? -1;
+
+    const landed = press(
+      tabs,
+      { session: 2, chat: "2", who: "steward" },
+      { filedIn: () => "alpha", frontOf: () => before.inFront },
+      startedInto(tabs),
+    );
+
+    expect(landed.tabs.inFront).toBe(plus);
+    expect(landed.tabs.byId[plus].layout).toMatchObject({ content: { session: 2 } });
+    expect(landed.tabs.byId[before.inFront ?? -1].layout).toMatchObject({
+      content: { session: 1 },
+    });
+  });
+
+  it("names no pane with no tab in front, so the start goes where a press would", () => {
+    expect(startedInto(noTabs())).toBeUndefined();
   });
 });
