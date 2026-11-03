@@ -5413,9 +5413,9 @@ export const PlaneView = memo(function PlaneView({
     if (!viewsHeard || (sidebar === undefined && !sidebarUnread) || tabs.inFront !== undefined)
       return;
     const strip = focused ?? OUTSIDE;
-    if (tabsIn(tabs, strip, filedIn).some((id) => !isBackground(id))) return;
+    if (tabsIn(tabs, strip, filedIn).length > 0) return;
     change((was) => openEmptyTab(was, strip));
-  }, [change, filedIn, focused, isBackground, sidebar, sidebarUnread, tabs, viewsHeard]);
+  }, [change, filedIn, focused, sidebar, sidebarUnread, tabs, viewsHeard]);
   // The session the next worktree question is about: the chat in the pane that has the
   // keyboard, which is the one "this chat's worktree" means.
   // The chat SHOWN there (#1486): while the tab shows a task, the task is what is typed into.
