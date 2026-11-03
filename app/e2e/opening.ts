@@ -204,6 +204,31 @@ export async function answerTheAsk(ending: string): Promise<void> {
 }
 
 /**
+ * **Opens the palette**, and makes sure it is up: F2, and where the driver's F2 reaches nothing
+ * that opens it (the keyboard left on something that takes the key, such as a terminal or a
+ * dialog that just closed), the same key dispatched on the window, where the palette listens,
+ * as `reach.ts`'s `runFromThePalette` does.
+ */
+async function openThePalette(): Promise<void> {
+  const palette = await $(PALETTE);
+  if (await palette.isDisplayed().catch(() => false)) return;
+  await browser.keys(["F2"]);
+  const opened = await palette
+    .waitForDisplayed({ timeout: 3_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!opened) {
+    await browser.execute(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true }),
+      );
+    });
+    await palette.waitForDisplayed({ timeout: 20_000 });
+  }
+  await $("#palette-query").waitForDisplayed({ timeout: 10_000 });
+}
+
+/**
  * Ends every chat of the project in front, on a strip or in no pane at all: each one's End…
  * (#4753), the one row that ends a chat, since a close ends nothing (#4756). Run from the
  * palette, which lists an End… for every chat, one at a time, and bounded so that an End which
@@ -211,8 +236,7 @@ export async function answerTheAsk(ending: string): Promise<void> {
  */
 export async function endEveryChat(most = 200): Promise<void> {
   for (let pressed = 0; pressed < most; pressed++) {
-    await browser.keys(["F2"]);
-    await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
+    await openThePalette();
     await $("#palette-query").addValue("End chat");
     const row = await browser.execute(() => {
       const found = document.querySelector<HTMLElement>(
