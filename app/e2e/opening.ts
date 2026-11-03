@@ -203,27 +203,30 @@ export async function answerTheAsk(ending: string): Promise<void> {
   await theDialogHasGone("alertdialog", ending, `the question about ${ending} never went`);
 }
 
-/** Ends the chat a control named `name` belongs to, and answers the question it asks. */
-export async function endChat(name: string): Promise<void> {
-  await pressOnly(name);
-  await answerTheAsk(name);
-}
-
 /**
- * Ends every chat the strip is drawing, and the ones it is not.
- *
- * **The strip collapses rather than scrolling** (ADR 0039, as amended), so at fifty
- * chats it draws a handful and hides the rest. This terminates because closing a drawn tab
- * gives the strip room for a hidden one — the hidden tabs flow onto the strip as the drawn
- * ones go — and it is bounded so that a close which stops taking is a failure and not a hang.
+ * Ends every chat of the project in front, on a strip or in no pane at all: each one's End…
+ * (#4753), the one row that ends a chat, since a close ends nothing (#4756). Run from the
+ * palette, which lists an End… for every chat, one at a time, and bounded so that an End which
+ * stops taking is a failure and not a hang.
  */
 export async function endEveryChat(most = 200): Promise<void> {
   for (let pressed = 0; pressed < most; pressed++) {
-    const closer = await $('button[aria-label^="End chat "]');
-    if (!(await closer.isExisting())) return;
-    const name = (await closer.getAttribute("aria-label")) ?? "";
-    await closer.click();
-    await answerTheAsk(name);
+    await browser.keys(["F2"]);
+    await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
+    await $("#palette-query").addValue("End chat");
+    const row = await browser.execute(() => {
+      const found = document.querySelector<HTMLElement>(
+        '[id^="palette-row-chat.end:"]:not([aria-disabled="true"])',
+      );
+      found?.click();
+      return found?.id ?? null;
+    });
+    if (row === null) {
+      await browser.keys(["Escape"]);
+      await $(PALETTE).waitForDisplayed({ reverse: true, timeout: 10_000 });
+      return;
+    }
+    await answerTheAsk("");
   }
   throw new Error(`${most} presses did not end every chat`);
 }

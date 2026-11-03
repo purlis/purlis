@@ -14,7 +14,6 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { EndingChat } from "./EndingChat";
 import type { ClosingChat, PersonaChat } from "./bindings";
 import { forgetDismissals } from "./dismissals";
 import { stripNamed } from "./test-strips";
@@ -282,46 +281,5 @@ describe("closing a chat with nothing at work below it", () => {
 
     expect(within(asking).queryByRole("radio")).toBeNull();
     expect(asking).not.toHaveTextContent("closes with it");
-  });
-});
-
-describe("closing several chats at once", () => {
-  const offer = {
-    id: "tab.close:1",
-    title: "End tab steward 4",
-    available: true,
-    reason: "",
-    does: { verb: "nothing" },
-  } as const;
-
-  it("asks nothing about the chats they started, and says those keep running", () => {
-    render(
-      <EndingChat
-        offer={offer}
-        keeps
-        onEnd={() => undefined}
-        onSmartClose={() => undefined}
-        onCancel={() => undefined}
-      />,
-    );
-
-    const asking = screen.getByRole("alertdialog");
-    expect(within(asking).queryByRole("radio")).toBeNull();
-    expect(asking).toHaveTextContent(
-      "The chats these chats started keep running. Close one chat at a time to be asked about them.",
-    );
-  });
-
-  it("says nothing of it where none of them started a chat that is at work", () => {
-    render(
-      <EndingChat
-        offer={offer}
-        onEnd={() => undefined}
-        onSmartClose={() => undefined}
-        onCancel={() => undefined}
-      />,
-    );
-
-    expect(screen.getByRole("alertdialog")).not.toHaveTextContent("keep running");
   });
 });

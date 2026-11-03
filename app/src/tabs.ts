@@ -970,6 +970,45 @@ export function closeTab(
   return { ...tabs, byId, order, inFront: frontWithout(tabs, id, filedIn, pinned, background) };
 }
 
+/** What a tab whose first pane is empty is called (#4755), as the empty pane's own button
+ *  says (spec #4750 story 44). */
+export const EMPTY_TAB = "New chat";
+
+/**
+ * **Close tab, the person's** (#4756): the layout closes, and its chats go on in the sidebar.
+ * **Unless it is its strip's last tab**, which keeps one empty pane in place of its whole
+ * layout, so a strip the person tidied is never a blank window. {@link closeTab} is the bare
+ * close, for a tab that goes with its workspace or with the chat the core closed.
+ */
+export function closeLayout(
+  tabs: Tabs,
+  id: number,
+  filedIn: FiledIn,
+  pinned: Pinned = nothingPinned,
+  background: Backgrounded = nothingBackgrounded,
+): Tabs {
+  const tab = tabs.byId[id];
+  if (tab === undefined) return tabs;
+  const workspace = workspaceOf(tabs, id, filedIn);
+  const strip = tabsIn(tabs, workspace, filedIn, pinned, background);
+  if (workspace === undefined || strip.some((other) => other !== id))
+    return closeTab(tabs, id, filedIn, pinned, background);
+  if (tab.layout.kind === "pane" && tab.layout.content.kind === "empty") return tabs;
+  const pane = tabs.named.panes + 1;
+  const emptied: Tab = {
+    id,
+    name: EMPTY_TAB,
+    defaultName: EMPTY_TAB,
+    layout: { kind: "pane", pane, content: { kind: "empty", workspace } },
+    focused: pane,
+  };
+  return {
+    ...tabs,
+    byId: { ...tabs.byId, [id]: emptied },
+    named: { ...tabs.named, panes: pane },
+  };
+}
+
 /**
  * **Where the front goes when tab `id` leaves it** — closed, or put into the background by
  * Smart close (SI-8f). One answer for both, because the operator's ruling is that a smart close
@@ -1493,8 +1532,9 @@ function sameContent(a: Content, b: Content): boolean {
 }
 
 /**
- * Closes the focused pane. What shared its split takes the split's place; when it was the
- * tab's only pane, the tab closes with it.
+ * **Close pane** (#4756): what shared its split takes the split's place; when it was the tab's
+ * only pane, the tab closes with it by {@link closeLayout}'s rule. Its chat ends nothing and goes
+ * on in the sidebar: which chats end is no part of a close.
  */
 export function closeFocusedPane(
   tabs: Tabs,
@@ -1505,7 +1545,7 @@ export function closeFocusedPane(
   const tab = frontTab(tabs);
   if (!tab) return tabs;
   const left = without(tab.layout, tab.focused);
-  if (!left) return closeTab(tabs, tab.id, filedIn, pinned, background);
+  if (!left) return closeLayout(tabs, tab.id, filedIn, pinned, background);
   const focused = panes(left)[0].pane;
   const kept = showing({ ...tab, layout: left, focused }, tab.shows);
   return { ...tabs, byId: { ...tabs.byId, [tab.id]: kept } };

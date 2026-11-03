@@ -354,9 +354,14 @@ describe("renaming a chat's tab", () => {
     await userEvent.keyboard("{Meta>}k{/Meta}");
     const palette = await screen.findByRole("dialog", { name: "Command palette" });
 
-    // Its End…, and its tab's close, which still ends it until #4756.
+    // Its End…, the one row that ends it (#4756), and its tab's close, which ends nothing.
     expect(
-      within(palette).getAllByRole("option", { name: /^End chat billing bug/ }).length,
+      within(palette)
+        .getAllByRole("option", { name: /^End chat billing bug/ })
+        .map((row) => row.textContent),
+    ).toEqual([expect.stringContaining("End chat billing bug…")]);
+    expect(
+      within(palette).getAllByRole("option", { name: /^Close billing bug/ }).length,
     ).toBeGreaterThan(0);
   });
 });

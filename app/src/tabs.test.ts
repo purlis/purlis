@@ -297,12 +297,12 @@ describe("tabs and their panes", () => {
     expect(visibleSessions(tabs)).toEqual([11]);
   });
 
-  it("closes the tab when its last pane closes", () => {
-    const tabs = closeFocusedPane(openTab(noTabs(), 11), oneWorkspace);
+  it("closes the tab when its last pane closes, and the strip has another (#4756)", () => {
+    const opened = twoTabs();
+    const tabs = closeFocusedPane(opened, oneWorkspace);
 
-    expect(tabs.order).toEqual([]);
-    expect(tabs.inFront).toBeUndefined();
-    expect(visibleSessions(tabs)).toEqual([]);
+    expect(tabs.order).toEqual([opened.order[0]]);
+    expect(visibleSessions(tabs)).toEqual([11]);
   });
 
   it("brings the tab beside it to the front when a tab closes", () => {

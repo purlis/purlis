@@ -58,10 +58,10 @@ const OFFERS: Record<string, Offer> = {
   },
   "pane.close": {
     id: "pane.close",
-    title: "End this pane's chat",
+    title: "Close this pane",
     available: true,
     reason: "",
-    does: { verb: "closePane", ends: true },
+    does: { verb: "closePane" },
   },
 };
 

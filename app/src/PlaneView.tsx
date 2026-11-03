@@ -70,6 +70,7 @@ import {
 import {
   catalogue,
   catalogued,
+  endId,
   freshId,
   ignoreId,
   needsYouRows,
@@ -270,6 +271,8 @@ import { StatusLine, projectName, runningIn, todoCount, type Alerts } from "./St
 import {
   closeChat,
   closeFocusedPane,
+  showIn,
+  closeLayout,
   closeTab,
   otherTabsToClose,
   focusPane,
@@ -3667,15 +3670,12 @@ export const PlaneView = memo(function PlaneView({
         change((tabs) => openTab(tabs, session, name, whoOf(persona, kind), held));
         return undefined;
       }
-      const before = now.current;
-      // The tab that was to be split can have closed while the picker was open. Nothing
-      // would show that session, so it is ended rather than left running unseen.
-      // A split is a layout change, so Undo puts it back (#4763); its chat runs on in the sidebar.
-      const split = (tabs: Tabs) =>
-        recorded(tabs, splitFocusedPane(tabs, where.split, session, name), "Split the pane.");
-      if (change(split) === before) {
-        void commands.closeSession(plane, session);
-      }
+      // The tab that was to be split can have gone while the picker was open: the chat goes on
+      // in the sidebar, as every chat in no pane does (#4756). A split is a layout change, so
+      // Undo puts it back (#4763); its chat runs on in the sidebar.
+      change((tabs) =>
+        recorded(tabs, splitFocusedPane(tabs, where.split, session, name), "Split the pane."),
+      );
       return undefined;
     },
     [change, focused, plane, startIn],
@@ -3815,43 +3815,53 @@ export const PlaneView = memo(function PlaneView({
     listedNow.current = chatsByNumber;
   }, [chatsByNumber]);
 
+  /**
+   * **Close pane: the focused pane is cleared, and its chat goes on in the sidebar** (#4756).
+   * Nothing ends, and its tasks stay wherever they are shown (#4757).
+   */
   const closePane = useCallback(() => {
     const tab =
       now.current.inFront === undefined ? undefined : now.current.byId[now.current.inFront];
-    // A pane showing a task has no close (#1486): the catalogue says why, and nothing here
-    // ends the session under a task on the strength of a row built a moment earlier.
-    if (tab?.shows?.[tab.focused] !== undefined) return;
     const going = tab && panesOf(now.current, tab.id).find((pane) => pane.pane === tab.focused);
-    // Nor is a task's own pane ever closed (#1489): its control is the minimise, which is
-    // another verb and ends nothing.
+    // A task's own pane is never closed (#1489): its control is the minimise, another verb.
     if (going !== undefined && askedByNow(going.session) !== undefined) return;
     change((tabs) => closeFocusedPane(tabs, filedIn, isPinned, isBackground));
-    // Its tasks stay in whatever panes they are in: a chat leaving moves no other pane (#4757).
-    if (going) void commands.closeSession(plane, going.session);
-  }, [askedByNow, change, filedIn, isBackground, isPinned, plane]);
+    // Nothing ends, and its tasks stay in whatever panes they are in: a chat leaving moves no
+    // other pane (#4757).
+  }, [askedByNow, change, filedIn, isBackground, isPinned]);
 
   /**
-   * **Closes a session's tab: the only close on the strip** (#1489, V100-39). Its chats end.
-   * **A task never ends by a close**: one beside its session goes with the tab's panes and
-   * goes on working, and a task below the session in a pane of another tab stays there: a chat
-   * leaving moves no other pane (#4757).
-   * Stopping them instead is the dialog's other answer, which the core carries out
-   * (`closeStopping`).
+   * **Clear pane, on an ended chat's band** (#4756): pane `pane` of the tab in front shows
+   * nothing in its place, filed where its chat was. The chat is still in the sidebar, and ends
+   * nothing more: End… takes it away.
+   */
+  const clearPane = useCallback(
+    (pane: number) => {
+      const id = now.current.inFront;
+      if (id === undefined) return;
+      const going = panesOf(now.current, id).find((one) => one.pane === pane);
+      if (going === undefined) return;
+      change((tabs) =>
+        showIn(tabs, id, pane, { kind: "empty", workspace: filedIn(going.session) }),
+      );
+    },
+    [change, filedIn],
+  );
+
+  /**
+   * **Close tab: the layout closes, and its chats go on in the sidebar** (#4756). The strip's
+   * last tab keeps one empty pane (`closeLayout`). A task whose pane was in the tab goes back
+   * to the Chats list, and the core is told it has no tab (`close_chat_tab`). A task below a
+   * chat of the tab stays in whatever pane it is in: a chat leaving moves no other pane (#4757).
    */
   const close = useCallback(
     (id: number) => {
       const before = now.current;
-      const ending = panesOf(before, id)
-        .map((one) => one.session)
-        .filter((session) => askedByNow(session) === undefined);
-      change((tabs) => closeTab(tabs, id, filedIn, isPinned, isBackground));
-      // **A close ends a chat, and never a task** (#1488, V100-38): a task whose pane was in
-      // the tab goes back to the Chats list, and the core is told it has no tab
-      // (`close_chat_tab`, the one command for it).
-      for (const one of panesOf(before, id))
-        if (askedByNow(one.session) !== undefined)
-          void commands.closeChatTab(plane, one.session).catch(() => undefined);
-      for (const session of ending) void commands.closeSession(plane, session);
+      const chats = panesOf(before, id).map((one) => one.session);
+      change((tabs) => closeLayout(tabs, id, filedIn, isPinned, isBackground));
+      for (const session of chats)
+        if (askedByNow(session) !== undefined)
+          void commands.closeChatTab(plane, session).catch(() => undefined);
     },
     [askedByNow, change, filedIn, isBackground, isPinned, plane],
   );
@@ -8323,8 +8333,8 @@ export const PlaneView = memo(function PlaneView({
    */
   const [endingChat, setEndingChat] = useState<{
     offer: Offer;
-    /** The one chat the close is about, where it is about one — what Smart close would close. */
-    session?: number;
+    /** The chat End… ends — what Smart close would close. */
+    session: number;
     /** Whether that chat is offered Smart close (ADR 0064), or none where charter cannot say. */
     smart?: SmartAsk;
     /** The persona chats that chat asked for that are still running, by name: what the dialog
@@ -8332,13 +8342,6 @@ export const PlaneView = memo(function PlaneView({
     running?: readonly string[];
     /** Its persona chats that have reported and close with it, by name. */
     closing?: readonly string[];
-    /** The tasks among what is closed, by name: sent back to the list, not ended (#1488). */
-    back?: readonly string[];
-    /** For a close of several chats: whether any has chats at work below it, which keep
-     *  running. */
-    keeps?: boolean;
-    /** The task the tab being closed shows, and the session that ends (#1486). */
-    shows?: { task: string; session: string };
     /** How many tasks below the closing session have a tab of their own (#1489). */
     ownTabs?: number;
     /** The closing chat's theme drafts (#2332), which the close asks Keep or Revert about. */
@@ -8388,62 +8391,18 @@ export const PlaneView = memo(function PlaneView({
         });
         return { ok: true };
       }
-      if (offer.available && endsAChat(offer.does)) {
-        const ending = chatsEndedBy(offer.does, now.current, askedByNow);
-        // **A close ends no task** (#1488): the tasks whose panes a tab's close takes go back
-        // to the Chats list, are not asked about, and are named in the dialog's one line.
-        const back =
-          offer.does.verb === "closeTab"
-            ? panesOf(now.current, offer.does.tab)
-                .map((one) => one.session)
-                .filter((session) => askedByNow(session) !== undefined)
-                .map((session) => nameOfNow.current(session))
-            : [];
-        // Nothing but tasks: there is no chat to end, so there is nothing to ask.
-        if (back.length > 0 && ending.length === 0) return carryOut(offer);
-        /** What closing chat `session` would do with the chats below it, as the core says. A
-         *  core that answers nothing (an older one) has none below it. */
-        const below = async (session: number) => {
-          const theirs = await commands
-            .personaChatsOf(plane, session)
-            .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-          const said = theirs.status === "ok" ? theirs.data : null;
-          return {
-            running: Array.isArray(said?.running) ? said.running : [],
-            closing: Array.isArray(said?.tasks)
-              ? said.tasks.filter((one) => one.closes_with_its_asker).map((one) => one.name)
-              : [],
-          };
-        };
-        // **The theme drafts of every chat the close ends** (#2332), which it asks Keep or Revert
-        // about; on a link, nothing is asked (#2708), and a close with drafts waits in the
-        // window (#2761).
-        const found = await draftsOfClosing(commands, plane, ending);
+      // **Only End… ends a chat, and is asked about first** (#4753, #4756): a close ends nothing.
+      if (offer.available && offer.does.verb === "endChat") {
+        const session = offer.does.session;
+        // **The theme drafts of the chat it ends** (#2332), which it asks Keep or Revert about;
+        // on a link, nothing is asked (#2708), and an end with drafts waits in the window
+        // (#2761).
+        const found = await draftsOfClosing(commands, plane, [session]);
         if (!found.ok)
           return "handed" in found
             ? { ok: true, said: found.handed }
             : { ok: false, refused: found.refused };
         const drafts = found.drafts;
-        // Close other tabs is never a smart close, however many chats it ends (#4762): a record
-        // is one chat's, asked for on its own tab.
-        if (ending.length !== 1 || offer.does.verb === "closeOtherTabs") {
-          // A close of several chats at once asks nothing about what each started: those
-          // keep running, and the dialog says so where any is.
-          const theirs = await Promise.all(ending.map(below));
-          setEndingChat({
-            offer,
-            smart:
-              ending.length > 1
-                ? { available: false, why: MORE_THAN_ONE_CHAT, close_first: false }
-                : undefined,
-            keeps: theirs.some((one) => one.running.length > 0),
-            back,
-            drafts,
-            fromALink,
-          });
-          return { ok: true };
-        }
-        const session = ending[0];
         // The core's answer, asked now: whether the chat can write a record depends on what it
         // is doing this moment, and the command that starts a smart close asks the same thing.
         const asked = await commands
@@ -8453,33 +8412,19 @@ export const PlaneView = memo(function PlaneView({
           asked.status === "ok" && asked.data !== null && typeof asked.data === "object"
             ? asked.data
             : undefined;
-        // And the chats at work below it, which the close asks about once, and its reported
-        // persona chats, which close with it.
-        const { running, closing } = await below(session);
-        // **A tab that shows a task says which chat its close ends** (#1486): the session's,
-        // not the task on screen.
-        const does = offer.does;
-        const task = does.verb === "closeTab" ? taskShownIn(now.current, does.tab) : undefined;
-        const shows =
-          does.verb !== "closeTab" || task === undefined
-            ? undefined
-            : {
-                task: nameOfNow.current(task),
-                session: now.current.byId[does.tab]?.name ?? "",
-              };
-        // Its tasks in panes of other tabs stay where they are (#4757): a chat leaving moves no
+        // And the chats at work below it, which the end asks about once, and its reported
+        // persona chats, which end with it. A core that answers nothing (an older one) has none
+        // below it. Its tasks in panes stay where they are (#4757): a chat leaving moves no
         // other pane, so the dialog has nothing to say of them.
-        setEndingChat({
-          offer,
-          session,
-          smart,
-          running,
-          closing,
-          shows,
-          back,
-          drafts,
-          fromALink,
-        });
+        const theirs = await commands
+          .personaChatsOf(plane, session)
+          .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+        const said = theirs.status === "ok" ? theirs.data : null;
+        const running = Array.isArray(said?.running) ? said.running : [];
+        const closing = Array.isArray(said?.tasks)
+          ? said.tasks.filter((one) => one.closes_with_its_asker).map((one) => one.name)
+          : [];
+        setEndingChat({ offer, session, smart, running, closing, drafts, fromALink });
         return { ok: true };
       }
       return carryOut(offer);
@@ -8500,7 +8445,7 @@ export const PlaneView = memo(function PlaneView({
     async (offer: Offer, fromALink: boolean, unsavedAnswered = false): Promise<Ran> => {
       const asks =
         offer.available &&
-        (endsAChat(offer.does) ||
+        (offer.does.verb === "endChat" ||
           (!unsavedAnswered && unsavedClosedBy(plane, now.current, offer.does) !== undefined));
       if (!asks) return askToEndNow(offer, fromALink, unsavedAnswered);
       return counted(() => askToEndNow(offer, fromALink, unsavedAnswered));
@@ -8532,25 +8477,16 @@ export const PlaneView = memo(function PlaneView({
       sayNotAsked(CLOSE_HANDED_NOT_ASKED);
       return;
     }
-    const asked = new Set(closeAsked.sessions);
-    const tab = now.current.order.find((id) =>
-      panesOf(now.current, id).some((one) => asked.has(one.session)),
-    );
-    const offer = tab === undefined ? undefined : by(`tab.close:${tab}`);
-    const ends =
-      offer === undefined || !offer.available || !endsAChat(offer.does)
-        ? []
-        : chatsEndedBy(offer.does, now.current, askedByNow);
-    if (
-      offer === undefined ||
-      ends.length !== asked.size ||
-      !ends.every((session) => asked.has(session))
-    ) {
+    // **Asked as the chat's own End…** (#4756): a close ends nothing, so a link's end of a chat
+    // is End… of that chat, and End… is one chat's.
+    const [only, ...more] = closeAsked.sessions;
+    const offer = only === undefined || more.length > 0 ? undefined : by(endId(only));
+    if (offer === undefined || !offer.available) {
       sayNotAsked(CLOSE_HANDED_NOT_HERE);
       return;
     }
     void askToEnd(offer, true);
-  }, [askToEnd, askedByNow, by, closeAsked, questionUp, sayNotAsked]);
+  }, [askToEnd, by, closeAsked, questionUp, sayNotAsked]);
 
   /**
    * **Keeps or reverts a closing chat's theme drafts** (#2332), as its close was answered, while
@@ -10389,6 +10325,8 @@ export const PlaneView = memo(function PlaneView({
                             }}
                             runningIn={runningIn}
                             tab={frontTab.id}
+                            chatName={nameOf}
+                            onClearPane={clearPane}
                           />
                         </TaskEndContext.Provider>
                       ) : tabs.order.some((id) => !isBackground(id)) ? (
@@ -10892,9 +10830,6 @@ export const PlaneView = memo(function PlaneView({
                   smart={endingChat.smart}
                   running={endingChat.running}
                   closing={endingChat.closing}
-                  keeps={endingChat.keeps}
-                  shows={endingChat.shows}
-                  back={endingChat.back}
                   ownTabs={endingChat.ownTabs}
                   drafts={endingChat.drafts}
                   fromALink={endingChat.fromALink}
@@ -11400,57 +11335,14 @@ function alreadyShows(tabs: Tabs, session: number): boolean {
   return tabs.order.some((id) => panesOf(tabs, id).some((pane) => pane.session === session));
 }
 
-/**
- * Whether carrying a row out ends a chat, and therefore whether it is asked about first.
- *
- * **By what the row does and not by its id**, so a row added to the catalogue that ends a chat
- * is asked about without anybody remembering to add it here — the same rule the region toggles
- * follow. A close says whether it ends one (`Does.ends`): a pane or a tab showing only a view
- * closes, kills nothing, and is not asked about. `closeProject` is deliberately not one of
- * them: it ends every chat in a project, and the window is where that question belongs — it
- * asks it there (`ClosingProject`, charter-app#239) whenever the project has chats open.
- */
-function endsAChat(does: Offer["does"]): boolean {
-  if (does.verb === "endChat") return true;
-  return (
-    (does.verb === "closeTab" || does.verb === "closePane" || does.verb === "closeOtherTabs") &&
-    does.ends
-  );
-}
-
-/**
- * The chats a close row would end: a tab's every session, or the focused pane's one. Smart close
- * is offered only where this is exactly one (ADR 0064) — a record is one chat's.
- */
-function chatsEndedBy(does: Offer["does"], tabs: Tabs, askedBy: AskedBy): number[] {
-  // **A task is never one of them** (#1489): one beside its session goes on working when the
-  // session's tab closes, unless the person answers that the session's tasks stop.
-  if (does.verb === "endChat") return [does.session];
-  if (does.verb === "closeOtherTabs")
-    return does.closes
-      .flatMap((tab) => panesOf(tabs, tab).map((one) => one.session))
-      .filter((session) => askedBy(session) === undefined);
-  if (does.verb === "closeTab")
-    return panesOf(tabs, does.tab)
-      .map((one) => one.session)
-      .filter((session) => askedBy(session) === undefined);
-  if (does.verb !== "closePane" || tabs.inFront === undefined) return [];
-  const tab = tabs.byId[tabs.inFront];
-  const going = panesOf(tabs, tab.id).find((one) => one.pane === tab.focused);
-  return going === undefined ? [] : [going.session];
-}
-
 /** What the window says of a link's close that came while a question was on screen (#2761). */
 const CLOSE_HANDED_NOT_ASKED =
   "A link asked to close chats here that have theme drafts while a question was on screen, so it was not asked: close them here, and answer Keep or Revert.";
 
-/** What the window says when a link's close names chats no tab here holds alone (#2761). */
+/** What the window says when a link's close names chats it cannot ask End… about as one
+ *  (#2761, #4756): more than one, or one not open here. */
 const CLOSE_HANDED_NOT_HERE =
-  "A link asked to close chats that have theme drafts, and no tab here holds just those chats: close them here, and answer Keep or Revert.";
-
-/** Why Smart close is not offered on a tab holding more than one chat. */
-const MORE_THAN_ONE_CHAT =
-  "This tab holds more than one chat, and a session record is one chat's. Smart close each from its own pane.";
+  "A link asked to end chats that have theme drafts, and they can't be asked about together here: end each here with End…, and answer Keep or Revert.";
 
 /** The programs the Skill studio lists the own skills of, by the word the project calls each. */
 const HARNESS_KINDS: readonly HarnessKind[] = ["claude", "opencode", "codex"];

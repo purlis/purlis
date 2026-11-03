@@ -636,11 +636,6 @@ body {
    hover fill under the pointer. `Doer`'s `iconOnly` draws a quiet icon button, which wears
    `bare`; `N more` is a quiet button with words, which wears `show-more`. */
 
-/* **`End this pane's chat` is not on the bar any more** — it is in each pane's own corner, and
-   `.pane-doing > .ends-a-chat` in `paneFrame.css` is where its danger hover now lives. The
-   rule that was here is gone with the button rather than left behind matching nothing: dead
-   CSS is how a rule comes to be copied for a reason that stopped being true. */
-
 .trouble {
   margin: 0;
   padding: var(--space-2) var(--space-4);
@@ -1617,7 +1612,7 @@ body {
 
 /* **A task's own tab** (#1489, V100-38): the task mark before its name, whose task it is after
    it, dimmer (`talk · steward 4`), and a minimise where a session's tab has its close. The
-   minimise ends nothing, so it never wears the close's danger look (`.closer.keeps`). */
+   minimise ends nothing, as no close does (#4756). */
 .tab[data-task-tab] .tab-mark[data-mark="task"] {
   color: var(--text-secondary);
 }

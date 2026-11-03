@@ -190,7 +190,7 @@ async function panes() {
           controls: [...frame.querySelectorAll<HTMLElement>(".pane-doing button")].map((one) => ({
             says: one.getAttribute("aria-label") ?? "",
             minimise: one.hasAttribute("data-minimise"),
-            ends: one.classList.contains("ends-a-chat"),
+            closes: one.getAttribute("aria-label") === "Close this pane",
           })),
         };
       });
@@ -327,10 +327,11 @@ describe("a task in a tab of its own, and beside its session", () => {
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
       ),
     ).toBe(true);
-    // The task's pane has a minimise and nothing that ends a chat; the session's has its close.
+    // The task's pane has a minimise and no close; the session's has its close, which ends
+    // nothing (#4756).
     expect(task.controls.filter((one) => one.minimise)).toHaveLength(1);
-    expect(task.controls.filter((one) => one.ends)).toEqual([]);
-    expect(own.controls.filter((one) => one.ends)).toHaveLength(1);
+    expect(task.controls.filter((one) => one.closes)).toEqual([]);
+    expect(own.controls.filter((one) => one.closes)).toHaveLength(1);
     expect(own.controls.filter((one) => one.minimise)).toEqual([]);
 
     // The pane's minimise sends it back, and the session's pane takes the room.

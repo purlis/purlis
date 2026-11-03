@@ -14,7 +14,9 @@ import {
   catalogued,
   curateRows,
   curateSubjectOf,
-  ENDS_IT,
+  GO_ON,
+  GOES_ON,
+  PANE_CLOSE,
   FILE_VERBS,
   fileRows,
   KEEPS_THE_BRANCH,
@@ -498,60 +500,57 @@ describe("the one list of actions", () => {
     expect(by(catalogue(now({ workspaces: [OUTSIDE] })), "root.chat")?.available).toBe(false);
   });
 
-  it("says on the row that ends a chat what ending it costs", () => {
-    // charter-app#130. The row is `End chat`, not `Close tab`: it calls `close_session`,
-    // which ends the program. Nothing said so, and the `×` read as "hide this tab".
+  it("closes a tab and ends nothing, saying its chat goes on (#4756)", () => {
+    // The row used to be `End chat` (charter-app#130), since the `×` ended the chat. Closing
+    // never ends anything now: ending is End…, the chat's own row.
     const offers = catalogue(now({ tabs: openTab(noTabs(), 7, "3", "steward") }));
 
-    expect(by(offers, "tab.close:1")?.title).toBe("End chat steward 3");
-    expect(by(offers, "tab.close:1")?.note).toBe(ENDS_IT);
+    expect(by(offers, "tab.close:1")?.title).toBe("Close steward 3");
+    expect(by(offers, "tab.close:1")?.does).toEqual({ verb: "closeTab", tab: 1 });
+    expect(by(offers, "tab.close:1")?.note).toBe(GOES_ON);
     // And not on rows that only navigate: a note on everything is a note on nothing.
     expect(by(offers, "tab.select:1")?.note).toBeUndefined();
     expect(by(offers, "chat.new")?.note).toBeUndefined();
   });
 
-  it("says the same of the pane close, which ends a chat too", () => {
-    const offers = catalogue(now({ tabs: openTab(noTabs(), 7, "3") }));
+  it("says of a tab of several chats that they go on", () => {
+    const tabs = splitFocusedPane(openTab(noTabs(), 7, "3", "steward"), "row", 8);
 
-    expect(by(offers, "pane.close")?.title).toBe("End this pane's chat");
-    expect(by(offers, "pane.close")?.note).toBe(ENDS_IT);
+    expect(by(catalogue(now({ tabs })), "tab.close:1")?.note).toBe(GO_ON);
   });
 
-  it("offers no pane close while the pane shows a task, and still ends the session from its tab", () => {
+  it("clears a pane on Close pane and ends nothing, saying its chat goes on (#4756)", () => {
+    const offers = catalogue(now({ tabs: openTab(noTabs(), 7, "3") }));
+
+    expect(by(offers, "pane.close")?.title).toBe(PANE_CLOSE);
+    expect(by(offers, "pane.close")?.does).toEqual({ verb: "closePane" });
+    expect(by(offers, "pane.close")?.note).toBe(GOES_ON);
+  });
+
+  it("closes a pane that shows a task too, since that ends nothing either", () => {
     // Chat 9 is a task of chat 7, shown inside chat 7's tab (#1486).
     const tabs = switchTabTo(openTab(noTabs(), 7, "3", "steward"), 9, (session) =>
       session === 9 ? 7 : undefined,
     );
     const offers = catalogue(now({ tabs, nameOf: () => "steward 3" }));
 
-    expect(by(offers, "pane.close")?.available).toBe(false);
-    expect(by(offers, "pane.close")?.reason).toBe(
-      "This pane shows a task of steward 3. Go back to steward 3 to end its chat, or close the tab.",
-    );
-    // The tab is the session's, and its close is the session's.
-    expect(by(offers, "tab.close:1")?.title).toBe("End chat steward 3");
-    expect(by(offers, "tab.close:1")?.available).toBe(true);
-    expect(by(offers, "tab.close:1")?.does).toEqual({ verb: "closeTab", tab: 1, ends: true });
+    expect(by(offers, "pane.close")).toMatchObject({ available: true, title: PANE_CLOSE });
+    expect(by(offers, "tab.close:1")?.does).toEqual({ verb: "closeTab", tab: 1 });
   });
 
-  it("decides a pane's close for that pane: the one beside a pane showing a task still closes", () => {
+  it("decides a pane's close for that pane, and closes the one showing a task too", () => {
     // Chat 7's tab is split with chat 8 beside it, and chat 8's pane shows its task 9.
     const split = splitFocusedPane(openTab(noTabs(), 7, "3", "steward"), "row", 8);
     const tabs = switchTabTo(split, 9, (session) => (session === 9 ? 8 : undefined));
     const [first, second] = panesOf(tabs, 1);
     const names = (session: number) => (session === 8 ? "devops 8" : "steward 3");
 
-    // The pane in focus shows the task: the catalogue's row is that pane's, and names ITS chat.
-    expect(by(catalogue(now({ tabs, nameOf: names })), "pane.close")?.reason).toBe(
-      "This pane shows a task of devops 8. Go back to devops 8 to end its chat, or close the tab.",
-    );
-    expect(paneCloseOf(tabs, second.pane, names).available).toBe(false);
-    // The other pane shows its own chat, and its close is its own.
-    expect(paneCloseOf(tabs, first.pane, names)).toMatchObject({
-      available: true,
-      title: "End this pane's chat",
-      does: { verb: "closePane", ends: true },
-    });
+    for (const pane of [first.pane, second.pane])
+      expect(paneCloseOf(tabs, pane, names)).toMatchObject({
+        available: true,
+        title: PANE_CLOSE,
+        does: { verb: "closePane" },
+      });
   });
 
   it("says on letting go of a project what goes with it and what does not", () => {
@@ -1550,7 +1549,7 @@ describe("the one list of actions", () => {
       const row = by(catalogue(now({ tabs })), `tab.close:${tabs.inFront}`);
 
       expect(row?.title).toBe("Close steward");
-      expect(row?.does).toEqual({ verb: "closeTab", tab: tabs.inFront, ends: false });
+      expect(row?.does).toEqual({ verb: "closeTab", tab: tabs.inFront });
       expect(row?.note).toBeUndefined();
     });
 
@@ -1558,7 +1557,7 @@ describe("the one list of actions", () => {
       const row = by(catalogue(now({ tabs: withView() })), "pane.close");
 
       expect(row?.title).toBe("Close this view");
-      expect(row?.does).toEqual({ verb: "closePane", ends: false });
+      expect(row?.does).toEqual({ verb: "closePane" });
     });
 
     it("sends the palette's key nowhere, because a view pane has no chat to send it to", () => {
@@ -1588,11 +1587,11 @@ describe("the one list of actions", () => {
       expect(by(catalogue(now({ tabs })), `tab.rename:${tabs.inFront}`)).toBeUndefined();
     });
 
-    it("still ends a chat's tab beside it, and asks about that", () => {
+    it("closes a chat's tab beside it the same way, ending nothing (#4756)", () => {
       const tabs = withView();
       const row = by(catalogue(now({ tabs })), `tab.close:${tabs.order[0]}`);
 
-      expect(row?.does).toEqual({ verb: "closeTab", tab: tabs.order[0], ends: true });
+      expect(row?.does).toEqual({ verb: "closeTab", tab: tabs.order[0] });
     });
   });
 
@@ -2148,12 +2147,12 @@ describe("Close other tabs (#4762)", () => {
     noTabs(),
   );
 
-  it("closes the tabs the window says, and asks first, since it ends their chats", () => {
+  it("closes the tabs the window says, and ends none of their chats (#4756)", () => {
     // The tab in front is the last opened, tab 3; tab 2 is pinned, so it closes tab 1.
     const row = by(catalogue(now({ tabs: three, otherTabs: () => [1] })), "tab.closeOthers:3");
 
     expect(row?.title).toBe("Close other tabs");
-    expect(row?.does).toEqual({ verb: "closeOtherTabs", tab: 3, closes: [1], ends: true });
+    expect(row?.does).toEqual({ verb: "closeOtherTabs", tab: 3, closes: [1] });
   });
 
   it("is one row, the tab in front's, however many tabs there are", () => {
@@ -3841,8 +3840,8 @@ describe("ending a task by hand (#1488)", () => {
     });
     expect(by(offers, `tab.close:${task}`)?.title).toMatch(/^Send .*2 back/);
     expect(by(offers, `tab.close:${session}`)).toMatchObject({
-      title: "End chat chat 1",
-      does: { verb: "closeTab", tab: session, ends: true },
+      title: "Close chat 1",
+      does: { verb: "closeTab", tab: session },
     });
     // The pane's close of the tab in front (the task's) says the same.
     expect(by(offers, "pane.close")).toMatchObject({

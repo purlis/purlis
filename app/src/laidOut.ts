@@ -6,6 +6,7 @@ import type { LaidNode, LaidOut, LaidTab, ViewTab } from "./bindings";
 import { DRAFT, isMemory, memoryRefOf } from "./memories";
 import {
   type Content,
+  EMPTY_TAB,
   type Layout,
   type Tab,
   type Tabs,
@@ -29,9 +30,7 @@ export const EVEN = 500;
 /** The whole of a split, in tenths of a percent. */
 export const WHOLE = 1000;
 
-/** What a tab whose first pane is empty is called (#4755), as the empty pane's own button
- *  says (spec #4750 story 44). */
-export const EMPTY_TAB = "New chat";
+export { EMPTY_TAB };
 
 /** What a split holds as its first child's share: its own, or even. */
 export function shareOf(layout: Extract<Layout, { kind: "split" }>): number {

@@ -406,15 +406,7 @@
   background-color: transparent;
 }
 
-/* Each is the button family's quiet ghost (#3214). Ending a chat takes the danger colour under
-   the pointer, as a tab's `×` does, for the same reason: a confirmation is no licence for the
-   control to look lighter than what it does. It outranks the quiet ghost's hover by naming it,
-   in this layer after the family's. */
-.pane-doing
-  > .ends-a-chat[data-scope="button"][data-variant="quiet"][data-hovered]:not([data-disabled]) {
-  background-color: var(--danger-surface);
-  color: var(--danger-text);
-}
+/* Each is the button family's quiet ghost (#3214), the close too: it ends nothing (#4756). */
 
 /* ---------------------------------------------------------------------------------------------
    A view's pane.

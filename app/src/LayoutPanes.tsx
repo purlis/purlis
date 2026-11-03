@@ -27,6 +27,7 @@ import {
   besideId,
   menuOn,
   ownTabId,
+  restartId,
   OUTSIDE,
   taskCloseId,
   taskStopId,
@@ -64,7 +65,8 @@ import { qualifierOf, shownOf } from "./finished";
 import { HarnessChip } from "./HarnessCard";
 import { movedAt, stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { EmptyPane } from "./EmptyPane";
-import { closesOnly, markOf } from "./StripMarks";
+import { EndedBand, endedBy } from "./EndedBand";
+import { markOf } from "./StripMarks";
 import {
   type RestartAct,
   type RestartSaid,
@@ -136,10 +138,14 @@ export function PaneFrame({
   asked,
   others,
   doing,
+  ended,
   focused = false,
   children,
 }: {
   plane: PlaneId;
+  /** **The chat's program has ended** (#4756): the ended band, under the header and the
+   *  notices, above the last screen. */
+  ended?: ReactNode;
   /** The pane it draws, by its number in the tabs: its band is remembered by it (#3167). */
   pane?: number;
   /** The tab it is a pane of: with `pane`, where a dragged pane lands (#4763). */
@@ -263,6 +269,7 @@ export function PaneFrame({
           onHolds={setHolds}
           onFocusBell={focusBell}
         />
+        {ended}
       </div>
       <div className="pane-body">{children}</div>
     </div>
@@ -496,6 +503,8 @@ export function LayoutPanes({
   split,
   runningIn,
   tab,
+  chatName,
+  onClearPane,
   path = "",
 }: {
   /** The chats the launch has still to start (`restoring.rs`): each one's pane says so, in the
@@ -614,12 +623,23 @@ export function LayoutPanes({
   /** The tab this is the layout of. Its splits are its own: another tab's never carry over
    *  (#4755). */
   tab: number;
+  /** A chat's name, as its row says it: what an ended chat's band names (#4756). */
+  chatName: (session: number) => string;
+  /** Clear pane: pane `pane` shows nothing, and its chat goes on in the sidebar (#4756). */
+  onClearPane: (pane: number) => void;
   /** This layout's path from its tab's root: `a` for a split's first child, `b` for its
    *  second. The tab's own layout is `""`. */
   path?: string;
 }) {
   // The pane is one side of a split. Read here: a chat's pane names its breadcrumb `path`.
   const inSplit = path !== "";
+  // **Whether the chat this pane draws has ended** (#4756): read for every layout, so the hooks
+  // are the same whatever the pane shows, and false for all but a chat's.
+  const shown = layout.kind === "pane" && layout.content.kind === "session" ? layout.content : null;
+  const ended = useChatsSelect(
+    useChatsHere(),
+    (states) => shown !== null && endedBy(stateOf(states, shown.session)),
+  );
   if (layout.kind === "pane") {
     const content = layout.content;
     if (content.kind === "empty")
@@ -881,6 +901,17 @@ export function LayoutPanes({
         asked={asked[layout.pane]}
         others={hidden}
         doing={doing}
+        ended={
+          ended && !restoring.has(content.session) ? (
+            <EndedBand
+              session={content.session}
+              name={chatName(content.session)}
+              resume={offerFor(restartId(content.session))}
+              onResume={(offer) => onPaneDoes(layout.pane, offer)}
+              onClear={() => onClearPane(layout.pane)}
+            />
+          ) : undefined
+        }
       >
         {/* A chat the launch has still to start has no terminal yet (`restoring.rs`). */}
         {restoring.has(content.session) ? (
@@ -895,6 +926,7 @@ export function LayoutPanes({
               offers: paneMenuOf(offerFor),
               onPress: (offer) => onPaneDoes(layout.pane, offer),
             }}
+            readOnly={ended}
           />
         )}
       </PaneFrame>
@@ -1001,6 +1033,8 @@ export function LayoutPanes({
               split={split}
               runningIn={runningIn}
               tab={tab}
+              chatName={chatName}
+              onClearPane={onClearPane}
             />
           </Panel>
         </Fragment>
@@ -1125,7 +1159,6 @@ export function PaneDoing({
         icon={Mark ? <Mark /> : null}
         aria-label={offer.title}
         tooltip={offer.reason || offer.note || undefined}
-        className={offer.id === "pane.close" && !closesOnly(offer.does) ? "ends-a-chat" : undefined}
         // A task's minimise, as its own tab draws it (#1489): never the close's look.
         data-minimise={offer.does.verb === "sendBack" ? "" : undefined}
         isDisabled={!offer.available}
