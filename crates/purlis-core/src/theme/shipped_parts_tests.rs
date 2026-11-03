@@ -13,7 +13,7 @@ use super::measured_afresh;
 #[test]
 fn every_shipped_appearance_s_parts_are_measured_as_written_alone() {
     let shipped: Vec<_> = purlis().appearances.iter().chain(built_ins()).collect();
-    assert_eq!(shipped.len(), 5, "Purlis's three and Classic's two");
+    assert_eq!(shipped.len(), 6, "Purlis's four and Classic's two");
     for one in shipped {
         assert_eq!(
             measured_afresh(one),

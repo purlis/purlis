@@ -41,7 +41,7 @@ fn drawn_for(levels: &Levels, contrast: Contrast) -> Drawn {
 }
 
 #[test]
-fn purlis_is_a_dark_a_light_and_a_high_contrast_dark_appearance() {
+fn purlis_is_a_dark_a_light_and_a_high_contrast_dark_and_light_appearance() {
     let theme = purlis();
     assert_eq!(theme.name, "Purlis");
     let shape: Vec<(&str, Appearance, bool)> = theme
@@ -55,6 +55,7 @@ fn purlis_is_a_dark_a_light_and_a_high_contrast_dark_appearance() {
             ("dark", Appearance::Dark, false),
             ("light", Appearance::Light, false),
             ("dark-high-contrast", Appearance::Dark, true),
+            ("light-high-contrast", Appearance::Light, true),
         ]
     );
 }
@@ -243,7 +244,8 @@ fn it_is_the_default_and_every_stored_pick_but_purlis_classic_draws_it() {
     // light or following the system, so they draw Purlis's; only `purlis-classic` draws Classic.
     // At every level, in the standard contrast and in more; no file is rewritten.
     let dark = ("Purlis", "dark", "dark-high-contrast");
-    let light = ("Purlis", "light", "light");
+    // More contrast draws the high-contrast appearance of the tag picked (#4677).
+    let light = ("Purlis", "light", "light-high-contrast");
     for (stored, appearance, (name, standard, more)) in [
         (CLASSIC, None, ("Purlis Classic", "dark", "dark")),
         (CLASSIC, Some("light"), ("Purlis Classic", "light", "light")),
@@ -325,7 +327,7 @@ fn no_theme_folder_takes_its_id_and_a_theme_may_extend_it() {
     assert_eq!(dark.value("accent.base"), "#b3a8f2");
     assert_eq!(dark.value("surface.base"), "#17171b");
     assert_eq!(dark.fonts, purlis().first().fonts);
-    assert_eq!(read.theme.appearances.len(), 3);
+    assert_eq!(read.theme.appearances.len(), 4);
 }
 
 #[test]
@@ -535,11 +537,24 @@ fn a_light_wash_reads_in_its_own_hue_on_every_ground_it_is_laid_on() {
     }
 }
 
-#[test]
-fn light_is_dark_reflected_by_its_one_rule() {
-    let theme = purlis();
-    let dark = theme.of(Appearance::Dark).unwrap();
-    let light = theme.of(Appearance::Light).unwrap();
+/// The colours a reflected colour is stepped for, past the reflection: the pairs it missed and
+/// the ground it is stepped away from, at the floor it has to clear (#2700).
+type Stepped<'a> = &'a [(&'static str, &'static str, f64)];
+
+/// The pairs light's reflected colours missed (#2700, #2902): the quiet tier, the placeholder
+/// that is drawn in it, and faint.
+const LIGHT_STEPPED: Stepped<'static> = &[
+    ("text.quiet", "surface.hover", 4.5),
+    ("placeholder", "surface.hover", 4.5),
+    ("text.faint", "surface.hover", 3.0),
+];
+
+/// **`dark` reflected by light's one rule** ([`light_rule`]), then each colour of `stepped`
+/// stepped darker until it clears its floor on its ground, in order.
+fn reflected(
+    dark: &ResolvedTheme,
+    stepped: Stepped<'_>,
+) -> std::collections::BTreeMap<&'static str, String> {
     // The foundation's deepest colour: what the window is drawn on, behind everything.
     let deepest = light_rule::oklch_of(dark.value("window.background")).0;
     // A plain control's edge stays none, and the filled primary is drawn as in dark: its white
@@ -553,13 +568,6 @@ fn light_is_dark_reflected_by_its_one_rule() {
         "accent.fill-hover",
         "accent.fill-edge",
         "accent.fill-text",
-    ];
-    // The pairs a reflected colour missed, and the ground it is stepped away from (#2700).
-    let stepped = [
-        // The quiet tier, the placeholder that is drawn in it, and faint (#2902).
-        ("text.quiet", "surface.hover", 4.5),
-        ("placeholder", "surface.hover", 4.5),
-        ("text.faint", "surface.hover", 3.0),
     ];
     let mut derived: std::collections::BTreeMap<&str, String> = dark
         .values
@@ -579,14 +587,115 @@ fn light_is_dark_reflected_by_its_one_rule() {
     for (token, ground, floor) in stepped {
         let ground = derived[ground].clone();
         let value = derived[token].clone();
-        derived.insert(token, light_rule::cleared(value, &ground, floor));
+        derived.insert(token, light_rule::cleared(value, &ground, *floor));
     }
+    derived
+}
+
+#[test]
+fn light_is_dark_reflected_by_its_one_rule() {
+    let theme = purlis();
+    let dark = theme.of(Appearance::Dark).unwrap();
+    let light = theme.of(Appearance::Light).unwrap();
+    let derived = reflected(dark, LIGHT_STEPPED);
     for (token, value) in &light.values {
         assert_eq!(value, &derived[token], "{token}");
     }
     assert_eq!(light.typed, dark.typed);
     assert_eq!(light.geometry, dark.geometry);
     assert_eq!(light.motion, dark.motion);
+}
+
+/// Purlis's appearance `id`.
+fn appearance(id: &str) -> &'static ResolvedTheme {
+    purlis()
+        .appearances
+        .iter()
+        .find(|one| one.id == id)
+        .unwrap_or_else(|| panic!("Purlis has no {id}"))
+}
+
+/// **Light high contrast's own steps** (#4677), past light's: a reflected colour that falls
+/// under the tier dark high contrast holds its pair at is stepped darker until it holds it.
+/// Faint's marks hold 4.5:1 in dark high contrast, and the success colour 7:1 on a row.
+const LIGHT_HIGH_CONTRAST_STEPPED: Stepped<'static> = &[
+    ("text.quiet", "surface.hover", 4.5),
+    ("placeholder", "surface.hover", 4.5),
+    ("text.faint", "surface.hover", 3.0),
+    ("text.faint", "surface.hover", 4.5),
+    ("text.faint", "list.selected", 4.5),
+    ("state.success", "surface.hover", 7.0),
+    ("state.success", "list.selected", 7.0),
+];
+
+#[test]
+fn light_high_contrast_is_dark_high_contrast_reflected_by_light_s_rule() {
+    // #4677: light high contrast is to dark high contrast what light is to dark. Its words a
+    // tier up, its accent the accent's words, its borders a tier stronger, all come from dark
+    // high contrast's; `icon.folder` and `icon.grey` stay on the label colour, as the operator
+    // ruled for high contrast on #4663.
+    let dark = appearance("dark-high-contrast");
+    let light = appearance("light-high-contrast");
+    let derived = reflected(dark, LIGHT_HIGH_CONTRAST_STEPPED);
+    for (token, value) in &light.values {
+        assert_eq!(value, &derived[token], "{token}");
+    }
+    assert_eq!(light.typed, dark.typed);
+    assert_eq!(light.geometry, dark.geometry);
+    assert_eq!(light.motion, dark.motion);
+    let label = appearance("light").value("text.muted");
+    assert_eq!(light.value("icon.folder"), label);
+    assert_eq!(light.value("icon.grey"), label);
+}
+
+/// The tier a ratio reaches: WCAG's enhanced 7:1 for words, AA's 4.5:1, the 3:1 a mark takes,
+/// or none of them.
+fn tier(ratio: f64) -> f64 {
+    [7.0, 4.5, 3.0]
+        .into_iter()
+        .find(|floor| ratio >= *floor)
+        .unwrap_or(0.0)
+}
+
+#[test]
+fn light_high_contrast_holds_every_pair_where_dark_high_contrast_holds_it() {
+    // #4677: what dark high contrast promises, light high contrast promises too. Every pair the
+    // check measures reaches at least the tier it reaches in dark high contrast: words at 7:1
+    // where dark's are, and at 4.5:1 where dark's are; the focus ring and every mark at 3:1 or
+    // more where dark's are. The hairline (`border.subtle`) is under 3:1 in both: it is a ground
+    // for words too (a notice's "and N more"), so it cannot be drawn darker and keep them.
+    let dark = appearance("dark-high-contrast");
+    let light = appearance("light-high-contrast");
+    let mut lowest = (f64::MAX, "", "");
+    for pair in PAIRS {
+        let (Some(was), Some(is)) = (check::ratio(dark, pair), check::ratio(light, pair)) else {
+            continue;
+        };
+        assert!(
+            tier(is) >= tier(was),
+            "{} on {} (over {:?}): {is} in light high contrast, {was} in dark",
+            pair.front,
+            pair.back,
+            pair.under
+        );
+        if is < lowest.0 {
+            lowest = (is, pair.front, pair.back);
+        }
+    }
+    // Its lowest pair: a changed word's wash on its line, held apart at 1.3 as in every
+    // appearance.
+    assert!(lowest.0 >= 1.3, "{lowest:?}");
+    for token in [
+        "focus.ring",
+        "border.strong",
+        "tree.guide",
+        "list.selected-edge",
+    ] {
+        for pair in PAIRS.iter().filter(|pair| pair.front == token) {
+            let is = check::ratio(light, pair).unwrap();
+            assert!(is >= 3.0, "{token} on {}: {is}", pair.back);
+        }
+    }
 }
 
 #[test]
@@ -616,7 +725,7 @@ fn light_and_high_contrast_ship_as_its_appearances_and_dark_stays_the_default() 
     };
     let purlis = |appearance| Choice::new(PURLIS, Some(appearance));
     let it = |id: &str| ("Purlis".to_owned(), id.to_owned());
-    for id in ["dark", "light", "dark-high-contrast"] {
+    for id in ["dark", "light", "dark-high-contrast", "light-high-contrast"] {
         let chosen = drawn(purlis(id), Appearance::Dark, Contrast::Standard);
         assert_eq!(chosen, it(id), "{id} can be chosen");
     }
@@ -630,12 +739,10 @@ fn light_and_high_contrast_ship_as_its_appearances_and_dark_stays_the_default() 
         following(Appearance::Dark, Contrast::More),
         it("dark-high-contrast")
     );
-    // Purlis has no light high contrast (#3182): a light system asking for more contrast draws
-    // standard light when Purlis follows the system or light is chosen, and never turns it dark.
-    assert_eq!(following(Appearance::Light, Contrast::More), it("light"));
+    // A light system asking for more contrast draws light high contrast (#4677).
     assert_eq!(
-        drawn(purlis("light"), Appearance::Light, Contrast::More),
-        it("light")
+        following(Appearance::Light, Contrast::More),
+        it("light-high-contrast")
     );
     assert_eq!(
         drawn(None, Appearance::Light, Contrast::Standard),
@@ -694,6 +801,10 @@ fn the_old_system_id_follows_the_system_with_the_person_s_own_theme_else_purlis(
     );
     let dark = drawn(None, Appearance::Dark, Contrast::More).theme.unwrap();
     assert_eq!(dark.id, "dark-high-contrast");
+    let light = drawn(None, Appearance::Light, Contrast::More)
+        .theme
+        .unwrap();
+    assert_eq!(light.id, "light-high-contrast");
     let mine = load(&serde_json::json!({
         "name": "Mine",
         "appearances": [
@@ -788,6 +899,41 @@ fn purlis_draws_each_workspace_colour_as_these_numbers_and_every_strip_keeps_its
             "#1c1423",
         ),
         ("dark-high-contrast", "pink", None, "#c3baf5", "#23121b"),
+        // Light high contrast (#4677): red, orange, yellow and pink draw its accent untinted,
+        // and green draws it as written while the strip turns, as dark high contrast's yellow
+        // and green do; every strip keeps its hue.
+        ("light-high-contrast", "red", None, "#403667", "#fef6f4"),
+        ("light-high-contrast", "orange", None, "#403667", "#fff6f0"),
+        ("light-high-contrast", "yellow", None, "#403667", "#fdf8e1"),
+        (
+            "light-high-contrast",
+            "green",
+            Some(f64::INFINITY),
+            "#403667",
+            "#eafdea",
+        ),
+        (
+            "light-high-contrast",
+            "teal",
+            Some(f64::INFINITY),
+            "#014543",
+            "#e0fefa",
+        ),
+        (
+            "light-high-contrast",
+            "blue",
+            Some(f64::INFINITY),
+            "#1d3e68",
+            "#f3f8ff",
+        ),
+        (
+            "light-high-contrast",
+            "purple",
+            Some(f64::INFINITY),
+            "#4a3362",
+            "#faf6fe",
+        ),
+        ("light-high-contrast", "pink", None, "#403667", "#fff5f9"),
     ];
     let mut got = Vec::new();
     for one in &purlis().appearances {
@@ -837,6 +983,7 @@ fn a_red_workspace_s_link_is_these() {
         ("dark", "#b3a8f2", "#a99cf0"),
         ("light", "#4d3f80", "#554691"),
         ("dark-high-contrast", "#c3baf5", "#c3baf5"),
+        ("light-high-contrast", "#403667", "#403667"),
     ]
     .map(|(id, link, chart)| (id, link.to_owned(), chart.to_owned()));
     assert_eq!(got, want);

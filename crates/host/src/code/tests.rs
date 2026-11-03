@@ -53,6 +53,8 @@ struct Recorded {
     conversations: Arc<Mutex<Vec<KeptConversation>>>,
     /// Each project and workspace whose clones were asked for (1.51).
     clones_asked: Arc<Mutex<Vec<(PathBuf, String)>>>,
+    /// Whether it refuses to mark a program's start (#4933).
+    refuses_starts: Arc<std::sync::atomic::AtomicBool>,
 }
 
 const CONVERSATION: &[u8] = b"{\"said\":\"the runner's conversation\"}\n";
@@ -67,6 +69,19 @@ fn fix() -> CodeRef {
 }
 
 impl Code for Recorded {
+    fn program_starting(&self, _projects: &Path) -> Result<(), Refusal> {
+        if self
+            .refuses_starts
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(Refusal {
+                code: session::NOT_STARTED.into(),
+                why: "the runner could not note when its first program started".into(),
+            });
+        }
+        Ok(())
+    }
+
     fn take(
         &self,
         project: &Path,
@@ -698,4 +713,42 @@ async fn the_window_hears_the_clones_a_runner_holds_in_a_workspace_and_no_other_
         assert_eq!(refusal.code, session::NOT_ALLOWED, "{scope:?}");
     }
     assert_eq!(runner.recorded.clones_asked.lock().unwrap().len(), 1);
+}
+
+/// **A program its host can't mark the start of is not started** (#4933): the start is refused
+/// as not started, and nothing runs, so what it would have kept outside its project can't be lost
+/// from sight.
+#[tokio::test]
+async fn a_program_whose_start_the_runner_cannot_mark_is_not_started() {
+    let runner = a_runner();
+    let (client, _streams) = through_the_relay(Scope::LocalUi, &runner).await;
+    client.hold_project(PROJECT, "").await.unwrap();
+    runner
+        .recorded
+        .refuses_starts
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+
+    let started = tokio::time::timeout(
+        PATIENCE,
+        client.start_program(session::StartProgram::of(
+            PROJECT,
+            session::ProgramKind::Shell,
+        )),
+    )
+    .await
+    .expect("the start is answered");
+
+    assert!(
+        matches!(&started, Err(CallError::Refused(refused)) if refused.code == session::NOT_STARTED),
+        "{started:?}"
+    );
+    assert_eq!(
+        tokio::time::timeout(PATIENCE, client.list())
+            .await
+            .expect("the list is answered")
+            .unwrap()
+            .len(),
+        0,
+        "nothing runs"
+    );
 }

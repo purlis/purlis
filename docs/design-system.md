@@ -402,16 +402,15 @@ the theme matrix, and Storybook starts on the default's cell, which
 `app/.storybook/at-creation.json` names and a test of the app's core holds to the engine
 (`docs/component-stories.md`).
 
-It has three appearances, `dark`, `light` and `dark-high-contrast` (dark, high contrast), each
-naming every token itself, so nothing in it is Purlis Classic's by falling back. Every
+It has four appearances, `dark`, `light`, `dark-high-contrast` (dark, high contrast) and
+`light-high-contrast` (light, high contrast, #4677), each naming every token itself, so nothing in it is Purlis Classic's by falling back. Every
 combination clears the theme check with no warning and holds no consent floor, and a test keeps
 it so (`purlis_tests.rs`). **Light and high contrast ship as drawn** (the operator's ruling of
 2026-10-24, after seeing them beside dark and Classic, #2924). Each can be chosen in Settings, and
-Purlis chosen to follow the system draws light on a light system and high contrast where a dark
-system asks for more. There is no light high contrast, so a light system that asks for more, or
-more contrast with light chosen, draws standard light (#3182). With nothing chosen, Purlis draws
-its dark (its high contrast where more is asked for), whatever the system's appearance. Where its
-values come from:
+Purlis chosen to follow the system draws light on a light system and the high contrast of the
+system's appearance where the system asks for more; so do the stored picks `purlis-dark` and
+`purlis-light`. With nothing chosen, Purlis draws its dark (its high contrast where more is
+asked for), whatever the system's appearance. Where its values come from:
 
 - **Dark is the foundation's.** Each colour the record proposes for a token is that token's.
   Where the record lacks a value, one rule derives it from the record's palette:
@@ -488,6 +487,20 @@ values come from:
   grey, and the accent to the record's lighter lavender `#c3baf5`. Syntax comments and punctuation
   are muted in every appearance, so they move with it (#3182). Its strong border and tree guides are the palette's
   quiet, so they moved with it from `#8a8896` to `#91909d` (#2902): a lighter edge on dark.
+- **High-contrast light is high-contrast dark reflected by light's one rule** (#4677), so it is
+  to high-contrast dark what light is to dark, and a test re-derives it. Its words are a step
+  darker than light's (primary `#121212`, secondary light's primary `#252329`, muted light's
+  secondary `#3b3942`, quiet light's muted `#5d5b67`), its accent the accent's words `#403667`,
+  its strong border and tree guides `#6a6975`, and `icon.folder` and `icon.grey` stay on the
+  label grey `#5d5b67` (the operator's ruling on #4663). A reflected colour that falls under the
+  tier dark high contrast holds its pair at is stepped darker until it holds it: faint
+  (`#61606c`, 4.5:1 on the row under the pointer and the selected row) and the success colour
+  (`#174e27`, 7:1 there). So every pair the check measures reaches at least the tier, 7:1, 4.5:1
+  or 3:1, it reaches in dark high contrast, and a test holds that. Its lowest, against dark high
+  contrast's: primary words 7.92:1 (7.53), muted 8.30:1 (8.54), quiet 4.86:1 (5.41), faint
+  4.52:1 (4.53), the focus ring 7.91:1 (7.94), the strong border 5.06:1 (5.69), the tree guide
+  4.67:1 (5.34). The hairline `border.subtle` is 2.22:1 (2.37): it is also the ground of a
+  notice's "and N more", whose words it would lose if drawn darker.
 
 **The fonts are bundled as their projects publish them**, unmodified: IBM Plex Sans 3.005
 Regular, Medium and SemiBold, each upright and italic (IBM's complete woff2, which covers Latin,
