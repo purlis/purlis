@@ -117,12 +117,16 @@ describe("what a menu lists", () => {
     expect(shown.below).toEqual([]);
   });
 
-  it("puts everything that destroys something below the line and nothing else", () => {
+  it("puts what ends or closes something below the line and nothing else", () => {
     const tabs = openTab(noTabs(), 7, "3 steward");
-    // A tab's own rows (#4753), and its close.
+    // A tab's own rows (#4753), and its close, which ends nothing (#4756) and is still last.
     const tab = titles({ on: "tab", tab: 1 }, { tabs });
-    expect(tab.above).toEqual(["Switch to tab 3 steward", "Pin tab 3 steward"]);
-    expect(tab.below).toEqual(["End chat 3 steward"]);
+    expect(tab.above).toEqual([
+      "Switch to tab 3 steward",
+      "Pin tab 3 steward",
+      "Tile all in 3 steward",
+    ]);
+    expect(tab.below).toEqual(["Close 3 steward"]);
     // The chat's own list: its Activity only reads (#1495), and End… ends it.
     const chat = titles({ on: "chat", session: 7 }, { tabs });
     expect(chat.above).toEqual([
@@ -220,7 +224,7 @@ describe("what a menu lists", () => {
       "Split down",
       "Send F2 to the chat in front",
     ]);
-    expect(pane.below).toEqual(["End this pane's chat"]);
+    expect(pane.below).toEqual(["Close this pane"]);
   });
 
   it("keeps a row that cannot run, with the catalogue's reason on it", () => {
@@ -570,7 +574,7 @@ describe("a menu on screen", () => {
     const tabMenu = await open();
     expect(
       within(tabMenu)
-        .getByRole("menuitem", { name: "End" })
+        .getByRole("menuitem", { name: "Close" })
         .querySelector('[data-part="shortcut"]'),
     ).toHaveTextContent(/^(⌫|Delete)$/);
     expect(within(tabMenu).getByRole("menuitemcheckbox", { name: "Pinned" })).toHaveAttribute(

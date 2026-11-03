@@ -28,8 +28,10 @@ import {
   chromaFor,
   hueOf,
   mostOf,
+  noNearer,
   oklabDistance,
   tintHex,
+  toward,
   wordsChroma,
 } from "./tint";
 
@@ -109,9 +111,10 @@ describe("the core's copy of the tint", () => {
     // other (#3034).
     for (const { token, held } of (cases as unknown as { held: { token: string; held: boolean }[] })
       .held)
-      expect(chromaFor(token, 0.01, CLASSIC_THEME.tint.apart, 0.01, 0.01), token).toBe(
-        held ? 0.01 : Number.POSITIVE_INFINITY,
-      );
+      expect(
+        chromaFor(token, 0.01, CLASSIC_THEME.tint.apart, 0.01, 0.01, CLASSIC_THEME.tint.with_words),
+        token,
+      ).toBe(held ? 0.01 : Number.POSITIVE_INFINITY);
     for (const { colour, hue } of cases.hues) {
       if (hue === null) expect(hueIn(CLASSIC_THEME, colour), colour).toBeUndefined();
       else expect(hueIn(CLASSIC_THEME, colour), colour).toBeCloseTo(hue, 9);
@@ -183,6 +186,41 @@ describe("the core's copy of the tint", () => {
       const drawn = got === undefined ? null : accent_tinted ? tintHex(accent, hue, got) : accent;
       expect(drawn, `${accent} at ${hue}`).toBe(want);
     }
+  });
+
+  it("turns an accent's grounds toward it as the shared fixture says the engine does", () => {
+    // #4666: the engine's `tint::toward`, how an accent given over a parent takes its grounds.
+    const { toward: cases } = sharedCases() as {
+      toward: { under: string; accent: string; toward: string }[];
+    };
+    expect(cases.length).toBeGreaterThanOrEqual(40);
+    for (const { under, accent, toward: want } of cases)
+      expect(toward(under, accent), `${under} toward ${accent}`).toBe(want);
+  });
+
+  it("keeps a ground no nearer a signal's wash as the shared fixture says the engine does", () => {
+    // #4666: the engine's `tint::no_nearer`, measured as drawn, alpha and all.
+    const { no_nearer: cases } = sharedCases() as {
+      no_nearer: {
+        turned: string;
+        written: string;
+        values: Record<string, string>;
+        holds: boolean;
+      }[];
+    };
+    expect(cases.some((one) => one.holds)).toBe(true);
+    expect(cases.some((one) => !one.holds)).toBe(true);
+    for (const { turned, written, values, holds } of cases)
+      expect(
+        noNearer(turned, written, (token) => values[token], CLASSIC_THEME.tint.no_nearer),
+        `${turned} for ${written}`,
+      ).toBe(holds);
+  });
+
+  it("answers a value that is not a colour as it is, as the engine does", () => {
+    // #4666's review, F3: no "#NaNNaNNaN".
+    expect(toward("#292735", "platform")).toBe("#292735");
+    expect(toward("platform", "#2bb3a3")).toBe("platform");
   });
 
   it("draws every token of a built-in as the shared fixture says the engine does", () => {
@@ -479,13 +517,15 @@ describe("the consent floors under every tint (#2526)", () => {
   });
 
   it("draws Purlis Classic light's yellow workspace as the core does", () => {
-    // #3130: the accent gives way alone to the waiting amber, near a grey, while the primary's
-    // fill keeps the yellow (`purlis_classic_s_tints_are_these`), so the window's sum and the
-    // core's cannot drift apart.
+    // #3130: the accent gives way alone to the waiting amber, near a grey. The primary's fill is
+    // Classic's surface, and a yellow surface would come nearer the waiting wash than Classic's
+    // own, so both are drawn as written (#4666, `purlis_classic_s_tints_are_these`): the window's
+    // sum and the core's cannot drift apart.
     const light = classicAppearances().find((one) => one.id === "light")?.theme as Theme;
     const tint = tinted(light, "yellow");
     expect(tint.values["accent.base"]).toBe("#5e5d5e");
-    expect(tint.values["accent.fill"]).toBe("#f1edda");
+    expect(tint.values["accent.fill"]).toBe(light.values["accent.fill"]);
+    expect(tint.values["accent.surface"]).toBe(light.values["accent.surface"]);
   });
 
   it("draws a rule between two chromas with its sides as far apart as the core does", () => {
@@ -575,6 +615,8 @@ describe("the consent floors under every tint (#2526)", () => {
     ["light", "yellow"],
     ["dark-high-contrast", "yellow"],
     ["dark-high-contrast", "green"],
+    ["light-high-contrast", "yellow"],
+    ["light-high-contrast", "green"],
   ])("keeps the accent of Purlis %s as written in a %s workspace", (id, colour) => {
     const theme = purlisAppearance(id);
     const tint = tinted(theme, colour);
@@ -584,7 +626,7 @@ describe("the consent floors under every tint (#2526)", () => {
     expect(tint.values["layer.chat"]).not.toBe(theme.values["layer.chat"]);
   });
 
-  it.each(["light", "dark", "dark-high-contrast"])(
+  it.each(["light", "dark", "dark-high-contrast", "light-high-contrast"])(
     "holds every rule on Purlis %s at every whole degree",
     (id) => {
       const theme = purlisAppearance(id);

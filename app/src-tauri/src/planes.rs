@@ -130,6 +130,9 @@ struct Records {
     /// record it writes, so the next launch can tell whether it is still in this clone, on
     /// this device — or in a copy, or a move ([`reopen::arrive`]).
     clone_seat: reopen::CloneSeat,
+    /// Each open chat's kept skill stamp, which a sweep that takes a closed chat's record of
+    /// the levels it could have made forgets (#4884).
+    skills_now: Arc<crate::chats::SkillsNow>,
 }
 
 impl Records {
@@ -177,7 +180,7 @@ impl Records {
         purlis_core::browsertimeline::sweep(&self.root, &open);
         // **And a closed chat's Skill studio leftovers** (SK-9, #2772): the record of the levels
         // a sandboxed chat could have made, and a Try it's throwaway piece no chat stands in.
-        crate::skilldrafts::sweep(&self.root, &record);
+        crate::skilldrafts::sweep(&self.root, &record, &self.skills_now);
     }
 
     /// Every project this machine remembers opening (the machine store's recents), which is
@@ -269,6 +272,9 @@ pub struct Held {
     closing: Arc<crate::smartclose::Closing>,
     /// What the app remembers of the tasks its chats dispatched, and who waits on them (#1441).
     tasks: Arc<crate::dispatched::Tasks>,
+    /// Told each time a vault value is remembered, to mask what the host's board keeps of what
+    /// the chats said (the review of #4905). Kept here so it is told while the project is held.
+    _masked_kept: purlis_core::secrets::seen::Remembered,
     /// The window, for each step of a smart close.
     smart: crate::smartclose::Teller,
     /// Each chat's lane, which everything typed into a chat, its resizes and its views take in
@@ -3249,6 +3255,8 @@ impl Planes {
             Arc::new(move |report| {
                 if let Some(held) = held.upgrade() {
                     crate::smartclose::reported(&held, report);
+                    // The first report after a start timed at a launch: the chat is live (#4988).
+                    crate::starttiming::heard(report.chat);
                     // Whether its harness runs with its permission prompts off, which a
                     // dispatch from it is held to (#1446). Only a report the board took: a
                     // harness nested in the chat never marks the chat.
@@ -3279,6 +3287,21 @@ impl Planes {
                     // cancelling (#1459), is sent its last-turn prompt when the turn it was in
                     // ends, and is ended when that last turn does (#1448).
                     crate::stopping::reported(&held, report.chat);
+                }
+            })
+        });
+        // What each chat last said, as the board the host kept had it (#4709): kept again,
+        // masked again under what this window knows, where the ledger heard nothing since.
+        // Weak for the handoff's reason.
+        held.hooks.when_said_taken({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat, said| {
+                if let Some(held) = held.upgrade() {
+                    let said = said
+                        .iter()
+                        .map(|one| purlis_core::secrets::mcpstart::masked(one))
+                        .collect();
+                    held.tasks().ledger().said_again(chat, said);
                 }
             })
         });
@@ -4025,6 +4048,12 @@ impl Planes {
         if let Err(why) = machine::update(config, move |store| {
             store.remember(&plane, when);
             store.pin_the_most_active(&plane);
+            // A workspace removed or renamed outside purlis leaves its Runs on under a name no
+            // folder has: a pool there becomes This machine (#4591). Read under the store's lock,
+            // so a rename's carry can't fall between the list and the write.
+            if let Some(there) = machine::workspaces_surely_there(&plane) {
+                store.tidy_workspaces(&plane, &there);
+            }
         }) && why.kind() != std::io::ErrorKind::Unsupported
         {
             tracing::warn!(
@@ -4220,11 +4249,14 @@ impl Planes {
             .config
             .as_deref()
             .and_then(|config| purlis_core::machine::device_id(config).ok());
+        // Shared by the chats and their record's sweep (#4884).
+        let skills_now = Arc::new(crate::chats::SkillsNow::default());
         let records = Arc::new(Records {
             root: root.clone(),
             config: self.config.clone(),
             allowed: AtomicBool::new(false),
             clone_seat: reopen::CloneSeat::of(&root, device.clone()),
+            skills_now: Arc::clone(&skills_now),
         });
         let recorded = WrittenBehind::new({
             let records = Arc::clone(&records);
@@ -4244,6 +4276,7 @@ impl Planes {
             chats.sessions().hear_through(relayed);
         }
         chats.arming_with(self.shipped.clone());
+        chats.keeping_skills_in(skills_now);
         if let Some(executor) = &self.routers {
             chats.asks_routers_with(Arc::new(purlis_core::skills::router::OnThisMachine {
                 executor: Arc::clone(executor),
@@ -4738,6 +4771,9 @@ impl Planes {
             let (plane, told) = (id.clone(), Arc::clone(&self.moves_told));
             Arc::new(move |one| told(plane.clone(), one))
         });
+        let tasks: Arc<crate::dispatched::Tasks> = Arc::default();
+        let masked_kept =
+            crate::dispatched::masked_kept_when_remembered(&tasks, hooks.shared_board());
         Held {
             id,
             root,
@@ -4752,7 +4788,8 @@ impl Planes {
             started_on,
             typed,
             closing,
-            tasks: Arc::default(),
+            tasks,
+            _masked_kept: masked_kept,
             smart: Arc::clone(&self.smart),
             lanes,
             stopping: crate::stopping::Stopping::default(),

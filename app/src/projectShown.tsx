@@ -47,15 +47,45 @@ export function useProjectShown(): boolean {
   return useContext(ProjectShown);
 }
 
-/** Runs `run` once the frame being drawn now has been painted. Answers how to call it off. */
+/** The runs asked for while the frame being drawn now is drawn, not yet run. */
+let thisFrame: Set<() => void> | undefined;
+
+/**
+ * Runs `run` once the frame being drawn now has been painted. Answers how to call it off.
+ *
+ * **Every run asked for during one frame runs in one task** (#3032), in the order asked: a
+ * project coming back asks one of each part that reads again behind the paint, and run as one,
+ * what they set is drawn in one commit and the reads they start go out together. Each in a timer
+ * of its own, as it was, they ran together on a quiet machine and apart on a busy one, with React
+ * drawing between them, so a switch drew as many times as its timers were spread. One that throws
+ * is reported, and the rest still run.
+ */
 export function afterPaint(run: () => void): () => void {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const frame = requestAnimationFrame(() => {
-    timer = setTimeout(run, 0);
-  });
+  let batch = thisFrame;
+  if (batch === undefined) {
+    const runs = new Set<() => void>();
+    batch = thisFrame = runs;
+    requestAnimationFrame(() => {
+      if (thisFrame === runs) thisFrame = undefined;
+      setTimeout(() => {
+        for (const one of runs) {
+          try {
+            one();
+          } catch (error) {
+            queueMicrotask(() => {
+              throw error;
+            });
+          }
+        }
+      }, 0);
+    });
+  }
+  // Its own entry, so the same `run` asked for twice runs twice and is called off once.
+  const entry = () => run();
+  batch.add(entry);
+  const runs = batch;
   return () => {
-    cancelAnimationFrame(frame);
-    if (timer !== undefined) clearTimeout(timer);
+    runs.delete(entry);
   };
 }
 

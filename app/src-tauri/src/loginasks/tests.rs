@@ -33,8 +33,37 @@ fn suggested(site: &str) -> Suggested {
     }
 }
 
+/// Where a page's own form shows: on the page itself.
+fn on_its_page(page: &str) -> Result<String, String> {
+    Ok(page.to_owned())
+}
+
+/// [`super::judged`] for a page whose form is on its own origin.
+fn judged(
+    root: &Path,
+    persona: &str,
+    login: &str,
+    suggested: &Suggested,
+    held: &[Tool],
+) -> Result<Judged, String> {
+    super::judged(root, persona, login, suggested, &on_its_page, None, held)
+        .map(|judged| judged.expect("an undeclared login is asked about"))
+}
+
 fn raised(root: &Path, grants: &Grants, site: &str) -> (u32, Proposal, mpsc::Receiver<Heard>) {
-    let judged = judged(root, "qa", "shop-login", &suggested(site), &[]).expect("asked");
+    raised_finding(root, grants, site, &on_its_page)
+}
+
+/// [`raised`], the page followed to its form with `finds`.
+fn raised_finding(
+    root: &Path,
+    grants: &Grants,
+    site: &str,
+    finds: FindsForm<'_>,
+) -> (u32, Proposal, mpsc::Receiver<Heard>) {
+    let judged = super::judged(root, "qa", "shop-login", &suggested(site), finds, None, &[])
+        .expect("asked")
+        .expect("an ask");
     let proposal = judged.proposal.clone();
     let (id, heard) = grants
         .raise(LoginWait {
@@ -69,7 +98,18 @@ fn answered(
     audited: &Audited,
     asked: &Asked<'_>,
 ) -> Result<Pressed, String> {
-    answer(root, grants, asked, &|_, one| {
+    answered_finding(root, grants, audited, asked, &on_its_page)
+}
+
+/// [`answered`], a typed page followed to its form with `finds`.
+fn answered_finding(
+    root: &Path,
+    grants: &Grants,
+    audited: &Audited,
+    asked: &Asked<'_>,
+    finds: FindsForm<'_>,
+) -> Result<Pressed, String> {
+    answer(root, grants, asked, finds, &|_, one| {
         audited
             .borrow_mut()
             .push((one.what.to_owned(), one.level.word().to_owned()));
@@ -298,6 +338,7 @@ fn other_site(root: &Path) -> Tool {
         "qa",
         "other",
         &suggested("https://other.example.test/"),
+        &on_its_page,
         &[],
     )
     .expect("a proposal");
@@ -519,4 +560,396 @@ fn a_closed_chat_stops_its_call_waiting() {
     grants.forget(7);
     assert_eq!(heard.try_recv(), Ok(Heard::Gone));
     assert!(grants.waiting().is_empty());
+}
+
+// ---- A form on another host (#4995) ----
+
+const AUTH: &str = "https://auth.example.test/realms/x/protocol/openid-connect/auth?state=s";
+
+fn on_auth(_: &str) -> Result<String, String> {
+    Ok(AUTH.to_owned())
+}
+
+#[test]
+fn a_form_on_another_host_is_drawn_and_once_fills_there_alone() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, heard) =
+        raised_finding(dir.path(), &grants, "https://app.example.test/", &on_auth);
+    assert_eq!(proposal.form, "https://auth.example.test");
+    assert!(
+        proposal
+            .warnings
+            .iter()
+            .any(|warning| matches!(warning, loginask::Warning::FormElsewhere { .. })),
+        "{proposal:?}"
+    );
+    let audited = Audited::default();
+    answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Once, &proposal.digest()),
+    )
+    .expect("allowed");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
+    let login = tool_of(&grants, "shop-login")
+        .and_then(|tool| tool.login)
+        .expect("a login");
+    assert_eq!(login.url, "https://app.example.test/");
+    assert_eq!(login.fills_on(), "https://auth.example.test");
+}
+
+#[test]
+fn a_page_that_cant_be_followed_to_its_form_is_never_asked_about() {
+    let dir = project("");
+    let refused = super::judged(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &|_| Ok("http://auth.example.test/login".to_owned()),
+        None,
+        &[],
+    )
+    .expect_err("refused");
+    assert!(refused.contains("not https"), "{refused}");
+    assert!(refused.contains("records nothing"), "{refused}");
+}
+
+/// A site the person typed is followed to its own form: the form found for the chat's page
+/// never stands for it, and a form elsewhere is drawn before a press counts.
+#[test]
+fn a_typed_site_is_followed_to_its_own_form_before_anything_is_allowed() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/login");
+    let audited = Audited::default();
+    let digest = proposal.digest();
+    let asked = Asked {
+        typed: Some("app.example.test"),
+        ..press(id, Press::Once, &digest)
+    };
+    let drawn = answered_finding(dir.path(), &grants, &audited, &asked, &on_auth);
+    assert!(matches!(drawn, Ok(Pressed::DrawnAgain { .. })), "{drawn:?}");
+    assert!(heard.try_recv().is_err(), "the chat still waits");
+    assert!(tool_of(&grants, "shop-login").is_none());
+    assert_eq!(
+        grants.waiting()[0].proposal.form,
+        "https://auth.example.test"
+    );
+}
+
+#[test]
+fn a_typed_site_that_cant_be_followed_to_its_form_is_refused_and_the_ask_stays() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/login");
+    let audited = Audited::default();
+    let digest = proposal.digest();
+    let asked = Asked {
+        typed: Some("app.example.test"),
+        ..press(id, Press::Once, &digest)
+    };
+    let refused = answered_finding(dir.path(), &grants, &audited, &asked, &|_| {
+        Err("no login form appeared".to_owned())
+    });
+    assert!(refused.is_err(), "{refused:?}");
+    assert_eq!(
+        grants.waiting()[0].proposal,
+        proposal,
+        "the ask stays as drawn"
+    );
+    assert!(tool_of(&grants, "shop-login").is_none());
+}
+
+#[test]
+fn always_writes_the_form_the_notice_showed() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let grants = Grants::default();
+    let (id, proposal, _heard) =
+        raised_finding(dir.path(), &grants, "https://app.example.test/", &on_auth);
+    let audited = Audited::default();
+    answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Always, &proposal.digest()),
+    )
+    .expect("allowed");
+    let file = file_of(dir.path());
+    assert!(
+        file.contains("form = \"https://auth.example.test\""),
+        "{file}"
+    );
+    assert!(!file.contains("state=s"), "{file}");
+}
+
+// ---- A call naming another site for a declared login (#4996) ----
+
+/// The project of #4996: `shop-login` recorded on the app's address, allowed on this machine.
+const RECORDED: &str = "[sandbox]\nmode = \"on\"\n[sandbox.personas.qa]\ntools = { shop-login = { \
+                        vault = \"qa\", browser = \"https://app.example.test/\", user = \
+                        \"username\", key = \"password\" } }\n";
+
+/// A project that records `shop-login` on the app's address, with qa's list allowed here.
+fn recorded() -> tempfile::TempDir {
+    let dir = project(RECORDED);
+    let locks = Locks::of(dir.path());
+    let digest = sandbox::persona::digest_in(dir.path(), RECORDED, "qa", &locks).expect("a digest");
+    sandbox::local::allow_persona_hosts(dir.path(), "qa", &digest).expect("allowed");
+    dir
+}
+
+fn declared_shop(root: &Path) -> Tool {
+    declared_now(root, "qa", "shop-login").expect("declared")
+}
+
+/// The replace notice of #4996, raised for chat 7.
+fn raised_replacing(root: &Path, grants: &Grants) -> (u32, Proposal, mpsc::Receiver<Heard>) {
+    let judged = super::judged(
+        root,
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &on_auth,
+        Some(&declared_shop(root)),
+        &[],
+    )
+    .expect("asked")
+    .expect("a replacement");
+    let proposal = judged.proposal.clone();
+    let (id, heard) = grants
+        .raise(LoginWait {
+            id: 0,
+            session: 7,
+            proposal: judged.proposal,
+            since: 1,
+            vault_too: judged.vault_too,
+            no_always: judged.no_always,
+            pool: None,
+        })
+        .expect("raised");
+    (id, proposal, heard)
+}
+
+#[test]
+fn a_call_naming_the_site_a_login_has_is_no_ask() {
+    let dir = recorded();
+    let judged = super::judged(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &on_its_page,
+        Some(&declared_shop(dir.path())),
+        &[],
+    )
+    .expect("judged");
+    assert!(judged.is_none());
+}
+
+#[test]
+fn a_call_naming_another_site_asks_to_replace_the_recorded_one() {
+    let dir = recorded();
+    let grants = Grants::default();
+    let (_, proposal, _heard) = raised_replacing(dir.path(), &grants);
+    let old = proposal.replaces.expect("it replaces");
+    assert_eq!(old.page, "https://app.example.test/");
+    assert_eq!(old.form, "https://app.example.test");
+    assert_eq!(proposal.form, "https://auth.example.test");
+    assert_eq!(
+        file_of(dir.path()),
+        RECORDED,
+        "nothing changes before a press"
+    );
+}
+
+#[test]
+fn once_and_this_chat_write_nothing_and_the_next_login_fills_on_the_new_host() {
+    for press_it in [Press::Once, Press::Chat] {
+        let dir = recorded();
+        let grants = Grants::default();
+        let (id, proposal, heard) = raised_replacing(dir.path(), &grants);
+        let audited = Audited::default();
+        answered(
+            dir.path(),
+            &grants,
+            &audited,
+            &press(id, press_it, &proposal.digest()),
+        )
+        .expect("allowed");
+        assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
+        assert_eq!(file_of(dir.path()), RECORDED);
+        let login = tool_of(&grants, "shop-login")
+            .and_then(|tool| tool.login)
+            .expect("held for the chat");
+        assert_eq!(login.fills_on(), "https://auth.example.test");
+    }
+}
+
+#[test]
+fn always_replaces_the_recorded_line_and_allows_it_here() {
+    let dir = recorded();
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised_replacing(dir.path(), &grants);
+    let audited = Audited::default();
+    let done = answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Always, &proposal.digest()),
+    )
+    .expect("replaced");
+    assert!(
+        matches!(&done, Pressed::Done { said } if said.starts_with("Replaced")),
+        "{done:?}"
+    );
+    let file = file_of(dir.path());
+    assert!(
+        file.contains("form = \"https://auth.example.test\""),
+        "{file}"
+    );
+    let (declared, allowed) = sandbox::tools::declared_and_allowed_here(dir.path(), "qa");
+    let tool = declared
+        .iter()
+        .find(|tool| tool.name == "shop-login")
+        .expect("declared");
+    assert_eq!(
+        tool.login.as_ref().map(|login| login.fills_on()),
+        Some("https://auth.example.test")
+    );
+    assert!(
+        allowed.iter().any(|one| one.name == "shop-login"),
+        "{allowed:?}"
+    );
+}
+
+#[test]
+fn keep_leaves_the_recorded_site_and_tells_the_chat_plainly() {
+    let dir = recorded();
+    let grants = Grants::default();
+    let (id, proposal, heard) = raised_replacing(dir.path(), &grants);
+    let audited = Audited::default();
+    let done = answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Keep, &proposal.digest()),
+    )
+    .expect("kept");
+    assert!(
+        matches!(&done, Pressed::Done { said } if said.contains("recorded site")),
+        "{done:?}"
+    );
+    assert_eq!(heard.try_recv(), Ok(Heard::Kept(None)));
+    assert_eq!(file_of(dir.path()), RECORDED);
+    assert!(tool_of(&grants, "shop-login").is_none());
+    let told = kept_where_it_is_said("shop-login", "https://app.example.test/", None);
+    assert!(
+        told.contains("kept login shop-login on https://app.example.test/"),
+        "{told}"
+    );
+}
+
+#[test]
+fn always_is_held_back_by_proposals_off_for_a_replacement_too() {
+    let dir = recorded();
+    sandbox::policy::set_for_this_test(Locks::parse(
+        r#"{"sandbox": {"proposed-changes": "off"}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised_replacing(dir.path(), &grants);
+    assert!(grants.waiting()[0].no_always.is_some());
+    let audited = Audited::default();
+    assert!(
+        answered(
+            dir.path(),
+            &grants,
+            &audited,
+            &press(id, Press::Always, &proposal.digest()),
+        )
+        .is_err()
+    );
+    assert_eq!(file_of(dir.path()), RECORDED);
+}
+
+/// #4995: a chat's calls side by side never open a browser apiece to follow their pages.
+#[test]
+fn a_chat_follows_one_page_to_its_form_at_a_time() {
+    let grants = Grants::default();
+    let one = grants.follow(7).expect("the first");
+    assert!(
+        grants.follow(7).is_none(),
+        "a second, side by side, is refused"
+    );
+    assert!(grants.follow(8).is_some(), "another chat's is its own");
+    drop(one);
+    assert!(
+        grants.follow(7).is_some(),
+        "once it's done, the next may follow"
+    );
+}
+
+/// Nothing is opened for what needs no browser to judge: a declared login called with other keys,
+/// or on its own page where its line records its form.
+#[test]
+fn a_declared_login_is_judged_before_any_page_is_followed() {
+    let text = RECORDED.replace(
+        "browser = \"https://app.example.test/\",",
+        "browser = \"https://app.example.test/\", form = \"https://auth.example.test\",",
+    );
+    let dir = project(&text);
+    let opened = std::cell::Cell::new(false);
+    let finds = |page: &str| {
+        opened.set(true);
+        Ok(page.to_owned())
+    };
+    let declared = declared_shop(dir.path());
+    let same = super::judged(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &finds,
+        Some(&declared),
+        &[],
+    )
+    .expect("judged");
+    assert!(same.is_none(), "the declared login fills");
+    let other_key = Suggested {
+        key: "other".into(),
+        ..suggested("https://elsewhere.example.test/")
+    };
+    let refused = super::judged(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &other_key,
+        &finds,
+        Some(&declared),
+        &[],
+    )
+    .expect_err("refused");
+    assert!(refused.contains("change its site alone"), "{refused}");
+    assert!(!opened.get(), "no page was followed");
+}
+
+/// A declared login called on its own page fills as declared where the page can't be followed:
+/// its fill keeps the password on its origin all the same.
+#[test]
+fn a_declared_login_on_its_own_page_fills_as_declared_where_the_page_cant_be_followed() {
+    let dir = recorded();
+    let judged = super::judged(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &|_| Err("no login form appeared".to_owned()),
+        Some(&declared_shop(dir.path())),
+        &[],
+    )
+    .expect("judged");
+    assert!(judged.is_none());
 }

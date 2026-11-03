@@ -336,12 +336,33 @@ async function opened() {
 }
 
 /**
+ * **A workspace's first chat on its project's pool** (#4591): before anything is sent there, the
+ * row says plainly that the workspace's code is copied to that pool's runner and the chat's work
+ * comes back here.
+ */
+export const RunsOnFirstOnThePool: Story = {
+  args: { runsOn: { pool: "builds", level: "project", at_root: false, pools: POOLS, ran_on: [] } },
+  play: async () => {
+    const page = await opened();
+    const runsOn = page.getByRole("button", { name: /Runs on$/ });
+    await expect(runsOn).toHaveAccessibleDescription(
+      "Pool builds, as this project's chats run. This is this workspace's first chat on " +
+        "pool builds. Its code is copied to that pool's runner. The chat's work comes back " +
+        "here when it ends.",
+    );
+    await pictureNow();
+  },
+};
+
+/**
  * **Runs on, following the project's pool** (#4536): the row says the place and the level that
  * put it there. Picked from the keyboard, a pool is for this start only and says so, and Start
  * carries it.
  */
 export const RunsOnFollowsTheProject: Story = {
-  args: { runsOn: { pool: "builds", level: "project", at_root: false, pools: POOLS } },
+  args: {
+    runsOn: { pool: "builds", level: "project", at_root: false, pools: POOLS, ran_on: POOLS },
+  },
   play: async ({ userEvent }) => {
     const page = await opened();
     const runsOn = page.getByRole("button", { name: /Runs on$/ });
@@ -381,7 +402,7 @@ export const RunsOnFollowsTheProject: Story = {
 
 /** **Runs on, where the workspace runs its chats on this machine** (#4536). */
 export const RunsOnThisMachineForTheWorkspace: Story = {
-  args: { runsOn: { pool: null, level: "workspace", at_root: false, pools: POOLS } },
+  args: { runsOn: { pool: null, level: "workspace", at_root: false, pools: POOLS, ran_on: POOLS } },
   play: async () => {
     const page = await opened();
     const runsOn = page.getByRole("button", { name: /Runs on$/ });
@@ -395,7 +416,9 @@ export const RunsOnThisMachineForTheWorkspace: Story = {
 
 /** **Runs on, at the project's root** (#4536): a chat there runs here, and no pool is offered. */
 export const RunsOnAtTheRoot: Story = {
-  args: { runsOn: { pool: null, level: "this_machine", at_root: true, pools: POOLS } },
+  args: {
+    runsOn: { pool: null, level: "this_machine", at_root: true, pools: POOLS, ran_on: POOLS },
+  },
   play: async () => {
     const page = await opened();
     await expect(
@@ -409,7 +432,7 @@ export const RunsOnAtTheRoot: Story = {
 /** **Runs on, with no pool on this machine** (#4536): the place, and Pool setup… to add one,
  *  rather than a choice of one. */
 export const RunsOnWithNoPool: Story = {
-  args: { runsOn: { pool: null, level: "this_machine", at_root: false, pools: [] } },
+  args: { runsOn: { pool: null, level: "this_machine", at_root: false, pools: [], ran_on: [] } },
   play: async ({ userEvent }) => {
     const page = await opened();
     await expect(
@@ -434,7 +457,7 @@ export const RunsOnWithNoPool: Story = {
  */
 export const PoolUnavailable: Story = {
   args: {
-    runsOn: { pool: "builds", level: "project", at_root: false, pools: POOLS },
+    runsOn: { pool: "builds", level: "project", at_root: false, pools: POOLS, ran_on: POOLS },
     trouble: "Pool builds is stopped, so the chat did not start.",
     poolUnavailable: "builds",
   },

@@ -132,7 +132,10 @@ import {
   type Direction,
   type Tabs,
   type ViewRef,
+  type Tab,
 } from "./tabs";
+import { canTileAll, isSplit, zoomedOf } from "./tiling";
+import { canUndoLayout } from "./layoutUndo";
 import { isBrowser } from "./browsers";
 import { anyPoolKept, startAddingAPool } from "./pools";
 import { isDriven } from "./browserDriving";
@@ -351,13 +354,13 @@ export type Does =
   | { verb: "split"; direction: Direction }
   /** Hands a key the palette claimed to the chat in front, rather than swallowing it. */
   | { verb: "sendKey"; key: string }
-  /** `ends` is whether carrying it out ends a chat — a pane showing a view closes and kills
-   *  nothing, and only a row that ends a chat is asked about first (`PlaneView.ENDS_A_CHAT`). */
-  | { verb: "closePane"; ends: boolean }
-  | { verb: "closeTab"; tab: number; ends: boolean }
+  /** **A close never ends a chat** (#4756): Close pane clears the focused pane, Close tab closes
+   *  a layout, and their chats go on in the sidebar. Ending is End…, the chat's own row. */
+  | { verb: "closePane" }
+  | { verb: "closeTab"; tab: number }
   /** Close other tabs (#4762): `closes` is the tabs it closes, every other tab on the strip of
-   *  `tab` but the pinned ones, and `ends` whether any of them holds a chat it would end. */
-  | { verb: "closeOtherTabs"; tab: number; closes: readonly number[]; ends: boolean }
+   *  `tab` but the pinned ones. */
+  | { verb: "closeOtherTabs"; tab: number; closes: readonly number[] }
   | { verb: "selectTab"; tab: number }
   /** Opens a chat's name for editing (charter-app#254, #4753): in place on the strip where the
    *  chat is its tab's own, and in a dialog where it has no tab. By the chat's number. */
@@ -390,6 +393,12 @@ export type Does =
    *  workspace's go in the machine store and a chat's goes in the plane's own app record
    *  (ADR 0040). A design that treated "pin" as one thing would discover that in review. */
   | { verb: "pinTab"; tab: number; pinned: boolean }
+  /** Tile all (#4765): evens `tab`'s own panes into a grid, with Undo. */
+  | { verb: "tileAll"; tab: number }
+  /** Focus this pane in a split (#4765): zooms the focused pane, or brings the split back. */
+  | { verb: "zoomPane" }
+  /** Undo (#4763, #4765): the window's last layout change put back, once. */
+  | { verb: "undoLayout" }
   | { verb: "pinWorkspace"; workspace: string; pinned: boolean }
   | { verb: "pinProject"; plane: string; pinned: boolean }
   | { verb: "focusWorkspace"; workspace: string }
@@ -404,9 +413,9 @@ export type Does =
    *  second press on a sentence the operator has read. A `force` here would be a row that
    *  discards work with nobody warned — the same objection `worktree.discard` records. */
   | { verb: "removeWorkspace"; workspace: string }
-  /** `inside` is the next and the previous chat in a tab (V100-36): the tab is switched to it
-   *  whatever the person set for a pressed task, so the key never gives a task a tab. */
-  | { verb: "showChat"; session: number; inside?: true }
+  | { verb: "showChat"; session: number }
+  /** ⌘⇧H (#4757): the focused pane goes back to the chat it showed before. Nothing ends. */
+  | { verb: "paneBack" }
   /** Gives a task a tab of its own (#1489). Nothing ends, and nothing is asked. */
   | { verb: "ownTab"; session: number }
   /** Opens a task beside the session that asked for it, inside that session's tab (#1489). */
@@ -1041,6 +1050,12 @@ export type Doing = {
    *  "charter pins at most 32 projects — unpin one first" is a sentence the operator can act
    *  on and must therefore reach them. */
   pinTab: (tab: number, pinned: boolean) => Promise<Ran>;
+  /** Tiles `tab`'s own panes into an even grid (#4765). */
+  tileAll: (tab: number) => void;
+  /** Zooms the focused pane of the tab in front, or brings its split back (#4765). */
+  zoomPane: () => void;
+  /** Puts the last layout change back (#4763, #4765): a drop, a split or Tile all. */
+  undoLayout: () => void;
   pinWorkspace: (workspace: string, pinned: boolean) => Promise<Ran>;
   pinProject: (plane: string, pinned: boolean) => Promise<Ran>;
   focusWorkspace: (workspace: string) => void;
@@ -1050,7 +1065,9 @@ export type Doing = {
    *  what deletes is `workspace_remove` — never a lower-level call that would be past the
    *  core's guard. */
   removeWorkspace: (workspace: string) => void;
-  showChat: (session: number, inside?: boolean) => void;
+  showChat: (session: number) => void;
+  /** The focused pane goes back to the chat it showed before, or to where that chat is. */
+  paneBack: () => void;
   /** Gives a task a tab of its own, in front. */
   ownTab: (session: number) => void;
   /** Opens a task beside its session, in the session's tab, with the keyboard in it. */
@@ -1420,14 +1437,16 @@ export function projectRows(
 }
 
 /**
- * What ending a chat costs, said on the row that does it (charter-app#130).
- *
- * The `×` on a tab has always called `close_session`, which ends the program and takes the
- * chat off the board. That is the right behaviour and it is not changing. What was missing is
- * anybody saying so: the glyph reads as "hide this tab", and at fifty tabs with no undo the
- * operator tidying up was ending fifty live harnesses on that reading.
+ * What ending a chat costs, said on the row that does it (charter-app#130): End…, the one row
+ * that ends a chat since a close ends nothing (#4756).
  */
 export const ENDS_IT = "Ends the program it runs. There is no undo.";
+
+/** What a close says of the one chat it takes off the screen (#4756): it ends nothing. */
+export const ONE_CHAT_GOES_ON = "Its chat goes on in the sidebar.";
+
+/** What a close says of the chats it takes off the screen (#4756). */
+export const CHATS_GO_ON = "Its chats go on in the sidebar.";
 
 /**
  * What deleting a workspace costs, said on the row that asks for it.
@@ -1590,8 +1609,18 @@ export const TOGGLE_NAVIGATION_ID = "view.toggle:navigation";
 export const TOGGLE_ATTENTION_ID = "view.toggle:aside";
 /** The palette's row that shows the Panel or hides it, ⌘J's (#1737, P-6). */
 export const TOGGLE_PANEL_ID = "view.toggle:panel";
-/** Focus mode's row (#2921). */
+/** Focus this pane's row (#2921, #4765): zoom in a split, Focus mode in a one-pane tab. */
 export const FOCUS_MODE_ID = "focus.toggle";
+/** What Focus this pane's row says while it would zoom or hide (#4765). */
+export const FOCUS_THIS_PANE = "Focus this pane";
+/** Tile all's row for tab `tab` (#4765). */
+export function tileAllId(tab: number): string {
+  return `tab.tile:${tab}`;
+}
+/** Undo's row: the last layout change put back (#4763, #4765); ⌘Z's too. */
+export const UNDO_LAYOUT_ID = "layout.undo";
+/** Why Tile all cannot run on a tab of one pane (#4765). */
+export const ONE_PANE_TO_TILE = "It has one pane, so there is nothing to tile.";
 /** The keyboard shortcuts' row (#2921). */
 export const SHORTCUTS_ID = "shortcuts.show";
 /** The Devices view's row (#2052). */
@@ -1959,14 +1988,36 @@ export function catalogue(now: Now): Offer[] {
   // **Focus mode** (#2921, N32): one row whose words say what pressing it does now, as each
   // region's do; and **the keyboard shortcuts**, the key registry's cheat sheet in a tab of its
   // own (N25). Their keys are drawn on the rows from the registry.
+  // **Focus this pane** (#4765): in a split it zooms the focused pane and the same row brings
+  // the split back; in a one-pane tab it is focus mode, which, once on, it leaves first.
+  const zooms = now.focusMode !== true && isSplit(now.tabs, front?.id);
+  const zoomed = zooms && front !== undefined && zoomedOf(now.tabs, front.id) !== undefined;
+  const [focusTitle, focusVerb, focusNote]: [string, Does, string] = zooms
+    ? zoomed
+      ? [
+          "Back to the split",
+          { verb: "zoomPane" },
+          "Every pane of this tab drawn again, as it was.",
+        ]
+      : [
+          FOCUS_THIS_PANE,
+          { verb: "zoomPane" },
+          "This pane fills the tab for now, and the others keep running.",
+        ]
+    : now.focusMode === true
+      ? [
+          "Leave focus mode",
+          { verb: "toggleFocusMode" },
+          "The rail, the bars and the panels back where they were.",
+        ]
+      : [
+          FOCUS_THIS_PANE,
+          { verb: "toggleFocusMode" },
+          "The rail, the bars and the panels hidden: the work alone.",
+        ];
   offers.push({
-    ...can(FOCUS_MODE_ID, now.focusMode === true ? "Leave focus mode" : "Focus mode", {
-      verb: "toggleFocusMode",
-    }),
-    note:
-      now.focusMode === true
-        ? `The rail, the bars and the panels back where they were. ${FOCUS_KEY_SAID}.`
-        : `The rail, the bars and the panels hidden: the work alone. ${FOCUS_KEY_SAID}.`,
+    ...can(FOCUS_MODE_ID, focusTitle, focusVerb),
+    note: `${focusNote} ${FOCUS_KEY_SAID}.`,
   });
   offers.push({
     ...can(SHORTCUTS_ID, "Keyboard shortcuts", {
@@ -2089,6 +2140,30 @@ export function catalogue(now: Now): Offer[] {
       note: held ? UNPIN_NOTE : PIN_NOTE,
     });
   }
+
+  // **Tile all** (#4765): one row per tab, as Pin tab's, so the tab menu of a tab behind has its
+  // own; it evens only that tab's panes, and a tab of one pane has nothing to even.
+  for (const tab of now.tabs.order) {
+    const name = now.tabs.byId[tab].name;
+    const id = tileAllId(tab);
+    const title = `Tile all in ${name}`;
+    offers.push(
+      canTileAll(now.tabs, tab)
+        ? {
+            ...can(id, title, { verb: "tileAll", tab }, name),
+            note: "Its panes, evened into a grid in reading order. Undo puts them back.",
+          }
+        : cannot(id, title, ONE_PANE_TO_TILE, name),
+    );
+  }
+
+  // **Undo** (#4763, #4765): the window's last layout change, while nothing has changed since.
+  // Only while it can run, as the change it undoes was just made; its toast and ⌘Z run the same.
+  if (canUndoLayout(now.tabs))
+    offers.push({
+      ...can(UNDO_LAYOUT_ID, "Undo the last layout change", { verb: "undoLayout" }),
+      note: "The panes back where they were before.",
+    });
 
   offers.push(...chatRows(now));
 
@@ -2921,21 +2996,13 @@ export function catalogue(now: Now): Offer[] {
 
   // ----- destructive, and therefore last -----
 
-  // A pane's close ends its chat exactly as a tab's does, so it says the same thing.
-  // A pane showing a view closes and ends nothing, so it says so and is not asked about.
+  // A pane's close clears the pane and ends nothing, as a tab's does (#4756).
   const askedBy = now.askedBy ?? askedByOf(now.listed ?? []);
   offers.push(paneCloseOf(now.tabs, front?.focused, now.nameOf, askedBy, now.restoring));
 
-  // **`End`, not `Close`** (charter-app#130). Closing a tab calls `close_session`, which ends
-  // the program and takes the chat off the board — correct, and what the `×` has always done.
-  // But `Close tab 3` reads as "hide this", and an operator tidying fifty tabs with no undo
-  // was ending fifty live harnesses on that reading. The words are the fix: the row says what
-  // it does, and every surface draws these words — the palette row, the `×`'s accessible name
-  // and its tooltip are all this one string.
-  //
-  // **A tab showing only a view is closed, not ended** — nothing runs in it, so nothing is
-  // killed and nothing is asked. A view's tab with a chat split beside it ends that chat, and
-  // says so.
+  // **Close tab closes a layout and ends nothing** (#4756, spec #4750 story 18): its chats go
+  // on in the sidebar, so nothing is asked and nothing is drawn in the danger colour. It used
+  // to end them (charter-app#130), which is why the chat's own End… exists apart (#4753).
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
     const chats = panesOf(now.tabs, tab).length;
@@ -2955,33 +3022,24 @@ export function catalogue(now: Now): Offer[] {
       });
       continue;
     }
-    if (chats === 0) {
-      offers.push(
-        can(`tab.close:${tab}`, `Close ${name}`, { verb: "closeTab", tab, ends: false }, name),
-      );
-      continue;
-    }
-    // **A chat still restoring has no close yet** (`restoring.rs`): it has no program to end,
-    // and a tab taken away now would leave the chat to start with nowhere to be drawn.
+    const title = `Close ${name}`;
+    // **A chat still restoring has no close yet** (`restoring.rs`): a tab taken away now would
+    // leave the chat to start with nowhere to be drawn.
     if (panesOf(now.tabs, tab).some((one) => (now.restoring ?? []).includes(one.session))) {
-      offers.push(cannot(`tab.close:${tab}`, `End chat ${name}`, RESTORING_HAS_NO_CLOSE, name));
+      offers.push(cannot(`tab.close:${tab}`, title, RESTORING_HAS_NO_CLOSE, name));
       continue;
     }
-    const title =
-      chatOf(now.tabs, tab) === undefined
-        ? `Close ${name} and end the chat beside it`
-        : `End chat ${name}`;
     offers.push({
-      ...can(`tab.close:${tab}`, title, { verb: "closeTab", tab, ends: true }, name),
-      note: ENDS_IT,
+      ...can(`tab.close:${tab}`, title, { verb: "closeTab", tab }, name),
+      ...(chats === 0 ? {} : { note: chats === 1 ? ONE_CHAT_GOES_ON : CHATS_GO_ON }),
     });
   }
 
   // **Close other tabs skips the pinned ones** (#4762): a pin is the operator saying a tab
   // stays. One row, the tab in front's, however many tabs there are: a row per tab would be
   // fifty more at fifty chats, all saying the same verb. It closes each tab as that tab's own
-  // close would, so the chats it ends are asked about first, and the tasks in them go back to
-  // the Chats list.
+  // close would: their chats go on in the sidebar, and the tasks in them go back to the Chats
+  // list.
   if (now.tabs.inFront !== undefined && now.tabs.byId[now.tabs.inFront] !== undefined) {
     const tab = now.tabs.inFront;
     const id = `tab.closeOthers:${tab}`;
@@ -2991,15 +3049,7 @@ export function catalogue(now: Now): Offer[] {
       panesOf(now.tabs, one).some((pane) => (now.restoring ?? []).includes(pane.session));
     if (closes.length === 0) offers.push(cannot(id, title, NO_OTHER_TAB));
     else if (closes.some(restoring)) offers.push(cannot(id, title, RESTORING_HAS_NO_CLOSE));
-    else {
-      const ends = closes.some((one) =>
-        panesOf(now.tabs, one).some((pane) => askedBy(pane.session) === undefined),
-      );
-      offers.push({
-        ...can(id, title, { verb: "closeOtherTabs", tab, closes, ends }),
-        ...(ends ? { note: ENDS_IT } : {}),
-      });
-    }
+    else offers.push(can(id, title, { verb: "closeOtherTabs", tab, closes }));
   }
 
   offers.push(...stopRows(now.listed ?? [], now.stopping ?? []));
@@ -3306,6 +3356,15 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "pinTab":
       return doing.pinTab(does.tab, does.pinned);
+    case "tileAll":
+      doing.tileAll(does.tab);
+      return DID;
+    case "zoomPane":
+      doing.zoomPane();
+      return DID;
+    case "undoLayout":
+      doing.undoLayout();
+      return DID;
     case "pinWorkspace":
       return doing.pinWorkspace(does.workspace, does.pinned);
     case "pinProject":
@@ -3320,8 +3379,10 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       doing.removeWorkspace(does.workspace);
       return DID;
     case "showChat":
-      if (does.inside) doing.showChat(does.session, true);
-      else doing.showChat(does.session);
+      doing.showChat(does.session);
+      return DID;
+    case "paneBack":
+      doing.paneBack();
       return DID;
     case "ownTab":
       doing.ownTab(does.session);
@@ -4820,12 +4881,8 @@ function nothingSaidSoFar(quiet: readonly string[]): string {
  * **The close of one pane of the tab in front** (`pane.close`), decided for that pane: the
  * catalogue's row is the focused pane's, and a pane's own corner draws its own (#1486).
  *
- * A pane's close ends its chat exactly as a tab's does, so it says the same thing. A pane
- * showing a view closes and ends nothing, so it says so and is not asked about.
- *
- * **A pane showing a task has no close**: its close would end the session under the task,
- * which is not what is on screen, and ending a task is not a close. The reason names the
- * session that pane is. The tab's own close still ends the session, and says so.
+ * **Close pane clears the pane and ends nothing** (#4756), as a tab's close does: its chat, a
+ * task it shows, or the view it holds goes on or goes, and nothing is asked.
  *
  * **A task's own pane is sent back** (#1489): the same id, a minimise, which ends nothing.
  */
@@ -4843,17 +4900,11 @@ export function paneCloseOf(
     front === undefined
       ? undefined
       : contentsOf(tabs, front.id).find((one) => one.pane === pane)?.content;
-  if (content?.kind === "view")
-    return can("pane.close", "Close this view", { verb: "closePane", ends: false });
-  // An empty pane holds nothing to end (#4755): closing it only takes it away.
-  if (content?.kind === "empty")
-    return can("pane.close", "Close this pane", { verb: "closePane", ends: false });
+  if (content?.kind === "view") return can("pane.close", "Close this view", { verb: "closePane" });
+  // An empty pane holds nothing (#4755): closing it only takes it away.
+  if (content?.kind === "empty") return can("pane.close", PANE_CLOSE, { verb: "closePane" });
   if (front === undefined || content === undefined || pane === undefined)
-    return cannot(
-      "pane.close",
-      "End this pane's chat",
-      "No chat is in front, so there is no pane to close.",
-    );
+    return cannot("pane.close", PANE_CLOSE, "No chat is in front, so there is no pane to close.");
   // **A task's own pane has a minimise and no close** (#1489): beside its session, or the one
   // pane of its own tab. It sends the task back, and ends nothing. Also while that pane shows
   // a task of the task: what goes back is the pane's own chat, with everything below it.
@@ -4868,20 +4919,14 @@ export function paneCloseOf(
       note: BACK_NOTE,
     };
   if (restoring.includes(content.session))
-    return cannot("pane.close", "End this pane's chat", RESTORING_HAS_NO_CLOSE);
-  if (front.shows?.[pane] !== undefined) {
-    const own = nameOf(content.session);
-    return cannot(
-      "pane.close",
-      "End this pane's chat",
-      `This pane shows a task of ${own}. Go back to ${own} to end its chat, or close the tab.`,
-    );
-  }
-  return {
-    ...can("pane.close", "End this pane's chat", { verb: "closePane", ends: true }),
-    note: ENDS_IT,
-  };
+    return cannot("pane.close", PANE_CLOSE, RESTORING_HAS_NO_CLOSE);
+  // **Close pane clears the pane and ends nothing** (#4756, spec #4750 story 17): its chat, and
+  // a task it shows, go on in the sidebar.
+  return { ...can("pane.close", PANE_CLOSE, { verb: "closePane" }), note: ONE_CHAT_GOES_ON };
 }
+
+/** Close pane's words (#4756), on the pane head's `×`, its menu and the palette. */
+export const PANE_CLOSE = "Close this pane";
 
 /** The four rows' ids, which their keys press (`taskKeys.TASK_KEY_ROW`). */
 export const TAB_TASKS_ID = "tasks.menu";
@@ -4905,20 +4950,29 @@ function tabChatRows(now: Now): Offer[] {
     tasks: "Show this tab's tasks",
     next: "Next chat in this tab",
     previous: "Previous chat in this tab",
-    own: "Back to this tab's own chat",
+    own: "Back to this pane's previous chat",
   };
   const front = now.tabs.inFront === undefined ? undefined : now.tabs.byId[now.tabs.inFront];
   const pane = front && panesOf(now.tabs, front.id).find((one) => one.pane === front.focused);
   if (front === undefined || pane === undefined) {
+    const focused =
+      front === undefined
+        ? undefined
+        : contentsOf(now.tabs, front.id).find((one) => one.pane === front.focused)?.content;
     const why =
       front === undefined
         ? "No chat is in front."
-        : "The pane in focus shows a view, not a chat, so it has no tasks.";
+        : focused?.kind === "empty"
+          ? "The pane in focus shows nothing, so it has no tasks."
+          : "The pane in focus shows a view, not a chat, so it has no tasks.";
     return [
       cannot(TAB_TASKS_ID, titles.tasks, why),
       cannot(NEXT_CHAT_ID, titles.next, why),
       cannot(PREVIOUS_CHAT_ID, titles.previous, why),
-      cannot(OWN_CHAT_ID, titles.own, why),
+      // ⌘⇧H still goes back from a pane a chat left empty (#4757): it remembers that chat.
+      front !== undefined && focused?.kind === "empty"
+        ? backRow(now, front, titles.own, mac)
+        : cannot(OWN_CHAT_ID, titles.own, why),
     ];
   }
   // A task in a tab of its own is listed by this tab's menu and is not a chat IN this tab:
@@ -4927,7 +4981,6 @@ function tabChatRows(now: Now): Offer[] {
     (row) => row.placed !== "tab",
   );
   const shown = focusedChat(now.tabs);
-  const showsTask = front.shows?.[pane.pane] !== undefined;
   const hasTasks =
     rows.some((row) => row.level > 1 || (now.finished?.get(row.session)?.length ?? 0) > 0) ||
     front.shows !== undefined;
@@ -4937,7 +4990,7 @@ function tabChatRows(now: Now): Offer[] {
     return to === undefined || to === shown
       ? cannot(id, title, hasTasks ? `${front.name} is the only chat in this tab.` : none)
       : {
-          ...can(id, title, { verb: "showChat", session: to, inside: true }),
+          ...can(id, title, { verb: "showChat", session: to }),
           note: `${taskKeySaid(key, mac)}.${taskKeyNote(key, mac)}`,
         };
   };
@@ -4950,13 +5003,31 @@ function tabChatRows(now: Now): Offer[] {
       : cannot(TAB_TASKS_ID, titles.tasks, none),
     step(NEXT_CHAT_ID, titles.next, 1, "next"),
     step(PREVIOUS_CHAT_ID, titles.previous, -1, "previous"),
-    showsTask
-      ? {
-          ...can(OWN_CHAT_ID, titles.own, { verb: "showChat", session: pane.session }),
-          note: `Shows ${now.nameOf(pane.session)} again. The task goes on. ${taskKeySaid("own", mac)}.`,
-        }
-      : cannot(OWN_CHAT_ID, titles.own, "This tab is showing its own chat."),
+    backRow(now, front, titles.own, mac),
   ];
+}
+
+/**
+ * **⌘⇧H's row** (#4757; spec story 86): the focused pane goes back to the chat it showed
+ * before, and swaps back on a second press; where that chat is on screen in another pane, that
+ * pane comes forward. Nothing ends. Greyed, saying why, where the pane showed nothing else or
+ * that chat has ended.
+ */
+function backRow(now: Now, front: Tab, title: string, mac: boolean): Offer {
+  const before = front.previous?.[front.focused];
+  if (before === undefined)
+    return cannot(OWN_CHAT_ID, title, "This pane has shown no other chat yet.");
+  const listed = now.listed?.some((chat) => chat.session === before) ?? false;
+  if (!listed)
+    return cannot(
+      OWN_CHAT_ID,
+      title,
+      `${now.nameOf(before)} has ended, so there is nothing to go back to.`,
+    );
+  return {
+    ...can(OWN_CHAT_ID, title, { verb: "paneBack" }),
+    note: `Shows ${now.nameOf(before)} again. The chat on screen goes on. ${taskKeySaid("own", mac)}.`,
+  };
 }
 
 /** The tab holding a session, or nothing when no tab does. */
@@ -5225,7 +5296,12 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
     }
     case "tab":
       return {
-        above: [`tab.select:${what.tab}`, `tab.pin:${what.tab}`, `tab.keep:${what.tab}`],
+        above: [
+          `tab.select:${what.tab}`,
+          `tab.pin:${what.tab}`,
+          tileAllId(what.tab),
+          `tab.keep:${what.tab}`,
+        ],
         below: [`tab.close:${what.tab}`],
       };
     case "workspace":

@@ -210,3 +210,82 @@ fn with_no_window_the_host_moves_its_board_by_what_the_lines_say() {
     // A line that moves no board.
     assert!(!board.hear(&Heard::AskerGone { connection: 3 }));
 }
+
+#[test]
+fn what_a_chat_last_said_is_kept_beside_and_taken_whole_by_the_next_window() {
+    // #4709: the window keeps a chat's last turn-end messages, masked already, and tells the
+    // host each change; a window that holds the project again takes them with the board.
+    let mut window = Board::new();
+    let host = kept_beside(&mut window);
+    window.opened(1, Some(Harness::ClaudeCode), Some(CONVERSATION.into()));
+    window.keep_said(1, &["Which host?".to_owned(), "Should I push?".to_owned()]);
+    assert_eq!(
+        host.lock().unwrap().said_of(1),
+        ["Which host?", "Should I push?"]
+    );
+
+    let kept: Kept =
+        serde_json::from_value(serde_json::to_value(host.lock().unwrap().kept()).expect("said"))
+            .expect("read");
+    let mut next = Board::new();
+    next.keep(kept);
+    assert_eq!(next.said_of(1), ["Which host?", "Should I push?"]);
+
+    // Cleared as the window clears it, and gone with the chat.
+    window.keep_said(1, &[]);
+    assert!(host.lock().unwrap().said_of(1).is_empty());
+    window.keep_said(1, &["Again?".to_owned()]);
+    window.closed(1);
+    assert!(host.lock().unwrap().said_of(1).is_empty());
+}
+
+#[test]
+fn with_no_window_the_host_keeps_what_a_turn_ended_saying_masked_and_a_reply_clears_it() {
+    use crate::hookwire::relay::Heard;
+    use crate::hookwire::{Output, Speaker, TurnOutput};
+    let mut board = Board::new();
+    board.opened(1, Some(Harness::ClaudeCode), Some(CONVERSATION.into()));
+    board.hear(&Heard::Report(its_own(1, Event::UserPromptSubmit)));
+    board.hear(&Heard::Report(its_own(1, Event::Stop)));
+    let token = format!("{}{}", "ghp_", "0123456789abcdefghijABCDEFGHIJ012345");
+    let ended = |text: String, speaker: Speaker| {
+        Heard::Output(TurnOutput {
+            chat: 1,
+            turn_output: Output::Final { text },
+            speaker,
+        })
+    };
+    // A harness nested in the chat says nothing for it.
+    board.hear(&ended("Not mine.".to_owned(), Speaker::default()));
+    assert!(board.said_of(1).is_empty());
+    let its_run = Speaker {
+        pid: Some(PID),
+        conversation: Conversation::Named(CONVERSATION.into()),
+    };
+    board.hear(&ended(format!("Is {token} the one to use?"), its_run));
+    let said = board.said_of(1);
+    assert_eq!(said.len(), 1);
+    assert!(!said[0].contains(&token), "{}", said[0]);
+    assert!(said[0].starts_with("Is "), "{}", said[0]);
+
+    // The person's next turn is their answer.
+    board.hear(&Heard::Report(its_own(1, Event::UserPromptSubmit)));
+    assert!(board.said_of(1).is_empty());
+}
+
+#[test]
+fn a_board_too_large_for_the_link_with_what_chats_said_is_still_taken_without_it() {
+    let mut board = Board::new();
+    for chat in 1..=400 {
+        board.opened(chat, Some(Harness::ClaudeCode), Some(CONVERSATION.into()));
+        board.keep_said(chat, &["word ".repeat(800), "more ".repeat(800)]);
+    }
+    let lean = board.kept().without_said();
+    assert_eq!(lean.chats().count(), 400);
+    let read: Kept =
+        serde_json::from_value(serde_json::to_value(lean).expect("said")).expect("read");
+    let mut next = Board::new();
+    next.keep(read);
+    assert!(next.said_of(1).is_empty());
+    assert_eq!(next.chats().count(), 400);
+}

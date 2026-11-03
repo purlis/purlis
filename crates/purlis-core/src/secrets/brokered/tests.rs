@@ -3855,6 +3855,7 @@ fn shop_login_armed(vault: &str, key: &str, user: Option<&str>) -> crate::sandbo
             login: Some(Login {
                 url: "https://shop.example.test/login".into(),
                 origin: "https://shop.example.test".into(),
+                form: None,
             }),
             ..tool
         },

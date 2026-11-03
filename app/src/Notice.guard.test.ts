@@ -81,10 +81,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: READING,
   },
   "About.tsx": {
-    count: 1,
+    count: 2,
     why:
       "a dialog's read refusal: an inline error, not a Notice (V91n). Read again beside it is " +
-      "the retry (NO-8's follow-up, #1296)",
+      "the retry (NO-8's follow-up, #1296). And what Copy diagnostics came to, said once in the " +
+      "footer (#4774): the button beside it is the retry, so it has no way out of its own",
   },
   "ActivityTab.tsx": {
     count: 2,
@@ -632,6 +633,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "keys/ShortcutsView.tsx": {
     count: 1,
     why: "a filter that matches no shortcut says so where the cheat sheet's list was (#2921)",
+  },
+  "paneDrag.tsx": {
+    count: 1,
+    why: "what a pane drag says to a reader as it goes (picked up, dropped, put back), heard and never drawn (#4763)",
   },
   "references.tsx": {
     count: 1,

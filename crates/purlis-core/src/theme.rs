@@ -145,11 +145,12 @@ pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
 pub use tiers::Lifted;
 pub use tint::{
-    ACCENT_KIN, APART, Apart, Hue, Most, PALETTE, Rule, Tint, WAITING_KIN, alone_chroma_of,
-    apart_chroma, apart_chroma_of, chroma_for, chroma_of, held_apart, hue_of, most_at, tint_hex,
-    tint_hex_within, tinted,
+    ACCENT_KIN, APART, Apart, Hue, Most, NO_NEARER, NoNearer, PALETTE, Rule, Tint, WAITING_KIN,
+    alone_chroma_of, apart_chroma, apart_chroma_of, chroma_for, chroma_of, held_apart, hue_of,
+    most_at, no_nearer, tint_hex, tint_hex_within, tinted,
 };
 pub use typed::Typed;
+pub use vocabulary::ACCENT_WASHES;
 use vocabulary::{
     DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
 };
@@ -198,6 +199,8 @@ mod options_tests;
 // Every family's own tests, `parts_<family>_tests.rs`, declared by `build.rs` (`families`), so a
 // family's pull request adds its file and no line here.
 include!(concat!(env!("OUT_DIR"), "/theme_parts_tests.rs"));
+#[cfg(test)]
+mod accent_grounds_tests;
 #[cfg(test)]
 mod parts_tests;
 #[cfg(test)]
@@ -759,13 +762,14 @@ pub fn shipped(id: &str) -> Option<&'static Theme> {
     shipped_pick(id).map(|(theme, _)| theme)
 }
 
-/// **What a built-in pick names** (#3034): the theme, and the appearance its id implies, by the
-/// appearance's id. `purlis-dark` and `charter-dark` name Purlis's first appearance, its dark
-/// (`None`, so more contrast draws its high-contrast dark, as nothing chosen does);
-/// `purlis-light` and `charter-light` its `light`; `purlis` Purlis, `purlis-classic` Purlis
-/// Classic, each with no appearance implied. Those ids were written as a pick of the default's
-/// dark or light, so they draw the default's; only `purlis-classic` names Classic.
-pub fn shipped_pick(id: &str) -> Option<(&'static Theme, Option<&'static str>)> {
+/// **What a built-in pick names** (#3034): the theme, and the tag of the appearance its id
+/// implies. `purlis-dark` and `charter-dark` name Purlis's first appearance, its dark (`None`,
+/// so more contrast draws its high-contrast dark, as nothing chosen does); `purlis-light` and
+/// `charter-light` its light, by the tag, so more contrast draws its high-contrast light
+/// (#4677); `purlis` Purlis, `purlis-classic` Purlis Classic, each with no appearance implied.
+/// Those ids were written as a pick of the default's dark or light, so they draw the default's;
+/// only `purlis-classic` names Classic.
+pub fn shipped_pick(id: &str) -> Option<(&'static Theme, Option<Appearance>)> {
     if id == CLASSIC {
         return Some((classic(), None));
     }
@@ -774,11 +778,8 @@ pub fn shipped_pick(id: &str) -> Option<(&'static Theme, Option<&'static str>)> 
     }
     crate::names::THEME_LIGHT
         .recognises(id)
-        .then_some((purlis(), Some(LIGHT)))
+        .then_some((purlis(), Some(Appearance::Light)))
 }
-
-/// The id of Purlis's light appearance, which `purlis-light` names.
-const LIGHT: &str = "light";
 
 /// The appearance purlis draws when nothing has said otherwise: Purlis's dark (#3034).
 pub fn default_theme() -> &'static ResolvedTheme {
@@ -806,7 +807,7 @@ pub fn built_in(id: &str) -> Option<&'static ResolvedTheme> {
     let (theme, implied) = shipped_pick(id)?;
     Some(
         implied
-            .and_then(|wanted| theme.appearances.iter().find(|one| one.id == wanted))
+            .and_then(|tag| theme.of(tag))
             .unwrap_or_else(|| theme.first()),
     )
 }

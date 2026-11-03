@@ -708,6 +708,7 @@ fn writing_a_plane_s_record_vouches_for_it_in_the_same_breath() {
         config: Some(config.clone()),
         allowed: AtomicBool::new(true),
         clone_seat: reopen::CloneSeat::of(&root, None),
+        skills_now: Arc::default(),
     };
 
     // A record that appeared behind charter's back is exactly what the question is for.
@@ -740,6 +741,7 @@ fn a_plane_nobody_approved_is_not_vouched_into_consent_by_its_record_being_writt
         config: Some(config.clone()),
         allowed: AtomicBool::new(true),
         clone_seat: reopen::CloneSeat::of(&root, None),
+        skills_now: Arc::default(),
     };
 
     records.write(&one_chat_on("/bin/true"));
@@ -759,6 +761,7 @@ fn writing_the_record_deletes_the_theme_drafts_of_every_chat_it_no_longer_holds(
         config: None,
         allowed: AtomicBool::new(true),
         clone_seat: reopen::CloneSeat::of(&root, None),
+        skills_now: Arc::default(),
     };
     let (kept, gone) = (reopen::mint(), reopen::mint());
     let place = purlis_core::theme::drafts::Place {
@@ -7498,5 +7501,39 @@ fn a_secret_exec_heard_over_a_pools_link_never_reaches_the_run_on_this_desktop()
     assert!(
         matches!(here.as_slice(), [Frame::Refused { why, .. }] if !why.contains("pool")),
         "this desktop's own words for its own chats: {here:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn opening_a_plane_sets_a_pool_named_for_a_workspace_no_longer_there_to_this_machine() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let config = dir.path().join("config");
+    let root = a_plane(&dir.path().join("plane"));
+    std::fs::create_dir_all(root.join("workspaces").join("kept")).expect("a workspace");
+    let resolved = root.canonicalize().expect("the plane resolves");
+    machine::update(&config, |store| {
+        store.remember(&resolved, 1);
+        store
+            .set_chats_run_on(&resolved, "renamed", Some("builds"))
+            .expect("set");
+        store
+            .set_chats_run_on(&resolved, "kept", Some("builds"))
+            .expect("set");
+    })
+    .expect("written");
+    let planes = planes_keeping(&config);
+    let shown = asking(planes.open_if_approved(&root).expect("it is a plane")).contributes;
+
+    planes.approve_and_open(&root, &shown).expect("yes");
+
+    let store = planes.remembered().store;
+    assert_eq!(
+        store.workspace_place(&resolved, "renamed"),
+        machine::WorkspacePlace::ThisMachine
+    );
+    assert_eq!(
+        store.workspace_place(&resolved, "kept"),
+        machine::WorkspacePlace::Pool("builds".to_owned())
     );
 }

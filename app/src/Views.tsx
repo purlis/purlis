@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type ReactNode,
 } from "react";
 import { useLentMemoryStores } from "./MemoryEdits";
@@ -104,6 +105,7 @@ import { useSessionOffers } from "./sessionOffers";
 import { TodoTab } from "./TodoTab";
 import { TODO_VIEW, todoRefOf } from "./todos";
 import { pieceDiffOf, pieceOf } from "./pieceViews";
+import type { PieceFilesTab as FilesTab } from "./editor/PieceFiles";
 import { SESSION_VIEW, sessionTitle, sessionView } from "./sessions";
 import { ActivityTab } from "./ActivityTab";
 import { ChatNetworkTab } from "./ChatNetworkTab";
@@ -396,6 +398,7 @@ export function ViewPane({
   onMemorySaved,
   onCloseView,
   firstTask,
+  onNewChatOn,
   split,
   onSplit,
   onShowInstead,
@@ -434,6 +437,8 @@ export function ViewPane({
   onCloseView?: (view: ViewRef) => void;
   /** What the first task's tab asks the plane to do: start a run, show a run's diff (FR-28). */
   firstTask?: FirstTaskDoes;
+  /** Asks for a new chat on pool `pool`: Pool setup's last screen (#4483). */
+  onNewChatOn?: (pool: string, workspace?: string) => void;
   /** Where this view's divider was, as its first side's share in percent (FM-2). */
   split?: number;
   /** The operator moved this view's divider. */
@@ -654,7 +659,7 @@ export function ViewPane({
           />
         ) : viewKey(view) === viewKey(POOL_SETUP_VIEW) ? (
           /* Pool setup (spec #4469), keyed by the plane, whose personas it reads. */
-          <PoolSetupTab key={plane} plane={plane} />
+          <PoolSetupTab key={plane} plane={plane} workspace={workspace} onOpenChat={onNewChatOn} />
         ) : isSaving(view) ? (
           /* The plane's save standing and its save button (charter-app#294). Keyed by the
              plane, so a pane that comes to show another project's starts from its own read. */
@@ -666,25 +671,16 @@ export function ViewPane({
           /* A piece's files, or one of them, in the light editor (RC-5). Keyed by the view, so
              a pane that comes to show another file starts from its own read. */
           <Suspense fallback={OPENING}>
-            {piece.path === undefined ? (
-              <PieceFilesTab
-                key={`${plane}\u0000${view.key}`}
-                plane={plane}
-                cut={piece.place}
-                onOpenView={onOpenView}
-                split={split}
-                onSplit={onSplit}
-                onPress={onPress}
-              />
-            ) : (
-              <PieceFileTab
-                key={`${plane}\u0000${view.key}`}
-                plane={plane}
-                cut={piece.place}
-                path={piece.path}
-                onOpenView={onOpenView}
-              />
-            )}
+            <PieceTab
+              key={`${plane}\u0000${view.key}`}
+              plane={plane}
+              cut={piece.place}
+              path={piece.path}
+              onOpenView={onOpenView}
+              split={split}
+              onSplit={onSplit}
+              onPress={onPress}
+            />
           </Suspense>
         ) : pieceDiff !== undefined ? (
           /* One file against its branch's base (FM-11), in the light editor's merge view. */
@@ -901,12 +897,29 @@ function OfferButton({ offer, onPress }: { offer?: Offer; onPress?: (offer: Offe
  * **The light editor's tabs, loaded the first time one is drawn** (RC-5). CodeMirror and its
  * grammars are a chunk of their own, so a window that never opens a file or a diff never
  * parses any of it (ADR 0086 rows M2 and L6).
+ *
+ * **One lazy component for a branch's file tab and a file's own tab** (#4799), because they are
+ * one chunk. A lazy component suspends the first time it is drawn even when its module is
+ * loaded already, and React retries it only after its fallback has stood a while. With one per
+ * kind, the first tab of the second kind waited out that retry, and the tab it replaced stayed
+ * in the page, hidden, under the new tab's name. One component suspends once per window.
  */
-const PieceFilesTab = lazy(() =>
-  import("./editor/PieceFiles").then((module) => ({ default: module.PieceFilesTab })),
-);
-const PieceFileTab = lazy(() =>
-  import("./editor/PieceFiles").then((module) => ({ default: module.PieceFileTab })),
+const PieceTab = lazy(() =>
+  import("./editor/PieceFiles").then(({ PieceFilesTab, PieceFileTab }) => ({
+    default: function PieceTab(props: ComponentProps<typeof FilesTab> & { path?: string }) {
+      const { path, ...files } = props;
+      return path === undefined ? (
+        <PieceFilesTab {...files} />
+      ) : (
+        <PieceFileTab
+          plane={files.plane}
+          cut={files.cut}
+          path={path}
+          onOpenView={files.onOpenView}
+        />
+      );
+    },
+  })),
 );
 
 const PieceDiffTab = lazy(() =>

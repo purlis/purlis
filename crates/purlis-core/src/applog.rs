@@ -276,7 +276,7 @@ pub fn inform_on_purpose() {
 ///
 /// **Blocking, on purpose.** `tracing-appender`'s non-blocking writer hands lines to a thread
 /// and loses whatever it still holds when the process ends without dropping its guard, which
-/// is how this app ends: `panic = "abort"`, and `std::process::exit` on a second launch. The
+/// is how this app ends: an abort on a panic (`crate::panicend`), and `std::process::exit` on a second launch. The
 /// app says little, so a write on the thread that said it costs nothing anyone can notice.
 fn daily_file(dir: &Path) -> std::io::Result<RollingFileAppender> {
     RollingFileAppender::builder()

@@ -30,7 +30,7 @@ import { DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/the
 import { KEPT_DRAWN } from "./projectShown";
 import { onAMac } from "./tabKeys";
 import { themeInForce } from "./theme/inForce.testkit";
-import { forgetExtensionsOn } from "./extensionsOn";
+import { EXTENSIONS_ON_ASKED_AGAIN_AFTER, forgetExtensionsOn } from "./extensionsOn";
 import { aboutThisMachine, sayAboutThisMachine } from "./windowprefs";
 import { PURLIS_LIGHT } from "./theme/handed.testkit";
 import { findResult } from "./actionResult.testkit";
@@ -159,6 +159,8 @@ function core(
     closes?: () => Promise<null>;
     /** What `extensions_on` answers, or throws (#4822). None said, nothing is on. */
     extensionsOn?: () => string[];
+    /** What `theme_in_force` answers instead of the built-ins' (#4871). */
+    inForce?: (args: unknown) => unknown;
   } = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -198,7 +200,7 @@ function core(
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
     if (cmd === "extensions_on") return over.extensionsOn?.() ?? [];
-    if (cmd === "theme_in_force") return themeInForce(args);
+    if (cmd === "theme_in_force") return (over.inForce ?? themeInForce)(args);
     if (cmd === "project_theme_drawn") return over.themes?.[plane ?? ""] ?? null;
     if (cmd === "asks_waiting" && over.asks !== undefined)
       return {
@@ -607,6 +609,70 @@ describe("a window holding more than one project", () => {
       expect(drawn).toEqual([PURLIS_LIGHT]);
     } finally {
       stop();
+      drawIn(DEFAULT_THEME);
+      sayAboutThisMachine("extensions unread", undefined);
+      forgetExtensionsOn();
+    }
+  });
+
+  it("reads what the project has on again on Read again, once a press, and draws its extension's theme (#4871)", async () => {
+    forgetExtensionsOn();
+    // Fake timers for the wait before a failed question is asked once more; the rest of the
+    // window runs on time as it passes.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let said: string | undefined = "the record is unreadable";
+    const ACME = { ...PURLIS_LIGHT, name: "Acme Sharp" };
+    const { asked } = core({
+      launch: ONE,
+      themes: { [ONE]: "acme/sharp" },
+      extensionsOn: () => {
+        if (said !== undefined) throw new Error(said);
+        return ["acme"];
+      },
+      inForce: (args) => {
+        const on = (args as { on?: string[] | null }).on ?? [];
+        return on.includes("acme")
+          ? { theme: ACME, complaints: [], follows_system: false }
+          : themeInForce(args);
+      },
+    });
+    const questions = () => asked.filter(ofTheProjectAlone).length;
+    const unreadRow = () =>
+      document.querySelector<HTMLElement>('[data-cause="alert:extensions unread"]');
+    const readAgain = () => {
+      const row = unreadRow();
+      expect(row).not.toBeNull();
+      return within(row as HTMLElement).getByRole("button", { name: "Read again" });
+    };
+    try {
+      render(<App />);
+      await waitFor(() => expect(questions()).toBe(1));
+      await vi.advanceTimersByTimeAsync(EXTENSIONS_ON_ASKED_AGAIN_AFTER);
+      await waitFor(() => expect(questions()).toBe(2));
+      await openTheInbox();
+      await waitFor(() => expect(unreadRow()?.textContent).toContain("the record is unreadable"));
+
+      // A press that fails again: one question (and its one ask again), and the Notice stays
+      // with the new reason.
+      said = "the record is still unreadable";
+      await userEvent.click(readAgain());
+      await waitFor(() => expect(questions()).toBe(3));
+      await vi.advanceTimersByTimeAsync(EXTENSIONS_ON_ASKED_AGAIN_AFTER);
+      await waitFor(() => expect(questions()).toBe(4));
+      await waitFor(() =>
+        expect(unreadRow()?.textContent).toContain("the record is still unreadable"),
+      );
+
+      // A press that is answered: one question, the Notice goes and the extension's theme is
+      // drawn.
+      said = undefined;
+      await userEvent.click(readAgain());
+      await waitFor(() => expect(inForce().name).toBe("Acme Sharp"));
+      expect(questions()).toBe(5);
+      await waitFor(() => expect(unreadRow()).toBeNull());
+      expect(aboutThisMachine().some((one) => one.subject === "extensions unread")).toBe(false);
+    } finally {
+      vi.useRealTimers();
       drawIn(DEFAULT_THEME);
       sayAboutThisMachine("extensions unread", undefined);
       forgetExtensionsOn();

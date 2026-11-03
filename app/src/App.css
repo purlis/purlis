@@ -636,11 +636,6 @@ body {
    hover fill under the pointer. `Doer`'s `iconOnly` draws a quiet icon button, which wears
    `bare`; `N more` is a quiet button with words, which wears `show-more`. */
 
-/* **`End this pane's chat` is not on the bar any more** — it is in each pane's own corner, and
-   `.pane-doing > .ends-a-chat` in `paneFrame.css` is where its danger hover now lives. The
-   rule that was here is gone with the button rather than left behind matching nothing: dead
-   CSS is how a rule comes to be copied for a reason that stopped being true. */
-
 .trouble {
   margin: 0;
   padding: var(--space-2) var(--space-4);
@@ -1537,36 +1532,12 @@ body {
   white-space: nowrap;
 }
 
-/* **A pane whose tab shows a task that is not there to be drawn** (#1486, `TaskAway.tsx`): in
-   the terminal's place and on its surface, under the pane's top line, which still says the
-   path. A sentence, how it ended, and the way back. Nothing here is a terminal, so nothing
-   typed reaches a chat. */
-.task-away {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  align-items: flex-start;
-  height: 100%;
-  padding: var(--space-8) var(--space-5) var(--space-5);
-  overflow: auto;
-  color: var(--text-primary);
-  background: var(--terminal-background);
-}
-
-.task-away p {
-  margin: 0 0 var(--space-2);
-  max-width: 40rem;
-}
-
-.task-away-ways {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.task-away-report {
+/* **A task's report on the band of a pane left on it as it ended** (#4757, `EndedBand.tsx`):
+   text, every character, wrapped and never cut, in a box of its own that scrolls. */
+.ended-report {
   max-width: 100%;
-  max-height: 50vh;
+  max-height: 30vh;
+  margin: var(--space-2) 0 0;
   overflow: auto;
   white-space: pre-wrap;
 }
@@ -1617,7 +1588,7 @@ body {
 
 /* **A task's own tab** (#1489, V100-38): the task mark before its name, whose task it is after
    it, dimmer (`talk · steward 4`), and a minimise where a session's tab has its close. The
-   minimise ends nothing, so it never wears the close's danger look (`.closer.keeps`). */
+   minimise ends nothing, as no close does (#4756). */
 .tab[data-task-tab] .tab-mark[data-mark="task"] {
   color: var(--text-secondary);
 }
@@ -1776,6 +1747,19 @@ body {
 }
 
 .tabs .tab-split-more > svg {
+  inline-size: var(--space-5);
+  block-size: var(--space-5);
+}
+
+/* **A zoomed pane's mark** (#4765): after `⊟+N`, quiet like it, and never cut. */
+.tabs .tab-zoomed {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--text-quiet);
+}
+
+.tabs .tab-zoomed > svg {
   inline-size: var(--space-5);
   block-size: var(--space-5);
 }
@@ -3482,6 +3466,17 @@ body {
   .chat:is([aria-selected="true"], [aria-current]:not([aria-current="false"]))
   .chat-persona {
   --chat-badge-ground: var(--list-selected);
+}
+
+/* **A chat on screen in another pane of this tab** (#4757; the faint on-screen bar accepted on
+   #4582): the selected row's edge, thinner and with no fill, so a press that would jump there is
+   told before it is pressed, and the focused pane's row stays the one selected. */
+.chats-section .chat[data-beside]:not([aria-current]:not([aria-current="false"])) {
+  box-shadow: inset 1px 0 0 var(--list-selected-edge);
+}
+
+.chats-section .chat[data-beside]:not([aria-current]:not([aria-current="false"])):dir(rtl) {
+  box-shadow: inset -1px 0 0 var(--list-selected-edge);
 }
 
 /* The icon's look is `chatPersona.css`'s (#4762): the row sets only its size and its grounds. */
@@ -8817,6 +8812,10 @@ nav.piece-files-head {
 .waiting-strip[data-open] .waiting-strip-words {
   flex-direction: column;
   gap: var(--space-1);
+  /* The strip's height where its pane holds less than they would take (#4843): they shrink
+     to it, and their text scrolls. */
+  align-self: stretch;
+  min-block-size: 0;
 }
 .waiting-strip-label {
   flex: none;
@@ -8832,6 +8831,7 @@ nav.piece-files-head {
   white-space: nowrap;
 }
 .waiting-strip[data-open] .waiting-strip-says {
+  min-block-size: 0;
   max-block-size: 10lh;
   overflow: auto;
   white-space: pre-wrap;

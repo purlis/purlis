@@ -3,7 +3,7 @@
 
 import { SandboxMark, type SandboxSaid } from "./SandboxMark";
 import { memo, useMemo, type ReactNode } from "react";
-import { Columns2, Hand, ListTodo, Plus, SquareTerminal } from "lucide-react";
+import { Columns2, Hand, ListTodo, Maximize2, Plus, SquareTerminal } from "lucide-react";
 import { PersonaMark } from "./PersonaMark";
 import { ChatMark, StoppingMark, WrappingUp } from "./NeedsYou";
 import { markOf, ownWorkOf, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
@@ -161,7 +161,7 @@ export function TabMarks({
         <span className={preview ? "tab-name is-preview" : "tab-name"} {...tabPart("label")}>
           {face.name}
         </span>
-        <SplitMore more={face.more} />
+        <SplitMore more={face.more} zoomed={face.zoomed} />
       </>
     );
   }
@@ -195,7 +195,7 @@ export function TabMarks({
       <span className="tab-name" {...tabPart("label")}>
         {face.name}
       </span>
-      <SplitMore more={face.more} />
+      <SplitMore more={face.more} zoomed={face.zoomed} />
       <SandboxMark level={sandbox?.level} why={sandbox?.why} sites={sandbox?.sites} />
       <PlaneUpdatedMark files={updates?.[chat]} />
       {/* **What the tab is doing, said after what it is**: its own element, so a tab whose text
@@ -283,14 +283,24 @@ const StateBadge = memo(function StateBadge({
  * **`⊟+N`: how many other panes share a split tab** (#4762), after its name and never giving way
  * to it: the name is cut first. A screen reader hears it as words.
  */
-function SplitMore({ more }: { more: number }) {
+function SplitMore({ more, zoomed }: { more: number; zoomed?: true }) {
   if (more <= 0) return null;
   return (
-    <span className="tab-split-more" data-mark="split">
-      <Columns2 aria-hidden="true" />
-      <span aria-hidden="true">+{more}</span>
-      <span className="hidden-words">, split, {more + 1} panes</span>
-    </span>
+    <>
+      <span className="tab-split-more" data-mark="split">
+        <Columns2 aria-hidden="true" />
+        <span aria-hidden="true">+{more}</span>
+        <span className="hidden-words">, split, {more + 1} panes</span>
+      </span>
+      {/* **A zoomed pane's mark** (#4765): one pane fills the tab for now, and Focus this pane
+          brings the others back. */}
+      {zoomed && (
+        <span className="tab-zoomed" data-mark="zoomed">
+          <Maximize2 aria-hidden="true" />
+          <span className="hidden-words">, one pane zoomed</span>
+        </span>
+      )}
+    </>
   );
 }
 

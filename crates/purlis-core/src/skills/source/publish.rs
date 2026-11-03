@@ -11,8 +11,9 @@
 //!
 //! **The commit is built from git's objects, never a checkout** of the source's own files: its
 //! tree at the reviewed commit, with each skill's folder replaced. It goes to a new branch of the
-//! source itself, named by the digest of what it holds, by the one refspec, never forced. A person
-//! who may not push to the source is told so; nothing is forked for them (#4342).
+//! source itself, named by the digest of what it holds, by the one refspec, never forced. The
+//! review asks the forge first whether the person's account may push there, so a no is said up
+//! front with Export beside it; the push still answers for itself. Nothing is forked (#4342).
 //!
 //! **Grades go as a summary** in the request's description, and never in the skill's folder
 //! (decision 21): when, which harness, which grader, how it scored and how it ended. Never a
@@ -42,6 +43,9 @@ const MOST_GRADES: usize = 10;
 pub trait PublishForge {
     /// The credential helper the push gets, or `None` for a folder on this machine.
     fn helper(&self) -> Option<String>;
+    /// Whether the person's account may push to the source, as the forge says it: `None` where
+    /// its answer does not say. Read only, for the review alone.
+    fn may_push(&self) -> Result<Option<bool>, String>;
     /// The page of the open request already on `branch`. A closed or merged one does not count.
     fn already(&self, branch: &str) -> Result<Option<String>, String>;
     /// Opens the draft request, and answers its page.
@@ -115,6 +119,17 @@ impl PublishForge for OnTheForge {
             .or_else(|| Some(crate::forge::helper_for(&self.repo.forge)))
     }
 
+    fn may_push(&self) -> Result<Option<bool>, String> {
+        let record =
+            crate::forge::backend::RepoRecord::addressed_by(&self.repo.path, self.repo.forge.kind);
+        let about = self
+            .repo
+            .backend()
+            .about(&self.caller, &record)
+            .map_err(|why| why.to_string())?;
+        Ok(about.can_push)
+    }
+
     fn already(&self, branch: &str) -> Result<Option<String>, String> {
         let found = self
             .repo
@@ -158,6 +173,12 @@ pub struct PublishReview {
     pub author: (String, String),
     /// The grades the description holds.
     pub grades: Vec<GradeSent>,
+    /// Whether the person's account may push to the source, as its forge says (#4342). A reading
+    /// aid that says so up front and never refuses: GitLab answers no to an instance's admins and
+    /// to access through a shared group, and the forge's account need not be the one git pushes
+    /// as, so the push always answers for itself. `None` where the forge does not say, cannot be
+    /// asked, or the review is stopped already.
+    pub may_push: Option<bool>,
     /// The request's description, the grades among it, whole.
     pub body: String,
 }
@@ -207,9 +228,14 @@ pub fn review(
     level: &Level,
     name: &str,
     source: &Source,
+    forge: &dyn PublishForge,
 ) -> Result<PublishReview, String> {
     let scratch = Scratch::new()?;
-    reviewed(plane, built_in, level, name, source, &scratch, None)
+    let mut review = reviewed(plane, built_in, level, name, source, &scratch, None)?;
+    if !review.stopped() {
+        review.may_push = forge.may_push().ok().flatten();
+    }
+    Ok(review)
 }
 
 /// The review, with the source fetched into `scratch`, at the commit `at` where one is held to.
@@ -278,6 +304,7 @@ fn reviewed(
         author,
         grades,
         body,
+        may_push: None,
     })
 }
 

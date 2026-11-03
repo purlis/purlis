@@ -355,6 +355,9 @@ pub struct Hooks {
     /// Told what a chat's own tool hook says it is doing (#1981), once the board has judged the
     /// line its own run's. **In memory only.**
     doing_heard: Arc<Mutex<Option<Doings>>>,
+    /// Told what each chat last said as the board the host kept had it, as the window takes
+    /// that board (#4709): a slot filled after the fact, as `output` is. **In memory only.**
+    said_taken: Arc<Mutex<Option<SaidTaken>>>,
     /// What each working chat is doing, for the one line under its name (#1493). **In memory
     /// only**, as a touched path is: nothing here writes it, and the event log is not told.
     doings: Arc<crate::doing::Doings>,
@@ -430,7 +433,16 @@ pub struct Relayed {
     /// Which pool each chat runs on, where the project's chats are routed by workspace: a line
     /// is heard only from the host its chat runs on ([`Relayed::for_a_pool`]).
     routes: Mutex<Option<Routes>>,
+    /// Told what each chat last said, as the board it takes had it (#4709, [`Hooks::when_said_taken`]).
+    said_taken: Arc<Mutex<Option<SaidTaken>>>,
 }
+
+/// Told chat `chat`'s last turn-end messages, oldest first, as the host's board kept them
+/// (#4709): masked already, and masked again by whoever keeps them.
+pub type SaidTaken = Arc<dyn Fn(u32, Vec<String>) + Send + Sync + 'static>;
+
+/// A chat, and what its turns last ended saying (#4709).
+pub type ChatSaid = (u32, Vec<String>);
 
 std::thread_local! {
     /// The pool whose runner's link the ask heard on this thread came over, while it is heard:
@@ -646,6 +658,7 @@ impl Relayed {
             waiting: Mutex::new(None),
             pool: Some(pool.to_owned()),
             routes: Mutex::new(Some(routes)),
+            said_taken: Arc::clone(&self.said_taken),
         })
     }
 
@@ -683,11 +696,16 @@ impl Relayed {
         keeper: purlis_core::state::Keeper,
         kept: Option<purlis_core::state::Kept>,
     ) {
-        let (told, limits): (Vec<Moved>, Vec<(u32, i64)>) = {
+        let (told, limits, said): (Vec<Moved>, Vec<(u32, i64)>, Vec<ChatSaid>) = {
             let mut board = held_board(&self.board);
             board.told_to(keeper);
             match kept {
                 Some(kept) => {
+                    // What each chat last said, kept in the host past the window (#4709).
+                    let said = kept
+                        .said()
+                        .map(|(chat, said)| (chat, said.to_vec()))
+                        .collect();
                     board.keep(kept);
                     let chats: Vec<u32> = board.chats().collect();
                     (
@@ -696,11 +714,22 @@ impl Relayed {
                             .map(|chat| seen_by(&board, &self.plane, chat))
                             .collect(),
                         board.own_work_limits(),
+                        said,
                     )
                 }
-                None => (Vec::new(), Vec::new()),
+                None => (Vec::new(), Vec::new(), Vec::new()),
             }
         };
+        let taken = self
+            .said_taken
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(taken) = taken {
+            for (chat, said) in said {
+                taken(chat, said);
+            }
+        }
         for moved in told {
             (self.moved)(moved);
         }
@@ -2360,6 +2389,7 @@ impl Hooks {
             touching: Arc::new(Mutex::new(None)),
             output: Arc::new(Mutex::new(None)),
             doing_heard: Arc::new(Mutex::new(None)),
+            said_taken: Arc::new(Mutex::new(None)),
             blocked: Arc::new(Mutex::new(None)),
             repeated: Arc::new(Mutex::new(None)),
             throttle: Arc::default(),
@@ -2428,6 +2458,7 @@ impl Hooks {
             waiting: Mutex::new(Some(Vec::new())),
             pool: None,
             routes: Mutex::new(None),
+            said_taken: Arc::clone(&hooks.said_taken),
         }));
         hooks
     }
@@ -2842,6 +2873,7 @@ impl Hooks {
             touching,
             output,
             doing_heard,
+            said_taken: Arc::new(Mutex::new(None)),
             doings,
             skill_runs,
             blocked,
@@ -3286,6 +3318,15 @@ impl Hooks {
             .doing_heard
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(doings);
+    }
+
+    /// Who is told what each chat last said, as the window takes the board the host kept
+    /// (#4709): what the ledger keeps for the waiting strip, past a relaunch.
+    pub fn when_said_taken(&self, taken: SaidTaken) {
+        *self
+            .said_taken
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(taken);
     }
 
     /// Who is told what a chat's turn put out (#1981), once the board has judged the line its

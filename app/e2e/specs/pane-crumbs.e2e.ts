@@ -298,8 +298,8 @@ async function asATaskPane(pane: number): Promise<number> {
       frame.querySelector('[data-testid="pane"]'),
     );
     const controls = frames[at]?.querySelector(".pane-head > .pane-actions > .pane-doing");
-    const close = [...(controls?.querySelectorAll<HTMLElement>("button") ?? [])].find((button) =>
-      (button.getAttribute("aria-label") ?? "").startsWith("End this pane"),
+    const close = [...(controls?.querySelectorAll<HTMLElement>("button") ?? [])].find(
+      (button) => (button.getAttribute("aria-label") ?? "") === "Close this pane",
     );
     if (close) {
       close.style.display = "none";

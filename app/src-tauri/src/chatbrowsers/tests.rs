@@ -306,6 +306,7 @@ fn logins(name: &str) -> super::ReadLogin {
             keep: Some(kept_as(name)),
             identity: Some(IDENTITY.into()),
             suggested: false,
+            form: None,
         },
         opens: name == "kept-login",
         identity: IDENTITY.into(),

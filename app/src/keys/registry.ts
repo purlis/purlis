@@ -423,7 +423,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "focus.toggle",
-    does: "Focus mode: the work alone, and back",
+    does: "Focus this pane: zoom in a split, focus mode in one pane",
     group: "Window",
     where: "window",
     kind: "key",
@@ -615,6 +615,21 @@ export const SHORTCUTS: readonly Shortcut[] = [
     yields: ["dialog", "typing"],
     rows: [TASK_KEY_ROW.own],
     matches: isTask("own"),
+  },
+  {
+    id: "layout.undo",
+    does: "Undo the last layout change",
+    group: "Tabs and chats",
+    where: "window",
+    kind: "key",
+    chords: { mac: [cmd("z")], other: [ctl("z")] },
+    said: (mac) => (mac ? "⌘Z" : "Ctrl+Z"),
+    // A field's and an editor's own Undo come first, and off a Mac Ctrl+Z is the chat's
+    // (#4763): its handler holds it as not runnable in a field, so the field keeps the key.
+    yields: ["modal", "dialog", "palette", "editor", "terminal-off-mac", "typing"],
+    // The palette's Undo row (`UNDO_LAYOUT_ID`) runs the same Undo.
+    rows: ["layout.undo"],
+    matches: (e, mac) => isChord(e, mac ? cmd("z") : ctl("z")),
   },
   {
     id: "tab.rename",

@@ -359,7 +359,13 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
           ignore_fix_id: null,
           declares_none: false,
         }}
-        runsOn={{ pool: "builds", level: "project", at_root: false, pools: ["builds"] }}
+        runsOn={{
+          pool: "builds",
+          level: "project",
+          at_root: false,
+          pools: ["builds"],
+          ran_on: ["builds"],
+        }}
         onStart={(...args) => started.push(args[6])}
         onApprove={() => {}}
         onCancel={() => {}}
@@ -662,11 +668,11 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
           void render(
             <EndingChat
               offer={{
-                id: "tab.close:1",
-                title: "End chat steward 1",
+                id: "chat.end:1",
+                title: "End chat steward 1…",
                 available: true,
                 reason: "",
-                does: { verb: "closeTab", tab: 1, ends: true },
+                does: { verb: "endChat", session: 1 },
                 note: ENDS_IT,
               }}
               smart={{ available: true, why: null, close_first: false }}
@@ -750,9 +756,11 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     await screen.findByRole("dialog");
     await screen.findByRole("button", { name: "Read again" });
     // The licences (FM-3) are one link, to their tab (#1719). The walk starts on
-    // Close, where the dialog puts the keyboard (#1719).
+    // Close, where the dialog puts the keyboard (#1719). Copy diagnostics (#4774) is the
+    // footer's other button, beside Close.
     expect(await reachableByKeyboard()).toEqual([
       'button "Close"',
+      'button "Copy diagnostics"',
       'button "Read again"',
       'a "Discussions"',
       'a "report a bug"',

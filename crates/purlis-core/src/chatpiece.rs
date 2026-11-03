@@ -314,7 +314,7 @@ pub fn undo(plane: &Path, cut: &Cut) -> Result<Undone, Refusal> {
 /// [`Held::take_back`] when the start is refused or fails, and by `Drop` when neither happens.
 ///
 /// **`Drop` is not crash safety.** It runs on an early return and on an unwinding panic, which
-/// is what a debug build and the tests do. The release build sets `panic = "abort"`, so a panic
+/// is what a debug build and the tests do. A shipped build aborts on a panic (`crate::panicend`), so a panic
 /// there, like a crash or a kill, ends the process with no `Drop` at all, and the folder and
 /// the branch stay. Nothing sweeps them up afterwards on purpose: deleting branches charter
 /// did not see used risks the operator's work (D-GL1a). Instead the window shows such a

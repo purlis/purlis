@@ -784,6 +784,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_sizes",
     "pool_setup_skip",
     "pool_setup_wake",
+    // Try it starts a real chat on a pool on the person's press, and keeps that it started.
+    "pool_setup_try",
     "pool_setup_open_docker",
     "add_docker_pool",
     "remove_docker_pool",
@@ -928,6 +930,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "theme_drafts_revert_here",
     "theme_move_to_project",
     "theme_copy_to_machine",
+    // Copy diagnostics' facts about this machine (#4774): its system and how many chats it
+    // holds, for a bug report the person copies from About in their own window. The report
+    // carries the slow-answer log, which is the window's alone, so the facts beside it are too.
+    "diagnostics_here",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

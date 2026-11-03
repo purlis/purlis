@@ -14,6 +14,11 @@
 //! `browser` is the login page, and makes the tool this kind; `key` is the password's key and
 //! `user` the user name's, which a page that asks for a password alone leaves out.
 //!
+//! **A site that signs in on another host** (#4995, the person's ruling of 2026-11-03) also
+//! names `form`, the origin its login form is on: `browser = "https://app.example.com/"`,
+//! `form = "https://auth.example.com"`. The browser opens the page, and the password is typed on
+//! the form's origin alone. Without `form` it is typed on the page's own origin, as before.
+//!
 //! **purlis performs it, in the chat's own browser** (#2016, spec #2008). The chat calls the
 //! `browser_login` tool with the login's name; the app checks that the chat's start armed it
 //! (declared, and allowed on this machine with the persona's hosts, D-PE-ruling-1), reads its
@@ -27,6 +32,9 @@
 
 /// The key that makes a tool a browser login: the login page's URL.
 pub const KEY: &str = "browser";
+
+/// The key of the origin a browser login's form is on, where it isn't the page's own (#4995).
+pub const FORM_KEY: &str = "form";
 
 /// The key of a browser login's user name, beside `key`, the password's.
 pub const USER_KEY: &str = "user";
@@ -44,6 +52,29 @@ pub const USER_VAR: &str = "BROWSER_LOGIN_USER";
 pub struct Login {
     pub url: String,
     pub origin: String,
+    /// **The origin its form is on, where that isn't [`Self::origin`]** (#4995): the one place
+    /// the password is typed. None types it on the page's own origin.
+    pub form: Option<String>,
+}
+
+impl Login {
+    /// **The one origin the password is typed on**: the form's, else the page's own.
+    pub fn fills_on(&self) -> &str {
+        self.form.as_deref().unwrap_or(&self.origin)
+    }
+}
+
+/// **A login's `form`** (#4995): an origin as [`origin_of`] reads one, written as an origin alone,
+/// with no page, query or fragment, or why it is not one.
+pub fn form_of(form: &str) -> Result<String, String> {
+    let origin = origin_of(form).map_err(|why| why.replace("browser = ", "form = "))?;
+    if form.trim_end_matches('/') != origin {
+        return Err(format!(
+            "form = {form:?} is not an origin alone: write the scheme and host of the login form, \
+             as {origin:?}"
+        ));
+    }
+    Ok(origin)
 }
 
 /// **The origin a login page's `url` is on** (`https://host[:port]`, the port left out where it

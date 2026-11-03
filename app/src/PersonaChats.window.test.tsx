@@ -14,9 +14,9 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { EndingChat } from "./EndingChat";
 import type { ClosingChat, PersonaChat } from "./bindings";
 import { forgetDismissals } from "./dismissals";
+import { askToEnd } from "./menus.testkit";
 import { stripNamed } from "./test-strips";
 
 /**
@@ -142,8 +142,9 @@ async function closingTheStewardChat(theirs: ClosingChat) {
   await screen.findAllByTestId("pane");
   await settled();
   expect(tabNames()).toEqual(["steward 4", "check prod"]);
-  await userEvent.click(screen.getByRole("button", { name: "End chat steward 4" }));
-  return { ...said, asking: await screen.findByRole("alertdialog") };
+  // Its End… (#4753): the one row that ends a chat, and so the one that asks about the chats at
+  // work below it. A close ends nothing (#4756).
+  return { ...said, asking: await askToEnd("steward 4") };
 }
 
 function tabNames() {
@@ -155,7 +156,7 @@ function tabNames() {
 
 const ONE_RUNNING = below([RUNNING], ["check prod"]);
 
-describe("closing a chat with chats at work below it", () => {
+describe("ending a chat with chats at work below it", () => {
   it("asks once, with both choices, and starts on keeping them", async () => {
     const { asking, asked } = await closingTheStewardChat(ONE_RUNNING);
 
@@ -174,21 +175,20 @@ describe("closing a chat with chats at work below it", () => {
     expect(asked("close_session")).toEqual([]);
   });
 
-  it("keeps them running: the chat closes, and its persona chat goes back to the list, still open", async () => {
+  it("keeps them running: the chat closes, and its persona chat stays in its tab, still open", async () => {
     const { asking, asked } = await closingTheStewardChat(ONE_RUNNING);
 
     await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
 
     await waitFor(() => expect(asked("close_session")).toEqual([{ plane: PLANE, session: 4 }]));
     expect(asked("close_chat_stopping")).toEqual([]);
-    // **Its tab goes with the session's** (#1489, V100-39): a task's own tab is sent back when
-    // the session that asked closes, and the task is not ended by that. It was never closed,
-    // and the core is told it has no tab.
-    await waitFor(() => expect(within(stripNamed("Tabs")).queryAllByRole("tab")).toEqual([]));
-    expect(asked("close_chat_tab")).toEqual([{ plane: PLANE, session: 9 }]);
+    // **Its tab stays where it is** (#4757): a chat leaving moves no other pane, so the task's
+    // own tab is not sent back with the session that asked, and nothing of it ends.
+    await waitFor(() => expect(tabNames()).toEqual(["check prod"]));
+    expect(asked("close_chat_tab")).toEqual([]);
   });
 
-  it("stops them and closes in one command to the core, and their tabs go with the chat's", async () => {
+  it("stops them and closes in one command to the core, and the chat's tab goes", async () => {
     const { asking, asked, order } = await closingTheStewardChat(ONE_RUNNING);
 
     await userEvent.click(within(asking).getByRole("radio", { name: "Stop them" }));
@@ -203,7 +203,9 @@ describe("closing a chat with chats at work below it", () => {
     // One step: the chat is never left running between the stop and its own close, and the
     // window ends nothing a second time.
     expect(order()).toEqual(["close_chat_stopping"]);
-    await waitFor(() => expect(within(stripNamed("Tabs")).queryAllByRole("tab")).toEqual([]));
+    // The chat's own tab goes; the stopped task's stays until the core says it has ended, and
+    // then shows it as ended (#4757): a chat leaving moves no other pane.
+    await waitFor(() => expect(tabNames()).toEqual(["check prod"]));
   });
 
   it("carries the answer through Smart close: stopped now, and remembered for its close", async () => {
@@ -246,7 +248,7 @@ describe("closing a chat with chats at work below it", () => {
   });
 });
 
-describe("closing a chat with nothing at work below it", () => {
+describe("ending a chat with nothing at work below it", () => {
   it("asks nothing about them, and says which reported tasks close with it", async () => {
     const { asking, asked } = await closingTheStewardChat(
       below(
@@ -281,46 +283,5 @@ describe("closing a chat with nothing at work below it", () => {
 
     expect(within(asking).queryByRole("radio")).toBeNull();
     expect(asking).not.toHaveTextContent("closes with it");
-  });
-});
-
-describe("closing several chats at once", () => {
-  const offer = {
-    id: "tab.close:1",
-    title: "End tab steward 4",
-    available: true,
-    reason: "",
-    does: { verb: "nothing" },
-  } as const;
-
-  it("asks nothing about the chats they started, and says those keep running", () => {
-    render(
-      <EndingChat
-        offer={offer}
-        keeps
-        onEnd={() => undefined}
-        onSmartClose={() => undefined}
-        onCancel={() => undefined}
-      />,
-    );
-
-    const asking = screen.getByRole("alertdialog");
-    expect(within(asking).queryByRole("radio")).toBeNull();
-    expect(asking).toHaveTextContent(
-      "The chats these chats started keep running. Close one chat at a time to be asked about them.",
-    );
-  });
-
-  it("says nothing of it where none of them started a chat that is at work", () => {
-    render(
-      <EndingChat
-        offer={offer}
-        onEnd={() => undefined}
-        onSmartClose={() => undefined}
-        onCancel={() => undefined}
-      />,
-    );
-
-    expect(screen.getByRole("alertdialog")).not.toHaveTextContent("keep running");
   });
 });

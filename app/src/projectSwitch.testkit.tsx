@@ -1,13 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { Profiler } from "react";
 import { expect } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
+import { SETTLE_MS as ASKS_SETTLE_MS } from "./asks";
 import { panes } from "./countedPane.testkit";
-import { counts } from "./reactCommits.testkit";
+import { counts, renderedBy } from "./reactCommits.testkit";
 import { stripNamed } from "./test-strips";
 import { themeInForce } from "./theme/inForce.testkit";
 
@@ -96,26 +98,59 @@ const START_OPTIONS = {
 export type Asked = { cmd: string; plane: string | undefined };
 
 /** A core holding the projects `shape` names, with every call kept. */
-function core(shape: Shape): Asked[] {
+type Core = {
+  asked: Asked[];
+  /** Says `plane-changed` for `plane`'s answer `answer`, as the core's watcher would. */
+  planeChanged: (plane: string, answer: string) => Promise<void>;
+  /** Says `chat-moved` with `payload`, as the core does for each move of a chat. */
+  chatMoved: (payload: unknown) => void;
+  /** Holds every `plane_sidebar` answer from now on until the function it answers is called. */
+  holdSidebar: () => () => void;
+  /** Writes every `plane_sidebar` answer from now on with each object's keys in reverse order:
+   *  the same answer, as a core built another way could send it. */
+  reverseSidebarKeys: () => void;
+};
+
+/** `value` with the keys of every object in it in reverse order. */
+const keysReversed = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(keysReversed)
+    : value !== null && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value)
+            .reverse()
+            .map(([key, inner]) => [key, keysReversed(inner)]),
+        )
+      : value;
+
+function core(shape: Shape): Core {
   const asked: Asked[] = [];
+  const listening = new Map<string, number[]>();
+  let held: Promise<void> | undefined;
+  let reversed = false;
   const roots = Array.from({ length: shape.projects }, (_, n) => rootOf(n));
   const chats = new Map(
     roots.map((root, n) => [root, chatsOf(root, shape, shape.chatsIn?.[n] ?? shape.chats)]),
   );
   // Past every session a project was given: a chat a split starts is a new one.
   let started = 1_000;
-  mockIPC((cmd, args) => {
+  mockIPC(async (cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
     const plane = given.plane as string | undefined;
     asked.push({ cmd, plane });
-    if (cmd === "plugin:event|listen") return 1;
+    if (cmd === "plugin:event|listen") {
+      const { event, handler } = given as { event: string; handler: number };
+      listening.set(event, [...(listening.get(event) ?? []), handler]);
+      return 1;
+    }
     const open = chats.get(plane ?? "") ?? [];
+    if (cmd === "plane_sidebar" && held !== undefined) await held;
     if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
     if (cmd === "planes_to_restore")
       return { windows: [{ planes: roots, active: 0 }], dropped: [], gone: [] };
     if (cmd === "open_plane") return { plane: given.path, ask: null };
-    if (cmd === "plane_sidebar")
-      return {
+    if (cmd === "plane_sidebar") {
+      const answer = {
         root: plane ?? "",
         workspaces: Array.from({ length: shape.workspaces }, (_, w) => ({
           name: `w${w}`,
@@ -130,6 +165,8 @@ function core(shape: Shape): Asked[] {
         persona: "steward",
         unfiled: [],
       };
+      return reversed ? keysReversed(answer) : answer;
+    }
     if (cmd === "opened_chats") return open;
     // A split starts a chat, on the profile its picker offers.
     if (cmd === "start_options") return START_OPTIONS;
@@ -158,7 +195,42 @@ function core(shape: Shape): Asked[] {
       };
     return null;
   });
-  return asked;
+  return {
+    asked,
+    planeChanged: async (plane, answer) => {
+      await act(async () => {
+        for (const handler of listening.get("plane-changed") ?? [])
+          window.__TAURI_INTERNALS__.runCallback(handler, {
+            event: "plane-changed",
+            id: 1,
+            payload: { plane, changes: null, answers: [{ answer, workspace: null }] },
+          });
+      });
+    },
+    chatMoved: (payload) => {
+      for (const handler of listening.get("chat-moved") ?? [])
+        window.__TAURI_INTERNALS__.runCallback(handler, { event: "chat-moved", id: 1, payload });
+    },
+    holdSidebar: () => {
+      let release = () => {};
+      held = new Promise((done) => {
+        release = () => {
+          held = undefined;
+          done();
+        };
+      });
+      return release;
+    },
+    reverseSidebarKeys: () => {
+      reversed = true;
+    },
+  };
+}
+
+declare global {
+  interface Window {
+    __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
+  }
 }
 
 function projectTab(name: string): HTMLElement {
@@ -175,14 +247,24 @@ const inFront = () =>
     .find((tab) => tab.getAttribute("aria-selected") === "true")
     ?.getAttribute("aria-label");
 
-/** Everything the window has started has settled: nothing new was asked for a while. */
-async function settled(asked: Asked[]): Promise<void> {
-  let seen = -1;
-  for (let rounds = 0; seen !== asked.length; rounds++) {
+/**
+ * **Everything the window has started has settled**: a round in which nothing new was asked and
+ * React committed nothing, the two things a switch is read by.
+ *
+ * **Each round spans an animation frame and then a timer** (#3032), as `afterPaint` does
+ * (`projectShown.tsx`): what is read again once the project is painted is asked from a timer set
+ * in a frame, so a round that only waited a timer could end before that frame came, on a runner
+ * whose frames come late, and the switch's own reads and commits were counted for the next one.
+ * Any `afterPaint` started before the round has run by its end.
+ */
+export async function settled(asked: Asked[]): Promise<void> {
+  const now = () => `${asked.length}:${counts.commits}`;
+  let seen = "";
+  for (let rounds = 0; seen !== now(); rounds++) {
     if (rounds > 200) throw new Error(`the window never settled: ${asked.at(-1)?.cmd}`);
-    seen = asked.length;
+    seen = now();
     await act(async () => {
-      await new Promise((done) => setTimeout(done, 30));
+      await new Promise((done) => requestAnimationFrame(() => setTimeout(done, 30)));
     });
   }
 }
@@ -195,6 +277,8 @@ export type Switch = {
   /** How many times React committed for it, until everything it started had settled. */
   commits: number;
   rendered: number;
+  /** How many times each component was drawn for it, by name. */
+  renderedBy: Record<string, number>;
   mounted: number;
   unmounted: number;
   nodesAdded: number;
@@ -269,16 +353,41 @@ function nodesIn(node: Node): number {
 }
 
 /**
+ * How many times React has committed for the window {@link aWindow} mounted, as a `Profiler`
+ * around it says.
+ *
+ * Read off a `Profiler` and not off {@link counts}: the DevTools hook those are counted by works
+ * only when it is in place before `react-dom` is first loaded, and the test setup loads it first.
+ */
+export const windowCommits = { count: 0 };
+
+/** The real window on a core holding `shape`, mounted with its first project in front and
+ *  settled. */
+export async function aWindow(shape: Shape): Promise<Core> {
+  const held = core(shape);
+  render(
+    <Profiler
+      id="window"
+      onRender={() => {
+        windowCommits.count += 1;
+      }}
+    >
+      <App />
+    </Profiler>,
+  );
+  await waitFor(() => expect(inFront()).toBe(nameOf(0)), { timeout: 20_000 });
+  await settled(held.asked);
+  return held;
+}
+
+/**
  * Mounts the window, brings every project to the front once, then the ones in `visits` and the
  * first again, so nothing measured afterwards is a first visit and each of them is a project the
  * person was in lately. Then switches to each of `visits` in turn and answers with what each
  * cost. The window starts on the first project, so `visits` should not start with it.
  */
 export async function switches(shape: Shape, visits: readonly number[]): Promise<Switch[]> {
-  const asked = core(shape);
-  render(<App />);
-  await waitFor(() => expect(inFront()).toBe(nameOf(0)), { timeout: 20_000 });
-  await settled(asked);
+  const { asked } = await aWindow(shape);
   for (let n = 1; n < shape.projects; n++) {
     fireEvent.click(projectTab(nameOf(n)));
     await settled(asked);
@@ -293,6 +402,17 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
       await waitFor(() => expect(screen.getAllByTestId("pane")).toHaveLength(held + 1));
       await settled(asked);
     }
+    // Each split offers its Undo for a few seconds (#4763). The line is put away now, as the
+    // person would, so that its time running out is not counted as a switch's cost: a switch
+    // slow enough here, forty panes on a busy runner, saw it go mid-switch and counted its 20
+    // components among the unmounted.
+    // The cause is on the card's message; its Dismiss is beside it.
+    for (const said of document.querySelectorAll('[data-cause="layout-changed"]'))
+      fireEvent.click(
+        within(said.parentElement as HTMLElement).getByRole("button", { name: "Dismiss" }),
+      );
+    await settled(asked);
+    expect(document.querySelector('[data-cause="layout-changed"]')).toBeNull();
   }
 
   const out: Switch[] = [];
@@ -307,6 +427,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     });
     watching.observe(document.body, { childList: true, subtree: true });
     Object.assign(counts, { rendered: 0, mounted: 0, unmounted: 0, commits: 0 });
+    renderedBy.clear();
     Object.assign(panes, { started: 0, stopped: 0 });
     watchLayoutReads();
     reads.clear();
@@ -336,6 +457,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
       syncMs,
       commits: counts.commits,
       rendered: counts.rendered,
+      renderedBy: Object.fromEntries(renderedBy),
       mounted: counts.mounted,
       unmounted: counts.unmounted,
       nodesAdded: nodes.added,
@@ -352,4 +474,66 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     });
   }
   return out;
+}
+
+/** What a run of chat moves cost the window. */
+export type Moves = {
+  /** How many times React committed for them, until everything they started had settled. */
+  commits: number;
+  /** How many times the window's root (`App`) was drawn again for them. */
+  windowDrawn: number;
+  /** Commands sent to the core for them, by name. */
+  invokes: Record<string, number>;
+};
+
+/**
+ * Mounts the window holding `shape`, brings every project to the front once and the first back,
+ * then has the core push `times` moves of one busy chat of project `of`: the same chat, working
+ * throughout and waiting on nobody, each move newer than the last, as a harness at work makes
+ * them. Answers with what those moves cost.
+ */
+export async function chatMoves(
+  shape: Shape,
+  { of, times }: { of: number; times: number },
+): Promise<Moves> {
+  const held = core(shape);
+  const { asked } = held;
+  render(<App />);
+  await waitFor(() => expect(inFront()).toBe(nameOf(0)), { timeout: 20_000 });
+  await settled(asked);
+  for (const n of [...Array.from({ length: shape.projects }, (_, n) => n).slice(1), 0]) {
+    fireEvent.click(projectTab(nameOf(n)));
+    await settled(asked);
+  }
+  const plane = rootOf(of);
+  const move = (at: number) =>
+    held.chatMoved({
+      plane,
+      session: 2,
+      state: "working",
+      needs_you: false,
+      queue: [],
+      sequence: 1_000 + at,
+      moved_at: 1_000 + at,
+      reports: [],
+      refusals: [],
+    });
+
+  // The first move says the chat is working; what is counted is every move after it.
+  act(() => move(0));
+  await settled(asked);
+
+  Object.assign(counts, { rendered: 0, mounted: 0, unmounted: 0, commits: 0 });
+  renderedBy.clear();
+  const from = asked.length;
+  for (let at = 1; at <= times; at++) act(() => move(at));
+  // Past the wait after which a burst of moves has the asks read again (`asks.ts`), which is
+  // longer than the one `settled` looks for.
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, ASKS_SETTLE_MS * 4));
+  });
+  await settled(asked);
+  const invokes: Record<string, number> = {};
+  for (const one of asked.slice(from)) invokes[one.cmd] = (invokes[one.cmd] ?? 0) + 1;
+  return { commits: counts.commits, windowDrawn: renderedBy.get("App") ?? 0, invokes };
 }

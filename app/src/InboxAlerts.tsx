@@ -10,6 +10,7 @@ import { useAlertFix } from "./alertFix";
 import { identityNowOf, sendIdentity, useFixForm, type Fixer } from "./Doctor";
 import { useSeenOnThisMachine } from "./dismissals";
 import { drawWhatIsInForce } from "./Extensions";
+import { extensionsChanged } from "./extensionsOn";
 import { Notice, type NoticeAction } from "./Notice";
 import { RequestMerge } from "./SavingMerge";
 import { projectThemeChanged } from "./projectTheme";
@@ -34,7 +35,7 @@ import {
  * - **This machine's**: a theme or layout file purlis could not use as written, with its
  *   Settings group, Use the built-in theme or Use the default layout (each asks first), or
  *   Dismiss; a theme refused for a project's font file its approval does not hold, with Review
- *   and allow (#2647).
+ *   and allow (#2647); what a project has on, unread, with Read again (#4871).
  * - **Another project's**: the drawer listed every project's, because the one that matters is
  *   often not the one in front. Here each other project with alerts is one Notice, "N alerts in
  *   name", whose way out opens that project's Inbox, where they are listed whole.
@@ -537,8 +538,8 @@ function RefusedThemeReview({ alert, plane }: { alert: MachineAlert; plane: Plan
 }
 
 /**
- * A row about this machine: its Settings group, a file it can move aside (which asks first, in
- * the row), or — with neither — Dismiss, which takes it back for this launch. A layout row that
+ * A row about this machine: what a project has on, read again (#4871), its Settings group, a file
+ * it can move aside (which asks first, in the row), or — with none — Dismiss, which takes it back for this launch. A layout row that
  * can move its file aside keeps its Dismiss too (D-1289-2): a machine row's Dismiss lasts one
  * launch, since the layout file is where dismissals are kept, and a broken one cannot hold its
  * own.
@@ -584,6 +585,19 @@ function MachineRow({
         ]}
       >
         <Words {...shown} detail={aside.question} />
+      </Notice>
+    );
+  const readAgain = alert.readAgain;
+  // What a project has on, read again on a press (#4871): one question a press, and the row
+  // stays, with the new reason, until one is answered.
+  if (readAgain !== undefined)
+    return (
+      <Notice
+        cause={cause}
+        tone={tone}
+        fixes={[{ label: "Read again", onPress: () => extensionsChanged(readAgain) }]}
+      >
+        {words}
       </Notice>
     );
   if (settings !== undefined)

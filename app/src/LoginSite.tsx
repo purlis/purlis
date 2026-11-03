@@ -36,16 +36,36 @@ export function LoginSite({
 }) {
   return (
     <div className="login-site" data-testid="login-site">
+      {login.replaces != null && (
+        <div data-testid="login-site-replaces">
+          <p className="ui-text-meta">Recorded now</p>
+          <p className="login-site-domain ui-text-body">
+            {login.replaces}, password typed on https://{login.replaces_form}
+          </p>
+          <p className="ui-text-meta">
+            The chat asks to change it. Nothing changes until you choose.
+          </p>
+        </div>
+      )}
+      <p className="ui-text-meta">Opens</p>
       <p className="login-site-domain ui-text-title">
         https://{login.domain}
         <span className="ui-text-body">{login.path}</span>
       </p>
       <TextField
-        aria-label="Change the site this login is filled on"
+        aria-label="Change the site this login opens"
         value={typed ?? siteOf(login)}
         spellCheck={false}
         onChange={onTyped}
       />
+      <p className="ui-text-meta">
+        {login.form === login.domain
+          ? "The password is typed on this site alone"
+          : "That site sends the browser to sign in elsewhere. The password is typed only on"}
+      </p>
+      <p className="login-site-domain ui-text-title" data-testid="login-site-form">
+        https://{login.form}
+      </p>
       <p className="ui-text-meta">
         Fills{" "}
         {login.user_key != null && (
@@ -64,8 +84,12 @@ export function LoginSite({
         <p className="ui-text-meta">{login.no_always}.</p>
       ) : (
         <p className="ui-text-meta">
-          Always allow adds this to <code>{login.under}</code>
-          {login.vault_too ? ", and lets this persona use the vault" : ""}:{" "}
+          {login.replaces != null
+            ? "Always replace swaps its line in "
+            : "Always allow adds this to "}
+          <code>{login.under}</code>
+          {login.vault_too ? ", and lets this persona use the vault" : ""}
+          {login.replaces != null ? " for" : ""}:{" "}
           <code className="login-site-line">{login.line}</code>
         </p>
       )}

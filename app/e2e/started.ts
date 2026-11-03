@@ -3,6 +3,7 @@
 
 import { browser } from "@wdio/globals";
 import { pressAndStart, showView } from "./opening.js";
+import { runFromThePalette } from "./reach.js";
 import { projectInFront, runningIn } from "./running.js";
 
 /**
@@ -152,73 +153,45 @@ export async function bringChatForward(session: number): Promise<void> {
 
 /**
  * **Ends chat `session` in `plane`** (the project in front where none is named), as a person
- * does: brings it forward, presses the `×` of the tab in front (its own, since its pane is in
- * front), answers the question's Close, and waits until the core no longer runs it. A chat
- * already gone is left alone.
- *
- * A split tab's `×` ends the tab's own chat, and the chat split beside it goes on in a tab of
- * its own: so where the chat is still running after one press, it is brought forward and its
- * tab's `×` pressed again, three presses at most.
+ * does: its End… (#4753), the one row that ends a chat, since a close ends nothing (#4756). It
+ * is run from the palette by the row's id, which names the chat by its number, answered Close,
+ * and waited for until the core no longer runs it. A chat already gone is left alone.
  */
 export async function endChatById(session: number, plane?: string): Promise<void> {
   const where = plane ?? (await projectInFront());
-  const most = 3;
-  for (let pressed = 1; pressed <= most; pressed++) {
-    if (!(await runningIn(where)).includes(session)) return;
-    const asked = await pressItsTabsEnd(session);
-    const gone = await browser
-      .waitUntil(async () => !(await runningIn(where)).includes(session), {
-        timeout: pressed < most ? 10_000 : 20_000,
-        interval: 200,
-      })
-      .then(() => true)
-      .catch(() => false);
-    if (gone) return;
-    if (pressed === most)
-      throw new Error(
-        `chat ${session} was still running after ${asked} was answered Close ${most} times`,
-      );
-  }
+  if (!(await runningIn(where)).includes(session)) return;
+  const asked = await pressItsEnd(session);
+  await browser.waitUntil(async () => !(await runningIn(where)).includes(session), {
+    timeout: 20_000,
+    interval: 200,
+    timeoutMsg: `chat ${session} was still running after ${asked} was answered Close`,
+  });
 }
 
 /**
- * Brings chat `session` forward, presses the `×` of the tab in front, answers the question's
- * Close and waits until the question has gone; answers the `×`'s name.
+ * Runs chat `session`'s End… from the palette, answers the question's Close and waits until the
+ * question has gone; answers the row's id.
  */
-async function pressItsTabsEnd(session: number): Promise<string> {
-  await bringChatForward(session);
-  const asked = await browser.execute((selected: string) => {
-    const closer = document
-      .querySelector(selected)
-      ?.closest("span.tab")
-      ?.querySelector<HTMLElement>("button.closer:not([data-minimise])");
-    closer?.click();
-    return closer?.getAttribute("aria-label") ?? null;
-  }, SELECTED_TAB);
-  if (asked === null) throw new Error(`the tab in front for chat ${session} has no × that ends it`);
+async function pressItsEnd(session: number): Promise<string> {
+  const row = `chat.end:${session}`;
+  await runFromThePalette("End chat", row);
   await browser.waitUntil(
     async () =>
-      browser.execute(
-        (about: string) => {
-          // Only the question this × asked, about its chat by name: a stray dialog never ends
-          // another chat.
-          const asking = document.querySelector('[role="alertdialog"]');
-          if (!asking?.textContent?.includes(about)) return false;
-          const close = [...asking.querySelectorAll<HTMLButtonElement>("button")].find(
-            (button) => button.textContent?.trim() === "Close",
-          );
-          close?.click();
-          return close !== undefined;
-        },
-        asked.replace(/^End chat /, ""),
-      ),
-    { timeout: 20_000, interval: 100, timeoutMsg: `${asked} never asked whether to end it` },
+      browser.execute(() => {
+        const asking = document.querySelector('[role="alertdialog"]');
+        const close = [...(asking?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
+          (button) => button.textContent?.trim() === "Close",
+        );
+        close?.click();
+        return close !== undefined;
+      }),
+    { timeout: 20_000, interval: 100, timeoutMsg: `${row} never asked whether to end it` },
   );
   await browser.waitUntil(
     async () => browser.execute(() => document.querySelector('[role="alertdialog"]') === null),
-    { timeout: 20_000, interval: 100, timeoutMsg: `the question ${asked} asked never went` },
+    { timeout: 20_000, interval: 100, timeoutMsg: `the question ${row} asked never went` },
   );
-  return asked;
+  return row;
 }
 
 /**

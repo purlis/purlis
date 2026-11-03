@@ -81,6 +81,7 @@ export function SessionPane({
   focused,
   onFocus,
   menu,
+  readOnly = false,
 }: {
   /** The plane this session belongs to. A session number is only half of a chat's name —
    *  every plane numbers its own from one — so it travels with every call this pane makes. */
@@ -91,6 +92,8 @@ export function SessionPane({
   /** The pane's own rows, listed in the terminal's menu under its own. None where the pane is
    *  drawn without a catalogue: the menu is then the terminal's rows alone. */
   menu?: PaneMenu;
+  /** **The chat's program has ended** (#4756): its last screen stays, and takes no input. */
+  readOnly?: boolean;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | undefined>(undefined);
@@ -454,6 +457,12 @@ export function SessionPane({
       bench.paneClosed(session, pane);
     };
   }, [plane, session]);
+  // **An ended chat's last screen takes no input** (#4756): xterm sends nothing typed, and the
+  // screen is read, scrolled, found in and copied from as before. After the effect above, which
+  // made the terminal it is set on.
+  useEffect(() => {
+    if (terminal.current) terminal.current.options.disableStdin = readOnly;
+  }, [plane, readOnly, session]);
 
   return (
     <>

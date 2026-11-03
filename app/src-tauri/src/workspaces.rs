@@ -171,7 +171,13 @@ pub async fn workspace_create(
     // Off the window's thread (#1007): the scaffold is written, a LIVE one is saved with git,
     // and the sidebar's model is read again under its lock.
     let said = crate::off_the_window(CREATING, move || {
-        let made = create_in(&at, &named, vision.as_deref(), live);
+        let made = create_in(
+            &at,
+            &held.chats().skills_now(),
+            &named,
+            vision.as_deref(),
+            live,
+        );
         // The window reads the sidebar straight after, made or not (FD-10b).
         held.workspaces_moved();
         let mut said = made?;
@@ -225,7 +231,8 @@ fn vision_in(root: &Path, workspace: &str, vision: &str) -> Result<String, Strin
 /// A workspace for another module's test, as the window would make it: LOCAL.
 #[cfg(test)]
 pub(crate) fn create_for_tests(root: &Path, name: &str) {
-    create_in(root, name, None, false).expect("a workspace for the test");
+    create_in(root, &crate::chats::SkillsNow::default(), name, None, false)
+        .expect("a workspace for the test");
 }
 
 /// The operator brought a workspace to the front: tell the extensions that hear it
@@ -252,6 +259,7 @@ pub fn workspace_focused(
 /// The creation itself, against a root the registry has already vouched for.
 fn create_in(
     root: &Path,
+    skills_now: &crate::chats::SkillsNow,
     name: &str,
     vision: Option<&str>,
     live: bool,
@@ -282,7 +290,7 @@ fn create_in(
     // The person made it, in their window: no chat did, so its skills reach chats (SK-9), where
     // the create made its folder.
     if code == 0
-        && let Some(note) = purlis_core::skills::levels::vouch_if_made(root, &owner, was_there)
+        && let Some(note) = crate::skilldrafts::vouched_if_made(root, skills_now, &owner, was_there)
     {
         said.push(Say::Info(note.into()));
     }

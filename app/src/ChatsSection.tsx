@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { CHAT_ROW } from "./paneDrag";
 import {
   memo,
   useCallback,
@@ -278,6 +279,7 @@ export function ChatsSection({
   here,
   tab,
   front,
+  besides,
   onOpen,
   offers = NO_OFFERS,
   onPress,
@@ -308,8 +310,11 @@ export function ChatsSection({
   /** The tab in front and its chats, as the window reads them (`tabChats.chatsOfTabs`): what
    *  This tab lists (#1679). Left out, This tab lists none. */
   tab?: { id: number; chats: readonly ChatRow[] };
-  /** The chat in front, whose row is the current one. */
+  /** The chat in front, whose row is the current one: the focused pane's (#4757). */
   front?: number;
+  /** The chats in the other panes of the tab in front (#4757): their rows are marked faintly,
+   *  so a press that would jump to one is told before it is pressed. */
+  besides?: ReadonlySet<number>;
   /** A row was pressed: go to that chat. A task is shown inside its session's tab (#1486).
    *  The one way a row opens. */
   onOpen: (session: number) => void;
@@ -1146,6 +1151,7 @@ export function ChatsSection({
                       askerWaiting={row.askerWaiting === true}
                       tab={row.tab}
                       current={row.session === front}
+                      beside={besides?.has(row.session) ?? false}
                       open={open ?? null}
                       needs={lead === undefined ? null : lead}
                       askingUnder={askingUnder.get(row.session) ?? 0}
@@ -1367,6 +1373,7 @@ const Row = memo(function Row({
   askerWaiting,
   tab,
   current,
+  beside,
   open,
   needs,
   askingUnder,
@@ -1421,6 +1428,8 @@ const Row = memo(function Row({
   askerWaiting: boolean;
   tab: boolean;
   current: boolean;
+  /** On screen in another pane of the tab in front (#4757): a press on it jumps there. */
+  beside: boolean;
   /** Whether its rows are drawn under it, for a row that has some; nothing for a leaf. */
   open: boolean | null;
   /** The chat its hand leads to: itself, a chat below it, or none when it wears no hand. */
@@ -1577,6 +1586,7 @@ const Row = memo(function Row({
             aria-posinset={posinset}
             aria-setsize={setsize}
             aria-current={current || undefined}
+            data-beside={beside || undefined}
             aria-expanded={open ?? undefined}
             // What the card says, while it is up: the row's description, which says what the
             // row says too (#3886).
@@ -1586,6 +1596,8 @@ const Row = memo(function Row({
             data-tab={tab}
             // The chat's number, as a pane carries it: what a reveal finds the row by (#1490).
             data-session={session}
+            // Dragged onto a pane or the strip, it lands there (#4763); a press stays a press.
+            {...{ [CHAT_ROW]: String(session) }}
             onClick={() => {
               // A press focuses the row too: that is no rest of the keyboard.
               away();

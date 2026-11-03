@@ -2087,6 +2087,7 @@ impl Browser {
     fn run(&self, call: Call) -> Result<Answer, Refusal> {
         match call {
             Call::Open { address } => self.open(&address),
+            Call::FindLoginForm { address } => self.find_login_form(&address),
             Call::Navigate { page, address } => {
                 let target = self.target(page.as_ref())?;
                 let session = self.page_session(&target)?;

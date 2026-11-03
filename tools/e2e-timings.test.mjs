@@ -113,3 +113,53 @@ test("a hook's time is listed with the tests, under WebdriverIO's own title for 
     },
   ]);
 });
+
+test("a speed bar is a measurement: its misses are a warning, never a failure (#4419)", () => {
+  const bars = [
+    { kind: "bar", name: "the theme specimen, dark", ms: 6_502, bar: 5_000 },
+    { kind: "bar", name: "the theme specimen, light", ms: 1_204, bar: 5_000 },
+    {
+      kind: "bar",
+      name: "the theme specimen, dark",
+      ms: null,
+      bar: 5_000,
+      refused:
+        "the theme specimen was not drawn within its budget of 5 s: ask for it again",
+    },
+  ]
+    .map((line) => JSON.stringify(line))
+    .join("\n");
+  const timings = readTimings(bars);
+  assert.equal(timings.bars.length, 3);
+  const lines = annotations(timings, { label: "macos-latest, part 4 of 4" });
+  const bar = lines.find((line) => line.includes("Speed bars"));
+  assert.match(
+    bar,
+    /^::warning title=Speed bars missed \(macos-latest%2C part 4 of 4\)::/,
+  );
+  assert.match(
+    bar,
+    /missed {2}6\.5 s against 5\.0 s {2}the theme specimen, dark/,
+  );
+  assert.match(
+    bar,
+    /met {5}1\.2 s against 5\.0 s {2}the theme specimen, light/,
+  );
+  assert.match(
+    bar,
+    /missed {2}refused against 5\.0 s {2}the theme specimen, dark: the theme/,
+  );
+  assert.ok(!lines.some((line) => line.startsWith("::error")));
+});
+
+test("bars all met are a notice", () => {
+  const lines = annotations(
+    readTimings(
+      JSON.stringify({ kind: "bar", name: "a picture", ms: 900, bar: 5_000 }),
+    ),
+    { label: "ubuntu-24.04" },
+  );
+  assert.deepEqual(lines.slice(-1), [
+    "::notice title=Speed bars (ubuntu-24.04)::met     0.9 s against 5.0 s  a picture",
+  ]);
+});

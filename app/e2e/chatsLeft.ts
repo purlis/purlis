@@ -191,11 +191,9 @@ async function endTheOnesHere(left: readonly Chat[]): Promise<Chat[]> {
  * **Ends, through the window and by number, every chat started since `before`**
  * ({@link chatsRunning}), in whichever workspace it was started, and puts the focus back on the
  * workspace it found in front. Each chat is ended as a person ends it (`started.ts`'s
- * `endChatById`: brought forward by its number, its own tab's `×`, the question's Close), so a
- * chat that was running first is never found by a name it shares. One case it does not guard:
- * a split tab's `×` ends the tab's own chat, so a spec chat split beside a chat that was running
- * first ends that chat on the first press. A spec splits only its own chats. A chat it could
- * not end fails the `after`, naming it; the root hook above stays the backstop.
+ * `endChatById`: its End…, by the number in the row's id, and the question's Close), so a chat
+ * that was running first is never found by a name it shares. A chat it could not end fails the
+ * `after`, naming it; the root hook above stays the backstop.
  */
 export async function endTheChatsStartedSince(before: Running): Promise<void> {
   let left = leftOver(before, await chatsRunning());

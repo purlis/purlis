@@ -5,10 +5,11 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import process from "node:process";
-import { $, browser } from "@wdio/globals";
+import { browser } from "@wdio/globals";
 import type { Bench, Plan } from "../../src/bench.ts";
 import type { Renderer } from "../../src/renderer.ts";
 import { built } from "../harness.js";
+import { endEveryChat } from "../opening.js";
 
 /** What the benchmark measures in, and the pieces every spec shares. */
 
@@ -202,21 +203,9 @@ export function harnesses(): { running: number; cpuPercent: number } {
  * hands the next test a load it does not know about and does not report.
  */
 export async function closeEverything(): Promise<void> {
-  // **One at a time, answering as it goes.** Ending a chat asks first, and the question is
-  // modal — so the loop this used to be, clicking every close button in one `execute`, opened
-  // one dialog and then pressed forty inert buttons behind it. The strip also collapses rather
-  // than scrolling, so what it draws is not every tab: the loop goes round until the document
-  // has no close button left rather than over a list read once.
-  for (let pressed = 0; pressed < 200; pressed++) {
-    const closer = await $('button[aria-label^="End chat "]');
-    if (!(await closer.isExisting())) break;
-    await closer.click();
-    const asking = await $('[role="alertdialog"]');
-    await asking.waitForDisplayed({ timeout: 20_000 });
-    // Close is the dialog's answer that ends the chat (ADR 0064 put Smart close beside it).
-    await asking.$("button=Close").click();
-    await asking.waitForDisplayed({ timeout: 20_000, reverse: true });
-  }
+  // **By each chat's End…** (#4753), one at a time, answering as it goes: a tab's close ends
+  // nothing (#4756), and the palette lists an End… for every chat, drawn or not.
+  await endEveryChat();
   await browser.waitUntil(async () => harnesses().running === 0, {
     timeout: 60_000,
     timeoutMsg: "closing every tab left harnesses running",

@@ -552,7 +552,7 @@ describe("a task that has a tab of its own", () => {
     expect(closeOf("sweep").getAttribute("aria-label")).toBe(
       "Send sweep back into steward 1's tab",
     );
-    expect(closeOf("sweep").className).toContain("keeps");
+    expect(closeOf("sweep").className).not.toContain("ends-a-chat");
 
     await userEvent.click(closeOf("sweep"));
 
@@ -569,7 +569,7 @@ describe("a task that has a tab of its own", () => {
     await waitFor(() => expect(onScreen()).toEqual([5]));
   });
 
-  it("is sent back by the close shortcut too, and a session's own close is as it was", async () => {
+  it("is sent back by the close shortcut too, and a session's own close ends nothing either", async () => {
     const { tree, asked } = await drawn({}, true);
 
     act(() => tabOf("sweep")?.focus());
@@ -578,9 +578,11 @@ describe("a task that has a tab of its own", () => {
     await waitFor(() => expect(tabOf("sweep")).toBeUndefined());
     expect(asked.filter((one) => ending.includes(one.cmd))).toEqual([]);
     expect(row(tree, "sweep")).toBeTruthy();
-    // A session is not a task: its close still asks the close question.
+    // A session's close closes its tab and ends nothing (#4756): nothing is asked.
     await userEvent.click(closeOf("steward 1"));
-    expect(await screen.findByRole("alertdialog", { name: "End chat steward 1?" })).toBeTruthy();
+    await waitFor(() => expect(tabOf("steward 1")).toBeUndefined());
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(asked.filter((one) => ending.includes(one.cmd))).toEqual([]);
   });
 });
 
@@ -839,11 +841,12 @@ describe("the breadcrumb's line, while a tab shows a task", () => {
     const { tree, stopping, ended } = await drawn();
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
+    // The press showed talk in the focused pane, and the tab is named for it (#4757).
     const tab = () => {
       const found = within(stripNamed("Tabs"))
         .getAllByRole("tab")
-        .find((one) => one.querySelector(".tab-name")?.textContent === "steward 1");
-      if (found === undefined) throw new Error("no tab is called steward 1");
+        .find((one) => one.querySelector(".tab-name")?.textContent === "talk");
+      if (found === undefined) throw new Error("no tab is called talk");
       return found;
     };
     expect(within(tab()).queryByRole("img", { name: "stopping" })).toBeNull();
@@ -931,21 +934,23 @@ describe("a tab chip's menu (#1487)", () => {
     expect(asked.some((one) => one.cmd === "stop_chat")).toBe(false);
   });
 
-  it("asks in the one question for a task its tab was left on while another tab is in front", async () => {
-    // steward 1's tab is switched to sweep, and then steward 2's tab is brought forward.
-    // sweep's breadcrumb is not on screen: a second step set there would be asked where
-    // nobody is looking, and the press would seem to do nothing.
+  it("asks in the one question for a task in a tab that is not in front", async () => {
+    // A press shows sweep in steward 1's tab's pane (#4757), and then steward 2's tab is
+    // brought forward. sweep's breadcrumb is not on screen: a second step set there would be
+    // asked where nobody is looking, and the press would seem to do nothing. steward 1 is in
+    // no pane now, so its chip went with it: the palette's row asks, from elsewhere, as the
+    // chip's did.
     const { tree, asked } = await drawn({}, false, "claude", true);
     await userEvent.click(row(tree, "sweep"));
     await waitFor(() => expect(onScreen()).toEqual([5]));
     await userEvent.click(row(tree, "steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
 
-    fireEvent.click(await screen.findByRole("button", { name: /^Tasks of steward 1/ }));
-    const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "End a task" }));
-    const ways = await screen.findByRole("menu", { name: "End a task" });
-    await userEvent.click(within(ways).getByRole("menuitem", { name: STOP_SWEEP }));
+    await userEvent.keyboard("{F2}");
+    await userEvent.type(screen.getByRole("combobox"), "stop and get");
+    await userEvent.click(
+      await screen.findByRole("option", { name: new RegExp(`^${STOP_SWEEP}`) }),
+    );
 
     // Idle, and still the modal question: its pane is not the one in front.
     expect(await screen.findByRole("alertdialog", { name: "Stop task 'sweep'?" })).toBeTruthy();
@@ -1007,8 +1012,8 @@ describe("what its row says afterwards", () => {
       finished.push({ ...ended(how, word), chat: 4 });
       await coreEnds(4);
 
-      // The pane stays on the task, as ended, and says how in the row's word.
-      const away = await screen.findByTestId("task-away");
+      // The pane stays on the task, as ended, and its band says how in the row's word (#4756).
+      const away = await screen.findByRole("status", { name: /^Ended/ });
       await waitFor(() => expect(away.querySelector(".shown-state .word")?.textContent).toBe(word));
       expect(away.querySelector(".shown-state .shape")?.getAttribute("data-shape")).toBe(shape);
       // Said once: no second word beside it, and never "cancelled".

@@ -40,7 +40,9 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 use super::floors::{ALLOW_APART, DANGER_APART, WAITING_APART};
-use super::vocabulary::{ACCENT_WORDS, TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour};
+use super::vocabulary::{
+    ACCENT_GROUNDS, ACCENT_WASHES, ACCENT_WORDS, TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour,
+};
 use super::{Complaint, ResolvedTheme, stringify};
 
 /// The palette a workspace names its colour from, as OKLCH hues in degrees, in
@@ -87,6 +89,56 @@ pub fn tint_hex(hex: &str, hue: f64) -> String {
 /// [`tint_hex`] with the chroma held to at most `most`: how a tint keeps its accent apart from
 /// the danger colour ([`apart_chroma`]).
 pub fn tint_hex_within(hex: &str, hue: f64, most: f64) -> String {
+    let asked = (hue.to_bits(), most.to_bits());
+    let kept = TURNED.with(|turned| {
+        turned
+            .borrow()
+            .at
+            .get(&asked)
+            .and_then(|at| at.get(hex))
+            .cloned()
+    });
+    if let Some(found) = kept {
+        return found;
+    }
+    let found = turning(hex, hue, most);
+    TURNED.with(|turned| {
+        let mut turned = turned.borrow_mut();
+        if turned.kept >= KEPT {
+            *turned = Turned::default();
+        }
+        turned.kept += 1;
+        turned
+            .at
+            .entry(asked)
+            .or_default()
+            .insert(hex.to_owned(), found.clone());
+    });
+    found
+}
+
+/// How many answers each of [`TURNED`] and [`OKLAB`] keeps on a thread.
+const KEPT: usize = 1 << 16;
+
+/// **What [`tint_hex_within`] answered on this thread** (#5056), by hue and most chroma, then by
+/// value: the floors and the import's walks ask it the same colours at every whole degree and
+/// chroma step again and again, and each answer is a search of its own. Emptied once it holds
+/// [`KEPT`].
+#[derive(Default)]
+struct Turned {
+    kept: usize,
+    at: std::collections::HashMap<(u64, u64), std::collections::HashMap<String, String>>,
+}
+
+thread_local! {
+    static TURNED: std::cell::RefCell<Turned> = std::cell::RefCell::new(Turned::default());
+    /// [`oklab_of`]'s answers on this thread, as [`TURNED`] keeps [`tint_hex_within`]'s.
+    static OKLAB: std::cell::RefCell<std::collections::HashMap<String, Option<Vec3>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// [`tint_hex_within`], worked out.
+fn turning(hex: &str, hue: f64, most: f64) -> String {
     let Some((rgb, alpha)) = parse(hex) else {
         return hex.to_owned();
     };
@@ -94,6 +146,12 @@ pub fn tint_hex_within(hex: &str, hue: f64, most: f64) -> String {
     let [_, a, b] = oklab(rgb);
     let had = a.hypot(b);
     let chroma = if had < GREY { NEUTRAL_CHROMA } else { had }.min(most);
+    turned_to(&alpha, target, hue, chroma)
+}
+
+/// [`tint_hex_within`]'s search: a colour at `hue` and `chroma`, at the lightness that gives it
+/// luminance `target`, with `alpha` kept as written.
+fn turned_to(alpha: &str, target: f64, hue: f64, chroma: f64) -> String {
     let at = |lightness: f64| shown(lightness, chroma, hue);
     // Luminance rises with lightness at a fixed chroma and hue, so the lightness that gives the
     // luminance the colour had is found by halving the interval.
@@ -108,6 +166,18 @@ pub fn tint_hex_within(hex: &str, hue: f64, most: f64) -> String {
     }
     let [r, g, b] = rounded(at((low + high) / 2.0), target);
     format!("#{r:02x}{g:02x}{b:02x}{alpha}")
+}
+
+/// **`under` turned toward `accent`** (#4666): to the accent's OKLCH hue, at no more chroma than
+/// the accent has, with the luminance and alpha `under` had ([`tint_hex_within`]). How an
+/// accent's grounds follow an accent given over a parent ([`super::vocabulary::follow_kin`]): a
+/// grey accent gives grey grounds. A value that is not a colour is answered as it is.
+pub fn toward(under: &str, accent: &str) -> String {
+    let Some((rgb, _)) = parse(accent) else {
+        return under.to_owned();
+    };
+    let [_, a, b] = oklab(rgb);
+    tint_hex_within(under, degrees(b.atan2(a)), a.hypot(b))
 }
 
 /// One workspace colour's hue in a theme: a [`PALETTE`] name and its OKLCH hue in degrees.
@@ -164,12 +234,13 @@ impl Tint {
     }
 
     /// The recipe without `tokens`: a workspace's colour leaves them as the theme draws them. The
-    /// accent's words go where the accent goes (#3100), so a chosen item's are never turned away
-    /// from the accent beside them.
-    /// What it left, the accent's words among them, for the Notice to name.
+    /// accent's words and the washes they stand on go where the accent goes (#3100, #4666), so a
+    /// chosen item's are never turned away from the accent beside them.
+    /// What it left, the accent's words and washes among them, for the Notice to name.
     pub(super) fn leave(&mut self, tokens: &[&str]) -> Vec<&'static str> {
         let accent_left = tokens.contains(&"accent.base");
-        let left = |token: &str| tokens.contains(&token) || (accent_left && token == ACCENT_WORDS);
+        let left =
+            |token: &str| tokens.contains(&token) || (accent_left && follows_the_accent(token));
         let (gone, kept): (Vec<_>, Vec<_>) =
             self.tokens.iter().copied().partition(|token| left(token));
         self.tokens = kept;
@@ -184,6 +255,12 @@ impl Tint {
         }
         colour.starts_with('#').then(|| hue_of(colour)).flatten()
     }
+}
+
+/// **Whether `token` turns and stays with the accent** in a recipe (#3100, #4666): its words, and
+/// the washes they stand on.
+fn follows_the_accent(token: &str) -> bool {
+    token == ACCENT_WORDS || ACCENT_WASHES.contains(&token)
 }
 
 /// **A rule every tint holds**: `token`, tinted, stays at least `distance` from `from` in OKLab,
@@ -208,7 +285,9 @@ pub struct Apart {
 /// blocked's (Allow is distinguishable from Keep blocked), the consent floors of ADR 0097 §6, and
 /// each accent-hued token drawn beside danger from it as the accent is ([`ACCENT_KIN`]); and the
 /// accent from the waiting colour (waiting is distinguishable from the accent, #3130), so a
-/// yellow or orange workspace's accent never reads as the waiting signal.
+/// yellow or orange workspace's accent never reads as the waiting signal; and the accent's words
+/// from the waiting and danger colours (#3100). The washes those words stand on are held by
+/// [`NO_NEARER`] (#4666).
 pub const APART: [Apart; 17] = [
     danger_apart("accent.base"),
     // Keep blocked's edge is a plain control's (#3177).
@@ -237,14 +316,14 @@ pub const APART: [Apart; 17] = [
     // The accent's words take the colour the accent takes where they hold apart from waiting and
     // danger there, and keep the theme's colour where they do not (#3100): measured after the
     // accent, so they never cost it colour.
-    words_apart("state.waiting", WAITING_APART),
-    words_apart("danger.base", DANGER_APART),
+    words_apart(ACCENT_WORDS, "state.waiting", WAITING_APART),
+    words_apart(ACCENT_WORDS, "danger.base", DANGER_APART),
 ];
 
-/// The accent's words held `distance` from `from` ([`words_chroma_of`]).
-const fn words_apart(from: &'static str, distance: f64) -> Apart {
+/// `token`, the accent's words, held `distance` from `from` ([`words_chroma_of`]).
+const fn words_apart(token: &'static str, from: &'static str, distance: f64) -> Apart {
     Apart {
-        token: ACCENT_WORDS,
+        token,
         from,
         distance,
         alone: false,
@@ -303,13 +382,75 @@ const fn danger_apart(token: &'static str) -> Apart {
     }
 }
 
-/// What the window is handed: the two lists, the hues, and the rules a tint holds.
+/// **A ground the accent's words stand on comes no nearer a signal's wash than it was**
+/// (#4666): turned, each of `tokens`, laid on each of `over` as the screen draws it, alpha and
+/// all, is at least as far in OKLab from each of `from` laid on the same ground as the value it
+/// was turned from. Where turning would bring it nearer, it stays as it was: a chosen item's
+/// ground is never taken for the waiting or danger wash beside it. Measured as drawn because two
+/// see-through washes that look apart by their colours alone can meet on the ground (Classic's
+/// opaque wash and its see-through waiting wash in a yellow workspace). The accent's words turn
+/// by their own rule ([`words_chroma_of`]). What a workspace's colour turns ([`Most::kept`]) and
+/// what follows an accent given over a parent ([`super::vocabulary::follow_kin`]) both hold it.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct NoNearer {
+    pub tokens: &'static [&'static str],
+    pub from: &'static [&'static str],
+    pub over: &'static [&'static str],
+}
+
+/// The grounds of the accent's words, the waiting and danger washes, and what they are laid on.
+pub const NO_NEARER: NoNearer = NoNearer {
+    tokens: &ACCENT_GROUNDS,
+    from: &["wash.warning", "danger.wash"],
+    over: &["surface.base", "surface.deep"],
+};
+
+/// **Whether `turned` comes no nearer a signal's wash than `written`**: the nearest `turned`
+/// comes to any wash of [`NO_NEARER`], each laid with it on each ground as the screen draws them,
+/// is no nearer than the nearest `written` comes. Nearest, not each: a ground turned away from
+/// danger and toward waiting is kept only when it lands nearer waiting than the theme's own
+/// ground is to either. `value` gives the signal washes and the grounds as they are drawn. A value
+/// that is not a colour has nothing to be near. `tint.ts`' `noNearer` is the same.
+pub fn no_nearer(turned: &str, written: &str, value: impl Fn(&'static str) -> String) -> bool {
+    if !is_colour(turned) || !is_colour(written) {
+        return true;
+    }
+    nearest_signal(turned, &value) >= nearest_signal(written, &value)
+}
+
+/// The nearest `ground` comes to a signal's wash of [`NO_NEARER`], both laid on each of its
+/// grounds as the screen draws them; infinity where nothing is a colour.
+fn nearest_signal(ground: &str, value: &impl Fn(&'static str) -> String) -> f64 {
+    let mut nearest = f64::INFINITY;
+    for under in NO_NEARER.over {
+        let under = value(under);
+        if !is_colour(&under) {
+            continue;
+        }
+        for from in NO_NEARER.from {
+            let from = value(from);
+            if !is_colour(&from) {
+                continue;
+            }
+            let drawn = |top: &str| oklab_of(&super::check::onto(top, &under));
+            if let (Some(ground), Some(from)) = (drawn(ground), drawn(&from)) {
+                nearest = nearest.min(distance(ground, from));
+            }
+        }
+    }
+    nearest
+}
+
+/// What the window is handed: the two lists, the hues, the rules a tint holds, the washes that
+/// take the words' answer, and the grounds held no nearer the signal washes.
 #[derive(serde::Serialize)]
 struct Handed<'a> {
     window: Vec<&'static str>,
     tabs: &'a [&'static str],
     hues: &'a [Hue],
     apart: &'a [Apart],
+    with_words: &'a [&'static str],
+    no_nearer: NoNearer,
 }
 
 impl serde::Serialize for Tint {
@@ -319,6 +460,8 @@ impl serde::Serialize for Tint {
             tabs: self.tabs(),
             hues: &self.hues,
             apart: &APART,
+            with_words: &ACCENT_WASHES,
+            no_nearer: NO_NEARER,
         }
         .serialize(to)
     }
@@ -402,10 +545,12 @@ fn tokens(
     if complaints.len() != before {
         return None;
     }
-    // A recipe that turns the accent turns its words (#3100), named or not: what a chosen item
-    // says was the accent before it was a token of its own.
+    // A recipe that turns the accent turns its words (#3100) and the washes they stand on
+    // (#4666), named or not: what a chosen item says was the accent before it was a token of its
+    // own, and its ground goes with it.
     if named.contains(&"accent.base") {
         named.push(ACCENT_WORDS);
+        named.extend(ACCENT_WASHES);
     }
     Some(
         TOKENS
@@ -518,17 +663,19 @@ pub(super) fn tinted_at(theme: &ResolvedTheme, hue: f64) -> ResolvedTheme {
     tint
 }
 
-/// **Whether `token` is a side of a rule of [`APART`]**: the tokens a tint gives less colour to
-/// hold the rules.
+/// **Whether `token` is a side of a rule of [`APART`]**, or a wash that takes the words' answer:
+/// the tokens a tint gives less colour to hold the rules.
 pub fn held_apart(token: &str) -> bool {
-    APART
-        .iter()
-        .any(|rule| rule.token == token || rule.from == token)
+    ACCENT_WASHES.contains(&token)
+        || APART
+            .iter()
+            .any(|rule| rule.token == token || rule.from == token)
 }
 
-/// **Whether `token` is the accent's words** (#3100): what [`Most::words`] answers for.
+/// **Whether `token` is the accent's words** (#3100), or a wash they stand on (#4666): what
+/// [`Most::words`] answers for.
 fn words_of(token: &str) -> bool {
-    APART.iter().any(|rule| rule.words && rule.token == token)
+    ACCENT_WASHES.contains(&token) || APART.iter().any(|rule| rule.words && rule.token == token)
 }
 
 /// **Whether `token` is a side of a rule of [`APART`] held alone** (#3130).
@@ -541,29 +688,91 @@ fn held_alone(token: &str) -> bool {
 /// **The most chroma a tint at one hue gives**: `shared`, what [`apart_chroma`] answers, for
 /// every side of a rule of [`APART`]; and `alone`, what every rule together answers, for the
 /// sides of a rule held alone, which give way further on their own (#3130); and `words`, for the
-/// accent's words (#3100).
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// accent's words and the washes they stand on (#3100, #4666); and `kept`, the tokens drawn as
+/// written because a ground of [`NO_NEARER`] turned would come nearer a signal's wash (#4666).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Most {
     pub shared: Option<f64>,
     pub alone: Option<f64>,
     pub words: Option<f64>,
+    /// The tokens kept as written at this hue, one bit each by their place in [`TINTABLE`]: a
+    /// ground [`NO_NEARER`] keeps, and every token the theme draws in the same value, so what a
+    /// theme draws alike stays alike (Classic's primary's fill is its surface).
+    pub kept: u64,
+}
+
+impl Most {
+    /// Whether `token` is kept as written at this hue ([`Self::kept`]).
+    pub fn keeps(&self, token: &str) -> bool {
+        TINTABLE
+            .iter()
+            .position(|one| *one == token)
+            .is_some_and(|at| self.kept & (1 << at) != 0)
+    }
 }
 
 /// [`Most`] for `theme` at `hue`.
 pub fn most_at(theme: &ResolvedTheme, hue: f64) -> Most {
-    let most = most_of(&held_rules(theme), &shared_rules(theme), hue);
-    Most {
+    finished(
+        theme,
+        hue,
+        most_of(&held_rules(theme), &shared_rules(theme), hue),
+    )
+}
+
+/// `most`, what [`most_of`] answered for `theme` at `hue`, with the accent's words answered
+/// ([`words_chroma_of`]) and the grounds [`NO_NEARER`] keeps ([`Most::kept`]): what a tint draws.
+pub(super) fn finished(theme: &ResolvedTheme, hue: f64, most: Most) -> Most {
+    let most = Most {
         words: words_chroma_of(&words_rules(theme), hue, most),
         ..most
+    };
+    Most {
+        kept: kept_at(theme, hue, most),
+        ..most
     }
+}
+
+const _: () = assert!(
+    TINTABLE.len() <= 64,
+    "Most::kept has a bit for each tintable token"
+);
+
+/// **The tokens a tint of `theme` at `hue` keeps as written** (#4666, [`Most::kept`]): each
+/// ground of [`NO_NEARER`] whose turned value, at what `most` gives it, comes nearer a signal's
+/// wash than as written, the washes and the grounds under them drawn as `most` turns them; and
+/// each token the theme draws in a kept ground's value.
+fn kept_at(theme: &ResolvedTheme, hue: f64, most: Most) -> u64 {
+    let tabs = theme.tint.tabs();
+    let drawn = |token: &str| -> String {
+        let value = theme.value(token);
+        match chroma_of(token, most).filter(|_| tabs.contains(&token)) {
+            Some(chroma) => tint_hex_within(value, hue, chroma),
+            None => value.to_owned(),
+        }
+    };
+    let kept: Vec<&str> = NO_NEARER
+        .tokens
+        .iter()
+        .filter_map(|ground| {
+            let (turned, written) = (drawn(ground), theme.value(ground));
+            (turned != written && !no_nearer(&turned, written, drawn)).then_some(written)
+        })
+        .collect();
+    TINTABLE
+        .iter()
+        .zip(0..)
+        .filter(|(token, _)| kept.contains(&theme.value(token)))
+        .fold(0, |bits, (_, at)| bits | (1 << at))
 }
 
 /// **The chroma the accent's words are drawn at** (#3100): the accent's own, [`Most::alone`],
 /// where every rule of the words in `rules` holds at it, the other side of each drawn as it will
 /// be (at the alone answer for a side held alone, else at the shared one); `None`, the words as
 /// written, where one does not. Where no chroma holds them apart from the waiting colour (a yellow
-/// or green workspace), they keep the theme's colour and the accent keeps its tint. `tint.ts`'
-/// `wordsChroma` is the same.
+/// or green workspace), they keep the theme's colour and the accent keeps its tint. The washes
+/// the words stand on take this answer (#4666), unless [`NO_NEARER`] keeps them as written.
+/// `tint.ts`' `wordsChroma` is the same.
 pub fn words_chroma_of(rules: &[Rule<'_>], hue: f64, most: Most) -> Option<f64> {
     let alone = most.alone?;
     let from = |side_alone: bool| if side_alone { Some(alone) } else { most.shared };
@@ -588,6 +797,7 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
             shared: shared_most,
             alone: shared_most,
             words: shared_most,
+            kept: 0,
         };
     }
     let Some(ceiling) = shared_most else {
@@ -595,6 +805,7 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
             shared: None,
             alone: None,
             words: None,
+            kept: 0,
         };
     };
     let alone = alone_chroma_of(all, shared, ceiling, hue);
@@ -603,14 +814,17 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
         shared: holds.then_some(ceiling),
         alone,
         words: alone,
+        kept: 0,
     }
 }
 
 /// **The most chroma a tint gives `token`** at a hue whose [`Most`] is `most`: the alone
-/// answer for a side of a rule held alone, else as [`chroma_for`] gives it. `tint.ts`'
-/// `chromaFor` is the same.
+/// answer for a side of a rule held alone, else as [`chroma_for`] gives it; `None` for a ground
+/// [`Most::kept`] keeps as written. `tint.ts`' `chromaFor` is the same.
 pub fn chroma_of(token: &str, most: Most) -> Option<f64> {
-    if words_of(token) {
+    if most.keeps(token) {
+        None
+    } else if words_of(token) {
         most.words
     } else if held_alone(token) {
         most.alone
@@ -842,7 +1056,18 @@ pub(super) fn distance(a: Vec3, b: Vec3) -> f64 {
 
 /// A theme value in OKLab, its alpha left out; `None` for a value that is not a colour.
 pub(super) fn oklab_of(hex: &str) -> Option<Vec3> {
-    parse(hex).map(|(rgb, _)| oklab(rgb))
+    if let Some(kept) = OKLAB.with(|known| known.borrow().get(hex).copied()) {
+        return kept;
+    }
+    let found = parse(hex).map(|(rgb, _)| oklab(rgb));
+    OKLAB.with(|known| {
+        let mut known = known.borrow_mut();
+        if known.len() >= KEPT {
+            known.clear();
+        }
+        known.insert(hex.to_owned(), found);
+    });
+    found
 }
 
 /// **`hex` at the OKLab lightness `lightness`** (#2940): its hue kept, its chroma lowered only as

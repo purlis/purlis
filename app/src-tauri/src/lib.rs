@@ -50,6 +50,7 @@ mod questiontrail;
 // The Devices view (#2052).
 mod clusterpools;
 mod devices;
+mod diagnostics;
 mod dispatchaway;
 mod dispatched;
 mod dispatches;
@@ -179,6 +180,7 @@ mod slowstart;
 mod smartclose;
 mod specimen;
 mod staleclones;
+mod starttiming;
 mod stopping;
 #[cfg(test)]
 mod storythemes;
@@ -2654,9 +2656,10 @@ fn open_chat_tab(
     planes.held(&plane)?.chats().open_tab(session)
 }
 
-/// The person sent a task chat's tab back to the Chats list: the tab goes, and the task keeps
-/// working. It ends nothing and tells no chat anything. Refused for a chat that is not a task.
-/// The record keeps it, so a reloaded window and the next launch draw no tab for it.
+/// The person closed a chat's tab, or sent a task's back to the Chats list: the tab goes, and
+/// the chat keeps working. It ends nothing, tells no chat anything, and is never refused for an
+/// open chat (#4756). The record keeps a task's, so a reloaded window and the next launch draw
+/// no tab for it.
 #[tauri::command]
 #[specta::specta]
 fn close_chat_tab(

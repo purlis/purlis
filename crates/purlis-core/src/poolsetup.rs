@@ -35,6 +35,7 @@ use crate::runners::{self, Refused};
 
 pub mod asked;
 pub mod signins;
+pub mod trying;
 
 /// The file a person's choices are kept in, in this machine's folder.
 const CHOICES_FILE: &str = "pool-setup.json";
@@ -686,8 +687,8 @@ fn try_reading(facts: &Facts, choices: &Choices) -> Reading {
             ActionId::StartTestChat,
             "Start a test chat",
             format!(
-                "Starts a real chat on {pool}, and checks gh and git push with commands that \
-                 change nothing."
+                "Starts a real chat on {pool}, and closes it once it has started. Nothing is \
+                 typed into it."
             ),
         ),
     )
@@ -792,17 +793,26 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool) -> Vec<Check> {
             None,
         ),
     });
-    checks.push(match state(StepId::Identity).map(|step| step.state) {
-        Some(StepState::Skipped) => check(
+    // Checking gh and git push through a chat's own route is the agent identity step's (#4490):
+    // Try it says how that step stands, and a step not done is never said as passed.
+    checks.push(match state(StepId::Identity) {
+        Some(step) if step.state == StepState::Done => check(
+            Verdict::Ok,
+            format!(
+                "The agent's identity is set: {}",
+                step.line.as_deref().unwrap_or("allowed here")
+            ),
+            None,
+        ),
+        Some(step) if step.state == StepState::Skipped => check(
             Verdict::Skip,
             "gh and git push weren't checked: agent identity was skipped".to_owned(),
             Some("In these chats, gh and git push say they have no identity."),
         ),
-        // Checking them through a chat's own route is the agent identity step's (#4490).
         _ => check(
-            Verdict::Skip,
-            "gh and git push aren't checked here".to_owned(),
-            Some("The agent identity step checks them."),
+            Verdict::Todo,
+            "The agent's identity is set".to_owned(),
+            Some("The agent identity step sets it, for gh and git push in these chats."),
         ),
     });
     checks
@@ -866,12 +876,7 @@ pub struct Here<'a> {
 /// again, and changes nothing. Refused where there is no such Docker pool on this machine.
 pub fn read(here: &Here<'_>, pool: Option<&str>) -> Result<Setup, Refused> {
     let choices = read_choices(here.config)?;
-    let engine = match here.docker {
-        None => Engine::Missing,
-        Some(docker) if docker.answers().is_err() => Engine::NotAnswering,
-        Some(_) if here.engine.is_err() => Engine::Elsewhere,
-        Some(_) => Engine::Ready,
-    };
+    let engine = engine_of(here);
     let pool = pool
         .map(|name| pool_facts(here, name, engine))
         .transpose()?;
@@ -881,6 +886,21 @@ pub fn read(here: &Here<'_>, pool: Option<&str>) -> Result<Setup, Refused> {
         identity: identity_in(here.plane),
     };
     Ok(of(Kind::Docker, &facts, &choices))
+}
+
+fn engine_of(here: &Here<'_>) -> Engine {
+    match here.docker {
+        None => Engine::Missing,
+        Some(docker) if docker.answers().is_err() => Engine::NotAnswering,
+        Some(_) if here.engine.is_err() => Engine::Elsewhere,
+        Some(_) => Engine::Ready,
+    }
+}
+
+/// **How pool `name`'s runner and its sign-ins stand, read now** (#4483): what Try it picks its
+/// profile by ([`trying::profile_to_try`]). It reads as [`read`] does, and changes nothing.
+pub fn read_pool(here: &Here<'_>, name: &str) -> Result<PoolFacts, Refused> {
+    pool_facts(here, name, engine_of(here))
 }
 
 fn pool_facts(here: &Here<'_>, name: &str, engine: Engine) -> Result<PoolFacts, Refused> {

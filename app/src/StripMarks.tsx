@@ -10,6 +10,7 @@ import {
   FolderOpen,
   FolderPlus,
   Hand,
+  LayoutGrid,
   Minus,
   PanelRight,
   Pin as PinMark,
@@ -32,23 +33,6 @@ import { tabPart } from "./ui/tabs/Tabs";
  * (`ShowMore`), a tab's pin and its `×` (`Closer`). The project, workspace and chat strips all
  * draw them, so they are one look in one module.
  */
-
-/**
- * Whether a row is a close that says it ends nothing — a pane or a tab showing only a view.
- *
- * Asked the other way round from `PlaneView`'s `endsAChat` on purpose: the danger look stays
- * on every close that has not said it is harmless, including a row the catalogue cannot run
- * right now, because a look that goes quiet when a row is merely unavailable would teach the
- * operator the wrong thing about the day it is available.
- */
-export function closesOnly(does: Offer["does"]): boolean {
-  // A task sent back out of its tab or pane ends nothing either (#1489).
-  if (does.verb === "sendBack") return true;
-  return (
-    (does.verb === "closeTab" || does.verb === "closePane" || does.verb === "closeOtherTabs") &&
-    !does.ends
-  );
-}
 
 /** A button that IS a row of the catalogue: its words, its availability and its reason.
  *
@@ -98,7 +82,7 @@ export function Doer({
   primary?: boolean;
 }) {
   if (!offer) return null;
-  const Mark = MARKS[offer.id];
+  const Mark = MARKS[markKey(offer.id)];
   const bare = iconOnly && Mark !== undefined;
   if (primary)
     return (
@@ -114,10 +98,7 @@ export function Doer({
     );
   // **The quiet ghost** (#3214): a mark at the end of a strip is not the point of the strip, so
   // its words or its glyph are in the quiet tier until the pointer reaches it.
-  const place = clsx(
-    offer.id === "pane.close" && !closesOnly(offer.does) && "ends-a-chat",
-    bare && "bare",
-  );
+  const place = clsx(bare && "bare");
   const tip = offer.reason || offer.note || undefined;
   if (bare)
     return (
@@ -156,9 +137,7 @@ export function Doer({
  * exactly as before. A row with no entry here draws its words alone, which is the right way to
  * fail: a missing icon is cosmetic, a missing button is not.
  *
- * `pane.close` ends a chat, so its mark is the same `X` a tab's close carries and it gets the
- * same danger hover (`paneFrame.css`, `.ends-a-chat`) — an icon may not make ending a chat look
- * lighter than it is.
+ * `pane.close` is the same `X` a tab's close carries, and like it ends nothing (#4756).
  *
  * **The project strip draws three of these side by side, so no two may be the same glyph**
  * (charter-app#178). The third is the switcher's `ArrowLeftRight` (FR-27), first of the three:
@@ -185,6 +164,8 @@ export const MARKS: Record<string, typeof Plus> = {
   "project.open": FolderOpen,
   // The title bar's switcher (FR-27): two ways along the strip, which is what it does.
   "project.switch": ArrowLeftRight,
+  // Tile all (#4765), one row per tab: found by its stem.
+  "tab.tile": LayoutGrid,
 };
 
 /**
@@ -207,9 +188,8 @@ export const MARKS: Record<string, typeof Plus> = {
  * because it needs you: that would move tabs under the operator's hand, which is the one
  * thing ADR 0039 refuses, and the count and the title bar's ✋ menu already say it.
  *
- * **After those, the caller's order**, which on all three strips is most recently moved first:
- * a tab by its chats' newest move, a workspace by its chats', and a project by the newest move
- * its `PlaneView` reports (`PlaneReport.moved`, charter#401).
+ * **After those, the caller's order**, which on the chat strip is most recently moved first: a
+ * tab by its chats' newest move.
  *
  * **Only rows that bring a tab forward.** Every row is the catalogue's `tab.select:<id>`,
  * which is the same row the tab itself is and the same row the palette lists. Nothing
@@ -381,10 +361,8 @@ export function Pin({ held, what }: { held: boolean; what: string }) {
 /** A tab's close button. The same row the palette lists, drawn as the `×` a pointer wants —
  *  so the accessible name is the catalogue's words and the glyph is only the glyph.
  *
- *  **The words are the whole guard** (charter-app#130). This `×` ends a chat: it calls
- *  `close_session`, which ends the program and takes the chat off the board. The glyph reads
- *  as "hide this tab" and there is no undo, so the name a screen reader and a keyboard get is
- *  `End chat 3 steward`, and the tooltip a pointer gets says what that costs. */
+ *  **It ends nothing** (#4756): the tab's layout closes and its chats go on in the sidebar, so
+ *  its name is `Close steward 3` and it has the quiet hover. Ending a chat is End…. */
 export function Closer({ offer, onPress }: { offer?: Offer; onPress: (offer: Offer) => void }) {
   if (!offer) return null;
   // **A task's own tab has a minimise where a session's has its close** (#1489, V100-38): `−`,
@@ -393,18 +371,15 @@ export function Closer({ offer, onPress }: { offer?: Offer; onPress: (offer: Off
   return (
     <Tooltip tip={offer.note ? `${offer.title} — ${offer.note}` : offer.title}>
       <button
-        // A tab showing only a view closes and ends nothing, so its `×` does not wear the danger
-        // hover a chat's does — the look may not say more than the act does, either way.
         // `ui-tabs-control`: the tabs family's control on its strip, by which the button
         // family's lint knows it (#3012); `closer` is where it stands.
-        className={clsx("ui-tabs-control closer", { keeps: closesOnly(offer.does), minimise })}
+        className={clsx("ui-tabs-control closer", { minimise })}
         data-minimise={minimise ? "" : undefined}
-        // The tabs family's `×` (`ui/tabs`), which ends a chat unless it only closes a view.
+        // The tabs family's `×` (`ui/tabs`), which ends nothing (#4756).
         {...tabPart("closer")}
-        data-keeps={closesOnly(offer.does) ? "" : undefined}
         // **Not a Tab stop, and deliberately** (charter-app#189). The strip it sits on is ONE
         // stop, the WAI-ARIA "Tabs" pattern; a `×` per tab in the sequence would be fifty stops
-        // again. A keyboard ends a chat from the palette's row for it, or from the tab's own menu
+        // again. A keyboard closes a tab from the palette's row for it, or from the tab's own menu
         // (the context-menu key), both of which read the same catalogue row this does — and
         // Delete on the focused tab (charter-app#239, `closeOnDelete`), which a Mac needs.
         tabIndex={-1}
@@ -436,5 +411,11 @@ export function markOf(offer: Offer): typeof Plus | undefined {
   }
   if (offer.id.startsWith("chat.own:")) return SquareArrowOutUpRight;
   if (offer.id.startsWith("chat.beside:")) return PanelRight;
-  return MARKS[offer.id];
+  return MARKS[markKey(offer.id)];
+}
+
+/** Which key of `MARKS` a row's mark is under: its whole id, else its stem, for a row with one
+ *  id per thing it acts on (Tile all's `tab.tile:<tab>`, #4765). */
+function markKey(id: string): string {
+  return id in MARKS ? id : id.split(":")[0];
 }

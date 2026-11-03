@@ -462,19 +462,18 @@ describe("the chat strip at fifty chats (charter-app#130)", () => {
     expect(chatTabs()).toEqual(["steward 1"]);
   });
 
-  it("says on the close button that it ends the chat, because nothing else does", async () => {
-    // `close_session` ends the program and takes the chat off the board. That is right, and
-    // it is not changing — but the `×` read as "hide this tab", and with fifty tabs and no
-    // undo an operator tidying up was ending fifty live harnesses.
+  it("says on the close button that it closes the tab and its chat goes on (#4756)", async () => {
+    // The `×` used to end the chat (charter-app#130), and an operator tidying fifty tabs was
+    // ending fifty live harnesses. A close ends nothing now: ending is End…, the chat's own.
     core();
     render(<App />);
     expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
     await openAChat();
 
-    const closer = screen.getByRole("button", { name: "End chat steward 1" });
+    const closer = screen.getByRole("button", { name: "Close steward 1" });
 
-    expect(tipOf(closer)).toEqual(expect.stringContaining("There is no undo"));
-    expect(screen.queryByRole("button", { name: /Close tab/ })).toBeNull();
+    expect(tipOf(closer)).toEqual(expect.stringContaining("Its chat goes on in the sidebar."));
+    expect(tipOf(closer)).not.toEqual(expect.stringContaining("There is no undo"));
   });
 
   it("never scrolls a strip, because a strip that does not fit collapses instead", async () => {
@@ -593,15 +592,9 @@ describe("the strip that is drawn", () => {
 
     // The plane gains a workspace at chat one's own directory, so chat one is `gamma`'s now.
     // Nothing the window did moved it, and no handler runs on the way: the strip is re-read
-    // because the tabs changed, and what changed is the OTHER chat closing.
+    // because the tabs changed, and what changed is the OTHER chat's tab closing.
     plane.addGamma();
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward two" }));
-    await userEvent.click(
-      within(await screen.findByRole("alertdialog", { name: "End chat steward two?" })).getByRole(
-        "button",
-        { name: "Close" },
-      ),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Close steward two" }));
 
     await vi.waitFor(
       async () => expect(await strip()).toEqual(["Plane root", "alpha", "beta", "gamma"]),

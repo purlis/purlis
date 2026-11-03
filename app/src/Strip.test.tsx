@@ -12,6 +12,7 @@ import { DEFAULT_TEXT } from "./textSize";
 import type { LaidOut, Moved, OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
 import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
+import { measuring, type Room } from "./stripRoom.testkit";
 
 /**
  * The chat strip when it holds more than it has room for (ADR 0039, as amended).
@@ -41,72 +42,6 @@ vi.mock("./SessionPane", () => ({
 }));
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
-
-/** The wire to what the strips measure. */
-type Room = {
-  /** Gives the chat strip room for exactly `tabs` tabs, and tells the app its size changed. */
-  roomFor: (tabs: number) => void;
-  /** How many live observers are watching the chat strip itself. Scoped to it deliberately:
-   *  the resizable panels and Radix's own positioning each put observers up, so a count of
-   *  every observer in the window would measure somebody else's library. */
-  live: () => number;
-  /** Puts `clientWidth` back, so one test's stub is not every later test's. */
-  stop: () => void;
-};
-
-/**
- * Stubs the one number the strips measure, and the observer that reports changes to it.
- *
- * It answers per element, which is what the real one does — the window has three strips and
- * each measures itself. Only the chat strip is given a width here; the other two measure zero,
- * which is "nobody has said", and draw everything.
- */
-function measuring(): Room {
-  const widths = new WeakMap<Element, number>();
-  const live: { callback: ResizeObserverCallback; targets: Element[]; gone: boolean }[] = [];
-  const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-    configurable: true,
-    get(this: HTMLElement) {
-      return widths.get(this) ?? 0;
-    },
-  });
-  const was = globalThis.ResizeObserver;
-  globalThis.ResizeObserver = class {
-    private readonly mine: (typeof live)[number];
-    constructor(callback: ResizeObserverCallback) {
-      this.mine = { callback, targets: [], gone: false };
-      live.push(this.mine);
-    }
-    observe(target: Element) {
-      this.mine.targets.push(target);
-    }
-    unobserve() {}
-    disconnect() {
-      this.mine.gone = true;
-    }
-  } as unknown as typeof ResizeObserver;
-  return {
-    roomFor: (tabs) => {
-      const strip = stripNamed("Tabs");
-      // The floor the strip fits by at the default window text size (charter-app#283).
-      widths.set(strip, tabs * leastAt(LEAST.chat, DEFAULT_TEXT.window));
-      for (const one of live) {
-        if (one.gone || !one.targets.includes(strip)) continue;
-        one.callback([], undefined as unknown as ResizeObserver);
-      }
-    },
-    live: () => {
-      const strip = stripNamed("Tabs");
-      return live.filter((one) => !one.gone && one.targets.includes(strip)).length;
-    },
-    stop: () => {
-      if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
-      else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
-      globalThis.ResizeObserver = was;
-    },
-  };
-}
 
 /** A chat the core says it has open, with everything not under test left plain. */
 function chat(session: number): OpenChat {
@@ -205,22 +140,8 @@ const menuNames = () =>
   screen.getAllByRole("menuitem").map((row) => row.querySelector(".tab-name")?.textContent);
 
 /** Every close button the strip is drawing, left to right. */
-const closers = () => within(strip()).queryAllByRole("button", { name: /^End chat / });
-
-/**
- * Ends the chat of the tab `closer` belongs to: press, then answer.
- *
- * **Ending a chat asks first** (`EndingChat.tsx`, the operator's *"closing session should ask
- * confirmation"*), from every surface that can ask for it. The dialog's own answer carries the
- * row's words, so this reads the button it is about to press rather than assuming which chat
- * the question is about.
- */
-async function endChat(closer: HTMLElement): Promise<void> {
-  const name = closer.getAttribute("aria-label") ?? "";
-  await userEvent.click(closer);
-  const asking = await screen.findByRole("alertdialog", { name: `${name}?` });
-  await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
-}
+/** The tabs' closes: each closes its tab and ends nothing (#4756), so nothing is asked. */
+const closers = () => within(strip()).queryAllByRole("button", { name: /^Close / });
 
 describe("the chat strip when it holds more than it has room for", () => {
   let room: Room;
@@ -334,8 +255,7 @@ describe("the chat strip when it holds more than it has room for", () => {
 
   it("draws a tab picked from the menu, with its own close button", async () => {
     // **This is what the collapse owes**, and what the scroller used to owe with
-    // `scrollIntoView`: a tab reached through the menu arrives ON the strip, so ending it is
-    // still two presses and never one from a menu under the cursor (charter-app#130).
+    // `scrollIntoView`: a tab reached through the menu arrives ON the strip, with its close.
     await fourChats();
     room.roomFor(1);
     await userEvent.click(
@@ -346,25 +266,25 @@ describe("the chat strip when it holds more than it has room for", () => {
 
     await vi.waitFor(() => expect(screen.getAllByTestId("pane")[0]).toHaveTextContent("session 3"));
     expect(tabNames()).toEqual(["ide.3"]);
-    expect(within(strip()).getByRole("button", { name: "End chat ide.3" })).toBeInTheDocument();
+    expect(within(strip()).getByRole("button", { name: "Close ide.3" })).toBeInTheDocument();
   });
 
-  it("reaches and ends every chat with room for only two of four", async () => {
-    // **The fifty-tab question, at four.** `stress.e2e.ts` closes every tab by pressing the
-    // last close button on the strip over and over; with the strip collapsing rather than
-    // scrolling, that only terminates because closing a drawn tab gives the strip room for a
-    // hidden one. If it ever does not, this goes red here rather than as a four-minute
-    // scenario run that ends with sessions still alive.
+  it("reaches and closes every tab with room for only two of four, ending no chat", async () => {
+    // **The fifty-tab question, at four.** Pressing the last close button on the strip over and
+    // over reaches every tab only because closing a drawn tab gives the strip room for a hidden
+    // one. A close ends nothing (#4756), and the strip's last tab keeps one empty pane.
     const { ended } = await fourChats();
     room.roomFor(2);
     await vi.waitFor(() => expect(closers()).toHaveLength(2));
 
-    for (let pressed = 0; pressed < 16 && closers().length > 0; pressed++) {
+    for (let pressed = 0; pressed < 4; pressed++) {
       const drawn = closers();
-      await endChat(drawn[drawn.length - 1]);
+      await userEvent.click(drawn[drawn.length - 1]);
     }
 
-    expect([...ended].sort()).toEqual([1, 2, 3, 4]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(ended).toEqual([]);
+    expect(tabNames()).toEqual(["New chat"]);
     expect(screen.queryByRole("button", { name: /the strip is not showing/ })).toBeNull();
   });
 
@@ -466,12 +386,12 @@ describe("the chat strip when it holds more than it has room for", () => {
     }
   });
 
-  it("drops a tab out of the menu when its chat ends", async () => {
+  it("drops a tab out of the menu when it closes", async () => {
     await fourChats();
     room.roomFor(1);
     await screen.findByRole("button", { name: "Show 3 tabs the strip is not showing" });
 
-    await endChat(within(strip()).getByRole("button", { name: "End chat ide.1" }));
+    await userEvent.click(closers()[0]);
 
     expect(
       await screen.findByRole("button", { name: "Show 2 tabs the strip is not showing" }),
@@ -547,6 +467,39 @@ describe("the strip's tabs (#4762)", () => {
     const tab = tabNamed("ide.2");
     expect(tab?.querySelector(".tab-split-more")?.textContent).toBe("+1, split, 2 panes");
     expect(await hoverTipOf(tab)).toBe("ide.1 · ide.2");
+  });
+
+  it("draws Tile all at its right end only while the tab in front is split (#4765)", async () => {
+    core([chat(1), chat(2)], {
+      strip: null,
+      tabs: [
+        {
+          workspace: null,
+          pinned: false,
+          window: 0,
+          front: true,
+          focused: "a",
+          tree: {
+            kind: "split",
+            direction: "row",
+            share: 500,
+            a: { kind: "chat", chat: 1 },
+            b: { kind: "chat", chat: 2 },
+          },
+        },
+      ],
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Tile all" })).toBeEnabled();
+  });
+
+  it("draws no Tile all for a tab of one pane, so it takes no room from the tabs (#4765)", async () => {
+    core([chat(1)]);
+    render(<App />);
+
+    await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
+    expect(screen.queryByRole("button", { name: "Tile all" })).toBeNull();
   });
 
   it("always draws the tab in front, in the last place that fits", async () => {
@@ -627,12 +580,11 @@ describe("the strip's tabs (#4762)", () => {
     await screen.findByRole("dialog", { name: "Command palette" });
     await userEvent.keyboard("Close other tabs");
     await userEvent.keyboard("{Enter}");
-    // It ends a chat, so it asks first, as End chat does.
-    const asking = await screen.findByRole("alertdialog");
-    await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
 
+    // It ends nothing (#4756), so nothing is asked.
     await waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.2"]));
-    expect(ended).toEqual([3]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(ended).toEqual([]);
   });
 
   it("marks its tabs narrow under 140px each, and not while they are wider", async () => {

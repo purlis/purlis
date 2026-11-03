@@ -406,15 +406,7 @@
   background-color: transparent;
 }
 
-/* Each is the button family's quiet ghost (#3214). Ending a chat takes the danger colour under
-   the pointer, as a tab's `×` does, for the same reason: a confirmation is no licence for the
-   control to look lighter than what it does. It outranks the quiet ghost's hover by naming it,
-   in this layer after the family's. */
-.pane-doing
-  > .ends-a-chat[data-scope="button"][data-variant="quiet"][data-hovered]:not([data-disabled]) {
-  background-color: var(--danger-surface);
-  color: var(--danger-text);
-}
+/* Each is the button family's quiet ghost (#3214), the close too: it ends nothing (#4756). */
 
 /* ---------------------------------------------------------------------------------------------
    A view's pane.
@@ -514,4 +506,69 @@
    band's Notices: those stand two at a time, and the strip always stands. */
 .pane-top > .waiting-strip {
   margin: var(--space-4) var(--space-4) 0;
+}
+
+/* **Opened, it stays inside the top's cap** (#4843): in a short pane the top is 46% of it, and
+   the strip gives way to it like the band does, its text scrolling inside it, so the terminal
+   below keeps its room whatever the message holds. */
+.pane-top > .waiting-strip[data-open] {
+  flex: 0 1 auto;
+  min-block-size: 0;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Dragging a pane (#4763, `paneDrag.tsx`).
+   --------------------------------------------------------------------------------------------- */
+
+/* A pane is picked up by its head, outside the head's controls. */
+.pane-head[data-pane-grip] {
+  cursor: grab;
+}
+
+:root[data-pane-dragging],
+:root[data-pane-dragging] * {
+  cursor: grabbing;
+}
+
+/* **The result, drawn before the drop** (#4583): the half of the pane the source would take, or
+   the whole pane for a swap, over the terminal, which never sees the pointer while it is there.
+   Over every pane's own corner (`App.css`, up to 3), under what is opened over the window. A
+   refused place is dashed, in the danger colour, with its reason by the pointer. */
+.pane-drop-preview {
+  position: fixed;
+  z-index: 4;
+  pointer-events: none;
+  border: var(--focus-ring-width) solid var(--accent-base);
+  border-radius: var(--radius-sm);
+  background-color: var(--accent-wash);
+}
+
+.pane-drop-preview[data-refused] {
+  border-style: dashed;
+  border-color: var(--danger-base);
+  background-color: var(--danger-wash);
+}
+
+/* On the strip, the line where the new tab goes. */
+.pane-drop-preview[data-line] {
+  border: none;
+  background-color: var(--accent-base);
+}
+
+.pane-drop-says {
+  position: fixed;
+  z-index: 4;
+  max-inline-size: 32rem;
+  padding: var(--space-1) var(--space-2);
+  border: var(--panel-border-width) solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-overlay);
+  box-shadow: var(--elevation-overlay);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  pointer-events: none;
+}
+
+.pane-drop-says[data-refused] {
+  color: var(--danger-text);
 }

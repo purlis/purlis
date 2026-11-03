@@ -40,6 +40,28 @@ describe("the waiting strip", () => {
     expect(within(strip()).getByText(STRIP.answerBelow, { exact: false })).toBeVisible();
   });
 
+  it("shows a question purlis's server asks in a form in its own words, whole once opened", async () => {
+    // #4710: `ask_operator`'s question, held with the form it asks through.
+    const user = userEvent.setup();
+    const asked = "Which host do I deploy to?\nThe blue one or the green one?";
+    render(
+      <WaitingStrip
+        session={CHAT}
+        waiting={[
+          ask("terminal", {
+            says: "Which host do I deploy to? The blue one or the green one?",
+            last_message: asked,
+          }),
+        ]}
+      />,
+    );
+    expect(within(strip()).getByText(STRIP.answerBelow, { exact: false })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: STRIP.showAll }));
+    expect(
+      within(strip()).getByText((_, node) => node?.textContent === asked && node.tagName === "P"),
+    ).toBeVisible();
+  });
+
   it("keeps a real ask's words whatever a later turn ended saying", () => {
     render(
       <WaitingStrip

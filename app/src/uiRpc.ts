@@ -796,9 +796,10 @@ export const commands = {
 	 */
 	openChatTab: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("open_chat_tab", { plane, session })),
 	/**
-	 *  The person sent a task chat's tab back to the Chats list: the tab goes, and the task keeps
-	 *  working. It ends nothing and tells no chat anything. Refused for a chat that is not a task.
-	 *  The record keeps it, so a reloaded window and the next launch draw no tab for it.
+	 *  The person closed a chat's tab, or sent a task's back to the Chats list: the tab goes, and
+	 *  the chat keeps working. It ends nothing, tells no chat anything, and is never refused for an
+	 *  open chat (#4756). The record keeps a task's, so a reloaded window and the next launch draw
+	 *  no tab for it.
 	 */
 	closeChatTab: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("close_chat_tab", { plane, session })),
 	/**
@@ -1629,6 +1630,7 @@ export const commands = {
 	poolSetupSizes: __WINDOW_ONLY_RESULT,
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,
+	poolSetupTry: __WINDOW_ONLY_RESULT,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -2254,6 +2256,7 @@ export const commands = {
 	 *  holds no project for the first moments of every launch.
 	 */
 	aboutCharter: () => __TAURI_INVOKE<About>("about_charter"),
+	diagnosticsHere: __WINDOW_ONLY,
 	installCliOnPath: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Keeps the window's layout, replacing what the file held.
@@ -4196,6 +4199,19 @@ export type DevicesShown = {
 	 *  row names its project.
 	 */
 	projects: number,
+};
+
+/**  What the report says about where purlis runs and how many chats it holds. */
+export type DiagnosticsHere = {
+	/**  The system, as [`purlis_core::adopt::system`] says it: `Darwin 27.2.0, aarch64`. */
+	os: string,
+	/**  The chats open in every project this app holds, a shell tab not among them. */
+	open: number,
+	/**
+	 *  The open chats whose run has a program (the glossary's **hot chat**): any not done or
+	 *  failed.
+	 */
+	hot: number,
 };
 
 /**  **The disk each pool's runners hold**, as the use table says it (#3493). */
@@ -6796,10 +6812,15 @@ export type LocalModelRow = {
  *  value: purlis hasn't read one.
  */
 export type LoginShown = {
-	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
+	/**  The domain of the page it opens, with a port where it has one: `shop.example.com`. */
 	domain: string,
 	/**  The page's path on it. */
 	path: string,
+	/**
+	 *  **The host the password is typed on** (#4995), with a port where it has one: the login
+	 *  form's, which the page may have sent the browser to. The domain where they're one.
+	 */
+	form: string,
 	vault: string,
 	user_key?: string | null,
 	key: string,
@@ -6812,6 +6833,10 @@ export type LoginShown = {
 	no_always?: string | null,
 	/**  The persona's chats get the vault too with Always. */
 	vault_too: boolean,
+	/**  **The page the declared login opens now, which this replaces** (#4996). */
+	replaces?: string | null,
+	/**  The host its password is typed on now, with a port where it has one. */
+	replaces_form?: string | null,
 };
 
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
@@ -8903,6 +8928,14 @@ export type PoolSetupCreated = {
 	breaks: string[],
 };
 
+/**  Why Try it didn't pass, and the step that mends it, where one does (#4483). */
+export type PoolSetupFailed = {
+	/**  What happened and what to do, in a sentence or two. */
+	why: string,
+	/**  The step to go to, by its id: `signins` for a sign-in. Null where trying again is it. */
+	step: string | null,
+};
+
 /**  A limit a profile is over. */
 export type PoolSetupOver = {
 	/**  The limit's key, as `pool_limit_set` takes it. */
@@ -8965,6 +8998,14 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+};
+
+/**  What Try it found. */
+export type PoolSetupTried = {
+	/**  Why it didn't pass; null where a real chat started and the proof is kept. */
+	failed: PoolSetupFailed | null,
+	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
+	workspace: string | null,
 };
 
 /**  What the person is asked. */
@@ -9545,6 +9586,11 @@ export type PublishReviewView = {
 	grades: PublishGrade[],
 	/**  The request's description, whole. */
 	body: string,
+	/**
+	 *  Whether the forge says the person's account may not push to the source (#4342). The page
+	 *  says so up front and offers Export, and never refuses on it: the push answers for itself.
+	 */
+	forge_says_no_push: boolean,
 	accepted: PublishAccepted,
 };
 
@@ -12538,12 +12584,15 @@ export type StartRefused = {
  *  shows before the person picks anything, and every pool this machine keeps, which the row
  *  offers for this start only. `at_root` is a chat at the project's root, which runs here and is
  *  offered no pool. Nothing here is checked against the pool's runner: the start does that.
+ *  `ran_on` is each of those pools the workspace has run a chat on, or every one where it has no
+ *  clone to send, so the row can say a first start anywhere else (#4591).
  */
 export type StartRunsOn = {
 	pool: string | null,
 	level: RunsOnLevel,
 	at_root: boolean,
 	pools: string[],
+	ran_on: string[],
 };
 
 /**  A chat that started: its session, and the name it was given as charter holds it. */
@@ -14005,6 +14054,17 @@ export type WindowMotion = {
 };
 
 /**
+ *  **A ground of the accent's words comes no nearer a signal's wash than it was** (#4666,
+ *  `purlis_core::theme::NoNearer`): each of `tokens`, turned and laid on each of `over`, is no
+ *  nearer any of `from` laid on the same ground than the value it was turned from.
+ */
+export type WindowNoNearer = {
+	tokens: string[],
+	from: string[],
+	over: string[],
+};
+
+/**
  *  One option of the theme drawn (#2325), as Settings shows it: what it is called, its values,
  *  the value drawn and whether a choice made it (`false`: the theme's default).
  */
@@ -14099,6 +14159,13 @@ export type WindowTint = {
 	hues: WindowHue[],
 	/**  The rules every tint holds, whatever the hue. */
 	apart: WindowApart[],
+	/**  The washes that take the accent's words' answer (#4666). */
+	with_words: string[],
+	/**
+	 *  The grounds a tint keeps as written where turning would bring them nearer the waiting or
+	 *  danger wash, as drawn (#4666, `purlis_core::theme::NO_NEARER`).
+	 */
+	no_nearer: WindowNoNearer,
 };
 
 /**  A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers. */

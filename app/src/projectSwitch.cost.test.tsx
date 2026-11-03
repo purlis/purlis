@@ -7,6 +7,7 @@ import { cleanup } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { switches, type Shape, type Switch } from "./projectSwitch.testkit";
 import { keepTheirOrder } from "./commandOrder";
+import { countReactsCommits } from "./reactCommits.testkit";
 
 // As the window runs: the lanes that keep a read and a change in order (#1949), whose reads
 // must not queue behind each other on a switch.
@@ -33,13 +34,20 @@ keepTheirOrder();
  * second project alone), and `SWITCH_OUT=<file>` writes what each switch cost as a line of JSON.
  */
 
-await vi.hoisted(async () => {
-  const { countReactsCommits } = await import("./reactCommits.testkit");
-  countReactsCommits();
-});
+countReactsCommits();
 
 vi.mock("./SessionPane", async () => ({
   SessionPane: (await import("./countedPane.testkit")).CountedPane,
+}));
+
+// A read on a wall-clock beat (`everyWhileShown`: the saving rows every 10 s, the alerts, the
+// state clock, a running chat's gauge) is not what a switch costs, and on a slow runner one
+// landed inside a measured switch and drew the window again: 8 commits where a switch makes 5.
+// No beat runs here. What a switch reads as its project comes back is read after the paint
+// (`useOnShownAgain`), not on a beat, and is still counted.
+vi.mock("./whileShown", async (actual) => ({
+  ...(await actual<typeof import("./whileShown")>()),
+  everyWhileShown: () => () => {},
 }));
 
 afterEach(() => {

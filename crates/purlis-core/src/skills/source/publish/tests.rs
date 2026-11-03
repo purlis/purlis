@@ -78,6 +78,8 @@ fn source_at(bare: &Path) -> Source {
 #[derive(Default)]
 struct StandIn {
     already: Option<String>,
+    /// What the forge says of the account's write access: `Err` where it could not be asked.
+    may_push: Option<Result<Option<bool>, String>>,
     fails: std::cell::Cell<bool>,
     opened: RefCell<Vec<(String, String, String, String)>>,
 }
@@ -88,6 +90,9 @@ impl PublishForge for StandIn {
     }
     fn already(&self, _: &str) -> Result<Option<String>, String> {
         Ok(self.already.clone())
+    }
+    fn may_push(&self) -> Result<Option<bool>, String> {
+        self.may_push.clone().unwrap_or(Ok(None))
     }
     fn open_draft(
         &self,
@@ -136,7 +141,26 @@ fn set() -> Set {
 }
 
 fn review_of(set: &Set) -> PublishReview {
-    review(&set.plane, None, &Level::project(), "deploy", &set.source).unwrap()
+    review_by(set, &StandIn::default())
+}
+
+fn review_by(set: &Set, forge: &StandIn) -> PublishReview {
+    review(
+        &set.plane,
+        None,
+        &Level::project(),
+        "deploy",
+        &set.source,
+        forge,
+    )
+    .unwrap()
+}
+
+fn says_may_push(answer: Result<Option<bool>, String>) -> StandIn {
+    StandIn {
+        may_push: Some(answer),
+        ..StandIn::default()
+    }
 }
 
 fn publish_of(set: &Set, accepted: &Accepted, forge: &StandIn) -> Result<Published, String> {
@@ -306,7 +330,15 @@ fn the_same_files_to_another_folder_are_another_branch() {
     let first = review_of(&set);
     let mut elsewhere = set.source.clone();
     elsewhere.folder = Some("packs".to_owned());
-    let second = review(&set.plane, None, &Level::project(), "deploy", &elsewhere).unwrap();
+    let second = review(
+        &set.plane,
+        None,
+        &Level::project(),
+        "deploy",
+        &elsewhere,
+        &StandIn::default(),
+    )
+    .unwrap();
     assert_ne!(first.branch, second.branch);
     assert_eq!(second.lands[0].0, "packs/deploy");
 }
@@ -335,6 +367,70 @@ fn a_source_that_refuses_the_push_is_said_as_such_and_opens_nothing() {
 
     assert!(matches!(done, Published::PushRefused { .. }), "{done:?}");
     assert!(forge.opened.borrow().is_empty());
+}
+
+#[test]
+fn a_review_says_up_front_when_the_forge_says_the_account_cannot_push() {
+    let set = set();
+    assert_eq!(
+        review_by(&set, &says_may_push(Ok(Some(false)))).may_push,
+        Some(false)
+    );
+    assert_eq!(
+        review_by(&set, &says_may_push(Ok(Some(true)))).may_push,
+        Some(true)
+    );
+}
+
+#[test]
+fn a_forge_that_cannot_be_asked_leaves_write_access_unknown_and_the_review_stands() {
+    let set = set();
+    let forge = says_may_push(Err("the forge did not answer".to_owned()));
+    assert_eq!(review_by(&set, &forge).may_push, None);
+}
+
+#[test]
+fn the_forge_saying_no_never_refuses_a_publish_the_push_itself_answers() {
+    // GitLab answers no to an admin and to a shared group's member, who can push all the same.
+    let set = set();
+    let forge = says_may_push(Ok(Some(false)));
+    let review = review_by(&set, &forge);
+
+    let done = publish_of(&set, &review.accepted(), &forge).unwrap();
+
+    assert!(matches!(done, Published::Opened { .. }), "{done:?}");
+    assert!(
+        branches(&set.bare).contains(&review.branch),
+        "{}",
+        branches(&set.bare)
+    );
+}
+
+#[test]
+fn a_review_stopped_already_does_not_ask_the_forge() {
+    let set = set();
+    let dir = Level::project().dir(&set.plane).unwrap().join("deploy");
+    let token = format!("ghp_{}", "a1B2".repeat(9));
+    std::fs::write(dir.join("SKILL.md"), format!("{SKILL}{token}\n")).unwrap();
+    let review = review_by(&set, &says_may_push(Ok(Some(false))));
+    assert!(review.stopped());
+    assert_eq!(review.may_push, None);
+}
+
+#[test]
+fn an_account_the_forge_says_may_push_still_gets_a_branch_on_the_source() {
+    let set = set();
+    let forge = says_may_push(Ok(Some(true)));
+    let review = review_by(&set, &forge);
+
+    let done = publish_of(&set, &review.accepted(), &forge).unwrap();
+
+    assert!(matches!(done, Published::Opened { .. }), "{done:?}");
+    assert!(
+        branches(&set.bare).contains(&review.branch),
+        "{}",
+        branches(&set.bare)
+    );
 }
 
 #[test]

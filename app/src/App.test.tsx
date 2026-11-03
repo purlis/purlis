@@ -122,9 +122,19 @@ async function splitInto(which: "Split right" | "Split down") {
  * `name` is the row's own words, which are the dialog's too, so this presses the answer that
  * belongs to the chat under test rather than whichever button happens to be second.
  */
+/**
+ * Asks to end chat `name` the one way there is (#4753, #4756): End… in its pane's ⋯. A close
+ * ends nothing. Answers the question it asks.
+ */
+async function askToEnd(name: string) {
+  await userEvent.click(screen.getAllByRole("button", { name: `More for ${name}` })[0]);
+  await userEvent.click(await screen.findByRole("menuitem", { name: "End…" }));
+  return screen.findByRole("alertdialog", { name: `End chat ${name}…?` });
+}
+
+/** Ends chat `name` by End… and its Close. */
 async function endChat(name: string) {
-  await userEvent.click(screen.getByRole("button", { name }));
-  const asking = await screen.findByRole("alertdialog", { name: `${name}?` });
+  const asking = await askToEnd(name);
   await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
 }
 
@@ -584,54 +594,100 @@ describe("App", () => {
     expect(panes()).toEqual(["session 1"]);
   });
 
-  it("ends the sessions of a tab that closes", async () => {
+  it("closes a tab and ends none of its chats, asking nothing (#4756)", async () => {
     const { asked } = core();
     render(<App />);
     await openAChat();
     await splitInto("Split right");
 
-    await endChat("End chat steward 1");
+    await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
 
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(screen.queryAllByTestId("pane")).toEqual([]);
-    // The plane travels with the session, because a session number alone names a chat in
-    // every plane the process holds.
-    expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
-      { plane: "/home/dev/plane", session: 1 },
-      { plane: "/home/dev/plane", session: 2 },
-    ]);
+    // The strip's last tab keeps one empty pane.
+    expect(await screen.findByText("Nothing in this pane")).toBeInTheDocument();
+    expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
-  it("ends only the session of a pane that closes", async () => {
+  it("starts the next chat in the empty tab a close left, not in a tab beside it (#4756)", async () => {
+    core();
+    render(<App />);
+    await openAChat();
+    await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
+    await screen.findByText("Nothing in this pane");
+
+    await openAChat();
+
+    expect(tabs()).toEqual(["steward 2"]);
+    expect(panes()).toEqual(["session 2"]);
+  });
+
+  it("clears a pane on Close pane, and its chat goes on (#4756)", async () => {
     const { asked } = core();
     render(<App />);
     await openAChat();
     await splitInto("Split down");
 
-    await userEvent.click(paneDoing(2).getByRole("button", { name: "End this pane's chat" }));
-    const asking = await screen.findByRole("alertdialog");
-    await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
+    await userEvent.click(paneDoing(2).getByRole("button", { name: "Close this pane" }));
 
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(panes()).toEqual(["session 1"]);
-    expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
-      { plane: "/home/dev/plane", session: 2 },
-    ]);
+    expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
-  it("ends the chat of the pane the button is ON, not the focused one", async () => {
+  it("puts a closed pane back on the window's Undo, its chat still running (#4763)", async () => {
+    core();
+    render(<App />);
+    await openAChat();
+    await splitInto("Split down");
+
+    await userEvent.click(paneDoing(2).getByRole("button", { name: "Close this pane" }));
+    expect(await screen.findByText("Closed the pane.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(panes()).toEqual(["session 1", "session 2"]));
+  });
+
+  it("puts a closed tab back on the window's Undo, as it was (#4763)", async () => {
+    core();
+    render(<App />);
+    await openAChat();
+    await splitInto("Split right");
+
+    await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
+    expect(await screen.findByText("Closed steward 1.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(panes()).toEqual(["session 1", "session 2"]));
+    expect(tabs()).toEqual(["steward 1"]);
+  });
+
+  it("closes the pane the button is ON, not the focused one", async () => {
     // **The operator's reason for moving these onto the panes**, as a test: *"this will be
     // clear for spliting — user will know what pane is spliting."* A split leaves the NEW
     // pane focused, so pressing the older pane's own `×` is precisely the case a bar button
-    // gets wrong — it would end session 2 and leave the pane the operator aimed at.
+    // gets wrong — it would close session 2's pane and leave the pane the operator aimed at.
     const { asked } = core();
     render(<App />);
     await openAChat();
     await splitInto("Split right");
 
-    await userEvent.click(paneDoing(1).getByRole("button", { name: "End this pane's chat" }));
-    const asking = await screen.findByRole("alertdialog");
-    await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
+    await userEvent.click(paneDoing(1).getByRole("button", { name: "Close this pane" }));
 
     expect(panes()).toEqual(["session 2"]);
+    expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
+  });
+
+  it("ends a chat only by End…, which ends its program and takes its pane (#4753)", async () => {
+    const { asked } = core();
+    render(<App />);
+    await openAChat();
+
+    await endChat("steward 1");
+
+    expect(screen.queryAllByTestId("pane")).toEqual([]);
+    // The plane travels with the session, because a session number alone names a chat in
+    // every plane the process holds.
     expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
       { plane: "/home/dev/plane", session: 1 },
     ]);
@@ -662,8 +718,7 @@ describe("App", () => {
     render(<App />);
     await openAChat();
 
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
-    const asking = await screen.findByRole("alertdialog");
+    const asking = await askToEnd("steward 1");
     await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
 
     expect(panes()).toEqual(["session 1"]);
@@ -693,8 +748,7 @@ describe("App", () => {
     render(<App />);
     await openAChat();
 
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
-    const asking = await screen.findByRole("alertdialog");
+    const asking = await askToEnd("steward 1");
 
     // Read off the DOM rather than asked for by name: "these three, in this order" is the
     // claim, and `getByRole` for each would pass with a fourth between them. Smart close is
@@ -728,8 +782,7 @@ describe("App", () => {
     render(<App />);
     await openAChat();
 
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
-    const asking = await screen.findByRole("alertdialog");
+    const asking = await askToEnd("steward 1");
     // To Close and no further, by the key Radix handles at the scope's first edge: Smart close,
     // the last answer, cannot be pressed on a chat this core says nothing about.
     await userEvent.tab({ shift: true });
@@ -752,8 +805,7 @@ describe("App", () => {
     render(<App />);
     await openAChat();
 
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
-    await screen.findByRole("alertdialog");
+    await askToEnd("steward 1");
     await userEvent.keyboard("{Escape}");
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -761,9 +813,9 @@ describe("App", () => {
     expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
-  it("ends a session it opened for a split whose tab closed while it was starting", async () => {
-    // Starting a session is a real round trip: the tab can be gone by the time it answers,
-    // and then nothing would ever show that session.
+  it("keeps a chat it opened for a split whose tab went while it was starting (#4756)", async () => {
+    // Starting a session is a real round trip: the tab can be gone by the time it answers. The
+    // chat the person started goes on in the sidebar: nothing that takes a pane away ends one.
     const asked: { cmd: string; args: unknown }[] = [];
     let letTheSecondSessionStart = () => {};
     let opened = 0;
@@ -791,15 +843,13 @@ describe("App", () => {
     // `×` the only way there is — by leaving the picker first. Escape does not call the start
     // back; it is already in flight, which is exactly the race this test is about.
     await userEvent.keyboard("{Escape}");
-    await endChat("End chat steward 1");
+    await endChat("steward 1");
     letTheSecondSessionStart();
 
-    await vi.waitFor(() =>
-      expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
-        { plane: "/home/dev/plane", session: 1 },
-        { plane: "/home/dev/plane", session: 2 },
-      ]),
-    );
+    await waitFor(() => expect(opened).toBe(2));
+    expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
+      { plane: "/home/dev/plane", session: 1 },
+    ]);
     expect(screen.queryAllByTestId("pane")).toEqual([]);
   });
 

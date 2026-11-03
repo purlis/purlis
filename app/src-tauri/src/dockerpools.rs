@@ -885,12 +885,15 @@ pub enum RunsOnLevel {
 /// shows before the person picks anything, and every pool this machine keeps, which the row
 /// offers for this start only. `at_root` is a chat at the project's root, which runs here and is
 /// offered no pool. Nothing here is checked against the pool's runner: the start does that.
+/// `ran_on` is each of those pools the workspace has run a chat on, or every one where it has no
+/// clone to send, so the row can say a first start anywhere else (#4591).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct StartRunsOn {
     pub pool: Option<String>,
     pub level: RunsOnLevel,
     pub at_root: bool,
     pub pools: Vec<String>,
+    pub ran_on: Vec<String>,
 }
 
 /// [`StartRunsOn`] for a chat in `workspace` of the plane at `plane`, on `config`.
@@ -907,6 +910,7 @@ pub fn start_runs_on_at(
             level: RunsOnLevel::ThisMachine,
             at_root: true,
             pools,
+            ran_on: Vec::new(),
         });
     };
     let place = purlis_core::machine::read(config)
@@ -917,11 +921,14 @@ pub fn start_runs_on_at(
         PlaceLevel::Project => RunsOnLevel::Project,
         PlaceLevel::Start | PlaceLevel::Default => RunsOnLevel::ThisMachine,
     };
+    // Where a first chat of this workspace would send nothing new (#4591).
+    let ran_on = purlis_core::pools::pools_run_on(config, plane, workspace, &pools);
     Ok(StartRunsOn {
         pool: place.pool,
         level,
         at_root: false,
         pools,
+        ran_on,
     })
 }
 
@@ -950,6 +957,7 @@ pub async fn start_runs_on(
             level: RunsOnLevel::ThisMachine,
             at_root: workspace.is_none(),
             pools: Vec::new(),
+            ran_on: Vec::new(),
         })
     }
 }
@@ -1000,6 +1008,8 @@ pub fn follow_project_chats_run_on_at(
     })
     .map_err(|why| format!("Where this workspace's chats run was not kept: {why}"))?;
     set?;
+    // A project none of whose workspaces runs on a pool now is not marked for one (#4591).
+    crate::notheld::recheck(config);
     chats_run_on_at(config, plane, workspace)
 }
 
@@ -1045,6 +1055,8 @@ pub fn set_project_chats_run_on_at(
     })
     .map_err(|why| format!("Where this project's chats run was not kept: {why}"))?;
     set?;
+    // A project none of whose workspaces runs on a pool now is not marked for one (#4591).
+    crate::notheld::recheck(config);
     project_chats_run_on_at(config, plane)
 }
 
@@ -1071,6 +1083,8 @@ pub fn set_chats_run_on_at(
     })
     .map_err(|why| format!("Where this workspace's chats run was not kept: {why}"))?;
     set?;
+    // A project none of whose workspaces runs on a pool now is not marked for one (#4591).
+    crate::notheld::recheck(config);
     chats_run_on_at(config, plane, workspace)
 }
 

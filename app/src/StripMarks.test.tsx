@@ -32,7 +32,7 @@ describe("the bar's buttons carry a mark beside their words", () => {
     ["chat.new", "New tab", "lucide-plus"],
     ["pane.split.right", "Split right", "lucide-square-split-horizontal"],
     ["pane.split.down", "Split down", "lucide-square-split-vertical"],
-    ["pane.close", "End this pane's chat", "lucide-x"],
+    ["pane.close", "Close this pane", "lucide-x"],
     // The project strip's two, and they are deliberately not the same glyph: `FolderPlus` is
     // what every file manager puts on *New folder*, `FolderOpen` on *Open* (charter-app#178).
     // Two icon-only buttons an inch apart carrying one icon is a strip aimed at by memory.
@@ -57,10 +57,10 @@ describe("the bar's buttons carry a mark beside their words", () => {
     expect(screen.getByRole("button", { name: "Quit charter" }).querySelector("svg")).toBeNull();
   });
 
-  it("marks the button that ends a pane's chat as one that ends something", () => {
-    render(<Doer offer={offer("pane.close", "End this pane's chat")} onPress={() => {}} />);
+  it("draws Close pane as any other mark, since it ends nothing (#4756)", () => {
+    render(<Doer offer={offer("pane.close", "Close this pane")} onPress={() => {}} />);
 
-    expect(screen.getByRole("button")).toHaveClass("ends-a-chat");
+    expect(screen.getByRole("button")).not.toHaveClass("ends-a-chat");
   });
 
   it("has a mark for exactly the rows the bar and the project strip draw", () => {
@@ -76,6 +76,8 @@ describe("the bar's buttons carry a mark beside their words", () => {
         "project.open",
         // The project switcher's button, at the start of the strip's controls (FR-27).
         "project.switch",
+        // Tile all at the strip's right end (#4765), found by its row's stem.
+        "tab.tile",
         "workspace.create",
       ].sort(),
     );
@@ -105,7 +107,8 @@ describe("the bar's buttons carry a mark beside their words", () => {
     // One each, so these cannot collide with anything — listed so that a second control
     // arriving on either strip has somewhere to be added and something to fail against.
     "the workspace strip": ["workspace.create"],
-    "the chat strip": ["chat.new"],
+    // The `+`, and Tile all at the strip's right end (#4765).
+    "the chat strip": ["chat.new", "tab.tile"],
   };
 
   it.each(Object.keys(SIDE_BY_SIDE))("never gives %s two rows with the same mark", (strip) => {
@@ -118,27 +121,31 @@ describe("the bar's buttons carry a mark beside their words", () => {
 describe("a tab's close", () => {
   it("is named for what it does, with the X drawn and unread", async () => {
     const onPress = vi.fn();
-    const ends = offer("tab.close:3", "End chat 3 steward", { note: "Ends the program." });
-    render(<Closer offer={ends} onPress={onPress} />);
+    const closes = offer("tab.close:3", "Close steward 3", {
+      note: "Its chat goes on in the sidebar.",
+    });
+    render(<Closer offer={closes} onPress={onPress} />);
 
-    const button = screen.getByRole("button", { name: "End chat 3 steward" });
+    const button = screen.getByRole("button", { name: "Close steward 3" });
     expect(button.querySelector("svg.lucide-x")?.getAttribute("aria-hidden")).toBe("true");
     await userEvent.click(button);
-    expect(onPress).toHaveBeenCalledWith(ends);
+    expect(onPress).toHaveBeenCalledWith(closes);
   });
 
   /**
-   * **It may not look lighter than it is** (charter-app#130). The `×` ends a chat with no undo,
-   * and the one thing the styling must not do is agree with a glyph that reads as "hide".
-   * jsdom computes no hover, so this reads the rule.
+   * **The danger cue on close is gone** (#4756, spec #4750 story 20): a close ends nothing, so
+   * its hover is the quiet one. jsdom computes no hover, so this reads the rule.
    */
-  it("goes to the danger colours when a pointer is on it, in the stylesheet", () => {
+  it("has the quiet hover in the stylesheet, and no danger colour", () => {
     // The session tabs' `×` is the tabs family's (`ui/tabs/tabs.css`, #2914).
-    const css = readFileSync(join(process.cwd(), "src/ui/tabs/tabs.css"), "utf8");
+    const css = readFileSync(join(process.cwd(), "src/ui/tabs/tabs.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
     const hover =
       /\[data-part="closer"\]\[data-scope="tabs"\]:hover\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-    expect(hover).toMatch(/background-color:\s*var\(--danger-surface\)/);
-    expect(hover).toMatch(/color:\s*var\(--danger-text\)/);
+    expect(hover).toMatch(/background-color:\s*var\(--surface-hover\)/);
+    expect(css).not.toMatch(/\[data-part="closer"\][^{]*\{[^}]*--danger-/);
   });
 });
 
@@ -388,15 +395,12 @@ describe("each strip says which layer it is, by shade rather than by indent or l
 });
 
 /**
- * **A pane's close that ends a chat says so under the pointer** (#3214): the quiet ghost's hover
- * would draw it as light as a split, so `paneFrame.css` gives it the danger colour, as a tab's
- * `×` has. A close that ends nothing (a view's, a task's minimise) keeps the quiet hover.
+ * **A pane's close has the quiet hover a split has** (#3214, #4756): it ends nothing, a chat's
+ * pane's or a view's, so it is drawn as lightly as what it does.
  */
 describe("a pane's split and close", () => {
-  function drawn(ends: boolean) {
-    const close = offer("pane.close", ends ? "End this pane's chat" : "Close this view", {
-      does: { verb: "closePane", ends },
-    });
+  function drawn(title: string) {
+    const close = offer("pane.close", title, { does: { verb: "closePane" } });
     render(
       <PaneDoing
         pane={0}
@@ -411,20 +415,15 @@ describe("a pane's split and close", () => {
     };
   }
 
-  it("draws the close that ends a chat in the danger colour under the pointer", () => {
-    const { split, close } = drawn(true);
-    expect(close).toHaveAttribute("data-variant", "quiet");
-    expect(close).toHaveClass("ends-a-chat");
-    expect(drawnWith(close, "background-color", { hover: true })).toBe("var(--danger-surface)");
-    expect(drawnWith(close, "color", { hover: true })).toBe("var(--danger-text)");
-    // At rest it is as quiet as the split beside it, and the split keeps the quiet hover.
-    expect(drawnWith(close, "color")).toBe("var(--text-quiet)");
-    expect(drawnWith(split, "background-color", { hover: true })).toBe("var(--surface-hover)");
-  });
-
-  it("keeps the quiet hover on a close that ends nothing", () => {
-    const { close } = drawn(false);
-    expect(close).not.toHaveClass("ends-a-chat");
-    expect(drawnWith(close, "background-color", { hover: true })).toBe("var(--surface-hover)");
-  });
+  it.each(["Close this pane", "Close this view"])(
+    "draws %s with the quiet hover, as the split beside it, and no danger colour",
+    (title) => {
+      const { split, close } = drawn(title);
+      expect(close).toHaveAttribute("data-variant", "quiet");
+      expect(close).not.toHaveClass("ends-a-chat");
+      expect(drawnWith(close, "background-color", { hover: true })).toBe("var(--surface-hover)");
+      expect(drawnWith(close, "color", { hover: true })).not.toBe("var(--danger-text)");
+      expect(drawnWith(split, "background-color", { hover: true })).toBe("var(--surface-hover)");
+    },
+  );
 });

@@ -213,6 +213,16 @@ fn ready_to_start(machine: &Machine, root: &Path, pool: &str) -> Result<(), Stri
 
 /// Waits until the pool's row says `wanted` of the profile, as the window asks again while the
 /// runner fetches its harness (#4008).
+///
+/// Each ask is a link made anew (`ToARunner::keep`): the container checked, `docker exec` of the
+/// runner's `purlis bridge` and the handshake, given `ANSWER_WITHIN` (20 s) before it says
+/// [`crate::runnerlinks::LATE`]. In the parity job this step runs while the runner downloads its
+/// harness and some eight other Docker-pool tests share the one Docker engine. One ask came back
+/// `LATE` 90 s into the step with the runner's host up and `ready` (#4894, run 41505160992); the
+/// other waits that say `LATE` are two minutes (a staged keep) and ten (the whole call), so it was
+/// the link's 20 s. The window's row says so and asks again, so a late answer is a "not yet" here
+/// too, said on stderr. The deadline still fails a runner that never answers, and any other
+/// answer (a refusal) fails at once.
 fn the_row_says(machine: &Machine, pool: &str, wanted: &Standing) {
     let record = profilestore::list(&machine.config)
         .expect("the store reads")
@@ -224,10 +234,20 @@ fn the_row_says(machine: &Machine, pool: &str, wanted: &Standing) {
         .with_settings_of(&record);
     let deadline = Instant::now() + LONG;
     loop {
-        let said = keep(machine, pool, &kept)
-            .unwrap_or_else(|why| panic!("the runner did not keep the profile: {why}"))
-            .expect("this runner keeps profiles");
-        if said == *wanted {
+        let said = match keep(machine, pool, &kept) {
+            Ok(said) => Some(said.expect("this runner keeps profiles")),
+            Err(why) if why == crate::runnerlinks::LATE => {
+                // As the journey's steps are said: read where it fails or runs out of time.
+                use std::io::Write as _;
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "the row's ask was not answered in time; it asks again"
+                );
+                None
+            }
+            Err(why) => panic!("the runner did not keep the profile: {why}"),
+        };
+        if said.as_ref() == Some(wanted) {
             return;
         }
         assert!(

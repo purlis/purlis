@@ -1075,7 +1075,7 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                     .heeding(purlis_core::halt::OnDisk(config.clone()))
                     // The projects it holds for its desktop, each in `<data>/projects/<id>`,
                     // and the code the desktop moves in them over the link (#2046).
-                    .moving_code_with(purlis_core::codelink::Moves::from_now()),
+                    .moving_code_with(purlis_core::codelink::Moves::on_this_runner()),
                 ))
             },
             pairing,
@@ -5029,6 +5029,10 @@ fn plugin(verb: &PluginCommand) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    // First: the release build unwinds, and a Rust panic, on any thread, still ends the process
+    // (`panicend`). The guard's refusal below replaces it and ends the process its own way.
+    #[cfg(not(debug_assertions))]
+    purlis_core::panicend::fatal();
     // purlis's own wrap of a chat on Linux (#1040), before anything else of the command runs:
     // the hidden `purlis _sandbox`, never in help and not a public command line. Each call its
     // supervisor refuses is told to the app as the chat's sandbox block (#2344).

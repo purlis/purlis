@@ -415,3 +415,61 @@ fn a_clock_a_stuck_chat_started_keeps_across_a_restart_and_the_turn_after_is_sti
         "the turn that had it is said"
     );
 }
+
+#[test]
+fn a_question_whose_file_a_turn_took_before_the_app_went_is_still_shown_after_a_restart() {
+    // #4843: the asking chat's turn took the question's file, and the app went before it
+    // wrote so. That turn had it, and its trail says so.
+    use crate::eventlog::questions::Step;
+    let project = Project::new();
+    let mut before = project.app();
+    let number = project.asks(&mut before, "Which host?");
+    let (name, _) = waiting(project.root.path(), ASKER).remove(0);
+    std::fs::remove_file(
+        dir_for(project.root.path(), ASKER)
+            .expect("its folder")
+            .join(name),
+    )
+    .expect("taken by the turn");
+
+    let (mut after, back) = project.restarted();
+
+    assert_eq!(back, Restored::Open);
+    assert_eq!(
+        after.take_trail(),
+        [(TASK, Step::Shown { number })],
+        "the turn that took it is said"
+    );
+    assert_eq!(
+        after.handed_at(TASK),
+        Some(NOW),
+        "its time starts at the restart"
+    );
+}
+
+#[test]
+fn a_question_a_stuck_chat_s_clock_started_whose_file_was_taken_is_still_shown_after_a_restart() {
+    use crate::eventlog::questions::Step;
+    let project = Project::new();
+    let mut before = project.app();
+    let number = project.asks(&mut before, "Which host?");
+    before.look(NOW - 30, &HashSet::new(), &HashSet::from([ASKER]));
+    let (name, _) = waiting(project.root.path(), ASKER).remove(0);
+    std::fs::remove_file(
+        dir_for(project.root.path(), ASKER)
+            .expect("its folder")
+            .join(name),
+    )
+    .expect("taken by the turn");
+
+    let (mut after, _) = project.restarted();
+
+    assert_eq!(after.take_trail(), [(TASK, Step::Shown { number })]);
+    assert_eq!(
+        after.handed_at(TASK),
+        Some(NOW - 30),
+        "the clock is not started again"
+    );
+    // And once only: the asking chat is not told it again, as its turn had it.
+    assert!(!after.askers_not_handed().contains(&ASKER));
+}

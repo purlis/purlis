@@ -169,6 +169,19 @@ export function SkillPublishPage({
           {`Nothing was sent. It takes write access to the source: ask for it, or export the skill and send it to them. git said: ${done.why}`}
         </Notice>
       )}
+      {review?.forge_says_no_push === true && done === undefined && (
+        <Notice
+          cause="skill-publish-forge-says-no-push"
+          tone="trouble"
+          label={`${review.forge} says your account cannot push to this source`}
+          fixes={[
+            { label: "Export…", onPress: onExport },
+            { label: "Review again", onPress: again },
+          ]}
+        >
+          {`${review.forge} says your account cannot push to this source, and publishing takes write access to it, so the push will likely be refused. Ask its owners for access, or export the skill and send it to them.`}
+        </Notice>
+      )}
       {refused !== undefined && (
         <Notice
           cause="skill-publish-refused"

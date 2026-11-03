@@ -28,6 +28,7 @@ import type { State } from "./chatState";
 import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { theFrameNow } from "./frame.testkit";
 
 /**
  * **While you were away: one summary in place of a pile of Notices** (#1514, V100-65), against
@@ -51,6 +52,13 @@ declare global {
   interface Window {
     __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
   }
+}
+
+/** An event from the core, and the frame the window draws it in: the chat stores tell their
+ *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
+function heard(handler: number, message: unknown) {
+  window.__TAURI_INTERNALS__.runCallback(handler, message);
+  theFrameNow();
 }
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
@@ -178,8 +186,10 @@ function core(open: OpenChat[], rows: FinishedTask[] = [], other?: Project) {
     if (cmd === "opened_chats") return [...here.open];
     if (cmd === "stopping_chats") return [];
     if (cmd === "finished_tasks") return [...here.rows];
+    // A copy, as the core's answer reaches the window over IPC: the window keeps an answer
+    // equal to the one it holds (#4729), so one sharing this fake's chats would change with them.
     if (cmd === "plane_sidebar")
-      return {
+      return structuredClone({
         root: (a.plane as string | undefined) ?? PLANE,
         personas: ["steward", "devops"],
         persona: "steward",
@@ -195,7 +205,7 @@ function core(open: OpenChat[], rows: FinishedTask[] = [], other?: Project) {
             chats: [...here.open],
           },
         ],
-      };
+      });
     if (cmd === "workspace_panels")
       return {
         workspace: a.workspace,
@@ -230,8 +240,7 @@ function core(open: OpenChat[], rows: FinishedTask[] = [], other?: Project) {
     const handlers = everyListener.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
     await act(async () => {
-      for (const handler of handlers)
-        window.__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload });
+      for (const handler of handlers) heard(handler, { event, id: 1, payload });
       await Promise.resolve();
     });
   };

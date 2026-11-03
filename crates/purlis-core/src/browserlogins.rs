@@ -155,6 +155,9 @@ pub struct Declared<'a> {
     pub user_key: Option<&'a str>,
     pub password_key: &'a str,
     pub page: &'a str,
+    /// The origin its form is on, where it isn't the page's own (#4995): none leaves the
+    /// identity a login always had.
+    pub form: Option<&'a str>,
 }
 
 /// **A login's identity** (#2021): a digest of the persona whose login it is, the project it is
@@ -182,6 +185,9 @@ pub fn identity_of(persona: &str, project: &str, declared: &Declared<'_>) -> Str
     field(b'u', declared.user_key);
     field(b'k', Some(declared.password_key));
     field(b'a', Some(declared.page));
+    if let Some(form) = declared.form {
+        field(b'f', Some(form));
+    }
     digest
         .finalize()
         .iter()

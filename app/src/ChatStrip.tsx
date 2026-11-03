@@ -1,12 +1,19 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { type CSSProperties, useMemo } from "react";
+import { type CSSProperties, type ReactNode, useMemo } from "react";
 import { QueueRead } from "./QueueRead";
 import { closestCenter, DndContext } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { SquareTerminal } from "lucide-react";
-import { renameId, workItemSaid, RENAMES_ON_F2, type Offer, type Catalogued } from "./actions";
+import {
+  renameId,
+  tileAllId,
+  workItemSaid,
+  RENAMES_ON_F2,
+  type Offer,
+  type Catalogued,
+} from "./actions";
 import { Menued } from "./Menus";
 import {
   ALONG_THE_STRIP,
@@ -19,7 +26,9 @@ import { droppedReference, overChat, type ChatsForReferences } from "./reference
 import { FreshMark, freshMarkShown } from "./PlaneUpdated";
 import { TabBrowsers, type BrowserShown } from "./ChatBrowsersShown";
 import { REGION_CHROME } from "./RegionFrame";
+import { movedAt, sameList, useChatsSelect, type Chats } from "./chatState";
 import {
+  byLastActivity,
   chatOf,
   contentsOf,
   panesOf,
@@ -40,6 +49,7 @@ import { NONE_RESTORING, RESTORING } from "./restoringChats";
 import { closeOnDelete, renameOnF2 } from "./tabKeys";
 import { TabRename } from "./TabRename";
 import { type ChatRow } from "./chatsTree";
+import { STRIP, TAB } from "./paneDrag";
 import { showsStopping, TabMarks, type TabFacts } from "./ChatRows";
 import { faceOf, type Naming, type TabFace } from "./tabFace";
 import type { Ref } from "./fits";
@@ -96,7 +106,8 @@ export function ChatStrip({
   colourOf,
   tintOf,
   shown,
-  notShowing,
+  hidden,
+  chats,
   chatTabId,
   strip,
   chatControls,
@@ -154,6 +165,8 @@ export function ChatStrip({
   openBrowser,
   openSkillRun,
 }: ChatStripProps) {
+  /** Tile all on the tab in front, as the catalogue holds it (#4765). */
+  const tileAll = tabs.inFront === undefined ? undefined : by(tileAllId(tabs.inFront));
   // The tabs drawn, as React Aria's tablist knows them (`ui/tabs/TabStrip`): not a tab being
   // renamed, whose name box is drawn in its place and is not a tab.
   /** The Rename… row of the tab's own chat (#4753): a double-click on its name and F2 on it
@@ -165,8 +178,8 @@ export function ChatStrip({
   const drawn = shown.filter((id) => !nameBoxFor(id)).map(String);
   // What each tab wears (#4762), read once a draw for every tab it is drawn or listed by.
   const faces = useMemo(
-    () => new Map([...shown, ...notShowing].map((id) => [id, faceOf(tabs, id, naming)])),
-    [naming, notShowing, shown, tabs],
+    () => new Map([...shown, ...hidden].map((id) => [id, faceOf(tabs, id, naming)])),
+    [hidden, naming, shown, tabs],
   );
   const faceAt = (id: number) => faces.get(id) ?? faceOf(tabs, id, naming);
   const along = useTabStrip({
@@ -223,6 +236,8 @@ export function ChatStrip({
             ids={shown.flatMap((id, place) => (nameBoxFor(id) ? [] : [chatTabId(place)]))}
             className="tabs"
             data-strip="Tabs"
+            // A pane or a chat dropped here makes a tab of its own (#4763).
+            {...{ [STRIP]: "" }}
             ref={strip}
             style={{ "--least": `${chatLeast}px`, "--chip": `${chipWidth}px` } as CSSProperties}
           >
@@ -292,6 +307,8 @@ export function ChatStrip({
                         // The first tab starts at the panel's edge, and flares on its right only.
                         first={place === 0}
                         data-dragging={sortable.isDragging || undefined}
+                        // Pulled down off the strip, it splits in beside a pane (#4763).
+                        {...{ [TAB]: String(id) }}
                         // A pinned tab at its icon only, where pins alone would take over half
                         // the strip; its name is in its tooltip (#4762).
                         data-icon-only={(pinsIconOnly && isPinned(id)) || undefined}
@@ -520,37 +537,49 @@ export function ChatStrip({
         (charter-app#130/#131). It appears only once the tabs fill the strip, so it
         then sits beside the `+`. */}
       <div className="more">
-        <QueueRead>
-          {(queue) => (
-            <ShowMore
-              noun="tab"
-              hidden={notShowing.map((id) => ({
-                key: String(id),
-                offer: by(`tab.select:${id}`),
-                needs: waitingOn(queue, id),
-                children: (
-                  <TabMarks
-                    tabs={tabs}
-                    id={id}
-                    face={faceAt(id)}
-                    personaOf={personaOf}
-                    factsOf={factsOf}
-                    sandbox={sandboxOf?.(chatOf(tabs, id))}
-                    updates={planeUpdates}
-                    shells={shells}
-                    wrapping={wrapping}
-                    stopping={stopping}
-                    task={taskNameOf(id)}
-                    taskOf={taskTabOf(id)}
-                    needs={hiddenIn(queue, id).map((chat) => chat.name)}
-                  />
-                ),
-              }))}
-              onPress={press}
-            />
+        <HiddenTabs hidden={hidden} tabs={tabs} chats={chats}>
+          {(notShowing) => (
+            <QueueRead>
+              {(queue) => (
+                <ShowMore
+                  noun="tab"
+                  hidden={notShowing.map((id) => ({
+                    key: String(id),
+                    offer: by(`tab.select:${id}`),
+                    needs: waitingOn(queue, id),
+                    children: (
+                      <TabMarks
+                        tabs={tabs}
+                        id={id}
+                        face={faceAt(id)}
+                        personaOf={personaOf}
+                        factsOf={factsOf}
+                        sandbox={sandboxOf?.(chatOf(tabs, id))}
+                        updates={planeUpdates}
+                        shells={shells}
+                        wrapping={wrapping}
+                        stopping={stopping}
+                        task={taskNameOf(id)}
+                        taskOf={taskTabOf(id)}
+                        needs={hiddenIn(queue, id).map((chat) => chat.name)}
+                      />
+                    ),
+                  }))}
+                  onPress={press}
+                />
+              )}
+            </QueueRead>
           )}
-        </QueueRead>
+        </HiddenTabs>
       </div>
+      {/* **Tile all, at the strip's right end** (#4765): the tab in front's panes evened into a
+        grid. **Drawn only while it can run**, as the show-more is only while something is
+        hidden: at one pane it has nothing to say, and a button there would take room from the
+        tabs on every strip that is not split. The tab menu and the palette keep its row,
+        greyed with its reason. */}
+      {tileAll?.available === true && (
+        <Doer offer={tileAll} onPress={press} words="Tile all" iconOnly />
+      )}
       {/* **`Split right`, `Split down` and `End this pane's chat` were here and are on the
         panes now** — the operator: *"harnesses panes should each have close button and
         spliting buttons in pane right top corner … so this will fully replace separate
@@ -588,7 +617,10 @@ type ChatStripProps = {
   colourOf: (workspace: string | undefined) => string | null;
   tintOf: (workspace: string | undefined) => CSSProperties;
   shown: readonly number[];
-  notShowing: readonly number[];
+  /** The tabs the strip has no room for, in the strip's order. The show-more menu orders them. */
+  hidden: readonly number[];
+  /** What the plane's chats are doing, which `HiddenTabs` reads the menu's order from. */
+  chats: Chats;
   chatTabId: (at: number) => string;
   strip: Ref;
   chatControls: Ref;
@@ -661,3 +693,44 @@ type ChatStripProps = {
    *  tab's chat (`session`'s). */
   openSkillRun?: (skill: string, run: string, session: number, level: string | null) => void;
 };
+
+/**
+ * What the show-more menu lists: the tabs the strip has no room for, **most recently moved
+ * first** — and nothing else.
+ *
+ * **The menu is not a find surface** (ADR 0039). It lists what the strip is hiding, not every
+ * chat: the palette lists every chat with a search and a ranking over it, it is better at
+ * finding than any menu will be, and a menu built as a second one of those is a menu that should
+ * not have been built.
+ *
+ * **And now it is the only pointer route to a hidden tab, which is what the amendment to ADR
+ * 0039 had to argue for.** Its rows bring a tab forward, and the tab it brings forward is drawn
+ * on the strip with its own `×` (`fits.ts`, the selected tab is always drawn). So ending a chat
+ * is still two presses and never one from a menu under the cursor.
+ *
+ * **The order is read here, where the menu is drawn, and nowhere above it** (#4726). When each
+ * chat last moved is the CORE's count (ADR 0039), which comes down on `chat-moved` and in the
+ * first snapshot, so two windows on one plane agree. A busy chat behind the edge changes it on
+ * nearly every move: read at the top of the project view, each of those drew the whole view
+ * again. Read here, a move draws this menu and its button, and the strip keeps only how many it
+ * hides, which a move does not change. And redrawn only when the order changes: a move by a
+ * chat the strip is drawing changes nothing in a menu of the ones it is not.
+ */
+function HiddenTabs({
+  hidden,
+  tabs,
+  chats,
+  children,
+}: {
+  hidden: readonly number[];
+  tabs: Tabs;
+  chats: Chats;
+  children: (notShowing: readonly number[]) => ReactNode;
+}) {
+  const notShowing = useChatsSelect(
+    chats,
+    (states) => byLastActivity(hidden, tabs, (session) => movedAt(states, session)),
+    sameList,
+  );
+  return children(notShowing);
+}

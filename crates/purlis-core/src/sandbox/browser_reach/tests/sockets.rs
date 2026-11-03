@@ -322,7 +322,7 @@ fn a_browser_holding_a_login_reaches_its_logins_site_alone_from_the_moment_it_is
     open.read_exact(&mut back).expect("echoed");
 
     proxy
-        .bind(&Site::of("127.0.0.1", login_port))
+        .bind(&[Site::of("127.0.0.1", login_port)])
         .expect("bound");
 
     // The tunnel open before is ended at the bind.

@@ -191,6 +191,11 @@ pub(crate) const START_CANCELLED: &str = "the person cancelled this start";
 /// The code of a start that was cancelled, which is the window's own, never a host's.
 const CANCELLED: &str = "cancelled";
 
+/// The code of a start nobody could cancel that its runner did not answer within its pool's
+/// answer wait (#4988): the window's own, never a host's. As with [`CANCELLED`], what the runner
+/// answers after is the late answer's to settle.
+const WAITED_OUT: &str = "waited-out";
+
 /// What anything but a start waiting for it says while a start waits for its runner (#4415): it
 /// waits on nothing, so the window's commands never wait on a runner coming back.
 const THE_RUNNER_COMES_BACK: &str =
@@ -1780,11 +1785,21 @@ impl HostLink {
     /// **Starts a program, waiting as a start does** (#4264). Where the person cancels, what the
     /// host answers after goes to `late`: the window's giving up and the answer's arrival are
     /// decided under one lock, so a chat that comes up after is never left running unseen.
+    ///
+    /// **A start nobody can cancel, on a pool's runner, waits at most the pool's answer wait**
+    /// (#4988): a launch's put-back and a dispatch have no Cancel, and a runner that keeps its link
+    /// and never answers held one for 4 minutes, until the pool's follow-up removed it. Past the
+    /// wait it gives up as a Cancel does, and what the runner answers after goes to `late` too.
     fn call_start(
         &self,
         start: StartProgram,
         late: impl FnOnce(Result<Answer, session::CallError>, Arc<Client>) + Send + 'static,
     ) -> Result<Answer, session::Refusal> {
+        use purlis_core::poollimits::LimitId::AnswerWait;
+        let waits = (self.pool.is_some() && !can_be_cancelled()).then(|| {
+            let secs = self.limits().in_force(AnswerWait);
+            (Instant::now() + Duration::from_secs(secs), secs)
+        });
         let (answered, answer) = std::sync::mpsc::channel();
         let waited_for = Arc::new(Mutex::new(Some(answered)));
         let client = Arc::clone(&self.client);
@@ -1818,6 +1833,22 @@ impl HostLink {
                         return Err(session::Refusal {
                             code: CANCELLED.to_owned(),
                             why: START_CANCELLED.to_owned(),
+                        });
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                    if waits.is_some_and(|(until, _)| Instant::now() >= until) =>
+                {
+                    // Only this machine's own clock says the wait ran out: no words of a runner can.
+                    if lock(&waited_for).take().is_some() {
+                        let secs = waits.map_or(0, |(_, secs)| secs);
+                        let hit = self.limits().waited(AnswerWait, secs, None);
+                        return Err(session::Refusal {
+                            code: WAITED_OUT.to_owned(),
+                            why: format!(
+                                "the runner did not answer in time: {}",
+                                self.limit_said(hit)
+                            ),
                         });
                     }
                 }
@@ -4293,6 +4324,7 @@ impl HostedSessions {
             // Only a refusal whose code says nothing started is taken at its word (#3702).
             Err(refused)
                 if refused.code == CANCELLED
+                    || refused.code == WAITED_OUT
                     || NOTHING_STARTED.contains(&refused.code.as_str()) =>
             {
                 // A cancel is this window giving up on the answer: the host may start it yet.
