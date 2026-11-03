@@ -61,10 +61,21 @@ export type Apart = {
   distance: number;
   /** A rule held alone gives less colour only to its own sides (#3130). */
   alone?: boolean;
-  /** A rule of the accent's words or the washes they stand on (#3100, #4666): measured only
-   *  once the accent is answered, so it costs the accent no colour, and the words and washes turn
-   *  together or not at all; see {@link wordsChroma}. */
+  /** A rule of the accent's words (#3100): measured only once the accent is answered, so it
+   *  costs the accent no colour; see {@link wordsChroma}. */
   words?: boolean;
+};
+
+/**
+ * **A ground the accent's words stand on comes no nearer a signal's wash than it was** (#4666,
+ * `purlis_core::theme::tint::NoNearer`): each of `tokens`, turned and laid on each of `over` as
+ * the screen draws it, is at least as far from each of `from` laid on the same ground as the value
+ * it was turned from; where it would come nearer, it stays as it was. See {@link noNearer}.
+ */
+export type NoNearer = {
+  readonly tokens: readonly string[];
+  readonly from: readonly string[];
+  readonly over: readonly string[];
 };
 
 /** One rule as a theme draws it: the value of each side, whether the tint turns each, whether
@@ -151,6 +162,75 @@ export function wordsChroma(
   if (alone === undefined) return undefined;
   const at = (sideAlone: boolean | undefined) => (sideAlone === true ? alone : shared);
   return words.every((rule) => holdsAt(rule, hue, alone, at(rule.fromAlone))) ? alone : undefined;
+}
+
+/**
+ * **Whether `turned` comes no nearer a signal's wash than `written`** (#4666,
+ * `purlis_core::theme::tint::no_nearer`): the nearest `turned` comes to any of `rule.from`, each
+ * laid with it on each ground of `rule.over` as the screen draws them, alpha and all, in OKLab,
+ * is no nearer than the nearest `written` comes. `value` gives those washes and grounds as they
+ * are drawn. A value that is not a colour has nothing to be near.
+ */
+export function noNearer(
+  turned: string,
+  written: string,
+  value: (token: string) => string | undefined,
+  rule: NoNearer,
+): boolean {
+  if (!isColour(turned) || !isColour(written)) return true;
+  return nearestSignal(turned, value, rule) >= nearestSignal(written, value, rule);
+}
+
+/** The nearest `ground` comes to one of `rule.from`, both laid on each of `rule.over`. */
+function nearestSignal(
+  ground: string,
+  value: (token: string) => string | undefined,
+  rule: NoNearer,
+): number {
+  let nearest = Number.POSITIVE_INFINITY;
+  for (const underToken of rule.over) {
+    const under = value(underToken);
+    if (under === undefined || !isColour(under)) continue;
+    for (const fromToken of rule.from) {
+      const from = value(fromToken);
+      if (from === undefined || !isColour(from)) continue;
+      nearest = Math.min(nearest, oklabDistance(onto(ground, under), onto(from, under)));
+    }
+  }
+  return nearest;
+}
+
+/**
+ * `wash` laid over `under` as the screen draws it, opaque (`purlis_core::theme::check::onto`):
+ * each channel mixed by the wash's alpha and rounded to its byte, a half up.
+ */
+export function onto(wash: string, under: string): string {
+  const top = long(wash);
+  if (top.length === 6) return wash;
+  const bottom = long(under);
+  const byte = (digits: string, at: number) => Number.parseInt(digits.slice(at, at + 2), 16);
+  const alpha = byte(top, 6) / 255;
+  return `#${[0, 2, 4]
+    .map((at) =>
+      Math.floor(byte(top, at) * alpha + byte(bottom, at) * (1 - alpha) + 0.5)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
+/** `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`: a theme's colour. */
+const COLOUR = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+/** Whether `value` is a theme's colour (`purlis_core::theme::vocabulary::is_colour`). */
+export function isColour(value: string): boolean {
+  return COLOUR.test(value);
+}
+
+/** A colour's hex digits as six or eight. */
+function long(hex: string): string {
+  const digits = hex.slice(1);
+  return digits.length <= 4 ? [...digits].map((d) => d + d).join("") : digits;
 }
 
 /** The search for `rules`, remembered: the same rules at the same hue give the same answer. */
@@ -264,9 +344,12 @@ export function chromaFor(
   rules: readonly Apart[],
   alone: number | undefined,
   words: number | undefined,
+  withWords: readonly string[] = [],
 ): number | undefined {
   const side = (rule: Apart) => rule.token === token || rule.from === token;
-  // The accent's words, at what {@link wordsChroma} answers (#3100).
+  // The accent's words, and the washes they stand on, at what {@link wordsChroma} answers (#3100,
+  // #4666).
+  if (withWords.includes(token)) return words;
   if (rules.some((rule) => rule.words === true && rule.token === token)) return words;
   // A side of a rule held alone gives way to every rule together (#3130): `alone`.
   if (rules.some((rule) => rule.alone === true && side(rule))) return alone;
@@ -312,9 +395,11 @@ export function tintHex(hex: string, hue: number, most = Number.POSITIVE_INFINIT
 /**
  * **`under` turned toward `accent`** (#4666, `purlis_core::theme::tint::toward`): to the accent's
  * OKLCH hue, at no more chroma than the accent has, with the luminance and alpha `under` had. How
- * an accent's grounds follow an accent given over a parent: a grey accent gives grey grounds.
+ * an accent's grounds follow an accent given over a parent: a grey accent gives grey grounds. An
+ * accent or a ground that is not a colour leaves `under` as it is.
  */
 export function toward(under: string, accent: string): string {
+  if (!isColour(accent) || !isColour(under)) return under;
   const [, a, b] = oklab(parse(accent).rgb);
   return tintHex(under, degrees(Math.atan2(b, a)), Math.hypot(a, b));
 }

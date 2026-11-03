@@ -411,7 +411,9 @@ pub const KIN: [(&str, &str); 10] = [
 /// `accent.surface`, `accent.wash` or `accent.wash-hover` turns `below`'s to its own hue, at no
 /// more chroma than it has, keeping each ground's luminance and alpha ([`super::tint::toward`]).
 /// So a teal over Purlis says its words on a teal wash, as light as Purlis's lavender one, and
-/// every contrast on it stays where Purlis put it; a grey accent draws grey grounds.
+/// every contrast on it stays where Purlis put it; a grey accent draws grey grounds. A ground
+/// that turning would bring nearer the waiting or danger wash, as drawn, than the parent's is the
+/// parent's ([`super::tint::NO_NEARER`]).
 ///
 /// What follows, each beside what it follows, so a colour left out takes them with it.
 pub fn follow_kin(
@@ -438,8 +440,20 @@ pub fn follow_kin(
             if given.contains_key(ground) {
                 continue;
             }
-            if let Some(under) = below.get(ground) {
-                given.insert(ground, super::tint::toward(under, &accent));
+            let Some(under) = below.get(ground) else {
+                continue;
+            };
+            let turned = super::tint::toward(under, &accent);
+            // Never nearer the waiting or danger wash, as drawn, than the parent's ground.
+            let drawn = |token: &'static str| {
+                given
+                    .get(token)
+                    .or_else(|| below.get(token))
+                    .cloned()
+                    .unwrap_or_default()
+            };
+            if super::tint::no_nearer(&turned, under, drawn) {
+                given.insert(ground, turned);
                 followed.push((ground, ACCENT));
             }
         }
@@ -458,7 +472,8 @@ pub const ACCENT_WORDS: &str = "accent.text";
 pub const ACCENT_GROUNDS: [&str; 3] = ["accent.surface", "accent.wash", "accent.wash-hover"];
 
 /// **The accent's washes** (#4666): the grounds a workspace's colour turns with the accent's
-/// words, as one, so the words never stand on a wash of another hue ([`super::tint::APART`]).
+/// words, at their answer, unless that brings them nearer a signal's wash
+/// ([`super::tint::NO_NEARER`]).
 pub const ACCENT_WASHES: [&str; 2] = ["accent.wash", "accent.wash-hover"];
 
 /// **The tokens drawn as what they follow**, each by its own token: the hot count and the

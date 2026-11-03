@@ -535,8 +535,10 @@ fn a_part_whose_words_break_their_floor_draws_its_family_default_there() {
 
 #[test]
 fn a_part_that_clears_its_floors_is_drawn_as_written() {
+    // The primary in the active tab's wash, which Classic draws as its fill under the pointer, so
+    // a tint draws the two alike (#4666 keeps Classic's surface as written at some hues).
     let loaded = load(&with_parts(json!({
-        "button.root.primary.fill": "accent.surface",
+        "button.root.primary.fill": "tab.active",
         "button.root.ghost.hover.fill": "control.hover",
     })));
     let fallen = parts::fallen(loaded.theme.first());

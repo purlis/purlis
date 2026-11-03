@@ -1096,32 +1096,27 @@
     "from": "danger.base",
     "distance": 0.1,
     "words": true
-   },
-   {
-    "token": "accent.wash",
-    "from": "wash.warning",
-    "distance": 0.1,
-    "words": true
-   },
-   {
-    "token": "accent.wash",
-    "from": "danger.wash",
-    "distance": 0.1,
-    "words": true
-   },
-   {
-    "token": "accent.wash-hover",
-    "from": "wash.warning",
-    "distance": 0.1,
-    "words": true
-   },
-   {
-    "token": "accent.wash-hover",
-    "from": "danger.wash",
-    "distance": 0.1,
-    "words": true
    }
-  ]
+  ],
+  "with_words": [
+   "accent.wash",
+   "accent.wash-hover"
+  ],
+  "no_nearer": {
+   "tokens": [
+    "accent.surface",
+    "accent.wash",
+    "accent.wash-hover"
+   ],
+   "from": [
+    "wash.warning",
+    "danger.wash"
+   ],
+   "over": [
+    "surface.base",
+    "surface.deep"
+   ]
+  }
  },
  "apart": [
   {
@@ -3343,6 +3338,52 @@
     "layer.chat": "#141e2b",
     "layer.selected": "#1b2533"
    }
+  },
+  {
+   "appearance": "dark",
+   "colour": "yellow",
+   "tokens": {
+    "accent.base": "#bea643",
+    "accent.surface": "#292735",
+    "accent.wash": "#a99cf024",
+    "accent.wash-hover": "#a99cf03a",
+    "accent.text": "#c3baf5",
+    "accent.fill": "#7c6601",
+    "accent.fill-hover": "#836d01",
+    "accent.fill-edge": "#00000000",
+    "focus.ring": "#bea643",
+    "tab.active": "#252010",
+    "list.selected": "#2e2a1d",
+    "list.selected-edge": "#bea643",
+    "markdown.link": "#c5b15e",
+    "chart.1": "#bea643",
+    "layer.workspace": "#1c1706",
+    "layer.chat": "#221d0d",
+    "layer.selected": "#292414"
+   }
+  },
+  {
+   "appearance": "dark",
+   "colour": "purple",
+   "tokens": {
+    "accent.base": "#bc97e7",
+    "accent.surface": "#292735",
+    "accent.wash": "#a99cf024",
+    "accent.wash-hover": "#a99cf03a",
+    "accent.text": "#cfb7ef",
+    "accent.fill": "#8251b1",
+    "accent.fill-hover": "#8958b9",
+    "accent.fill-edge": "#00000000",
+    "focus.ring": "#bc97e7",
+    "tab.active": "#251d2d",
+    "list.selected": "#2d2835",
+    "list.selected-edge": "#bc97e7",
+    "markdown.link": "#c3a4ea",
+    "chart.1": "#bc97e7",
+    "layer.workspace": "#1c1423",
+    "layer.chat": "#221a2a",
+    "layer.selected": "#292132"
+   }
   }
  ],
  "toward": [
@@ -3695,6 +3736,139 @@
    "under": "#c9e8de",
    "accent": "#2bb3a380",
    "toward": "#c8e8e1"
+  },
+  {
+   "under": "#292735",
+   "accent": "platform",
+   "toward": "#292735"
+  },
+  {
+   "under": "platform",
+   "accent": "#2bb3a3",
+   "toward": "platform"
+  }
+ ],
+ "no_nearer": [
+  {
+   "turned": "#312b18",
+   "written": "#17302a",
+   "values": {
+    "wash.warning": "#d299221f",
+    "danger.wash": "#c974741f",
+    "surface.base": "#191917",
+    "surface.deep": "#141413"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#3b2625",
+   "written": "#17302a",
+   "values": {
+    "wash.warning": "#d299221f",
+    "danger.wash": "#c974741f",
+    "surface.base": "#191917",
+    "surface.deep": "#141413"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#212c3c",
+   "written": "#17302a",
+   "values": {
+    "wash.warning": "#d299221f",
+    "danger.wash": "#c974741f",
+    "surface.base": "#191917",
+    "surface.deep": "#141413"
+   },
+   "holds": true
+  },
+  {
+   "turned": "#d2e7d2",
+   "written": "#c9e8de",
+   "values": {
+    "wash.warning": "#8055001f",
+    "danger.wash": "#a832321f",
+    "surface.base": "#fcfbf8",
+    "surface.deep": "#e8e6df"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#362423",
+   "written": "#292735",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#192c2a",
+   "written": "#292735",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": true
+  },
+  {
+   "turned": "#d2999124",
+   "written": "#a99cf024",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#34baa924",
+   "written": "#a99cf024",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": true
+  },
+  {
+   "turned": "#d299913a",
+   "written": "#a99cf03a",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#34baa93a",
+   "written": "#a99cf03a",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": false
+  },
+  {
+   "turned": "platform",
+   "written": "#a99cf024",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": true
   }
  ]
 }

@@ -503,10 +503,15 @@ fn a_tinted_accent_stays_apart_from_danger_at_every_hue() {
 
 #[test]
 fn classic_keeps_today_s_tint_wherever_the_accent_was_already_apart_from_danger() {
-    // Today's tint: every token of the recipe turned to the palette's own hue.
+    // Today's tint: every token of the recipe turned to the palette's own hue, but the grounds a
+    // tint keeps off the waiting and danger washes (#4666), which no rule of APART holds.
     let today = |theme: &ResolvedTheme, hue: f64| {
         let mut tint = theme.clone();
+        let most = tint::most_at(theme, hue);
         for token in TINTED {
+            if most.keeps(token) {
+                continue;
+            }
             let value = tint_hex(theme.value(token), hue);
             tint.values.insert(token, value);
         }
@@ -764,6 +769,29 @@ fn an_accent_s_grounds_turn_toward_it_exactly_as_the_window_turns_them() {
             tint::toward(under, accent),
             case["toward"].as_str().unwrap(),
             "{under} toward {accent}"
+        );
+    }
+}
+
+#[test]
+fn a_ground_comes_no_nearer_a_signal_wash_as_the_shared_fixture_says() {
+    // The shared fixture's `no_nearer` (#4666): a turned ground, the value it was turned from,
+    // the waiting and danger washes and the grounds they are laid on, and whether the turned one
+    // comes no nearer. `tint.ts`' `noNearer` reads the same.
+    let cases: Value = serde_json::from_str(TINT_CASES).unwrap();
+    let cases = cases["no_nearer"].as_array().unwrap();
+    assert!(cases.iter().any(|one| one["holds"] == true));
+    assert!(cases.iter().any(|one| one["holds"] == false));
+    for case in cases {
+        let value = |token: &str| case["values"][token].as_str().unwrap().to_owned();
+        assert_eq!(
+            tint::no_nearer(
+                case["turned"].as_str().unwrap(),
+                case["written"].as_str().unwrap(),
+                value
+            ),
+            case["holds"].as_bool().unwrap(),
+            "{case}"
         );
     }
 }
@@ -1363,13 +1391,25 @@ fn purlis_classic_s_tints_are_these() {
         };
         let tint = tinted(theme, colour);
         // The accent's words and washes came into the recipe after these were pinned (#3100,
-        // #4666): the words are the accent, and the washes are pinned by the shared fixture.
-        let drawn: Vec<&str> = TINTED
+        // #4666): the words are the accent, and the washes are pinned by the shared fixture. A
+        // ground turning would bring nearer the waiting or danger wash, and what is drawn in its
+        // value, is drawn as written (#4666, `tint::NO_NEARER`); the rest as pinned.
+        let hue = theme.tint.hue(colour).unwrap();
+        let most = tint::most_at(theme, hue);
+        let (drawn, want): (Vec<&str>, Vec<&str>) = TINTED
             .iter()
             .filter(|token| **token != "accent.text" && !ACCENT_WASHES.contains(token))
-            .map(|token| tint.value(token))
-            .collect();
-        assert_eq!(drawn, values, "{name} {colour}");
+            .zip(values)
+            .map(|(token, pinned)| {
+                let want = if most.keeps(token) {
+                    theme.value(token)
+                } else {
+                    pinned
+                };
+                (tint.value(token), want)
+            })
+            .unzip();
+        assert_eq!(drawn, want, "{name} {colour}");
         assert_eq!(
             tint.value("accent.text"),
             tint.value("accent.base"),
@@ -1604,7 +1644,7 @@ fn accent_words_drawn_as_the_accent_are_turned_exactly_as_it_is() {
 #[test]
 fn the_accent_s_words_cost_the_accent_no_colour() {
     // Words written onto the waiting amber itself: every other token is tinted exactly as before,
-    // but the washes under the words, which take the words' answer (#4666).
+    // but the washes under the words, which take the words' answer or are kept as written (#4666).
     for theme in &purlis().appearances {
         let mut near = theme.clone();
         let amber = theme.value("state.waiting").to_owned();
@@ -1625,9 +1665,9 @@ fn the_accent_s_words_cost_the_accent_no_colour() {
             }
             let most = tint::most_at(&near, hue);
             for wash in ACCENT_WASHES {
-                assert_eq!(
-                    tint::chroma_of(wash, most),
-                    tint::chroma_of("accent.text", most),
+                let at = tint::chroma_of(wash, most);
+                assert!(
+                    at.is_none() || at == tint::chroma_of("accent.text", most),
                     "{} {wash} at {degree}",
                     theme.id
                 );

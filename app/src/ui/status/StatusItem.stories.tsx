@@ -16,7 +16,7 @@ import { drawWindowText, LEAST_TEXT } from "../../textSize";
 import { reordered } from "../../statusBarPrefs";
 import { StatusBar, type StatusContribution } from "./StatusBar";
 import { property, type Token } from "../../theme/theme";
-import { toward } from "../../theme/tint";
+import { noNearer, toward, type NoNearer } from "../../theme/tint";
 import { ActivityGroup, ActivityItem } from "../activity/ActivityItem";
 import { StatusCell, StatusItem } from "./StatusItem";
 
@@ -97,20 +97,32 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The grounds the accent's words stand on, which follow the accent (#4666). */
+/** The grounds the accent's words stand on, which follow the accent (#4666), each no nearer the
+ *  waiting or danger wash, as drawn, than the theme's own (`purlis_core::theme::NO_NEARER`). */
 const ACCENT_GROUNDS = ["accent.surface", "accent.wash", "accent.wash-hover"] as const;
+const NO_NEARER: NoNearer = {
+  tokens: ACCENT_GROUNDS,
+  from: ["wash.warning", "danger.wash"],
+  over: ["surface.base", "surface.deep"],
+};
 
 /** An accent set over the cell's theme, its words and grounds as the engine resolves them. */
 function OverPurlis() {
   const root = getComputedStyle(document.documentElement);
   const value = (token: Token) => root.getPropertyValue(property(token)).trim();
   const accent = value("state.success");
+  // Each ground turned toward the accent, or the theme's own where that would bring it nearer
+  // the waiting or danger wash (`vocabulary::follow_kin`).
+  const followed = (ground: Token) => {
+    const turned = toward(value(ground), accent);
+    return noNearer(turned, value(ground), (token) => value(token as Token), NO_NEARER)
+      ? turned
+      : value(ground);
+  };
   const drawn = {
     [property("accent.base")]: accent,
     [property("accent.text")]: accent,
-    ...Object.fromEntries(
-      ACCENT_GROUNDS.map((ground) => [property(ground), toward(value(ground), accent)]),
-    ),
+    ...Object.fromEntries(ACCENT_GROUNDS.map((ground) => [property(ground), followed(ground)])),
     display: "flex",
     alignItems: "center",
     gap: "var(--space-3)",
@@ -140,7 +152,8 @@ function OverPurlis() {
  * accent the engine is given, and so do the grounds those words stand on, so the update pill's
  * words stand on the accent's `accent.surface` and a chosen activity item's on its `accent.wash`,
  * not on Purlis's lavender. Each ground is the theme's turned to the accent's hue at the
- * luminance and alpha it had (`tint::toward`), so every contrast on it is where the theme put it.
+ * luminance and alpha it had (`tint::toward`), so every contrast on it is where the theme put it,
+ * and stays the theme's where turning would bring it nearer the waiting or danger wash.
  * The tokens are set here as the engine resolves them, from a green the theme already holds
  * (`state.success`) and the cell's own grounds, by the window's own arithmetic (`tint.ts`'
  * `toward`, held to the engine's by the shared fixture), so no colour is written outside a theme

@@ -681,36 +681,27 @@
             "distance": 0.1,
             "alone": false,
             "words": true
-          },
-          {
-            "token": "accent.wash",
-            "from": "wash.warning",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash",
-            "from": "danger.wash",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash-hover",
-            "from": "wash.warning",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash-hover",
-            "from": "danger.wash",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -1412,36 +1403,27 @@
             "distance": 0.1,
             "alone": false,
             "words": true
-          },
-          {
-            "token": "accent.wash",
-            "from": "wash.warning",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash",
-            "from": "danger.wash",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash-hover",
-            "from": "wash.warning",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash-hover",
-            "from": "danger.wash",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -2143,36 +2125,27 @@
             "distance": 0.1,
             "alone": false,
             "words": true
-          },
-          {
-            "token": "accent.wash",
-            "from": "wash.warning",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash",
-            "from": "danger.wash",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash-hover",
-            "from": "wash.warning",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash-hover",
-            "from": "danger.wash",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -2708,36 +2681,27 @@
             "distance": 0.1,
             "alone": false,
             "words": true
-          },
-          {
-            "token": "accent.wash",
-            "from": "wash.warning",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash",
-            "from": "danger.wash",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash-hover",
-            "from": "wash.warning",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash-hover",
-            "from": "danger.wash",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -3289,36 +3253,27 @@
             "distance": 0.1,
             "alone": false,
             "words": true
-          },
-          {
-            "token": "accent.wash",
-            "from": "wash.warning",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash",
-            "from": "danger.wash",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash-hover",
-            "from": "wash.warning",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
-          },
-          {
-            "token": "accent.wash-hover",
-            "from": "danger.wash",
-            "distance": 0.1,
-            "alone": false,
-            "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",

@@ -41,7 +41,7 @@ use serde_json::Value;
 
 use super::floors::{ALLOW_APART, DANGER_APART, WAITING_APART};
 use super::vocabulary::{
-    ACCENT_WASHES, ACCENT_WORDS, TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour,
+    ACCENT_GROUNDS, ACCENT_WASHES, ACCENT_WORDS, TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour,
 };
 use super::{Complaint, ResolvedTheme, stringify};
 
@@ -218,9 +218,8 @@ pub struct Apart {
     pub distance: f64,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub alone: bool,
-    /// A rule of the accent's words or the washes they stand on (#3100, #4666): measured only
-    /// once the accent is answered, so it costs the accent no colour, and the words and washes
-    /// turn together or not at all ([`words_chroma_of`]).
+    /// A rule of the accent's words (#3100): measured only once the accent is answered, so it
+    /// costs the accent no colour ([`words_chroma_of`]).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub words: bool,
 }
@@ -231,8 +230,9 @@ pub struct Apart {
 /// each accent-hued token drawn beside danger from it as the accent is ([`ACCENT_KIN`]); and the
 /// accent from the waiting colour (waiting is distinguishable from the accent, #3130), so a
 /// yellow or orange workspace's accent never reads as the waiting signal; and the accent's words
-/// and washes from the waiting and danger colours and washes (#3100, #4666).
-pub const APART: [Apart; 21] = [
+/// from the waiting and danger colours (#3100). The washes those words stand on are held by
+/// [`NO_NEARER`] (#4666).
+pub const APART: [Apart; 17] = [
     danger_apart("accent.base"),
     // Keep blocked's edge is a plain control's (#3177).
     Apart {
@@ -262,16 +262,9 @@ pub const APART: [Apart; 21] = [
     // accent, so they never cost it colour.
     words_apart(ACCENT_WORDS, "state.waiting", WAITING_APART),
     words_apart(ACCENT_WORDS, "danger.base", DANGER_APART),
-    // The washes those words stand on turn with them, held apart from the waiting and danger
-    // washes they would otherwise be taken for (#4666): one answer for the words and their ground.
-    words_apart(ACCENT_WASHES[0], "wash.warning", WAITING_APART),
-    words_apart(ACCENT_WASHES[0], "danger.wash", DANGER_APART),
-    words_apart(ACCENT_WASHES[1], "wash.warning", WAITING_APART),
-    words_apart(ACCENT_WASHES[1], "danger.wash", DANGER_APART),
 ];
 
-/// `token`, the accent's words or a wash under them, held `distance` from `from`
-/// ([`words_chroma_of`]).
+/// `token`, the accent's words, held `distance` from `from` ([`words_chroma_of`]).
 const fn words_apart(token: &'static str, from: &'static str, distance: f64) -> Apart {
     Apart {
         token,
@@ -333,13 +326,75 @@ const fn danger_apart(token: &'static str) -> Apart {
     }
 }
 
-/// What the window is handed: the two lists, the hues, and the rules a tint holds.
+/// **A ground the accent's words stand on comes no nearer a signal's wash than it was**
+/// (#4666): turned, each of `tokens`, laid on each of `over` as the screen draws it, alpha and
+/// all, is at least as far in OKLab from each of `from` laid on the same ground as the value it
+/// was turned from. Where turning would bring it nearer, it stays as it was: a chosen item's
+/// ground is never taken for the waiting or danger wash beside it. Measured as drawn because two
+/// see-through washes that look apart by their colours alone can meet on the ground (Classic's
+/// opaque wash and its see-through waiting wash in a yellow workspace). The accent's words turn
+/// by their own rule ([`words_chroma_of`]). What a workspace's colour turns ([`Most::kept`]) and
+/// what follows an accent given over a parent ([`super::vocabulary::follow_kin`]) both hold it.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct NoNearer {
+    pub tokens: &'static [&'static str],
+    pub from: &'static [&'static str],
+    pub over: &'static [&'static str],
+}
+
+/// The grounds of the accent's words, the waiting and danger washes, and what they are laid on.
+pub const NO_NEARER: NoNearer = NoNearer {
+    tokens: &ACCENT_GROUNDS,
+    from: &["wash.warning", "danger.wash"],
+    over: &["surface.base", "surface.deep"],
+};
+
+/// **Whether `turned` comes no nearer a signal's wash than `written`**: the nearest `turned`
+/// comes to any wash of [`NO_NEARER`], each laid with it on each ground as the screen draws them,
+/// is no nearer than the nearest `written` comes. Nearest, not each: a ground turned away from
+/// danger and toward waiting is kept only when it lands nearer waiting than the theme's own
+/// ground is to either. `value` gives the signal washes and the grounds as they are drawn. A value
+/// that is not a colour has nothing to be near. `tint.ts`' `noNearer` is the same.
+pub fn no_nearer(turned: &str, written: &str, value: impl Fn(&'static str) -> String) -> bool {
+    if !is_colour(turned) || !is_colour(written) {
+        return true;
+    }
+    nearest_signal(turned, &value) >= nearest_signal(written, &value)
+}
+
+/// The nearest `ground` comes to a signal's wash of [`NO_NEARER`], both laid on each of its
+/// grounds as the screen draws them; infinity where nothing is a colour.
+fn nearest_signal(ground: &str, value: &impl Fn(&'static str) -> String) -> f64 {
+    let mut nearest = f64::INFINITY;
+    for under in NO_NEARER.over {
+        let under = value(under);
+        if !is_colour(&under) {
+            continue;
+        }
+        for from in NO_NEARER.from {
+            let from = value(from);
+            if !is_colour(&from) {
+                continue;
+            }
+            let drawn = |top: &str| oklab_of(&super::check::onto(top, &under));
+            if let (Some(ground), Some(from)) = (drawn(ground), drawn(&from)) {
+                nearest = nearest.min(distance(ground, from));
+            }
+        }
+    }
+    nearest
+}
+
+/// What the window is handed: the two lists, the hues, the rules a tint holds, the washes that
+/// take the words' answer, and the grounds held no nearer the signal washes.
 #[derive(serde::Serialize)]
 struct Handed<'a> {
     window: Vec<&'static str>,
     tabs: &'a [&'static str],
     hues: &'a [Hue],
     apart: &'a [Apart],
+    with_words: &'a [&'static str],
+    no_nearer: NoNearer,
 }
 
 impl serde::Serialize for Tint {
@@ -349,6 +404,8 @@ impl serde::Serialize for Tint {
             tabs: self.tabs(),
             hues: &self.hues,
             apart: &APART,
+            with_words: &ACCENT_WASHES,
+            no_nearer: NO_NEARER,
         }
         .serialize(to)
     }
@@ -550,17 +607,19 @@ pub(super) fn tinted_at(theme: &ResolvedTheme, hue: f64) -> ResolvedTheme {
     tint
 }
 
-/// **Whether `token` is a side of a rule of [`APART`]**: the tokens a tint gives less colour to
-/// hold the rules.
+/// **Whether `token` is a side of a rule of [`APART`]**, or a wash that takes the words' answer:
+/// the tokens a tint gives less colour to hold the rules.
 pub fn held_apart(token: &str) -> bool {
-    APART
-        .iter()
-        .any(|rule| rule.token == token || rule.from == token)
+    ACCENT_WASHES.contains(&token)
+        || APART
+            .iter()
+            .any(|rule| rule.token == token || rule.from == token)
 }
 
-/// **Whether `token` is the accent's words** (#3100): what [`Most::words`] answers for.
+/// **Whether `token` is the accent's words** (#3100), or a wash they stand on (#4666): what
+/// [`Most::words`] answers for.
 fn words_of(token: &str) -> bool {
-    APART.iter().any(|rule| rule.words && rule.token == token)
+    ACCENT_WASHES.contains(&token) || APART.iter().any(|rule| rule.words && rule.token == token)
 }
 
 /// **Whether `token` is a side of a rule of [`APART`] held alone** (#3130).
@@ -573,21 +632,82 @@ fn held_alone(token: &str) -> bool {
 /// **The most chroma a tint at one hue gives**: `shared`, what [`apart_chroma`] answers, for
 /// every side of a rule of [`APART`]; and `alone`, what every rule together answers, for the
 /// sides of a rule held alone, which give way further on their own (#3130); and `words`, for the
-/// accent's words (#3100).
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// accent's words and the washes they stand on (#3100, #4666); and `kept`, the tokens drawn as
+/// written because a ground of [`NO_NEARER`] turned would come nearer a signal's wash (#4666).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Most {
     pub shared: Option<f64>,
     pub alone: Option<f64>,
     pub words: Option<f64>,
+    /// The tokens kept as written at this hue, one bit each by their place in [`TINTABLE`]: a
+    /// ground [`NO_NEARER`] keeps, and every token the theme draws in the same value, so what a
+    /// theme draws alike stays alike (Classic's primary's fill is its surface).
+    pub kept: u64,
+}
+
+impl Most {
+    /// Whether `token` is kept as written at this hue ([`Self::kept`]).
+    pub fn keeps(&self, token: &str) -> bool {
+        TINTABLE
+            .iter()
+            .position(|one| *one == token)
+            .is_some_and(|at| self.kept & (1 << at) != 0)
+    }
 }
 
 /// [`Most`] for `theme` at `hue`.
 pub fn most_at(theme: &ResolvedTheme, hue: f64) -> Most {
-    let most = most_of(&held_rules(theme), &shared_rules(theme), hue);
-    Most {
+    finished(
+        theme,
+        hue,
+        most_of(&held_rules(theme), &shared_rules(theme), hue),
+    )
+}
+
+/// `most`, what [`most_of`] answered for `theme` at `hue`, with the accent's words answered
+/// ([`words_chroma_of`]) and the grounds [`NO_NEARER`] keeps ([`Most::kept`]): what a tint draws.
+pub(super) fn finished(theme: &ResolvedTheme, hue: f64, most: Most) -> Most {
+    let most = Most {
         words: words_chroma_of(&words_rules(theme), hue, most),
         ..most
+    };
+    Most {
+        kept: kept_at(theme, hue, most),
+        ..most
     }
+}
+
+const _: () = assert!(
+    TINTABLE.len() <= 64,
+    "Most::kept has a bit for each tintable token"
+);
+
+/// **The tokens a tint of `theme` at `hue` keeps as written** (#4666, [`Most::kept`]): each
+/// ground of [`NO_NEARER`] whose turned value, at what `most` gives it, comes nearer a signal's
+/// wash than as written, the washes and the grounds under them drawn as `most` turns them; and
+/// each token the theme draws in a kept ground's value.
+fn kept_at(theme: &ResolvedTheme, hue: f64, most: Most) -> u64 {
+    let tabs = theme.tint.tabs();
+    let drawn = |token: &str| -> String {
+        let value = theme.value(token);
+        match chroma_of(token, most).filter(|_| tabs.contains(&token)) {
+            Some(chroma) => tint_hex_within(value, hue, chroma),
+            None => value.to_owned(),
+        }
+    };
+    let kept: Vec<&str> = NO_NEARER
+        .tokens
+        .iter()
+        .filter_map(|ground| {
+            let (turned, written) = (drawn(ground), theme.value(ground));
+            (turned != written && !no_nearer(&turned, written, drawn)).then_some(written)
+        })
+        .collect();
+    TINTABLE
+        .iter()
+        .zip(0..)
+        .filter(|(token, _)| kept.contains(&theme.value(token)))
+        .fold(0, |bits, (_, at)| bits | (1 << at))
 }
 
 /// **The chroma the accent's words are drawn at** (#3100): the accent's own, [`Most::alone`],
@@ -595,8 +715,8 @@ pub fn most_at(theme: &ResolvedTheme, hue: f64) -> Most {
 /// be (at the alone answer for a side held alone, else at the shared one); `None`, the words as
 /// written, where one does not. Where no chroma holds them apart from the waiting colour (a yellow
 /// or green workspace), they keep the theme's colour and the accent keeps its tint. The washes
-/// the words stand on are answered with them (#4666): every rule in `rules` holds or none of its
-/// tokens turn. `tint.ts`' `wordsChroma` is the same.
+/// the words stand on take this answer (#4666), unless [`NO_NEARER`] keeps them as written.
+/// `tint.ts`' `wordsChroma` is the same.
 pub fn words_chroma_of(rules: &[Rule<'_>], hue: f64, most: Most) -> Option<f64> {
     let alone = most.alone?;
     let from = |side_alone: bool| if side_alone { Some(alone) } else { most.shared };
@@ -621,6 +741,7 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
             shared: shared_most,
             alone: shared_most,
             words: shared_most,
+            kept: 0,
         };
     }
     let Some(ceiling) = shared_most else {
@@ -628,6 +749,7 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
             shared: None,
             alone: None,
             words: None,
+            kept: 0,
         };
     };
     let alone = alone_chroma_of(all, shared, ceiling, hue);
@@ -636,14 +758,17 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
         shared: holds.then_some(ceiling),
         alone,
         words: alone,
+        kept: 0,
     }
 }
 
 /// **The most chroma a tint gives `token`** at a hue whose [`Most`] is `most`: the alone
-/// answer for a side of a rule held alone, else as [`chroma_for`] gives it. `tint.ts`'
-/// `chromaFor` is the same.
+/// answer for a side of a rule held alone, else as [`chroma_for`] gives it; `None` for a ground
+/// [`Most::kept`] keeps as written. `tint.ts`' `chromaFor` is the same.
 pub fn chroma_of(token: &str, most: Most) -> Option<f64> {
-    if words_of(token) {
+    if most.keeps(token) {
+        None
+    } else if words_of(token) {
         most.words
     } else if held_alone(token) {
         most.alone
