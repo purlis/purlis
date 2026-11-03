@@ -13,14 +13,18 @@ import {
   measureSwitches,
   openFromTheStrip,
 } from "../switching.js";
-import { closeEverything, job, openTab, ready, record } from "./window.js";
+import { closeEverything, corpus, job, openTab, ready, record } from "./window.js";
 
 /** How many times each project is switched to. */
 const ROUNDS = 3;
 
+/** Agents streaming in the first project all the while: L9's realistic load (#4744). */
+const STREAMING = 20;
+
 /**
  * Ten open projects, each with one chat, and each brought to the front through the project
- * switcher three times round (FR-27).
+ * switcher three times round (FR-27), **while twenty agents stream in the first** (#4744): an
+ * idle window switched fast and the operator's did not, so the row is held under load.
  *
  * Spec limit: row L9 of the budgets of record — switching among ten open projects ≤ 200 ms at the p95,
  * release absolute. Measured from the press of the project's row in the switcher until the
@@ -49,6 +53,8 @@ describe(`switching among ${OPEN} open projects`, () => {
     // The benchmark's own plane is in front: its chat first.
     const launched = await inFront();
     if (launched === null) throw new Error("the benchmark's plane is not in front");
+    nextLoad(["--corpus", corpus, "--loops", "1000000", "--interval-ms", "4"]);
+    for (let n = 0; n < STREAMING; n++) await openTab();
     nextLoad(["--synthetic", "4096", "--sentinel", "PROJECT-0", "--interactive"]);
     await openTab();
     planes.push(launched);
@@ -70,7 +76,12 @@ describe(`switching among ${OPEN} open projects`, () => {
       job,
     );
     const verdict = heldToBudget(switches, ROUNDS);
-    results["project switch"] = { budgetMs: BUDGET_MS, met: verdict.met, ...switches };
+    results["project switch"] = {
+      budgetMs: BUDGET_MS,
+      met: verdict.met,
+      streaming: STREAMING,
+      ...switches,
+    };
     console.log(verdict.sentence);
 
     await closeTheProjectsOfItsOwn();
