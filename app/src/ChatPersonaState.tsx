@@ -7,6 +7,7 @@ import { markOf, ownWorkOf, useChatsHere, useChatsSelect } from "./chatState";
 import { PersonaMark } from "./PersonaMark";
 import { shownState, type Shown, type TaskFacts } from "./shownState";
 import { StateShown } from "./StateShown";
+import { useQuestionStanding } from "./QuestionsHere";
 import { tasksAtWorkOf } from "./sessionTasks";
 import { useTasksBelow } from "./TasksBelow";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -36,7 +37,6 @@ export const ChatPersonaState = memo(function ChatPersonaState({
   shell,
   report = null,
   outcome = null,
-  asking = null,
   harness,
   changed = false,
 }: {
@@ -46,17 +46,21 @@ export const ChatPersonaState = memo(function ChatPersonaState({
   shell: boolean;
   report?: TaskFacts["report"] | null;
   outcome?: string | null;
-  asking?: string | null;
   harness: string | null;
 }) {
   const below = useTasksBelow(session);
+  // Its question, where the asks registry says it stands (#4564): never a copy of its own.
+  const question = useQuestionStanding(session);
   const shown = useChatsSelect(
     useChatsHere(),
     (states) =>
       shownState({
         board: markOf(states, session, shell),
-        needsYou: states.needsYou.includes(session),
-        task: report === null ? null : { report, outcome, asking },
+        needsYou: states.needsYou.includes(session) || question?.level === "needs-you",
+        task:
+          report === null
+            ? null
+            : { report, outcome, asking: question?.level === "with-asker" ? question.asker : null },
         harness,
         tasksAtWork: tasksAtWorkOf(states, below),
         ownWork: ownWorkOf(states, session),
