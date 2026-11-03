@@ -585,7 +585,7 @@ describe("a tab's menu (#4753)", () => {
     expect(keys).toEqual({ Close: expect.stringMatching(/^(⌫|Delete)$/) });
   });
 
-  it("on a view's tab is Pinned, Tile all and Close, and Close is not coloured", () => {
+  it("on a view's tab is Pinned, Tile all, Close other tabs and Close, and its Close is not coloured", () => {
     const withView = openView(tabs, { from: null, view: "vault", key: "forge" }, "forge", "beta");
     const view = withView.order[withView.order.length - 1];
     const menu = menuOf(
@@ -594,10 +594,13 @@ describe("a tab's menu (#4753)", () => {
     );
     const rows = rowsOf(menu);
 
+    // Close other tabs (#4762), which this window, saying no other tab it would close, offers
+    // greyed and so uncoloured.
     expect(rows.map((row) => [row.said, row.danger])).toEqual([
       ["Pinned", false],
       // Greyed: a tab of one pane has nothing to tile (#4765).
       ["Tile all", false],
+      ["Close other tabs", false],
       ["Close", false],
     ]);
   });

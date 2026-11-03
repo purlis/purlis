@@ -222,7 +222,14 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "task.stop": { said: SAID.taskStop, slot: "end", danger: true, warns: WARNS.taskStops },
   "task.close": { said: SAID.taskClose, slot: "end", danger: true, warns: WARNS.taskCloses },
 
-  // A tab's own rows (#4753): what a tab is, and never a chat's.
+  // A tab's own rows (#4753): what a tab is, and never a chat's. Close other tabs (#4762) is
+  // drawn among what closes, coloured where a tab it closes ends a chat, as Close is (#4760).
+  "tab.closeOthers": {
+    said: SAID.closeOtherTabs,
+    slot: "end",
+    danger: endsAChat,
+    warns: (offer) => (endsAChat(offer) ? WARNS.ends : undefined),
+  },
   "tab.select": { said: SAID.switchTo, slot: "first", quiet: true },
   "tab.pin": pin,
   "tab.tile": { said: SAID.tileAll, slot: "first" },

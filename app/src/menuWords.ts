@@ -28,6 +28,7 @@ export const SAID = {
   end: "End…",
   keepOpen: "Keep open",
   tileAll: "Tile all",
+  closeOtherTabs: "Close other tabs",
   thisMachine: "This machine",
   brief: "Brief",
   answer: "Answer its question",
