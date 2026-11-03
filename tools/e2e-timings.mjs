@@ -30,6 +30,7 @@ function specPath(file) {
 export function readTimings(text) {
   const tests = [];
   const specs = [];
+  const bars = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     let record;
@@ -45,9 +46,20 @@ export function readTimings(text) {
       tests.push({ file: specPath(record.file), name, seconds });
     } else if (record.kind === "spec") {
       specs.push({ file: specPath(record.file), seconds });
+    } else if (record.kind === "bar") {
+      // A speed bar measured, not asserted (#4419): `ms` is null when the app refused past it.
+      const ms = typeof record.ms === "number" ? record.ms : null;
+      const bar = Number(record.bar) || 0;
+      bars.push({
+        name: String(record.name ?? ""),
+        ms,
+        bar,
+        refused: record.refused,
+        met: ms !== null && ms <= bar,
+      });
     }
   }
-  return { tests, specs };
+  return { tests, specs, bars };
 }
 
 // Workflow command escaping: `%`, CR and LF in data; `:` and `,` too in a property.
@@ -56,17 +68,46 @@ const escapeData = (s) =>
 const escapeProperty = (s) =>
   escapeData(s).replace(/:/g, "%3A").replace(/,/g, "%2C");
 
-const notice = (title, lines) =>
-  `::notice title=${escapeProperty(title)}::${escapeData(lines.join("\n"))}`;
+const command = (level, title, lines) =>
+  `::${level} title=${escapeProperty(title)}::${escapeData(lines.join("\n"))}`;
+const notice = (title, lines) => command("notice", title, lines);
 const time = (seconds) => `${seconds.toFixed(1)} s`.padStart(8);
 const slowestFirst = (list, limit) =>
   [...list].sort((a, b) => b.seconds - a.seconds).slice(0, limit);
 
-/** The two `::notice` lines, titled with `label` (the job's part), or one that says there were none. */
-export function annotations({ tests, specs }, { label, limit = LIMIT }) {
+/**
+ * **The speed bars a run measured** (#4419): a bar a scenario holds the app to on a person's
+ * machine, which a loaded CI runner misses for reasons of its own. The spec waits on the state it
+ * needs and records the time here; a miss is a `::warning`, which is read through the checks API
+ * like the notices and never fails the job. Nothing when no bar was measured.
+ */
+function barLines(bars, label) {
+  if (bars.length === 0) return [];
+  const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`;
+  const lines = bars.map(
+    (one) =>
+      `${one.met ? "met    " : "missed "} ${one.ms === null ? "refused" : seconds(one.ms)} against ` +
+      `${seconds(one.bar)}  ${one.name}${one.refused ? `: ${one.refused}` : ""}`,
+  );
+  return bars.every((one) => one.met)
+    ? [notice(`Speed bars (${label})`, lines)]
+    : [command("warning", `Speed bars missed (${label})`, lines)];
+}
+
+/**
+ * The two `::notice` lines, titled with `label` (the job's part), or one that says there were
+ * none; then the speed bars, if any were measured.
+ */
+export function annotations(
+  { tests, specs, bars = [] },
+  { label, limit = LIMIT },
+) {
   const files = `Slowest scenario spec files (${label})`;
   if (tests.length === 0 && specs.length === 0)
-    return [notice(files, ["No scenario timings were recorded."])];
+    return [
+      notice(files, ["No scenario timings were recorded."]),
+      ...barLines(bars, label),
+    ];
   return [
     notice(
       files,
@@ -80,6 +121,7 @@ export function annotations({ tests, specs }, { label, limit = LIMIT }) {
         (one) => `${time(one.seconds)}  ${one.file}  ${one.name}`,
       ),
     ),
+    ...barLines(bars, label),
   ];
 }
 

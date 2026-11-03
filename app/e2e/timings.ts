@@ -39,3 +39,13 @@ interface Ran {
 export function recordTiming(ran: Ran, ms: number, kind: "test" | "hook" = "test"): void {
   logLine(TIMINGS, { kind, file: ran.file, parent: ran.parent, title: ran.title, ms });
 }
+
+/**
+ * **A speed bar, measured and not asserted** (#4419): `ms` against `bar`, or `ms` null with what
+ * the app said when it refused past the bar. `tools/e2e-timings.mjs` lists them on the job, a miss
+ * as a warning. A spec waits on the state it needs; how fast the app got there on a loaded runner
+ * is this measurement, never the test's verdict.
+ */
+export function recordBar(name: string, ms: number | null, bar: number, refused?: string): void {
+  logLine(TIMINGS, { kind: "bar", name, ms, bar, ...(refused === undefined ? {} : { refused }) });
+}
