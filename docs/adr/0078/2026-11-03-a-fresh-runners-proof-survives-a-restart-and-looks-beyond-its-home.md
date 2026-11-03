@@ -22,7 +22,7 @@ to be confirmed* (the D-lines of the pull request that built it).
    temporary (`/run`, `/tmp`, `/var/tmp`), the home (looked through by its own rules), purlis's
    data home and projects, and the hidden entries of a person's home (`/root`, `/home/<name>`).
    A folder that can't be read is said, unless it is another's, unchanged since, that the user
-   can't write in either. A folder deeper than 128 is said, not looked into.
+   can neither write in nor pass through. A folder deeper than 128 is said, not looked into.
 5. **Elsewhere, the home only.** Fresh runners are cluster pods, on Linux; on macOS `/` reaches
    other volumes, and the home again by another path.
 6. **What can't be looked through keeps the runner**, as everything the proof can't read does:

@@ -904,7 +904,8 @@ fn a_file_outside_the_home_another_user_owns_keeps_no_runner() {
 }
 
 /// **An unreadable folder outside the home is said unless it is another's, unchanged, that the
-/// runner's user can't write in either** (#4933): only such a one can hold nothing a task made.
+/// runner's user can neither write in nor pass through** (#4933): only such a one can hold
+/// nothing a task made.
 #[cfg(unix)]
 #[test]
 fn a_folder_the_runners_user_cannot_read_is_said_unless_it_could_hold_nothing_of_a_task() {
@@ -913,13 +914,17 @@ fn a_folder_the_runners_user_cannot_read_is_said_unless_it_could_hold_nothing_of
         return; // Every folder is open to root.
     }
     let (_dir, root, home, _) = a_runners_root();
-    for (folder, mode) in [("var/locked", 0o100), ("var/dropbox", 0o300)] {
+    let shut = |folder: &str, mode: u32| {
         std::fs::create_dir_all(root.join(folder)).unwrap();
         std::fs::set_permissions(root.join(folder), std::fs::Permissions::from_mode(mode)).unwrap();
-    }
+    };
+    shut("var/locked", 0o000);
+    shut("var/passage", 0o100);
+    shut("var/dropbox", 0o300);
     std::thread::sleep(std::time::Duration::from_millis(50));
     let since = std::time::SystemTime::now();
     std::thread::sleep(std::time::Duration::from_millis(50));
+    shut("var/shut-since", 0o000);
     // Another user's folders, as the walk sees them.
     let others = Beyond {
         root: &root,
@@ -927,33 +932,28 @@ fn a_folder_the_runners_user_cannot_read_is_said_unless_it_could_hold_nothing_of
     };
 
     let said = outside_the_projects_and_beyond(&home, &[], Some(since), Some(others));
-
-    assert!(
-        says(&said, "/var/dropbox on the runner could not be read"),
-        "{said:?}"
-    );
-    assert!(!says(&said, "/var/locked"), "{said:?}");
-    assert_eq!(said.len(), 1, "{said:?}");
-
-    // The user's own folder, shut since, is said however it is shut.
-    std::fs::create_dir_all(root.join("var/mine")).unwrap();
-    std::fs::set_permissions(
-        root.join("var/mine"),
-        std::fs::Permissions::from_mode(0o000),
-    )
-    .unwrap();
+    // The user's own, however long shut.
     let mine = Beyond {
         owner: the_runners_user(),
         ..others
     };
-    let said = outside_the_projects_and_beyond(&home, &[], Some(since), Some(mine));
-    for folder in ["var/locked", "var/dropbox", "var/mine"] {
+    let said_mine = outside_the_projects_and_beyond(&home, &[], Some(since), Some(mine));
+    for folder in ["var/locked", "var/passage", "var/dropbox", "var/shut-since"] {
         std::fs::set_permissions(root.join(folder), std::fs::Permissions::from_mode(0o700))
             .unwrap();
     }
+
+    for folder in ["/var/dropbox", "/var/passage", "/var/shut-since"] {
+        assert!(
+            says(&said, &format!("{folder} on the runner could not be read")),
+            "{folder}: {said:?}"
+        );
+    }
+    assert!(!says(&said, "/var/locked"), "{said:?}");
+    assert_eq!(said.len(), 3, "{said:?}");
     assert!(
-        says(&said, "/var/mine on the runner could not be read"),
-        "{said:?}"
+        says(&said_mine, "/var/locked on the runner could not be read"),
+        "{said_mine:?}"
     );
 }
 
@@ -1008,7 +1008,8 @@ fn a_mark_that_is_not_the_file_purlis_made_keeps_the_runner_and_refuses_a_start(
     assert!(refused.contains("could not note"), "{refused}");
     assert!(!elsewhere.exists(), "never through the link");
 
-    // A pipe in its place is refused at once, never waited on.
+    // A pipe in its place is refused at once, never waited on, and refused too while a task
+    // holds it open to read.
     std::fs::remove_file(projects.join(FIRST_PROGRAM)).unwrap();
     let made = crate::forklock::status(
         std::process::Command::new("mkfifo").arg(projects.join(FIRST_PROGRAM)),
@@ -1017,4 +1018,12 @@ fn a_mark_that_is_not_the_file_purlis_made_keeps_the_runner_and_refuses_a_start(
     assert!(made.success(), "a pipe is made");
     let refused = first_program_starting(&projects).unwrap_err();
     assert!(refused.contains("could not note"), "{refused}");
+    let _reading = rustix::fs::open(
+        projects.join(FIRST_PROGRAM),
+        rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NONBLOCK | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .unwrap();
+    let refused = first_program_starting(&projects).unwrap_err();
+    assert!(refused.contains("not a file purlis made"), "{refused}");
 }

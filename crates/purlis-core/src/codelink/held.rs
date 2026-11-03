@@ -307,9 +307,9 @@ pub fn outside_the_projects(
 /// write wherever the runner's user may, such as the volume its home is a folder of, or a folder
 /// its image gives that user. Its home and every folder in `skip` are left out of that, as is
 /// what holds no task's work ([`NO_TASKS_WORK`]); so is a hidden entry of a person's home there
-/// (`/root`, `/home/<name>`), for the home's reason. A folder that user can neither read nor
-/// write holds nothing of theirs that was not there before, and is passed over in silence; one it
-/// can write but not read is said.
+/// (`/root`, `/home/<name>`), for the home's reason. A folder that user can't read is said,
+/// unless it is another's, unchanged since, that the user can neither write in nor pass through:
+/// that holds nothing of theirs that was not there before.
 #[cfg(unix)]
 pub fn outside_the_projects_and_beyond(
     home: &Path,
@@ -462,17 +462,21 @@ impl Outside {
         }) = stack.pop()
         {
             let shown_dir = rules.shown(&rel);
-            // A folder its user can't read is said unless it is another's that the user can't
-            // write in either, unchanged since: that holds nothing of a task's not there before.
-            // A check that can't be made is said.
+            // A folder its user can't read is said unless it is another's, unchanged since, that
+            // the user can neither write in nor pass through: that holds nothing of a task's not
+            // there before. A check that can't be made is said.
             let unread = |e: rustix::io::Errno, parent: &rustix::fd::OwnedFd| {
                 e != rustix::io::Errno::ACCESS
                     || said_unread
                     || name.as_deref().is_none_or(|name| {
-                        !matches!(
-                            rustix::fs::accessat(parent, name, Access::WRITE_OK, AtFlags::EACCESS),
+                        // Shut to the user both ways: it can't write there, nor pass through to a
+                        // folder within that it could.
+                        let check =
+                            |access| rustix::fs::accessat(parent, name, access, AtFlags::EACCESS);
+                        !(matches!(
+                            check(Access::WRITE_OK),
                             Err(rustix::io::Errno::ACCESS | rustix::io::Errno::ROFS)
-                        )
+                        ) && matches!(check(Access::EXEC_OK), Err(rustix::io::Errno::ACCESS)))
                     })
             };
             let fd = match &name {

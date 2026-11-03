@@ -393,8 +393,9 @@ spec:
     (#4781). A file the runner's user owns anywhere else in the runner counts too, such as one
     beside the home on its volume or in a folder the pool's image gives that user, except in
     `/proc`, `/sys`, `/dev`, `/run`, `/tmp` and `/var/tmp` and the hidden entries of `/root`
-    and `/home/<name>`; a folder there it can't read is said, unless it is another's that it
-    can't write in either. The time its host first started a program is kept on the home's
+    and `/home/<name>`; a folder there it can't read is said, unless it is another's, unchanged
+    since, that it can neither write in nor pass through, and a folder more than 128 deep is
+    said rather than looked into. The time its host first started a program is kept on the home's
     volume, so a host started again in the same pod still finds what a task saved before
     (#4933). An image with a very large file system, or a folder its user may write in but not
     read, keeps its fresh runners until you discard them.
