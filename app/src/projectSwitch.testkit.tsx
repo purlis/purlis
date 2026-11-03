@@ -402,6 +402,17 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
       await waitFor(() => expect(screen.getAllByTestId("pane")).toHaveLength(held + 1));
       await settled(asked);
     }
+    // Each split offers its Undo for a few seconds (#4763). The line is put away now, as the
+    // person would, so that its time running out is not counted as a switch's cost: a switch
+    // slow enough here, forty panes on a busy runner, saw it go mid-switch and counted its 20
+    // components among the unmounted.
+    // The cause is on the card's message; its Dismiss is beside it.
+    for (const said of document.querySelectorAll('[data-cause="layout-changed"]'))
+      fireEvent.click(
+        within(said.parentElement as HTMLElement).getByRole("button", { name: "Dismiss" }),
+      );
+    await settled(asked);
+    expect(document.querySelector('[data-cause="layout-changed"]')).toBeNull();
   }
 
   const out: Switch[] = [];

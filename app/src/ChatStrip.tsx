@@ -49,6 +49,7 @@ import { NONE_RESTORING, RESTORING } from "./restoringChats";
 import { closeOnDelete, renameOnF2 } from "./tabKeys";
 import { TabRename } from "./TabRename";
 import { type ChatRow } from "./chatsTree";
+import { STRIP, TAB } from "./paneDrag";
 import { showsStopping, TabMarks, type TabFacts } from "./ChatRows";
 import { faceOf, type Naming, type TabFace } from "./tabFace";
 import type { Ref } from "./fits";
@@ -235,6 +236,8 @@ export function ChatStrip({
             ids={shown.flatMap((id, place) => (nameBoxFor(id) ? [] : [chatTabId(place)]))}
             className="tabs"
             data-strip="Tabs"
+            // A pane or a chat dropped here makes a tab of its own (#4763).
+            {...{ [STRIP]: "" }}
             ref={strip}
             style={{ "--least": `${chatLeast}px`, "--chip": `${chipWidth}px` } as CSSProperties}
           >
@@ -304,6 +307,8 @@ export function ChatStrip({
                         // The first tab starts at the panel's edge, and flares on its right only.
                         first={place === 0}
                         data-dragging={sortable.isDragging || undefined}
+                        // Pulled down off the strip, it splits in beside a pane (#4763).
+                        {...{ [TAB]: String(id) }}
                         // A pinned tab at its icon only, where pins alone would take over half
                         // the strip; its name is in its tooltip (#4762).
                         data-icon-only={(pinsIconOnly && isPinned(id)) || undefined}

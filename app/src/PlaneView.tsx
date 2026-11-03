@@ -210,7 +210,6 @@ import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import type { Elsewhere } from "./InboxElsewhere";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
 import { drawWhatIsInForce } from "./Extensions";
-import { useProfileNames } from "./profileNames";
 import { useScreenReaderMode } from "./screenReader";
 import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
@@ -353,7 +352,8 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
-import { tileAll, undoLayout, zoomedLayout, zoomFocusedPane } from "./tiling";
+import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
+import { recorded } from "./layoutUndo";
 import { layoutOf, tabsOf, withShare } from "./laidOut";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -433,6 +433,8 @@ import { NewVault } from "./NewVault";
 import { OpenVault, useVaults } from "./Vaults";
 import { usePlaneEdits } from "./PlaneEdits";
 import { MemoryStores, useMemoryEdits, useMemoryStores } from "./MemoryEdits";
+import { usePaneDrag } from "./paneDrag";
+import type { DropContext } from "./paneDrop";
 import type { MemoryTargets } from "./memoryMoves";
 import { AddToAChat } from "./AddToAChat";
 import { handReferences } from "./referencesMany";
@@ -627,7 +629,16 @@ const NONE: readonly never[] = [];
  *  split of the pane in front. `prefer` is the harness (a profile's `kind`) the picker starts
  *  on, where something already knows which one is wanted: a harness started by hand in a shell
  *  tab, opened as a chat instead (ADR 0062). */
-type Where = { tab: true; in?: string; prefer?: string } | { split: Direction };
+type Where =
+  | {
+      tab: true;
+      in?: string;
+      prefer?: string;
+      /** A pool chosen on the picker's Runs on row as it opens, in the workspace `workspace`
+       *  (#4483): Pool setup's Open a chat. */
+      pool?: { name: string; workspace: string };
+    }
+  | { split: Direction };
 
 /** What a new shell tab has typed into it: a line spelled out (FR-4's `gh auth login`), a
  *  harness whose compiled-in installer the core types itself (FR-29, V65), or the sandbox's
@@ -786,7 +797,7 @@ export const PlaneView = memo(function PlaneView({
   inboxGroup,
   elsewhere,
   windowLines,
-  paletteOpen = false,
+  profileNames,
 }: {
   plane: PlaneId;
   /** Whether this is the project the operator is looking at. */
@@ -880,9 +891,10 @@ export const PlaneView = memo(function PlaneView({
    *  and counted in its status line while it is in front, so none stands under the title bar
    *  with a project open. The window draws them; this view gives them their place. */
   windowLines?: WindowLines;
-  /** Whether the window's palette is open: the project's profiles are read for its rows then,
-   *  and at no other time (#1201). */
-  paletteOpen?: boolean;
+  /** This project's harness profiles, by name, for the palette's rows to their pages (#1201):
+   *  read by the window as the palette opens over this project, and the same list while the
+   *  names are (#4351). None while none was read, or the project has none. */
+  profileNames?: readonly string[];
   /** The first chat a repository opened into this project asks for (FR-4): started in that
    *  repository's clone, on the workspace named after it. `at` counts the asks, so each is
    *  answered once. */
@@ -1182,9 +1194,6 @@ export const PlaneView = memo(function PlaneView({
   const settingsChanges = usePlaneChanged([plane], SETTINGS);
   /** Each harness's card, for the palette's *What <product> can do here* rows (#1134). */
   const harnessCards = useHarnessCards(plane, inFront, settingsChanges);
-  /** The project's harness profiles, for the palette's rows to their pages (#1201): read as
-   *  the palette opens over this project, never on a render of its own. */
-  const profileNames = useProfileNames(plane, paletteOpen && inFront);
   /** The same, counting only the changes the sidebar is made of (FD-10): a memory an agent
    *  saves does not make it list every workspace's todos again. */
   const sidebarChanges = usePlaneChanged([plane], SIDEBAR);
@@ -3160,7 +3169,7 @@ export const PlaneView = memo(function PlaneView({
       setPickerTrouble(undefined);
       const cwd = ("in" in where ? where.in : undefined) ?? startIn;
       // The workspace the chat would be filed in, or none at the project's root.
-      const filed = filedFor(cwd, focused);
+      const filed = "pool" in where && where.pool ? where.pool.workspace : filedFor(cwd, focused);
       const [options, found, runsOn] = await Promise.all([
         commands
           .startOptions(plane)
@@ -3181,6 +3190,27 @@ export const PlaneView = memo(function PlaneView({
       setPicking({ options: options.data, where, runsOn });
     },
     [change, focused, plane, readRunsOn, refusedBy, startIn, succeeded],
+  );
+
+  /**
+   * **A new chat on pool `pool`** (#4483): Pool setup's Open a chat. The picker opens with the pool
+   * chosen on its Runs on row, in workspace `workspace` where the tab names one and else the
+   * project's first, as Try it started its chat: a chat at the project's root runs here. The
+   * person still presses Start.
+   */
+  const newChatOn = useCallback(
+    (pool: string, workspace?: string) => {
+      const workspaces = sidebar?.workspaces ?? [];
+      const ws =
+        workspaces.find((one) => one.name === workspace) ??
+        [...workspaces].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))[0];
+      void ask(
+        ws === undefined
+          ? { tab: true }
+          : { tab: true, in: ws.path, pool: { name: pool, workspace: ws.name } },
+      );
+    },
+    [ask, sidebar],
   );
 
   /**
@@ -3640,7 +3670,10 @@ export const PlaneView = memo(function PlaneView({
       const before = now.current;
       // The tab that was to be split can have closed while the picker was open. Nothing
       // would show that session, so it is ended rather than left running unseen.
-      if (change((tabs) => splitFocusedPane(tabs, where.split, session, name)) === before) {
+      // A split is a layout change, so Undo puts it back (#4763); its chat runs on in the sidebar.
+      const split = (tabs: Tabs) =>
+        recorded(tabs, splitFocusedPane(tabs, where.split, session, name), "Split the pane.");
+      if (change(split) === before) {
         void commands.closeSession(plane, session);
       }
       return undefined;
@@ -3654,9 +3687,15 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the picker's start is in flight: the ref is the guard, the state is the button. */
   const startingNow = useRef(false);
   const [starting, setStarting] = useState(false);
+  /** The workspace the picker's chat starts in: the one a pool preset names (#4483), else the
+   *  one in front. */
+  const pickingIn =
+    picking !== undefined && "pool" in picking.where && picking.where.pool
+      ? picking.where.pool.workspace
+      : ofWorkspace;
   const readStage = useCallback(
-    (runsOn: RunsOnPick | null) => readRunnerStage(plane, ofWorkspace, runsOn),
-    [plane, ofWorkspace],
+    (runsOn: RunsOnPick | null) => readRunnerStage(plane, pickingIn, runsOn),
+    [plane, pickingIn],
   );
   /** The person cancelled the start in flight: what it answers is said to nobody. */
   const startLeft = useRef(false);
@@ -3770,10 +3809,6 @@ export const PlaneView = memo(function PlaneView({
   // Tile all, its Undo and Focus this pane (#4765): the tab's own panes rearranged, nothing
   // started or ended.
   const tileAllIn = useCallback((tab: number) => change((tabs) => tileAll(tabs, tab)), [change]);
-  const undoLayoutIn = useCallback(
-    (tab: number) => change((tabs) => undoLayout(tabs, tab)),
-    [change],
-  );
   const zoomPane = useCallback(() => change(zoomFocusedPane), [change]);
 
   useEffect(() => {
@@ -4614,6 +4649,40 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     nameOfNow.current = nameOf;
   }, [nameOf]);
+
+  /** What a pane drop is judged against (#4763): where chats are filed, and what each is called. */
+  const dropContext = useMemo<DropContext>(
+    () => ({
+      filedIn,
+      pinned: isPinned,
+      background: isBackground,
+      name: (content) =>
+        content.kind === "session"
+          ? nameOf(content.session)
+          : content.kind === "view"
+            ? (tabs.byId[findView(tabs, content.view)?.tab ?? -1]?.name ?? "this view")
+            : "the empty pane",
+    }),
+    [filedIn, isBackground, isPinned, nameOf, tabs],
+  );
+  const holdTab = useCallback((id: number) => change((tabs) => selectTab(tabs, id)), [change]);
+  const ownNameOf = useCallback(
+    (session: number) =>
+      [...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []), ...(sidebar?.unfiled ?? [])].find(
+        (chat) => chat.session === session,
+      )?.name ?? String(session),
+    [sidebar],
+  );
+  /** **Dragging panes: split, swap and move** (#4763), its Undo line and what it draws. */
+  const paneDrag = usePaneDrag({
+    tabs,
+    change,
+    ctx: dropContext,
+    onHoldTab: holdTab,
+    chatNameOf: ownNameOf,
+  });
+  /** The window's one Undo (#4763, #4765): the palette's row runs the toast's and ⌘Z's. */
+  const undoLayoutIn = paneDrag.undo;
 
   /**
    * **What a tab's panes are called on the strip** (#4762): a chat by its own name, never the
@@ -9719,6 +9788,11 @@ export const PlaneView = memo(function PlaneView({
 
       {/* A memory's Delete, which can be undone for a few seconds (SI-9b, ADR 0065 Q8). */}
       {memoryEdits.undo}
+      {/* A pane dropped, which Undo or ⌘Z puts back (#4763). */}
+      {paneDrag.undoLine}
+      {/* While a pane is dragged: where it would land and what it would do, drawn over
+          everything at fixed places, and said to a reader. */}
+      {paneDrag.layer}
 
       {/* By the chat's id, never its name: two waiting chats can share a name (a split's chat
             takes its tab's), and each Notice acts on its own chat alone. */}
@@ -10306,6 +10380,7 @@ export const PlaneView = memo(function PlaneView({
                               },
                             }}
                             firstTask={firstTaskDoes}
+                            onNewChatOn={newChatOn}
                             split={{
                               of: (view) => splitOf(tabs, view),
                               moved: (view, split) => change((tabs) => setSplit(tabs, view, split)),
@@ -10865,10 +10940,11 @@ export const PlaneView = memo(function PlaneView({
                   options={picking.options}
                   repo={pickingInRepo}
                   // Where it starts, by name (R8): the workspace in front, else the project.
-                  place={ofWorkspace ?? projectName(plane)}
+                  place={pickingIn ?? projectName(plane)}
                   starting={starting}
                   readStage={readStage}
                   prefer={"prefer" in picking.where ? picking.where.prefer : undefined}
+                  pool={"pool" in picking.where ? picking.where.pool?.name : undefined}
                   trouble={pickerTrouble}
                   // Only beside the refusal it was asked for, never beside a later one.
                   signIn={

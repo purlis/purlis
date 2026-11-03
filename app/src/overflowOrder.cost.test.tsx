@@ -9,6 +9,7 @@ import type { Moved, OpenChat } from "./bindings";
 import App from "./App";
 import { countReactsCommits, counts, drawnOutside } from "./reactCommits.testkit";
 import { measuring, type Room } from "./stripRoom.testkit";
+import { theFrameNow } from "./frame.testkit";
 
 /**
  * **A busy chat the strip is not drawing costs the window nothing but its overflow** (#4726).
@@ -83,6 +84,8 @@ function core(open: OpenChat[]): (moved: Moved) => void {
         id: 1,
         payload: moved,
       });
+      // The chat stores tell their readers once a frame (`heldStore.ts`): draw it in this act.
+      theFrameNow();
     });
   };
 }

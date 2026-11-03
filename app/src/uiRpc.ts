@@ -1629,6 +1629,7 @@ export const commands = {
 	poolSetupSizes: __WINDOW_ONLY_RESULT,
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,
+	poolSetupTry: __WINDOW_ONLY_RESULT,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -8926,6 +8927,14 @@ export type PoolSetupCreated = {
 	breaks: string[],
 };
 
+/**  Why Try it didn't pass, and the step that mends it, where one does (#4483). */
+export type PoolSetupFailed = {
+	/**  What happened and what to do, in a sentence or two. */
+	why: string,
+	/**  The step to go to, by its id: `signins` for a sign-in. Null where trying again is it. */
+	step: string | null,
+};
+
 /**  A limit a profile is over. */
 export type PoolSetupOver = {
 	/**  The limit's key, as `pool_limit_set` takes it. */
@@ -8988,6 +8997,14 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+};
+
+/**  What Try it found. */
+export type PoolSetupTried = {
+	/**  Why it didn't pass; null where a real chat started and the proof is kept. */
+	failed: PoolSetupFailed | null,
+	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
+	workspace: string | null,
 };
 
 /**  What the person is asked. */
