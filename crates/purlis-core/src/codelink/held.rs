@@ -1094,12 +1094,11 @@ fn one(dir: &Path, project: &str, rel: &str, kind: Kind) -> Result<Held, String>
     {
         return Err(failed(
             "read",
-            &format!(
+            format!(
                 "git does not take its folder for a repository of its own {}",
                 named.err.trim()
             )
-            .trim_end()
-            .to_owned(),
+            .trim_end(),
         ));
     }
     let listed = run(
