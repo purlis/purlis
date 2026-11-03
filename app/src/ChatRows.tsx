@@ -305,7 +305,9 @@ const StateBadge = memo(function StateBadge({
 }) {
   const state = useChatsSelect(useChatsHere(), (states) => markOf(states, session, shell));
   if (state === undefined) return null;
-  return <span className={`state state-${state}`} data-state={state} aria-hidden="true" />;
+  // `state-dot`, never `state`: the tab's one `.state` is the mark that says the word, which
+  // the scenario specs read (`chat.state.e2e.ts`).
+  return <span className={`state-dot state-${state}`} data-state={state} aria-hidden="true" />;
 });
 
 /**

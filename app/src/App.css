@@ -1744,7 +1744,7 @@ body {
   --chat-persona-size: var(--space-6);
 }
 
-.tabs .tab-persona > .state:not(:only-child) {
+.tabs .tab-persona > .state-dot:not(:only-child) {
   position: absolute;
   inset-block-end: calc(-1 * var(--space-1));
   inset-inline-end: calc(-1 * var(--space-1));
@@ -4155,7 +4155,8 @@ body {
 
 /* What a chat is doing. A mark, plus a shape per state: colour alone is no state at all to
    anyone who cannot see it, and the accessible name carries the word either way. */
-.state {
+.state,
+.state-dot {
   display: inline-block;
   width: 0.6rem;
   height: 0.6rem;
@@ -6695,7 +6696,8 @@ nav.piece-files-head {
 /* **A chat's state mark changing.** Its colour, its shape and its ring morph into the new state
    over `settle` rather than cutting — a transition, so it only ever runs on a change and never
    on a tab being drawn. */
-.state {
+.state,
+.state-dot {
   transition-property: background-color, border-color, border-radius, box-shadow, opacity;
   transition-duration: var(--motion-duration-settle);
   transition-timing-function: var(--motion-easing-standard);

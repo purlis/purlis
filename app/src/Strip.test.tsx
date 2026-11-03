@@ -560,6 +560,21 @@ describe("the strip's tabs (#4762)", () => {
     await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.4"]));
   });
 
+  it("says its state on its first `.state` mark, the corner dot being only seen", async () => {
+    // The scenario specs read `tab.$(".state")` for the state's word (`chat.state.e2e.ts`).
+    const { move } = core([chat(1)]);
+    render(<App />);
+    await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
+
+    move(moving(1, 5));
+
+    const tab = within(strip()).getAllByRole("tab")[0];
+    await waitFor(() =>
+      expect(tab.querySelector(".state")?.getAttribute("aria-label")).toBe("waiting on you"),
+    );
+    expect(tab.querySelectorAll(".state")).toHaveLength(1);
+  });
+
   it("draws its pin before its icon", async () => {
     core([chat(1), { ...chat(2), pinned: true }]);
     render(<App />);
