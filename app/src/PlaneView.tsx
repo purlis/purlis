@@ -332,7 +332,6 @@ import {
   taskShownIn,
   back,
   noteUsed,
-  pinsFollowed,
   press as pressChat,
   shownBeside,
   showIn,
@@ -3983,7 +3982,6 @@ export const PlaneView = memo(function PlaneView({
         return pressed.tabs;
       });
       if (next === before) return;
-      setPinnedChats((was) => pinsFollowed(before, next, was));
       if (sidebar !== undefined && landed !== undefined) setPicked(landed);
       const typing = focusedChat(next);
       if (typing !== undefined && typing !== focusedChat(before)) giveKeyboardTo(plane, typing);

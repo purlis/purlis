@@ -1403,24 +1403,6 @@ export function shownBeside(tabs: Tabs): number[] {
     .map((one) => one.session);
 }
 
-/**
- * **A pin stays with its tab** (#4757; spec story 51): `pinned` with each pinned chat that a
- * tab's first pane showed in `before`, and another chat in `after`, swapped for that chat. A
- * tab is pinned by its first pane's chat as the window reads it (#4762), and a press still
- * replaces the focused pane of a pinned tab. Answers `pinned` itself when nothing moved.
- */
-export function pinsFollowed(before: Tabs, after: Tabs, pinned: number[]): number[] {
-  let next = [...pinned];
-  for (const id of after.order) {
-    const was = contentsOf(before, id)[0]?.content;
-    const now = contentsOf(after, id)[0]?.content;
-    if (was?.kind !== "session" || now?.kind !== "session" || was.session === now.session) continue;
-    if (!next.includes(was.session) || next.includes(now.session)) continue;
-    next = next.map((one) => (one === was.session ? now.session : one));
-  }
-  return next.every((one, at) => one === pinned[at]) ? pinned : next;
-}
-
 /** The pane that shows chat `session`, in any tab. */
 function whereShown(tabs: Tabs, session: number): PaneAt | undefined {
   for (const id of tabs.order) {

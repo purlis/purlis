@@ -151,6 +151,21 @@ describe("a press shows the chat in the focused pane (#4757)", () => {
   });
 });
 
+describe("a pinned tab (#4757; spec story 51)", () => {
+  it("keeps its pin when a press replaces what its focused pane shows", () => {
+    const { tabs, second } = twoTabs();
+    const pinned: Tabs = {
+      ...tabs,
+      byId: { ...tabs.byId, [second]: { ...tabs.byId[second], pinned: true } },
+    };
+
+    const { tabs: next } = press(pinned, pressed(3), pressing());
+
+    expect(shows(next, second)).toEqual([chat(3)]);
+    expect(next.byId[second].pinned).toBe(true);
+  });
+});
+
 describe("a press never replaces a view (#4757)", () => {
   it("goes to the most recently used pane that shows a chat, and brings its tab forward", () => {
     const { tabs, first, second } = twoTabs();
@@ -261,7 +276,6 @@ describe("a chat of another workspace (#4757)", () => {
     });
     const saying: Saying = {
       workspaceOf: (id) => workspaceOf(next, id, filedIn),
-      pinned: () => false,
       frontOf: () => undefined,
       told: () => true,
     };

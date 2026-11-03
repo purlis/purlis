@@ -91,7 +91,6 @@ import {
   splitFocusedPane,
   switchTabTo,
   press,
-  showIn,
   viewKey,
   type Tabs,
   type ViewRef,
