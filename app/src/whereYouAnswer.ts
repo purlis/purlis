@@ -91,18 +91,39 @@ export function useWhereYouAnswer(): WhereYouAnswerPrefs {
   return WHERE_YOU_ANSWER.use();
 }
 
-/** A quiz a pane draws: the question, how many more wait at the same top, and whether it is the
- *  pane's own chat's question (drawn with no Open task). */
-export type QuizHere = { ask: Shown; more: number; own: boolean };
+/** A quiz a pane draws: the question, how many more wait at the same top, whether it is the
+ *  pane's own chat's question (drawn with no Open task), and whether the window can draw it. */
+export type QuizHere = { ask: Shown; more: number; own: boolean; drawn: boolean };
+
+/** Whether `ask` is a question the window draws as a quiz: a task question. */
+const isQuiz = (ask: Shown) => ask.source === "task-question";
 
 /**
- * **Which task question the pane showing chat `shown` draws as a quiz**, if any (#4565).
+ * Whether `ask` is **a task's question the window cannot draw** (#4566, spec #4551 story 62): a
+ * prompt in a task's own terminal, which purlis holds nothing to answer by (a harness with no
+ * adapter, or a redirect that failed). It takes the same route, linked from the top to the
+ * task's pane, where it is answered.
+ */
+const isUndrawable = (ask: Shown, topOf: (task: number) => number | undefined) =>
+  ask.source === "terminal" && topOf(ask.session) !== undefined;
+
+/** Oldest first; one whose age is unknown after every one whose age is known. */
+const oldestFirst = (one: Shown, other: Shown) =>
+  (one.since ?? Number.POSITIVE_INFINITY) - (other.since ?? Number.POSITIVE_INFINITY) ||
+  one.session - other.session;
+
+/**
+ * **Which task question the pane showing chat `shown` draws as a quiz**, if any (#4565, #4566).
  *
- * - **The chat's own question**, in either setting: any task can be opened and answered.
+ * - **The chat's own question**, in either setting: any task can be opened and answered. From
+ *   the top, the questions waiting at it behind its own are counted in `more`.
  * - **From the top**: the oldest question whose top (`topOf`, the nearest chat above it with a
  *   tab) is `shown`, with how many more wait there. One at a time, oldest first.
- * - Nothing else: **only a task question is drawn as a quiz**. Every other ask stays on its chat
- *   and in the Inbox, as does a question whose top has no tab.
+ * - **A task's question the window cannot draw** takes the same route ({@link isUndrawable}),
+ *   `drawn: false`: linked from the top, and left to its terminal and the waiting strip in its
+ *   own pane.
+ * - Nothing else: every other ask stays on its chat and in the Inbox, as does a question whose
+ *   top has no tab.
  *
  * Plain inputs and no state: the asks are the registry's list, never a copy.
  */
@@ -112,13 +133,16 @@ export function quizIn(
   where: WhereYouAnswer,
   topOf: (task: number) => number | undefined,
 ): QuizHere | undefined {
-  const questions = asks.filter((ask) => ask.source === "task-question");
-  const own = questions.find((ask) => ask.session === shown);
-  if (own !== undefined) return { ask: own, more: 0, own: true };
-  if (where !== "top") return undefined;
-  const here = questions
-    .filter((ask) => topOf(ask.session) === shown)
-    .sort((one, other) => (one.since ?? 0) - (other.since ?? 0) || one.session - other.session);
-  if (here.length === 0) return undefined;
-  return { ask: here[0], more: here.length - 1, own: false };
+  const waitingHere =
+    where === "top"
+      ? asks
+          .filter((ask) => isQuiz(ask) || isUndrawable(ask, topOf))
+          .filter((ask) => ask.session !== shown && topOf(ask.session) === shown)
+          .sort(oldestFirst)
+      : [];
+  const own = asks.find((ask) => isQuiz(ask) && ask.session === shown);
+  if (own !== undefined) return { ask: own, more: waitingHere.length, own: true, drawn: true };
+  if (waitingHere.length === 0) return undefined;
+  const first = waitingHere[0];
+  return { ask: first, more: waitingHere.length - 1, own: false, drawn: isQuiz(first) };
 }

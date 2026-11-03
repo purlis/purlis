@@ -3048,7 +3048,7 @@ fn the_asking_chat_is_still_told_the_person_answered_after_the_task_closed() {
 }
 
 #[test]
-fn the_person_s_answer_to_a_question_the_chat_answered_changes_nothing() {
+fn the_person_s_word_on_a_question_the_chat_answered_overrides_it_and_each_chat_is_told() {
     let mut ledger = asked();
     ledger
         .talk
@@ -3066,7 +3066,8 @@ fn the_person_s_answer_to_a_question_the_chat_answered_changes_nothing() {
         .expect("answered");
     ledger.landed(TASK, Landed::Answer);
 
-    let refused = ledger.person_answers(
+    // #4566: the person's later word overrides the chat's answer (spec #4551 story 37).
+    let taken = ledger.person_answers(
         TASK,
         "check the queue",
         Some(ASKER),
@@ -3075,20 +3076,24 @@ fn the_person_s_answer_to_a_question_the_chat_answered_changes_nothing() {
         "The second.",
     );
 
-    assert!(
-        refused
-            .as_ref()
-            .is_err_and(|why| why.starts_with("The chat 'steward 3' answered that question")),
-        "{refused:?}"
+    assert_eq!(taken, Ok(None));
+    assert_eq!(
+        ledger.nudge_step(TASK, WAITING),
+        vec![Landed::Answer, Landed::PersonAnswered],
+        "the chat's answer, then the person's word"
     );
-    assert_eq!(ledger.nudge_step(TASK, WAITING), vec![Landed::Answer]);
     assert_eq!(
         ledger.nudge_step(ASKER, WAITING),
-        vec![Landed::Question(TASK)],
-        "what the asking chat was to be told is as it was"
+        vec![Landed::PersonAnsweredFor(TASK)]
     );
-    assert!(handed(&mut ledger, TASK).is_empty());
-    assert!(handed(&mut ledger, ASKER).is_empty());
+    assert!(matches!(
+        handed(&mut ledger, TASK).as_slice(),
+        [crate::dispatchtalk::PersonSaid::Overrode { .. }]
+    ));
+    assert!(matches!(
+        handed(&mut ledger, ASKER).as_slice(),
+        [crate::dispatchtalk::PersonSaid::OverrodeFor { .. }]
+    ));
 }
 
 #[test]

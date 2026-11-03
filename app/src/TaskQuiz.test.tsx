@@ -144,6 +144,45 @@ describe("a task question's quiz (#4565)", () => {
     expect(sent[0]).toMatchObject({ session: 7, number: 3, text: "Per project" });
   });
 
+  it("clears the box and holds Send once the answer is taken, so a second Enter sends nothing", async () => {
+    // #4566, from #4938's review: the registry's next list is what takes the quiz away, and
+    // until it comes the box held the text and Send was live.
+    const sent = core();
+    const user = userEvent.setup();
+    draw(asked());
+    const box = screen.getByRole("textbox", { name: "Your answer" });
+    await waitFor(() => expect(box).not.toBeDisabled());
+    await user.type(box, "Per project{Enter}");
+    await waitFor(() => expect(sent).toHaveLength(1));
+    await waitFor(() => expect(box).toHaveValue(""));
+    expect(box).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    await user.keyboard("{Enter}");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("tells what is typed in it to the band, which keeps it should an agent answer first", async () => {
+    core();
+    const user = userEvent.setup();
+    const typed = vi.fn();
+    render(
+      <TaskQuiz
+        plane={PLANE}
+        ask={asked()}
+        more={0}
+        own={false}
+        now={NOW}
+        onOpenTask={vi.fn()}
+        onAnswered={() => {}}
+        onTyped={typed}
+      />,
+    );
+    const box = screen.getByRole("textbox", { name: "Your answer" });
+    await waitFor(() => expect(box).not.toBeDisabled());
+    await user.type(box, "Per");
+    expect(typed).toHaveBeenLastCalledWith("Per");
+  });
+
   it("counts the questions behind it, and opens its task on Open task", async () => {
     core();
     const user = userEvent.setup();

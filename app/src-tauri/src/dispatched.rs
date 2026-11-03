@@ -2101,6 +2101,56 @@ pub(crate) fn task_question(
     Ok(question_of(&held, session))
 }
 
+/// **What an asking chat answered a task's question, as the window shows it** (#4566): the line
+/// a quiz leaves when an agent answered it first, which says who said what and offers the
+/// person's later word.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ChatAnsweredShown {
+    /// The task, by the name the person sees it under.
+    pub task: String,
+    /// The asking chat that answered, by its name.
+    pub from: String,
+    /// What it answered, masked, **as text**: a chat's own words, never drawn as markup.
+    pub said: String,
+    /// The question it answered, in the task's words: what the person's word is held to
+    /// (`answer_task_question`).
+    pub question: String,
+}
+
+/// What task `task`'s asking chat answered its question `number`, while the person may still
+/// say otherwise to it: `None` once the task has asked another, ended or been told the
+/// person's word, and for a chat that is no task.
+pub fn chat_answered_of(held: &Held, task: u32, number: u32) -> Option<ChatAnsweredShown> {
+    let from = held.chats().handed_from(task)?;
+    if from.mode != Mode::Task || seen(held, task).ended {
+        return None;
+    }
+    let answered = held.tasks().ledger().talk.chat_answered(task, number)?;
+    Some(ChatAnsweredShown {
+        task: dispatchtalk::chat_shown(&held.chats().shown_name(task)?),
+        from: dispatchtalk::chat_shown(&answered.from),
+        said: answered.text,
+        question: answered.question,
+    })
+}
+
+/// **What an asking chat answered task `session`'s question `number`** (#4566): read by a quiz
+/// the person had open when an agent answered it first, for the line it leaves. `null` where
+/// nobody but the person can be said to have answered it, or it can no longer be overridden.
+///
+/// **The window's alone**, as `task_question` is: it reads words a chat wrote.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn task_question_answered(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+    number: u32,
+) -> Result<Option<ChatAnsweredShown>, String> {
+    let held = planes.held(&plane)?;
+    Ok(chat_answered_of(&held, session, number))
+}
+
 /// **The person answers the question a task put to its asking chat** (#1496, V100-46): chat
 /// `session`'s question `number` (`task_question`, or a line's `asks`), which read `question`
 /// as the window showed it, with `text`. It answers that question and no other: a question
