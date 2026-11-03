@@ -378,9 +378,11 @@ pub fn first_program_at(projects: &Path) -> Result<Option<std::time::SystemTime>
         .ok_or_else(|| unknown(format!("{FIRST_PROGRAM} has no time purlis can read")))
 }
 
-/// Whether the user this process runs as may write `name` in `dir`, by its effective ids and
-/// whatever its file system grants beyond the mode (an ACL). A check that can't be made says
-/// it may, so the file counts.
+/// Whether the user this process runs as may write `name` in `dir`, by its mode and whatever
+/// its file system grants beyond it (an ACL). Asked by the process's real ids, which are the
+/// runner's user's as its effective ones are (purlis's host is never set-id), with the call
+/// every kernel and sandbox profile knows. Only a refusal by its permissions or a read-only file
+/// system says no: a check that can't be made says it may, so the file counts.
 #[cfg(unix)]
 fn may_write<Fd: rustix::fd::AsFd, P: rustix::path::Arg>(dir: Fd, name: P) -> bool {
     !matches!(
@@ -388,9 +390,9 @@ fn may_write<Fd: rustix::fd::AsFd, P: rustix::path::Arg>(dir: Fd, name: P) -> bo
             dir,
             name,
             rustix::fs::Access::WRITE_OK,
-            rustix::fs::AtFlags::EACCESS,
+            rustix::fs::AtFlags::empty(),
         ),
-        Err(rustix::io::Errno::ACCESS | rustix::io::Errno::ROFS | rustix::io::Errno::PERM)
+        Err(rustix::io::Errno::ACCESS | rustix::io::Errno::ROFS)
     )
 }
 
@@ -406,7 +408,7 @@ fn changed_at(stat: &rustix::fs::Stat) -> Option<std::time::SystemTime> {
 }
 
 /// **The rest of a runner's file system** (#4933), looked through as well as its home: from
-/// `root`, for files `owner`, the runner's user, owns.
+/// `root`, for files `owner`, the runner's user, owns or may write (#5103).
 #[derive(Debug, Clone, Copy)]
 pub struct Beyond<'a> {
     pub root: &'a Path,
@@ -437,7 +439,7 @@ pub fn outside_the_projects(
 }
 
 /// [`outside_the_projects`], and where `beyond` names the rest of the runner's file system, each
-/// file there `beyond`'s owner owns changed since too (#4933): a task at the sandbox's floor may
+/// file there `beyond`'s owner owns or may write changed since too (#4933, #5103): a task at the sandbox's floor may
 /// write wherever the runner's user may, such as the volume its home is a folder of, or a folder
 /// its image gives that user. Its home and every folder in `skip` are left out of that, as is
 /// what holds no task's work ([`NO_TASKS_WORK`]); so is a hidden entry of a person's home there
@@ -480,7 +482,7 @@ pub struct DataHome<'a> {
 /// in purlis's data home, but what purlis keeps there itself ([`PURLIS_KEEPS`]), the mark of the
 /// first program and a transfer's scratch beside the projects, and each repository listed; and,
 /// where `beyond` is given, in each place [`writable`] found its user may write, and each file
-/// of its own [`writable`] found elsewhere. What [`writable`] could not look through is said
+/// it owns or may write that [`writable`] found elsewhere. What [`writable`] could not look through is said
 /// again. `skip` is left out of every walk but where it holds the data home or is in its
 /// projects. A data home that is the home itself is looked through as the home.
 #[cfg(unix)]
@@ -566,7 +568,7 @@ fn outside_within(
                     let the_users = stat.st_uid == beyond.owner
                         || (rustix::fs::FileType::from_raw_mode(stat.st_mode)
                             == rustix::fs::FileType::RegularFile
-                            && may_write(&rustix::fs::CWD, &at));
+                            && may_write(rustix::fs::CWD, &at));
                     if the_users && changed_at(&stat).is_none_or(|at| at >= since) {
                         outside.found(format!("/{file}"));
                     }
@@ -587,13 +589,13 @@ fn outside_within(
 /// one check looks through.
 pub const MOST_IMAGE_FOLDERS: usize = 2_000_000;
 
-/// The most files of its own outside every place its user may write a runner keeps to look at
-/// again ([`writable`]): past it, what it found is not whole.
+/// The most files its user owns or may write outside every place it may write a runner keeps to
+/// look at again ([`writable`]): past it, what it found is not whole.
 pub const MOST_OWN_FILES: usize = 100_000;
 
 /// **Where on a runner, outside its home, its user may have saved anything** (#5030), as
-/// [`writable`] found it: each place it may write, by its path from the root, each file of its
-/// own outside them, and what could not be looked through, in sentences.
+/// [`writable`] found it: each place it may write, by its path from the root, each file it owns
+/// or may write outside them, and what could not be looked through, in sentences.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Writable {
     /// The cutoff it was found with: an unreadable folder unchanged since is passed over.
@@ -621,8 +623,8 @@ impl Writable {
 
 /// **Every place on the runner from `beyond`'s root, but `skip`, its user may write** (#5030): a
 /// folder it owns, since it could open that one again at any time, or one it may write in now,
-/// and nothing within it is looked at further. Each file it owns outside them is kept too, since
-/// it may change that one wherever it is. What can't be looked through is said, by
+/// and nothing within it is looked at further. Each file it owns or may write outside them is
+/// kept too (#5103), since it may change that one wherever it is. What can't be looked through is said, by
 /// [`outside_the_projects_and_beyond`]'s rules for it.
 ///
 /// Found once for each host and kept while it is [whole](Writable::whole), since what its user
@@ -692,7 +694,8 @@ enum Rules<'a> {
     /// purlis's data home, named as the first, with its projects folder at the second, its path
     /// in it: what purlis keeps there itself and beside the projects is left out (#5029).
     Data(&'a str, &'a str),
-    /// The rest of its file system, for files the user it names owns: a path is named from `/`.
+    /// The rest of its file system, for files the user it names owns or may write: a path is
+    /// named from `/`.
     Beyond(u32),
 }
 
@@ -741,8 +744,8 @@ impl Rules<'_> {
         }
     }
 
-    /// Whether a folder or a link found is the user's: in the home and the data home every one
-    /// is; beyond them, one it owns.
+    /// Whether a file, folder or link found is the user's: in the home and the data home every
+    /// one is; beyond them, one it owns.
     fn owns(self, stat: &rustix::fs::Stat) -> bool {
         match self {
             Rules::Home | Rules::Data(..) => true,
@@ -790,7 +793,7 @@ struct Outside {
     folders: usize,
     /// The most folders it looks through.
     most: usize,
-    /// The most files of the user's own it records outside the places ([`writable`]).
+    /// The most files the user owns or may write it records outside the places ([`writable`]).
     most_files: usize,
     /// Whether a folder the user owns is a place ([`writable_bounded`]).
     owned_is_a_place: bool,
@@ -1032,7 +1035,8 @@ impl Outside {
                             if kept >= self.most_files {
                                 self.say(format!(
                                     "the runner's user may change more than {} files \
-                                     where it may not write, so not all were looked at",
+                                     outside the places it may write, so not all were \
+                                     looked at",
                                     self.most_files
                                 ));
                                 return false;
@@ -1085,7 +1089,7 @@ impl Outside {
 /// `sentences` with each character a reader would not see in them written as its mark,
 /// `⟦U+XXXX⟧` (#5103), by purlis's one rule: a name a runner reports is shown as the
 /// characters it holds.
-fn marked(sentences: Vec<String>) -> Vec<String> {
+pub fn marked(sentences: Vec<String>) -> Vec<String> {
     sentences
         .into_iter()
         .map(|sentence| purlis_unicode::marked(&sentence, purlis_unicode::Breaks::Marked))

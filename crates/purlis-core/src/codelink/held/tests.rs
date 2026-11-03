@@ -1548,8 +1548,8 @@ fn too_many_files_of_its_users_own_where_it_may_not_write_are_said() {
 }
 
 /// **A file another user owns that the runner's user may write, where it may not write in the
-/// folder, is looked at again at each check** (#5103): a task may change it in
-/// place, and a change keeps the runner. One it may not write is not.
+/// folder, is looked at again at each check** (#5103): a task may change it in place, and a
+/// change keeps the runner. One it may not write is not.
 #[cfg(unix)]
 #[test]
 fn a_file_its_user_may_write_where_it_may_not_write_the_folder_keeps_the_runner_once_changed() {
@@ -1610,19 +1610,19 @@ fn a_file_its_user_may_write_where_it_may_not_write_the_folder_keeps_the_runner_
 }
 
 /// **A name the runner reports is shown with each character a reader would not see marked**
-/// (#5103): a control, a line end or a bidirectional override in a file's name
-/// is written as `⟦U+XXXX⟧` in the sentences the window shows.
+/// (#5103): a control, a line end or a bidirectional override in a file's name is written as
+/// `⟦U+XXXX⟧` in the sentences the window shows.
 #[cfg(unix)]
 #[test]
 fn a_name_holding_a_character_a_reader_would_not_see_is_shown_marked() {
     let (_dir, home, started) = a_home();
-    std::fs::write(home.join("report\u{202e}dm.exe"), "a task's\n").unwrap();
+    std::fs::write(home.join("a\u{202e}b.txt"), "a task's\n").unwrap();
     std::fs::create_dir_all(home.join("two\nlines\u{1b}[31m")).unwrap();
     std::fs::write(home.join("two\nlines\u{1b}[31m/x"), "a task's\n").unwrap();
 
     let said = outside_the_projects(&home, &[], Some(started));
 
-    assert!(says(&said, "~/report⟦U+202E⟧dm.exe"), "{said:?}");
+    assert!(says(&said, "~/a⟦U+202E⟧b.txt"), "{said:?}");
     assert!(says(&said, "~/two⟦U+000A⟧lines⟦U+001B⟧[31m/x"), "{said:?}");
     for sentence in &said {
         assert!(
@@ -1632,8 +1632,8 @@ fn a_name_holding_a_character_a_reader_would_not_see_is_shown_marked() {
     }
 }
 
-/// **What the desktop says a runner holds is shown marked too** (#5103): a path,
-/// a ref's name or a sentence a runner sent holding a character a reader would not see.
+/// **What the desktop says a runner holds is shown marked too** (#5103): a path, a ref's name
+/// or a sentence a runner sent holding a character a reader would not see.
 #[test]
 fn what_a_runner_reports_is_shown_marked_on_the_desktop() {
     let world = World::new();
@@ -1646,9 +1646,9 @@ fn what_a_runner_reports_is_shown_marked_on_the_desktop() {
         },
         Held {
             project: PROJECT.to_owned(),
-            path: "web\u{202e}gpj.exe".to_owned(),
+            path: "web\u{202e}b".to_owned(),
             refs: vec![Ref {
-                name: "refs/heads/a\u{1b}[2J".to_owned(),
+                name: "refs/heads/a\u{1b}b".to_owned(),
                 oid: "0".repeat(40),
             }],
             changed: Vec::new(),
@@ -1658,7 +1658,7 @@ fn what_a_runner_reports_is_shown_marked_on_the_desktop() {
 
     let missing = not_home(&world.desktop, PROJECT, &held, &unread);
 
-    assert!(says(&missing, "web⟦U+202E⟧gpj.exe"), "{missing:?}");
+    assert!(says(&missing, "web⟦U+202E⟧b"), "{missing:?}");
     assert!(says(&missing, "sent⟦U+000A⟧with"), "{missing:?}");
     for sentence in &missing {
         assert!(
