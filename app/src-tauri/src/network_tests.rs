@@ -777,3 +777,50 @@ fn a_chat_with_no_record_of_how_its_run_started_is_shown_as_unsandboxed() {
     assert!(shown.open && !shown.sandboxed, "{shown:?}");
     assert!(shown.reach.is_empty());
 }
+
+// ---- each chat's browser-site count, kept (#4739) -------------------------------------------
+
+/// A [`SitesInForce`] with no policy and no site kept for every chat.
+fn no_policy() -> SitesInForce {
+    SitesInForce {
+        locks: sandbox::policy::Locks::none(),
+        kept_here: Vec::new(),
+    }
+}
+
+#[test]
+fn a_restore_of_fifty_chats_reads_the_policy_once_until_it_is_forgotten() {
+    // #4739: `opened_chats` is asked at each chat a launch brings back, and counts every
+    // confined chat's sites: fifty asks of fifty chats read the policy files once.
+    let kept = KeptSites::default();
+    let reads = std::cell::Cell::new(0);
+    let read = || {
+        reads.set(reads.get() + 1);
+        no_policy()
+    };
+    for _ask in 0..50 {
+        for _chat in 0..50 {
+            kept.now(read);
+        }
+    }
+    assert_eq!(reads.get(), 1);
+
+    kept.forget();
+    kept.now(read);
+    kept.now(read);
+    assert_eq!(reads.get(), 2, "read again once, after the forget");
+}
+
+#[test]
+fn a_read_a_forget_overtook_is_answered_but_not_kept() {
+    // The policy changed while it was being read: what was read may be from before the change.
+    let kept = KeptSites::default();
+    let answered = kept.now(|| {
+        kept.forget();
+        no_policy()
+    });
+    assert_eq!(answered.of_chat(&[], 1), 0);
+    assert!(!kept.holds(), "a read from before the change was kept");
+    kept.now(no_policy);
+    assert!(kept.holds());
+}

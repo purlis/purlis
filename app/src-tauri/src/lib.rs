@@ -918,7 +918,9 @@ fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
 /// for a chat its sandbox holds nothing of, whose browser is given none.
 fn browser_sites_of(held: &planes::Held, session: u32) -> Option<u32> {
     held.chats().confines_now(session)?;
-    let count = network::browser_sites_here(held.root(), &held.browsers().chat_sites(), session);
+    let count = held
+        .browser_sites_in_force()
+        .of_chat(&held.browsers().chat_sites(), session);
     u32::try_from(count).ok().filter(|count| *count > 0)
 }
 
@@ -2062,10 +2064,19 @@ fn task_failure_seen(
 /// starts, when it asks this again.
 #[tauri::command]
 #[specta::specta]
-fn opened_chats(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Vec<OpenChat>, String> {
+// On a blocking thread (#4739): a launch asks it at each chat it brings back, and a confined
+// chat's browser sites are counted against the policy ([`planes::Held::browser_sites_in_force`]).
+async fn opened_chats(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<OpenChat>, String> {
     let held = planes.held(&plane)?;
-    Ok(held
-        .chats()
+    off_the_window("listing the open chats", move || Ok(opened_chats_of(&held))).await
+}
+
+/// [`opened_chats`] of the plane `held`.
+fn opened_chats_of(held: &planes::Held) -> Vec<OpenChat> {
+    held.chats()
         .drawn_now()
         .into_iter()
         .map(|(open, restoring)| {
@@ -2080,10 +2091,10 @@ fn opened_chats(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Vec<
                     ..OpenChat::from(open)
                 }
             } else {
-                drawn_of(&held, open)
+                drawn_of(held, open)
             }
         })
-        .collect())
+        .collect()
 }
 
 /// The chats this launch could not start, by id, name and reason. They are still recorded, and

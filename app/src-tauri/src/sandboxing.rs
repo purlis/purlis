@@ -3132,8 +3132,10 @@ fn revoke_browser_site(
             .map(|ended| vec![(session, ended)])
             .unwrap_or_default(),
         None => {
-            sandbox::local::revoke_browser_site(held.root(), site)
-                .map_err(|why| format!("purlis could not remove {site}: {why}"))?;
+            let removed = sandbox::local::revoke_browser_site(held.root(), site);
+            // After the write, whether or not it was made (#4739).
+            held.browser_sites_moved();
+            removed.map_err(|why| format!("purlis could not remove {site}: {why}"))?;
             held.browsers().sites_removed(held.browser_driver())
         }
     };
@@ -3369,12 +3371,20 @@ impl PolicyWatch {
     }
 }
 
+/// **This machine's policy changed** (#4739): what every open project keeps of it is read
+/// again at its next ask.
+pub(crate) fn policy_moved(planes: &crate::planes::Planes) {
+    for held in planes.every_held() {
+        held.browser_sites_moved();
+    }
+}
+
 /// **Reads this machine's policy file every [`POLICY_READ_EVERY`]**, and tells every window
 /// [`POLICY_CHANGED`] when it reads to other locks (#1431). It only reads: the file is read as
 /// every start reads it ([`sandbox::policy::Locks::of`]), and nothing is written. On a thread
 /// of its own for the life of the app.
 pub(crate) fn watch_policy(app: tauri::AppHandle) {
-    use tauri::Emitter as _;
+    use tauri::{Emitter as _, Manager as _};
     let read = || sandbox::policy::Locks::of(std::path::Path::new("/"));
     let spawned = std::thread::Builder::new()
         .name("purlis-policy".into())
@@ -3383,6 +3393,10 @@ pub(crate) fn watch_policy(app: tauri::AppHandle) {
             loop {
                 std::thread::sleep(POLICY_READ_EVERY);
                 if watch.moved(read()) {
+                    // Before the window hears and asks again (#4739).
+                    if let Some(planes) = app.try_state::<crate::planes::Planes>() {
+                        policy_moved(&planes);
+                    }
                     let _ = app.emit(POLICY_CHANGED, ());
                 }
             }

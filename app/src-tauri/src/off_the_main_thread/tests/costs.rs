@@ -399,7 +399,6 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "take_up_sandbox_block",
             "task_question",
             "persona_chats_of",
-            "opened_chats",
             "chats_that_would_not_start",
             "chats_plane_updated",
             "skill_move_needs_grant",

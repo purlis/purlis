@@ -623,16 +623,90 @@ fn reach_of(hosts: &[String], open: &[String], persona: &[String]) -> Vec<Reache
         .collect()
 }
 
-/// **How many sites only chat `session`'s browser reaches** in the project at `root` (#2364):
-/// what its Network view lists, counted for its tab's sandbox mark.
-pub fn browser_sites_here(root: &Path, chat_sites: &[(u32, Site)], session: u32) -> usize {
-    let locks = sandbox::policy::Locks::of(root);
-    browser_sites_of(
-        &chat_sites_in_force(chat_sites, &locks),
-        session,
-        &sandbox::local::browser_sites_in_force(root, &locks),
-    )
-    .len()
+/// **What every chat's browser-site count is read from** in one project (#2364): this machine's
+/// policy as it stands, and the browser sites kept for every chat of the project on this machine
+/// that it leaves in force. Read once ([`KeptSites`]) and asked of each chat.
+#[derive(Debug)]
+pub struct SitesInForce {
+    locks: sandbox::policy::Locks,
+    kept_here: Vec<Site>,
+}
+
+impl SitesInForce {
+    /// Read from the policy files and the project at `root`'s kept browser sites.
+    pub fn read(root: &Path) -> Self {
+        let locks = sandbox::policy::Locks::of(root);
+        let kept_here = sandbox::local::browser_sites_in_force(root, &locks);
+        Self { locks, kept_here }
+    }
+
+    /// **How many sites only chat `session`'s browser reaches**, of `chat_sites`: what its
+    /// Network view lists, counted for its tab's sandbox mark.
+    pub fn of_chat(&self, chat_sites: &[(u32, Site)], session: u32) -> usize {
+        browser_sites_of(
+            &chat_sites_in_force(chat_sites, &self.locks),
+            session,
+            &self.kept_here,
+        )
+        .len()
+    }
+}
+
+/// **[`SitesInForce`], kept** (#4739): `opened_chats` is asked at each chat a launch brings
+/// back, and counted every chat's sites from the policy files each time, so a restore of fifty
+/// chats read them fifty times fifty. They change only when this machine's policy does (the
+/// policy watch, `sandboxing::watch_policy`) or when this app keeps or removes a site for every
+/// chat here, and each of those forgets what is kept.
+#[derive(Debug, Default)]
+pub struct KeptSites {
+    kept: std::sync::Mutex<Kept>,
+}
+
+#[derive(Debug, Default)]
+struct Kept {
+    /// How many times it was forgotten: a read that began before a forget does not keep what it
+    /// read, which may be from before the change.
+    forgotten: u64,
+    now: Option<std::sync::Arc<SitesInForce>>,
+}
+
+impl KeptSites {
+    /// What is kept, or what `read` reads where nothing is. `read` runs with no lock held.
+    pub fn now(&self, read: impl FnOnce() -> SitesInForce) -> std::sync::Arc<SitesInForce> {
+        let forgotten = {
+            let kept = self.lock();
+            if let Some(now) = &kept.now {
+                return std::sync::Arc::clone(now);
+            }
+            kept.forgotten
+        };
+        let now = std::sync::Arc::new(read());
+        let mut kept = self.lock();
+        if kept.forgotten == forgotten {
+            kept.now = Some(std::sync::Arc::clone(&now));
+        }
+        now
+    }
+
+    /// The policy or the sites kept here changed: the next ask reads them again.
+    pub fn forget(&self) {
+        let mut kept = self.lock();
+        kept.forgotten += 1;
+        kept.now = None;
+    }
+
+    /// Whether anything is kept.
+    #[cfg(test)]
+    pub fn holds(&self) -> bool {
+        self.lock().now.is_some()
+    }
+
+    /// Through a poisoned lock too: a panic elsewhere costs a read, never a stale answer.
+    fn lock(&self) -> std::sync::MutexGuard<'_, Kept> {
+        self.kept
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 /// `chat_sites`, less each one policy holds at its chat's scope (#2364).
