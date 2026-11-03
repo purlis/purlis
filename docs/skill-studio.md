@@ -25,7 +25,9 @@ with **Use skill…** (see [Using a skill in a chat](#using-a-skill-in-a-chat)).
 
 ### Where a skill lives decides who gets it
 
-Every skill lives at a **level**. The studio shows the level as a small tag on each row.
+Every skill lives at a **level**. The studio shows the level as a small tag on each row, says it
+under **Where it lives** on a skill's page, and asks for it as **Lands in** wherever a skill is
+made, copied or installed.
 
 | Level | Where its folder is | Which chats get it |
 |---|---|---|
@@ -92,11 +94,11 @@ installed from a source shows the source's label after its name, such as
 
 **Search skills** finds a skill by what you type. The chips under it, **The project's own**,
 **Built-in**, **On** and **Off or left out**, narrow the list. The built-in skills fold into one
-quiet line, such as *12 built-in skills*, unless one of them needs your attention.
+quiet line, such as *13 built-in skills*, unless one of them needs your attention.
 
 Pick a row to open the skill's page, with its tabs **Overview**, **Text**, **History**,
-**Grades** and **Runs**. **Overview** says who gets it, where it lives, where it reaches and
-whether it's pinned.
+**Grades** and **Runs**. **Overview** says who gets it, **Where it lives** (its level and
+folder), **Reaches** (a project skill's grant) and whether it's pinned.
 
 ### Why a skill is left out
 
@@ -133,10 +135,12 @@ on the same conversation, so it picks the change up.
 
 ## Using a skill in a chat
 
-**Use skill…**, in the palette, lists exactly the skills of the chat in front, and types the one
-you pick into the chat, in the way that chat's program expects, for you to send. A card in the
-Skills view has **Use**, and a skill's page has **Use in this chat**, which do the same. A skill
-that takes arguments asks for them first.
+**Use skill…** lists exactly the skills of one chat, and types the one you pick into that chat,
+in the way its program expects, for you to send. It is among the chat's actions: its pane's
+**⋯**, the **⋯** or right-click on its row in the sidebar, and the palette, as *Use skill in
+<chat>…*. ⌘⇧S (Ctrl+Shift+S off a Mac) opens it for the chat you're in. **Use in this chat**, on
+a card's menu in the Skills view and on a skill's page, does the same for that one skill. A
+skill that takes arguments asks for them first.
 
 A **manual-only** skill is one a chat never picks by itself: it runs only when you ask for it,
 and it costs nothing in the chat's skill budget.
@@ -153,13 +157,15 @@ to the exact commit you reviewed. It never updates by itself.
    browse it** is *The whole project* or *Only this machine*. A private source signs in with a
    vault entry, under *More: branch, folder, sign-in*.
 2. Open the source and pick a skill: **Review install**, or **Install all** to tick several.
-3. Read the **install review**, then press **Install**.
+3. Read the review, headed **Install** *<skill>* **from** *<source>* (or **Install** *N skills*
+   **from** *<source>*), then press **Install**.
 
 ![The install review: where the skill lands and where it reaches, then what it adds](../app/src/__screenshots__/SkillSources.stories.tsx/skillsources-install-review_purlis_light-chromium-linux.png)
 
 ### What the review shows
 
-Nothing is installed until you press **Install**. The review shows:
+Nothing is installed until you press **Install**. The review (the install review, as this page
+and the changelog call it) shows:
 
 - **Lands in**: the level the skill is copied into.
 - **Reaches**: for a project skill, its grant. It starts at *The project's root only*.
@@ -226,33 +232,52 @@ version. Chats started after it get it.
 
 From the **⋯** menu you can **Rename…** (purlis changes every persona and skill that names it),
 **Move to another level…**, **Deprecate…** (it still works, points to its replacement and is
-listed last), **Archive…** (it never loads until you unarchive it), and **Delete…**. A deleted
+listed last), **Archive…** (it never loads until you unarchive it), **Improve from runs…** (a
+chat reads the skill's runs and grades and drafts an edit, which you can grade before you accept
+it: see [Grading a draft](#grading-a-draft)), and **Delete…**. A deleted
 skill waits under **Deleted** for 30 days. **History** lists every saved version, with **Revert
 to this**.
 
 ## Grading a skill
 
-<!-- TODO(#4749): the Grades tab becomes "Checks", with the cards "Does it get picked?" and "Does
-it do the job?", a one-sentence answer, and "Ask a chat to write checks". This section describes
-main as it is today, and moves to those words when #4749 lands. -->
+A grade answers two plain questions about a skill, by running real chats. The skill's **Grades**
+tab calls the tests for them its **Checks**, a card for each question:
 
-A grade answers two plain questions about a skill, by running real chats:
+- **Does it get picked?** Things a person might type, each with whether the skill should start
+  for it, including near misses it should leave alone. Their small label says what they are in
+  the skill's files: *trigger tests*, in `evals/triggers.json`.
+- **Does it do the job?** Tasks, each with what a good result has. Another chat, the judge,
+  checks each result. Their label says *outcome evals*, in `evals/evals.json`.
 
-- **Does it get picked?** These are the skill's **trigger tests**: requests the skill should
-  start on, and near misses it should leave alone.
-- **Does it do the job?** These are its **outcome evals**: a task, and what a good result has
-  in it. A separate judge chat reads each result and says whether it meets them.
-
-Each test runs several times **with the skill**, **without it** and, where the skill had an
+Each check runs several times **with the skill**, **without it** and, where the skill had an
 earlier version, **with its previous version**, so you can see the difference the skill makes.
+
+![The Grades tab: Checks, with the answer for Does it get picked? and no outcome evals yet](../app/src/__screenshots__/SkillGrades.stories.tsx/skillgrades-only-picked_purlis_light-chromium-linux.png)
+
+Once the skill has been graded, one sentence under **Checks** says how it did, such as *With
+deploy, chats picked it right 86% of the time; without it, 68%.* Each card then shows its own bars
+for **With it**, **Without it** and **Previous version**, how many checks it has, and **Edit
+these checks**, which opens their file.
+
+### Writing checks
+
+![A skill with no checks yet: Ask a chat to write checks, or Write them yourself](../app/src/__screenshots__/SkillGrades.stories.tsx/skillgrades-no-checks_purlis_light-chromium-linux.png)
+
+A skill with no checks yet says what each kind is and offers:
+
+- **Ask a chat to write checks**: a chat opens with the request typed, for you to send. It writes
+  both kinds, and they come back as one draft that waits on the **Grades** tab. **Accept checks**
+  keeps both kinds together, and **Discard** drops them.
+- **Write them yourself**: starts `evals/triggers.json` from a short template and opens it.
+
+A card with none of its kind yet has **Ask a chat to write these**, for that kind alone.
 
 ### Before a grade: the plan
 
-On a skill's **Grades** tab, a skill with no tests yet offers **Write trigger tests** and **Ask a
-chat to write them**. Once it has some, **Grade** opens the plan. Nothing runs until you press
-**Start grading**. The plan shows:
+**Grade**, at the top of the skill's page, or **Grade <name>…** on its **Grades** tab, opens
+the plan. Nothing runs until you press **Start grading**. The plan shows:
 
-- **What it runs**: every test, as the chat will read it.
+- **What it runs**: every check, as the chat will read it.
 - **Where it runs**: the profile and model the chats use. The chats are paid for by that
   profile's account, as any chat is.
 - **What it may spend**: how many chats, at most, and the **Token cap**, 200,000 tokens unless
@@ -266,21 +291,36 @@ far.
 
 ![A grade's scorecard: with it, without it, against its previous version, and what it spent](../app/src/__screenshots__/SkillGrades.stories.tsx/skillgrades-scorecard_purlis_light-chromium-linux.png)
 
-The **scorecard** shows the share of tests passed **With it**, **Without it** and against the
+The **scorecard** shows the share of checks passed **With it**, **Without it** and against the
 **Previous version**, with the difference in points under each, and what the grade spent. Below
-are each test's results, and each test's chats, which you can open.
+are each check's results, and each check's chats, which you can open.
 
-The **Grades** tab keeps every grade, newest first, with the version it graded. Grades are saved
-with the project, so your team sees them too. **Grade after each edit**, once you turn it on and
-accept its limit, grades each edit you save once.
+Under the checks, **Grades** lists every grade, newest first, with the version it graded. Grades
+are saved with the project, so your team sees them too.
+
+### Grading after each edit
+
+**Grade after each edit**, at the foot of the **Grades** tab, is off for every skill. Its **Turn
+on…** opens a plan that says what each edit you save will run and may spend. Nothing changes until
+you press **Turn on grading after each edit** there. Then each edit you save in the studio's
+editor is graded once, within the limit you accepted. A grade that would run more or cost more
+waits and asks you again, with **Read the new plan…**. **Turn off** stops it. Edits made from a
+terminal or by a chat are never graded.
 
 ### Grading a draft
 
-<!-- TODO(#4631): a draft's page grades what Accept would write against the current version, with
-the result beside Accept. Not on main yet: describe it here when #4631 lands. -->
+![A draft graded against the current version, its score beside Accept](../app/src/__screenshots__/SkillStudioDrafts.stories.tsx/skillstudiodrafts-grade-better_purlis_light-chromium-linux.png)
 
-A draft can't be graded yet: its page offers **Try it**. Once the draft is accepted, it's graded
-like any other version, against the version before it.
+A draft can be graded before you accept it. On its page under **Drafts**, **Grade against the
+current version…** grades what **Accept** would write against the skill as it is now. A new skill
+has no current version, so its button reads **Grade…** and grades it against no skill alone. The
+grade uses the draft's own checks, and opens the same plan as any grade.
+
+The result stands beside **Accept**: the **Draft**, **Current** and **No skill** scores and the
+difference in points, with **Scorecard** and **Grade again…**. A grade never stops you accepting
+or discarding the draft. It is kept on this machine, out of the skill's **Grades** list, and if
+the draft changes after it, it is marked **Out of date**. A draft that changes only the skill's
+checks has nothing to grade against the current version, and says so.
 
 ## When a chat has too many skills
 
@@ -344,8 +384,11 @@ purlis ships its own skills, the same for every chat program, and each is named
 edit or turn one off. To change one, **Make my own copy…** makes a skill of your own under a new
 name, which chats get beside the built-in one.
 
-<!-- TODO(#4748): a 13th built-in skill, purlis-skill-studio, holds the steps the studio's "Ask a
-chat to…" prompts follow. Name it here when #4748 lands. -->
+One of them, `purlis-skill-studio`, holds the steps a chat follows when the studio asks it for
+something: **Ask a chat to draft a skill**, **Ask a chat to write checks** (or one kind of them),
+**Improve from runs…** and **Ask the chat to redo it**. The studio types a one-line prompt that names
+`purlis-skill-studio`, the job and the skill's folder, and the skill says how to write each file and
+that what the chat writes comes back to you as a draft. It never runs a grade itself.
 
 **Old names in your files keep working.** A persona's `skills:` list, a skill's text or a
 curation action that names `purlis:handoff` or `charter:handoff` means `purlis-handoff`.
