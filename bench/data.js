@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793668164565,
+  "lastUpdate": 1793670057412,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36876,6 +36876,48 @@ window.BENCHMARK_DATA = {
             "value": 101.976816,
             "unit": "ms",
             "extra": "median of 5 runs: 101.136, 101.472, 101.977, 102.510, 102.797 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1e127239c2a8eae493aae6fcbd18c17b02636eb1",
+          "message": "Pane notices: the bell in the header, minimised and expanded (#4754) (#4787)\n\n* Pane notices: the bell in the header, minimised and expanded (#4754)\n\nThe pane's band moves under its header, and a bell in a fixed slot before\nsplit and close counts the pane's notes. Minimised (the default, one choice\nfor every pane, kept in layout.json under notices) folds the notes into the\ncount and stands the asks; expanded shows every notice under a head row with\nDismiss all, which skips the asks. The cap of two per pane and its line about\nthe rest in the Inbox are gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DY1SHT11567S38MD97VEE2\nPurlis-Persona: steward\n\n* Pane notices: the preference, the bell's words and the window tests (#4754)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DY1SHT11567S38MD97VEE2\nPurlis-Persona: steward\n\n* Pane notices: stories, end-to-end specs, test machine and docs (#4754)\n\nThe pane's stories draw the header with its bell and the band under it, with\nstories for minimised, expanded, Dismiss all and a full band. The e2e specs\nmeasure the band under the header and with no cap. A test's machine has its\npanes' notices expanded, so a test of a note reads it; the fold's tests ask\nfor the default themselves.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DY1SHT11567S38MD97VEE2\nPurlis-Persona: steward\n\n* Pane notices: the bell and the band are \"Pane notices\" (#4754)\n\n\"Notices: …\" was the status line's Notices button's name, and \"Notices for …\"\na chip's region: a query for either found the pane's too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DY1SHT11567S38MD97VEE2\nPurlis-Persona: steward\n\n* Pane notices: the bell stands outside the controls drawn on hover (#4754)\n\nThe pane's split and close are drawn only under the pointer or the keyboard\n(.pane-doing, App.css), and the bell was inside them, so its count was not on\nscreen at rest. It is the first of the pane's actions now, before that\ncluster, which keeps its room hidden, so nothing beside the bell moves.\nSeen in the stories run's pictures.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DY1SHT11567S38MD97VEE2\nPurlis-Persona: steward\n\n* Pane notices: CI's findings (#4754)\n\n- The notice family reads no window state: the choice is kept in\n  paneNoticesPref.ts and the pane hands its band the bell (minimised,\n  Minimise, onHolds), so the theme specimen still imports no prefs.\n- A card is capped at its pane less the header now above the band.\n- The bell is a tab stop before split; its polite count is listed among\n  the live regions that are not Notices.\n- Tests that forget the launch read a task's prompt note expanded; the\n  band-and-header order reads header first.\n- E2E: a skills note is read after expanding the pane's notices, and the\n  outcome bar counts that press.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DY1SHT11567S38MD97VEE2\nPurlis-Persona: steward\n\n* Pane notices: story baselines from the stories run (#4754)\n\nDrawn by stories run 41451893534 of #4787: the header above the band with\nits bell, the expanded head row, and the new Minimised, Expanded and\nFullBand stories; ConsentAndMore's pictures go with the story. Pictures of\nstories this change does not draw (SkillPage, SkillStudio) were left as\nthey were.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DY1SHT11567S38MD97VEE2\nPurlis-Persona: steward\n\n* Pane notices: the new stories' baselines (#4754)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DY1SHT11567S38MD97VEE2\nPurlis-Persona: steward\n\n* Pane notices: the review's findings (#4754)\n\n- The bell's count is said through ui/said.ts (useSaidAtMost): never the\n  count a pane is first drawn with, every change heard, at most once a\n  second; the hand-made arrival check goes.\n- The bell's tooltip says Show all and Minimise, as the head row does.\n- Dismiss all hands the keyboard to the bell through the pane, never by\n  reaching into the pane's markup (PaneBellAt).\n- The band's read is one type with one equality; the choice is read and\n  set through useNoticesMinimised and showNotices.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DY1SHT11567S38MD97VEE2\nPurlis-Persona: steward\n\n* Pane notices: the chat's ⋯ leads the controls after the bell (#4754)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n* Pane notices: a narrow pane's header keeps its inset up to 28rem, with the bell's slot (#4754)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T23:58:14Z",
+          "tree_id": "8d0073ea8c1ca49e654bc4e512f9d2a8f1c01696",
+          "url": "https://github.com/purlis/purlis/commit/1e127239c2a8eae493aae6fcbd18c17b02636eb1"
+        },
+        "date": 1793670052567,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6563685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.639, 0.654, 0.656, 0.668, 0.716 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.573040499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.342, 16.394, 16.573, 16.678, 16.800 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.236532,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.224, 101.631, 102.237, 103.006, 103.470 ms"
           }
         ]
       }
