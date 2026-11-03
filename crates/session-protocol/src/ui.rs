@@ -359,6 +359,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Whether this desktop sends a persona's tool its vault values on a pool's runner (#2047):
     // the person's answer alone. No chat allows its own tool.
     "answer_pool_tool",
+    // A Secret ask (#5068, ADR 0109): only the person, in the window, fills a secret or
+    // declines it. No chat, relayed link or other client answers one.
+    "answer_secret_ask",
     // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
     // browser a site.
     "allow_browser_sites",
