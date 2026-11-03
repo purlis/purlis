@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793683691269,
+  "lastUpdate": 1793688247174,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37254,6 +37254,48 @@ window.BENCHMARK_DATA = {
             "value": 102.7224195,
             "unit": "ms",
             "extra": "median of 5 runs: 102.301, 102.715, 102.722, 102.891, 103.007 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f5bb7d4ab54d220c9e4127b42e0976019efd4b7c",
+          "message": "The waiting strip: what a chat waits on you for, at the top of its pane (#4563) (#4949)\n\n* The waiting strip: what a chat waits on you for, at the top of its pane (#4563)\n\nA chat waiting on the person shows one line at the top of its pane, above\nits band of Notices, read off the asks registry the Inbox reads: a real ask\nin its own words, a terminal prompt by its kind, and for a turn that ended\non the person its last message with the few before it a press away. It\nnever takes the keyboard and goes once they answer.\n\nThe ledger keeps each chat's last four turn-end messages, and a background\nturn no longer clears them. A message past 4 KiB keeps its head and its\ntail, so a closing question survives.\n\nCarried over from #4708 (a73035f4f), with two fixes to its stories:\n- InAPane gives its pane a height. A chat's pane is a size container, so\n  one with none collapsed to nothing and clipped the strip, and every\n  picture of it was a blank bar.\n- OverARealTerminal measures the terminal's foot against its pane, not\n  the page, which moved by its own offset in CI, and checks the input\n  line is the terminal's last row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DVPEH0BTRXKTZ0KA0EHP62\nPurlis-Persona: steward\n\n* The waiting strip: a task question's ask has no earlier messages, and its baselines\n\nMain's task question adapter (asking::task_question, #4598) builds a Shown\nof its own, which this branch's new field missed: E0063, so nothing of the\napp compiled on #4771's first run. It has no earlier messages to keep.\n\nThe waiting strip's stories' baselines, as #4771's stories run drew them\n(run 41428209748), every story in each cell of the matrix.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DVPEH0BTRXKTZ0KA0EHP62\nPurlis-Persona: steward\n\n* The waiting strip: its real terminal's picture waits for the scrollbar to settle\n\nOverARealTerminal's picture caught xterm's scrollbar mid-fade, so ~1160\npixels around its thumb differed between runs (#4771's second run, three\ncells across Chromium and WebKit). The play now waits out the hide timer\nand every running animation in the terminal before the picture is taken.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DVPEH0BTRXKTZ0KA0EHP62\nPurlis-Persona: steward\n\n* The waiting strip: its baselines, with the terminal's scrollbar settled\n\nDrawn by run 41442991276: OverARealTerminal in every cell with the\nscrollbar hidden once its fade is done, and the purlis_dark_compact\nChromium cell, which no earlier run drew.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DVPEH0BTRXKTZ0KA0EHP62\nPurlis-Persona: steward\n\n* The waiting strip: a held folder's write ask has no earlier messages either\n\n#4690's held-folder branch of sandbox_write builds a Shown of its own, which the rebase onto\nmain left without the strip's new field.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FGQVY4VA1H1XBN7FNTXBYY\nPurlis-Persona: steward\n\n* A killed task's test waits for its report to be marked failed\n\nThe program's end leaves the asking chat's report file first, and marks\nthe task's record Failed only once the delivery that follows is done, on\nthe session's own thread. The test read the record the moment the file\nappeared, so a slow runner saw it still Due (merge-group run 41572170058,\non every retry). It now waits for the mark within the same bound, as it\nalready waits for the file.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FRRJ4Z6R0AZ6Z523TRTCHJ\nPurlis-Persona: steward\n\n* EmptyPane: its Alone baselines, as main draws them since #4916\n\nmain's own stories have failed on EmptyPane > Alone in all 20 cells since\nc841814f1 (#4916) landed 15 minutes after #4912 drew them, and every pull\nrequest's run fails with it. The pictures are the ones this pull request's\nstories run drew (41575456455): New chat without a focus ring, where the\nstory's play ends after Shift+Tab takes the focus off it. No WaitingStrip\npicture changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FTC51XRNG7QR7FSGR85H1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T05:46:12Z",
+          "tree_id": "c9a2b1acef807abc5568dba91b4fc03f515ba544",
+          "url": "https://github.com/purlis/purlis/commit/f5bb7d4ab54d220c9e4127b42e0976019efd4b7c"
+        },
+        "date": 1793688243649,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6806205000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.671, 0.680, 0.681, 0.691, 0.694 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4976305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.340, 16.449, 16.498, 16.544, 16.599 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2106685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.557, 101.704, 102.211, 102.707, 103.628 ms"
           }
         ]
       }
