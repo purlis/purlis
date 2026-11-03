@@ -799,10 +799,15 @@ const FIELD_HELP_GROUNDS: &[&str] = &["surface.raised", "surface.overlay"];
 /// a refusal's or an unrun command's box in a dialog and the approval of what an extension runs
 /// as you, also a dialog (`App.css`; a dialog's content is `surface.overlay`, `dialog.css`), and a
 /// pane's trouble Notice over the terminal's fill (`paneFrame.css`); the warning wash is a pane's
-/// warning and its consent, over the same fill (#4795). A part's own wash (the title bar's
-/// waiting count, a waiting badge) is no ground: `PART_LAID_ON` says where one is laid.
+/// warning and its consent, over the same fill (#4795). A part's own wash is no ground: the
+/// title bar's waiting pill (`StatusItem variant="waiting"`, `NeedsYou.tsx`), a workspace chip's
+/// waiting count (`titlebar.count`, which `PART_LAID_ON` lays on `surface.deep`) and a waiting
+/// badge each hold only their own words (#4876, correcting D-4795-2).
 /// `app/src/theme/grounds.test.ts` follows every rule that paints a see-through token to the
-/// grounds under it and holds this table to them, exactly (#4796).
+/// grounds under it and holds this table to them, exactly (#4796), however the rule names it: a
+/// Tailwind utility, an alias, a fallback, a gradient (#4876). The editor's diff and selection
+/// washes (`editor/look.ts`) are not here: no family stands on them, and `check.rs` reads the
+/// editor's words on each over the grounds it is laid on.
 /// The check reads a family on a wash laid over these alone, never over every opaque ground the
 /// family stands on (an active tab, a chosen row), since no wash is drawn there. A ground a theme
 /// makes see-through that is not here is read over each opaque ground its family names.
