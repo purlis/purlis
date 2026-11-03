@@ -461,7 +461,7 @@ describe("a menu on screen", () => {
       // it, which keeps it (WCAG 1.4.13, hoverable).
       // A key moved the keyboard here, as a person's does.
       fireEvent.keyDown(document.body, { key: "ArrowDown" });
-      act(() => within(menu).getByRole("menuitem", { name: /^End/ }).focus());
+      act(() => within(menu).getByRole("menuitem", { name: "Close" }).focus());
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY);
       });

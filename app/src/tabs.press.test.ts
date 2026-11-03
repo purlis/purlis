@@ -405,7 +405,7 @@ describe("a task that ends in a pane a press put it in (#4757)", () => {
     const { tabs, second } = twoTabs();
     const { tabs: on5 } = press(tabs, pressed(5), pressing());
 
-    const kept = closeChat(on5, 5, filedIn, undefined, undefined, (session) => session === 5);
+    const kept = closeChat(on5, 5, filedIn, undefined, (session) => session === 5);
 
     expect(kept).toBe(on5);
     expect(shows(kept, second)).toEqual([chat(5)]);
