@@ -230,9 +230,15 @@ pub fn outside_the_projects(
             )];
         }
     };
+    // Each folder is opened only as it is looked through, from the one it is in, which is held
+    // open meanwhile: so the open folders are only those of the path being walked.
     let mut folders = 0usize;
-    let mut stack = vec![(String::new(), top)];
-    while let Some((rel, fd)) = stack.pop() {
+    let mut stack: Vec<(
+        String,
+        std::rc::Rc<rustix::fd::OwnedFd>,
+        Option<std::ffi::CString>,
+    )> = vec![(String::new(), std::rc::Rc::new(top), None)];
+    while let Some((rel, parent, name)) = stack.pop() {
         folders += 1;
         if folders > MOST_FOLDERS {
             say(
@@ -249,7 +255,26 @@ pub fn outside_the_projects(
         } else {
             format!("~/{rel}")
         };
-        let mut dir = match rustix::fs::Dir::read_from(&fd) {
+        let fd = match name {
+            None => parent,
+            Some(name) => match rustix::fs::openat(
+                &*parent,
+                name.as_c_str(),
+                folder | OFlags::NOFOLLOW,
+                Mode::empty(),
+            ) {
+                Ok(fd) => std::rc::Rc::new(fd),
+                Err(rustix::io::Errno::NOENT) => continue,
+                Err(e) => {
+                    say(
+                        format!("~/{rel} on the runner could not be read: {e}"),
+                        &mut said,
+                    );
+                    continue;
+                }
+            },
+        };
+        let mut dir = match rustix::fs::Dir::read_from(&*fd) {
             Ok(dir) => dir,
             Err(e) => {
                 say(
@@ -294,7 +319,7 @@ pub fn outside_the_projects(
                 continue;
             }
             // Never through a link: one made since counts as a file.
-            let stat = match rustix::fs::statat(&fd, raw, AtFlags::SYMLINK_NOFOLLOW) {
+            let stat = match rustix::fs::statat(&*fd, raw, AtFlags::SYMLINK_NOFOLLOW) {
                 Ok(stat) => stat,
                 Err(rustix::io::Errno::NOENT) => continue,
                 Err(e) => {
@@ -307,14 +332,7 @@ pub fn outside_the_projects(
             };
             match rustix::fs::FileType::from_raw_mode(stat.st_mode) {
                 rustix::fs::FileType::Directory => {
-                    match rustix::fs::openat(&fd, raw, folder | OFlags::NOFOLLOW, Mode::empty()) {
-                        Ok(inner) => stack.push((shown, inner)),
-                        Err(rustix::io::Errno::NOENT) => {}
-                        Err(e) => say(
-                            format!("~/{shown} on the runner could not be read: {e}"),
-                            &mut said,
-                        ),
-                    }
+                    stack.push((shown, std::rc::Rc::clone(&fd), Some(raw.to_owned())));
                 }
                 rustix::fs::FileType::RegularFile | rustix::fs::FileType::Symlink => {
                     let changed = u64::try_from(stat.st_ctime)
@@ -456,8 +474,12 @@ fn one(dir: &Path, project: &str, rel: &str, kind: Kind) -> Result<Held, String>
     let stashed = run(dir, &["rev-parse", "--verify", "--quiet", STASH])
         .map_err(|why| failed("read", &why.to_string()))?;
     if stashed.ok() && !stashed.line().is_empty() {
-        let logged = run(dir, &["log", "--walk-reflogs", "--format=%H", STASH, "--"])
-            .map_err(|why| failed("read", &why.to_string()))?;
+        let most = format!("--max-count={}", MOST_STASHES + 1);
+        let logged = run(
+            dir,
+            &["log", "--walk-reflogs", &most, "--format=%H", STASH, "--"],
+        )
+        .map_err(|why| failed("read", &why.to_string()))?;
         if !logged.ok() {
             return Err(failed("read", &logged.err));
         }

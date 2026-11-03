@@ -4191,7 +4191,10 @@ impl HostedSessions {
                 if refused.code == CANCELLED
                     || NOTHING_STARTED.contains(&refused.code.as_str()) =>
             {
-                asked_to_run.unmark();
+                // A cancel is this window giving up on the answer: the host may start it yet.
+                if refused.code != CANCELLED {
+                    asked_to_run.unmark();
+                }
                 return Err(refused.why);
             }
             Err(refused) => return Err(unclear(refused.why)),
