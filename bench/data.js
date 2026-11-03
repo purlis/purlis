@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793693891655,
+  "lastUpdate": 1793697361648,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37380,6 +37380,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4355195,
             "unit": "ms",
             "extra": "median of 5 runs: 100.783, 100.859, 101.436, 101.732, 101.813 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7e9a6bb457c48b5a6ba0b2ca76599c0e7480e2fe",
+          "message": "Story baselines: a take writes only the pictures that changed, and the cap counts those (#4974)\n\n* Story baselines: a take writes only the pictures that changed, and the cap counts those (#4973)\n\ntake() wrote every drawn baseline and refused once the whole set passed\nLIMITS.total, which main's set has nearly reached. It now writes only the\npictures whose bytes differ, and LIMITS.total and LIMITS.files count what it\nwrites and deletes, so they bound one commit as they were meant to.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G1HS8JYQTHRBBNMBT167Y1\nPurlis-Persona: steward\n\n* Story baselines: review fixes for a take that writes only what changed (#4973)\n\nOne count check, not two; the comment on the caps names deletions too; the\ntake command reports as the pull tool does; per-picture refusals tested for\npath shape, side and links while the rest match.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G1HS8JYQTHRBBNMBT167Y1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T07:51:33Z",
+          "tree_id": "5235e6619837a110ab5398762f7115012a53940a",
+          "url": "https://github.com/purlis/purlis/commit/7e9a6bb457c48b5a6ba0b2ca76599c0e7480e2fe"
+        },
+        "date": 1793697357765,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6605065,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.648, 0.649, 0.661, 0.662, 0.675 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.429013,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.366, 16.398, 16.429, 16.489, 16.608 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5824255,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.137, 101.227, 101.582, 102.129, 103.624 ms"
           }
         ]
       }
