@@ -264,23 +264,22 @@ export async function untilFocusInSight(step: string): Promise<void> {
 /**
  * **`element` scrolled to the middle of the pane it scrolls in**, and nothing else moved: the
  * nearest ancestor that scrolls, never the page or anything around the pane, as
- * `scrollIntoView` would, so nothing is left scrolled for the next story (#5016). For a story
- * that pictures what sits under its pane's fold.
+ * `scrollIntoView` would, so the frame that is pictured stays where the story drew it (#5016).
+ * For a story that pictures what sits under its pane's fold.
  */
 export function scrollIntoItsPane(element: Element): void {
   let pane = element.parentElement;
   while (pane !== null && !scrolls(pane)) pane = pane.parentElement;
   if (pane === null) throw new Error(`${describe(element)} is in no pane that scrolls`);
+  // A pane with nothing under its fold stays as it is: the browser holds `scrollTop` at 0.
   const [box, room] = [element.getBoundingClientRect(), pane.getBoundingClientRect()];
   pane.scrollTop += box.top - room.top - (room.height - box.height) / 2;
 }
 
-/** Whether `element` scrolls its content up and down. */
+/** Whether `element` is a pane its content scrolls up and down in, overflowing now or not. */
 function scrolls(element: Element): boolean {
   const { overflowY } = getComputedStyle(element);
-  return (
-    (overflowY === "auto" || overflowY === "scroll") && element.scrollHeight > element.clientHeight
-  );
+  return overflowY === "auto" || overflowY === "scroll";
 }
 
 /** Why `part` is not wholly in sight, or `null` when every point a person looks at is. */
@@ -288,6 +287,7 @@ function outOfSight(part: Element): string | null {
   const box = part.getBoundingClientRect();
   if (box.width === 0 || box.height === 0) return `${describe(part)} is not drawn`;
   // A rounded part is hit only inside its curve: its corners are looked at as far in as it rounds.
+  // A radius in px; a percentage reads as its number, held inside the box by `pointsOf`.
   const round = parseFloat(getComputedStyle(part).borderTopLeftRadius) || 0;
   for (const [x, y] of pointsOf(box, round)) {
     if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight)
