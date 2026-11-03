@@ -780,7 +780,8 @@ export function LayoutPanes({
     const path = crumb ?? placed[layout.pane];
     // A task the list of chats has not been read for yet: nothing is known of it, so nothing
     // is drawn (#1486).
-    if (unread.has(layout.pane)) return <div className="pane-frame" {...dropPane(tab, layout.pane)} />;
+    if (unread.has(layout.pane))
+      return <div className="pane-frame" {...dropPane(tab, layout.pane)} />;
     // **A task this pane was left on that has ended** (#4757): its last screen stays, read-only,
     // under the ended band (#4756), and its path says how it ended, as its finished row says it
     // where it has one: one word for one end.

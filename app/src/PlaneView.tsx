@@ -3826,7 +3826,10 @@ export const PlaneView = memo(function PlaneView({
     const going = tab && panesOf(now.current, tab.id).find((pane) => pane.pane === tab.focused);
     // A task's own pane is never closed (#1489): its control is the minimise, another verb.
     if (going !== undefined && askedByNow(going.session) !== undefined) return;
-    change((tabs) => closeFocusedPane(tabs, filedIn, isPinned, isBackground));
+    // A close is a layout change, so Undo puts it back (#4763, #4583 rule 3): it ended nothing.
+    change((tabs) =>
+      recorded(tabs, closeFocusedPane(tabs, filedIn, isPinned, isBackground), "Closed the pane."),
+    );
     // Nothing ends, and its tasks stay in whatever panes they are in: a chat leaving moves no
     // other pane (#4757).
   }, [askedByNow, change, filedIn, isBackground, isPinned]);
@@ -3859,7 +3862,14 @@ export const PlaneView = memo(function PlaneView({
     (id: number) => {
       const before = now.current;
       const chats = panesOf(before, id).map((one) => one.session);
-      change((tabs) => closeLayout(tabs, id, filedIn, isPinned, isBackground));
+      // Undo brings the tab back as it was (#4763): it ended nothing.
+      change((tabs) =>
+        recorded(
+          tabs,
+          closeLayout(tabs, id, filedIn, isPinned, isBackground),
+          `Closed ${tabs.byId[id]?.name ?? "the tab"}.`,
+        ),
+      );
       for (const session of chats)
         if (askedByNow(session) !== undefined)
           void commands.closeChatTab(plane, session).catch(() => undefined);

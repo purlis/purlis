@@ -635,6 +635,33 @@ describe("App", () => {
     expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
+  it("puts a closed pane back on the window's Undo, its chat still running (#4763)", async () => {
+    core();
+    render(<App />);
+    await openAChat();
+    await splitInto("Split down");
+
+    await userEvent.click(paneDoing(2).getByRole("button", { name: "Close this pane" }));
+    expect(await screen.findByText("Closed the pane.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(panes()).toEqual(["session 1", "session 2"]));
+  });
+
+  it("puts a closed tab back on the window's Undo, as it was (#4763)", async () => {
+    core();
+    render(<App />);
+    await openAChat();
+    await splitInto("Split right");
+
+    await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
+    expect(await screen.findByText("Closed steward 1.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(panes()).toEqual(["session 1", "session 2"]));
+    expect(tabs()).toEqual(["steward 1"]);
+  });
+
   it("closes the pane the button is ON, not the focused one", async () => {
     // **The operator's reason for moving these onto the panes**, as a test: *"this will be
     // clear for spliting — user will know what pane is spliting."* A split leaves the NEW
