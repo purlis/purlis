@@ -1,0 +1,86 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: image leftovers
+
+# The untagged images a failed publishing run left in the runner's and the operator's packages
+# (#4930), listed once a day for a person to delete. Since #4512 an image is pushed only after its
+# check passed, by digest and untagged, and `index` names it; when a later step of the same run
+# fails, an image it pushed stays behind, checked but named by nothing and never signed. The
+# registry has no retention rule to set by hand.
+#
+# **It reports, and deletes nothing** (the person's ruling of 2026-11-03, D-4930-7): deleting with
+# the job's token would need the repository to hold the Admin role on the packages, which every
+# job of the repository holding `packages: write` would then hold too. The run's summary links
+# each version it lists to its page in the package's settings, where a person deletes it.
+#
+# What it lists is `tools/image-leftovers.mjs`, tested on recorded answers in
+# `tools/image-leftovers.test.mjs`: only an untagged plain image that a failed, cancelled or
+# timed-out run of the publishing workflow (this repository's own, from `main` or a `v*` tag)
+# recorded as its own push, that nothing any tag reaches holds (an index's own images, its
+# signatures and attestations are untagged too) and nothing refers to, pushed while that run ran,
+# three days after it ended, and at most four at a time. An answer it cannot read lists nothing.
+#
+# It gates nothing: the job `continue-on-error`, so the run never fails, it is in no release's
+# chain, and no branch protection names it. A pull request touching it runs it too, which is how
+# a change to the selection is seen working.
+
+on:
+  schedule:
+    # Every day at 06:41 UTC.
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - tools/image-leftovers*
+      - tools/image-leftovers-fixtures/**
+      - tools/image-registry.mjs
+      - .github/workflows/image-leftovers.yml
+
+permissions: {}
+
+concurrency:
+  group: image-leftovers-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  report:
+    name: report (${{ matrix.package }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The runner image is pushed by `runner-image.yml`, called by `release.yml`: the
+          # release's run holds the `digest-<arch>` artifacts.
+          - package: purlis-runner
+            workflow: release.yml
+          - package: purlis-cluster-operator
+            workflow: operator-image.yml
+    # Read the runs, their artifacts and the package; write nothing.
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: What a failed run left
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.package }}
+          WORKFLOW: ${{ matrix.workflow }}
+        run: |
+          set -euo pipefail
+          node tools/image-leftovers.mjs "$WORKFLOW" | tee "$RUNNER_TEMP/report.txt"
+          { echo "### $IMAGE"; echo; echo '```'; cat "$RUNNER_TEMP/report.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if grep -q '^safe to delete ' "$RUNNER_TEMP/report.txt"; then
+            echo "::notice::$IMAGE holds untagged images a failed run left: see this run's summary"
+          fi

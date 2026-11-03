@@ -50,7 +50,9 @@ step. This page is the reference behind it.
   loaded from it: Linux on that architecture, a numbered user who is not root, the operator as
   the whole default command, and a binary that starts there. Only then is the same file pushed,
   untagged, by its digest, so an image that fails is never pushed; nothing is tagged or signed
-  until both architectures passed.
+  until both architectures passed. An image a run pushed before a later step of it failed stays
+  untagged and unsigned; the `image leftovers` workflow lists it three days on for a person to
+  delete (#4930).
 - **Tags:** `sha-<commit>`, and `main` for the image of the latest commit; `main` only moves
   forward, and only once the image has been pulled and checked with no sign-in. Tags can move, so
   name the image by its **digest**. The run's summary records it. Its `operator-image` artifact
