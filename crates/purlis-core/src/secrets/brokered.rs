@@ -1181,26 +1181,17 @@ pub struct Missing<'a> {
     pub within: Duration,
     /// Told once an ask is raised or joined, so the window lists it.
     pub moved: &'a (dyn Fn() + Sync),
-    /// Whether to stop waiting before `within` runs out: a start its person cancelled (#5074).
-    /// None for a run, which its harness ends.
-    pub stop: Option<&'a (dyn Fn() -> bool + Sync)>,
 }
 
 impl Missing<'_> {
-    /// [`super::ask::Asks::read_asking`] for `need`, holding at most [`Self::within`], or until
-    /// [`Self::stop`] says so, and telling [`Self::moved`] once it asks (#5074).
+    /// [`super::ask::Asks::read_asking`] for `need`, holding at most [`Self::within`] and telling [`Self::moved`] once it asks (#5074).
     pub fn read_asking<T>(
         &self,
         need: super::ask::Need,
         read: &mut dyn FnMut() -> Result<T, super::VaultError>,
     ) -> Result<T, super::ask::Unread> {
-        self.asks.read_asking(
-            need,
-            self.within,
-            self.stop.unwrap_or(&|| false),
-            &mut |_| (self.moved)(),
-            read,
-        )
+        self.asks
+            .read_asking(need, self.within, &mut |_| (self.moved)(), read)
     }
 }
 

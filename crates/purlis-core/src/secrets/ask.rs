@@ -22,9 +22,10 @@
 //! - **Every read purlis makes for a chat asks alike** (#5074): a brokered run's, through
 //!   [`Asks::hold`] for each key its run misses, and a browser login's and a profile's
 //!   credential at a chat's start, each through [`Asks::read_asking`].
-//!   A start has no chat number yet ([`Need::chat`] is `None`): it waits as a chat's command
-//!   does and is counted among the waiting, but is never nudged, keeps no decline, and is traced
-//!   under [`crate::trace::NO_SESSION`].
+//!   A start has no chat number yet ([`Need::chat`] is `None`): the app's waits on nothing and
+//!   is refused, telling the person to fill the ask and start it again. It is counted among the
+//!   waiting, but is never nudged, keeps no decline, and is traced under
+//!   [`crate::trace::NO_SESSION`].
 //! - **A decline settles the chats waiting then, and only them.** Each is not asked about that
 //!   key again for as long as it lives; another chat that misses it later is asked afresh.
 //!
@@ -207,15 +208,6 @@ pub fn holds_for(harness: Option<Harness>) -> Duration {
     command_timeout(harness) * 3 / 4
 }
 
-/// **How long a chat's start waits on a Secret ask for its profile's credential** (#5074): no
-/// harness runs yet to kill it, and only a start the person made from the window, which they can
-/// cancel, waits at all, so five minutes. Then it is refused, saying so, and the ask stays open:
-/// the person starts it again once it is answered, which reads the value filled.
-pub const START_HOLDS_FOR: Duration = Duration::from_secs(5 * 60);
-
-/// How often a hold looks whether it is to stop ([`Asks::hold_unless`]).
-pub const STOP_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
-
 fn vault_and_key(vault: &str, key: &str) -> String {
     format!("{vault}/{key}")
 }
@@ -286,18 +278,6 @@ impl Asks {
     /// nothing asked, where this chat declined it before. `say` tells the command, as it starts
     /// to wait, what it waits on.
     pub fn hold(&self, need: Need, within: Duration, say: &mut dyn FnMut(&str)) -> Held {
-        self.hold_unless(need, within, &|| false, say)
-    }
-
-    /// [`Asks::hold`], which also stops waiting, as its hold running out does, once `stop` says
-    /// so: a start its person cancelled (#5074). Looked at every [`STOP_LOOKED_AT_EVERY`].
-    pub fn hold_unless(
-        &self,
-        need: Need,
-        within: Duration,
-        stop: &dyn Fn() -> bool,
-        say: &mut dyn FnMut(&str),
-    ) -> Held {
         let Need {
             chat,
             persona,
@@ -361,16 +341,7 @@ impl Asks {
                 line: declined_said(&vault, &key),
             },
         };
-        let until = std::time::Instant::now() + within;
-        let heard = loop {
-            let left = until.saturating_duration_since(std::time::Instant::now());
-            match answered.recv_timeout(left.min(STOP_LOOKED_AT_EVERY)) {
-                Err(mpsc::RecvTimeoutError::Timeout)
-                    if std::time::Instant::now() < until && !stop() => {}
-                heard => break heard,
-            }
-        };
-        match heard {
+        match answered.recv_timeout(within) {
             Ok(settled) => settled_as(settled),
             // Its chat closed meanwhile.
             Err(mpsc::RecvTimeoutError::Disconnected) => Held::StillOpen {
@@ -400,13 +371,12 @@ impl Asks {
     /// what a browser login's and a profile's credential read with, so each asks as a brokered
     /// run does. `read` is the read of exactly that key, and is read once more once the person
     /// fills it; a key still missing then is refused as the vault refuses it, never asked
-    /// twice. Any other refusal of the vault's asks nothing. `stop` and `say` are
-    /// [`Asks::hold_unless`]'s.
+    /// twice. Any other refusal of the vault's asks nothing. `within` and `say` are
+    /// [`Asks::hold`]'s.
     pub fn read_asking<T>(
         &self,
         need: Need,
         within: Duration,
-        stop: &dyn Fn() -> bool,
         say: &mut dyn FnMut(&str),
         read: &mut dyn FnMut() -> Result<T, super::VaultError>,
     ) -> Result<T, Unread> {
@@ -414,7 +384,7 @@ impl Asks {
             Err(e) if e.kind == super::Kind::NotFound => {}
             got => return got.map_err(Unread::Vault),
         }
-        match self.hold_unless(need, within, stop, say) {
+        match self.hold(need, within, say) {
             Held::Filled => read().map_err(Unread::Vault),
             Held::Declined { line } | Held::StillOpen { line } => Err(Unread::Asked(line)),
         }

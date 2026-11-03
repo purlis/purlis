@@ -3293,7 +3293,6 @@ fn secret_missing<'a>(
         asks: held.secret_asks(),
         within: purlis_core::secrets::ask::holds_for(asker.harness),
         moved,
-        stop: None,
     }
 }
 
@@ -3310,13 +3309,7 @@ fn taken_as_read<T>(
     tool: &purlis_core::sandbox::tools::Tool,
     read: Result<T, String>,
 ) -> Result<T, String> {
-    let waits_on_a_secret = || {
-        held.secret_asks()
-            .open()
-            .iter()
-            .any(|open| open.chats.contains(&session))
-    };
-    if read.is_err() && waits_on_a_secret() {
+    if read.is_err() && waits_on_its_secret(&held.secret_asks().open(), session, tool) {
         return read;
     }
     match held.login_grants().take(session, persona, name) {
@@ -3326,6 +3319,24 @@ fn taken_as_read<T>(
             "login {name} was used already, so nothing was filled"
         )),
     }
+}
+
+/// **Whether chat `session` waits on a Secret ask for one of `tool`'s own login keys** (#5074):
+/// one still open for that chat, in the login's vault, for its user's or password's key. Any
+/// other open ask of the chat's keeps no Allow once ([`taken_as_read`]).
+fn waits_on_its_secret(
+    open: &[purlis_core::secrets::ask::Open],
+    session: u32,
+    tool: &purlis_core::sandbox::tools::Tool,
+) -> bool {
+    let Some((user_key, pass_key)) = tool.login_keys() else {
+        return false;
+    };
+    open.iter().any(|open| {
+        open.chats.contains(&session)
+            && open.vault == tool.vault
+            && (user_key == Some(open.key.as_str()) || open.key == pass_key)
+    })
 }
 
 /// **Chat `session`'s browser login `name`** (#2016): read for the chat as the app records it,
@@ -3357,6 +3368,10 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
         );
         let (login, identity) =
             taken_as_read(held, session, asker.persona.as_deref(), name, &tool, read)?;
+        // And since the read, which may have waited on the person.
+        if let Some(why) = crate::loginasks::refused_now(held.root(), persona, &tool) {
+            return Err(why);
+        }
         return Ok(LoginRead {
             login,
             opens: false,
@@ -3497,6 +3512,12 @@ fn pool_login_of(
             Some(&missing),
         )?,
     };
+    // And since the read, which may have waited on the person (#5074).
+    if let Some(tool) = &granted
+        && let Some(why) = crate::loginasks::refused_now(held.root(), &persona, tool)
+    {
+        return Err(why);
+    }
     let fresh = granted.is_some();
     // Again once it is read: a vault may wait on a sign-in for as long as it takes (#4071).
     if purlis_core::poollogins::Bound::over_the_link(&config, pool, reached.as_deref()).as_ref()

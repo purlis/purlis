@@ -272,10 +272,12 @@ pub fn read(
                     .read_asking(need, &mut once)
                     .map_err(|unread| match unread {
                         crate::secrets::ask::Unread::Vault(e) => refused(&e.message),
-                        // What to do: start it again, which asks afresh, or reads the fill.
-                        crate::secrets::ask::Unread::Asked(line) => {
-                            format!("{}; start the chat again to be asked again", refused(&line))
-                        }
+                        // What to do: the ask waits in the Inbox, and a start once it is
+                        // filled reads the value (a declined one is asked afresh).
+                        crate::secrets::ask::Unread::Asked(line) => format!(
+                            "{}; fill it from the Secret ask in the Inbox, then start the chat again",
+                            refused(&line)
+                        ),
                     })?
             }
         };

@@ -4404,25 +4404,20 @@ impl Chats {
         // that does not open to it starts nothing, and leaves no event and no hook behind
         // (#2036). Set on the harness's program as it starts; the commands, hooks and tools it
         // starts inherit them.
-        // One its vault holds none of is a Secret ask (#5074, ADR 0109). A start from the
-        // person's dialog waits on it, until it is answered or they cancel the start, and starts
-        // once they fill it. Any other start (a relaunch, a chat put back, a dispatch's) raises
-        // it and waits on nothing: it may run under a lock the window's commands wait on, and
-        // nobody may be at the window. A start that does not wait is refused, saying so.
+        // One its vault holds none of is a Secret ask (#5074, ADR 0109), raised and waited on
+        // by nothing: the start is refused, saying so, and the ask stays in the Inbox, where the
+        // person fills it and starts the chat again, which reads the value filled. No start
+        // waits, as none waits on a sign-in (ADR 0095 §3): the Start dialog is modal, so the
+        // person could not reach the ask while it waited, and any other start (a relaunch, a
+        // dispatch's) may run under a lock the window's commands wait on.
         let secret_asks = lock(&self.secret_asks).clone();
         let moved = || self.asks_may_have_moved();
-        let (may_wait, cancelled) = start_waits_and_its_cancel();
         let missing = secret_asks
             .as_deref()
             .map(|asks| purlis_core::secrets::brokered::Missing {
                 asks,
-                within: if may_wait {
-                    purlis_core::secrets::ask::START_HOLDS_FOR
-                } else {
-                    std::time::Duration::ZERO
-                },
+                within: std::time::Duration::ZERO,
                 moved: &moved,
-                stop: Some(cancelled),
             });
         let handed =
             match sign_in.filter(|s| !reattaching && !on_the_runner && !s.credentials.is_empty()) {
@@ -7992,23 +7987,6 @@ pub(crate) fn task_of(
 /// in its restart stamp as they do where the chat is armed (SK-15).
 fn built_in_skills_here() -> Option<std::path::PathBuf> {
     crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin))
-}
-
-/// **Whether this thread's start may wait on a Secret ask, and whether its person cancelled it**
-/// (#5074): only a start from the person's dialog waits
-/// (`crate::hostedsessions::a_start_may_wait`).
-#[cfg(unix)]
-fn start_waits_and_its_cancel() -> (bool, &'static (dyn Fn() -> bool + Sync)) {
-    (
-        crate::hostedsessions::a_start_may_wait(),
-        &crate::hostedsessions::a_start_was_cancelled,
-    )
-}
-
-/// Where no session host starts chats, no start waits on a Secret ask (#5074).
-#[cfg(not(unix))]
-fn start_waits_and_its_cancel() -> (bool, &'static (dyn Fn() -> bool + Sync)) {
-    (false, &|| false)
 }
 
 mod skillsnow;

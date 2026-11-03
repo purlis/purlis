@@ -1657,9 +1657,7 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
     // A profile's credential a start misses names no tool, and no chat has started (#5074).
     let used_by = match open.tool.as_deref() {
         Some(tool) => format!(" for {tool}"),
-        None if open.chats.is_empty() && open.starts > 0 => {
-            " for a chat that is starting".to_owned()
-        }
+        None if open.chats.is_empty() && open.starts > 0 => " to start a chat".to_owned(),
         None => String::new(),
     };
     let others = match open.waiting() {

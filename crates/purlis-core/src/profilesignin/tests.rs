@@ -247,7 +247,6 @@ mod at_start {
             asks,
             within,
             moved: &|| {},
-            stop: None,
         };
         read(&plane.ctx, Some("dev"), &a_missing_key(), Some(&missing))
     }
