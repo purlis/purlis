@@ -4627,7 +4627,7 @@ export const PlaneView = memo(function PlaneView({
         content.kind === "session"
           ? nameOf(content.session)
           : content.kind === "view"
-            ? (tabs.byId[findView(tabs, content.view)?.tab ?? -1]?.name ?? content.view.view)
+            ? (tabs.byId[findView(tabs, content.view)?.tab ?? -1]?.name ?? "this view")
             : "the empty pane",
     }),
     [filedIn, isBackground, isPinned, nameOf, tabs],

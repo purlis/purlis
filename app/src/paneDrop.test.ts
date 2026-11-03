@@ -21,6 +21,7 @@ import {
   noTabs,
   openTab,
   openView,
+  renameTab,
   selectTab,
   showIn,
   type Tabs,
@@ -123,7 +124,10 @@ describe("a pane dropped on another pane's edge splits on that side (#4763)", ()
     const { tabs, tab } = three();
     const from = paneSource(tabs, tab, 3);
     const to = { kind: "pane", tab, pane: paneOf(tabs, tab, 1), place } as const;
-    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toEqual({ ok: true, says });
+    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toMatchObject({
+      ok: true,
+      says,
+    });
     expect(shapeOf(dropOn(tabs, from, to, ctx), tab)).toBe(after);
   });
 
@@ -229,7 +233,7 @@ describe("a pane dropped in another pane's middle (#4763)", () => {
     const one = paneOf(tabs, tab, 1);
     const from = paneSource(tabs, tab, 3);
     const to = { kind: "pane", tab, pane: one, place: "middle" } as const;
-    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toEqual({
+    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toMatchObject({
       ok: true,
       says: "Swap chat 3 and chat 1.",
     });
@@ -258,7 +262,7 @@ describe("a pane dropped in another pane's middle (#4763)", () => {
     const tabs = showIn(made.tabs, tab, two, { kind: "empty", workspace: "ops" });
     const from = paneSource(tabs, tab, 1);
     const to = { kind: "pane", tab, pane: two, place: "middle" } as const;
-    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toEqual({
+    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toMatchObject({
       ok: true,
       says: "Put chat 1 in this empty pane.",
     });
@@ -271,7 +275,7 @@ describe("a sidebar chat dropped on a pane (#4763)", () => {
     const { tabs, tab } = three();
     const from: Source = { kind: "chat", session: 7, chat: "7" };
     const to = { kind: "pane", tab, pane: paneOf(tabs, tab, 2), place: "middle" } as const;
-    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toEqual({
+    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toMatchObject({
       ok: true,
       says: "Show chat 7 here. chat 2 keeps running in the sidebar.",
     });
@@ -294,7 +298,7 @@ describe("a sidebar chat dropped on a pane (#4763)", () => {
     const { tabs, first, second } = twoTabs();
     const from: Source = { kind: "chat", session: 5, chat: "5" };
     const to = { kind: "pane", tab: first, pane: paneOf(tabs, first, 1), place: "left" } as const;
-    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toEqual({
+    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toMatchObject({
       ok: true,
       says: "chat 5 left of chat 1.",
     });
@@ -306,7 +310,7 @@ describe("a sidebar chat dropped on a pane (#4763)", () => {
     const { tabs, tab } = three();
     const from: Source = { kind: "chat", session: 21, chat: "21" };
     const to = { kind: "pane", tab, pane: paneOf(tabs, tab, 2), place: "right" } as const;
-    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toEqual({
+    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toMatchObject({
       ok: true,
       says: "chat 21 right of chat 2. It stays filed in volaticloud.",
     });
@@ -334,7 +338,10 @@ describe("a drop on the strip makes a tab (#4763)", () => {
     const { tabs, first, second } = twoTabs();
     const from = paneSource(tabs, second, 5);
     const to = { kind: "strip", at: 0 } as const;
-    expect(judgeDrop(tabs, from, to, ctx)).toEqual({ ok: true, says: "A new tab with chat 5." });
+    expect(judgeDrop(tabs, from, to, ctx)).toMatchObject({
+      ok: true,
+      says: "A new tab with chat 5.",
+    });
     const after = dropOn(tabs, from, to, ctx);
     expect(strip(after)).toEqual(["5", "1", "4"]);
     expect(after.order.slice(1)).toEqual([first, second]);
@@ -356,7 +363,7 @@ describe("a drop on the strip makes a tab (#4763)", () => {
   it("moves a tab along the strip", () => {
     const { tabs, first, second } = twoTabs();
     const from: Source = { kind: "tab", tab: second };
-    expect(judgeDrop(tabs, from, { kind: "strip", at: 0 }, ctx)).toEqual({
+    expect(judgeDrop(tabs, from, { kind: "strip", at: 0 }, ctx)).toMatchObject({
       ok: true,
       says: "Move the tab here.",
     });
@@ -376,7 +383,7 @@ describe("a tab dragged down into a split (#4763)", () => {
     const { tabs, first, second } = twoTabs();
     const from: Source = { kind: "tab", tab: second };
     const to = { kind: "pane", tab: first, pane: paneOf(tabs, first, 1), place: "bottom" } as const;
-    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toEqual({
+    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toMatchObject({
       ok: true,
       says: "The tab chat 4 below chat 1.",
     });
@@ -403,7 +410,7 @@ describe("what a drop refuses, with its reason (#4763)", () => {
     const to = { kind: "pane", tab, pane: paneOf(tabs, tab, 1), place: "right" } as const;
     expect(judgeDrop(tabs, paneSource(tabs, tab, 3), to, ctx, narrow)).toEqual({
       ok: false,
-      why: "Too narrow: each half would be under 40 columns.",
+      why: "Too narrow: a pane here would be under about 40 columns. Drop it on a wider pane.",
     });
     // The other way still fits.
     const below = { ...to, place: "bottom" } as const;
@@ -416,7 +423,7 @@ describe("what a drop refuses, with its reason (#4763)", () => {
     const to = { kind: "pane", tab, pane: paneOf(tabs, tab, 1), place: "top" } as const;
     expect(judgeDrop(tabs, paneSource(tabs, tab, 3), to, ctx, short)).toEqual({
       ok: false,
-      why: "Too short: each half would be under 8 rows.",
+      why: "Too short: a pane here would be under about 8 rows. Drop it on a taller pane.",
     });
   });
 
@@ -433,7 +440,7 @@ describe("what a drop refuses, with its reason (#4763)", () => {
     for (const place of ["left", "middle"] as const)
       expect(
         judgeDrop(tabs, { kind: "pane", tab, pane }, { kind: "pane", tab, pane, place }, ctx),
-      ).toEqual({ ok: false, why: "That's the pane being moved." });
+      ).toEqual({ ok: false, why: "That's the pane being moved. Drop it on another pane." });
   });
 
   it("refuses a tab dropped on its own panes", () => {
@@ -441,7 +448,7 @@ describe("what a drop refuses, with its reason (#4763)", () => {
     const to = { kind: "pane", tab: second, pane: paneOf(tabs, second, 4), place: "left" } as const;
     expect(judgeDrop(tabs, { kind: "tab", tab: second }, to, ctx)).toEqual({
       ok: false,
-      why: "That's the tab being moved.",
+      why: "That's the tab being moved. Drop it on a pane in another tab.",
     });
   });
 
@@ -577,5 +584,67 @@ describe("Undo puts the last layout back (#4763)", () => {
       ctx,
     );
     expect(undone(after, tabs, after)?.named).toEqual(after.named);
+  });
+});
+
+describe("review fixes (#4763)", () => {
+  it("says what a drop did, in the past, apart from what it would do", () => {
+    const { tabs, tab } = three();
+    const one = paneOf(tabs, tab, 1);
+    const from = paneSource(tabs, tab, 3);
+    expect(judgeDrop(tabs, from, { kind: "pane", tab, pane: one, place: "middle" }, ctx)).toEqual({
+      ok: true,
+      says: "Swap chat 3 and chat 1.",
+      did: "Swapped chat 3 and chat 1.",
+    });
+    expect(judgeDrop(tabs, from, { kind: "pane", tab, pane: one, place: "left" }, ctx)).toEqual({
+      ok: true,
+      says: "chat 3 left of chat 1.",
+      did: "Put chat 3 left of chat 1.",
+    });
+  });
+
+  it("leaves a tab where it is when it is dropped back on its own place on the strip", () => {
+    const { tabs, first, second } = twoTabs();
+    const after = dropOn(tabs, { kind: "tab", tab: first }, { kind: "strip", at: 0 }, ctx);
+    expect(after.order).toEqual([first, second]);
+    const moved = dropOn(tabs, { kind: "tab", tab: second }, { kind: "strip", at: 1 }, ctx);
+    expect(moved.order).toEqual([first, second]);
+  });
+
+  it("refuses a tab of several panes where its own panes would not fit in the half", () => {
+    const { tabs, first, second } = twoTabs(); // second is row(4 5): two panes side by side
+    const to = { kind: "pane", tab: first, pane: paneOf(tabs, first, 1), place: "right" } as const;
+    // Room for one pane a half, not for two side by side.
+    const width = { width: PANE_FLOOR.width * 3, height: 900 };
+    expect(judgeDrop(tabs, { kind: "tab", tab: second }, to, ctx, width).ok).toBe(false);
+    // Below, each half is as wide as the pane: the two fit.
+    const below = { ...to, place: "bottom" } as const;
+    expect(judgeDrop(tabs, { kind: "tab", tab: second }, below, ctx, width).ok).toBe(true);
+  });
+
+  it("says another workspace's chat dropped on the strip makes its tab on that strip", () => {
+    const { tabs } = twoTabs();
+    expect(
+      judgeDrop(tabs, { kind: "chat", session: 21, chat: "21" }, { kind: "strip", at: 0 }, ctx),
+    ).toEqual({
+      ok: true,
+      says: "A new tab with chat 21, on volaticloud's strip.",
+      did: "Made a new tab with chat 21, on volaticloud's strip.",
+    });
+  });
+
+  it("keeps a name given since when Undo puts the layout back", () => {
+    const { tabs, first, second } = twoTabs();
+    const after = dropOn(
+      tabs,
+      paneSource(tabs, second, 5),
+      { kind: "pane", tab: first, pane: paneOf(tabs, first, 1), place: "left" },
+      ctx,
+    );
+    const renamed = renameTab(after, first, "mine");
+    const back = undone(renamed, tabs, after);
+    expect(back?.byId[first].name).toBe("mine");
+    expect(back && strip(back)).toEqual(["1", "row(4 5)"]);
   });
 });

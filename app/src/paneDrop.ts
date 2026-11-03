@@ -9,10 +9,14 @@ import {
   type Layout,
   nothingBackgrounded,
   nothingPinned,
+  type Pane,
+  panes,
   type Pinned,
+  replace,
   showIn,
   type Tab,
   type Tabs,
+  without,
   workspaceOf,
 } from "./tabs";
 
@@ -68,7 +72,9 @@ export type DropContext = {
 };
 
 /** What a drop would do, said, or why it is refused. */
-export type Verdict = { ok: true; says: string } | { ok: false; why: string };
+export type Verdict =
+  /** `says` what it would do, before the drop; `did` what it did, after it. */
+  { ok: true; says: string; did: string } | { ok: false; why: string };
 
 /** How far in from an edge, as a share of the pane, a drop splits rather than swaps. */
 export const EDGE = 0.25;
@@ -106,88 +112,121 @@ export function judgeDrop(
   ctx: DropContext,
   size?: Size,
 ): Verdict {
-  const source = normal(tabs, from, to);
+  const source = asDropped(tabs, from, to);
   if (source.kind === "pane") {
-    const leaf = leafOf(tabs, source.tab, source.pane);
-    if (leaf === undefined) return refused("That pane has closed.");
-    if (leaf.content.kind === "empty")
+    const pane = paneAt(tabs, source);
+    if (pane === undefined) return refused("That pane has closed.");
+    if (pane.content.kind === "empty")
       return refused("An empty pane has nothing to move. Close it instead.");
   }
   if (source.kind === "tab" && tabs.byId[source.tab] === undefined)
     return refused("That tab has closed.");
   const name = sourceName(tabs, source, ctx);
-  if (to.kind === "strip")
-    return said(source.kind === "tab" ? "Move the tab here." : `A new tab with ${name}.`);
+  const home = homeOf(tabs, source, ctx);
 
-  const target = leafOf(tabs, to.tab, to.pane);
+  if (to.kind === "strip") {
+    if (source.kind === "tab") return said("Move the tab here.", "Moved the tab.");
+    // Another workspace's chat makes its tab on that workspace's strip, where it is filed.
+    const strip =
+      tabs.inFront === undefined ? undefined : workspaceOf(tabs, tabs.inFront, ctx.filedIn);
+    const elsewhere = home !== undefined && strip !== undefined && home !== strip;
+    return elsewhere
+      ? said(
+          `A new tab with ${name}, on ${home}'s strip.`,
+          `Made a new tab with ${name}, on ${home}'s strip.`,
+        )
+      : said(`A new tab with ${name}.`, `Made a new tab with ${name}.`);
+  }
+
+  const target = paneAt(tabs, to);
   if (target === undefined) return refused("That pane has closed.");
   if (source.kind === "pane" && source.pane === to.pane)
-    return refused("That's the pane being moved.");
-  if (source.kind === "tab" && source.tab === to.tab) return refused("That's the tab being moved.");
+    return refused("That's the pane being moved. Drop it on another pane.");
+  if (source.kind === "tab" && source.tab === to.tab)
+    return refused("That's the tab being moved. Drop it on a pane in another tab.");
   const there = ctx.name(target.content);
 
-  let says: string;
+  let verdict: { says: string; did: string };
   if (to.place === "middle") {
     if (source.kind === "tab")
       return refused("A tab of several panes goes beside a pane, not into one.");
-    if (target.content.kind === "empty") says = `Put ${name} in this empty pane.`;
-    else if (source.kind === "pane") says = `Swap ${name} and ${there}.`;
-    else says = `Show ${name} here. ${there} keeps running in the sidebar.`;
+    if (target.content.kind === "empty")
+      verdict = {
+        says: `Put ${name} in this empty pane.`,
+        did: `Put ${name} in the empty pane.`,
+      };
+    else if (source.kind === "pane")
+      verdict = { says: `Swap ${name} and ${there}.`, did: `Swapped ${name} and ${there}.` };
+    else
+      verdict = {
+        says: `Show ${name} here. ${there} keeps running in the sidebar.`,
+        did: `Showing ${name} in place of ${there}, which keeps running in the sidebar.`,
+      };
   } else {
-    if (size !== undefined) {
-      const across = to.place === "left" || to.place === "right";
-      if (across ? size.width / 2 < PANE_FLOOR.width : size.height / 2 < PANE_FLOOR.height)
-        return refused(
-          across
-            ? "Too narrow: each half would be under 40 columns."
-            : "Too short: each half would be under 8 rows.",
-        );
-    }
-    const what = source.kind === "tab" ? `The tab ${name}` : name;
-    says = `${what} ${SIDE_WORD[to.place]} ${there}.`;
+    const across = to.place === "left" || to.place === "right";
+    // Each half must hold the panes put in it: the dragged tab's own, or one pane.
+    const moved = source.kind === "tab" ? tabs.byId[source.tab].layout : undefined;
+    const direction = across ? "row" : "column";
+    const needs = Math.max(
+      across ? PANE_FLOOR.width : PANE_FLOOR.height,
+      moved === undefined ? 0 : floorAlong(moved, direction),
+    );
+    if (size !== undefined && (across ? size.width : size.height) / 2 < needs)
+      return refused(
+        across
+          ? "Too narrow: a pane here would be under about 40 columns. Drop it on a wider pane."
+          : "Too short: a pane here would be under about 8 rows. Drop it on a taller pane.",
+      );
+    // A chat's name is said as it is written, even first in a sentence: it is a name.
+    const what = source.kind === "tab" ? `the tab ${name}` : name;
+    verdict = {
+      says: `${source.kind === "tab" ? `The tab ${name}` : name} ${SIDE_WORD[to.place]} ${there}.`,
+      did: `Put ${what} ${SIDE_WORD[to.place]} ${there}.`,
+    };
   }
 
   // Another workspace's chat may land in a pane, by drag only (#4583), and stays filed in its
-  // own. A tab's strip is still read from its first pane (#4755 D9) until the tab keeps a
-  // workspace of its own (#4757), so a drop that would take that first place is refused: it
-  // would carry the whole tab to the other strip.
-  const home = homeOf(tabs, source, ctx);
+  // own. A tab's strip is read from its first pane (#4755 D9) until the tab keeps a workspace of
+  // its own (#4757), so a drop that would take that first place is refused: it would carry the
+  // whole tab to the other strip.
   const strip = workspaceOf(tabs, to.tab, ctx.filedIn);
   if (home !== undefined && strip !== undefined && home !== strip) {
     const after = apply(tabs, source, to, ctx);
     if (workspaceOf(after, to.tab, ctx.filedIn) !== strip)
       return refused(`${name} works in ${home}. Drop it right of or below ${there}.`);
-    says = `${says} It stays filed in ${home}.`;
+    const filed = ` It stays filed in ${home}.`;
+    return said(verdict.says + filed, verdict.did + filed);
   }
-  return said(says);
+  return said(verdict.says, verdict.did);
 }
 
 /** **`tabs` after dropping `from` on `to`**, or `tabs` itself when the drop is refused. */
 export function dropOn(tabs: Tabs, from: Source, to: Target, ctx: DropContext, size?: Size): Tabs {
   if (!judgeDrop(tabs, from, to, ctx, size).ok) return tabs;
-  return apply(tabs, normal(tabs, from, to), to, ctx);
+  return apply(tabs, asDropped(tabs, from, to), to, ctx);
 }
 
 const refused = (why: string): Verdict => ({ ok: false, why });
-const said = (says: string): Verdict => ({ ok: true, says });
+const said = (says: string, did: string): Verdict => ({ ok: true, says, did });
 
 /**
- * The source as the drop acts on it: a sidebar chat already on screen is its pane; a tab of one
- * pane dropped on a pane is that pane; a pane alone in its tab dropped on the strip is its tab.
+ * **What a drop acts on**, which is not always what was picked up: a sidebar chat already on
+ * screen is its pane; a tab of one pane dropped on a pane is that pane; a pane alone in its tab
+ * dropped on the strip is its tab.
  */
-function normal(tabs: Tabs, from: Source, to: Target): Source {
+function asDropped(tabs: Tabs, from: Source, to: Target): Source {
   if (from.kind === "chat") {
     for (const id of tabs.order) {
-      const on = leaves(tabs.byId[id].layout).find(
+      const on = panes(tabs.byId[id].layout).find(
         ({ content }) => content.kind === "session" && content.session === from.session,
       );
-      if (on !== undefined) return normal(tabs, { kind: "pane", tab: id, pane: on.pane }, to);
+      if (on !== undefined) return asDropped(tabs, { kind: "pane", tab: id, pane: on.pane }, to);
     }
     return from;
   }
   const tab = tabs.byId[from.tab];
   if (tab === undefined) return from;
-  const all = leaves(tab.layout);
+  const all = panes(tab.layout);
   if (from.kind === "tab" && to.kind === "pane" && all.length === 1)
     return { kind: "pane", tab: from.tab, pane: all[0].pane };
   if (from.kind === "pane" && to.kind === "strip" && all.length === 1)
@@ -195,20 +234,21 @@ function normal(tabs: Tabs, from: Source, to: Target): Source {
   return from;
 }
 
-function sourceName(tabs: Tabs, source: Source, ctx: DropContext): string {
+/** **What a dragged thing is called** in a sentence: its chat, its view, or its tab's first. */
+export function sourceName(tabs: Tabs, source: Source, ctx: DropContext): string {
   if (source.kind === "chat")
     return ctx.name({ kind: "session", session: source.session, chat: source.chat });
   const tab = tabs.byId[source.tab];
-  const leaf =
-    source.kind === "pane" ? leafOf(tabs, source.tab, source.pane) : leaves(tab.layout)[0];
-  return leaf === undefined ? "" : ctx.name(leaf.content);
+  if (tab === undefined) return "";
+  const pane = source.kind === "pane" ? paneAt(tabs, source) : panes(tab.layout)[0];
+  return pane === undefined ? "" : ctx.name(pane.content);
 }
 
 /** The workspace what is dragged is filed in. */
 function homeOf(tabs: Tabs, source: Source, ctx: DropContext): string | undefined {
   if (source.kind === "chat") return ctx.filedIn(source.session);
   if (source.kind === "tab") return workspaceOf(tabs, source.tab, ctx.filedIn);
-  const content = leafOf(tabs, source.tab, source.pane)?.content;
+  const content = paneAt(tabs, source)?.content;
   if (content === undefined) return undefined;
   return content.kind === "session" ? ctx.filedIn(content.session) : content.workspace;
 }
@@ -226,13 +266,14 @@ function apply(tabs: Tabs, source: Source, to: Target, ctx: DropContext): Tabs {
       return inFront(shown, to.tab, to.pane);
     }
     if (source.kind === "pane") {
-      const target = leafOf(tabs, to.tab, to.pane);
-      if (target?.content.kind === "empty") {
+      if (paneAt(tabs, to)?.content.kind === "empty") {
         const lifted = lift(tabs, source, ctx);
-        const placed = edit(lifted.tabs, to.tab, (layout) => swapIn(layout, to.pane, lifted.moved));
+        const placed = edit(lifted.tabs, to.tab, (layout) =>
+          replace(layout, to.pane, () => lifted.moved),
+        );
         return inFront(carry(placed, lifted.shows, to.tab), to.tab, firstPane(lifted.moved));
       }
-      return swap(tabs, source, to.tab, to.pane);
+      return swap(tabs, source, to);
     }
     return tabs;
   }
@@ -240,7 +281,7 @@ function apply(tabs: Tabs, source: Source, to: Target, ctx: DropContext): Tabs {
   const direction = to.place === "left" || to.place === "right" ? "row" : "column";
   const first = to.place === "left" || to.place === "top";
   const placed = edit(lifted.tabs, to.tab, (layout) =>
-    swapIn(layout, to.pane, (found) => ({
+    replace(layout, to.pane, (found) => ({
       kind: "split",
       direction,
       children: first ? [lifted.moved, found] : [found, lifted.moved],
@@ -251,17 +292,25 @@ function apply(tabs: Tabs, source: Source, to: Target, ctx: DropContext): Tabs {
 
 /** A tab made of `source`, or `source`'s tab moved, before the tab at `at`. */
 function toStrip(tabs: Tabs, source: Source, at: number, ctx: DropContext): Tabs {
-  const before = tabs.order[at];
-  if (source.kind === "tab") {
-    const order = tabs.order.filter((id) => id !== source.tab);
-    const index = before === undefined ? order.length : order.indexOf(before);
-    order.splice(index < 0 ? order.length : index, 0, source.tab);
-    return { ...tabs, order, inFront: source.tab };
-  }
+  // The tab it goes before: the one at the line, or the next, when that is the tab being moved.
+  const before = tabs.order.slice(at).find((id) => source.kind !== "tab" || id !== source.tab);
+  const placed = (order: number[], id: number): number[] => {
+    const index = before === undefined ? -1 : order.indexOf(before);
+    return index < 0 ? [...order, id] : [...order.slice(0, index), id, ...order.slice(index)];
+  };
+  if (source.kind === "tab")
+    return {
+      ...tabs,
+      order: placed(
+        tabs.order.filter((id) => id !== source.tab),
+        source.tab,
+      ),
+      inFront: source.tab,
+    };
   const lifted = lift(tabs, source, ctx);
   const next = lifted.tabs;
   const id = next.named.tabs + 1;
-  const name = ctx.name(leaves(lifted.moved)[0].content);
+  const name = ctx.name(panes(lifted.moved)[0].content);
   const tab: Tab = {
     id,
     name,
@@ -269,13 +318,10 @@ function toStrip(tabs: Tabs, source: Source, at: number, ctx: DropContext): Tabs
     layout: lifted.moved,
     focused: firstPane(lifted.moved),
   };
-  const order = [...next.order];
-  const index = before === undefined ? order.length : order.indexOf(before);
-  order.splice(index < 0 ? order.length : index, 0, id);
   const made = {
     ...next,
     byId: { ...next.byId, [id]: tab },
-    order,
+    order: placed(next.order, id),
     inFront: id,
     named: { ...next.named, tabs: id },
   };
@@ -305,24 +351,15 @@ function lift(tabs: Tabs, source: Source, ctx: DropContext): Lifted {
     };
   }
   const tab = tabs.byId[source.tab];
-  const moved =
-    source.kind === "tab" ? tab.layout : (leafOf(tabs, source.tab, source.pane) ?? tab.layout);
-  const numbers = new Set(leaves(moved).map(({ pane }) => pane));
-  const shows = Object.fromEntries(
-    Object.entries(tab.shows ?? {}).filter(([pane]) => numbers.has(Number(pane))),
-  ) as Record<number, number>;
+  const moved = source.kind === "tab" ? tab.layout : (paneAt(tabs, source) ?? tab.layout);
+  const numbers = new Set(panes(moved).map(({ pane }) => pane));
+  const shows = showsWhere(tab, (pane) => numbers.has(pane));
   const left = source.kind === "tab" ? undefined : without(tab.layout, source.pane);
   if (left !== undefined) {
-    const kept = Object.fromEntries(
-      Object.entries(tab.shows ?? {}).filter(([pane]) => !numbers.has(Number(pane))),
-    ) as Record<number, number>;
-    const rest: Tab = {
-      ...tab,
-      layout: left,
-      focused: numbers.has(tab.focused) ? firstPane(left) : tab.focused,
-    };
-    delete rest.shows;
-    if (Object.keys(kept).length > 0) rest.shows = kept;
+    const rest = withShows(
+      { ...tab, layout: left, focused: numbers.has(tab.focused) ? firstPane(left) : tab.focused },
+      showsWhere(tab, (pane) => !numbers.has(pane)),
+    );
     return { tabs: { ...tabs, byId: { ...tabs.byId, [tab.id]: rest } }, moved, shows };
   }
   // The tab is left with nothing: it closes, unless it is its strip's last tab.
@@ -341,12 +378,14 @@ function lift(tabs: Tabs, source: Source, ctx: DropContext): Lifted {
     return { tabs: closed, moved, shows };
   }
   const pane = tabs.named.panes + 1;
-  const emptied: Tab = {
-    ...tab,
-    layout: { kind: "pane", pane, content: { kind: "empty", workspace: strip } },
-    focused: pane,
-  };
-  delete emptied.shows;
+  const emptied = withShows(
+    {
+      ...tab,
+      layout: { kind: "pane", pane, content: { kind: "empty", workspace: strip } },
+      focused: pane,
+    },
+    {},
+  );
   return {
     tabs: {
       ...tabs,
@@ -358,10 +397,12 @@ function lift(tabs: Tabs, source: Source, ctx: DropContext): Lifted {
   };
 }
 
-/** Pane `a` of tab `from.tab` and pane `b` of tab `tab` trade places, each keeping its number. */
-function swap(tabs: Tabs, from: { tab: number; pane: number }, tab: number, b: number): Tabs {
-  const one = leafOf(tabs, from.tab, from.pane);
-  const other = leafOf(tabs, tab, b);
+type At = { tab: number; pane: number };
+
+/** Pane `from` and pane `to` trade places, each keeping its number, across tabs too. */
+function swap(tabs: Tabs, from: At, to: At): Tabs {
+  const one = paneAt(tabs, from);
+  const other = paneAt(tabs, to);
   if (one === undefined || other === undefined) return tabs;
   const exchange = (layout: Layout): Layout =>
     layout.kind === "pane"
@@ -370,23 +411,20 @@ function swap(tabs: Tabs, from: { tab: number; pane: number }, tab: number, b: n
         : layout.pane === other.pane
           ? one
           : layout
-      : {
-          ...layout,
-          children: layout.children.map(exchange) as [Layout, Layout],
-        };
+      : { ...layout, children: layout.children.map(exchange) as [Layout, Layout] };
   let next = edit(tabs, from.tab, exchange);
-  if (from.tab !== tab) {
-    next = edit(next, tab, exchange);
+  if (from.tab !== to.tab) {
+    next = edit(next, to.tab, exchange);
     // What each pane showed in place of its own chat goes with it.
     const shownOne = tabs.byId[from.tab].shows?.[one.pane];
-    const shownOther = tabs.byId[tab].shows?.[other.pane];
+    const shownOther = tabs.byId[to.tab].shows?.[other.pane];
     next = moveShows(next, from.tab, one.pane, other.pane, shownOther);
-    next = moveShows(next, tab, other.pane, one.pane, shownOne);
+    next = moveShows(next, to.tab, other.pane, one.pane, shownOne);
     const source = next.byId[from.tab];
     if (source.focused === one.pane)
       next = { ...next, byId: { ...next.byId, [from.tab]: { ...source, focused: other.pane } } };
   }
-  return inFront(next, tab, one.pane);
+  return inFront(next, to.tab, one.pane);
 }
 
 /** Tab `id`'s `shows` without pane `gone`'s entry, and with `shown` for pane `came`. */
@@ -398,14 +436,24 @@ function moveShows(
   shown: number | undefined,
 ): Tabs {
   const tab = tabs.byId[id];
-  const shows = Object.fromEntries(
-    Object.entries(tab.shows ?? {}).filter(([pane]) => Number(pane) !== gone),
-  ) as Record<number, number>;
+  const shows = showsWhere(tab, (pane) => pane !== gone);
   if (shown !== undefined) shows[came] = shown;
+  return { ...tabs, byId: { ...tabs.byId, [id]: withShows(tab, shows) } };
+}
+
+/** What `tab` shows in place of its own chat, for the panes `keep` keeps. */
+function showsWhere(tab: Tab, keep: (pane: number) => boolean): Record<number, number> {
+  return Object.fromEntries(
+    Object.entries(tab.shows ?? {}).filter(([pane]) => keep(Number(pane))),
+  ) as Record<number, number>;
+}
+
+/** `tab` showing `shows`, and no `shows` at all when it is empty, as `tabs.ts` keeps a tab. */
+function withShows(tab: Tab, shows: Record<number, number> | undefined): Tab {
   const next: Tab = { ...tab };
   delete next.shows;
-  if (Object.keys(shows).length > 0) next.shows = shows;
-  return { ...tabs, byId: { ...tabs.byId, [id]: next } };
+  if (shows !== undefined && Object.keys(shows).length > 0) next.shows = shows;
+  return next;
 }
 
 /** Tab `id` with `shows` added: the moved panes' tasks go with them. */
@@ -427,37 +475,12 @@ function edit(tabs: Tabs, id: number, change: (layout: Layout) => Layout): Tabs 
   return { ...tabs, byId: { ...tabs.byId, [id]: { ...tab, layout: change(tab.layout) } } };
 }
 
-type Leaf = Extract<Layout, { kind: "pane" }>;
-
-function leaves(layout: Layout): Leaf[] {
-  return layout.kind === "pane" ? [layout] : layout.children.flatMap(leaves);
+function paneAt(tabs: Tabs, at: At): Pane | undefined {
+  const tab = tabs.byId[at.tab];
+  return tab === undefined ? undefined : panes(tab.layout).find(({ pane }) => pane === at.pane);
 }
 
-function leafOf(tabs: Tabs, tab: number, pane: number): Leaf | undefined {
-  const found = tabs.byId[tab];
-  return found === undefined ? undefined : leaves(found.layout).find((one) => one.pane === pane);
-}
-
-const firstPane = (layout: Layout): number => leaves(layout)[0].pane;
-
-/** `layout` with pane `pane` replaced by `by` (a layout, or one made from the pane found). */
-function swapIn(layout: Layout, pane: number, by: Layout | ((found: Leaf) => Layout)): Layout {
-  if (layout.kind === "pane")
-    return layout.pane === pane ? (typeof by === "function" ? by(layout) : by) : layout;
-  return {
-    ...layout,
-    children: layout.children.map((child) => swapIn(child, pane, by)) as [Layout, Layout],
-  };
-}
-
-/** `layout` without pane `pane`: its sibling takes the split's place. */
-function without(layout: Layout, pane: number): Layout | undefined {
-  if (layout.kind === "pane") return layout.pane === pane ? undefined : layout;
-  const [first, second] = layout.children.map((child) => without(child, pane));
-  if (!first) return second;
-  if (!second) return first;
-  return { ...layout, children: [first, second] };
-}
+const firstPane = (layout: Layout): number => panes(layout)[0].pane;
 
 /** A box on screen, in CSS pixels. */
 export type Box = { left: number; top: number; width: number; height: number };
@@ -507,6 +530,20 @@ export function undone(now: Tabs, before: Tabs, after: Tabs): Tabs | undefined {
       (id, at) => after.order[at] === id && now.byId[id]?.layout === after.byId[id]?.layout,
     );
   if (!same) return undefined;
+  // Only the layout goes back: a tab renamed since keeps its new name. A tab the drop closed
+  // comes back as it was.
+  const byId = Object.fromEntries(
+    before.order.map((id) => {
+      const was = before.byId[id];
+      const is = now.byId[id];
+      return [
+        id,
+        is === undefined
+          ? was
+          : withShows({ ...is, layout: was.layout, focused: was.focused }, was.shows),
+      ];
+    }),
+  );
   // Numbers handed out since stay handed out: a pane or a tab never reuses one.
-  return { ...before, named: now.named };
+  return { ...now, byId, order: before.order, inFront: before.inFront, named: now.named };
 }

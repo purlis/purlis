@@ -4,6 +4,7 @@
 import { useCallback, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { UNDO_MS } from "./MemoryEdits";
 import { CHAT_ROW, dropPane, GRIP, HOLD_MS, STRIP, TAB, usePaneDrag } from "./paneDrag";
 import type { DropContext } from "./paneDrop";
 import { contentsOf, insertPane, type Layout, noTabs, openTab, selectTab, type Tabs } from "./tabs";
@@ -65,7 +66,10 @@ function Window({ first, heard }: { first: Tabs; heard: (tabs: Tabs) => void }) 
       <div {...{ [STRIP]: "" }} data-box="0,0,1600,30">
         {tabs.order.map((id, at) => (
           <div key={id} {...{ [TAB]: String(id) }} data-box={`${at * 100},0,100,30`}>
-            {`tab ${id}`}
+            <span role="tab" aria-selected={id === tabs.inFront}>{`tab ${id}`}</span>
+            <button type="button" aria-label={`Close tab ${id}`}>
+              ×
+            </button>
           </div>
         ))}
       </div>
@@ -136,7 +140,7 @@ describe("dragging a pane in the window (#4763)", () => {
     );
     fireEvent.pointerUp(document, at(60, 300));
     expect(shape(window.tabs().byId[front].layout)).toBe("row(3 1)");
-    await waitFor(() => expect(heard()).toBe("Dropped. chat 3 left of chat 1."));
+    await waitFor(() => expect(heard()).toBe("Put chat 3 left of chat 1."));
     expect(document.querySelector(".pane-drop-preview")).toBeNull();
   });
 
@@ -180,12 +184,14 @@ describe("dragging a pane in the window (#4763)", () => {
     // The pane's own head is its own place: dropping it on itself is refused.
     fireEvent.pointerMove(document, at(1200, 340));
     fireEvent.pointerMove(document, at(1500, 340));
-    const said = await screen.findByText("That's the pane being moved.");
+    const said = await screen.findByText("That's the pane being moved. Drop it on another pane.");
     expect(said.hasAttribute("data-refused")).toBe(true);
     fireEvent.pointerUp(document, at(1500, 340));
     expect(window.tabs()).toBe(before);
     expect(contentsOf(window.tabs(), front)[0].pane).toBe(one);
-    await waitFor(() => expect(heard()).toBe("Not dropped: That's the pane being moved."));
+    await waitFor(() =>
+      expect(heard()).toBe("Not dropped: That's the pane being moved. Drop it on another pane."),
+    );
   });
 
   it("offers Undo after a drop, which puts the last layout back", async () => {
@@ -240,6 +246,32 @@ describe("dragging a pane in the window (#4763)", () => {
     const tabs = window.tabs();
     expect(tabs.order).toEqual([first]);
     expect(shape(tabs.byId[first].layout)).toBe("row(1 row(3 4))");
+  });
+
+  it("starts no drag from a control beside a tab, such as its close", () => {
+    const window = shown();
+    const before = window.tabs();
+    const second = before.order[1];
+    fireEvent.pointerDown(screen.getByRole("button", { name: `Close tab ${second}` }), at(190, 10));
+    fireEvent.pointerMove(document, at(1500, 340));
+    fireEvent.pointerUp(document, at(1500, 340));
+    expect(window.tabs()).toBe(before);
+    expect(document.querySelector(".pane-drop-preview")).toBeNull();
+  });
+
+  it("hides the Undo line after a few seconds, and ⌘Z still puts the layout back", () => {
+    vi.useFakeTimers();
+    const window = shown();
+    const front = window.tabs().order[0];
+    fireEvent.pointerDown(head(contentsOf(window.tabs(), front)[1].pane), at(900, 50));
+    fireEvent.pointerMove(document, at(60, 300));
+    fireEvent.pointerUp(document, at(60, 300));
+    expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
+    act(() => vi.advanceTimersByTime(UNDO_MS));
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    fireEvent.keyDown(document.body, { key: "z", metaKey: true });
+    fireEvent.keyDown(document.body, { key: "z", ctrlKey: true });
+    expect(shape(window.tabs().byId[front].layout)).toBe("row(1 3)");
   });
 
   it("brings a tab forward when a drag holds over it", () => {

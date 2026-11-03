@@ -11,12 +11,15 @@ import {
   judgeDrop,
   placeAt,
   previewOf,
+  type Size,
   type Source,
+  sourceName,
   type Target,
   undone,
   type Verdict,
 } from "./paneDrop";
-import { contentsOf, type Tabs } from "./tabs";
+import { UNDO_MS } from "./MemoryEdits";
+import type { Tabs } from "./tabs";
 
 /**
  * **Dragging panes in the window** (#4763): the pointer half of `paneDrop.ts`. Everything a drop
@@ -65,12 +68,14 @@ type Over = {
   verdict: Verdict;
   /** Where the result is drawn: the half the source would take, or a line on the strip. */
   box: Box;
+  /** The pane's size, for the floor the drop keeps; none on the strip. */
+  size?: Size;
 };
 
 type Dragging = { source: Source; x: number; y: number; over?: Over };
 
 /** A drop that can still be undone: the tabs before it and after it, and what it did. */
-type Undoable = { before: Tabs; after: Tabs; says: string };
+type Undoable = { before: Tabs; after: Tabs; did: string };
 
 export type PaneDragging = {
   /** The preview, the sentence by the pointer, and what a reader hears. */
@@ -100,6 +105,14 @@ export function usePaneDrag({
   const [dragging, setDragging] = useState<Dragging>();
   const [said, setSaid] = useState("");
   const [undo, setUndo] = useState<Undoable>();
+  /** Whether the Undo line is drawn: for {@link UNDO_MS} after a drop. ⌘Z works on while the
+   *  layout is still what the drop left. */
+  const [lineUp, setLineUp] = useState(false);
+  useEffect(() => {
+    if (undo === undefined) return;
+    const timer = window.setTimeout(() => setLineUp(false), UNDO_MS);
+    return () => window.clearTimeout(timer);
+  }, [undo]);
   const now = useRef({ tabs, ctx, change, onHoldTab, chatNameOf });
   useEffect(() => {
     now.current = { tabs, ctx, change, onHoldTab, chatNameOf };
@@ -114,7 +127,7 @@ export function usePaneDrag({
     const was = undo;
     now.current.change((current) => undone(current, was.before, was.after) ?? current);
     setUndo(undefined);
-    setSaid(`Undone: ${was.says}`);
+    setSaid("Undone. The layout is back as it was.");
   }, [undo]);
 
   // ⌘Z, while there is a drop to undo: a field's own Undo comes first.
@@ -168,12 +181,16 @@ export function usePaneDrag({
           // A tab pulled off the strip leaves the strip's own drag, which an Escape on the
           // document ends (dnd-kit's pointer sensor).
           if (strip !== undefined) {
+            // Kept to dnd-kit's listener on the document as far as it can be: it is heard there
+            // first, and goes no further up to the window's own Escape handlers.
             leavingTheStrip = true;
+            document.addEventListener("keydown", stopHere, { once: true });
             document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape" }));
+            document.removeEventListener("keydown", stopHere);
             leavingTheStrip = false;
           }
           document.documentElement.dataset.paneDragging = "";
-          setSaid(`Dragging ${nameOf(source)}.`);
+          setSaid(`Dragging ${sourceName(now.current.tabs, source, now.current.ctx)}.`);
         }
         const over = hit(at.clientX, at.clientY, source);
         const tab = tabUnder(at.clientX, at.clientY);
@@ -192,21 +209,23 @@ export function usePaneDrag({
         window.setTimeout(() => window.removeEventListener("click", swallow, true), 0);
         const over = hit(at.clientX, at.clientY, source);
         if (over === undefined) {
-          setSaid("Not dropped.");
+          setSaid("Not dropped: drop it on a pane or on the tab strip.");
           return;
         }
         if (!over.verdict.ok) {
           setSaid(`Not dropped: ${over.verdict.why}`);
           return;
         }
-        const says = over.verdict.says;
+        const did = over.verdict.did;
         const before = now.current.tabs;
-        const size = sizeOfPane(at.clientX, at.clientY);
         const after = now.current.change((current) =>
-          dropOn(current, source, over.target, now.current.ctx, size),
+          dropOn(current, source, over.target, now.current.ctx, over.size),
         );
-        if (after !== before) setUndo({ before, after, says });
-        setSaid(`Dropped. ${says}`);
+        if (after !== before) {
+          setUndo({ before, after, did });
+          setLineUp(true);
+        }
+        setSaid(did);
       };
       const esc = (key: KeyboardEvent) => {
         // Not the Escape that ends the strip's own drag as a tab leaves it.
@@ -219,18 +238,6 @@ export function usePaneDrag({
       window.addEventListener("pointermove", move, true);
       window.addEventListener("pointerup", up, true);
       window.addEventListener("keydown", esc, true);
-    };
-
-    const nameOf = (source: Source): string => {
-      const { tabs, ctx } = now.current;
-      if (source.kind === "chat")
-        return ctx.name({ kind: "session", session: source.session, chat: source.chat });
-      const tab = tabs.byId[source.tab];
-      return tab === undefined ? "" : source.kind === "tab" ? tab.name : paneName(tabs, source);
-    };
-    const paneName = (tabs: Tabs, source: { tab: number; pane: number }): string => {
-      const found = contentsOf(tabs, source.tab).find(({ pane }) => pane === source.pane)?.content;
-      return found === undefined ? "" : now.current.ctx.name(found);
     };
 
     /** What dropping `source` at the point would do: in a pane, or on the strip. */
@@ -258,6 +265,7 @@ export function usePaneDrag({
         target,
         verdict: judgeDrop(tabs, source, target, ctx, size),
         box: previewOf(r, place),
+        size,
       };
     };
 
@@ -297,16 +305,17 @@ export function usePaneDrag({
     </>
   );
 
-  const undoLine = undoable ? (
-    <Notice
-      cause="layout-changed"
-      tone="news"
-      fixes={[{ label: "Undo", onPress: takeBack }]}
-      onDismiss={() => setUndo(undefined)}
-    >
-      {undo.says}
-    </Notice>
-  ) : null;
+  const undoLine =
+    undoable && lineUp ? (
+      <Notice
+        cause="layout-changed"
+        tone="news"
+        fixes={[{ label: "Undo", onPress: takeBack }]}
+        onDismiss={() => setLineUp(false)}
+      >
+        {undo.did}
+      </Notice>
+    ) : null;
 
   return { layer, undoLine };
 }
@@ -345,6 +354,14 @@ function pickedUp(target: Element): { source: Source; strip?: DOMRect } | undefi
   }
   const tab = target.closest(`[${TAB}]`);
   const strip = tab?.closest(`[${STRIP}]`);
+  // A tab is pressed by its own tab element; a control beside it in its cell (its close, its
+  // name box) keeps its press.
+  if (
+    control !== null &&
+    tab?.contains(control) === true &&
+    control.closest("[role='tab']") === null
+  )
+    return undefined;
   if (tab != null && strip != null)
     return {
       source: { kind: "tab", tab: Number(tab.getAttribute(TAB)) },
@@ -385,11 +402,9 @@ function tabUnder(x: number, y: number): number | undefined {
   return tab?.closest(`[${STRIP}]`) == null ? undefined : Number(tab.getAttribute(TAB));
 }
 
-function sizeOfPane(x: number, y: number): { width: number; height: number } | undefined {
-  const pane = document.elementFromPoint(x, y)?.closest(`[${PANE}]`);
-  if (pane == null) return undefined;
-  const r = pane.getBoundingClientRect();
-  return { width: r.width, height: r.height };
+/** Ends an event where it is heard, so nothing further up hears it. */
+function stopHere(event: Event) {
+  event.stopPropagation();
 }
 
 function swallow(event: MouseEvent) {

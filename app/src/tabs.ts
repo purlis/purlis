@@ -2145,9 +2145,11 @@ function frontTab(tabs: Tabs): Tab | undefined {
   return tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
 }
 
-type Pane = Extract<Layout, { kind: "pane" }>;
+/** One pane of a layout. */
+export type Pane = Extract<Layout, { kind: "pane" }>;
 
-function panes(layout: Layout): Pane[] {
+/** Every pane of `layout`, in reading order. */
+export function panes(layout: Layout): Pane[] {
   return layout.kind === "pane" ? [layout] : layout.children.flatMap(panes);
 }
 
@@ -2156,7 +2158,7 @@ function contents(layout: Layout): { pane: number; content: Content }[] {
 }
 
 /** `layout` with the pane `pane` put through `change`. */
-function replace(layout: Layout, pane: number, change: (found: Pane) => Layout): Layout {
+export function replace(layout: Layout, pane: number, change: (found: Pane) => Layout): Layout {
   if (layout.kind === "pane") return layout.pane === pane ? change(layout) : layout;
   return {
     ...layout,
@@ -2165,7 +2167,7 @@ function replace(layout: Layout, pane: number, change: (found: Pane) => Layout):
 }
 
 /** `layout` without the pane `pane`, or nothing when it was the only one. */
-function without(layout: Layout, pane: number): Layout | undefined {
+export function without(layout: Layout, pane: number): Layout | undefined {
   if (layout.kind === "pane") return layout.pane === pane ? undefined : layout;
   const [first, second] = layout.children.map((child) => without(child, pane));
   if (!first) return second;
