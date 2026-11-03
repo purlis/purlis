@@ -1042,7 +1042,8 @@ impl FakeDocker {
              prev=$a; done; \
              exit \"$(cat '{holds}' 2>/dev/null || echo 0)\" ;; esac\ncase \"$1 $2\" in\n  \
              'run --rm') [ -f '{copy_fails}' ] && \
-             {{ echo 'cp: cannot open' >&2; exit 1; }}; cat '{conversations}' 2>/dev/null; true ;;\n  \
+             {{ echo 'cp: cannot open' >&2; exit 1; }}; [ -f '{during_run}' ] && sh '{during_run}'; \
+             cat '{conversations}' 2>/dev/null; true ;;\n  \
              'run '*) [ -f '{run_fails}' ] && \
              {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
              'container inspect') if [ -f '{inspect}-once' ]; then cat '{inspect}-once'; rm '{inspect}-once'; \
@@ -1076,6 +1077,7 @@ impl FakeDocker {
             containers = at("containers"),
             holds = at("holds"),
             conversations = at("conversations"),
+            during_run = at("during-run"),
             probe = PROBE_ID,
         );
         stand_in::program(dir.path(), "docker", &script);
@@ -3512,6 +3514,7 @@ fn bringing_back_puts_each_conversation_at_its_place_in_the_new_home() {
         ".claude/projects/-home-purlis-p/other.jsonl",
         "the new runner's\n",
     );
+    harnesses_ran_in(to.path());
 
     let (said, errors) = conversations_run(from.path(), Some(to.path()));
 
@@ -3637,6 +3640,34 @@ fn a_homes_conversations_are_read_by_a_container_that_reaches_nothing() {
     );
 }
 
+/// **A read of a home runs in a container of its own** (#4861): named and labelled for the home it
+/// reads, so a carry or a bring back that clears its own `-copy` container never ends a read that
+/// runs outside the runners lock, and a sweep of the read runner's leftovers takes it.
+#[test]
+fn a_homes_read_runs_in_a_container_named_for_that_home() {
+    let held = made();
+    let pools = Made {
+        container: ContainerId::new(&"b".repeat(64)).unwrap(),
+        runner: Runner::new(
+            "first-fedcba98",
+            image(),
+            User::new(10001, 10001).unwrap(),
+            "/home/purlis",
+        )
+        .unwrap(),
+    };
+
+    let seen = pools.conversations_args(&held, "d", false).join(" ");
+    let brought = pools.conversations_args(&held, "d", true).join(" ");
+
+    assert!(seen.contains("--name purlis-runner-first-read "), "{seen}");
+    assert!(seen.contains(&format!("--label {LABEL}=first ")), "{seen}");
+    assert!(
+        brought.contains("--name purlis-runner-first-fedcba98-copy "),
+        "{brought}"
+    );
+}
+
 /// **What a harness keeps beside a transcript comes back with it** (#4633): Claude Code's
 /// subagents' transcripts and tool results under the session's own folder, and Codex's archived
 /// rollouts, each at its place.
@@ -3653,6 +3684,7 @@ fn bringing_back_takes_what_a_harness_keeps_beside_a_transcript() {
     for rel in beside {
         put(from.path(), rel, &format!("{rel}\n"));
     }
+    harnesses_ran_in(to.path());
 
     let (said, errors) = conversations_run(from.path(), Some(to.path()));
 
@@ -3671,6 +3703,54 @@ fn bringing_back_takes_what_a_harness_keeps_beside_a_transcript() {
             format!("{rel}\n")
         );
     }
+}
+
+/// The folders Claude Code and Codex keep in a runner's home once each has run there, and the
+/// profile `work` made there.
+fn harnesses_ran_in(home: &std::path::Path) {
+    for folder in [
+        ".claude",
+        ".codex",
+        ".local/share/purlis/profiles/work/config",
+    ] {
+        std::fs::create_dir_all(home.join(folder)).unwrap();
+    }
+}
+
+/// **Nothing is brought back where the runner has no place for it yet**: a profile not made on
+/// the new runner yet, or a harness that never ran there. Its folder made by a bring back would
+/// stand in the way of the profile purlis makes there (the runner refuses a profile whose folder
+/// is already there), so those conversations are left, and the runner stays held until they can
+/// come.
+#[cfg(unix)]
+#[test]
+fn nothing_is_brought_back_where_the_runner_has_no_place_for_it_yet() {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let made = ".local/share/charter/profiles/work/config/projects/-home-purlis-p/0b5e.jsonl";
+    let not_made = ".local/share/charter/profiles/home/config/projects/-home-purlis-p/1c6f.jsonl";
+    for rel in [made, not_made] {
+        put(from.path(), rel, &format!("{rel}\n"));
+    }
+    std::fs::create_dir_all(to.path().join(".local/share/charter/profiles/work/config")).unwrap();
+
+    let (said, errors) = conversations_run(from.path(), Some(to.path()));
+
+    assert_eq!(
+        said,
+        Some(Conversations {
+            found: 2,
+            left: 1,
+            seen: 0
+        }),
+        "{errors}"
+    );
+    assert!(to.path().join(made).is_file());
+    assert!(
+        !to.path()
+            .join(".local/share/charter/profiles/home")
+            .exists(),
+        "no folder of a profile the runner has not made"
+    );
 }
 
 /// **A read that cannot finish gives no answer**, never one of none: an image with no `realpath`

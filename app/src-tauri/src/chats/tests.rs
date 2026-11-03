@@ -1121,7 +1121,7 @@ fn until_printed(chats: &Chats, session: u32, text: &str) -> String {
     let seen = Arc::new(Mutex::new(String::new()));
     let collect = {
         let seen = Arc::clone(&seen);
-        move |more: String| lock(&seen).push_str(&more)
+        move |more: Vec<u8>| lock(&seen).push_str(&String::from_utf8_lossy(&more))
     };
     chats
         .sessions()

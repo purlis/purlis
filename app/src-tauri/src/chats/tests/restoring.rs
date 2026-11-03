@@ -161,11 +161,13 @@ fn the_chat_in_front_starts_first_and_the_rest_in_the_records_order() {
     assert_eq!(started, [4, 1, 2, 3, 5]);
 }
 
+/// One project takes all the gate's places but one: the last is another project's
+/// (`restoring::Gate::enter`).
 #[test]
-fn no_more_chats_start_at_once_than_the_gate_lets() {
+fn no_more_chats_start_at_once_than_the_gate_lets_one_project() {
     let host = Pretend::default();
     host.takes(Duration::from_millis(10));
-    let (chats, _project) = chats_on(&host, 2);
+    let (chats, _project) = chats_on(&host, 3);
 
     chats.begin_put_back(&a_record_of(12, 1), &|_| None);
     let opened = chats.finish_put_back(SIZE);
@@ -178,7 +180,8 @@ fn no_more_chats_start_at_once_than_the_gate_lets() {
 fn a_start_that_hangs_holds_up_no_other_chat() {
     let host = Pretend::default();
     host.hangs_number(2);
-    let (chats, _project) = chats_on(&host, 2);
+    // The fewest places a gate has (`restoring::at_once`).
+    let (chats, _project) = chats_on(&host, 3);
     chats.begin_put_back(&a_record_of(8, 2), &|_| None);
 
     std::thread::scope(|scope| {

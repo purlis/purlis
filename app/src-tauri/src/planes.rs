@@ -864,14 +864,15 @@ impl Held {
     }
 
     /// A view of chat `session` opened in its turn in the chat's lane, after every resize sent
-    /// before it (#891, #4734), waiting for the host's answer: never on the window's thread.
+    /// before it (#891, #4734), waiting for the host's answer: never on the window's thread. The
+    /// view is paced by what its pane reports drawn (`session_drawn`, #4733).
     pub fn watch_in_turn(
         &self,
         session: u32,
         sink: crate::host::Sink,
     ) -> Result<crate::host::Watching, String> {
         self.lanes
-            .in_turn(session, || self.chats.sessions().watch(session, sink))
+            .in_turn(session, || self.chats.sessions().watch_drawn(session, sink))
     }
 
     /// Types `bytes` into chat `session` in its turn in the chat's lane, waiting for the host's
@@ -1564,6 +1565,9 @@ impl Held {
         // And what the app remembers of it as a task and as an asking chat, with the messages
         // waiting for its next turn (#1441, #1442): a cancel, a question, the stepped-in mark.
         crate::dispatched::followed(self, session, started);
+        // And the places the person refused it to move its work to (#4862), so a restart
+        // doesn't ask them again.
+        self.runner_dispatches.followed(session, started);
     }
 
     /// A chat `session` handed work to, shown as `from`, has reported back to it, and the

@@ -205,3 +205,17 @@ fn a_ticket_the_app_will_not_mint_is_said_in_a_dispatch_s_words() {
         )
     );
 }
+
+/// A chat whose dispatch waits because it moves work is told, before the person answers, that a
+/// refusal holds for that place while it runs (#4862).
+#[test]
+fn a_chat_held_to_move_is_told_a_refusal_holds_for_that_place() {
+    let said = held_to_move("pool:builds", "lint");
+    assert!(said.contains("It asks to run on pool 'builds'"), "{said}");
+    assert!(
+        said.contains(
+            "its dispatches to run on pool 'builds' are refused from then on without asking them"
+        ),
+        "{said}"
+    );
+}

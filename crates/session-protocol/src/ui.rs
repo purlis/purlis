@@ -858,6 +858,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Where a new chat would run and why, for Start chat's Runs on row (#4536): this machine's
     // pools and settings, read for the person's own start in their window.
     "start_runs_on",
+    // A pool's held runners (#4860): named in the person's question before Remove pool discards
+    // their chats' conversations, in their window.
+    "pool_held_runners",
     // What a workspace's sends to a runner leave out (#2046): the person's list, in their window.
     "send_leaves_out",
     "set_send_leaves_out",
@@ -1246,6 +1249,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "see_on_this_machine",
     "seen_on_this_machine",
     "session_bus",
+    // How much of a view its pane has drawn, which paces the view (#4733): beside
+    // `watch_session`, a link's pane reports its own.
+    "session_drawn",
     // Whether the session host is failing, and what the window says of it (#2007).
     "session_host_failing",
     "session_record",

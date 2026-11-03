@@ -588,8 +588,9 @@ fn held_to_move(runs_on: &str, task: &str) -> String {
         "{SAYS} held for the person. It asks to run {place}, which is not where its workspace \
          runs its chats, so the person approves it in the window, with this brief in front of \
          them. Nothing has started. If they approve it, '{}' is decided then, and this chat is \
-         told what became of it; if they refuse it, this chat is told on its next turn. Carry \
-         on with other work, and do not dispatch it again.",
+         told what became of it; if they refuse it, this chat is told on its next turn, and its \
+         dispatches to run {place} are refused from then on without asking them. Carry on with \
+         other work, and do not dispatch it again.",
         one(task)
     )
 }

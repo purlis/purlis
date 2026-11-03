@@ -76,6 +76,8 @@ describe("the bar's buttons carry a mark beside their words", () => {
         "project.open",
         // The project switcher's button, at the start of the strip's controls (FR-27).
         "project.switch",
+        // Tile all at the strip's right end (#4765), found by its row's stem.
+        "tab.tile",
         "workspace.create",
       ].sort(),
     );
@@ -105,7 +107,8 @@ describe("the bar's buttons carry a mark beside their words", () => {
     // One each, so these cannot collide with anything — listed so that a second control
     // arriving on either strip has somewhere to be added and something to fail against.
     "the workspace strip": ["workspace.create"],
-    "the chat strip": ["chat.new"],
+    // The `+`, and Tile all at the strip's right end (#4765).
+    "the chat strip": ["chat.new", "tab.tile"],
   };
 
   it.each(Object.keys(SIDE_BY_SIDE))("never gives %s two rows with the same mark", (strip) => {

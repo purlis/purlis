@@ -496,6 +496,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -510,6 +512,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -678,7 +682,26 @@
             "alone": false,
             "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -786,7 +809,7 @@
         "surface.raised": "#1d1d22",
         "surface.sunken": "#17171b",
         "syntax.attribute": "#c3baf5",
-        "syntax.comment": "#a09eab",
+        "syntax.comment": "#c9c7d2",
         "syntax.constant": "#e5c08a",
         "syntax.function": "#99c2f4",
         "syntax.heading": "#f0aaa3",
@@ -795,7 +818,7 @@
         "syntax.number": "#e5c08a",
         "syntax.operator": "#ffffff",
         "syntax.property": "#c3baf5",
-        "syntax.punctuation": "#a09eab",
+        "syntax.punctuation": "#c9c7d2",
         "syntax.string": "#9fcfa8",
         "syntax.tag": "#f0aaa3",
         "syntax.type": "#79cfd6",
@@ -1195,6 +1218,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -1209,6 +1234,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -1377,7 +1404,26 @@
             "alone": false,
             "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -1477,7 +1523,7 @@
         "state.success": "#20562f",
         "state.unreadable": "#653410",
         "state.waiting": "#523601",
-        "state.waiting-glow": "#52360159",
+        "state.waiting-glow": "#fdb00559",
         "surface.base": "#f7f7fd",
         "surface.deep": "#fcfcff",
         "surface.hover": "#dbdce5",
@@ -1894,6 +1940,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -1908,6 +1956,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2076,7 +2126,26 @@
             "alone": false,
             "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -2427,6 +2496,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2441,6 +2512,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2609,7 +2682,26 @@
             "alone": false,
             "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -2976,6 +3068,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2990,6 +3084,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -3158,7 +3254,26 @@
             "alone": false,
             "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",

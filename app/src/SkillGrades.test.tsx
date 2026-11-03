@@ -474,7 +474,9 @@ describe("a skill's Grades tab (S6)", () => {
     await screen.findByTestId("skill-checks-none");
     const list = await screen.findByRole("grid", { name: "Grades of deploy" });
     fireEvent.click(
-      within(list).getByRole("button", { name: "Scorecard of the grade of 2026-10-28 10:00 UTC" }),
+      await within(list).findByRole("button", {
+        name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
+      }),
     );
     expect(onGrading).toHaveBeenLastCalledWith({ at: "scorecard", grade: "01C" }, "go");
   });
@@ -487,10 +489,9 @@ describe("a skill's Grades tab (S6)", () => {
       },
     });
     renderTab();
+    // React Aria draws the grid before it fills in its columns (#4950): wait for the columns.
     const list = await screen.findByRole("grid", { name: "Grades of deploy" });
-    const names = within(list)
-      .getAllByRole("columnheader")
-      .map((one) => one.textContent);
+    const names = (await within(list).findAllByRole("columnheader")).map((one) => one.textContent);
     expect(names).toEqual(
       expect.arrayContaining([
         "Picked, without it",
@@ -503,6 +504,7 @@ describe("a skill's Grades tab (S6)", () => {
     core();
     renderTab();
     const only = await screen.findByRole("grid", { name: "Grades of deploy" });
+    await within(only).findByRole("columnheader", { name: "Graded" });
     expect(within(only).queryByRole("columnheader", { name: /Does the job/ })).toBeNull();
   });
 

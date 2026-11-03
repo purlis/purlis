@@ -169,8 +169,10 @@ When two choices conflict, the higher priority wins.
    with many chats to put back took minutes). Reopening registers every chat at once, which
    starts nothing: each has its tab in its place from the first frame, drawn as restoring, and
    the window is usable however many there are. The chats then start a few at a time across
-   every project (two to four, by the machine's cores), the chat in front of the project in
-   front first, then each project's chat in front, then the rest in the record's order. Every
+   every project (three to four, by the machine's cores), the chat in front of the project in
+   front first, then each project's chat in front, then the rest in the record's order. One
+   project's chats take all of those places but one, so a project whose starts hang or crawl
+   never holds up another's (2026-11-03, #4986). Every
    chat still comes back, and each start is the one every chat goes through, with every check
    it makes: only when it starts moved. A chat that does not start is listed with its reason
    and Retry now, as before, and holds up no other; a record written while chats are still

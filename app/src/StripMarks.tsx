@@ -10,6 +10,7 @@ import {
   FolderOpen,
   FolderPlus,
   Hand,
+  LayoutGrid,
   Minus,
   PanelRight,
   Pin as PinMark,
@@ -98,7 +99,7 @@ export function Doer({
   primary?: boolean;
 }) {
   if (!offer) return null;
-  const Mark = MARKS[offer.id];
+  const Mark = MARKS[markKey(offer.id)];
   const bare = iconOnly && Mark !== undefined;
   if (primary)
     return (
@@ -185,6 +186,8 @@ export const MARKS: Record<string, typeof Plus> = {
   "project.open": FolderOpen,
   // The title bar's switcher (FR-27): two ways along the strip, which is what it does.
   "project.switch": ArrowLeftRight,
+  // Tile all (#4765), one row per tab: found by its stem.
+  "tab.tile": LayoutGrid,
 };
 
 /**
@@ -435,5 +438,11 @@ export function markOf(offer: Offer): typeof Plus | undefined {
   }
   if (offer.id.startsWith("chat.own:")) return SquareArrowOutUpRight;
   if (offer.id.startsWith("chat.beside:")) return PanelRight;
-  return MARKS[offer.id];
+  return MARKS[markKey(offer.id)];
+}
+
+/** Which key of `MARKS` a row's mark is under: its whole id, else its stem, for a row with one
+ *  id per thing it acts on (Tile all's `tab.tile:<tab>`, #4765). */
+function markKey(id: string): string {
+  return id in MARKS ? id : id.split(":")[0];
 }

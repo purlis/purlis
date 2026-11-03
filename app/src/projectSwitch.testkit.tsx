@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { Profiler } from "react";
 import { expect } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -96,34 +97,60 @@ const START_OPTIONS = {
 /** What the window sent the core, in order. */
 export type Asked = { cmd: string; plane: string | undefined };
 
-/** The window's listeners for `chat-moved`, by the handler the core calls (`chatMoves`). */
-const moveListeners: number[] = [];
-
 /** A core holding the projects `shape` names, with every call kept. */
-function core(shape: Shape): Asked[] {
+type Core = {
+  asked: Asked[];
+  /** Says `plane-changed` for `plane`'s answer `answer`, as the core's watcher would. */
+  planeChanged: (plane: string, answer: string) => Promise<void>;
+  /** Holds every `plane_sidebar` answer from now on until the function it answers is called. */
+  holdSidebar: () => () => void;
+  /** Writes every `plane_sidebar` answer from now on with each object's keys in reverse order:
+   *  the same answer, as a core built another way could send it. */
+  reverseSidebarKeys: () => void;
+  /** The window's listeners for `event`, by the handler the core calls. */
+  listenersOf: (event: string) => number[];
+};
+
+/** `value` with the keys of every object in it in reverse order. */
+const keysReversed = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(keysReversed)
+    : value !== null && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value)
+            .reverse()
+            .map(([key, inner]) => [key, keysReversed(inner)]),
+        )
+      : value;
+
+function core(shape: Shape): Core {
   const asked: Asked[] = [];
-  moveListeners.length = 0;
+  const listening = new Map<string, number[]>();
+  let held: Promise<void> | undefined;
+  let reversed = false;
   const roots = Array.from({ length: shape.projects }, (_, n) => rootOf(n));
   const chats = new Map(
     roots.map((root, n) => [root, chatsOf(root, shape, shape.chatsIn?.[n] ?? shape.chats)]),
   );
   // Past every session a project was given: a chat a split starts is a new one.
   let started = 1_000;
-  mockIPC((cmd, args) => {
+  mockIPC(async (cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
     const plane = given.plane as string | undefined;
     asked.push({ cmd, plane });
     if (cmd === "plugin:event|listen") {
-      if (given.event === "chat-moved") moveListeners.push(given.handler as number);
+      const { event, handler } = given as { event: string; handler: number };
+      listening.set(event, [...(listening.get(event) ?? []), handler]);
       return 1;
     }
     const open = chats.get(plane ?? "") ?? [];
+    if (cmd === "plane_sidebar" && held !== undefined) await held;
     if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
     if (cmd === "planes_to_restore")
       return { windows: [{ planes: roots, active: 0 }], dropped: [], gone: [] };
     if (cmd === "open_plane") return { plane: given.path, ask: null };
-    if (cmd === "plane_sidebar")
-      return {
+    if (cmd === "plane_sidebar") {
+      const answer = {
         root: plane ?? "",
         workspaces: Array.from({ length: shape.workspaces }, (_, w) => ({
           name: `w${w}`,
@@ -138,6 +165,8 @@ function core(shape: Shape): Asked[] {
         persona: "steward",
         unfiled: [],
       };
+      return reversed ? keysReversed(answer) : answer;
+    }
     if (cmd === "opened_chats") return open;
     // A split starts a chat, on the profile its picker offers.
     if (cmd === "start_options") return START_OPTIONS;
@@ -166,7 +195,39 @@ function core(shape: Shape): Asked[] {
       };
     return null;
   });
-  return asked;
+  return {
+    asked,
+    planeChanged: async (plane, answer) => {
+      await act(async () => {
+        for (const handler of listening.get("plane-changed") ?? [])
+          window.__TAURI_INTERNALS__.runCallback(handler, {
+            event: "plane-changed",
+            id: 1,
+            payload: { plane, changes: null, answers: [{ answer, workspace: null }] },
+          });
+      });
+    },
+    holdSidebar: () => {
+      let release = () => {};
+      held = new Promise((done) => {
+        release = () => {
+          held = undefined;
+          done();
+        };
+      });
+      return release;
+    },
+    reverseSidebarKeys: () => {
+      reversed = true;
+    },
+    listenersOf: (event) => listening.get(event) ?? [],
+  };
+}
+
+declare global {
+  interface Window {
+    __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
+  }
 }
 
 function projectTab(name: string): HTMLElement {
@@ -184,7 +245,7 @@ const inFront = () =>
     ?.getAttribute("aria-label");
 
 /** Everything the window has started has settled: nothing new was asked for a while. */
-async function settled(asked: Asked[]): Promise<void> {
+export async function settled(asked: Asked[]): Promise<void> {
   let seen = -1;
   for (let rounds = 0; seen !== asked.length; rounds++) {
     if (rounds > 200) throw new Error(`the window never settled: ${asked.at(-1)?.cmd}`);
@@ -279,16 +340,41 @@ function nodesIn(node: Node): number {
 }
 
 /**
+ * How many times React has committed for the window {@link aWindow} mounted, as a `Profiler`
+ * around it says.
+ *
+ * Read off a `Profiler` and not off {@link counts}: the DevTools hook those are counted by works
+ * only when it is in place before `react-dom` is first loaded, and the test setup loads it first.
+ */
+export const windowCommits = { count: 0 };
+
+/** The real window on a core holding `shape`, mounted with its first project in front and
+ *  settled. */
+export async function aWindow(shape: Shape): Promise<Core> {
+  const held = core(shape);
+  render(
+    <Profiler
+      id="window"
+      onRender={() => {
+        windowCommits.count += 1;
+      }}
+    >
+      <App />
+    </Profiler>,
+  );
+  await waitFor(() => expect(inFront()).toBe(nameOf(0)), { timeout: 20_000 });
+  await settled(held.asked);
+  return held;
+}
+
+/**
  * Mounts the window, brings every project to the front once, then the ones in `visits` and the
  * first again, so nothing measured afterwards is a first visit and each of them is a project the
  * person was in lately. Then switches to each of `visits` in turn and answers with what each
  * cost. The window starts on the first project, so `visits` should not start with it.
  */
 export async function switches(shape: Shape, visits: readonly number[]): Promise<Switch[]> {
-  const asked = core(shape);
-  render(<App />);
-  await waitFor(() => expect(inFront()).toBe(nameOf(0)), { timeout: 20_000 });
-  await settled(asked);
+  const { asked } = await aWindow(shape);
   for (let n = 1; n < shape.projects; n++) {
     fireEvent.click(projectTab(nameOf(n)));
     await settled(asked);
@@ -386,7 +472,7 @@ export async function chatMoves(
   shape: Shape,
   { of, times }: { of: number; times: number },
 ): Promise<Moves> {
-  const asked = core(shape);
+  const { asked, listenersOf } = core(shape);
   render(<App />);
   await waitFor(() => expect(inFront()).toBe(nameOf(0)), { timeout: 20_000 });
   await settled(asked);
@@ -396,7 +482,7 @@ export async function chatMoves(
   }
   const plane = rootOf(of);
   const move = (at: number) => {
-    for (const handler of moveListeners)
+    for (const handler of listenersOf("chat-moved"))
       window.__TAURI_INTERNALS__.runCallback(handler, {
         event: "chat-moved",
         id: 1,

@@ -386,7 +386,11 @@ spec:
     the runner does. Another repository's branches as last fetched (`refs/remotes/…`) and what the
     desktop sent (`refs/purlis/…`) are not the runner's work. What a clone's git ignores is left
     out, as git leaves it out; a file in no clone, such as one a task wrote in its workspace's
-    folder, counts. Only the window of the checkout a task started from lets its runner go, so
+    folder, counts. So does a change git is told not to look at (a file marked unchanged or to
+    skip the work tree), every stash and not only the newest, and a file a task wrote in the
+    runner's home since its host started, outside its project: a hidden folder of the home, a
+    program's own settings, cache or record, is left out, as is a temporary folder (#4781).
+    Only the window of the checkout a task started from lets its runner go, so
     another checkout of the same project never takes it. Anything else missing keeps the
     Claim, and the window says what, with **Fetch again** and **Discard**, never silently. purlis
     tries again as the window comes into focus and at its next launch. A long task and a handoff

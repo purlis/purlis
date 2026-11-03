@@ -599,6 +599,12 @@ export const commands = {
 	 *  (#4734, ADR 0108). The session keeps running.
 	 */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
+	/**
+	 *  The pane drawing view `view` of session `session` has drawn `pieces` more of what its
+	 *  channel was sent, in order (#4733). Only what is drawn is acknowledged to the session host,
+	 *  so a pane that cannot keep up is sent a fresh screen rather than a backlog.
+	 */
+	sessionDrawn: (plane: PlaneId, session: number, view: number, pieces: number) => typedError<null, string>(__TAURI_INVOKE("session_drawn", { plane, session, view, pieces })),
 	openBrowser: __WINDOW_ONLY_RESULT,
 	unwatchBrowser: __WINDOW_ONLY_RESULT,
 	closeBrowser: __WINDOW_ONLY_RESULT,
@@ -1670,6 +1676,7 @@ export const commands = {
 	startRunsOn: __WINDOW_ONLY_RESULT,
 	setProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	poolNamedBy: __WINDOW_ONLY_RESULT,
+	poolHeldRunners: __WINDOW_ONLY_RESULT,
 	sendLeavesOut: __WINDOW_ONLY_RESULT,
 	setSendLeavesOut: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
@@ -6937,6 +6944,8 @@ export type MachineWorkspacePin = {
  */
 export type MadeAgain = {
 	sign_ins_kept: boolean,
+	/**  What became of the gone runner's home (#4859). */
+	old_home: OldHome,
 };
 
 /**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */
@@ -7426,6 +7435,21 @@ export type OfferedSource = {
 	why: string,
 	source: SkillSource,
 };
+
+/**
+ *  **What Make the runner again did with the gone runner's home** (#4859), for the pool's row to
+ *  say.
+ */
+export type OldHome = 
+/**  It held no conversation, or was gone too: it was removed. */
+"removed" | 
+/**
+ *  It holds its chats' conversations, so it is kept, held: Devices offers to bring them back
+ *  or discard them.
+ */
+"held" | 
+/**  It could not be read, so it is kept, held, all the same. */
+"unread";
 
 /**
  *  The chats of a project still running under an older sandbox (#1428), for the Notice after
@@ -13981,6 +14005,17 @@ export type WindowMotion = {
 };
 
 /**
+ *  **A ground of the accent's words comes no nearer a signal's wash than it was** (#4666,
+ *  `purlis_core::theme::NoNearer`): each of `tokens`, turned and laid on each of `over`, is no
+ *  nearer any of `from` laid on the same ground than the value it was turned from.
+ */
+export type WindowNoNearer = {
+	tokens: string[],
+	from: string[],
+	over: string[],
+};
+
+/**
  *  One option of the theme drawn (#2325), as Settings shows it: what it is called, its values,
  *  the value drawn and whether a choice made it (`false`: the theme's default).
  */
@@ -14075,6 +14110,13 @@ export type WindowTint = {
 	hues: WindowHue[],
 	/**  The rules every tint holds, whatever the hue. */
 	apart: WindowApart[],
+	/**  The washes that take the accent's words' answer (#4666). */
+	with_words: string[],
+	/**
+	 *  The grounds a tint keeps as written where turning would bring them nearer the waiting or
+	 *  danger wash, as drawn (#4666, `purlis_core::theme::NO_NEARER`).
+	 */
+	no_nearer: WindowNoNearer,
 };
 
 /**  A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers. */

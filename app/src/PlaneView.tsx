@@ -15,6 +15,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { dequal } from "dequal/lite";
 import { listen } from "./here";
 import { CHAT_RESTORED, isRestoring, restoredSince, type ChatRestored } from "./restoringChats";
 import { QueueRead } from "./QueueRead";
@@ -271,6 +272,7 @@ import {
   chatOf,
   contentsOf,
   findView,
+  openChatsKey,
   openTab,
   openTabBehind,
   openView,
@@ -336,6 +338,7 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
+import { tileAll, undoLayout, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { layoutOf, tabsOf, withShare } from "./laidOut";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -954,6 +957,13 @@ export const PlaneView = memo(function PlaneView({
     [],
   );
   const [sidebar, setSidebar] = useState<SidebarModel>();
+  /** The sidebar held, for its read's answer to compare with outside React's own update. */
+  const sidebarHeld = useRef<SidebarModel>(undefined);
+  useEffect(() => {
+    sidebarHeld.current = sidebar;
+  }, [sidebar]);
+  /** Reads the finished tasks again, drawing nothing if they are as held (set further down). */
+  const finishedQuietly = useRef<() => void>(() => undefined);
   /** How many chats a stop has ended: the sidebar is read again for each, since a task chat
    *  with no tab leaves the list without any tab changing (#1448). */
   const [stopsEnded, setStopsEnded] = useState(0);
@@ -1950,15 +1960,22 @@ export const PlaneView = memo(function PlaneView({
 
   // The sidebar is read from the plane, and re-read whenever the chats change: the plane is a
   // directory the operator also edits by hand and another charter process writes, so there is
-  // nothing to invalidate a cache of it. `tabs` is the dependency because opening or ending a
-  // chat is what this window can change about the answer, and `sidebarChanges` because the core
-  // says when something else changed it (charter-app#264) — a change of a kind the sidebar
-  // reads (FD-10).
+  // nothing to invalidate a cache of it. `openHere` is the dependency because opening or ending
+  // a chat is what this window can change about the answer, and `sidebarChanges` because the
+  // core says when something else changed it (charter-app#264) — a change of a kind the sidebar
+  // reads (FD-10). **Not `tabs`** (#4729): a switch between chats already open changes the tabs
+  // and not the answer, and each switch read the plane again and drew the window again.
+  //
+  // **An answer equal to the one held is not drawn** (#4729): the state keeps the object it
+  // holds, so nothing that reads the sidebar is drawn again for a read that found no change.
+  // Equal is structural (`dequal`): it walks the two answers once and does not care in which
+  // order a key was written, where comparing them as JSON serialised both whole each time.
   //
   // **Only the newest read is drawn.** The core reads the sidebar off the window's thread
   // (SC-2), so two reads can answer in either order, and one asked before a workspace was
   // renamed must not put it back after the read that saw the rename. `gone` is set when a
   // newer read is asked, which is when this effect runs again.
+  const openHere = useMemo(() => openChatsKey(tabs), [tabs]);
   useEffect(() => {
     let gone = false;
     void commands
@@ -1975,7 +1992,11 @@ export const PlaneView = memo(function PlaneView({
           setSidebar(undefined);
           return;
         }
-        setSidebar(next);
+        // An equal answer moves nothing the finished tasks are read on, so they are read
+        // again here: a finished row can change while the sidebar does not (Clear finished).
+        const held = sidebarHeld.current;
+        if (held !== undefined && dequal(held, next)) finishedQuietly.current();
+        setSidebar((held) => (held !== undefined && dequal(held, next) ? held : next));
         // Focus follows the plane rather than being guessed: whichever workspace was picked,
         // while it still exists — and otherwise **the workspace of the chat in front**,
         // because the strip below shows that workspace's chats and a strip that opened on
@@ -2019,12 +2040,12 @@ export const PlaneView = memo(function PlaneView({
   }, [
     change,
     sidebarChanges,
+    openHere,
     plane,
     replan,
     sandboxMoved,
     startedIn,
     stopsEnded,
-    tabs,
     tasksMoved,
   ]);
 
@@ -3794,6 +3815,14 @@ export const PlaneView = memo(function PlaneView({
   );
 
   const split = useCallback((direction: Direction) => void ask({ split: direction }), [ask]);
+  // Tile all, its Undo and Focus this pane (#4765): the tab's own panes rearranged, nothing
+  // started or ended.
+  const tileAllIn = useCallback((tab: number) => change((tabs) => tileAll(tabs, tab)), [change]);
+  const undoLayoutIn = useCallback(
+    (tab: number) => change((tabs) => undoLayout(tabs, tab)),
+    [change],
+  );
+  const zoomPane = useCallback(() => change(zoomFocusedPane), [change]);
 
   useEffect(() => {
     listedNow.current = chatsByNumber;
@@ -5970,8 +5999,12 @@ export const PlaneView = memo(function PlaneView({
   const {
     finished: finishedTasks,
     read: rereadFinished,
+    readQuietly: rereadFinishedQuietly,
     settled: finishedSettled,
   } = useFinishedTasks(plane, sidebar);
+  useEffect(() => {
+    finishedQuietly.current = rereadFinishedQuietly;
+  }, [rereadFinishedQuietly]);
   useEffect(() => {
     finishedNow.current = finishedTasks;
   }, [finishedTasks]);
@@ -7113,6 +7146,9 @@ export const PlaneView = memo(function PlaneView({
       runAction,
       split,
       closePane,
+      tileAll: tileAllIn,
+      zoomPane,
+      undoLayout: undoLayoutIn,
       closeTab: close,
       // Each as its own close (#4762): the chats asked about once, by the row, before this.
       closeOtherTabs: (closing) => {
@@ -7264,6 +7300,9 @@ export const PlaneView = memo(function PlaneView({
       cancelSmartClose,
       close,
       closePane,
+      tileAllIn,
+      undoLayoutIn,
+      zoomPane,
       curate,
       createVault,
       createWorkspace,
@@ -10152,7 +10191,12 @@ export const PlaneView = memo(function PlaneView({
                             restoring={restoringChats}
                             // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
                             // session that asked, while the tab is switched to it.
-                            layout={layoutShown(tabs, frontTab.id) ?? frontTab.layout}
+                            // A zoomed pane is drawn alone, the tree kept whole (#4765).
+                            layout={zoomedLayout(
+                              tabs,
+                              frontTab.id,
+                              layoutShown(tabs, frontTab.id) ?? frontTab.layout,
+                            )}
                             crumbs={frontCrumbs}
                             placed={frontPlaced}
                             away={frontAway}

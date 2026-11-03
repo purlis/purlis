@@ -945,6 +945,21 @@ pub struct WindowTint {
     pub hues: Vec<WindowHue>,
     /// The rules every tint holds, whatever the hue.
     pub apart: Vec<WindowApart>,
+    /// The washes that take the accent's words' answer (#4666).
+    pub with_words: Vec<String>,
+    /// The grounds a tint keeps as written where turning would bring them nearer the waiting or
+    /// danger wash, as drawn (#4666, `purlis_core::theme::NO_NEARER`).
+    pub no_nearer: WindowNoNearer,
+}
+
+/// **A ground of the accent's words comes no nearer a signal's wash than it was** (#4666,
+/// `purlis_core::theme::NoNearer`): each of `tokens`, turned and laid on each of `over`, is no
+/// nearer any of `from` laid on the same ground than the value it was turned from.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowNoNearer {
+    pub tokens: Vec<String>,
+    pub from: Vec<String>,
+    pub over: Vec<String>,
 }
 
 /// A tint holds `token`, tinted, at least `distance` from `from` in OKLab, `from` as the tint
@@ -1153,6 +1168,12 @@ impl WindowTheme {
                         words: rule.words,
                     })
                     .collect(),
+                with_words: owned_names(&purlis_core::theme::ACCENT_WASHES),
+                no_nearer: WindowNoNearer {
+                    tokens: owned_names(purlis_core::theme::NO_NEARER.tokens),
+                    from: owned_names(purlis_core::theme::NO_NEARER.from),
+                    over: owned_names(purlis_core::theme::NO_NEARER.over),
+                },
             },
             parts,
         }

@@ -1197,7 +1197,8 @@ pub struct RepoHeld {
     pub path: String,
     /// Each ref it holds, but another repository's branches as last fetched
     /// (`refs/remotes/…`) and what a desktop sent it (`refs/purlis/…`), at the commit it
-    /// reaches, and `HEAD` at the commit checked out.
+    /// reaches, `HEAD` at the commit checked out, and each stash under the newest as
+    /// `refs/stash@{<n>}` (#4781), which only the stash's log holds.
     pub refs: Vec<CodeRef>,
     /// Each file of its work tree that differs from what it has checked out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

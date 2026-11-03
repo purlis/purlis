@@ -19,6 +19,8 @@
  * - **The keyboard stays on the work**: a key pressed in a part that is going takes the keyboard
  *   to the work in front, else it would be left on nothing; and so does a surface that gives the
  *   keyboard back into a hidden part once focus mode is on (the palette, #4072).
+ * - **The key is Focus this pane** (#4765): in a split tab it zooms the focused pane instead
+ *   (`tiling.ts`), and focus mode is what it does in a tab of one pane.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 

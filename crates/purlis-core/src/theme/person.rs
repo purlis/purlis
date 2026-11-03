@@ -43,7 +43,7 @@ use serde_json::Value;
 use super::check::{self, PAIRS, Pair};
 use super::fonts::{FAMILY_RULE, SLOTS, core_stack, is_family};
 use super::least::{self, Least};
-use super::vocabulary::{KIN, TOKENS, follow_kin, is_colour, is_platform};
+use super::vocabulary::{TOKENS, follow_kin, is_colour, is_platform};
 use super::{Complaint, ResolvedTheme, stringify};
 
 /// The settings `appearance` holds.
@@ -134,12 +134,8 @@ impl Layer {
         let mut drawn = theme.clone();
         let mut said = Vec::new();
         let mut given = self.colours.clone();
-        follow_kin(&mut given, &theme.values);
         // What is drawn only because it follows a colour of the person's, and that colour.
-        let following: Vec<(&'static str, &'static str)> = KIN
-            .into_iter()
-            .filter(|(token, _)| given.contains_key(token) && !self.colours.contains_key(token))
-            .collect();
+        let following = follow_kin(&mut given, &theme.values);
         let source = |token: &'static str| {
             following
                 .iter()
