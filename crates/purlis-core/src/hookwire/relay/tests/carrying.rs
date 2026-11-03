@@ -326,3 +326,101 @@ fn a_message_queued_while_the_link_was_down_is_still_carried_after_its_host_rest
     assert_eq!(carried(&window), [format!("carried {waits} waits")]);
     assert!(still_queued(&socket).is_empty(), "carried, and so not kept");
 }
+
+#[test]
+fn a_refused_message_behind_a_sender_still_writing_a_lower_one_is_retired_all_the_same() {
+    // Another sender of the chat's is still writing the message numbered below it (#4941): the
+    // retire lists the folder itself, not what a drain may take now, which stops at that part.
+    let (window, holding) = a_window();
+    let here = Arc::new(AtomicBool::new(true));
+    let (_root, socket, token) = a_runner_project();
+    let dir = dispatchqueue::dir_for(&socket, CHAT);
+    std::fs::create_dir_all(&dir).expect("the chat's queue");
+    let writing = dir.join(format!("{:020}.part", 1));
+    std::fs::write(&writing, b"").expect("a sender's part");
+    let refused = queues(&socket, &token, "refused before");
+    let host = a_runner_host(&window, &holding, &here, &socket);
+
+    // The sender gives up, or an hour passes and its part is a dead sender's.
+    std::fs::remove_file(&writing).expect("the part gone");
+    (host.each)(report(CHAT)).expect("the window hears this host");
+    std::thread::sleep(Duration::from_millis(200));
+
+    assert!(carried(&window).is_empty(), "{:?}", window.heard());
+    assert!(
+        !still_queued(&socket).contains(&refused),
+        "retired, not kept for later"
+    );
+}
+
+#[test]
+fn a_message_queued_under_a_build_before_hosts_carried_is_retired_after_a_host_carried_before() {
+    // A host carried here, then `purlis serve` went back to a build from before hosts carried
+    // and forward again (#4941): what was queued in between was refused saying nothing was
+    // sent, whatever a host before it left behind.
+    let (window, holding) = a_window();
+    let here = Arc::new(AtomicBool::new(true));
+    let (_root, socket, token) = a_runner_project();
+    drop(a_runner_host(&window, &holding, &here, &socket));
+    let refused = queues(&socket, &token, "refused in between");
+
+    let host = a_runner_host(&window, &holding, &here, &socket);
+    (host.each)(report(CHAT)).expect("the window hears this host");
+    std::thread::sleep(Duration::from_millis(200));
+
+    assert!(carried(&window).is_empty(), "{:?}", window.heard());
+    assert!(!still_queued(&socket).contains(&refused), "retired");
+}
+
+#[test]
+fn a_host_starting_to_carry_removes_the_marker_hosts_left_before_what_they_told_was_written_down() {
+    // A build from #4895 to #4941 left `carries` and, finding it, retired nothing (#4961): were it
+    // left here, a build before hosts carried that refused a message, then that build, would
+    // deliver what its sender was told was not sent.
+    let (window, holding) = a_window();
+    let here = Arc::new(AtomicBool::new(true));
+    let (_root, socket, _token) = a_runner_project();
+    let marker = dispatchqueue::old_carries_marker_for(&socket);
+    std::fs::create_dir_all(marker.parent().expect("its folder")).expect("the folder");
+    std::fs::write(&marker, b"").expect("the old marker");
+
+    let _host = a_runner_host(&window, &holding, &here, &socket);
+
+    assert!(!marker.exists(), "the old marker is removed");
+}
+
+#[test]
+fn a_deliver_that_waited_while_its_host_started_is_told_its_retired_message_was_not_sent() {
+    // The sender queued while no host carried, and its connect waited in the socket's backlog
+    // while the host starting up retired its message (#4961): it must not hear "delivered".
+    let (window, holding) = a_window();
+    let here = Arc::new(AtomicBool::new(true));
+    let (_root, socket, token) = a_runner_project();
+    let refused = queues(&socket, &token, "queued as the host started");
+    let host = a_runner_host(&window, &holding, &here, &socket);
+
+    let answer = (host.answer)(42, deliver(&refused));
+
+    assert!(
+        matches!(&answer, Answer::No { why } if why.starts_with("nothing was sent")),
+        "{answer:?}"
+    );
+    assert!(carried(&window).is_empty(), "{:?}", window.heard());
+}
+
+#[test]
+fn a_delivered_message_is_no_longer_written_down_as_waiting() {
+    // So the most written down for a chat is taken by what still waits (#4961), never one that
+    // waits pushed out by those delivered long ago.
+    let (window, holding) = a_window();
+    let here = Arc::new(AtomicBool::new(true));
+    let (_root, socket, token) = a_runner_project();
+    let host = a_runner_host(&window, &holding, &here, &socket);
+    let id = queues(&socket, &token, "halfway");
+
+    let _ = (host.answer)(42, deliver(&id));
+
+    let written = std::fs::read_to_string(dispatchqueue::told_waits_for(&socket))
+        .expect("what the host told its chats waits");
+    assert!(!written.contains(&id), "{written}");
+}
