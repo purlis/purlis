@@ -6928,6 +6928,31 @@ fn a_seventh_task_is_refused_while_six_are_running_and_says_to_wait() {
 
 /// Planes whose chats run on `host`, which runs nothing: no pty, so these run wherever
 /// the tests do. What a chat was started on is `host.openings()`.
+/// [`planes_on`], on a machine keeping a Docker pool by each of `pools` (#4965): a dispatch
+/// naming one may wait for the person, and one naming any other is refused before.
+fn planes_keeping_pools(host: &Pretend, pools: &[&str]) -> (Planes, tempfile::TempDir) {
+    let config = tempfile::tempdir().expect("a config home");
+    let image = purlis_core::dockerpool::Image::pinned(&format!(
+        "ghcr.io/purlis/purlis-runner@sha256:{}",
+        "0".repeat(64)
+    ))
+    .expect("an image");
+    for pool in pools {
+        purlis_core::runners::record_pool(
+            config.path(),
+            &purlis_core::runners::Pool::new(
+                pool,
+                image.clone(),
+                purlis_core::runners::Set::default(),
+            )
+            .expect("a pool"),
+        )
+        .expect("kept");
+    }
+    let planes = planes_on(host).keeping_pools_in(Some(config.path().to_path_buf()));
+    (planes, config)
+}
+
 fn planes_on(host: &Pretend) -> Planes {
     let host = host.clone();
     planes().running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
@@ -12501,7 +12526,7 @@ fn a_dispatch_naming_where_the_levels_put_it_follows_them_and_a_word_purlis_cann
 fn a_chats_dispatch_that_names_another_place_than_its_workspaces_waits_for_the_person() {
     let plane = Plane::new();
     let host = Pretend::default();
-    let planes = planes_on(&host);
+    let (planes, _config) = planes_keeping_pools(&host, &["builds"]);
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     let asking = a_chat_on_work(&held, &plane.root);
@@ -12545,7 +12570,7 @@ fn a_chats_dispatch_that_names_another_place_than_its_workspaces_waits_for_the_p
 fn a_chats_dispatch_to_a_place_the_person_refused_it_is_refused_without_asking_again() {
     let plane = Plane::new();
     let host = Pretend::default();
-    let planes = planes_on(&host);
+    let (planes, _config) = planes_keeping_pools(&host, &["builds", "tests"]);
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     let asking = a_chat_on_work(&held, &plane.root);
@@ -12583,4 +12608,70 @@ fn a_chats_dispatch_to_a_place_the_person_refused_it_is_refused_without_asking_a
         matches!(dispatched("pool:tests"), Answer::HeldToMove { .. }),
         "another place still asks"
     );
+}
+
+/// **A dispatch naming a pool this machine doesn't keep is refused before anyone is asked**
+/// (#4965): no start could take it, so it starts nothing, holds nothing, and the chat is told why
+/// in words, as a word purlis can't read is. A pool this machine keeps still waits for Approve.
+#[test]
+fn a_chats_dispatch_naming_a_pool_this_machine_does_not_keep_is_refused_before_anyone_is_asked() {
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let (planes, _config) = planes_keeping_pools(&host, &["builds"]);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+    let dispatched = |runs_on: &str| {
+        let ticket = ticket(&held, &id, &tickets, asking);
+        let Ask::Dispatch(mut ask) = a_task_into_alpha(asking, &ticket, Some("lint")) else {
+            unreachable!("a dispatch");
+        };
+        ask.runs_on = Some(runs_on.to_owned());
+        answer(&held, &id, &tickets, 1, Ask::Dispatch(ask), &|_| {})
+    };
+    let before = held.chats().record().chats.len();
+
+    let refused = dispatched("pool:nightly");
+
+    assert!(
+        matches!(&refused, Answer::No { why }
+            if why.contains("pool nightly isn't one this machine keeps")
+                && why.contains("Nothing was started")),
+        "{refused:?}"
+    );
+    assert!(
+        held.runner_dispatches().every().is_empty(),
+        "nobody is asked"
+    );
+    assert_eq!(held.chats().record().chats.len(), before, "nothing started");
+    assert!(
+        matches!(dispatched("pool:builds"), Answer::HeldToMove { .. }),
+        "a pool this machine keeps still waits for the person"
+    );
+}
+
+/// **On a machine that keeps no pool, a dispatch naming one is refused too** (#4965).
+#[test]
+fn a_chats_dispatch_naming_a_pool_on_a_machine_that_keeps_none_is_refused() {
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let (planes, _config) = planes_keeping_pools(&host, &[]);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+    let ticket = ticket(&held, &id, &tickets, asking);
+    let Ask::Dispatch(mut ask) = a_task_into_alpha(asking, &ticket, Some("lint")) else {
+        unreachable!("a dispatch");
+    };
+    ask.runs_on = Some("pool:builds".to_owned());
+
+    let refused = answer(&held, &id, &tickets, 1, Ask::Dispatch(ask), &|_| {});
+
+    assert!(
+        matches!(&refused, Answer::No { why } if why.contains("pool builds isn't one this machine keeps")),
+        "{refused:?}"
+    );
+    assert!(held.runner_dispatches().every().is_empty());
 }
