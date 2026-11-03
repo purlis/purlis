@@ -115,6 +115,7 @@ import {
   changesView,
   chatOf,
   contentsOf,
+  ONE_JOB_STAYS,
   focusedChat,
   focusedContent,
   harnessCardView,
@@ -4902,6 +4903,10 @@ export function paneCloseOf(
       ? undefined
       : contentsOf(tabs, front.id).find((one) => one.pane === pane)?.content;
   if (content?.kind === "view") return can("pane.close", "Close this view", { verb: "closePane" });
+  // **A one-job program's pane has no close** (#4761; spec #4750 story 78): it goes when its
+  // program exits, and a close would leave the program running with no pane to draw it.
+  if (content?.kind === "session" && content.oneJob !== undefined)
+    return cannot("pane.close", PANE_CLOSE, ONE_JOB_STAYS);
   // An empty pane holds nothing (#4755): closing it only takes it away.
   if (content?.kind === "empty") return can("pane.close", PANE_CLOSE, { verb: "closePane" });
   if (front === undefined || content === undefined || pane === undefined)

@@ -341,6 +341,9 @@ import {
   back,
   noteUsed,
   press as pressChat,
+  openOneJob,
+  oneJobEnded,
+  shellExited,
   shownBeside,
   showIn,
   type PaneAt,
@@ -643,6 +646,20 @@ type Where =
       pool?: { name: string; workspace: string };
     }
   | { split: Direction };
+
+/** `set` without `one`, or `set` itself where it does not hold it. */
+function withoutOne(set: ReadonlySet<number>, one: number): ReadonlySet<number> {
+  if (!set.has(one)) return set;
+  const left = new Set(set);
+  left.delete(one);
+  return left;
+}
+
+/** **A forge login's one-job pane is named for the login** (#4761): its first three words,
+ *  `gh auth login`, never the host a held line goes on to name. */
+function loginName(line: string): string {
+  return line.trim().split(/\s+/).slice(0, 3).join(" ");
+}
 
 /** What a new shell tab has typed into it: a line spelled out (FR-4's `gh auth login`), a
  *  harness whose compiled-in installer the core types itself (FR-29, V65), or the sandbox's
@@ -1388,6 +1405,9 @@ export const PlaneView = memo(function PlaneView({
    * its name is read. Filled when one is opened here and when one comes back from the record.
    */
   const [shells, setShells] = useState<ReadonlySet<number>>(() => new Set());
+  /** **The one-job programs open** (#4761): a terminal editor or a forge login, drawn beside a
+   *  pane, listed nowhere, and gone when it exits. */
+  const [oneJobs, setOneJobs] = useState<ReadonlySet<number>>(() => new Set());
   /**
    * A harness started by hand in a shell tab, by that tab's session, as its banner says it
    * (ADR 0062). The core says so over `harness-by-hand`; the banner stays until it is dismissed
@@ -1712,6 +1732,9 @@ export const PlaneView = memo(function PlaneView({
                 .map((chat) => chat.session),
             ),
           );
+          // A one-job program still running at a reload of the window: no launch puts one back,
+          // since the record never holds one (#4761).
+          setOneJobs(new Set(open.filter((chat) => chat.one_job).map((chat) => chat.session)));
         }
         // **What a record from before tabs were recorded says is pinned** (#4762, #4935): each
         // chat's pin and each view tab's, read once, at this upgrade, onto the tab that opens on
@@ -1766,7 +1789,10 @@ export const PlaneView = memo(function PlaneView({
           });
           const all = pinnedAsBefore(
             open
-              .filter((chat) => chat.from?.tab !== false && !back.placed.has(chat.session))
+              .filter(
+                (chat) =>
+                  chat.from?.tab !== false && !back.placed.has(chat.session) && !chat.one_job,
+              )
               .reduce(
                 (tabs, chat) =>
                   openTab(
@@ -1786,8 +1812,13 @@ export const PlaneView = memo(function PlaneView({
             back.inFront ??
             (frontChat === undefined ? undefined : tabHolding(all, frontChat.session));
           layoutHeard.current = true;
-          if (all.order.length > 0)
-            change(() => (inFront === undefined ? all : selectTab(all, inFront)));
+          // **A one-job program a reload of the window found running** opens beside the focused
+          // pane again (#4761): the layout the core holds never has its pane.
+          const fronted = inFront === undefined ? all : selectTab(all, inFront);
+          const withJobs = open
+            .filter((chat) => chat.one_job)
+            .reduce((tabs, chat) => openOneJob(tabs, chat.session, chat.name), fronted);
+          if (withJobs.order.length > 0) change(() => withJobs);
           setViewsHeard(true);
           return;
         }
@@ -3229,21 +3260,30 @@ export const PlaneView = memo(function PlaneView({
   const newTabIn = useCallback((path: string) => void ask({ tab: true, in: path }), [ask]);
 
   /**
-   * **A shell tab** (SI-5): the operator's own `$SHELL` in `cwd`, filed on `filed`'s strip, in a
-   * tab of its own in front. `open_session` with no program is the core's shell, and the core
-   * puts charter's shims first on its `PATH` (ADR 0062). Nothing asks first: a shell starts no
-   * harness, so there is no profile for the picker to ask about.
+   * **A shell** (SI-5): the operator's own `$SHELL` in `cwd`, filed on `filed`'s strip. `open_session`
+   * with no program is the core's shell, and the core puts charter's shims first on its `PATH`
+   * (ADR 0062). Nothing asks first: a shell starts no harness, so there is no profile for the
+   * picker to ask about.
    *
-   * Named `shell <N>` as the chat's own name, not only the tab's, so the tab that comes back
-   * from the record reads the same: a chat's name is what its tab is drawn from at a relaunch.
+   * **It follows a chat's rules** (#4761, ADR 0062 as amended 2026-11-02): it takes the focused
+   * pane as a press does, with the keyboard, and what that pane showed keeps running in the
+   * sidebar. **A one-job shell** (`oneJob`, a forge login typed into it) opens as a split
+   * beside the focused pane instead, goes when it exits and is never recorded.
+   *
+   * Named `shell <N>` as the chat's own name, so the pane that comes back from the record reads
+   * the same: a chat's name is what its pane is drawn from at a relaunch.
    */
   const startShell = useCallback(
     (
       start: (name: string) => ReturnType<typeof commands.openSession>,
       filed: string,
       typed?: Typed,
+      oneJob = false,
     ) => {
-      const name = `shell ${now.current.named.tabs + 1}`;
+      const name =
+        oneJob && typed?.line !== undefined
+          ? loginName(typed.line)
+          : `shell ${now.current.named.tabs + 1}`;
       void start(name)
         .then((opened) => {
           if (opened.status === "error") {
@@ -3254,7 +3294,17 @@ export const PlaneView = memo(function PlaneView({
           const session = opened.data;
           setShells((was) => new Set(was).add(session));
           setStartedIn((was) => ({ ...was, [session]: filed }));
-          change((tabs) => openTab(tabs, session, name));
+          if (oneJob) setOneJobs((was) => new Set(was).add(session));
+          change((tabs) =>
+            oneJob
+              ? openOneJob(tabs, session, name)
+              : pressChat(
+                  tabs,
+                  { session, chat: name },
+                  { filedIn, frontOf: (workspace) => lastFront.current[workspace] },
+                ).tabs,
+          );
+          giveKeyboardTo(plane, session);
           // A command typed in for the operator, run as if they had typed it: the shell reads
           // it once it is up, and the tab is theirs to leave. A harness's installer is named,
           // never spelled: the core types its own compiled-in line (FR-29, V65).
@@ -3304,7 +3354,7 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch((err: unknown) => refusedBy("shell", String(err)));
     },
-    [change, plane, refusedBy, signingOutIn, succeeded],
+    [change, filedIn, plane, refusedBy, signingOutIn, succeeded],
   );
   const openShell = useCallback(
     (cwd: string | null, filed: string, typed?: Typed) =>
@@ -3321,6 +3371,23 @@ export const PlaneView = memo(function PlaneView({
           ),
         filed,
         typed,
+      ),
+    [plane, startShell],
+  );
+  /**
+   * **A forge login, as a one-job program** (#4761; ADR 0062 as amended 2026-11-02): `line`
+   * typed into the operator's shell in `cwd`, which opens as a split beside the focused pane and
+   * goes when it exits, never recorded (`open_one_job_shell`). `held` leaves the line for the
+   * person to read before Return (NO-8).
+   */
+  const openLogin = useCallback(
+    (cwd: string, line: string, held = false) =>
+      startShell(
+        (name) =>
+          commands.openOneJobShell(plane, cwd, name, STARTING_SIZE.columns, STARTING_SIZE.rows),
+        OUTSIDE,
+        { line, held },
+        true,
       ),
     [plane, startShell],
   );
@@ -3349,15 +3416,18 @@ export const PlaneView = memo(function PlaneView({
     [plane, startShell],
   );
 
-  /** A terminal editor the core opened in a shell tab (#1042): in front, filed on its
-   *  workspace, and marked as a shell. */
+  /** **A terminal editor the core opened** (#1042), a one-job program (#4761, ADR 0081 as
+   *  amended 2026-11-02): a split beside the focused pane, in the same tab, with the keyboard,
+   *  filed on its workspace and marked as a shell. It goes when the editor exits. */
   const editorTab = useCallback(
     (opened: EditorTabOpened) => {
       setShells((was) => new Set(was).add(opened.session));
+      setOneJobs((was) => new Set(was).add(opened.session));
       setStartedIn((was) => ({ ...was, [opened.session]: opened.workspace }));
-      change((tabs) => openTab(tabs, opened.session, opened.name));
+      change((tabs) => openOneJob(tabs, opened.session, opened.name));
+      giveKeyboardTo(plane, opened.session);
     },
-    [change],
+    [change, plane],
   );
   useEditorTabs(plane, editorTab);
 
@@ -3410,8 +3480,9 @@ export const PlaneView = memo(function PlaneView({
     if (shellAsked === undefined || root === undefined) return;
     if (shellHandled.current === shellAsked.at) return;
     shellHandled.current = shellAsked.at;
-    openShell(root, OUTSIDE, { line: shellAsked.typed });
-  }, [openShell, root, shellAsked]);
+    // A forge's own login (FR-4): a one-job program beside the focused pane (#4761).
+    openLogin(root, shellAsked.typed);
+  }, [openLogin, root, shellAsked]);
 
   /** A shell tab where a new chat would start — or in `workspace`'s own directory, filed under
    *  it, when a row names one. */
@@ -3451,11 +3522,11 @@ export const PlaneView = memo(function PlaneView({
         );
         return;
       }
-      openShell(sidebar.root, OUTSIDE, { line: asked.line, held: true });
+      openLogin(sidebar.root, asked.line, true);
     };
     window.addEventListener(FORGE_LOGIN, login);
     return () => window.removeEventListener(FORGE_LOGIN, login);
-  }, [openShell, plane, refusedBy, sidebar]);
+  }, [openLogin, plane, refusedBy, sidebar]);
 
   /**
    * **A blocked save's two ways out** (charter-app#295), asked by the Saving tab: a chat started
@@ -3830,6 +3901,8 @@ export const PlaneView = memo(function PlaneView({
     const going = tab && panesOf(now.current, tab.id).find((pane) => pane.pane === tab.focused);
     // A task's own pane is never closed (#1489): its control is the minimise, another verb.
     if (going !== undefined && askedByNow(going.session) !== undefined) return;
+    // Nor a one-job program's (#4761): it goes when its program exits, and the row says so.
+    if (going !== undefined && shellsNow.current.oneJobs.has(going.session)) return;
     // A close is a layout change, so Undo puts it back (#4763, #4583 rule 3): it ended nothing.
     keyboardInto(
       change((tabs) =>
@@ -7052,6 +7125,45 @@ export const PlaneView = memo(function PlaneView({
   }, [change, chats, filedIn, isPinned, plane, resumeSession]);
 
   /**
+   * **A shell or a one-job program whose program exited goes** (#4761; ADR 0062 and 0081 as
+   * amended 2026-11-02). The core says it is `done` or `failed`, its program's exit, the one
+   * cause read here. A shell's pane is left empty, the keyboard where it was; a one-job
+   * program's split goes, the keyboard back to the pane it opened from. Then the core closes
+   * it, so its row goes and the record no longer holds it. One already closed (End…) is not
+   * listed, and nothing is done twice.
+   *
+   * Watched off the store rather than read in a render, as the resume watch above is.
+   */
+  const shellsNow = useRef({ shells, oneJobs });
+  shellsNow.current = { shells, oneJobs };
+  useEffect(() => {
+    const watch = () => {
+      const states = chats.store.statesFor(chats.plane);
+      const { shells: open, oneJobs: jobs } = shellsNow.current;
+      for (const session of open) {
+        const state = stateOf(states, session);
+        if (state !== "done" && state !== "failed") continue;
+        if (!listedNow.current.has(session) && !jobs.has(session)) continue;
+        const job = jobs.has(session);
+        const before = now.current;
+        const next = change((tabs) =>
+          job
+            ? oneJobEnded(tabs, session, filedIn, isPinned, inTheBackground.current)
+            : shellExited(tabs, session, filedIn),
+        );
+        const typing = focusedChat(next);
+        if (job && typing !== undefined && typing !== focusedChat(before))
+          giveKeyboardTo(plane, typing);
+        setShells((was) => withoutOne(was, session));
+        if (job) setOneJobs((was) => withoutOne(was, session));
+        void commands.closeSession(plane, session).catch(() => undefined);
+      }
+    };
+    watch();
+    return chats.store.subscribe(watch);
+  }, [change, chats, filedIn, isPinned, plane]);
+
+  /**
    * A chat's work link (V60, ADR 0088 §3). **What each chat works on is asked once per chat**,
    * as it appears, and then follows what this window links and unlinks: the link is the
    * project's, and the core's answer is what the tab and the pane draw.
@@ -7546,13 +7658,19 @@ export const PlaneView = memo(function PlaneView({
       );
     // By number, which is the order they were started in: the list arrives workspace by
     // workspace, and a chat's children are read in the order it asked for them.
-    return [
-      ...sidebar.workspaces.flatMap((ws) => ws.chats.map((chat) => one(chat, ws.name))),
-      ...sidebar.unfiled.map((chat) => one(chat, ROOT_WORD)),
-      // Tasks a scenario spec pretends a session has (`e2eTasks.ts`): none in a shipped build.
-      ...pretended.map(({ chat, workspace }) => one(chat, workspace)),
-    ].sort((a, b) => a.session - b.session);
-  }, [pretended, pretendedLimits, questions, sidebar, tabs]);
+    return (
+      [
+        ...sidebar.workspaces.flatMap((ws) => ws.chats.map((chat) => one(chat, ws.name))),
+        ...sidebar.unfiled.map((chat) => one(chat, ROOT_WORD)),
+        // Tasks a scenario spec pretends a session has (`e2eTasks.ts`): none in a shipped build.
+        ...pretended.map(({ chat, workspace }) => one(chat, workspace)),
+      ]
+        // **A one-job program has no row** (#4761): it is drawn beside the pane it opened from,
+        // and goes when it exits.
+        .filter((chat) => !oneJobs.has(chat.session))
+        .sort((a, b) => a.session - b.session)
+    );
+  }, [oneJobs, pretended, pretendedLimits, questions, sidebar, tabs]);
   /** The chats of each tab, as its chip counts them and its menu lists them (#1487). */
   const chatsByTab = useMemo(() => chatsOfTabs(tabs, listedChats), [listedChats, tabs]);
   /** **What each chat's pane head says of it** (#4760): the chat as the Chats list lists it,
@@ -8387,6 +8505,8 @@ export const PlaneView = memo(function PlaneView({
     drafts?: readonly WindowDraft[];
     /** Whether a link asked for this close (#2761): the dialog says so. */
     fromALink?: boolean;
+    /** Whether the chat is a shell (#4761): End… asks only Cancel or End. */
+    shell?: boolean;
   }>();
   /** The themes kept as their chat closed (#2332), each asked in turn who draws it (#2708). */
   const [keptOnClose, setKeptOnClose] = useState<readonly KeptOnClose[]>([]);
@@ -8442,6 +8562,12 @@ export const PlaneView = memo(function PlaneView({
             ? { ok: true, said: found.handed }
             : { ok: false, refused: found.refused };
         const drafts = found.drafts;
+        // **End… on a shell asks only Cancel or End** (#4761, ADR 0062 as amended 2026-11-02):
+        // a shell runs no harness, so it has no record to write and no chats it asked for.
+        if (shellsNow.current.shells.has(session)) {
+          setEndingChat({ offer, session, drafts, fromALink, shell: true });
+          return { ok: true };
+        }
         // The core's answer, asked now: whether the chat can write a record depends on what it
         // is doing this moment, and the command that starts a smart close asks the same thing.
         const asked = await commands
@@ -10870,6 +10996,7 @@ export const PlaneView = memo(function PlaneView({
                   ownTabs={endingChat.ownTabs}
                   drafts={endingChat.drafts}
                   fromALink={endingChat.fromALink}
+                  shell={endingChat.shell}
                   onEnd={(stop, keepDrafts) => {
                     const { offer: ending, session, drafts } = endingChat;
                     setEndingChat(undefined);

@@ -1205,6 +1205,13 @@ export const commands = {
 	 *  Refused, in the core's sentence, for a folder outside the branch, a link or git's own.
 	 */
 	openShellInBranch: (plane: PlaneId, workspace: string, repo: string, piece: string | null, folder: string, name: string, columns: number, rows: number) => typedError<number, string>(__TAURI_INVOKE("open_shell_in_branch", { plane, workspace, repo, piece, folder, name, columns, rows })),
+	/**
+	 *  **The operator's own shell in `cwd`, as a one-job program** (#4761, ADR 0062 as amended
+	 *  2026-11-02): what a forge login is typed into. The window draws it as a split beside the
+	 *  focused pane, and the split goes when the shell exits. Never recorded
+	 *  (`Chats::start_one_job`), and let through the kill switch as any operator's shell is.
+	 */
+	openOneJobShell: (plane: PlaneId, cwd: string | null, name: string, columns: number, rows: number) => typedError<number, string>(__TAURI_INVOKE("open_one_job_shell", { plane, cwd, name, columns, rows })),
 	/**  Ends a session and everything it started. It is no longer a chat a quit would record. */
 	closeSession: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("close_session", { plane, session })),
 	/**
@@ -10095,6 +10102,12 @@ export type OpenChat = {
 	 *  `chat-restored` says when it has. `null` for a chat that is open.
 	 */
 	restoring?: RestoringChat | null,
+	/**
+	 *  `true` for a one-job program (#4761): a terminal editor opened from a file or a forge
+	 *  login, drawn as a split beside a pane and gone when it exits. It has no sidebar row and
+	 *  is never recorded. `null` for every other chat.
+	 */
+	one_job?: boolean | null,
 };
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */

@@ -554,6 +554,7 @@ export const commands = {
 	firstTaskStarted: __WINDOW_ONLY_RESULT,
 	openSession: __WINDOW_ONLY_RESULT,
 	openShellInBranch: __WINDOW_ONLY_RESULT,
+	openOneJobShell: __WINDOW_ONLY_RESULT,
 	closeSession: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Drops a chat's request for the operator until it asks again — the needs-you item's Ignore
@@ -7668,6 +7669,12 @@ export type OpenChat = {
 	 *  `chat-restored` says when it has. `null` for a chat that is open.
 	 */
 	restoring?: RestoringChat | null,
+	/**
+	 *  `true` for a one-job program (#4761): a terminal editor opened from a file or a forge
+	 *  login, drawn as a split beside a pane and gone when it exits. It has no sidebar row and
+	 *  is never recorded. `null` for every other chat.
+	 */
+	one_job?: boolean | null,
 };
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */

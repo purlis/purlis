@@ -117,10 +117,11 @@ fn tab_name(program: &str, file: Option<&Path>) -> String {
     }
 }
 
-/// `chat` started as the operator's own shell is: in a tab, through the kill switch, as the
-/// detached editor always was (D-qw309-2).
+/// `chat` started as the operator's own shell is, through the kill switch, as the detached
+/// editor always was (D-qw309-2), and as a one-job program (#4761): drawn beside the pane it was
+/// opened from, gone when it exits, and never recorded.
 pub(crate) fn in_a_tab(held: &Held, chat: &Chat) -> Result<u32, String> {
-    held.chats().start_operator_shell(chat, STARTING)
+    held.chats().start_one_job(chat, STARTING)
 }
 
 #[cfg(test)]

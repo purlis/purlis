@@ -830,6 +830,11 @@ struct OpenChat {
     /// `chat-restored` says when it has. `null` for a chat that is open.
     #[specta(optional)]
     restoring: Option<RestoringChat>,
+    /// `true` for a one-job program (#4761): a terminal editor opened from a file or a forge
+    /// login, drawn as a split beside a pane and gone when it exits. It has no sidebar row and
+    /// is never recorded. `null` for every other chat.
+    #[specta(optional)]
+    one_job: Option<bool>,
 }
 
 /// What the window is told of a chat a launch has still to start, beyond its tab.
@@ -1954,6 +1959,29 @@ async fn open_session(
 /// reads the project's profile and sandbox, and starts a program.
 const STARTING_A_CHAT: &str = "starting the chat";
 
+/// **The operator's own shell in `cwd`, as a one-job program** (#4761, ADR 0062 as amended
+/// 2026-11-02): what a forge login is typed into. The window draws it as a split beside the
+/// focused pane, and the split goes when the shell exits. Never recorded
+/// (`Chats::start_one_job`), and let through the kill switch as any operator's shell is.
+#[tauri::command]
+#[specta::specta]
+async fn open_one_job_shell(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    cwd: Option<String>,
+    name: String,
+    columns: u16,
+    rows: u16,
+) -> Result<u32, String> {
+    let chat = unprofiled(None, Vec::new(), cwd.map(PathBuf::from), name);
+    let held = planes.held(&plane)?;
+    let size = Size { columns, rows };
+    off_the_window(STARTING_A_CHAT, move || {
+        held.chats().start_one_job(&chat, size)
+    })
+    .await
+}
+
 /// A shell tab in one folder of a branch (FM-10): the operator's own shell, as `open_session`
 /// with no program starts it, in a folder the core resolved. `""` is the branch's own folder.
 /// Refused, in the core's sentence, for a folder outside the branch, a link or git's own.
@@ -2804,6 +2832,7 @@ impl From<chats::Open> for OpenChat {
             guessed: None,
             untaken: open.untaken,
             restoring: None,
+            one_job: open.one_job.then_some(true),
             resumed: match &open.how {
                 Reopened::Resumed(id) => Some(id.to_string()),
                 Reopened::Fresh(_) => None,

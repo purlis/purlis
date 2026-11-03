@@ -168,6 +168,7 @@ export function PaneFrame({
   ended,
   said,
   focused = false,
+  oneJob = false,
   children,
 }: {
   plane: PlaneId;
@@ -184,6 +185,9 @@ export function PaneFrame({
   session: number;
   /** Whether the keyboard is in this pane: a split says which of its panes has it (#2914). */
   focused?: boolean;
+  /** **A one-job program's pane** (#4761; spec #4750 story 78): its head is no grip, so it
+   *  cannot be picked up. It goes when its program exits. */
+  oneJob?: boolean;
   /** While the pane shows a task of its tab's session: the path to it (#1486). Also for a task
    *  in a pane of its own, and the session it is beside (#1489). */
   crumbs?: Crumbs;
@@ -264,6 +268,7 @@ export function PaneFrame({
         {strip}
         <PaneDropsOf.Provider value={drops}>
           <PaneHead
+            grip={!oneJob}
             menu={
               headMenu &&
               ((element) => (
@@ -1063,6 +1068,7 @@ export function LayoutPanes({
           />
         }
         chat={{ session: content.session, offers }}
+        oneJob={content.oneJob !== undefined}
       />
     );
     return (
@@ -1072,6 +1078,7 @@ export function LayoutPanes({
         tab={tab}
         session={content.session}
         focused={layout.pane === focused}
+        oneJob={content.oneJob !== undefined}
         crumbs={shownPath}
         said={
           endedTask === undefined
@@ -1345,6 +1352,7 @@ export function PaneDoing({
   closeOf,
   onPaneDoes,
   task = false,
+  oneJob = false,
 }: {
   pane: number;
   offerFor: (id: string) => Offer | undefined;
@@ -1356,6 +1364,9 @@ export function PaneDoing({
   /** The pane shows a task of its tab's session (#1486): it draws no close. A close here
    *  would read as ending the task, and what it would end is the session under it. */
   task?: boolean;
+  /** A one-job program's pane (#4761): no close, since it goes when its program exits. Its
+   *  edges still take a split. */
+  oneJob?: boolean;
 }) {
   // **A task's own pane keeps its minimise whatever it shows** (#1489): switched to a task of
   // its own, it is still the pane that is sent back. Only a close is not drawn over a task.
@@ -1367,7 +1378,7 @@ export function PaneDoing({
   const rows = [
     "pane.split.right",
     ...(drops.has("splitDown") ? [] : ["pane.split.down"]),
-    ...(task && !minimise ? [] : ["pane.close"]),
+    ...((task && !minimise) || oneJob ? [] : ["pane.close"]),
   ];
   return <div className="pane-doing">{rows.map(draw)}</div>;
   function draw(id: string) {

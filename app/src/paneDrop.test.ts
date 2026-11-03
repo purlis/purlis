@@ -19,6 +19,8 @@ import {
   insertPane,
   type Layout,
   noTabs,
+  ONE_JOB_STAYS,
+  openOneJob,
   openTab,
   openView,
   renameTab,
@@ -646,5 +648,58 @@ describe("review fixes (#4763)", () => {
     const back = undone(renamed, tabs, after);
     expect(back?.byId[first].name).toBe("mine");
     expect(back && strip(back)).toEqual(["1", "row(4 5)"]);
+  });
+});
+
+/**
+ * **A one-job pane has no grip and no swap, while its edges still take a split** (#4761; spec
+ * #4750 story 78): a terminal editor or a forge login stays beside the pane it opened from.
+ */
+describe("a one-job pane", () => {
+  /** Chat 1 in a tab, with a terminal editor (chat 9) opened beside it. */
+  function beside(): { tabs: Tabs; tab: number; job: number; one: number } {
+    const opened = openOneJob(openTab(noTabs(), 1, "1", "steward"), 9, "vim notes.md");
+    const tab = opened.order[0];
+    return { tabs: opened, tab, job: paneOf(opened, tab, 9), one: paneOf(opened, tab, 1) };
+  }
+
+  it("cannot be picked up", () => {
+    const { tabs, tab, job, one } = beside();
+    const from: Source = { kind: "pane", tab, pane: job };
+    expect(
+      judgeDrop(tabs, from, { kind: "pane", tab, pane: one, place: "left" }, ctx, ROOMY),
+    ).toEqual({ ok: false, why: ONE_JOB_STAYS });
+    expect(judgeDrop(tabs, from, { kind: "strip", at: 0 }, ctx, ROOMY)).toEqual({
+      ok: false,
+      why: ONE_JOB_STAYS,
+    });
+  });
+
+  it("swaps with nothing dropped in its middle", () => {
+    const { tabs, tab, job, one } = beside();
+    const from: Source = { kind: "pane", tab, pane: one };
+    expect(
+      judgeDrop(tabs, from, { kind: "pane", tab, pane: job, place: "middle" }, ctx, ROOMY),
+    ).toMatchObject({
+      ok: false,
+      why: "chat 9 goes when its program exits. Drop beside it instead.",
+    });
+    expect(
+      judgeDrop(
+        tabs,
+        { kind: "chat", session: 5, chat: "5" },
+        { kind: "pane", tab, pane: job, place: "middle" },
+        ctx,
+        ROOMY,
+      ),
+    ).toMatchObject({ ok: false });
+  });
+
+  it("takes a split on its edges", () => {
+    const { tabs, tab, job } = beside();
+    const to = { kind: "pane", tab, pane: job, place: "bottom" } as const;
+    const from: Source = { kind: "chat", session: 5, chat: "5" };
+    expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toMatchObject({ ok: true });
+    expect(strip(dropOn(tabs, from, to, ctx, ROOMY))).toEqual(["row(1 column(9 5))"]);
   });
 });

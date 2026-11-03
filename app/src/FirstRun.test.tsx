@@ -616,10 +616,10 @@ describe("the first run", () => {
     expect(calls("start_chat")).toHaveLength(0);
   });
 
-  it("offers GitHub's own sign-in in a shell tab, and asks nothing", async () => {
+  it("offers GitHub's own sign-in in a one-job shell beside the focused pane, and asks nothing", async () => {
     const { calls } = core((cmd) => {
       if (cmd === "open_local_project") return { plane: LOCAL, ask: null };
-      if (cmd === "open_session") return 7;
+      if (cmd === "open_one_job_shell") return 7;
       return undefined;
     });
     await renderSignIn();
@@ -627,10 +627,11 @@ describe("the first run", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Sign in to GitHub" }));
 
     await vi.waitFor(() => expect(calls("send_input")).toHaveLength(1));
-    expect(calls("open_session")[0].args).toMatchObject({
+    // A one-job program beside the focused pane (#4761), named for the login, never recorded.
+    expect(calls("open_one_job_shell")[0].args).toMatchObject({
       plane: LOCAL,
-      program: null,
       cwd: LOCAL,
+      name: "gh auth login",
     });
     expect(calls("send_input")[0].args).toEqual({
       plane: LOCAL,
@@ -643,7 +644,7 @@ describe("the first run", () => {
   it("offers GitLab's own sign-in the same way, with glab", async () => {
     const { calls } = core((cmd) => {
       if (cmd === "open_local_project") return { plane: LOCAL, ask: null };
-      if (cmd === "open_session") return 7;
+      if (cmd === "open_one_job_shell") return 7;
       return undefined;
     });
     await renderSignIn();
@@ -666,7 +667,7 @@ describe("the first run", () => {
     const { calls } = core((cmd) => {
       if (cmd === "open_local_project") return { plane: null, ask: ASK };
       if (cmd === "approve_plane") return LOCAL;
-      if (cmd === "open_session") return 7;
+      if (cmd === "open_one_job_shell") return 7;
       return undefined;
     });
     await renderSignIn();
