@@ -1219,11 +1219,21 @@ fn tune(
         return;
     }
     let mut document = document.clone();
-    let resolved = |document: &mut Value, tokens: &Map<String, Value>| -> Option<ResolvedTheme> {
+    // The tokens last loaded and what they loaded as: a recipe that changed nothing since the
+    // last one measures the theme that one loaded, rather than loading it again (#5056).
+    let mut last: Option<(Map<String, Value>, Option<ResolvedTheme>)> = None;
+    let mut resolved = |tokens: &Map<String, Value>| -> Option<ResolvedTheme> {
+        if let Some((was, theme)) = &last
+            && was.iter().eq(tokens.iter())
+        {
+            return theme.clone();
+        }
         document["appearances"][0]["tokens"] = Value::Object(tokens.clone());
         // Read only to check: a walk registers none of the theme's fonts.
-        let loaded = super::Library::new().checking().load(None, document);
-        (!loaded.refused).then(|| loaded.theme.first().clone())
+        let loaded = super::Library::new().checking().load(None, &document);
+        let theme = (!loaded.refused).then(|| loaded.theme.first().clone());
+        last = Some((tokens.clone(), theme.clone()));
+        theme
     };
     for (token, recipe) in recipes {
         match recipe {
@@ -1252,7 +1262,7 @@ fn tune(
                 if !tokens.contains_key(token) {
                     continue;
                 }
-                let Some(theme) = resolved(&mut document, tokens) else {
+                let Some(theme) = resolved(tokens) else {
                     return;
                 };
                 if let Some(nearer) = toward(&theme, token, keys, look) {
@@ -1263,7 +1273,7 @@ fn tune(
                 if !tokens.contains_key(token) {
                     continue;
                 }
-                let Some(theme) = resolved(&mut document, tokens) else {
+                let Some(theme) = resolved(tokens) else {
                     return;
                 };
                 let window = theme.value("surface.base");
@@ -1284,7 +1294,7 @@ fn tune(
                 if !tokens.contains_key(token) {
                     continue;
                 }
-                let Some(theme) = resolved(&mut document, tokens) else {
+                let Some(theme) = resolved(tokens) else {
                     return;
                 };
                 let window = theme.value("surface.base");
