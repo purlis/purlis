@@ -514,7 +514,6 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
         "TAB_ORDER",
         &[
             "window_layout",
-            "pin_chat",
             "open_chat_tab",
             "close_chat_tab",
             "chat_order",

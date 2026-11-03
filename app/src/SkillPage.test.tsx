@@ -401,8 +401,8 @@ describe("a skill's page", () => {
     const user = userEvent.setup();
     renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "grades" }), { onOpenView });
 
-    const none = await screen.findByTestId("skill-grades-no-tests");
-    await user.click(within(none).getByRole("button", { name: "Write trigger tests" }));
+    const none = await screen.findByTestId("skill-checks-none");
+    await user.click(within(none).getByRole("button", { name: "Write them yourself" }));
     await waitFor(() =>
       expect(onOpenView).toHaveBeenCalledWith(
         { from: null, view: "plane-file", key: "skills/deploy/evals/triggers.json" },
@@ -433,8 +433,8 @@ describe("a skill's page", () => {
     const user = userEvent.setup();
     renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "grades" }), { onOpenView });
 
-    const none = await screen.findByTestId("skill-grades-no-tests");
-    await user.click(within(none).getByRole("button", { name: "Write trigger tests" }));
+    const none = await screen.findByTestId("skill-checks-none");
+    await user.click(within(none).getByRole("button", { name: "Write them yourself" }));
     await screen.findByText("This project is read-only here, so nothing was written.");
     expect(onOpenView).not.toHaveBeenCalled();
   });
@@ -621,6 +621,45 @@ describe("a skill's banner", () => {
     expect(await screen.findByTestId("skill-history-review")).toHaveTextContent(
       "Chat 3 changed deploy, and the change is not accepted yet.",
     );
+  });
+
+  it("shows the checks a chat wrote on the Grades tab, as the skill's one draft", async () => {
+    core([DEPLOY], {
+      skill_grades: () => ({
+        grades: [],
+        said: null,
+        tests: 0,
+        evals: 0,
+        tests_refused: null,
+        running: null,
+      }),
+      skill_drafts: () => [
+        {
+          id: "d1",
+          name: "deploy",
+          level: { at: "project", local: false },
+          chat: 3,
+          chat_open: false,
+          new: false,
+          stale: false,
+          files: [
+            {
+              path: "evals/triggers.json",
+              before: null,
+              after: '[{"query": "deploy the api", "should_trigger": true}]',
+              hunks: [],
+              stale: false,
+            },
+          ],
+        },
+      ],
+    });
+    renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "grades" }));
+
+    const draft = await screen.findByTestId("skill-checks-draft");
+    expect(draft).toHaveTextContent("Chat 3 wrote checks for deploy");
+    expect(draft).toHaveTextContent("Does it get picked? · 1 prompt");
+    expect(screen.queryByTestId("skill-checks-none")).toBeNull();
   });
 
   it("says an installed skill's source has a newer version, and goes to Sources", async () => {

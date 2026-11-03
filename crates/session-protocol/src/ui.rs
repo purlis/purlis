@@ -697,6 +697,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_trigger_tests_start",
     "skill_trigger_tests_chat",
     "skill_outcome_evals_chat",
+    "skill_checks_chat",
     "skill_improve_chat",
     // A grade of a skill started or stopped (SK-16, #2779): it runs chats on the person's
     // profile, each started on a trigger test's query, and records the grade in the project.
@@ -785,6 +786,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "docker_pool_replace_runner",
     // Removing a held runner: what its chats left goes with it, so the person's press alone.
     "docker_pool_remove_held_runner",
+    // Bringing a held runner's conversations back (#4633): it writes into the pool's runner's
+    // home and then removes the held one, so the person's press alone.
+    "docker_pool_bring_back_held_runner",
     // The runner image this version's release names (2026-10-30): the Add a pool dialog's
     // default image, read through the updater, for the person's own window.
     "runner_image_of_this_version",
@@ -1182,7 +1186,6 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "persona_profile",
     "pick_project",
     "piece_file",
-    "pin_chat",
     "pin_on_this_machine",
     "pin_project",
     "pin_workspace",

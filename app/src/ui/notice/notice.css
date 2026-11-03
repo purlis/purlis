@@ -313,17 +313,10 @@
   z-index: 2;
 }
 
-/* `hidden` hides a Notice the row keeps behind "+N more": its box's own `display` would otherwise
-   win over the browser's rule for the attribute. */
+/* `hidden` hides a note a minimised band folds into its bell (#4754): its box's own `display`
+   would otherwise win over the browser's rule for the attribute. */
 [data-scope="notice-row"][data-part="stack"] > [hidden] {
   display: none;
-}
-
-/* "+N more", beside the stack and at its top: a third Notice changes the row's width by a
-   button, never its height. */
-[data-scope="notice-row"][data-part="root"] > [data-way="more"] {
-  flex: none;
-  align-self: flex-start;
 }
 
 /* ---------------------------------------------------------------------------------------------

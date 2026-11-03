@@ -179,6 +179,42 @@ fn a_link_lost_only_a_moment_leaves_the_question_with_its_asking_chat() {
 }
 
 #[test]
+fn a_link_back_within_the_wait_leaves_the_question_with_its_asking_chat_which_answers_it() {
+    let (_plane, host, _planes, id, held, steward, task) = a_task_on_a_runner();
+    asks_over_the_link(&held, &id, task, "Which one?");
+    host.link_down(&[steward]);
+    crate::dispatched::look_at_questions(&held);
+
+    // Back before the question's 100 s are up: the asking chat answers over its link.
+    host.link_back(&[steward]);
+    crate::dispatched::look_at_questions(&held);
+    over_the_link(
+        &held,
+        &id,
+        steward,
+        What::Answer {
+            to: task,
+            text: "The blue one".to_owned(),
+        },
+    );
+    let gone = std::collections::HashSet::new();
+    held.tasks().ledger().talk.look(
+        in_secs(purlis_core::dispatchtalk::A_QUESTION_WAITS_SECS + 1),
+        &gone,
+        &gone,
+    );
+
+    assert!(asks_of(&held, task).is_empty(), "never the person's");
+    let given = held.tasks().ledger().talk.answered(task).cloned();
+    assert!(
+        given
+            .as_ref()
+            .is_some_and(|given| given.text == "The blue one" && !given.by_person),
+        "answered by its asking chat: {given:?}"
+    );
+}
+
+#[test]
 fn a_question_whose_asking_chat_went_with_its_runner_reaches_the_person_at_once() {
     let (_plane, host, _planes, id, held, steward, task) = a_task_on_a_runner();
     asks_over_the_link(&held, &id, task, "Which one?");
@@ -197,9 +233,10 @@ fn a_question_whose_asking_chat_went_with_its_runner_reaches_the_person_at_once(
 }
 
 #[test]
-fn a_message_a_runner_chat_queued_is_refused_saying_nothing_was_sent() {
-    // The chat queued it in the spool beside its hook socket, which is on the runner's disk:
-    // this app does not read it there, so it is not delivered from here (#4560).
+fn a_message_an_older_runner_host_handed_on_is_refused_saying_nothing_was_sent() {
+    // A runner's host from before #4804 does not carry its chats' queues: it hands a chat's
+    // `Deliver` on, and the message stays on the runner's disk, where this app does not read
+    // it (#4560). A host since carries each message itself, and never hands a `Deliver` on.
     let (_plane, _host, _planes, id, held, _steward, task) = a_task_on_a_runner();
 
     let said = over_the_link(

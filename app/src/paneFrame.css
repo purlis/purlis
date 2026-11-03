@@ -1,14 +1,15 @@
 /* Copyright 2026 Purlis */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* **A chat's pane: the band, the header, then the terminal** (#3142, the operator's variant A of
-   2026-10-24, `LayoutPanes.tsx`). Three rows, each with one job, all inside the pane and on the
-   terminal's own fill:
+/* **A chat's pane: the header, the band, then the terminal** (#3142, the operator's variant A of
+   2026-10-24; #4754, `LayoutPanes.tsx`). Three rows, each with one job, all inside the pane and
+   on the terminal's own fill:
 
-   1. **the band** (`NoticePaneRow`): the pane's warnings as washed cards, the words above their
-      ways out, two at most and the rest behind "+N more" on a row of its own;
-   2. **the header** (`PaneHead`): the chat at a glance at its start, the pane's own controls at
-      its end;
+   1. **the header** (`PaneHead`): the chat at a glance at its start, the pane's own controls at
+      its end, the bell among them in a fixed slot before split and close (`PaneBell`);
+   2. **the band** (`NoticePaneRow`): the pane's notices as washed cards, the words above their
+      ways out: its asks, and, expanded, its notes too under a head row with Dismiss all. Under
+      the header, so a notice arriving never moves it;
    3. **the terminal**, which has the room the two leave and is pinned to its bottom.
 
    **Nothing sits between a tab and its pane, and nothing draws over the terminal.** The band was
@@ -49,9 +50,9 @@
    The band.
    --------------------------------------------------------------------------------------------- */
 
-/* **On the pane's own fill, with no ground, edge or line of its own.** Its top padding is the
-   runway: the top 8px of a pane is the terminal's fill, warning or none (rule 2). A step at its
-   foot keeps "+N more" a whole target apart from the header's first chip. */
+/* **On the pane's own fill, with no ground, edge or line of its own**, under the header: the
+   header holds the runway at the pane's top (rule 2), and a step at the band's foot keeps its
+   last card apart from the terminal's first line. */
 .pane-top > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"]) {
   flex: 0 1 auto;
   flex-direction: column;
@@ -59,7 +60,7 @@
   gap: var(--space-2);
   min-block-size: 0;
   max-block-size: none;
-  padding: var(--space-4) var(--space-4) var(--space-2);
+  padding: 0 var(--space-4) var(--space-2);
   border: 0;
   background-color: transparent;
 }
@@ -82,27 +83,24 @@
   --notice-row-ground: var(--terminal-background);
 }
 
-/* **"+N more" on a row of its own, at its start, its width reserved** (rule 5) for the longer
-   of what it says: both are drawn in one cell, the one not said hidden (`NoticePaneRow`), so
-   "+1 more", "+12 more" and "Show fewer" move nothing beside it. */
+/* **An expanded band's head row** (#4754): what it holds at its start, quiet, and Dismiss all
+   and Minimise at its end. */
 .pane-top
   > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"])
-  > :is(.notice-more-pane, [data-way="more"]) {
-  align-self: flex-start;
-  font-variant-numeric: tabular-nums;
+  > [data-scope="notice-row"][data-part="head"] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--size-control);
+  padding-inline: var(--space-1);
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
 }
 
-[data-scope="notice-row"][data-part="says"] {
-  display: inline-grid;
-  justify-items: start;
-}
-
-[data-scope="notice-row"][data-part="says"] > * {
-  grid-area: 1 / 1;
-}
-
-[data-scope="notice-row"][data-part="says"] > [data-off] {
-  visibility: hidden;
+[data-scope="notice-row"][data-part="head"] > [data-part="says"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -139,8 +137,10 @@
   > :is(.notice-pane-box, [data-scope="notice"][data-part="root"]) {
   flex: none;
   min-block-size: auto;
-  /* Never taller than its pane: what a way out opened gives way first, inside the card. */
-  max-block-size: calc(100cqb - var(--space-8));
+  /* Never taller than its pane: what a way out opened gives way first, inside the card. The
+     header above the band (#4754) and the band's runway are taken off: a chrome row and its
+     steps. */
+  max-block-size: calc(100cqb - var(--size-chrome) - var(--space-8));
 }
 
 .pane-top
@@ -285,18 +285,36 @@
   padding-inline: var(--space-6);
 }
 
-/* **In a narrow pane the line keeps the room it had** (#3332): under about 24rem the breadcrumb's
+/* **In a narrow pane the line keeps the room it had** (#3332): under about 28rem the breadcrumb's
    line cannot hold the longest state word with anything else (`App.css`, `.pane-crumbs`), so
    the header keeps its former inset (space.5 at its start and space.3 at its end: 12 and 6, or 8
-   and 4 in compact), and the state word its room. */
-@container (max-width: 24rem) {
+   and 4 in compact), and the state word its room. It was 24rem until the bell (#4754) took its
+   fixed slot in the header, two controls wide (4rem), from the line: a pane of two in the
+   narrowest window, about 26rem, with five controls, cut the state word by a few pixels. A
+   container query's condition cannot read a token, so the length is written here. */
+@container (max-width: 28rem) {
   .pane-head {
     padding-inline: var(--space-5) var(--space-3);
   }
 }
 
-.pane-top > :is(.pane-notice-row-empty, [data-scope="notice-row"][data-empty]) + .pane-head {
+/* **The header is the top of the pane** (#4754): it keeps the runway, band or none. */
+.pane-top > .pane-head:first-child {
   margin-block-start: var(--space-2);
+}
+
+/* **The bell** (`PaneBell`, #4754): a fixed slot, as wide with no count as with two digits, so
+   nothing beside it moves when a notice arrives. The count is neutral, and in the trouble colour
+   while one note is trouble; told by its words too, never the colour alone. */
+.pane-actions > .pane-bell {
+  justify-content: flex-start;
+  min-inline-size: calc(var(--size-control) * 2);
+  font-variant-numeric: tabular-nums;
+}
+
+.pane-actions > .pane-bell[data-trouble] [data-part="label"] {
+  color: var(--danger-text);
+  font-weight: var(--font-weight-strong);
 }
 
 /* The chips take the room the controls leave, and give way in it; the line's own rules decide
@@ -413,8 +431,8 @@
   --pane-actions-room: calc(var(--size-control) * 3 + var(--space-5) * 2);
 }
 
-/* Where a chat's header is: under the empty band's step (`.pane-notice-row-empty + .pane-head`),
-   at the pane's top, end to end. It takes no pointer itself, so the view's first row under it
+/* Where a chat's header is: at the pane's top, a step down (`.pane-head:first-child`), end to
+   end. It takes no pointer itself, so the view's first row under it
    stays pressable; only its actions do. */
 .pane-frame.pane-viewed > .pane-head {
   position: absolute;

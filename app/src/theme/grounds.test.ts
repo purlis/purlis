@@ -22,7 +22,11 @@
  *   or may not carry is a ground it may be on, and never hides the one under it.
  *
  * The list of grounds found must be the manifest's list, exactly, so a new surface a button is
- * placed on fails here until the manifest names it, and the parts check measures it.
+ * placed on fails here until the manifest names it, and the parts check measures it. *
+ * **Where each see-through ground is laid** (#4796) is read the same way: every rule that paints a
+ * token purlis ships see-through is followed to the grounds under the element it paints, and those
+ * must be `WASH_LAID_ON` (in `parts.rs`), exactly, so a wash drawn on a new ground fails here until
+ * the table names it and the parts check reads what stands on the wash over that ground.
  */
 
 /// <reference types="node" />
@@ -224,6 +228,87 @@ function utility(name: string): Ground | undefined {
   return { tokens: new Set([token]), rest: hit[1] === "" };
 }
 
+/** **A rule that paints a see-through ground, read whole** (#4796): the element it paints carries
+ *  every class and attribute its subject names (a state's aside), and stands inside every class
+ *  the compounds before it name. One `:is(…)` subject is each of its alternatives. */
+type WashRule = {
+  token: Token;
+  selector: string;
+  tag?: string;
+  classes: string[];
+  attributes: [string, string | undefined][];
+  within: string[];
+};
+
+/** Every rule in `css` that paints a background on an element by its attributes alone, at rest
+ *  and wherever it stands, read whole: a ground under all the element holds (#4796). */
+function wholeRulesOf(css: string[]): WashRule[] {
+  return washRulesOf(css, new Set(BY_PROPERTY.values())).filter(
+    (rule) =>
+      rule.classes.length === 0 &&
+      rule.attributes.length > 0 &&
+      topLevel(rule.selector, /[\s>+~]/).length === 1 &&
+      !STATE.test(rule.selector) &&
+      !/:(?:is|has|not|where)\(/.test(rule.selector),
+  );
+}
+
+/** A subject's alternatives: each of a leading `:is(…)`'s, with what follows it. */
+function alternativesOf(subject: string): string[] {
+  if (!subject.startsWith(":is(")) return [subject];
+  let depth = 0;
+  for (let at = 3; at < subject.length; at += 1) {
+    if (subject[at] === "(") depth += 1;
+    else if (subject[at] === ")" && --depth === 0) {
+      const rest = subject.slice(at + 1);
+      return topLevel(subject.slice(4, at), /,/).map((one) => one + rest);
+    }
+  }
+  return [subject];
+}
+
+/** Every rule in `css` that paints one of `washes` as a background, read whole. */
+function washRulesOf(css: string[], washes: ReadonlySet<Token>): WashRule[] {
+  const rules: WashRule[] = [];
+  for (const sheet of css)
+    for (const [, selectors, body] of sheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const backs = [
+        ...body.matchAll(/(?<![\w-])background(?:-color)?\s*:\s*var\((--[\w-]+)\)/g),
+      ].flatMap(([, name]) => {
+        const token = BY_PROPERTY.get(name);
+        return token === undefined || !washes.has(token) ? [] : [token];
+      });
+      if (backs.length === 0) continue;
+      for (const selector of topLevel(selectors.replace(/^\s*@[^;{]*;?/, ""), /,/)) {
+        const compounds = topLevel(selector, /[\s>+~]/);
+        const last = compounds[compounds.length - 1] ?? "";
+        // A pseudo-element is drawn on the element, never under what it holds.
+        if (last.includes("::")) continue;
+        const within = compounds
+          .slice(0, -1)
+          .filter((one) => !one.includes(":is("))
+          .flatMap((one) => [...narrowedOut(one).matchAll(/\.([\w-]+)/g)].map((hit) => hit[1]));
+        const alternatives = alternativesOf(last);
+        for (const alternative of alternatives) {
+          const subject = narrowedOut(alternative);
+          const attributes = [...subject.matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g)]
+            .filter(([whole]) => !STATE.test(whole))
+            .map(([, name, value]): [string, string | undefined] => [name, value]);
+          for (const token of backs)
+            rules.push({
+              token,
+              selector,
+              tag: /^([a-z][\w-]*)/.exec(subject)?.[1],
+              classes: [...subject.matchAll(/\.([\w-]+)/g)].map((hit) => hit[1]),
+              attributes,
+              within,
+            });
+        }
+      }
+    }
+  return rules;
+}
+
 // --- The components: where each button is drawn -----------------------------------------------
 
 /** A class an element carries, and whether it carries it always or only on a condition. */
@@ -231,7 +316,7 @@ type Carried = { name: string; always: boolean };
 
 /** One element around a button: the grounds it may draw, and whether it draws one at rest
  *  always, which hides what is under it. */
-type Frame = { tokens: Set<Token>; covers: boolean; classes: Set<string> };
+type Frame = { tokens: Set<Token>; covers: boolean; classes: Set<string>; whole?: Set<Token> };
 
 /** What one function that renders JSX places: the grounds its buttons are drawn on, whether
  *  one is drawn on what is under the function, where its `children` go, and what it renders. */
@@ -259,6 +344,22 @@ function sources(dir: string): { name: string; text: string }[] {
 function under(frames: Frame[]): { tokens: Set<Token>; covered: boolean } {
   const tokens = new Set<Token>();
   for (let at = frames.length - 1; at >= 0; at -= 1) {
+    frames[at].tokens.forEach((token) => tokens.add(token));
+    if (frames[at].covers) return { tokens, covered: true };
+  }
+  return { tokens, covered: false };
+}
+
+/** What `frames` draw under a see-through ground (#4796): as [`under`], but an element a rule
+ *  read whole paints at rest is that rule's ground alone, and covers what is under it. */
+function beneath(frames: Frame[]): { tokens: Set<Token>; covered: boolean } {
+  const tokens = new Set<Token>();
+  for (let at = frames.length - 1; at >= 0; at -= 1) {
+    const whole = frames[at].whole;
+    if (whole !== undefined) {
+      whole.forEach((token) => tokens.add(token));
+      return { tokens, covered: true };
+    }
     frames[at].tokens.forEach((token) => tokens.add(token));
     if (frames[at].covers) return { tokens, covered: true };
   }
@@ -294,6 +395,9 @@ class Reader {
   constructor(
     private readonly files: { name: string; text: string }[],
     private readonly byClass: Map<string, Ground>,
+    private readonly washRules: readonly WashRule[] = [],
+    private readonly wholeRules: readonly WashRule[] = [],
+    private readonly familyWashes: ReadonlySet<Token> = new Set(),
   ) {
     for (const [key, ground] of byClass) {
       const at = key.indexOf("@");
@@ -483,6 +587,33 @@ class Reader {
           covers: false,
           classes: new Set(carried.map((one) => one.name)),
         };
+        // A see-through ground a rule read whole may paint on this element is drawn over what
+        // is under it: in this component, where one of its grounds covers what is under it,
+        // and otherwise wherever the component is placed, which is read no further (#4796).
+        /** Whether `rule` reaches this element: `exactly`, by what is written on it alone; and
+         *  `around`, taking a class it is scoped by as one the component may be placed in. */
+        const reaches = (rule: WashRule, exactly: boolean, around = false) =>
+          (rule.tag === undefined || rule.tag === tag) &&
+          rule.classes.every((name) => carried.some((one) => one.name === name)) &&
+          (around || rule.within.every((name) => frames.some((at) => at.classes.has(name)))) &&
+          rule.attributes.every(([name, value]) => {
+            const written = attribute(name)?.initializer;
+            if (attribute(name) === undefined) return false;
+            if (value === undefined) return true;
+            // One written as an expression may be the value the rule asks for.
+            return written !== undefined && ts.isStringLiteral(written)
+              ? written.text === value
+              : !exactly;
+          });
+        for (const rule of this.wholeRules)
+          if (reaches(rule, true)) (frame.whole ??= new Set()).add(rule.token);
+        for (const rule of this.washRules) {
+          if (reaches(rule, false)) this.laidUnder(rule, frames);
+          // A see-through ground a family names is one what the element holds may stand on
+          // (#4795): a pane's warning, a Notice placed in the pane's top.
+          if (this.familyWashes.has(rule.token) && reaches(rule, false, true))
+            frame.tokens.add(rule.token);
+        }
         // The forms a rule on a tag or an attribute reaches this element by, as it is written.
         const forms = new Set<string>(/^[a-z]/.test(tag) ? [`<${tag}>`] : []);
         for (const one of attributes) {
@@ -505,7 +636,8 @@ class Reader {
           ground.tokens.forEach((token) => frame.tokens.add(token));
           if (ground.rest && one.always) frame.covers = true;
         }
-        if (frame.tokens.size > 0 || frame.classes.size > 0) inside = [...frames, frame];
+        if (frame.tokens.size > 0 || frame.classes.size > 0 || frame.whole !== undefined)
+          inside = [...frames, frame];
       }
       const component = /^[A-Z]/.test(tag) && !isButton ? tag.split(".").pop() : undefined;
       if (component !== undefined) unit.uses.push({ name: component, frames: inside });
@@ -538,6 +670,20 @@ class Reader {
       unit.uses.push({ name: node.expression.text, frames });
     if (held.isJsx(node)) return;
     ts.forEachChild(node, (child) => again(child, frames));
+  }
+
+  /** **The grounds each see-through ground's element is drawn on** (#4796), by the rule that
+   *  paints it: each one a component draws under it, out to the first that covers what is under
+   *  it; and whether one is drawn where its own component covers nothing, and so on whatever
+   *  the component is placed on, which is read no further (a dialog's content is portaled). */
+  readonly laid = new Map<WashRule, { on: Set<Token>; loose: boolean }>();
+
+  private laidUnder(rule: WashRule, frames: Frame[]): void {
+    const drawn = beneath(frames);
+    const laid = this.laid.get(rule) ?? { on: new Set<Token>(), loose: false };
+    if (drawn.covered) drawn.tokens.forEach((token) => laid.on.add(token));
+    else laid.loose = true;
+    this.laid.set(rule, laid);
   }
 
   /** Every ground a button is drawn on: each unit's own, and through the units it renders,
@@ -718,7 +864,14 @@ function hasJsx(node: ts.Node): boolean {
 function readGrounds(
   files: { name: string; text: string }[],
   css: string[],
-): { found: Map<Token, string[]>; unread: Unread; inline: string[] } {
+  washes: ReadonlySet<Token> = new Set(),
+  familyWashes: ReadonlySet<Token> = new Set(),
+): {
+  found: Map<Token, string[]>;
+  laid: Map<WashRule, { on: Set<Token>; loose: boolean } | undefined>;
+  unread: Unread;
+  inline: string[];
+} {
   const { byClass, window, unread } = groundsOfClasses(css);
   // What a helper's spread attributes or the theme engine's layout words draw, by class.
   for (const [name, tokens] of ENGINE_GROUNDS) {
@@ -726,7 +879,8 @@ function readGrounds(
     tokens.forEach((token) => ground.tokens.add(token));
     byClass.set(name, ground);
   }
-  const reader = new Reader(files, byClass);
+  const rules = washRulesOf(css, washes);
+  const reader = new Reader(files, byClass, rules, wholeRulesOf(css), familyWashes);
   // The first pass finds the buttons' classes and each component's `children` places, the next
   // ones read what is placed in them; a third settles a component placed in another's children.
   for (let pass = 0; pass < 3; pass += 1) reader.read();
@@ -734,7 +888,8 @@ function readGrounds(
   // the window sets it as it runs, or spells it in an expression.
   for (const [form, selectors] of unread.byAttribute)
     if (!reader.reached.has(form)) unread.classless.push(...selectors);
-  return { found: reader.grounds(window), unread, inline: [...reader.inline].sort() };
+  const laid = new Map(rules.map((rule) => [rule, reader.laid.get(rule)]));
+  return { found: reader.grounds(window), laid, unread, inline: [...reader.inline].sort() };
 }
 
 function buttonGroundsWhere(
@@ -892,6 +1047,39 @@ describe("the grounds a button is drawn on", () => {
       css(`li:has(> .row) { background: var(--surface-raised); }`),
     );
     expect(found).toEqual(["surface.base", "surface.raised"]);
+  });
+
+  it("count a see-through ground a family names, where a class around its component scopes it", () => {
+    // A pane's warning (#4795): the Notice is its own component, placed in the pane's top, so the
+    // class the rule is scoped by is around the component, not in it.
+    const files = [
+      file(
+        "Note.tsx",
+        `export function Note({ at, children }) {
+           return <div data-scope="note" data-placement={at}>{children}</div>;
+         }`,
+      ),
+      file(
+        "Pane.tsx",
+        `export function Pane() {
+           return <div className="top"><Note at="pane"><button data-scope="button">Allow</button></Note></div>;
+         }`,
+      ),
+    ];
+    const sheet = css(
+      `.top { background: var(--terminal-background); }
+       .top :is([data-scope="note"][data-placement="pane"]) { background: var(--wash-warning); }`,
+    );
+    const washes = new Set<Token>(["wash.warning"]);
+    const named = readGrounds(files, sheet, washes, washes).found;
+    expect([...named.keys()].sort()).toEqual([
+      "surface.base",
+      "terminal.background",
+      "wash.warning",
+    ]);
+    // A see-through ground no family names is not one a button is read on.
+    const unnamed = readGrounds(files, sheet, washes, new Set()).found;
+    expect([...unnamed.keys()].sort()).toEqual(["surface.base", "terminal.background"]);
   });
 
   it("count each member of the button family as a button, and its parts as its own", () => {
@@ -1058,8 +1246,14 @@ describe("the grounds a button is drawn on", () => {
     expect(found).toEqual(["surface.base", "surface.raised"]);
   });
 
-  /** The window, read once for the tests below. */
-  const read = readGrounds(sources(SRC), sheets());
+  /** The window, read once for the tests below, with the see-through grounds the families name. */
+  const SEE_THROUGH = shippedSeeThrough();
+  const familyWashes = new Set(
+    [...engineGrounds().values()]
+      .flat()
+      .filter((token): token is Token => SEE_THROUGH.has(token as Token)),
+  );
+  const read = readGrounds(sources(SRC), sheets(), SEE_THROUGH, familyWashes);
 
   it("are, in the window, exactly the grounds the button family's manifest lists", () => {
     const listed = engineGrounds().get("button");
@@ -1093,5 +1287,320 @@ describe("the grounds a button is drawn on", () => {
 
   it("are never reached only by what an element holds, or the rule is listed with why", () => {
     expect([...new Set(read.unread.within)].sort()).toEqual([...WITHIN].sort());
+  });
+});
+
+// --- Where each see-through ground is laid (#4796) ------------------------------------------
+
+/**
+ * **The tokens purlis ships see-through**: each one an appearance of a built-in theme writes with
+ * an alpha under `ff`. A ground in one of these shows what it is drawn over, so the parts check
+ * reads what stands on it over each ground `WASH_LAID_ON` (in `parts.rs`) says it is laid on.
+ */
+function shippedSeeThrough(): Set<Token> {
+  const found = new Set<Token>();
+  for (const theme of ["purlis", "purlis-classic"]) {
+    const read = JSON.parse(readFileSync(join(THEME, "built-in", theme, "theme.json"), "utf8")) as {
+      appearances: { tokens?: Record<string, unknown> }[];
+    };
+    for (const appearance of read.appearances)
+      for (const [token, value] of Object.entries(appearance.tokens ?? {}))
+        if (typeof value === "string" && /^#[0-9a-f]{6}(?![fF]{2})[0-9a-f]{2}$/i.test(value))
+          found.add(token as Token);
+  }
+  return found;
+}
+
+/** `WASH_LAID_ON` as `parts.rs` writes it: each see-through ground, with the grounds the window
+ *  lays it on. */
+function engineWashes(): Map<string, string[]> {
+  const parts = readFileSync(join(THEME, "parts.rs"), "utf8");
+  const table = /\nconst WASH_LAID_ON: [^=]*=\s*&\[([\s\S]*?)\];/.exec(parts)?.[1] ?? "";
+  return new Map(
+    [...table.matchAll(/\(\s*"([^"]+)",\s*&\[([^\]]*)\]\s*\)/g)].map(([, wash, under]) => [
+      wash,
+      [...under.matchAll(/"([^"]+)"/g)].map(([, token]) => token).sort(),
+    ]),
+  );
+}
+
+/** A rule's name in `PAINTED`: the see-through token and the selector, its spaces as one. */
+const named = (rule: WashRule) => `${rule.token} ${rule.selector.replace(/\s+/g, " ").trim()}`;
+
+/** What a rule that paints a see-through ground is, where the reader cannot find it all: a
+ *  ground, `on` the grounds named, or a part's own fill, which nothing of another family stands
+ *  on and the family's own look is held to (`own`). */
+type Painted = { on: readonly Token[] } | { own: string };
+
+/**
+ * **The see-through grounds the window draws, as the stylesheets paint them**: each rule's
+ * element is followed out through the component that draws it to the first ground that covers
+ * what is under it (a ground a rule paints on an element by its attributes alone, at rest, covers
+ * too), and the grounds found are the ones it is laid on. Where the reader cannot follow it all
+ * (it is drawn by a component it reads no further out of, or under a class a component around it
+ * carries), `painted` says what it is laid on. Each list is what the window lays the token on.
+ */
+function laidGrounds(
+  laid: Map<WashRule, { on: Set<Token>; loose: boolean } | undefined>,
+  painted: ReadonlyMap<string, Painted>,
+): { laid: Map<string, string[]>; unlisted: string[]; stale: string[] } {
+  const byName = new Map<string, { token: Token; on: Set<Token>; read: boolean }>();
+  for (const [rule, found] of laid) {
+    const one = byName.get(named(rule)) ?? { token: rule.token, on: new Set<Token>(), read: true };
+    found?.on.forEach((token) => one.on.add(token));
+    if (found === undefined || found.loose) one.read = false;
+    byName.set(named(rule), one);
+  }
+  const out = new Map<string, Set<Token>>();
+  const unlisted: string[] = [];
+  const stale = [...painted.keys()].filter((name) => !byName.has(name));
+  for (const [name, { token, on, read }] of byName) {
+    const listed = painted.get(name);
+    if (listed !== undefined && "own" in listed) continue;
+    if (listed === undefined && !read) {
+      unlisted.push(
+        `${name}: drawn on ${on.size === 0 ? "nothing the reader finds" : [...on].join(", ")}`,
+      );
+      continue;
+    }
+    if (listed !== undefined && read)
+      stale.push(`${name}: the reader finds it on ${[...on].join(", ")}`);
+    const grounds = out.get(token) ?? new Set<Token>();
+    on.forEach((ground) => grounds.add(ground));
+    listed?.on.forEach((ground) => grounds.add(ground));
+    out.set(token, grounds);
+  }
+  return {
+    laid: new Map([...out].map(([token, on]) => [token, [...on].sort()])),
+    unlisted: unlisted.sort(),
+    stale: stale.sort(),
+  };
+}
+
+/** Where `laid` and `table` part: each see-through ground laid on a ground the table does not
+ *  name, and each the table names that nothing lays it on. */
+function unsaid(laid: Map<string, string[]>, table: Map<string, string[]>): string[] {
+  const said: string[] = [];
+  for (const [wash, on] of laid)
+    for (const ground of on)
+      if (!table.get(wash)?.includes(ground))
+        said.push(`${wash} over ${ground}: not in WASH_LAID_ON`);
+  for (const [wash, on] of table)
+    for (const ground of on)
+      if (!laid.get(wash)?.includes(ground)) said.push(`${wash} over ${ground}: never drawn`);
+  return said.sort();
+}
+
+/**
+ * **The rules that paint a see-through ground the reader cannot follow all the way**, each with
+ * what it is: the grounds it is laid on, or a part's own fill with why nothing else stands on it.
+ * A new one fails until it is read or listed here, and one the reader comes to read fails until
+ * it is taken off.
+ */
+const PAINTED: ReadonlyMap<string, Painted> = new Map<string, Painted>([
+  // A refusal's or an unrun command's box, and the approval of what an extension runs as you:
+  // in a dialog (`App.css`), whose content is portaled to the overlay surface (`dialog.css`).
+  ['danger.wash [data-scope="dialog"] .honest.mid-turn', { on: ["surface.overlay"] }],
+  ['danger.wash [data-scope="dialog"] .honest.approve', { on: ["surface.overlay"] }],
+  ['danger.wash [data-scope="dialog"] .runs-as-you', { on: ["surface.overlay"] }],
+  // A pane's warnings (`paneFrame.css`), over the terminal's fill under the pane's top: trouble,
+  // a warning, and a consent, each a Notice the pane's band places.
+  [
+    'danger.wash .pane-top :is(.notice-pane-box:has(> .notice-trouble), [data-scope="notice"][data-variant="trouble"])',
+    { on: ["terminal.background"] },
+  ],
+  [
+    'wash.warning .pane-top :is(.notice-pane-box, [data-scope="notice"][data-part="root"][data-placement="pane"])',
+    { on: ["terminal.background"] },
+  ],
+  [
+    'wash.warning .pane-top :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):has([data-variant="grants"])',
+    { on: ["terminal.background"] },
+  ],
+  // A part's own fill, its words and marks the family's own parts on it.
+  [
+    'accent.wash [data-scope="activity"][data-part="item"][data-selected]',
+    { own: "a chosen activity item; its icon and count are its own" },
+  ],
+  [
+    'accent.wash [data-scope="view-nav"][data-part="item"][data-selected]',
+    { own: "a chosen view's item; its words are its own" },
+  ],
+  [
+    'accent.wash [data-scope="steps"][data-part="item"][data-here] [data-part="press"]',
+    { own: "the step you are on; its mark and name are its own" },
+  ],
+  [
+    'accent.wash [data-part="workspace"][data-scope="titlebar"][data-selected]',
+    { own: "the chosen workspace chip; its count is laid on the bar's own ground (PART_LAID_ON)" },
+  ],
+  [
+    'accent.wash-hover [data-part="workspace"][data-scope="titlebar"][data-selected][data-hovered]',
+    { own: "the same, under the pointer" },
+  ],
+  [
+    'wash.warning [data-part="count"][data-scope="titlebar"]',
+    { own: "a chip's waiting count, on the bar's own ground (PART_LAID_ON)" },
+  ],
+  [
+    'wash.warning [data-part="row-count"][data-scope="titlebar"]',
+    { own: "a switcher row's waiting count" },
+  ],
+  [
+    'wash.warning [data-scope="badge"][data-part="root"][data-variant="waiting"]',
+    { own: "a waiting badge; its words are its own" },
+  ],
+  [
+    'wash.warning [data-scope="count"][data-part="root"][data-variant="waiting"]',
+    { own: "a waiting count; its number is its own" },
+  ],
+  [
+    'wash.warning [data-scope="status-item"][data-part="root"][data-variant="waiting"]',
+    { own: "the status bar's waiting pill; its icon and words are its own" },
+  ],
+  [
+    'overlay.scrim [data-scope="dialog"][data-part="scrim"]',
+    { own: "the dim behind a dialog; what it holds is the dialog's opaque ground" },
+  ],
+]);
+
+describe("where each see-through ground is laid", () => {
+  const SEE_THROUGH = shippedSeeThrough();
+  const window = readGrounds(sources(SRC), sheets(), SEE_THROUGH);
+  const read = laidGrounds(window.laid, PAINTED);
+
+  it("is what the window draws: purlis ships its washes see-through", () => {
+    for (const token of ["danger.wash", "wash.warning", "accent.wash", "overlay.scrim"])
+      expect(SEE_THROUGH).toContain(token);
+    expect(SEE_THROUGH).not.toContain("surface.overlay");
+  });
+
+  it("is read for every rule that paints one, or the rule is listed with what it is", () => {
+    expect(read.unlisted).toEqual([]);
+    expect(read.stale).toEqual([]);
+  });
+
+  it("is, in the window, exactly what WASH_LAID_ON says", () => {
+    const table = engineWashes();
+    expect(table.get("danger.wash"), "WASH_LAID_ON in parts.rs").toBeDefined();
+    expect(unsaid(read.laid, table)).toEqual([]);
+  });
+
+  /** A component that draws `inside` on a raised ground, and the stylesheet that paints it. */
+  const raised = (inside: string) => ({
+    files: [
+      {
+        name: "Raised.tsx",
+        text: `export function Raised() { return <div className="raised">${inside}</div>; }`,
+      },
+    ],
+    css: [
+      ".raised { background: var(--surface-raised); }",
+      ".box { background: var(--danger-wash); }",
+    ],
+  });
+
+  it("reads a wash over the ground its component draws under it", () => {
+    const { files, css } = raised('<p className="box">Refused.</p>');
+    const fixture = readGrounds(files, css, SEE_THROUGH);
+    const found = laidGrounds(fixture.laid, new Map());
+    expect(found.unlisted).toEqual([]);
+    expect(found.laid.get("danger.wash")).toEqual(["surface.raised"]);
+  });
+
+  it("fails a danger-wash box over surface.raised until WASH_LAID_ON names it", () => {
+    const { files, css } = raised('<p className="box">Refused.</p>');
+    const both = readGrounds([...sources(SRC), ...files], [...sheets(), ...css], SEE_THROUGH);
+    const laid = laidGrounds(both.laid, PAINTED).laid;
+    expect(unsaid(laid, engineWashes())).toContain(
+      "danger.wash over surface.raised: not in WASH_LAID_ON",
+    );
+    const named = new Map(engineWashes());
+    named.set("danger.wash", [...(named.get("danger.wash") ?? []), "surface.raised"]);
+    expect(unsaid(laid, named)).toEqual([]);
+  });
+
+  it("takes a ground a rule paints on an element by its attributes, at rest, as covering", () => {
+    const fixture = readGrounds(
+      [
+        {
+          name: "Card.tsx",
+          text: 'export function Card() { return <div className="raised"><div data-scope="card" data-part="root"><p className="box">Refused.</p></div></div>; }',
+        },
+      ],
+      [
+        ...raised("").css,
+        '[data-scope="card"][data-part="root"] { background: var(--surface-overlay); }',
+      ],
+      SEE_THROUGH,
+    );
+    expect(laidGrounds(fixture.laid, new Map()).laid.get("danger.wash")).toEqual([
+      "surface.overlay",
+    ]);
+  });
+
+  it("reads an attribute written as an expression as a ground it may be on, never a cover", () => {
+    const fixture = readGrounds(
+      [
+        {
+          name: "Card.tsx",
+          text: 'export function Card({ part }: { part: string }) { return <div className="raised"><div data-scope="card" data-part={part}><p className="box">Refused.</p></div></div>; }',
+        },
+      ],
+      [
+        ...raised("").css,
+        '[data-scope="card"][data-part="root"] { background: var(--surface-overlay); }',
+      ],
+      SEE_THROUGH,
+    );
+    expect(laidGrounds(fixture.laid, new Map()).laid.get("danger.wash")).toEqual([
+      "surface.overlay",
+      "surface.raised",
+    ]);
+  });
+
+  it("asks for a rule whose element its own component lays on nothing", () => {
+    const fixture = readGrounds(
+      [
+        {
+          name: "Box.tsx",
+          text: 'export function Box() { return <p className="box">Refused.</p>; }',
+        },
+      ],
+      raised("").css,
+      SEE_THROUGH,
+    );
+    const found = laidGrounds(fixture.laid, new Map());
+    expect(found.unlisted).toEqual(["danger.wash .box: drawn on nothing the reader finds"]);
+    expect(
+      laidGrounds(
+        fixture.laid,
+        new Map([["danger.wash .box", { on: ["surface.overlay"] }]]),
+      ).laid.get("danger.wash"),
+    ).toEqual(["surface.overlay"]);
+  });
+
+  it("asks for a rule it finds no element of, and lets a part's own fill be", () => {
+    const fixture = readGrounds([], raised("").css, SEE_THROUGH);
+    expect(laidGrounds(fixture.laid, new Map()).unlisted).toEqual([
+      "danger.wash .box: drawn on nothing the reader finds",
+    ]);
+    expect(
+      laidGrounds(fixture.laid, new Map([["danger.wash .box", { own: "why" }]])).unlisted,
+    ).toEqual([]);
+  });
+
+  it("fails a listed rule it reads, and a listed rule no sheet has", () => {
+    const { files, css } = raised('<p className="box">Refused.</p>');
+    const fixture = readGrounds(files, css, SEE_THROUGH);
+    expect(
+      laidGrounds(
+        fixture.laid,
+        new Map([
+          ["danger.wash .box", { on: ["surface.overlay"] }],
+          ["danger.wash .gone", { on: ["surface.base"] }],
+        ]),
+      ).stale,
+    ).toEqual(["danger.wash .box: the reader finds it on surface.raised", "danger.wash .gone"]);
   });
 });

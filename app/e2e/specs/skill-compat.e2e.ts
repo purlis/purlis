@@ -120,6 +120,12 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
 
     const notice = await $('[data-cause^="skills-missing:"]');
     await notice.waitForExist({ timeout: 40_000 });
+    // A note, folded into its pane's bell while notices are minimised, the window's default
+    // (#4754): the bell expands them, for every pane, and is pressed again at the end.
+    const bell = await $('.pane-frame:has([data-cause^="skills-missing:"]) [data-way="bell"]');
+    await expect(bell).toHaveAttribute("aria-expanded", "false");
+    await bell.click();
+    await notice.waitForDisplayed({ timeout: 10_000 });
     await expect(notice).toHaveText(/could not be loaded/);
     await expect(notice).toHaveText(new RegExp(`${BROKEN} \\(project\\)`));
     await expect(notice).toHaveText(
@@ -134,7 +140,9 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
     const need = await $('[data-testid="skills-need-missing"]');
     await need.waitForDisplayed({ timeout: 20_000 });
     await expect(need).toHaveText(/could not be loaded/);
-    // The left side back on Chats, as the next spec expects it (`showView`).
+    // The left side back on Chats, and the panes' notices minimised again, as the next spec
+    // expects them (`showView`).
     await showView("Chats");
+    if ((await bell.getAttribute("aria-expanded")) === "true") await bell.click();
   });
 });

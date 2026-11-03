@@ -840,8 +840,8 @@ describe("You › This machine › Pools", () => {
     await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
     const group = await screen.findByRole("region", { name: "Pools" });
     expect(
-      await within(group).findByText(/1 older runner stopped during its drain\./),
-    ).toHaveTextContent(/until you remove it in Devices\./);
+      await within(group).findByText(/1 older runner stopped with what its chats left/),
+    ).toHaveTextContent(/until you bring their conversations back or discard them in Devices\./);
     expect(within(group).queryByText(/then purlis removes it/)).toBeNull();
   });
 

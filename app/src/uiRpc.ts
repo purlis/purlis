@@ -778,14 +778,6 @@ export const commands = {
 	 */
 	pinOnThisMachine: (path: string, workspace: string | null, pinned: boolean, at: number | null) => typedError<null, string>(__TAURI_INVOKE("pin_on_this_machine", { path, workspace, pinned, at })),
 	/**
-	 *  Pins or unpins one chat.
-	 * 
-	 *  Its own command rather than a third case of the two above, because it is written
-	 *  somewhere else entirely: a chat pin goes in the plane's own `.charter/app/reopen.json`
-	 *  and never in the machine store, which ADR 0034 forbids holding a chat's name.
-	 */
-	pinChat: (plane: PlaneId, session: number, pinned: boolean) => typedError<null, string>(__TAURI_INVOKE("pin_chat", { plane, session, pinned })),
-	/**
 	 *  The person gave a task chat a tab of its own (#1447, #1489): the record keeps it, so a
 	 *  reloaded window and the next launch draw the tab again. Sending it back is
 	 *  `close_chat_tab`. Nothing ends by either.
@@ -823,8 +815,8 @@ export const commands = {
 	 *  The order the chat strip draws this project's chats in, by session, so the record lists
 	 *  them in it and the next launch — or a reloaded window — puts them back in it (SI-6).
 	 * 
-	 *  **In the plane's own `.charter/app/reopen.json`, beside each chat's pin**, and never in the
-	 *  machine store, for [`pin_chat`]'s reason: a chat is numbered per plane, and ADR 0034 keeps
+	 *  **In the plane's own `.charter/app/reopen.json`**, and never in the machine store: a chat
+	 *  is numbered per plane, and ADR 0034 keeps
 	 *  its number out of a file every plane shares. That file is out of git, so the order is this
 	 *  machine's as a pin is.
 	 */
@@ -835,7 +827,7 @@ export const commands = {
 	 * 
 	 *  **Charter's label, never the harness's**: the program keeps the `--name` it was started
 	 *  with, so renaming a chat never disturbs one that is running. The name goes in the plane's
-	 *  own `.charter/app/reopen.json`, beside the chat's pin, so it comes back at a relaunch.
+	 *  own `.charter/app/reopen.json`, so it comes back at a relaunch.
 	 */
 	renameChat: (plane: PlaneId, session: number, label: string) => typedError<string | null, string>(__TAURI_INVOKE("rename_chat", { plane, session, label })),
 	/**
@@ -1089,6 +1081,7 @@ export const commands = {
 	skillDraftChat: __WINDOW_ONLY_START_REFUSED,
 	skillTriggerTestsChat: __WINDOW_ONLY_START_REFUSED,
 	skillOutcomeEvalsChat: __WINDOW_ONLY_START_REFUSED,
+	skillChecksChat: __WINDOW_ONLY_START_REFUSED,
 	skillImproveChat: __WINDOW_ONLY_START_REFUSED,
 	skillDraftTry: __WINDOW_ONLY_START_REFUSED,
 	skillDraftRedo: __WINDOW_ONLY_START_REFUSED,
@@ -1627,6 +1620,7 @@ export const commands = {
 	dockerPoolMakeAgain: __WINDOW_ONLY_RESULT,
 	dockerPoolReplaceRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolRemoveHeldRunner: __WINDOW_ONLY_RESULT,
+	dockerPoolBringBackHeldRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
@@ -2899,6 +2893,12 @@ export type AskSource =
 export type Asking = {
 	plane: PlaneId,
 	asks: Shown[],
+	/**
+	 *  **Each task question still with its asking chat** (#4564, ADR 0107): in progress, so
+	 *  its task's row alone says it, and nothing here is counted by the ✋ or listed in the
+	 *  Inbox, which read [`Asking::asks`].
+	 */
+	with_asking_chat: WithAskingChat[],
 };
 
 /**  What a chat's row says while it is at its task limit. */
@@ -6132,11 +6132,6 @@ export type HandedFromNote = {
 	 */
 	outcome?: string | null,
 	/**
-	 *  Whether, as a task, it has a question open with the chat that dispatched it, and is
-	 *  paused until that chat answers (#1484): its row says whom it is asking.
-	 */
-	asking?: boolean | null,
-	/**
 	 *  Whether, as a task, the person asked for it themselves from that chat's tab (#1492,
 	 *  V100-70): its row and its breadcrumb say `asked by you`. The app's own record of how it
 	 *  was started, never a word a chat said.
@@ -8941,8 +8936,8 @@ export type PoolVersion = {
 	 */
 	draining: number,
 	/**
-	 *  How many of its older runners are held: each stopped during its drain, and stays with its
-	 *  home until the person removes it.
+	 *  How many of its older runners are held: each stopped with what its chats left, and stays with
+	 *  its home until the person brings their conversations back or discards them.
 	 */
 	held: number,
 	/**
@@ -10373,8 +10368,8 @@ export type RunnerAsked = {
 	 */
 	ran_this_week: number | null,
 	/**
-	 *  It stopped during its drain, so it stays with its home until the person removes it
-	 *  ([`purlis_core::pools::DrainLook::Held`]).
+	 *  It stopped with what its chats left, so it stays with its home until the person brings their
+	 *  conversations back or discards them ([`purlis_core::pools::DrainLook::Held`], #4633).
 	 */
 	held: boolean,
 };
@@ -13933,6 +13928,16 @@ export type WindowTyped = {
 	flags: { [key in string]: boolean },
 	choices: { [key in string]: string },
 	numbers: { [key in string]: number | null },
+};
+
+/**  A task question its asking chat has, as the task's row says it: `asking steward 2 · 1m`. */
+export type WithAskingChat = {
+	/**  The task that asked. */
+	session: number,
+	/**  The chat it asks, by name as its own row names it. */
+	asker: string,
+	/**  When it was asked, in seconds since 1970. */
+	since: number,
 };
 
 /**  A person's opt-out, as the picker sends it. */

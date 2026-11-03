@@ -864,10 +864,6 @@ pub struct HandedFromNote {
     /// report, and where no record says how.
     #[specta(optional)]
     pub outcome: Option<String>,
-    /// Whether, as a task, it has a question open with the chat that dispatched it, and is
-    /// paused until that chat answers (#1484): its row says whom it is asking.
-    #[specta(optional)]
-    pub asking: Option<bool>,
     /// Whether, as a task, the person asked for it themselves from that chat's tab (#1492,
     /// V100-70): its row and its breadcrumb say `asked by you`. The app's own record of how it
     /// was started, never a word a chat said.
@@ -895,7 +891,6 @@ impl HandedFromNote {
             // What the project's own records say of it, which a list of rows asks for
             // ([`with_task_standing`]): not the chat's record, so not read here.
             outcome: None,
-            asking: None,
             by_person: (from.mode == purlis_core::reopen::Mode::Task && from.by_person)
                 .then_some(true),
             asker_waiting: None,
@@ -944,12 +939,10 @@ fn with_task_standing(
     if let Some(from) = drawn.from.as_mut() {
         from.asker_waiting = held.chats().waits_to_start(from.chat).then_some(true);
     }
-    if let Some(from) = drawn.from.as_mut().filter(|from| from.task) {
-        if from.reported || from.unreported {
-            from.outcome = outcomes.of_task(session).map(str::to_owned);
-        } else {
-            from.asking = dispatched::asks_its_asker(held, session).then_some(true);
-        }
+    if let Some(from) = drawn.from.as_mut().filter(|from| from.task)
+        && (from.reported || from.unreported)
+    {
+        from.outcome = outcomes.of_task(session).map(str::to_owned);
     }
     drawn
 }
@@ -2598,22 +2591,6 @@ async fn arrange_workspace_pins(
     .await
 }
 
-/// Pins or unpins one chat.
-///
-/// Its own command rather than a third case of the two above, because it is written
-/// somewhere else entirely: a chat pin goes in the plane's own `.charter/app/reopen.json`
-/// and never in the machine store, which ADR 0034 forbids holding a chat's name.
-#[tauri::command]
-#[specta::specta]
-fn pin_chat(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-    session: u32,
-    pinned: bool,
-) -> Result<(), String> {
-    planes.held(&plane)?.chats().pin(session, pinned)
-}
-
 /// The person gave a task chat a tab of its own (#1447, #1489): the record keeps it, so a
 /// reloaded window and the next launch draw the tab again. Sending it back is
 /// `close_chat_tab`. Nothing ends by either.
@@ -2647,8 +2624,8 @@ fn close_chat_tab(
 /// The order the chat strip draws this project's chats in, by session, so the record lists
 /// them in it and the next launch — or a reloaded window — puts them back in it (SI-6).
 ///
-/// **In the plane's own `.charter/app/reopen.json`, beside each chat's pin**, and never in the
-/// machine store, for [`pin_chat`]'s reason: a chat is numbered per plane, and ADR 0034 keeps
+/// **In the plane's own `.charter/app/reopen.json`**, and never in the machine store: a chat
+/// is numbered per plane, and ADR 0034 keeps
 /// its number out of a file every plane shares. That file is out of git, so the order is this
 /// machine's as a pin is.
 #[tauri::command]
@@ -2667,7 +2644,7 @@ fn chat_order(
 ///
 /// **Charter's label, never the harness's**: the program keeps the `--name` it was started
 /// with, so renaming a chat never disturbs one that is running. The name goes in the plane's
-/// own `.charter/app/reopen.json`, beside the chat's pin, so it comes back at a relaunch.
+/// own `.charter/app/reopen.json`, so it comes back at a relaunch.
 #[tauri::command]
 #[specta::specta]
 fn rename_chat(

@@ -164,8 +164,8 @@ pub struct PoolVersion {
     /// How many of its older runners drain: each keeps its chats until they end, then is
     /// removed.
     pub draining: u32,
-    /// How many of its older runners are held: each stopped during its drain, and stays with its
-    /// home until the person removes it.
+    /// How many of its older runners are held: each stopped with what its chats left, and stays with
+    /// its home until the person brings their conversations back or discards them.
     pub held: u32,
     /// Whether this version's release named a runner image, as purlis last found it (#2880):
     /// one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
@@ -694,6 +694,87 @@ pub async fn docker_pool_remove_held_runner(
         let _ = (app, runner);
         Err(NOT_HERE.to_owned())
     }
+}
+
+/// **Brings back the held runner `runner`'s conversations to its pool's runner, as the person
+/// pressed** (#4633, ruled 2026-11-02), and then removes it, once none is left behind
+/// ([`purlis_core::pools::bring_back`]). The window's alone, as removing one is. What stopped
+/// it, or what is left of it, is said.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pool_bring_back_held_runner(
+    app: tauri::AppHandle,
+    runner: String,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("bringing back a held runner's conversations", move || {
+            let machine = Machine::here(&config_root()?)?;
+            let kept = purlis_core::runners::named(&machine.config, &runner)
+                .map_err(|why| refused_said(&why.to_string()))?
+                .ok_or_else(|| format!("No runner {runner} is on this machine."))?;
+            let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)?;
+            let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
+            let brought = purlis_core::pools::bring_back(
+                &machine.config,
+                &machine.docker,
+                &runner,
+                Some(&unpair),
+            )
+            .map_err(|why| refused_said(&why.to_string()))?;
+            let Some(removed) = brought.removed else {
+                return Err(left_behind_said(
+                    &runner,
+                    brought.found,
+                    brought.left,
+                    brought.seen,
+                ));
+            };
+            if removed.forgotten {
+                crate::poolfollow::forget_waiting_on(&machine.config, kept.pool(), &runner);
+                if let Some(host) =
+                    tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app)
+                {
+                    host.connection().links_to_gone_runners_end(&machine.config);
+                }
+            }
+            removed.left().map_or(Ok(()), Err)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, runner);
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+/// What the window says when `left` of the `found` files of the held runner `runner`'s
+/// conversations stayed where they were, `seen` of them opencode's, so it is kept (#4633).
+#[cfg(unix)]
+fn left_behind_said(runner: &str, found: u32, left: u32, seen: u32) -> String {
+    let files = |n: u32| {
+        if n == 1 {
+            "1 file".to_owned()
+        } else {
+            format!("{n} files")
+        }
+    };
+    let opencode = if seen == 0 {
+        String::new()
+    } else {
+        format!(
+            " {} of them opencode's, which stay where they are.",
+            files(seen)
+        )
+    };
+    format!(
+        "{} of {} of its chats' conversations came back. purlis keeps runner {runner} with the \
+         {} left.{opencode} Discard them to remove it.",
+        files(found.saturating_sub(left)),
+        files(found),
+        files(left),
+    )
 }
 
 /// **Which version the pool `name`'s runner runs, against this desktop's** (#2749).
