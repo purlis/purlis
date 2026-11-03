@@ -377,6 +377,37 @@ describe("the explorer", () => {
         $('[role="listbox"][aria-label="Search results"] [role="group"]'),
       ).toHaveAttribute("aria-label", expect.stringContaining("notes.md, found-by-content"));
 
+      // DIAGNOSIS (#4799, temporary): each light editor as it comes and goes, from before Enter.
+      await browser.execute(() => {
+        type Watched = { log: string[]; seen: number; start: number };
+        const w: Watched = { log: [], seen: 0, start: performance.now() };
+        (window as unknown as { editorWatch: Watched }).editorWatch = w;
+        const live = new Map<Element, number>();
+        const tick = () => {
+          const at = Math.round(performance.now() - w.start);
+          const now = new Set(document.querySelectorAll('[data-testid="light-editor"]'));
+          for (const el of now)
+            if (!live.has(el)) {
+              const n = ++w.seen;
+              live.set(el, n);
+              (el as HTMLElement).dataset.watch = String(n);
+              const tab = document.querySelector(
+                '[data-strip="Tabs"] [role="tab"][aria-selected="true"] .tab-name',
+              );
+              w.log.push(
+                `${at}ms +${n} in front=${tab?.textContent ?? "?"} text=${(el.textContent ?? "").slice(0, 30)}`,
+              );
+            }
+          for (const [el, n] of live)
+            if (!now.has(el)) {
+              live.delete(el);
+              w.log.push(`${at}ms -${n} connected=${el.isConnected}`);
+            }
+          if (at < 30_000) requestAnimationFrame(tick);
+        };
+        tick();
+      });
+
       // Into the hits from the box, and the one stepped to opens.
       await browser.keys(["ArrowDown"]);
       await browser.keys(["Enter"]);
@@ -386,50 +417,30 @@ describe("the explorer", () => {
         timeoutMsg: `the file tab never came forward; in front is ${await tabInFront()}`,
       });
       const editor = await $('[data-testid="light-editor"]');
-      // DIAGNOSIS (#4799, temporary): what hides the editor, at the moment it is not displayed.
+      const held = await browser
+        .execute(
+          (el: HTMLElement) =>
+            `held: watch=${el.dataset.watch ?? "none"} connected=${el.isConnected}`,
+          editor as unknown as HTMLElement,
+        )
+        .catch((e: unknown) => `held: ${String(e).slice(0, 80)}`);
       try {
         await editor.waitForDisplayed({ timeout: 20_000 });
       } catch (err) {
-        const said = await browser.execute(() => {
-          const lines: string[] = [];
-          const all = document.querySelectorAll('[data-testid="light-editor"]');
-          lines.push(`editors: ${all.length}`);
-          all.forEach((el, i) => {
-            const box = el.getBoundingClientRect();
-            const vis = (el as Element & { checkVisibility: (o?: object) => boolean })
-              .checkVisibility;
-            lines.push(
-              `#${i} ${Math.round(box.width)}x${Math.round(box.height)} at ${Math.round(box.left)},${Math.round(box.top)} plain=${vis.call(el)} opacity=${vis.call(el, { opacityProperty: true })} visibility=${vis.call(el, { visibilityProperty: true })} cv=${vis.call(el, { contentVisibilityAuto: true })} text=${(el.textContent ?? "").slice(0, 40)}`,
-            );
-            for (let up: Element | null = el; up !== null; up = up.parentElement) {
-              const s = getComputedStyle(up);
-              const odd =
-                s.opacity !== "1" ||
-                s.visibility !== "visible" ||
-                s.display === "none" ||
-                s.contentVisibility !== "visible" ||
-                s.animationName !== "none" ||
-                up.hasAttribute("hidden") ||
-                up.hasAttribute("inert");
-              if (!odd) continue;
-              const data = [...up.attributes]
-                .filter(
-                  (a) => a.name.startsWith("data-") || a.name === "hidden" || a.name === "inert",
-                )
-                .map((a) => `${a.name}=${a.value}`)
-                .join(" ");
-              lines.push(
-                `  ${up.tagName.toLowerCase()}.${String(up.className).trim().split(/\s+/).slice(0, 3).join(".")} opacity=${s.opacity} visibility=${s.visibility} display=${s.display} cv=${s.contentVisibility} anim=${s.animationName}/${s.animationPlayState} ${data}`,
-              );
-            }
-          });
-          const running = document.getAnimations().map((a) => {
-            const t = (a.effect as KeyframeEffect | null)?.target;
-            return `${(a as CSSAnimation).animationName ?? a.constructor.name} ${a.playState} t=${String(a.currentTime)} on ${t ? `${t.tagName.toLowerCase()}.${String(t.className).split(/\s+/)[0]}` : "?"}`;
-          });
-          lines.push(`animations: ${running.join(" | ") || "none"}`);
-          return lines.join("\n");
-        });
+        const later = await browser
+          .execute(
+            (el: HTMLElement) =>
+              `held later: watch=${el.dataset.watch ?? "none"} connected=${el.isConnected}`,
+            editor as unknown as HTMLElement,
+          )
+          .catch((e: unknown) => `held later: ${String(e).slice(0, 80)}`);
+        const log = await browser.execute(
+          () =>
+            (window as unknown as { editorWatch?: { log: string[] } }).editorWatch?.log.join(
+              "\n",
+            ) ?? "no watch",
+        );
+        const said = `${held}\n${later}\n${log}`;
         console.error(`DIAGNOSIS #4799\n${said}`);
         if (err instanceof Error) err.message += `\nDIAGNOSIS #4799\n${said}`;
         throw err;
