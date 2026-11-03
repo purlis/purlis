@@ -226,3 +226,10 @@ now say which it was.
 - **The schedule is one more way into the workflow that holds the keys.** It reaches none of
   them, and two tests in `crates/release-manifest` hold that: the events that get the `release`
   environment are named, and the guard's own job has no secret, no environment and no action.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0092/`](0092/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

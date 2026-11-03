@@ -333,8 +333,8 @@ pub(crate) fn decided_within<T: Send>(budget: &Budget, judge: impl FnOnce() -> T
 
 /// From here on, a panic anywhere in this process is a refusal: exit 2, one line on stderr.
 ///
-/// **A crashed guard is otherwise an allow** (#349). A panic exits 101, or under the release
-/// profile's `panic = "abort"` ends in SIGABRT, and a harness reads every non-zero status but
+/// **A crashed guard is otherwise an allow** (#349). A panic exits 101, or in a shipped build
+/// (`purlis_core::panicend`) ends in SIGABRT, and a harness reads every non-zero status but
 /// 2 as a non-blocking error and runs the tool. `catch_unwind` cannot help where there is no
 /// unwinding, but a panic hook runs before the abort does, so the hook answers and exits
 /// itself — the abort is never reached. It covers every thread, which is right: under abort a

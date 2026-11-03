@@ -96,11 +96,15 @@ strip = "debuginfo"
 inherits = "test"
 debug = "none"
 
+# `panic = "unwind"`, so that an Objective-C exception AppKit raises under one of tao's callbacks
+# (a paste's `sendEvent:`) unwinds to NSApplication, which reports it and goes on; under
+# `abort` it took the app down (tao#1354, ADR 0092 amended 2026-11-03). A Rust panic still ends
+# the process: each shipped binary calls `purlis_core::panicend::fatal` first in its `main`.
 [profile.release]
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
+panic = "unwind"
 strip = true
 
 # What a dev channel build is compiled with (ADR 0092, #1429). `release` with a lighter link:
