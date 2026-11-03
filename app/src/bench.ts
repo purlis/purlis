@@ -31,6 +31,9 @@ type Pane = {
   /** Everything the pane has been sent since it was armed, in a window big enough to match
    *  a sentinel that arrives split across two chunks. */
   tail: string;
+  /** What the pane is sent is bytes (#4745): decoded here, as its terminal decodes them, only
+   *  while measuring, so a character cut between two chunks is counted once, whole. */
+  text: TextDecoder;
   chunks: number;
   characters: number;
   firstChunkAt?: number;
@@ -75,7 +78,14 @@ export const measuring = Boolean(import.meta.env.VITE_E2E);
 /** A pane's terminal, now on screen. */
 export function paneOpened(session: number, terminal: Terminal): void {
   if (!measuring) return;
-  const pane: Pane = { session, terminal, tail: "", chunks: 0, characters: 0 };
+  const pane: Pane = {
+    session,
+    terminal,
+    tail: "",
+    text: new TextDecoder(),
+    chunks: 0,
+    characters: 0,
+  };
   open.set(terminal, pane);
   opens += 1;
   terminal.onRender(() => {
@@ -103,17 +113,18 @@ export function paneDrawing(terminal: Terminal, drawing: Drawing): void {
 }
 
 /**
- * Text a pane has been sent, before it writes it to its terminal.
+ * Output a pane has been sent, the bytes its program wrote, before it writes it to its terminal.
  *
  * The answer, where there is one, is for the pane to hand to `Terminal.write` as its
  * callback: that is called once this text has been parsed into the grid, which is where the
  * row a job waits for becomes real. Arrival over IPC is not that — xterm.js parses its write
  * queue on its own schedule — so a job that timed from arrival would be timing delivery.
  */
-export function paneSent(terminal: Terminal, text: string): (() => void) | undefined {
+export function paneSent(terminal: Terminal, bytes: Uint8Array): (() => void) | undefined {
   if (!measuring) return undefined;
   const pane = open.get(terminal);
   if (!pane) return undefined;
+  const text = pane.text.decode(bytes, { stream: true });
   pane.chunks += 1;
   pane.characters += text.length;
   pane.firstChunkAt ??= performance.now();

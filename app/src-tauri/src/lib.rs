@@ -2925,8 +2925,26 @@ fn resize_session(
     Ok(())
 }
 
+/// **A piece of a session's output, as the bytes its program wrote** (#4745): sent on a
+/// channel as a raw body, so the window is handed an `ArrayBuffer` for its terminal to decode,
+/// where a string would be escaped into JSON and parsed back out of script source on the way.
+pub struct OutputBytes(pub Vec<u8>);
+
+impl tauri::ipc::IpcResponse for OutputBytes {
+    fn body(self) -> tauri::Result<tauri::ipc::InvokeResponseBody> {
+        Ok(tauri::ipc::InvokeResponseBody::Raw(self.0))
+    }
+}
+
+impl specta::Type for OutputBytes {
+    fn definition(_: &mut specta::Types) -> specta::datatype::DataType {
+        specta_typescript::define("ArrayBuffer").into()
+    }
+}
+
 /// Opens a view of a session for a pane that is now on screen: the channel is sent the screen
-/// as it already is, and then the session's output. Answers with the id that closes the view.
+/// as it already is, and then the session's output, each piece the bytes it is (#4745).
+/// Answers with the id that closes the view.
 ///
 /// Off the window's thread, in its turn in the chat's lane (#4734, ADR 0108): after every
 /// resize the pane sent before it (#891), and answered once the host has.
@@ -2936,7 +2954,7 @@ async fn watch_session(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
-    output: Channel<String>,
+    output: Channel<OutputBytes>,
 ) -> Result<Watching, String> {
     let held = planes.held(&plane)?;
     off_the_window("opening a view of a chat", move || {
@@ -2944,9 +2962,11 @@ async fn watch_session(
         let watching = held.watch_in_turn(
             session,
             // A view whose window has gone is closed by the pane that owned it; until then,
-            // text it cannot take is dropped rather than held, and the session keeps running.
-            Box::new(move |text| {
-                let _ = output.send(text);
+            // what it cannot take is dropped rather than held, and the session keeps running.
+            // The pane reports what it drew (`session_drawn`), and the view is paced by it
+            // (#4733).
+            Box::new(move |bytes| {
+                let _ = output.send(OutputBytes(bytes));
             }),
         )?;
         Ok(Watching {
@@ -2958,6 +2978,25 @@ async fn watch_session(
         })
     })
     .await
+}
+
+/// The pane drawing view `view` of session `session` has drawn `pieces` more of what its
+/// channel was sent, in order (#4733). Only what is drawn is acknowledged to the session host,
+/// so a pane that cannot keep up is sent a fresh screen rather than a backlog.
+#[tauri::command]
+#[specta::specta]
+fn session_drawn(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    view: u32,
+    pieces: u32,
+) -> Result<(), String> {
+    planes
+        .held(&plane)?
+        .chats()
+        .sessions()
+        .drawn(session, view, pieces)
 }
 
 /// Closes a view, for a pane that has gone off screen, in the chat's lane: it answers at once

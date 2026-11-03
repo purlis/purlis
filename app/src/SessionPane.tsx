@@ -49,7 +49,7 @@ import {
 } from "./theme/theme";
 import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
-import { writePerFrame } from "./paneWrites";
+import { drawnReports, writePerFrame } from "./paneWrites";
 import { useProjectShown } from "./projectShown";
 import { viewOpening } from "./slowLog";
 
@@ -372,16 +372,31 @@ export function SessionPane({
     // for, so a line the session wrapped is not wrapped again somewhere else. A benchmark
     // wants to know when its text reached the grid, so what it gives back travels with the
     // text it belongs to.
-    const waiting: { text: string; written?: () => void }[] = [];
+    const waiting: { bytes: Uint8Array; written?: () => void }[] = [];
     let ready = false;
     // What arrives within a frame is one write to the terminal, not one per chunk (#4732).
-    const writes = writePerFrame((text, parsed) => pane.write(text, parsed));
-    const output = new Channel<string>();
-    output.onmessage = (text) => {
+    const writes = writePerFrame((bytes, parsed) => pane.write(bytes, parsed));
+    // What the terminal has drawn is told back, one report per write, and the session host
+    // paces the view by it (#4733): a pane that falls behind is sent a fresh screen, not a
+    // backlog.
+    const drawn = drawnReports((pieces) => {
+      if (gone || view === undefined) return;
+      void commands.sessionDrawn(plane, session, view, pieces);
+    });
+    // Each piece is the bytes the program wrote, a raw body over IPC rather than a string
+    // escaped into JSON (#4745); the terminal decodes them, a character cut between two
+    // pieces included.
+    const output = new Channel<ArrayBuffer>();
+    output.onmessage = (buffer) => {
       if (gone) return;
-      const written = bench.paneSent(pane, text);
-      if (ready) writes.add(text, written);
-      else waiting.push({ text, written });
+      const bytes = new Uint8Array(buffer);
+      const benched = bench.paneSent(pane, bytes);
+      const written = () => {
+        benched?.();
+        drawn.piece();
+      };
+      if (ready) writes.add(bytes, written);
+      else waiting.push({ bytes, written });
     };
     // Opening the view, until its screen is handed to the terminal: what the stall log says was
     // going on (`slowLog.ts`).
@@ -409,7 +424,7 @@ export function SessionPane({
       newline = opened.data.newline ?? undefined;
       pane.resize(opened.data.columns, opened.data.rows);
       ready = true;
-      for (const held of waiting.splice(0)) writes.add(held.text, held.written);
+      for (const held of waiting.splice(0)) writes.add(held.bytes, held.written);
       // Now that the screen is drawn, the pane's own size applies again.
       fit.fit();
       openingDone();

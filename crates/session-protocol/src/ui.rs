@@ -1249,6 +1249,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "see_on_this_machine",
     "seen_on_this_machine",
     "session_bus",
+    // How much of a view its pane has drawn, which paces the view (#4733): beside
+    // `watch_session`, a link's pane reports its own.
+    "session_drawn",
     // Whether the session host is failing, and what the window says of it (#2007).
     "session_host_failing",
     "session_record",
