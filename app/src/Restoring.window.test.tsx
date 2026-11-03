@@ -10,7 +10,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { NotStarted, OpenChat } from "./bindings";
 import { forgetThisLaunch } from "./regions";
-import { restoredSince, RESTORING_HAS_NO_CLOSE } from "./restoringChats";
+import { restoredSince, RESTORING_HAS_NO_CLOSE, seenFirst } from "./restoringChats";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { findResult } from "./actionResult.testkit";
 
@@ -105,13 +105,23 @@ function core(first: OpenChat[]) {
       const left = held.chats.filter((one) => one.restoring != null).length;
       await act(() => emit("chat-restored", { plane: PLANE, number, session: number, left }));
     },
-    /** Chat `number` started, but under `session`: the core lists that and not `number`. */
-    async startsAs(number: number, session: number, more: Partial<OpenChat> = {}) {
+    /** Chat `number` started, but under `session`: the core lists that in its place, and not
+     *  `number`. Said at once unless `told` is false; then only {@link tell} says it. */
+    async startsAs(
+      number: number,
+      session: number,
+      more: Partial<OpenChat> = {},
+      { told = true } = {},
+    ) {
       held.chats = held.chats.map((one) =>
         one.session === number
           ? chat(session, { name: one.name, in_front: one.in_front, ...more })
           : one,
       );
+      if (told) await this.tell(number, session);
+    },
+    /** The event the core sends for chat `number`, which started as `session`. */
+    async tell(number: number, session: number | null) {
       const left = held.chats.filter((one) => one.restoring != null).length;
       await act(() => emit("chat-restored", { plane: PLANE, number, session, left }));
     },
@@ -227,6 +237,30 @@ describe("a launch's chats, coming back behind the window", () => {
     );
   });
 
+  it("one the list says started under a new number, before its event does, keeps its tab (#4962)", async () => {
+    const the = core([
+      restoring(4, { in_front: true }),
+      restoring(5, { name: "five", pinned: true }),
+      restoring(6),
+    ]);
+    render(<App />);
+    await waitFor(() => expect(tabs().filter((tab) => tab.pinned)).toHaveLength(1));
+    const before = tabs();
+    const five = before.findIndex((tab) => tab.pinned);
+
+    // Chat 5 has started as 9, but the read that sees it is the one chat 4's event asks for.
+    await the.startsAs(5, 9, { pinned: false }, { told: false });
+    await the.starts(4);
+    const after = before.map((tab, at) =>
+      at === five || tab.name === "steward 4" ? { ...tab, restoring: false } : tab,
+    );
+    await waitFor(() => expect(tabs()).toEqual(after));
+
+    // Its own event, heard last, changes nothing.
+    await the.tell(5, 9);
+    expect(tabs()).toEqual(after);
+  });
+
   it("an event about another project's chat reads nothing of this one", async () => {
     const the = core([restoring(4, { in_front: true })]);
     render(<App />);
@@ -266,11 +300,82 @@ describe("what a read says has become of the restoring chats", () => {
 
   it("tells the started from the ones still restoring and the ones that are gone", () => {
     const open = [chat(4), restoring(5)];
-    const said = restoredSince(was, open, { number: 4, session: 4 }, shown);
+    const said = restoredSince(was, open, { number: 6, session: null }, shown);
     expect(said.started.map((one) => one.session)).toEqual([4]);
     expect([...said.still]).toEqual([5]);
     expect(said.gone).toEqual([6]);
     expect(said.arrived).toEqual([]);
+  });
+
+  it("holds a chat a read finds missing, drawn as restoring, until its event says what it became", () => {
+    const first = restoredSince(was, [chat(4), restoring(5)], null, shown);
+    expect(first.gone).toEqual([]);
+    expect([...first.still].sort()).toEqual([5, 6]);
+
+    // Its event says it started as 9: the same chat, in its tab.
+    const then = restoredSince(
+      first.still,
+      [chat(4), restoring(5), chat(9)],
+      { number: 6, session: 9 },
+      shown,
+      first.seen,
+    );
+    expect(then.renumbered.map(({ from, chat }) => [from, chat.session])).toEqual([[6, 9]]);
+    expect(then.gone).toEqual([]);
+    // Even where a read listed 9 already without telling it was 6's.
+    const listed9 = restoredSince(
+      first.still,
+      [chat(4), restoring(5), chat(9)],
+      null,
+      shown,
+      first.seen,
+    );
+    expect(listed9.renumbered).toEqual([]);
+    const late = restoredSince(
+      listed9.still,
+      [chat(4), restoring(5), chat(9)],
+      { number: 6, session: 9 },
+      shown,
+      listed9.seen,
+    );
+    expect(late.renumbered.map(({ from, chat }) => [from, chat.session])).toEqual([[6, 9]]);
+    // Or that it did not start.
+    const not = restoredSince(
+      first.still,
+      [chat(4), restoring(5)],
+      { number: 6, session: null },
+      shown,
+      first.seen,
+    );
+    expect(not.gone).toEqual([6]);
+  });
+
+  it("takes a session in a missing chat's place on the list as that chat, before its event", () => {
+    const seen = seenFirst([restoring(4), restoring(5), restoring(6)]);
+    const said = restoredSince(was, [restoring(4), chat(9), restoring(6)], null, shown, seen);
+    expect(said.renumbered.map(({ from, chat }) => [from, chat.session])).toEqual([[5, 9]]);
+    expect(said.gone).toEqual([]);
+    // Not a session a tab already shows, nor one the read before listed.
+    const shows = restoredSince(was, [restoring(4), chat(9), restoring(6)], null, () => true, seen);
+    expect(shows.renumbered).toEqual([]);
+    expect([...shows.still].sort()).toEqual([4, 5, 6]);
+  });
+
+  it("takes a held chat whose event never comes as gone, once nothing else is restoring", () => {
+    const first = restoredSince(new Set([5, 6]), [chat(4), restoring(5)], null, shown);
+    expect([...first.still].sort()).toEqual([5, 6]);
+    // Found missing again, but 5 is restoring still: its event may yet come.
+    const second = restoredSince(first.still, [chat(4), restoring(5)], null, shown, first.seen);
+    expect(second.gone).toEqual([]);
+    // 5 has started and nothing else is restoring: a look of the window's own takes 6 as one
+    // that did not start, where an event's read does not.
+    const open = [chat(4), chat(5)];
+    expect(
+      restoredSince(second.still, open, { number: 5, session: 5 }, shown, second.seen).gone,
+    ).toEqual([]);
+    const third = restoredSince(second.still, open, null, shown, second.seen);
+    expect(third.gone).toEqual([6]);
+    expect([...third.still]).toEqual([]);
   });
 
   it("takes a chat that started under another number as the same chat, in its tab", () => {

@@ -16,7 +16,14 @@ import {
   type ReactNode,
 } from "react";
 import { listen } from "./here";
-import { CHAT_RESTORED, isRestoring, restoredSince, type ChatRestored } from "./restoringChats";
+import {
+  CHAT_RESTORED,
+  isRestoring,
+  restoredSince,
+  seenFirst,
+  type ChatRestored,
+  type RestoreSeen,
+} from "./restoringChats";
 import { QueueRead } from "./QueueRead";
 import { QuestionsHere } from "./QuestionsHere";
 import { standingOf, waitingOnYou, type QuestionsHeld } from "./taskQuestions";
@@ -1071,6 +1078,8 @@ export const PlaneView = memo(function PlaneView({
    */
   const [restoringChats, setRestoringChats] = useState<ReadonlySet<number>>(() => new Set());
   const restoringNow = useRef<ReadonlySet<number>>(new Set());
+  /** What the reads of the restoring chats have seen, for the next to go on from. */
+  const restoreSeen = useRef<RestoreSeen>(seenFirst([]));
   /** Raised when the chats were adopted with some still restoring: they are read again once,
    *  for one that started between the read and the listener. */
   const [restoreLooks, setRestoreLooks] = useState(0);
@@ -1621,6 +1630,7 @@ export const PlaneView = memo(function PlaneView({
         const coming = open.filter(isRestoring);
         if (coming.length > 0) {
           restoringNow.current = new Set(coming.map((chat) => chat.session));
+          restoreSeen.current = seenFirst(open);
           setRestoringChats(restoringNow.current);
           setStartedIn((was) => ({
             ...was,
@@ -6614,12 +6624,14 @@ export const PlaneView = memo(function PlaneView({
       const answer = await commands.openedChats(plane).catch(() => undefined);
       if (answer?.status !== "ok") return;
       const open = answer.data ?? [];
-      const { still, started, gone, arrived, renumbered } = restoredSince(
+      const { still, started, gone, arrived, renumbered, seen } = restoredSince(
         restoringNow.current,
         open,
         said,
         (session) => alreadyShows(now.current, session),
+        restoreSeen.current,
       );
+      restoreSeen.current = seen;
       if (
         started.length === 0 &&
         gone.length === 0 &&
@@ -6636,9 +6648,9 @@ export const PlaneView = memo(function PlaneView({
       // Filed where they were, and said again: the sidebar is read once more, now that the
       // core lists them among the open chats (the Chats section, the workspace's count).
       if (started.length > 0) setStartedIn((was) => ({ ...was }));
-      // Started under another number than its tab was drawn under, which is still drawn: the
-      // new number goes into that tab, as Restart's does, and the tab keeps its pin, its place
-      // and its panes (#4962).
+      // Started under another number than its tab was drawn under, which is still drawn, as an
+      // event or the list says: the new number goes into that tab, as Restart's does, and the
+      // tab keeps its pin, its place and its panes (#4962).
       for (const { from, chat } of renumbered) {
         noteStarted(chat);
         change((tabs) => replaceSession(tabs, from, chat.session));
