@@ -6926,8 +6926,6 @@ fn a_seventh_task_is_refused_while_six_are_running_and_says_to_wait() {
 
 // ----- the person's own dispatch, from a chat's tab (#1438) -----
 
-/// Planes whose chats run on `host`, which runs nothing: no pty, so these run wherever
-/// the tests do. What a chat was started on is `host.openings()`.
 /// [`planes_on`], on a machine keeping a Docker pool by each of `pools` (#4965): a dispatch
 /// naming one may wait for the person, and one naming any other is refused before.
 fn planes_keeping_pools(host: &Pretend, pools: &[&str]) -> (Planes, tempfile::TempDir) {
@@ -6953,6 +6951,8 @@ fn planes_keeping_pools(host: &Pretend, pools: &[&str]) -> (Planes, tempfile::Te
     (planes, config)
 }
 
+/// Planes whose chats run on `host`, which runs nothing: no pty, so these run wherever
+/// the tests do. What a chat was started on is `host.openings()`.
 fn planes_on(host: &Pretend) -> Planes {
     let host = host.clone();
     planes().running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
