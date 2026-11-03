@@ -5656,10 +5656,14 @@ export const PlaneView = memo(function PlaneView({
               STARTING_SIZE.columns,
               STARTING_SIZE.rows,
             )
-          : wanted.kind === "triggers" || wanted.kind === "evals" || wanted.kind === "improve"
+          : wanted.kind === "triggers" ||
+              wanted.kind === "evals" ||
+              wanted.kind === "checks" ||
+              wanted.kind === "improve"
             ? {
                 triggers: commands.skillTriggerTestsChat,
                 evals: commands.skillOutcomeEvalsChat,
+                checks: commands.skillChecksChat,
                 improve: commands.skillImproveChat,
               }[wanted.kind](
                 plane,

@@ -360,6 +360,7 @@ macro_rules! app_commands {
                 skilldrafts::skill_draft_chat,
                 skilldrafts::skill_trigger_tests_chat,
                 skilldrafts::skill_outcome_evals_chat,
+                skilldrafts::skill_checks_chat,
                 skilldrafts::skill_improve_chat,
                 skilldrafts::skill_draft_try,
                 skilldrafts::skill_draft_redo,

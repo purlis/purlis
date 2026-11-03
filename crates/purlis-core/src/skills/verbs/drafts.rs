@@ -1456,6 +1456,19 @@ pub fn asking_for_outcome_evals(root: &Path, level: &Level, name: &str) -> Resul
     ))
 }
 
+/// **The prompt "Ask a chat to write checks" types** (ruling of 2026-11-02), unsent: both kinds
+/// of a skill's checks, its trigger tests ("does it get picked?") and its outcome evals ("does it
+/// do the job?"), asked of one chat, so both files come back in the skill's one draft, which the
+/// person accepts whole. It names the job, the skill and its folder, and [`STUDIO_SKILL`], whose
+/// Checks section holds both formats and what makes a good check (#4714). One line, which the
+/// person may add to.
+pub fn asking_for_checks(root: &Path, level: &Level, name: &str) -> Result<String, String> {
+    let at = told_folder(root, level, name, "write its checks")?;
+    Ok(format!(
+        "Use the {STUDIO_SKILL} skill to write checks for the {name} skill in {at}."
+    ))
+}
+
 /// The flags that name `level` on `purlis skill`'s command line ([`Level`]'s own words): nothing
 /// for the project's. Empty or with a leading space.
 fn level_flags(level: &Level) -> String {

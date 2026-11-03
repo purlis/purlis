@@ -8111,6 +8111,83 @@ nav.piece-files-head {
   gap: var(--space-4);
 }
 
+/* Its checks (ruling of 2026-11-02): one heading with the latest grade and Grade beside it, the
+   one-sentence answer, and a card per kind, side by side where they fit; the technical name is a
+   small label under each question. */
+.skill-checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.skill-checks-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.skill-checks-answer {
+  margin: 0;
+  font-weight: var(--font-weight-strong);
+}
+
+.skill-checks-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--space-3);
+}
+
+.skill-checks-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.skill-checks-technical {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+.skill-checks-count {
+  color: var(--text-secondary);
+}
+
+.skill-checks-drafted {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Under the card's title, never louder than it: the title's size, its kinds' weight a step down. */
+.skill-checks-drafted-head {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.skill-checks-list {
+  font-size: var(--font-size-sm);
+}
+
+.skill-checks-list,
+.skill-checks-kinds-said {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-inline-start: var(--space-4);
+  overflow-wrap: anywhere;
+}
+
+.skill-checks-kinds-said {
+  margin-block-start: var(--space-2);
+  text-align: start;
+}
+
 .skill-grading-head {
   display: flex;
   flex-direction: column;
