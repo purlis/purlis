@@ -91,6 +91,11 @@ export const Trying: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Start a test chat" }));
     await canvas.findByRole("heading", { name: "Trying it for real" });
     await expect(canvas.getByRole("status")).toHaveTextContent("Starting a chat on dev-box");
+    // Cancel stands beside the busy button while the chat starts (#4976).
+    const cancel = canvas.getByRole("button", { name: "Cancel" });
+    cancel.focus();
+    await untilFocused(() => cancel, "Cancel");
+    await expectFocusInSight();
   },
 };
 
