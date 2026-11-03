@@ -711,6 +711,18 @@ impl ReachProxy {
         Ok(sign_in)
     }
 
+    /// **Opens the sign-in of a login of the page the browser is bound to already** (#4995,
+    /// [`Bound::to`]), its connections left as they are but those to the form's site of a sign-in
+    /// it replaces: the login's page may send it to its form before anything is filled. Answers
+    /// the sign-in's number, where the login opens one.
+    pub fn sign_in(&self, at: &LoginSites) -> Result<Option<u64>, String> {
+        let (sign_in, replaced) = self.bound.to(at)?;
+        if let Some(was) = replaced {
+            self.live.end_open_to(&was);
+        }
+        Ok(sign_in)
+    }
+
     /// **Sign-in `number` is over** (#4995, [`Bound::sign_in_over`]): the browser reaches its
     /// login's page's site alone from now, and every connection to the form's site is ended.
     /// Whether that sign-in was still open.

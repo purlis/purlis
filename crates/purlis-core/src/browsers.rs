@@ -1043,6 +1043,7 @@ pub fn performed<T>(
         at: at.clone(),
         within,
         sign_in: Mutex::new(None),
+        bound: std::sync::atomic::AtomicBool::new(false),
     });
     let done = run(&holder);
     sites.done_logging_in();
@@ -1050,18 +1051,22 @@ pub fn performed<T>(
 }
 
 /// **What holds a browser to a login purlis performs in it** (#2016, #4995), handed to its
-/// engine. It binds the browser to the login's sites, and where its form is on another site, it
-/// ends the sign-in there (the browser reaches the page's site alone from then on, the person's
-/// ruling of 2026-11-03) as soon as the first of these comes: the login's own page is back on its
-/// page's origin ([`drive::Hold::back`]), the login did not go through and the agent has the
-/// browser back ([`Self::sign_in_over`]), or its `within` has passed. Another login asks again.
+/// engine. It binds the browser to the login's sites. Where its form is on another site, a
+/// sign-in reaches that site: from the bind, or, in a browser held to the login's page already
+/// (opened from kept logins, or logged in before), from the moment the login begins. It ends the
+/// sign-in (the browser reaches the page's site alone from then on, the person's ruling of
+/// 2026-11-03) as soon as the first of these comes: the login's own page is back on its page's
+/// origin ([`drive::Hold::back`]), the login answered with nothing to finish there
+/// ([`Self::answered`]), or its `within` has passed. Another login asks again.
 pub struct Holder {
     sites: Arc<judge::SiteJudge>,
     proxy: std::sync::Weak<ReachProxy>,
     at: LoginSites,
     within: Duration,
-    /// The sign-in its bind opened, if it opened one.
+    /// The sign-in it opened, if it opened one.
     sign_in: Mutex<Option<u64>>,
+    /// Whether it bound the browser: a value may have gone in.
+    bound: std::sync::atomic::AtomicBool,
 }
 
 impl Holder {
@@ -1075,6 +1080,56 @@ impl Holder {
         }
     }
 
+    /// **The login answered, as `ended`** (#4995): its sign-in is over unless there is something
+    /// left to finish on the form's site, a login that went through (a step the site asks for
+    /// after the password) or one the person took over. A login that never bound fills nothing
+    /// there, and one that failed with the agent's browser handed back is over.
+    pub fn answered(&self, ended: &Result<drive::LoginEnded, drive::Refusal>) {
+        let bound = self.bound.load(std::sync::atomic::Ordering::SeqCst);
+        let to_finish = matches!(
+            ended,
+            Ok(ended) if ended.outcome.is_ok() || ended.driver != drive::Driver::Agent
+        );
+        if !(bound && to_finish) {
+            self.sign_in_over();
+        }
+    }
+
+    /// **Opens a sign-in of its own on `proxy`**, sign-in `number`, ended once `within` has
+    /// passed. One it opened already goes on.
+    fn opened(&self, proxy: &Arc<ReachProxy>, number: u64) -> Result<(), String> {
+        let was = self
+            .sign_in
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .replace(number);
+        if was == Some(number) {
+            return Ok(());
+        }
+        let ending = Arc::downgrade(proxy);
+        let within = self.within;
+        let ends = std::thread::Builder::new()
+            .name("browser-sign-in".to_owned())
+            .spawn(move || {
+                std::thread::sleep(within);
+                if let Some(proxy) = ending.upgrade() {
+                    proxy.sign_in_over(number);
+                }
+            });
+        // No thread to end it: it ends now, and the login cannot fill.
+        if ends.is_err() {
+            proxy.sign_in_over(number);
+            return Err("purlis could not time the sign-in".to_owned());
+        }
+        Ok(())
+    }
+
+    fn proxy(&self) -> Result<Arc<ReachProxy>, String> {
+        self.proxy
+            .upgrade()
+            .ok_or_else(|| "the browser's reach proxy has stopped".to_owned())
+    }
+
     /// The form's site the browser reaches while this login's sign-in is open, if it is.
     pub fn signing_in(&self) -> Option<Site> {
         let number = (*self.sign_in.lock().unwrap_or_else(PoisonError::into_inner))?;
@@ -1083,34 +1138,42 @@ impl Holder {
 }
 
 impl drive::Hold for Holder {
+    fn begins(&self) -> Result<(), String> {
+        // A browser held to this login's page already reaches the form's site from now: its
+        // page may send it there before anything is filled.
+        let Some(form) = &self.at.form else {
+            return Ok(());
+        };
+        if self.sites.bound().page().as_ref() != Some(&self.at.page) {
+            return Ok(());
+        }
+        let proxy = self.proxy()?;
+        self.sites.bound_to(form);
+        match proxy.sign_in(&self.at)? {
+            Some(number) => self.opened(&proxy, number),
+            None => Ok(()),
+        }
+    }
+
     fn bind(&self) -> Result<(), String> {
-        let proxy = self
-            .proxy
-            .upgrade()
-            .ok_or_else(|| "the browser's reach proxy has stopped".to_owned())?;
-        let sign_in = proxy.bind(&self.at)?;
+        let proxy = self.proxy()?;
+        // A sign-in this login opened as it began goes on; the browser is held to its page.
+        let open = (*self.sign_in.lock().unwrap_or_else(PoisonError::into_inner))
+            .is_some_and(|number| self.sites.bound().signing_in(number).is_some());
+        let sign_in = if open {
+            proxy.bind(&LoginSites::page(self.at.page.clone()))?;
+            None
+        } else {
+            proxy.bind(&self.at)?
+        };
+        self.bound.store(true, std::sync::atomic::Ordering::SeqCst);
         for site in self.at.all() {
             self.sites.bound_to(&site);
         }
-        *self.sign_in.lock().unwrap_or_else(PoisonError::into_inner) = sign_in;
-        if let Some(number) = sign_in {
-            let proxy = Arc::downgrade(&proxy);
-            let within = self.within;
-            let ends = std::thread::Builder::new()
-                .name("browser-sign-in".to_owned())
-                .spawn(move || {
-                    std::thread::sleep(within);
-                    if let Some(proxy) = proxy.upgrade() {
-                        proxy.sign_in_over(number);
-                    }
-                });
-            // No thread to end it: it ends now, and the login cannot fill.
-            if ends.is_err() {
-                proxy.sign_in_over(number);
-                return Err("purlis could not time the sign-in".to_owned());
-            }
+        match sign_in {
+            Some(number) => self.opened(&proxy, number),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     fn back(&self) {
@@ -1637,14 +1700,9 @@ impl Screen for EngineScreen {
             SIGN_IN_WITHIN,
             |holder| {
                 let ended = browser.log_in(&login, Arc::clone(holder) as Arc<dyn drive::Hold>);
-                // A login that did not go through, handed back to the agent, signs in no more
+                // A login with nothing left to finish on its form's site signs in no more
                 // (#4995); one the person took over is theirs to finish meanwhile.
-                if let Ok(ended) = &ended
-                    && ended.outcome.is_err()
-                    && ended.driver == drive::Driver::Agent
-                {
-                    holder.sign_in_over();
-                }
+                holder.answered(&ended);
                 (ended, holder.signing_in())
             },
         )

@@ -704,6 +704,75 @@ fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time
         std::thread::sleep(Duration::from_millis(50));
     }
     assert_eq!(status(&proxy, page_port), carried);
+
+    // A browser held to the login's page already, as one opened from kept logins is, reaches
+    // the form's site from the moment the login begins; a login that answers there with nothing
+    // filled ends it.
+    let (sites, proxy) = a_browser();
+    proxy
+        .bind(&LoginSites::page(login.page.clone()))
+        .expect("held to its page");
+    assert_eq!(status(&proxy, form_port), refused, "held to its page alone");
+    let holder = super::performed(
+        &sites,
+        &proxy,
+        &login,
+        "http://127.0.0.1",
+        super::SIGN_IN_WITHIN,
+        |holder| {
+            holder.begins().expect("begun");
+            std::sync::Arc::clone(holder)
+        },
+    )
+    .expect("performed");
+    assert_eq!(status(&proxy, form_port), carried, "once the login begins");
+    holder.answered(&Ok(drive::LoginEnded {
+        driver: drive::Driver::Agent,
+        epoch: 1,
+        outcome: Ok(Answer {
+            page: None,
+            settled: Settled::Yes,
+            opened: Vec::new(),
+            content: Content::Nothing,
+            note: None,
+            repeated: false,
+            asked: Vec::new(),
+            downloads: Vec::new(),
+        }),
+    }));
+    assert_eq!(
+        status(&proxy, form_port),
+        refused,
+        "signed in already, nothing was filled"
+    );
+    // One that binds and fails with the browser handed back to the agent ends it too; one the
+    // person took over goes on.
+    let failed = |driver| drive::LoginEnded {
+        driver,
+        epoch: 2,
+        outcome: Err(drive::Refusal::NotLoggedIn("no form".into())),
+    };
+    for (driver, after) in [
+        (drive::Driver::Person, carried),
+        (drive::Driver::Agent, refused),
+    ] {
+        let holder = super::performed(
+            &sites,
+            &proxy,
+            &login,
+            "http://127.0.0.1",
+            super::SIGN_IN_WITHIN,
+            |holder| {
+                holder.begins().expect("begun");
+                holder.bind().expect("bound");
+                std::sync::Arc::clone(holder)
+            },
+        )
+        .expect("performed");
+        holder.answered(&Ok(failed(driver)));
+        assert_eq!(status(&proxy, form_port), after, "{driver:?}");
+        holder.sign_in_over();
+    }
 }
 
 // ---- Kept logins (#2021) ----

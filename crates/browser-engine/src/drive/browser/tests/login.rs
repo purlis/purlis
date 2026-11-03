@@ -799,11 +799,22 @@ fn a_login_whose_form_sends_the_browser_back_to_its_page_went_through() {
 /// A holder that counts what it was told.
 #[derive(Default)]
 struct Counted {
+    begun: AtomicUsize,
     bound: AtomicUsize,
     back: AtomicUsize,
+    /// Refuses the login as it begins.
+    refuses: bool,
 }
 
 impl Hold for Counted {
+    fn begins(&self) -> Result<(), String> {
+        self.begun.fetch_add(1, Ordering::SeqCst);
+        if self.refuses {
+            return Err("its sign-in did not open".to_owned());
+        }
+        Ok(())
+    }
+
     fn bind(&self) -> Result<(), String> {
         self.bound.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -855,6 +866,7 @@ fn a_login_whose_page_comes_back_to_its_origin_tells_its_holder_once() {
         .log_in(&back, Arc::clone(&held) as Arc<dyn Hold>)
         .unwrap();
     assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert_eq!(held.begun.load(Ordering::SeqCst), 1);
     assert_eq!(held.bound.load(Ordering::SeqCst), 1);
     assert!(comes_to(&held.back, 1), "told it came back once");
     page_moves(&engine, "S-PAGE-2", BACK);
@@ -909,4 +921,30 @@ fn a_login_with_no_page_to_come_back_to_tells_its_holder_nothing() {
     page_moves(&engine, "S-PAGE-2", BACK);
     std::thread::sleep(Duration::from_millis(100));
     assert_eq!(held.back.load(Ordering::SeqCst), 0);
+}
+
+/// #4995: a login whose holder can't let the browser reach the login as it begins opens no page
+/// and fills nothing.
+#[test]
+fn a_login_whose_holder_refuses_it_as_it_begins_opens_nothing_and_fills_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    let held = Arc::new(Counted {
+        refuses: true,
+        ..Counted::default()
+    });
+    let ended = browser
+        .log_in(&login_at(ORIGIN), Arc::clone(&held) as Arc<dyn Hold>)
+        .unwrap();
+    match ended.outcome {
+        Err(Refusal::NotLoggedIn(why)) => {
+            assert!(why.contains("its sign-in did not open"), "{why}");
+            assert!(why.contains("nothing was filled"), "{why}");
+        }
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    assert_eq!(held.bound.load(Ordering::SeqCst), 0);
+    assert!(engine.sent("Page.navigate").is_empty(), "no page opened");
+    assert!(inserted(&engine).is_empty());
+    assert_eq!(ended.driver, Driver::Agent);
 }
