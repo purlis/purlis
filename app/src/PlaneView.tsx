@@ -778,7 +778,7 @@ export const PlaneView = memo(function PlaneView({
   inboxGroup,
   elsewhere,
   windowLines,
-  paletteOpen = false,
+  paletteOpenings = 0,
 }: {
   plane: PlaneId;
   /** Whether this is the project the operator is looking at. */
@@ -872,9 +872,10 @@ export const PlaneView = memo(function PlaneView({
    *  and counted in its status line while it is in front, so none stands under the title bar
    *  with a project open. The window draws them; this view gives them their place. */
   windowLines?: WindowLines;
-  /** Whether the window's palette is open: the project's profiles are read for its rows then,
-   *  and at no other time (#1201). */
-  paletteOpen?: boolean;
+  /** How many times the window's palette has opened: the project's profiles are read for its
+   *  rows as it opens over this project, and at no other time (#1201). A count rather than
+   *  whether it is open, so its closing changes nothing this view is drawn from (#4351). */
+  paletteOpenings?: number;
   /** The first chat a repository opened into this project asks for (FR-4): started in that
    *  repository's clone, on the workspace named after it. `at` counts the asks, so each is
    *  answered once. */
@@ -1176,7 +1177,7 @@ export const PlaneView = memo(function PlaneView({
   const harnessCards = useHarnessCards(plane, inFront, settingsChanges);
   /** The project's harness profiles, for the palette's rows to their pages (#1201): read as
    *  the palette opens over this project, never on a render of its own. */
-  const profileNames = useProfileNames(plane, paletteOpen && inFront);
+  const profileNames = useProfileNames(plane, paletteOpenings, inFront);
   /** The same, counting only the changes the sidebar is made of (FD-10): a memory an agent
    *  saves does not make it list every workspace's todos again. */
   const sidebarChanges = usePlaneChanged([plane], SIDEBAR);

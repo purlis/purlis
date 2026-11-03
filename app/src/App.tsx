@@ -280,6 +280,13 @@ function App() {
   /** Whether the palette is up, so what an action answered is said in one place rather than
    *  two: the palette is modal and draws over the line below it. */
   const [paletteOpen, setPaletteOpen] = useState(false);
+  /** How many times the palette has opened: what a project's view reads its profiles on
+   *  (#1201). A count, not `paletteOpen`, so the palette closing draws no project again (#4351). */
+  const [paletteOpenings, setPaletteOpenings] = useState(0);
+  const paletteOpened = useCallback((open: boolean) => {
+    setPaletteOpen(open);
+    if (open) setPaletteOpenings((was) => was + 1);
+  }, []);
   /** Whether the new-project dialog is up, and why the last attempt made nothing. The
    *  window's, like the opener: what it ends in is a project this window holds. */
   const [creating, setCreating] = useState(false);
@@ -2749,7 +2756,7 @@ function App() {
               inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
               elsewhere={elsewhere}
               windowLines={plane === inFront ? windowLines : undefined}
-              paletteOpen={paletteOpen}
+              paletteOpenings={paletteOpenings}
             />
           ))}
 
@@ -2824,7 +2831,7 @@ function App() {
         said={said}
         onSettings={followSaid}
         onRun={saying?.run ?? run}
-        onOpened={setPaletteOpen}
+        onOpened={paletteOpened}
       />
 
       {/* What has contributed what to this window (ADR 0041 item 5). Mounted only
