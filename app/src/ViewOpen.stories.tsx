@@ -19,7 +19,10 @@ const VIEW = { from: "statistics", view: "stats", key: "steward" };
 /** A pane of `width`, marked as the window marks one, holding the view's heading. */
 function Heading({ width, onOpen }: { width: number; onOpen: (how: "tab" | "beside") => void }) {
   return (
-    <div {...{ [PANE]: "7" }} style={{ inlineSize: width, blockSize: 320, padding: 8 }}>
+    <div
+      {...{ [PANE]: "7" }}
+      style={{ inlineSize: width, blockSize: 320, padding: "var(--space-4)" }}
+    >
       <div className="view-head">
         <ViewOpenButton
           view={VIEW}
@@ -85,7 +88,7 @@ export const TooNarrowToOpenBeside: Story = {
  *  each reached by the keyboard. */
 export const AnOffer: StoryObj<typeof OfferNotice> = {
   render: (args) => (
-    <div style={{ inlineSize: 720, padding: 8 }}>
+    <div style={{ inlineSize: 720, padding: "var(--space-4)" }}>
       <OfferNotice {...args} />
     </div>
   ),
