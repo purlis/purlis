@@ -504,15 +504,15 @@ describe("one list, two surfaces", () => {
     //
     // It is not lost, and this is where it now lives: the palette lists every unavailable
     // row with the reason it cannot run. Since the window always keeps one pane (#4758), an
-    // empty one splits like any other, so the row asked here is the tab's tasks: its button
-    // is a chat tab's chip, and the one tab here is an empty pane's, which wears none.
+    // empty one splits like any other, so the row asked here is the focused chat's tasks: its
+    // button is a chat tab's chip, and the one tab here is an empty pane's, which wears none.
     core();
     render(<App />);
     await screen.findByTestId("empty-pane");
 
-    await palette("tab's tasks");
+    await palette("focused chat's tasks");
 
-    const row = screen.getByRole("option", { name: /Show this tab's tasks/ });
+    const row = screen.getByRole("option", { name: /Show the focused chat's tasks/ });
     expect(row).toHaveAttribute("aria-disabled", "true");
     expect(row).toHaveTextContent("The pane in focus shows nothing, so it has no tasks.");
     expect(screen.queryByRole("button", { name: /tasks/ })).toBeNull();
