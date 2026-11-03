@@ -476,10 +476,11 @@ const STRIP =
 /** Named like a strip and not one: a chart's bar and the two columns down a side. */
 const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
 
-/** The chips on a pane's top line (#2484): the breadcrumb, Brief, the gauge, the harness, where
- *  a handed-off chat came from, its work item and its skills (#2775); and since the pane head
- *  names its chat (#4760), its persona icon, its name, its sandbox, its state, its wrapping-up mark, "harness ·
- *  workspace" and a task's end asked there. Each is as tall as the line, the chrome height, so
+/** The chips on a pane's top line (#2484): the breadcrumb, the gauge, the harness, where a
+ *  handed-off chat came from, its work item and its skills (#2775); and since the pane head names
+ *  its chat (#4760), its persona icon, its name, its sandbox (`SandboxMark`'s own class, which
+ *  the tab wore first), its state, its wrapping-up mark, "harness · workspace" and a task's end
+ *  asked there. Brief is the state button's, in the pane's actions (#4760). Each is as tall as the line, the chrome height, so
  *  the line is one height. */
 export const PANE_LINE_CHIPS = [
   "pane-persona",

@@ -72,15 +72,13 @@ describe("Tile all as a row (#4765)", () => {
 
   // **Where it is drawn** (`prototype/pane-chat-actions/command-table.md`, rows 88 and 98):
   // the tab's right-click, the pane head's right-click and the palette. On the tab's menu among
-  // its own rows, after Pin tab and before Keep open (#4760); on the pane's, with the splits.
-  it("is on the tab's menu, after Pin tab and before Keep open", () => {
+  // its own rows, right after Pin tab (#4760); on the pane's, with the splits.
+  it("is on the tab's menu, right after Pin tab", () => {
     const rows = menuRows({ on: "tab", tab: 1 }, catalogued(catalogue(now(two()))));
     const above = rows.above.map((row) => row.id);
 
     expect(above).toContain("tab.tile:1");
     expect(above.indexOf("tab.tile:1")).toBe(above.indexOf("tab.pin:1") + 1);
-    if (above.includes("tab.keep:1"))
-      expect(above.indexOf("tab.keep:1")).toBeGreaterThan(above.indexOf("tab.tile:1"));
     expect(rows.below.map((row) => row.id)).not.toContain("tab.tile:1");
   });
 

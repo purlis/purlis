@@ -10276,9 +10276,9 @@ export const PlaneView = memo(function PlaneView({
                     browsersOfTab={browsersOfTab}
                     openBrowser={openChatBrowser}
                   />
-                  {/* The centre is where a chat is, so its menu is the chat verbs: a new tab, the two
-                splits, the key the palette claimed, and — under the line — ending this pane's
-                chat. `asChild` again: the panes' box is measured, and it must not gain a
+                  {/* The centre is where a chat is, so its menu is the pane's rows: the two splits,
+                the tab in front's Tile all, the key the palette claimed, and — under the line —
+                Close pane, which ends nothing (#4756). `asChild` again: the panes' box is measured, and it must not gain a
                 wrapper, so the editor's column is outside it and not between it and the panes. */}
                   <Menued on={{ on: "pane", tab: frontTabId }} offers={found} onPress={press}>
                     {/* The content panel, which the chosen tab joins (`ui/tabs`): the tab panel of

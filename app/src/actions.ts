@@ -5274,8 +5274,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
     }
     case "tab":
       // **A tab's own rows and nothing else** (#4760, `command-table.md` "Tabs"): no chat's, and
-      // no Switch to, which the tab's press does. Close other tabs is offered on the tab in
-      // front (#4762).
+      // no Switch to, which the tab's press does. Close other tabs is on every tab's own menu;
+      // the palette lists the tab in front's alone (#4762).
       return {
         above: [`tab.pin:${what.tab}`, tileAllId(what.tab), `tab.keep:${what.tab}`],
         below: [`tab.closeOthers:${what.tab}`, `tab.close:${what.tab}`],

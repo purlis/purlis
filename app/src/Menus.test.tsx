@@ -486,8 +486,7 @@ describe("a menu on screen", () => {
       expect(tip).not.toBeNull();
       // The pointer leaves the row for the note: the row loses the keyboard, the note stays.
       fireEvent.pointerEnter(tip as Element);
-      // The keyboard leaves the row for the menu itself: no other row's note is drawn, which
-      // the tab's close, its only other row since #4760, has.
+      // The keyboard leaves the row for the menu itself: no other row's note is drawn.
       act(() => menu.focus());
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY * 10);
