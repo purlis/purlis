@@ -15,7 +15,8 @@
 //!   are reached from, with the core's prompt typed and never sent, as a curation chat is opened.
 //!   **"Ask a chat to write them"** ([`skill_trigger_tests_chat`]) opens one the same way, asked
 //!   for a skill's trigger tests (#3925); [`skill_outcome_evals_chat`] for its outcome evals, and
-//!   [`skill_improve_chat`] for an edit from its recent runs and grades (#2780).
+//!   [`skill_improve_chat`] for an edit from its recent runs and grades (#2780);
+//!   [`skill_checks_chat`] for both kinds of a skill's checks, in one draft (ruling of 2026-11-02).
 //! - **Try it** opens a scratch chat in a throwaway piece, armed with the built-in skills and the
 //!   draft alone, on the profile the person picked or the project's default; the piece goes when
 //!   the chat closes (`Chats::close`).
@@ -339,6 +340,36 @@ pub(crate) async fn skill_outcome_evals_chat(
             &held,
             &level,
             format!("Outcome evals of {name}"),
+            prompt,
+            purlis_core::engine::Size { columns, rows },
+        )
+    })
+    .await
+}
+
+/// **"Ask a chat to write checks"** (ruling of 2026-11-02): a chat where `level`'s skills are
+/// reached from, with the core's prompt for both kinds of checks of the skill `name`, its trigger
+/// tests and its outcome evals, typed and never sent ([`drafts::asking_for_checks`]). Both files
+/// come back in the skill's one draft, accepted whole.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_checks_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    level: SkillLevel,
+    name: String,
+    columns: u16,
+    rows: u16,
+) -> Result<Curating, StartRefused> {
+    let held = planes.held(&plane)?;
+    crate::curation::off_the_window_refused("starting the chat", move || {
+        crate::skillchange::flag_on()?;
+        let level: purlis_core::skills::verbs::Level = (&level).into();
+        let prompt = drafts::asking_for_checks(held.root(), &level, &name)?;
+        open_on_a_skill(
+            &held,
+            &level,
+            format!("Checks of {name}"),
             prompt,
             purlis_core::engine::Size { columns, rows },
         )

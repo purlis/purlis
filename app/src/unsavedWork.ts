@@ -167,6 +167,24 @@ export function unsavedClosedBy(
   tabs: Tabs,
   does: Offer["does"],
 ): { work: readonly UnsavedWork[]; tab: number } | undefined {
+  // Close other tabs closes each of its tabs whole (#4762): the work of every one of them.
+  if (does.verb === "closeOtherTabs") {
+    const closing = new Set(
+      does.closes.flatMap((one) =>
+        contentsOf(tabs, one).flatMap(({ content }) =>
+          content.kind === "view" ? [viewKey(content.view)] : [],
+        ),
+      ),
+    );
+    const work = unsavedIn(plane).filter((one) => closing.has(viewKey(one.view)));
+    const first = does.closes.find((one) =>
+      contentsOf(tabs, one).some(
+        ({ content }) =>
+          content.kind === "view" && work.some((w) => viewKey(w.view) === viewKey(content.view)),
+      ),
+    );
+    return first === undefined ? undefined : { work, tab: first };
+  }
   const tab =
     does.verb === "closeTab" ? does.tab : does.verb === "closePane" ? tabs.inFront : undefined;
   if (tab === undefined) return undefined;

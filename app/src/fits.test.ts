@@ -2,7 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { capacity, fitting, LEAST, LEAST_CHIP, LEAST_TUNED_AT, leastAt } from "./fits";
+import {
+  capacity,
+  fitting,
+  LEAST,
+  LEAST_CHIP,
+  LEAST_TUNED_AT,
+  leastAt,
+  NARROW_TAB,
+  narrowTabs,
+  pinnedFirst,
+} from "./fits";
 
 /**
  * The arithmetic that decides what a strip draws.
@@ -122,13 +132,81 @@ describe("a strip holding chips (SI-8f)", () => {
   });
 });
 
-describe("the floors the three strips fit by", () => {
-  it("gets wider as the axis gets shallower", () => {
-    // The operator's "PROJECT is holder of workspaces, workspaces are holder of sessions",
-    // as a number: a project's segment is the widest thing on the window and a chat's is the
-    // narrowest. A change that made them equal would put the nesting back to three rows of
-    // the same thing, which is what he was complaining about.
-    expect(LEAST.workspace).toBeGreaterThan(LEAST.chat);
+describe("a pinned tab never collapses (ADR 0039, amended 2026-11-02)", () => {
+  // Two pins, first on the strip where `tabs.tabsIn` puts them, and six tabs after them.
+  const strip = ["p", "q", "a", "b", "c", "d", "e", "f"];
+  const pins = { is: (one: string) => one === "p" || one === "q", iconWidth: LEAST_CHIP };
+
+  it("draws everything at the floor when everything fits", () => {
+    expect(pinnedFirst(strip, "a", 8 * 120, 120, pins)).toEqual({
+      shown: strip,
+      hidden: [],
+      pinsIconOnly: false,
+    });
+  });
+
+  it("keeps every pin and collapses only the others", () => {
+    // Room for five tabs: the two pins and three of the rest.
+    expect(pinnedFirst(strip, "a", 5 * 120, 120, pins)).toEqual({
+      shown: ["p", "q", "a", "b", "c"],
+      hidden: ["d", "e", "f"],
+      pinsIconOnly: false,
+    });
+  });
+
+  it("still draws the front tab, in the place of the last one that fits", () => {
+    expect(pinnedFirst(strip, "f", 5 * 120, 120, pins)).toEqual({
+      shown: ["p", "q", "a", "b", "f"],
+      hidden: ["c", "d", "e"],
+      pinsIconOnly: false,
+    });
+  });
+
+  it("keeps the pins even where the room would hold nothing else", () => {
+    // Pins at their floor would take the whole strip, so they go to their icons, and one
+    // other tab, the front one, is still drawn.
+    const { shown, pinsIconOnly } = pinnedFirst(strip, "e", 2 * 120, 120, pins);
+    expect(shown).toEqual(["p", "q", "e"]);
+    expect(pinsIconOnly).toBe(true);
+  });
+
+  it("goes icon-only only when the pins alone would take more than half the strip", () => {
+    // Two pins at 120 are 240: more than half of 470, not more than half of 480.
+    expect(pinnedFirst(strip, "a", 470, 120, pins).pinsIconOnly).toBe(true);
+    expect(pinnedFirst(strip, "a", 480, 120, pins).pinsIconOnly).toBe(false);
+  });
+
+  it("gives the others the room the pins' icons leave", () => {
+    // Pins at 40 each leave 470 - 80 = 390: three tabs at 120.
+    expect(pinnedFirst(strip, "a", 470, 120, pins).shown).toEqual(["p", "q", "a", "b", "c"]);
+  });
+
+  it("is a front pin's own business: a pinned front tab takes no other tab's place", () => {
+    expect(pinnedFirst(strip, "q", 5 * 120, 120, pins).shown).toEqual(["p", "q", "a", "b", "c"]);
+  });
+});
+
+describe("a narrow tab (#4702)", () => {
+  it("is one whose equal share of the strip is under 140px", () => {
+    expect(NARROW_TAB).toBe(140);
+    expect(narrowTabs(5 * 139, 5)).toBe(true);
+    expect(narrowTabs(5 * 140, 5)).toBe(false);
+  });
+
+  it("leaves the pins' room out of the others' share", () => {
+    // Two icon-only pins at 40 leave 620 for four tabs, 155 each; at 630, 137.5 each.
+    expect(narrowTabs(700, 4, 2 * LEAST_CHIP)).toBe(false);
+    expect(narrowTabs(630, 4, 2 * LEAST_CHIP)).toBe(true);
+  });
+
+  it("is never said of a strip nobody has measured", () => {
+    expect(narrowTabs(0, 30)).toBe(false);
+  });
+});
+
+describe("the floor a chat tab fits by", () => {
+  it("is 120px, room for the icon, about eight letters and the split's mark (#4702)", () => {
+    expect(LEAST.chat).toBe(120);
   });
 });
 

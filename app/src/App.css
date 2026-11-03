@@ -1734,6 +1734,39 @@ body {
   height: 0.75rem;
 }
 
+/* **A tab wears its focused pane's chat's combined icon** (#4762, `chatPersona.css`): the tab's
+   own marks, its persona's or its shell's at the strip's mark size, with its state's mark on the
+   lower end corner, as the sidebar wears it. A chat with no persona wears the state mark alone,
+   where it stands. */
+.tabs .tab {
+  /* Equal shares of the row up to 230px each (ADR 0039, amended 2026-11-02). */
+  --most: calc(230rem / 14);
+  --chat-persona-size: var(--space-6);
+}
+
+.tabs .tab-persona > .state-dot:not(:only-child) {
+  position: absolute;
+  inset-block-end: calc(-1 * var(--space-1));
+  inset-inline-end: calc(-1 * var(--space-1));
+  margin: 0;
+}
+
+/* **`⊟+N`, a split's other panes** (#4762): after the name, and never cut. The name gives way
+   first, so it keeps the tab's floor. */
+.tabs .tab-split-more {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-quiet);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabs .tab-split-more > svg {
+  inline-size: var(--space-5);
+  block-size: var(--space-5);
+}
+
 /* The narrowest tab that also wears the hand has no room for a count beside it (the third
    step above). Asked of the tab's own cell, and only of a cell that wears the hand, so no
    other tab is measured any differently than it was. */
@@ -3424,8 +3457,6 @@ body {
    grey mark stands for seven states; its state is still the row's word to a screen reader and
    its tooltip's. */
 .chats-section .chat-persona {
-  position: relative;
-  display: inline-flex;
   /* The ground the badge is ringed in: the row's, at rest, under the pointer, chosen. */
   --chat-badge-ground: var(--panel-fill);
 }
@@ -3440,48 +3471,9 @@ body {
   --chat-badge-ground: var(--list-selected);
 }
 
-.chats-section .chat-persona > svg,
-.chats-section .chat-persona > .persona-mark {
-  inline-size: var(--chats-mark);
-  block-size: var(--chats-mark);
-}
-
-/* At rest, no badge. */
-.chats-section .chat-persona > .shown-state {
-  display: none;
-}
-
-/* The states that ask for the person or are at work. */
-.chats-section
-  .chat-persona:is(
-    [data-state="needs-you"],
-    [data-state="working"],
-    [data-state="asking"],
-    [data-state="waiting-on-tasks"],
-    [data-state="waiting-on-own-work"],
-    [data-state="failed"],
-    [data-state="unreported"],
-    [data-state="last-message"]
-  )
-  > .shown-state {
-  display: block;
-  position: absolute;
-  inset-block-end: calc(-1 * var(--space-2));
-  inset-inline-end: calc(-1 * var(--space-2));
-}
-
-.chats-section .chat-persona > .shown-state .shape {
-  display: grid;
-  place-items: center;
-  inline-size: calc(var(--space-4) + var(--space-2));
-  block-size: calc(var(--space-4) + var(--space-2));
-  border-radius: 50%;
-  background-color: var(--chat-badge-ground);
-}
-
-.chats-section .chat-persona > .shown-state .shape > svg {
-  inline-size: calc(var(--space-4) + var(--space-1));
-  block-size: calc(var(--space-4) + var(--space-1));
+/* The icon's look is `chatPersona.css`'s (#4762): the row sets only its size and its grounds. */
+.chats-section {
+  --chat-persona-size: var(--chats-mark);
 }
 
 /* **A finished row says how it ended by its mark** (#1687, as a chat's row does, #1675): the
@@ -4164,6 +4156,16 @@ body {
 /* What a chat is doing. A mark, plus a shape per state: colour alone is no state at all to
    anyone who cannot see it, and the accessible name carries the word either way. */
 .state {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-inline-start: var(--space-3);
+  border-radius: 50%;
+  vertical-align: middle;
+  flex: none;
+}
+/* **The state's dot on a tab's icon** (#4762): the mark's shape, seen and not heard. */
+.state-dot {
   display: inline-block;
   width: 0.6rem;
   height: 0.6rem;
@@ -6708,6 +6710,11 @@ nav.piece-files-head {
   transition-duration: var(--motion-duration-settle);
   transition-timing-function: var(--motion-easing-standard);
 }
+.state-dot {
+  transition-property: background-color, border-color, border-radius, box-shadow, opacity;
+  transition-duration: var(--motion-duration-settle);
+  transition-timing-function: var(--motion-easing-standard);
+}
 
 /* **And a chat that has just started waiting on you knocks twice.** The ring swells and settles
    back: the one signal this app exists for, arriving, is the one mark allowed to ask for the
@@ -8111,6 +8118,83 @@ nav.piece-files-head {
   gap: var(--space-4);
 }
 
+/* Its checks (ruling of 2026-11-02): one heading with the latest grade and Grade beside it, the
+   one-sentence answer, and a card per kind, side by side where they fit; the technical name is a
+   small label under each question. */
+.skill-checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.skill-checks-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.skill-checks-answer {
+  margin: 0;
+  font-weight: var(--font-weight-strong);
+}
+
+.skill-checks-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--space-3);
+}
+
+.skill-checks-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.skill-checks-technical {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+.skill-checks-count {
+  color: var(--text-secondary);
+}
+
+.skill-checks-drafted {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Under the card's title, never louder than it: the title's size, its kinds' weight a step down. */
+.skill-checks-drafted-head {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.skill-checks-list {
+  font-size: var(--font-size-sm);
+}
+
+.skill-checks-list,
+.skill-checks-kinds-said {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-inline-start: var(--space-4);
+  overflow-wrap: anywhere;
+}
+
+.skill-checks-kinds-said {
+  margin-block-start: var(--space-2);
+  text-align: start;
+}
+
 .skill-grading-head {
   display: flex;
   flex-direction: column;
@@ -8503,10 +8587,88 @@ nav.piece-files-head {
   padding: var(--space-5) 0;
   font-size: var(--font-size-base);
 }
-.pool-setup-command {
-  font-family: var(--font-mono);
+.pool-setup-title-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+.pool-setup-h2 {
+  margin: var(--space-2) 0 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-strong);
+}
+.pool-setup-choice {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+.pool-setup-fold {
+  margin-block: var(--space-1);
+}
+.pool-setup-fold-body {
+  display: grid;
+  gap: var(--space-3);
+  padding-block: var(--space-3);
+}
+.pool-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+.pool-setup-facts {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
   font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
+}
+.pool-setup-facts > div {
+  display: flex;
+  gap: var(--space-3);
+}
+.pool-setup-facts dt {
+  min-width: 64px;
+  color: var(--text-secondary);
+}
+.pool-setup-facts dd {
+  margin: 0;
+  color: var(--text-primary);
+}
+.pool-setup-others {
+  display: grid;
+  gap: var(--space-2);
+}
+.pool-setup-profiles {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pool-setup-profile {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.pool-setup-profile-top {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.pool-setup-said {
+  display: grid;
+  gap: var(--space-3);
+  outline: none;
+}
+.pool-setup-say {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.pool-setup-say-actions {
+  margin-top: var(--space-3);
 }
 @media (max-width: 720px) {
   .pool-setup {

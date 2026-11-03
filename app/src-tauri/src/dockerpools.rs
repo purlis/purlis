@@ -9,11 +9,11 @@
 //! alone (`ui::WINDOW_ONLY`): only the person adds or removes a pool, which runs a container on
 //! their machine.
 
+use purlis_core::dockerpool::Limits;
 #[cfg(unix)]
 use purlis_core::dockerpool::Missing;
-use purlis_core::dockerpool::{Image, Limits};
 #[cfg(unix)]
-use purlis_core::runners::{Pool, Set};
+use purlis_core::runners::Pool;
 #[cfg(unix)]
 use purlis_session_protocol::browsing::LinkFrames;
 
@@ -87,6 +87,24 @@ pub struct PoolAdding {
     pub frames: Option<u32>,
     /// The widest frame its runner's browsers are watched at over the link, in pixels (#3297).
     pub width: Option<u32>,
+}
+
+impl PoolAdding {
+    /// What the core takes it as: one value for the button and for `purlis pool add` (#4481).
+    #[cfg(unix)]
+    pub fn asked(&self) -> purlis_core::poolsetup::asked::Asked {
+        purlis_core::poolsetup::asked::Asked {
+            name: self.name.clone(),
+            image: self.image.clone(),
+            cpus: self.cpus.clone(),
+            memory_mib: self.memory_mib,
+            processes: self.processes,
+            tmp_mib: self.tmp_mib,
+            suspend_after: self.suspend_after.clone(),
+            frames: self.frames,
+            width: self.width,
+        }
+    }
 }
 
 /// **The runner image a new pool is offered** (the person's ruling of 2026-10-30), by the
@@ -164,8 +182,8 @@ pub struct PoolVersion {
     /// How many of its older runners drain: each keeps its chats until they end, then is
     /// removed.
     pub draining: u32,
-    /// How many of its older runners are held: each stopped during its drain, and stays with its
-    /// home until the person removes it.
+    /// How many of its older runners are held: each stopped with what its chats left, and stays with
+    /// its home until the person brings their conversations back or discards them.
     pub held: u32,
     /// Whether this version's release named a runner image, as purlis last found it (#2880):
     /// one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
@@ -240,77 +258,10 @@ fn after_shown(after: std::time::Duration) -> String {
         .unwrap_or_else(|| format!("{}s", after.as_secs()))
 }
 
-/// `typed`, how long a pool's runner is left without a link before it suspends (`12h`, `90m`).
-pub fn suspend_after_of(typed: &str) -> Result<std::time::Duration, String> {
-    let typed = typed.trim();
-    let after = purlis_core::spelledtime::read(typed, purlis_core::spelledtime::UP_TO_HOURS)
-        .ok_or_else(|| {
-            format!(
-                "\"{typed}\" is not a time; write a whole number followed by h, m or s, such as \
-                 12h or 90m"
-            )
-        })?;
-    purlis_core::dockerpool::suspend_after(after).map_err(|why| why.0)
-}
-
-/// `typed`, a number of CPUs to the thousandth (`2`, `0.5`, `1.25`), in thousandths.
-pub fn millicpus_of(typed: &str) -> Result<u32, String> {
-    let not = || {
-        format!(
-            "\"{typed}\" is not a number of CPUs; write one such as 2 or 1.5, to the thousandth"
-        )
-    };
-    let typed = typed.trim();
-    let (whole, part) = typed.split_once('.').unwrap_or((typed, "0"));
-    let digits = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
-    if !digits(whole) || !digits(part) || part.len() > 3 {
-        return Err(not());
-    }
-    let whole: u32 = whole.parse().map_err(|_| not())?;
-    let part: u32 = format!("{part:0<3}").parse().map_err(|_| not())?;
-    whole
-        .checked_mul(1000)
-        .and_then(|whole| whole.checked_add(part))
-        .ok_or_else(not)
-}
-
 #[cfg(unix)]
 /// The pool `adding` names, held to the core's rules.
 pub fn pool_of(adding: &PoolAdding) -> Result<Pool, String> {
-    let image = Image::pinned(adding.image.trim()).map_err(|why| why.0)?;
-    let set = Set {
-        millicpus: adding
-            .cpus
-            .as_deref()
-            .filter(|cpus| !cpus.trim().is_empty())
-            .map(millicpus_of)
-            .transpose()?,
-        memory_mib: adding.memory_mib.map(u64::from),
-        processes: adding.processes,
-        tmp_mib: adding.tmp_mib.map(u64::from),
-        suspend_after: adding
-            .suspend_after
-            .as_deref()
-            .filter(|after| !after.trim().is_empty())
-            .map(suspend_after_of)
-            .transpose()?,
-        frames: adding.frames,
-        width: adding
-            .width
-            .map(|width| {
-                u16::try_from(width).map_err(|_| {
-                    let widest = purlis_session_protocol::browsing::LinkFrames::WIDTH;
-                    format!(
-                        "a pool's widest browser frame is {} to {} pixels",
-                        widest.start(),
-                        widest.end()
-                    )
-                })
-            })
-            .transpose()?,
-        chosen: Default::default(),
-    };
-    Pool::new(adding.name.trim(), image, set).map_err(|why| why.to_string())
+    adding.asked().pool()
 }
 
 #[cfg(unix)]
@@ -694,6 +645,87 @@ pub async fn docker_pool_remove_held_runner(
         let _ = (app, runner);
         Err(NOT_HERE.to_owned())
     }
+}
+
+/// **Brings back the held runner `runner`'s conversations to its pool's runner, as the person
+/// pressed** (#4633, ruled 2026-11-02), and then removes it, once none is left behind
+/// ([`purlis_core::pools::bring_back`]). The window's alone, as removing one is. What stopped
+/// it, or what is left of it, is said.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pool_bring_back_held_runner(
+    app: tauri::AppHandle,
+    runner: String,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("bringing back a held runner's conversations", move || {
+            let machine = Machine::here(&config_root()?)?;
+            let kept = purlis_core::runners::named(&machine.config, &runner)
+                .map_err(|why| refused_said(&why.to_string()))?
+                .ok_or_else(|| format!("No runner {runner} is on this machine."))?;
+            let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)?;
+            let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
+            let brought = purlis_core::pools::bring_back(
+                &machine.config,
+                &machine.docker,
+                &runner,
+                Some(&unpair),
+            )
+            .map_err(|why| refused_said(&why.to_string()))?;
+            let Some(removed) = brought.removed else {
+                return Err(left_behind_said(
+                    &runner,
+                    brought.found,
+                    brought.left,
+                    brought.seen,
+                ));
+            };
+            if removed.forgotten {
+                crate::poolfollow::forget_waiting_on(&machine.config, kept.pool(), &runner);
+                if let Some(host) =
+                    tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app)
+                {
+                    host.connection().links_to_gone_runners_end(&machine.config);
+                }
+            }
+            removed.left().map_or(Ok(()), Err)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, runner);
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+/// What the window says when `left` of the `found` files of the held runner `runner`'s
+/// conversations stayed where they were, `seen` of them opencode's, so it is kept (#4633).
+#[cfg(unix)]
+fn left_behind_said(runner: &str, found: u32, left: u32, seen: u32) -> String {
+    let files = |n: u32| {
+        if n == 1 {
+            "1 file".to_owned()
+        } else {
+            format!("{n} files")
+        }
+    };
+    let opencode = if seen == 0 {
+        String::new()
+    } else {
+        format!(
+            " {} of them opencode's, which stay where they are.",
+            files(seen)
+        )
+    };
+    format!(
+        "{} of {} of its chats' conversations came back. purlis keeps runner {runner} with the \
+         {} left.{opencode} Discard them to remove it.",
+        files(found.saturating_sub(left)),
+        files(found),
+        files(left),
+    )
 }
 
 /// **Which version the pool `name`'s runner runs, against this desktop's** (#2749).

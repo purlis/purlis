@@ -12,8 +12,9 @@ import {
   type Now,
   type Offer,
 } from "./actions";
+import type { ChatWorktree } from "./bindings";
 import type { ListedChat } from "./chatsTree";
-import { menuOf, rowsOf } from "./menuModel";
+import { menuOf, rowsOf, type SubDrawn } from "./menuModel";
 import { noTabs, openTab, selectTab, splitFocusedPane } from "./tabs";
 
 /**
@@ -52,6 +53,16 @@ const KINDS = {
   "a handoff with no tab": 5,
   "a shell": 6,
 } as const;
+
+/** The branch folder chat `session` works in, named by its number. */
+const folderOf = (session: number): ChatWorktree => ({
+  workspace: "beta",
+  repo: "svc",
+  piece: `fix-${session}`,
+  branch: `fix/${session}`,
+  wired: false,
+  stale: false,
+});
 
 /** A window holding one chat of every kind, every row of a chat's list on, with or without a
  *  tab: twelve-persona Ask, the Skill studio, a pool to move to, a work link. */
@@ -94,6 +105,9 @@ function world(over: Partial<Now> = {}): { now: Now; offers: Catalogued; palette
     linkable: () => true,
     movesTo: (session) => (session === 6 ? [] : ["builds"]),
     workItems: { 1: "PRJ-1" },
+    // Every chat works in a branch folder purlis cut but the handoff, which works in its
+    // clone: a shell's folder is its own as much as a harness's (#4851).
+    worktreeOf: (session) => (session === 5 ? undefined : folderOf(session)),
     ...over,
   };
   const all = catalogue(now);
@@ -234,5 +248,79 @@ describe("a chat's one list (#4753)", () => {
       [1, 2, 6, 3, 4, 5].map((session) => ({ verb: "renameChat", session })),
     );
     expect(palette.filter((offer) => offer.menuOnly === true && isChats(offer.id, 3))).toEqual([]);
+  });
+
+  describe("its Branch rows (#4851, command-table.md rows 24 and 25)", () => {
+    it("are on the list of every kind of chat in a branch folder, a shell's and a task's too", () => {
+      const { offers } = world();
+      for (const session of [1, 2, 3, 4, 6]) {
+        expect(listOf(session, offers), `chat ${session}`).toEqual(
+          expect.arrayContaining([`chat.branch.merge:${session}`, `chat.branch.remove:${session}`]),
+        );
+      }
+    });
+
+    it("are not on the list of a chat that works in no branch folder", () => {
+      const { offers } = world();
+      expect(listOf(5, offers).filter((id) => id.startsWith("chat.branch."))).toEqual([]);
+    });
+
+    it("say the table's words: the chat's name in the palette, the verb alone under Branch", () => {
+      const { offers, palette } = world();
+      const titles = new Map(palette.map((offer) => [offer.id, offer.title]));
+      expect(titles.get("chat.branch.merge:3")).toBe("Merge chat 3's branch into its clone");
+      expect(titles.get("chat.branch.remove:3")).toBe("Remove chat 3's branch folder");
+
+      const branch = menuOf({ on: "chat", session: 3 }, offers)
+        .groups.flatMap((group) => group.entries)
+        .find((entry): entry is SubDrawn => entry.kind === "sub" && entry.key === "branch");
+      expect(branch?.said).toBe("Branch");
+      expect(branch === undefined ? [] : rowsOf(branch).map((row) => row.said)).toEqual([
+        "Merge its branch",
+        "Remove its branch folder",
+      ]);
+    });
+
+    it("act on that chat's own folder, never the chat in front's", () => {
+      const { offers } = world();
+      expect(offers.get("chat.branch.merge:3")?.does).toEqual({
+        verb: "mergeWorktree",
+        cut: { workspace: "beta", repo: "svc", piece: "fix-3", branch: "fix/3" },
+      });
+      expect(offers.get("chat.branch.remove:3")?.does).toEqual({
+        verb: "removeWorktree",
+        cut: { workspace: "beta", repo: "svc", piece: "fix-3", branch: "fix/3" },
+        force: false,
+      });
+    });
+
+    it("stand after Stop and before End… (the table's rule 3)", () => {
+      const { offers } = world();
+      const list = listOf(1, offers);
+      expect(list.indexOf("chat.stop:1")).toBeLessThan(list.indexOf("chat.branch.merge:1"));
+      expect(list.indexOf("chat.branch.remove:1")).toBeLessThan(list.indexOf("chat.end:1"));
+    });
+
+    it("are greyed with the reason where purlis has no project to reach the branch in", () => {
+      const { offers } = world({ plane: undefined });
+      for (const id of ["chat.branch.merge:3", "chat.branch.remove:3"]) {
+        expect(offers.get(id), id).toMatchObject({ available: false });
+        expect(offers.get(id)?.reason, id).toMatch(/no project/);
+        expect(listOf(3, offers)).toContain(id);
+      }
+    });
+
+    it("offer the discard only on the chat whose removal was refused", () => {
+      expect(world().offers.get("chat.branch.discard:3")).toBeUndefined();
+
+      const { offers } = world({ refused: "chat.branch.remove:3" });
+      expect(offers.get("chat.branch.discard:3")?.does).toEqual({
+        verb: "removeWorktree",
+        cut: { workspace: "beta", repo: "svc", piece: "fix-3", branch: "fix/3" },
+        force: true,
+      });
+      expect(listOf(3, offers)).toContain("chat.branch.discard:3");
+      expect(offers.get("chat.branch.discard:1")).toBeUndefined();
+    });
   });
 });

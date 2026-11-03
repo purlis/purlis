@@ -175,7 +175,8 @@ function pinnedNow(offer: Offer): boolean {
 /** Whether a close row ends a chat, as the catalogue says. */
 function endsAChat(offer: Offer): boolean {
   const does = offer.does;
-  if (does.verb === "closeTab" || does.verb === "closePane") return does.ends;
+  if (does.verb === "closeTab" || does.verb === "closePane" || does.verb === "closeOtherTabs")
+    return does.ends;
   // A row that cannot run carries no verb; its title still says which it is.
   return does.verb === "nothing" && offer.title.startsWith("End ");
 }
@@ -221,6 +222,11 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.stop": stopped(WARNS.stops),
   "chat.stop.below": stopped(WARNS.stopsBelow),
   "chat.stop.tasks": stopped(WARNS.stopsTasks, SAID.stopAllTasks),
+  // **Its Branch ▸** (#4851): drawn after Stop ▸ and before End…. Merging takes nothing away and
+  // a folder with work in it is refused, so neither is in the danger colour; the discard is.
+  "chat.branch.merge": { said: SAID.mergeItsBranch, slot: "end", under: "branch" },
+  "chat.branch.remove": { said: SAID.removeItsBranchFolder, slot: "end", under: "branch" },
+  "chat.branch.discard": { said: SAID.discardAnyway, slot: "end", under: "branch", danger: true },
   "chat.end": { said: SAID.end, slot: "end", danger: true, warns: WARNS.ends },
   "task.stop": { said: SAID.taskStop, slot: "end", danger: true, warns: WARNS.taskStops },
   "task.close": { said: SAID.taskClose, slot: "end", danger: true, warns: WARNS.taskCloses },

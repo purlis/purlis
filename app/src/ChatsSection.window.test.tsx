@@ -2109,8 +2109,12 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
       expect(drawnAs(lead, "inline-size"), name).toBe("var(--chats-mark)");
       const persona = lead.firstElementChild as Element;
       const mark = persona.firstElementChild as Element;
-      expect(drawnAs(mark, "inline-size"), name).toBe("var(--chats-mark)");
-      expect(drawnAs(mark, "block-size"), name).toBe("var(--chats-mark)");
+      // The one icon's size (#4762, `chatPersona.css`), which the Chats list sets to its mark's.
+      const sized = "var(--chat-persona-size, calc(var(--space-6) + var(--space-2)))";
+      expect(drawnWith(mark, "inline-size"), name).toBe(sized);
+      expect(drawnWith(mark, "block-size"), name).toBe(sized);
+      const holder = tree.closest(".chats-section") as Element;
+      expect(drawnWith(holder, "--chat-persona-size"), name).toBe("var(--chats-mark)");
       expect(mark.getAttribute("aria-hidden"), name).toBe("true");
       expect(persona.querySelector(".shown-state"), name).not.toBeNull();
     }
@@ -2146,7 +2150,8 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     await section();
 
     // At rest no badge, whatever the state: a grey mark would stand for seven (WCAG 1.4.1).
-    const sheet = cascadeOf("App.css");
+    // The whole cascade: the icon's rules are the components layer's (`chatPersona.css`, #4762).
+    const sheet = drawnWith;
     const at = (kind: string) => {
       const persona = document.createElement("span");
       persona.className = "chat-persona";

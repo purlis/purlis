@@ -3428,6 +3428,10 @@ const STANDS_ON: &[(&str, &[&str])] = &[
 #[cfg(test)]
 pub(super) const HOLDS_NO_CONSENT: &[(&str, &str)] = &[
     (
+        "code",
+        "a box of text to copy holds its ghost Copy button, never an Allow or a danger answer",
+    ),
+    (
         "text-input",
         "a field's box holds the words typed into it, never an answer",
     ),
