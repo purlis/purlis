@@ -43,7 +43,9 @@ name: stories-baselines
 # other adds an appearance. Then main has no picture of the new story in the new appearance, and
 # every pull request's `stories` check fails on it. A push to main draws nothing. Open a pull
 # request off main that touches something in the stories' scope, label it `update-baselines`
-# and `fixes-main`, and land it (#4880 with #4969 and #5003, 2026-11-03).
+# and `fixes-main`, and land it (#4880 with #4969 and #5003, 2026-11-03). Pull requests that were
+# already queued when the first fix branched can leave more stories behind: check main's next
+# `stories` run (#5084, then #4957's EndedBand and PaneBand).
 
 on:
   pull_request:
