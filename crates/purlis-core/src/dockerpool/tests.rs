@@ -3,7 +3,8 @@
 
 use super::*;
 
-const DIGEST: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+pub(crate) const DIGEST: &str =
+    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn image() -> Image {
     Image::pinned(&format!("ghcr.io/purlis/purlis-runner@{DIGEST}")).unwrap()
@@ -3691,4 +3692,46 @@ fn a_read_that_cannot_finish_says_nothing_of_the_home() {
     let (said, _) = conversations_run_on(home.path(), None, Some(bin.path()));
 
     assert_eq!(said, None);
+}
+
+/// A login whose `--check` is the shell script `script`, with `$*` what it was asked.
+#[cfg(test)]
+fn a_login_of(script: &str) -> crate::profilestore::sign_in::Login {
+    crate::profilestore::sign_in::Login {
+        program: "/bin/sh".into(),
+        args: vec!["-c".into(), script.into(), "login".into()],
+        env: Vec::new(),
+        cleared: Vec::new(),
+    }
+}
+
+#[test]
+fn a_read_as_installed_asks_the_runner_to_fetch_nothing() {
+    use crate::profilestore::sign_in::Standing;
+    let login = a_login_of(r#"case "$*" in *--no-fetch*) exit 3 ;; esac; exit 0"#);
+    assert_eq!(
+        standing_as_installed_by_login(&login, "work"),
+        Ok(Some(Standing::SignedOut))
+    );
+}
+
+#[test]
+fn an_older_runner_that_doesnt_know_the_flag_answers_it_cant_tell_and_fetches_nothing() {
+    use crate::profilestore::sign_in::Standing;
+    let asked = tempfile::tempdir().unwrap();
+    let log = asked.path().join("asked");
+    let login = a_login_of(&format!(
+        r#"echo "$*" >> '{}'; case "$*" in *--no-fetch*) exit 2 ;; esac; exit 3"#,
+        log.display()
+    ));
+    assert_eq!(
+        standing_as_installed_by_login(&login, "work"),
+        Ok(Some(Standing::CannotTell))
+    );
+    let said = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(
+        said.lines().count(),
+        1,
+        "asked once, never the fetching way: {said}"
+    );
 }

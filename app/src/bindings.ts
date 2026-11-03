@@ -3216,6 +3216,32 @@ export const commands = {
 	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
 	poolSetupPool: (name: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_pool", { name })),
 	/**
+	 *  **The command that does what the Pool step's button would do with `adding`**: See what this
+	 *  does, from the value the button sends (Q30). It reads nothing and changes nothing.
+	 */
+	poolSetupCommand: (adding: PoolAdding) => typedError<string, string>(__TAURI_INVOKE("pool_setup_command", { adding })),
+	/**
+	 *  **Makes the pool `adding` asks for**, on the Pool step's own button: what `purlis pool add`
+	 *  runs, a team's image held to the contract first.
+	 */
+	poolSetupCreate: (adding: PoolAdding) => typedError<PoolSetupCreated, string>(__TAURI_INVOKE("pool_setup_create", { adding })),
+	/**
+	 *  **This machine's profiles against pool `pool`'s limits**, the ones in use in `plane` marked:
+	 *  measured as a send measures them, with no file read. It changes nothing.
+	 */
+	poolSetupSizes: (plane: PlaneId, pool: string) => typedError<PoolSetupSizes, string>(__TAURI_INVOKE("pool_setup_sizes", { plane, pool })),
+	/**
+	 *  **Keeps that the person skipped step `step` on pool `pool`, or takes the skip back.** Refused
+	 *  for a step the ones after it need.
+	 */
+	poolSetupSkip: (pool: string, step: string, skipped: boolean) => typedError<null, string>(__TAURI_INVOKE("pool_setup_skip", { pool, step, skipped })),
+	/**
+	 *  **Starts pool `pool`'s runner again**, on the Sign-ins step's own button: one a day without a
+	 *  link stopped its own container, which is checked as it was made before it starts, as a link to
+	 *  it would start it. It goes back to sleep by itself.
+	 */
+	poolSetupWake: (pool: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_wake", { pool })),
+	/**
 	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 	 *  elsewhere, with what to do instead.
 	 */
@@ -11192,6 +11218,50 @@ export type PoolSetupAction = {
 	url: string | null,
 };
 
+/**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
+export type PoolSetupCheck = {
+	verdict: string,
+	title: string,
+	more: string | null,
+};
+
+/**
+ *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
+ *  contract; none where the pool was made.
+ */
+export type PoolSetupCreated = {
+	breaks: string[],
+};
+
+/**  A limit a profile is over. */
+export type PoolSetupOver = {
+	/**  The limit's key, as `pool_limit_set` takes it. */
+	key: string,
+	said: string,
+	/**  What to raise it to, where a value would do. */
+	raise_to: number | null,
+};
+
+/**  One of this machine's profiles against a pool's limit (#4482). */
+export type PoolSetupProfileSize = {
+	name: string,
+	/**  What a send to the runner carries, in MiB rounded up, and in files; null where unread. */
+	mib: number | null,
+	files: number | null,
+	/**  Why it could not be measured. */
+	unread: string | null,
+	/**  Each limit it is over, in words, with what to raise it to. */
+	over: PoolSetupOver[],
+	/**  The project's default, or a profile an open chat runs on. */
+	in_use: boolean,
+};
+
+/**  A step by hand: the exact commands, and what running them means (#4481). */
+export type PoolSetupSee = {
+	note: string,
+	text: string,
+};
+
 /**  What the tab draws. */
 export type PoolSetupShown = {
 	/**  The pool this setup made. */
@@ -11201,6 +11271,17 @@ export type PoolSetupShown = {
 	/**  The step the person has reached. */
 	at: string | null,
 	steps: PoolSetupStep[],
+	/**  The pool was made by hand under the name typed, and purlis noticed (#4481). */
+	noticed: boolean,
+	/**  Pools this machine keeps that this setup isn't on. */
+	others: string[],
+};
+
+/**  This machine's profiles against pool `pool`'s limits (#4482). */
+export type PoolSetupSizes = {
+	most_mib: number,
+	most_files: number,
+	profiles: PoolSetupProfileSize[],
 };
 
 /**  One step as it stands. */
@@ -11212,6 +11293,8 @@ export type PoolSetupStep = {
 	findings: string[],
 	next: PoolSetupAction | null,
 	skippable: boolean,
+	see: PoolSetupSee | null,
+	checks: PoolSetupCheck[],
 };
 
 /**  What the person is asked. */

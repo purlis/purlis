@@ -2091,6 +2091,7 @@ pub struct Docker {
 /// purlis's own, which prints and ends, and a version once read is not asked again.
 pub const READS_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
 
+pub mod contract;
 pub mod settings;
 
 /// Why a `docker` run gave no answer: it did not answer in its time ([`READS_WITHIN`]), or it
@@ -2152,10 +2153,40 @@ pub fn standing_by_login(
     login: &crate::profilestore::sign_in::Login,
     name: &str,
 ) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
+    let (code, said) = check_by_login(login, &[])?;
+    standing_answered(name, code, &said)
+}
+
+/// `clap`'s exit for a flag it doesn't know: an older runner's answer to [`NO_FETCH`].
+const FLAG_NOT_KNOWN: i32 = 2;
+
+/// The flag that holds `--check` to what is installed (#4507).
+const NO_FETCH: &str = "--no-fetch";
+
+/// **[`standing_by_login`], fetching nothing** (#4507, Q31): for a read that changes nothing on the
+/// runner. A runner of an older purlis doesn't know the flag; asked the old way it would fetch,
+/// so its answer is that it can't tell, which a chat on it starts with.
+pub fn standing_as_installed_by_login(
+    login: &crate::profilestore::sign_in::Login,
+    name: &str,
+) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
+    match check_by_login(login, &[NO_FETCH])? {
+        // Asked the old way it would fetch, so it can't say: a read changes nothing (Q31).
+        (Some(FLAG_NOT_KNOWN), _) => Ok(Some(crate::profilestore::sign_in::Standing::CannotTell)),
+        (code, said) => standing_answered(name, code, &said),
+    }
+}
+
+/// Runs `login`'s `--check`, with `more`: how it exited, and what it said.
+fn check_by_login(
+    login: &crate::profilestore::sign_in::Login,
+    more: &[&str],
+) -> Result<(Option<i32>, String), String> {
     let mut command = std::process::Command::new(&login.program);
     command
         .args(login.args.iter().filter(|arg| *arg != "--until-input-ends"))
         .arg("--check")
+        .args(more)
         .envs(login.env.iter().map(|(n, v)| (n, v)));
     for name in &login.cleared {
         command.env_remove(name);
@@ -2179,7 +2210,10 @@ pub fn standing_by_login(
         }
         crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
     })?;
-    standing_answered(name, ran.status.code(), &String::from_utf8_lossy(&ran.said))
+    Ok((
+        ran.status.code(),
+        String::from_utf8_lossy(&ran.said).into_owned(),
+    ))
 }
 
 impl Docker {
@@ -2474,26 +2508,7 @@ impl Docker {
     /// user and a group by number, neither root, and its `HOME` an absolute plain path. An image
     /// this machine does not hold yet is pulled first, by its digest.
     pub fn declared(&self, image: &Image) -> Result<(User, String), Refused> {
-        let inspect = || {
-            self.json_or_late(
-                &["image", "inspect", image.as_str()],
-                "docker image inspect",
-            )
-        };
-        // An image this machine does not hold yet is pulled, by its digest, then read. An engine
-        // that did not answer is said to be so, and nothing is pulled from it.
-        let inspected = match inspect() {
-            Ok(inspected) => inspected,
-            Err(Failed::Late(why)) => return Err(why),
-            Err(Failed::Refused(_)) => {
-                self.run(
-                    &["pull".into(), "--quiet".into(), image.as_str().into()],
-                    None,
-                    MOST_INSPECTED,
-                )?;
-                inspect().map_err(Refused::from)?
-            }
-        };
+        let inspected = self.inspected_image(image)?;
         let config = inspected
             .pointer("/0/Config")
             .ok_or_else(|| refused(format!("the runner image {} has no config", image.as_str())))?;
@@ -2772,6 +2787,17 @@ impl Docker {
     ) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
         let login = self.driven_sign_in(made, engine, name, None)?;
         standing_by_login(&login, name)
+    }
+
+    /// [`Docker::standing_on_runner`], fetching nothing there (#4507).
+    pub fn standing_as_installed(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+    ) -> Result<Option<crate::profilestore::sign_in::Standing>, String> {
+        let login = self.driven_sign_in(made, engine, name, None)?;
+        standing_as_installed_by_login(&login, name)
     }
 
     /// **The runner's own sign-in of the profile `name`, in a terminal of `size` carried over

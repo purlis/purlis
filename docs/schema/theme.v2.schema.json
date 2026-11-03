@@ -3527,6 +3527,264 @@
         "checkbox.description.chip.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "checks.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.root.ok.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.root.missing.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.root.running.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.root.todo.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.root.warn.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.root.skip.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.mark.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.mark.ok.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.mark.missing.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.mark.running.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.mark.todo.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.mark.warn.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.mark.skip.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.title.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.title.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.title.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.title.ok.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.title.ok.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.title.ok.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.title.missing.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.title.missing.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.title.missing.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.title.running.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.title.running.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.title.running.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.title.todo.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.title.todo.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.title.todo.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.title.warn.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.title.warn.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.title.warn.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.title.skip.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.title.skip.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.title.skip.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.more.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.more.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.more.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.more.ok.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.more.ok.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.more.ok.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.more.missing.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.more.missing.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.more.missing.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.more.running.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.more.running.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.more.running.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.more.todo.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.more.todo.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.more.todo.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.more.warn.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.more.warn.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.more.warn.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.more.skip.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.more.skip.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.more.skip.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.trail.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.trail.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.trail.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.trail.ok.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.trail.ok.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.trail.ok.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.trail.missing.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.trail.missing.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.trail.missing.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.trail.running.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.trail.running.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.trail.running.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.trail.todo.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.trail.todo.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.trail.todo.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.trail.warn.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.trail.warn.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.trail.warn.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checks.trail.skip.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checks.trail.skip.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checks.trail.skip.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "code.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "code.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "code.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "code.label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "code.label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "code.label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "code.body.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "code.body.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "code.body.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
         "combobox.root.fill": {
           "$ref": "#/$defs/part-fill"
         },

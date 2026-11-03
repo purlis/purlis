@@ -1612,6 +1612,11 @@ export const commands = {
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
+	poolSetupCommand: __WINDOW_ONLY_RESULT,
+	poolSetupCreate: __WINDOW_ONLY_RESULT,
+	poolSetupSizes: __WINDOW_ONLY_RESULT,
+	poolSetupSkip: __WINDOW_ONLY_RESULT,
+	poolSetupWake: __WINDOW_ONLY_RESULT,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -8824,6 +8829,50 @@ export type PoolSetupAction = {
 	url: string | null,
 };
 
+/**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
+export type PoolSetupCheck = {
+	verdict: string,
+	title: string,
+	more: string | null,
+};
+
+/**
+ *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
+ *  contract; none where the pool was made.
+ */
+export type PoolSetupCreated = {
+	breaks: string[],
+};
+
+/**  A limit a profile is over. */
+export type PoolSetupOver = {
+	/**  The limit's key, as `pool_limit_set` takes it. */
+	key: string,
+	said: string,
+	/**  What to raise it to, where a value would do. */
+	raise_to: number | null,
+};
+
+/**  One of this machine's profiles against a pool's limit (#4482). */
+export type PoolSetupProfileSize = {
+	name: string,
+	/**  What a send to the runner carries, in MiB rounded up, and in files; null where unread. */
+	mib: number | null,
+	files: number | null,
+	/**  Why it could not be measured. */
+	unread: string | null,
+	/**  Each limit it is over, in words, with what to raise it to. */
+	over: PoolSetupOver[],
+	/**  The project's default, or a profile an open chat runs on. */
+	in_use: boolean,
+};
+
+/**  A step by hand: the exact commands, and what running them means (#4481). */
+export type PoolSetupSee = {
+	note: string,
+	text: string,
+};
+
 /**  What the tab draws. */
 export type PoolSetupShown = {
 	/**  The pool this setup made. */
@@ -8833,6 +8882,17 @@ export type PoolSetupShown = {
 	/**  The step the person has reached. */
 	at: string | null,
 	steps: PoolSetupStep[],
+	/**  The pool was made by hand under the name typed, and purlis noticed (#4481). */
+	noticed: boolean,
+	/**  Pools this machine keeps that this setup isn't on. */
+	others: string[],
+};
+
+/**  This machine's profiles against pool `pool`'s limits (#4482). */
+export type PoolSetupSizes = {
+	most_mib: number,
+	most_files: number,
+	profiles: PoolSetupProfileSize[],
 };
 
 /**  One step as it stands. */
@@ -8844,6 +8904,8 @@ export type PoolSetupStep = {
 	findings: string[],
 	next: PoolSetupAction | null,
 	skippable: boolean,
+	see: PoolSetupSee | null,
+	checks: PoolSetupCheck[],
 };
 
 /**  What the person is asked. */

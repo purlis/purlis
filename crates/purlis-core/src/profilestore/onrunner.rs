@@ -367,16 +367,23 @@ pub fn left_out_said(profile: &str) -> Option<String> {
 
 /// The hits of a profile of `bytes` in `files`, against what `kept` is held to.
 fn limits_hit(kept: &Kept, bytes: u64, files: u64) -> Vec<LimitHit> {
+    hits_against(&kept.limits, &kept.highest, bytes, files)
+}
+
+/// **The limits a profile of `bytes` in `files` is over**, of `limits` chosen and the `highest`
+/// its runner takes: what a send to a runner refuses, said before anything is sent (#4482).
+#[must_use]
+pub fn hits_against(limits: &Chosen, highest: &Chosen, bytes: u64, files: u64) -> Vec<LimitHit> {
     [
         (LimitId::ProfileSize, bytes.div_ceil(MIB)),
         (LimitId::ProfileFiles, files),
     ]
     .into_iter()
     .filter_map(|(id, needed)| {
-        let highest = kept.highest.get(id);
-        let chosen = kept.limits.in_force(id);
+        let highest = highest.get(id);
+        let chosen = limits.in_force(id);
         let in_force = highest.map_or(chosen, |highest| highest.min(chosen));
-        (needed > in_force).then(|| kept.limits.hit(id, in_force, needed, highest))
+        (needed > in_force).then(|| limits.hit(id, in_force, needed, highest))
     })
     .collect()
 }
