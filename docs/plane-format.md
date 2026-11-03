@@ -7158,6 +7158,20 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
     shows a question with no answer after it is told to ask again. A file that does not read is
     started afresh and tells them the same; an entry that does not read tells that task alone.
 
+### `app/spool/messages/carries`
+- **Tier:** Machine, device-bound — beside the queues in `app/spool/messages/<n>/` on a pool's
+  runner, where its host carries them (#4804).
+- **Format:** an empty file. Only whether it is there counts.
+- **Written by:** `purlis_core::hookwire::Relaying::carrying_queues_beside`, in `purlis serve`
+  on a runner, the first time its host carries the queues beside its hook socket, after it has
+  retired every message queued before then (#4895). A message queued before any host carried was
+  refused there, its sender told nothing was sent (#4560), so it is never delivered.
+- **Read by:** the same, each time a host starts carrying: where the file is there, nothing is
+  retired, and what waits is carried once the window hears that host, so a message queued while
+  the link was down survives a restart of `purlis serve`.
+- **Status:** **internal**. Deleting it makes the next host retire what is queued then: messages
+  lost, never one delivered twice or after its sender was told it was not sent.
+
 ### `app/spool/keys.json`
 - **Format:** JSON, `{"v": 2, "keys": [{"id": "<16 hex>", "chat": <n>, "key": "<64 hex>",
   "drained": <n>, "missing": [[<from>, <to>]], "file": <n>}]}`: one entry per chat token the

@@ -61,6 +61,11 @@ const DIGITS: usize = 20;
 /// ([`crate::dispatchtalk::Talk::keep_at`]), beside the queues and under their denial.
 pub const RECORDS: &str = "records.json";
 
+/// **The marker a runner's host leaves the first time it carries these queues** (#4895): where
+/// it is, the host started since retires nothing, since what waits was queued while a host
+/// carried, and its sender was told it waits.
+pub const CARRIES: &str = "carries";
+
 /// What a queued message's MAC is over, ahead of its body: so no spool line's MAC is ever a
 /// message's, or the other way round.
 const LABEL: &str = "purlis dispatch message v1\n";
@@ -272,6 +277,11 @@ pub fn dir_for(socket: &Path, chat: u32) -> PathBuf {
 /// Where the app keeps what became of the messages ([`RECORDS`]), beside `socket`.
 pub fn records_for(socket: &Path) -> PathBuf {
     queues_for(socket).join(RECORDS)
+}
+
+/// Where a runner's host marks that it carries these queues ([`CARRIES`]), beside `socket`.
+pub fn carries_for(socket: &Path) -> PathBuf {
+    queues_for(socket).join(CARRIES)
 }
 
 /// Where every chat's queue is.
