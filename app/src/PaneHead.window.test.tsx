@@ -147,6 +147,10 @@ describe("a chat's pane head", () => {
     await aPane();
 
     await waitFor(() => expect(within(head()).getByText(NAME)).toHaveClass("pane-name"));
+    // Led by the chat's persona and state icon, the one its row and tab wear (#4762).
+    const line = head().querySelector(".pane-chips") as HTMLElement;
+    expect(line.firstElementChild).toHaveClass("pane-persona");
+    expect(line.firstElementChild?.querySelector(".chat-persona")).not.toBeNull();
     expect(head().querySelector(".pane-where")).toHaveTextContent(/^claude · alpha$/);
     // The badge moved from the tab to the head (#4760): named for a screen reader.
     expect(within(head()).getByRole("img", { name: "floor" })).toBeInTheDocument();

@@ -319,6 +319,16 @@
   text-overflow: ellipsis;
 }
 
+/* The chat's persona and state icon (`ChatPersonaState`, #4762): the tab's size, its badge
+   ringed in the terminal's fill the head stands on. */
+.pane-chips > .pane-persona {
+  --chat-persona-size: var(--space-6);
+  --chat-badge-ground: var(--terminal-background);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
 .pane-chips > :is(.pane-state-mark, .pane-wrapping) {
   display: inline-flex;
   flex: none;

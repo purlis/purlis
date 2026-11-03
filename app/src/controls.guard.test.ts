@@ -478,10 +478,11 @@ const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
 
 /** The chips on a pane's top line (#2484): the breadcrumb, Brief, the gauge, the harness, where
  *  a handed-off chat came from, its work item and its skills (#2775); and since the pane head
- *  names its chat (#4760), its name, its sandbox, its state, its wrapping-up mark, "harness ·
+ *  names its chat (#4760), its persona icon, its name, its sandbox, its state, its wrapping-up mark, "harness ·
  *  workspace" and a task's end asked there. Each is as tall as the line, the chrome height, so
  *  the line is one height. */
 export const PANE_LINE_CHIPS = [
+  "pane-persona",
   "pane-name",
   "tab-sandbox",
   "pane-state-mark",
