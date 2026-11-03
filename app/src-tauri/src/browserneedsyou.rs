@@ -332,8 +332,9 @@ pub fn answered_first(
                 }
             })
         }
-        // A login waits for the person too: the browser is theirs to hand back first.
-        Browsing::Act(_) | Browsing::LogIn { .. } => {
+        // A login and a secret fill wait for the person too: the browser is theirs to hand back
+        // first.
+        Browsing::Act(_) | Browsing::LogIn { .. } | Browsing::FillSecret { .. } => {
             let (name, program) = browsers.which(browse.chat, browse.browser.as_deref())?;
             needs.on(&program).map(|_| Answer::No {
                 why: waits_said(&name),

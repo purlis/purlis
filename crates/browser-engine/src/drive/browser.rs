@@ -34,6 +34,7 @@ use crate::ending::{EndedBy, Ending, EngineExit};
 mod changes;
 mod downloads;
 mod drawing;
+mod fill;
 mod inspect;
 mod login;
 mod reading;
@@ -2099,6 +2100,7 @@ impl Browser {
         match call {
             Call::Open { address } => self.open(&address),
             Call::FindLoginForm { address } => self.find_login_form(&address),
+            Call::DescribeField { target } => self.describe_field(&target),
             Call::Navigate { page, address } => {
                 let target = self.target(page.as_ref())?;
                 let session = self.page_session(&target)?;

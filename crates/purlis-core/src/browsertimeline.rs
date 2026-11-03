@@ -275,7 +275,8 @@ fn did(act: &Act, signed_in: bool) -> Option<String> {
         | Act::Changes { .. }
         | Act::Pages
         | Act::Downloads
-        | Act::WaitForText { .. } => return None,
+        | Act::WaitForText { .. }
+        | Act::DescribeField { .. } => return None,
         Act::Open { address: to } | Act::FindLoginForm { address: to } => {
             format!("Opened {}", address(to))
         }

@@ -51,7 +51,8 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures::StreamExt;
 use purlis_session_protocol::browsing::{
-    Act, Aim, Browsed, BrowserReach, Driver, Input, KeptLogin, LinkFrames, LogIn, origin_of,
+    Act, Aim, Browsed, BrowserReach, Driver, FillSecret, Input, KeptLogin, LinkFrames, LogIn,
+    origin_of,
 };
 use purlis_session_protocol::session::{self, Exit, Readiness, Refusal, ViewKind, ViewRole};
 use purlis_session_protocol::view::frames::{JPEG, aimed, closed as closed_frame, frame, origin};
@@ -174,6 +175,15 @@ pub trait Screen: Send + Sync + 'static {
     /// nothing, while the person drives. It waits on the page, so the host calls it off its
     /// runtime.
     fn log_in(&self, login: &LogIn) -> Result<LoginEnded, NotActed>;
+    /// purlis puts `fill`'s value into its field (#5115), as the agent's act under the lease of
+    /// `epoch`: refused unless the agent holds it, and only where the field's own frame is on
+    /// the approved origin at that moment. A browser that can't is refused, filling nothing.
+    fn fill_secret(&self, epoch: u64, fill: &FillSecret) -> Result<Browsed, NotActed> {
+        let _ = (epoch, fill);
+        Err(NotActed::Refused(
+            "this browser fills no secret, so nothing was filled".into(),
+        ))
+    }
     /// The person opens the DevTools of the page it shows (#2028), their front end `width` by
     /// `height`, while they drive; `ended` is called once, as they close, with why: one of
     /// `view::frames::CLOSED_WHY`. Opened already, it
@@ -864,6 +874,16 @@ impl Running for Browser {
             *lease = (ended.driver, ended.epoch);
         }
         ended.outcome
+    }
+
+    fn fill_secret(&self, fill: FillSecret) -> Result<Browsed, NotActed> {
+        let epoch = match *self.lease() {
+            (Driver::Person, _) => {
+                return Err(NotActed::Refused(A_BROWSER_THE_PERSON_DRIVES.into()));
+            }
+            (Driver::Agent, epoch) => epoch,
+        };
+        self.screen.fill_secret(epoch, &fill)
     }
 
     fn take_over(&self) -> Result<Driver, Refusal> {

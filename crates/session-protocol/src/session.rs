@@ -462,9 +462,21 @@ use crate::view::{Limits, Views};
 /// and a page, and attaches again with more as the person scrolls up. A host before 1.71
 /// ignores the field and draws the whole history, as before, and answers no `older`: there is
 /// nothing more to ask for.
+///
+/// 1.72 has purlis put one vault value into one field of a browser a chat is using (#5115, spec
+/// #5100): `describe_field`, an act no chat's tool sends, reads the field the person is asked
+/// about (its frame's origin, label and kind), and `fill_secret`, the window's alone, fills it,
+/// the engine checking the field's own frame against the approved origin at that moment. A host
+/// before 1.72 refuses both, so nothing is filled.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 71,
+    minor: 72,
+};
+
+/// The version that first fills a secret into a field (#5115): no fill is sent to a host before.
+pub const KNOWS_SECRET_FILL: Version = Version {
+    major: 1,
+    minor: 72,
 };
 
 /// The version that is first told a runner's programs are not known (#4684).
@@ -1041,6 +1053,17 @@ pub enum Command {
         program: String,
         /// Boxed: a login is far larger than the rest of a command (1.70 gave it a `form`).
         login: Box<crate::browsing::LogIn>,
+    },
+    /// **purlis puts a vault value into one field of browser `program`** (1.72, #5115), under
+    /// the agent's lease: the engine fills it only where the document of the field's own frame
+    /// is on the approved origin at that moment, and only a one-line field. Answered
+    /// [`Answer::Browsed`] with the page as it is now, or refused [`BROWSER_REFUSED`] in words
+    /// that carry no value. The value never shows in this command's `Debug`. The window's alone
+    /// ([`crate::grants::Power::LogIn`]). A host before 1.72 refuses it `unknown_command`.
+    FillSecret {
+        program: String,
+        /// Boxed, as a login is.
+        fill: Box<crate::browsing::FillSecret>,
     },
     /// A relaying host's word on each link it makes to another host for one window (1.22,
     /// #2511): this link is `window`'s, by the name the relaying host gives that window on
@@ -2615,6 +2638,7 @@ wire_words!(Command {
     Inspect => "inspect",
     InspectorInput => "inspector_input",
     LogIn => "log_in",
+    FillSecret => "fill_secret",
     TakeBack => "take_back",
     NameWindow => "name_window",
     Unpair => "unpair",
@@ -2678,7 +2702,7 @@ impl Command {
             | Command::BrowserInput { .. }
             | Command::SizeBrowser { .. }
             | Command::CancelEngineDownload { .. } => Power::Browser,
-            Command::LogIn { .. } => Power::LogIn,
+            Command::LogIn { .. } | Command::FillSecret { .. } => Power::LogIn,
             Command::Inspect { .. } | Command::InspectorInput { .. } => Power::Inspect,
             Command::ProgramsOf { .. } => Power::ProgramsOf,
             Command::NoteProgram { .. } => Power::Reattach,
@@ -3269,7 +3293,9 @@ impl Lane {
             | Command::Board { project }
             | Command::ProgramsOf { project } => Some(Lane::Board(project.clone())),
             // A login is one more of the browser's acts, in their order.
-            Command::Browse { program, .. } | Command::LogIn { program, .. } => {
+            Command::Browse { program, .. }
+            | Command::LogIn { program, .. }
+            | Command::FillSecret { program, .. } => {
                 Some(Lane::Browsing(program.clone()))
             }
             // The person's take-over, input and hand-back keep their order with each other and
@@ -4349,6 +4375,25 @@ impl Client {
             .call(Command::LogIn {
                 program: program.into(),
                 login: Box::new(login),
+            })
+            .await?
+        {
+            Answer::Browsed(browsed) => Ok(*browsed),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// purlis puts `fill`'s value into its field in browser `program` (1.72, #5115): the page as
+    /// it is now, or why nothing was filled ([`BROWSER_REFUSED`]).
+    pub async fn fill_secret(
+        &self,
+        program: &str,
+        fill: crate::browsing::FillSecret,
+    ) -> Result<crate::browsing::Browsed, CallError> {
+        match self
+            .call(Command::FillSecret {
+                program: program.into(),
+                fill: Box::new(fill),
             })
             .await?
         {
