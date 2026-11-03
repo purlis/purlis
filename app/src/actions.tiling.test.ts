@@ -79,6 +79,8 @@ describe("Tile all as a row (#4765)", () => {
 
     expect(above).toContain("tab.tile:1");
     expect(above.indexOf("tab.tile:1")).toBe(above.indexOf("tab.pin:1") + 1);
+    // Move to new window is among the tab's own rows too (#4768).
+    expect(above).toContain("tab.newWindow:1");
     expect(rows.below.map((row) => row.id)).not.toContain("tab.tile:1");
   });
 

@@ -23,6 +23,7 @@ import {
   matches,
   menuOn,
   PASS_THROUGH_ID,
+  PANE_TO_NEW_WINDOW,
   memoryOffers,
   menuRows,
   narrow,
@@ -115,6 +116,10 @@ function doing(): Doing & { calls: string[] } {
     newShell: note("newShell"),
     newBrowser: note("newBrowser"),
     tileAll: note("tileAll"),
+    moveToWindow: async (...args: unknown[]) => {
+      note("moveToWindow")(...args);
+      return { ok: true };
+    },
     zoomPane: note("zoomPane"),
     undoLayout: note("undoLayout"),
     resumeSession: async (...args: unknown[]) => {
@@ -1816,6 +1821,10 @@ describe("carrying out a row", () => {
         "closePane",
         "closeTab:1",
         "closeTab:2",
+        // Move to new window, each tab's and the focused pane's (#4768).
+        "moveToWindow:1,false,",
+        "moveToWindow:2,false,",
+        "moveToWindow:1,true,",
         "renameChat:7",
         "renameChat:8",
         // The same three calls whether the row was the chat in front's or the explorer's:
@@ -2220,6 +2229,9 @@ describe("the catalogue as the tabs change", () => {
       // Tile all, per tab, as Pin is (#4765): its tab menu's row.
       "tab.tile:1",
       "tab.tile:2",
+      // Move to new window, per tab, as Tile all is (#4768): its tab menu's row.
+      "tab.newWindow:1",
+      "tab.newWindow:2",
       "tab.close:1",
       "tab.close:2",
       // Close other tabs on each tab's right-click (#4760); the palette lists the tab in
@@ -2600,7 +2612,9 @@ describe("the palette at fifty chats", () => {
     // 1023 since #4767: a tab's next and previous chat went with the tab a chat no longer has.
     // 1072 since #4760: Close other tabs on each of the fifty tabs' own right-click. The other
     // forty-nine are menu-only rows, so the palette still lists one.
-    expect(offers).toHaveLength(1072);
+    // 1123 since #4768: Move to new window, each of the fifty tabs' own row (+50), and the
+    // focused pane's (+1).
+    expect(offers).toHaveLength(1123);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
       1,
     );
@@ -2624,9 +2638,10 @@ describe("the palette at fifty chats", () => {
    * different is the shape: the scan's cost is the catalogue's length, and #174 is the change
    * that grew it — a third more comparisons for the same fifty menus, before anything is
    * added next. A millisecond assertion would be flaky on a shared runner, so what is pinned
-   * below is the work itself, which is the standard #133 set: 250 lookups (150 before a chat
+   * below is the work itself, which is the standard #133 set: 300 lookups (150 before a chat
    * could be renamed, charter-app#254; 200 before a wrapping-up tab could cancel its smart
-   * close, ADR 0064), and the same 250 whichever catalogue it is.
+   * close, ADR 0064; 250 before a tab could move to a window of its own, #4768), and the same
+   * 300 whichever catalogue it is.
    */
   describe("what a menu on the chat strip costs (charter-app#174)", () => {
     /** A catalogue that counts what is asked of it. `Map` and not a stand-in, so what is
@@ -2645,19 +2660,19 @@ describe("the palette at fifty chats", () => {
       return offers.lookups;
     }
 
-    it("asks for five rows per tab and never walks the list", () => {
+    it("asks for six rows per tab and never walks the list", () => {
       const offers = new Counting(loaded().map((offer) => [offer.id, offer]));
 
-      // 50 tabs × the five ids a tab's menu lists: Pin, Tile all (#4765), Keep open, Close other
-      // tabs and Close (#4760). A
+      // 50 tabs × the six ids a tab's menu lists: Pin, Tile all (#4765), Keep open, Move to new
+      // window (#4768), Close other tabs and Close (#4760). A
       // chat's rows are its own list's since #4753, which a strip never draws.
       // **Not fifty scans of 291 rows**, which is
       // what this cost before the lookup was built once for the window — and the number that
       // does not move when the catalogue grows again.
-      expect(strip(offers)).toBe(250);
+      expect(strip(offers)).toBe(300);
     });
 
-    it("is the same 250 whether the catalogue carries the pieces or not", () => {
+    it("is the same 300 whether the catalogue carries the pieces or not", () => {
       // The property, not the timing: the cost of a menu is flat in the length of the list it
       // reads. A scan is not, which is why #174's hundred rows needed this first.
       const small = new Counting(
@@ -2666,7 +2681,7 @@ describe("the palette at fifty chats", () => {
         ),
       );
 
-      expect(strip(small)).toBe(250);
+      expect(strip(small)).toBe(300);
     });
   });
 });
@@ -3762,9 +3777,10 @@ describe("stopping a chat (#1448)", () => {
   });
 
   describe("a tab's right-click and a pane's rows (#4760)", () => {
-    it("holds Pin tab, Tile all, Keep open, Close other tabs and Close tab, and nothing else", () => {
+    it("holds Pin tab, Tile all, Keep open, Move to new window, Close other tabs and Close tab, and nothing else", () => {
       expect(menuOn({ on: "tab", tab: 7 })).toEqual({
-        above: ["tab.pin:7", "tab.tile:7", "tab.keep:7"],
+        // Move to new window (#4768): the tab into a tab window of its project.
+        above: ["tab.pin:7", "tab.tile:7", "tab.keep:7", "tab.newWindow:7"],
         below: ["tab.closeOthers:7", "tab.close:7"],
       });
     });
@@ -3775,10 +3791,17 @@ describe("stopping a chat (#1448)", () => {
       expect([...above, ...below]).not.toContain("tab.select:7");
     });
 
-    it("are the splits, Tile all and Send F2, then Close pane, and not the window's New tab or New shell", () => {
-      // Tile all is the tab's own row, the one its right-click lists (#4765).
+    it("are the splits, Tile all, Move to new window and Send F2, then Close pane, and not the window's New tab or New shell", () => {
+      // Tile all is the tab's own row, the one its right-click lists (#4765); Move to new window
+      // takes the focused pane into a tab window of the project (#4768).
       expect(menuOn({ on: "pane", tab: 7 })).toEqual({
-        above: ["pane.split.right", "pane.split.down", "tab.tile:7", PASS_THROUGH_ID],
+        above: [
+          "pane.split.right",
+          "pane.split.down",
+          "tab.tile:7",
+          PANE_TO_NEW_WINDOW,
+          PASS_THROUGH_ID,
+        ],
         below: ["pane.close"],
       });
     });
@@ -3787,6 +3810,7 @@ describe("stopping a chat (#1448)", () => {
       expect(menuOn({ on: "pane" }).above).toEqual([
         "pane.split.right",
         "pane.split.down",
+        PANE_TO_NEW_WINDOW,
         PASS_THROUGH_ID,
       ]);
     });

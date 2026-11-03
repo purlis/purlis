@@ -560,7 +560,8 @@ describe("a tab's menu (#4753)", () => {
     // The tab's press switches to it, so Switch to is no row; and a tab behind has its own
     // Close other tabs (#4760), and its own Tile all (#4765).
     expect(said(menuOf({ on: "tab", tab: behind }, offers))).toEqual([
-      ["Pinned", "Tile all"],
+      // Move to new window (#4768): a tab into a tab window of its project.
+      ["Pinned", "Tile all", "Move to new window"],
       ["Close other tabs", "Close"],
     ]);
     const inFront = rowsOf(menuOf({ on: "tab", tab: front }, offers));
@@ -586,7 +587,7 @@ describe("a tab's menu (#4753)", () => {
     expect(keys).toEqual({ Close: expect.stringMatching(/^(⌫|Delete)$/) });
   });
 
-  it("on a view's tab is Pinned, Tile all, Close other tabs and Close, and its Close is not coloured", () => {
+  it("on a view's tab is Pinned, Tile all, Move to new window, Close other tabs and Close, and its Close is not coloured", () => {
     const withView = openView(tabs, { from: null, view: "vault", key: "forge" }, "forge", "beta");
     const view = withView.order[withView.order.length - 1];
     const menu = menuOf(
@@ -601,6 +602,7 @@ describe("a tab's menu (#4753)", () => {
       ["Pinned", false],
       // Greyed: a tab of one pane has nothing to tile (#4765).
       ["Tile all", false],
+      ["Move to new window", false],
       ["Close other tabs", false],
       ["Close", false],
     ]);
@@ -652,13 +654,19 @@ describe("the other tabs' menus", () => {
 
   it("the panes hold the pane's rows in the catalogue's words, and not the window's New tab or New shell (#4760)", () => {
     expect(said(menuOf({ on: "pane" }, offers))).toEqual([
-      ["Split right", "Split down", "Send F2 to the chat in front"],
+      ["Split right", "Split down", "Move to new window", "Send F2 to the chat in front"],
       ["Close this pane"],
     ]);
     // The panes of a tab list that tab's Tile all, greyed at one pane (#4765).
     const [tab] = world().tabs.order;
     expect(said(menuOf({ on: "pane", tab }, offers))).toEqual([
-      ["Split right", "Split down", "Tile all", "Send F2 to the chat in front"],
+      [
+        "Split right",
+        "Split down",
+        "Tile all",
+        "Move to new window",
+        "Send F2 to the chat in front",
+      ],
       ["Close this pane"],
     ]);
     // A workspace's tab opens a shell in that workspace, which has no key.

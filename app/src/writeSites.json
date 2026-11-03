@@ -273,6 +273,16 @@
       "why": "It writes the window's tabs, which no lane's read draws."
     },
     {
+      "at": "tabwindows.rs closing",
+      "writes": null,
+      "why": "It forgets where a closed tab window was on screen (#4768), which no lane's read draws."
+    },
+    {
+      "at": "tabwindows.rs default",
+      "writes": null,
+      "why": "It keeps where each tab window is on screen as it moves (#4768), which no lane's read draws."
+    },
+    {
       "at": "loginasks.rs pressed",
       "writes": "this machine's network record",
       "by": ["answerBrowserLogin"]

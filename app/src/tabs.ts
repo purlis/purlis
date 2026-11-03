@@ -1680,13 +1680,31 @@ export function closeFocusedPane(
 ): Tabs {
   const tab = frontTab(tabs);
   if (!tab) return tabs;
-  const left = without(tab.layout, tab.focused);
-  if (!left) return closeLayout(tabs, tab.id, filedIn, pinned);
+  return closePane(tabs, tab.id, tab.focused, filedIn, pinned);
+}
+
+/**
+ * {@link closeFocusedPane} of pane `pane` of tab `id`, focused or not: a pane the core moved to
+ * another window (#4768) goes as a close would take it. The keyboard stays where it was, unless
+ * it was on that pane.
+ */
+export function closePane(
+  tabs: Tabs,
+  id: number,
+  pane: number,
+  filedIn: FiledIn,
+  pinned: Pinned = nothingPinned,
+): Tabs {
+  const tab = tabs.byId[id];
+  if (!tab) return tabs;
+  const left = without(tab.layout, pane);
+  if (!left) return closeLayout(tabs, id, filedIn, pinned);
   // **The keyboard goes to the pane that takes the space** (spec #4750): the nearest pane of
   // the sibling that takes the closed pane's place.
-  const focused = takesTheSpace(tab.layout, tab.focused) ?? panes(left)[0].pane;
+  const focused =
+    tab.focused === pane ? (takesTheSpace(tab.layout, pane) ?? panes(left)[0].pane) : tab.focused;
   const kept = showing({ ...tab, layout: left, focused }, tab.shows);
-  return { ...tabs, byId: { ...tabs.byId, [tab.id]: kept } };
+  return { ...tabs, byId: { ...tabs.byId, [id]: kept } };
 }
 
 /**

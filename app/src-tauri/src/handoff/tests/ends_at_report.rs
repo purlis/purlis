@@ -16,6 +16,10 @@ use super::*;
 /// What ends and what does not once a task has reported, on the real clock (fix round 1).
 mod working_again;
 
+/// A task on screen in a tab window (#4768): never ended under the person, and a minimised
+/// window counts as nothing.
+mod in_a_tab_window;
+
 /// A steward chat and the one task it dispatched, on a pretend host.
 fn a_steward_and_its_task() -> (Plane, Pretend, Planes, PlaneId, Arc<Held>, u32, u32) {
     let plane = a_plane_with_personas();
