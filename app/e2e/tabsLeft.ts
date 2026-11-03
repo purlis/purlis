@@ -4,6 +4,8 @@
 import { browser } from "@wdio/globals";
 import { specOf } from "./chatsLeft.js";
 import { recordFailure } from "./failures.js";
+import { openedSince, pressClose, tabNames } from "./reach.js";
+import { CURRENT_CHIP } from "./titleBarWorkspaces.js";
 
 /**
  * **Every spec file closes the tabs it opened** (#5111), as {@link ./chatsLeft.ts} has every
@@ -17,8 +19,8 @@ import { recordFailure } from "./failures.js";
  * - **Each spec closes its own tabs through the window**: `before`, it writes down `reach.ts`'s
  *   `tabNames`, and `after`, `closeTheViewTabsOpenedSince` closes each tab that was not there by
  *   its own `Close <name>` and waits until the strip is as it was.
- * - **This file's root hooks are the backstop**, wired through `mochaOpts.require` beside
- *   `chatsLeft.ts`: `beforeAll` writes down the strip in front and where it is (the project in
+ * - **This file's root hooks are the backstop**, run by `leftBehind.ts` after `chatsLeft.ts`'s:
+ *   `beforeAll` writes down the strip in front and where it is (the project in
  *   front and its workspace), and `afterAll`, when the same strip is in front again, closes every
  *   tab on it that was not there, by its own `Close <name>`, and FAILS the file, naming it and
  *   the tabs. A file that leaves tabs behind is a red file, not a quiet cost to the files after.
@@ -37,25 +39,14 @@ export interface Strip {
   tabs: string[];
 }
 
-/** What the strip's kept empty tab is called (`tabs.EMPTY_TAB`, #4756): never left over. */
-export const KEPT_EMPTY = "New chat";
-
 /**
- * The tabs on `now` that were not on `before`, by name and as many times as each was added, when
- * both are the same strip; none when they are not, since another strip says nothing about this
- * one. The strip's kept empty tab is never one (#4756).
+ * The tabs on `now` that were not on `before` (`reach.ts`'s {@link openedSince}, the rule a
+ * spec's own `after` uses), when both are the same strip; none when they are not, since another
+ * strip says nothing about this one.
  */
 export function tabsLeftOver(before: Strip, now: Strip): string[] {
   if (before.project !== now.project || before.workspace !== now.workspace) return [];
-  const had = new Map<string, number>();
-  for (const name of before.tabs) had.set(name, (had.get(name) ?? 0) + 1);
-  const left: string[] = [];
-  for (const name of now.tabs) {
-    const still = had.get(name) ?? 0;
-    if (still > 0) had.set(name, still - 1);
-    else if (name !== KEPT_EMPTY) left.push(name);
-  }
-  return left;
+  return openedSince(before.tabs, now.tabs);
 }
 
 /** What the guard says when a file left tabs open: the file, how many, and which. */
@@ -68,45 +59,41 @@ export function tabsLeftSaid(spec: string, left: readonly string[]): string {
   );
 }
 
-/** The strip in front, read in one go from the page. */
+/** The strip in front: where it is, read from the page, and its tabs. */
 export async function stripInFront(): Promise<Strip> {
-  return browser.execute(() => {
-    const project =
-      document
-        .querySelector('[data-strip="Projects"] [role="tab"][aria-selected="true"]')
-        ?.getAttribute("data-directory") ?? "";
-    const workspace =
-      document
-        .querySelector(
-          '[data-testid="title-bar"] [data-scope="titlebar"][data-part="workspace"][aria-current="true"]:not([data-variant="root"]) [data-part="name"]',
-        )
-        ?.textContent?.trim() ?? "";
-    const tabs = [
-      ...(document.querySelector('[data-strip="Tabs"]')?.querySelectorAll('[role="tab"]') ?? []),
-    ].map((tab) => tab.querySelector(".tab-name")?.textContent ?? "");
-    return { project, workspace, tabs };
-  });
-}
-
-/** Presses each tab's own `Close <name>` on the strip in front, from the page. */
-async function closeByName(names: readonly string[]): Promise<void> {
-  await browser.execute((called: string[]) => {
-    for (const name of called)
-      document
-        .querySelector<HTMLElement>(
-          `[data-strip="Tabs"] button[aria-label="Close ${CSS.escape(name)}"]`,
-        )
-        ?.click();
-  }, names as string[]);
+  const where = await browser.execute(
+    (chip: string) => ({
+      project:
+        document
+          .querySelector('[data-strip="Projects"] [role="tab"][aria-selected="true"]')
+          ?.getAttribute("data-directory") ?? "",
+      workspace: document.querySelector(`${chip} [data-part="name"]`)?.textContent?.trim() ?? "",
+    }),
+    CURRENT_CHIP,
+  );
+  return { ...where, tabs: await tabNames() };
 }
 
 let before: Strip | null = null;
 
-/** Mocha's root hooks, collected from `mochaOpts.require` as `chatsLeft.ts`'s are. */
-export const mochaHooks = {
-  async beforeAll(): Promise<void> {
-    // `chatsLeft.ts`'s `beforeAll`, required first, has waited for a project to be drawn.
-    before = await stripInFront().catch(() => null);
+/** The tabs' root hooks, run by `leftBehind.ts` after the chats'. */
+export const tabHooks = {
+  async beforeAll(this: Mocha.Context): Promise<void> {
+    // `chatsLeft.ts`'s `beforeAll`, run first, has waited for a project to be drawn.
+    try {
+      before = await stripInFront();
+    } catch (error) {
+      // Not wrapped by WebdriverIO, so written down here, as `chatsLeft.ts`'s is.
+      recordFailure(
+        {
+          title: '"before all" hook: the tabs a spec file began with',
+          parent: "",
+          file: specOf(this.test?.parent),
+        },
+        error,
+      );
+      throw error;
+    }
   },
 
   async afterAll(this: Mocha.Context): Promise<void> {
@@ -124,9 +111,9 @@ export const mochaHooks = {
         .catch(() => undefined);
     if (left.length === 0) return;
 
-    // `chatsLeft.ts`'s `afterAll`, required first, has already ended any chat the file left, so
+    // `chatsLeft.ts`'s `afterAll`, run first, has already ended any chat the file left, so
     // what is pressed here is a view's tab or an ended chat's. The file is red either way.
-    await closeByName(left).catch(() => undefined);
+    await pressClose(left).catch(() => undefined);
     await browser
       .waitUntil(async () => tabsLeftOver(had, await stripInFront()).length === 0, {
         timeout: 10_000,

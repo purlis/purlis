@@ -134,13 +134,13 @@ describe("the explorer", () => {
   // and are ended again through the window, each by its number, in whichever workspace it is:
   // one app process serves the whole run, and a spec file leaves no chat running (#1796,
   // `chatsLeft.ts`).
-  let wereOpen: Running = {};
+  let wereRunning: Running = {};
   /** The tabs on alpha's strip before this spec, where its file tabs open: `after` closes the
    *  ones it opened (#5111). `null` when the `before` never read them. */
   let alphaHad: string[] | null = null;
   // The left side opens on Chats (#1673): these are about the Explorer view's rows.
   before(async () => {
-    wereOpen = await chatsRunning();
+    wereRunning = await chatsRunning();
     await focus("alpha");
     alphaHad = await tabNames();
     await showView("Explorer");
@@ -149,7 +149,7 @@ describe("the explorer", () => {
     // Step by step, each on its own: a chat that would not end still leaves the view put back.
     let trouble: unknown;
     try {
-      await endTheChatsStartedSince(wereOpen);
+      await endTheChatsStartedSince(wereRunning);
     } catch (error) {
       trouble = error;
     }
