@@ -119,6 +119,18 @@ describe("Move to new window and Move to window ▸ (#4768)", () => {
     });
   });
 
+  it("grey a tab of only empty panes, with why", () => {
+    const empty = showIn(two(), 1, 1, { kind: "empty", workspace: "ops" });
+    const offers = catalogue(now(empty, { otherWindows: [0] }));
+
+    for (const id of [toNewWindowId(1), toWindowId(1, 0)])
+      expect(by(offers, id)).toMatchObject({
+        available: false,
+        reason: "An empty tab has nothing to move.",
+      });
+    expect(by(offers, toNewWindowId(2))?.available).toBe(true);
+  });
+
   it("put Move to new window on the tab's menu after its own rows, above the line", () => {
     const rows = menuRows({ on: "tab", tab: 1 }, catalogued(catalogue(now(two()))));
 

@@ -54,7 +54,6 @@ export const SAID = {
   toNewWindow: "Move to a new window",
   // A tab's and a pane's (#4768), in the ruling's words: into a tab window of the project.
   tabToNewWindow: "Move to new window",
-  projectWindow: "Project window",
   toMainWindow: "Move to the main window",
   // A view's icon (`actions.ts`, `viewRows`): to its half of the Panel, or back to its sidebar.
   toPanel: "Move to panel",

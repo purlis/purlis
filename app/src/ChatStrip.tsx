@@ -571,7 +571,6 @@ function splitTip(face: TabFace): string | undefined {
   return face.more > 0 ? face.panes.join(" · ") : undefined;
 }
 
-/** Each is `PlaneView`'s own value of the same name: the strip reads them and holds none. */
 /**
  * **Where the pointer is while a tab is carried** (#4768): `dnd-kit`'s own delta is held to the
  * strip's axis (`ALONG_THE_STRIP`), so it cannot say whether a tab was let go past the window's
@@ -604,6 +603,7 @@ function useFollowedPointer() {
   return followed;
 }
 
+/** Each is `PlaneView`'s own value of the same name: the strip reads them and holds none. */
 type ChatStripProps = {
   by: (id: string) => Offer | undefined;
   found: Catalogued;

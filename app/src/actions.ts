@@ -2177,24 +2177,21 @@ export function catalogue(now: Now): Offer[] {
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
     const behind = tab !== now.tabs.inFront ? { menuOnly: true as const } : {};
+    const holds = contentsOf(now.tabs, tab).some(
+      (one) => one.content.kind === "session" || one.content.kind === "view",
+    );
+    const move = (id: string, title: string, to: number | null): Offer =>
+      holds
+        ? can(id, title, { verb: "moveToWindow", tab, pane: false, to }, name)
+        : cannot(id, title, EMPTY_TAB_STAYS, name);
     offers.push({
-      ...can(
-        toNewWindowId(tab),
-        `Move tab ${name} to new window`,
-        { verb: "moveToWindow", tab, pane: false, to: null },
-        name,
-      ),
+      ...move(toNewWindowId(tab), `Move tab ${name} to new window`, null),
       note: TO_WINDOW_NOTE,
       ...behind,
     });
     for (const to of windows)
       offers.push({
-        ...can(
-          toWindowId(tab, to),
-          `Move tab ${name} to ${windowNamed(to)}`,
-          { verb: "moveToWindow", tab, pane: false, to },
-          name,
-        ),
+        ...move(toWindowId(tab, to), `Move tab ${name} to ${windowNamed(to)}`, to),
         ...behind,
       });
   }
@@ -4733,7 +4730,6 @@ export const BELOW_TOO =
 export const STOPS_IT =
   "A chat another chat started gets one short turn to write what it did, then it ends. The chat that asked is told you stopped it.";
 
-/** A chat's Merge its branch row (#4851). */
 /** **Move to new window** on tab `tab` (#4768). */
 export function toNewWindowId(tab: number): string {
   return `tab.newWindow:${tab}`;
@@ -4752,10 +4748,17 @@ export function paneToWindowId(to: number): string {
   return `pane.toWindow:${to}`;
 }
 
-/** **A window of the project, as a Move to window row names it** (#4768): its project window,
- *  or a tab window by its number. */
+/** **A window of the project, as Move to window names it** (#4768): its project window, or a
+ *  tab window by its number. The one place it is written; a submenu's row says it as a sentence
+ *  starts ({@link windowSaid}). */
 export function windowNamed(window: number): string {
   return window === 0 ? "the project window" : `tab window ${window}`;
+}
+
+/** {@link windowNamed} as a row of the Move to window submenu says it: "Project window". */
+export function windowSaid(window: number): string {
+  const named = windowNamed(window).replace(/^the /, "");
+  return named.charAt(0).toUpperCase() + named.slice(1);
 }
 
 /** What Move to new window does, which its title cannot fit. */
@@ -4765,6 +4768,10 @@ const TO_WINDOW_NOTE =
 /** Why an empty pane has no Move to window row (#4768). */
 const EMPTY_PANE_STAYS = "An empty pane has nothing to move.";
 
+/** Why a tab of only empty panes has no Move to window row (#4768). */
+const EMPTY_TAB_STAYS = "An empty tab has nothing to move.";
+
+/** A chat's Merge its branch row (#4851). */
 export function branchMergeId(session: number): string {
   return `chat.branch.merge:${session}`;
 }
