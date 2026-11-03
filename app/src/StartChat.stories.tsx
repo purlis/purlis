@@ -19,6 +19,7 @@ import {
   expectFocusInSight,
   inAWindow,
   pictureNow,
+  scrollIntoItsPane,
   untilFocused,
   untilInSight,
 } from "./stories.testkit";
@@ -338,13 +339,13 @@ async function opened() {
 
 /**
  * **The Runs on row in the picture** (#5016): the row sits below the harness cards, under the
- * details pane's fold as the dialog opens, so it is scrolled into the pane's sight before
- * `pictureNow`, and what a person reads there is held wholly in sight: its heading, the row's
- * control (the select, or Pool setup…) and the line under it that says why.
+ * details pane's fold as the dialog opens, so it is scrolled to the middle of the pane, and only
+ * the pane, before `pictureNow`. What a person reads there is held wholly in sight: its heading,
+ * the row's control (the select, or Pool setup…) and the line under it that says why.
  */
 async function runsOnInSight(page: ReturnType<typeof within>) {
   const section = page.getByRole("region", { name: "Runs on" });
-  section.scrollIntoView({ block: "center" });
+  scrollIntoItsPane(section);
   const inside = within(section);
   await untilInSight(
     [

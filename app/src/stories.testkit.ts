@@ -261,6 +261,28 @@ export async function untilFocusInSight(step: string): Promise<void> {
   throw new Error(`${step}: ${why instanceof Error ? why.message : String(why)}`);
 }
 
+/**
+ * **`element` scrolled to the middle of the pane it scrolls in**, and nothing else moved: the
+ * nearest ancestor that scrolls, never the page or anything around the pane, as
+ * `scrollIntoView` would, so nothing is left scrolled for the next story (#5016). For a story
+ * that pictures what sits under its pane's fold.
+ */
+export function scrollIntoItsPane(element: Element): void {
+  let pane = element.parentElement;
+  while (pane !== null && !scrolls(pane)) pane = pane.parentElement;
+  if (pane === null) throw new Error(`${describe(element)} is in no pane that scrolls`);
+  const [box, room] = [element.getBoundingClientRect(), pane.getBoundingClientRect()];
+  pane.scrollTop += box.top - room.top - (room.height - box.height) / 2;
+}
+
+/** Whether `element` scrolls its content up and down. */
+function scrolls(element: Element): boolean {
+  const { overflowY } = getComputedStyle(element);
+  return (
+    (overflowY === "auto" || overflowY === "scroll") && element.scrollHeight > element.clientHeight
+  );
+}
+
 /** Why `part` is not wholly in sight, or `null` when every point a person looks at is. */
 function outOfSight(part: Element): string | null {
   const box = part.getBoundingClientRect();
