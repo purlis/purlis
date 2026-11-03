@@ -1654,6 +1654,47 @@ impl HostLink {
         self.call_until_answered(command)
     }
 
+    /// **A start's hold, answered or not** (#4536): the host's own refusal apart from what this
+    /// window found itself (no answer in `within`, the link ended, the person cancelled), so a
+    /// runner's words are never taken for this machine's finding. `within` is none where only
+    /// the host's answer, its link's end or a cancel ends the wait.
+    fn call_held_for_a_start(
+        &self,
+        command: Command,
+        within: Option<Duration>,
+    ) -> Result<Answer, Unanswered> {
+        let (answered, answer) = std::sync::mpsc::channel();
+        let client = Arc::clone(&self.client);
+        self.runtime.spawn(async move {
+            let _ = answered.send(client.call(command).await);
+        });
+        let until = within.map(|within| Instant::now() + within);
+        loop {
+            match answer.recv_timeout(LOOKS_FOR_A_CANCEL_EVERY) {
+                Ok(said) => {
+                    return said.map_err(|why| match why.refusal() {
+                        Some(refused) => Unanswered::Host(refused.clone()),
+                        None => Unanswered::Here(why.to_string()),
+                    });
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(Unanswered::Here("the session host's link ended".to_owned()));
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                    if can_be_cancelled() && was_cancelled() =>
+                {
+                    return Err(Unanswered::Here(START_CANCELLED.to_owned()));
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                    if until.is_some_and(|until| Instant::now() >= until) =>
+                {
+                    return Err(Unanswered::Here(NOT_IN_TIME.to_owned()));
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            }
+        }
+    }
+
     /// Waits until the host answers, its link ends or the person cancels, where one can.
     fn call_until_answered(&self, command: Command) -> Result<Answer, String> {
         let (answered, answer) = std::sync::mpsc::channel();
@@ -3037,6 +3078,10 @@ impl HostedSessions {
     /// [`Self::link`] for a chat's start, the one thing that wakes an idle runner: a project held
     /// on a link that is down is held again, and that hold waits for the runner (#4403, #4415).
     /// Its code goes with it.
+    ///
+    /// A pool's runner that isn't reached, or doesn't come back, refuses the start as a pool not
+    /// reached ([`held_on`], #4536): the window offers this machine for it, and starts nothing
+    /// here unasked.
     fn link_of_a_start(&self) -> Result<(Arc<HostLink>, String), String> {
         let (link, project) = held_on(&self.holding(), true)?;
         self.sends_the_code(&link, &project)?;
@@ -3326,10 +3371,23 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
         skill_runs,
     } = holding;
     let stays = lock(stays_on).clone();
+    // **A pool's runner this machine could not reach for a start is a pool not reached**
+    // (#4536): only this machine's own findings are marked so, here the link not coming up
+    // ([`waits_off_the_lock`] marks the runner not coming back); nothing a runner answers is.
+    let not_reached = |why: String| match connection.pool().filter(|_| for_a_start) {
+        Some(pool) if *kept_on_the_runner && why != START_CANCELLED => {
+            crate::poolprofiles::not_reached(pool, &why)
+        }
+        _ => why,
+    };
     let link = match stays {
         Some(link) => link,
-        None if can_be_cancelled() => connection.of_project(root, UNTIL_THE_HOST_SAYS)?,
-        None => connection.of_project(root, LINK_WITHIN)?,
+        None if can_be_cancelled() => connection
+            .of_project(root, UNTIL_THE_HOST_SAYS)
+            .map_err(not_reached)?,
+        None => connection
+            .of_project(root, LINK_WITHIN)
+            .map_err(not_reached)?,
     };
     // A runner this was held on is kept no more (Make the runner again, a drain's end): the
     // relay holds the project on the one after it, which answers yes and holds none of its
@@ -3698,13 +3756,32 @@ fn waits_off_the_lock(holding: &Holding, link: &HostLink) -> Result<(), String> 
         project,
         project_path: String::new(),
     };
-    if can_be_cancelled() {
-        link.call_until_answered(hold)
-    } else {
-        link.call_within(hold, a_dispatchs_hold_within(&holding.connection))
-    }
-    .map(|_| ())
-    .map_err(|why| format!("{NOT_HELD} {why}"))
+    // Read before the hold goes out: this machine's host says a link is down, and a runner can't,
+    // so a refusal while it already was is the host's, not the runner's (#4536).
+    let was_down = lock(&link.shared.runner_log).link_is_down();
+    let within = (!can_be_cancelled()).then(|| a_dispatchs_hold_within(&holding.connection));
+    link.call_held_for_a_start(hold, within)
+        .map(|_| ())
+        .map_err(|unanswered| {
+            // **The runner not coming back is this machine's own finding** (#4536): no answer in
+            // time, the link ended, or a refusal while the link was already down. What a runner
+            // says over a link that is up is never marked, whatever its code.
+            let (here, said) = match unanswered {
+                Unanswered::Here(why) => (why != START_CANCELLED, why),
+                Unanswered::Host(refused) => (was_down, refused.why),
+            };
+            match holding.connection.pool() {
+                Some(pool) if here => crate::poolprofiles::not_reached(pool, &said),
+                _ => format!("{NOT_HELD} {said}"),
+            }
+        })
+}
+
+/// **A start's hold that was not answered with yes** (#4536): what this window found itself, or
+/// the host's refusal as it came.
+enum Unanswered {
+    Here(String),
+    Host(purlis_session_protocol::session::Refusal),
 }
 
 /// How long a window waits to send its `relay_to` once more, where the host refused it because

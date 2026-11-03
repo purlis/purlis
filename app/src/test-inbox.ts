@@ -3,6 +3,7 @@
 
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
+import type { PaneNoticesShown } from "./paneNotices";
 
 /**
  * **A window whose right side opens on the Inbox**, for the window tests of a project's
@@ -19,11 +20,20 @@ export function inboxOpenAtLaunch(): void {
  * a pane's own Notices, which the Inbox lists too. The side opens on the Inbox since #1738, and a
  * Notice on a pane and its line in the Inbox are two of the same name on screen.
  */
-export function inboxAwayAtLaunch(): void {
-  asideOpenAtLaunch("personas");
+export function inboxAwayAtLaunch(notices?: unknown): void {
+  // Passed as a hook (`beforeEach(inboxAwayAtLaunch)`), its argument is the test's context.
+  asideOpenAtLaunch("personas", notices === "minimised" ? "minimised" : "expanded");
 }
 
-function asideOpenAtLaunch(view: "inbox" | "personas"): void {
+/**
+ * The layout file a test's window is handed. **Its panes' notices are expanded** (#4754), so a
+ * test of a note on a pane reads the note; a test of the fold hands the file without them, as a
+ * new machine's has (`minimised`, the window's default, which the file leaves out).
+ */
+function asideOpenAtLaunch(
+  view: "inbox" | "personas",
+  notices: PaneNoticesShown = "expanded",
+): void {
   forgetThisLaunch();
   (globalThis as Record<string, unknown>)[GLOBAL] = {
     layout: {
@@ -35,6 +45,7 @@ function asideOpenAtLaunch(view: "inbox" | "personas"): void {
           { id: "navigation", side: "left", order: 0, collapsed: false },
           { id: "aside", side: "right", order: 0, collapsed: false, view },
         ],
+        ...(notices === "expanded" ? { notices } : {}),
       },
       trouble: null,
     },

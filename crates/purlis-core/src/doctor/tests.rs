@@ -954,6 +954,149 @@ fn an_index_lock_being_written_is_stated_and_a_crashed_one_is_a_warning() {
     )));
 }
 
+/// A plane at a path holding a space and a quote, as a repository on `main` (#4830).
+fn repo_plane_at_an_awkward_path() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path())
+        .unwrap()
+        .join("it's a plane");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    for d in ["personas", "inventory", "workspaces"] {
+        std::fs::create_dir_all(root.join(d)).unwrap();
+    }
+    git(&root, &["init", "-q", "-b", "main", "."]);
+    git(&root, &["add", "charter.toml"]);
+    git(&root, &["commit", "-q", "-m", "plane"]);
+    (dir, root)
+}
+
+/// What `shell` reads `word` back as: the one argument it hands `printf`.
+fn as_the_shell_reads_it(shell: &str, word: &str) -> String {
+    let out =
+        crate::forklock::output(Command::new(shell).args(["-c", &format!("printf %s {word}")]))
+            .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    String::from_utf8(out.stdout).unwrap()
+}
+
+#[test]
+fn a_hint_putting_the_root_back_quotes_a_path_with_a_space_and_a_quote_for_the_shell() {
+    let (_d, root) = repo_plane_at_an_awkward_path();
+    let quoted = format!("'{}'", root.display().to_string().replace('\'', "'\"'\"'"));
+    assert_eq!(
+        as_the_shell_reads_it("sh", &quoted),
+        root.display().to_string()
+    );
+
+    git(&root, &["checkout", "-q", "--detach"]);
+    let r = one(&root, "plane root");
+    assert!(
+        r.hint.starts_with(&format!(
+            "Put the root back on a branch: git -C {quoted} checkout main."
+        )),
+        "{r:?}"
+    );
+
+    git(&root, &["checkout", "-q", "-b", "feature"]);
+    let r = one(&root, "plane root");
+    assert!(
+        r.hint.starts_with(&format!(
+            "Put the root back: git -C {quoted} checkout main."
+        )),
+        "{r:?}"
+    );
+}
+
+#[test]
+fn a_crashed_index_lock_at_a_path_with_a_space_and_a_quote_is_removed_by_a_quoted_command() {
+    let (_d, root) = repo_plane_at_an_awkward_path();
+    let lock = root.join(".git/index.lock");
+    std::fs::write(&lock, "").unwrap();
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 3600);
+    std::fs::File::options()
+        .write(true)
+        .open(&lock)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    let r = one(&root, "index lock");
+    assert_eq!(r.status, Status::Warn);
+    let quoted = format!("'{}'", lock.display().to_string().replace('\'', "'\"'\"'"));
+    assert!(
+        r.hint
+            .ends_with(&format!("rm -f {quoted}  — purlis never removes a lock.")),
+        "{r:?}"
+    );
+}
+
+#[test]
+fn a_path_in_a_command_is_one_word_the_shell_reads_back_whole() {
+    for path in [
+        "/plain/path",
+        "/it's a plane",
+        "/a $(touch pwned); `id` & | > \"x\"",
+        "/two\nlines\tand a tab",
+        "/caf\u{e9}/\u{202e}rtl",
+        "/back\\slash'",
+    ] {
+        let word = crate::shown::shell_path(Path::new(path));
+        assert_eq!(as_the_shell_reads_it("bash", &word), path, "{word}");
+        assert!(!word.contains('\n'), "{word}");
+    }
+    assert_eq!(
+        crate::shown::shell_path(Path::new("/plain/path")),
+        "/plain/path"
+    );
+    assert_eq!(
+        as_the_shell_reads_it("sh", &crate::shown::shell_word("a;$b'c")),
+        "a;$b'c"
+    );
+}
+
+/// The bytes `shell` reads `word` back as, for a path that is not UTF-8.
+#[cfg(unix)]
+fn the_bytes_the_shell_reads_back(shell: &str, word: &str) -> Vec<u8> {
+    let out =
+        crate::forklock::output(Command::new(shell).args(["-c", &format!("printf %s {word}")]))
+            .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    out.stdout
+}
+
+#[cfg(unix)]
+#[test]
+fn a_path_that_is_not_utf8_is_spelled_byte_for_byte_and_never_as_a_replacement_character() {
+    use std::os::unix::ffi::OsStrExt;
+    for bytes in [&b"/caf\xe9/plane"[..], &b"/it's \xff a\nplane"[..]] {
+        let path = Path::new(std::ffi::OsStr::from_bytes(bytes));
+        let word = crate::shown::shell_path(path);
+        assert!(!word.contains('\u{fffd}'), "{word}");
+        assert_eq!(
+            the_bytes_the_shell_reads_back("bash", &word),
+            bytes,
+            "{word}"
+        );
+    }
+}
+
+#[test]
+fn a_bang_in_an_ansi_c_word_is_escaped_so_history_expansion_cannot_reach_it() {
+    let path = "/two\nlines!!/and !$ more";
+    let word = crate::shown::shell_path(Path::new(path));
+    assert!(word.starts_with("$'"), "{word}");
+    assert!(!word.contains('!'), "{word}");
+    assert_eq!(as_the_shell_reads_it("bash", &word), path, "{word}");
+}
+
+#[test]
+fn a_path_in_a_command_is_never_shortened() {
+    let long = "/deep".repeat(400);
+    let word = crate::shown::shell_path(Path::new(&long));
+    assert_eq!(word, long);
+    assert!(word.chars().count() > super::PATH_DISPLAY_LIMIT);
+}
+
 #[test]
 fn age_is_coarse_and_never_negative() {
     assert_eq!(git::age_phrase(-5.0), "0s");
@@ -1057,6 +1200,31 @@ fn a_clone_whose_config_holds_a_branch_with_no_name_is_named_with_how_to_remove_
             "git -C {} config --remove-section branch.",
             clone.display()
         )),
+        "{r:?}"
+    );
+}
+
+#[test]
+fn a_clone_at_a_path_with_a_space_and_a_quote_is_named_in_a_quoted_command() {
+    let (_d, root) = plane("schema = 1\n");
+    let clone = root.join("workspaces/beta/it's a svc");
+    std::fs::create_dir_all(&clone).unwrap();
+    git(&clone, &["init", "-q", "-b", "main", "."]);
+    let config = clone.join(".git/config");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str("[branch \"\"]\n\tcharterBase = main\n");
+    std::fs::write(&config, text).unwrap();
+
+    let r = one(&root, "clone git config");
+    assert_eq!(r.status, Status::Warn, "{r:?}");
+    let quoted = format!("'{}'", clone.display().to_string().replace('\'', "'\"'\"'"));
+    assert_eq!(
+        as_the_shell_reads_it("sh", &quoted),
+        clone.display().to_string()
+    );
+    assert!(
+        r.hint
+            .contains(&format!("git -C {quoted} config --remove-section branch.")),
         "{r:?}"
     );
 }

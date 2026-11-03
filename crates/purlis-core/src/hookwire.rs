@@ -1792,6 +1792,13 @@ pub struct DispatchAsk {
     pub long: bool,
     /// See [`OpenChat`]. Minted by the app, spent once, never written down.
     pub ticket: String,
+    /// **Where the new chat runs** (`--pool`, `--this-machine`, #4536): a pool this machine
+    /// keeps, or this machine, before the target workspace's and its project's own, in
+    /// [`crate::machine::StartChoice::word`]'s word. `None` follows those levels. **A word, never
+    /// a runner**: the pool is looked up among the ones this machine keeps, and a chat on a
+    /// pool's runner that asks for anything is held for the person as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runs_on: Option<String>,
 }
 
 /// What a task's report says beside its text, as `purlis dispatch report` hands it over
@@ -2326,6 +2333,12 @@ pub enum Answer {
     },
     /// What became of an ask after a dispatched task (#1441).
     Task(Box<crate::dispatched::Answered>),
+    /// **Held for the person's Approve because it moves work** (#4536, the person's ruling of
+    /// 2026-11-02): a chat's dispatch named a place to run, `runs_on` in
+    /// [`crate::machine::StartChoice::word`]'s word, other than where its target's own levels
+    /// put it. Nothing has started; the person approves or refuses it in the window. `to` is the
+    /// persona it is for.
+    HeldToMove { to: String, runs_on: String },
 }
 
 /// How long a ticket lives unspent.

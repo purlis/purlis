@@ -39,6 +39,8 @@ const GROUNDS: &[&str] = &[
     "tab.active",
     "danger.surface",
     "danger.wash",
+    // A pane's warning and its consent, which hold their ways out (#4795).
+    "wash.warning",
     "layer.project",
     "layer.workspace",
     "layer.chat",

@@ -18,6 +18,7 @@ import type { FinishedTask, Moved, OpenChat, Shown } from "./bindings";
 import type { State } from "./chatState";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
+import { PANE_NOTICES } from "./paneNoticesPref";
 import { stripNamed } from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
@@ -134,13 +135,8 @@ function core(open: Listed[], finished: FinishedTask[] = []) {
     if (cmd === "dispatch_grants_needed") return [];
     // The Brief panel's read (#1494): this core holds no dispatch records.
     if (cmd === "task_brief") throw "This project holds no record of that task.";
-    // The question a task asking its asker is paused on (#1551).
-    if (cmd === "task_question") {
-      const one = open.find((chat) => chat.session === a.session);
-      return one?.from?.asking === true
-        ? { task: one.label, asked: one.from.name, number: 2, question: "Which branch?" }
-        : null;
-    }
+    // No task here has a question open with its asker (#1551): the registry lists none.
+    if (cmd === "task_question") return null;
     if (cmd === "vault_refusals") return [];
     if (cmd === "owed_restarts") return [];
     if (cmd === "finished_tasks") return [...finished];
@@ -310,6 +306,9 @@ async function drawn(open: Listed[], finished: FinishedTask[] = []) {
 beforeEach(() => {
   globalThis.localStorage.clear();
   forgetThisLaunch();
+  // A task's prompt is a note on its session's pane, folded into the bell while the band is
+  // minimised (#4754): these tests read it on the band, expanded, as a test's machine has it.
+  PANE_NOTICES.keep("expanded");
   forgetKeyboard();
 });
 afterEach(() => {

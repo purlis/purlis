@@ -475,6 +475,8 @@ impl KeptBoard {
 pub struct HookChannels {
     log: EventLog,
     spools_after: Duration,
+    /// Whether each channel carries its chats' queued dispatch messages to the window itself.
+    carries_messages: bool,
 }
 
 impl HookChannels {
@@ -483,6 +485,18 @@ impl HookChannels {
         HookChannels {
             log,
             spools_after: A_SPOOL_IS_LOOKED_AT_AFTER,
+            carries_messages: false,
+        }
+    }
+
+    /// **Each channel carries what its chats queued to the window itself** (#4804): a pool's
+    /// runner's host, whose queues are on the runner's disk, where the window does not read
+    /// ([`Relaying::carrying_queues_beside`]). The window's own host does not: the window
+    /// delivers from the queues beside it.
+    pub fn carrying_dispatch_messages(self) -> HookChannels {
+        HookChannels {
+            carries_messages: true,
+            ..self
         }
     }
 
@@ -540,6 +554,9 @@ impl purlis_host::Hear for HookChannels {
         // A `secret exec` of a chat composed here runs here on the values its desktop sends
         // (#2047).
         relaying.of_project_at(path);
+        if self.carries_messages {
+            relaying.carrying_queues_beside(&socket);
+        }
         // A Claude Code chat's server dials in on macOS alone (#3316): each slot is handed on to
         // the window beside this socket, which holds the doors.
         if cfg!(target_os = "macos") {

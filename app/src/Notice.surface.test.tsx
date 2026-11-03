@@ -18,7 +18,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { drawnWith } from "./cascade.testkit";
-import { Notice, NoticeList, NoticeOf, NoticePaneRow } from "./Notice";
+import { Notice, NoticeList, NoticeOf } from "./Notice";
 
 afterEach(cleanup);
 
@@ -106,24 +106,6 @@ describe("a Notice's ways out", () => {
     expect(undo).toHaveAttribute("data-disabled", "true");
     expect(drawnWith(undo, "color")).toBe("var(--text-faint)");
     expect(drawnWith(undo, "cursor")).toBe("progress");
-  });
-
-  it("puts +N more in a pane's row as the shared small button", async () => {
-    const one = (cause: string) => (
-      <Notice
-        key={cause}
-        cause={cause}
-        at="pane"
-        label={cause}
-        fixes={[{ label: `Answer ${cause}`, onPress: () => undefined }]}
-      >
-        {cause}
-      </Notice>
-    );
-    render(<NoticePaneRow>{[one("a:1"), one("b:1"), one("c:1")]}</NoticePaneRow>);
-    const more = await screen.findByRole("button", { name: "+1 more" });
-    expect(more).toHaveAttribute("data-size", "sm");
-    expect(drawnWith(more, "block-size")).toBe("max(24px, var(--size-chrome), var(--space-7))");
   });
 });
 

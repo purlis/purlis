@@ -268,6 +268,31 @@ describe("the show-more button", () => {
     expect(more.textContent).toContain("1 more");
   });
 
+  // #4762, `prototype/narrow-window`: 'N more ▾' wears ✋ when a tab behind it asks.
+  it("wears the hand when a tab it hides asks, and none when nothing does", () => {
+    const { rerender } = render(
+      <ShowMore
+        noun="tab"
+        hidden={[{ key: "a", offer: offer("tab.select:a", "a"), needs: 0, children: "a" }]}
+        onPress={() => {}}
+      />,
+    );
+    const more = () => screen.getByRole("button", { name: /^Show 1 tab/ });
+    expect(more().querySelector("[data-mark='asks']")).toBeNull();
+
+    rerender(
+      <ShowMore
+        noun="tab"
+        hidden={[{ key: "a", offer: offer("tab.select:a", "a"), needs: 1, children: "a" }]}
+        onPress={() => {}}
+      />,
+    );
+    expect(more().querySelector("[data-mark='asks']")).not.toBeNull();
+    expect(more()).toHaveAccessibleName(
+      "Show 1 tab the strip is not showing, where 1 chat needs you",
+    );
+  });
+
   // #3524: its menu open, the family draws it as under the pointer, and shut it is at rest.
   it("shows that its menu is open, from the button family", async () => {
     render(

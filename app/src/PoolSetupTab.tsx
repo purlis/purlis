@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExternalLink, Loader2 } from "lucide-react";
 import {
@@ -12,10 +12,10 @@ import {
   type PoolSetupStep,
 } from "./bindings";
 import { Notice } from "./Notice";
-import { makeRunnerAgain, readReleaseImage, rereadPools, type ReleaseImage } from "./pools";
-import { Button, ButtonRow } from "./ui/button/Button";
+import { Action, SeeWhat, StepHead } from "./poolsetup/parts";
+import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
+import { SignInsStep } from "./poolsetup/SignInsStep";
 import { Card } from "./ui/card/Card";
-import { TextField } from "./ui/field/Field";
 import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
 
 /**
@@ -31,25 +31,16 @@ import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
  * **Nothing changes but on a step's own button** (Q31), and each says what it will do before it is
  * pressed. Choosing Docker and the name given are kept as they are made, so coming back resumes.
  *
- * This ticket builds Where and Pool. The later steps show what the core finds and what to do next,
- * and get their own screens in their tickets (#4482, #4483, #4490).
+ * **Each step has two more levels** (#4481, Q30): Options, with every setting and the recommended
+ * value marked, and See what this does, with the commands the button runs ({@link SeeWhat}). A pool
+ * made by hand under the name typed is noticed, and setup follows it.
+ *
+ * Where and Pool have their screens. The later steps show what the core finds and what to do next,
+ * and get theirs in their tickets (#4482, #4483, #4490).
  */
 
 /** How often the tab asks again while it waits on Docker. */
 const RECHECK_MS = 5000;
-
-/** How long typing rests before the name is kept. */
-const KEEP_NAME_MS = 400;
-
-/** A pool being made, held above the step so leaving it loses neither. */
-type Adding = {
-  making: boolean;
-  refused?: string;
-  set: (to: { making: boolean; refused?: string }) => void;
-  /** The name typed, undefined until something is typed. */
-  typed: string | undefined;
-  type: (to: string) => void;
-};
 
 const STATES: readonly string[] = STEP_STATES;
 
@@ -61,51 +52,6 @@ type Read =
   | { state: "reading" }
   | { state: "trouble"; trouble: string }
   | { state: "read"; shown: PoolSetupShown };
-
-/** A step's heading and its plain sentences. Takes the focus as a step opens. */
-function StepHead({ title, lead }: { title: string; lead?: ReactNode }) {
-  const ref = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    if (document.activeElement?.closest('[data-scope="steps"]')) return;
-    ref.current?.focus({ preventScroll: true });
-  }, [title]);
-  return (
-    <header className="pool-setup-head">
-      <h1 ref={ref} tabIndex={-1} className="pool-setup-title">
-        {title}
-      </h1>
-      {lead && <p className="pool-setup-lead">{lead}</p>}
-    </header>
-  );
-}
-
-/** One main action, and what it will do, said before it is pressed (Q31). */
-function Action({
-  does,
-  main,
-  onMain,
-  busy,
-  icon,
-}: {
-  does?: string;
-  main?: string;
-  onMain?: () => void;
-  busy?: boolean;
-  icon?: ReactNode;
-}) {
-  return (
-    <section className="pool-setup-action" aria-label="What to do next">
-      {does && <p className="pool-setup-does">{does}</p>}
-      {main && (
-        <ButtonRow size="lg">
-          <Button variant="primary" onPress={onMain} isDisabled={busy} aria-busy={busy} icon={icon}>
-            {main}
-          </Button>
-        </ButtonRow>
-      )}
-    </section>
-  );
-}
 
 /** A recheck that runs by itself, said once and politely (Q28). */
 function Rechecking() {
@@ -189,6 +135,7 @@ function Where({
           </p>
         </>
       )}
+      {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
       {next && onlySaid ? (
         <Action does={next.does} />
       ) : next ? (
@@ -205,201 +152,6 @@ function Where({
   );
 }
 
-const IMAGE_NOT_NAMED = "This build of purlis names no runner image, so give one by its digest.";
-
-/** The Pool step: a name, and its own button. Image and limits come under Options with #4481. */
-function PoolStep({
-  step,
-  shown,
-  plane,
-  adding,
-  changed,
-  onNext,
-}: {
-  step: PoolSetupStep;
-  shown: PoolSetupShown;
-  plane: PlaneId;
-  adding: Adding;
-  changed: () => void;
-  onNext: () => void;
-}) {
-  const name = adding.typed ?? shown.name ?? "";
-  const keeping = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const [image, setImage] = useState("");
-  const [offered, setOffered] = useState<ReleaseImage>();
-  useEffect(() => {
-    if (shown.pool !== null) return;
-    let live = true;
-    void readReleaseImage().then((read) => {
-      if (live) setOffered(read);
-    });
-    return () => {
-      live = false;
-    };
-  }, [shown.pool]);
-  // Kept as it is typed, so a tab closed mid-word comes back with it. A step left before the
-  // wait ends keeps the name then, so no wait outlives it (#4823).
-  // A name no pool could have yet is left unkept, and Create says why.
-  const unkept = useRef<string>(undefined);
-  const keep = useCallback(() => {
-    clearTimeout(keeping.current);
-    const to = unkept.current;
-    if (to === undefined) return;
-    unkept.current = undefined;
-    const kept = to.trim();
-    void commands.poolSetupName(kept === "" ? null : kept);
-  }, []);
-  useEffect(() => keep, [keep]);
-  const typing = (to: string) => {
-    adding.type(to);
-    unkept.current = to;
-    clearTimeout(keeping.current);
-    keeping.current = setTimeout(keep, KEEP_NAME_MS);
-  };
-
-  if (shown.pool !== null) {
-    const action = step.next;
-    return (
-      <>
-        <StepHead title={`Pool ${shown.pool}`} />
-        {step.state === "attention" ? (
-          <Findings step={step} />
-        ) : (
-          <p className="pool-setup-p">
-            Pool {shown.pool} is made, and its runner is on this machine's Docker.
-          </p>
-        )}
-        {adding.refused && (
-          <Notice
-            cause="pool-setup.pool"
-            tone="trouble"
-            title="That didn't work"
-            onDismiss={() => adding.set({ making: false })}
-          >
-            {adding.refused}
-          </Notice>
-        )}
-        {action?.id === "make-runner-again" ? (
-          <Action
-            does={action.does}
-            main={action.label}
-            busy={adding.making}
-            onMain={() => {
-              adding.set({ making: true });
-              void makeRunnerAgain(shown.pool ?? "").then((why) => {
-                adding.set({ making: false, refused: why });
-                changed();
-              });
-            }}
-          />
-        ) : action?.id === "check-again" ? (
-          <Action does={action.does} main={action.label} onMain={changed} />
-        ) : action ? (
-          <Action does={action.does} />
-        ) : (
-          <Action main="Continue" onMain={onNext} />
-        )}
-      </>
-    );
-  }
-
-  const named = offered && "image" in offered ? offered.image : undefined;
-  const reading = offered === undefined;
-  const newer = offered?.state === "newer" ? offered : undefined;
-  const trouble = offered?.state === "trouble" ? offered.trouble : undefined;
-  const create = async () => {
-    const kept = name.trim();
-    const using = image.trim() || named || "";
-    if (kept === "") return adding.set({ making: false, refused: "Give the pool a name first." });
-    if (using === "") return adding.set({ making: false, refused: IMAGE_NOT_NAMED });
-    adding.set({ making: true });
-    // Docker may have changed since this step was read: what is made is held to now.
-    const now = await commands.poolSetup(plane);
-    const where =
-      now.status === "ok" ? now.data.steps.find((one) => one.id === "where") : undefined;
-    if (where?.state !== "done") {
-      adding.set({ making: false });
-      changed();
-      return;
-    }
-    const answer = await commands.addDockerPool({
-      name: kept,
-      image: using,
-      cpus: null,
-      memory_mib: null,
-      processes: null,
-      tmp_mib: null,
-      suspend_after: null,
-      frames: null,
-      width: null,
-    });
-    if (answer.status === "error") {
-      adding.set({ making: false, refused: answer.error });
-      return;
-    }
-    const going = await commands.poolSetupPool(kept);
-    adding.set(
-      going.status === "error" ? { making: false, refused: going.error } : { making: false },
-    );
-    // The rest of the window lists the new pool too.
-    await rereadPools();
-    changed();
-  };
-  return (
-    <>
-      <StepHead
-        title="Name your pool"
-        lead="Pick any short name you'll recognise. The rest is already set to what we recommend."
-      />
-      {adding.making ? (
-        <p className="pool-setup-busy" role="status">
-          <Loader2 aria-hidden size={18} className="spinning" />
-          <span>Making the pool and its runner. The first time, this downloads the runner.</span>
-        </p>
-      ) : (
-        <>
-          <TextField
-            label="Name"
-            value={name}
-            onChange={typing}
-            help="Small letters, digits and dashes."
-          />
-          {!reading && named === undefined && (
-            <TextField
-              label="Runner image"
-              value={image}
-              onChange={setImage}
-              help={trouble ?? IMAGE_NOT_NAMED}
-            />
-          )}
-          {named && (
-            <p className="pool-setup-does">
-              Runner image: {named}
-              {newer && `, from purlis ${newer.version}. An update to it is waiting.`}
-            </p>
-          )}
-          {adding.refused && (
-            <Notice
-              cause="pool-setup.pool"
-              tone="trouble"
-              title="The pool wasn't made"
-              onDismiss={() => adding.set({ making: false })}
-            >
-              {adding.refused}
-            </Notice>
-          )}
-        </>
-      )}
-      <Action
-        does={step.next?.does}
-        main={step.next?.label ?? "Create the pool"}
-        busy={adding.making || reading}
-        onMain={() => void create()}
-      />
-    </>
-  );
-}
-
 /** A later step, whose own screen comes with its ticket: what the core finds, and what to do. */
 function Found({ step, onRecheck }: { step: PoolSetupStep; onRecheck: () => void }) {
   return (
@@ -411,7 +163,7 @@ function Found({ step, onRecheck }: { step: PoolSetupStep; onRecheck: () => void
       ) : (
         step.next && <Action does={step.next.does} />
       )}
-      {step.next?.command && <code className="pool-setup-command">{step.next.command}</code>}
+      {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
     </>
   );
 }
@@ -420,8 +172,13 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
   const [read, setRead] = useState<Read>({ state: "reading" });
   const [showing, setShowing] = useState<string>();
   const [trouble, setTrouble] = useState<string>();
-  const [made, setMade] = useState<{ making: boolean; refused?: string }>({ making: false });
+  const [made, setMade] = useState<{
+    making: boolean;
+    refused?: string;
+    breaks?: readonly string[];
+  }>({ making: false });
   const [typed, setTyped] = useState<string>();
+  const [chosen, choose] = useState<Chosen>(NOTHING_CHOSEN);
   const reads = useRef(0);
   /** The read on its way, so a slow Docker is waited for and never asked twice at once. */
   const reading = useRef(0);
@@ -453,6 +210,19 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
     reread();
     return () => {
       reads.current++;
+    };
+  }, [reread]);
+  // Work done elsewhere is picked up as the person comes back to the window (Q30): a command
+  // run from See what this does, in their own terminal.
+  useEffect(() => {
+    const back = () => {
+      if (document.visibilityState === "visible" && reading.current === 0) reread();
+    };
+    window.addEventListener("focus", back);
+    document.addEventListener("visibilitychange", back);
+    return () => {
+      window.removeEventListener("focus", back);
+      document.removeEventListener("visibilitychange", back);
     };
   }, [reread]);
 
@@ -551,8 +321,19 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
               step={step}
               shown={setup}
               plane={plane}
-              adding={{ ...made, set: setMade, typed, type: setTyped }}
+              adding={{ ...made, set: setMade, typed, type: setTyped, chosen, choose }}
               onNext={() => after("pool")}
+              changed={() => {
+                setShowing(undefined);
+                reread();
+              }}
+            />
+          ) : step?.id === "signins" && setup.pool !== null ? (
+            <SignInsStep
+              key={setup.pool}
+              step={step}
+              pool={setup.pool}
+              plane={plane}
               changed={() => {
                 setShowing(undefined);
                 reread();

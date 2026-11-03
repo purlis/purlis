@@ -46,17 +46,18 @@ step. This page is the reference behind it.
 - **What:** `linux/amd64` and `linux/arm64` under one index, each built on a GitHub runner of
   that architecture with the pinned toolchain, `cargo auditable` and the operator's `release`
   profile, no cache, into [`operator/Dockerfile`](../operator/Dockerfile). Each architecture's
-  image is pushed untagged, by digest, and pulled back; nothing is tagged or signed until
-  `tools/operator-image-check.mjs` has passed on exactly those bytes: Linux on that
-  architecture, a numbered user who is not root, the operator as the whole default command,
-  and a binary that starts there.
+  image is built once, into a file, and `tools/operator-image-check.mjs` runs on the image
+  loaded from it: Linux on that architecture, a numbered user who is not root, the operator as
+  the whole default command, and a binary that starts there. Only then is the same file pushed,
+  untagged, by its digest, so an image that fails is never pushed; nothing is tagged or signed
+  until both architectures passed.
 - **Tags:** `sha-<commit>`, and `main` for the image of the latest commit; `main` only moves
-  forward. Tags can move, so name the image by its **digest**. The run's summary records it.
-  Its `operator-image` artifact holds the digest and `install/`: this commit's plain
-  manifests and chart, with `operator.yaml`'s image and the chart's default `image.repository`
-  and `image.digest` set to that image (#2281). So an install from it names the image built
-  from the same commit as the manifests, with nothing to set.
-  `tools/operator-install.mjs` makes it, and the kind tests install from what it makes.
+  forward, and only once the image has been pulled and checked with no sign-in. Tags can move, so
+  name the image by its **digest**. The run's summary records it. Its `operator-image` artifact
+  holds the digest and `install/`: this commit's plain manifests and chart, with `operator.yaml`'s
+  image and the chart's default `image.repository` and `image.digest` set to that image (#2281).
+  So an install from it names the image built from the same commit as the manifests, with nothing
+  to set. `tools/operator-install.mjs` makes it, and the kind tests install from what it makes.
 - **Signed:** keyless with [cosign](https://docs.sigstore.dev/), by the `operator-image.yml`
   workflow on `main`, through GitHub's OIDC identity, as the runner image is: no key is stored
   anywhere, and the signature's entry in Sigstore's public transparency log names the image
@@ -67,6 +68,28 @@ step. This page is the reference behind it.
   cosign verify ghcr.io/purlis/purlis-cluster-operator@sha256:<digest> \
     --certificate-identity https://github.com/purlis/purlis/.github/workflows/operator-image.yml@refs/heads/main \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  ```
+
+- **Build provenance and an SBOM:** each published image carries SLSA build provenance,
+  attached to its multi-architecture index, and a CycloneDX SBOM of each architecture's image,
+  listing the image's Ubuntu packages and the crates the operator's binary was built from. Each
+  is stored by GitHub and pushed to the registry beside the image, and the run verifies each one
+  before it moves `main`. To check them yourself (`gh attestation` needs `gh` signed in to any
+  GitHub account, to read GitHub's attestation API; the registry needs no sign-in):
+
+  ```bash
+  # Provenance: built by operator-image.yml in purlis/purlis, on a GitHub-hosted runner.
+  gh attestation verify oci://ghcr.io/purlis/purlis-cluster-operator@sha256:<digest> \
+    --repo purlis/purlis \
+    --cert-identity https://github.com/purlis/purlis/.github/workflows/operator-image.yml@refs/heads/main \
+    --deny-self-hosted-runners
+
+  # The SBOM of one architecture's image: its digest is in `docker buildx imagetools inspect`.
+  gh attestation verify oci://ghcr.io/purlis/purlis-cluster-operator@sha256:<arch digest> \
+    --repo purlis/purlis \
+    --cert-identity https://github.com/purlis/purlis/.github/workflows/operator-image.yml@refs/heads/main \
+    --predicate-type https://cyclonedx.org/bom \
+    --format json | jq '.[0].verificationResult.statement.predicate'
   ```
 
 ## Before you install: doctor

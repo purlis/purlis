@@ -143,6 +143,17 @@ pub fn without_credentials(kind: &str, path: &str, bytes: &[u8]) -> Result<Vec<u
     filtered(kind, path, bytes).map(|file| file.bytes)
 }
 
+/// [`without_credentials`], for a file a runner was sent and holds whole (#4396): one with nothing
+/// to take out comes back in the memory it came in, never copied, so a runner holds what a profile
+/// sends once while it keeps it.
+pub fn kept_without_credentials(kind: &str, path: &str, bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    let written_again = match filtered_saying(kind, path, &bytes, &mut Said::default())? {
+        std::borrow::Cow::Borrowed(_) => None,
+        std::borrow::Cow::Owned(written) => Some(written),
+    };
+    Ok(written_again.unwrap_or(bytes))
+}
+
 /// [`filtered`], with what was removed said in the log, as what an import leaves out is: what a
 /// desktop sends.
 pub fn sent_without_credentials(kind: &str, path: &str, bytes: &[u8]) -> Result<Filtered, String> {
@@ -193,7 +204,7 @@ fn chooses_an_endpoint(name: &str) -> bool {
 /// not parse.
 pub fn filtered(kind: &str, path: &str, bytes: &[u8]) -> Result<Filtered, String> {
     let mut said = Said::default();
-    let bytes = filtered_saying(kind, path, bytes, &mut said)?;
+    let bytes = filtered_saying(kind, path, bytes, &mut said)?.into_owned();
     Ok(Filtered {
         bytes,
         removed: said.items,
@@ -201,12 +212,21 @@ pub fn filtered(kind: &str, path: &str, bytes: &[u8]) -> Result<Filtered, String
     })
 }
 
-fn filtered_saying(
+/// [`filtered`]'s bytes, borrowed where nothing was taken out of them.
+fn filtered_saying<'a>(
     kind: &str,
     path: &str,
-    bytes: &[u8],
+    bytes: &'a [u8],
     said: &mut Said,
-) -> Result<Vec<u8>, String> {
+) -> Result<std::borrow::Cow<'a, [u8]>, String> {
+    use std::borrow::Cow;
+    // A text that came back as it went is the bytes themselves.
+    fn as_it_was<'a>(bytes: &'a [u8], text: Cow<'_, str>) -> Cow<'a, [u8]> {
+        match text {
+            Cow::Borrowed(_) => Cow::Borrowed(bytes),
+            Cow::Owned(text) => Cow::Owned(text.into_bytes()),
+        }
+    }
     let unreadable = || {
         format!(
             "its settings file {} is not one its harness can read, so no settings were sent",
@@ -216,33 +236,43 @@ fn filtered_saying(
     match (kind, path) {
         ("claude", "settings.json" | MCP_SERVERS_FILE) => {
             let text = std::str::from_utf8(bytes).map_err(|_| unreadable())?;
-            json_without(kind, text, said).ok_or_else(unreadable)
+            json_without(kind, text, said)
+                .map(Cow::Owned)
+                .ok_or_else(unreadable)
         }
         // opencode reads each of its settings files as JSON with comments.
         ("opencode", "opencode.json" | "opencode.jsonc" | "tui.json") => {
             let text = std::str::from_utf8(bytes).map_err(|_| unreadable())?;
-            json_without(kind, &plain_json(text), said).ok_or_else(unreadable)
+            json_without(kind, &plain_json(text), said)
+                .map(Cow::Owned)
+                .ok_or_else(unreadable)
         }
         ("codex", "config.toml") => {
             let text = std::str::from_utf8(bytes).map_err(|_| unreadable())?;
-            codex_without(text, said).ok_or_else(unreadable)
+            codex_without(text, said)
+                .map(Cow::Owned)
+                .ok_or_else(unreadable)
         }
         _ => Ok(match std::str::from_utf8(bytes) {
             Ok(text) if is_markdown(path) => {
-                let text = frontmatter_without(text, path.contains('/'), said);
-                no_url_users(&text, said).into_owned().into_bytes()
+                match frontmatter_without(text, path.contains('/'), said) {
+                    Cow::Borrowed(text) => as_it_was(bytes, no_url_users(text, said)),
+                    Cow::Owned(text) => {
+                        Cow::Owned(no_url_users(&text, said).into_owned().into_bytes())
+                    }
+                }
             }
-            Ok(text) => no_url_users(text, said).into_owned().into_bytes(),
+            Ok(text) => as_it_was(bytes, no_url_users(text, said)),
             // A harness can read Markdown past a byte that is not UTF-8, frontmatter and all, so
             // it is filtered all the same, as the text it reads.
             Err(_) if is_markdown(path) => {
                 let text = String::from_utf8_lossy(bytes);
                 let text = frontmatter_without(&text, path.contains('/'), said);
                 said.push("a character that is not UTF-8".to_owned());
-                no_url_users(&text, said).into_owned().into_bytes()
+                Cow::Owned(no_url_users(&text, said).into_owned().into_bytes())
             }
             // No text to read a URL in, and rewriting one could only break it.
-            Err(_) => bytes.to_vec(),
+            Err(_) => Cow::Borrowed(bytes),
         }),
     }
 }
@@ -311,14 +341,19 @@ fn dropped_from_frontmatter() -> Vec<&'static str> {
 /// loads; so does one that would not read back as it was written, so filtering it again changes
 /// nothing. Rules around text that holds no keys are no frontmatter, and neither is what a harness's
 /// own instructions file (`in_folder` false) holds that purlis cannot read: both stay.
-fn frontmatter_without(text: &str, in_folder: bool, said: &mut Said) -> String {
+fn frontmatter_without<'a>(
+    text: &'a str,
+    in_folder: bool,
+    said: &mut Said,
+) -> std::borrow::Cow<'a, str> {
+    use std::borrow::Cow;
     let Some((span, read)) = purlis_skills::handed::frontmatter_value(text) else {
-        return text.to_owned();
+        return Cow::Borrowed(text);
     };
     let block = &text[span.clone()];
     let names = dropped_from_frontmatter();
     let filtered_written = match read {
-        Ok(value) if !value.is_object() => return text.to_owned(),
+        Ok(value) if !value.is_object() => return Cow::Borrowed(text),
         Ok(mut value) => {
             let before = value.clone();
             if json_runs_a_credential(&value)
@@ -330,12 +365,12 @@ fn frontmatter_without(text: &str, in_folder: bool, said: &mut Said) -> String {
             }
             clean_json(&mut value, &names, "frontmatter", said);
             if value == before && !block.contains('#') {
-                return text.to_owned();
+                return Cow::Borrowed(text);
             }
             let written = frontmatter_written(&value);
             reads_back(&written, &value).then_some(written)
         }
-        Err(_) if !in_folder => return text.to_owned(),
+        Err(_) if !in_folder => return Cow::Borrowed(text),
         Err(_) => None,
     };
     let written = filtered_written.unwrap_or_else(|| {
@@ -344,7 +379,11 @@ fn frontmatter_without(text: &str, in_folder: bool, said: &mut Said) -> String {
         said.push("frontmatter, but for its name and description: not readable".to_owned());
         frontmatter_written(&value)
     });
-    format!("{}{written}{}", &text[..span.start], &text[span.end..])
+    Cow::Owned(format!(
+        "{}{written}{}",
+        &text[..span.start],
+        &text[span.end..]
+    ))
 }
 
 /// Whether `written`, a frontmatter as [`frontmatter_written`] wrote it, reads as `value` again.

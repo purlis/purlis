@@ -811,7 +811,7 @@ fn kept_with_its_settings(dir: &Path, profile: &MachineProfile) -> MachineProfil
         &runner,
         &runner_home(dir),
         DESKTOP,
-        &sent,
+        sent.clone(),
         &Answers(Some(0)),
         7,
     )
@@ -894,7 +894,7 @@ fn a_keep_with_no_settings_leaves_the_runners_as_they_are() {
         &runner,
         &runner_home(dir.path()),
         DESKTOP,
-        &sent,
+        sent.clone(),
         &Answers(Some(0)),
         9,
     )
@@ -999,7 +999,7 @@ fn kept_staged(runner: &Homes, dir: &Path, sent: ToKeep) -> Result<MachineProfil
         runner,
         &runner_home(dir),
         DESKTOP,
-        &profile,
+        profile.clone(),
         &Answers(Some(0)),
         7,
     )?;
@@ -1136,7 +1136,7 @@ fn a_keep_that_fails_leaves_the_settings_it_kept() {
         &runner,
         &runner_home(dir.path()),
         DESKTOP,
-        &profile,
+        profile.clone(),
         &Answers(Some(0)),
         7,
     )
@@ -1401,7 +1401,7 @@ fn a_runner_refuses_a_settings_file_named_like_a_credential_or_outside_the_list(
             &runner,
             &runner_home(dir.path()),
             DESKTOP,
-            &sent,
+            sent.clone(),
             &Answers(Some(0)),
             7,
         )
@@ -1490,7 +1490,7 @@ fn settings_a_runner_refuses_leave_its_record_as_it_was() {
         &runner,
         &runner_home(dir.path()),
         DESKTOP,
-        &sent,
+        sent.clone(),
         &Answers(Some(0)),
         9,
     )
@@ -1548,7 +1548,7 @@ fn a_kept_pinned_profiles_standing_is_asked_of_the_version_the_runner_installs()
         &runner,
         &runner_home(dir.path()),
         DESKTOP,
-        &Kept::of(&desktop).unwrap().into(),
+        Kept::of(&desktop).unwrap().into(),
         &look,
         7,
     )
@@ -1764,7 +1764,7 @@ fn a_kept_profile_whose_harness_is_being_fetched_is_said_to_be_fetching() {
         &runner,
         &runner_home(dir.path()),
         DESKTOP,
-        &Kept::of(&desktop).unwrap().into(),
+        Kept::of(&desktop).unwrap().into(),
         &StillFetching,
         7,
     )
@@ -2336,7 +2336,7 @@ fn another_desktops_settings_are_neither_told_nor_changed() {
         &runner,
         &runner_home(dir.path()),
         "another",
-        &profile,
+        profile.clone(),
         &Answers(Some(0)),
         7,
     )
@@ -2356,7 +2356,7 @@ fn a_keep_of_what_changed_with_no_staged_settings_is_refused() {
         &runner,
         &runner_home(dir.path()),
         DESKTOP,
-        &sent.profile,
+        sent.profile.clone(),
         &Answers(Some(0)),
         7,
     )

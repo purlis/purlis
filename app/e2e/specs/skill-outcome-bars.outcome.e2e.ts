@@ -1,7 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { focusedChat } from "../menus.js";
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
@@ -17,7 +16,12 @@ import {
   reasonProblem,
   useVerdict,
 } from "../outcomeBars.js";
-import { closeTheViewTabsOpenedSince, focusWorkspace, tabNames } from "../reach.js";
+import {
+  closeTheViewTabsOpenedSince,
+  focusWorkspace,
+  runFromThePalette,
+  tabNames,
+} from "../reach.js";
 import { runningIn } from "../running.js";
 import { paneInFront, startAChat } from "../started.js";
 
@@ -42,7 +46,9 @@ import { paneInFront, startAChat } from "../started.js";
 const harness = harnessUnderTest(process.env.PURLIS_OUTCOME_HARNESS);
 const MADE = "e2e-bars-wanted";
 /** The studio of the workspace the chats are in: the root's has no skill turned off or ungranted. */
-const STUDIO_OF_ALPHA = "palette-row-skills.studio:alpha";
+const STUDIO_ROW = "skills.studio:alpha";
+/** That row, as the palette draws it. */
+const STUDIO_OF_ALPHA = `palette-row-${STUDIO_ROW}`;
 /** The first of the two hundred, by name, so the first row the Library draws. */
 const crowd = (n: number) => `e2e-bars-crowd-${String(n).padStart(3, "0")}`;
 
@@ -82,20 +88,15 @@ function aProjectSkill(root: string, name: string, front: string, beside = 'gran
   writeFileSync(join(root, "skills", `${name}.toml`), beside);
 }
 
-/** Presses the palette's row `id`, found by typing `typed`, counting what a person does. */
+/**
+ * Runs the palette's row `id` ({@link runFromThePalette}), counting what a person does: the key
+ * that opens it, what is typed and the press. A chat's row ends with that chat's number (#4753);
+ * a workspace's, such as its studio's, has none.
+ */
 async function fromThePalette(typed: string, id: string, effort: Effort): Promise<void> {
-  await browser.keys(["F2"]);
-  effort.presses += 1;
-  const box = await $("#palette-query");
-  await box.waitForDisplayed({ timeout: 10_000 });
-  await box.addValue(typed);
+  await runFromThePalette(typed, id);
+  effort.presses += 2;
   effort.characters += typed.length;
-  // A chat's row is the focused chat's own (#4753): every chat has one, by its number.
-  const chat = await focusedChat();
-  const row = await $(`[id="${id}${chat}"]`);
-  await row.waitForExist({ timeout: 20_000, timeoutMsg: `the palette never offered ${typed}` });
-  await browser.execute((one: HTMLElement) => one.click(), row);
-  effort.presses += 1;
 }
 
 /** Presses the button that says `said` in `scope`, once it can be pressed. */
@@ -209,7 +210,7 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     const beforeTheStudio = await tabNames();
     const started = Date.now();
 
-    await fromThePalette("Open Skill studio", STUDIO_OF_ALPHA, effort);
+    await fromThePalette("Open Skill studio", STUDIO_ROW, effort);
     await press("New skill…", effort, '[data-testid="skill-studio"]');
     await press("Write it yourself", effort, '[data-testid="skill-new"]');
     await typeInto("Name", MADE, effort);
@@ -233,6 +234,17 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       timeout: 30_000,
       timeoutMsg: `the running chat was never offered a restart for its new skill`,
     });
+    // A note, folded into the pane's bell while notices are minimised, the window's default
+    // (#4754): a person presses the bell to see it, a press counted like any other.
+    const bell = await $(
+      `.pane-frame:has([data-cause="skills-changed:${chat.session}"]) [data-way="bell"]`,
+    );
+    const folded = (await bell.getAttribute("aria-expanded")) === "false";
+    if (folded) {
+      await bell.click();
+      effort.presses += 1;
+      await notice.waitForDisplayed({ timeout: 10_000 });
+    }
     await notice.$("button=Restart").click();
     effort.presses += 1;
     await notice.waitForExist({ timeout: 40_000, reverse: true }).catch(async () => {
@@ -254,6 +266,13 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       );
     });
 
+    // The panes' notices minimised again, as the window's default, for the specs after this one:
+    // the person's own tidying, not part of wanting a skill, so no press is counted.
+    if (folded) {
+      const now = await $('.pane-frame [data-way="bell"][aria-expanded="true"]');
+      if (await now.isExisting()) await now.click();
+    }
+
     // The Notice goes as the restart begins. The chat is back once the pane in front is a chat the
     // core runs, and has stayed so: a pick before that types into the program being replaced.
     let steady = 0;
@@ -266,7 +285,7 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       { timeout: 40_000, interval: 500, timeoutMsg: "the restarted chat never came back" },
     );
 
-    await fromThePalette("Use skill", "palette-row-chat.useskill:", effort);
+    await fromThePalette("Use skill", `chat.useskill:${await paneInFront()}`, effort);
     await $('[data-testid="use-skill"]').waitForDisplayed({ timeout: 20_000 });
     await browser.waitUntil(
       async () => {
@@ -384,7 +403,7 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     });
 
     it("gives a one-line reason for every state, in the studio's Library", async () => {
-      await fromThePalette("Open Skill studio", STUDIO_OF_ALPHA, {
+      await fromThePalette("Open Skill studio", STUDIO_ROW, {
         presses: 0,
         characters: 0,
       });

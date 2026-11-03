@@ -935,8 +935,8 @@ pub struct RunnerAsked {
     /// The seconds it ran this week (the ISO week in local time), as this machine recorded it
     /// (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
     pub ran_this_week: Option<u32>,
-    /// It stopped during its drain, so it stays with its home until the person removes it
-    /// ([`purlis_core::pools::DrainLook::Held`]).
+    /// It stopped with what its chats left, so it stays with its home until the person brings their
+    /// conversations back or discards them ([`purlis_core::pools::DrainLook::Held`], #4633).
     pub held: bool,
 }
 

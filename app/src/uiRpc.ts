@@ -778,14 +778,6 @@ export const commands = {
 	 */
 	pinOnThisMachine: (path: string, workspace: string | null, pinned: boolean, at: number | null) => typedError<null, string>(__TAURI_INVOKE("pin_on_this_machine", { path, workspace, pinned, at })),
 	/**
-	 *  Pins or unpins one chat.
-	 * 
-	 *  Its own command rather than a third case of the two above, because it is written
-	 *  somewhere else entirely: a chat pin goes in the plane's own `.charter/app/reopen.json`
-	 *  and never in the machine store, which ADR 0034 forbids holding a chat's name.
-	 */
-	pinChat: (plane: PlaneId, session: number, pinned: boolean) => typedError<null, string>(__TAURI_INVOKE("pin_chat", { plane, session, pinned })),
-	/**
 	 *  The person gave a task chat a tab of its own (#1447, #1489): the record keeps it, so a
 	 *  reloaded window and the next launch draw the tab again. Sending it back is
 	 *  `close_chat_tab`. Nothing ends by either.
@@ -823,8 +815,8 @@ export const commands = {
 	 *  The order the chat strip draws this project's chats in, by session, so the record lists
 	 *  them in it and the next launch — or a reloaded window — puts them back in it (SI-6).
 	 * 
-	 *  **In the plane's own `.charter/app/reopen.json`, beside each chat's pin**, and never in the
-	 *  machine store, for [`pin_chat`]'s reason: a chat is numbered per plane, and ADR 0034 keeps
+	 *  **In the plane's own `.charter/app/reopen.json`**, and never in the machine store: a chat
+	 *  is numbered per plane, and ADR 0034 keeps
 	 *  its number out of a file every plane shares. That file is out of git, so the order is this
 	 *  machine's as a pin is.
 	 */
@@ -835,7 +827,7 @@ export const commands = {
 	 * 
 	 *  **Charter's label, never the harness's**: the program keeps the `--name` it was started
 	 *  with, so renaming a chat never disturbs one that is running. The name goes in the plane's
-	 *  own `.charter/app/reopen.json`, beside the chat's pin, so it comes back at a relaunch.
+	 *  own `.charter/app/reopen.json`, so it comes back at a relaunch.
 	 */
 	renameChat: (plane: PlaneId, session: number, label: string) => typedError<string | null, string>(__TAURI_INVOKE("rename_chat", { plane, session, label })),
 	/**
@@ -1089,6 +1081,7 @@ export const commands = {
 	skillDraftChat: __WINDOW_ONLY_START_REFUSED,
 	skillTriggerTestsChat: __WINDOW_ONLY_START_REFUSED,
 	skillOutcomeEvalsChat: __WINDOW_ONLY_START_REFUSED,
+	skillChecksChat: __WINDOW_ONLY_START_REFUSED,
 	skillImproveChat: __WINDOW_ONLY_START_REFUSED,
 	skillDraftTry: __WINDOW_ONLY_START_REFUSED,
 	skillDraftRedo: __WINDOW_ONLY_START_REFUSED,
@@ -1619,6 +1612,11 @@ export const commands = {
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
+	poolSetupCommand: __WINDOW_ONLY_RESULT,
+	poolSetupCreate: __WINDOW_ONLY_RESULT,
+	poolSetupSizes: __WINDOW_ONLY_RESULT,
+	poolSetupSkip: __WINDOW_ONLY_RESULT,
+	poolSetupWake: __WINDOW_ONLY_RESULT,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -1627,6 +1625,7 @@ export const commands = {
 	dockerPoolMakeAgain: __WINDOW_ONLY_RESULT,
 	dockerPoolReplaceRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolRemoveHeldRunner: __WINDOW_ONLY_RESULT,
+	dockerPoolBringBackHeldRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
@@ -1662,6 +1661,7 @@ export const commands = {
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
 	followProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	projectChatsRunOn: __WINDOW_ONLY_RESULT,
+	startRunsOn: __WINDOW_ONLY_RESULT,
 	setProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	poolNamedBy: __WINDOW_ONLY_RESULT,
 	sendLeavesOut: __WINDOW_ONLY_RESULT,
@@ -2899,6 +2899,12 @@ export type AskSource =
 export type Asking = {
 	plane: PlaneId,
 	asks: Shown[],
+	/**
+	 *  **Each task question still with its asking chat** (#4564, ADR 0107): in progress, so
+	 *  its task's row alone says it, and nothing here is counted by the ✋ or listed in the
+	 *  Inbox, which read [`Asking::asks`].
+	 */
+	with_asking_chat: WithAskingChat[],
 };
 
 /**  What a chat's row says while it is at its task limit. */
@@ -3134,6 +3140,12 @@ export type Boxes = {
 	 *  a chat, a file or the CLI sends can carry one.
 	 */
 	without_sandbox: WithoutSandbox | null,
+	/**
+	 *  Where the person chose to run this chat, for this start only (#4536): a pool, or this
+	 *  machine (a null pool), before its workspace's and its project's own. Absent follows them.
+	 *  It never writes a setting.
+	 */
+	runs_on?: RunsOnPick | null,
 };
 
 /**  What `branch-changed` carries: the branches, of those this window listens to, that moved. */
@@ -4575,6 +4587,12 @@ export type DispatchPending = {
 	 *  work off. The Notice says "hand off" for a handoff.
 	 */
 	mode: string,
+	/**
+	 *  **Where the dispatch asked its chat to run** (#4536, the person's ruling of 2026-11-02):
+	 *  `pool <name>` or `this machine`, read before any Allow. Null where it named none, and it
+	 *  runs where its workspace's levels say.
+	 */
+	runs_on: string | null,
 };
 
 /**  One dispatch, as the Dispatches tab draws its row. */
@@ -6132,11 +6150,6 @@ export type HandedFromNote = {
 	 */
 	outcome?: string | null,
 	/**
-	 *  Whether, as a task, it has a question open with the chat that dispatched it, and is
-	 *  paused until that chat answers (#1484): its row says whom it is asking.
-	 */
-	asking?: boolean | null,
-	/**
 	 *  Whether, as a task, the person asked for it themselves from that chat's tab (#1492,
 	 *  V100-70): its row and its breadcrumb say `asked by you`. The app's own record of how it
 	 *  was started, never a word a chat said.
@@ -6665,6 +6678,13 @@ export type LevelWaiting = {
 export type LimitRefused = {
 	words: string,
 	limit: PoolLimitOffer | null,
+	/**
+	 *  **The pool a start was to run on, where that pool is gone, stopped or not reached**
+	 *  (#4536, ruled 2026-11-01): nothing started, and the window offers Try again, Pool setup
+	 *  and Run on this machine this once. Never set by a runner's words: only where this machine
+	 *  found the pool missing or its link down ([`unavailable`]). Absent for every other refusal.
+	 */
+	pool_unavailable?: string | null,
 };
 
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
@@ -8829,6 +8849,50 @@ export type PoolSetupAction = {
 	url: string | null,
 };
 
+/**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
+export type PoolSetupCheck = {
+	verdict: string,
+	title: string,
+	more: string | null,
+};
+
+/**
+ *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
+ *  contract; none where the pool was made.
+ */
+export type PoolSetupCreated = {
+	breaks: string[],
+};
+
+/**  A limit a profile is over. */
+export type PoolSetupOver = {
+	/**  The limit's key, as `pool_limit_set` takes it. */
+	key: string,
+	said: string,
+	/**  What to raise it to, where a value would do. */
+	raise_to: number | null,
+};
+
+/**  One of this machine's profiles against a pool's limit (#4482). */
+export type PoolSetupProfileSize = {
+	name: string,
+	/**  What a send to the runner carries, in MiB rounded up, and in files; null where unread. */
+	mib: number | null,
+	files: number | null,
+	/**  Why it could not be measured. */
+	unread: string | null,
+	/**  Each limit it is over, in words, with what to raise it to. */
+	over: PoolSetupOver[],
+	/**  The project's default, or a profile an open chat runs on. */
+	in_use: boolean,
+};
+
+/**  A step by hand: the exact commands, and what running them means (#4481). */
+export type PoolSetupSee = {
+	note: string,
+	text: string,
+};
+
 /**  What the tab draws. */
 export type PoolSetupShown = {
 	/**  The pool this setup made. */
@@ -8838,6 +8902,17 @@ export type PoolSetupShown = {
 	/**  The step the person has reached. */
 	at: string | null,
 	steps: PoolSetupStep[],
+	/**  The pool was made by hand under the name typed, and purlis noticed (#4481). */
+	noticed: boolean,
+	/**  Pools this machine keeps that this setup isn't on. */
+	others: string[],
+};
+
+/**  This machine's profiles against pool `pool`'s limits (#4482). */
+export type PoolSetupSizes = {
+	most_mib: number,
+	most_files: number,
+	profiles: PoolSetupProfileSize[],
 };
 
 /**  One step as it stands. */
@@ -8849,6 +8924,8 @@ export type PoolSetupStep = {
 	findings: string[],
 	next: PoolSetupAction | null,
 	skippable: boolean,
+	see: PoolSetupSee | null,
+	checks: PoolSetupCheck[],
 };
 
 /**  What the person is asked. */
@@ -8941,8 +9018,8 @@ export type PoolVersion = {
 	 */
 	draining: number,
 	/**
-	 *  How many of its older runners are held: each stopped during its drain, and stays with its
-	 *  home until the person removes it.
+	 *  How many of its older runners are held: each stopped with what its chats left, and stays with
+	 *  its home until the person brings their conversations back or discards them.
 	 */
 	held: number,
 	/**
@@ -10373,8 +10450,8 @@ export type RunnerAsked = {
 	 */
 	ran_this_week: number | null,
 	/**
-	 *  It stopped during its drain, so it stays with its home until the person removes it
-	 *  ([`purlis_core::pools::DrainLook::Held`]).
+	 *  It stopped with what its chats left, so it stays with its home until the person brings their
+	 *  conversations back or discards them ([`purlis_core::pools::DrainLook::Held`], #4633).
 	 */
 	held: boolean,
 };
@@ -10419,8 +10496,11 @@ export type RunnerDispatchWhole = {
 	/**  The chat that asked, by its number and as its tab names it. */
 	session: number,
 	chat: string,
-	/**  The pool it runs on. */
-	pool: string,
+	/**
+	 *  The pool the asking chat runs on, where that is why it is held; null where it is held
+	 *  because it names a place to run other than its workspace's own (#4536).
+	 */
+	pool: string | null,
 	/**  The persona the new chat would run as, none for a chat on no persona. */
 	persona: string | null,
 	/**  Whether it hands the chat's work off, rather than asking for a task that reports back. */
@@ -10433,6 +10513,11 @@ export type RunnerDispatchWhole = {
 	profile: string | null,
 	/**  Whether it asks for a long-running task. */
 	long: boolean,
+	/**
+	 *  Where it would run (#4536): this machine or a pool, as the chat asked, else where its
+	 *  workspace runs its chats.
+	 */
+	runs_on: string,
 	/**  The brief whole, drawn inertly: escapes written out for what would draw otherwise. */
 	brief: string,
 };
@@ -10520,6 +10605,23 @@ export type RunnerWriteWhole = {
 	applies: boolean,
 	/**  Why Apply is not offered, in a sentence. */
 	why: string | null,
+};
+
+/**  **Which level decides where a new chat runs** (#4536), as Start chat's Runs on row says why. */
+export type RunsOnLevel = 
+/**  The workspace's own setting. */
+"workspace" | 
+/**  The project's setting, which the workspace follows. */
+"project" | 
+/**  No level names a pool, or the chat starts at the project's root. */
+"this_machine";
+
+/**
+ *  The Runs on row's choice for one start (#4536): `pool` names a pool this machine keeps, and
+ *  null is this machine.
+ */
+export type RunsOnPick = {
+	pool: string | null,
 };
 
 /**  What the picker says about the sandbox for one profile, before anything starts. */
@@ -12373,6 +12475,19 @@ export type StartRefused = {
 	approval: NeedsApproval | null,
 };
 
+/**
+ *  **Where a new chat in a workspace would run, and why** (#4536): what Start chat's Runs on row
+ *  shows before the person picks anything, and every pool this machine keeps, which the row
+ *  offers for this start only. `at_root` is a chat at the project's root, which runs here and is
+ *  offered no pool. Nothing here is checked against the pool's runner: the start does that.
+ */
+export type StartRunsOn = {
+	pool: string | null,
+	level: RunsOnLevel,
+	at_root: boolean,
+	pools: string[],
+};
+
 /**  A chat that started: its session, and the name it was given as charter holds it. */
 export type Started = {
 	session: number,
@@ -13933,6 +14048,16 @@ export type WindowTyped = {
 	flags: { [key in string]: boolean },
 	choices: { [key in string]: string },
 	numbers: { [key in string]: number | null },
+};
+
+/**  A task question its asking chat has, as the task's row says it: `asking steward 2 · 1m`. */
+export type WithAskingChat = {
+	/**  The task that asked. */
+	session: number,
+	/**  The chat it asks, by name as its own row names it. */
+	asker: string,
+	/**  When it was asked, in seconds since 1970. */
+	since: number,
 };
 
 /**  A person's opt-out, as the picker sends it. */

@@ -39,6 +39,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use purlis_core::engine::Size;
+use purlis_core::machine::StartChoice;
 
 mod chatskept;
 
@@ -50,9 +51,11 @@ use crate::host::{
     Composed, Ends, Named, Opening, Readiness, Reconnecting, SessionHost, Sink, Watching,
 };
 
-/// Which pool a workspace's chats run on, as this machine's store says it now: `None` for this
-/// machine, or the refusal where it names a pool this machine does not keep.
-pub type RunsOn = Arc<dyn Fn(&str) -> Result<Option<String>, String> + Send + Sync>;
+/// Which pool a chat of a workspace runs on, with what its start chose (#4536), as this machine's
+/// store orders the levels now: `None` for this machine, or the refusal where the level that
+/// decides names a pool this machine does not keep.
+pub type RunsOn =
+    Arc<dyn Fn(Option<&str>, Option<&StartChoice>) -> Result<Option<String>, String> + Send + Sync>;
 
 /// Every pool and the workspaces of this project that run their chats on it, as the store says
 /// them now.
@@ -175,7 +178,10 @@ impl RoutedSessions {
         let (config, plane) = (config.to_path_buf(), root.to_path_buf());
         let runs_on: RunsOn = {
             let (config, plane) = (config.clone(), plane.clone());
-            Arc::new(move |workspace| purlis_core::pools::runs_on(&config, &plane, Some(workspace)))
+            Arc::new(move |workspace, start| {
+                purlis_core::pools::chat_place(&config, &plane, workspace, start)
+                    .map(|place| place.pool)
+            })
         };
         let on_pools: OnPools = {
             let (config, plane) = (config.clone(), plane.clone());
@@ -273,7 +279,9 @@ impl RoutedSessions {
         wanted: Option<u32>,
         start: impl FnOnce(&dyn SessionHost, u32) -> Result<T, String>,
     ) -> Result<T, String> {
-        let host = self.pool_for_a_start(pool)?;
+        let host = self
+            .pool_for_a_start(pool)
+            .map_err(|why| crate::poolprofiles::unavailable(pool, why))?;
         self.here.hold_here();
         let number = wanted
             .filter(|wanted| *wanted > 0)
@@ -499,15 +507,20 @@ impl RoutedSessions {
             .collect()
     }
 
-    /// The pool `workspace` runs its chats on, where it runs them on one.
-    fn route(&self, workspace: Option<&str>) -> Result<Option<String>, String> {
+    /// The pool a chat of `workspace` runs on, where it runs on one: where its start chose
+    /// (#4536), else where the levels say.
+    fn route(
+        &self,
+        workspace: Option<&str>,
+        start: Option<&StartChoice>,
+    ) -> Result<Option<String>, String> {
         if let Some(pool) = &self.every_start_on {
             return Ok(Some(pool.clone()));
         }
-        match workspace {
-            Some(workspace) => (self.runs_on)(workspace),
-            None => Ok(None),
+        if workspace.is_none() && start.is_none() {
+            return Ok(None);
         }
+        (self.runs_on)(workspace, start)
     }
 }
 
@@ -773,7 +786,7 @@ impl SessionHost for RoutedSessions {
         // (#3818, #4569): its conversation and its work are there.
         let on = match &named.runner {
             Some(runner) => Some(runner.clone()),
-            None => self.route(named.workspace.as_deref())?,
+            None => self.route(named.workspace.as_deref(), named.runs_on.as_ref())?,
         };
         let Some(on) = on else {
             return self
@@ -790,15 +803,19 @@ impl SessionHost for RoutedSessions {
         self.here.composes_its_harness_chats()
     }
 
-    fn pool_for(&self, workspace: Option<&str>) -> Option<String> {
-        self.route(workspace).ok().flatten()
+    fn pool_for(&self, workspace: Option<&str>, start: Option<&StartChoice>) -> Option<String> {
+        self.route(workspace, start).ok().flatten()
     }
 
-    fn composes_its_harness_chats_in(&self, workspace: Option<&str>) -> bool {
-        match self.route(workspace) {
+    fn composes_its_harness_chats_in(
+        &self,
+        workspace: Option<&str>,
+        start: Option<&StartChoice>,
+    ) -> bool {
+        match self.route(workspace, start) {
             // A start whose pool is not kept is refused as it opens, in its own words.
             Ok(Some(_)) | Err(_) => true,
-            Ok(None) => self.here.composes_its_harness_chats_in(workspace),
+            Ok(None) => self.here.composes_its_harness_chats_in(workspace, start),
         }
     }
 
@@ -1231,6 +1248,15 @@ impl SessionHost for RoutedSessions {
     /// asking sends a pool no code. One found with no record at all is kept as it is taken back
     /// ([`Self::reattach`], #4683).
     fn left_running_in(&self, number: u32, workspace: Option<&str>) -> bool {
+        self.left_running_as_started(number, workspace, None)
+    }
+
+    fn left_running_as_started(
+        &self,
+        number: u32,
+        workspace: Option<&str>,
+        start: Option<&StartChoice>,
+    ) -> bool {
         if self.here.left_running(number) {
             self.chats_kept.leave(number);
             return true;
@@ -1242,7 +1268,7 @@ impl SessionHost for RoutedSessions {
         if let Some(chat) = kept {
             return self.found_on(number, chat.pool);
         }
-        let Ok(Some(pool)) = self.route(workspace) else {
+        let Ok(Some(pool)) = self.route(workspace, start) else {
             return false;
         };
         let found = self.found_on(number, pool);

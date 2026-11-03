@@ -11,7 +11,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
-import type { ProfileRow, StartOptions } from "./bindings";
+import type { ProfileRow, StartOptions, StartRunsOn } from "./bindings";
 import { StartChat } from "./StartChat";
 import {
   SHORT_WINDOW,
@@ -94,8 +94,23 @@ const OPTIONS: StartOptions = {
   declares_none: true,
 };
 
+/** Where a start's Runs on choice sends the chat, as the story's status says it (#4536). */
+const whereSaid = (runsOn?: { pool: string | null } | null) =>
+  runsOn == null ? "" : runsOn.pool === null ? " on this machine" : ` on pool ${runsOn.pool}`;
+
 /** The dialog as the window opens it, and what was answered once it is gone. */
-function Window({ options = OPTIONS }: { options?: StartOptions }) {
+function Window({
+  options = OPTIONS,
+  runsOn,
+  trouble,
+  poolUnavailable,
+}: {
+  options?: StartOptions;
+  /** Where a new chat would run, and why: the Runs on row (#4536). */
+  runsOn?: StartRunsOn;
+  trouble?: string;
+  poolUnavailable?: string;
+}) {
   const [open, setOpen] = useState(true);
   const [said, setSaid] = useState("Nothing started");
   return (
@@ -107,10 +122,18 @@ function Window({ options = OPTIONS }: { options?: StartOptions }) {
         <StartChat
           options={options}
           place="smart-ide"
-          onStart={(profile, persona, footer, label) => {
+          runsOn={runsOn}
+          trouble={trouble}
+          poolUnavailable={poolUnavailable}
+          onPoolSetup={() => {
+            setSaid("Pool setup");
+            setOpen(false);
+          }}
+          onStart={(profile, persona, footer, label, _branch, _sandbox, where) => {
             setSaid(
               `Started ${label ?? persona ?? "a chat"} as ${persona ?? "no persona"} on ${profile}` +
-                (footer ? " with purlis's footer" : ""),
+                (footer ? " with purlis's footer" : "") +
+                whereSaid(where),
             );
             setOpen(false);
           }}
@@ -294,5 +317,144 @@ export const SandboxAndApproval: Story = {
     await expect(boxOf(dialog)).toEqual(box);
     await expect(room()).toEqual(before);
     expectFocusInSight();
+  },
+};
+
+/** Every pool this machine keeps, in the Runs on stories (#4536). */
+const POOLS = ["builds", "gpu"];
+
+/** The dialog open and the keyboard on Cancel, as each Runs on story starts. */
+async function opened() {
+  const page = within(document.body);
+  await page.findByRole("dialog", { name: "Start a chat" });
+  await untilFocused(
+    () => page.getByRole("button", { name: "Cancel" }),
+    "Start a chat: the keyboard starts on Cancel",
+  );
+  await waitFor(() => expect(page.getByRole("heading", { name: "Runs on" })).toBeVisible());
+  return page;
+}
+
+/**
+ * **Runs on, following the project's pool** (#4536): the row says the place and the level that
+ * put it there. Picked from the keyboard, a pool is for this start only and says so, and Start
+ * carries it.
+ */
+export const RunsOnFollowsTheProject: Story = {
+  args: { runsOn: { pool: "builds", level: "project", at_root: false, pools: POOLS } },
+  play: async ({ userEvent }) => {
+    const page = await opened();
+    const runsOn = page.getByRole("button", { name: /Runs on$/ });
+    await expect(runsOn).toHaveTextContent("As set (pool builds)");
+    await expect(runsOn).toHaveAccessibleDescription("Pool builds, as this project's chats run.");
+    await pictureNow();
+
+    runsOn.focus();
+    await userEvent.keyboard("{Enter}");
+    await untilFocused(
+      () => page.getByRole("option", { name: "As set (pool builds)" }),
+      "Runs on: its list opens on what it holds",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+    await untilFocused(
+      () => page.getByRole("option", { name: "Pool gpu" }),
+      "Runs on: the arrows move to pool gpu",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await untilFocused(() => runsOn, "Runs on: a pick hands the keyboard back to the select");
+    expectFocusInSight();
+    await expect(runsOn).toHaveTextContent("Pool gpu");
+    await expect(runsOn).toHaveAccessibleDescription(
+      "Pool gpu for this start only. No setting changes.",
+    );
+
+    await userEvent.click(page.getByRole("button", { name: "Start chat" }));
+    await waitFor(() =>
+      expect(page.getByRole("status", { hidden: true })).toHaveTextContent(
+        "Started steward as steward on claude on pool gpu",
+      ),
+    );
+  },
+};
+
+/** **Runs on, where the workspace runs its chats on this machine** (#4536). */
+export const RunsOnThisMachineForTheWorkspace: Story = {
+  args: { runsOn: { pool: null, level: "workspace", at_root: false, pools: POOLS } },
+  play: async () => {
+    const page = await opened();
+    const runsOn = page.getByRole("button", { name: /Runs on$/ });
+    await expect(runsOn).toHaveTextContent("As set (this machine)");
+    await expect(runsOn).toHaveAccessibleDescription(
+      "This machine, as this workspace's chats run.",
+    );
+    await pictureNow();
+  },
+};
+
+/** **Runs on, at the project's root** (#4536): a chat there runs here, and no pool is offered. */
+export const RunsOnAtTheRoot: Story = {
+  args: { runsOn: { pool: null, level: "this_machine", at_root: true, pools: POOLS } },
+  play: async () => {
+    const page = await opened();
+    await expect(
+      page.getByText("This machine. A chat at the project's root always runs here."),
+    ).toBeVisible();
+    await expect(page.queryByRole("button", { name: /Runs on$/ })).toBeNull();
+    await pictureNow();
+  },
+};
+
+/** **Runs on, with no pool on this machine** (#4536): the place, and Pool setup… to add one,
+ *  rather than a choice of one. */
+export const RunsOnWithNoPool: Story = {
+  args: { runsOn: { pool: null, level: "this_machine", at_root: false, pools: [] } },
+  play: async ({ userEvent }) => {
+    const page = await opened();
+    await expect(
+      page.getByText("This machine. No pool is set up on this machine yet."),
+    ).toBeVisible();
+    await pictureNow();
+    const setup = page.getByRole("button", { name: "Pool setup…" });
+    setup.focus();
+    await untilFocused(() => setup, "Runs on: Pool setup… takes the keyboard");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(page.getByRole("status", { hidden: true })).toHaveTextContent("Pool setup"),
+    );
+  },
+};
+
+/**
+ * **A pool that could not be reached** (#4536): nothing started, and the picker offers Try
+ * again, Pool setup… and Run on this machine this once, under the refusal. The last runs this
+ * one chat here and changes no setting.
+ */
+export const PoolUnavailable: Story = {
+  args: {
+    runsOn: { pool: "builds", level: "project", at_root: false, pools: POOLS },
+    trouble: "Pool builds is stopped, so the chat did not start.",
+    poolUnavailable: "builds",
+  },
+  play: async ({ userEvent }) => {
+    const page = await opened();
+    await expect(page.getByRole("alert")).toHaveTextContent(
+      "Pool builds is stopped, so the chat did not start.",
+    );
+    for (const name of ["Try again", "Pool setup…", "Run on this machine this once"])
+      await expect(page.getByRole("button", { name })).toBeVisible();
+    await pictureNow();
+    const here = page.getByRole("button", { name: "Run on this machine this once" });
+    here.focus();
+    await untilFocused(() => here, "Pool unavailable: Run on this machine this once");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(page.getByRole("status", { hidden: true })).toHaveTextContent(
+        "Started steward as steward on claude on this machine",
+      ),
+    );
   },
 };

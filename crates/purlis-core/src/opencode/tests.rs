@@ -525,3 +525,37 @@ fn an_operator_who_asks_about_every_tool_is_asked_about_the_dispatch_tools_too()
         Vec::<String>::new()
     );
 }
+
+#[test]
+fn only_the_app_chats_shim_routes_a_task_s_question_and_neither_copy_guards_it() {
+    // #4559: a refused question would be lost, so no guard sees opencode's `question`. The app's
+    // chat routes it (its behaviour is `tools/opencode-shim.test.mjs`'s); the installed copy,
+    // loaded beside it there, lets it through, so the app is asked once.
+    let session = shim(Arming::Session);
+    assert!(
+        session.contains("const QUESTION_TOOL = \"question\"\n"),
+        "{session}"
+    );
+    assert!(
+        session.contains("const QUESTION_WORD = \"taskquestion\"\n"),
+        "{session}"
+    );
+    assert!(
+        session.contains("const ROUTES_QUESTIONS = true\n"),
+        "{session}"
+    );
+    assert!(session.contains("\"taskquestion\":10"), "{session}");
+    let installed = shim(Arming::GuardOnly(Path::new("/bin/charter")));
+    assert!(
+        installed.contains("const QUESTION_TOOL = \"question\"\n"),
+        "{installed}"
+    );
+    assert!(
+        installed.contains("const ROUTES_QUESTIONS = false\n"),
+        "{installed}"
+    );
+    assert!(
+        installed.contains("if (!ROUTES_QUESTIONS) return"),
+        "{installed}"
+    );
+}

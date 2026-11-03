@@ -365,8 +365,9 @@ pub struct Kept {
     /// is held ([`crate::pools::drain_look`]). `None` where this was not read, a row from before
     /// it among them, which says nothing of when it stopped.
     pub last_stop: Option<u64>,
-    /// **It is held** ([`crate::pools::DrainLook::Held`]): it stays with its home until the person
-    /// removes it, whatever it answers, and running again changes nothing.
+    /// **It is held** ([`crate::pools::DrainLook::Held`], [`crate::pools::held_for_its_conversations`]):
+    /// it stays with its home until the person brings its chats' conversations back or discards
+    /// them, whatever it answers, and running again changes nothing.
     pub held: bool,
     /// The engine that made it, as `docker info` prints its id (#4166): only that engine's word
     /// says it was removed. `None` for a runner kept before this, or an engine that prints none.
@@ -561,8 +562,7 @@ pub fn runner_for(config_root: &Path, pool: &str) -> Result<Kept, Refused> {
     let held = load(config_root)?;
     if !held.pools.iter().any(|kept| kept.name() == pool) {
         return Err(Refused::Other(format!(
-            "this workspace's chats run on pool {pool}, which is not on this machine, so \
-             nothing was started"
+            "pool {pool} is not on this machine, so nothing was started"
         )));
     }
     let image = held
@@ -805,7 +805,9 @@ fn limits_in(held: &Held, name: &str) -> Option<PoolLimitsHeld> {
     let cluster = held.clusters.iter().find(|pool| pool.name() == name);
     docker
         .map(|pool| PoolLimitsHeld {
-            chosen: pool.with_shape_in(pool.set.chosen),
+            chosen: pool
+                .with_shape_in(pool.set.chosen)
+                .on_a_runner_of(runner_memory_of(held, pool)),
             refused: pool.refused_limits.clone(),
             docker: true,
         })
@@ -821,6 +823,20 @@ fn limits_in(held: &Held, name: &str) -> Option<PoolLimitsHeld> {
 /// **Pool `name`'s limits as its row holds them**, or why not; no such pool is refused.
 pub fn limits_held_of(config_root: &Path, name: &str) -> Result<PoolLimitsHeld, Refused> {
     limits_in(&load(config_root)?, name).ok_or_else(|| no_such_pool(name))
+}
+
+/// **The memory a Docker pool's runner has**, in MiB (#4396): what its pool says, or less where
+/// the runner new chats start on was made with less and waits to be replaced.
+fn runner_memory_of(held: &Held, pool: &Pool) -> u64 {
+    let says = pool.limits().memory_mib();
+    held.runners
+        .iter()
+        .find(|kept| {
+            kept.pool() == pool.name() && !kept.draining && kept.made.runner.image() == pool.image()
+        })
+        .map_or(says, |kept| {
+            kept.made.runner.limits().memory_mib().min(says)
+        })
 }
 
 fn no_such_pool(name: &str) -> Refused {
@@ -840,9 +856,7 @@ fn limit_may_be(
 ) -> Result<PoolLimitsHeld, Refused> {
     let limits = limits_in(held, name).ok_or_else(|| no_such_pool(name))?;
     if let Some(value) = value {
-        id.limit()
-            .check(value, limits.chosen.team_highest(id))
-            .map_err(Refused::Other)?;
+        limits.chosen.check(id, value).map_err(Refused::Other)?;
     }
     // A runner's own shape is this machine's to make: never a cluster pool's, and checked with
     // the pool's other values, as a new pool's are.

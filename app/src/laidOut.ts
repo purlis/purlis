@@ -30,6 +30,10 @@ export const EVEN = 500;
 /** The whole of a split, in tenths of a percent. */
 export const WHOLE = 1000;
 
+/** What a tab whose first pane is empty is called (#4755), as the empty pane's own button
+ *  says (spec #4750 story 44). */
+export const EMPTY_TAB = "New chat";
+
 /** What a split holds as its first child's share: its own, or even. */
 export function shareOf(layout: Extract<Layout, { kind: "split" }>): number {
   return layout.share ?? EVEN;
@@ -93,6 +97,7 @@ function nodeOf(tabs: Tabs, tab: Tab, layout: Layout, say: Saying): LaidNode {
       b: nodeOf(tabs, tab, layout.children[1], say),
     };
   const content = layout.content;
+  if (content.kind === "empty") return { kind: "empty" };
   if (content.kind === "session") {
     const shown = tab.shows?.[layout.pane] ?? content.session;
     return say.told(shown) ? { kind: "chat", chat: shown } : { kind: "empty" };
@@ -176,6 +181,9 @@ export type PutBack = {
   placed: Set<number>;
   /** The views of pinned tabs that open on a view, as {@link viewKey}s. */
   pinnedViews: string[];
+  /** The chats of pinned tabs that open on a chat (#4762): the pin is the tab's, and a tab is
+   *  pinned by its first pane's chat, as the window reads it. */
+  pinnedChats: number[];
   /** Each strip's front tab, by workspace ({@link OUTSIDE} for the strip outside them). */
   fronts: Record<string, number>;
   /** The tab in front of the strip drawn, where one came back. */
@@ -184,8 +192,9 @@ export type PutBack = {
 
 /**
  * **The record's tabs, as the window draws them** (#4751), added to `tabs`. A pane whose chat
- * did not come back, a chat already in an earlier pane, and an empty pane are left out, and the
- * split that held one gives its place to the other side; a tab left with nothing is not put
+ * did not come back and a chat already in an earlier pane are left out, and the split that held
+ * one gives its place to the other side; an empty pane comes back empty (#4755). A tab left with
+ * nothing is not put
  * back. Each view waits for a press, as a view tab put back always has. The tab in front is
  * left as `tabs` had it: {@link PutBack.inFront} says which to bring forward.
  */
@@ -193,6 +202,7 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
   let next = tabs;
   const placed = new Set<number>();
   const pinnedViews: string[] = [];
+  const pinnedChats: number[] = [];
   const fronts: Record<string, number> = {};
   let inFront: number | undefined;
   const inLayout = new Set(laid.tabs.flatMap((one) => chatsOf(one.tree)));
@@ -217,8 +227,9 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
         };
       }
       let content: Content;
-      if (node.kind === "empty") return undefined;
-      if (node.kind === "chat") {
+      // **An empty pane comes back as one** (#4755): the person's, kept in its place.
+      if (node.kind === "empty") content = { kind: "empty", workspace };
+      else if (node.kind === "chat") {
         const chat = reopening.chat(node.chat);
         if (chat === undefined || placed.has(node.chat)) return undefined;
         placed.add(node.chat);
@@ -256,7 +267,9 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
             name: titles.get(lead) ?? content.view.view,
             defaultName: titles.get(lead) ?? content.view.view,
           }
-        : chatName(content.session, reopening);
+        : content.kind === "empty"
+          ? { name: EMPTY_TAB, defaultName: EMPTY_TAB }
+          : chatName(content.session, reopening);
     const focused = byPath.get(one.focused) ?? lead;
     next = {
       ...next,
@@ -276,10 +289,11 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
     };
     for (const [view, split] of splits) next = setSplit(next, view, split);
     if (one.pinned && content.kind === "view") pinnedViews.push(viewKey(content.view));
+    if (one.pinned && content.kind === "session") pinnedChats.push(content.session);
     if (one.front) fronts[workspace] = id;
     if (one.front && one.window === 0 && one.workspace === laid.strip) inFront = id;
   }
-  return { tabs: next, placed, pinnedViews, fronts, inFront };
+  return { tabs: next, placed, pinnedViews, pinnedChats, fronts, inFront };
 }
 
 /** Every chat in a pane of `node`, in reading order. */

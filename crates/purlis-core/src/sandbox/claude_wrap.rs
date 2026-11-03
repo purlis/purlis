@@ -188,6 +188,7 @@ impl Wrap {
             sandbox: serde_json::json!({ "enabled": false }),
             deny: self.rules.deny.clone(),
             made_empty: Vec::new(),
+            made_folders: Vec::new(),
         }
     }
 

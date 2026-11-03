@@ -221,7 +221,7 @@ export const GATES = {
   // No step of its own greps this one: the job's steps are the scenario legs'. What the Skill
   // studio's outcome bars measure, and the suite and its stand-ins (#4343).
   "outcome-bars":
-    "^(app/src/(Skill|UseSkill|skill|chatSkill|personaSkills)|app/src/ui/list/|app/src-tauri/src/(skill|useskill|personaskills)|crates/skills/|crates/purlis-core/src/(skills|skillspan|skilltools|skilluse)(\\.rs|/)|crates/fake-harness/|app/e2e/(outcomeBars|harness\\.ts|wdio\\.outcome\\.conf|specs/skill-outcome-bars)|\\.github/workflows/ci\\.yml$)",
+    "^(app/src/(Skill|UseSkill|skill|chatSkill|personaSkills)|app/src/ui/list/|app/src-tauri/src/(skill|useskill|personaskills)|crates/skills/|crates/purlis-core/src/(skills|skillspan|skilltools|skilluse)(\\.rs|/)|crates/fake-harness/|app/e2e/(outcomeBars|harness\\.ts|wdio\\.outcome\\.conf|specs/skill-outcome-bars)|Cargo\\.toml$|\\.github/workflows/ci\\.yml$)",
   "bench":
     "^(crates/session-protocol/|Cargo\\.toml$|Cargo\\.lock$|rust-toolchain\\.toml$|fixtures/corpora/|tools/bench\\.mjs$|tools/latency-gate\\.mjs$|\\.github/workflows/ci\\.yml$)",
 };

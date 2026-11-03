@@ -12,6 +12,8 @@ import { expect } from "storybook/test";
 import { ChatsSection } from "./ChatsSection";
 import { ChatsHere, fixedChats, nothingKnown, type ChatStates } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
+import { QuestionsHere } from "./QuestionsHere";
+import type { QuestionsHeld } from "./taskQuestions";
 import { panelRoot } from "./ui/panel/Panel";
 
 /** One chat, a top-level one open in a tab, as the core lists it. */
@@ -39,7 +41,7 @@ function listed(session: number, name: string, over: Partial<ListedChat> = {}): 
 const CHATS: ListedChat[] = [
   listed(1, "working"),
   listed(2, "needs you"),
-  listed(3, "asking", { report: "owed", asking: "steward 1" }),
+  listed(3, "asking", { report: "owed" }),
   listed(4, "failed"),
   listed(5, "unreported", { report: "failed" }),
   listed(6, "done"),
@@ -62,18 +64,27 @@ const STATES: ChatStates = {
   needsYou: [2],
 };
 
+/** Chat 3's question, with its asking chat: the asks registry's, which is where a row reads
+ *  that it is asking (#4564). A minute back, so the row's time holds. */
+const QUESTIONS: QuestionsHeld = {
+  asks: [],
+  with_asking_chat: [{ session: 3, asker: "steward 1", since: Math.floor(Date.now() / 1000) - 60 }],
+};
+
 /** The Chats view in its side panel, as the window's slot draws it. */
 function OneRowPerState() {
   return (
     <ChatsHere.Provider value={fixedChats(STATES)}>
-      <div
-        {...panelRoot("side")}
-        aria-label="Navigation"
-        role="region"
-        style={{ display: "flex", flexDirection: "column", inlineSize: 260, blockSize: 420 }}
-      >
-        <ChatsSection rows={chatsTree(CHATS)} front={1} onOpen={() => {}} />
-      </div>
+      <QuestionsHere.Provider value={QUESTIONS}>
+        <div
+          {...panelRoot("side")}
+          aria-label="Navigation"
+          role="region"
+          style={{ display: "flex", flexDirection: "column", inlineSize: 260, blockSize: 420 }}
+        >
+          <ChatsSection rows={chatsTree(CHATS)} front={1} onOpen={() => {}} />
+        </div>
+      </QuestionsHere.Provider>
     </ChatsHere.Provider>
   );
 }
@@ -107,6 +118,8 @@ export const OneRowPerStateOfAChat: Story = {
       await expect(glyph, name).not.toBeNull();
       await expect(Math.round((glyph as SVGElement).getBoundingClientRect().width), name).toBe(ten);
     }
+    // The asking row wears the asking mark, read from the registry, not the working one.
+    await expect(badgeOf("asking")).toHaveAttribute("data-state", "asking");
     for (const name of ["done", "idle"]) {
       const badge = badgeOf(name);
       await expect(getComputedStyle(badge as HTMLElement).display, name).toBe("none");

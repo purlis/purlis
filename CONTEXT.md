@@ -1806,8 +1806,9 @@ _Avoid_: skill list, catalogue (that is a source's offer)
 
 **Skill level**:
 Where a skill lives, which decides who gets it: project, workspace, persona, repo, local or
-built-in. It is drawn as a tag on each of the studio's rows. It is not the **Level** of
-settings.
+built-in. It is drawn as a tag on each of the studio's rows. On screen the word is never "skill
+level": a skill's page says it under **Where it lives**, and a choice of one, where a skill is
+made, copied or installed, is **Lands in**. It is not the **Level** of settings.
 _Avoid_: level (alone, where settings are near), scope (that is whose chats the studio covers)
 
 **Finish line** (of the Skill studio):
@@ -1843,7 +1844,8 @@ _Avoid_: private skill, draft
 **Grant** (of a project skill):
 A project skill's statement of where it may be used: the plane root only (`root`, the
 default), every workspace (`all`), or a named list. A workspace can turn a granted skill off,
-never on one it was not granted (ADR 0099).
+never on one it was not granted (ADR 0099). On screen it is **Reaches**, on a skill's page and in
+the install review; "grant" is the CLI's word (`purlis skill grant`, `--grant`).
 _Avoid_: permission, share, scope
 
 **Manual-only skill**:
@@ -1886,6 +1888,14 @@ installed from. An installed skill is a pinned copy, updated only through a revi
 (ADR 0100). It is not a **marketplace**.
 _Avoid_: marketplace, registry, feed
 
+**Install review**:
+The page that shows what installing a skill from a skill source would add before anything is
+copied: where it **Lands in**, where it **Reaches**, what it adds, its files and what comes along
+(ADR 0100). **Review install** opens it, and **Install** is its one way on. On screen its heading
+is **Install** _<skill>_ **from** _<source>_, or **Install** _N skills_ **from** _<source>_ for
+Install all; "install review" is the docs' and the changelog's name for it, never a heading.
+_Avoid_: install dialog, install preview
+
 **Marketplace**:
 The listing service of packs, extensions and personas (M47). A skill source is not a
 marketplace.
@@ -1908,10 +1918,12 @@ limit it cannot move. Past it, the skill router hides skills behind the index sk
 _Avoid_: context budget (for this), skill limit
 
 **Use skill…**:
-Picking one of a chat's skills, from the palette, the chat's tab menu or the Skills chip on its
-pane, and having it typed into the chat in its harness's syntax, with the arguments the skill
+Picking one of a chat's skills, from the chat's actions (its pane's ⋯, its sidebar row's ⋯ and
+right-click, and the palette's row for it) or ⌘⇧S, and having it typed into the chat in its harness's syntax, with the arguments the skill
 declares, for the person to send. It lists exactly that chat's skill set, manual-only skills
-included, and its run starts when that prompt is sent (#2775). A skill the skill router hid
+included, and its run starts when that prompt is sent (#2775). **Use in this chat**, on a Skills
+view card's menu and a skill's page, opens it on that one skill. The Skills chip no longer opens
+it: it shows the chat in the Skills view (#3694). A skill the skill router hid
 behind the index skill is typed as a request to load it with `skill_load`, and its run starts
 with that load (#2778).
 _Avoid_: skill picker (for the act), run skill, invoke

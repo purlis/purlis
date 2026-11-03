@@ -1,0 +1,60 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* The checks family's default look (`Checks.tsx`): tokens only, so light, dark and themes follow. */
+
+[data-scope="checks"][data-part="root"] {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  color: var(--text-primary);
+  list-style: none;
+}
+
+[data-scope="checks"][data-part="item"] {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-body);
+}
+
+[data-scope="checks"][data-part="mark"] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-5);
+  height: 1.5em;
+  color: var(--text-muted);
+}
+
+[data-scope="checks"][data-part="item"][data-variant="ok"] [data-part="mark"] {
+  color: var(--state-success);
+}
+
+[data-scope="checks"][data-part="item"][data-variant="missing"] [data-part="mark"] {
+  color: var(--state-failed);
+}
+
+[data-scope="checks"][data-part="item"][data-variant="warn"] [data-part="mark"] {
+  color: var(--state-waiting);
+}
+
+[data-scope="checks"][data-part="words"] {
+  flex: 1;
+  min-width: 0;
+}
+
+[data-scope="checks"][data-part="more"] {
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="checks"][data-part="trail"] {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}

@@ -104,6 +104,17 @@ fn project_sandbox(
         .map_err(|not| not.said(&locks))
 }
 
+/// **What a chat's start puts on a pool's Claim by** (#4536, the person's ruling of 2026-11-02):
+/// its own choice of where it runs where the person made it in the window, the levels where it
+/// chose nothing, and nothing at all where a dispatch chose for it (`None`).
+pub(crate) fn claim_follows(chat: &Chat) -> Option<Option<&purlis_core::machine::StartChoice>> {
+    match (&chat.runs_on, &chat.from) {
+        (None, _) => Some(None),
+        (Some(start), None) => Some(Some(start)),
+        (Some(_), Some(_)) => None,
+    }
+}
+
 /// The workspace of the project at `root` a chat started in `cwd` works in, read once as it
 /// starts (#1333): `None` at the project root or outside it. Against the app's own project,
 /// never a root found from `cwd`: a clone carrying a manifest of its own would read as a
@@ -1611,6 +1622,7 @@ impl Chats {
         why: String,
         profile: Option<&str>,
         workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
     ) -> String {
         if !purlis_core::profilestore::sign_in::is_refusal(&why) {
             return why;
@@ -1618,7 +1630,7 @@ impl Chats {
         let (Some(on_pools), Some(profile), Some(pool)) = (
             &self.profiles_on_pools,
             profile,
-            self.sessions.pool_for(workspace),
+            self.sessions.pool_for(workspace, start),
         ) else {
             return why;
         };
@@ -1844,6 +1856,7 @@ impl Chats {
         &self,
         id: &str,
         workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
         sign_in: Option<&purlis_core::profilesignin::AtStart>,
     ) -> Result<OwnRunnerOrNot, String> {
         use purlis_core::clusterpool::{ChatOnARunner, Keeping, kept_for};
@@ -1863,9 +1876,11 @@ impl Chats {
                 stays_because: None,
             });
         }
-        let (Some(config), Some(workspace), Some(pool)) =
-            (&self.pools_in, workspace, self.sessions.pool_for(workspace))
-        else {
+        let (Some(config), Some(workspace), Some(pool)) = (
+            &self.pools_in,
+            workspace,
+            self.sessions.pool_for(workspace, start),
+        ) else {
             return Ok(OwnRunnerOrNot::default());
         };
         let Ok(Some((held, _))) = purlis_core::runners::cluster_runner_for(config, &pool) else {
@@ -1908,6 +1923,7 @@ impl Chats {
         &self,
         _id: &str,
         _workspace: Option<&str>,
+        _start: Option<&purlis_core::machine::StartChoice>,
         _sign_in: Option<&purlis_core::profilesignin::AtStart>,
     ) -> Result<OwnRunnerOrNot, String> {
         Ok(OwnRunnerOrNot::default())
@@ -2362,7 +2378,8 @@ impl Chats {
             return true;
         }
         let workspace = workspace_at_start(Some(&self.project), chat.cwd.as_deref());
-        self.sessions.left_running_in(number, workspace.as_deref())
+        self.sessions
+            .left_running_as_started(number, workspace.as_deref(), chat.runs_on.as_ref())
     }
 
     /// Reattaches `chat` as its record has it, where what a start reads of it now refuses
@@ -4086,9 +4103,30 @@ impl Chats {
         // One that names a pool this machine does not keep starts nowhere, in words, and is
         // never run on this machine instead.
         let workspace = workspace_at_start(Some(&self.project), chat.cwd.as_deref());
+        // A start's own choice comes first (#4536): one for a pool that is gone, stopped or not
+        // reached starts nothing, and is offered this machine only by the person's press.
         #[cfg(unix)]
         if !reattaching && let Some(config) = &self.pools_in {
-            purlis_core::pools::runs_on(config, &self.project, workspace.as_deref())?;
+            purlis_core::pools::chat_place(
+                config,
+                &self.project,
+                workspace.as_deref(),
+                chat.runs_on.as_ref(),
+            )
+            .map_err(|why| {
+                // In a workspace, a refusal here is the pool its level names not being kept. At
+                // the project's root it is the root's own rule, and no pool is unavailable.
+                let named = workspace.as_deref().and_then(|workspace| {
+                    purlis_core::machine::read(config)
+                        .store
+                        .chat_place(&self.project, workspace, chat.runs_on.as_ref())
+                        .pool
+                });
+                match named {
+                    Some(pool) => crate::poolprofiles::unavailable(&pool, why),
+                    None => why,
+                }
+            })?;
         }
         // **A harness chat on a runner is started by its names** (#2446): the runner composes
         // it, with the sandbox, hooks and line it makes for itself, and writes its run and its
@@ -4099,7 +4137,7 @@ impl Chats {
             && harness.is_some()
             && (self
                 .sessions
-                .composes_its_harness_chats_in(workspace.as_deref())
+                .composes_its_harness_chats_in(workspace.as_deref(), chat.runs_on.as_ref())
                 // Its own runner, wherever its workspace runs since (#4569).
                 || chat
                     .identity
@@ -4128,8 +4166,8 @@ impl Chats {
         // composes its own line, and would start it with none of them.
         if on_the_runner && chat.graded {
             return Err(
-                "A grade's chat runs on this machine alone, and this project's chats are started \
-                 by a runner, so nothing was started."
+                "A grade's chat runs on this machine alone, and this chat would start on a \
+                 pool's runner, so nothing was started."
                     .to_owned(),
             );
         }
@@ -4144,7 +4182,12 @@ impl Chats {
         let mut stays_on_the_pools = None;
         let own_runner = match (&mut own_start, identity.id.as_deref()) {
             (Some(start), Some(id)) => {
-                let chosen = self.fresh_runner_for(id, workspace.as_deref(), sign_in)?;
+                let chosen = self.fresh_runner_for(
+                    id,
+                    workspace.as_deref(),
+                    chat.runs_on.as_ref(),
+                    sign_in,
+                )?;
                 stays_on_the_pools = chosen.stays_because;
                 start.made = chosen.own.as_ref().is_some_and(|own| own.made);
                 chosen.own.map(|own| own.name)
@@ -4178,7 +4221,10 @@ impl Chats {
                 .as_deref()
                 .and_then(|runner| runner.split_once('/'))
                 .map(|(pool, _)| pool.to_owned())
-                .or_else(|| self.sessions.pool_for(workspace.as_deref()))
+                .or_else(|| {
+                    self.sessions
+                        .pool_for(workspace.as_deref(), chat.runs_on.as_ref())
+                })
         {
             match &own_runner {
                 Some(runner) => {
@@ -4836,16 +4882,22 @@ impl Chats {
         let mut clones_at_start = (on_the_runner && !reattaching)
             .then(|| purlis_core::forge::apptoken::clones_now(&self.project));
         // Before the program is started, so its first mint covers them (#4331).
+        // **A start's own choice widens a Claim only where the person made it in the window**
+        // (#4536, the person's ruling of 2026-11-02): a dispatched chat that names where it runs
+        // puts nothing on any Claim, and its mints go to the person.
         #[cfg(unix)]
-        self.puts_its_repos_on_its_claim(
-            workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
-            chat.cwd.as_deref(),
-            own_runner.as_deref(),
-            // A start its runner is sure to refuse adds nothing to the Claim.
-            clones_at_start
-                .as_deref()
-                .filter(|_| !runner_without_sandbox),
-        );
+        if let Some(start) = claim_follows(chat) {
+            self.puts_its_repos_on_its_claim(
+                workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
+                start,
+                chat.cwd.as_deref(),
+                own_runner.as_deref(),
+                // A start its runner is sure to refuse adds nothing to the Claim.
+                clones_at_start
+                    .as_deref()
+                    .filter(|_| !runner_without_sandbox),
+            );
+        }
         let opened = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.reattach(number, &announce),
             _ if on_the_runner => self
@@ -4865,6 +4917,7 @@ impl Chats {
                         // A person's own opt-out, which a runner takes from no link but its own
                         // window's: such a start is refused there, never run sandboxed silently.
                         without_sandbox: runner_without_sandbox,
+                        runs_on: chat.runs_on.clone(),
                         // A chat held from its persona's grants is armed with none of them.
                         tools_allowed: runs_as.as_deref().filter(|_| chat.held.is_none()).and_then(
                             |persona| {
@@ -4898,7 +4951,12 @@ impl Chats {
                     composed.number
                 })
                 .map_err(|why| {
-                    self.in_the_pools_words(why, chat.profile.as_deref(), workspace.as_deref())
+                    self.in_the_pools_words(
+                        why,
+                        chat.profile.as_deref(),
+                        workspace.as_deref(),
+                        chat.runs_on.as_ref(),
+                    )
                 }),
             _ => self.sessions.open(
                 // The number this chat already answers to, where it has one. A chat put
@@ -5245,34 +5303,9 @@ impl Chats {
         self.looked_at().contains(&session)
     }
 
-    /// Pins or unpins one chat, and writes the record so the pin outlives the app.
-    ///
-    /// **A chat charter does not have open cannot be pinned**, and the answer says so rather
-    /// than inventing an entry: a pin is an arrangement of what is there, and the record is
-    /// the only thing that says a chat exists at all (ADR 0040). It follows that a
-    /// pinned chat that does not come back at a launch takes its pin with it, which is the
-    /// dangling-pin question answered by there being nowhere for one to dangle.
-    ///
-    /// Nothing is written when nothing changed, for the reason `bring_to_front` gives: the
-    /// record is rewritten on every write, and a write is a fingerprint the machine store
-    /// then has to vouch for.
-    pub fn pin(&self, session: u32, pinned: bool) -> Result<(), String> {
-        let mut open = lock(&self.open);
-        let Some(one) = open.get_mut(&session) else {
-            return Err(format!("purlis has no chat {session} open to pin."));
-        };
-        if one.chat.pinned == pinned {
-            return Ok(());
-        }
-        one.chat.pinned = pinned;
-        drop(open);
-        self.write_it_down();
-        Ok(())
-    }
-
     /// The person opened chat `session`'s tab (#1447, #1489): a task chat, listed until now,
     /// has a tab from here on, across a reload and a relaunch, until it is sent back
-    /// ([`Self::close_tab`]). Written only when it changes, for [`Self::pin`]'s reason, and
+    /// ([`Self::close_tab`]). Written only when it changes, for [`Self::lay_out`]'s reason, and
     /// only for a chat that had none.
     pub fn open_tab(&self, session: u32) -> Result<(), String> {
         let mut open = lock(&self.open);
@@ -5326,8 +5359,9 @@ impl Chats {
     ///
     /// **Refused whole, saying why**, where it names a chat in two panes, across every tab and
     /// window (a chat is shown once), or a chat that is not open here: one still being put
-    /// back at a launch is open. A refusal changes nothing. Written only when it changes, for
-    /// [`Self::pin`]'s reason.
+    /// back at a launch is open. A refusal changes nothing. Written only when it changes: the
+    /// record is rewritten on every write, and a write is a fingerprint the machine store then
+    /// has to vouch for.
     ///
     /// **What is kept is the window's word, and it says only where the person is looking**: the
     /// core starts and allows nothing by these numbers. A reported task's end, already due, is
@@ -5354,6 +5388,16 @@ impl Chats {
                 ));
             }
         }
+        // **The pin is the tab's from here on** (#4762): a chat's own, read from a record
+        // written before tabs were recorded, was the window's to carry onto its tab, and this
+        // layout carries it. It retires, so a chat started again does not bring back a pin
+        // its tab no longer has.
+        for one in lock(&self.coming).iter_mut() {
+            one.chat.pinned = false;
+        }
+        for running in lock(&self.open).values_mut() {
+            running.chat.pinned = false;
+        }
         let held = Some(layout.held());
         let changed = std::mem::replace(&mut *lock(&self.layout), held.clone()) != held;
         if changed {
@@ -5375,7 +5419,7 @@ impl Chats {
     /// (`Chat::name`), so a rename never reaches a program that is running. The name is held to
     /// [`purlis_core::reopen::label`], and a refusal changes nothing and says why.
     ///
-    /// Nothing is written when nothing changed, for [`Self::pin`]'s reason.
+    /// Nothing is written when nothing changed, for [`Self::lay_out`]'s reason.
     pub fn rename(&self, session: u32, raw: &str) -> Result<Option<String>, String> {
         let label = purlis_core::reopen::label(raw)?;
         let mut open = lock(&self.open);
@@ -5409,6 +5453,12 @@ impl Chats {
         lock(&self.open).get(&session)?.harness
     }
 
+    /// What `session` was started as, where charter has it open: its harness, or `None` inside
+    /// for a shell. The outer `None` is a chat charter does not have open.
+    pub fn started_as(&self, session: u32) -> Option<Option<Harness>> {
+        lock(&self.open).get(&session).map(|one| one.harness)
+    }
+
     /// What chat `session`'s pane sends for Shift+Enter (SI-4): the `[terminal] newline` of the
     /// declaration it started on, a project's or this machine's (#967, #968), else its
     /// harness's newline ([`Harness::newline`]), and none for a shell, a declaration that names
@@ -5421,6 +5471,18 @@ impl Chats {
             (None, Some(harness)) => Some(harness.newline().to_owned()),
             (None, None) => None,
         }
+    }
+
+    /// **Sets where chat `session`'s start chose to run it**, answering what it was (#4536): a
+    /// move takes a chat where its workspace now runs, so its one-off choice goes with the move.
+    pub fn choose_runs_on(
+        &self,
+        session: u32,
+        runs_on: Option<purlis_core::machine::StartChoice>,
+    ) -> Option<purlis_core::machine::StartChoice> {
+        let mut open = lock(&self.open);
+        let chat = &mut open.get_mut(&session)?.chat;
+        std::mem::replace(&mut chat.runs_on, runs_on)
     }
 
     /// The handoff `session` was opened by, where one opened it.
@@ -5824,7 +5886,7 @@ impl Chats {
     /// **The board has already judged it.** This is told only what `Board::reported` adopted
     /// or followed (`Hooks::when_it_follows`), so a nested harness's report never gets here.
     ///
-    /// Written down only when the record would change, for [`Self::pin`]'s reason. Nothing for
+    /// Written down only when the record would change, for [`Self::lay_out`]'s reason. Nothing for
     /// a chat that runs no harness: a shell tab is resumed by nothing, whatever ran in it.
     ///
     /// **A report that arrives before the chat is remembered here is not kept**, which no
@@ -5866,7 +5928,7 @@ impl Chats {
     /// **Only the chat's own harness** ([`its_own_model`]): `now` is the conversation the board
     /// holds for the chat after it took `report`, and a report the board did not take as the
     /// chat's own, a sub-agent's, or any event but a `SessionStart` is no model. Written down
-    /// only when the model changed, for [`Self::pin`]'s reason.
+    /// only when the model changed, for [`Self::lay_out`]'s reason.
     pub fn heard_model(&self, report: &purlis_core::hookwire::Report, now: Option<&str>) {
         let Some(model) = its_own_model(report, now) else {
             return;
@@ -5887,7 +5949,7 @@ impl Chats {
     }
 
     /// What the window says its view tabs are now. Written down when it differs from what was
-    /// held, and not otherwise — for [`Self::pin`]'s reason: every write is a fingerprint the
+    /// held, and not otherwise — for [`Self::lay_out`]'s reason: every write is a fingerprint the
     /// machine store then has to vouch for.
     pub fn hold_views(&self, views: Vec<View>) {
         let changed = std::mem::replace(&mut *lock(&self.views), views.clone()) != views;
@@ -5947,7 +6009,7 @@ impl Chats {
     /// What order the window's strip now draws the chats in, by session (SI-6).
     ///
     /// Written down when the order the record would list them in moves, and not otherwise —
-    /// for [`Self::pin`]'s reason. Not when the list said differs from the one held: the window
+    /// for [`Self::lay_out`]'s reason. Not when the list said differs from the one held: the window
     /// says it after every change to its tabs, and a chat it has just opened is already last.
     pub fn hold_order(&self, sessions: Vec<u32>) {
         let was = self.in_order();
@@ -6289,6 +6351,7 @@ impl Chats {
     fn puts_its_repos_on_its_claim(
         &self,
         workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
         folder: Option<&std::path::Path>,
         own_runner: Option<&str>,
         clones: Option<&[purlis_core::forge::apptoken::Started]>,
@@ -6299,8 +6362,10 @@ impl Chats {
         // The Claim of the runner it runs on: a chat's fresh runner has one of its own (#4569).
         let pool = match own_runner {
             Some(runner) => runner.to_owned(),
-            None => match purlis_core::pools::runs_on(config, &self.project, workspace) {
-                Ok(Some(pool)) => pool,
+            None => match purlis_core::pools::chat_place(config, &self.project, workspace, start) {
+                Ok(purlis_core::machine::ChatPlace {
+                    pool: Some(pool), ..
+                }) => pool,
                 _ => return,
             },
         };
@@ -6498,6 +6563,8 @@ impl Chats {
                 Chat {
                     shows: None,
                     beside: None,
+                    // The tab holds the pin (#4762).
+                    pinned: false,
                     ..chat
                 }
             } else {

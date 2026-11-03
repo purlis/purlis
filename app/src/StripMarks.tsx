@@ -9,6 +9,7 @@ import {
   ChevronDown,
   FolderOpen,
   FolderPlus,
+  Hand,
   Minus,
   PanelRight,
   Pin as PinMark,
@@ -43,7 +44,10 @@ import { tabPart } from "./ui/tabs/Tabs";
 export function closesOnly(does: Offer["does"]): boolean {
   // A task sent back out of its tab or pane ends nothing either (#1489).
   if (does.verb === "sendBack") return true;
-  return (does.verb === "closeTab" || does.verb === "closePane") && !does.ends;
+  return (
+    (does.verb === "closeTab" || does.verb === "closePane" || does.verb === "closeOtherTabs") &&
+    !does.ends
+  );
 }
 
 /** A button that IS a row of the catalogue: its words, its availability and its reason.
@@ -286,6 +290,9 @@ export function ShowMore({
         onKeyDown={opensOnTheArrows(open !== false, setOpen)}
       >
         {`${hidden.length} more`}
+        {/* ✋ when a tab behind it asks (#4762, `prototype/narrow-window`): the hand every
+            chat that asks wears, beside how many do. Its words are the button's name. */}
+        {needs > 0 && <Hand data-mark="asks" aria-hidden="true" />}
         {needs > 0 && <Count variant="hot">{needs}</Count>}
         <ChevronDown />
       </Button>

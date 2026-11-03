@@ -420,6 +420,7 @@ fn as_a_task(
         profile: None,
         place: Some(&place),
         long: false,
+        runs_on: crate::dispatch::RunsOn::default(),
     };
     match crate::dispatch::send(here, persona, &task, brief, &options, None) {
         Ok(said) => {
@@ -692,6 +693,7 @@ fn in_the_app(
             | Answer::Working(_)
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
+            | Answer::HeldToMove { .. }
             | Answer::Task(_),
         )
         | Err(_) => Host::None,
@@ -742,6 +744,7 @@ pub(crate) fn ticketed() -> Ticketed {
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }
+            | Answer::HeldToMove { .. }
             | Answer::WaitingOnMemory { .. }
             | Answer::Task(_),
         )

@@ -215,7 +215,8 @@ pub(super) fn clone_git_config(d: &Doctor) -> Option<Row> {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
             let at = super::one_line(&format!("{ws}/{name}"), super::DISPLAY_LIMIT);
-            let shown = super::one_line(&clone.display().to_string(), super::DISPLAY_LIMIT);
+            // A word of the command the hint suggests, so quoted and never shortened (#4830).
+            let shown = crate::shown::shell_path(&clone);
             // git answers 0 where a key matches and 1 where none does; anything else is a
             // config it could not read.
             match git_in(

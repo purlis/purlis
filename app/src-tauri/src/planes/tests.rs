@@ -6321,7 +6321,7 @@ fn a_program_the_host_says_has_failed_is_failed_on_the_board_and_the_window_is_t
 
 #[test]
 fn a_tab_moved_writes_its_record_behind_the_window_and_the_close_writes_the_last() {
-    // #1949: a chat's tab pinned, moved or brought to the front changes the project's
+    // #1949: a chat renamed, its tab moved or brought to the front changes the project's
     // record, a synced file and a vouch in this machine's store. With the store held by
     // another writer, the change still answers at once; the close writes the last record
     // after it, and that is what is on disk.
@@ -6365,24 +6365,27 @@ fn a_tab_moved_writes_its_record_behind_the_window_and_the_close_writes_the_last
     });
     held_now.recv().expect("the store is held");
 
-    let pinning = std::thread::spawn({
+    let renaming = std::thread::spawn({
         let held = Arc::clone(&held);
-        move || held.chats().pin(session, true)
+        move || held.chats().rename(session, "the build")
     });
     let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while !pinning.is_finished() && std::time::Instant::now() < until {
+    while !renaming.is_finished() && std::time::Instant::now() < until {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    let answered = pinning.is_finished();
+    let answered = renaming.is_finished();
     release.send(()).expect("let go");
     other.join().expect("the other writer ends");
-    pinning.join().expect("pinned").expect("it pins");
-    assert!(answered, "the pin waited for the store's write");
+    renaming.join().expect("renamed").expect("it renames");
+    assert!(answered, "the rename waited for the store's write");
 
     planes.close(&plane).expect("it closes");
     let on_disk = reopen::read_or_refusal(&root).expect("the record reads");
     assert!(
-        on_disk.chats.iter().any(|chat| chat.pinned),
+        on_disk
+            .chats
+            .iter()
+            .any(|chat| chat.label.as_deref() == Some("the build")),
         "the last record is not the one on disk: {on_disk:?}"
     );
 }

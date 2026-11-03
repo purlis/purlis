@@ -121,7 +121,7 @@ describe("what a menu lists", () => {
     const tabs = openTab(noTabs(), 7, "3 steward");
     // A tab's own rows (#4753), and its close.
     const tab = titles({ on: "tab", tab: 1 }, { tabs });
-    expect(tab.above).toEqual(["Switch to tab 3 steward", "Pin chat 3 steward"]);
+    expect(tab.above).toEqual(["Switch to tab 3 steward", "Pin tab 3 steward"]);
     expect(tab.below).toEqual(["End chat 3 steward"]);
     // The chat's own list: its Activity only reads (#1495), and End… ends it.
     const chat = titles({ on: "chat", session: 7 }, { tabs });

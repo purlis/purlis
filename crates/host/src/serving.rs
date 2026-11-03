@@ -59,9 +59,10 @@ pub type Answering = Arc<dyn Fn() -> Result<Option<(Identity, Pinned)>, String> 
 pub type Unpairing = Arc<dyn Fn(&Pinned) -> Result<(), String> + Send + Sync>;
 
 /// Keeps a profile for the desktop a link proved, on the runner (`keep_profile`, 1.43, #2049),
-/// and says whether its harness says it is signed in there.
+/// and says whether its harness says it is signed in there. The profile is handed over whole, so
+/// its settings are held once (#4396).
 pub type Keeping = Arc<
-    dyn Fn(&Pinned, &session::ProfileToKeep) -> Result<session::ProfileStanding, String>
+    dyn Fn(&Pinned, session::ProfileToKeep) -> Result<session::ProfileStanding, String>
         + Send
         + Sync,
 >;
@@ -387,7 +388,7 @@ impl PairedLink {
             profile.settings = Some(staged.finished(&profile.name, files).map_err(refused)?);
         }
         let (keeping, desktop) = (Arc::clone(&self.keeping), self.desktop.clone());
-        tokio::task::spawn_blocking(move || keeping(&desktop, &profile))
+        tokio::task::spawn_blocking(move || keeping(&desktop, profile))
             .await
             .unwrap_or_else(|why| Err(format!("the profile was not kept: {why}")))
             .map(|standing| session::Answer::ProfileKept { standing })

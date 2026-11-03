@@ -23,6 +23,8 @@ import {
   type StartOptions,
   type WithoutSandbox,
   type RunnerStage,
+  type RunsOnPick,
+  type StartRunsOn,
 } from "./bindings";
 import { useChatsHere } from "./chatState";
 import { profileCommand, profilePage } from "./settings/profileAddress";
@@ -36,6 +38,7 @@ import { HarnessIcon, ownIconsOf } from "./ui/harness-icon/HarnessIcon";
 import { ListBox, ListOption } from "./ui/list/List";
 import { FILTERED_FROM, ListFilter, noMatchSaid, type Noun } from "./ui/list/ListFilter";
 import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
+import { Select } from "./ui/select/Select";
 import { reachableWords, startAnswer } from "./StartChatApproval";
 import { RaiseLimit } from "./RaiseLimit";
 
@@ -58,6 +61,11 @@ const SAYS_THE_HOST_AFTER_MS = 3000;
 
 /** How often a waiting start asks where its runner has got to (#3709). */
 const ASKS_THE_STAGE_EVERY_MS = 3000;
+
+/** The Runs on choice that follows the levels: `@` starts no pool's name. */
+const AS_SET = "@as-set";
+/** The Runs on choice of this machine for this start: no pool's name is empty. */
+const HERE = "";
 
 /**
  * What a new chat asks before anything runs.
@@ -170,6 +178,9 @@ export function StartChat({
   fixing = false,
   onFix,
   onOpenSettings,
+  runsOn,
+  poolUnavailable,
+  onPoolSetup,
   onCancel,
 }: {
   options: StartOptions;
@@ -181,7 +192,7 @@ export function StartChat({
    *  because a second press was a second chat (GL-1). */
   starting?: boolean;
   /** Where the runner of this start has got to, asked while it waits (#3709). */
-  readStage?: () => Promise<RunnerStage | undefined>;
+  readStage?: (runsOn: RunsOnPick | null) => Promise<RunnerStage | undefined>;
   /**
    * The harness (a profile's `kind`) to start on, when something already knows which one is
    * wanted — a harness started by hand in a shell tab, opened as a chat instead (ADR 0062).
@@ -205,7 +216,9 @@ export function StartChat({
   onRaiseLimit?: (values: ReadonlyArray<readonly [string, number]>) => Promise<boolean>;
   /** `label` is the Name field, or `null` when it was left empty. `newBranch` is the branch
    *  box, and `false` when there is none to tick. `withoutSandbox` is the person's opt-out for
-   *  this chat, with the reason typed, or `null` for a sandboxed start. */
+   *  this chat, with the reason typed, or `null` for a sandboxed start. `runsOn` is the Runs on
+   *  row's choice for this start alone (#4536), a pool or this machine (`{ pool: null }`), and
+   *  is left out while the row follows the levels. */
   onStart: (
     profile: string,
     persona: string | null,
@@ -213,6 +226,7 @@ export function StartChat({
     label: string | null,
     newBranch: boolean,
     withoutSandbox: WithoutSandbox | null,
+    runsOn?: RunsOnPick | null,
   ) => void;
   /** The profile, the persona, the footer choice, and the exact line the operator read — so
    *  the approval is for what was on screen and not for whatever the file says by the time
@@ -225,6 +239,7 @@ export function StartChat({
     label: string | null,
     newBranch: boolean,
     withoutSandbox: WithoutSandbox | null,
+    runsOn?: RunsOnPick | null,
   ) => void;
   /** SD-30's install action: the window opens a shell tab at the project root with the
    *  install command typed and not run (ruling V78 c). Absent, the command is only shown. */
@@ -237,6 +252,14 @@ export function StartChat({
   /** Opens Settings at a group (SE-22's address), with the setting to focus there: where a
    *  refused profile is mended (NO-8, #1296). */
   onOpenSettings?: (group: string, setting?: string) => void;
+  /** Where a new chat here would run and which level says so (#4536): the Runs on row. Absent,
+   *  no row is drawn. */
+  runsOn?: StartRunsOn;
+  /** The pool the last attempt was to run on, where it is gone, stopped or not reached: beside
+   *  `trouble`, the picker offers Try again, Pool setup and Run on this machine this once. */
+  poolUnavailable?: string;
+  /** Opens Pool setup, where a pool is added or mended. Absent, it is not offered. */
+  onPoolSetup?: () => void;
   onCancel: () => void;
 }) {
   // Only a persona there is a row for. The core already filters `[persona] default`
@@ -346,12 +369,15 @@ export function StartChat({
     };
   }, [starting]);
   const [stage, setStage] = useState<RunnerStage | undefined>();
+  /** Where the start in flight chose to run, which its stage line is read for. */
+  const [startedOn, setStartedOn] = useState<RunsOnPick | undefined>();
   useEffect(() => {
     if (!hostSlow || readStage === undefined) return;
     let left = false;
     let next: number | undefined;
     const ask = async () => {
-      const read = await readStage();
+      // Of the place this start chose (#4536), or the levels' where it chose none.
+      const read = await readStage(startedOn ?? null);
       if (left) return;
       setStage(read);
       // The next is asked after this one answers: a slow cluster is never asked twice at once.
@@ -363,21 +389,44 @@ export function StartChat({
       window.clearTimeout(next);
       setStage(undefined);
     };
-  }, [hostSlow, readStage]);
+  }, [hostSlow, readStage, startedOn]);
+  // **Runs on, for this start alone** (#4536): the levels' answer until the person picks a pool
+  // or this machine here. It never writes a setting, and is not remembered between chats. A chat
+  // at the project's root runs here, so it is offered no choice.
+  const [runsOnChoice, setRunsOnChoice] = useState(AS_SET);
+  const runsOnPick: RunsOnPick | undefined =
+    runsOn === undefined || runsOn.at_root || runsOnChoice === AS_SET
+      ? undefined
+      : { pool: runsOnChoice === HERE ? null : runsOnChoice };
   const cancelled = useRef(false);
   const leave = () => {
     cancelled.current = true;
     onCancel();
   };
-  const start = () => {
+  // `thisOnce` is Run on this machine this once, beside a pool that could not be reached: it
+  // goes with this press alone and leaves the row's choice as it was.
+  const start = (thisOnce?: RunsOnPick) => {
+    const pick = thisOnce ?? runsOnPick;
+    setStartedOn(pick);
+    // Left out while the row follows the levels, so a start that chose nothing says nothing.
+    const where: [] | [RunsOnPick] = pick === undefined ? [] : [pick];
     if (picked?.approval) {
       if (picked.harness) noteHarness(picked.harness.name);
-      onApprove(picked.name, persona, showFooter, picked.shown, label, newBranch, withoutSandbox);
+      onApprove(
+        picked.name,
+        persona,
+        showFooter,
+        picked.shown,
+        label,
+        newBranch,
+        withoutSandbox,
+        ...where,
+      );
       return;
     }
     if (!profile) return;
     if (picked?.harness) noteHarness(picked.harness.name);
-    onStart(profile, persona, showFooter, label, newBranch, withoutSandbox);
+    onStart(profile, persona, showFooter, label, newBranch, withoutSandbox, ...where);
   };
   const approves = Boolean(picked?.approval);
   const unavailable = (approves ? !picked : !profile) || blockedByPolicy;
@@ -445,7 +494,10 @@ export function StartChat({
     if (event.key !== "Enter") return;
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
-    const row = target.closest<HTMLElement>('[role="option"][data-key]');
+    // A persona row, and never a Runs on option: its list is drawn over the page, but its keys
+    // still pass through here.
+    const option = target.closest<HTMLElement>('[role="option"][data-key]');
+    const row = option !== null && list.current?.contains(option) ? option : null;
     const filterBox = target instanceof HTMLInputElement && target.type === "search";
     const card = target instanceof HTMLInputElement && target.type === "radio";
     if (!row && !filterBox && !card) return;
@@ -511,6 +563,8 @@ export function StartChat({
   const harnessLabel = useId();
   const nameLabel = useId();
   const whoId = useId();
+  const runsOnLabel = useId();
+  const runsOnWhy = useId();
   const who = persona ?? "No persona";
 
   // **The persona picked**, said once at the top of the details: what it says of itself
@@ -576,7 +630,7 @@ export function StartChat({
         starting: starting || savingLimit,
         unavailable,
         reach,
-        onPress: start,
+        onPress: () => start(),
       })}
     >
       <div
@@ -680,6 +734,22 @@ export function StartChat({
                 <Button onPress={onShowSignIn}>Go to the Inbox</Button>
               </p>
             )}
+            {/* A pool that could not be reached (#4536): nothing started, and nothing moves to this
+              machine unless the person says so, for this start alone. */}
+            {trouble && poolUnavailable !== undefined && (
+              <div className="start-chat-offers">
+                <Button isDisabled={starting || savingLimit || unavailable} onPress={() => start()}>
+                  Try again
+                </Button>
+                {onPoolSetup && <Button onPress={onPoolSetup}>Pool setup…</Button>}
+                <Button
+                  isDisabled={starting || savingLimit || unavailable}
+                  onPress={() => start({ pool: null })}
+                >
+                  Run on this machine this once
+                </Button>
+              </div>
+            )}
             {trouble && limitOffer !== undefined && onRaiseLimit && raises && (
               <RaiseLimit
                 // A later refusal's suggestion is a form afresh.
@@ -757,6 +827,22 @@ export function StartChat({
           {/* The picked harness's card, at a glance (HP-19): what it runs at and lacks, before
             anything starts. Its whole card is a tab, opened from the chat's header. */}
           {picked?.harness && <HarnessSummary glance={picked.harness} />}
+
+          {runsOn !== undefined && (
+            <section className="start-chat-section" aria-labelledby={runsOnLabel}>
+              <h3 className="start-chat-label" id={runsOnLabel}>
+                Runs on
+              </h3>
+              <RunsOnRow
+                runsOn={runsOn}
+                choice={runsOnChoice}
+                onChoose={setRunsOnChoice}
+                labelId={runsOnLabel}
+                whyId={runsOnWhy}
+                onPoolSetup={onPoolSetup}
+              />
+            </section>
+          )}
 
           <div className="start-chat-section">
             <label className="start-chat-label" htmlFor={nameLabel}>
@@ -887,6 +973,88 @@ export function StartChat({
         </section>
       </div>
     </Dialog>
+  );
+}
+
+/** A pool, as the Runs on row names it inside a sentence and on its own. */
+const poolSaid = (pool: string | null) => (pool === null ? "this machine" : `pool ${pool}`);
+const capital = (said: string) => said.charAt(0).toUpperCase() + said.slice(1);
+
+/**
+ * **Why a new chat runs where the levels put it** (#4536): the workspace's own setting, the
+ * project's, or no pool set at either.
+ */
+export function runsOnReason(runsOn: StartRunsOn): string {
+  if (runsOn.at_root) return "This machine. A chat at the project's root always runs here.";
+  const place = capital(poolSaid(runsOn.pool));
+  switch (runsOn.level) {
+    case "workspace":
+      return `${place}, as this workspace's chats run.`;
+    case "project":
+      return `${place}, as this project's chats run.`;
+    case "this_machine":
+      return "This machine: no pool is set for this workspace or the project.";
+  }
+}
+
+/**
+ * **The Runs on row** (#4536, the person's rulings of 2026-11-01): where this chat would run and
+ * which level says so, and a pool or this machine for this start alone. The levels are this
+ * start, then the workspace, then the project, then this machine, and the most specific wins. A
+ * choice here writes no setting. A chat at the project's root runs here and is offered nothing;
+ * with no pool kept at all, the row says so and offers Pool setup instead of an empty choice.
+ */
+function RunsOnRow({
+  runsOn,
+  choice,
+  onChoose,
+  labelId,
+  whyId,
+  onPoolSetup,
+}: {
+  runsOn: StartRunsOn;
+  choice: string;
+  onChoose: (to: string) => void;
+  labelId: string;
+  whyId: string;
+  onPoolSetup?: () => void;
+}) {
+  if (runsOn.at_root) return <p className="start-chat-help">{runsOnReason(runsOn)}</p>;
+  // Nothing to choose between: no pool is kept, and no level names one that is gone.
+  if (runsOn.pools.length === 0 && runsOn.pool === null)
+    return (
+      <>
+        <p className="start-chat-help">This machine. No pool is set up on this machine yet.</p>
+        {onPoolSetup && (
+          <Button className="start-chat-runs-on" onPress={onPoolSetup}>
+            Pool setup…
+          </Button>
+        )}
+      </>
+    );
+  const options = [
+    { value: AS_SET, label: `As set (${poolSaid(runsOn.pool)})` },
+    { value: HERE, label: "This machine" },
+    ...runsOn.pools.map((pool) => ({ value: pool, label: `Pool ${pool}` })),
+  ];
+  const why =
+    choice === AS_SET
+      ? runsOnReason(runsOn)
+      : `${capital(poolSaid(choice === HERE ? null : choice))} for this start only. No setting changes.`;
+  return (
+    <>
+      <Select
+        className="start-chat-runs-on"
+        aria-labelledby={labelId}
+        aria-describedby={whyId}
+        value={choice}
+        options={options}
+        onValueChange={onChoose}
+      />
+      <p className="start-chat-help" id={whyId}>
+        {why}
+      </p>
+    </>
   );
 }
 

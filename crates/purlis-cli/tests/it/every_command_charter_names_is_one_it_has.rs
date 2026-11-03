@@ -224,10 +224,11 @@ const NAMES: [&str; 2] = ["purlis", "charter"];
 /// The binary under each name, as this build made them.
 const BINARIES: [&str; 2] = [support::PURLIS, support::CHARTER];
 
-/// Words that follow "charter" when it is the subject of a sentence rather than a command.
-const PROSE: [&str; 15] = [
-    "is", "was", "will", "would", "could", "can", "cannot", "does", "did", "has", "had", "found",
-    "reads", "never", "says",
+/// Words that follow "charter" when it is the subject of a sentence rather than a command. A
+/// word is read up to an apostrophe, so "couldn't" is "couldn" (#4922).
+const PROSE: [&str; 16] = [
+    "is", "was", "will", "would", "could", "couldn", "can", "cannot", "does", "did", "has", "had",
+    "found", "reads", "never", "says",
 ];
 
 /// `<binary> <words> --help`, answered by this build.

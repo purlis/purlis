@@ -891,6 +891,41 @@ fn a_pools_page_shows_what_the_team_set() {
     assert_eq!(other.highest_said, None);
 }
 
+/// #4396: on a Docker pool whose runner has little memory, the page says how much of a profile it
+/// holds and why, and a size kept from before says it holds to that.
+#[test]
+fn a_pools_page_says_what_its_runners_memory_holds_of_a_profile() {
+    use purlis_core::poollimits::{Chosen, LimitId};
+    let chosen = Chosen::default()
+        .with(LimitId::Memory, Some(1024))
+        .on_a_runner_of(1024)
+        .with(LimitId::ProfileSize, Some(1000));
+    let shown = limits_shown(&chosen, &[], true, &[]);
+    let rows: Vec<&PoolLimitRow> = shown
+        .groups
+        .iter()
+        .flat_map(|group| &group.limits)
+        .collect();
+    let size = rows.iter().find(|row| row.key == "profileSize").unwrap();
+    let says = size.highest_said.as_deref().unwrap_or("");
+    assert!(says.starts_with("Up to 512 MiB"), "{says}");
+    assert!(says.contains("half of the runner's memory"), "{says}");
+    assert!(says.ends_with("Raise Memory to allow more."), "{says}");
+    let refused = size.refused.as_deref().unwrap_or("");
+    assert!(refused.contains("holds at 512 MiB"), "{refused}");
+    let files = rows.iter().find(|row| row.key == "profileFiles").unwrap();
+    assert_eq!(files.highest_said, None);
+
+    let roomy = limits_shown(&Chosen::default().on_a_runner_of(4096), &[], true, &[]);
+    assert!(
+        roomy
+            .groups
+            .iter()
+            .flat_map(|group| &group.limits)
+            .all(|row| row.highest_said.is_none())
+    );
+}
+
 /// Q15: the window's check and the file's refusal are one, word for word.
 #[test]
 fn the_windows_check_refuses_as_the_file_does() {
@@ -1167,5 +1202,34 @@ fn a_stop_between_two_asks_says_its_reason() {
     assert_eq!(
         still_driving(u32::MAX).map(|_| ()).unwrap_err(),
         "that sign-in is over"
+    );
+}
+
+/// **A pool not reached is offered beside its own refusal alone** (#4536): a step the attempt got
+/// past marks nothing on a later refusal, and an attempt outside [`offering_limits`] keeps none.
+#[test]
+fn a_pool_not_reached_is_offered_only_beside_the_refusal_it_made() {
+    let refused = offering_limits(|| -> Result<(), String> {
+        Err(unavailable(
+            "builds",
+            "pool builds is not reached".to_owned(),
+        ))
+    })
+    .unwrap_err();
+    assert_eq!(refused.pool_unavailable.as_deref(), Some("builds"));
+
+    let got_past = offering_limits(|| -> Result<(), String> {
+        let _ = unavailable("builds", "pool builds is not reached".to_owned());
+        Err("its profile is signed out".to_owned())
+    })
+    .unwrap_err();
+    assert_eq!(got_past.pool_unavailable, None);
+
+    let _ = unavailable("builds", "outside any attempt".to_owned());
+    let later = offering_limits(|| -> Result<(), String> { Err("outside any attempt".to_owned()) })
+        .unwrap_err();
+    assert_eq!(
+        later.pool_unavailable, None,
+        "nothing kept outside an attempt"
     );
 }

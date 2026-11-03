@@ -97,9 +97,6 @@ export function byChat(asks: readonly Shown[], age: (ask: Shown) => Age): ChatGr
   }));
 }
 
-/** The most of one chat's asks its pane draws a Notice for (spec #1688, I-4). */
-export const MOST_ON_A_PANE = 2;
-
 /** The sources whose asks a pane draws a Notice for: a reply is answered in the pane itself. */
 const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
   "dispatch",
@@ -116,35 +113,12 @@ const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
 ]);
 
 /**
- * **Which Notice of its pane an ask is drawn in**: every host one block's Notice lists is one
- * Notice (#1637), so the hosts a chat's sandbox refused on one operation and kind share it;
- * every other ask is a Notice of its own.
- */
-const noticeOf = (ask: Shown) =>
-  ask.source === "sandbox-host" && ask.answer.via === "sandbox-block"
-    ? `block:${ask.session}:${ask.answer.shown.operation}:${ask.answer.shown.kind}`
-    : ask.ask;
-
-/**
- * **The asks of one chat its pane draws a Notice for** (#1695, spec #1688): the chat's
- * in-context copy of what the Inbox lists, in at most {@link MOST_ON_A_PANE} Notices, the
- * longest waiting first (`since`, else the registry's order). The rest wait in the Inbox, which
- * lists them all.
+ * **The asks of one chat its pane draws a Notice for** (#1695, spec #1688; #4754): the chat's
+ * in-context copy of what the Inbox lists, every one of them, the longest waiting first
+ * (`since`, else the registry's order). There is no cap: the band scrolls past its room.
  */
 export function onItsPane(asks: readonly Shown[], session: number): Shown[] {
-  return paneSplit(asks, session).drawn;
-}
-
-/**
- * **How many of a chat's Notices the cap keeps off its pane** (#1695): each still waits in the
- * Inbox, and the pane says so, so an ask is never out of sight of the chat it is about.
- */
-export function offItsPane(asks: readonly Shown[], session: number): number {
-  return paneSplit(asks, session).off;
-}
-
-function paneSplit(asks: readonly Shown[], session: number): { drawn: Shown[]; off: number } {
-  const ordered = asks
+  return asks
     .map((ask, at) => ({ ask, at }))
     .filter(({ ask }) => ask.session === session && ON_A_PANE.has(ask.source))
     .sort(
@@ -153,12 +127,6 @@ function paneSplit(asks: readonly Shown[], session: number): { drawn: Shown[]; o
         one.at - other.at,
     )
     .map(({ ask }) => ask);
-  const every = [...new Set(ordered.map(noticeOf))];
-  const notices = every.slice(0, MOST_ON_A_PANE);
-  return {
-    drawn: ordered.filter((ask) => notices.includes(noticeOf(ask))),
-    off: every.length - notices.length,
-  };
 }
 
 /** What the Inbox keeps of an ask once it was answered from it (I-12): read-only. */
