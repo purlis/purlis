@@ -1390,13 +1390,12 @@ export function oneJobEnded(
   session: number,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
 ): Tabs {
   const found = oneJobAt(tabs, session);
   if (found === undefined) return tabs;
   const tab = tabs.byId[found.tab];
   const left = without(tab.layout, found.pane);
-  if (!left) return closeTab(tabs, tab.id, filedIn, pinned, background);
+  if (!left) return closeTab(tabs, tab.id, filedIn, pinned);
   const kept = panes(left);
   const focused =
     tab.focused !== found.pane

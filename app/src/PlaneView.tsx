@@ -7154,9 +7154,7 @@ export const PlaneView = memo(function PlaneView({
         const job = jobs.has(session);
         const before = now.current;
         const next = change((tabs) =>
-          job
-            ? oneJobEnded(tabs, session, filedIn, isPinned, inTheBackground.current)
-            : shellExited(tabs, session, filedIn),
+          job ? oneJobEnded(tabs, session, filedIn, isPinned) : shellExited(tabs, session, filedIn),
         );
         const typing = focusedChat(next);
         if (job && typing !== undefined && typing !== focusedChat(before))
