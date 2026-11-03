@@ -469,6 +469,7 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "forge_pkce_sign_in_cancel",
             "agent_identity_create_cancel",
             "pool_sign_in_cancel",
+            "pool_setup_try_cancel",
         ],
     ),
     (
