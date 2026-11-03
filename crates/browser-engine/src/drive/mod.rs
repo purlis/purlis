@@ -175,10 +175,11 @@ impl fmt::Debug for Login {
 }
 
 /// **What holds a browser to the login purlis performs in it** (#2016, #4995): the caller's.
-/// [`Hold::begins`] is told as the login begins, and [`Hold::bind`] holds what the browser reaches to the login's sites just before the first value
-/// goes in; where it cannot, no value goes in. A login whose form is on another origin than its
-/// page ([`Login::back_to`]) is told [`Hold::back`] once its own page shows a document on its
-/// page's origin again, whenever that is: during the login or after it.
+/// [`Hold::begins`] is told as the login begins, and [`Hold::bind`] holds what the browser
+/// reaches to the login's sites just before the first value goes in; where it cannot, no value
+/// goes in. A login whose form is on another origin than its page ([`Login::back_to`]) is told
+/// [`Hold::back`] once its own page leaves the form's origin, whenever that is: during the login
+/// or after it.
 pub trait Hold: Send + Sync {
     /// **The login begins**, purlis driving: told once, before its page is opened, so a browser
     /// held to a login already can reach the login's form (#4995). Why not, where it cannot; the
@@ -189,10 +190,11 @@ pub trait Hold: Send + Sync {
 
     /// Holds the browser to the login's sites, or why it cannot.
     fn bind(&self) -> Result<(), String>;
-    /// **The login's own page is back on its page's origin** since the browser was held: the
-    /// page purlis opened for the login, never another, shows a document there. Told at most
-    /// once per login, on the thread that reads the engine's events, so it must not wait on the
-    /// browser.
+
+    /// **The login's own page has left its form's origin** since the browser was held: the page
+    /// purlis opened for the login, never another, shows a document back on its page's origin,
+    /// or anywhere else. Told at most once per login, on the thread that reads the engine's
+    /// events, so it must not wait on the browser.
     fn back(&self);
 }
 

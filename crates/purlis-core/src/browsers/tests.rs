@@ -504,9 +504,9 @@ fn a_login_whose_form_is_elsewhere_fills_there_and_is_held_to_both_sites() {
 #[test]
 fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
     use std::io::{BufRead, BufReader, Write};
+    use std::net::{TcpListener, TcpStream};
 
     use purlis_browser_engine::drive::Hold;
-    use std::net::{TcpListener, TcpStream};
 
     use crate::sandbox::browser_reach::{Lane, ReachProxy};
 
@@ -648,7 +648,7 @@ fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time
     )
     .expect("performed");
     assert_eq!(status(&proxy, form_port), carried, "while it signs in");
-    assert_eq!(holder.signing_in(), login.form);
+    assert_eq!(holder.signing_in().map(|(form, _)| form), login.form);
     holder.back();
     assert_eq!(status(&proxy, form_port), refused, "back on its page");
     assert_eq!(status(&proxy, page_port), carried);

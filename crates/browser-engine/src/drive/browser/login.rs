@@ -31,8 +31,9 @@
 //! **The browser holds the login from the first fill**: its [`Hold`], the caller's, holds what
 //! the browser reaches to the login's sites before the first value goes in. Where it cannot, no
 //! value goes in. A login whose form is on another origin than its page (#4995) has its holder
-//! told once the page purlis opened for it shows a document on the page's origin again
-//! ([`Hold::back`]), during the login or after it: the browser's page, never another.
+//! told once the page purlis opened for it shows a document anywhere but on the form's origin
+//! ([`Hold::back`]): back on the page's origin, or elsewhere, during the login or after it. The
+//! browser's page, never another.
 //!
 //! **Then it submits, and waits for the password field to go.** A login that does not go
 //! through within [`crate::drive::Limits::login_within`] has every field it filled cleared,
@@ -258,10 +259,31 @@ impl Browser {
         };
         // Opened from kept logins, a page that asks for nothing is signed in already: twice
         // read, so a page between documents is not taken for one (#2021), and never a page
-        // that cannot be read.
+        // that cannot be read. One whose form is on another origin (#5014) must stay on its own
+        // page's origin for a fifth of the wait, as a page may send the browser to its form by
+        // script once it has loaded.
         if login.only_if_asked && shows_form(self)? == Some(false) {
-            self.pause(LOOK_AGAIN)?;
-            if shows_form(self)? == Some(false) {
+            let stays = match login.back_to {
+                Some(_) => within / 5,
+                None => LOOK_AGAIN,
+            };
+            let until = Instant::now() + stays;
+            let mut asks_nothing = true;
+            loop {
+                self.pause(LOOK_AGAIN)?;
+                let on_its_page = login
+                    .back_to
+                    .as_deref()
+                    .is_none_or(|back| self.on_origin(&target, back));
+                if !on_its_page || shows_form(self)? != Some(false) {
+                    asks_nothing = false;
+                    break;
+                }
+                if Instant::now() >= until {
+                    break;
+                }
+            }
+            if asks_nothing {
                 let shown = lock(&self.inner.state)
                     .current
                     .clone()
@@ -306,9 +328,10 @@ impl Browser {
                 "purlis could not hold this browser to {origin} ({why}), so nothing was filled"
             ))
         })?;
-        // Its holder is told once this page is back on the login's page's origin (#4995).
+        // Its holder is told once this page leaves the form's origin (#4995): back on the
+        // login's page's, or anywhere else.
         if let Some(back) = &login.back_to {
-            self.inner.watch_back(&target, back, hold);
+            self.inner.watch_back(&target, back, origin, hold);
         }
         let mut filled: Vec<NodeKey> = Vec::new();
         let done = self.fill_and_submit(&target, login, &mut filled);

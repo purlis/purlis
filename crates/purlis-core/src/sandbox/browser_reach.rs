@@ -387,6 +387,8 @@ pub struct Bound(Arc<Mutex<Option<Holding>>>);
 struct Holding {
     page: Site,
     sign_in: Option<SignIn>,
+    /// The form's site its first sign-in reached: the only one a later sign-in may (#4995).
+    form: Option<Site>,
     /// Sign-ins opened in this browser so far: each one's number.
     opened: u64,
 }
@@ -413,13 +415,15 @@ impl Bound {
     /// to another login's page stays bound to that, since a browser holds one login's session
     /// at a time. Binding again to the same page changes nothing of it. Where the login's form
     /// is on another site, a sign-in reaching it opens, in place of any open before (#4995):
-    /// what is answered is its number, and the site of the one it replaced, if any.
+    /// what is answered is its number, and the site of the one it replaced, if any. A browser
+    /// signs in on one form's site: a login of its page whose form is on another is refused.
     pub fn to(&self, at: &LoginSites) -> Result<(Option<u64>, Option<Site>), String> {
         let mut bound = self.lock();
         let holding = match bound.as_mut() {
             None => bound.insert(Holding {
                 page: at.page.clone(),
                 sign_in: None,
+                form: None,
                 opened: 0,
             }),
             Some(holding) if holding.page == at.page => holding,
@@ -433,6 +437,16 @@ impl Bound {
         let Some(form) = &at.form else {
             return Ok((None, None));
         };
+        // A browser signs in on one form's site, whichever login of its page asks.
+        if let Some(signed_in_on) = &holding.form
+            && signed_in_on != form
+        {
+            return Err(format!(
+                "this browser signs in to {} on {signed_in_on}, and on no other site",
+                holding.page
+            ));
+        }
+        holding.form = Some(form.clone());
         holding.opened += 1;
         let number = holding.opened;
         let was = holding

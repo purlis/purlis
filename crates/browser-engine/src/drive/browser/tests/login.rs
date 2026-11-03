@@ -896,15 +896,39 @@ fn a_login_whose_page_comes_back_after_it_answered_tells_its_holder_then() {
         "still on the form's origin"
     );
     page_moves(&engine, "S-PAGE-1", BACK);
-    page_moves(&engine, "S-PAGE-2", "http://elsewhere.fixture.test/");
+    page_moves(&engine, "S-PAGE-2", "http://fixture.test/next-step");
     std::thread::sleep(Duration::from_millis(100));
     assert_eq!(
         held.back.load(Ordering::SeqCst),
         0,
-        "not its page, or not its origin"
+        "not its page, or still on the form's origin"
     );
     page_moves(&engine, "S-PAGE-2", BACK);
     assert!(comes_to(&held.back, 1), "told once its page came back");
+}
+
+/// #4995: a login's page that leaves the form's origin for anywhere but its own page's (a chat
+/// that sends it elsewhere, a page that can't load) tells its holder as well: the sign-in is
+/// done with.
+#[test]
+fn a_login_whose_page_leaves_its_forms_origin_for_elsewhere_tells_its_holder() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    let back = Login {
+        back_to: Some("http://app.fixture.test".to_owned()),
+        ..login_at(ORIGIN)
+    };
+    let held = Arc::new(Counted::default());
+    let ended = browser
+        .log_in(&back, Arc::clone(&held) as Arc<dyn Hold>)
+        .unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert_eq!(held.back.load(Ordering::SeqCst), 0);
+    page_moves(&engine, "S-PAGE-2", "chrome-error://chromewebdata/");
+    assert!(comes_to(&held.back, 1), "told once its page left");
+    page_moves(&engine, "S-PAGE-2", BACK);
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(held.back.load(Ordering::SeqCst), 1, "told once only");
 }
 
 /// A login whose form is on its page's own origin waits for no page to come back: it tells
@@ -947,4 +971,35 @@ fn a_login_whose_holder_refuses_it_as_it_begins_opens_nothing_and_fills_nothing(
     assert!(engine.sent("Page.navigate").is_empty(), "no page opened");
     assert!(inserted(&engine).is_empty());
     assert_eq!(ended.driver, Driver::Agent);
+}
+
+/// #5014: reopened from kept logins, a page whose form is on another origin and that sends the
+/// browser there by script a moment after it loaded is no page signed in already: purlis waits
+/// for it, and fills the form.
+#[test]
+fn a_kept_login_whose_page_sends_it_to_its_form_late_is_filled_there() {
+    let (browser, engine) = browser_with(Limits {
+        login_within: Duration::from_secs(4),
+        ..limits()
+    });
+    as_a_login_form(&engine, true);
+    let login = Login {
+        address: WebAddress::parse(BACK).unwrap(),
+        only_if_asked: true,
+        back_to: Some("http://app.fixture.test".to_owned()),
+        ..login_at(ORIGIN)
+    };
+    let late = {
+        let engine = Arc::clone(&engine);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(500));
+            page_moves(&engine, "S-PAGE-2", ADDRESS);
+        })
+    };
+    let ended = browser
+        .log_in(&login, Arc::new(Counted::default()) as Arc<dyn Hold>)
+        .unwrap();
+    late.join().unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert_eq!(inserted(&engine), vec![FILLED.to_owned()]);
 }

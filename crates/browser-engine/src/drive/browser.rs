@@ -1385,10 +1385,11 @@ pub(crate) struct Inner {
 }
 
 /// **A login whose page is to come back to its page's origin** (#4995): the page purlis opened
-/// for it, that origin, and who is told.
+/// for it, that origin, the form's, and who is told.
 struct Back {
     target: String,
     origin: String,
+    form: String,
     hold: Arc<dyn Hold>,
 }
 
@@ -4227,24 +4228,25 @@ impl Drop for Browser {
 }
 
 impl Inner {
-    /// **`hold` is told once page `target` shows a document on `origin` again** (#4995), in
-    /// place of any login told before.
-    pub(crate) fn watch_back(&self, target: &str, origin: &str, hold: Arc<dyn Hold>) {
+    /// **`hold` is told once page `target` shows a document anywhere but on `form`** (#4995):
+    /// back on `origin`, its page's, or elsewhere. In place of any login told before.
+    pub(crate) fn watch_back(&self, target: &str, origin: &str, form: &str, hold: Arc<dyn Hold>) {
         *lock(&self.back) = Some(Back {
             target: target.to_owned(),
             origin: origin.to_owned(),
+            form: form.to_owned(),
             hold,
         });
     }
 
-    /// Page `target`'s own document is now at `address`: a login waiting for that page to come
-    /// back to its origin has its holder told, once (#4995).
+    /// Page `target`'s own document is now at `address`: a login waiting for that page to leave
+    /// its form's origin has its holder told, once (#4995).
     fn came_back(&self, target: &str, address: &str) {
         let here = login::origin_of(address);
         let told = {
             let mut back = lock(&self.back);
             match back.as_ref() {
-                Some(one) if one.target == target && here.as_deref() == Some(&*one.origin) => {
+                Some(one) if one.target == target && here.as_deref() != Some(&*one.form) => {
                     back.take()
                 }
                 _ => None,

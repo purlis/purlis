@@ -331,17 +331,19 @@ fn a_login_whose_form_is_elsewhere_reaches_it_only_while_it_signs_in() {
         "an old sign-in ends no newer one"
     );
     assert!(bound.lets("auth.example.test", 443));
-    let other = Site::of("login.other.test", 443);
-    let (third, replaced) = bound
+    // Another form's site for the same page is refused: a browser signs in on one.
+    let refused = bound
         .to(&LoginSites {
             page: app.clone(),
-            form: Some(other.clone()),
+            form: Some(Site::of("login.other.test", 443)),
         })
-        .unwrap();
-    assert_eq!(replaced, Some(auth.clone()), "one sign-in at a time");
-    assert!(!bound.lets("auth.example.test", 443));
-    assert_eq!(bound.sign_in_over(second), None);
-    assert_eq!(bound.sign_in_over(third.unwrap()), Some(other));
+        .unwrap_err();
+    assert!(refused.contains("on auth.example.test:443"), "{refused}");
+    assert!(!bound.lets("login.other.test", 443));
+    let (third, replaced) = bound.to(&login).unwrap();
+    assert_eq!(replaced, None, "the same form's site replaces nothing");
+    assert_eq!(bound.sign_in_over(second), None, "replaced by the third");
+    assert_eq!(bound.sign_in_over(third.unwrap()), Some(auth.clone()));
     // Another page's login is refused, whatever its form.
     let refused = bound
         .to(&LoginSites {

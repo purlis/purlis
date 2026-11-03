@@ -252,16 +252,18 @@ struct Chat {
     /// Browsers following a page to its login form for it now (#5015): counted as its own.
     following: usize,
     /// When each page it suggested last failed to be followed, in seconds since 1970, within
-    /// [`FOLLOWS_REST`] (#5015).
+    /// [`FOLLOWS_REST`] of each other and since the last that was followed (#5015).
     unfollowed: Vec<u64>,
+    /// Until when, in seconds since 1970, none of its pages is followed (#5015).
+    rests_until: u64,
 }
 
 /// **How many suggested pages of one chat may fail to be followed** within [`FOLLOWS_REST`]
 /// before it has none followed (#5015): each opens a browser.
 pub const FOLLOWS_FAILED_AT_MOST: usize = 3;
 
-/// How long, in seconds, a chat's failed follows are remembered, and it rests after the last
-/// of [`FOLLOWS_FAILED_AT_MOST`] (#5015).
+/// How long, in seconds, a chat's failed follows are remembered, and how long it rests from the
+/// last of [`FOLLOWS_FAILED_AT_MOST`] (#5015).
 pub const FOLLOWS_REST: u64 = 10 * 60;
 
 impl Default for Chat {
@@ -288,6 +290,7 @@ impl Default for Chat {
             idled_after: 0,
             following: 0,
             unfollowed: Vec::new(),
+            rests_until: 0,
         }
     }
 }
@@ -1710,18 +1713,18 @@ impl ChatBrowsers {
             let running =
                 self.endings().browsers.len() + chats.values().map(Chat::running).sum::<usize>();
             let chat = chats.entry(session).or_default();
-            chat.unfollowed
-                .retain(|at| now.saturating_sub(*at) < FOLLOWS_REST);
-            if chat.unfollowed.len() >= FOLLOWS_FAILED_AT_MOST {
-                let last = chat.unfollowed.iter().max().copied().unwrap_or(now);
-                let minutes = FOLLOWS_REST
-                    .saturating_sub(now.saturating_sub(last))
-                    .div_ceil(60);
+            if now < chat.rests_until {
+                let minutes = (chat.rests_until - now).div_ceil(60);
+                let minutes = if minutes == 1 {
+                    "1 minute".to_owned()
+                } else {
+                    format!("{minutes} minutes")
+                };
                 return Err(format!(
                     "purlis could not follow the last {FOLLOWS_FAILED_AT_MOST} login pages this \
-                     chat suggested to their forms, so it follows none for {minutes} minutes \
-                     more, and nothing was recorded or filled. Give the address of the login \
-                     page itself, or ask the person to declare the login"
+                     chat suggested, so it follows none for {minutes} more, and nothing was \
+                     recorded or filled. Give the address of the login page itself, or ask the \
+                     person to declare the login"
                 ));
             }
             if running >= per_project {
@@ -1732,13 +1735,23 @@ impl ChatBrowsers {
             chat.following += 1;
         }
         let found = followed(driver.as_ref(), root, pool, reach, page);
-        let mut chats = self.lock();
-        let chat = chats.entry(session).or_default();
-        chat.following = chat.following.saturating_sub(1);
-        found.map_err(|why| {
-            chat.unfollowed.push(now);
-            not_followed(&why)
-        })
+        // A chat that closed meanwhile has nothing left to count.
+        if let Some(chat) = self.lock().get_mut(&session) {
+            chat.following = chat.following.saturating_sub(1);
+            match &found {
+                Ok(_) => chat.unfollowed.clear(),
+                Err(_) => {
+                    chat.unfollowed
+                        .retain(|at| now.saturating_sub(*at) < FOLLOWS_REST);
+                    chat.unfollowed.push(now);
+                    if chat.unfollowed.len() >= FOLLOWS_FAILED_AT_MOST {
+                        chat.unfollowed.clear();
+                        chat.rests_until = now + FOLLOWS_REST;
+                    }
+                }
+            }
+        }
+        found.map_err(|why| not_followed(&why))
     }
 
     /// **Allow** on chat `session`'s Ask, with the open web or not. Answers whether it waited.

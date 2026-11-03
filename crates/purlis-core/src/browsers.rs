@@ -1043,6 +1043,7 @@ pub fn performed<T>(
         at: at.clone(),
         within,
         sign_in: Mutex::new(None),
+        since: Mutex::new(None),
         bound: std::sync::atomic::AtomicBool::new(false),
     });
     let done = run(&holder);
@@ -1065,6 +1066,8 @@ pub struct Holder {
     within: Duration,
     /// The sign-in it opened, if it opened one.
     sign_in: Mutex<Option<u64>>,
+    /// When it opened it.
+    since: Mutex<Option<std::time::Instant>>,
     /// Whether it bound the browser: a value may have gone in.
     bound: std::sync::atomic::AtomicBool,
 }
@@ -1106,6 +1109,8 @@ impl Holder {
         if was == Some(number) {
             return Ok(());
         }
+        *self.since.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some(std::time::Instant::now());
         let ending = Arc::downgrade(proxy);
         let within = self.within;
         let ends = std::thread::Builder::new()
@@ -1124,16 +1129,20 @@ impl Holder {
         Ok(())
     }
 
+    /// **Its browser's reach proxy**, or why there is none: the browser has ended.
     fn proxy(&self) -> Result<Arc<ReachProxy>, String> {
         self.proxy
             .upgrade()
             .ok_or_else(|| "the browser's reach proxy has stopped".to_owned())
     }
 
-    /// The form's site the browser reaches while this login's sign-in is open, if it is.
-    pub fn signing_in(&self) -> Option<Site> {
+    /// **The form's site the browser reaches while this login's sign-in is open**, and how long
+    /// it has left, if it is open.
+    pub fn signing_in(&self) -> Option<(Site, Duration)> {
         let number = (*self.sign_in.lock().unwrap_or_else(PoisonError::into_inner))?;
-        self.sites.bound().signing_in(number)
+        let since = (*self.since.lock().unwrap_or_else(PoisonError::into_inner))?;
+        let form = self.sites.bound().signing_in(number)?;
+        Some((form, self.within.saturating_sub(since.elapsed())))
     }
 }
 
@@ -1708,19 +1717,18 @@ impl Screen for EngineScreen {
         )
         .map_err(NotActed::Refused)?;
         let ended = ended.map_err(not_acted)?;
+        let (fills_on, page) = (login.origin.clone(), login.back_to.clone());
         drop(login);
         let mut outcome = ended
             .outcome
             .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
             .map_err(not_acted);
         // Still on the form's site: what the agent may do there, and for how long (#4995).
-        if let (Ok(browsed), Some(form)) = (&mut outcome, signing_in) {
+        if let (Ok(browsed), Some((_, left)), Some(page)) = (&mut outcome, signing_in, page) {
             let said = format!(
-                "this browser reaches {form} until it is back on {}, for {} seconds at most, and \
-                 then {} alone",
-                at.page,
-                SIGN_IN_WITHIN.as_secs(),
-                at.page
+                "this browser reaches {fills_on} until it is back on {page}, for {} more seconds \
+                 at most, and then {page} alone",
+                left.as_secs().max(1),
             );
             browsed.note = Some(match browsed.note.take() {
                 Some(note) => format!("{note}; {said}"),
