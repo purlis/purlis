@@ -498,10 +498,11 @@ export function Palette({
 
   return (
     // **A surface of the dialog family with an anatomy of its own** (#2910, `DialogSurface`):
-    // the family's modal, fixed top, width and height, and the palette's box and rows inside.
-    // What it adds over the markup that was here is the trap: the box took the keyboard on
-    // opening and nothing held it there, so focus could leave for a pane behind the overlay while
-    // the palette was still up and modal.
+    // the family's fixed top, width and height, and the palette's box and rows inside. It holds
+    // the keyboard in itself, but it is **not modal**, as VS Code's palette is not (the operator's
+    // ruling of 2026-11-04, #4351): the window behind it is never made inert, which WebKit paid
+    // for with a restyle of the whole window as the palette closed, before what a row opened was
+    // drawn.
     //
     // **Its Escape stays on the window, deliberately.** This listener is on the window in the
     // capture phase, so it runs before the dialog's own and stops the event — which is the point,
@@ -509,8 +510,7 @@ export function Palette({
     // have to be decided in one place. The dialog's own Escape is wired to the same `close` for
     // the case where the window listener is not the one that sees it.
     //
-    // A click outside answers nothing, which is how every surface in this app has always
-    // behaved: the way out is Escape or a row.
+    // A press outside it closes it, as Escape does: not being modal, it is no question to answer.
     <DialogSurface
       onClose={close}
       className="palette"
