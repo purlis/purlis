@@ -2087,6 +2087,7 @@ describe("Runs on: where this chat runs, and why (#4536)", () => {
     level: "project",
     at_root: false,
     pools: ["builds", "gpu"],
+    ran_on: ["builds", "gpu"],
     ...over,
   });
 
@@ -2145,6 +2146,41 @@ describe("Runs on: where this chat runs, and why (#4536)", () => {
 
     expect(selectNamed("Runs on")).toHaveTextContent(held);
     expect(selectNamed("Runs on")).toHaveAccessibleDescription(said);
+  });
+
+  // A workspace's first chat on a pool says what that does, before anything is sent (#4591).
+  const FIRST_ON_BUILDS =
+    "This workspace hasn't run a chat on pool builds before: its clones are copied to that " +
+    "pool's runner, and the chat's work comes back here when it ends.";
+
+  it("says plainly what a workspace's first start on its project's pool does", () => {
+    showRunsOn(runsOn({ ran_on: ["gpu"] }));
+
+    expect(selectNamed("Runs on")).toHaveAccessibleDescription(
+      `Pool builds, as this project's chats run. ${FIRST_ON_BUILDS}`,
+    );
+  });
+
+  it("says a first start on a pool picked for this start only", async () => {
+    const { user } = showRunsOn(runsOn({ ran_on: ["gpu"] }));
+
+    await choose(user, "Pool gpu");
+    expect(selectNamed("Runs on")).toHaveAccessibleDescription(
+      "Pool gpu for this start only. No setting changes.",
+    );
+    await choose(user, "Pool builds");
+    expect(selectNamed("Runs on")).toHaveAccessibleDescription(
+      `Pool builds for this start only. No setting changes. ${FIRST_ON_BUILDS}`,
+    );
+  });
+
+  it("says nothing of a first start on this machine", async () => {
+    const { user } = showRunsOn(runsOn({ ran_on: [] }));
+
+    await choose(user, "This machine");
+    expect(selectNamed("Runs on")).toHaveAccessibleDescription(
+      "This machine for this start only. No setting changes.",
+    );
   });
 
   it("is not drawn where the window did not say where a chat runs", () => {

@@ -403,3 +403,58 @@ fn a_projects_mark_goes_once_its_last_workspace_following_its_pool_runs_here() {
     crate::notheld::held(&plane);
     assert!(!marked, "nothing follows the project's pool now");
 }
+
+/// **Start chat's row knows where a workspace has run a chat** (#4591), so it can say a first
+/// start on a pool, the project's or any other, before anything is sent there.
+#[test]
+fn where_a_new_chat_would_run_names_the_pools_its_workspace_has_run_on() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let plane = plane.path();
+    for workspace in ["app", "new"] {
+        std::fs::create_dir_all(plane.join("workspaces").join(workspace)).unwrap();
+    }
+    for pool in ["builds", "gpus"] {
+        purlis_core::runners::record_pool(
+            config.path(),
+            &purlis_core::runners::Pool::new(
+                pool,
+                purlis_core::dockerpool::Image::pinned(IMAGE).unwrap(),
+                purlis_core::runners::Set::default(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    }
+    purlis_core::machine::update(config.path(), |store| {
+        store.remember(plane, 1);
+        store
+            .set_project_chats_run_on(plane, Some("builds"))
+            .unwrap();
+        store.keep_chat_on_pool(
+            plane,
+            1,
+            purlis_core::machine::ChatOnPool {
+                pool: "builds".to_owned(),
+                workspace: "app".to_owned(),
+            },
+        );
+    })
+    .unwrap();
+    let ran_on = |workspace| {
+        start_runs_on_at(config.path(), plane, Some(workspace))
+            .unwrap()
+            .ran_on
+    };
+    assert_eq!(ran_on("app"), ["builds".to_owned()]);
+    assert!(
+        ran_on("new").is_empty(),
+        "its first chat there is still to come"
+    );
+    assert!(
+        start_runs_on_at(config.path(), plane, None)
+            .unwrap()
+            .ran_on
+            .is_empty()
+    );
+}

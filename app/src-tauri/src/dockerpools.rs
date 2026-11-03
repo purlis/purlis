@@ -851,12 +851,15 @@ pub enum RunsOnLevel {
 /// shows before the person picks anything, and every pool this machine keeps, which the row
 /// offers for this start only. `at_root` is a chat at the project's root, which runs here and is
 /// offered no pool. Nothing here is checked against the pool's runner: the start does that.
+/// `ran_on` is each of those pools the workspace has run a chat on, so the row can say a first
+/// start anywhere else (#4591).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct StartRunsOn {
     pub pool: Option<String>,
     pub level: RunsOnLevel,
     pub at_root: bool,
     pub pools: Vec<String>,
+    pub ran_on: Vec<String>,
 }
 
 /// [`StartRunsOn`] for a chat in `workspace` of the plane at `plane`, on `config`.
@@ -873,6 +876,7 @@ pub fn start_runs_on_at(
             level: RunsOnLevel::ThisMachine,
             at_root: true,
             pools,
+            ran_on: Vec::new(),
         });
     };
     let place = purlis_core::machine::read(config)
@@ -883,11 +887,18 @@ pub fn start_runs_on_at(
         PlaceLevel::Project => RunsOnLevel::Project,
         PlaceLevel::Start | PlaceLevel::Default => RunsOnLevel::ThisMachine,
     };
+    // What came back from a pool says this workspace's chats ran there (#4591).
+    let ran_on = pools
+        .iter()
+        .filter(|pool| purlis_core::pools::has_run_on(config, plane, workspace, pool))
+        .cloned()
+        .collect();
     Ok(StartRunsOn {
         pool: place.pool,
         level,
         at_root: false,
         pools,
+        ran_on,
     })
 }
 
@@ -916,6 +927,7 @@ pub async fn start_runs_on(
             level: RunsOnLevel::ThisMachine,
             at_root: workspace.is_none(),
             pools: Vec::new(),
+            ran_on: Vec::new(),
         })
     }
 }

@@ -3,7 +3,7 @@
 **Built by #4591**, on the amendment of 2026-11-01, *where a chat runs resolves start, workspace,
 project, then this machine* (#4536), and the amendment of 2026-11-02, *a chat is found on the pool
 it ran on* (#4590). The person's rulings in both stand as they are. Everything here is *decided in
-implementation, to be confirmed* (D-4591-1 to D-4591-5).
+implementation, to be confirmed* (D-4591-1 to D-4591-6).
 
 1. **Fetch-back and the away list ask about a follower once it has run there.** A workspace that
    follows the project's pool is asked about on that pool once a chat of it is kept there, or its
@@ -27,3 +27,10 @@ implementation, to be confirmed* (D-4591-1 to D-4591-5).
    still owed under that name stay, and a put-back settles them. *(D-4591-4)*
 5. **A move that can't put Runs on back names the setting the workspace had**: Same as the project,
    This machine or a pool, by the labels its settings use. *(D-4591-5)*
+6. **Start chat says a workspace's first chat on a pool.** When a workspace has never run a chat on
+   the pool a start would use, the Runs on row says before anything is sent that its clones are
+   copied to that pool's runner and that the chat's work comes back here. That pool may come from
+   the settings or be picked for this start. The workspace has run there when a chat of it is kept
+   there, its branches are still owed from there, or a clone of it holds branches that came back
+   from there (`pools::has_run_on`). This is the word a workspace renamed outside purlis gets
+   before its new name follows the project's pool. *(D-4591-6)*

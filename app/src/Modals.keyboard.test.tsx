@@ -359,7 +359,13 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
           ignore_fix_id: null,
           declares_none: false,
         }}
-        runsOn={{ pool: "builds", level: "project", at_root: false, pools: ["builds"] }}
+        runsOn={{
+          pool: "builds",
+          level: "project",
+          at_root: false,
+          pools: ["builds"],
+          ran_on: ["builds"],
+        }}
         onStart={(...args) => started.push(args[6])}
         onApprove={() => {}}
         onCancel={() => {}}
