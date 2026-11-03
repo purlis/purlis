@@ -56,15 +56,31 @@ export function IdentityStep({
   const flows = !done && step.next?.id === "set-up-identity";
   const reads = done || flows;
 
-  const read = useCallback(() => {
-    setTrouble(undefined);
-    void answer(commands.agentIdentities(plane)).then(setShown, (why: unknown) =>
-      setTrouble(whyOf(why)),
-    );
-  }, [plane]);
+  /** Asks what is set up, and hears the answer only while `live` says it still counts. */
+  const fetch = useCallback(
+    (live: () => boolean) =>
+      void answer(commands.agentIdentities(plane)).then(
+        (got) => {
+          if (live()) {
+            setTrouble(undefined);
+            setShown(got);
+          }
+        },
+        (why: unknown) => {
+          if (live()) setTrouble(whyOf(why));
+        },
+      ),
+    [plane],
+  );
+  const read = () => fetch(() => true);
   useEffect(() => {
-    if (reads) read();
-  }, [reads, read]);
+    if (!reads) return;
+    let live = true;
+    fetch(() => live);
+    return () => {
+      live = false;
+    };
+  }, [reads, fetch]);
 
   const skip = (skipped: boolean) => {
     setSkipping(true);
