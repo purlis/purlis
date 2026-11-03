@@ -249,6 +249,73 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
           if (holder.__openedInMs === undefined) requestAnimationFrame(rafMark);
         }; // [DEBUG-4351]
         requestAnimationFrame(rafMark); // [DEBUG-4351]
+        // [DEBUG-4351] every read that forces a layout, timed, with who asked: patched once.
+        const w = globalThis as { __reflowPatched?: boolean }; // [DEBUG-4351]
+        if (!w.__reflowPatched) {
+          // [DEBUG-4351]
+          w.__reflowPatched = true; // [DEBUG-4351]
+          const note = (name: string, ms: number) => {
+            const t = globalThis as { __tl4351?: string[]; __t04351?: number };
+            if (ms < 3 || t.__tl4351 === undefined || t.__t04351 === undefined) return;
+            const stack = (new Error().stack ?? "")
+              .split("\n")
+              .slice(2, 7)
+              .map((one) =>
+                one
+                  .trim()
+                  .replace(/@?(https?|tauri):\/\/[^ ]*\//, "@")
+                  .slice(0, 60),
+              )
+              .join(" < ");
+            t.__tl4351.push(
+              `${(performance.now() - t.__t04351).toFixed(0)} reflow ${name} ${ms.toFixed(0)} ms: ${stack}`,
+            );
+          }; // [DEBUG-4351]
+          const wrapFn = (proto: object, name: string) => {
+            const was = (proto as Record<string, unknown>)[name] as (...a: unknown[]) => unknown;
+            if (typeof was !== "function") return;
+            (proto as Record<string, unknown>)[name] = function (this: unknown, ...a: unknown[]) {
+              const t0 = performance.now();
+              const r = was.apply(this, a);
+              note(name, performance.now() - t0);
+              return r;
+            };
+          }; // [DEBUG-4351]
+          const wrapGet = (proto: object, name: string) => {
+            const d = Object.getOwnPropertyDescriptor(proto, name);
+            if (d?.get === undefined) return;
+            const get = d.get;
+            Object.defineProperty(proto, name, {
+              ...d,
+              get(this: unknown) {
+                const t0 = performance.now();
+                const r = get.call(this);
+                note(name, performance.now() - t0);
+                return r;
+              },
+            });
+          }; // [DEBUG-4351]
+          for (const name of ["getBoundingClientRect", "getClientRects", "scrollIntoView", "focus"])
+            wrapFn(Element.prototype, name); // [DEBUG-4351]
+          wrapFn(HTMLElement.prototype, "focus"); // [DEBUG-4351]
+          wrapFn(window as unknown as object, "getComputedStyle"); // [DEBUG-4351]
+          for (const name of [
+            "offsetWidth",
+            "offsetHeight",
+            "offsetTop",
+            "offsetLeft",
+            "offsetParent",
+          ])
+            wrapGet(HTMLElement.prototype, name); // [DEBUG-4351]
+          for (const name of [
+            "clientWidth",
+            "clientHeight",
+            "scrollWidth",
+            "scrollHeight",
+            "scrollTop",
+          ])
+            wrapGet(Element.prototype, name); // [DEBUG-4351]
+        } // [DEBUG-4351]
         const started = performance.now();
         (globalThis as { __t04351?: number }).__t04351 = started; // [DEBUG-4351]
         row.click();
