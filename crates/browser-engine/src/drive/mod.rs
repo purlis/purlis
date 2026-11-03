@@ -159,8 +159,8 @@ pub struct Login {
     /// says it's one, or beside a password field.
     pub suggested: bool,
     /// **The page's own origin, where the form is on another** (#4995): a page that has gone
-    /// back there since the login was submitted is a login that went through. Nothing is ever
-    /// filled on it.
+    /// back there since the login was submitted is a login that went through, and its holder is
+    /// told ([`Hold::back`]). Nothing is ever filled on it.
     pub back_to: Option<String>,
 }
 
@@ -172,6 +172,31 @@ impl fmt::Debug for Login {
             .field("back_to", &self.back_to)
             .finish_non_exhaustive()
     }
+}
+
+/// **What holds a browser to the login purlis performs in it** (#2016, #4995): the caller's.
+/// [`Hold::bind`] holds what the browser reaches to the login's sites just before the first value
+/// goes in; where it cannot, no value goes in. A login whose form is on another origin than its
+/// page ([`Login::back_to`]) is told [`Hold::back`] once its own page shows a document on its
+/// page's origin again, whenever that is: during the login or after it.
+pub trait Hold: Send + Sync {
+    /// Holds the browser to the login's sites, or why it cannot.
+    fn bind(&self) -> Result<(), String>;
+    /// **The login's own page is back on its page's origin** since the browser was held: the
+    /// page purlis opened for the login, never another, shows a document there. Told at most
+    /// once per login, on the thread that reads the engine's events, so it must not wait on the
+    /// browser.
+    fn back(&self);
+}
+
+/// A login that only binds, told nothing of its page coming back: what a caller with one site
+/// passes.
+impl<F: Fn() -> Result<(), String> + Send + Sync> Hold for F {
+    fn bind(&self) -> Result<(), String> {
+        self()
+    }
+
+    fn back(&self) {}
 }
 
 /// What a frame showed: its page, and its documents (a number that changes each time the page

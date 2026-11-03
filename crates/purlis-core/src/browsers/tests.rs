@@ -40,7 +40,7 @@ use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, 
 use purlis_host::protocol::session::{Layer, Listed};
 
 use super::{aim_of, browsed, call_of, input_of, reach_of};
-use crate::sandbox::browser_reach::Site;
+use crate::sandbox::browser_reach::{LoginSites, Site};
 
 #[test]
 fn the_acts_a_chat_asks_become_the_drivers_own_calls() {
@@ -399,7 +399,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
     })
     .unwrap();
     assert_eq!(login.origin, "https://shop.example.test");
-    assert_eq!(site, vec![Site::of("shop.example.test", 443)]);
+    assert_eq!(site, LoginSites::page(Site::of("shop.example.test", 443)));
     assert!(login.user.is_none());
     assert_eq!(login.back_to, None);
     let local = super::login_of(&LogIn {
@@ -413,7 +413,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
     })
     .unwrap();
     assert_eq!(local.0.origin, "http://127.0.0.1:8123");
-    assert_eq!(local.1, vec![Site::of("127.0.0.1", 8123)]);
+    assert_eq!(local.1, LoginSites::page(Site::of("127.0.0.1", 8123)));
     let refused = super::login_of(&LogIn {
         address: "file:///etc/passwd".into(),
         user: None,
@@ -454,11 +454,15 @@ fn a_login_is_refused_on_plain_http_but_this_machines_loopback() {
     })
     .unwrap();
     assert_eq!(login.origin, "https://xn--bcher-kva.example");
-    assert_eq!(site, vec![Site::of("xn--bcher-kva.example", 443)]);
+    assert_eq!(
+        site,
+        LoginSites::page(Site::of("xn--bcher-kva.example", 443))
+    );
 }
 
-/// #4995: a login whose form is on another host fills on the form's origin alone, is held to the
-/// form's site and its page's, and has gone through once the browser is back on its page.
+/// #4995: a login whose form is on another host fills on the form's origin alone, is held to its
+/// page's site and, while it signs in, its form's, and has gone through once the browser is back
+/// on its page.
 #[test]
 fn a_login_whose_form_is_elsewhere_fills_there_and_is_held_to_both_sites() {
     use purlis_host::protocol::browsing::{LogIn, Secret};
@@ -476,14 +480,14 @@ fn a_login_whose_form_is_elsewhere_fills_there_and_is_held_to_both_sites() {
     assert_eq!(driven.back_to.as_deref(), Some("https://app.example.test"));
     assert_eq!(
         sites,
-        vec![
-            Site::of("auth.example.test", 443),
-            Site::of("app.example.test", 443)
-        ]
+        LoginSites {
+            page: Site::of("app.example.test", 443),
+            form: Some(Site::of("auth.example.test", 443)),
+        }
     );
     let (same, sites) = super::login_of(&login("https://app.example.test")).unwrap();
     assert_eq!(same.back_to, None);
-    assert_eq!(sites, vec![Site::of("app.example.test", 443)]);
+    assert_eq!(sites, LoginSites::page(Site::of("app.example.test", 443)));
     for refused in [
         "http://auth.example.test",
         "https://auth.example.test/realm",
@@ -500,6 +504,8 @@ fn a_login_whose_form_is_elsewhere_fills_there_and_is_held_to_both_sites() {
 #[test]
 fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
     use std::io::{BufRead, BufReader, Write};
+
+    use purlis_browser_engine::drive::Hold;
     use std::net::{TcpListener, TcpStream};
 
     use crate::sandbox::browser_reach::{Lane, ReachProxy};
@@ -524,8 +530,9 @@ fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
     };
     let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
     let (listed, _) = reach_of(Some(&reach)).unwrap();
-    let proxy =
-        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap();
+    let proxy = std::sync::Arc::new(
+        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap(),
+    );
     let status = |port: u16| -> String {
         let mut stream = TcpStream::connect(proxy.address()).expect("the proxy");
         stream
@@ -539,10 +546,15 @@ fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
         line.trim_end().to_owned()
     };
     assert_eq!(status(other_port), "HTTP/1.1 200 Connection established");
-    let login_site = Site::of("127.0.0.1", login_port);
-    let bound = super::performed(&sites, &proxy, &[login_site], "http://127.0.0.1", |bind| {
-        bind()
-    })
+    let login_site = LoginSites::page(Site::of("127.0.0.1", login_port));
+    let bound = super::performed(
+        &sites,
+        &proxy,
+        &login_site,
+        "http://127.0.0.1",
+        super::SIGN_IN_WITHIN,
+        |holder| holder.bind(),
+    )
     .expect("performed");
     assert_eq!(bound, Ok(()));
     assert_eq!(status(other_port), "HTTP/1.1 403 Forbidden");
@@ -551,13 +563,147 @@ fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
     let refused = super::performed(
         &sites,
         &proxy,
-        &[Site::of("127.0.0.1", other_port)],
+        &LoginSites::page(Site::of("127.0.0.1", other_port)),
         "http://127.0.0.1",
+        super::SIGN_IN_WITHIN,
         |_| ran.set(true),
     )
     .unwrap_err();
     assert!(refused.contains("holds a login at 127.0.0.1:"), "{refused}");
     assert!(!ran.get(), "a second login at another site runs nothing");
+}
+
+/// #4995, the person's ruling of 2026-11-03: a login whose form is on another site, performed
+/// through a real reach proxy and judge, reaches the form's site from its bind until its page is
+/// back on the page's origin; from then on the page's site alone. One whose page never comes
+/// back reaches it until its sign-in's time is up. These bind sockets, so they first run on CI.
+#[cfg(unix)]
+#[test]
+fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time_is_up() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{TcpListener, TcpStream};
+
+    use purlis_browser_engine::drive::Hold;
+
+    use crate::sandbox::browser_reach::{Lane, ReachProxy};
+
+    let server = || {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a listener");
+        let port = listener.local_addr().expect("an address").port();
+        (listener, port)
+    };
+    let (_page_site, page_port) = server();
+    let (_form_site, form_port) = server();
+    let reach = BrowserReach {
+        listed: [page_port, form_port]
+            .iter()
+            .flat_map(|port| crate::sandbox::localport::reach_entries(*port))
+            .map(|host| Listed {
+                host,
+                layer: Layer::Chat,
+            })
+            .collect(),
+        ..BrowserReach::default()
+    };
+    let login = LoginSites {
+        page: Site::of("127.0.0.1", page_port),
+        form: Some(Site::of("127.0.0.1", form_port)),
+    };
+    let a_browser = || {
+        let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
+        let (listed, _) = reach_of(Some(&reach)).unwrap();
+        let proxy = std::sync::Arc::new(
+            ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone())
+                .unwrap(),
+        );
+        (sites, proxy)
+    };
+    let status = |proxy: &ReachProxy, port: u16| -> String {
+        let mut stream = TcpStream::connect(proxy.address()).expect("the proxy");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(15)))
+            .unwrap();
+        stream
+            .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(stream).read_line(&mut line).unwrap();
+        line.trim_end().to_owned()
+    };
+    let carried = "HTTP/1.1 200 Connection established";
+    let refused = "HTTP/1.1 403 Forbidden";
+
+    // Its page comes back.
+    let (sites, proxy) = a_browser();
+    let holder = super::performed(
+        &sites,
+        &proxy,
+        &login,
+        "http://127.0.0.1",
+        super::SIGN_IN_WITHIN,
+        |holder| {
+            holder.bind().expect("bound");
+            std::sync::Arc::clone(holder)
+        },
+    )
+    .expect("performed");
+    assert_eq!(status(&proxy, form_port), carried, "while it signs in");
+    assert_eq!(holder.signing_in(), login.form);
+    holder.back();
+    assert_eq!(status(&proxy, form_port), refused, "back on its page");
+    assert_eq!(status(&proxy, page_port), carried);
+    assert_eq!(holder.signing_in(), None);
+    // A later login of the same page signs in anew.
+    let again = super::performed(
+        &sites,
+        &proxy,
+        &login,
+        "http://127.0.0.1",
+        super::SIGN_IN_WITHIN,
+        |holder| {
+            holder.bind().expect("bound again");
+            std::sync::Arc::clone(holder)
+        },
+    )
+    .expect("performed again");
+    assert_eq!(
+        status(&proxy, form_port),
+        carried,
+        "a later login signs in anew"
+    );
+    holder.back();
+    assert_eq!(
+        status(&proxy, form_port),
+        carried,
+        "an earlier login ends no later one"
+    );
+    again.sign_in_over();
+    assert_eq!(status(&proxy, form_port), refused);
+
+    // Its page never comes back.
+    let (sites, proxy) = a_browser();
+    let _holder = super::performed(
+        &sites,
+        &proxy,
+        &login,
+        "http://127.0.0.1",
+        Duration::from_millis(300),
+        |holder| {
+            holder.bind().expect("bound");
+            std::sync::Arc::clone(holder)
+        },
+    )
+    .expect("performed");
+    assert_eq!(status(&proxy, form_port), carried, "while it signs in");
+    let start = std::time::Instant::now();
+    while status(&proxy, form_port) == carried {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the sign-in outlived its time"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(status(&proxy, page_port), carried);
 }
 
 // ---- Kept logins (#2021) ----

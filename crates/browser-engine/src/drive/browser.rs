@@ -24,7 +24,7 @@ use super::settle::{Activity, Settle, activity};
 use super::site::site;
 use super::tree::{FrameAx, NodeKey, Query, Scrub, Snapshot, View, build_kept};
 use super::{
-    Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, Gate, Judge, Limits, Outbound,
+    Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, Gate, Hold, Judge, Limits, Outbound,
     PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
 };
 use crate::WebAddress;
@@ -1380,6 +1380,16 @@ pub(crate) struct Inner {
     worlds: Worlds,
     /// The folder its downloads are held in, once it was given one (#2020).
     held_in: Mutex<Option<std::path::PathBuf>>,
+    /// The login whose holder is told once its page is back on its page's origin (#4995).
+    back: Mutex<Option<Back>>,
+}
+
+/// **A login whose page is to come back to its page's origin** (#4995): the page purlis opened
+/// for it, that origin, and who is told.
+struct Back {
+    target: String,
+    origin: String,
+    hold: Arc<dyn Hold>,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -1503,6 +1513,7 @@ impl Browser {
             following: Mutex::new(None),
             worlds: Worlds::default(),
             held_in: Mutex::new(None),
+            back: Mutex::new(None),
         });
         Screencast::start(&inner);
         if inner.judge.is_some() {
@@ -4216,6 +4227,34 @@ impl Drop for Browser {
 }
 
 impl Inner {
+    /// **`hold` is told once page `target` shows a document on `origin` again** (#4995), in
+    /// place of any login told before.
+    pub(crate) fn watch_back(&self, target: &str, origin: &str, hold: Arc<dyn Hold>) {
+        *lock(&self.back) = Some(Back {
+            target: target.to_owned(),
+            origin: origin.to_owned(),
+            hold,
+        });
+    }
+
+    /// Page `target`'s own document is now at `address`: a login waiting for that page to come
+    /// back to its origin has its holder told, once (#4995).
+    fn came_back(&self, target: &str, address: &str) {
+        let here = login::origin_of(address);
+        let told = {
+            let mut back = lock(&self.back);
+            match back.as_ref() {
+                Some(one) if one.target == target && here.as_deref() == Some(&*one.origin) => {
+                    back.take()
+                }
+                _ => None,
+            }
+        };
+        if let Some(told) = told {
+            told.hold.back();
+        }
+    }
+
     /// **Its DevTools connection ended** (#2745): unless purlis is stopping the engine, which
     /// tells of it itself, the engine is given a moment to end by itself where its pipe closed,
     /// and ended at once where the connection closed on a message, and whoever waits is told how.
@@ -4394,6 +4433,8 @@ impl Inner {
         }
         let now = Instant::now();
         let mut follow = Vec::new();
+        // The page whose own document changed, and its address (#4995).
+        let mut navigated: Option<(String, String)> = None;
         {
             let mut state = lock(&self.state);
             let params = &event.params;
@@ -4623,6 +4664,10 @@ impl Inner {
                             && let Some(target) = state.page_of_session(session)
                         {
                             lock(&self.devtools_unread).remove(&target);
+                            // A page's own document, where a login waits for it (#4995).
+                            if text("/frame/id").as_deref() == Some(target.as_str()) {
+                                navigated = Some((target, text("/frame/url").unwrap_or_default()));
+                            }
                         }
                         state.frame_seen(session, &params["frame"], Seen::Navigated);
                     }
@@ -4756,6 +4801,9 @@ impl Inner {
             {
                 page.settle.observe(session, seen, now);
             }
+        }
+        if let Some((target, address)) = navigated {
+            self.came_back(&target, &address);
         }
         self.changed.notify_all();
         for step in follow {
