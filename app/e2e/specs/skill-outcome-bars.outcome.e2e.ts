@@ -149,7 +149,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     // The clock is the window's own, started in the same task as the press, and stopped by the
     // frame after the row is drawn: so WebDriver's round trips are in neither end of it.
     const armed = await browser.execute(
-      (id: string, css: string) => {
+      (id: string, css: string, snapThis: boolean) => {
         const row = document.getElementById(id);
         if (row === null) return false;
         const holder = globalThis as { __openedInMs?: number };
@@ -282,10 +282,26 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
           const styleFirst = () => {
             if (inside) return 0;
             inside = true;
+            const g = globalThis as {
+              __snapOn4351?: boolean;
+              __snaps4351?: { name: string; html: string }[];
+              __frame4351?: string;
+              __t04351?: number;
+            }; // [DEBUG-4351]
+            const pre = g.__snapOn4351 ? document.documentElement.outerHTML : ""; // [DEBUG-4351]
             const t0 = performance.now();
             void styleOf(document.documentElement).color;
+            const ms = performance.now() - t0;
+            if (g.__snapOn4351 && ms >= 40 && g.__snaps4351 !== undefined) {
+              const at = (t0 - (g.__t04351 ?? t0)).toFixed(0);
+              g.__snaps4351.push({
+                name: `${at}-${ms.toFixed(0)}ms-lastframe`,
+                html: g.__frame4351 ?? "",
+              });
+              g.__snaps4351.push({ name: `${at}-${ms.toFixed(0)}ms-pre`, html: pre });
+            } // [DEBUG-4351]
             inside = false;
-            return performance.now() - t0;
+            return ms;
           }; // [DEBUG-4351]
           const note = (name: string, ms: number, styleMs = 0, self?: unknown) => {
             const t = globalThis as {
@@ -363,6 +379,34 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         const started = performance.now();
         (globalThis as { __t04351?: number }).__t04351 = started; // [DEBUG-4351]
         (globalThis as { __census4351?: boolean }).__census4351 = false; // [DEBUG-4351]
+        const snap = globalThis as {
+          __snapOn4351?: boolean;
+          __snaps4351?: { name: string; html: string }[];
+          __frame4351?: string;
+          __css4351?: string;
+        }; // [DEBUG-4351]
+        snap.__snapOn4351 = snapThis; // [DEBUG-4351]
+        if (snapThis) {
+          snap.__css4351 = Array.from(document.styleSheets)
+            .map((sheet) => {
+              try {
+                return Array.from(sheet.cssRules)
+                  .map((r) => r.cssText)
+                  .join("\n");
+              } catch {
+                return "";
+              }
+            })
+            .join("\n");
+          snap.__frame4351 = document.documentElement.outerHTML;
+          snap.__snaps4351 = [{ name: "0-before-click", html: snap.__frame4351 }];
+          const keep = () => {
+            if (!snap.__snapOn4351) return;
+            snap.__frame4351 = document.documentElement.outerHTML;
+            requestAnimationFrame(keep);
+          };
+          requestAnimationFrame(keep);
+        } // [DEBUG-4351]
         row.click();
         tl.push(`${(performance.now() - started).toFixed(0)} click returned`); // [DEBUG-4351]
         const look = () => {
@@ -377,6 +421,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       },
       STUDIO_OF_ALPHA,
       `[data-testid="skill-${crowd(0)}"]`,
+      n === 2, // [DEBUG-4351]
     );
     expect(armed).toBe(true);
     let took: number | undefined;
@@ -392,6 +437,22 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     console.log(
       `[DEBUG-4351] opening ${n} took ${Math.round(took as number)} ms: ${(tl as string[]).join(" | ")}`,
     ); // [DEBUG-4351]
+    if (n === 2) {
+      const got = (await browser.execute(() => {
+        const g = globalThis as {
+          __snapOn4351?: boolean;
+          __snaps4351?: { name: string; html: string }[];
+          __css4351?: string;
+        };
+        g.__snapOn4351 = false;
+        return { snaps: g.__snaps4351 ?? [], css: g.__css4351 ?? "" };
+      })) as { snaps: { name: string; html: string }[]; css: string }; // [DEBUG-4351]
+      const dir = join(process.cwd(), "logs", `dom4351-${harness.kind}`); // [DEBUG-4351]
+      mkdirSync(dir, { recursive: true }); // [DEBUG-4351]
+      writeFileSync(join(dir, "window.css"), got.css); // [DEBUG-4351]
+      for (const one of got.snaps) writeFileSync(join(dir, `${one.name}.html`), one.html); // [DEBUG-4351]
+      console.log(`[DEBUG-4351] wrote ${got.snaps.length} snapshots to ${dir}`); // [DEBUG-4351]
+    } // [DEBUG-4351]
   }
   return samples;
 }
