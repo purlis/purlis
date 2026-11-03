@@ -82,17 +82,24 @@ function aProjectSkill(root: string, name: string, front: string, beside = 'gran
   writeFileSync(join(root, "skills", `${name}.toml`), beside);
 }
 
-/** Presses the palette's row `id`, found by typing `typed`, counting what a person does. */
-async function fromThePalette(typed: string, id: string, effort: Effort): Promise<void> {
+/**
+ * Presses the palette's row `id`, found by typing `typed`, counting what a person does. A chat's
+ * row is the focused chat's own (#4753), so `ofTheChat` ends its id with the chat's number; a
+ * workspace's row, such as its studio's, has no chat in its id.
+ */
+async function fromThePalette(
+  typed: string,
+  id: string,
+  effort: Effort,
+  ofTheChat = false,
+): Promise<void> {
   await browser.keys(["F2"]);
   effort.presses += 1;
   const box = await $("#palette-query");
   await box.waitForDisplayed({ timeout: 10_000 });
   await box.addValue(typed);
   effort.characters += typed.length;
-  // A chat's row is the focused chat's own (#4753): every chat has one, by its number.
-  const chat = await focusedChat();
-  const row = await $(`[id="${id}${chat}"]`);
+  const row = await $(`[id="${ofTheChat ? `${id}${await focusedChat()}` : id}"]`);
   await row.waitForExist({ timeout: 20_000, timeoutMsg: `the palette never offered ${typed}` });
   await browser.execute((one: HTMLElement) => one.click(), row);
   effort.presses += 1;
@@ -266,7 +273,7 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       { timeout: 40_000, interval: 500, timeoutMsg: "the restarted chat never came back" },
     );
 
-    await fromThePalette("Use skill", "palette-row-chat.useskill:", effort);
+    await fromThePalette("Use skill", "palette-row-chat.useskill:", effort, true);
     await $('[data-testid="use-skill"]').waitForDisplayed({ timeout: 20_000 });
     await browser.waitUntil(
       async () => {
