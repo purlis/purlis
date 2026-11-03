@@ -583,11 +583,10 @@ fn workspace_to_try(
 /// A wait in words: `2 minutes`, or `30 seconds` under a minute.
 #[cfg(unix)]
 fn said_as_time(wait: std::time::Duration) -> String {
-    let counted =
-        |count: u64, unit: &str| format!("{count} {unit}{}", if count == 1 { "" } else { "s" });
+    use purlis_core::counts::counted;
     match wait.as_secs() {
-        secs @ 0..60 => counted(secs, "second"),
-        secs => counted(secs.div_ceil(60), "minute"),
+        secs @ 0..60 => counted(secs, "second", "seconds"),
+        secs => counted(secs.div_ceil(60), "minute", "minutes"),
     }
 }
 
