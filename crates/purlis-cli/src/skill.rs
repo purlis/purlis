@@ -2178,13 +2178,17 @@ fn publish(
         return Ok(1);
     }
     let forge = source::publish::OnTheForge::of(root, source)?;
-    let review = source::publish::review(root, built_in, level, name, source)?;
+    let review = source::publish::review(root, built_in, level, name, source, &forge)?;
     print!("{}", publish_text(&review, source));
     if review.stopped() {
         voice::err("Nothing can be sent until these are fixed:");
         for stop in &review.outgoing.stops {
             voice::err(esc(&stop.to_string()).to_string());
         }
+        return Ok(1);
+    }
+    if review.may_push == Some(false) {
+        voice::err(no_write_access(forge.display()));
         return Ok(1);
     }
     if !asked("Open this draft request, under your own account?") {
@@ -2216,8 +2220,21 @@ fn publish(
             );
             return Ok(1);
         }
+        source::publish::Published::NoWriteAccess => {
+            voice::err(no_write_access(forge.display()));
+            return Ok(1);
+        }
     }
     Ok(0)
+}
+
+/// What a publish says where the forge says the person's account may not push to the source.
+fn no_write_access(forge: &str) -> String {
+    format!(
+        "Nothing was sent: {forge} says your account cannot push to this source, and publishing \
+         takes write access to it. Ask its owners for access, or export the skill with \
+         `purlis skill export` and send it to them."
+    )
 }
 
 /// What a publish says with no person to ask.

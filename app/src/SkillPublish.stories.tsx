@@ -3,7 +3,8 @@
 
 /**
  * **The publish review and the export dialog** (#2781, `prototype/skill-publish`): the review in
- * the studio's own panel, clean, stopped by a secret, and kept on this machine, then the dialog.
+ * the studio's own panel, clean, stopped by a secret, kept on this machine, and on a source the
+ * account cannot push to (#4342), then the dialog.
  * Walked by the keyboard, held to axe, and pictured in every pictured theme cell. The core is
  * faked at its command boundary.
  */
@@ -15,7 +16,7 @@ import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.test
 import { inWorkspace, skillRowId } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { EXPORT, GITHUB, LOCAL, REVIEW, STOPPED } from "./skillPublish.testkit";
+import { CANNOT_PUSH, EXPORT, GITHUB, LOCAL, REVIEW, STOPPED } from "./skillPublish.testkit";
 import { expectFocusInSight } from "./stories.testkit";
 import { ExportDialog } from "./SkillPublish";
 
@@ -72,6 +73,18 @@ export const SomethingStopsIt: Story = {
       "aria-disabled",
       "true",
     );
+  },
+};
+
+export const CannotPush: Story = {
+  args: { review: CANNOT_PUSH },
+  play: async ({ canvas }) => {
+    await canvas.findByText(/GitHub says your account cannot push to this source/);
+    await expect(canvas.getByRole("button", { name: "Open draft pull request" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await expect(canvas.getByRole("button", { name: "Export…" })).toBeVisible();
   },
 };
 

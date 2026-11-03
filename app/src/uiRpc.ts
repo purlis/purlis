@@ -9484,7 +9484,9 @@ export type PublishAccepted = {
 };
 
 /**  **How a publish ended.** */
-export type PublishDone = { kind: "opened"; url: string } | { kind: "already"; url: string } | { kind: "cannot-push"; why: string };
+export type PublishDone = { kind: "opened"; url: string } | { kind: "already"; url: string } | { kind: "cannot-push"; why: string } | 
+/**  The forge says the person's account may not push to the source; nothing was pushed. */
+{ kind: "no-write-access" };
 
 /**  One grade the description holds. */
 export type PublishGrade = {
@@ -9539,6 +9541,11 @@ export type PublishReviewView = {
 	grades: PublishGrade[],
 	/**  The request's description, whole. */
 	body: string,
+	/**
+	 *  Whether the forge says the person's account may not push to the source (#4342). Only a
+	 *  no from the forge sets it: where the forge does not say, the push answers.
+	 */
+	cannot_push: boolean,
 	accepted: PublishAccepted,
 };
 

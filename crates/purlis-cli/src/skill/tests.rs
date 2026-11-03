@@ -154,3 +154,13 @@ fn a_publish_asks_only_at_a_terminal_outside_any_chat_and_a_doubt_counts_as_a_ch
     assert!(!may_publish(true, &Where::Outside, true));
     assert!(!may_publish(false, &Where::Outside, false));
 }
+
+#[test]
+fn a_publish_the_forge_says_cannot_push_names_the_forge_and_offers_export() {
+    let said = no_write_access("GitHub");
+    assert!(
+        said.starts_with("Nothing was sent: GitHub says your account cannot push"),
+        "{said}"
+    );
+    assert!(said.contains("`purlis skill export`"), "{said}");
+}
