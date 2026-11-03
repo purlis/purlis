@@ -11,6 +11,7 @@ import { settleLayout } from "./regions";
 import { keepTheirOrder } from "./commandOrder";
 import { startTheSwitchClock } from "./switchClock";
 import { watchTheAnswers } from "./answerWatch";
+import { watchForStalls } from "./slowLog";
 import { drawWindowText, listenForSizeKeys, onTextSizes, textSizes } from "./textSize";
 import {
   DEFAULT_THEME,
@@ -80,6 +81,11 @@ watchTheAnswers();
 // The parts the frame was drawn without, watched like any answer, on no one's way to the first
 // paint: the core is measuring them off the window's thread already.
 if (frame !== undefined) void partsLand(frame);
+
+// Every answer of a second or more, and every stall of the window's thread of 200 ms or more,
+// written to a log in the app's log folder, so a slow moment can be read afterwards
+// (`slowLog.ts`).
+watchForStalls();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
