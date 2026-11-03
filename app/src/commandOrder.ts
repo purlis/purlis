@@ -62,6 +62,8 @@ export const LANES = {
       "applyProposedChange",
       // A browser login line added to the manifest from its notice (#4595).
       "answerBrowserLogin",
+      // A secret fill's press, audited into the network record (#5115).
+      "answerSecretFill",
       // It drops a listed folder that resolves elsewhere now, so it writes as it reads.
       "grantableFolders",
       "listGrantableFolder",
