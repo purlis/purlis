@@ -453,7 +453,7 @@ export function drawThemeFor(
   at?: { plane: PlaneId; workspace?: string },
   unread?: string,
 ) {
-  sayTheUnread(unread, pick);
+  sayTheUnread(unread, pick, at?.plane);
   const next = at === undefined ? null : { plane: at.plane, workspace: at.workspace ?? null };
   // A switch to another workspace (or project) repaints with a short crossfade; the first draw
   // of the launch is at once.
@@ -469,7 +469,7 @@ export function drawThemeFor(
 /** Says, or takes back, why the project in front's extensions were not read (#4822). Only a
  *  pick of an extension's theme (`<extension>/<theme>`) is surely not drawn; with any other pick,
  *  or none, an extension's theme is drawn only where the levels come to one, so it may not be. */
-function sayTheUnread(unread: string | undefined, pick: string | null) {
+function sayTheUnread(unread: string | undefined, pick: string | null, plane?: PlaneId) {
   const surely = pick !== null && pick.includes("/");
   sayAboutThisMachine(
     "extensions unread",
@@ -479,7 +479,10 @@ function sayTheUnread(unread: string | undefined, pick: string | null) {
           severity: "warn",
           detail: `${surely ? "The extension's theme this project picked is not drawn" : "An extension's theme this project is on may not be drawn"}: purlis could not read which extensions it has on (${plainLine(unread)}).`,
           remedy:
-            "save the project's settings, or turn an extension on or off, and purlis reads them again",
+            plane === undefined
+              ? "save the project's settings, or turn an extension on or off, and purlis reads them again"
+              : "Read again asks once more, as saving the project's settings or turning an extension on or off does",
+          ...(plane === undefined ? {} : { readAgain: plane }),
         },
   );
 }

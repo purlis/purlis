@@ -239,6 +239,9 @@ export type MachineAlert = Pick<AlertRow, "severity" | "subject" | "detail"> & {
   /** A refused theme's way out (#2647): the project whose trust ask, asked again in place, can
    *  let it be drawn — a font file of its theme folders that its approval does not hold. */
   review?: PlaneId;
+  /** What a project has on could not be read (#4871): Read again asks it once more
+   *  ({@link extensionsChanged} in `extensionsOn.ts`). */
+  readAgain?: PlaneId;
 };
 
 /** The subject of the offer to move a format 1 theme file into a theme folder, and the cause it
