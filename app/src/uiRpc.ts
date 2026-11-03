@@ -2195,16 +2195,8 @@ export const commands = {
 	 */
 	cold: number | null,
 } | null, string>(__TAURI_INVOKE("chat_usage", { plane, session })),
-	/**
-	 *  **Writes one slow moment to the log**, on a blocking thread: a file is not the window's to
-	 *  wait for, least of all while it is slow.
-	 */
-	recordSlow: (moment: SlowMoment) => typedError<null, string>(__TAURI_INVOKE("record_slow", { moment })),
-	/**
-	 *  **The log's recent entries on this machine, newest last**, or none when there is no log
-	 *  (#4774): what a person's diagnostics carry. On a blocking thread, as the write is.
-	 */
-	slowLogRecent: () => typedError<SlowMoment[], string>(__TAURI_INVOKE("slow_log_recent")),
+	recordSlow: __WINDOW_ONLY_RESULT,
+	slowLogRecent: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the
