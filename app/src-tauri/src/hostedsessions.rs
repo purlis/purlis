@@ -4351,6 +4351,8 @@ impl SessionHost for HostedSessions {
                 link.unhear(confinement);
             }
         };
+        // From here its program may run there, whatever the window hears (#4781).
+        named.asked_to_run.mark();
         // How the host applied the sandbox to the run it composed, by its own record (#2692).
         let Begun {
             id,

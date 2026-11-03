@@ -1817,6 +1817,7 @@ fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
         runner: None,
         its_code_is_there: false,
         runs_on: None,
+        asked_to_run: crate::host::AskedToRun::default(),
         tools_allowed: None,
         plane_skills: false,
         chat: None,
@@ -3873,6 +3874,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
                 &crate::host::Named {
                     runner: None,
                     its_code_is_there: false,
+                    asked_to_run: crate::host::AskedToRun::default(),
                     tools_allowed,
                     ..named("run them", false)
                 },
