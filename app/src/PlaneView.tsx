@@ -335,6 +335,7 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
+import { tileAll, undoLayout, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { layoutOf, tabsOf, withShare } from "./laidOut";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -3790,6 +3791,14 @@ export const PlaneView = memo(function PlaneView({
   );
 
   const split = useCallback((direction: Direction) => void ask({ split: direction }), [ask]);
+  // Tile all, its Undo and Focus this pane (#4765): the tab's own panes rearranged, nothing
+  // started or ended.
+  const tileAllIn = useCallback((tab: number) => change((tabs) => tileAll(tabs, tab)), [change]);
+  const undoLayoutIn = useCallback(
+    (tab: number) => change((tabs) => undoLayout(tabs, tab)),
+    [change],
+  );
+  const zoomPane = useCallback(() => change(zoomFocusedPane), [change]);
 
   useEffect(() => {
     listedNow.current = chatsByNumber;
@@ -7109,6 +7118,9 @@ export const PlaneView = memo(function PlaneView({
       runAction,
       split,
       closePane,
+      tileAll: tileAllIn,
+      zoomPane,
+      undoLayout: undoLayoutIn,
       closeTab: close,
       // Each as its own close (#4762): the chats asked about once, by the row, before this.
       closeOtherTabs: (closing) => {
@@ -7260,6 +7272,9 @@ export const PlaneView = memo(function PlaneView({
       cancelSmartClose,
       close,
       closePane,
+      tileAllIn,
+      undoLayoutIn,
+      zoomPane,
       curate,
       createVault,
       createWorkspace,
@@ -10150,7 +10165,12 @@ export const PlaneView = memo(function PlaneView({
                             restoring={restoringChats}
                             // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
                             // session that asked, while the tab is switched to it.
-                            layout={layoutShown(tabs, frontTab.id) ?? frontTab.layout}
+                            // A zoomed pane is drawn alone, the tree kept whole (#4765).
+                            layout={zoomedLayout(
+                              tabs,
+                              frontTab.id,
+                              layoutShown(tabs, frontTab.id) ?? frontTab.layout,
+                            )}
                             crumbs={frontCrumbs}
                             placed={frontPlaced}
                             away={frontAway}

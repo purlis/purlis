@@ -19,6 +19,7 @@ import {
   canUndoLayout,
   tileAll,
   undoLayout,
+  zoomedLayout,
   zoomedOf,
   zoomFocusedPane,
 } from "./tiling";
@@ -280,6 +281,18 @@ describe("Focus this pane in a split: zoom (#4765)", () => {
     const back = zoomFocusedPane(zoomed);
     expect(zoomedOf(back, 1)).toBeUndefined();
     expect(treeOf(back)).toEqual(treeOf(tabs));
+  });
+
+  it("draws the zoomed pane alone, and the whole split once it is back", () => {
+    const tabs = focusPane(nested(3), 2);
+    const zoomed = zoomFocusedPane(tabs);
+
+    expect(zoomedLayout(zoomed, 1, zoomed.byId[1].layout)).toMatchObject({
+      kind: "pane",
+      pane: 2,
+    });
+    const back = zoomFocusedPane(zoomed);
+    expect(zoomedLayout(back, 1, back.byId[1].layout)).toBe(back.byId[1].layout);
   });
 
   it("leaves the tree alone, so the core keeps the whole split while a pane is zoomed", () => {

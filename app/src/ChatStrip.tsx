@@ -6,7 +6,14 @@ import { QueueRead } from "./QueueRead";
 import { closestCenter, DndContext } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { SquareTerminal } from "lucide-react";
-import { renameId, workItemSaid, RENAMES_ON_F2, type Offer, type Catalogued } from "./actions";
+import {
+  renameId,
+  tileAllId,
+  workItemSaid,
+  RENAMES_ON_F2,
+  type Offer,
+  type Catalogued,
+} from "./actions";
 import { Menued } from "./Menus";
 import {
   ALONG_THE_STRIP,
@@ -551,6 +558,13 @@ export function ChatStrip({
           )}
         </QueueRead>
       </div>
+      {/* **Tile all, at the strip's right end** (#4765): the tab in front's panes evened into a
+        grid. The catalogue's row, so a tab of one pane draws it greyed with its reason. */}
+      {tabs.inFront !== undefined && (
+        <span className="strip-tile">
+          <Doer offer={by(tileAllId(tabs.inFront))} onPress={press} words="Tile all" iconOnly />
+        </span>
+      )}
       {/* **`Split right`, `Split down` and `End this pane's chat` were here and are on the
         panes now** — the operator: *"harnesses panes should each have close button and
         spliting buttons in pane right top corner … so this will fully replace separate

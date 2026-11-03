@@ -10,6 +10,7 @@ import {
   FolderOpen,
   FolderPlus,
   Hand,
+  LayoutGrid,
   Minus,
   PanelRight,
   Pin as PinMark,
@@ -98,7 +99,7 @@ export function Doer({
   primary?: boolean;
 }) {
   if (!offer) return null;
-  const Mark = MARKS[offer.id];
+  const Mark = MARKS[offer.id] ?? MARKS[offer.id.split(":")[0]];
   const bare = iconOnly && Mark !== undefined;
   if (primary)
     return (
@@ -185,6 +186,8 @@ export const MARKS: Record<string, typeof Plus> = {
   "project.open": FolderOpen,
   // The title bar's switcher (FR-27): two ways along the strip, which is what it does.
   "project.switch": ArrowLeftRight,
+  // Tile all (#4765), one row per tab: found by its stem.
+  "tab.tile": LayoutGrid,
 };
 
 /**
