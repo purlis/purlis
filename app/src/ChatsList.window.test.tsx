@@ -245,7 +245,7 @@ function core(open: Filed[], ended: FinishedTask[] = []) {
       send("chat-stop", { plane: PLANE, session, phase: "stopped" });
     },
     /** The core says chat `session` moved to `state`, with `queue` asking for the person. */
-    move: (session: number, state: State, queue: number[] = []) => {
+    move: (session: number, state: State, queue: number[] = [], more: Partial<Moved> = {}) => {
       const handler = listeners.get("chat-moved");
       if (handler === undefined) throw new Error("the window is not listening for moves");
       sequence += 1;
@@ -262,6 +262,7 @@ function core(open: Filed[], ended: FinishedTask[] = []) {
         children: [],
         needs: null,
         stopped: null,
+        ...more,
       };
       act(() => {
         window.__TAURI_INTERNALS__.runCallback(handler, {
@@ -1073,6 +1074,54 @@ describe("a chat's tab and its row say one state word (#4935)", () => {
     await waitFor(() => expect(word("steward 1")).toBeTruthy());
     expect(tabSays("steward 1")).toBe(word("steward 1"));
     expect(tabOf("steward 1").querySelectorAll(".state")).toHaveLength(1);
+  });
+
+  it("says the same word on both for a session waiting on its own work", async () => {
+    const { move } = core(threeSessions());
+    render(<App />);
+    await section();
+    await waitFor(() => expect(shape()).toHaveLength(4));
+    move(4, "done");
+
+    move(1, "waiting", [], { own_work: { helpers: 2, workflows: 0, monitors: 0, shells: 0 } });
+
+    await waitFor(() => expect(word("steward 1")).toMatch(/^waiting on /));
+    expect(tabSays("steward 1")).toBe(word("steward 1"));
+  });
+
+  it("says the same word on both for a shell", async () => {
+    const { move } = core([
+      chat(1, "alpha", { harness: null, profile: null, persona: null, name: "zsh" }),
+    ]);
+    render(<App />);
+    await section();
+    await waitFor(() => expect(shape()).toHaveLength(1));
+
+    move(1, "running");
+
+    const name = within(theTree()).getAllByRole("treeitem")[0].querySelector(".session")
+      ?.textContent as string;
+    await waitFor(() => expect(word(name)).toBeTruthy());
+    expect(tabSays(name)).toBe(word(name));
+  });
+
+  it("says the same word on both for a task in a tab of its own that has reported", async () => {
+    const { move } = core([
+      chat(1, "alpha"),
+      chat(5, "alpha", {
+        persona: "devops",
+        in_front: true,
+        from: { ...taskOf(1), tab: true, reported: true, outcome: "blocked" },
+      }),
+    ]);
+    render(<App />);
+    await section();
+    await waitFor(() => expect(tabOf("devops 5")).toBeTruthy());
+
+    move(5, "waiting");
+
+    await waitFor(() => expect(word("devops 5")).toBeTruthy());
+    expect(tabSays("devops 5")).toBe(word("devops 5"));
   });
 
   it("says the same word on both for a session waiting on its task", async () => {

@@ -2104,33 +2104,33 @@ export const PlaneView = memo(function PlaneView({
     },
     [sidebar],
   );
+  /** Chat `session` as the plane's chats list it, in a workspace or outside them all. */
+  const listedChatOf = useCallback(
+    (session: number | undefined) => {
+      if (session === undefined || sidebar === undefined) return undefined;
+      return [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled].find(
+        (chat) => chat.session === session,
+      );
+    },
+    [sidebar],
+  );
   /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it, or `null`. */
   const sandboxOf = useCallback(
     (session: number | undefined): SandboxSaid | null => {
-      if (session === undefined || sidebar === undefined) return null;
-      for (const chats of [...sidebar.workspaces.map((ws) => ws.chats), sidebar.unfiled]) {
-        const found = chats.find((chat) => chat.session === session);
-        if (found)
-          return found.sandbox == null
-            ? null
-            : { level: found.sandbox, why: found.sandbox_why, sites: found.browser_sites };
-      }
-      return null;
+      const found = listedChatOf(session);
+      if (found?.sandbox == null) return null;
+      return { level: found.sandbox, why: found.sandbox_why, sites: found.browser_sites };
     },
-    [sidebar],
+    [listedChatOf],
   );
   /** What chat `session`'s row reads its state from beside the board (#4935), as the plane's
    *  chats say it: so its tab says its row's word. */
   const factsOf = useCallback(
     (session: number): TabFacts | undefined => {
-      if (sidebar === undefined) return undefined;
-      for (const chats of [...sidebar.workspaces.map((ws) => ws.chats), sidebar.unfiled]) {
-        const found = chats.find((chat) => chat.session === session);
-        if (found) return rowFactsOf(found);
-      }
-      return undefined;
+      const found = listedChatOf(session);
+      return found === undefined ? undefined : rowFactsOf(found);
     },
-    [sidebar],
+    [listedChatOf],
   );
   /** How many chats run in `workspace`, as the sidebar lists them: what an empty pane says
    *  (#4755). */
@@ -5446,12 +5446,8 @@ export const PlaneView = memo(function PlaneView({
    */
   const pinTab = useCallback(
     async (id: number, pinned: boolean): Promise<Ran> => {
-      // **The pin is the tab's** (#4762, #4935): its own, whatever its panes hold, so a tab
-      // whose only pane is empty is pinned too. It rides the layout the core is told
-      // (`window_layout`) in the same call, and a view tab's line of the record with it, so
-      // there is nothing here for the core to refuse. Nothing is said: the mark appearing on
-      // the tab is the answer, and a banner after every pin is noise about something the
-      // operator can already see.
+      // Its own, whatever its panes hold, so a tab whose only pane is empty is pinned too
+      // (#4935). Nothing is said: the mark appearing on the tab is the answer.
       change((tabs) => setPinned(tabs, id, pinned));
       return { ok: true };
     },
@@ -11270,8 +11266,9 @@ function giveViewTheKeyboard(view: ViewId): void {
  *  session, view tabs by `tabs.viewKey`. */
 type PinnedBefore = { chats: ReadonlySet<number>; views: ReadonlySet<string> };
 
-/** Chat `chat`'s own pin, where only a record from before tabs were recorded still says one
- *  (the core clears it once it holds a layout). */
+/** Chat `chat`'s own pin, where only a record from before tabs were recorded still says one:
+ *  the core clears every chat's own pin once the window has told it a layout
+ *  (`Chats::lay_out`), which the launch does at once. */
 function recordedPin(chat: OpenChat): PinnedBefore {
   return { chats: new Set(chat.pinned ? [chat.session] : []), views: new Set() };
 }

@@ -5,7 +5,7 @@ import { memo } from "react";
 import { SquareTerminal } from "lucide-react";
 import { markOf, ownWorkOf, useChatsHere, useChatsSelect } from "./chatState";
 import { PersonaMark } from "./PersonaMark";
-import { shownState, type Shown, type TaskFacts } from "./shownState";
+import { shownState, type RowFacts, type Shown } from "./shownState";
 import { StateShown } from "./StateShown";
 import { useQuestionStanding } from "./QuestionsHere";
 import { tasksAtWorkOf } from "./sessionTasks";
@@ -17,18 +17,15 @@ export function sameShown(one: Shown | undefined, other: Shown | undefined): boo
   return one === other || (one?.kind === other?.kind && one?.word === other?.word);
 }
 
-/** What a chat's shown state is read from beside the board: its row's facts (`RowFacts`). */
+/** What a chat's shown state is read from beside the board: its row's facts (`RowFacts`), of
+ *  which its question is read here, from the asks registry (#4564). A chat that is no task
+ *  leaves `report` and `outcome` out. */
 export type ShownOf = {
   session: number;
   /** A shell tab, which shows no state until something reports one. */
   shell: boolean;
-  /** As a task, the report it owes (`TaskFacts`); nothing for a chat that is not one. */
-  report?: TaskFacts["report"] | null;
-  /** How it reported, where it has and the app knows. */
-  outcome?: string | null;
-  /** Its harness as the person calls it: named in what is not known of it. */
-  harness: string | null;
-};
+} & Partial<Pick<RowFacts, "report" | "outcome">> &
+  Pick<RowFacts, "harness">;
 
 /**
  * **A chat's state, as every place that says it reads it** (#1484, #4935): its row in the

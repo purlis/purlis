@@ -12,7 +12,7 @@ import { contentsOf, panesOf, shownIn, type Tabs } from "./tabs";
 import type { TabFace } from "./tabFace";
 import { sameShown, useShownState, type ShownOf } from "./ChatPersonaState";
 import { ViewMark } from "./Views";
-import { shownState, type Shown } from "./shownState";
+import { shownState, type RowFacts, type Shown } from "./shownState";
 import { StateShown } from "./StateShown";
 import { needsSaid } from "./tabTasks";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -75,8 +75,9 @@ const NO_SESSIONS: ReadonlySet<number> = new Set();
 /** What a tab says of a chat it is told nothing of: no task, and no harness to name. */
 const NO_FACTS: TabFacts = { report: null, outcome: null, harness: null };
 
-/** What a tab is told of its chat beside the board, as its row has it (#4935). */
-export type TabFacts = Pick<ShownOf, "report" | "outcome" | "harness">;
+/** What a tab is told of its chat beside the board, as its row has it (#4935). Its question is
+ *  read where its state is (`useShownState`). */
+export type TabFacts = Pick<RowFacts, "report" | "outcome" | "harness">;
 
 /** No names: what a tab with no hidden task that needs you is handed. */
 const NO_NAMES: readonly string[] = [];
@@ -126,8 +127,8 @@ export function TabMarks({
   face: TabFace;
   /** The persona a chat runs as, when it runs as one: its mark is the combined icon's. */
   personaOf: (session: number) => string | null | undefined;
-  /** What a chat's row reads its state from beside the board (`shownState.RowFacts`), so its
-   *  tab says the row's word (#4935). A chat it knows nothing of is a chat that is no task. */
+  /** What a chat's row reads its state from beside the board ({@link TabFacts}), so its tab
+   *  says the row's word (#4935). A chat it knows nothing of is a chat that is no task. */
   factsOf?: (session: number) => TabFacts | undefined;
   /** How much the tab's chat's sandbox holds (#2071): its mark is drawn after the name. */
   sandbox?: SandboxSaid | null;

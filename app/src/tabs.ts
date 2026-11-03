@@ -787,17 +787,6 @@ export function renamedView(
 }
 
 /**
- * A pinned view's key ({@link viewKey}) after the rename {@link renamedView} follows, or the key
- * itself when it names no view the rename touches.
- */
-export function renamedViewKey(key: string, from: string, to: string, root?: string): string {
-  const [space, view, ...rest] = key.split("/");
-  if (space !== "charter" || view === undefined || rest.length === 0) return key;
-  const moved = renamedView({ from: null, view, key: rest.join("/") }, from, to, root);
-  return moved ? viewKey(moved) : key;
-}
-
-/**
  * Every view tab follows a workspace renamed from `from` to `to` (charter#367): a view on its
  * strip moves to the new strip, and **every view keyed by the workspace's name is keyed by the
  * new one** ({@link renamedView}, #1248) — its settings, its changes, a todo, a memory, a piece's
