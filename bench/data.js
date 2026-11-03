@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793663490573,
+  "lastUpdate": 1793665764242,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -36792,6 +36792,48 @@ window.BENCHMARK_DATA = {
             "value": 102.31020849999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.388, 101.646, 102.310, 102.316, 102.869 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "698906e9b703f424f35e78ac9ef5ec187b78bd38",
+          "message": "A late wake from a chat's own work keeps its wait (#4647) (#4864)\n\nAfter own_work_lapsed or blocked_while_waiting, own_work was None, so\nthe ledger read a later wake from that same work as the person's turn:\nthe needs-you item, its refusals and its needs cleared, and with tasks\nrunning the wait stayed gone. Reproduced in the app's hook path\n(Hooks::hear, then dispatched::heard): both late wakes emptied the queue.\n\nThe chat now keeps own_work_out while its work is still out but the wait\non it has ended for the person: on a lapse, a block during the wait, or a\nNotice in the turn that ended on it. Board::wakes_on_its_own_work reads\nit, and waits_as asks that through the glance, so the wake is a\nbackground turn. A turn that isn't a background turn, a turn's end, a\nfresh wait and a new session forget the flag. The person's line still\nclears the wait.\n\nA report applied with no WaitsOf (no window holds the project; the\nhost's Board::hear) stays an unknown turn and clears the wait, the safe\ndefault #4562 chose. A test records that.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EKC45NAXZVWPYQ6YQVJC74\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-02T21:15:20Z",
+          "tree_id": "1aa8dd3b686ce36f28a0b3d3d8b89adebac653fd",
+          "url": "https://github.com/purlis/purlis/commit/698906e9b703f424f35e78ac9ef5ec187b78bd38"
+        },
+        "date": 1793665760752,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4464955,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.440, 0.445, 0.446, 0.456, 0.461 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6572115,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.611, 16.639, 16.657, 16.858, 16.890 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.879211,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.497, 101.780, 101.879, 102.907, 102.988 ms"
           }
         ]
       }
