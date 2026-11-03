@@ -194,6 +194,26 @@ function core(
   return { asked };
 }
 
+/** Chat `session` as the sidebar lists it, working at the plane root. */
+function chatRow(session: number) {
+  return {
+    session,
+    name: String(session),
+    cwd: "/home/dev/plane",
+    harness: "claude",
+    in_front: false,
+    resumed: null,
+    fresh: null,
+    profile: "claude",
+    persona: "steward",
+    unreported: null,
+    guessed: null,
+    pinned: false,
+    label: null,
+    from: null,
+  };
+}
+
 /** A look at a machine with one harness `installed` (by its word), or none. */
 function harnessesHere(installed?: string) {
   const row = (name: string, title: string) => ({
@@ -826,6 +846,80 @@ describe("App", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(panes()).toEqual(["session 1"]);
     expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
+  });
+
+  it("gives each chat started from a + tab's empty pane that tab, three in a row (#4758)", async () => {
+    // As the scenario plane is: the window is on alpha's strip, while each chat starts where
+    // the explorer's pick says, the plane root, and the sidebar read again files it there.
+    const started: { session: number; name: string }[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "plane_at_launch")
+        return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
+      if (cmd === "plane_sidebar")
+        return {
+          ...SIDEBAR,
+          unfiled: started.map(({ session, name }) => ({ ...chatRow(session), name })),
+        };
+      if (cmd === "running_sessions") return started.map(({ session }) => session);
+      if (cmd === "opened_chats") return [];
+      if (cmd === "chat_states") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_chat") {
+        const session = started.length + 1;
+        started.push({ session, name: (args as { name: string }).name });
+        return { session };
+      }
+      return null;
+    });
+    render(<App />);
+
+    for (let one = 0; one < 3; one++) {
+      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+      await openAChat();
+      await waitFor(() => expect(panes()).toEqual([`session ${one + 1}`]));
+    }
+
+    expect(tabs().filter((name) => name?.startsWith("steward"))).toEqual([
+      "steward 1",
+      "steward 2",
+      "steward 3",
+    ]);
+  });
+
+  it("starts a chat in the pane New chat was pressed in, though another tab is in front by then (#4758)", async () => {
+    // Starting is a round trip, and the person can go to another tab before it answers: the
+    // chat still takes the pane it was asked for in, not whichever is in front then.
+    let letItStart = () => {};
+    let opened = 0;
+    mockIPC(async (cmd) => {
+      if (cmd === "plane_at_launch")
+        return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
+      if (cmd === "plane_sidebar") return SIDEBAR;
+      if (cmd === "running_sessions") return [];
+      if (cmd === "opened_chats") return [];
+      if (cmd === "chat_states") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd !== "start_chat") return null;
+      if (++opened === 1) return { session: 1 };
+      await new Promise<void>((starts) => (letItStart = starts));
+      return { session: 2 };
+    });
+    render(<App />);
+    await openAChat();
+    await waitFor(() => expect(panes()).toEqual(["session 1"]));
+
+    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+    await openAChat();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(within(stripNamed("Tabs")).getAllByRole("tab")[0]);
+    await waitFor(() => expect(panes()).toEqual(["session 1"]));
+    letItStart();
+
+    await waitFor(() => expect(tabs()).toEqual(["steward 1", "steward 2"]));
+    // And it comes to the front there, as a chat the person started always has.
+    expect(panes()).toEqual(["session 2"]);
   });
 
   it("draws its empty pane when the plane's sidebar cannot be read (#4758)", async () => {

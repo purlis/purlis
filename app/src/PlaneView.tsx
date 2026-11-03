@@ -661,6 +661,9 @@ type Where =
       /** A pool chosen on the picker's Runs on row as it opens, in the workspace `workspace`
        *  (#4483): Pool setup's Open a chat. */
       pool?: { name: string; workspace: string };
+      /** The pane New chat was pressed for (#4758): the chat takes it, while it is there,
+       *  whichever tab is in front by the time the start answers. */
+      pane?: PaneAt;
     }
   | { split: Direction };
 
@@ -2153,12 +2156,17 @@ export const PlaneView = memo(function PlaneView({
         // A view tab is on the strip it was opened from, which it carries; when the plane stops
         // having that workspace nothing else would move it, and it would be on a strip that is
         // never drawn. It goes where a chat working in no workspace goes.
-        // An empty tab holds nothing but its strip, so it goes with it (#4758), and the window
-        // lands where the rule above puts it.
+        // An empty tab holds nothing but its strip, so it goes with it when the workspace goes
+        // (#4758), and the window lands where the rule above puts it. **Only a workspace this
+        // read no longer lists, that the last one did**, or any the first read does not list:
+        // a strip the window was already on unlisted is not a workspace that has just gone,
+        // and an empty tab there may be the one New chat is about to fill.
+        const wasListed = (name: string) =>
+          held === undefined || held.workspaces.some((ws) => ws.name === name);
         change((tabs) =>
           dropEmptyTabsOfGoneWorkspaces(
             refileViews(tabs, (name) => next.workspaces.some((ws) => ws.name === name), OUTSIDE),
-            stands,
+            (name) => stands(name) || !wasListed(name),
           ),
         );
       })
@@ -2373,7 +2381,7 @@ export const PlaneView = memo(function PlaneView({
    * no pane but views.
    */
   const showStarted = useCallback(
-    (chat: PressedChat, workspace: string, named = false) => {
+    (chat: PressedChat, workspace: string, named = false, asked?: PaneAt) => {
       landOn((tabs) =>
         pressChat(
           tabs,
@@ -2385,7 +2393,13 @@ export const PlaneView = memo(function PlaneView({
           },
           // The focused pane, whichever strip the chat is filed on (#4758), unless the start
           // named its workspace: "New shell in beta" goes to beta's strip.
-          named ? undefined : startedInto(tabs),
+          // The pane New chat was pressed for, while it is there.
+          named
+            ? undefined
+            : asked !== undefined &&
+                contentsOf(tabs, asked.tab).some((one) => one.pane === asked.pane)
+              ? asked
+              : startedInto(tabs),
         ),
       );
     },
@@ -3503,7 +3517,7 @@ export const PlaneView = memo(function PlaneView({
 
   /** **New chat** (#4758; spec story 12): the picker, and the chat it starts takes the focused
    *  pane. */
-  const newChat = useCallback(() => void ask({ tab: true }), [ask]);
+  const newChat = useCallback(() => void ask({ tab: true, pane: startedInto(now.current) }), [ask]);
   /** **The strip's `+`** (#4758; spec story 13): a tab with one empty pane on the strip in front,
    *  in front, which New chat then fills. */
   const newTab = useCallback(
@@ -3978,7 +3992,12 @@ export const PlaneView = memo(function PlaneView({
         // caller chose, keeps that place's strip.
         const label = started.data.label ?? null;
         const named = where.in !== undefined || filedIn !== undefined;
-        showStarted({ session, chat: name, who: whoOf(persona, kind), label }, filed, named);
+        showStarted(
+          { session, chat: name, who: whoOf(persona, kind), label },
+          filed,
+          named,
+          where.pane,
+        );
         return undefined;
       }
       // The tab that was to be split can have gone while the picker was open: the chat goes on
