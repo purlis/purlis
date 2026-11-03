@@ -798,7 +798,14 @@ describe("what the menu says of the work (#1493, #1494, #1495)", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(commandsOf(asked, "answer_task_question")).toEqual([
-      { plane: PLANE, session: 4, number: 2, question: "Which branch?", text: "main" },
+      {
+        plane: PLANE,
+        session: 4,
+        number: 2,
+        question: "Which branch?",
+        text: "main",
+        overrides: false,
+      },
     ]);
   });
 

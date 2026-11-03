@@ -205,7 +205,7 @@ export function useAnswerQuestion({
     setSending(true);
     setRefused(undefined);
     const answer = await commands
-      .answerTaskQuestion(plane, session, asked.number, asked.question, text)
+      .answerTaskQuestion(plane, session, asked.number, asked.question, text, false)
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
     setSending(false);
     if (answer.status === "error") {

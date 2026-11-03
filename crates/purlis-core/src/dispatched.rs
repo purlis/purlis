@@ -2145,6 +2145,31 @@ impl Ledger {
         let unread = self
             .talk
             .person_answers(task, name, asker, number, seen, text)?;
+        self.person_answered(task, asker);
+        Ok(unread)
+    }
+
+    /// **The person says otherwise to the answer `task`'s asking chat gave question `number`**
+    /// (#4566, [`crate::dispatchtalk::Talk::person_overrides`], which decides and refuses):
+    /// only from the window's Say otherwise, once it drew that answer (#5005). Each chat is told
+    /// as for [`Ledger::person_answers`].
+    pub fn person_overrides(
+        &mut self,
+        task: u32,
+        name: &str,
+        asker: Option<u32>,
+        number: u32,
+        seen: &str,
+        text: &str,
+    ) -> Result<Option<PathBuf>, String> {
+        let unread = self
+            .talk
+            .person_overrides(task, name, asker, number, seen, text)?;
+        self.person_answered(task, asker);
+        Ok(unread)
+    }
+
+    fn person_answered(&mut self, task: u32, asker: Option<u32>) {
         self.landed(task, Landed::PersonAnswered);
         if let Some(asker) = asker {
             if let Some(told) = self.landed.get_mut(&asker) {
@@ -2152,7 +2177,6 @@ impl Ledger {
             }
             self.landed(asker, Landed::PersonAnsweredFor(task));
         }
-        Ok(unread)
     }
 
     /// Chat `chat`'s turn has what the person said of the questions `numbers`

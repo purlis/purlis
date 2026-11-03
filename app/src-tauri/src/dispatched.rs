@@ -2046,6 +2046,32 @@ pub fn person_answers(
     question: &str,
     said: &str,
 ) -> Result<(), String> {
+    the_person_s_word(held, task, number, question, said, false)
+}
+
+/// **The person says otherwise to the answer task `task`'s asking chat gave question
+/// `number`** (#4566): the window's Say otherwise, once it drew that answer
+/// ([`chat_answered_of`]). Reaches each chat as [`person_answers`] does, marked as overriding.
+/// Only this says otherwise (#5005): a plain answer that comes after the chat's is refused,
+/// since the person never saw what it would override.
+pub fn person_overrides(
+    held: &Held,
+    task: u32,
+    number: u32,
+    question: &str,
+    said: &str,
+) -> Result<(), String> {
+    the_person_s_word(held, task, number, question, said, true)
+}
+
+fn the_person_s_word(
+    held: &Held,
+    task: u32,
+    number: u32,
+    question: &str,
+    said: &str,
+    overrides: bool,
+) -> Result<(), String> {
     let name = held
         .chats()
         .shown_name(task)
@@ -2064,10 +2090,15 @@ pub fn person_answers(
     // The asking chat, while it is open: one that has closed is told nothing, and its number
     // may be another chat's by now.
     let asker = Some(from.chat).filter(|asker| !seen(held, *asker).ended);
-    let unread = held
-        .tasks()
-        .ledger()
-        .person_answers(task, &name, asker, number, question, &text)?;
+    let unread = if overrides {
+        held.tasks()
+            .ledger()
+            .person_overrides(task, &name, asker, number, question, &text)?
+    } else {
+        held.tasks()
+            .ledger()
+            .person_answers(task, &name, asker, number, question, &text)?
+    };
     // The question the asking chat had not read: it is told it was answered, and not asked it.
     if let Some(file) = unread {
         purlis_core::handback::took(held.root(), &file);
@@ -2161,6 +2192,10 @@ pub(crate) fn task_question_answered(
 /// nothing was sent: the question was answered first by the asking chat, the task has moved
 /// on, or the text is empty, too long or holds a character purlis hands to no chat.
 ///
+/// `overrides` is the person's Say otherwise to an answer the asking chat gave first, which
+/// the window drew (`task_question_answered`), and nothing else sends it (#5005): without it,
+/// an answer that arrives after the chat's is refused, as the person never saw that answer.
+///
 /// **The window's alone.** No chat's command, hook or tool reaches it, and no link serves it
 /// (`purlis_session_protocol::ui::WINDOW_ONLY`): what it sends reaches a chat marked as the
 /// person's. On a blocking thread, as it writes the dispatch's record.
@@ -2173,10 +2208,15 @@ pub(crate) async fn answer_task_question(
     number: u32,
     question: String,
     text: String,
+    overrides: bool,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("answering a task's question", move || {
-        person_answers(&held, session, number, &question, &text)
+        if overrides {
+            person_overrides(&held, session, number, &question, &text)
+        } else {
+            person_answers(&held, session, number, &question, &text)
+        }
     })
     .await
 }
