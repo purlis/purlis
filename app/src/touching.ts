@@ -75,6 +75,10 @@ export type TouchStore = {
 };
 
 type OwnStore = TouchStore & {
+  /** Says whether its project is in front: a touch that comes while it is not is dropped. */
+  show: (shown: boolean) => void;
+  /** Whether its project is in front, as last said. */
+  shown: () => boolean;
   /** Holds `touches` of `plane`, and sets the timer for the next of them to fade. */
   hold: (plane: PlaneId | undefined, touches: Touches) => void;
 };
@@ -82,8 +86,13 @@ type OwnStore = TouchStore & {
 function touchStore(): OwnStore {
   let held: Held = { touches: NONE };
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let shown = true;
   const listeners = new Set<() => void>();
   const store: OwnStore = {
+    show: (now) => {
+      shown = now;
+    },
+    shown: () => shown,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => void listeners.delete(listener);
@@ -117,20 +126,27 @@ export function touchesOf(held: Held, plane: PlaneId | undefined): Touches {
  * and not the touches, so the component holding it is not drawn again by one.
  *
  * **Only while the project is in front** (`useProjectShown`): a project nobody can see draws no
- * mark, so it does no work for its agents' touches and listens for none. A mark lasts a few
- * seconds, so one that came while it was away would mostly have faded by its return anyway.
+ * mark, so it does no work for its agents' touches: each is dropped as it arrives. A mark lasts
+ * a few seconds, so one that came while it was away would mostly have faded by its return anyway.
+ * It keeps listening while away: a switch between projects that listened and stopped again
+ * would send the core four commands more before it is painted (`projectSwitch.cost.test.tsx`).
  */
 export function useTouches(plane: PlaneId | undefined): TouchStore {
   const [store] = useState(touchStore);
   const shown = useProjectShown();
   useEffect(() => {
-    if (plane === undefined || !shown) return;
+    store.show(shown);
+    // What it held goes when the project leaves the front, and its timer: nothing marks them now.
+    if (!shown) store.hold(plane, NONE);
+  }, [store, plane, shown]);
+  useEffect(() => {
+    if (plane === undefined) return;
     let gone = false;
     let stop: (() => void) | undefined;
     void (async () => {
       try {
         const unlisten = await listen<ChatTouching>("chat-touching", (event) => {
-          if (gone || event.payload.plane !== plane) return;
+          if (gone || !store.shown() || event.payload.plane !== plane) return;
           const { session, path } = event.payload;
           const now = Date.now();
           const from = touchesOf(store.held(), plane);
@@ -145,11 +161,10 @@ export function useTouches(plane: PlaneId | undefined): TouchStore {
     return () => {
       gone = true;
       stop?.();
-      // What it held goes with it, and its timer: the project left the front or the window
-      // moved to another, and either way nothing marks them now.
+      // What it held goes with it, and its timer: the window moved to another project.
       store.hold(plane, NONE);
     };
-  }, [store, plane, shown]);
+  }, [store, plane]);
   return store;
 }
 
