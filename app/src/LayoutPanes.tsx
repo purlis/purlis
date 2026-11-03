@@ -1090,11 +1090,9 @@ export function EvenedSeparator({
  *   Both carry the catalogue's own words, so there is still one place they are written down.
  * - **Hover-only is invisible without a pointer**, so these are drawn for the FOCUSED pane as
  *   well as the hovered one. `App.css` has the rule and the reason it is `visibility` rather
- *   than `opacity`: an invisible button that can still be clicked is `End this pane's chat`
- *   under a stray press.
- * - **The close is the danger colour**, as the tab's `×` and the bar's button were, because
- *   it does the same thing. It asks first now (`EndingChat`), which is new and is not a
- *   licence for it to look lighter.
+ *   than `opacity`: an invisible button that can still be clicked is a press nobody meant.
+ * - **The close ends nothing** (#4756): it clears the pane, asks nothing, and has the quiet
+ *   hover a split has.
  *
  * Every button is a row of the catalogue, and the row is the same one the palette lists.
  * Nothing is drawn for a row the catalogue no longer has.

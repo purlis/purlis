@@ -1437,20 +1437,16 @@ export function projectRows(
 }
 
 /**
- * What ending a chat costs, said on the row that does it (charter-app#130).
- *
- * The `×` on a tab has always called `close_session`, which ends the program and takes the
- * chat off the board. That is the right behaviour and it is not changing. What was missing is
- * anybody saying so: the glyph reads as "hide this tab", and at fifty tabs with no undo the
- * operator tidying up was ending fifty live harnesses on that reading.
+ * What ending a chat costs, said on the row that does it (charter-app#130): End…, the one row
+ * that ends a chat since a close ends nothing (#4756).
  */
 export const ENDS_IT = "Ends the program it runs. There is no undo.";
 
 /** What a close says of the one chat it takes off the screen (#4756): it ends nothing. */
-export const GOES_ON = "Its chat goes on in the sidebar.";
+export const ONE_CHAT_GOES_ON = "Its chat goes on in the sidebar.";
 
 /** What a close says of the chats it takes off the screen (#4756). */
-export const GO_ON = "Its chats go on in the sidebar.";
+export const CHATS_GO_ON = "Its chats go on in the sidebar.";
 
 /**
  * What deleting a workspace costs, said on the row that asks for it.
@@ -3035,7 +3031,7 @@ export function catalogue(now: Now): Offer[] {
     }
     offers.push({
       ...can(`tab.close:${tab}`, title, { verb: "closeTab", tab }, name),
-      ...(chats === 0 ? {} : { note: chats === 1 ? GOES_ON : GO_ON }),
+      ...(chats === 0 ? {} : { note: chats === 1 ? ONE_CHAT_GOES_ON : CHATS_GO_ON }),
     });
   }
 
@@ -4885,12 +4881,8 @@ function nothingSaidSoFar(quiet: readonly string[]): string {
  * **The close of one pane of the tab in front** (`pane.close`), decided for that pane: the
  * catalogue's row is the focused pane's, and a pane's own corner draws its own (#1486).
  *
- * A pane's close ends its chat exactly as a tab's does, so it says the same thing. A pane
- * showing a view closes and ends nothing, so it says so and is not asked about.
- *
- * **A pane showing a task has no close**: its close would end the session under the task,
- * which is not what is on screen, and ending a task is not a close. The reason names the
- * session that pane is. The tab's own close still ends the session, and says so.
+ * **Close pane clears the pane and ends nothing** (#4756), as a tab's close does: its chat, a
+ * task it shows, or the view it holds goes on or goes, and nothing is asked.
  *
  * **A task's own pane is sent back** (#1489): the same id, a minimise, which ends nothing.
  */
@@ -4930,7 +4922,7 @@ export function paneCloseOf(
     return cannot("pane.close", PANE_CLOSE, RESTORING_HAS_NO_CLOSE);
   // **Close pane clears the pane and ends nothing** (#4756, spec #4750 story 17): its chat, and
   // a task it shows, go on in the sidebar.
-  return { ...can("pane.close", PANE_CLOSE, { verb: "closePane" }), note: GOES_ON };
+  return { ...can("pane.close", PANE_CLOSE, { verb: "closePane" }), note: ONE_CHAT_GOES_ON };
 }
 
 /** Close pane's words (#4756), on the pane head's `×`, its menu and the palette. */

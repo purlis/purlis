@@ -30,8 +30,6 @@ export const EVEN = 500;
 /** The whole of a split, in tenths of a percent. */
 export const WHOLE = 1000;
 
-export { EMPTY_TAB };
-
 /** What a split holds as its first child's share: its own, or even. */
 export function shareOf(layout: Extract<Layout, { kind: "split" }>): number {
   return layout.share ?? EVEN;

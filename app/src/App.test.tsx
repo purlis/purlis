@@ -819,7 +819,7 @@ describe("App", () => {
     await endChat("steward 1");
     letTheSecondSessionStart();
 
-    await vi.waitFor(() => expect(opened).toBe(2));
+    await waitFor(() => expect(opened).toBe(2));
     expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
       { plane: "/home/dev/plane", session: 1 },
     ]);

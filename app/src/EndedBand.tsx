@@ -3,16 +3,11 @@
 
 import type { Offer } from "./actions";
 import { Notice } from "./Notice";
-import { stateOf, useChatsHere, useChatsSelect, type State } from "./chatState";
+import type { State } from "./chatState";
 
 /** Whether a chat's state is its program's end: content (`done`) or not (`failed`). */
 export function endedBy(state: State): boolean {
   return state === "done" || state === "failed";
-}
-
-/** Whether chat `session`'s program has ended, as the core last told it (`chat-moved`). */
-export function useChatEnded(session: number): boolean {
-  return useChatsSelect(useChatsHere(), (states) => endedBy(stateOf(states, session)));
 }
 
 /**

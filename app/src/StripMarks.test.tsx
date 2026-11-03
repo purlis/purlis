@@ -32,7 +32,7 @@ describe("the bar's buttons carry a mark beside their words", () => {
     ["chat.new", "New tab", "lucide-plus"],
     ["pane.split.right", "Split right", "lucide-square-split-horizontal"],
     ["pane.split.down", "Split down", "lucide-square-split-vertical"],
-    ["pane.close", "End this pane's chat", "lucide-x"],
+    ["pane.close", "Close this pane", "lucide-x"],
     // The project strip's two, and they are deliberately not the same glyph: `FolderPlus` is
     // what every file manager puts on *New folder*, `FolderOpen` on *Open* (charter-app#178).
     // Two icon-only buttons an inch apart carrying one icon is a strip aimed at by memory.

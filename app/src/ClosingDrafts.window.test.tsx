@@ -294,7 +294,7 @@ describe("a link's close of a chat with theme drafts", () => {
     render(<App />);
     await openAChat();
     await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1, 7] }));
-    expect(await findResult(/can't be asked about together here/)).toBeTruthy();
+    expect(await findResult(/cannot be asked about together here/)).toBeTruthy();
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 

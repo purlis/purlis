@@ -373,7 +373,7 @@ describe("a chat wrapping up", () => {
   const keptOpenNotice = (session: number) =>
     document.querySelector<HTMLElement>(`[data-cause="smart-close-kept-open:${session}"]`);
 
-  it("stays open after a Smart close it held no pass for, says so, and Close tab closes it plainly", async () => {
+  it("stays open after a Smart close it held no pass for, says so, and End chat ends it plainly", async () => {
     const { asked: log } = core();
     render(<App />);
     await openAChat();
@@ -384,12 +384,12 @@ describe("a chat wrapping up", () => {
     const notice = keptOpenNotice(1) as HTMLElement;
     expect(notice).toHaveTextContent(
       "steward 1 saved its session record. purlis did not see " +
-        "/purlis-smart-close typed in it, so its tab stayed open.",
+        "/purlis-smart-close typed in it, so it was not ended.",
     );
     expect(tabOf("steward 1")).toBeDefined();
     expect(asked(log, "close_session")).toEqual([]);
 
-    await userEvent.click(within(notice).getByRole("button", { name: "Close tab" }));
+    await userEvent.click(within(notice).getByRole("button", { name: "End chat" }));
 
     await waitFor(() => expect(tabOf("steward 1")).toBeUndefined());
     expect(asked(log, "close_session")).toEqual([{ plane: PLANE, session: 1 }]);

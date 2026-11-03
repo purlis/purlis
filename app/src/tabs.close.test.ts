@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { EMPTY_TAB } from "./laidOut";
 import {
   closeFocusedPane,
   closeLayout,
   contentsOf,
+  EMPTY_TAB,
+  focusPane,
   type FiledIn,
   noTabs,
   openTab,
@@ -144,5 +145,31 @@ describe("a new chat on a strip whose one tab is empty (#4756)", () => {
     expect(openTabFilling(tabs, "alpha", 12, "12", "steward")).toEqual(
       openTab(tabs, 12, "12", "steward"),
     );
+  });
+});
+
+describe("where the keyboard goes on Close pane (#4756, spec #4750)", () => {
+  /** A | (B / C): A on the left, B over C on the right, C focused. */
+  function threePanes() {
+    const tabs = splitFocusedPane(splitFocusedPane(openTab(noTabs(), 11), "row", 12), "column", 13);
+    const [a, b, c] = contentsOf(tabs, front(tabs)).map((one) => one.pane);
+    return { tabs, a, b, c };
+  }
+
+  it("goes to the pane that takes the space, not the layout's first pane", () => {
+    const { tabs, b } = threePanes();
+
+    const left = closeFocusedPane(tabs, filed);
+
+    expect(left.byId[front(left)].focused).toBe(b);
+  });
+
+  it("goes to the pane below when the pane above it closes", () => {
+    const { tabs, b, c } = threePanes();
+    const onB = focusPane(tabs, b);
+
+    const left = closeFocusedPane(onB, filed);
+
+    expect(left.byId[front(left)].focused).toBe(c);
   });
 });

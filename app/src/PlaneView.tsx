@@ -2519,13 +2519,13 @@ export const PlaneView = memo(function PlaneView({
     tabs.order.some((id) => panesOf(tabs, id).some((pane) => pane.session === session)),
   );
   if (keptOpenHere.length !== keptOpen.length) setKeptOpen(keptOpenHere);
-  /** A kept-open chat's Notice put away, by Dismiss or by its Close tab. */
+  /** A kept-open chat's Notice put away, by Dismiss or by its End chat. */
   const forgetKeptOpen = useCallback(
     (session: number) => setKeptOpen((was) => was.filter((one) => one.session !== session)),
     [],
   );
-  /** **Close tab** on a kept-open chat's Notice: the plain Close, the person's own press. It
-   *  ends the chat and grants nothing, as the close dialog's Close does. */
+  /** **End chat** on a kept-open chat's Notice: the person's own press, ending the chat as
+   *  End…'s Close does, and granting nothing. Named End, since a close ends nothing (#4756). */
   const closeKeptOpen = useCallback(
     (session: number) => {
       forgetKeptOpen(session);
@@ -9682,17 +9682,18 @@ export const PlaneView = memo(function PlaneView({
         </Notice>
       )}
       {/* **A Smart close that saved its record with no pass** (#1361): the chat ran it, and
-          purlis did not see /purlis-smart-close typed in its pane, so its tab stayed open. Never a
-          silent miss: one press closes it, as Close would. Only while its tab is there. */}
+          purlis did not see /purlis-smart-close typed in its pane, so it was not ended. Never a
+          silent miss: one press ends it, as End… would (#4756: a close ends nothing, so the press
+          says End). Only while its tab is there. */}
       {keptOpen.map(({ session, name }) => (
         <Notice
           key={session}
           cause={`smart-close-kept-open:${session}`}
-          fixes={[{ label: "Close tab", onPress: () => closeKeptOpen(session) }]}
+          fixes={[{ label: "End chat", onPress: () => closeKeptOpen(session) }]}
           onDismiss={() => forgetKeptOpen(session)}
         >
           {name} saved its session record. purlis did not see <code>/purlis-smart-close</code> typed
-          in it, so its tab stayed open.
+          in it, so it was not ended.
         </Notice>
       ))}
 
@@ -11340,12 +11341,12 @@ function alreadyShows(tabs: Tabs, session: number): boolean {
 
 /** What the window says of a link's close that came while a question was on screen (#2761). */
 const CLOSE_HANDED_NOT_ASKED =
-  "A link asked to close chats here that have theme drafts while a question was on screen, so it was not asked: close them here, and answer Keep or Revert.";
+  "A link asked to end chats here that have theme drafts while a question was on screen, so it was not asked: end each here with End…, and answer Keep or Revert.";
 
 /** What the window says when a link's close names chats it cannot ask End… about as one
  *  (#2761, #4756): more than one, or one not open here. */
 const CLOSE_HANDED_NOT_HERE =
-  "A link asked to end chats that have theme drafts, and they can't be asked about together here: end each here with End…, and answer Keep or Revert.";
+  "A link asked to end chats that have theme drafts, and they cannot be asked about together here: end each here with End…, and answer Keep or Revert.";
 
 /** The programs the Skill studio lists the own skills of, by the word the project calls each. */
 const HARNESS_KINDS: readonly HarnessKind[] = ["claude", "opencode", "codex"];

@@ -268,8 +268,8 @@ export function OWN_TABS_SAYS(count: number): string {
       ? "1 of its tasks has a tab of its own"
       : `${count} of its tasks have tabs of their own`;
   const those = count === 1 ? "That tab closes" : "Those tabs close";
-  const kept = count === 1 ? "a task that goes on working" : "tasks that go on working";
-  return `${tasks}. ${those} with this one: ${kept} stay in the Chats list.`;
+  const kept = count === 1 ? "a task that goes on working stays" : "tasks that go on working stay";
+  return `${tasks}. ${those} with this one: ${kept} in the Chats list.`;
 }
 
 /** What the dialog asks about the chats at work below a closing chat. */

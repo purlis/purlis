@@ -482,15 +482,9 @@ export function openTabFilling(
   label: string | null = null,
 ): Tabs {
   const opened = openTab(tabs, session, chat, who, label);
-  const isEmpty = (id: number | undefined) => {
-    const layout = id === undefined ? undefined : tabs.byId[id]?.layout;
-    return (
-      layout?.kind === "pane" &&
-      layout.content.kind === "empty" &&
-      layout.content.workspace === workspace
-    );
-  };
-  const empty = [tabs.inFront, ...tabs.order].find(isEmpty);
+  const empty = [tabs.inFront, ...tabs.order].find(
+    (id) => id !== undefined && isEmptyTab(tabs.byId[id], workspace),
+  );
   if (empty === undefined || opened.inFront === undefined) return opened;
   const made = opened.byId[opened.inFront];
   // The tab `openTab` made goes; the empty one takes what it holds.
@@ -1008,6 +1002,17 @@ export function closeTab(
  *  says (spec #4750 story 44). */
 export const EMPTY_TAB = "New chat";
 
+/** Whether `tab` is one empty pane of `workspace`'s strip: what a close leaves on a strip's last
+ *  tab (#4756). */
+function isEmptyTab(tab: Tab | undefined, workspace: string): boolean {
+  const layout = tab?.layout;
+  return (
+    layout?.kind === "pane" &&
+    layout.content.kind === "empty" &&
+    layout.content.workspace === workspace
+  );
+}
+
 /**
  * **Close tab, the person's** (#4756): the layout closes, and its chats go on in the sidebar.
  * **Unless it is its strip's last tab**, which keeps one empty pane in place of its whole
@@ -1027,7 +1032,7 @@ export function closeLayout(
   const strip = tabsIn(tabs, workspace, filedIn, pinned, background);
   if (workspace === undefined || strip.some((other) => other !== id))
     return closeTab(tabs, id, filedIn, pinned, background);
-  if (tab.layout.kind === "pane" && tab.layout.content.kind === "empty") return tabs;
+  if (isEmptyTab(tab, workspace)) return tabs;
   const pane = tabs.named.panes + 1;
   const emptied: Tab = {
     id,
@@ -1580,7 +1585,9 @@ export function closeFocusedPane(
   if (!tab) return tabs;
   const left = without(tab.layout, tab.focused);
   if (!left) return closeLayout(tabs, tab.id, filedIn, pinned, background);
-  const focused = panes(left)[0].pane;
+  // **The keyboard goes to the pane that takes the space** (spec #4750): the nearest pane of
+  // the sibling that takes the closed pane's place.
+  const focused = takesTheSpace(tab.layout, tab.focused) ?? panes(left)[0].pane;
   const kept = showing({ ...tab, layout: left, focused }, tab.shows);
   return { ...tabs, byId: { ...tabs.byId, [tab.id]: kept } };
 }
@@ -2241,6 +2248,19 @@ export function replace(layout: Layout, pane: number, change: (found: Pane) => L
     ...layout,
     children: layout.children.map((child) => replace(child, pane, change)) as [Layout, Layout],
   };
+}
+
+/**
+ * The pane that takes pane `pane`'s space when it closes: in the split it is a side of, the
+ * other side's pane nearest to it (its last pane where `pane` came second, its first where it
+ * came first). Nothing for a layout of one pane, or a pane it does not hold.
+ */
+function takesTheSpace(layout: Layout, pane: number): number | undefined {
+  if (layout.kind === "pane") return undefined;
+  const [first, second] = layout.children;
+  if (first.kind === "pane" && first.pane === pane) return panes(second)[0]?.pane;
+  if (second.kind === "pane" && second.pane === pane) return panes(first).at(-1)?.pane;
+  return takesTheSpace(first, pane) ?? takesTheSpace(second, pane);
 }
 
 /** `layout` without the pane `pane`, or nothing when it was the only one. */

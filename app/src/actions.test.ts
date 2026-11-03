@@ -14,8 +14,8 @@ import {
   catalogued,
   curateRows,
   curateSubjectOf,
-  GO_ON,
-  GOES_ON,
+  CHATS_GO_ON,
+  ONE_CHAT_GOES_ON,
   PANE_CLOSE,
   FILE_VERBS,
   fileRows,
@@ -507,7 +507,7 @@ describe("the one list of actions", () => {
 
     expect(by(offers, "tab.close:1")?.title).toBe("Close steward 3");
     expect(by(offers, "tab.close:1")?.does).toEqual({ verb: "closeTab", tab: 1 });
-    expect(by(offers, "tab.close:1")?.note).toBe(GOES_ON);
+    expect(by(offers, "tab.close:1")?.note).toBe(ONE_CHAT_GOES_ON);
     // And not on rows that only navigate: a note on everything is a note on nothing.
     expect(by(offers, "tab.select:1")?.note).toBeUndefined();
     expect(by(offers, "chat.new")?.note).toBeUndefined();
@@ -516,7 +516,7 @@ describe("the one list of actions", () => {
   it("says of a tab of several chats that they go on", () => {
     const tabs = splitFocusedPane(openTab(noTabs(), 7, "3", "steward"), "row", 8);
 
-    expect(by(catalogue(now({ tabs })), "tab.close:1")?.note).toBe(GO_ON);
+    expect(by(catalogue(now({ tabs })), "tab.close:1")?.note).toBe(CHATS_GO_ON);
   });
 
   it("clears a pane on Close pane and ends nothing, saying its chat goes on (#4756)", () => {
@@ -524,7 +524,7 @@ describe("the one list of actions", () => {
 
     expect(by(offers, "pane.close")?.title).toBe(PANE_CLOSE);
     expect(by(offers, "pane.close")?.does).toEqual({ verb: "closePane" });
-    expect(by(offers, "pane.close")?.note).toBe(GOES_ON);
+    expect(by(offers, "pane.close")?.note).toBe(ONE_CHAT_GOES_ON);
   });
 
   it("closes a pane that shows a task too, since that ends nothing either", () => {
