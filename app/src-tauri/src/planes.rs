@@ -130,6 +130,9 @@ struct Records {
     /// record it writes, so the next launch can tell whether it is still in this clone, on
     /// this device — or in a copy, or a move ([`reopen::arrive`]).
     clone_seat: reopen::CloneSeat,
+    /// Each open chat's kept skill stamp, which a sweep that takes a closed chat's record of
+    /// the levels it could have made forgets (#4884).
+    skills_now: Arc<crate::chats::SkillsNow>,
 }
 
 impl Records {
@@ -177,7 +180,7 @@ impl Records {
         purlis_core::browsertimeline::sweep(&self.root, &open);
         // **And a closed chat's Skill studio leftovers** (SK-9, #2772): the record of the levels
         // a sandboxed chat could have made, and a Try it's throwaway piece no chat stands in.
-        crate::skilldrafts::sweep(&self.root, &record);
+        crate::skilldrafts::sweep(&self.root, &record, &self.skills_now);
     }
 
     /// Every project this machine remembers opening (the machine store's recents), which is
@@ -4220,11 +4223,14 @@ impl Planes {
             .config
             .as_deref()
             .and_then(|config| purlis_core::machine::device_id(config).ok());
+        // Shared by the chats and their record's sweep (#4884).
+        let skills_now = Arc::new(crate::chats::SkillsNow::default());
         let records = Arc::new(Records {
             root: root.clone(),
             config: self.config.clone(),
             allowed: AtomicBool::new(false),
             clone_seat: reopen::CloneSeat::of(&root, device.clone()),
+            skills_now: Arc::clone(&skills_now),
         });
         let recorded = WrittenBehind::new({
             let records = Arc::clone(&records);
@@ -4244,6 +4250,7 @@ impl Planes {
             chats.sessions().hear_through(relayed);
         }
         chats.arming_with(self.shipped.clone());
+        chats.keeping_skills_in(skills_now);
         if let Some(executor) = &self.routers {
             chats.asks_routers_with(Arc::new(purlis_core::skills::router::OnThisMachine {
                 executor: Arc::clone(executor),

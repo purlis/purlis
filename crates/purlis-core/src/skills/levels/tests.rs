@@ -207,12 +207,12 @@ fn a_record_whose_chat_is_off_the_record_is_swept_only_once_it_is_old() {
         .join(DIR)
         .join(format!("{CHAT}.json"));
     // Just noted: the chat may not be on the app's record yet.
-    sweep(root, &[]);
+    assert!(!sweep(root, &[]), "nothing went");
     assert!(record.is_file());
     noted_long_ago(root, CHAT);
-    sweep(root, &[CHAT.to_owned()]);
+    assert!(!sweep(root, &[CHAT.to_owned()]), "nothing went");
     assert!(record.is_file(), "its chat is open");
-    sweep(root, &[]);
+    assert!(sweep(root, &[]), "its record went");
     assert!(!record.exists());
 }
 

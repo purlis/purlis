@@ -510,14 +510,16 @@ pub fn vouch(root: &Path, owner: &str) {
 /// **Removes every record whose chat is not among `open`**, the ids on the app's record of open
 /// chats, once it is older than [`super::verbs::drafts::SWEEP_GRACE`] (the time between the host
 /// noting a start and the chat being on that record): the app's, each time it writes that record,
-/// so a closed chat's goes, and at a launch every one a quit or a crash left.
-pub fn sweep(root: &Path, open: &[String]) {
+/// so a closed chat's goes, and at a launch every one a quit or a crash left. Whether any went:
+/// what an open chat would start on now may have changed with it.
+pub fn sweep(root: &Path, open: &[String]) -> bool {
     let Some(state) = crate::appstate::dir(root) else {
-        return;
+        return false;
     };
     let Ok(entries) = std::fs::read_dir(state.join(DIR)) else {
-        return;
+        return false;
     };
+    let mut swept = false;
     for entry in entries.filter_map(Result::ok) {
         let Some(id) = entry
             .file_name()
@@ -553,8 +555,10 @@ pub fn sweep(root: &Path, open: &[String]) {
                 continue;
             }
             remove(&state, &id);
+            swept = true;
         }
     }
+    swept
 }
 
 /// **Each chat on the plane at `root`'s record of open chats noted in the app state `state`**, its
