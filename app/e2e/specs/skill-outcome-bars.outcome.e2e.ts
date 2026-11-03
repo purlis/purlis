@@ -141,57 +141,60 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     await closeTheViewTabsOpenedSince(wereOpen);
     const already = await $('[data-testid="skill-studio"]').isExisting();
     if (already) throw new Error("the studio's tab is still open, so this would time no opening");
-    // [DEBUG-4351] A/B on the click's style pass: 1 drops every :has() rule, 2 every :focus/:hover/:active rule, 3 every @container and @media block.
-    const variant = n % 4; // [DEBUG-4351]
+    // [DEBUG-4351] A/B: odd openings key every [data-scope="x"] rule on a class .ds-x instead,
+    // which the window adds wherever data-scope is set, so WebKit files those rules by class.
+    const variant = n % 2; // [DEBUG-4351]
     const dropped = await browser.execute((v: number) => {
       const g = globalThis as {
         __variant4351?: number;
-        __inertPatched4351?: boolean;
-        __dropped4351?: { sheet: CSSStyleSheet | CSSGroupingRule; at: number; text: string }[];
+        __classPatched4351?: boolean;
+        __was4351?: { rule: CSSStyleRule; text: string }[];
       };
       g.__variant4351 = v;
-      if (!g.__inertPatched4351) {
-        g.__inertPatched4351 = true;
-        const d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "inert");
-        if (d?.set !== undefined) {
-          const set = d.set;
-          Object.defineProperty(HTMLElement.prototype, "inert", {
-            ...d,
-            set(this: HTMLElement, on: boolean) {
-              const w = (globalThis as { __variant4351?: number }).__variant4351 ?? 0;
-              if (this.id === "root" && w >= 99) return;
-              set.call(this, on);
-            },
-          });
-        }
-      }
-      for (const one of (g.__dropped4351 ?? []).reverse()) one.sheet.insertRule(one.text, one.at);
-      g.__dropped4351 = [];
-      if (v > 0) {
-        const drops = (r: CSSRule) =>
-          v === 1
-            ? r instanceof CSSStyleRule && r.selectorText.includes(":has(")
-            : v === 2
-              ? r instanceof CSSStyleRule && /:(focus|hover|active)/.test(r.selectorText)
-              : r.constructor.name === "CSSContainerRule" || r instanceof CSSMediaRule;
-        const walk = (list: CSSRuleList, owner: CSSStyleSheet | CSSGroupingRule) => {
-          for (let i = list.length - 1; i >= 0; i--) {
-            const r = list[i];
-            if (drops(r)) {
-              g.__dropped4351?.push({ sheet: owner, at: i, text: r.cssText });
-              owner.deleteRule(i);
-            } else if ("cssRules" in r) walk((r as CSSGroupingRule).cssRules, r as CSSGroupingRule);
+      const classOf = (scope: string) => `ds-${scope.replace(/[^\w-]/g, "_")}`;
+      if (!g.__classPatched4351) {
+        g.__classPatched4351 = true;
+        const set = Element.prototype.setAttribute;
+        Element.prototype.setAttribute = function (this: Element, name: string, value: string) {
+          set.call(this, name, value);
+          const w = (globalThis as { __variant4351?: number }).__variant4351 ?? 0;
+          if (w !== 1) return;
+          if (name === "data-scope") this.classList.add(classOf(value));
+          else if (name === "class") {
+            const scope = this.getAttribute("data-scope");
+            if (scope !== null) this.classList.add(classOf(scope));
           }
         };
-        for (const sheet of Array.from(document.styleSheets)) {
-          try {
-            walk(sheet.cssRules, sheet);
-          } catch {
-            // a sheet from elsewhere
+      }
+      for (const one of g.__was4351 ?? []) one.rule.selectorText = one.text;
+      g.__was4351 = [];
+      if (v !== 1) return 0;
+      for (const el of Array.from(document.querySelectorAll("[data-scope]")))
+        el.classList.add(classOf(el.getAttribute("data-scope") ?? ""));
+      const walk = (list: CSSRuleList) => {
+        for (const r of Array.from(list)) {
+          if (r instanceof CSSStyleRule && r.selectorText.includes("[data-scope=")) {
+            const text = r.selectorText;
+            const next = text.replace(
+              /\[data-scope="([^"]+)"\]/g,
+              (_m, x: string) => `.${classOf(x)}`,
+            );
+            if (next !== text) {
+              r.selectorText = next;
+              if (r.selectorText === next) g.__was4351?.push({ rule: r, text });
+            }
           }
+          if ("cssRules" in r) walk((r as CSSGroupingRule).cssRules);
+        }
+      };
+      for (const sheet of Array.from(document.styleSheets)) {
+        try {
+          walk(sheet.cssRules);
+        } catch {
+          // a sheet from elsewhere
         }
       }
-      return (g.__dropped4351 ?? []).length;
+      return (g.__was4351 ?? []).length;
     }, variant); // [DEBUG-4351]
     await browser.keys(["F2"]);
     const box = await $("#palette-query");
@@ -487,7 +490,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     samples.push(took as number);
     const tl = await browser.execute(() => (globalThis as { __tl4351?: string[] }).__tl4351 ?? []); // [DEBUG-4351]
     console.log(
-      `[DEBUG-4351] opening ${n} variant ${variant} (${String(dropped)} rules dropped) took ${Math.round(took as number)} ms: ${(tl as string[]).join(" | ")}`,
+      `[DEBUG-4351] opening ${n} variant ${variant} (${String(dropped)} rules rekeyed) took ${Math.round(took as number)} ms: ${(tl as string[]).join(" | ")}`,
     ); // [DEBUG-4351]
     if (n === 2) {
       const got = (await browser.execute(() => {
