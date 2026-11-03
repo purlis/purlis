@@ -24,6 +24,8 @@ describe("the story matrix (#2945)", () => {
       "purlis_dark-high-contrast_compact",
       "purlis_light",
       "purlis_light_compact",
+      "purlis_light-high-contrast",
+      "purlis_light-high-contrast_compact",
       "purlis-classic_dark",
       "purlis-classic_dark_compact",
       "purlis-classic_light",
@@ -33,7 +35,7 @@ describe("the story matrix (#2945)", () => {
 
   it("pictures every cell of the matrix", () => {
     const cells = cellsOf(THEMES as BuiltInThemes, PICTURED);
-    expect(cells).toHaveLength(10);
+    expect(cells).toHaveLength(12);
     expect(cells.filter((cell) => !cell.pictured)).toEqual([]);
   });
 

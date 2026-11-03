@@ -1075,7 +1075,7 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                     .heeding(purlis_core::halt::OnDisk(config.clone()))
                     // The projects it holds for its desktop, each in `<data>/projects/<id>`,
                     // and the code the desktop moves in them over the link (#2046).
-                    .moving_code_with(purlis_core::codelink::Moves::from_now()),
+                    .moving_code_with(purlis_core::codelink::Moves::on_this_runner()),
                 ))
             },
             pairing,

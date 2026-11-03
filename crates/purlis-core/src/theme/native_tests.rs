@@ -119,13 +119,28 @@ fn a_theme_with_no_high_contrast_appearance_draws_the_same_whatever_contrast_is_
             follow(&plain, system, Contrast::Standard)
         );
     }
-    // `purlis-light` names Purlis's light, which has no high-contrast light (#3034).
+    // `purlis-light` names Purlis's light, drawn as its high-contrast light (#4677), as
+    // `purlis-dark` draws its high-contrast dark below.
     let light_pick = Pick::BuiltIn("purlis-light");
     let more = resolve(
         &inputs(Some(&light_pick), None, Appearance::Dark, Contrast::More),
         || unreachable!("a built-in pick surveys nothing"),
     );
-    assert_eq!(more.theme.as_ref(), purlis().of(Appearance::Light));
+    assert_eq!(
+        more.theme.as_ref(),
+        purlis().of_for(Appearance::Light, Contrast::More)
+    );
+    assert_eq!(more.theme.unwrap().id, "light-high-contrast");
+    let standard = resolve(
+        &inputs(
+            Some(&light_pick),
+            None,
+            Appearance::Dark,
+            Contrast::Standard,
+        ),
+        || unreachable!("a built-in pick surveys nothing"),
+    );
+    assert_eq!(standard.theme.as_ref(), purlis().of(Appearance::Light));
     // `purlis-dark` names Purlis's dark, drawn high contrast as nothing chosen is.
     let dark_pick = Pick::BuiltIn("purlis-dark");
     let more = resolve(
