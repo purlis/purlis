@@ -238,6 +238,17 @@ function asDropped(tabs: Tabs, from: Source, to: Target): Source {
   return from;
 }
 
+/**
+ * **The pane that moves when `source` is dropped on a pane**, if a pane does: the pane itself,
+ * or the pane a sidebar chat is already on screen in (D1). It takes no drop of its own, so
+ * placement mode shows it no targets (#4764).
+ */
+export function heldPane(tabs: Tabs, source: Source): At | undefined {
+  if (source.kind === "tab") return undefined;
+  const dropped = asDropped(tabs, source, { kind: "pane", tab: -1, pane: -1, place: "middle" });
+  return dropped.kind === "pane" ? { tab: dropped.tab, pane: dropped.pane } : undefined;
+}
+
 /** **What a dragged thing is called** in a sentence: its chat, its view, or its tab's first. */
 export function sourceName(tabs: Tabs, source: Source, ctx: DropContext): string {
   if (source.kind === "chat")
