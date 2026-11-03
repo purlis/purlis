@@ -3751,9 +3751,18 @@ fn a_project_pool_this_machine_does_not_keep_starts_nothing_and_never_runs_here(
     assert_eq!(runs_on(config.path(), plane, Some("here")), Ok(None));
     // A chat at the project's root moves no clone, so it stays here.
     assert_eq!(runs_on(config.path(), plane, None), Ok(None));
-    // `ide` follows the project, and is asked about there only once it has run a chat there.
+    // A put-back closes what nothing took back on the project's pool, as `ide` follows it.
     assert_eq!(
         workspaces_on_pools(config.path(), plane),
+        [
+            ("first".to_owned(), vec!["ide".to_owned()]),
+            ("second".to_owned(), vec!["web".to_owned()]),
+        ]
+        .into()
+    );
+    // Fetch-back asks about `ide` there only once it has run a chat there.
+    assert_eq!(
+        workspaces_to_fetch(config.path(), plane),
         [("second".to_owned(), vec!["web".to_owned()])].into()
     );
     let chosen = crate::machine::StartChoice::Pool("gone".to_owned());
@@ -4013,7 +4022,7 @@ fn fetch_back_asks_a_workspace_following_the_projects_pool_only_once_it_ran_ther
     .unwrap();
     // `docs` follows the project too, and never ran a chat there.
     assert_eq!(
-        workspaces_on_pools(config.path(), plane),
+        workspaces_to_fetch(config.path(), plane),
         [
             ("first".to_owned(), vec!["ide".to_owned(), "web".to_owned()]),
             ("second".to_owned(), vec!["named".to_owned()]),
@@ -4026,7 +4035,7 @@ fn fetch_back_asks_a_workspace_following_the_projects_pool_only_once_it_ran_ther
     })
     .unwrap();
     assert_eq!(
-        workspaces_on_pools(config.path(), plane)["first"],
+        workspaces_to_fetch(config.path(), plane)["first"],
         vec!["ide".to_owned()]
     );
 }

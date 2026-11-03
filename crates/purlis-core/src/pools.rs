@@ -379,15 +379,32 @@ pub fn branches_to_fetch(
 }
 
 /// **Every pool a workspace of the plane at `plane` runs its chats on**, with those
-/// workspaces, as this machine's store names them (#2046): what fetch-back, the away list and a
-/// put-back ask about. Whether each pool is kept is asked as each is reached ([`runs_on`]).
-///
-/// A workspace that follows the project's pool is listed once it has run a chat there: one is
-/// kept there, or its branches are still owed from there (#4590). Never before, since nothing of
-/// it is there to ask about (#4591).
+/// workspaces, as this machine's store names them (#2046): the pools a put-back closes what
+/// nothing took back on. Whether each pool is kept is asked as each is reached ([`runs_on`]).
+/// What fetch-back and the away list ask about is [`workspaces_to_fetch`].
 pub fn workspaces_on_pools(
     config_root: &Path,
     plane: &Path,
+) -> std::collections::BTreeMap<String, Vec<String>> {
+    on_pools(config_root, plane, false)
+}
+
+/// **[`workspaces_on_pools`], as fetch-back and the away list ask about them** (#4591): a
+/// workspace that follows the project's pool is listed once it has run a chat there, a chat of
+/// it kept there or its branches still owed from there (#4590), and never before, since nothing
+/// of it is there to come back. A workspace that names a pool of its own is listed as its setting
+/// says: a chat of it from before those records may have left work there.
+pub fn workspaces_to_fetch(
+    config_root: &Path,
+    plane: &Path,
+) -> std::collections::BTreeMap<String, Vec<String>> {
+    on_pools(config_root, plane, true)
+}
+
+fn on_pools(
+    config_root: &Path,
+    plane: &Path,
+    ran_there: bool,
 ) -> std::collections::BTreeMap<String, Vec<String>> {
     let loaded = crate::machine::read(config_root);
     let mut on: std::collections::BTreeMap<String, Vec<String>> = Default::default();
@@ -409,7 +426,7 @@ pub fn workspaces_on_pools(
             let place = loaded.store.chat_place(plane, &workspace, None);
             if place.level == crate::machine::PlaceLevel::Project
                 && let Some(pool) = place.pool
-                && loaded.store.ran_on(plane, &workspace, &pool)
+                && (!ran_there || loaded.store.ran_on(plane, &workspace, &pool))
             {
                 on.entry(pool).or_default().push(workspace);
             }

@@ -81,6 +81,8 @@ pub struct RoutedSessions {
     here: Box<dyn SessionHost>,
     runs_on: RunsOn,
     on_pools: OnPools,
+    /// What fetch-back asks about on each pool ([`Self::fetching_from`]).
+    fetch_from: OnPools,
     to_a_pool: ToAPool,
     draining_of: DrainingOf,
     chats_kept: ChatsKept,
@@ -156,6 +158,7 @@ impl RoutedSessions {
             root: root.to_path_buf(),
             here,
             runs_on,
+            fetch_from: Arc::clone(&on_pools),
             on_pools,
             to_a_pool,
             draining_of: Arc::new(|_| Vec::new()),
@@ -195,6 +198,17 @@ impl RoutedSessions {
                 on
             })
         };
+        // What can come back: a workspace following the project's pool once it ran there (#4591).
+        let fetch_from: OnPools = {
+            let (config, plane) = (config.clone(), plane.clone());
+            Arc::new(move || {
+                let mut on = purlis_core::pools::workspaces_to_fetch(&config, &plane);
+                if let Ok(id) = purlis_core::scaffold::planefile::id_to_hold_by(&plane) {
+                    on.extend(purlis_core::pools::fresh_runners_of_plane(&config, &id));
+                }
+                on
+            })
+        };
         let draining_of: DrainingOf = {
             let config = config.clone();
             Arc::new(move |pool| crate::runnerlinks::draining_to_ask(&config, pool))
@@ -225,6 +239,7 @@ impl RoutedSessions {
             })
         };
         RoutedSessions::new(root, here, runs_on, on_pools, to_a_pool)
+            .fetching_from(fetch_from)
             .taking_back_from(draining_of)
             .keeping_chats(chats_kept)
     }
@@ -232,6 +247,13 @@ impl RoutedSessions {
     /// [`Self::new`], with where each runner chat runs kept past this window (#4590).
     fn keeping_chats(mut self, chats_kept: ChatsKept) -> Self {
         self.chats_kept = chats_kept;
+        self
+    }
+
+    /// [`Self::new`], with fetch-back asking `fetch_from` what to fetch from each pool (#4591), where
+    /// it asked the pools the settings run a workspace on.
+    pub(crate) fn fetching_from(mut self, fetch_from: OnPools) -> Self {
+        self.fetch_from = fetch_from;
         self
     }
 
@@ -639,8 +661,8 @@ fn routes_of(shared: &Arc<Shared>) -> crate::hooks::Routes {
 
 /// **What comes back from each pool** (#4590): the workspaces the settings run there now, those
 /// of the chats kept there, and those whose branches are still owed from there.
-fn to_fetch(on_pools: &OnPools, chats_kept: &ChatsKept) -> BTreeMap<String, BTreeSet<String>> {
-    let mut all: BTreeMap<String, BTreeSet<String>> = on_pools()
+fn to_fetch(fetch_from: &OnPools, chats_kept: &ChatsKept) -> BTreeMap<String, BTreeSet<String>> {
+    let mut all: BTreeMap<String, BTreeSet<String>> = fetch_from()
         .into_iter()
         .map(|(pool, workspaces)| (pool, workspaces.into_iter().collect()))
         .collect();
@@ -676,11 +698,12 @@ fn fetch_back_owed(
 fn fetch_back_all(
     shared: &Arc<Shared>,
     on_pools: &OnPools,
+    fetch_from: &OnPools,
     to_a_pool: &ToAPool,
     chats_kept: &ChatsKept,
 ) -> Vec<String> {
     let mut failed = Vec::new();
-    for (pool, workspaces) in to_fetch(on_pools, chats_kept) {
+    for (pool, workspaces) in to_fetch(fetch_from, chats_kept) {
         failed.extend(fetch_back_owed(
             shared,
             to_a_pool,
@@ -905,6 +928,7 @@ impl SessionHost for RoutedSessions {
             let to_a_pool = Arc::clone(&self.to_a_pool);
             let root = self.root.clone();
             let on_pools = Arc::clone(&self.on_pools);
+            let fetch_from = Arc::clone(&self.fetch_from);
             let chats_kept = self.chats_kept.clone();
             Arc::new(move |id, exit| {
                 // Its runner went after its program ended: there is nothing to fetch, and a
@@ -932,8 +956,12 @@ impl SessionHost for RoutedSessions {
                 if !lock(&shared.ending).insert(pool.clone()) {
                     return;
                 }
-                let (to_a_pool, on_pools, root) =
-                    (Arc::clone(&to_a_pool), Arc::clone(&on_pools), root.clone());
+                let (to_a_pool, on_pools, fetch_from, root) = (
+                    Arc::clone(&to_a_pool),
+                    Arc::clone(&on_pools),
+                    Arc::clone(&fetch_from),
+                    root.clone(),
+                );
                 let chats_kept = chats_kept.clone();
                 // Off the thread that tells: a fetch crosses the link.
                 let spawned = std::thread::Builder::new()
@@ -945,7 +973,7 @@ impl SessionHost for RoutedSessions {
                             let _one_at_a_time = lock(&shared.fetching);
                             lock(&shared.ending).remove(&pool);
                             // This chat's pool alone, and what comes back from it.
-                            let workspaces = to_fetch(&on_pools, &chats_kept)
+                            let workspaces = to_fetch(&fetch_from, &chats_kept)
                                 .remove(&pool)
                                 .unwrap_or_default();
                             for why in fetch_back_owed(
@@ -1080,6 +1108,7 @@ impl SessionHost for RoutedSessions {
             inner,
             Arc::clone(&self.shared),
             Arc::clone(&self.on_pools),
+            Arc::clone(&self.fetch_from),
             Arc::clone(&self.to_a_pool),
             self.chats_kept.clone(),
         ))
@@ -1403,6 +1432,7 @@ impl FetchingBack {
         inner: Box<dyn crate::autosave::Saver>,
         shared: Arc<Shared>,
         on_pools: OnPools,
+        fetch_from: OnPools,
         to_a_pool: ToAPool,
         chats_kept: ChatsKept,
     ) -> FetchingBack {
@@ -1428,7 +1458,9 @@ impl FetchingBack {
                         *fetched = Some(Instant::now());
                     }
                     let _one_at_a_time = lock(&shared.fetching);
-                    for why in fetch_back_all(&shared, &on_pools, &to_a_pool, &chats_kept) {
+                    for why in
+                        fetch_back_all(&shared, &on_pools, &fetch_from, &to_a_pool, &chats_kept)
+                    {
                         tracing::warn!("purlis: {why}");
                     }
                 }
