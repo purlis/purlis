@@ -210,7 +210,6 @@ import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import type { Elsewhere } from "./InboxElsewhere";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
 import { drawWhatIsInForce } from "./Extensions";
-import { useProfileNames } from "./profileNames";
 import { useScreenReaderMode } from "./screenReader";
 import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
@@ -778,7 +777,7 @@ export const PlaneView = memo(function PlaneView({
   inboxGroup,
   elsewhere,
   windowLines,
-  paletteOpenings = 0,
+  profileNames,
 }: {
   plane: PlaneId;
   /** Whether this is the project the operator is looking at. */
@@ -872,10 +871,10 @@ export const PlaneView = memo(function PlaneView({
    *  and counted in its status line while it is in front, so none stands under the title bar
    *  with a project open. The window draws them; this view gives them their place. */
   windowLines?: WindowLines;
-  /** How many times the window's palette has opened: the project's profiles are read for its
-   *  rows as it opens over this project, and at no other time (#1201). A count rather than
-   *  whether it is open, so its closing changes nothing this view is drawn from (#4351). */
-  paletteOpenings?: number;
+  /** This project's harness profiles, by name, for the palette's rows to their pages (#1201):
+   *  read by the window as the palette opens over this project, and the same list while the
+   *  names are (#4351). None while none was read, or the project has none. */
+  profileNames?: readonly string[];
   /** The first chat a repository opened into this project asks for (FR-4): started in that
    *  repository's clone, on the workspace named after it. `at` counts the asks, so each is
    *  answered once. */
@@ -1175,9 +1174,6 @@ export const PlaneView = memo(function PlaneView({
   const settingsChanges = usePlaneChanged([plane], SETTINGS);
   /** Each harness's card, for the palette's *What <product> can do here* rows (#1134). */
   const harnessCards = useHarnessCards(plane, inFront, settingsChanges);
-  /** The project's harness profiles, for the palette's rows to their pages (#1201): read as
-   *  the palette opens over this project, never on a render of its own. */
-  const profileNames = useProfileNames(plane, paletteOpenings, inFront);
   /** The same, counting only the changes the sidebar is made of (FD-10): a memory an agent
    *  saves does not make it list every workspace's todos again. */
   const sidebarChanges = usePlaneChanged([plane], SIDEBAR);

@@ -1,4 +1,4 @@
 ### Changed
 
-- **The palette closing no longer redraws the project in front.** Running a row, such as Open
-  Skill studio, draws the window once fewer times on its way to what it opens (#4351).
+- **The palette opening and closing no longer redraw the project in front.** Running a row from
+  the palette, such as Open Skill studio, gets to what it opens sooner (#4351).

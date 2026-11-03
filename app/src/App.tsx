@@ -107,6 +107,7 @@ import { drawTint, facesAfterTheFirstFrame } from "./theme/theme";
 import { useContributedPanels } from "./Panels";
 import { useExtensionCommands, useExtensionViews } from "./Views";
 import { Palette } from "./Palette";
+import { useProfileNames } from "./profileNames";
 import { placeOf, scopeLadder } from "./fileFind";
 import { useJumpAsks, type Pending } from "./fileJump";
 import type { Place } from "./pieceViews";
@@ -280,13 +281,6 @@ function App() {
   /** Whether the palette is up, so what an action answered is said in one place rather than
    *  two: the palette is modal and draws over the line below it. */
   const [paletteOpen, setPaletteOpen] = useState(false);
-  /** How many times the palette has opened: what a project's view reads its profiles on
-   *  (#1201). A count, not `paletteOpen`, so the palette closing draws no project again (#4351). */
-  const [paletteOpenings, setPaletteOpenings] = useState(0);
-  const paletteOpened = useCallback((open: boolean) => {
-    setPaletteOpen(open);
-    if (open) setPaletteOpenings((was) => was + 1);
-  }, []);
   /** Whether the new-project dialog is up, and why the last attempt made nothing. The
    *  window's, like the opener: what it ends in is a project this window holds. */
   const [creating, setCreating] = useState(false);
@@ -416,6 +410,18 @@ function App() {
   }, []);
   /** The project in front, for a verb that is kept stable across renders. */
   const inFrontNow = useRef<PlaneId | undefined>(undefined);
+  /** Each project's harness profiles, for the palette's rows to their pages (#1201): read for
+   *  the project in front as the palette opens over it. Held here, so a project's view is given
+   *  only its own list, and the palette opening or closing draws no project again (#4351). */
+  const profileNames = useProfileNames();
+  const readProfileNames = profileNames.read;
+  const paletteOpened = useCallback(
+    (open: boolean) => {
+      setPaletteOpen(open);
+      if (open && inFrontNow.current !== undefined) readProfileNames(inFrontNow.current);
+    },
+    [readProfileNames],
+  );
   /** Why this launch took longer than the limit, when it did — and nothing when it did not
    *  (charter-app#24). The core decides that; the window only draws it. */
   const [slowStart, setSlowStart] = useState<SlowStart>();
@@ -2756,7 +2762,7 @@ function App() {
               inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
               elsewhere={elsewhere}
               windowLines={plane === inFront ? windowLines : undefined}
-              paletteOpenings={paletteOpenings}
+              profileNames={profileNames.of[plane]}
             />
           ))}
 

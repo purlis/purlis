@@ -9,10 +9,11 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 
 /**
- * **The palette closing draws no project again** (#4351): the project's view reads its
- * profiles as the palette opens over it (#1201), and nothing it is drawn from changes as the
- * palette goes away, so a row run from the palette does not pay for a draw of the whole project
- * on its way to what it opens.
+ * **The palette opening and closing draw no project again** (#4351): the window reads the
+ * project's profiles as the palette opens over it (#1201) and gives the project's view only its
+ * own list, so nothing the view is drawn from changes as the palette comes and goes, and a row
+ * run from the palette does not pay for a draw of the whole project on its way to what it
+ * opens.
  */
 
 /** How many times a chat's pane has been drawn: drawn by the project's view on each of its own
@@ -55,6 +56,8 @@ const CHAT = {
 
 function core() {
   const asked: string[] = [];
+  /** The profiles' answer, held until the test lets it land. */
+  let answer: () => void = () => undefined;
   mockIPC(
     (cmd) => {
       asked.push(cmd);
@@ -69,10 +72,13 @@ function core() {
           workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [{ ...CHAT }] }],
         };
       if (cmd === "project_settings")
-        return {
-          shared: { which: "shared", parsed: true, entries: [] },
-          local: { which: "local", parsed: true, entries: [] },
-        };
+        return new Promise((land) => {
+          answer = () =>
+            land({
+              shared: { which: "shared", parsed: true, entries: [] },
+              local: { which: "local", parsed: true, entries: [] },
+            });
+        });
       if (cmd === "about_charter") return new Promise(() => {});
       if (cmd === "chat_states" || cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions" || cmd === "chats_plane_updated") return [];
@@ -80,7 +86,7 @@ function core() {
     },
     { shouldMockEvents: true },
   );
-  return asked;
+  return { asked, land: () => answer() };
 }
 
 const settle = () =>
@@ -88,25 +94,26 @@ const settle = () =>
     await new Promise((done) => setTimeout(done, 0));
   });
 
-describe("the palette closing (#4351)", () => {
-  it("draws no project again, and the profiles are read as it opens", async () => {
-    const asked = core();
+describe("the palette coming and going (#4351)", () => {
+  it("draws no project again, even when the profiles' answer lands after it closed", async () => {
+    const { asked, land } = core();
     render(<App />);
     await screen.findByTestId("pane");
     await settle();
+    // A project's view mounting reads nothing: only an opening does.
+    expect(asked).not.toContain("project_settings");
+    const drawn = paneDrawn.times;
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
     await waitFor(() => expect(asked).toContain("project_settings"));
-    await settle();
-    const drawnOpen = paneDrawn.times;
-
     await userEvent.keyboard("{Escape}");
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull(),
     );
+    await act(async () => land());
     await settle();
 
-    expect(paneDrawn.times).toBe(drawnOpen);
+    expect(paneDrawn.times).toBe(drawn);
   });
 });
