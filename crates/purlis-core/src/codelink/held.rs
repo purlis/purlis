@@ -213,7 +213,7 @@ pub fn first_program_starting(projects: &Path) -> Result<(), String> {
     std::fs::create_dir_all(projects).map_err(|e| not_noted(&e))?;
     rustix::fs::openat(
         CWD,
-        &projects.join(FIRST_PROGRAM),
+        projects.join(FIRST_PROGRAM),
         OFlags::WRONLY | OFlags::CREATE | OFlags::NOFOLLOW | OFlags::CLOEXEC,
         Mode::RUSR | Mode::WUSR,
     )
@@ -232,15 +232,12 @@ pub fn first_program_at(projects: &Path) -> Result<Option<std::time::SystemTime>
              outside its project could not be looked for"
         )
     };
-    let stat = match rustix::fs::statat(
-        CWD,
-        &projects.join(FIRST_PROGRAM),
-        AtFlags::SYMLINK_NOFOLLOW,
-    ) {
-        Ok(stat) => stat,
-        Err(rustix::io::Errno::NOENT) => return Ok(None),
-        Err(e) => return Err(unknown(e.to_string())),
-    };
+    let stat =
+        match rustix::fs::statat(CWD, projects.join(FIRST_PROGRAM), AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(rustix::io::Errno::NOENT) => return Ok(None),
+            Err(e) => return Err(unknown(e.to_string())),
+        };
     if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
         return Err(unknown(format!(
             "{FIRST_PROGRAM} beside its projects is not a file purlis made"
@@ -522,14 +519,13 @@ impl Outside {
                         stack.push((rel_now, std::rc::Rc::clone(&fd), Some(raw.to_owned())));
                     }
                     rustix::fs::FileType::RegularFile | rustix::fs::FileType::Symlink
-                        if rules.counts(&stat) =>
+                        if rules.counts(&stat)
+                            && changed_at(&stat).is_none_or(|at| at >= since) =>
                     {
-                        if changed_at(&stat).is_none_or(|at| at >= since) {
-                            self.found += 1;
-                            self.named.insert(rules.shown(&rel_now));
-                            if self.named.len() > MOST_NAMED_OUTSIDE {
-                                self.named.pop_last();
-                            }
+                        self.found += 1;
+                        self.named.insert(rules.shown(&rel_now));
+                        if self.named.len() > MOST_NAMED_OUTSIDE {
+                            self.named.pop_last();
                         }
                     }
                     _ => {}
