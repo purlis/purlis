@@ -114,6 +114,7 @@ function doing(): Doing & { calls: string[] } {
   return {
     calls,
     newChat: note("newChat"),
+    newTab: note("newTab"),
     newShell: note("newShell"),
     newBrowser: note("newBrowser"),
     tileAll: note("tileAll"),
@@ -1327,7 +1328,7 @@ describe("the one list of actions", () => {
       const hands = doing();
       const offers = catalogue(now({ clones: [SVC] }));
 
-      expect(by(offers, "clone.chat:svc")?.title).toBe("New tab in svc");
+      expect(by(offers, "clone.chat:svc")?.title).toBe("New chat in svc");
       await run(offers, "clone.chat:svc", hands);
 
       // Not `pickClone`: that would make every later New tab start in the clone too, and then

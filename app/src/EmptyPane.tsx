@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { MessageSquarePlus } from "lucide-react";
+import { FolderPlus, MessageSquarePlus } from "lucide-react";
 import type { Offer } from "./actions";
 import { Doer } from "./StripMarks";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -15,12 +15,17 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
  * draw it, so it stops existing where the catalogue stops offering it. Its words are the empty
  * state's ("New chat"), not the strip's `+` ("New tab"): two controls on one screen with one
  * accessible name are two a screen reader cannot tell apart.
+ *
+ * **In a plane with no workspace yet** (#4758; spec story 11) it says so, and offers Create a
+ * workspace first: one empty pane replaces the window's three empty states, and this was the
+ * one with a first step of its own.
  */
 export function EmptyPane({
   running,
   newChat,
   onPress,
   inSplit,
+  createWorkspace,
 }: {
   /** How many chats run in this pane's workspace. */
   running: number;
@@ -29,7 +34,24 @@ export function EmptyPane({
   onPress: (offer: Offer) => void;
   /** The pane is one side of a split, and the prototype names it apart from a tab's only pane. */
   inSplit: boolean;
+  /** The catalogue's `workspace.create` row, given only while the plane has no workspace. */
+  createWorkspace?: Offer;
 }) {
+  if (createWorkspace !== undefined)
+    return (
+      <EmptyState
+        mark={FolderPlus}
+        headline="No workspaces yet"
+        body="A workspace holds the repos you work on and the chats about them."
+        action={
+          <>
+            <Doer offer={createWorkspace} onPress={onPress} words="Create a workspace" primary />
+            <Doer offer={newChat} onPress={onPress} words="New chat" />
+          </>
+        }
+        testid="empty-pane"
+      />
+    );
   return (
     <EmptyState
       mark={MessageSquarePlus}

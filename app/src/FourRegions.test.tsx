@@ -517,7 +517,7 @@ describe("the four regions", () => {
   });
 
   it("starts only that tab in the clone, and the next New tab where it always did", async () => {
-    // The review of #174: `New tab in svc` had set the explorer's pick, which made it the
+    // The review of #174: `New chat in svc` had set the explorer's pick, which made it the
     // same row as `Start new chats in svc` under another name.
     const { asked } = core();
     render(<App />);

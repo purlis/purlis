@@ -13,10 +13,18 @@ import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const NEW_CHAT: Offer = {
   id: "chat.new",
-  title: "New tab",
+  title: "New chat",
   available: true,
   reason: "",
   does: { verb: "chat.new" },
+};
+
+const CREATE_WORKSPACE: Offer = {
+  id: "workspace.create",
+  title: "Create a workspace…",
+  available: true,
+  reason: "",
+  does: { verb: "createWorkspace" },
 };
 
 function Pane(props: Parameters<typeof EmptyPane>[0]) {
@@ -62,5 +70,24 @@ export const InASplitWithNothingRunning: Story = {
     expectFocusInSight();
     await userEvent.tab({ shift: true });
     await expect(canvas.getByRole("button", { name: "New chat" })).not.toHaveFocus();
+  },
+};
+
+/** **A plane with no workspace yet** (#4758; spec story 11): Create a workspace comes first,
+ *  then New chat, both reached by the keyboard. */
+export const NoWorkspaceYet: Story = {
+  args: { running: 0, createWorkspace: CREATE_WORKSPACE },
+  play: async ({ canvas, args, userEvent }) => {
+    await expect(canvas.getByText("No workspaces yet")).toBeVisible();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Create a workspace" }),
+      "Tab to Create a workspace",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await expect(args.onPress).toHaveBeenCalledWith(CREATE_WORKSPACE);
+    await userEvent.tab();
+    await untilFocused(() => canvas.getByRole("button", { name: "New chat" }), "Tab to New chat");
   },
 };

@@ -478,6 +478,21 @@ export function openTab(
   );
 }
 
+/** What a tab whose first pane is empty is called (#4755), as the empty pane's own button
+ *  says (spec #4750 story 44). */
+export const EMPTY_TAB = "New chat";
+
+/**
+ * **The strip's `+`: a new tab holding one empty pane** (#4758; spec story 13), in front, after
+ * the strip's last tab, on `workspace`'s strip. New chat then fills it, as it fills any focused
+ * pane: "new tab" still means a tab, and a chat is never one.
+ */
+export function openEmptyTab(tabs: Tabs, workspace: string): Tabs {
+  const opened = withTab(tabs, EMPTY_TAB, { kind: "empty", workspace }, tabs.order.length);
+  const id = opened.named.tabs;
+  return { ...opened, byId: { ...opened.byId, [id]: { ...opened.byId[id], workspace } } };
+}
+
 /**
  * **A new chat, opened as a tab, that fills its strip's empty tab** (#4756): where the strip of
  * `workspace` holds a tab that is one empty pane (what a close leaves on the strip's last tab),
@@ -958,29 +973,6 @@ export function refileViews(
     tabs.order.map((id) => [id, strip({ ...tabs.byId[id], layout: refile(tabs.byId[id].layout) })]),
   );
   return moved ? { ...tabs, byId } : tabs;
-}
-
-/**
- * Opens a tab for a chat the operator did not open from this window: one a handoff opened
- * (charter-app#204). **It does not take the front.**
- *
- * A handoff is work the operator sent away from the chat they are reading, and the chat it
- * opened is often on another workspace's strip. Taking the front would interrupt the chat on
- * screen or move the window to a workspace nobody asked to look at. The tab is on its strip,
- * and that is the whole of how it is seen.
- *
- * The one exception is a window with nothing in front: there is nothing to interrupt, and a
- * tab on a strip with nothing in front of it is a blank pane.
- */
-export function openTabBehind(
-  tabs: Tabs,
-  session: number,
-  chat = "",
-  who: string | null = null,
-  label: string | null = null,
-): Tabs {
-  const opened = openTab(tabs, session, chat, who, label);
-  return tabs.inFront === undefined ? opened : { ...opened, inFront: tabs.inFront };
 }
 
 /**
