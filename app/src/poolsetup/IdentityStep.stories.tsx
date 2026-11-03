@@ -68,6 +68,7 @@ const meta = {
     changed: () => undefined,
     onNext: () => undefined,
     onOpenIdentity: () => undefined,
+    onOpenSettings: () => undefined,
   },
   beforeEach: faked(shown([])),
   decorators: [

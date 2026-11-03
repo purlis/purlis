@@ -1631,6 +1631,7 @@ export const commands = {
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,
 	poolSetupTry: __WINDOW_ONLY_RESULT,
+	poolSetupTryCancel: __WINDOW_ONLY,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -8915,6 +8916,8 @@ export type PoolSetupAction = {
 
 /**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
 export type PoolSetupCheck = {
+	/**  What it checks: `chat`, `signins` or `identity`. */
+	about: string,
 	verdict: string,
 	title: string,
 	more: string | null,
@@ -9002,8 +9005,19 @@ export type PoolSetupStep = {
 
 /**  What Try it found. */
 export type PoolSetupTried = {
-	/**  Why it didn't pass; null where a real chat started and the proof is kept. */
+	/**
+	 *  Why it didn't pass; null where a real chat started and the proof is kept, or where the
+	 *  person cancelled it.
+	 */
 	failed: PoolSetupFailed | null,
+	/**  The person cancelled it (#4976): nothing was kept, and its chat is closed. */
+	cancelled: boolean,
+	/**
+	 *  What Try it proved of the agent's identity itself (#4490), for the identity's line: a
+	 *  read-only token GitHub made for the App, read with and revoked. None where the identity
+	 *  step's own line stands: no App of Agent identity's, no repo, or a step not done.
+	 */
+	identity: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
 };
