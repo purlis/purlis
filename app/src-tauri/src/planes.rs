@@ -4788,7 +4788,8 @@ impl Planes {
         let tasks: Arc<crate::dispatched::Tasks> = Arc::default();
         let masked_kept =
             crate::dispatched::masked_kept_when_remembered(&tasks, hooks.shared_board());
-        let secret_asks = purlis_core::secrets::ask::Asks::new(&root);
+        // Kept across a restart, as a task's open question is (#5079).
+        let secret_asks = purlis_core::secrets::ask::Asks::kept(&root);
         Held {
             id,
             root,

@@ -27,8 +27,14 @@
 //! never a value. Each ask's life is recorded in the chat's trace as `secret.ask`, metadata only:
 //! raised, joined, filled, declined.
 //!
-//! In memory only, as every other ask the app holds: an ask dies with the app (keeping open
-//! asks across a restart is #5054's story 59, not this one).
+//! **An open ask outlives a restart of the app** (#5079, #5054's story 59), as a task's open
+//! question does: [`Asks::kept`] writes each one, by its names and the chats that wait on it, to
+//! `<state>/app/`[`KEPT_IN`] whenever that changes, masked as the open questions are
+//! ([`crate::dispatchrecord::masked`]), and reads them back as the app starts. A restart ends
+//! every command that waited, so each chat is nudged when the ask is answered, unless it ran its
+//! command again and waits once more; a chat the restart did not bring back waits on nothing
+//! ([`Asks::only_these_came_back`]). What a chat declined is not kept: it lives as long as the
+//! app's own run, so after a restart that chat may be asked about that key once more.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -43,6 +49,12 @@ use crate::harness::asks::{Answerer, HumanScope};
 
 /// What the trace records an ask's life under.
 pub const TRACED_AS: &str = "secret.ask";
+
+/// The file in `<state>/app/` the open asks are kept in across a restart ([`Asks::kept`]).
+pub const KEPT_IN: &str = "secret-asks.json";
+
+/// The version of [`KEPT_IN`]'s shape this purlis writes.
+const KEPT_VERSION: u32 = 1;
 
 /// **What a brokered run that missed a key asks for**: the app's record of the chat (its number
 /// and the persona it was started as), and the vault and key its run reads. Never a word the
@@ -154,6 +166,64 @@ struct Inner {
 pub struct Asks {
     root: PathBuf,
     inner: Mutex<Inner>,
+    /// Where they are kept across a restart; nowhere for [`Asks::new`]'s.
+    kept_at: Option<PathBuf>,
+}
+
+/// **The open asks as [`KEPT_IN`] holds them**: names and chats, never a value.
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct Kept {
+    v: u32,
+    /// The last number an ask was given, so a number is never given twice.
+    asked: u32,
+    asks: Vec<KeptAsk>,
+}
+
+/// One open ask as it is kept: each name masked as an open question is.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct KeptAsk {
+    id: u32,
+    persona: String,
+    vault: String,
+    key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tool: Option<String>,
+    since: u64,
+    /// The chats that wait on it, by the app's number, which a restart keeps.
+    chats: Vec<u32>,
+}
+
+impl KeptAsk {
+    /// `asked`, as it is written: none where a name of it reads as a secret, since masked it
+    /// would name another key, and its answer would be written under that one.
+    fn of(vault: &str, key: &str, asked: &Asked) -> Option<Self> {
+        let kept = |name: &str| {
+            let masked = crate::dispatchrecord::masked(name);
+            (masked == name).then_some(masked)
+        };
+        Some(Self {
+            id: asked.id,
+            persona: kept(&asked.persona)?,
+            vault: kept(vault)?,
+            key: kept(key)?,
+            tool: match &asked.tool {
+                Some(tool) => Some(kept(tool)?),
+                None => None,
+            },
+            since: asked.since,
+            chats: chats_of(asked),
+        })
+    }
+
+    /// Whether every name reads as a name: one line, not empty.
+    fn reads(&self) -> bool {
+        let name = |name: &str| !name.is_empty() && !name.chars().any(char::is_control);
+        [&self.persona, &self.vault, &self.key]
+            .into_iter()
+            .chain(&self.tool)
+            .all(|one| name(one))
+            && !self.chats.is_empty()
+    }
 }
 
 /// How long a command waits on the person at most, by the harness the app started its chat on
@@ -216,7 +286,119 @@ impl Asks {
         Self {
             root: root.to_path_buf(),
             inner: Mutex::new(Inner::default()),
+            kept_at: None,
         }
+    }
+
+    /// **The Secret asks of the project at `root`, kept across a restart** (module docs): those
+    /// a run before this one left open, each chat that waited on one to be nudged once it is
+    /// answered. A file that does not read starts with none, and an entry that does not read is
+    /// left out, each said in the log.
+    pub fn kept(root: &Path) -> Self {
+        let path = crate::names::state(root).join("app").join(KEPT_IN);
+        let mut inner = Inner::default();
+        let kept = match std::fs::read(&path) {
+            Ok(bytes) => serde_json::from_slice::<Kept>(&bytes).unwrap_or_else(|why| {
+                tracing::warn!(
+                    "purlis: {} does not read as the open secret asks ({why}); none is open",
+                    path.display()
+                );
+                Kept::default()
+            }),
+            Err(_) => Kept::default(),
+        };
+        inner.next = kept.asked;
+        for one in kept.asks {
+            let at = (one.vault.clone(), one.key.clone());
+            if !one.reads() {
+                tracing::warn!(
+                    "purlis: an open secret ask kept in {} does not read; it is left out",
+                    path.display()
+                );
+                continue;
+            }
+            if inner.open.contains_key(&at) {
+                tracing::warn!(
+                    "purlis: {} keeps a second open secret ask for one vault and key; only the \
+                     first is open",
+                    path.display()
+                );
+                continue;
+            }
+            inner.next = inner.next.max(one.id);
+            let mut waiters = Vec::new();
+            for chat in one.chats {
+                inner.next_waiter += 1;
+                waiters.push(Waiter {
+                    chat,
+                    tell: None,
+                    n: inner.next_waiter,
+                });
+            }
+            inner.open.insert(
+                at,
+                Asked {
+                    id: one.id,
+                    persona: one.persona,
+                    tool: one.tool,
+                    since: one.since,
+                    waiters,
+                    answering: false,
+                },
+            );
+        }
+        Self {
+            root: root.to_path_buf(),
+            inner: Mutex::new(inner),
+            kept_at: Some(path),
+        }
+    }
+
+    /// Writes the asks open in `inner` where [`Asks::kept`] keeps them, under its lock, so two
+    /// writes land in the order their changes were made.
+    fn save(&self, inner: &Inner) {
+        let Some(path) = &self.kept_at else { return };
+        let mut asks: Vec<KeptAsk> = Vec::new();
+        for ((vault, key), asked) in &inner.open {
+            match KeptAsk::of(vault, key, asked) {
+                Some(one) => asks.push(one),
+                None => tracing::info!(
+                    "purlis: an open secret ask whose names read as a secret is not kept across \
+                     a restart"
+                ),
+            }
+        }
+        asks.sort_by_key(|one| one.id);
+        let kept = Kept {
+            v: KEPT_VERSION,
+            asked: inner.next,
+            asks,
+        };
+        let written = serde_json::to_vec_pretty(&kept)
+            .map_err(std::io::Error::other)
+            .and_then(|mut bytes| {
+                bytes.push(b'\n');
+                let dir = path.parent().unwrap_or(Path::new("."));
+                std::fs::create_dir_all(dir)?;
+                crate::rewrite::replace(dir, path, &bytes, crate::rewrite::Mode::Private)
+            });
+        if let Err(why) = written {
+            tracing::warn!(
+                "purlis: the open secret asks were not written ({why}); they are kept in memory \
+                 until the next write"
+            );
+        }
+    }
+
+    /// **A launch brought back the chats `back`, by number** (#5079): a chat waiting on a kept
+    /// ask that is not among them waits on nothing, and an ask nobody waits on goes.
+    pub fn only_these_came_back(&self, back: &[u32]) {
+        let mut inner = self.inner();
+        inner.open.retain(|_, asked| {
+            asked.waiters.retain(|waiter| back.contains(&waiter.chat));
+            !asked.waiters.is_empty() || asked.answering
+        });
+        self.save(&inner);
     }
 
     fn inner(&self) -> MutexGuard<'_, Inner> {
@@ -292,6 +474,7 @@ impl Asks {
                 );
                 None
             };
+            self.save(&inner);
             drop(inner);
             match joined {
                 Some(waiting) => self.trace(chat, "joined", &vault, &key, waiting),
@@ -422,6 +605,7 @@ impl Asks {
                 inner.declined.insert((chat, vault.clone(), key.clone()));
             }
         }
+        self.save(&inner);
         drop(inner);
         let what = if filled { "filled" } else { "declined" };
         for &chat in &chats {
@@ -456,6 +640,7 @@ impl Asks {
             asked.waiters.retain(|waiter| waiter.chat != chat);
             !asked.waiters.is_empty() || asked.answering
         });
+        self.save(&inner);
     }
 }
 

@@ -6222,6 +6222,35 @@ down rather than read off the code.
 - **Code:** `app/src-tauri/src/oldplugins.rs` (`answered_at`, `notice_of`,
   `purlis_change_applied`, `purlis_change_dismissed`).
 
+### `app/secret-asks.json`
+- **What:** the Secret asks open as the app last changed them (#5079, ADR 0109, #5054's story
+  59): a chat's brokered run missed a key in its persona's vault and asked the person for it,
+  and nobody has answered yet. Read back as the project opens, so a restart does not drop one:
+  it is listed again, and each chat that waited on it is nudged once it is answered.
+- **Format:** JSON, pretty-printed, trailing `\n`, mode 0600, replaced whole
+  (`rewrite::replace`) whenever an ask is raised, joined, answered or loses a chat. `{"v": 1,
+  "asked": <n>, "asks": [{"id", "persona", "vault", "key", "tool"?, "since", "chats": [<n>,
+  ...]}]}`: `asked` is the last number an ask was given, so one is never given twice; `since`
+  is seconds since 1970; `chats` the chats that wait on it, by the app's number, which a
+  restart keeps (`app/reopen.json`'s `chats[].number`), the first to ask first; `tool` the
+  declared tool whose run missed the key, absent for none.
+  - **Names only, never a value**: the person's fill goes to the vault's provider and nowhere
+    else. Each name is masked as a task's open question is (`dispatchrecord::masked`), and an
+    ask with a name that masking would change is not written at all, since read back it would
+    name another key.
+  - **What a chat declined is not here**: it lasts as long as the app's run, so after a
+    restart a chat may be asked about that key once more.
+- **Read by:** `purlis_core::secrets::ask::Asks::kept`, as the project opens. A file that does
+  not read opens with no ask; an entry whose names are not one line, or that names no chat, is
+  left out; each is said in the log. After a launch that read its record of chats, a chat it
+  did not bring back waits on nothing, and an ask no chat waits on goes
+  (`Asks::only_these_came_back`).
+- **Status:** **internal** — written and read by purlis alone; no chat can write it (the
+  sandbox denies every chat a write under `<state>/app`).
+- **Tier:** Clone state — deleting it costs the open Secret asks: a chat's next run that
+  misses the key asks again.
+- **Code:** `crates/purlis-core/src/secrets/ask.rs`.
+
 ### `app/reopen.json`
 - **Format:** JSON, `indent=2`, trailing `\n`. Replaced whole by `rewrite::replace`: written
   to a temp file beside it (`.charter-generated.reopen.json.<pid>.<tag>.tmp`), flushed and
