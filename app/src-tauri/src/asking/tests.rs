@@ -2095,6 +2095,7 @@ fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
         key: "KUBECONFIG".into(),
         tool: Some("kubectl".into()),
         chats: vec![6, 9, 11],
+        cannot_receive: Vec::new(),
         since: 1_700_000_000,
     }];
 
@@ -2129,6 +2130,38 @@ fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
         asks.iter()
             .all(|one| one.session != 6 || one.source == AskSource::Secret),
         "the chat waits on the Secret ask, and no question of its own beside it: {asks:?}"
+    );
+}
+
+/// #5077: a key a chat on a runner that cannot receive a value asked for is asked under that
+/// chat, saying its runner won't get it and that a fill is for this machine's chats.
+#[test]
+fn a_secret_ask_from_a_runner_that_cannot_receive_says_the_runner_wont_get_it() {
+    let mut world = World::new();
+    world.queue = vec![8];
+    world.secrets = vec![purlis_core::secrets::ask::Open {
+        id: 4,
+        persona: "devops".into(),
+        vault: "team".into(),
+        key: "KUBECONFIG".into(),
+        tool: Some("kubectl".into()),
+        chats: Vec::new(),
+        cannot_receive: vec![8],
+        since: 1_700_000_000,
+    }];
+
+    let asks = world.asks();
+
+    let ask = asks
+        .iter()
+        .find(|one| one.source == AskSource::Secret)
+        .expect("asked");
+    assert_eq!(ask.session, 8);
+    assert_eq!(ids(ask), [super::SECRET_FILL, KEEP]);
+    assert_eq!(
+        ask.says,
+        "Needs KUBECONFIG from devops's vault team for kubectl. This chat's runner can't receive \
+         secrets: Fill stores it in that vault for chats on this machine"
     );
 }
 

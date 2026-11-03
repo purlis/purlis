@@ -22,6 +22,14 @@
 //! - **A decline settles the chats waiting then, and only them.** Each is not asked about that
 //!   key again for as long as it lives; another chat that misses it later is asked afresh.
 //!
+//! **A chat on a pool's runner asks here too, and is sent a value only as it always was** (#5077,
+//! ADR 0109): the desktop's window raises its ask, and the fill is stored on the desktop. What
+//! reaches the runner goes by the one route a runner chat's tool is ever sent a value by, its
+//! run's own Allow (ADR 0078 §7, `secret.forwarded`); nothing here sends anything anywhere. A
+//! runner that cannot receive one is told so at once, `declined <vault>/<key>: runner can't
+//! receive secrets`, and the ask stays for the person to fill for this machine's chats
+//! ([`Asks::cannot_receive`], [`Open::cannot_receive`]).
+//!
 //! **No value is held here past its write.** The window's answer carries it straight to the
 //! provider; [`Open`], what the chat hears, the nudge and the trace name the vault and the key,
 //! never a value. Each ask's life is recorded in the chat's trace as `secret.ask`, metadata only:
@@ -81,6 +89,9 @@ pub struct Open {
     /// Each chat that needs it, the first to ask first: those holding a command, and those
     /// whose command stopped waiting and will be nudged.
     pub chats: Vec<u32>,
+    /// Each chat on a runner that cannot receive the value, which asked for it and was told
+    /// it was declined: a fill is not for it, and it is not nudged (#5077).
+    pub cannot_receive: Vec<u32>,
     /// When it was raised, in seconds since 1970.
     pub since: u64,
 }
@@ -147,8 +158,18 @@ struct Asked {
     tool: Option<String>,
     since: u64,
     waiters: Vec<Waiter>,
+    /// The runner chats that cannot receive the value ([`Open::cannot_receive`]).
+    cannot_receive: Vec<u32>,
     /// An answer is being written: a second is refused, as any ask's second answer is.
     answering: bool,
+}
+
+impl Asked {
+    /// Whether anything still needs it: a chat waiting, a runner chat that asked, or an answer
+    /// being written.
+    fn needed(&self) -> bool {
+        !self.waiters.is_empty() || !self.cannot_receive.is_empty() || self.answering
+    }
 }
 
 #[derive(Debug, Default)]
@@ -191,6 +212,9 @@ struct KeptAsk {
     since: u64,
     /// The chats that wait on it, by the app's number, which a restart keeps.
     chats: Vec<u32>,
+    /// The runner chats that cannot receive it, by number.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    cannot_receive: Vec<u32>,
 }
 
 impl KeptAsk {
@@ -212,6 +236,7 @@ impl KeptAsk {
             },
             since: asked.since,
             chats: chats_of(asked),
+            cannot_receive: asked.cannot_receive.clone(),
         })
     }
 
@@ -222,7 +247,7 @@ impl KeptAsk {
             .into_iter()
             .chain(&self.tool)
             .all(|one| name(one))
-            && !self.chats.is_empty()
+            && !(self.chats.is_empty() && self.cannot_receive.is_empty())
     }
 }
 
@@ -256,10 +281,26 @@ fn declined_said(vault: &str, key: &str) -> String {
     format!("declined {}", vault_and_key(vault, key))
 }
 
+/// What a chat on a runner that cannot receive a value hears (#5077).
+fn cannot_receive_said(vault: &str, key: &str) -> String {
+    format!(
+        "{}: runner can't receive secrets",
+        declined_said(vault, key)
+    )
+}
+
 /// What a chat whose command stopped waiting hears.
 fn still_open_said(vault: &str, key: &str) -> String {
     format!(
         "waiting on you for {}; retry once answered",
+        vault_and_key(vault, key)
+    )
+}
+
+/// What a chat whose runner could not be confirmed as the person's own just now hears.
+fn unconfirmed_said(vault: &str, key: &str) -> String {
+    format!(
+        "waiting on you for {}, and the runner was unreachable just now; retry once answered",
         vault_and_key(vault, key)
     )
 }
@@ -343,6 +384,7 @@ impl Asks {
                     tool: one.tool,
                     since: one.since,
                     waiters,
+                    cannot_receive: one.cannot_receive,
                     answering: false,
                 },
             );
@@ -396,7 +438,8 @@ impl Asks {
         let mut inner = self.inner();
         inner.open.retain(|_, asked| {
             asked.waiters.retain(|waiter| back.contains(&waiter.chat));
-            !asked.waiters.is_empty() || asked.answering
+            asked.cannot_receive.retain(|chat| back.contains(chat));
+            asked.needed()
         });
         self.save(&inner);
     }
@@ -469,6 +512,7 @@ impl Asks {
                         tool,
                         since: now_secs(),
                         waiters: vec![waiter],
+                        cannot_receive: Vec::new(),
                         answering: false,
                     },
                 );
@@ -515,6 +559,109 @@ impl Asks {
         }
     }
 
+    /// **A chat on a runner that cannot receive a value misses `need`'s key** (#5077): the
+    /// person is asked for it all the same, raised or joined as any ask is, so they may fill it
+    /// for this machine's chats; the chat waits on nothing and is told at once that it was
+    /// declined, and why. Answers what it is told.
+    pub fn cannot_receive(&self, need: Need) -> String {
+        let Need {
+            chat,
+            persona,
+            vault,
+            key,
+            tool,
+        } = need;
+        let mut inner = self.inner();
+        let at = (vault.clone(), key.clone());
+        let joined = if let Some(asked) = inner.open.get_mut(&at) {
+            if !asked.cannot_receive.contains(&chat) {
+                asked.cannot_receive.push(chat);
+            }
+            true
+        } else {
+            inner.next += 1;
+            let id = inner.next;
+            inner.open.insert(
+                at,
+                Asked {
+                    id,
+                    persona,
+                    tool,
+                    since: now_secs(),
+                    waiters: Vec::new(),
+                    cannot_receive: vec![chat],
+                    answering: false,
+                },
+            );
+            false
+        };
+        self.save(&inner);
+        drop(inner);
+        let what = if joined {
+            "joined, cannot receive"
+        } else {
+            "raised, cannot receive"
+        };
+        self.trace(chat, what, &vault, &key, 0);
+        cannot_receive_said(&vault, &key)
+    }
+
+    /// **A chat on a runner that could not be confirmed as the person's own just now misses
+    /// `need`'s key** (#5077): asked as any ask is, raised or joined, and the chat waits on it
+    /// as one whose command stopped waiting does: nudged on its answer, and nothing declined. It
+    /// is not held, since no value could go to its runner now. Answers what it is told: that it
+    /// waits; or, where this chat declined it before, that it was declined (`Err`), with nothing
+    /// asked, as by [`Asks::hold`].
+    pub fn unconfirmed(&self, need: Need) -> Result<String, String> {
+        let Need {
+            chat,
+            persona,
+            vault,
+            key,
+            tool,
+        } = need;
+        let mut inner = self.inner();
+        if inner.declined.contains(&(chat, vault.clone(), key.clone())) {
+            return Err(declined_said(&vault, &key));
+        }
+        inner.next_waiter += 1;
+        let waiter = Waiter {
+            chat,
+            tell: None,
+            n: inner.next_waiter,
+        };
+        let at = (vault.clone(), key.clone());
+        let joined = if let Some(asked) = inner.open.get_mut(&at) {
+            if !asked.waiters.iter().any(|one| one.chat == chat) {
+                asked.waiters.push(waiter);
+            }
+            Some(chats_of(asked).len())
+        } else {
+            inner.next += 1;
+            let id = inner.next;
+            inner.open.insert(
+                at,
+                Asked {
+                    id,
+                    persona,
+                    tool,
+                    since: now_secs(),
+                    waiters: vec![waiter],
+                    cannot_receive: Vec::new(),
+                    answering: false,
+                },
+            );
+            None
+        };
+        self.save(&inner);
+        drop(inner);
+        match joined {
+            Some(waiting) => self.trace(chat, "joined, runner unconfirmed", &vault, &key, waiting),
+            None => self.trace(chat, "raised, runner unconfirmed", &vault, &key, 1),
+        }
+        Ok(unconfirmed_said(&vault, &key))
+    }
+
     /// **Every Secret ask open now**, longest waiting first.
     pub fn open(&self) -> Vec<Open> {
         let inner = self.inner();
@@ -528,6 +675,7 @@ impl Asks {
                 key: key.clone(),
                 tool: asked.tool.clone(),
                 chats: chats_of(asked),
+                cannot_receive: asked.cannot_receive.clone(),
                 since: asked.since,
             })
             .collect();
@@ -588,6 +736,7 @@ impl Asks {
             return Err(format!("secret ask {id} is no longer open"));
         };
         let chats = chats_of(&asked);
+        let asked_cannot_receive = asked.cannot_receive.clone();
         let settled = if filled {
             Settled::Filled
         } else {
@@ -608,7 +757,7 @@ impl Asks {
         self.save(&inner);
         drop(inner);
         let what = if filled { "filled" } else { "declined" };
-        for &chat in &chats {
+        for &chat in chats.iter().chain(&asked_cannot_receive) {
             self.trace(chat, what, &vault, &key, chats.len());
         }
         let told = crate::askoutcome::Outcome {
@@ -638,7 +787,8 @@ impl Asks {
         inner.declined.retain(|(of, _, _)| *of != chat);
         inner.open.retain(|_, asked| {
             asked.waiters.retain(|waiter| waiter.chat != chat);
-            !asked.waiters.is_empty() || asked.answering
+            asked.cannot_receive.retain(|one| *one != chat);
+            asked.needed()
         });
         self.save(&inner);
     }

@@ -2533,6 +2533,41 @@ mod cluster {
         assert!(!refused.contains("secret-host"), "{refused}");
     }
 
+    /// A cluster that does not vouch now is not a runner that can't receive (#5077): told apart
+    /// by kind, never by the words, which are the same.
+    #[test]
+    fn an_unanswered_vouch_is_unconfirmed_and_an_unmarked_pool_or_changed_key_is_not_yours() {
+        use crate::poollogins::NotSent;
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let link = reached(config.path());
+        let kind = |vouch: &dyn Fn(&Path, &str) -> Result<String, NotVouched>| {
+            Bound::of_a_cluster_pool_kinded(config.path(), "team", Some(&link), vouch).unwrap_err()
+        };
+        assert!(matches!(
+            kind(&|_, _| Ok("pod-uid-1".to_owned())),
+            NotSent::NotYours(_)
+        ));
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        for unanswered in [
+            NotVouched::WaitRanOut("no statement yet".into()),
+            NotVouched::Other("the cluster did not answer".into()),
+            NotVouched::NotVouched("none yet".into()),
+        ] {
+            let not = kind(&|_, _| Err(unanswered.clone()));
+            assert!(
+                matches!(not, NotSent::Unconfirmed(_)),
+                "{unanswered}: {not:?}"
+            );
+        }
+        let changed = kind(&|_, _| {
+            Err(NotVouched::OperatorKeyChanged {
+                pool: "team".into(),
+            })
+        });
+        assert!(matches!(changed, NotSent::NotYours(_)), "{changed:?}");
+    }
+
     /// What the cluster says beside the statement only ever refuses a value, as it is unsigned.
     #[test]
     fn a_stopped_or_no_longer_vouched_runner_is_sent_no_value() {

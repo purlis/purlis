@@ -600,3 +600,100 @@ fn a_kept_file_that_does_not_read_starts_with_no_open_ask() {
         ("GOOD", &[8][..])
     );
 }
+
+// A runner chat that cannot receive a value (#5077).
+
+#[test]
+fn a_chat_whose_runner_cannot_receive_is_declined_at_once_and_the_ask_stays_for_the_person() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let line = asks.cannot_receive(need(8, "MISSING"));
+    assert_eq!(line, "declined team/MISSING: runner can't receive secrets");
+    let open = asks.open();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert!(open[0].chats.is_empty(), "nothing waits on it: {open:?}");
+    assert_eq!(open[0].cannot_receive, vec![8]);
+    let answered = asks
+        .answer(
+            &ctx(project.path()),
+            open[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+    assert!(answered.nudge.is_empty(), "{answered:?}");
+    assert_eq!(stored(project.path(), "MISSING").as_deref(), Some(VALUE));
+}
+
+#[test]
+fn a_runner_chat_that_cannot_receive_joins_a_local_chats_ask_and_only_the_local_one_is_nudged() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, need(7, "MISSING"));
+    asks.cannot_receive(need(8, "MISSING"));
+    let open = asks.open();
+    assert_eq!(open.len(), 1, "one ask: {open:?}");
+    assert_eq!(
+        (open[0].chats.clone(), open[0].cannot_receive.clone()),
+        (vec![7], vec![8])
+    );
+    let answered = asks
+        .answer(
+            &ctx(project.path()),
+            open[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+    assert_eq!(answered.nudge, vec![7]);
+}
+
+#[test]
+fn an_ask_only_a_closed_runner_chat_raised_goes_with_it() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    asks.cannot_receive(need(8, "MISSING"));
+    asks.forget(8);
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn an_ask_a_runner_that_cannot_receive_raised_is_kept_across_a_restart() {
+    let project = project();
+    let before = {
+        let asks = Asks::kept(project.path());
+        asks.cannot_receive(need(8, "MISSING"));
+        asks.open()
+    };
+    assert_eq!(Asks::kept(project.path()).open(), before);
+}
+
+#[test]
+fn a_chat_whose_runner_was_unreachable_waits_on_the_ask_is_nudged_on_its_fill_and_nothing_is_declined()
+ {
+    let project = project();
+    let asks = Asks::new(project.path());
+    assert_eq!(
+        asks.unconfirmed(need(8, "MISSING")).as_deref(),
+        Ok(
+            "waiting on you for team/MISSING, and the runner was unreachable just now; retry once \
+            answered"
+        )
+    );
+    let open = asks.open();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!(open[0].chats, vec![8], "it waits: {open:?}");
+    assert!(
+        open[0].cannot_receive.is_empty(),
+        "never declined: {open:?}"
+    );
+    let answered = asks
+        .answer(
+            &ctx(project.path()),
+            open[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+    assert_eq!(answered.nudge, vec![8]);
+}
