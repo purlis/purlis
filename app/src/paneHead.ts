@@ -20,6 +20,12 @@ export type ChatHead = {
   sandbox: SandboxSaid | null;
   /** Being smart-closed (ADR 0064): the head breathes, and its state button is Cancel. */
   wrapping: boolean;
+  /**
+   * **Filed in another workspace than its tab's** (#4982; #4583 rule 2, `tabs.filedElsewhere`):
+   * its head names that workspace (`chat.workspace`) with a badge, in the workspace's colour, or
+   * `null` for one with none. Absent for a chat of the tab's own workspace.
+   */
+  elsewhere?: { colour: string | null };
 };
 
 /** The one state button: a row of the chat's own list, and the short word the head says. */

@@ -321,6 +321,7 @@ import {
   stopWaiting,
   tabsIn,
   workspaceOf,
+  filedElsewhere,
   type Direction,
   type FiledIn,
   focusedChat,
@@ -2884,8 +2885,11 @@ export const PlaneView = memo(function PlaneView({
    * which has no hue to tint with: no mark is drawn for a colour that tints nothing (the
    * Workspace level in Settings says why).
    */
-  const colourOf = (workspace: string | undefined): string | null =>
-    colourWithHue(sidebar?.workspaces.find((ws) => ws.name === workspace)?.colour);
+  const colourOf = useCallback(
+    (workspace: string | undefined): string | null =>
+      colourWithHue(sidebar?.workspaces.find((ws) => ws.name === workspace)?.colour),
+    [sidebar],
+  );
   /** The theme the window draws, which a colour is a hue shift of: a tab's tint follows it. */
   const drawnTheme = useSyncExternalStore(followTheme, inForce);
   /** What a workspace's own tab and its chat strip put on themselves: its colour, on the tokens
@@ -7556,16 +7560,24 @@ export const PlaneView = memo(function PlaneView({
   /** The chats of each tab, as its chip counts them and its menu lists them (#1487). */
   const chatsByTab = useMemo(() => chatsOfTabs(tabs, listedChats), [listedChats, tabs]);
   /** **What each chat's pane head says of it** (#4760): the chat as the Chats list lists it,
-   *  its sandbox, and whether it wraps up. */
+   *  its sandbox, whether it wraps up, and, in the tab in front, whether it is filed in another
+   *  workspace than that tab's (#4982), whose badge its head wears. */
   const paneHeads = useMemo(() => {
     const byNumber = new Map(listedChats.map((chat) => [chat.session, chat]));
+    const front = tabs.inFront;
     return (session: number): ChatHead | undefined => {
       const chat = byNumber.get(session);
-      return chat === undefined
-        ? undefined
-        : { chat, sandbox: sandboxOf(session), wrapping: wrapping.has(session) };
+      if (chat === undefined) return undefined;
+      const elsewhere =
+        front === undefined ? undefined : filedElsewhere(tabs, front, session, filedIn);
+      return {
+        chat,
+        sandbox: sandboxOf(session),
+        wrapping: wrapping.has(session),
+        ...(elsewhere === undefined ? {} : { elsewhere: { colour: colourOf(elsewhere) } }),
+      };
     };
-  }, [listedChats, sandboxOf, wrapping]);
+  }, [colourOf, filedIn, listedChats, sandboxOf, tabs, wrapping]);
   /** The tab in front and its chats: what the Chats view's This tab lists (#1679). */
   const tabInFront = useMemo(
     () =>
