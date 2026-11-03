@@ -81,8 +81,8 @@ export async function openChatList(): Promise<void> {
     async () =>
       browser.execute(() => {
         const frame =
-          document.querySelector(".pane-frame[data-focused] .pane-doing") ??
-          document.querySelector(".pane-frame .pane-doing");
+          document.querySelector(".pane-frame[data-focused] .pane-actions") ??
+          document.querySelector(".pane-frame .pane-actions");
         const more = frame?.querySelector<HTMLElement>(
           '[role="button"][aria-label^="More for "], button[aria-label^="More for "]',
         );

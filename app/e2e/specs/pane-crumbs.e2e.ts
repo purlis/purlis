@@ -146,6 +146,13 @@ async function draw(
       mark.setAttribute("class", "lucide");
       icon.append(mark);
       brief.append(icon);
+      // A pane that shows a path names no chat of its own beside it, and says no state but the
+      // path's (#4760): the head's name and state mark are drawn only where there is no path.
+      // Hidden, not removed: React still holds them, and takes them out itself.
+      for (const own of line.querySelectorAll<HTMLElement>(
+        ":scope > :is(.pane-name, .pane-state-mark)",
+      ))
+        own.style.display = "none";
       line.prepend(crumbs, brief);
       return true;
     },
