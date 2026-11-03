@@ -12,9 +12,8 @@
 //! **The commit is built from git's objects, never a checkout** of the source's own files: its
 //! tree at the reviewed commit, with each skill's folder replaced. It goes to a new branch of the
 //! source itself, named by the digest of what it holds, by the one refspec, never forced. The
-//! review asks the forge first whether the person's account may push there, and a publish its
-//! forge says may not is refused before anything is pushed, so Export is offered up front; where
-//! the forge does not say, the push answers. Nothing is forked for them (#4342).
+//! review asks the forge first whether the person's account may push there, so a no is said up
+//! front with Export beside it; the push still answers for itself. Nothing is forked (#4342).
 //!
 //! **Grades go as a summary** in the request's description, and never in the skill's folder
 //! (decision 21): when, which harness, which grader, how it scored and how it ended. Never a
@@ -45,7 +44,7 @@ pub trait PublishForge {
     /// The credential helper the push gets, or `None` for a folder on this machine.
     fn helper(&self) -> Option<String>;
     /// Whether the person's account may push to the source, as the forge says it: `None` where
-    /// its answer does not say. Read only, and asked before anything is pushed.
+    /// its answer does not say. Read only, for the review alone.
     fn may_push(&self) -> Result<Option<bool>, String>;
     /// The page of the open request already on `branch`. A closed or merged one does not count.
     fn already(&self, branch: &str) -> Result<Option<String>, String>;
@@ -121,22 +120,8 @@ impl PublishForge for OnTheForge {
     }
 
     fn may_push(&self) -> Result<Option<bool>, String> {
-        let name = self
-            .repo
-            .path
-            .rsplit_once('/')
-            .map_or(self.repo.path.as_str(), |(_, name)| name);
-        let record = crate::forge::backend::RepoRecord {
-            id: None,
-            name: name.to_owned(),
-            path_with_namespace: self.repo.path.clone(),
-            default_branch: None,
-            description: String::new(),
-            web_url: String::new(),
-            ssh_url: String::new(),
-            topics: Vec::new(),
-            forge: self.repo.forge.kind,
-        };
+        let record =
+            crate::forge::backend::RepoRecord::addressed_by(&self.repo.path, self.repo.forge.kind);
         let about = self
             .repo
             .backend()
@@ -188,8 +173,11 @@ pub struct PublishReview {
     pub author: (String, String),
     /// The grades the description holds.
     pub grades: Vec<GradeSent>,
-    /// Whether the person's account may push to the source, as its forge says: `Some(false)`
-    /// stops the publish before anything is pushed (#4342), and `None` leaves it to the push.
+    /// Whether the person's account may push to the source, as its forge says (#4342). A reading
+    /// aid that says so up front and never refuses: GitLab answers no to an instance's admins and
+    /// to access through a shared group, and the forge's account need not be the one git pushes
+    /// as, so the push always answers for itself. `None` where the forge does not say, cannot be
+    /// asked, or the review is stopped already.
     pub may_push: Option<bool>,
     /// The request's description, the grades among it, whole.
     pub body: String,
@@ -244,8 +232,9 @@ pub fn review(
 ) -> Result<PublishReview, String> {
     let scratch = Scratch::new()?;
     let mut review = reviewed(plane, built_in, level, name, source, &scratch, None)?;
-    // A reading aid: where the forge cannot be asked, the push itself still answers.
-    review.may_push = forge.may_push().ok().flatten();
+    if !review.stopped() {
+        review.may_push = forge.may_push().ok().flatten();
+    }
     Ok(review)
 }
 
@@ -520,8 +509,6 @@ pub enum Published {
     PushRefused {
         why: String,
     },
-    /// The forge says the person's account may not push to the source, so nothing was pushed.
-    NoWriteAccess,
 }
 
 /// **Sends what `accepted` showed**, refused whole where any of it moved since or anything stops
@@ -561,9 +548,6 @@ pub fn publish(
     // A branch an earlier publish pushed, whose request never opened or has since closed, is used
     // again when it holds these files, and nothing else is ever pushed over.
     if !branch_holds(plane, source, &scratch, &now.branch, &tree)? {
-        if forge.may_push().ok().flatten() == Some(false) {
-            return Ok(Published::NoWriteAccess);
-        }
         let helper = forge.helper();
         let pushed =
             scratch.push_new_branch(&source.remote.url, helper.as_deref(), &commit, &now.branch)?;

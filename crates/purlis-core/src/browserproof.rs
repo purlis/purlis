@@ -295,21 +295,7 @@ fn pr_of(request: &Request) -> Pr {
 
 /// The request's repo, as [`crate::forge::Repos::about`] is asked of it: by its path.
 fn repo_of(request: &Request) -> RepoRecord {
-    let name = request
-        .path
-        .rsplit_once('/')
-        .map_or(request.path.as_str(), |(_, name)| name);
-    RepoRecord {
-        id: None,
-        name: name.to_string(),
-        path_with_namespace: request.path.clone(),
-        default_branch: None,
-        description: String::new(),
-        web_url: String::new(),
-        ssh_url: String::new(),
-        topics: Vec::new(),
-        forge: request.forge.kind,
-    }
+    RepoRecord::addressed_by(&request.path, request.forge.kind)
 }
 
 /// **Attach what [`show`] showed** to its request, as the person, through `backend` (the

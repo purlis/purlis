@@ -157,9 +157,9 @@ fn a_publish_asks_only_at_a_terminal_outside_any_chat_and_a_doubt_counts_as_a_ch
 
 #[test]
 fn a_publish_the_forge_says_cannot_push_names_the_forge_and_offers_export() {
-    let said = no_write_access("GitHub");
+    let said = forge_says_no_push("GitHub");
     assert!(
-        said.starts_with("Nothing was sent: GitHub says your account cannot push"),
+        said.starts_with("GitHub says your account cannot push"),
         "{said}"
     );
     assert!(said.contains("`purlis skill export`"), "{said}");

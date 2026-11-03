@@ -16,7 +16,7 @@ import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.test
 import { inWorkspace, skillRowId } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { CANNOT_PUSH, EXPORT, GITHUB, LOCAL, REVIEW, STOPPED } from "./skillPublish.testkit";
+import { FORGE_SAYS_NO_PUSH, EXPORT, GITHUB, LOCAL, REVIEW, STOPPED } from "./skillPublish.testkit";
 import { expectFocusInSight } from "./stories.testkit";
 import { ExportDialog } from "./SkillPublish";
 
@@ -76,15 +76,14 @@ export const SomethingStopsIt: Story = {
   },
 };
 
-export const CannotPush: Story = {
-  args: { review: CANNOT_PUSH },
+export const ForgeSaysNoPush: Story = {
+  args: { review: FORGE_SAYS_NO_PUSH },
   play: async ({ canvas }) => {
-    await canvas.findByText(/GitHub says your account cannot push to this source/);
-    await expect(canvas.getByRole("button", { name: "Open draft pull request" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    await canvas.findByText(/GitHub says your account cannot push to this source, and publishing/);
     await expect(canvas.getByRole("button", { name: "Export…" })).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Open draft pull request" }),
+    ).not.toHaveAttribute("aria-disabled", "true");
   },
 };
 

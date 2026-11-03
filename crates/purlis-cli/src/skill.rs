@@ -2188,8 +2188,7 @@ fn publish(
         return Ok(1);
     }
     if review.may_push == Some(false) {
-        voice::err(no_write_access(forge.display()));
-        return Ok(1);
+        voice::warn(forge_says_no_push(forge.display()));
     }
     if !asked("Open this draft request, under your own account?") {
         voice::info("Nothing was sent.");
@@ -2220,20 +2219,17 @@ fn publish(
             );
             return Ok(1);
         }
-        source::publish::Published::NoWriteAccess => {
-            voice::err(no_write_access(forge.display()));
-            return Ok(1);
-        }
     }
     Ok(0)
 }
 
-/// What a publish says where the forge says the person's account may not push to the source.
-fn no_write_access(forge: &str) -> String {
+/// What a publish review says where the forge says the person's account may not push to the
+/// source. It warns and never refuses: the push answers for itself.
+fn forge_says_no_push(forge: &str) -> String {
     format!(
-        "Nothing was sent: {forge} says your account cannot push to this source, and publishing \
-         takes write access to it. Ask its owners for access, or export the skill with \
-         `purlis skill export` and send it to them."
+        "{forge} says your account cannot push to this source, and publishing takes write access \
+         to it, so the push will likely be refused. Ask its owners for access, or export the \
+         skill with `purlis skill export` and send it to them."
     )
 }
 

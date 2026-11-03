@@ -390,17 +390,31 @@ fn a_forge_that_cannot_be_asked_leaves_write_access_unknown_and_the_review_stand
 }
 
 #[test]
-fn an_account_the_forge_says_cannot_push_pushes_nothing_and_opens_nothing() {
+fn the_forge_saying_no_never_refuses_a_publish_the_push_itself_answers() {
+    // GitLab answers no to an admin and to a shared group's member, who can push all the same.
     let set = set();
     let forge = says_may_push(Ok(Some(false)));
     let review = review_by(&set, &forge);
-    let before = branches(&set.bare);
 
     let done = publish_of(&set, &review.accepted(), &forge).unwrap();
 
-    assert_eq!(done, Published::NoWriteAccess);
-    assert_eq!(branches(&set.bare), before);
-    assert!(forge.opened.borrow().is_empty());
+    assert!(matches!(done, Published::Opened { .. }), "{done:?}");
+    assert!(
+        branches(&set.bare).contains(&review.branch),
+        "{}",
+        branches(&set.bare)
+    );
+}
+
+#[test]
+fn a_review_stopped_already_does_not_ask_the_forge() {
+    let set = set();
+    let dir = Level::project().dir(&set.plane).unwrap().join("deploy");
+    let token = format!("ghp_{}", "a1B2".repeat(9));
+    std::fs::write(dir.join("SKILL.md"), format!("{SKILL}{token}\n")).unwrap();
+    let review = review_by(&set, &says_may_push(Ok(Some(false))));
+    assert!(review.stopped());
+    assert_eq!(review.may_push, None);
 }
 
 #[test]

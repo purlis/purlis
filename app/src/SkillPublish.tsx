@@ -40,9 +40,6 @@ function sizeSaid(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-/** What the page says where the forge says the person's account may not push to the source. */
-const NO_ACCESS = "Your account cannot push to this source";
-
 /** Only a source on a forge takes a request: a folder on this machine is no place to publish. */
 const onAForge = (source: SkillSource) => source.remote.url.startsWith("https://");
 
@@ -95,7 +92,7 @@ export function SkillPublishPage({
     }
   };
 
-  if (done?.kind === "opened" || done?.kind === "already")
+  if (done !== undefined && done.kind !== "cannot-push")
     return (
       <div className="skill-publish-done" data-testid="publish-opened">
         <Notice
@@ -122,8 +119,6 @@ export function SkillPublishPage({
     );
 
   const stopped = review !== undefined && (review.local.length > 0 || review.stops.length > 0);
-  // The forge's no, read before anything is sent, or met at the press (#4342).
-  const noAccess = review?.cannot_push === true || done?.kind === "no-write-access";
   const why = sending
     ? "The request is being opened."
     : source === undefined
@@ -134,27 +129,15 @@ export function SkillPublishPage({
           ? "The review could not be read."
           : stopped
             ? "Fix what stops it first."
-            : noAccess
-              ? `${NO_ACCESS}.`
-              : undefined;
+            : undefined;
   const main = `Open draft ${request}`;
 
   return (
     <ReviewPage
       label={`Publish ${name} to a source`}
       data-testid="publish-review"
-      summary={
-        stopped
-          ? "Fix what stops it first."
-          : noAccess
-            ? `${NO_ACCESS}.`
-            : "Opens a draft. You mark it ready."
-      }
-      summaryReserve={[
-        "Fix what stops it first.",
-        `${NO_ACCESS}.`,
-        "Opens a draft. You mark it ready.",
-      ]}
+      summary={stopped ? "Fix what stops it first." : "Opens a draft. You mark it ready."}
+      summaryReserve={["Fix what stops it first.", "Opens a draft. You mark it ready."]}
       onCancel={onCancel}
       cancel={{ children: "Cancel", isDisabled: sending }}
       main={{
@@ -186,23 +169,17 @@ export function SkillPublishPage({
           {`Nothing was sent. It takes write access to the source: ask for it, or export the skill and send it to them. git said: ${done.why}`}
         </Notice>
       )}
-      {noAccess && (
+      {review?.forge_says_no_push === true && done === undefined && (
         <Notice
-          cause="skill-publish-no-write-access"
+          cause="skill-publish-forge-says-no-push"
           tone="trouble"
-          label={NO_ACCESS}
+          label={`${review.forge} says your account cannot push to this source`}
           fixes={[
             { label: "Export…", onPress: onExport },
-            {
-              label: "Review again",
-              onPress: () => {
-                setDone(undefined);
-                again();
-              },
-            },
+            { label: "Review again", onPress: again },
           ]}
         >
-          {`Nothing was sent. ${review?.forge ?? "The forge"} says your account cannot push to this source, and publishing takes write access to it. Ask its owners for access, or export the skill and send it to them.`}
+          {`${review.forge} says your account cannot push to this source, and publishing takes write access to it, so the push will likely be refused. Ask its owners for access, or export the skill and send it to them.`}
         </Notice>
       )}
       {refused !== undefined && (

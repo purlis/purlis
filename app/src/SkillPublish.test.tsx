@@ -12,7 +12,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ExportDialog, SkillPublishPage } from "./SkillPublish";
 import type { PublishReviewView, SkillLevel } from "./bindings";
-import { CANNOT_PUSH, EXPORT, GITHUB, LOCAL, REVIEW, STOPPED } from "./skillPublish.testkit";
+import { FORGE_SAYS_NO_PUSH, EXPORT, GITHUB, LOCAL, REVIEW, STOPPED } from "./skillPublish.testkit";
 
 afterEach(() => {
   cleanup();
@@ -101,28 +101,26 @@ describe("the publish review", () => {
     expect(await opener()).not.toHaveAttribute("aria-disabled", "true");
   });
 
-  it("says up front when the forge says you cannot push, offers Export and sends nothing", async () => {
-    const asked = core(CANNOT_PUSH);
+  it("says up front when the forge says you cannot push, and offers Export", async () => {
+    core(FORGE_SAYS_NO_PUSH);
     const onExport = vi.fn();
     page({ onExport });
 
-    await screen.findByText(/GitHub says your account cannot push to this source/);
-    const button = await opener();
-    await waitFor(() => expect(button).toHaveAttribute("aria-disabled", "true"));
-    await userEvent.click(button);
-    expect(asked.some((one) => one.cmd === "skill_publish")).toBe(false);
-
+    await screen.findByText(/GitHub says your account cannot push to this source, and publishing/);
     await userEvent.click(screen.getByRole("button", { name: "Export…" }));
     expect(onExport).toHaveBeenCalled();
   });
 
-  it("says the same when the forge refuses access only at the press", async () => {
-    core(REVIEW, { kind: "no-write-access" });
+  it("leaves the push to answer for itself where the forge says no", async () => {
+    // GitLab says no to an instance's admins and to access through a shared group.
+    const asked = core(FORGE_SAYS_NO_PUSH);
     page();
 
+    await screen.findByText(/GitHub says your account cannot push to this source, and publishing/);
     await userEvent.click(await opener());
-    await screen.findByText(/GitHub says your account cannot push to this source/);
-    screen.getByRole("button", { name: "Export…" });
+
+    await screen.findByTestId("publish-opened");
+    expect(asked.some((one) => one.cmd === "skill_publish")).toBe(true);
   });
 
   it("names a skill it refers to that is kept here, and offers no move of the wrong one", async () => {

@@ -738,6 +738,24 @@ pub struct RepoRecord {
     pub forge: Kind,
 }
 
+impl RepoRecord {
+    /// A repo known by its path alone, as [`Repos::about`] needs it: nothing a listing adds.
+    pub fn addressed_by(path: &str, forge: Kind) -> RepoRecord {
+        let name = path.rsplit_once('/').map_or(path, |(_, name)| name);
+        RepoRecord {
+            id: None,
+            name: name.to_owned(),
+            path_with_namespace: path.to_owned(),
+            default_branch: None,
+            description: String::new(),
+            web_url: String::new(),
+            ssh_url: String::new(),
+            topics: Vec::new(),
+            forge,
+        }
+    }
+}
+
 /// One thing a forge may or may not do for one repo. Not an extension's capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Capability {

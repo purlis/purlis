@@ -94,9 +94,9 @@ pub struct PublishReviewView {
     pub grades: Vec<PublishGrade>,
     /// The request's description, whole.
     pub body: String,
-    /// Whether the forge says the person's account may not push to the source (#4342). Only a
-    /// no from the forge sets it: where the forge does not say, the push answers.
-    pub cannot_push: bool,
+    /// Whether the forge says the person's account may not push to the source (#4342). The page
+    /// says so up front and offers Export, and never refuses on it: the push answers for itself.
+    pub forge_says_no_push: bool,
     pub accepted: PublishAccepted,
 }
 
@@ -112,17 +112,9 @@ pub struct PublishAccepted {
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum PublishDone {
-    Opened {
-        url: String,
-    },
-    Already {
-        url: String,
-    },
-    CannotPush {
-        why: String,
-    },
-    /// The forge says the person's account may not push to the source; nothing was pushed.
-    NoWriteAccess,
+    Opened { url: String },
+    Already { url: String },
+    CannotPush { why: String },
 }
 
 /// **What the export dialog says.**
@@ -213,7 +205,7 @@ fn view_of(review: &PublishReview, forge: &OnTheForge) -> PublishReviewView {
             .collect(),
         broken: review.outgoing.broken.iter().map(|one| esc(one)).collect(),
         body: esc(&review.body),
-        cannot_push: review.may_push == Some(false),
+        forge_says_no_push: review.may_push == Some(false),
         grades: review
             .grades
             .iter()
@@ -306,7 +298,6 @@ pub(crate) async fn skill_publish(
                 Published::Opened { url, .. } => PublishDone::Opened { url },
                 Published::Already { url } => PublishDone::Already { url },
                 Published::PushRefused { why } => PublishDone::CannotPush { why: esc(&why) },
-                Published::NoWriteAccess => PublishDone::NoWriteAccess,
             })
         })
     })
