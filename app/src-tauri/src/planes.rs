@@ -259,6 +259,9 @@ pub struct Held {
     /// What the sidebar draws, kept current by what the watch and auto-save say moved
     /// (FD-10b, [`purlis_core::planemodel`]). In memory only.
     model: Arc<Mutex<Model>>,
+    /// The new-chat picker's two answers, kept while nothing they were read from moves
+    /// (#4737): dropped by what the watch tells, as `model` is kept by it. In memory only.
+    start_answers: Arc<crate::startkept::StartAnswers>,
     /// The plane's auto-save (charter-app#296): saves it after a quiet period and when a chat
     /// ends, and fetches what comes in. It runs where the plane's chats run: here, or in the
     /// session host (#2002). Stopped when the plane is let go of.
@@ -349,15 +352,19 @@ pub struct Held {
     me: Arc<std::sync::OnceLock<std::sync::Weak<Held>>>,
 }
 
-/// `tell`, after each change has been applied to `model` — so a reader the window sends on
-/// hearing it reads a model that already has it.
+/// `tell`, after each change has been applied to `model`, and `start_answers` dropped where it
+/// moves them — so a reader the window sends on hearing it reads a model that already has it.
 fn applying(
     model: Arc<Mutex<Model>>,
+    start_answers: Arc<crate::startkept::StartAnswers>,
     root: PathBuf,
     skills_now: Arc<crate::chats::SkillsNow>,
     tell: crate::planewatch::Changed,
 ) -> crate::planewatch::Changed {
     Arc::new(move |plane, what: crate::planewatch::What| {
+        if purlis_core::planechange::moves_a_new_chat(what.as_deref()) {
+            start_answers.moved();
+        }
         model
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -478,6 +485,7 @@ impl Held {
                 model.apply(&self.root, None);
                 // A change in the gap was told to nobody: the chats' skill stamps too (#4738).
                 self.chats.skills_now().forget();
+                self.start_answers.moved();
                 true
             }
             Some(crate::planewatch::Standing::Whole) => true,
@@ -506,10 +514,41 @@ impl Held {
         let paths: Vec<PathBuf> = stores.iter().map(|store| self.root.join(store)).collect();
         let changes =
             purlis_core::planechange::of_batch(&self.root, paths.iter().map(PathBuf::as_path));
+        if purlis_core::planechange::moves_a_new_chat(changes.as_deref()) {
+            self.start_answers.moved();
+        }
         self.model
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .apply(&self.root, changes.as_deref());
+    }
+
+    /// **The new-chat picker's first answer** (#4737), kept while nothing it was read from
+    /// moves ([`crate::startkept`]): `read` reads it, with the stamp of what it read on this
+    /// machine, where it is not kept.
+    pub(crate) fn kept_start_first(
+        &self,
+        read: impl FnOnce() -> Result<(crate::StartOptions, purlis_core::pickerstamp::Stamp), String>,
+    ) -> Result<crate::StartOptions, String> {
+        let trusted = self.start_answers_trusted();
+        self.start_answers.first.served(trusted, read)
+    }
+
+    /// **The new-chat picker's second answer** (#4737), each row's details, kept as
+    /// [`Self::kept_start_first`] keeps the first.
+    pub(crate) fn kept_start_details(
+        &self,
+        read: impl FnOnce() -> Result<(Vec<crate::RowDetails>, purlis_core::pickerstamp::Stamp), String>,
+    ) -> Result<Vec<crate::RowDetails>, String> {
+        let trusted = self.start_answers_trusted();
+        self.start_answers.details.served(trusted, read)
+    }
+
+    /// Whether the picker's answers may be kept: the plane is watched wholly, as the sidebar's
+    /// model must be ([`Self::trusted`]), which drops them where the watch lapsed meanwhile.
+    fn start_answers_trusted(&self) -> bool {
+        let mut model = self.model.lock().unwrap_or_else(PoisonError::into_inner);
+        self.trusted(&mut model)
     }
 
     /// The window moved the plane's workspaces itself — made, renamed or removed one, or set
@@ -4424,8 +4463,10 @@ impl Planes {
         // Read once here, and from then on only as far as each change the watch and auto-save
         // name (FD-10b).
         let model = Arc::new(Mutex::new(Model::read(&root)));
+        let start_answers = Arc::new(crate::startkept::StartAnswers::default());
         let changes = applying(
             Arc::clone(&model),
+            Arc::clone(&start_answers),
             root.clone(),
             chats.skills_now(),
             Arc::clone(&self.changes),
@@ -4757,6 +4798,7 @@ impl Planes {
             recorded,
             watch: Mutex::new(watch),
             model,
+            start_answers,
             autosave: Mutex::new(Some(autosave)),
             started_on,
             typed,

@@ -1336,8 +1336,12 @@ fn checked_within(root: &Path, git: Option<&Path>, timeout: std::time::Duration)
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Stamp(Vec<Option<FileStamp>>);
 
+/// How one file stood: its device, inode, length and change and modification times. A file
+/// rewritten to the same length within one tick of its modified time, or with that time put
+/// back, still moves its change time. The new-chat picker's kept answers use it too
+/// ([`crate::pickerstamp`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct FileStamp {
+pub(crate) struct FileStamp {
     dev: u64,
     ino: u64,
     len: u64,
@@ -1363,8 +1367,17 @@ impl Stamp {
 }
 
 impl FileStamp {
-    fn of(path: &Path) -> Option<Self> {
-        let meta = std::fs::symlink_metadata(path).ok()?;
+    /// How `path` itself stands, a link as the link; `None` where nothing is there.
+    pub(crate) fn of(path: &Path) -> Option<Self> {
+        Some(Self::of_meta(&std::fs::symlink_metadata(path).ok()?))
+    }
+
+    /// How what `path` names stands, through any link; `None` where nothing is there.
+    pub(crate) fn followed(path: &Path) -> Option<Self> {
+        Some(Self::of_meta(&std::fs::metadata(path).ok()?))
+    }
+
+    fn of_meta(meta: &std::fs::Metadata) -> Self {
         #[cfg(unix)]
         let (dev, ino, changed) = {
             use std::os::unix::fs::MetadataExt;
@@ -1372,13 +1385,13 @@ impl FileStamp {
         };
         #[cfg(not(unix))]
         let (dev, ino, changed) = (0, 0, (0, 0));
-        Some(Self {
+        Self {
             dev,
             ino,
             len: meta.len(),
             modified: meta.modified().ok(),
             changed,
-        })
+        }
     }
 }
 

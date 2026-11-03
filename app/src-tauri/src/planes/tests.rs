@@ -39,19 +39,25 @@ fn a_change_the_watch_tells_is_in_the_sidebars_model_before_the_window_hears_it(
     std::fs::create_dir_all(&store).expect("a todo store");
     let model = Arc::new(Mutex::new(Model::read(&root)));
     let heard = Arc::new(Mutex::new(Vec::new()));
-    let changed = applying(Arc::clone(&model), root.clone(), Arc::default(), {
-        let model = Arc::clone(&model);
-        let heard = Arc::clone(&heard);
-        Arc::new(move |_, _| {
-            let model = model.lock().expect("the model");
-            let todos: Vec<String> = model
-                .rows()
-                .expect("listed")
-                .flat_map(|row| row.todos.clone())
-                .collect();
-            heard.lock().expect("heard").push(todos);
-        })
-    });
+    let changed = applying(
+        Arc::clone(&model),
+        Arc::default(),
+        root.clone(),
+        Arc::default(),
+        {
+            let model = Arc::clone(&model);
+            let heard = Arc::clone(&heard);
+            Arc::new(move |_, _| {
+                let model = model.lock().expect("the model");
+                let todos: Vec<String> = model
+                    .rows()
+                    .expect("listed")
+                    .flat_map(|row| row.todos.clone())
+                    .collect();
+                heard.lock().expect("heard").push(todos);
+            })
+        },
+    );
     std::fs::write(store.join("b1.md"), "# Beta one\n").expect("a todo");
 
     let todo = purlis_core::planechange::classify(&root, &store.join("b1.md")).expect("placed");
@@ -73,11 +79,17 @@ fn only_a_change_to_the_instructions_makes_the_chats_read_their_skills_again() {
     let model = Arc::new(Mutex::new(Model::read(&root)));
     let skills_now = Arc::new(crate::chats::SkillsNow::default());
     let forgotten_when_told = Arc::new(Mutex::new(Vec::new()));
-    let changed = applying(Arc::clone(&model), root.clone(), Arc::clone(&skills_now), {
-        let skills_now = Arc::clone(&skills_now);
-        let heard = Arc::clone(&forgotten_when_told);
-        Arc::new(move |_, _| heard.lock().expect("heard").push(skills_now.forgotten()))
-    });
+    let changed = applying(
+        Arc::clone(&model),
+        Arc::default(),
+        root.clone(),
+        Arc::clone(&skills_now),
+        {
+            let skills_now = Arc::clone(&skills_now);
+            let heard = Arc::clone(&forgotten_when_told);
+            Arc::new(move |_, _| heard.lock().expect("heard").push(skills_now.forgotten()))
+        },
+    );
     let plane: PlaneId =
         serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
     let change =
@@ -106,6 +118,7 @@ fn a_workspaces_skill_settings_changing_makes_the_chats_read_their_skills_again(
     let skills_now = Arc::new(crate::chats::SkillsNow::default());
     let changed = applying(
         Arc::clone(&model),
+        Arc::default(),
         root.clone(),
         Arc::clone(&skills_now),
         Arc::new(|_, _| {}),
