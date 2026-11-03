@@ -396,6 +396,7 @@ export function ViewPane({
   onMemorySaved,
   onCloseView,
   firstTask,
+  onNewChatOn,
   split,
   onSplit,
   onShowInstead,
@@ -434,6 +435,8 @@ export function ViewPane({
   onCloseView?: (view: ViewRef) => void;
   /** What the first task's tab asks the plane to do: start a run, show a run's diff (FR-28). */
   firstTask?: FirstTaskDoes;
+  /** Asks for a new chat on pool `pool`: Pool setup's last screen (#4483). */
+  onNewChatOn?: (pool: string, workspace?: string) => void;
   /** Where this view's divider was, as its first side's share in percent (FM-2). */
   split?: number;
   /** The operator moved this view's divider. */
@@ -654,7 +657,7 @@ export function ViewPane({
           />
         ) : viewKey(view) === viewKey(POOL_SETUP_VIEW) ? (
           /* Pool setup (spec #4469), keyed by the plane, whose personas it reads. */
-          <PoolSetupTab key={plane} plane={plane} />
+          <PoolSetupTab key={plane} plane={plane} workspace={workspace} onOpenChat={onNewChatOn} />
         ) : isSaving(view) ? (
           /* The plane's save standing and its save button (charter-app#294). Keyed by the
              plane, so a pane that comes to show another project's starts from its own read. */

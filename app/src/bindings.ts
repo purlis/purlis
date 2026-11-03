@@ -3253,6 +3253,14 @@ export const commands = {
 	 */
 	poolSetupWake: (pool: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_wake", { pool })),
 	/**
+	 *  **Try it** (#4483, Q32): starts a real chat on pool `pool`, on the Try it step's own button,
+	 *  waits for the hook its harness reports its session's start by (ADR 0076), closes it, and keeps
+	 *  that it started (`purlis_core::poolsetup::tried`). Nothing is typed into it. A start that is
+	 *  refused, or a chat that never reports its start, comes back as `failed`, with the step that
+	 *  mends it where one does.
+	 */
+	poolSetupTry: (plane: PlaneId, pool: string, workspace: string | null) => typedError<PoolSetupTried, string>(__TAURI_INVOKE("pool_setup_try", { plane, pool, workspace })),
+	/**
 	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 	 *  elsewhere, with what to do instead.
 	 */
@@ -11284,6 +11292,13 @@ export type PoolSetupCreated = {
 	breaks: string[],
 };
 
+/**  Why Try it didn't pass, and the step that mends it, where one does (#4483). */
+export type PoolSetupFailed = {
+	why: string,
+	/**  The step to go to, by its id: `signins` for a sign-in. Null where trying again is it. */
+	step: string | null,
+};
+
 /**  A limit a profile is over. */
 export type PoolSetupOver = {
 	/**  The limit's key, as `pool_limit_set` takes it. */
@@ -11346,6 +11361,11 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+};
+
+/**  What Try it found: null where a real chat started and the proof is kept. */
+export type PoolSetupTried = {
+	failed: PoolSetupFailed | null,
 };
 
 /**  What the person is asked. */

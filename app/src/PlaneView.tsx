@@ -611,7 +611,16 @@ const NONE: readonly never[] = [];
  *  split of the pane in front. `prefer` is the harness (a profile's `kind`) the picker starts
  *  on, where something already knows which one is wanted: a harness started by hand in a shell
  *  tab, opened as a chat instead (ADR 0062). */
-type Where = { tab: true; in?: string; prefer?: string } | { split: Direction };
+type Where =
+  | {
+      tab: true;
+      in?: string;
+      prefer?: string;
+      /** A pool chosen on the picker's Runs on row as it opens, in the workspace `workspace`
+       *  (#4483): Pool setup's Open a chat. */
+      pool?: { name: string; workspace: string };
+    }
+  | { split: Direction };
 
 /** What a new shell tab has typed into it: a line spelled out (FR-4's `gh auth login`), a
  *  harness whose compiled-in installer the core types itself (FR-29, V65), or the sandbox's
@@ -3187,7 +3196,7 @@ export const PlaneView = memo(function PlaneView({
       setPickerTrouble(undefined);
       const cwd = ("in" in where ? where.in : undefined) ?? startIn;
       // The workspace the chat would be filed in, or none at the project's root.
-      const filed = filedFor(cwd, focused);
+      const filed = "pool" in where && where.pool ? where.pool.workspace : filedFor(cwd, focused);
       const [options, found, runsOn] = await Promise.all([
         commands
           .startOptions(plane)
@@ -3208,6 +3217,27 @@ export const PlaneView = memo(function PlaneView({
       setPicking({ options: options.data, where, runsOn });
     },
     [change, focused, plane, readRunsOn, refusedBy, startIn, succeeded],
+  );
+
+  /**
+   * **A new chat on pool `pool`** (#4483): Pool setup's Open a chat. The picker opens with the pool
+   * chosen on its Runs on row, in workspace `workspace` where the tab names one and else the
+   * project's first, as Try it started its chat: a chat at the project's root runs here. The
+   * person still presses Start.
+   */
+  const newChatOn = useCallback(
+    (pool: string, workspace?: string) => {
+      const workspaces = sidebar?.workspaces ?? [];
+      const ws =
+        workspaces.find((one) => one.name === workspace) ??
+        [...workspaces].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))[0];
+      void ask(
+        ws === undefined
+          ? { tab: true }
+          : { tab: true, in: ws.path, pool: { name: pool, workspace: ws.name } },
+      );
+    },
+    [ask, sidebar],
   );
 
   /**
@@ -10207,6 +10237,7 @@ export const PlaneView = memo(function PlaneView({
                               },
                             }}
                             firstTask={firstTaskDoes}
+                            onNewChatOn={newChatOn}
                             split={{
                               of: (view) => splitOf(tabs, view),
                               moved: (view, split) => change((tabs) => setSplit(tabs, view, split)),
@@ -10770,6 +10801,7 @@ export const PlaneView = memo(function PlaneView({
                   starting={starting}
                   readStage={readStage}
                   prefer={"prefer" in picking.where ? picking.where.prefer : undefined}
+                  pool={"pool" in picking.where ? picking.where.pool?.name : undefined}
                   trouble={pickerTrouble}
                   // Only beside the refusal it was asked for, never beside a later one.
                   signIn={

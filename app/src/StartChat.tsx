@@ -179,6 +179,7 @@ export function StartChat({
   onFix,
   onOpenSettings,
   runsOn,
+  pool,
   poolUnavailable,
   onPoolSetup,
   onCancel,
@@ -255,6 +256,9 @@ export function StartChat({
   /** Where a new chat here would run and which level says so (#4536): the Runs on row. Absent,
    *  no row is drawn. */
   runsOn?: StartRunsOn;
+  /** A pool chosen on the Runs on row as the picker opens, where the row offers it: Pool setup's
+   *  Open a chat (#4483). The person can still choose otherwise, and presses Start. */
+  pool?: string;
   /** The pool the last attempt was to run on, where it is gone, stopped or not reached: beside
    *  `trouble`, the picker offers Try again, Pool setup and Run on this machine this once. */
   poolUnavailable?: string;
@@ -393,7 +397,11 @@ export function StartChat({
   // **Runs on, for this start alone** (#4536): the levels' answer until the person picks a pool
   // or this machine here. It never writes a setting, and is not remembered between chats. A chat
   // at the project's root runs here, so it is offered no choice.
-  const [runsOnChoice, setRunsOnChoice] = useState(AS_SET);
+  const [runsOnChoice, setRunsOnChoice] = useState(() =>
+    pool !== undefined && runsOn !== undefined && !runsOn.at_root && runsOn.pools.includes(pool)
+      ? pool
+      : AS_SET,
+  );
   const runsOnPick: RunsOnPick | undefined =
     runsOn === undefined || runsOn.at_root || runsOnChoice === AS_SET
       ? undefined
