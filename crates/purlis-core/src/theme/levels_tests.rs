@@ -1156,7 +1156,13 @@ fn every_level_s_theme_is_drawn_with_its_own_tint_recipe() {
         assert_eq!(theme.name, "Edges");
         assert_eq!(
             theme.tint.tabs(),
-            ["border.control", "accent.base", "accent.text"]
+            [
+                "border.control",
+                "accent.base",
+                "accent.wash",
+                "accent.wash-hover",
+                "accent.text"
+            ]
         );
         for one in &theme.tint.hues {
             let tint = tinted(&theme, one.name);

@@ -496,6 +496,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -510,6 +512,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -678,7 +682,26 @@
             "alone": false,
             "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -1195,6 +1218,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -1209,6 +1234,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -1377,7 +1404,26 @@
             "alone": false,
             "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -1894,6 +1940,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -1908,6 +1956,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2076,7 +2126,26 @@
             "alone": false,
             "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -2427,6 +2496,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2441,6 +2512,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2609,7 +2682,26 @@
             "alone": false,
             "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",
@@ -2976,6 +3068,8 @@
         "window": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -2990,6 +3084,8 @@
         "tabs": [
           "accent.base",
           "accent.surface",
+          "accent.wash",
+          "accent.wash-hover",
           "accent.text",
           "accent.fill",
           "accent.fill-hover",
@@ -3158,7 +3254,26 @@
             "alone": false,
             "words": true
           }
-        ]
+        ],
+        "with_words": [
+          "accent.wash",
+          "accent.wash-hover"
+        ],
+        "no_nearer": {
+          "tokens": [
+            "accent.surface",
+            "accent.wash",
+            "accent.wash-hover"
+          ],
+          "from": [
+            "wash.warning",
+            "danger.wash"
+          ],
+          "over": [
+            "surface.base",
+            "surface.deep"
+          ]
+        }
       },
       "parts": [
         "@layer parts {",

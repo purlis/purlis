@@ -62,12 +62,15 @@ fn at_one_chroma(theme: &ResolvedTheme, hue: f64) -> Most {
         shared: tint::apart_chroma(theme, hue),
         alone,
         words: None,
+        kept: 0,
     };
     // The accent's words take their own answer since #3100: where they would land on waiting or
     // danger they keep the theme's colour, and the accent keeps its tint. That move is meant, and
     // tint_tests measures it, so the record here asks the same of the words.
+    // And the grounds kept as written since #4666 are meant too, so the record keeps the same.
     Most {
         words: tint::words_chroma_of(&tint::words_rules(theme), hue, one),
+        kept: tint::most_at(theme, hue).kept,
         ..one
     }
 }
@@ -270,6 +273,7 @@ fn the_sweep_reads_what_it_says_it_holds() {
         shared: Some(f64::INFINITY),
         alone: Some(f64::INFINITY),
         words: Some(f64::INFINITY),
+        kept: 0,
     };
     let close = themed(
         &json!({ "danger.base": tint::tint_hex(ours.value("accent.base"), 25.0) }),
