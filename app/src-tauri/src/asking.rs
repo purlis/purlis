@@ -134,6 +134,11 @@ pub struct Shown {
     /// other ask.
     #[specta(optional)]
     pub login: Option<LoginShown>,
+    /// **The few messages its chat's turns ended on before its last** (#4563), oldest first,
+    /// kept as [`Shown::last_message`] is: on a chat waiting on the person's reply, where it said
+    /// any, so a question a later turn pushed aside can be read back. Absent otherwise.
+    #[specta(optional)]
+    pub earlier_messages: Option<Vec<String>>,
 }
 
 /// **A suggested login, as its notice draws it** (#4595). The vault and key names, and never a
@@ -418,6 +423,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         lines,
         last_message: None,
         login: None,
+        earlier_messages: None,
     })
 }
 
@@ -615,6 +621,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -658,6 +665,7 @@ pub fn sandbox_host(
             lines: None,
             last_message: None,
             login: None,
+            earlier_messages: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -693,6 +701,7 @@ pub fn sandbox_host(
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     })
 }
 
@@ -757,6 +766,7 @@ pub fn sandbox_write(
             lines: None,
             last_message: None,
             login: None,
+            earlier_messages: None,
         });
     }
     Some(Shown {
@@ -782,6 +792,7 @@ pub fn sandbox_write(
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     })
 }
 
@@ -847,6 +858,7 @@ pub fn sandbox_runner(
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     })
 }
 
@@ -923,6 +935,7 @@ pub fn sandbox_port(
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     })
 }
 
@@ -996,6 +1009,7 @@ pub fn sandbox_local(
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     })
 }
 
@@ -1018,13 +1032,14 @@ pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Sh
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
 /// **The question adapter**: chat `session` is in the needs-you queue with no prompt open,
 /// its turn over and the next move the person's. Answered by replying in the chat. `says` is
 /// its kind; what its chat said is `last_message`, where the app heard any (#4550).
-pub fn question(session: u32, last_message: Option<String>) -> Shown {
+pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>) -> Shown {
     Shown {
         session,
         ask: format!("question:{session}"),
@@ -1039,6 +1054,7 @@ pub fn question(session: u32, last_message: Option<String>) -> Shown {
         lines: None,
         last_message,
         login: None,
+        earlier_messages: (!earlier.is_empty()).then_some(earlier),
     }
 }
 
@@ -1069,6 +1085,7 @@ pub fn task_question(
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1126,6 +1143,7 @@ pub fn workspace_removal(
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1240,6 +1258,7 @@ pub fn browser_posture(
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1306,6 +1325,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1376,6 +1396,7 @@ pub fn browser_login(
             no_always: wait.no_always.clone(),
             vault_too: wait.vault_too,
         }),
+        earlier_messages: None,
     }
 }
 
@@ -1443,6 +1464,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1506,6 +1528,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1550,6 +1573,7 @@ pub fn browser_sites(
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1721,6 +1745,7 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1748,6 +1773,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1803,6 +1829,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1859,6 +1886,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1915,6 +1943,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -1972,6 +2001,7 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -2002,6 +2032,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         lines: None,
         last_message: None,
         login: None,
+        earlier_messages: None,
     }
 }
 
@@ -2100,6 +2131,8 @@ pub struct Waiting<'a> {
     pub only_updates: &'a dyn Fn(u32) -> bool,
     /// What a chat's turn last ended on, as kept (#4550): what a question shows.
     pub last_message: &'a dyn Fn(u32) -> Option<String>,
+    /// What its turns ended on before that, oldest first (#4563).
+    pub earlier_messages: &'a dyn Fn(u32) -> Vec<String>,
     /// Until when a chat's proxy holds a connection to a host, where it holds one now, asking
     /// the person (#1709), given when the ask began.
     pub held: &'a HoldEnds<'a>,
@@ -2184,7 +2217,11 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .filter(|session| !said.contains(session) && !(waiting.only_updates)(**session))
             .map(|&session| match (waiting.at_its_prompt)(session) {
                 Some(prompt) => terminal(session, prompt),
-                None => question(session, (waiting.last_message)(session)),
+                None => question(
+                    session,
+                    (waiting.last_message)(session),
+                    (waiting.earlier_messages)(session),
+                ),
             }),
     );
     asks.extend(waiting.blocks.iter().filter_map(|(session, block)| {
@@ -2424,6 +2461,14 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             })
         },
         last_message: &|session| tasks.ledger().last_said(session).map(str::to_owned),
+        earlier_messages: &|session| {
+            tasks
+                .ledger()
+                .said_before(session)
+                .into_iter()
+                .map(str::to_owned)
+                .collect()
+        },
         held: &|session, target, began| {
             chats.asking(session, Some(target)).then(|| {
                 let ends = hold_ends(began.map(u64::from), now_secs);

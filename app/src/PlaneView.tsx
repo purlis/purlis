@@ -246,7 +246,7 @@ import {
   type ViewId,
 } from "./regions";
 import { drawnOnlyPresent, previewsDrawn, type ViewPlace } from "./sideViews";
-import { SkillsView, type FrontChat } from "./SkillsView";
+import { SkillsView, type FrontChat, type SkillsViewProps } from "./SkillsView";
 import type { ExplorerPlace } from "./skillsListing";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
@@ -4849,7 +4849,6 @@ export const PlaneView = memo(function PlaneView({
       ),
     [chatCwds],
   );
-  const frontCwd = frontSession === undefined ? null : (cwdOf.get(frontSession) ?? null);
   /** The directories to ask about, one line each in a fixed order: the effect's key. */
   const cwdsAsked = useMemo(() => [...new Set(cwdOf.values())].sort().join("\n"), [cwdOf]);
   /** The directories already asked about, and the plane and `relocate` they were asked at:
@@ -4887,7 +4886,6 @@ export const PlaneView = memo(function PlaneView({
   // Only an answer about the directory a chat is in now. Nothing is cleared when a chat moves —
   // clearing state from inside an effect is a render the window does not need, and a stale
   // answer is simply not this chat's.
-  const worktree = frontCwd === null ? undefined : located.get(frontCwd);
   const worktreeOf = useCallback(
     (session: number) => {
       const cwd = cwdOf.get(session);
@@ -6989,6 +6987,32 @@ export const PlaneView = memo(function PlaneView({
         });
     },
     [plane, setChatSkills],
+  );
+  /**
+   * **What the Skills view's cards act through, held still** (#4351): the view, kept once shown,
+   * draws every skill's card, and draws them again only for something of its own. Opening a tab
+   * moves `showView` and the restart's ask with the window around them; these call whichever is
+   * current.
+   */
+  const skillsActs = useRef({ showView, openUseSkill, revealInExplorer, askRestart });
+  useLayoutEffect(() => {
+    skillsActs.current = { showView, openUseSkill, revealInExplorer, askRestart };
+  });
+  const skillsOpenView = useCallback<SkillsViewProps["onOpenView"]>(
+    (view, title) => skillsActs.current.showView(view, title),
+    [],
+  );
+  const skillsUse = useCallback<SkillsViewProps["onUseSkill"]>(
+    (session, skill) => skillsActs.current.openUseSkill(session, skill),
+    [],
+  );
+  const skillsShowInExplorer = useCallback<SkillsViewProps["onShowInExplorer"]>(
+    (place) => skillsActs.current.revealInExplorer(place),
+    [],
+  );
+  const skillsRestart = useCallback(
+    (session: number) => skillsActs.current.askRestart(session),
+    [],
   );
   /**
    * A skill picked in Use skill…: the core types it into the chat in its tool's own syntax and
@@ -9673,22 +9697,28 @@ export const PlaneView = memo(function PlaneView({
     </>
   );
 
-  /** **The chat in front, whose skills the Skills view shows** (#3266, #3693): the one shown in
-   *  the pane with the keyboard, never a shell's, which runs no tool with skills. */
-  const frontWorkspace = frontSession === undefined ? undefined : filedIn(frontSession);
+  /** **The chat whose skills the Skills view shows** (#3266, #3693): the one shown in the pane
+   *  with the keyboard, never a shell's, which runs no tool with skills. **While a tab that is not
+   *  a chat is in front** (#4351; ADR 0102, amended 2026-11-02), such as the Skill studio's, the
+   *  chat last in front (`chatKept`, until its tab closes): its set is not read again for a new
+   *  chat, and its cards are not drawn again. It is described as it is now, wherever it moved. */
+  const skillsSession = chatNow ?? (frontTab !== undefined ? chatKept : undefined);
+  const skillsWorkspace = skillsSession === undefined ? undefined : filedIn(skillsSession);
+  // The checkout it works in, as the core answered for its directory (#4851), in front or not.
+  const skillsPiece = skillsSession === undefined ? undefined : worktreeOf(skillsSession);
   const skillsChat: FrontChat | undefined =
-    frontSession === undefined || shells.has(frontSession)
+    skillsSession === undefined
       ? undefined
       : {
-          session: frontSession,
-          name: nameOf(frontSession),
-          workspace: frontWorkspace === OUTSIDE ? undefined : frontWorkspace,
-          persona: personaOf(frontSession),
-          harness: harnessOf(frontSession),
+          session: skillsSession,
+          name: nameOf(skillsSession),
+          workspace: skillsWorkspace === OUTSIDE ? undefined : skillsWorkspace,
+          persona: personaOf(skillsSession),
+          harness: harnessOf(skillsSession),
           // Only where it is filed: the view names a checkout by the chat's workspace.
-          ...(worktree === undefined || worktree.workspace !== frontWorkspace
+          ...(skillsPiece === undefined || skillsPiece.workspace !== skillsWorkspace
             ? {}
-            : { branchFolder: { repo: worktree.repo, piece: worktree.piece } }),
+            : { branchFolder: { repo: skillsPiece.repo, piece: skillsPiece.piece } }),
         };
 
   const view = (
@@ -9882,10 +9912,10 @@ export const PlaneView = memo(function PlaneView({
                     plane={plane}
                     workspace={ofWorkspace}
                     chat={skillsChat}
-                    onOpenView={showView}
-                    onUseSkill={openUseSkill}
-                    onShowInExplorer={revealInExplorer}
-                    onRestart={askRestart}
+                    onOpenView={skillsOpenView}
+                    onUseSkill={skillsUse}
+                    onShowInExplorer={skillsShowInExplorer}
+                    onRestart={skillsRestart}
                   />
                 ),
                 // **Changes** (#1676, B-7): what the bottom region drew, the same content.
