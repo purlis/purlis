@@ -493,8 +493,10 @@ export function openTabFilling(
   const empty = [tabs.inFront, ...tabs.order].find(isEmpty);
   if (empty === undefined || opened.inFront === undefined) return opened;
   const made = opened.byId[opened.inFront];
-  const byId = { ...opened.byId, [empty]: { ...made, id: empty } };
-  delete byId[made.id];
+  // The tab `openTab` made goes; the empty one takes what it holds.
+  const byId = Object.fromEntries(
+    tabs.order.map((id) => [id, id === empty ? { ...made, id: empty } : opened.byId[id]]),
+  );
   return { ...opened, byId, order: tabs.order, inFront: empty };
 }
 
