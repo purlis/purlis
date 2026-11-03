@@ -2028,7 +2028,7 @@ function App() {
         workspaces: [],
         projects: drawn,
         needsYou: [],
-        pinned: { chats: [], workspaces: [], projects: pinnedProjects },
+        pinned: { workspaces: [], projects: pinnedProjects },
         nameOf: String,
         split,
         screenReader,

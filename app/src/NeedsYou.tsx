@@ -21,12 +21,20 @@ const WORDS: Record<State, string> = {
   failed: "failed",
 };
 
-export function ChatState({ state }: { state: State }) {
+export function ChatState({
+  state,
+  word = WORDS[state],
+}: {
+  state: State;
+  /** What it says, where the place drawing it says more than the board's word: a chat's tab
+   *  says its row's (`shownState`, #4935). The board's word otherwise. */
+  word?: string;
+}) {
   // A state this mark CHANGED to, rather than the one it was drawn in: only the first moves,
   // so a workspace's tabs coming back into view do not all pulse at once (`useArrived`).
   const arrived = useArrived(state);
   return (
-    <Tooltip tip={WORDS[state]}>
+    <Tooltip tip={word}>
       <span
         className={`state state-${state}${arrived ? " arrived" : ""}`}
         data-state={state}
@@ -34,15 +42,15 @@ export function ChatState({ state }: { state: State }) {
         // to anyone who cannot see it, and `title` alone is no use on a touch screen or to a
         // screen reader reading a list. The mark is decorative; the label carries the meaning.
         role="img"
-        aria-label={WORDS[state]}
+        aria-label={word}
       />
     </Tooltip>
   );
 }
 
 /** {@link ChatState} where a chat has a mark to draw, and nothing where it has none (`markOf`). */
-export function ChatMark({ state }: { state: State | undefined }) {
-  return state === undefined ? null : <ChatState state={state} />;
+export function ChatMark({ state, word }: { state: State | undefined; word?: string }) {
+  return state === undefined ? null : <ChatState state={state} word={word} />;
 }
 
 /** What a wrapping-up chat's tab and explorer row say about it, as their tooltip. */

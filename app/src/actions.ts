@@ -128,7 +128,6 @@ import {
   AGENT_IDENTITY_VIEW,
   DEVICES_TITLE,
   DEVICES_VIEW,
-  viewKey,
   type AskedBy,
   type Direction,
   type Tabs,
@@ -887,14 +886,12 @@ export type Now = {
   /**
    * What this operator has pinned (ADR 0039).
    *
-   * Three lists rather than a flag on each thing, because a pin is not a property of the
-   * chat, the workspace or the plane — it is the operator's arrangement of them, held
-   * somewhere else entirely (ADR 0040), and a copy on the thing would be a second answer.
+   * Lists rather than a flag on each thing, because a pin is not a property of the workspace
+   * or the plane — it is the operator's arrangement of them, held somewhere else entirely (ADR
+   * 0040), and a copy on the thing would be a second answer. A tab's pin is the tab's own
+   * (`Tab.pinned`, #4935), so it is read off {@link Now.tabs}.
    */
   pinned?: {
-    readonly chats: readonly number[];
-    /** View tabs, by `tabs.viewKey`. A tab with no chat is pinned as the view it shows. */
-    readonly views?: readonly string[];
     readonly workspaces: readonly string[];
     readonly projects: readonly string[];
   };
@@ -2061,7 +2058,7 @@ export function catalogue(now: Now): Offer[] {
   );
   offers.push(...stoppedRows(now.stopped ?? {}, now.needsYou, now.nameOf, now.tabs));
 
-  const pinned = now.pinned ?? { chats: [], workspaces: [], projects: [] };
+  const pinned = now.pinned ?? { workspaces: [], projects: [] };
 
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
@@ -2079,14 +2076,9 @@ export function catalogue(now: Now): Offer[] {
   // thing gets on its strip is a mark, and pressing the mark runs this same row.
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
-    // **The one pin is the tab's** (#4762): the window keys it by the tab's first pane, its
-    // chat or the view it opened on, and the record holds it on the tab.
-    const chat = chatOf(now.tabs, tab);
-    const first = contentsOf(now.tabs, tab)[0]?.content;
-    const held =
-      chat !== undefined
-        ? isPinned(pinned.chats, chat)
-        : first?.kind === "view" && isPinned(pinned.views ?? [], viewKey(first.view));
+    // **The one pin is the tab's** (#4762, #4935): its own, whatever its panes hold, so a tab
+    // whose only pane is empty is pinned as any other.
+    const held = now.tabs.byId[tab].pinned === true;
     offers.push({
       ...can(
         `tab.pin:${tab}`,
