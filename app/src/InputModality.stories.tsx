@@ -14,6 +14,9 @@
  * does, as a dialog opens (`autoFocus`) and by a call (`focus()`, as a story's `play` moves it),
  * and each must draw its ring, as it does when it runs alone; each ends on a press too.
  *
+ * The order of the exports is the test: each story after the first fails without the setup
+ * only because of the press that ends the story before it, and passes when it runs alone.
+ *
  * No pictures: the ring is what the picture would differ by, and it is asserted here.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
