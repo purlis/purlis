@@ -104,10 +104,13 @@ function StewardsPane({
   asks,
   after,
   strip = false,
+  pauseMs,
 }: {
   asks: Shown[];
   after?: Shown[];
   strip?: boolean;
+  /** How long the pause before the next quiz lasts, where a story pictures it. */
+  pauseMs?: number;
 }) {
   const [now, setNow] = useState(asks);
   useEffect(() => {
@@ -130,7 +133,7 @@ function StewardsPane({
         >
           <div className="pane-top" data-testid="pane-top">
             {strip && <WaitingStrip session={4} waiting={now} />}
-            <QuizBand plane="/plane" session={4} />
+            <QuizBand plane="/plane" session={4} pauseMs={pauseMs} />
             <div className="pane-head" data-testid="pane-head">
               <span className="ui-text-meta">Claude Code · smart-ide</span>
             </div>
@@ -186,10 +189,11 @@ const box = (canvas: HTMLElement) => within(canvas).getByRole("textbox", { name:
 /**
  * **The pause before the next quiz** (story 33): the person answers, and for about a second the
  * quiz's place says where the answer went, at the quiz's height, so a second click lands on
- * nothing. Then the next comes. The picture is the pause.
+ * nothing. Then the next comes. The picture is the pause, held here past its second so the
+ * picture always catches it (the next quiz coming is `QuizBand.test.tsx`'s).
  */
 export const PausesBeforeTheNext: Story = {
-  args: { asks: [FIRST, SECOND, THIRD], after: [SECOND, THIRD] },
+  args: { asks: [FIRST, SECOND, THIRD], after: [SECOND, THIRD], pauseMs: 600_000 },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await waitFor(() => expect(box(canvasElement)).toBeEnabled());
@@ -199,11 +203,9 @@ export const PausesBeforeTheNext: Story = {
     await expect(await canvas.findByText("Sent to developer 7.")).toBeVisible();
     await expect(canvas.getByText("The next question comes in a moment.")).toBeVisible();
     await expect(canvas.queryByRole("button", { name: "Send" })).toBeNull();
+    // Nothing of the next quiz is drawn under the pointer while the pause holds.
+    await expect(canvas.queryByRole("group", { name: "designer 3 asks" })).toBeNull();
     await pictureNow();
-    await expect(
-      await canvas.findByRole("group", { name: "designer 3 asks" }, { timeout: 4000 }),
-    ).toBeVisible();
-    await expect(canvas.getByText("1 more")).toBeVisible();
   },
 };
 

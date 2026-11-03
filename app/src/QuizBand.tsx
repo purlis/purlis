@@ -108,7 +108,12 @@ function useOffersHere(wants: boolean): boolean {
  * closing line ({@link QuizClosing}), which the core says who gave, and nothing where the person
  * answered it elsewhere: one answer clears every surface, with no error.
  */
-function useQuizzes(plane: PlaneId, quiz: QuizHere | undefined, asks: readonly Shown[]) {
+function useQuizzes(
+  plane: PlaneId,
+  quiz: QuizHere | undefined,
+  asks: readonly Shown[],
+  pauseMs: number,
+) {
   const [pause, setPause] = useState<{ sent?: string; height: number }>();
   const [closings, setClosings] = useState<Closed[]>([]);
   /** The quiz drawn at the last commit, its height, and what the person had typed in it. */
@@ -172,9 +177,9 @@ function useQuizzes(plane: PlaneId, quiz: QuizHere | undefined, asks: readonly S
 
   useEffect(() => {
     if (pause === undefined) return;
-    const over = setTimeout(() => setPause(undefined), PAUSE_MS);
+    const over = setTimeout(() => setPause(undefined), pauseMs);
     return () => clearTimeout(over);
-  }, [pause]);
+  }, [pause, pauseMs]);
 
   return {
     pausing: pause !== undefined && quiz !== undefined ? pause : undefined,
@@ -207,14 +212,29 @@ function useQuizzes(plane: PlaneId, quiz: QuizHere | undefined, asks: readonly S
  * The setting is read as it is drawn, so a change applies to every open question at once and
  * reroutes nothing.
  */
-export function QuizBand({ plane, session }: { plane: PlaneId; session: number }) {
+export function QuizBand({
+  plane,
+  session,
+  pauseMs = PAUSE_MS,
+}: {
+  plane: PlaneId;
+  session: number;
+  /** How long the pause before the next quiz lasts: {@link PAUSE_MS}, but for a story that
+   *  pictures the pause, which a second is too short to catch every time. */
+  pauseMs?: number;
+}) {
   const held = useQuestionsHere();
   const places = useContext(QuizPlaces);
   const prefs = useWhereYouAnswer();
   const [moved, setMoved] = useState(false);
   const asks = held?.asks ?? [];
   const quiz = places === undefined ? undefined : quizIn(asks, session, prefs.answer, places.topOf);
-  const { pausing, closings, dismiss, box, answered, typedIn } = useQuizzes(plane, quiz, asks);
+  const { pausing, closings, dismiss, box, answered, typedIn } = useQuizzes(
+    plane,
+    quiz,
+    asks,
+    pauseMs,
+  );
   const offers = useOffersHere(
     quiz !== undefined && quiz.drawn && !quiz.own && !prefs.offered && prefs.answer === "top",
   );

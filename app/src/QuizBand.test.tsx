@@ -36,13 +36,21 @@ const openSettings = vi.fn();
 /** Tasks 7 and 8 are at home in steward 4's tab (chat 4); task 21 in talk 2's (chat 20). */
 const topOf = (task: number) => (task === 7 || task === 8 ? 4 : task === 21 ? 20 : undefined);
 
-function Pane({ session, asks }: { session: number | number[]; asks: Shown[] }) {
+function Pane({
+  session,
+  asks,
+  pauseMs,
+}: {
+  session: number | number[];
+  asks: Shown[];
+  pauseMs?: number;
+}) {
   return (
     <QuizPlaces.Provider value={{ topOf, openTask, openSettings }}>
       <QuestionsHere.Provider value={{ asks, with_asking_chat: [] }}>
         {(Array.isArray(session) ? session : [session]).map((one) => (
           <div key={one} data-testid={`pane-${one}`}>
-            <QuizBand plane={PLANE} session={one} />
+            <QuizBand plane={PLANE} session={one} pauseMs={pauseMs} />
           </div>
         ))}
       </QuestionsHere.Provider>
@@ -189,6 +197,21 @@ describe("several questions at once (#4566)", () => {
       { timeout: PAUSE_MS * 3 },
     );
     expect(screen.queryByText("Sent to developer 7.")).not.toBeInTheDocument();
+  });
+
+  it("holds the pause as long as a story asks, for its picture", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <Pane session={4} asks={[QUESTION, SECOND]} pauseMs={PAUSE_MS * 10} />,
+    );
+    const box = screen.getByRole("textbox", { name: "Your answer" });
+    await waitFor(() => expect(box).not.toBeDisabled());
+    await user.type(box, "Per project{Enter}");
+    await waitFor(() => expect(sent).toHaveLength(1));
+    rerender(<Pane session={4} asks={[SECOND]} pauseMs={PAUSE_MS * 10} />);
+    await act(() => new Promise((done) => setTimeout(done, PAUSE_MS * 2)));
+    expect(screen.getByText("Sent to developer 7.")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "designer 8 asks" })).not.toBeInTheDocument();
   });
 
   it("says where the answer went though the list moved on before the core said it was taken", async () => {
