@@ -7,7 +7,7 @@ import { SecretFill } from "./SecretFill";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const meta = {
-  title: "Notices/Secret ask",
+  title: "Notices/Missing secret",
   component: SecretFill,
 } satisfies Meta<typeof SecretFill>;
 

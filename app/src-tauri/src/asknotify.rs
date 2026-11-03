@@ -295,6 +295,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::PoolLogin => "Asks to log its browser in on a pool's runner",
         AskSource::PoolTool => "Asks to send a tool its vault values for a run on a pool's runner",
         AskSource::BrowserLogin => "Asks to log its browser in to a site with vault credentials",
+        AskSource::Secret => "Asks you for a secret its vault doesn't hold",
     }
 }
 
