@@ -1362,3 +1362,87 @@ fn what_a_fresh_runner_left_stays_only_where_this_machine_has_it_nowhere_else() 
         Vec::new()
     );
 }
+
+/// A runner's home and the projects its host keeps, apart, as a runner's pod has them.
+#[cfg(unix)]
+fn a_runner_home() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let top = dir.path().canonicalize().unwrap();
+    let home = top.join("home");
+    let projects = top.join("data/projects");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&projects).unwrap();
+    (dir, home, projects)
+}
+
+/// **A host started again in the same pod still finds what a task saved before** (#4933): the
+/// time its first program started is kept beside its projects, so neither the restart nor a
+/// program started after it moves that time on.
+#[cfg(unix)]
+#[test]
+fn a_file_a_task_saved_before_its_host_started_again_still_keeps_the_runner() {
+    use purlis_host::Code;
+    let (_dir, home, projects) = a_runner_home();
+    let first = Moves::in_home(home.clone());
+    first.program_starting(&projects).unwrap();
+    std::fs::write(home.join("findings.md"), "what the task found\n").unwrap();
+    drop(first);
+
+    let again = Moves::in_home(home.clone());
+    let (_, unread) = again.repos_held(&projects).unwrap();
+    assert!(
+        unread.iter().any(|one| one.contains("~/findings.md")),
+        "{unread:?}"
+    );
+
+    std::thread::sleep(held::CHANGED_WITHIN + std::time::Duration::from_millis(200));
+    again.program_starting(&projects).unwrap();
+    let (_, unread) = again.repos_held(&projects).unwrap();
+    assert!(
+        unread.iter().any(|one| one.contains("~/findings.md")),
+        "{unread:?}"
+    );
+}
+
+/// **A runner looks beyond its home, but never through purlis's own folders there** (#4933):
+/// its data home and projects are left out wherever they are, and a task's file elsewhere keeps
+/// it.
+#[cfg(unix)]
+#[test]
+fn a_runner_looks_beyond_its_home_but_not_through_purlis_own_folders() {
+    use purlis_host::Code;
+    let (dir, home, projects) = a_runner_home();
+    let root = dir.path().canonicalize().unwrap();
+    let moves = Moves::in_home(home.clone()).and_beyond(root.clone());
+    moves.program_starting(&projects).unwrap();
+    std::fs::create_dir_all(root.join("data/browsers")).unwrap();
+    std::fs::write(root.join("data/browsers/engine"), "purlis's own\n").unwrap();
+
+    let (_, unread) = moves.repos_held(&projects).unwrap();
+    assert_eq!(unread, Vec::<String>::new());
+
+    std::fs::create_dir_all(root.join("work")).unwrap();
+    std::fs::write(root.join("work/out.txt"), "a task's\n").unwrap();
+    let (_, unread) = moves.repos_held(&projects).unwrap();
+    assert!(
+        unread.iter().any(|one| one.contains("/work/out.txt")),
+        "{unread:?}"
+    );
+}
+
+/// **A host that can't mark its first program starts none** (#4933): what that program kept
+/// outside its project could not be found afterwards.
+#[cfg(unix)]
+#[test]
+fn a_host_that_cannot_mark_its_first_program_starts_none() {
+    use purlis_host::Code;
+    let (dir, home, projects) = a_runner_home();
+    std::os::unix::fs::symlink(dir.path().join("gone"), projects.join(held::FIRST_PROGRAM))
+        .unwrap();
+
+    let refused = Moves::in_home(home)
+        .program_starting(&projects)
+        .unwrap_err();
+
+    assert_eq!(refused.code, purlis_host::protocol::session::NOT_STARTED);
+}

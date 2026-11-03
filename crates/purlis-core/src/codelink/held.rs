@@ -172,7 +172,8 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
 /// The most files outside the projects a runner names: the rest are counted.
 const MOST_NAMED_OUTSIDE: usize = 5;
 
-/// The most sentences of what could not be looked at a runner's home gives: the rest are counted.
+/// The most sentences of what could not be looked at outside the projects a runner gives: the
+/// rest are counted.
 const MOST_SAID_OUTSIDE: usize = 20;
 
 /// How long before a host first starts a program a file still counts as changed since: a file
@@ -183,6 +184,91 @@ pub const CHANGED_WITHIN: std::time::Duration = std::time::Duration::from_secs(2
 /// Folders of a runner's home a tool keeps by its own default, by their path in it, which hold
 /// nothing a task made: Go's module and build cache under its default `GOPATH`.
 const TOOLS_KEEP: &[&str] = &["go/pkg"];
+
+/// **The file whose making marks a host's first program** (#4933), beside the projects it keeps:
+/// hidden, so no project is ever named so. Its status change time is when the first program was
+/// asked for, kept on the same disk as the home, so a host started again in the same pod still
+/// knows it.
+pub const FIRST_PROGRAM: &str = ".first-program";
+
+/// Folders of the runner's file system, by their path from its root, that hold nothing a task
+/// could keep (#4933): the kernel's views of itself (`proc`, `sys`, `dev`, with `/dev/shm`), and
+/// what is temporary by the file system's convention (`run`, `tmp`, `var/tmp`), as a temporary
+/// folder in the home is.
+const NO_TASKS_WORK: &[&str] = &["proc", "sys", "dev", "run", "tmp", "var/tmp"];
+
+/// **A program is about to start on a host keeping its projects in `projects`** (#4933): the
+/// first one's start is marked by making [`FIRST_PROGRAM`] there, which is never made again
+/// while it is there. Never through a link. Why it could not be is said: the program does not
+/// start then, since what it kept outside its project could not be found afterwards.
+#[cfg(unix)]
+pub fn first_program_starting(projects: &Path) -> Result<(), String> {
+    use rustix::fs::{CWD, Mode, OFlags};
+    let not_noted = |e: &dyn std::fmt::Display| {
+        format!(
+            "the runner could not note when its first program started, which purlis needs to \
+             find what a task keeps outside its project: {e}"
+        )
+    };
+    std::fs::create_dir_all(projects).map_err(|e| not_noted(&e))?;
+    rustix::fs::openat(
+        CWD,
+        &projects.join(FIRST_PROGRAM),
+        OFlags::WRONLY | OFlags::CREATE | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::RUSR | Mode::WUSR,
+    )
+    .map(drop)
+    .map_err(|e| not_noted(&e))
+}
+
+/// **When the first program on a host keeping its projects in `projects` started** (#4933), as
+/// [`first_program_starting`] marked it: `None` where none has. Why it can't be known is said.
+#[cfg(unix)]
+pub fn first_program_at(projects: &Path) -> Result<Option<std::time::SystemTime>, String> {
+    use rustix::fs::{AtFlags, CWD, FileType};
+    let unknown = |why: String| {
+        format!(
+            "when the runner's first program started can't be known ({why}), so what a task kept \
+             outside its project could not be looked for"
+        )
+    };
+    let stat = match rustix::fs::statat(
+        CWD,
+        &projects.join(FIRST_PROGRAM),
+        AtFlags::SYMLINK_NOFOLLOW,
+    ) {
+        Ok(stat) => stat,
+        Err(rustix::io::Errno::NOENT) => return Ok(None),
+        Err(e) => return Err(unknown(e.to_string())),
+    };
+    if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
+        return Err(unknown(format!(
+            "{FIRST_PROGRAM} beside its projects is not a file purlis made"
+        )));
+    }
+    changed_at(&stat)
+        .map(Some)
+        .ok_or_else(|| unknown(format!("{FIRST_PROGRAM} has no time purlis can read")))
+}
+
+/// When `stat`'s file last had its status changed, which no program can set back.
+#[cfg(unix)]
+fn changed_at(stat: &rustix::fs::Stat) -> Option<std::time::SystemTime> {
+    u64::try_from(stat.st_ctime)
+        .ok()
+        .zip(u32::try_from(stat.st_ctime_nsec).ok())
+        .and_then(|(secs, nanos)| {
+            std::time::UNIX_EPOCH.checked_add(std::time::Duration::new(secs, nanos))
+        })
+}
+
+/// **The rest of a runner's file system** (#4933), looked through as well as its home: from
+/// `root`, for files `owner`, the runner's user, owns.
+#[derive(Debug, Clone, Copy)]
+pub struct Beyond<'a> {
+    pub root: &'a Path,
+    pub owner: u32,
+}
 
 /// **What a task keeps outside its project's folder on its runner** (#4781), in sentences: each
 /// file in the runner's `home` changed since `since`, when the host first started a program, so
@@ -204,179 +290,282 @@ pub fn outside_the_projects(
     skip: &[std::path::PathBuf],
     since: Option<std::time::SystemTime>,
 ) -> Vec<String> {
-    use rustix::fs::{AtFlags, CWD, Mode, OFlags};
+    outside_the_projects_and_beyond(home, skip, since, None)
+}
+
+/// [`outside_the_projects`], and where `beyond` names the rest of the runner's file system, each
+/// file there `beyond`'s owner owns changed since too (#4933): a task at the sandbox's floor may
+/// write wherever the runner's user may, such as the volume its home is a folder of, or a folder
+/// its image gives that user. Its home and every folder in `skip` are left out of that, as is
+/// what holds no task's work ([`NO_TASKS_WORK`]); so is a hidden entry of a person's home there
+/// (`/root`, `/home/<name>`), for the home's reason. A folder that user can neither read nor
+/// write holds nothing of theirs that was not there before, and is passed over in silence; one it
+/// can write but not read is said.
+#[cfg(unix)]
+pub fn outside_the_projects_and_beyond(
+    home: &Path,
+    skip: &[std::path::PathBuf],
+    since: Option<std::time::SystemTime>,
+    beyond: Option<Beyond<'_>>,
+) -> Vec<String> {
     let Some(since) = since else {
         return Vec::new();
     };
-    let folder = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
-    let mut named = std::collections::BTreeSet::new();
-    let mut found = 0usize;
-    let mut said: Vec<String> = Vec::new();
-    let mut unsaid = 0usize;
-    let mut say = |sentence: String, said: &mut Vec<String>| {
-        if said.len() < MOST_SAID_OUTSIDE {
-            said.push(sentence);
+    let mut outside = Outside::default();
+    let walked = outside.walk(home, Rules::Home, skip, since);
+    if walked && let Some(beyond) = beyond {
+        let mut skip = skip.to_vec();
+        skip.push(home.to_path_buf());
+        outside.walk(beyond.root, Rules::Beyond(beyond.owner), &skip, since);
+    }
+    outside.sentences()
+}
+
+/// Which part of the runner a walk looks through, and so what it leaves out and how it names a
+/// path.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy)]
+enum Rules {
+    /// The runner's home: its hidden entries and what tools keep are left out, and a path is
+    /// named from `~`.
+    Home,
+    /// The rest of its file system, for files the user it names owns: a path is named from `/`.
+    Beyond(u32),
+}
+
+#[cfg(unix)]
+impl Rules {
+    fn shown(self, rel: &str) -> String {
+        match (self, rel.is_empty()) {
+            (Rules::Home, true) => "~".to_owned(),
+            (Rules::Home, false) => format!("~/{rel}"),
+            (Rules::Beyond(_), _) => format!("/{rel}"),
+        }
+    }
+
+    /// Whether the hidden entries of the folder at `rel` are a program's own.
+    fn hidden_left_out(self, rel: &str) -> bool {
+        match self {
+            Rules::Home => rel.is_empty(),
+            Rules::Beyond(_) => {
+                rel == "root"
+                    || rel
+                        .strip_prefix("home/")
+                        .is_some_and(|name| !name.is_empty() && !name.contains('/'))
+            }
+        }
+    }
+
+    fn left_out(self, shown: &str) -> bool {
+        match self {
+            Rules::Home => TOOLS_KEEP.contains(&shown),
+            Rules::Beyond(_) => NO_TASKS_WORK.contains(&shown),
+        }
+    }
+
+    fn counts(self, stat: &rustix::fs::Stat) -> bool {
+        match self {
+            Rules::Home => true,
+            Rules::Beyond(owner) => stat.st_uid == owner,
+        }
+    }
+}
+
+/// What the walks outside the projects found, and what they could not look at.
+#[cfg(unix)]
+#[derive(Default)]
+struct Outside {
+    named: std::collections::BTreeSet<String>,
+    found: usize,
+    said: Vec<String>,
+    unsaid: usize,
+    folders: usize,
+}
+
+#[cfg(unix)]
+impl Outside {
+    fn say(&mut self, sentence: String) {
+        if self.said.len() < MOST_SAID_OUTSIDE {
+            self.said.push(sentence);
         } else {
-            unsaid += 1;
+            self.unsaid += 1;
         }
-    };
-    let top = match rustix::fs::openat(CWD, home, folder, Mode::empty()) {
-        Ok(top) => top,
-        Err(rustix::io::Errno::NOENT) => return Vec::new(),
-        Err(e) => {
-            return vec![format!(
-                "the runner's home could not be read, so what a task kept outside its project \
-                 could not be looked for: {e}"
-            )];
-        }
-    };
-    // Each folder is opened only as it is looked through, from the one it is in, which is held
-    // open meanwhile: so the open folders are only those of the path being walked.
-    let mut folders = 0usize;
-    let mut stack: Vec<(
-        String,
-        std::rc::Rc<rustix::fd::OwnedFd>,
-        Option<std::ffi::CString>,
-    )> = vec![(String::new(), std::rc::Rc::new(top), None)];
-    while let Some((rel, parent, name)) = stack.pop() {
-        folders += 1;
-        if folders > MOST_FOLDERS {
-            say(
-                format!(
-                    "the runner's home holds more than {MOST_FOLDERS} folders, so not all were \
-                     looked through"
-                ),
-                &mut said,
-            );
-            break;
-        }
-        let shown_dir = if rel.is_empty() {
-            "~".to_owned()
-        } else {
-            format!("~/{rel}")
+    }
+
+    /// Looks through `top` by `rules`: false where it stopped at [`MOST_FOLDERS`], so nothing
+    /// more is looked through.
+    fn walk(
+        &mut self,
+        top: &Path,
+        rules: Rules,
+        skip: &[std::path::PathBuf],
+        since: std::time::SystemTime,
+    ) -> bool {
+        use rustix::fs::{Access, AtFlags, CWD, Mode, OFlags};
+        let folder = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+        let top_fd = match rustix::fs::openat(CWD, top, folder, Mode::empty()) {
+            Ok(fd) => fd,
+            Err(rustix::io::Errno::NOENT) => return true,
+            Err(e) => {
+                self.say(match rules {
+                    Rules::Home => format!(
+                        "the runner's home could not be read, so what a task kept outside its \
+                         project could not be looked for: {e}"
+                    ),
+                    Rules::Beyond(_) => format!(
+                        "the runner's files outside its home could not be read, so what a task \
+                         kept there could not be looked for: {e}"
+                    ),
+                });
+                return true;
+            }
         };
-        let fd = match name {
-            None => parent,
-            Some(name) => match rustix::fs::openat(
-                &*parent,
-                name.as_c_str(),
-                folder | OFlags::NOFOLLOW,
-                Mode::empty(),
-            ) {
-                Ok(fd) => std::rc::Rc::new(fd),
-                Err(rustix::io::Errno::NOENT) => continue,
+        // Each folder is opened only as it is looked through, from the one it is in, which is held
+        // open meanwhile: so the open folders are only those of the path being walked.
+        let mut stack: Vec<(
+            String,
+            std::rc::Rc<rustix::fd::OwnedFd>,
+            Option<std::ffi::CString>,
+        )> = vec![(String::new(), std::rc::Rc::new(top_fd), None)];
+        while let Some((rel, parent, name)) = stack.pop() {
+            self.folders += 1;
+            if self.folders > MOST_FOLDERS {
+                self.say(format!(
+                    "the runner holds more than {MOST_FOLDERS} folders outside its projects, so \
+                     not all were looked through"
+                ));
+                return false;
+            }
+            let shown_dir = rules.shown(&rel);
+            // A folder its user can't read is said where the user could write in it: what it
+            // can't write holds nothing of a task's that was not there before.
+            let unread = |e: rustix::io::Errno, parent: &rustix::fd::OwnedFd| {
+                e != rustix::io::Errno::ACCESS
+                    || matches!(rules, Rules::Home)
+                    || name.as_deref().is_none_or(|name| {
+                        rustix::fs::accessat(parent, name, Access::WRITE_OK, AtFlags::EACCESS)
+                            .is_ok()
+                    })
+            };
+            let fd = match &name {
+                None => std::rc::Rc::clone(&parent),
+                Some(name) => match rustix::fs::openat(
+                    &*parent,
+                    name.as_c_str(),
+                    folder | OFlags::NOFOLLOW,
+                    Mode::empty(),
+                ) {
+                    Ok(fd) => std::rc::Rc::new(fd),
+                    Err(rustix::io::Errno::NOENT) => continue,
+                    Err(e) => {
+                        if unread(e, &parent) {
+                            self.say(format!("{shown_dir} on the runner could not be read: {e}"));
+                        }
+                        continue;
+                    }
+                },
+            };
+            let mut dir = match rustix::fs::Dir::read_from(&*fd) {
+                Ok(dir) => dir,
                 Err(e) => {
-                    say(
-                        format!("~/{rel} on the runner could not be read: {e}"),
-                        &mut said,
-                    );
+                    if unread(e, &parent) {
+                        self.say(format!("{shown_dir} on the runner could not be read: {e}"));
+                    }
                     continue;
                 }
-            },
-        };
-        let mut dir = match rustix::fs::Dir::read_from(&*fd) {
-            Ok(dir) => dir,
-            Err(e) => {
-                say(
-                    format!("{shown_dir} on the runner could not be read: {e}"),
-                    &mut said,
-                );
-                continue;
-            }
-        };
-        while let Some(entry) = dir.read() {
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(e) => {
-                    say(
-                        format!("{shown_dir} on the runner could not all be read: {e}"),
-                        &mut said,
-                    );
-                    break;
-                }
             };
-            let raw = entry.file_name();
-            let bytes = raw.to_bytes();
-            if bytes == b"." || bytes == b".." || (rel.is_empty() && bytes.starts_with(b".")) {
-                continue;
-            }
-            let Ok(name) = std::str::from_utf8(bytes) else {
-                say(
-                    format!(
+            let hidden_left_out = rules.hidden_left_out(&rel);
+            while let Some(entry) = dir.read() {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(e) => {
+                        self.say(format!(
+                            "{shown_dir} on the runner could not all be read: {e}"
+                        ));
+                        break;
+                    }
+                };
+                let raw = entry.file_name();
+                let bytes = raw.to_bytes();
+                if bytes == b"." || bytes == b".." || (hidden_left_out && bytes.starts_with(b".")) {
+                    continue;
+                }
+                let Ok(name) = std::str::from_utf8(bytes) else {
+                    self.say(format!(
                         "a file in {shown_dir} on the runner has a name that is not text, so it \
                          was not looked at"
-                    ),
-                    &mut said,
-                );
-                continue;
-            };
-            let shown = if rel.is_empty() {
-                name.to_owned()
-            } else {
-                format!("{rel}/{name}")
-            };
-            if TOOLS_KEEP.contains(&shown.as_str()) || skip.contains(&home.join(&shown)) {
-                continue;
-            }
-            // Never through a link: one made since counts as a file.
-            let stat = match rustix::fs::statat(&*fd, raw, AtFlags::SYMLINK_NOFOLLOW) {
-                Ok(stat) => stat,
-                Err(rustix::io::Errno::NOENT) => continue,
-                Err(e) => {
-                    say(
-                        format!("~/{shown} on the runner could not be read: {e}"),
-                        &mut said,
-                    );
+                    ));
+                    continue;
+                };
+                let rel_now = if rel.is_empty() {
+                    name.to_owned()
+                } else {
+                    format!("{rel}/{name}")
+                };
+                if rules.left_out(&rel_now) || skip.contains(&top.join(&rel_now)) {
                     continue;
                 }
-            };
-            match rustix::fs::FileType::from_raw_mode(stat.st_mode) {
-                rustix::fs::FileType::Directory => {
-                    stack.push((shown, std::rc::Rc::clone(&fd), Some(raw.to_owned())));
-                }
-                rustix::fs::FileType::RegularFile | rustix::fs::FileType::Symlink => {
-                    let changed = u64::try_from(stat.st_ctime)
-                        .ok()
-                        .zip(u32::try_from(stat.st_ctime_nsec).ok())
-                        .and_then(|(secs, nanos)| {
-                            std::time::UNIX_EPOCH.checked_add(std::time::Duration::new(secs, nanos))
-                        });
-                    if changed.is_none_or(|at| at >= since) {
-                        found += 1;
-                        named.insert(shown);
-                        if named.len() > MOST_NAMED_OUTSIDE {
-                            named.pop_last();
+                // Never through a link: one made since counts as a file.
+                let stat = match rustix::fs::statat(&*fd, raw, AtFlags::SYMLINK_NOFOLLOW) {
+                    Ok(stat) => stat,
+                    Err(rustix::io::Errno::NOENT) => continue,
+                    Err(e) => {
+                        self.say(format!(
+                            "{} on the runner could not be read: {e}",
+                            rules.shown(&rel_now)
+                        ));
+                        continue;
+                    }
+                };
+                match rustix::fs::FileType::from_raw_mode(stat.st_mode) {
+                    rustix::fs::FileType::Directory => {
+                        stack.push((rel_now, std::rc::Rc::clone(&fd), Some(raw.to_owned())));
+                    }
+                    rustix::fs::FileType::RegularFile | rustix::fs::FileType::Symlink
+                        if rules.counts(&stat) =>
+                    {
+                        if changed_at(&stat).is_none_or(|at| at >= since) {
+                            self.found += 1;
+                            self.named.insert(rules.shown(&rel_now));
+                            if self.named.len() > MOST_NAMED_OUTSIDE {
+                                self.named.pop_last();
+                            }
                         }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
         }
+        true
     }
-    if unsaid > 0 {
-        said.push(format!(
-            "and {unsaid} more parts of the runner's home could not be looked at"
-        ));
+
+    fn sentences(mut self) -> Vec<String> {
+        if self.unsaid > 0 {
+            self.said.push(format!(
+                "and {} more parts of the runner could not be looked at",
+                self.unsaid
+            ));
+        }
+        if self.found > 0 {
+            let more = self.found - self.named.len();
+            let named: Vec<String> = self.named.into_iter().collect();
+            self.said.insert(
+                0,
+                format!(
+                    "the task saved files on the runner outside its project, which purlis can't \
+                     bring here: {}{}. Fetch again brings back only what is in the project, so \
+                     discard the runner once you no longer need them",
+                    named.join(", "),
+                    if more > 0 {
+                        format!(" and {more} more")
+                    } else {
+                        String::new()
+                    }
+                ),
+            );
+        }
+        self.said
     }
-    if found > 0 {
-        let more = found - named.len();
-        let named: Vec<String> = named.iter().map(|one| format!("~/{one}")).collect();
-        said.insert(
-            0,
-            format!(
-                "the task saved files on the runner outside its project, which purlis can't \
-                 bring here: {}{}. Fetch again brings back only what is in the project, so \
-                 discard the runner once you no longer need them",
-                named.join(", "),
-                if more > 0 {
-                    format!(" and {more} more")
-                } else {
-                    String::new()
-                }
-            ),
-        );
-    }
-    said
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
