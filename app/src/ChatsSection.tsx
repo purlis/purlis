@@ -1680,7 +1680,7 @@ const Row = memo(function Row({
             {pickUp !== undefined && (
               <Tooltip tip={`Place ${name}… (${keySaid("pane.place")})`}>
                 <span
-                  className="ui-row-place"
+                  className="chat-row-place"
                   aria-hidden="true"
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={(event) => {

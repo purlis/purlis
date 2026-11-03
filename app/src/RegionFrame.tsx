@@ -905,8 +905,9 @@ export const EDITOR = "Editor";
 
 /**
  * **A region's own chrome, which F6 passes over** (DS-6, #1836): the attribute on the chat strip
- * the editor draws above its panes, and on a pane's grip (#4764). F6 into the editor lands on the pane, as VS Code's lands on
- * the editor and not on its tabs; Tab still stops on the strip, in document order.
+ * the editor draws above its panes, and on a pane's grip (#4764). F6 into the editor lands on
+ * the pane, as VS Code's lands on the editor and not on its tabs; Tab still stops on the strip,
+ * in document order.
  */
 export const REGION_CHROME = "data-region-chrome";
 

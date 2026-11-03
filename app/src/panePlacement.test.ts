@@ -9,6 +9,7 @@ import {
   placingDrop,
   stepFrom,
   firstTarget,
+  stillHeld,
   targetsOf,
 } from "./panePlacement";
 import { contentsOf, insertPane, noTabs, openTab, selectTab, type Tabs } from "./tabs";
@@ -174,5 +175,41 @@ describe("what a placement says and does (#4764)", () => {
     expect(done.said).toBe(
       "Not dropped: Too narrow: a pane here would be under about 40 columns. Drop it on a wider pane.",
     );
+  });
+});
+
+describe("what stays held as the tabs change (#4764)", () => {
+  it("keeps the target the keyboard is on while it is still offered", () => {
+    const { tabs, a, one, three } = start();
+    const at: Target = { kind: "pane", tab: a, pane: three, place: "left" };
+    expect(stillHeld(tabs, { kind: "pane", tab: a, pane: one }, at)).toEqual({ at });
+  });
+
+  it("starts again on the first target of the tab brought forward", () => {
+    const { tabs, a, b, one, three } = start();
+    const behind = selectTab(tabs, b);
+    const four = contentsOf(behind, b)[0].pane;
+    const at: Target = { kind: "pane", tab: a, pane: three, place: "left" };
+    expect(stillHeld(behind, { kind: "pane", tab: a, pane: one }, at)).toEqual({
+      at: { kind: "pane", tab: b, pane: four, place: "middle" },
+    });
+  });
+
+  it("says what was held has closed", () => {
+    const { tabs, a, three } = start();
+    const at: Target = { kind: "pane", tab: a, pane: three, place: "left" };
+    expect(stillHeld(tabs, { kind: "pane", tab: a, pane: 99 }, at)).toEqual({
+      gone: "Not placed: that pane has closed.",
+    });
+    expect(stillHeld(tabs, { kind: "tab", tab: 99 }, at)).toEqual({
+      gone: "Not placed: that tab has closed.",
+    });
+  });
+
+  it("offers a tab held in front only the strip", () => {
+    const { tabs, a } = start();
+    expect(groupsOf(tabs, { kind: "tab", tab: a })).toEqual([
+      { kind: "strip", at: tabs.order.length },
+    ]);
   });
 });

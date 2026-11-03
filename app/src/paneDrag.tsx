@@ -9,6 +9,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -45,8 +46,10 @@ import {
   placingDrop,
   PUT_BACK,
   sameTarget,
+  isArrow,
   type Step,
   stepFrom,
+  stillHeld,
   targetSaid,
   targetsOf,
 } from "./panePlacement";
@@ -188,7 +191,12 @@ export function usePaneDrag({
   active?: boolean;
 }): PaneDragging {
   const [dragging, setDragging] = useState<Dragging>();
-  const [said, setSaid] = useState("");
+  // What a reader is told, with a count, so the same words said twice are a new node, heard again
+  // (a second refusal for the same reason).
+  const [told, setSaid] = useReducer(
+    (was: { said: string; n: number }, said: string) => ({ said, n: was.n + 1 }),
+    { said: "", n: 0 },
+  );
   const [held, setHeld] = useState<Held>();
   const [boxes, setBoxes] = useState<Boxes>();
   /** A pointer drag ended in this very event: the press that a grip hears as it comes up is the
@@ -405,19 +413,14 @@ export function usePaneDrag({
     if (was === undefined || back === "none") return;
     setSaid(PUT_BACK);
     if (back !== "focused") return;
-    const grip =
-      was.source.kind === "pane"
-        ? document.querySelector<HTMLElement>(
-            `[${PANE}="${was.source.pane}"][${TAB}="${was.source.tab}"] [${GRIP_HANDLE}]`,
-          )
-        : null;
+    const grip = was.source.kind === "pane" ? gripOf(was.source.tab, was.source.pane) : null;
     const to = grip ?? (was.from?.isConnected === true ? was.from : null);
     to?.focus();
   }, []);
 
   /** Drops what is held on `to`, by the pointer's own rules; a refused target says why, and what
    *  is held stays held. */
-  const placeOn = useCallback((to: Target) => {
+  const dropOnTarget = useCallback((to: Target) => {
     const { tabs, ctx, held, boxes } = now.current;
     if (held === undefined) return;
     const size = to.kind === "pane" ? boxes?.panes.get(paneKey(to.tab, to.pane)) : undefined;
@@ -468,7 +471,7 @@ export function usePaneDrag({
           ? event.shiftKey
             ? "ShiftTab"
             : "Tab"
-          : !event.shiftKey && event.key in ARROW_KEYS
+          : !event.shiftKey && isArrow(event.key)
             ? (event.key as Step)
             : undefined;
       if (step !== undefined) {
@@ -481,12 +484,15 @@ export function usePaneDrag({
       if ((event.key === "Enter" || event.key === " ") && !event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
-        if (!event.repeat) placeOn(held.at);
+        if (!event.repeat) dropOnTarget(held.at);
       }
     };
+    // A press on a target drops; on a grip, it picks that pane up instead; on a tab on the strip,
+    // it brings that tab forward, as holding a drag over it does. Anywhere else it puts back.
     const press = (event: PointerEvent) => {
-      if (event.target instanceof Element && event.target.closest(`[${PLACE_TARGET}]`) !== null)
-        return;
+      const on = event.target instanceof Element ? event.target : null;
+      if (on?.closest(`[${PLACE_TARGET}], [${GRIP_HANDLE}]`) != null) return;
+      if (on?.closest(`[${TAB}]:not([${PANE}])`)?.closest(`[${STRIP}]`) != null) return;
       putDown("said");
     };
     // Esc puts it back. It is heard where the first Esc goes while a tooltip is up (the target
@@ -499,7 +505,7 @@ export function usePaneDrag({
       window.removeEventListener("keydown", key, true);
       window.removeEventListener("pointerdown", press, true);
     };
-  }, [holding, putDown, placeOn]);
+  }, [holding, putDown, dropOnTarget]);
 
   // Where the targets are drawn: measured as something is picked up, as the tabs change under
   // it (a tab brought forward), and as the window is resized.
@@ -510,6 +516,24 @@ export function usePaneDrag({
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [holding, tabs]);
+
+  // As the tabs change under what is held: the keyboard stays on a target that is still offered,
+  // and what has closed is put down.
+  useEffect(() => {
+    const held = now.current.held;
+    if (held === undefined) return;
+    const still = stillHeld(tabs, held.source, held.at);
+    if ("gone" in still) {
+      setHeld(undefined);
+      setBoxes(undefined);
+      setSaid(still.gone);
+      // The keyboard was on a target, which has gone with it: the focused pane's grip has it.
+      const focused = focusedPane(tabs);
+      if (focused !== undefined) gripOf(focused.tab, focused.pane)?.focus();
+      return;
+    }
+    if (still.at !== held.at) setHeld({ ...held, at: still.at });
+  }, [tabs, setSaid]);
 
   // The keyboard is on the target placement mode is on.
   const at = held?.at;
@@ -523,17 +547,13 @@ export function usePaneDrag({
   useEffect(() => {
     if (!followTheDrop.current) return;
     followTheDrop.current = false;
-    const front = tabs.inFront;
-    const pane = front === undefined ? undefined : tabs.byId[front]?.focused;
-    if (pane === undefined) return;
-    document
-      .querySelector<HTMLElement>(`[${PANE}="${pane}"][${TAB}="${front}"] [${GRIP_HANDLE}]`)
-      ?.focus();
+    const at = focusedPane(tabs);
+    if (at !== undefined) gripOf(at.tab, at.pane)?.focus();
   }, [tabs]);
 
   const targets =
     held === undefined || boxes === undefined ? null : (
-      <PlacementTargets tabs={tabs} ctx={ctx} held={held} boxes={boxes} onPlace={placeOn} />
+      <PlacementTargets tabs={tabs} ctx={ctx} held={held} boxes={boxes} onPlace={dropOnTarget} />
     );
 
   const layer = (
@@ -564,7 +584,7 @@ export function usePaneDrag({
         </div>
       )}
       <div role="status" className="sr-only" data-pane-drag-said="">
-        {said}
+        {told.said === "" ? null : <span key={told.n}>{told.said}</span>}
       </div>
     </>
   );
@@ -584,15 +604,28 @@ export function usePaneDrag({
   return { layer, undoLine, undo: takeBack, placing };
 }
 
-/** The arrow keys placement mode walks a pane's targets with. */
-const ARROW_KEYS: Record<string, true> = {
-  ArrowUp: true,
-  ArrowDown: true,
-  ArrowLeft: true,
-  ArrowRight: true,
-};
-
 const paneKey = (tab: number, pane: number) => `${tab}:${pane}`;
+
+/** Pane `pane` of tab `tab`'s grip, where it is drawn. */
+function gripOf(tab: number, pane: number): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    `[${PANE}="${pane}"][${TAB}="${tab}"] [${GRIP_HANDLE}]`,
+  );
+}
+
+/** The tab in front's focused pane, if a tab is in front. */
+function focusedPane(tabs: Tabs): { tab: number; pane: number } | undefined {
+  const front = tabs.inFront;
+  const pane = front === undefined ? undefined : tabs.byId[front]?.focused;
+  return front === undefined || pane === undefined ? undefined : { tab: front, pane };
+}
+
+const boxOfRect = (r: DOMRect): Box => ({
+  left: r.left,
+  top: r.top,
+  width: r.width,
+  height: r.height,
+});
 
 /** A target's key, as its button is marked: its pane and place, or the strip. */
 function targetKey(target: Target): string {
@@ -605,16 +638,10 @@ function measured(): Boxes {
   for (const pane of document.querySelectorAll(`[${PANE}]`)) {
     const r = pane.getBoundingClientRect();
     const key = paneKey(Number(pane.getAttribute(TAB)), Number(pane.getAttribute(PANE)));
-    panes.set(key, { left: r.left, top: r.top, width: r.width, height: r.height });
+    panes.set(key, boxOfRect(r));
   }
   const strip = document.querySelector(`[${STRIP}]`)?.getBoundingClientRect();
-  return {
-    panes,
-    strip:
-      strip === undefined
-        ? undefined
-        : { left: strip.left, top: strip.top, width: strip.width, height: strip.height },
-  };
+  return { panes, strip: strip === undefined ? undefined : boxOfRect(strip) };
 }
 
 /**
@@ -636,10 +663,8 @@ function focusedSource(on: Element | null, tabs: Tabs): Source | undefined {
       tab: Number(pane.getAttribute(TAB)),
       pane: Number(pane.getAttribute(PANE)),
     };
-  const front = tabs.inFront;
-  const focused = front === undefined ? undefined : tabs.byId[front]?.focused;
-  if (front === undefined || focused === undefined) return undefined;
-  return { kind: "pane", tab: front, pane: focused };
+  const at = focusedPane(tabs);
+  return at === undefined ? undefined : { kind: "pane", ...at };
 }
 
 const PLACE_ICON: Record<Place, ReactNode> = {
