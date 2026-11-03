@@ -22,15 +22,18 @@
 //! that found nobody there marks the queues as waiting, and the next line a window hears of
 //! this host sets off a drain of every chat's queue, on a thread of its own.
 //!
-//! **Only what was queued while a host carries is carried.** What a chat queued before the
-//! first host beside its socket started carrying is retired, removed and never delivered: a
-//! host before it handed the `Deliver` on to a window that could not read the queue, which told
-//! the chat plainly that nothing was sent (#4560's refusal). Delivering it now would send what
-//! its chat was told was not sent. **Retired once** (#4895): that host leaves a marker
-//! ([`dispatchqueue::CARRIES`]), and a host started since, after `purlis serve` restarts,
-//! retires nothing and carries what waits, whose senders were told it waits.
+//! **Only what a host told its chat waits is carried.** Each `Deliver` a host answers, it first
+//! writes down ([`dispatchqueue::TOLD_WAITS`]), and a host starting to carry retires every
+//! message queued beside its socket that no host wrote down, removed and never delivered: it
+//! was queued while no host carried, and a host then handed its `Deliver` on to a window that
+//! could not read the queue, which told the chat plainly that nothing was sent (#4560's
+//! refusal). Delivering it now would send what its chat was told was not sent. So what waits
+//! after `purlis serve` restarts is still carried (#4895), and what a build from before hosts
+//! carried queued in between is not, whatever a host before it wrote down (#4941): that build
+//! writes nothing down. The retire looks at every message in the folder, past any a sender is
+//! still writing.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -63,7 +66,23 @@ pub(super) struct Carrying {
     answered: Mutex<VecDeque<(u32, String, Answer)>>,
     /// How many drains of every chat's queue run on a thread of their own: one at most.
     drains: std::sync::atomic::AtomicUsize,
+    /// The ids of the messages it told each chat wait, as written down beside the queues
+    /// ([`dispatchqueue::TOLD_WAITS`]), newest last.
+    told: Mutex<Told>,
 }
+
+/// The ids of the messages a host told each chat wait, newest last.
+type Told = BTreeMap<u32, VecDeque<String>>;
+
+/// What [`dispatchqueue::TOLD_WAITS`] holds.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ToldFile {
+    v: u32,
+    chats: Told,
+}
+
+/// The version of [`ToldFile`].
+const TOLD_VERSION: u32 = 1;
 
 /// How one carried message came out.
 enum Came {
@@ -78,22 +97,35 @@ enum Came {
 impl Relaying {
     /// **Carries its chats' queued messages to the window itself** (#4804): those queued beside
     /// the hook socket `socket`. What a runner's host does, where the window cannot read them.
-    /// What is queued there already, from before any host carried it, is retired, never
-    /// carried; what a host carrying before this one left waiting goes once the window hears
-    /// this host.
+    /// What is queued there already that a host before this one told its chat waits goes once
+    /// the window hears this host; the rest was refused, and is retired, never carried.
     pub fn carrying_queues_beside(&self, socket: &Path) {
         let _one = self
             .carrying
             .draining
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if dispatchqueue::carries_for(socket).exists() {
+        let mut told = lock(&self.carrying.told);
+        *told = retire_what_no_host_told_waits(socket, &told_waits(socket));
+        write_told_waits(socket, &told);
+        if !told.is_empty() {
             self.carry_waits.store(true, Ordering::SeqCst);
-        } else {
-            retire_what_is_queued(socket);
-            mark_carried(socket);
         }
         *lock(&self.carrying.socket) = Some(socket.to_path_buf());
+    }
+
+    /// **Writes down that chat `chat` is told its message `id` waits**, before it is told so or
+    /// carried: a host started since carries it, where it is still queued then.
+    fn telling_it_waits(&self, socket: &Path, chat: u32, id: &str) {
+        let mut told = lock(&self.carrying.told);
+        let ids = told.entry(chat).or_default();
+        // Past the most a chat may queue, the oldest is delivered: carried in order, every one
+        // after a message still queued is still queued.
+        if ids.len() >= dispatchqueue::MOST_QUEUED {
+            ids.pop_front();
+        }
+        ids.push_back(id.to_owned());
+        write_told_waits(socket, &told);
     }
 
     /// How many drains of every chat's queue run on threads of their own now.
@@ -117,6 +149,7 @@ impl Relaying {
             return None;
         };
         let socket = self.carries()?;
+        self.telling_it_waits(&socket, asked.chat, id);
         Some(self.carry(&socket, connection, asked.chat, Some(id)))
     }
 
@@ -297,19 +330,25 @@ impl Drop for Gone<'_> {
     }
 }
 
-/// **Removes every message queued beside `socket`**, none delivered: what was queued before a
-/// host carried them ([`Relaying::carrying_queues_beside`]).
-fn retire_what_is_queued(socket: &Path) {
+/// **Removes every message queued beside `socket` that no host told its chat waits** (`told`),
+/// none delivered, past any message a sender is still writing: what was queued while no host
+/// carried. What it keeps, as [`Told`].
+fn retire_what_no_host_told_waits(socket: &Path, told: &Told) -> Told {
+    let mut kept = Told::new();
     for chat in dispatchqueue::chats(socket) {
-        for found in dispatchqueue::waiting(socket, chat) {
+        let waits = told.get(&chat);
+        for found in dispatchqueue::every_queued(socket, chat) {
             match found {
+                Found::Message(message) if waits.is_some_and(|ids| ids.contains(&message.id)) => {
+                    kept.entry(chat).or_default().push_back(message.id);
+                }
                 Found::Message(message) => {
                     tracing::warn!(
-                        "purlisd: chat {chat} queued a message before this host carried its \
+                        "purlisd: chat {chat} queued a message while no host carried its \
                          messages, and its sender was told it was not sent: it is removed, and \
                          not carried"
                     );
-                    dispatchqueue::delivered(socket, chat, &message);
+                    dispatchqueue::retired(&message);
                 }
                 Found::Delivered(path) | Found::Unchecked(path) => {
                     dispatchqueue::drop_unchecked(&path);
@@ -317,22 +356,42 @@ fn retire_what_is_queued(socket: &Path) {
             }
         }
     }
+    kept
 }
 
-/// **Marks the queues beside `socket` as carried** ([`dispatchqueue::CARRIES`]), so no host
-/// started since retires them. Where it cannot, the next host retires them again: what waits
-/// then is lost, never delivered after its sender was told it was not sent.
-fn mark_carried(socket: &Path) {
-    let marker = dispatchqueue::carries_for(socket);
-    let written = marker
-        .parent()
-        .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|()| std::fs::write(&marker, b""));
+/// What hosts before this one told each chat waits ([`dispatchqueue::TOLD_WAITS`]): nothing,
+/// where it is not there or does not read, and so every message queued is retired.
+fn told_waits(socket: &Path) -> Told {
+    std::fs::read(dispatchqueue::told_waits_for(socket))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<ToldFile>(&bytes).ok())
+        .filter(|file| file.v == TOLD_VERSION)
+        .map(|file| file.chats)
+        .unwrap_or_default()
+}
+
+/// **Writes down what this host told each chat waits** ([`dispatchqueue::TOLD_WAITS`]), whole.
+/// Where it cannot, a host started since retires what it did not find written: lost, never
+/// delivered after its sender was told it was not sent.
+fn write_told_waits(socket: &Path, told: &Told) {
+    let at = dispatchqueue::told_waits_for(socket);
+    let written = (|| {
+        let dir = at
+            .parent()
+            .ok_or_else(|| std::io::Error::other("no folder"))?;
+        crate::secrets::make_private_dir(dir)?;
+        let bytes = serde_json::to_vec(&ToldFile {
+            v: TOLD_VERSION,
+            chats: told.clone(),
+        })
+        .map_err(std::io::Error::other)?;
+        crate::rewrite::replace(dir, &at, &bytes, crate::rewrite::Mode::Private)
+    })();
     if let Err(why) = written {
         tracing::warn!(
-            "purlisd: the mark that this host carries its chats' messages was not written, so \
-             what they queue while the link is down is retired if this host restarts ({}): {why}",
-            marker.display()
+            "purlisd: what this host told its chats waits was not written down, so what they \
+             queue while the link is down is retired if this host restarts ({}): {why}",
+            at.display()
         );
     }
 }
