@@ -1294,17 +1294,24 @@ export const commands = {
 	resizeSession: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("resize_session", { plane, session, columns, rows })),
 	/**
 	 *  Opens a view of a session for a pane that is now on screen: the channel is sent the screen
-	 *  as it already is, and then the session's output. Answers with the id that closes the view.
+	 *  as it already is, and then the session's output, each piece the bytes it is (#4745).
+	 *  Answers with the id that closes the view.
 	 * 
 	 *  Off the window's thread, in its turn in the chat's lane (#4734, ADR 0108): after every
 	 *  resize the pane sent before it (#891), and answered once the host has.
 	 */
-	watchSession: (plane: PlaneId, session: number, output: Channel<string>) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output })),
+	watchSession: (plane: PlaneId, session: number, output: Channel<ArrayBuffer>) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output })),
 	/**
 	 *  Closes a view, for a pane that has gone off screen, in the chat's lane: it answers at once
 	 *  (#4734, ADR 0108). The session keeps running.
 	 */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
+	/**
+	 *  The pane drawing view `view` of session `session` has drawn `pieces` more of what its
+	 *  channel was sent, in order (#4733). Only what is drawn is acknowledged to the session host,
+	 *  so a pane that cannot keep up is sent a fresh screen rather than a backlog.
+	 */
+	sessionDrawn: (plane: PlaneId, session: number, view: number, pieces: number) => typedError<null, string>(__TAURI_INVOKE("session_drawn", { plane, session, view, pieces })),
 	/**  Starts a browser in project `plane`, and answers its id. Refused while Stop all holds. */
 	openBrowser: (plane: PlaneId) => typedError<string, string>(__TAURI_INVOKE("open_browser", { plane })),
 	/**

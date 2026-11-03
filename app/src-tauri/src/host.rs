@@ -207,8 +207,9 @@ pub const MOVES_NO_CHAT: &str = "chats do not move to or from where this one run
 pub const NOT_COMPOSED_HERE: &str =
     "a chat in the window is started from what the window composed, never by its names alone";
 
-/// Where a view's text goes. It is called on the view's own thread, one batch at a time.
-pub type Sink = Box<dyn FnMut(String) + Send>;
+/// Where a view's output goes: the bytes its program wrote, as it wrote them, never decoded on
+/// the way (#4745). It is called on the view's own thread, one batch at a time.
+pub type Sink = Box<dyn FnMut(Vec<u8>) + Send>;
 
 /// What a fresh runner's end is told once its work came back or did not (#4569): what did not, in
 /// sentences. It answers whether the runner went.
@@ -458,6 +459,21 @@ pub trait SessionHost: Send + Sync {
     /// session's output, as text, until the view is closed. The answer says which view that
     /// is, and the size its screen was drawn for.
     fn watch(&self, id: u32, sink: Sink) -> Result<Watching, String>;
+
+    /// [`Self::watch`], for a pane that reports what its terminal has drawn (#4733): each piece
+    /// `sink` is handed counts as the program's output only once [`Self::drawn`] says the pane
+    /// drew it. A pane that falls behind is then behind where its host can see it, and is sent
+    /// a fresh screen rather than a backlog. Where nothing paces a view, it is [`Self::watch`].
+    fn watch_drawn(&self, id: u32, sink: Sink) -> Result<Watching, String> {
+        self.watch(id, sink)
+    }
+
+    /// The pane drawing view `view` of session `id` has drawn `pieces` more of what its sink
+    /// was handed, in the order it was handed them (#4733). Nothing where nothing paces a view.
+    fn drawn(&self, id: u32, view: u32, pieces: u32) -> Result<(), String> {
+        let _ = (id, view, pieces);
+        Ok(())
+    }
 
     /// Closes a view. Its session keeps running, with its terminal, for the next pane.
     fn unwatch(&self, id: u32, view: u32) -> Result<(), String>;

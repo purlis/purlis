@@ -215,6 +215,7 @@ macro_rules! app_commands {
                 resize_session,
                 watch_session,
                 unwatch_session,
+                session_drawn,
                 browsers::open_browser,
                 browsers::watch_browser,
                 browsers::unwatch_browser,

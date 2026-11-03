@@ -487,6 +487,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "send_input_bytes",
             "resize_session",
             "unwatch_session",
+            // What a pane drew (#4733): in memory, answered at once, and after the writes it reports on.
+            "session_drawn",
         ],
     ),
     (
