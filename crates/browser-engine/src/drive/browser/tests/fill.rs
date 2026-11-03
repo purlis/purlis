@@ -238,6 +238,16 @@ fn once_a_secret_is_filled_the_agent_copies_and_cuts_nothing_in_that_browser() {
         "no key of a refused press reached the page"
     );
     assert!(press(7, &["Tab"]).is_ok(), "other keys still go");
+    // Nor is any of it dragged out, whole or in part.
+    let name = ref_of(&snapshot(&browser, 8), "- textbox \"Name\"");
+    let dragged = browser.call(
+        &id(9),
+        Call::Drag {
+            from: name,
+            to: crate::drive::DragTo::Offset { x: 40.0, y: 0.0 },
+        },
+    );
+    assert_eq!(dragged.err(), Some(Refusal::CopyWithheld));
 }
 
 #[test]

@@ -42,7 +42,7 @@ in purlis's own world; the value is written into that one element by a function 
 world, which checks in the same step that the element's document is still on the approved
 origin, so no focus and no moment between a check and a write decides where it goes; a field
 that doesn't keep the value whole is emptied and nothing is filled; from a fill on, the agent
-copies and cuts nothing in that browser, for its life; a chat can't send the field read itself; a
+copies, cuts and drags nothing in that browser, for its life; a chat can't send the field read itself; a
 runner's browser fills nothing yet; a field in a frame of another site than its page's is warned
 of; Keep blocked on a key and a site isn't asked again in that chat, and two end the chat's fill
 notices; a press is audited as `secret-fill`, naming the vault, the key and the origin; the
