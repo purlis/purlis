@@ -240,14 +240,24 @@ const inFront = () =>
     .find((tab) => tab.getAttribute("aria-selected") === "true")
     ?.getAttribute("aria-label");
 
-/** Everything the window has started has settled: nothing new was asked for a while. */
+/**
+ * **Everything the window has started has settled**: a round in which nothing new was asked and
+ * React committed nothing, the two things a switch is read by.
+ *
+ * **Each round spans an animation frame and then a timer** (#3032), as `afterPaint` does
+ * (`projectShown.tsx`): what is read again once the project is painted is asked from a timer set
+ * in a frame, so a round that only waited a timer could end before that frame came, on a runner
+ * whose frames come late, and the switch's own reads and commits were counted for the next one.
+ * Any `afterPaint` started before the round has run by its end.
+ */
 export async function settled(asked: Asked[]): Promise<void> {
-  let seen = -1;
-  for (let rounds = 0; seen !== asked.length; rounds++) {
+  const now = () => `${asked.length}:${counts.commits}`;
+  let seen = "";
+  for (let rounds = 0; seen !== now(); rounds++) {
     if (rounds > 200) throw new Error(`the window never settled: ${asked.at(-1)?.cmd}`);
-    seen = asked.length;
+    seen = now();
     await act(async () => {
-      await new Promise((done) => setTimeout(done, 30));
+      await new Promise((done) => requestAnimationFrame(() => setTimeout(done, 30)));
     });
   }
 }
