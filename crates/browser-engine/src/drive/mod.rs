@@ -807,6 +807,13 @@ pub enum Refusal {
          call was not carried out: type the text instead"
     )]
     PasteWithheld,
+    /// purlis filled a secret into a page of this browser (#5115): the agent's copies and cuts
+    /// are withheld for its life.
+    #[error(
+        "copying and cutting are not available in this browser since purlis filled a secret \
+         into it, so this call was not carried out: read what you need with a snapshot"
+    )]
+    CopyWithheld,
     #[error(
         "purlis is logging this browser in, so it takes no call from you until the login answers: wait for it, then take a new snapshot"
     )]

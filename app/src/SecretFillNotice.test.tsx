@@ -50,7 +50,9 @@ describe("SecretFillNotice", () => {
   it("says in plain words which key goes into which field on which site", () => {
     render(<SecretFillNotice plane="p" session={7} asks={[ask()]} />);
     const site = screen.getByTestId("fill-site");
-    expect(site).toHaveTextContent("Put dash-api-key from vault qa into the “API key” field on");
+    expect(site).toHaveTextContent(
+      "Put dash-api-key from vault qa into the field the page labels API key on",
+    );
     expect(screen.getByTestId("fill-site-site")).toHaveTextContent(/^dash\.example\.test$/);
     expect(site).toHaveTextContent("https://dash.example.test/settings");
     expect(site).toHaveTextContent("the chat never sees the value");

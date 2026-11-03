@@ -3205,6 +3205,15 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     if let Some(happened) = timeline_of(held.browsers(), browse, &answer, now) {
         keep_in_timeline(held, browse.chat, happened);
     }
+    // A secret fill refused says why in the person's view of the browser too (#5115).
+    if let (Browsing::FillSecret { key, .. }, Answer::No { why }) = (&browse.asked, &answer)
+        && let Some((name, _)) = held
+            .browsers()
+            .which(browse.chat, browse.browser.as_deref())
+    {
+        let happened = purlis_core::browsertimeline::fill_refused(&name, key, why, now);
+        keep_in_timeline(held, browse.chat, happened);
+    }
     answer
 }
 
@@ -3243,10 +3252,10 @@ pub fn timeline_of(
             timeline::acted(browser, act, browsed, at, seen)
         }
         Browsing::LogIn { login, .. } => Some(timeline::signed_in(browser, login, at)),
-        Browsing::New
-        | Browsing::Close
-        | Browsing::NeedsYou { .. }
-        | Browsing::FillSecret { .. } => None,
+        Browsing::FillSecret { key, target, .. } => {
+            Some(timeline::filled_secret(browser, key, target, at))
+        }
+        Browsing::New | Browsing::Close | Browsing::NeedsYou { .. } => None,
     }
 }
 

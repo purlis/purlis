@@ -242,6 +242,21 @@ pub(crate) const ACTIVE_ELEMENT: &str = r"(() => {
 pub(crate) const FOCUSED_HERE: &str = "document.hasFocus() ? document.activeElement : null";
 
 /// Whether a key event pastes: it carries the paste command, or it is Shift+Insert (#2028).
+/// Whether a key event copies or cuts: by the editing command it carries, or by the platform's
+/// own chords for them (Control or Meta with C, X or Insert; Shift with Delete) (#5115).
+fn copies(event: &Value) -> bool {
+    let commanded = event["commands"]
+        .as_array()
+        .is_some_and(|commands| commands.iter().any(|c| c == "copy" || c == "cut"));
+    let down = event["type"] == "keyDown" || event["type"] == "rawKeyDown";
+    let modifiers = event["modifiers"].as_i64().unwrap_or(0);
+    let key = event["key"].as_str().unwrap_or_default();
+    let chorded = modifiers & (2 | 4) != 0
+        && (key.eq_ignore_ascii_case("c") || key.eq_ignore_ascii_case("x") || key == "Insert");
+    let shift_delete = modifiers & 8 != 0 && key == "Delete";
+    commanded || (down && (chorded || shift_delete))
+}
+
 fn pastes(event: &Value) -> bool {
     let commanded = event["commands"].as_array().is_some_and(|commands| {
         commands
@@ -1341,6 +1356,9 @@ pub(crate) struct Inner {
     /// Whether the agent's pastes are withheld: DevTools were open on this browser, and what
     /// the person copied there may be what a paste gets.
     paste_withheld: AtomicBool,
+    /// Whether the agent's copies and cuts are withheld: purlis filled a secret into a page of
+    /// this browser (#5115), and what a copy takes could be it.
+    copy_withheld: AtomicBool,
     /// What DevTools wrote into pages since then, kept out at the hand-back.
     devtools_writes: Mutex<Vec<String>>,
     /// The pages that could not be read at the hand-back after DevTools: the agent's calls
@@ -1495,6 +1513,7 @@ impl Browser {
             inspection: Mutex::new(None),
             devtools_opened: AtomicBool::new(false),
             paste_withheld: AtomicBool::new(false),
+            copy_withheld: AtomicBool::new(false),
             devtools_writes: Mutex::new(Vec::new()),
             devtools_unread: Mutex::new(HashSet::new()),
             state: Mutex::new(State::default()),
@@ -2203,6 +2222,10 @@ impl Browser {
                 // What the person copied in DevTools may be what a paste gets (#2028).
                 if self.inner.paste_withheld.load(Ordering::SeqCst) && events.iter().any(pastes) {
                     return Err(Refusal::PasteWithheld);
+                }
+                // What a copy takes could be a secret purlis filled (#5115).
+                if self.inner.copy_withheld.load(Ordering::SeqCst) && events.iter().any(copies) {
+                    return Err(Refusal::CopyWithheld);
                 }
                 self.acting_on(&target, || {
                     for event in events {

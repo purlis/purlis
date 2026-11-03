@@ -183,3 +183,40 @@ fn a_fill_on_an_origin_nobody_approved_fills_nothing() {
         "the field holds nothing"
     );
 }
+
+#[test]
+fn a_number_field_given_letters_keeps_nothing_and_the_browser_stays() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "fill.html");
+    let port = ref_of(&browser, "Port");
+    match filled(&browser, port, "http://fixture.test") {
+        Err(Refusal::NotFilled(why)) => {
+            assert!(why.contains("did not keep the value whole"), "{why}")
+        }
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    // The browser still answers.
+    assert!(!holds_the_value(&snapshot(&browser)));
+}
+
+#[test]
+fn once_a_secret_is_filled_the_agent_cannot_copy_it_out() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "fill.html");
+    let key = ref_of(&browser, "API key");
+    filled(&browser, key.clone(), "http://fixture.test")
+        .unwrap_or_else(|why| panic!("filled: {}", ended_as(&Err::<(), _>(why))));
+    call(&browser, Call::Click { target: key });
+    let copied = browser.call(
+        &common::drive::next_id(),
+        Call::Press {
+            page: None,
+            keys: vec!["Control+a".into(), "Control+c".into()],
+        },
+    );
+    assert_eq!(copied.err(), Some(Refusal::CopyWithheld));
+}

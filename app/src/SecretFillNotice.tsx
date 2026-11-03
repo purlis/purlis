@@ -13,7 +13,15 @@ import { Notice, NoticeOf, type NoticeAction } from "./Notice";
  * page's own words, said as such.
  */
 export function SecretFillSite({ fill }: { fill: FillShown }) {
-  const field = fill.label.trim() === "" ? "a field" : `the “${fill.label}” field`;
+  // The label is the page's own words: set apart, so they never read as purlis's.
+  const field =
+    fill.label.trim() === "" ? (
+      "a field"
+    ) : (
+      <>
+        the field the page labels <code>{fill.label}</code>
+      </>
+    );
   return (
     <div className="login-site" data-testid="fill-site">
       <p className="ui-text-meta">

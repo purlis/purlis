@@ -18,18 +18,22 @@
 //! of the browser leaves it out. The field is blanked before the value goes in, so it is painted
 //! over and its tree reads keep what it holds.
 //!
-//! **Right before the value goes in, and right after**, the frame must still show the same
-//! document on the approved origin, with the field focused in it. Before, where it does not,
-//! nothing was typed and the fill is refused. After, where it does not, or the field doesn't
-//! hold exactly what was typed, the value may have gone elsewhere, so purlis ends the whole
-//! browser before the agent has anything more of it.
+//! **The value goes into that one element, never where the focus is**: a function run in
+//! purlis's own world in the field's frame checks, in the same step as it writes, that the
+//! element is still in its document and that document is still on the approved origin, and
+//! writes nothing where either is not. No key is pressed and no focus is moved, so nothing on the
+//! page can steer the value into another field or frame between a check and the write. A field
+//! that doesn't keep the value whole is emptied, and nothing is filled.
+//!
+//! **Once a value may be in a page, the agent copies and cuts nothing in that browser**, for its
+//! life: what a copy would take could be the value.
 
 use serde_json::{Value, json};
 
 use super::super::kept::Kept;
 use super::super::tree::NodeKey;
 use super::Browser;
-use super::login::{FIELD_HAS_FOCUS, FIELD_LENGTH, FOCUS_FIELD, origin_of};
+use super::login::origin_of;
 use super::takeover::Carrying;
 use crate::drive::{
     Answer, Content, Driver, FieldInfo, FieldKind, MOST_LABEL_CHARS, Ref, Refusal, SecretFill, lock,
@@ -57,10 +61,29 @@ pub(crate) const FIELD_KIND: &str = r"function () {
   return { kind, label };
 }";
 
+/// The function that writes a value into the field it is given, run in purlis's own world in
+/// the field's frame: a constant. In the same step it checks that the field is still in its
+/// document and that the document is on `origin`, answering `moved` where not and writing
+/// nothing, so no focus and no moment between a check and a write decides where the value goes.
+/// The value goes in through the field's own setter, with the events a page hears for typing,
+/// and the answer is how much the field then holds. A field that holds less is emptied again.
+pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin) {
+  if (!field.isConnected || field.ownerDocument.location.origin !== origin) return 'moved';
+  const own = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  own.set.call(field, value);
+  field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+  field.dispatchEvent(new Event('change', { bubbles: true }));
+  const held = own.get.call(field).length;
+  if (held !== value.length) {
+    own.set.call(field, '');
+    field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContent' }));
+  }
+  return held;
+}";
+
 /// A field as resolved for a fill: where it is, and its object in purlis's own world there.
 struct Resolved {
     page: String,
-    page_session: String,
     node_session: String,
     frame: String,
     key: NodeKey,
@@ -131,25 +154,15 @@ impl Browser {
             )));
         }
         self.blank_node(&at.page, at.key.clone())?;
-        let object = self.field_object(&at).ok_or_else(|| {
-            not_filled(format!(
-                "purlis could not reach {target} on {origin}, so nothing was filled"
-            ))
-        })?;
-        let filled = self.typed_into(&at, &object, document, fill);
-        let on = Some(at.node_session.as_str());
-        let _ = self
-            .devtools()
-            .call("Runtime.releaseObject", json!({ "objectId": object }), on);
-        // Focus is emulated for the fill alone.
-        for session in [&at.page_session, &at.node_session] {
-            let _ = self.devtools().call(
-                "Emulation.setFocusEmulationEnabled",
-                json!({ "enabled": false }),
-                Some(session),
-            );
+        if self.frame_now(&at) != Some((document, Some(origin.to_owned()))) {
+            return Err(changed(target, origin));
         }
-        filled?;
+        // From the moment a value may be in a page, the agent copies and cuts nothing in this
+        // browser: what it would copy could be the value.
+        self.inner
+            .copy_withheld
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.written(&at, fill)?;
         // The field holds what was just typed: read again, so it is kept out from now on.
         let _ = self.snapshot_of(&at.page);
         let mut answer = self.answer_now(&at.page, Content::Nothing);
@@ -161,58 +174,66 @@ impl Browser {
         Ok(answer)
     }
 
-    /// Focuses `object`, checks, types the value, and checks again (module docs).
-    fn typed_into(
-        &self,
-        at: &Resolved,
-        object: &str,
-        document: u64,
-        fill: &SecretFill,
-    ) -> Result<(), Refusal> {
+    /// **Writes the value into `at`'s element itself** (module docs), by a function run in
+    /// purlis's own world in its frame, which checks in the same step that the element is still
+    /// in its document and that document is on the approved origin: no focus decides where it
+    /// goes. A field that doesn't keep the value whole (a number field given letters) is
+    /// emptied, and nothing is filled.
+    fn written(&self, at: &Resolved, fill: &SecretFill) -> Result<(), Refusal> {
         let target = &fill.target;
         let origin = fill.origin.as_str();
         let on = Some(at.node_session.as_str());
-        let could_not = || {
-            not_filled(format!(
-                "purlis could not focus {target} on {origin}, so nothing was filled"
-            ))
-        };
-        // A page purlis drives behaves as one with the focus, whatever the window shows.
-        for session in [&at.page_session, &at.node_session] {
-            let _ = self.devtools().call(
-                "Emulation.setFocusEmulationEnabled",
-                json!({ "enabled": true }),
-                Some(session),
-            );
-        }
-        self.gated(|| {
-            self.devtools().call(
-                "Runtime.callFunctionOn",
-                json!({ "objectId": object, "functionDeclaration": FOCUS_FIELD }),
+        let wrote = self.in_world(&at.node_session, &at.frame, |world| {
+            let resolved = self.devtools().call(
+                "DOM.resolveNode",
+                json!({ "backendNodeId": at.key.backend, "executionContextId": world.id }),
                 on,
-            )
-        })?
-        .map_err(|_| could_not())?;
-        if !self.still_there(at, document, origin, object) {
-            return Err(not_filled(format!(
-                "the page changed as purlis was about to fill {target} on {origin}, so nothing \
-                 was filled: take a new snapshot"
-            )));
+            )?;
+            let Some(object) = resolved.pointer("/object/objectId").and_then(Value::as_str) else {
+                return Ok(Value::Null);
+            };
+            let wrote = self.gated(|| {
+                self.devtools().call(
+                    "Runtime.callFunctionOn",
+                    json!({
+                        "uniqueContextId": world.unique,
+                        "functionDeclaration": WRITE_FIELD,
+                        "arguments": [
+                            { "objectId": object },
+                            { "value": fill.value.as_str() },
+                            { "value": origin },
+                        ],
+                        "returnByValue": true,
+                    }),
+                    on,
+                )
+            });
+            let _ =
+                self.devtools()
+                    .call("Runtime.releaseObject", json!({ "objectId": object }), on);
+            match wrote {
+                Ok(done) => done,
+                // Cut by a take-over: nothing was written.
+                Err(_) => Ok(json!({ "result": { "value": "cut" } })),
+            }
+        });
+        let said = wrote
+            .ok()
+            .and_then(|read| read.pointer("/result/value").cloned());
+        let typed = fill.value.encode_utf16().count() as u64;
+        match said {
+            Some(Value::Number(held)) if held.as_u64() == Some(typed) => Ok(()),
+            Some(Value::Number(_)) => Err(not_filled(format!(
+                "{target} on {origin} did not keep the value whole, so purlis emptied it and \
+                 nothing was filled: the field may take only numbers, or fewer characters"
+            ))),
+            Some(Value::String(cut)) if cut == "cut" => Err(Refusal::Interrupted),
+            Some(Value::String(moved)) if moved == "moved" => Err(changed(target, origin)),
+            _ => Err(not_filled(format!(
+                "purlis could not reach {target} on {origin}, so nothing was filled: take a new \
+                 snapshot"
+            ))),
         }
-        self.gated(|| {
-            self.devtools().call(
-                "Input.insertText",
-                json!({ "text": fill.value.as_str() }),
-                Some(&at.page_session),
-            )
-        })?
-        .map_err(|_| self.ended_mid_fill(target, origin))?;
-        if !self.still_there(at, document, origin, object)
-            || !self.holds_as_typed_in(object, fill.value.as_str(), on)
-        {
-            return Err(self.ended_mid_fill(target, origin));
-        }
-        Ok(())
     }
 
     /// `target`'s element, where it is now: refused as a call on it would be.
@@ -224,7 +245,6 @@ impl Browser {
                 backend: at.backend,
             },
             page: at.target,
-            page_session: at.page_session,
             node_session: at.node_session,
             frame: at.frame,
         })
@@ -288,60 +308,6 @@ impl Browser {
             .to_owned();
         Ok((kind, label))
     }
-
-    /// Whether `at`'s frame still shows `document`, on `origin`, with `object` focused in it and
-    /// its document focused: read from the field itself.
-    fn still_there(&self, at: &Resolved, document: u64, origin: &str, object: &str) -> bool {
-        if self.frame_now(at) != Some((document, Some(origin.to_owned()))) {
-            return false;
-        }
-        let focused = self
-            .devtools()
-            .call(
-                "Runtime.callFunctionOn",
-                json!({
-                    "objectId": object,
-                    "functionDeclaration": FIELD_HAS_FOCUS,
-                    "returnByValue": true,
-                }),
-                Some(&at.node_session),
-            )
-            .ok()
-            .and_then(|read| read.pointer("/result/value").and_then(Value::as_bool))
-            == Some(true);
-        focused && self.frame_now(at) == Some((document, Some(origin.to_owned())))
-    }
-
-    /// Whether `object` holds exactly as much as purlis typed into it, read from the field.
-    fn holds_as_typed_in(&self, object: &str, value: &str, on: Option<&str>) -> bool {
-        let typed = value.encode_utf16().count() as i64;
-        self.devtools()
-            .call(
-                "Runtime.callFunctionOn",
-                json!({
-                    "objectId": object,
-                    "functionDeclaration": FIELD_LENGTH,
-                    "returnByValue": true,
-                }),
-                on,
-            )
-            .ok()
-            .and_then(|read| read.pointer("/result/value").and_then(Value::as_i64))
-            == Some(typed)
-    }
-
-    /// **Ends the whole browser**: the value may have gone somewhere other than its field.
-    fn ended_mid_fill(&self, target: &Ref, origin: &str) -> Refusal {
-        lock(&self.inner.state).ended = true;
-        self.inner.changed.notify_all();
-        let _ = self.devtools().call("Browser.close", json!({}), None);
-        #[cfg(unix)]
-        self.stop(std::time::Duration::ZERO);
-        not_filled(format!(
-            "the page changed while purlis filled {target} on {origin}, so purlis ended this \
-             browser: open a new one with browser_new"
-        ))
-    }
 }
 
 /// The page's label made plain: one line, no characters a person doesn't see, at most
@@ -370,6 +336,14 @@ fn said_kind(kind: FieldKind) -> &'static str {
         FieldKind::Editable => "an editable area of the page",
         FieldKind::Other => "not a field that takes typing",
     }
+}
+
+/// What a fill is refused with where the field's document changed before the value went in.
+fn changed(target: &Ref, origin: &str) -> Refusal {
+    not_filled(format!(
+        "the page changed as purlis was about to fill {target} on {origin}, so nothing was \
+         filled: take a new snapshot"
+    ))
 }
 
 fn not_filled(why: String) -> Refusal {

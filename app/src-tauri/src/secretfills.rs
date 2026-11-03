@@ -48,8 +48,9 @@ pub struct FillWait {
     pub page: Option<String>,
     /// What the page labels the field: the page's words.
     pub label: String,
-    /// The vault isn't one the chat's persona is tagged for.
-    pub warning: Option<String>,
+    /// What the person is warned of: a vault the chat's persona isn't tagged for, a field in a
+    /// frame of another site than its page's.
+    pub warnings: Vec<String>,
     pub since: u64,
 }
 
@@ -65,10 +66,13 @@ impl FillWait {
             &self.origin,
             self.page.as_deref().unwrap_or_default(),
             &self.label,
-            self.warning.as_deref().unwrap_or_default(),
         ] {
             hash.update(part.len().to_le_bytes());
             hash.update(part.as_bytes());
+        }
+        for warning in &self.warnings {
+            hash.update(warning.len().to_le_bytes());
+            hash.update(warning.as_bytes());
         }
         hash.finalize()
             .iter()
@@ -186,6 +190,11 @@ impl Fills {
     /// Chat `session` closed: what it waited on goes with it, so nothing reaches a later chat
     /// dealt the same number, and its call stops waiting.
     pub fn forget(&self, session: u32) {
+        // Never between a press's read of what waits and its answer.
+        let _no_press = self
+            .answering
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let mut inner = self.lock();
         inner.kept.retain(|(chat, ..)| *chat != session);
         inner.waits.retain(|(one, tell)| {
@@ -227,11 +236,7 @@ pub fn kept_said(key: &str, origin: &str, reason: Option<&str>) -> String {
 
 /// **Whether `asked` may be put to the person, and what the notice warns of**: the field's frame
 /// has a web origin, the field is one line, and the project lets the key be offered.
-fn judged(
-    held: &Held,
-    session: u32,
-    asked: &FillAsked,
-) -> Result<(String, Option<String>), String> {
+fn judged(held: &Held, session: u32, asked: &FillAsked) -> Result<(String, Vec<String>), String> {
     let target = &asked.target;
     let Some(origin) = asked.field.origin.clone() else {
         return Err(format!(
@@ -249,16 +254,31 @@ fn judged(
         .persona_of(session)
         .and_then(|persona| persona.started_as);
     let ctx = Ctx::new(held.root(), Env::from_process());
-    let warning =
-        purlis_core::secretfill::judged(&ctx, persona.as_deref(), &asked.vault, &asked.key)?;
-    Ok((origin, warning))
+    let mut warnings: Vec<String> =
+        purlis_core::secretfill::judged(&ctx, persona.as_deref(), &asked.vault, &asked.key)?
+            .into_iter()
+            .collect();
+    warnings.extend(frame_warning(&origin, asked.page.as_deref()));
+    Ok((origin, warnings))
+}
+
+/// **What the person is warned of where the field's frame is on another site than its page**
+/// (#5115): a page may hold a part of another site's, and the secret goes to that part's site.
+fn frame_warning(origin: &str, page: Option<&str>) -> Option<String> {
+    let page = page.and_then(purlis_session_protocol::browsing::origin_of)?;
+    (page != origin).then(|| {
+        format!(
+            "The field is in a part of the page from {origin}, inside a page from {page}. Allow \
+             only if you know {origin} as the place this secret goes."
+        )
+    })
 }
 
 /// **Chat `session`'s fill `asked`, put to the person**, and the value to fill once they allowed
 /// it: or why nothing is filled, in words the chat reads. The call waits here for the answer, at
 /// most [`purlis_core::loginask::THE_PERSON_IS_WAITED_FOR`], under no lock of the browsers'.
 pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<Secret, String> {
-    let (origin, warning) = judged(held, session, asked)?;
+    let (origin, warnings) = judged(held, session, asked)?;
     let fills = held.secret_fills();
     if fills.kept(session, &asked.vault, &asked.key, &origin) {
         return Err(kept_said(&asked.key, &origin, None));
@@ -272,7 +292,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<S
         origin: origin.clone(),
         page: asked.page.clone(),
         label: asked.field.label.clone(),
-        warning,
+        warnings,
         since: now,
     };
     let (id, heard) = fills.raise(wait)?;
@@ -282,7 +302,12 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<S
         Ok(heard) => heard,
         Err(mpsc::RecvTimeoutError::Disconnected) => Heard::Gone,
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            // A press in that very moment has ended it, and its answer is waiting here.
+            // Under the presses' own hold, so a press is either wholly before this or finds the
+            // wait gone: a press in that very moment has ended it, and its answer waits here.
+            let _no_press = fills
+                .answering
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
             let pressed = if fills.end(id, Heard::Gone) {
                 Heard::Gone
             } else {
@@ -294,10 +319,15 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<S
     };
     match heard {
         Heard::Allowed => {
+            // Judged again as the project reads now: policy may have changed while it waited.
+            judged(held, session, asked)?;
             let (asker, _) = held
                 .chats()
                 .login_asker(held.root(), session)
-                .ok_or_else(|| NOT_ANSWERED.to_owned())?;
+                .ok_or_else(|| {
+                    "this chat is no longer open in purlis's window, so nothing was filled"
+                        .to_owned()
+                })?;
             purlis_core::secrets::brokered::fill_value(&asker, &asked.vault, &asked.key)
         }
         Heard::Kept(reason) => Err(kept_said(&asked.key, &origin, reason.as_deref())),

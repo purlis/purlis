@@ -1496,7 +1496,7 @@ pub fn secret_fill(
             page: wait.page.clone(),
             label: purlis_core::shown::short(&wait.label),
             browser: wait.browser.clone(),
-            warnings: wait.warning.iter().cloned().collect(),
+            warnings: wait.warnings.clone(),
         }),
     }
 }
