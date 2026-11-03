@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793678439510,
+  "lastUpdate": 1793680108684,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37128,6 +37128,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7732445,
             "unit": "ms",
             "extra": "median of 5 runs: 101.242, 101.334, 101.773, 102.196, 102.263 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b2387adf30401924f2f39c2ac18ab0e18082d4a8",
+          "message": "CI: the macOS scenarios run in the merge queue, not on a pull request (#4919)\n\n* CI: the macOS scenarios run in the merge queue, not on a pull request\n\n26 pull request runs held 35 of the 50 macOS runners with 112 macOS jobs\nwaiting, and the queue's head waited 50 minutes for its own. A pull request\nnow runs the scenarios on Linux and builds the app on macOS; the six macOS\nlegs run on the merge group and on main.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* CI: say which macOS jobs a pull request still runs; tighten the scenario-checks test\n\nReview of #4919: the comments and land.mjs still described the macOS\nscenarios as a pull request's, and the test matched a substring that a\nmerge_group clause could slip past.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T03:03:53Z",
+          "tree_id": "07e699db259714b09d78b3669b3fae259f56b869",
+          "url": "https://github.com/purlis/purlis/commit/b2387adf30401924f2f39c2ac18ab0e18082d4a8"
+        },
+        "date": 1793680105054,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5331205,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.515, 0.528, 0.533, 0.550, 0.554 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3678465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.312, 16.361, 16.368, 16.388, 16.468 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.12618499999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.083, 100.959, 101.126, 101.382, 101.685 ms"
           }
         ]
       }
