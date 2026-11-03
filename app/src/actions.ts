@@ -356,6 +356,9 @@ export type Does =
    *  nothing, and only a row that ends a chat is asked about first (`PlaneView.ENDS_A_CHAT`). */
   | { verb: "closePane"; ends: boolean }
   | { verb: "closeTab"; tab: number; ends: boolean }
+  /** Close other tabs (#4762): `closes` is the tabs it closes, every other tab on the strip of
+   *  `tab` but the pinned ones, and `ends` whether any of them holds a chat it would end. */
+  | { verb: "closeOtherTabs"; tab: number; closes: readonly number[]; ends: boolean }
   | { verb: "selectTab"; tab: number }
   /** Opens a chat's name for editing (charter-app#254, #4753): in place on the strip where the
    *  chat is its tab's own, and in a dialog where it has no tab. By the chat's number. */
@@ -918,6 +921,9 @@ export type Now = {
   /** The chats a launch has still to start (`restoring.rs`): none has a close until it has
    *  started, since there is no program yet to end. */
   restoring?: readonly number[];
+  /** The tabs Close other tabs on tab `tab` would close (#4762): every other tab on its strip
+   *  but the pinned ones (`tabs.otherTabsToClose`). None where the window does not say. */
+  otherTabs?: (tab: number) => readonly number[];
   /** The work item each chat works on, by session, as `chat_work_item` answered (ADR 0088). */
   workItems?: Readonly<Record<number, string>>;
   /** Whether a chat can have a work link: it is filed in a workspace. A chat at the project
@@ -1012,6 +1018,8 @@ export type Doing = {
   split: (direction: Direction) => void;
   closePane: () => void;
   closeTab: (tab: number) => void;
+  /** Closes each of `tabs`, as its own close does (#4762). */
+  closeOtherTabs: (tabs: readonly number[]) => void;
   selectTab: (tab: number) => void;
   /** Opens the chat's name for editing: on its tab where it has one, else in a dialog.
    *  Nothing is renamed until the operator says the name, so it answers no `Ran`. */
@@ -1519,6 +1527,9 @@ export const DISPATCHES_SHOW = "dispatches.show";
 export const BROWSERS_SHOW = "browsers.show";
 /** The Skill studio (#2765), offered only while its flag is on: `skillStudio.ts` spells it. */
 export { SKILL_STUDIO_SHOW };
+
+/** Why Close other tabs is not offered on a tab (#4762). */
+const NO_OTHER_TAB = "Every other tab here is pinned, or there is none.";
 
 /** An offer that can run, spelled once so `reason` cannot drift from `available`. */
 function can(id: string, title: string, does: Does, name?: string): Offer {
@@ -2068,9 +2079,8 @@ export function catalogue(now: Now): Offer[] {
   // thing gets on its strip is a mark, and pressing the mark runs this same row.
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
-    // A tab is pinned as its own chat, or — a tab with none — as the view it opened on. The
-    // pin is stored with whichever it is (the chat's record, or the view tab's), so it goes
-    // away with the thing it pins.
+    // **The one pin is the tab's** (#4762): the window keys it by the tab's first pane, its
+    // chat or the view it opened on, and the record holds it on the tab.
     const chat = chatOf(now.tabs, tab);
     const first = contentsOf(now.tabs, tab)[0]?.content;
     const held =
@@ -2080,7 +2090,7 @@ export function catalogue(now: Now): Offer[] {
     offers.push({
       ...can(
         `tab.pin:${tab}`,
-        `${held ? "Unpin" : "Pin"} ${chat === undefined ? "tab" : "chat"} ${name}`,
+        `${held ? "Unpin" : "Pin"} tab ${name}`,
         { verb: "pinTab", tab, pinned: !held },
         name,
       ),
@@ -2975,6 +2985,31 @@ export function catalogue(now: Now): Offer[] {
     });
   }
 
+  // **Close other tabs skips the pinned ones** (#4762): a pin is the operator saying a tab
+  // stays. One row, the tab in front's, however many tabs there are: a row per tab would be
+  // fifty more at fifty chats, all saying the same verb. It closes each tab as that tab's own
+  // close would, so the chats it ends are asked about first, and the tasks in them go back to
+  // the Chats list.
+  if (now.tabs.inFront !== undefined && now.tabs.byId[now.tabs.inFront] !== undefined) {
+    const tab = now.tabs.inFront;
+    const id = `tab.closeOthers:${tab}`;
+    const title = "Close other tabs";
+    const closes = now.otherTabs?.(tab) ?? [];
+    const restoring = (one: number) =>
+      panesOf(now.tabs, one).some((pane) => (now.restoring ?? []).includes(pane.session));
+    if (closes.length === 0) offers.push(cannot(id, title, NO_OTHER_TAB));
+    else if (closes.some(restoring)) offers.push(cannot(id, title, RESTORING_HAS_NO_CLOSE));
+    else {
+      const ends = closes.some((one) =>
+        panesOf(now.tabs, one).some((pane) => askedBy(pane.session) === undefined),
+      );
+      offers.push({
+        ...can(id, title, { verb: "closeOtherTabs", tab, closes, ends }),
+        ...(ends ? { note: ENDS_IT } : {}),
+      });
+    }
+  }
+
   offers.push(...stopRows(now.listed ?? [], now.stopping ?? []));
   offers.push(...taskEndRows(now.listed ?? [], now.stopping ?? []));
   offers.push(...taskRows(now.listed ?? []));
@@ -3244,6 +3279,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "closeTab":
       doing.closeTab(does.tab);
+      return DID;
+    case "closeOtherTabs":
+      doing.closeOtherTabs(does.closes);
       return DID;
     case "selectTab":
       doing.selectTab(does.tab);

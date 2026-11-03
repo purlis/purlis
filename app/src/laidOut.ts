@@ -181,6 +181,9 @@ export type PutBack = {
   placed: Set<number>;
   /** The views of pinned tabs that open on a view, as {@link viewKey}s. */
   pinnedViews: string[];
+  /** The chats of pinned tabs that open on a chat (#4762): the pin is the tab's, and a tab is
+   *  pinned by its first pane's chat, as the window reads it. */
+  pinnedChats: number[];
   /** Each strip's front tab, by workspace ({@link OUTSIDE} for the strip outside them). */
   fronts: Record<string, number>;
   /** The tab in front of the strip drawn, where one came back. */
@@ -199,6 +202,7 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
   let next = tabs;
   const placed = new Set<number>();
   const pinnedViews: string[] = [];
+  const pinnedChats: number[] = [];
   const fronts: Record<string, number> = {};
   let inFront: number | undefined;
   const inLayout = new Set(laid.tabs.flatMap((one) => chatsOf(one.tree)));
@@ -285,10 +289,11 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
     };
     for (const [view, split] of splits) next = setSplit(next, view, split);
     if (one.pinned && content.kind === "view") pinnedViews.push(viewKey(content.view));
+    if (one.pinned && content.kind === "session") pinnedChats.push(content.session);
     if (one.front) fronts[workspace] = id;
     if (one.front && one.window === 0 && one.workspace === laid.strip) inFront = id;
   }
-  return { tabs: next, placed, pinnedViews, fronts, inFront };
+  return { tabs: next, placed, pinnedViews, pinnedChats, fronts, inFront };
 }
 
 /** Every chat in a pane of `node`, in reading order. */

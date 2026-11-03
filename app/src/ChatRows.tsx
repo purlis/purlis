@@ -3,12 +3,14 @@
 
 import { SandboxMark, type SandboxSaid } from "./SandboxMark";
 import { memo, useMemo, type ReactNode } from "react";
-import { Hand, ListTodo, SquareTerminal } from "lucide-react";
+import { Columns2, Hand, ListTodo, Plus, SquareTerminal } from "lucide-react";
+import { PersonaMark } from "./PersonaMark";
 import { ChatMark, StoppingMark, WrappingUp } from "./NeedsYou";
 import { markOf, ownWorkOf, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { PlaneUpdatedMark, type PlaneUpdates } from "./PlaneUpdated";
-import { chatOf, contentsOf, panesOf, shownIn, type Tabs } from "./tabs";
-import { PersonaMark } from "./PersonaMark";
+import { contentsOf, panesOf, shownIn, type Tabs } from "./tabs";
+import type { TabFace } from "./tabFace";
+import { sameShown } from "./ChatPersonaState";
 import { ViewMark } from "./Views";
 import { shownState, type Shown, type TaskFacts } from "./shownState";
 import { StateShown } from "./StateShown";
@@ -45,11 +47,6 @@ export const ChatStateMark = memo(function ChatStateMark({
   const state = useChatsSelect(useChatsHere(), (states) => markOf(states, session ?? -1, shell));
   return <ChatMark state={state} />;
 });
-
-/** Whether two shown states say the same thing. */
-function sameShown(one: Shown | undefined, other: Shown | undefined): boolean {
-  return one === other || (one?.kind === other?.kind && one?.word === other?.word);
-}
 
 /**
  * **One chat's state as a row says it, a mark and a word, which reads that chat's state
@@ -108,74 +105,6 @@ export const ChatShownState = memo(function ChatShownState({
 });
 
 /**
- * **Who a chat runs as, with its state on it** (#3342, the operator's ruling of 2026-10-26): the
- * persona's mark in the persona's colour, first on the chat's row. A chat that asks for the person
- * or is at work wears its state's own mark on the persona's corner, shape and colour (`App.css`
- * draws `StateShown`'s mark as that badge); a chat at rest wears none. A chat with no persona
- * wears the terminal's mark. Its tooltip and what a screen reader hears both say the two:
- * `steward, needs you`.
- */
-export const ChatPersonaState = memo(function ChatPersonaState({
-  persona,
-  session,
-  shell,
-  report = null,
-  outcome = null,
-  harness,
-  changed = false,
-}: {
-  persona: string | null;
-  session: number;
-  changed?: boolean;
-  shell: boolean;
-  report?: TaskFacts["report"] | null;
-  outcome?: string | null;
-  harness: string | null;
-}) {
-  const below = useTasksBelow(session);
-  // Its question, where the asks registry says it stands (#4564): never a copy of its own.
-  const question = useQuestionStanding(session);
-  const shown = useChatsSelect(
-    useChatsHere(),
-    (states) =>
-      shownState({
-        board: markOf(states, session, shell),
-        needsYou: states.needsYou.includes(session) || question?.level === "needs-you",
-        task:
-          report === null
-            ? null
-            : { report, outcome, asking: question?.level === "with-asker" ? question.asker : null },
-        harness,
-        tasksAtWork: tasksAtWorkOf(states, below),
-        ownWork: ownWorkOf(states, session),
-      }),
-    sameShown,
-  );
-  const who = persona ?? "terminal";
-  const said = shown === undefined ? who : `${who}, ${shown.word}`;
-  return (
-    <span className="chat-persona" data-state={shown?.kind}>
-      {persona === null ? (
-        <Tooltip tip={said}>
-          <SquareTerminal className="node-icon" aria-hidden="true" />
-        </Tooltip>
-      ) : (
-        <PersonaMark persona={persona} tip={said} />
-      )}
-      {/* Heard after the chat's name, as the persona and then the state: the state's word is
-          `StateShown`'s, out of sight where it stands. */}
-      <span className="hidden-words">{shown === undefined ? who : `${who},`}</span>
-      {shown !== undefined && (
-        <>
-          {" "}
-          <StateShown shown={shown} changed={changed} markOnly />
-        </>
-      )}
-    </span>
-  );
-});
-
-/**
  * **Whether tab `id` shows a chat being stopped** (#1459): its own chat, or the task one of its
  * panes shows in its place. A task of the tab that is not on screen is the chip's to tell.
  */
@@ -205,7 +134,8 @@ export function TabMarks({
   pin,
   wrapping,
   stopping = NO_SESSIONS,
-  persona,
+  face,
+  personaOf,
   sandbox,
   task,
   taskOf,
@@ -228,8 +158,10 @@ export function TabMarks({
    *  room for. **Left out on the strip** (#1487): there the hand is on the tab's chip, beside
    *  the tab, and is pressed (`TabChip.tsx`). */
   needs?: readonly string[];
-  /** The persona the tab's chat runs as, when it runs as one: its mark is the tab's. */
-  persona?: string | null;
+  /** What the tab wears (`tabFace.ts`): its focused pane's icon and name, and `⊟+N`. */
+  face: TabFace;
+  /** The persona a chat runs as, when it runs as one: its mark is the combined icon's. */
+  personaOf: (session: number) => string | null | undefined;
   /** How much the tab's chat's sandbox holds (#2071): its mark is drawn after the name. */
   sandbox?: SandboxSaid | null;
   /** The chats wrapping up — being smart-closed (ADR 0064). */
@@ -244,47 +176,69 @@ export function TabMarks({
   /** The pin mark, on the strip; the menu of hidden tabs draws none. */
   pin?: ReactNode;
 }) {
-  const lead = contentsOf(tabs, id)[0]?.content;
-  const chat = chatOf(tabs, id);
-  if (lead?.kind === "view") {
+  const lead = face.lead;
+  if (lead.kind !== "chat") {
+    const focused = contentsOf(tabs, id).find((one) => one.pane === tabs.byId[id]?.focused);
+    const preview = focused?.content.kind === "view" && focused.content.preview === true;
     return (
       <>
-        <ViewMark view={lead.view} />
+        {pin}
+        {lead.kind === "view" ? (
+          <ViewMark view={lead.view} />
+        ) : (
+          <Plus className="tab-mark" data-mark="empty" aria-hidden="true" />
+        )}
         {/* The preview tab is in italics, as VS Code draws its own: the tab the next single
             click on a memory reuses (SI-9b). */}
-        <span className={lead.preview ? "tab-name is-preview" : "tab-name"} {...tabPart("label")}>
-          {tabs.byId[id].name}
+        <span className={preview ? "tab-name is-preview" : "tab-name"} {...tabPart("label")}>
+          {face.name}
         </span>
-        {pin}
+        <SplitMore more={face.more} />
       </>
     );
   }
+  const chat = lead.session;
+  const shell = shells.has(chat);
+  const persona = personaOf(chat);
   return (
     <>
-      {/* A shell tab's mark, before its name as a view's is: what kind of thing the tab holds,
-          read before the name is. A chat that runs as a persona wears that persona's (#1449);
-          one that runs as none wears nothing. */}
+      {/* **A pinned tab shows its pin before its icon** (#4762), and the pin is the tab's. */}
+      {pin}
+      {/* **The focused pane's chat's combined icon** (#4762): who it runs as, a persona's
+          mark or a shell's terminal (#1449), with its state's mark on its corner, in the
+          sidebar's look (`chatPersona.css`). The marks are the tab's own, as before: the state
+          is the board's (`ChatStateMark`). The badge is only seen: the tab says its state after
+          its name, below, as it always has. A chat with neither wears the state mark alone. A
+          task's own tab wears the task mark (#1489), whose state is said after its name. */}
       {taskOf !== undefined ? (
-        /* The task mark: what kind of thing the tab holds, read before its name is (#1489). */
         <ListTodo className="tab-mark" data-mark="task" aria-hidden="true" />
-      ) : chat !== undefined && shells.has(chat) ? (
-        <SquareTerminal className="tab-mark" data-mark="shell" aria-hidden="true" />
       ) : (
-        persona != null && <PersonaMark persona={persona} className="tab-mark" />
+        <span className="chat-persona tab-persona">
+          {shell ? (
+            <SquareTerminal className="tab-mark" data-mark="shell" aria-hidden="true" />
+          ) : (
+            persona != null && <PersonaMark persona={persona} className="tab-mark" />
+          )}
+          <StateBadge session={chat} shell={shell} />
+        </span>
       )}
       <span className="tab-name" {...tabPart("label")}>
-        {tabs.byId[id].name}
+        {face.name}
       </span>
+      <SplitMore more={face.more} />
       <SandboxMark level={sandbox?.level} why={sandbox?.why} sites={sandbox?.sites} />
-      {pin}
-      <PlaneUpdatedMark files={chat === undefined ? undefined : updates?.[chat]} />
-      {/* The first pane's session is the tab's own chat. Its own element, so what a tab IS
-          stays separate from what it is DOING — a tab whose text changed every time a turn
-          began would be unreadable, and untestable.
-
-          **Before the task's name, where the tab shows a task** (#1486): the mark is the
-          session's, and beside the session's name it reads as the session's. */}
-      <ChatStateMark session={chat} shell={chat !== undefined && shells.has(chat)} />
+      <PlaneUpdatedMark files={updates?.[chat]} />
+      {/* **What the tab is doing, said after what it is**: its own element, so a tab whose text
+          changed every time a turn began would not be unreadable, and before the task's name
+          where it shows one (#1486). A task's own tab draws it here (#1489); any other tab wears
+          it as the icon's badge, so here it is heard and not seen. */}
+      {taskOf !== undefined ? (
+        <ChatStateMark session={chat} shell={shell} />
+      ) : (
+        <span className="hidden-words">
+          <ChatStateMark session={chat} shell={shell} />
+        </span>
+      )}
       {/* **`talk · steward 4`, on a task's own tab** (#1489): whose task it is, dimmer. To a
           screen reader the separator is the words it stands for. */}
       {taskOf !== undefined && (
@@ -332,6 +286,41 @@ export function TabMarks({
       <StoppingMark held={showsStopping(tabs, id, stopping)} />
       <WrappingUp held={panesOf(tabs, id).some((one) => wrapping.has(one.session))} />
     </>
+  );
+}
+
+/**
+ * **The state's dot on a tab's icon** (#4762): seen and not heard, since the tab says its state
+ * after its name (`ChatStateMark`, in hidden words). A dot of its own, read off the chat's
+ * state as that mark reads it, so a move redraws the two and no other row (SC-3). A chat with
+ * no mark to draw (`markOf`) wears none.
+ */
+const StateBadge = memo(function StateBadge({
+  session,
+  shell,
+}: {
+  session: number;
+  shell: boolean;
+}) {
+  const state = useChatsSelect(useChatsHere(), (states) => markOf(states, session, shell));
+  if (state === undefined) return null;
+  // `state-dot`, never `state`: the tab's one `.state` is the mark that says the word, which
+  // the scenario specs read (`chat.state.e2e.ts`).
+  return <span className={`state-dot state-${state}`} data-state={state} aria-hidden="true" />;
+});
+
+/**
+ * **`⊟+N`: how many other panes share a split tab** (#4762), after its name and never giving way
+ * to it: the name is cut first. A screen reader hears it as words.
+ */
+function SplitMore({ more }: { more: number }) {
+  if (more <= 0) return null;
+  return (
+    <span className="tab-split-more" data-mark="split">
+      <Columns2 aria-hidden="true" />
+      <span aria-hidden="true">+{more}</span>
+      <span className="hidden-words">, split, {more + 1} panes</span>
+    </span>
   );
 }
 

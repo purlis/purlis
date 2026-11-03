@@ -474,7 +474,8 @@ describe("moving a task to a tab of its own", () => {
   it("is offered on the task's line in its tab's menu: Enter with a modifier, and a button at the line's end", async () => {
     const { asked } = await drawn(withTasks());
     const open = async () => {
-      press(within(cell("steward 1")).getByRole("button", { name: /^Tasks of steward 1/ }));
+      // By its chip, which says the session's name whatever pane the tab wears (#4762).
+      press(within(strip()).getByRole("button", { name: /^Tasks of steward 1/ }));
       return screen.findByRole("menu", { name: /^Tasks of steward 1/ });
     };
     const lineOf = (menu: HTMLElement, name: string) => {
@@ -514,13 +515,15 @@ describe("moving a task to a tab of its own", () => {
     press(places[1]);
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
     expect(screen.queryByRole("menu")).toBeNull();
-    expect(tabNames()).toEqual(["steward 1", "steward 2", "sweep"]);
+    // The tab wears its focused pane's name (#4762): the task, opened beside its session.
+    expect(tabNames()).toEqual(["talk", "steward 2", "sweep"]);
 
     // Alt+Enter is beside its session.
     menu = await open();
     lineOf(menu, "sweep").focus();
     await userEvent.keyboard("{Alt>}{Enter}{/Alt}");
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "steward 2"]));
+    // Beside its session, in its focused pane, so the session's tab wears it (#4762).
+    await waitFor(() => expect(tabNames()).toEqual(["sweep", "steward 2"]));
     expect(onScreen()).toContain(5);
     expect(ended(asked)).toEqual([]);
   });
@@ -609,9 +612,11 @@ describe("opening a task beside its session", () => {
     await userEvent.keyboard(" ");
 
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
-    // No tab was added, and the tab is the session's.
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
-    expect(tab("steward 1").getAttribute("aria-selected")).toBe("true");
+    // No tab was added, and the tab is the session's: it wears its focused pane, the task
+    // opened beside it (#4762), and `⊟+1` for the session's pane.
+    expect(tabNames()).toEqual(["talk", "steward 2"]);
+    expect(tab("talk").getAttribute("aria-selected")).toBe("true");
+    expect(tab("talk").querySelector(".tab-split-more")).not.toBeNull();
     // Each pane says which chat it is.
     expect(crumbsSaid()).toEqual([
       expect.stringMatching(/^steward 1 ·/),
@@ -654,7 +659,7 @@ describe("opening a task beside its session", () => {
     await userEvent.keyboard(" ");
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
 
-    press(within(cell("steward 1")).getByRole("button", { name: /^Tasks of steward 1/ }));
+    press(within(cell("talk")).getByRole("button", { name: /^Tasks of steward 1/ }));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
     const names = within(menu)
       .getAllByRole("menuitem")
@@ -704,7 +709,7 @@ describe("opening a task beside its session", () => {
     await userEvent.keyboard(" ");
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
 
-    await userEvent.click(ender("steward 1") as HTMLElement);
+    await userEvent.click(ender("talk") as HTMLElement);
     // One chat ends, the session: the question is the one a session's close always asked.
     const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
