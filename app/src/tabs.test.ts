@@ -297,6 +297,16 @@ describe("tabs and their panes", () => {
     expect(visibleSessions(tabs)).toEqual([11]);
   });
 
+  it("focuses the pane that grows into a closed pane's space, not the tab's first (#4756, #4767)", () => {
+    // 11 on the left; 12 over 13 on the right. Closing 13 grows 12, which takes the keyboard.
+    const right = splitFocusedPane(openTab(noTabs(), 11), "row", 12);
+    const three = splitFocusedPane(right, "column", 13);
+    const tabs = closeFocusedPane(three, oneWorkspace);
+    const tab = tabs.byId[front(tabs)];
+
+    expect(panesOf(tabs, tab.id).find((one) => one.pane === tab.focused)?.session).toBe(12);
+  });
+
   it("closes the tab when its last pane closes, and the strip has another (#4756)", () => {
     const opened = twoTabs();
     const tabs = closeFocusedPane(opened, oneWorkspace);
