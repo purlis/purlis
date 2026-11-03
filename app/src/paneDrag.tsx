@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { keySaid, pressed } from "./keys/registry";
 import { Notice } from "./Notice";
+import { REGION_CHROME } from "./RegionFrame";
 import {
   type Box,
   type DropContext,
@@ -784,7 +785,9 @@ export function PaneGrip({ tab, pane }: { tab: number; pane: number }) {
       icon={<GripVertical aria-hidden="true" />}
       aria-label={gripName(tab, pane)}
       tooltip={`Drag it, or press to place it with the keys (${keySaid("pane.place")})`}
-      {...{ [GRIP_HANDLE]: "" }}
+      // F6 into the editor passes over it to the pane's own controls, as over the strip; Tab
+      // still stops on it.
+      {...{ [GRIP_HANDLE]: "", [REGION_CHROME]: "" }}
       onPress={() => pickUp({ kind: "pane", tab, pane }, self.current)}
     />
   );
