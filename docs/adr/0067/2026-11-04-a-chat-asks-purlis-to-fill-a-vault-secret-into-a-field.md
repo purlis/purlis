@@ -36,10 +36,14 @@ itself, at session protocol 1.72, which a host before refuses; the notice with A
 Keep blocked; one-line fields alone, any other refused; and the value kept out for the
 browser's life. The rest of the rulings are #5116 to #5122.
 
-*Decided in implementation (D-5115-1 to D-5115-8 in the pull request):* the fill runs under the
+*Decided in implementation (D-5115-1 to D-5115-10 in the pull request):* the fill runs under the
 agent's own lease, as one of its acts, so a take-over cuts it; the field's kind and label are read
-in purlis's own world; the fill is refused where the frame's document changed, or the field lost
-the focus, before the value goes in, and ends the whole browser where either happens as it goes
-in; a chat can't send the field read itself; a runner's browser fills nothing yet; Keep blocked
-on a key and a site isn't asked again in that chat, and two end the chat's fill notices; a
-press is audited as `secret-fill`, naming the vault, the key and the origin.
+in purlis's own world; the value is written into that one element by a function in purlis's own
+world, which checks in the same step that the element's document is still on the approved
+origin, so no focus and no moment between a check and a write decides where it goes; a field
+that doesn't keep the value whole is emptied and nothing is filled; from a fill on, the agent
+copies and cuts nothing in that browser, for its life; a chat can't send the field read itself; a
+runner's browser fills nothing yet; a field in a frame of another site than its page's is warned
+of; Keep blocked on a key and a site isn't asked again in that chat, and two end the chat's fill
+notices; a press is audited as `secret-fill`, naming the vault, the key and the origin; the
+person's view of the browser says what was filled where, and why a fill was refused.

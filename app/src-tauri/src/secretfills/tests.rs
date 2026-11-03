@@ -20,7 +20,7 @@ fn wait(origin: &str) -> FillWait {
         origin: origin.into(),
         page: Some(format!("{origin}/settings")),
         label: "API key".into(),
-        warning: None,
+        warnings: Vec::new(),
         since: 1,
     }
 }
@@ -198,7 +198,7 @@ fn the_notice_names_the_key_the_vault_and_the_site_and_offers_once_and_keep() {
     let locks = purlis_core::sandbox::policy::Locks::of(dir.path());
     let mut one = wait("https://dash.example.test");
     one.id = 3;
-    one.warning = Some("Vault qa isn't tagged for dev.".into());
+    one.warnings = vec!["Vault qa isn't tagged for dev.".into()];
 
     let shown = crate::asking::secret_fill(&one, &locks);
 
@@ -220,4 +220,23 @@ fn the_notice_names_the_key_the_vault_and_the_site_and_offers_once_and_keep() {
     // A site that isn't https says its scheme.
     let local = crate::asking::secret_fill(&wait("http://localhost:3000"), &locks);
     assert_eq!(local.fill.expect("a fill").site, "http://localhost:3000");
+}
+
+#[test]
+fn a_field_in_a_frame_of_another_site_than_its_page_is_warned_of() {
+    let warned = frame_warning(
+        "https://pay.example.test",
+        Some("https://shop.example.test/checkout"),
+    )
+    .expect("warned");
+    assert!(warned.contains("https://pay.example.test"), "{warned}");
+    assert!(warned.contains("https://shop.example.test"), "{warned}");
+    assert_eq!(
+        frame_warning(
+            "https://shop.example.test",
+            Some("https://shop.example.test/a")
+        ),
+        None
+    );
+    assert_eq!(frame_warning("https://shop.example.test", None), None);
 }

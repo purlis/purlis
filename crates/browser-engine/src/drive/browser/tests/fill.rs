@@ -7,13 +7,10 @@
 //! filling, and the value is kept out of every later answer.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
 
 use serde_json::json;
 
-use super::super::fill::FIELD_KIND;
-use super::super::login::{FIELD_HAS_FOCUS, FIELD_LENGTH};
+use super::super::fill::{FIELD_KIND, WRITE_FIELD};
 use super::{Engine, browser, id, ref_of, snapshot};
 use crate::drive::{Call, Content, Ref, Refusal, SecretFill};
 
@@ -23,39 +20,28 @@ const VALUE: &str = "open sesame";
 #[derive(Clone, Copy, PartialEq)]
 enum Twist {
     None,
-    /// The page loads another document as purlis types.
+    /// The field's document has moved on, or off the origin, by the time the value is written.
     Moves,
+    /// The field keeps less than was written into it: a number field given letters.
+    Shortens,
 }
 
-/// The stand-in's fields, each read as `kind`, and what they hold once typed into.
+/// The stand-in's fields, each read as `kind`, and what each write into them answers.
 fn as_fields(engine: &Arc<Engine>, kind: &'static str, twist: Twist) {
-    let typed = Arc::new(AtomicUsize::new(0));
-    engine.on(move |sent, engine| {
+    engine.on(move |sent, _engine| {
         let p = &sent.params;
         match sent.method.as_str() {
             "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_KIND => Some(Ok(
                 json!({ "result": { "type": "object", "value": { "kind": kind, "label": "Secret word" } } }),
             )),
-            "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_HAS_FOCUS => {
-                Some(Ok(json!({ "result": { "type": "boolean", "value": true } })))
-            }
-            "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_LENGTH => {
-                let held = typed.load(Ordering::SeqCst);
-                Some(Ok(json!({ "result": { "type": "number", "value": held } })))
-            }
-            "Input.insertText" => {
-                let text = p["text"].as_str().unwrap_or_default();
-                typed.store(text.encode_utf16().count(), Ordering::SeqCst);
-                if twist == Twist::Moves {
-                    engine.emit(
-                        "Page.frameNavigated",
-                        json!({ "frame": { "id": "PAGE-1", "loaderId": "LOADER-ELSEWHERE",
-                                           "url": "http://fixture.test/frames.html", "name": "" } }),
-                        Some("S-PAGE-1"),
-                    );
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-                Some(Ok(json!({})))
+            "Runtime.callFunctionOn" if p["functionDeclaration"] == WRITE_FIELD => {
+                let value = p["arguments"][1]["value"].as_str().unwrap_or_default();
+                let held = value.encode_utf16().count();
+                Some(Ok(match twist {
+                    Twist::None => json!({ "result": { "type": "number", "value": held } }),
+                    Twist::Moves => json!({ "result": { "type": "string", "value": "moved" } }),
+                    Twist::Shortens => json!({ "result": { "type": "number", "value": 0 } }),
+                }))
             }
             _ => None,
         }
@@ -71,8 +57,27 @@ fn fill_of(target: Ref, origin: &str) -> SecretFill {
     }
 }
 
+/// The values purlis wrote into fields, in order, and whether it pressed any key or typed.
+fn written(engine: &Engine) -> Vec<String> {
+    assert!(
+        engine.sent("Input.insertText").is_empty(),
+        "nothing is typed by focus"
+    );
+    engine
+        .sent("Runtime.callFunctionOn")
+        .iter()
+        .filter(|sent| sent.params["functionDeclaration"] == WRITE_FIELD)
+        .map(|sent| {
+            sent.params["arguments"][1]["value"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect()
+}
+
 fn inserted(engine: &Engine) -> usize {
-    engine.sent("Input.insertText").len()
+    written(engine).len()
 }
 
 /// How a fill ended, in words fixed in this file.
@@ -96,12 +101,18 @@ fn a_one_line_field_on_the_approved_origin_is_filled_and_its_value_kept_out() {
         .unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
 
     assert!(answer.note.unwrap_or_default().contains("dash-api-key"));
-    let typed: Vec<String> = engine
-        .sent("Input.insertText")
-        .iter()
-        .map(|sent| sent.params["text"].as_str().unwrap_or_default().to_owned())
-        .collect();
-    assert_eq!(typed, [VALUE]);
+    assert_eq!(written(&engine), [VALUE]);
+    // Written into that one element, checked against the approved origin in the same step.
+    let write = engine
+        .sent("Runtime.callFunctionOn")
+        .into_iter()
+        .find(|sent| sent.params["functionDeclaration"] == WRITE_FIELD)
+        .expect("written");
+    assert_eq!(write.params["arguments"][2]["value"], "http://fixture.test");
+    assert!(
+        !write.params["uniqueContextId"].is_null(),
+        "in purlis's own world"
+    );
     let text = snapshot(&browser, 2);
     assert!(!text.to_lowercase().contains(VALUE), "{text}");
     let found = browser
@@ -157,7 +168,7 @@ fn a_field_that_is_not_one_line_is_refused_before_anything_is_typed() {
 }
 
 #[test]
-fn a_page_that_moves_as_the_value_goes_in_ends_the_browser() {
+fn a_field_whose_document_moved_when_the_value_is_written_takes_nothing() {
     let (browser, engine) = browser();
     as_fields(&engine, "one_line", Twist::Moves);
     let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
@@ -165,13 +176,68 @@ fn a_page_that_moves_as_the_value_goes_in_ends_the_browser() {
     let filled = browser.fill_secret(browser.epoch(), &fill_of(secret, "http://fixture.test"));
 
     match filled {
-        Err(Refusal::NotFilled(why)) => assert!(why.contains("ended this browser"), "{why}"),
+        Err(Refusal::NotFilled(why)) => assert!(why.contains("nothing was filled"), "{why}"),
         other => panic!("refused otherwise: {}", ended_as(&other)),
     }
-    assert!(
-        !engine.sent("Browser.close").is_empty(),
-        "the whole browser is ended"
+}
+
+#[test]
+fn a_field_that_does_not_keep_the_value_whole_is_refused_in_words_that_say_why() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::Shortens);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+
+    let filled = browser.fill_secret(browser.epoch(), &fill_of(secret, "http://fixture.test"));
+
+    match filled {
+        Err(Refusal::NotFilled(why)) => {
+            assert!(why.contains("did not keep the value whole"), "{why}")
+        }
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    assert!(engine.sent("Browser.close").is_empty(), "the browser stays");
+}
+
+#[test]
+fn once_a_secret_is_filled_the_agent_copies_and_cuts_nothing_in_that_browser() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    let press = |n: u32, keys: &[&str]| {
+        browser.call(
+            &id(n),
+            Call::Press {
+                page: None,
+                keys: keys.iter().map(|key| (*key).to_owned()).collect(),
+            },
+        )
+    };
+    // Before a fill, a copy is the agent's to make.
+    assert!(press(2, &["Control+c"]).is_ok());
+    browser
+        .fill_secret(browser.epoch(), &fill_of(secret, "http://fixture.test"))
+        .unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
+    let keys_before = engine.sent("Input.dispatchKeyEvent").len();
+
+    for (n, chord) in [
+        (3, "Control+c"),
+        (4, "Meta+x"),
+        (5, "Control+Insert"),
+        (6, "Shift+Delete"),
+    ] {
+        assert_eq!(
+            press(n, &["Control+a", chord]),
+            Err(Refusal::CopyWithheld),
+            "{chord}"
+        );
+    }
+
+    assert_eq!(
+        engine.sent("Input.dispatchKeyEvent").len(),
+        keys_before,
+        "no key of a refused press reached the page"
     );
+    assert!(press(7, &["Tab"]).is_ok(), "other keys still go");
 }
 
 #[test]
