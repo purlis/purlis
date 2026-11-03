@@ -9865,6 +9865,15 @@ fn a_task_pressed_into_a_pane_is_held_from_that_layout_and_the_chat_it_replaced_
 
     assert!(chats.looks_at(task), "held from the press's own layout");
     assert!(!chats.looks_at(asker));
+    let looking = |chat_on_screen| crate::asknotify::Looking {
+        window_in_front: true,
+        inbox_open: false,
+        chat_on_screen,
+    };
+    assert!(
+        looking(chats.looks_at(task)).is_looking(),
+        "a notification about the task is held back while the person reads it"
+    );
     assert!(
         lock(&chats.open).contains_key(&asker),
         "the chat the press replaced keeps running"
@@ -9878,6 +9887,10 @@ fn a_task_pressed_into_a_pane_is_held_from_that_layout_and_the_chat_it_replaced_
     assert!(
         !chats.looks_at(task),
         "its end is no longer held by the pane"
+    );
+    assert!(
+        !looking(chats.looks_at(task)).is_looking(),
+        "and a notification about it is sent again"
     );
     assert!(
         lock(&chats.open).contains_key(&task),

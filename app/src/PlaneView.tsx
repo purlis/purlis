@@ -343,6 +343,7 @@ import {
   type AskedBy,
   type Backgrounded,
   type Pinned,
+  type Tab,
   type Tabs,
   type ViewRef,
 } from "./tabs";
@@ -3950,11 +3951,7 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /** The chats in the tab in front's other panes, which the sidebar marks faintly (#4757). */
-  const besidesKey = shownBeside(tabs).join(",");
-  const besides = useMemo(
-    () => new Set(besidesKey === "" ? [] : besidesKey.split(",").map(Number)),
-    [besidesKey],
-  );
+  const besides = useMemo(() => new Set(shownBeside(tabs)), [tabs]);
   /** What a press reads that the tabs do not hold (#4757): where each chat is filed, and each
    *  strip's front tab as the window last left it. */
   const pressing = useMemo<Pressing>(
@@ -7615,8 +7612,8 @@ export const PlaneView = memo(function PlaneView({
     if (tab === undefined) return to;
     for (const pane of Object.keys(frontAway).map(Number)) {
       if (tab.shows?.[pane] !== undefined) continue;
-      const before = tab.previous?.[pane];
-      to[pane] = before !== undefined && chatsByNumber.has(before) ? nameOf(before) : null;
+      const before = previousOpen(tab, pane, (session) => chatsByNumber.has(session));
+      to[pane] = before === undefined ? null : nameOf(before);
     }
     return to;
   }, [chatsByNumber, frontAway, nameOf, tabs]);
@@ -8920,8 +8917,8 @@ export const PlaneView = memo(function PlaneView({
       if (id === undefined) return;
       const tab = now.current.byId[id];
       if (tab.shows?.[pane] === undefined) {
-        const before = tab.previous?.[pane];
-        if (before !== undefined && listedNow.current.has(before)) {
+        const before = previousOpen(tab, pane, (session) => listedNow.current.has(session));
+        if (before !== undefined) {
           showChat(before, { tab: id, pane });
           return;
         }
@@ -11292,6 +11289,19 @@ const NO_ASKS: readonly Shown[] = [];
  * can read now where it can, and otherwise the one it last could. Only for what a pane shows
  * now. Answers `was` itself when nothing changed, so it can be held as state.
  */
+/**
+ * **Where an ended task's pane goes back to** (#4757): the chat it showed before, where `open`
+ * says that chat is still open, and otherwise nothing, which clears the pane.
+ */
+function previousOpen(
+  tab: Tab,
+  pane: number,
+  open: (session: number) => boolean,
+): number | undefined {
+  const before = tab.previous?.[pane];
+  return before !== undefined && open(before) ? before : undefined;
+}
+
 function recalledCrumbs(
   was: ReadonlyMap<string, Crumbs>,
   live: ReadonlyMap<string, Crumbs>,

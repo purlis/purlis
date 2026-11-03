@@ -4996,15 +4996,24 @@ function tabChatRows(now: Now): Offer[] {
   const front = now.tabs.inFront === undefined ? undefined : now.tabs.byId[now.tabs.inFront];
   const pane = front && panesOf(now.tabs, front.id).find((one) => one.pane === front.focused);
   if (front === undefined || pane === undefined) {
+    const focused =
+      front === undefined
+        ? undefined
+        : contentsOf(now.tabs, front.id).find((one) => one.pane === front.focused)?.content;
     const why =
       front === undefined
         ? "No chat is in front."
-        : "The pane in focus shows a view, not a chat, so it has no tasks.";
+        : focused?.kind === "empty"
+          ? "The pane in focus shows nothing, so it has no tasks."
+          : "The pane in focus shows a view, not a chat, so it has no tasks.";
     return [
       cannot(TAB_TASKS_ID, titles.tasks, why),
       cannot(NEXT_CHAT_ID, titles.next, why),
       cannot(PREVIOUS_CHAT_ID, titles.previous, why),
-      cannot(OWN_CHAT_ID, titles.own, why),
+      // ⌘⇧H still goes back from a pane a chat left empty (#4757): it remembers that chat.
+      front !== undefined && focused?.kind === "empty"
+        ? backRow(now, front, titles.own, mac)
+        : cannot(OWN_CHAT_ID, titles.own, why),
     ];
   }
   // A task in a tab of its own is listed by this tab's menu and is not a chat IN this tab:

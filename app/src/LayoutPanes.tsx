@@ -150,9 +150,8 @@ export function PaneFrame({
   ending?: ReactNode;
   /** The menu a right-click on a task's breadcrumb opens: its row's in the Chats list. */
   crumbMenu?: { session: number; offers: Catalogued; onPress: (offer: Offer) => void };
-  /** Goes to a chat: what a name in the breadcrumb does, and a hidden chat's Notice. */
-  /** Goes to a chat. `pane` is the pane whose breadcrumb named it, which shows it in place
-   *  (#4757); nothing for a press from anywhere else. */
+  /** Goes to a chat: what a name in the breadcrumb does, in this pane (#4757), and a hidden
+   *  chat's Notice. */
   onShowChat: (session: number, pane?: number) => void;
   /** Where a handed-off chat came from, `↳ from steward 3 · ops`, in the chat's own corner. */
   from?: string;
@@ -376,9 +375,7 @@ export function PaneNotices({
    *  own, before each other chat's, since each waits for the person. */
   asked?: ReactNode;
   others: readonly HiddenChat[];
-  /** Goes to a chat. `pane` is the pane whose breadcrumb named it, which shows it in place
-   *  (#4757); nothing for a press from anywhere else. */
-  onShowChat: (session: number, pane?: number) => void;
+  onShowChat: (session: number) => void;
 }) {
   // The window's choice, kept (`paneNoticesPref.ts`), handed to the band with the bell's ear.
   const minimised = useNoticesMinimised();
@@ -424,9 +421,7 @@ export function NoticeOfChat({
   session: number;
   whose: string;
   task: boolean;
-  /** Goes to a chat. `pane` is the pane whose breadcrumb named it, which shows it in place
-   *  (#4757); nothing for a press from anywhere else. */
-  onShowChat: (session: number, pane?: number) => void;
+  onShowChat: (session: number) => void;
   children: ReactNode;
 }) {
   const of = useMemo(
@@ -531,9 +526,8 @@ export function LayoutPanes({
   closeOf: (pane: number) => Offer | undefined;
   /** Pane `pane` goes back to its session's own chat. */
   onBack: (pane: number) => void;
-  /** Goes to a chat: what a name in a breadcrumb does. */
-  /** Goes to a chat. `pane` is the pane whose breadcrumb named it, which shows it in place
-   *  (#4757); nothing for a press from anywhere else. */
+  /** Goes to a chat: what a name in a breadcrumb does, with the pane it was named in, which
+   *  shows it in place (#4757). */
   onShowChat: (session: number, pane?: number) => void;
   focused: number;
   onFocus: (pane: number) => void;

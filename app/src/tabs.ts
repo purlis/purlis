@@ -1364,10 +1364,12 @@ export function press(tabs: Tabs, chat: PressedChat, at: Pressing, into?: PaneAt
         ? openTab(tabs, chat.session, chat.chat, chat.who ?? null, chat.label ?? null)
         : showChatAt(tabs, target, chat, at.filedIn);
   const used = noteUsed(next);
-  return {
-    tabs: used,
-    workspace: used.inFront === undefined ? undefined : workspaceOf(used, used.inFront, at.filedIn),
-  };
+  return { tabs: used, workspace: stripInFront(used, at.filedIn) };
+}
+
+/** The strip of the tab in front, which the window draws, or none with nothing in front. */
+function stripInFront(tabs: Tabs, filedIn: FiledIn): string | undefined {
+  return tabs.inFront === undefined ? undefined : workspaceOf(tabs, tabs.inFront, filedIn);
 }
 
 /**
@@ -1385,11 +1387,7 @@ export function back(
   const before = tab?.previous?.[tab.focused];
   const named = before === undefined ? undefined : chat(before);
   if (tab === undefined || named === undefined)
-    return {
-      tabs,
-      workspace:
-        tabs.inFront === undefined ? undefined : workspaceOf(tabs, tabs.inFront, at.filedIn),
-    };
+    return { tabs, workspace: stripInFront(tabs, at.filedIn) };
   return press(tabs, named, at, { tab: tab.id, pane: tab.focused });
 }
 
@@ -1411,7 +1409,7 @@ export function shownBeside(tabs: Tabs): number[] {
  * tab is pinned by its first pane's chat as the window reads it (#4762), and a press still
  * replaces the focused pane of a pinned tab. Answers `pinned` itself when nothing moved.
  */
-export function pinsFollowed(before: Tabs, after: Tabs, pinned: readonly number[]): number[] {
+export function pinsFollowed(before: Tabs, after: Tabs, pinned: number[]): number[] {
   let next = [...pinned];
   for (const id of after.order) {
     const was = contentsOf(before, id)[0]?.content;
@@ -1420,7 +1418,7 @@ export function pinsFollowed(before: Tabs, after: Tabs, pinned: readonly number[
     if (!next.includes(was.session) || next.includes(now.session)) continue;
     next = next.map((one) => (one === was.session ? now.session : one));
   }
-  return next.every((one, at) => one === pinned[at]) ? (pinned as number[]) : next;
+  return next.every((one, at) => one === pinned[at]) ? pinned : next;
 }
 
 /** The pane that shows chat `session`, in any tab. */

@@ -91,6 +91,7 @@ import {
   splitFocusedPane,
   switchTabTo,
   press,
+  showIn,
   viewKey,
   type Tabs,
   type ViewRef,
@@ -4051,6 +4052,22 @@ describe("the chats inside the tab in front (#1487)", () => {
     expect(by(ended, "tasks.own")).toMatchObject({
       available: false,
       reason: "chat 1 has ended, so there is nothing to go back to.",
+    });
+  });
+
+  it("goes back from a pane a chat left empty, which still remembers that chat (#4757)", () => {
+    const pressing = { filedIn: () => "ops", frontOf: () => undefined };
+    const onTwo = press(two(), { session: 2, chat: "2" }, pressing).tabs;
+    const front = onTwo.byId[onTwo.inFront as number];
+    const cleared = showIn(onTwo, front.id, front.focused, { kind: "empty", workspace: "ops" });
+
+    expect(by(rows(cleared), "tasks.own")).toMatchObject({
+      available: true,
+      does: { verb: "paneBack" },
+    });
+    expect(by(rows(cleared), "tasks.menu")).toMatchObject({
+      available: false,
+      reason: "The pane in focus shows nothing, so it has no tasks.",
     });
   });
 
