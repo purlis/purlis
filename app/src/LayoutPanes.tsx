@@ -53,6 +53,7 @@ import { BriefButton, type BriefAsk } from "./Brief";
 import { PaneCrumbs } from "./PaneCrumbs";
 import { ChipExplained, type ChipToExplain } from "./ChipExplained";
 import { TaskEndAsked } from "./TaskEnd";
+import { SAID } from "./menuWords";
 import { giveKeyboardTo } from "./paneKeyboard";
 import { StateShown } from "./StateShown";
 import { ViewPane } from "./Views";
@@ -93,7 +94,7 @@ import { useSaidAtMost } from "./ui/said";
 /**
  * **The rows of the panes' menu, for a terminal to list under its own** (`TerminalMenu.tsx`):
  * a right-click on a terminal opens the terminal's menu, and what the panes' menu offered
- * there before — a new tab, the splits, ending the chat — is the same catalogue rows, picked
+ * there — the splits, Tile all, Send F2 and Close pane — is the same catalogue rows, picked
  * out by the ids that menu lists (`actions.menuOn`).
  */
 export function paneMenuOf(
@@ -190,10 +191,10 @@ export function PaneFrame({
    *  sandbox and whether it wraps up. None where the plane has not listed it yet. */
   head?: ChatHead;
   /** The head's right-click (#4760): the chat's list, then this pane's rows. */
-  /** `tab` is the tab the pane is in, whose Tile all is among the pane's rows (#4765). */
   headMenu?: {
     offers: Catalogued;
     pane: Catalogued;
+    /** The tab the pane is in, whose Tile all is among the pane's rows (#4765). */
     tab?: number;
     onPress: (offer: Offer) => void;
   };
@@ -516,6 +517,7 @@ export function PaneStateButton({
   task,
   offers,
   brief,
+  ended = false,
   onPress,
 }: {
   session: number;
@@ -524,6 +526,10 @@ export function PaneStateButton({
   /** Where the pane can open the task's brief itself (`BriefButton`), which hands the keyboard
    *  back to the button. */
   brief?: BriefAsk;
+  /** **The pane is left on a task that has ended** (#4757): nothing of it runs or is listed, so
+   *  its one button is its Brief, read by its finished row's record, and none once that row is
+   *  gone (#1494). */
+  ended?: boolean;
   onPress: (offer: Offer) => void;
 }) {
   const working = useChatsSelect(
@@ -531,6 +537,10 @@ export function PaneStateButton({
     (states) => stateOf(states, session) === "running",
   );
   const drops = useContext(PaneDropsOf);
+  if (ended)
+    return brief === undefined ? null : (
+      <BriefButton of={brief} word={drops.has("buttonWord") ? undefined : SAID.brief} />
+    );
   const pick = stateButtonOf({ session, task, working, has: (id) => offers.has(id) });
   const offer = pick === undefined ? undefined : offers.get(pick.id);
   if (pick === undefined || offer === undefined) return null;
@@ -1048,6 +1058,7 @@ export function LayoutPanes({
                   ? undefined
                   : briefOfShown(path)
             }
+            ended={endedTask !== undefined}
             onPress={(offer) => onPaneDoes(layout.pane, offer)}
           />
         }

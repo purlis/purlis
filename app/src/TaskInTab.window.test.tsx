@@ -876,6 +876,31 @@ describe("a shown task that ends", () => {
     expect(away()).toBeNull();
   });
 
+  it("keeps its Brief on the head, read by its finished row's record", async () => {
+    // Nothing of an ended task is listed any more, so its one state button is its Brief
+    // (#4757, #1494): the row's, not the chat's, which is gone.
+    const { tree, ended, finished } = await drawn(withTasks());
+    await userEvent.click(row(tree, "sweep"));
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+
+    finished.push(finishedRow("sweep", { chat: 5, report: "Swept." }));
+    await ended(5);
+    await band();
+
+    expect(await screen.findByRole("button", { name: /^Brief/ })).toBeTruthy();
+  });
+
+  it("has no Brief on the head once no finished row is left to read it by", async () => {
+    const { tree, ended } = await drawn(withTasks());
+    await userEvent.click(row(tree, "sweep"));
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+
+    await ended(5);
+    await band();
+
+    expect(screen.queryByRole("button", { name: /^Brief/ })).toBeNull();
+  });
+
   it("says how it reported, for one that had", async () => {
     const open = withTasks();
     open[3].from = taskOf(1, { reported: true, outcome: "done" });
