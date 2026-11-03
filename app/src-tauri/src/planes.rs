@@ -308,7 +308,7 @@ pub struct Held {
     /// wait on one (#2047).
     pool_tools: crate::pooltools::PoolTools,
     /// The Secret asks the chats' brokered runs wait on (#5068, ADR 0109).
-    secret_asks: purlis_core::secrets::ask::Asks,
+    secret_asks: Arc<purlis_core::secrets::ask::Asks>,
     /// Where the chats' browsers run: the window's session host, where it has one.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each time a browser is added to its chats' or taken from them (#2024).
@@ -4788,7 +4788,9 @@ impl Planes {
         let tasks: Arc<crate::dispatched::Tasks> = Arc::default();
         let masked_kept =
             crate::dispatched::masked_kept_when_remembered(&tasks, hooks.shared_board());
-        let secret_asks = purlis_core::secrets::ask::Asks::new(&root);
+        // Shared with its chats, whose starts ask through it too (#5074).
+        let secret_asks = Arc::new(purlis_core::secrets::ask::Asks::new(&root));
+        chats.ask_secrets_in(Arc::clone(&secret_asks));
         Held {
             id,
             root,

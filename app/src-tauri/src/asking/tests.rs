@@ -2095,6 +2095,7 @@ fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
         key: "KUBECONFIG".into(),
         tool: Some("kubectl".into()),
         chats: vec![6, 9, 11],
+        starts: 0,
         since: 1_700_000_000,
     }];
 
@@ -2129,6 +2130,38 @@ fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
         asks.iter()
             .all(|one| one.session != 6 || one.source == AskSource::Secret),
         "the chat waits on the Secret ask, and no question of its own beside it: {asks:?}"
+    );
+}
+
+/// #5074: a profile's credential a chat's start misses is the same Secret ask, of no chat yet,
+/// saying it is for a chat's start.
+#[test]
+fn a_credential_a_start_misses_is_a_secret_ask_of_no_chat_saying_a_start_waits() {
+    let mut world = World::new();
+    world.secrets = vec![purlis_core::secrets::ask::Open {
+        id: 4,
+        persona: "dev".into(),
+        vault: "providers".into(),
+        key: "anthropic".into(),
+        tool: None,
+        chats: Vec::new(),
+        starts: 1,
+        since: 1_700_000_000,
+    }];
+
+    let asks = world.asks();
+
+    let ask = asks
+        .iter()
+        .find(|one| one.source == AskSource::Secret)
+        .expect("the Secret ask");
+    assert_eq!(ask.session, 0, "no chat has started yet");
+    assert_eq!(ask.answer, AnswerPath::Secret { id: 4 });
+    assert_eq!(ask.secret.as_ref().map(|s| s.waiting), Some(1));
+    assert_eq!(
+        ask.says,
+        "Needs anthropic from dev's vault providers for a chat starting on its profile. Fill \
+         stores it in that vault on this machine; the chat never sees it"
     );
 }
 

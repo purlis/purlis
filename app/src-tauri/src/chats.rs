@@ -891,6 +891,9 @@ pub struct Chats {
     /// a live ask held for its chat whose Notice the throttle held back. Empty until the
     /// project's hooks listen.
     asks_moved: Arc<Mutex<Option<AsksMoved>>>,
+    /// The project's Secret asks, which a start whose profile's credential its vault holds none
+    /// of waits on (#5074, ADR 0109). Empty until the project is held.
+    secret_asks: Mutex<Option<Arc<purlis_core::secrets::ask::Asks>>>,
     /// What hears each host purlis's own proxy refused a chat it wraps (Codex, opencode,
     /// #1663), as that chat's block: the road a hook's block takes into the app
     /// ([`crate::hooks::Hooks::block_hearer`]). Empty until the project's hooks listen.
@@ -1474,6 +1477,7 @@ impl Chats {
             kubeconfigs: Mutex::new(HashMap::new()),
             blocks: Arc::default(),
             asks_moved: Arc::new(Mutex::new(None)),
+            secret_asks: Mutex::new(None),
             refused: Arc::new(Mutex::new(None)),
             refused_more: Arc::new(Mutex::new(None)),
             reached: Arc::new(Mutex::new(None)),
@@ -3328,6 +3332,12 @@ impl Chats {
         *lock(&self.asks_moved) = Some(moved);
     }
 
+    /// The project's Secret asks, which a start asks for a missing profile credential through
+    /// from now on (#5074).
+    pub fn ask_secrets_in(&self, asks: Arc<purlis_core::secrets::ask::Asks>) {
+        *lock(&self.secret_asks) = Some(asks);
+    }
+
     /// The pool chat `session` runs on, where it runs on a pool's runner (#2046).
     pub fn pool_of(&self, session: u32) -> Option<String> {
         self.sessions.pool_of(session)
@@ -4394,6 +4404,23 @@ impl Chats {
         // that does not open to it starts nothing, and leaves no event and no hook behind
         // (#2036). Set on the harness's program as it starts; the commands, hooks and tools it
         // starts inherit them.
+        // One its vault holds none of is a Secret ask, which the start waits on (#5074, ADR
+        // 0109): it starts once the person fills it, and is refused, saying so, otherwise. A
+        // relaunch raises the ask and waits on nothing: the app may be putting many chats back
+        // one after another, with nobody at the window yet.
+        let secret_asks = lock(&self.secret_asks).clone();
+        let moved = || self.asks_may_have_moved();
+        let missing = secret_asks
+            .as_deref()
+            .map(|asks| purlis_core::secrets::brokered::Missing {
+                asks,
+                within: if why == Why::Relaunch {
+                    std::time::Duration::ZERO
+                } else {
+                    purlis_core::secrets::ask::START_HOLDS_FOR
+                },
+                moved: &moved,
+            });
         let handed =
             match sign_in.filter(|s| !reattaching && !on_the_runner && !s.credentials.is_empty()) {
                 Some(sign_in) => purlis_core::profilesignin::read(
@@ -4403,6 +4430,7 @@ impl Chats {
                     ),
                     runs_as.as_deref(),
                     &sign_in.credentials,
+                    missing.as_ref(),
                 )?,
                 None => purlis_core::profilesignin::Handed::default(),
             };

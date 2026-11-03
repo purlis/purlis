@@ -1314,32 +1314,36 @@ pub fn login_for(
     name: &str,
     unconfined: bool,
 ) -> Result<purlis_session_protocol::browsing::LogIn, String> {
-    login_and_identity_for(asker, name, unconfined).map(|(login, _)| login)
+    login_and_identity_for(asker, name, unconfined, None).map(|(login, _)| login)
 }
 
 /// **[`login_for`], and the login's identity** (#2021): a digest of the persona, the project
 /// and the login as declared and allowed, which its kept store is bound to
 /// ([`crate::browserlogins::identity_of`]), so a login of the same name of another persona or
-/// project, or declared otherwise since, never opens it.
+/// project, or declared otherwise since, never opens it. A value its vault holds none of is
+/// asked of the person through `missing`, where the app asks, and the login waits on it (#5074).
 pub fn login_and_identity_for(
     asker: &Asker,
     name: &str,
     unconfined: bool,
+    missing: Option<&Missing<'_>>,
 ) -> Result<(purlis_session_protocol::browsing::LogIn, String), String> {
     let (ready, ctx) = login_ready(asker, name, unconfined)?;
-    read_login(asker, name, &ready, &ctx)
+    read_login(asker, name, &ready, &ctx, missing)
 }
 
 /// **The login the person allowed from its notice, read for chat `asker`** (#4595): `tool`, as the
 /// app kept it from their press, with no start's record and no vault tag asked of it, since that
 /// press confirmed this vault and these keys for this one login. Nothing a chat says reaches it.
-/// The read is every other login's, so a key a `mint` line names is refused here too.
+/// The read is every other login's, so a key a `mint` line names is refused here too, and a
+/// value its vault holds none of is asked of the person through `missing` (#5074).
 pub fn granted_login(
     asker: &Asker,
     tool: &crate::sandbox::tools::Tool,
+    missing: Option<&Missing<'_>>,
 ) -> Result<(purlis_session_protocol::browsing::LogIn, String), String> {
     let (ready, ctx) = granted_ready(asker, tool);
-    let (login, identity) = read_login(asker, &tool.name, &ready, &ctx)?;
+    let (login, identity) = read_login(asker, &tool.name, &ready, &ctx, missing)?;
     Ok((
         purlis_session_protocol::browsing::LogIn {
             suggested: true,
@@ -1376,12 +1380,15 @@ fn granted_ready(
     (ready, ctx)
 }
 
-/// `ready`'s values, read from its vault, and its identity.
+/// `ready`'s values, read from its vault, and its identity. A key the vault holds no value
+/// under is asked of the person through `missing`, as a brokered run's is (#5074, ADR 0109):
+/// the read waits on the ask, and a decline, or no answer in time, fills nothing and says so.
 fn read_login(
     asker: &Asker,
     name: &str,
     ready: &crate::sandbox::tools::Ready,
     ctx: &Ctx,
+    missing: Option<&Missing<'_>>,
 ) -> Result<(purlis_session_protocol::browsing::LogIn, String), String> {
     use purlis_session_protocol::browsing::{LogIn, Secret};
     let (Some(login), Some((user_key, pass_key))) = (&ready.tool.login, ready.tool.login_keys())
@@ -1390,13 +1397,32 @@ fn read_login(
     };
     let vault = &ready.tool.vault;
     let v = cmd::provider(ctx, vault).map_err(|e| e.message.to_string())?;
+    let refused = |e: &super::VaultError| {
+        format!(
+            "vault '{vault}' did not give {name}'s login, so nothing was filled ({})",
+            e.message
+        )
+    };
     let read = |key: &str| {
-        cmd::get_value(ctx, &v, key).map(Secret::new).map_err(|e| {
-            format!(
-                "vault '{vault}' did not give {name}'s login, so nothing was filled ({})",
-                e.message
-            )
-        })
+        let mut once = || cmd::get_value(ctx, &v, key);
+        let Some(missing) = missing else {
+            return once().map(Secret::new).map_err(|e| refused(&e));
+        };
+        let need = super::ask::Need {
+            chat: Some(asker.chat),
+            persona: asker.persona.clone().unwrap_or_default(),
+            vault: vault.clone(),
+            key: key.to_owned(),
+            tool: Some(name.to_owned()),
+        };
+        missing
+            .asks
+            .read_asking(need, missing.within, &mut |_| (missing.moved)(), &mut once)
+            .map(Secret::new)
+            .map_err(|unread| match unread {
+                super::ask::Unread::Vault(e) => refused(&e),
+                super::ask::Unread::Asked(line) => format!("{line}: nothing was filled"),
+            })
     };
     let identity = identity_of_ready(asker, name, ready)?;
     let user = user_key.map(read).transpose()?;
@@ -2472,7 +2498,7 @@ pub(crate) fn serve_recorded(
                     break got;
                 }
                 let need = super::ask::Need {
-                    chat: asker.chat,
+                    chat: Some(asker.chat),
                     persona: persona.to_owned(),
                     vault: wanted.vault.clone(),
                     key: key.clone(),

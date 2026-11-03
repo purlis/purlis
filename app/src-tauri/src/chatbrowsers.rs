@@ -3280,6 +3280,22 @@ fn followed(
     }
 }
 
+/// **How a browser login read for `asker` asks for a value its vault holds none of** (#5074,
+/// ADR 0109): the project's Secret asks, as a brokered run's, held as long as a command of the
+/// chat's harness is, and the window told once one is raised or joined. A read is never under
+/// the browsers' lock ([`ChatBrowsers::answer`]), so no other chat's browser waits on it.
+fn secret_missing<'a>(
+    held: &'a crate::planes::Held,
+    asker: &purlis_core::secrets::brokered::Asker,
+    moved: &'a (dyn Fn() + Sync),
+) -> purlis_core::secrets::brokered::Missing<'a> {
+    purlis_core::secrets::brokered::Missing {
+        asks: held.secret_asks(),
+        within: purlis_core::secrets::ask::holds_for(asker.harness),
+        moved,
+    }
+}
+
 /// **Chat `session`'s browser login `name`** (#2016): read for the chat as the app records it,
 /// never as the line says, exactly as a declared tool's run is (`purlis_core::secrets::brokered`).
 fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
@@ -3288,6 +3304,8 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
     let (asker, unconfined) = login_asker_of(held, session, name).map_err(|why| {
         why.unwrap_or_else(|| format!("chat {session} is not one this app has open"))
     })?;
+    // A value its vault holds none of is asked of the person, and the read waits (#5074).
+    let moved = || held.chats().asks_may_have_moved();
     // One the person allowed from its notice (#4595): nothing of it is kept, on disk or sealed.
     if let Some(tool) = held
         .login_grants()
@@ -3298,7 +3316,11 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
         if let Some(why) = crate::loginasks::refused_now(held.root(), persona, &tool) {
             return Err(why);
         }
-        let (login, identity) = purlis_core::secrets::brokered::granted_login(&asker, &tool)?;
+        let (login, identity) = purlis_core::secrets::brokered::granted_login(
+            &asker,
+            &tool,
+            Some(&secret_missing(held, &asker, &moved)),
+        )?;
         return Ok(LoginRead {
             login,
             opens: false,
@@ -3307,8 +3329,12 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
         });
     }
     let persona = asker.persona.clone().unwrap_or_default();
-    let (mut login, identity) =
-        purlis_core::secrets::brokered::login_and_identity_for(&asker, name, unconfined)?;
+    let (mut login, identity) = purlis_core::secrets::brokered::login_and_identity_for(
+        &asker,
+        name,
+        unconfined,
+        Some(&secret_missing(held, &asker, &moved)),
+    )?;
     // Kept under the chat's profile on this device, bound to the login as declared and allowed
     // (#2021), and opened from it where a store of it is there.
     let kept = held.chats().profile_of(session).map(|profile| KeptLogin {
@@ -3420,6 +3446,8 @@ fn pool_login_of(
         return Err(why);
     }
     let taken = grants.take(session, asker.persona.as_deref(), name);
+    let moved = || held.chats().asks_may_have_moved();
+    let missing = secret_missing(held, &asker, &moved);
     let (login, identity) = match (&granted, &taken) {
         (Some(granted), Some(taken)) if granted != taken => {
             return Err(format!("login {name} changed, so nothing was filled"));
@@ -3429,8 +3457,15 @@ fn pool_login_of(
                 "login {name} was used already, so nothing was filled"
             ));
         }
-        (Some(_), Some(tool)) => purlis_core::secrets::brokered::granted_login(&asker, tool)?,
-        (None, _) => purlis_core::secrets::brokered::login_and_identity_for(&asker, name, true)?,
+        (Some(_), Some(tool)) => {
+            purlis_core::secrets::brokered::granted_login(&asker, tool, Some(&missing))?
+        }
+        (None, _) => purlis_core::secrets::brokered::login_and_identity_for(
+            &asker,
+            name,
+            true,
+            Some(&missing),
+        )?,
     };
     let fresh = granted.is_some();
     // Again once it is read: a vault may wait on a sign-in for as long as it takes (#4071).
