@@ -733,37 +733,37 @@ export const ConsentPressedByThePointer: Story = {
   },
 };
 
-// PROOF ONLY (#4685), dropped before merge: the engine's press made slow, as a loaded runner's
-// trip is, against the story as it was and as it is.
-const slowPress = (hold: boolean): Story => ({
-  args: { warnings: ["skills-missing", "vault-refused"] },
-  play: async ({ canvas, userEvent }) => {
-    allowed.length = 0;
-    const { userEvent: mouse } = await import("vitest/browser");
-    const open = await canvas.findByRole("button", { name: "Open in Skill studio" });
-    open.focus();
-    await userEvent.keyboard("{Escape}");
-    const vault = await canvas.findByRole("status", { name: "Vault" });
-    const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
-    const letGo = hold ? holdTheClock() : () => {};
-    try {
-      await new Promise((done) => setTimeout(done, SETTLE_MS + 200));
-      await mouse.click(allow);
-      letGo();
-      expect(allowed).toEqual([]);
-      expect(await canvas.findByText(NOTICE_MOVED_JUST_NOW)).toBeVisible();
-      await new Promise((done) => setTimeout(done, SETTLE_MS + 100));
-      await mouse.click(allow);
-    } finally {
-      letGo();
-      await mouse.hover(document.body, { position: { x: 0, y: 0 } });
-    }
-    expect(allowed).toEqual(["forge"]);
-    atRest();
-  },
-});
-export const ProofSlowPressAsItWas: Story = slowPress(false);
-export const ProofSlowPressAsItIs: Story = slowPress(true);
+// PROOF ONLY (#4685), dropped before merge: the fixed story thirty times in every cell.
+export const Repeat01: Story = { ...ConsentPressedByThePointer };
+export const Repeat02: Story = { ...ConsentPressedByThePointer };
+export const Repeat03: Story = { ...ConsentPressedByThePointer };
+export const Repeat04: Story = { ...ConsentPressedByThePointer };
+export const Repeat05: Story = { ...ConsentPressedByThePointer };
+export const Repeat06: Story = { ...ConsentPressedByThePointer };
+export const Repeat07: Story = { ...ConsentPressedByThePointer };
+export const Repeat08: Story = { ...ConsentPressedByThePointer };
+export const Repeat09: Story = { ...ConsentPressedByThePointer };
+export const Repeat10: Story = { ...ConsentPressedByThePointer };
+export const Repeat11: Story = { ...ConsentPressedByThePointer };
+export const Repeat12: Story = { ...ConsentPressedByThePointer };
+export const Repeat13: Story = { ...ConsentPressedByThePointer };
+export const Repeat14: Story = { ...ConsentPressedByThePointer };
+export const Repeat15: Story = { ...ConsentPressedByThePointer };
+export const Repeat16: Story = { ...ConsentPressedByThePointer };
+export const Repeat17: Story = { ...ConsentPressedByThePointer };
+export const Repeat18: Story = { ...ConsentPressedByThePointer };
+export const Repeat19: Story = { ...ConsentPressedByThePointer };
+export const Repeat20: Story = { ...ConsentPressedByThePointer };
+export const Repeat21: Story = { ...ConsentPressedByThePointer };
+export const Repeat22: Story = { ...ConsentPressedByThePointer };
+export const Repeat23: Story = { ...ConsentPressedByThePointer };
+export const Repeat24: Story = { ...ConsentPressedByThePointer };
+export const Repeat25: Story = { ...ConsentPressedByThePointer };
+export const Repeat26: Story = { ...ConsentPressedByThePointer };
+export const Repeat27: Story = { ...ConsentPressedByThePointer };
+export const Repeat28: Story = { ...ConsentPressedByThePointer };
+export const Repeat29: Story = { ...ConsentPressedByThePointer };
+export const Repeat30: Story = { ...ConsentPressedByThePointer };
 
 /**
  * **A consent the band was made to scroll back holds its Allow** (#3167): the band is scrolled
