@@ -1509,9 +1509,11 @@ describe("where each see-through ground is laid", () => {
   });
 
   it("fails a danger-wash box over surface.raised until WASH_LAID_ON names it", () => {
-    // The window is read once, above; the box is read on its own and added to it. Nothing in the
-    // window carries `raised` or `box`, or draws `Raised`, so this is the window with the box in
-    // it, without reading the whole window a second time (#4991: that read timed out on CI).
+    // The window is read once, above; the box is read on its own and added to it, without
+    // reading the whole window a second time (#4991: that read timed out on CI). This is the
+    // window with the box in it while the two never meet: nothing in the window carries `raised`
+    // or `box` or draws `Raised`, no window rule paints a bare `div` or `p`, and every window
+    // rule that paints a wash names a class or an attribute the box's frames do not carry.
     const { files, css } = raised('<p className="box">Refused.</p>');
     const box = readGrounds(files, css, SEE_THROUGH);
     const laid = laidGrounds(new Map([...window.laid, ...box.laid]), PAINTED).laid;
