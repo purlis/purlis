@@ -12,8 +12,16 @@
  * Each slot carries the `data-scope` of the family whose row it is in (`RowScope`), so a theme's
  * `list.label.text` reaches a list's words and never a tree's.
  */
-import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Text as AriaText } from "react-aria-components";
+import { drawnCut } from "../drawnCut";
 
 /** The families a row belongs to. */
 export type RowFamily = "list" | "tree" | "table";
@@ -78,16 +86,54 @@ export const RowDescription = slot("description", "description");
 /** **Its end**: a count, a state, the row's own actions. */
 export const RowTrail = slot("trail");
 
-const RowBelowSlot = slot("below");
+/**
+ * **Where a row takes the whole words of a line under it that its clamp cuts** (#4711): what
+ * `ListRow` and `ListOption` hand their `RowBelow`, which says its words while they are cut and
+ * `undefined` once they fit. `null` in any other row, where `tipWhenCut` does nothing.
+ */
+export const RowCutWords = createContext<((words: string | undefined) => void) | null>(null);
 
 /**
  * **A line under the row's words, inside the row**: what a search matched in its body, why it
  * was refused, a skill's one-line description. The row grows to fit it and is still one row to
  * the keyboard (#3751). `clamp` cuts it at one line (an ellipsis at its end) or two; without
  * one it wraps.
+ *
+ * **`tipWhenCut`** (#4711): while its clamp cuts it, its whole words are its row's tooltip
+ * (`RowTip.tsx`) and its description, under the pointer and while the keyboard is on the row;
+ * while they fit, there is none. The row stays as it is drawn. One to a row, and a list's row's
+ * alone (`ListRow`, `ListOption`).
  */
-export function RowBelow({ clamp, ...rest }: Slot & { clamp?: 1 | 2 }) {
-  return <RowBelowSlot {...rest} data-clamp={clamp} />;
+export function RowBelow({
+  clamp,
+  tipWhenCut = false,
+  children,
+  ...rest
+}: Slot & { clamp?: 1 | 2; tipWhenCut?: boolean }) {
+  const scope = useContext(RowScope);
+  const say = useContext(RowCutWords);
+  const line = useRef<HTMLSpanElement>(null);
+  const asks = tipWhenCut && clamp !== undefined ? say : null;
+  useLayoutEffect(() => {
+    const element = line.current;
+    if (asks === null || element === null) return;
+    // Measured at rest and again as the row's width moves; the words are the row's text, so a
+    // string, which only a change of words changes.
+    const measure = () => asks(drawnCut(element) ? element.textContent || undefined : undefined);
+    measure();
+    if (typeof ResizeObserver !== "function") return () => asks(undefined);
+    const watch = new ResizeObserver(measure);
+    watch.observe(element);
+    return () => {
+      watch.disconnect();
+      asks(undefined);
+    };
+  }, [asks, children]);
+  return (
+    <span {...rest} ref={line} data-scope={scope} data-part="below" data-clamp={clamp}>
+      {children}
+    </span>
+  );
 }
 
 /** **What a card row's summary says it in** (#3669): its description in the muted tier, or a

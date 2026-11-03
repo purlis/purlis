@@ -44,6 +44,7 @@ import {
   TOOLTIP_DELAY,
 } from "../tooltip/Tooltip";
 import { useWindowLeft } from "../windowLeft";
+import { drawnCut } from "../drawnCut";
 
 /** How a column shares the table's width: as narrow as its cells, or the room left. */
 export type ColumnSize = "fit" | "fill";
@@ -143,14 +144,6 @@ export function choicesOfElement(head: HTMLElement | null | undefined): Choices 
     if (value !== null) attributes[name] = value;
   }
   return choicesOf(attributes);
-}
-
-/** Whether `element`'s words are drawn cut: wider or taller than its box shows. */
-function drawnCut(element: HTMLElement): boolean {
-  return (
-    element.scrollWidth > element.clientWidth + 0.5 ||
-    element.scrollHeight > element.clientHeight + 0.5
-  );
 }
 
 /**

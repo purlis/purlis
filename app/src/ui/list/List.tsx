@@ -74,7 +74,7 @@ import {
   type ContextMenuOptions,
 } from "../menu/ContextMenu";
 import { InOption, RowScope, type RowSize } from "./Row";
-import { useRowTip, type RowTipped } from "./RowTip";
+import { useListRowTip, type RowTipped } from "./RowTip";
 import type { Tip } from "../tooltip/Tooltip";
 
 export type { Key, Selection };
@@ -321,7 +321,7 @@ export function ListOption<T extends object>({
 }: ListOptionProps<T>) {
   const size = useContext(ListSize);
   const own = useRowMenu(menu);
-  const tipped = useRowTip(tip);
+  const { tipped, hold } = useListRowTip(tip);
   const element = useSaysUnavailable(unavailable, ref);
   return (
     <AriaListBoxItem
@@ -336,7 +336,7 @@ export function ListOption<T extends object>({
     >
       {(state) => (
         <InOption.Provider value={true}>
-          {rowHolds(children, own.menu, tipped)(state)}
+          {hold(rowHolds(children, own.menu, tipped)(state))}
         </InOption.Provider>
       )}
     </AriaListBoxItem>
@@ -466,7 +466,7 @@ export function ListRow<T extends object>({
 }: ListRowProps<T>) {
   const size = useContext(ListSize);
   const own = useRowMenu(menu);
-  const tipped = useRowTip(tip);
+  const { tipped, hold } = useListRowTip(tip);
   return (
     <AriaGridListItem
       {...mergeProps(rest, own.handlers, tipped.hover)}
@@ -476,7 +476,7 @@ export function ListRow<T extends object>({
       data-variant={variant}
       data-size={size}
     >
-      {rowHolds(children, own.menu, tipped)}
+      {(state) => hold(rowHolds(children, own.menu, tipped)(state))}
     </AriaGridListItem>
   );
 }
