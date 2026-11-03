@@ -17,6 +17,7 @@ import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { Moved } from "./bindings";
 import { onTheWire } from "./chatEvents.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A chat's pane head, against the whole window** (#4760, spec #4750 stories 54, 55, 60 and
@@ -102,6 +103,8 @@ function core() {
     (cmd) => {
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
+      // The chat in a tab of its own on alpha, as the stored layout keeps it (#4758).
+      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,
