@@ -28,8 +28,12 @@ fn in_a_docker_pool() {
     let watching = target.hooks.skill_runs();
     let heard = watching.watch(id);
     runner.prints(": > /tmp/try-go");
-    let started =
-        crate::poolsetuptab::waited_for_its_start(&heard, "the pool", Duration::from_secs(120));
+    let started = crate::poolsetuptab::waited_for_its_start(
+        &heard,
+        "the pool",
+        Duration::from_secs(120),
+        || true,
+    );
     watching.unwatch(id);
     assert_eq!(started, Ok(()), "Try it heard the chat's start hook");
     Pane::on(&target, id).shows("started.");

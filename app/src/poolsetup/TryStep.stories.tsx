@@ -10,7 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolSetupCheck, PoolSetupStep } from "../bindings";
-import { expectFocusInSight } from "../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../stories.testkit";
 import { TryStep } from "./TryStep";
 
 const check = (verdict: string, title: string, more: string | null = null): PoolSetupCheck => ({
@@ -98,7 +98,7 @@ export const Trying: Story = {
 export const DidntStartWithinTime: Story = {
   beforeEach: faked(() => ({
     failed: {
-      why: "The chat on dev-box didn't start within two minutes. Its harness may be waiting on a question, so open a chat there yourself and answer it, then try again.",
+      why: "The chat on dev-box didn't start within 2 minutes. Its harness may be waiting on a question, so open a chat there yourself and answer it, then try again.",
       step: null,
     },
   })),
@@ -127,11 +127,23 @@ export const TheChatDidntStart: Story = {
     go.focus();
     await expect(go).toHaveFocus();
     await expectFocusInSight();
+    // Try again stands beside it, the next stop of the keyboard.
+    await userEvent.tab();
+    await untilFocused(() => canvas.getByRole("button", { name: "Try again" }), "Try again");
+    await expectFocusInSight();
   },
 };
 
 /** The last screen: everything passed. */
 export const EverythingPassed: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const open = canvas.getByRole("button", { name: "Open a chat on dev-box" });
+    open.focus();
+    await untilFocused(() => open, "Open a chat");
+    await expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+  },
   args: {
     step: {
       ...READY,

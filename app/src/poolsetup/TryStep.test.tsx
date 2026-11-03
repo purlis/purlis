@@ -70,7 +70,7 @@ afterEach(() => {
 
 describe("TryStep", () => {
   it("starts a real chat only on its own button", async () => {
-    const calls = core({ pool_setup_try: () => ({ failed: null }) });
+    const calls = core({ pool_setup_try: () => ({ failed: null, workspace: "web" }) });
     const { changed } = draw(READY);
     expect(calls.some((call) => call.cmd === "pool_setup_try")).toBe(false);
     await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
@@ -83,7 +83,7 @@ describe("TryStep", () => {
   });
 
   it("starts its chat in the workspace the tab is filed in", async () => {
-    const calls = core({ pool_setup_try: () => ({ failed: null }) });
+    const calls = core({ pool_setup_try: () => ({ failed: null, workspace: "web" }) });
     const { changed } = draw(READY, "web");
     await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
     await waitFor(() => expect(changed).toHaveBeenCalled());
@@ -112,6 +112,19 @@ describe("TryStep", () => {
     expect(screen.getByRole("heading", { name: "dev-box is ready" })).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Open a chat on dev-box" }));
     expect(onOpenChat).toHaveBeenCalled();
+  });
+
+  it("opens a chat in the workspace its test chat started in", async () => {
+    let step = READY;
+    core({ pool_setup_try: () => ({ failed: null, workspace: "web" }) });
+    const props = { changed: vi.fn(), onGo: vi.fn(), onOpenChat: vi.fn() };
+    const { rerender } = render(<TryStep step={step} pool="dev-box" plane="p" {...props} />);
+    await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
+    await waitFor(() => expect(props.changed).toHaveBeenCalled());
+    step = PASSED;
+    rerender(<TryStep step={step} pool="dev-box" plane="p" {...props} />);
+    await userEvent.click(screen.getByRole("button", { name: "Open a chat on dev-box" }));
+    expect(props.onOpenChat).toHaveBeenCalledWith("web");
   });
 
   it("never reads as done where a check was skipped", () => {
@@ -147,7 +160,7 @@ describe("TryStep", () => {
         tries += 1;
         return tries === 1
           ? { failed: { why: "work isn't signed in on this pool.", step: "signins" } }
-          : { failed: null };
+          : { failed: null, workspace: "web" };
       },
     });
     const { changed } = draw(READY);
@@ -168,7 +181,7 @@ describe("TryStep", () => {
       pool_setup_try: () => {
         tries += 1;
         if (tries === 1) throw "the runner didn't answer";
-        return { failed: null };
+        return { failed: null, workspace: "web" };
       },
     });
     const { changed } = draw(READY);

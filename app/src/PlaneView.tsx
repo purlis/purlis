@@ -3711,9 +3711,15 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the picker's start is in flight: the ref is the guard, the state is the button. */
   const startingNow = useRef(false);
   const [starting, setStarting] = useState(false);
+  /** The workspace the picker's chat starts in: the one a pool preset names (#4483), else the
+   *  one in front. */
+  const pickingIn =
+    picking !== undefined && "pool" in picking.where && picking.where.pool
+      ? picking.where.pool.workspace
+      : ofWorkspace;
   const readStage = useCallback(
-    (runsOn: RunsOnPick | null) => readRunnerStage(plane, ofWorkspace, runsOn),
-    [plane, ofWorkspace],
+    (runsOn: RunsOnPick | null) => readRunnerStage(plane, pickingIn, runsOn),
+    [plane, pickingIn],
   );
   /** The person cancelled the start in flight: what it answers is said to nobody. */
   const startLeft = useRef(false);
@@ -10797,7 +10803,7 @@ export const PlaneView = memo(function PlaneView({
                   options={picking.options}
                   repo={pickingInRepo}
                   // Where it starts, by name (R8): the workspace in front, else the project.
-                  place={ofWorkspace ?? projectName(plane)}
+                  place={pickingIn ?? projectName(plane)}
                   starting={starting}
                   readStage={readStage}
                   prefer={"prefer" in picking.where ? picking.where.prefer : undefined}

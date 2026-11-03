@@ -11294,6 +11294,7 @@ export type PoolSetupCreated = {
 
 /**  Why Try it didn't pass, and the step that mends it, where one does (#4483). */
 export type PoolSetupFailed = {
+	/**  What happened and what to do, in a sentence or two. */
 	why: string,
 	/**  The step to go to, by its id: `signins` for a sign-in. Null where trying again is it. */
 	step: string | null,
@@ -11363,9 +11364,12 @@ export type PoolSetupStep = {
 	checks: PoolSetupCheck[],
 };
 
-/**  What Try it found: null where a real chat started and the proof is kept. */
+/**  What Try it found. */
 export type PoolSetupTried = {
+	/**  Why it didn't pass; null where a real chat started and the proof is kept. */
 	failed: PoolSetupFailed | null,
+	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
+	workspace: string | null,
 };
 
 /**  What the person is asked. */

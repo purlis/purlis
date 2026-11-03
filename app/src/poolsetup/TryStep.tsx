@@ -42,11 +42,14 @@ export function TryStep({
   changed: () => void;
   /** Goes to another step: the one a failure names. */
   onGo: (step: string) => void;
-  /** Opens a chat on the pool, in the window's own start. */
-  onOpenChat: () => void;
+  /** Opens a chat on the pool, in the window's own start: in `workspace`, where Try it's chat
+   *  started, once it has here. */
+  onOpenChat: (workspace?: string) => void;
 }) {
   const [trying, setTrying] = useState(false);
   const [failed, setFailed] = useState<Failed>();
+  /** Where Try it's chat started, this visit: where Open a chat opens. */
+  const [triedIn, setTriedIn] = useState<string>();
   const checks = step.checks;
   const passed = step.state === "done";
   // Anything that didn't pass, skipped or not done, keeps the end from reading as done.
@@ -59,6 +62,7 @@ export function TryStep({
     setTrying(false);
     if (tried.status === "error") return setFailed({ why: tried.error, step: null });
     if (tried.data.failed !== null) return setFailed(tried.data.failed);
+    setTriedIn(tried.data.workspace ?? undefined);
     changed();
   };
 
@@ -85,25 +89,23 @@ export function TryStep({
           lead={
             except
               ? "You can start chats there now. Here's what they can and can't do."
-              : "A real chat started there, and it can reach your repos as the agent."
+              : `A real chat started on ${pool}, so chats you start there will run.`
           }
         />
         {lines("What was checked")}
-        <div className="pool-setup-end">
-          <ButtonRow size="lg">
-            <Button
-              variant="primary"
-              icon={<MessageSquarePlus aria-hidden size={16} />}
-              onPress={onOpenChat}
-            >
-              {`Open a chat on ${pool}`}
-            </Button>
-          </ButtonRow>
-        </div>
+        <ButtonRow size="lg">
+          <Button
+            variant="primary"
+            icon={<MessageSquarePlus aria-hidden size={16} />}
+            onPress={() => onOpenChat(triedIn)}
+          >
+            {`Open a chat on ${pool}`}
+          </Button>
+        </ButtonRow>
         <p className="pool-setup-does">
           {except
-            ? "The chat picker marks this pool Setup not finished until then, with a link back here."
-            : "Change anything later with Open setup on this pool's page."}
+            ? "Finish the rest any time: Pool setup in the palette comes back to this pool."
+            : "Change anything later from Pool setup in the palette."}
         </p>
       </>
     );
@@ -114,7 +116,9 @@ export function TryStep({
         title={trying ? "Trying it for real" : failed ? "Try it didn't pass" : "Try it for real"}
         lead={
           failed
-            ? "Your earlier steps are fine and stay done."
+            ? failed.step === null
+              ? "Your earlier steps are fine and stay done."
+              : "Mend this on the step it names, then try again here."
             : `Setup ends when a real chat has started on ${pool}, so you know it works before you rely on it.`
         }
       />
@@ -127,7 +131,7 @@ export function TryStep({
       {failed && !trying && (
         <Say
           tone="trouble"
-          title={`The chat on ${pool} didn't start`}
+          title="What happened"
           actions={
             failed.step !== null ? (
               <>

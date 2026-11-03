@@ -415,20 +415,25 @@ pub async fn pool_setup_wake(pool: String) -> Result<(), String> {
 /// Why Try it didn't pass, and the step that mends it, where one does (#4483).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolSetupFailed {
+    /// What happened and what to do, in a sentence or two.
     pub why: String,
     /// The step to go to, by its id: `signins` for a sign-in. Null where trying again is it.
     pub step: Option<String>,
 }
 
-/// What Try it found: null where a real chat started and the proof is kept.
+/// What Try it found.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolSetupTried {
+    /// Why it didn't pass; null where a real chat started and the proof is kept.
     pub failed: Option<PoolSetupFailed>,
+    /// The workspace its chat started in, where it got that far: where Open a chat opens.
+    pub workspace: Option<String>,
 }
 
 /// **How long Try it waits for its chat's harness to report its start** once the chat is under
-/// way. A chat that waits on something no hook tells of, such as a question at its launch, has
-/// spent nothing by then.
+/// way, as long as a grade waits for its chat's (`skillgrade`'s `A_CHAT_BEGINS_WITHIN`). A chat
+/// that waits on something no hook tells of, such as a question at its launch, has spent nothing
+/// by then.
 #[cfg(unix)]
 const TRY_BEGINS_WITHIN: std::time::Duration = std::time::Duration::from_secs(120);
 
@@ -467,20 +472,10 @@ pub async fn pool_setup_try(
         crate::off_the_window("trying the pool", move || {
             purlis_core::runners::usable_pool_name(&pool)?;
             let config = config_root()?;
-            {
-                let mut trying = TRYING
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if !trying.insert(pool.clone()) {
-                    return Err(format!("Try it is already under way on {pool}."));
-                }
-            }
-            let tried = try_on(&held, &config, &pool, workspace.as_deref());
-            TRYING
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .remove(&pool);
-            tried
+            let Some(_trying) = Trying::on(&pool) else {
+                return Err(format!("Try it is already under way on {pool}."));
+            };
+            try_on(&held, &config, &pool, workspace.as_deref())
         })
         .await
     }
@@ -488,6 +483,54 @@ pub async fn pool_setup_try(
     {
         let _ = (held, pool, workspace);
         Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **A Try it under way on one pool**: held for as long as it runs, and let go however it ends,
+/// a panic too, so a second press waits for the first and a failed one never locks the pool.
+#[cfg(unix)]
+struct Trying(String);
+
+#[cfg(unix)]
+impl Trying {
+    /// Holds `pool`, or none where a Try it is already under way on it.
+    fn on(pool: &str) -> Option<Trying> {
+        TRYING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(pool.to_owned())
+            .then(|| Trying(pool.to_owned()))
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Trying {
+    fn drop(&mut self) {
+        TRYING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.0);
+    }
+}
+
+/// **Try it's chat, ended however Try it ends**: unwatched and closed on drop, a panic too, so
+/// no chat it started is left running.
+#[cfg(unix)]
+struct TryChat<'a> {
+    held: &'a std::sync::Arc<crate::planes::Held>,
+    number: u32,
+    session: Option<u32>,
+}
+
+#[cfg(unix)]
+impl Drop for TryChat<'_> {
+    fn drop(&mut self) {
+        self.held.hooks().skill_runs().unwatch(self.number);
+        if let Some(session) = self.session
+            && let Err(why) = self.held.close_chat(session)
+        {
+            tracing::warn!("purlis: Try it's chat {session} did not close ({why})");
+        }
     }
 }
 
@@ -499,44 +542,74 @@ fn failed(why: String, step: Option<purlis_core::poolsetup::StepId>) -> PoolSetu
             why,
             step: step.as_ref().map(word),
         }),
+        workspace: None,
     }
 }
 
-/// **The folder Try it starts its chat in**: workspace `asked`, where the tab is filed in one,
-/// else the project's first workspace by name. None where the project has none.
+/// **The step that mends a start the pool refused**: Sign-ins, where its runner found the
+/// profile signed out (`purlis_core::profilestore::sign_in::is_refusal`); else none.
 #[cfg(unix)]
-fn workspace_to_try(root: &std::path::Path, asked: Option<&str>) -> Option<std::path::PathBuf> {
-    use purlis_core::wscmd::{workspace_dir, workspace_dir_exists};
-    if let Some(name) = asked.filter(|name| workspace_dir_exists(root, name)) {
-        return workspace_dir(root, name);
+fn step_of_a_refused_start(why: &str) -> Option<purlis_core::poolsetup::StepId> {
+    purlis_core::profilestore::sign_in::is_refusal(why)
+        .then_some(purlis_core::poolsetup::StepId::Signins)
+}
+
+/// Whether `workspaces/<name>` of the project at `root` is a folder of its own: never a link,
+/// which could lead out of the project.
+#[cfg(unix)]
+fn a_workspace_folder(root: &std::path::Path, name: &str) -> bool {
+    purlis_core::wscmd::workspace_dir(root, name)
+        .and_then(|dir| dir.symlink_metadata().ok())
+        .is_some_and(|meta| meta.is_dir())
+}
+
+/// **The workspace Try it starts its chat in, and its folder**: workspace `asked`, where the
+/// tab is filed in one, else the project's first workspace by name. None where the project has
+/// none.
+#[cfg(unix)]
+fn workspace_to_try(
+    root: &std::path::Path,
+    asked: Option<&str>,
+) -> Option<(String, std::path::PathBuf)> {
+    let found = |name: &str| {
+        a_workspace_folder(root, name)
+            .then(|| purlis_core::wscmd::workspace_dir(root, name))
+            .flatten()
+            .map(|dir| (name.to_owned(), dir))
+    };
+    if let Some(chosen) = asked.and_then(found) {
+        return Some(chosen);
     }
     let mut names: Vec<String> = std::fs::read_dir(root.join("workspaces"))
         .ok()?
         .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .collect();
     names.sort();
-    names.iter().find_map(|name| workspace_dir(root, name))
+    names.iter().find_map(|name| found(name))
 }
 
 /// A wait in words: `2 minutes`, or `30 seconds` under a minute.
 #[cfg(unix)]
 fn said_as_time(wait: std::time::Duration) -> String {
+    let counted =
+        |count: u64, unit: &str| format!("{count} {unit}{}", if count == 1 { "" } else { "s" });
     match wait.as_secs() {
-        secs @ 0..60 => format!("{secs} seconds"),
-        secs => format!("{} minutes", secs.div_ceil(60)),
+        secs @ 0..60 => counted(secs, "second"),
+        secs => counted(secs.div_ceil(60), "minute"),
     }
 }
 
 /// **Waits for the chat `heard` tells of to report its session's start** (ADR 0076): its
 /// harness's `SessionStart` hook, and nothing it prints. Why it didn't, said for pool `pool`,
-/// where it ended first or `within` passed.
+/// where it ended first, its program was found gone (`still_running`, asked each look: a program
+/// that exits reports no end of its own), or `within` passed.
 #[cfg(unix)]
 pub(crate) fn waited_for_its_start(
     heard: &std::sync::mpsc::Receiver<crate::skillrun::Watched>,
     pool: &str,
     within: std::time::Duration,
+    still_running: impl Fn() -> bool,
 ) -> Result<(), String> {
     use crate::skillrun::Watched;
     use std::sync::mpsc::RecvTimeoutError;
@@ -545,6 +618,12 @@ pub(crate) fn waited_for_its_start(
         match heard.recv_timeout(TRY_LOOKS_EVERY.min(within)) {
             Ok(Watched::Began) => return Ok(()),
             Ok(Watched::Closed) | Err(RecvTimeoutError::Disconnected) => {
+                return Err(format!(
+                    "The chat on {pool} ended before it had started. Open a chat there yourself \
+                     to see what it says, then try again."
+                ));
+            }
+            Ok(_) | Err(RecvTimeoutError::Timeout) if !still_running() => {
                 return Err(format!(
                     "The chat on {pool} ended before it had started. Open a chat there yourself \
                      to see what it says, then try again."
@@ -571,7 +650,7 @@ fn try_on(
     pool: &str,
     workspace: Option<&str>,
 ) -> Result<PoolSetupTried, String> {
-    use purlis_core::poolsetup::{self, Here, StepId, trying};
+    use purlis_core::poolsetup::{self, Here, trying};
     use purlis_core::reopen::Chat;
 
     let root = held.root().to_path_buf();
@@ -603,7 +682,7 @@ fn try_on(
         };
 
     // A chat at the project's root runs on this machine, so Try it starts in a workspace.
-    let Some(cwd) = workspace_to_try(&root, workspace) else {
+    let Some((workspace, cwd)) = workspace_to_try(&root, workspace) else {
         return Ok(failed(
             "Try it starts its chat in a workspace, and this project has none yet. Add a \
              workspace, then try again."
@@ -621,7 +700,7 @@ fn try_on(
         resume: None,
         show_footer: false,
         resuming: None,
-        // An ordinary sandboxed chat, as any on the pool starts.
+        // No opt-out of its own: sandboxed as the person's own new chat would be.
         without_sandbox: None,
         held: None,
         grants: Default::default(),
@@ -652,31 +731,39 @@ fn try_on(
         ..Default::default()
     };
     // Watched before it starts, so its first hook is never missed.
-    let watching = held.hooks().skill_runs();
-    let heard = watching.watch(number);
+    let heard = held.hooks().skill_runs().watch(number);
+    let mut chat_held = TryChat {
+        held,
+        number,
+        session: None,
+    };
     let session = match held.chats().start_ready(&chat, &ready, TRY_SIZE) {
         Ok(session) => session,
         Err(why) => {
-            watching.unwatch(number);
-            let step =
-                purlis_core::profilestore::sign_in::is_refusal(&why).then_some(StepId::Signins);
+            let step = step_of_a_refused_start(&why);
             return Ok(failed(crate::asking::start_refused(held, why), step));
         }
     };
+    chat_held.session = Some(session);
     tracing::info!("purlis: Try it started chat {number} on pool {pool}");
-    let ended = waited_for_its_start(&heard, pool, TRY_BEGINS_WITHIN).err();
-    watching.unwatch(number);
-    if let Err(why) = held.close_chat(session) {
-        tracing::warn!("purlis: Try it's chat {session} did not close ({why})");
-    }
+    let ended = waited_for_its_start(&heard, pool, TRY_BEGINS_WITHIN, || {
+        held.chats().sessions().running().contains(&session)
+    })
+    .err();
+    drop(chat_held);
     if let Some(why) = ended {
         return Ok(failed(why, None));
     }
     let at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs());
-    poolsetup::tried(config, pool, at).map_err(|why| why.to_string())?;
-    Ok(PoolSetupTried { failed: None })
+    poolsetup::tried(config, pool, at).map_err(|why| {
+        format!("A chat started on {pool}, and purlis couldn't keep that it did: {why}")
+    })?;
+    Ok(PoolSetupTried {
+        failed: None,
+        workspace: Some(workspace),
+    })
 }
 
 /// **Opens the Docker app**, on the person's press, where this system has one to open. Refused
@@ -710,8 +797,11 @@ mod tests {
     use std::sync::mpsc::channel;
     use std::time::Duration;
 
-    use super::waited_for_its_start;
+    use super::{said_as_time, step_of_a_refused_start, waited_for_its_start};
     use crate::skillrun::Watched;
+    use purlis_core::poolsetup::StepId;
+
+    const RUNNING: fn() -> bool = || true;
 
     #[test]
     fn try_it_passes_on_its_chats_start_hook_and_nothing_before_it() {
@@ -719,7 +809,7 @@ mod tests {
         tell.send(Watched::TurnEnded).unwrap();
         tell.send(Watched::Began).unwrap();
         assert_eq!(
-            waited_for_its_start(&heard, "dev-box", Duration::from_secs(5)),
+            waited_for_its_start(&heard, "dev-box", Duration::from_secs(5), RUNNING),
             Ok(())
         );
     }
@@ -728,14 +818,43 @@ mod tests {
     fn a_chat_that_ends_before_it_starts_fails_try_it_at_once() {
         let (tell, heard) = channel();
         tell.send(Watched::Closed).unwrap();
-        let why = waited_for_its_start(&heard, "dev-box", Duration::from_secs(60)).unwrap_err();
+        let why =
+            waited_for_its_start(&heard, "dev-box", Duration::from_secs(60), RUNNING).unwrap_err();
         assert!(why.contains("ended before it had started"), "{why}");
     }
 
     #[test]
     fn a_chat_that_never_reports_its_start_fails_try_it_once_the_wait_is_over() {
         let (_tell, heard) = channel();
-        let why = waited_for_its_start(&heard, "dev-box", Duration::from_millis(50)).unwrap_err();
+        let why = waited_for_its_start(&heard, "dev-box", Duration::from_millis(50), RUNNING)
+            .unwrap_err();
         assert!(why.contains("didn't start within"), "{why}");
+    }
+
+    #[test]
+    fn a_chat_whose_program_is_gone_fails_try_it_at_once_and_says_it_ended() {
+        let (_tell, heard) = channel();
+        let began = std::time::Instant::now();
+        let why =
+            waited_for_its_start(&heard, "dev-box", Duration::from_secs(60), || false).unwrap_err();
+        assert!(why.contains("ended before it had started"), "{why}");
+        assert!(
+            began.elapsed() < Duration::from_secs(5),
+            "it waited out the minute"
+        );
+    }
+
+    #[test]
+    fn a_start_its_runner_found_signed_out_sends_the_person_to_sign_ins() {
+        let refused = "work is not signed in on the runner of pool dev-box. Nothing was started.";
+        assert_eq!(step_of_a_refused_start(refused), Some(StepId::Signins));
+        assert_eq!(step_of_a_refused_start("the runner did not answer"), None);
+    }
+
+    #[test]
+    fn a_wait_is_said_in_words_with_its_unit_counted() {
+        assert_eq!(said_as_time(Duration::from_secs(120)), "2 minutes");
+        assert_eq!(said_as_time(Duration::from_secs(60)), "1 minute");
+        assert_eq!(said_as_time(Duration::from_secs(1)), "1 second");
     }
 }

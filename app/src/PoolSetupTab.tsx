@@ -364,7 +364,7 @@ export function PoolSetupTab({
                 reread();
               }}
               onGo={(id) => setShowing(id)}
-              onOpenChat={() => onOpenChat?.(madePool, workspace)}
+              onOpenChat={(triedIn) => onOpenChat?.(madePool, triedIn ?? workspace)}
             />
           ) : (
             step && <Found step={step} onRecheck={reread} />
