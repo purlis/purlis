@@ -297,7 +297,7 @@ impl Host {
         let session = SessionHost::default();
         session.start_at(place, move || {
             use std::os::unix::process::CommandExt as _;
-            let mut command = std::process::Command::new(&purlis);
+            let mut command = dying_with_this_test(&purlis);
             command
                 .arg("serve")
                 .env_clear()
@@ -306,7 +306,6 @@ impl Host {
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .process_group(0);
-            dies_with_this_test(&mut command);
             Ok(command)
         });
         session
@@ -332,32 +331,22 @@ impl Drop for Host {
 /// drop ends it after a failed assertion, but a host runs in a process group of its own, as the
 /// window's does, so nextest's kill of a test that hangs does not reach it, and a test process
 /// that ends without unwinding leaves it serving out the grace period a crashed window gets
-/// (ADR 0068 §2): ten minutes and more, which `tools/no-orphans.sh` fails the suite for. The
-/// kernel kills it when the thread that started it, the host's supervisor, goes: which is when
-/// the test's process goes, or after the window ended it.
-fn dies_with_this_test(command: &mut std::process::Command) {
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::process::CommandExt as _;
-        let test = std::process::id();
-        // SAFETY: the closure runs in the forked child before exec, and makes only the
-        // async-signal-safe `prctl` and `getppid` calls.
-        unsafe {
-            command.pre_exec(move || {
-                rustix::process::set_parent_process_death_signal(Some(
-                    rustix::process::Signal::KILL,
-                ))?;
-                // The test went between the fork and the call: nothing would signal it now.
-                let parent = rustix::process::getppid().map(rustix::process::Pid::as_raw_pid);
-                if parent.and_then(|pid| u32::try_from(pid).ok()) != Some(test) {
-                    return Err(std::io::Error::other("the test that started it has gone"));
-                }
-                Ok(())
-            });
-        }
+/// (ADR 0068 §2): ten minutes and more, which `tools/no-orphans.sh` fails the suite for.
+///
+/// So `purlis` is started through util-linux's `setpriv`, which sets the parent-death signal
+/// (`PR_SET_PDEATHSIG`) and then becomes it: the kernel kills the host when the thread that
+/// started it, the host's supervisor, goes, which is when the test's process goes, or after
+/// the window ended it. Without an `unsafe` block, which the workspace keeps to its audited few.
+/// Where there is no `setpriv`, the host is started as it was.
+fn dying_with_this_test(purlis: &Path) -> std::process::Command {
+    const SETPRIV: &str = "/usr/bin/setpriv";
+    if cfg!(target_os = "linux") && Path::new(SETPRIV).exists() {
+        let mut command = std::process::Command::new(SETPRIV);
+        command.args(["--pdeathsig", "KILL", "--"]).arg(purlis);
+        command
+    } else {
+        std::process::Command::new(purlis)
     }
-    #[cfg(not(target_os = "linux"))]
-    let _ = command;
 }
 
 /// The window: its planes over its link to the host, its chats run there and their browsers
