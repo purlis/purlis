@@ -101,6 +101,26 @@ function countUpdated(fiber: Fiber, above: boolean): void {
   for (let child = fiber.child; child; child = child.sibling) countUpdated(child, isInside);
 }
 
+/**
+ * **Where each commit's drawing began** (#3032): for each commit since it was last cleared, the
+ * topmost components whose own function ran, or that were put in, each with what is drawn below
+ * it left out. A commit nobody expected is named by these: a clock that ticked, a read that
+ * answered.
+ */
+export const commitRoots: string[][] = [];
+
+/** The topmost components drawn in the commit under `fiber`, into `roots`. */
+function rootsOf(fiber: Fiber, roots: string[]): void {
+  const before = fiber.alternate;
+  const component = COMPONENTS.has(fiber.tag) && fiber.tag !== 14;
+  if (component && (before === null || (fiber.flags & PERFORMED_WORK) !== 0)) {
+    roots.push(nameOf(fiber) ?? "(anonymous)");
+    return;
+  }
+  if (before !== null && fiber.child === before.child) return;
+  for (let child = fiber.child; child; child = child.sibling) rootsOf(child, roots);
+}
+
 /** Whether a test file asked for React's commits to be counted (`countReactsCommits`). */
 let counting = false;
 
@@ -121,6 +141,9 @@ let counting = false;
     if (!counting) return;
     counts.commits += 1;
     countUpdated(root.current, false);
+    const roots: string[] = [];
+    rootsOf(root.current, roots);
+    commitRoots.push(roots);
   },
   onPostCommitFiberRoot: () => {},
   onCommitFiberUnmount: (_id: number, fiber: Fiber) => {

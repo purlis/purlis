@@ -24,6 +24,5 @@ export default {
     // A session tab's `×` under the pointer (`tabs.css`, #2914): its attributes are the family's
     // (`tabPart`), and it holds no button.
     '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]:hover',
-    '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"][data-keeps]:hover',
   ],
 } satisfies FamilyTheme;

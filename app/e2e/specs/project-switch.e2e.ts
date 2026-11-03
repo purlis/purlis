@@ -3,7 +3,8 @@
 
 import { browser, expect } from "@wdio/globals";
 import { READY, built, declareAProfile, writeShell } from "../harness.js";
-import { endChat, pressAndStart } from "../opening.js";
+import { pressAndStart } from "../opening.js";
+import { endChatById } from "../started.js";
 import { logLine } from "../processes.js";
 import {
   BUDGET_MS,
@@ -39,8 +40,6 @@ import {
  * and the project the launch opened is in front again.
  */
 
-const TABS = '[data-strip="Tabs"]';
-
 /**
  * What a switched-to pane is waited for: the last word of `READY`, which every scenario chat
  * prints. A pane that comes back on screen is sent the screen as it already is (`watch_session`)
@@ -56,16 +55,16 @@ const ROUNDS = 3;
 const BACK_AND_FORTH = 4;
 
 /**
- * Opens one chat in `plane`, the project in front, and answers with the name its `×` carries.
+ * Opens one chat in `plane`, the project in front, and answers with its session, once its pane
+ * is on screen.
  *
  * **Known by its session, not by the strip.** The strip collapses rather than scrolling, so in a
  * project an earlier spec left full of chats a new tab can push another into the show-more and
  * the strip draws as many tabs as before; and the tab in front is the OLD chat until the new one
- * is up. So the new chat is the session the core's list did not have before, and its `×` is read
- * only once that session's own pane is on screen — the pane in front is the tab in front's, so
- * the `×` beside the selected tab is then this chat's and never another spec's.
+ * is up. So the new chat is the session the core's list did not have before, and it is ended by
+ * that number (`started.ts`), never by a name another spec's chat may share.
  */
-async function aChatIn(plane: string): Promise<string> {
+async function aChatIn(plane: string): Promise<number> {
   const before = new Set(await ask<number[]>("running_sessions", { plane }));
   await pressAndStart("New tab");
   let session: number | undefined;
@@ -78,27 +77,17 @@ async function aChatIn(plane: string): Promise<string> {
     },
     { timeout: 30_000, timeoutMsg: "the chat this spec opened never started" },
   );
-  let closer = "";
+  const mine = session ?? -1;
   await browser.waitUntil(
-    async () => {
-      const found = await browser.execute(
-        (tabs: string, mine: number) =>
-          document.querySelector(`[data-testid="pane"][data-session="${mine}"]`)
-            ? (document
-                .querySelector(`${tabs} [role="tab"][aria-selected="true"]`)
-                ?.closest(".tab")
-                ?.querySelector('button[aria-label^="End chat "]')
-                ?.getAttribute("aria-label") ?? null)
-            : null,
-        TABS,
-        session ?? -1,
-      );
-      closer = found ?? "";
-      return closer !== "";
-    },
+    async () =>
+      browser.execute(
+        (one: number) =>
+          document.querySelector(`[data-testid="pane"][data-session="${one}"]`) !== null,
+        mine,
+      ),
     { timeout: 30_000, timeoutMsg: "the chat this spec opened never came to the front" },
   );
-  return closer;
+  return mine;
 }
 
 describe(`switching among ${OPEN} open projects`, function () {
@@ -108,8 +97,8 @@ describe(`switching among ${OPEN} open projects`, function () {
 
   /** The project the launch opened, which this spec never closes. */
   let first = "";
-  /** The `×` of the chat this spec opened there, so only that chat is ended again. */
-  let mine = "";
+  /** The chat this spec opened there, so only that chat is ended again. */
+  let mine: number | undefined;
   /** The window's size before this spec made room for ten project tabs. */
   let size = { width: 0, height: 0 };
   const planes: string[] = [];
@@ -142,8 +131,7 @@ describe(`switching among ${OPEN} open projects`, function () {
       timeout: 30_000,
       timeoutMsg: "the launch's project did not come back to the front",
     });
-    // It was the tab in front there when the project was left, so it is the one in front now.
-    if (mine !== "") await endChat(mine);
+    if (mine !== undefined) await endChatById(mine, first);
     await browser.setWindowSize(size.width, size.height);
   });
 

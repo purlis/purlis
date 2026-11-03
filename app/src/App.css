@@ -636,11 +636,6 @@ body {
    hover fill under the pointer. `Doer`'s `iconOnly` draws a quiet icon button, which wears
    `bare`; `N more` is a quiet button with words, which wears `show-more`. */
 
-/* **`End this pane's chat` is not on the bar any more** — it is in each pane's own corner, and
-   `.pane-doing > .ends-a-chat` in `paneFrame.css` is where its danger hover now lives. The
-   rule that was here is gone with the button rather than left behind matching nothing: dead
-   CSS is how a rule comes to be copied for a reason that stopped being true. */
-
 .trouble {
   margin: 0;
   padding: var(--space-2) var(--space-4);
@@ -1537,36 +1532,12 @@ body {
   white-space: nowrap;
 }
 
-/* **A pane whose tab shows a task that is not there to be drawn** (#1486, `TaskAway.tsx`): in
-   the terminal's place and on its surface, under the pane's top line, which still says the
-   path. A sentence, how it ended, and the way back. Nothing here is a terminal, so nothing
-   typed reaches a chat. */
-.task-away {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  align-items: flex-start;
-  height: 100%;
-  padding: var(--space-8) var(--space-5) var(--space-5);
-  overflow: auto;
-  color: var(--text-primary);
-  background: var(--terminal-background);
-}
-
-.task-away p {
-  margin: 0 0 var(--space-2);
-  max-width: 40rem;
-}
-
-.task-away-ways {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.task-away-report {
+/* **A task's report on the band of a pane left on it as it ended** (#4757, `EndedBand.tsx`):
+   text, every character, wrapped and never cut, in a box of its own that scrolls. */
+.ended-report {
   max-width: 100%;
-  max-height: 50vh;
+  max-height: 30vh;
+  margin: var(--space-2) 0 0;
   overflow: auto;
   white-space: pre-wrap;
 }
@@ -1617,7 +1588,7 @@ body {
 
 /* **A task's own tab** (#1489, V100-38): the task mark before its name, whose task it is after
    it, dimmer (`talk · steward 4`), and a minimise where a session's tab has its close. The
-   minimise ends nothing, so it never wears the close's danger look (`.closer.keeps`). */
+   minimise ends nothing, as no close does (#4756). */
 .tab[data-task-tab] .tab-mark[data-mark="task"] {
   color: var(--text-secondary);
 }

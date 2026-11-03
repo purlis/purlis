@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import process from "node:process";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { LAUNCHDS_LIMIT, READY, THE_APPS_STARTING_LIMIT, built } from "../harness.js";
-import { answerTheAsk, pressAndStart } from "../opening.js";
+import { endEveryChat, pressAndStart } from "../opening.js";
 import { goToWorkspaceAt, workspacesListed } from "../titleBarWorkspaces.js";
 import {
   type Sample,
@@ -133,9 +133,9 @@ function runsTheChats(seen: Looked): Sample {
   return seen.host ?? seen;
 }
 
-/** The close buttons in the tab bar, left to right. */
-async function closeButtons(): Promise<WebdriverIO.Element[]> {
-  return [...(await $$('[data-strip="Tabs"] button[aria-label^="End chat "]').getElements())];
+/** The chats' panes drawn on the strip in front. */
+async function chatPanes(): Promise<WebdriverIO.Element[]> {
+  return [...(await $$('[data-testid="pane"]').getElements())];
 }
 
 /** Focuses a workspace by its name, from the title bar's ⌄ (#2916): whether it was listed. */
@@ -155,42 +155,27 @@ async function hiddenTabs(): Promise<number> {
 }
 
 /**
- * Closes every tab, last first, and waits for every session's program to be gone.
+ * Ends every chat, and waits for every session's program to be gone.
  *
  * **Every workspace's**, not the focused one's. The chat strip shows one workspace's chats
  * (ADR 0036), and one app process serves the whole run — so a chat another spec left in
  * another workspace is a live harness this spec would otherwise count as a leak.
  *
- * **The strip collapses rather than scrolling** (ADR 0039, as amended), so at fifty
- * chats it draws a handful and the rest are behind the show-more button. This loop still
- * terminates, and the reason is worth writing down because it is the whole of the
- * reachability argument: closing a drawn tab gives the strip room for a hidden one, so the
- * hidden tabs flow onto the strip as the drawn ones go. `4 * most` presses is four times what
- * `most` chats need. What would catch it going wrong is the pair of assertions below — no
- * close buttons AND nothing hidden — rather than the loop running out, and then the wait for
- * `harnessesRunning() === 0` underneath.
+ * **By each chat's End…** (#4753), the one row that ends a chat: a tab's close ends nothing
+ * (#4756). The palette lists an End… for every chat, drawn on the strip or behind its show-more
+ * or in no pane at all, so reachability no longer rests on the strip. What would catch it going
+ * wrong is the pair of assertions below — no chat's pane AND nothing hidden — and then the wait
+ * for `harnessesRunning() === 0` underneath.
  */
 async function closeEveryTab(most = TABS): Promise<void> {
   const names = (await workspacesListed()).map((one) => one.name);
   for (const name of names.length > 0 ? names : [""]) {
     if (name !== "" && !(await focusWorkspace(name))) continue;
-    // Bounded, so a close that never takes shows up as a failure and not as a hang.
-    for (let pressed = 0; pressed < 4 * most; pressed++) {
-      const buttons = await closeButtons();
-      if (buttons.length === 0) {
-        break;
-      }
-      // **Answered, not only pressed.** Ending a chat asks first now, and the question is
-      // modal: a second press with the dialog up reaches nothing, so a loop that skipped the
-      // answer would spend its whole budget clicking an inert strip.
-      const closing = buttons[buttons.length - 1];
-      const ending = (await closing.getAttribute("aria-label")) ?? "";
-      await closing.click();
-      await answerTheAsk(ending);
-    }
-    expect(await closeButtons()).toHaveLength(0);
+    // Bounded, so an End that never takes shows up as a failure and not as a hang.
+    await endEveryChat(4 * most);
+    expect(await chatPanes()).toHaveLength(0);
     // **And nothing left behind the button**, which is the assertion the collapse added. An
-    // empty strip with forty chats still hidden would otherwise read as "all closed" here and
+    // empty strip with forty chats still hidden would otherwise read as "all ended" here and
     // only fail sixty seconds later, as a leak, with no sign of what leaked.
     expect(await hiddenTabs()).toBe(0);
   }
@@ -202,7 +187,7 @@ async function closeEveryTab(most = TABS): Promise<void> {
   await browser.waitUntil(async () => harnessesRunning() === 0, {
     timeout: 60_000,
     interval: 250,
-    timeoutMsg: `every tab closed, and ${harnessesRunning()} sessions were still running`,
+    timeoutMsg: `every chat ended, and ${harnessesRunning()} sessions were still running`,
   });
 }
 

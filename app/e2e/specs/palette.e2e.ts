@@ -110,6 +110,17 @@ async function arrangement(): Promise<string[]> {
 
 /** The names on the tab strip, left to right. Scoped to that strip: the strip above lists
  *  workspaces as a tablist too, and a query across the window would mix the two. */
+/** What the palette is typed to end the chat in front: its End… row's words (#4753, #4756). */
+async function endOfTheChatInFront(): Promise<string> {
+  const name = await browser.execute(
+    () =>
+      document
+        .querySelector('[data-strip="Tabs"] [role="tab"][aria-selected="true"]')
+        ?.querySelector(".tab-name")?.textContent ?? "",
+  );
+  return `End chat ${name}…`;
+}
+
 async function tabNames(): Promise<string[]> {
   return browser.execute(() =>
     [
@@ -260,8 +271,9 @@ describe("the command palette", () => {
     // which is why it works here when nothing aimed at a button does, and it has a real
     // consequence this asserts: nothing is ended. `docs/ui-primitives.md` records the rest.
     const before = await tabNames();
+    const ending = await endOfTheChatInFront();
     await openPalette();
-    await typeIntoPalette("end this pane");
+    await typeIntoPalette(ending);
 
     await browser.keys(["Enter"]);
 
@@ -286,8 +298,9 @@ describe("the command palette", () => {
   });
 
   it("ends the chat once the question is answered yes", async () => {
-    // The pane the test above opened is that tab's only one, so closing it closes the tab
-    // with it — which is what makes this checkable without counting panes across tabs.
+    // The pane the test above opened is that tab's only one, so ending its chat closes the tab
+    // with it — which is what makes this checkable without counting panes across tabs. Its
+    // End…, the one row that ends a chat: Close pane ends nothing (#4756).
     //
     // **The yes is a click here, and only because a scenario cannot press a button by
     // keyboard at all** — see the spec above for the trace that measured it. What this proves
@@ -295,12 +308,13 @@ describe("the command palette", () => {
     // question against the real core, and that answering it really does end the chat and take
     // its tab off the strip. Whether a keyboard can press the answer is `App.test.tsx`'s.
     const before = await tabNames();
+    const ending = await endOfTheChatInFront();
     await openPalette();
-    await typeIntoPalette("end this pane");
+    await typeIntoPalette(ending);
 
     await browser.keys(["Enter"]);
 
-    await answerTheAsk("End this pane's chat");
+    await answerTheAsk(ending);
 
     await browser.waitUntil(async () => (await tabNames()).length === before.length - 1, {
       timeout: 15_000,

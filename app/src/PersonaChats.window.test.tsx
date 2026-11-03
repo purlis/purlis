@@ -14,9 +14,9 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { EndingChat } from "./EndingChat";
 import type { ClosingChat, PersonaChat } from "./bindings";
 import { forgetDismissals } from "./dismissals";
+import { askToEnd } from "./menus.testkit";
 import { stripNamed } from "./test-strips";
 
 /**
@@ -142,8 +142,9 @@ async function closingTheStewardChat(theirs: ClosingChat) {
   await screen.findAllByTestId("pane");
   await settled();
   expect(tabNames()).toEqual(["steward 4", "check prod"]);
-  await userEvent.click(screen.getByRole("button", { name: "End chat steward 4" }));
-  return { ...said, asking: await screen.findByRole("alertdialog") };
+  // Its End… (#4753): the one row that ends a chat, and so the one that asks about the chats at
+  // work below it. A close ends nothing (#4756).
+  return { ...said, asking: await askToEnd("steward 4") };
 }
 
 function tabNames() {
@@ -155,7 +156,7 @@ function tabNames() {
 
 const ONE_RUNNING = below([RUNNING], ["check prod"]);
 
-describe("closing a chat with chats at work below it", () => {
+describe("ending a chat with chats at work below it", () => {
   it("asks once, with both choices, and starts on keeping them", async () => {
     const { asking, asked } = await closingTheStewardChat(ONE_RUNNING);
 
@@ -247,7 +248,7 @@ describe("closing a chat with chats at work below it", () => {
   });
 });
 
-describe("closing a chat with nothing at work below it", () => {
+describe("ending a chat with nothing at work below it", () => {
   it("asks nothing about them, and says which reported tasks close with it", async () => {
     const { asking, asked } = await closingTheStewardChat(
       below(
@@ -282,46 +283,5 @@ describe("closing a chat with nothing at work below it", () => {
 
     expect(within(asking).queryByRole("radio")).toBeNull();
     expect(asking).not.toHaveTextContent("closes with it");
-  });
-});
-
-describe("closing several chats at once", () => {
-  const offer = {
-    id: "tab.close:1",
-    title: "End tab steward 4",
-    available: true,
-    reason: "",
-    does: { verb: "nothing" },
-  } as const;
-
-  it("asks nothing about the chats they started, and says those keep running", () => {
-    render(
-      <EndingChat
-        offer={offer}
-        keeps
-        onEnd={() => undefined}
-        onSmartClose={() => undefined}
-        onCancel={() => undefined}
-      />,
-    );
-
-    const asking = screen.getByRole("alertdialog");
-    expect(within(asking).queryByRole("radio")).toBeNull();
-    expect(asking).toHaveTextContent(
-      "The chats these chats started keep running. Close one chat at a time to be asked about them.",
-    );
-  });
-
-  it("says nothing of it where none of them started a chat that is at work", () => {
-    render(
-      <EndingChat
-        offer={offer}
-        onEnd={() => undefined}
-        onSmartClose={() => undefined}
-        onCancel={() => undefined}
-      />,
-    );
-
-    expect(screen.getByRole("alertdialog")).not.toHaveTextContent("keep running");
   });
 });

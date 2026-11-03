@@ -297,7 +297,7 @@ impl Host {
         let session = SessionHost::default();
         session.start_at(place, move || {
             use std::os::unix::process::CommandExt as _;
-            let mut command = std::process::Command::new(&purlis);
+            let mut command = dying_with_this_test(&purlis);
             command
                 .arg("serve")
                 .env_clear()
@@ -324,6 +324,28 @@ impl Host {
 impl Drop for Host {
     fn drop(&mut self) {
         self.session.end();
+    }
+}
+
+/// **The test's host ends with the test's process, however that ends** (#5057). [`Host`]'s
+/// drop ends it after a failed assertion, but a host runs in a process group of its own, as the
+/// window's does, so nextest's kill of a test that hangs does not reach it, and a test process
+/// that ends without unwinding leaves it serving out the grace period a crashed window gets
+/// (ADR 0068 §2): ten minutes and more, which `tools/no-orphans.sh` fails the suite for.
+///
+/// So `purlis` is started through util-linux's `setpriv`, which sets the parent-death signal
+/// (`PR_SET_PDEATHSIG`) and then becomes it: the kernel kills the host when the thread that
+/// started it, the host's supervisor, goes, which is when the test's process goes, or after
+/// the window ended it. Without an `unsafe` block, which the workspace keeps to its audited few.
+/// Where there is no `setpriv`, the host is started as it was.
+fn dying_with_this_test(purlis: &Path) -> std::process::Command {
+    const SETPRIV: &str = "/usr/bin/setpriv";
+    if cfg!(target_os = "linux") && Path::new(SETPRIV).exists() {
+        let mut command = std::process::Command::new(SETPRIV);
+        command.args(["--pdeathsig", "KILL", "--"]).arg(purlis);
+        command
+    } else {
+        std::process::Command::new(purlis)
     }
 }
 

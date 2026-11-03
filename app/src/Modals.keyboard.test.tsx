@@ -668,11 +668,11 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
           void render(
             <EndingChat
               offer={{
-                id: "tab.close:1",
-                title: "End chat steward 1",
+                id: "chat.end:1",
+                title: "End chat steward 1…",
                 available: true,
                 reason: "",
-                does: { verb: "closeTab", tab: 1, ends: true },
+                does: { verb: "endChat", session: 1 },
                 note: ENDS_IT,
               }}
               smart={{ available: true, why: null, close_first: false }}

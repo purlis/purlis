@@ -5764,6 +5764,26 @@ fn a_task_chat_sent_back_out_of_its_tab_has_none_in_the_record_and_is_still_open
     let _ = chats.close(session);
 }
 
+#[test]
+fn closing_the_tab_of_a_chat_that_is_not_a_task_ends_nothing_and_is_not_refused() {
+    // #4756: a close never ends a chat. The core used to refuse this one, saying closing its
+    // tab ends it; now it is open after, and its record is as it was.
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "steward", None), SIZE)
+        .unwrap();
+    let before = chats.record();
+
+    chats
+        .close_tab(session)
+        .expect("a tab close is never refused");
+
+    assert_eq!(chats.open_now().len(), 1, "closing its tab ends nothing");
+    assert_eq!(chats.record(), before);
+    let _ = chats.close(session);
+}
+
 /// A chat dispatched from `asker` in the lineage `root`, as a dispatch records it.
 fn dispatched_from(dir: &std::path::Path, name: &str, asker: u32, root: &str) -> Chat {
     let mut chat = started_by(dir, name, purlis_core::reopen::Mode::Task);
