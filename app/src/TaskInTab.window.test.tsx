@@ -571,16 +571,17 @@ afterEach(() => {
  *  accessible name, or nothing where it draws no pill. */
 
 describe("pressing a task", () => {
-  it("shows it in its session's tab and adds no tab", async () => {
+  it("shows it in the focused pane and adds no tab (#4757)", async () => {
     const { tree, asked } = await drawn(withTasks());
     expect(tabNames()).toEqual(["steward 1", "steward 2"]);
     expect(onScreen()).toEqual([1]);
 
     await userEvent.click(row(tree, "talk"));
 
+    // The pane shows talk itself, and its tab is named for what its pane shows (#4762).
     await waitFor(() => expect(onScreen()).toEqual([4]));
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
-    expect(tab("steward 1").getAttribute("aria-selected")).toBe("true");
+    expect(tabNames()).toEqual(["talk", "steward 2"]);
+    expect(tab("talk").getAttribute("aria-selected")).toBe("true");
     // The tab is not made an ordinary one: the core is told nothing of a tab for the task.
     expect(commandsOf(asked, "open_chat_tab")).toEqual([]);
     // Its row is the current one in the list.
@@ -590,7 +591,7 @@ describe("pressing a task", () => {
     expect(tree.textContent).not.toContain("no tab");
   });
 
-  it("brings its session's tab forward when another tab is in front", async () => {
+  it("lands in the focused pane of the tab in front, not in its session's tab (#4757)", async () => {
     const { tree } = await drawn(withTasks());
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
@@ -598,20 +599,20 @@ describe("pressing a task", () => {
     await userEvent.click(row(tree, "sweep"));
 
     await waitFor(() => expect(onScreen()).toEqual([5]));
-    expect(tab("steward 1").getAttribute("aria-selected")).toBe("true");
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
+    expect(tabNames()).toEqual(["steward 1", "sweep"]);
+    expect(tab("sweep").getAttribute("aria-selected")).toBe("true");
   });
 
-  it("shows a task of a task in the tab of the session at the top", async () => {
+  it("shows a task of a task in the focused pane, like any chat (#4757)", async () => {
     const { tree } = await drawn(withTasks());
 
     await userEvent.click(row(tree, "deep"));
 
     await waitFor(() => expect(onScreen()).toEqual([7]));
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
+    expect(tabNames()).toEqual(["deep", "steward 2"]);
   });
 
-  it("falls back to an ordinary tab for a task whose session has no tab in this window", async () => {
+  it("lands in the focused pane for a task whose session has closed, and adds no tab (#4757)", async () => {
     // Chat 9 asked for it and has closed since: the task is at the top of the list.
     const { tree, asked } = await drawn([
       chat(1, "alpha"),
@@ -620,13 +621,13 @@ describe("pressing a task", () => {
 
     await userEvent.click(row(tree, "left behind"));
 
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "left behind"]));
-    expect(onScreen()).toEqual([12]);
-    expect(commandsOf(asked, "open_chat_tab")).toEqual([{ plane: PLANE, session: 12 }]);
+    await waitFor(() => expect(onScreen()).toEqual([12]));
+    expect(tabNames()).toEqual(["left behind"]);
+    expect(commandsOf(asked, "open_chat_tab")).toEqual([]);
     expect(crumbs()).toBeNull();
   });
 
-  it("never shows a handoff inside the tab of the chat it came from", async () => {
+  it("shows a handoff in the focused pane as a session of its own, with no breadcrumb (#4757)", async () => {
     // Chat 3 is a handoff from steward 1, and this window draws no tab for it (the record
     // says it has one, and the fixture's tab was closed): it is a session of its own.
     const { tree, asked } = await drawn([
@@ -639,21 +640,22 @@ describe("pressing a task", () => {
 
     await userEvent.click(row(tree, "moved work"));
 
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "moved work"]));
+    await waitFor(() => expect(onScreen()).toEqual([3]));
+    expect(tabNames()).toEqual(["moved work"]);
     expect(crumbs()).toBeNull();
-    expect(commandsOf(asked, "open_chat_tab")).toEqual([{ plane: PLANE, session: 3 }]);
+    expect(commandsOf(asked, "open_chat_tab")).toEqual([]);
   });
 });
 
 describe("a tab remembers which chat it shows", () => {
-  it("shows the task again when the tab comes back to the front", async () => {
+  it("shows the task its pane was given when the tab comes back to the front (#4757)", async () => {
     const { tree } = await drawn(withTasks());
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
 
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
-    await userEvent.click(tab("steward 1"));
+    await userEvent.click(tab("talk"));
 
     await waitFor(() => expect(onScreen()).toEqual([4]));
     expect(crumbsSay()).toContain("talk");
@@ -665,9 +667,14 @@ describe("a tab remembers which chat it shows", () => {
     const window = render(<App />);
     const tree = await section();
     await waitFor(() => expect(rows(tree)).toHaveLength(open.length));
-    // Two tabs, each left on a task: the one in front and the one behind it.
+    // Two tabs, each left on a task: the one in front and the one behind it. A press lands in
+    // the focused pane of the tab in front (#4757), so each tab is brought forward first.
+    await userEvent.click(tab("steward 2"));
+    await waitFor(() => expect(onScreen()).toEqual([2]));
     await userEvent.click(row(tree, "notes"));
     await waitFor(() => expect(onScreen()).toEqual([8]));
+    await userEvent.click(tab("steward 1"));
+    await waitFor(() => expect(onScreen()).toEqual([1]));
     await userEvent.click(row(tree, "sweep"));
     await waitFor(() => expect(onScreen()).toEqual([5]));
     // Every tab is told with what its pane shows (#4751): the front tab's task is on screen.
@@ -681,12 +688,13 @@ describe("a tab remembers which chat it shows", () => {
     await section();
 
     await waitFor(() => expect(onScreen()).toEqual([5]));
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
-    expect(tab("steward 1").getAttribute("aria-selected")).toBe("true");
+    // Each tab comes back on its task, in its pane. The two sessions, in no pane, still get a
+    // tab of their own at a launch until chats stop getting tabs (#4758).
+    expect(tabNames()).toEqual(["sweep", "notes", "steward 1", "steward 2"]);
+    expect(tab("sweep").getAttribute("aria-selected")).toBe("true");
     expect(crumbsSay()).toContain("sweep");
     // And the tab behind is on its task too.
-    expect(tab("steward 2").querySelector(".tab-task")?.textContent).toBe("notes");
-    await userEvent.click(tab("steward 2"));
+    await userEvent.click(tab("notes"));
     await waitFor(() => expect(onScreen()).toEqual([8]));
   });
 
@@ -970,55 +978,34 @@ describe("a shown task that ends", () => {
 });
 
 describe("a pane never shows a task without its breadcrumb", () => {
-  /** Whatever is on screen: a task's terminal is there only under its breadcrumb. */
-  const neverUnlabelled = (own: number) => {
-    for (const session of onScreen()) if (session !== own) expect(crumbs()).not.toBeNull();
-  };
-
-  it("stops drawing a task of a task when the task between it and the session ends", async () => {
+  it("keeps drawing a task of a task when the task between it and the session ends (#4757)", async () => {
     const { tree, ended } = await drawn(withTasks());
     await userEvent.click(row(tree, "deep"));
     await waitFor(() => expect(onScreen()).toEqual([7]));
 
-    // talk asked for deep, and talk ends. deep is still running.
+    // talk asked for deep, and talk ends. deep is still running, and the pane was given deep
+    // itself: a pane never changes what it shows by itself.
     await ended(4);
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
-    const pane = await screen.findByTestId("task-away");
-    expect(onScreen()).toEqual([]);
-    expect(pane.textContent).toContain("deep is still running, and this tab can no longer show it");
-    // The path it had is still what the pane says, and the chat that is gone is no way.
-    expect(crumbsSay()).toMatch(/^steward 1 › talk › deep · /);
-    expect(within(crumbs() as HTMLElement).queryByRole("button", { name: "talk" })).toBeNull();
-    expect(within(pane).getByRole("button", { name: "Back to steward 1" })).toBeTruthy();
-
-    // Its own tab is the way to it now, and the first tab goes back to its session.
-    await userEvent.click(
-      within(pane).getByRole("button", { name: "Open deep in a tab of its own" }),
-    );
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "steward 2", "deep"]));
     expect(onScreen()).toEqual([7]);
-    await userEvent.click(tab("steward 1"));
-    await waitFor(() => expect(onScreen()).toEqual([1]));
-    expect(tab("steward 1").querySelector(".tab-task")).toBeNull();
+    expect(away()).toBeNull();
   });
 
-  it("holds while the session is started again under a new number, whichever catches up first", async () => {
+  it("says the path again once the session is started again under a new number (#4757)", async () => {
     const { tree, open, rowsChanged } = await drawn(withTasks());
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
 
-    // steward 1 is restarted from its list (#4753): it is chat 21 now. The tabs know at once;
-    // the core's list still says talk is a task of chat 1.
+    // steward 1 is restarted from its list (#4753): it is chat 21 now, in no pane (#4757). The
+    // core's list still says talk is a task of chat 1. The pane was given talk itself, so it
+    // draws talk's terminal as any chat's pane does, and says its path once the list does.
     await chatList("steward 1");
     await userEvent.click(await screen.findByRole("menuitem", { name: "Restart" }));
     await waitFor(() => expect(open[0].session).toBe(21));
-    await userEvent.click(tab("steward 1"));
-
-    // Between the two, the pane does not draw talk's terminal under a path it cannot say.
-    await waitFor(() => expect(screen.getAllByRole("tab").length).toBeGreaterThan(0));
-    neverUnlabelled(21);
+    await userEvent.click(tab("talk"));
 
     // The list catches up: talk and the rest are tasks of chat 21.
     for (const one of open) if (one.from?.chat === 1) one.from = { ...one.from, chat: 21 };
@@ -1027,23 +1014,6 @@ describe("a pane never shows a task without its breadcrumb", () => {
     await waitFor(() => expect(onScreen()).toEqual([4]));
     expect(crumbsSay()).toMatch(/› talk · /);
     expect(away()).toBeNull();
-  });
-
-  it("leaves no tab showing a task that was given a tab of its own", async () => {
-    const { tree, ended } = await drawn(withTasks());
-    await userEvent.click(row(tree, "deep"));
-    await waitFor(() => expect(onScreen()).toEqual([7]));
-    await ended(4);
-    await screen.findByTestId("task-away");
-
-    // Pressed from the list while its home is gone: it opens as a tab of its own.
-    await userEvent.click(row(tree, "deep"));
-
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "steward 2", "deep"]));
-    await userEvent.click(tab("steward 1"));
-    await waitFor(() => expect(onScreen()).toEqual([1]));
-    expect(away()).toBeNull();
-    expect(crumbs()).toBeNull();
   });
 });
 
@@ -1100,14 +1070,15 @@ describe("the breadcrumb", () => {
     expect(crumbsSay()).toMatch(/^steward 1 › talk · /);
   });
 
-  it("says the workspace of a task that works in another one, which still opens in its asker's tab", async () => {
+  it("says the workspace of a task that works in another one, which brings that workspace forward (#4757)", async () => {
     const { tree } = await drawn(withTasks());
 
     await userEvent.click(row(tree, "probe"));
 
     await waitFor(() => expect(onScreen()).toEqual([6]));
-    // The strip is still alpha's, where the session that asked is: beta's gained no tab.
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
+    // probe works in beta: beta's strip comes forward. It has no tab yet, so it gets one until
+    // every workspace keeps its own (#4758).
+    expect(tabNames()).toEqual(["probe"]);
     expect(crumbsSay()).toMatch(/^steward 1 › probe in beta · /);
   });
 
@@ -1120,54 +1091,6 @@ describe("the breadcrumb", () => {
 });
 
 describe("the tab's label", () => {
-  it("says the session and then the task, while the tab shows a task", async () => {
-    const { tree } = await drawn(withTasks());
-    expect(tab("steward 1").querySelector(".tab-task")).toBeNull();
-
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    const label = tab("steward 1");
-    expect(label.querySelector(".tab-name")?.textContent).toBe("steward 1");
-    expect(label.querySelector(".tab-task")?.textContent).toBe("talk");
-    // Read aloud, the separator is the words it stands for, and the tab says what a press does.
-    expect(label.textContent).toContain(", showing task talk");
-    expect(label.querySelector(".tab-task-sep")?.getAttribute("aria-hidden")).toBe("true");
-    expect(label.getAttribute("aria-description")).toBe("Press to go back to steward 1");
-    // The state mark is the session's, and stands beside the session's name, before the task's.
-    const mark = label.querySelector(".state");
-    expect(
-      (mark?.compareDocumentPosition(label.querySelector(".tab-task") as Node) ?? 0) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    // And the other session's tab says only its own name.
-    expect(tab("steward 2").querySelector(".tab-task")).toBeNull();
-    expect(tab("steward 2").getAttribute("aria-description")).toBeNull();
-  });
-
-  it("goes back to the session's own chat when the tab is pressed while it is in front", async () => {
-    const { tree } = await drawn(withTasks());
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    await userEvent.click(tab("steward 1"));
-
-    await waitFor(() => expect(onScreen()).toEqual([1]));
-    expect(tab("steward 1").querySelector(".tab-task")).toBeNull();
-    expect(crumbs()).toBeNull();
-  });
-
-  it("goes back at once when the tab in front is pressed from the keyboard", async () => {
-    const { tree } = await drawn(withTasks());
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    tab("steward 1").focus();
-    await userEvent.keyboard("{Enter}");
-
-    expect(onScreen()).toEqual([1]);
-  });
-
   it("stays on the task when the tab is pressed to bring it to the front", async () => {
     const { tree } = await drawn(withTasks());
     await userEvent.click(row(tree, "talk"));
@@ -1175,9 +1098,11 @@ describe("the tab's label", () => {
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
 
-    // One press brings it forward, on the task it was left on. Only a second goes back.
-    await userEvent.click(tab("steward 1"));
+    // One press brings it forward, on the task its pane was given (#4757), and a second does
+    // not take the pane anywhere else.
+    await userEvent.click(tab("talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
+    await userEvent.click(tab("talk"));
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(onScreen()).toEqual([4]);
   });
@@ -1187,11 +1112,12 @@ describe("the tab's label", () => {
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
 
-    await userEvent.dblClick(tab("steward 1"));
+    await userEvent.dblClick(tab("talk"));
 
-    // The name is open for editing, and it is the session's name: the tab is the session.
+    // The name is open for editing, and it is the task's: the tab is named for what its pane
+    // shows (#4757, #4762).
     const box = await within(strip()).findByRole("textbox", { name: /^Rename chat/ });
-    expect((box as HTMLInputElement).value).toBe("steward 1");
+    expect((box as HTMLInputElement).value).toBe("talk");
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(onScreen()).toEqual([4]);
     expect(crumbsSay()).toMatch(/^steward 1 › talk · /);
@@ -1214,7 +1140,7 @@ describe("the tab's label", () => {
       value: () => {},
     });
     try {
-      const dragged = tab("steward 1");
+      const dragged = tab("talk");
       dragged.focus();
       await userEvent.keyboard("{Shift>}[Space]{/Shift}");
       await userEvent.keyboard("{ArrowRight}");
@@ -1224,8 +1150,9 @@ describe("the tab's label", () => {
       Reflect.deleteProperty(Element.prototype, "scrollIntoView");
     }
 
+    // The pane still shows the task it was given (#4757).
     expect(onScreen()).toEqual([4]);
-    expect(tab("steward 1").querySelector(".tab-task")?.textContent).toBe("talk");
+    expect(tab("talk")).toBeTruthy();
   });
 });
 
@@ -1242,34 +1169,23 @@ describe("a task that needs you and is not on screen", () => {
     expect(onScreen()).toEqual([1]);
   });
 
-  it("puts the hand on the tab it was left showing in, once that tab is not in front", async () => {
+  it("puts the hand on the tab its pane shows it in, once that tab is not in front (#4757)", async () => {
     const { tree, move } = await drawn(withTasks());
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
     // On screen in the tab in front: the pane is what says it, and the tab wears nothing.
     await move(4, "waiting", 10, [4]);
-    expect(handOn("steward 1")).toBeNull();
+    expect(handOn("talk")).toBeNull();
 
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
 
-    expect(handSays("steward 1")).toBe("talk needs you");
-    // And the tab's own state mark is still the session's, not the task's, which needs you
-    // (the word the tab says is its row's, #4935).
-    expect(within(tab("steward 1")).queryByRole("img", { name: "needs you" })).toBeNull();
+    // talk is the tab's own chat now, so its state mark says it, and no hand stands for it.
+    expect(within(tab("talk")).queryByRole("img", { name: "needs you" })).not.toBeNull();
+    expect(handOn("talk")).toBeNull();
   });
 
-  it("puts the hand on the tab for the session's own chat, while the tab shows a task", async () => {
-    const { tree, move } = await drawn(withTasks());
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    await move(1, "waiting", 10, [1]);
-
-    expect(handSays("steward 1")).toBe("steward 1 needs you");
-  });
-
-  it("is gone to from the Inbox the title bar opens, which switches the tab to that task", async () => {
+  it("is gone to from the Inbox the title bar opens, which shows it in the focused pane (#4757)", async () => {
     const { move } = await drawn(withTasks());
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
@@ -1284,11 +1200,12 @@ describe("a task that needs you and is not on screen", () => {
       await within(inbox).findByRole("button", { name: /^Go to chat .*sweep/ }),
     );
 
+    // A Go is a press (#4757): it lands in the focused pane of the tab in front.
     await waitFor(() => expect(onScreen()).toEqual([5]));
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
-    expect(tab("steward 1").getAttribute("aria-selected")).toBe("true");
+    expect(tabNames()).toEqual(["steward 1", "sweep"]);
+    expect(tab("sweep").getAttribute("aria-selected")).toBe("true");
     // It is on screen now, so the tab wears no hand for it.
-    expect(handOn("steward 1")).toBeNull();
+    expect(handOn("sweep")).toBeNull();
   });
 
   it("is gone to from the hand on a row above it in the Chats list", async () => {
@@ -1299,8 +1216,9 @@ describe("a task that needs you and is not on screen", () => {
     if (!hand) throw new Error("steward 1 wears no hand for the task below it");
     await userEvent.click(hand);
 
+    // In the focused pane, which was steward 1's (#4757).
     await waitFor(() => expect(onScreen()).toEqual([7]));
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
+    expect(tabNames()).toEqual(["deep", "steward 2"]);
   });
 
   it("leaves the tab where it is after the prompt is answered", async () => {
@@ -1331,40 +1249,18 @@ describe("a task that needs you and is not on screen", () => {
 });
 
 describe("a Notice of a chat that is not the one its tab shows", () => {
-  it("is drawn on the pane for the session's own chat while a task is shown, says whose it is, and answers for that chat", async () => {
-    const { tree, asked, holdDispatch } = await drawn(withTasks());
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    // steward 1 asks to dispatch with no grant, while its tab shows talk.
-    await holdDispatch(1);
-
-    const held = await screen.findByRole("status", { name: "steward 1: Dispatch to devops" });
-    expect(held.textContent).toMatch(/^steward 1: It runs as steward and wants to dispatch/);
-    // The pane still shows talk: nothing was switched to show the question.
-    expect(onScreen()).toEqual([4]);
-
-    await userEvent.click(within(held).getByRole("button", { name: "Allow for this chat" }));
-
-    // The answer is the held dispatch's own, which is steward 1's: never the shown chat's.
-    await waitFor(() =>
-      expect(commandsOf(asked, "allow_dispatch")).toEqual([
-        { plane: PLANE, id: 71, level: "chat", also: [], shown: "s0" },
-      ]),
-    );
-    expect(onScreen()).toEqual([4]);
-  });
-
   it("goes to its chat on Go to it", async () => {
-    const { tree, holdDispatch } = await drawn(withTasks());
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-    await holdDispatch(1);
-    const held = await screen.findByRole("status", { name: "steward 1: Dispatch to devops" });
+    const { holdDispatch } = await drawn(withTasks());
+    // sweep is in no pane: its Notice is drawn on its session's pane (#4757: a press of Go to
+    // it shows sweep in the focused pane).
+    await holdDispatch(5);
+    const held = await screen.findByRole("status", {
+      name: "“sweep” (a task of “steward 1”): Dispatch to devops",
+    });
 
     await userEvent.click(within(held).getByRole("button", { name: "Go to it" }));
 
-    await waitFor(() => expect(onScreen()).toEqual([1]));
+    await waitFor(() => expect(onScreen()).toEqual([5]));
     // On its own pane it reads as it always did: no name before it, and no way to itself.
     const own = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(own.textContent).toMatch(/^This chat runs as steward and wants to dispatch/);
@@ -1387,24 +1283,6 @@ describe("a Notice of a chat that is not the one its tab shows", () => {
     expect(onScreen()).toEqual([1]);
   });
 
-  it("is drawn for a vault the session's own chat was refused, and Allow is sent for that chat", async () => {
-    const { tree, asked, refuseVault } = await drawn(withTasks());
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    await refuseVault(1);
-
-    const refused = await screen.findByRole("status", { name: "steward 1: Vault" });
-    await userEvent.click(
-      within(refused).getByRole("button", { name: "Allow steward to use this vault" }),
-    );
-    await waitFor(() =>
-      expect(commandsOf(asked, "allow_refused_vault")).toEqual([
-        { plane: PLANE, session: 1, vault: "prod" },
-      ]),
-    );
-  });
-
   it("is drawn for a vault a task was refused, and Keep blocked is sent for the task", async () => {
     const { asked, refuseVault } = await drawn(withTasks());
 
@@ -1422,38 +1300,38 @@ describe("a Notice of a chat that is not the one its tab shows", () => {
   });
 
   it("is drawn for a sandbox block of a hidden chat, and dismissing it dismisses that chat's", async () => {
-    const { tree, block } = await drawn(withTasks());
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
+    // sweep is in no pane (#4757): its block is drawn on its session's pane.
+    const { block } = await drawn(withTasks());
 
-    await block(1);
+    await block(5);
 
-    const said = await screen.findByRole("status", { name: "steward 1: Sandbox block" });
-    expect(handSays("steward 1")).toBe("steward 1 needs you");
+    const said = await screen.findByRole("status", {
+      name: "“sweep” (a task of “steward 1”): Sandbox block",
+    });
+    expect(handSays("steward 1")).toBe("sweep needs you");
     await userEvent.click(within(said).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(notice(/Sandbox block$/)).toBeNull());
     expect(handOn("steward 1")).toBeNull();
   });
 
   it("puts the hand on the tab, in front or behind, until it is answered", async () => {
+    // The two asking are tasks in no pane (#4757), whose Notices steward 1's pane draws.
     const { tree, holdDispatch, refuseVault } = await drawn(withTasks());
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
 
     // A held dispatch is not in the core's needs-you queue: the tab is what says it.
-    await holdDispatch(1);
-    await waitFor(() => expect(handSays("steward 1")).toBe("steward 1 needs you"));
-    // And a task's refusal, on a tab that is behind and whose pane is not drawn at all.
+    await holdDispatch(4);
+    await waitFor(() => expect(handSays("steward 1")).toBe("talk needs you"));
+    // And another task's refusal, on a tab that is behind and whose pane is not drawn at all.
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
     await refuseVault(5);
     await waitFor(() =>
-      expect(handSays("steward 1")).toMatch(/^(steward 1|sweep|talk) and \d more need you$/),
+      expect(handSays("steward 1")).toMatch(/^(sweep|talk) and \d more need you$/),
     );
 
-    // Answered where it is drawn: the hand for it goes.
-    await userEvent.click(row(tree, "steward 1"));
-    await waitFor(() => expect(onScreen()).toEqual([1]));
+    // Answered in its own pane, which a press gives it (#4757): the hand for it goes.
+    await userEvent.click(row(tree, "talk"));
+    await waitFor(() => expect(onScreen()).toEqual([4]));
     const held = await screen.findByRole("status", { name: "Dispatch to devops" });
     await userEvent.click(within(held).getByRole("button", { name: "Keep blocked" }));
     await waitFor(() => expect(handSays("steward 1")).toBe("sweep needs you"));
@@ -1542,12 +1420,13 @@ describe("a file dropped on a tab", () => {
       },
     });
 
-  it("goes to the task the tab shows and reads, and the sentence names that task", async () => {
+  it("goes to the task the tab's pane shows and reads, and the sentence names that task", async () => {
     const { tree, asked } = await drawn(withTasks());
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
 
-    dropOn(tab("steward 1").closest(".tab") as Element);
+    // The tab is talk's now: its pane was given talk (#4757).
+    dropOn(tab("talk").closest(".tab") as Element);
 
     await waitFor(() =>
       expect(commandsOf(asked, "reference_into_chat").map((sent) => sent.session)).toEqual([4]),
@@ -1567,28 +1446,6 @@ describe("a file dropped on a tab", () => {
 });
 
 describe("closing, while a tab shows a task", () => {
-  it("offers the session's close on the tab, which says what ends, asks first and ends the session, not the task", async () => {
-    const { tree, asked } = await drawn(withTasks());
-    await userEvent.click(row(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    const close = tab("steward 1").closest(".tab")?.querySelector<HTMLElement>("button.closer");
-    expect(close?.getAttribute("aria-label")).toBe("End chat steward 1");
-    await userEvent.click(close as HTMLElement);
-
-    const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
-    expect(question.textContent).toContain(
-      "This tab is showing talk, a task of steward 1. Closing the tab ends steward 1, not talk.",
-    );
-    expect(commandsOf(asked, "close_session")).toEqual([]);
-    await userEvent.click(within(question).getByRole("button", { name: "Close" }));
-
-    await waitFor(() =>
-      expect(commandsOf(asked, "close_session")).toEqual([{ plane: PLANE, session: 1 }]),
-    );
-    expect(tabNames()).toEqual(["steward 2"]);
-  });
-
   it("says nothing of a task in the close of a tab that shows its own chat", async () => {
     await drawn(withTasks());
     const close = tab("steward 1").closest(".tab")?.querySelector<HTMLElement>("button.closer");
@@ -1671,10 +1528,10 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
     expect(onScreenSaid(asked)).toEqual([3]);
     expect(laidSaid(asked)?.tabs.map((tab) => chatsOf(tab.tree))).toEqual([[1], [3]]);
 
-    // And a task of the chat it came from still opens in that chat's tab, not in this one.
+    // And a task of the chat it came from lands in the focused pane like any chat (#4757).
     await userEvent.click(row(tree, "talk").querySelector(".session") as HTMLElement);
     await waitFor(() => expect(onScreen()).toEqual([4]));
-    expect(inFront()).toBe("steward 1");
+    expect(inFront()).toBe("talk");
     expect(crumbsSay()).toContain("steward 1 › talk");
   });
 
@@ -1805,14 +1662,14 @@ describe("a chat the person asked for from a tab (#1492, V100-70)", () => {
     expect((await cardOfRow(row(tree, "steward 1"))).text).not.toContain("asked by you");
   });
 
-  it("opens inside that session's tab, and its breadcrumb says whose it is after its state", async () => {
+  it("opens in the focused pane, and its breadcrumb says whose it is after its state (#4757)", async () => {
     const { tree } = await drawn(asked());
 
     await userEvent.click(row(tree, "talk"));
 
     await waitFor(() => expect(onScreen()).toEqual([4]));
-    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
-    expect(inFront()).toBe("steward 1");
+    expect(tabNames()).toEqual(["talk", "steward 2"]);
+    expect(inFront()).toBe("talk");
     expect(crumbsSay()).toBe("steward 1 › talk · running (no detail from claude) · asked by you");
 
     await userEvent.click(row(tree, "sweep"));

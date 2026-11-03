@@ -325,7 +325,6 @@ import {
   placeBeside,
   restoreShown,
   sendBack,
-  tasksPlacedBelow,
   showOwn,
   showOwnIn,
   shownIn,
@@ -2210,39 +2209,6 @@ export const PlaneView = memo(function PlaneView({
   /** {@link isBackground} as of the last render, for handlers the set it reads is made from,
    *  which so cannot take it as a dependency. */
   const inTheBackground = useRef<Backgrounded>(() => false);
-  /**
-   * **The panes of chats `gone` have gone: every task below one of them that has a pane of its
-   * own is sent back to the list** (#1489, V100-39). **The one function for it, on every
-   * path a chat's pane goes by**: its tab's close, a close of its pane, a Smart close whose
-   * record landed, a stop, the chat ending by itself, and a close that stops what is below.
-   * So no task's tab outlives the session it would go back into, the close dialog's sentence
-   * about those tabs is true whichever answer is given, and a task never comes to be the own
-   * chat of what was its session's tab.
-   *
-   * `before` is the tabs as they were with those panes still there. A task that ended with
-   * its asker has no pane to send back, and the core says nothing of a chat it has closed.
-   * **Nothing ends here**: a task sent back goes on, in the Chats list.
-   */
-  const tasksGoBack = useCallback(
-    (gone: readonly number[], before: Tabs) => {
-      const back = [
-        ...new Set(
-          gone.flatMap((chat) =>
-            tasksPlacedBelow(before, chat, askedByNow).map((one) => one.session),
-          ),
-        ),
-      ].filter((task) => !gone.includes(task));
-      if (back.length === 0) return;
-      change((tabs) =>
-        back.reduce(
-          (left, task) => sendBack(left, task, filedIn, isPinned, inTheBackground.current),
-          tabs,
-        ),
-      );
-      for (const task of back) void commands.closeChatTab(plane, task).catch(() => undefined);
-    },
-    [askedByNow, change, filedIn, isPinned, plane],
-  );
 
   const stoppedFor = useCallback((session: number, why: string | undefined) => {
     setStopped((was) => {
@@ -2265,9 +2231,7 @@ export const PlaneView = memo(function PlaneView({
     (step: SmartClosing) => {
       settle(step.session);
       if (step.phase === "closed") {
-        const before = now.current;
         change((tabs) => closeChat(tabs, step.session, filedIn, isPinned, inTheBackground.current));
-        tasksGoBack([step.session], before);
         stoppedFor(step.session, undefined);
         setSavedNotice({ record: step.record });
         return;
@@ -2288,7 +2252,7 @@ export const PlaneView = memo(function PlaneView({
         setReport({ from: `smartclose:${step.session}`, refused: true, words: said });
       stoppedFor(step.session, stoppedWhy(step.phase));
     },
-    [change, filedIn, isPinned, settle, stoppedFor, tasksGoBack],
+    [change, filedIn, isPinned, settle, stoppedFor],
   );
   /** The chats wrapping up, as the core tells it. */
   const told = useSmartClosing(plane, smartCloseEnded);
@@ -2298,13 +2262,11 @@ export const PlaneView = memo(function PlaneView({
    */
   const chatStopped = useCallback(
     (session: number) => {
-      const before = now.current;
       change((tabs) => closeChat(tabs, session, filedIn, isPinned, inTheBackground.current));
-      tasksGoBack([session], before);
       stoppedFor(session, undefined);
       setStopsEnded((count) => count + 1);
     },
-    [change, filedIn, isPinned, stoppedFor, tasksGoBack],
+    [change, filedIn, isPinned, stoppedFor],
   );
   /** The chats being stopped, as the core tells it. */
   const stopping = useStopping(plane, chatStopped);
@@ -2526,12 +2488,10 @@ export const PlaneView = memo(function PlaneView({
   const closeKeptOpen = useCallback(
     (session: number) => {
       forgetKeptOpen(session);
-      const before = now.current;
       change((tabs) => closeChat(tabs, session, filedIn, isPinned, inTheBackground.current));
-      tasksGoBack([session], before);
       void commands.closeSession(plane, session);
     },
-    [change, filedIn, forgetKeptOpen, isPinned, plane, tasksGoBack],
+    [change, filedIn, forgetKeptOpen, isPinned, plane],
   );
   /**
    * **End…, a chat's own row, once it is answered** (#4753): the chat's pane goes, wherever it
@@ -2540,12 +2500,10 @@ export const PlaneView = memo(function PlaneView({
    */
   const endChat = useCallback(
     (session: number) => {
-      const before = now.current;
       change((tabs) => closeChat(tabs, session, filedIn, isPinned, inTheBackground.current));
-      tasksGoBack([session], before);
       void commands.closeSession(plane, session);
     },
-    [change, filedIn, isPinned, plane, tasksGoBack],
+    [change, filedIn, isPinned, plane],
   );
   /** …and the ones just pressed: their tabs, their explorer rows and their menus say so. */
   const wrapping = useMemo<ReadonlySet<number>>(
@@ -3836,19 +3794,16 @@ export const PlaneView = memo(function PlaneView({
     // Nor is a task's own pane ever closed (#1489): its control is the minimise, which is
     // another verb and ends nothing.
     if (going !== undefined && askedByNow(going.session) !== undefined) return;
-    const before = now.current;
     change((tabs) => closeFocusedPane(tabs, filedIn, isPinned, isBackground));
-    // Its tasks with a tab or a pane of their own go back to the list, the one beside it too:
-    // a task is never left as the own chat of what was its session's tab.
-    if (going) tasksGoBack([going.session], before);
+    // Its tasks stay in whatever panes they are in: a chat leaving moves no other pane (#4757).
     if (going) void commands.closeSession(plane, going.session);
-  }, [askedByNow, change, filedIn, isBackground, isPinned, plane, tasksGoBack]);
+  }, [askedByNow, change, filedIn, isBackground, isPinned, plane]);
 
   /**
    * **Closes a session's tab: the only close on the strip** (#1489, V100-39). Its chats end.
    * **A task never ends by a close**: one beside its session goes with the tab's panes and
-   * goes on working, and every task below the session that has a tab of its own is sent back
-   * to the list ({@link tasksGoBack}), since the tab it would go back into is the one closing.
+   * goes on working, and a task below the session in a pane of another tab stays there: a chat
+   * leaving moves no other pane (#4757).
    * Stopping them instead is the dialog's other answer, which the core carries out
    * (`closeStopping`).
    */
@@ -3865,10 +3820,9 @@ export const PlaneView = memo(function PlaneView({
       for (const one of panesOf(before, id))
         if (askedByNow(one.session) !== undefined)
           void commands.closeChatTab(plane, one.session).catch(() => undefined);
-      tasksGoBack(ending, before);
       for (const session of ending) void commands.closeSession(plane, session);
     },
-    [askedByNow, change, filedIn, isBackground, isPinned, plane, tasksGoBack],
+    [askedByNow, change, filedIn, isBackground, isPinned, plane],
   );
 
   /**
@@ -4038,7 +3992,7 @@ export const PlaneView = memo(function PlaneView({
       landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
       stoppedFor(session, undefined);
     },
-    [landOn, pressing, stoppedFor],
+    [landOn, pressedOf, pressing, stoppedFor],
   );
   /**
    * **⌘⇧H: the focused pane goes back to the chat it showed before** (#4757), and again to
@@ -4051,7 +4005,7 @@ export const PlaneView = memo(function PlaneView({
         listedNow.current.has(session) ? pressedOf(session) : undefined,
       ),
     );
-  }, [landOn, pressing]);
+  }, [landOn, pressedOf, pressing]);
   /** A name pressed in a breadcrumb of the tab in front: walks up the chain in that pane. */
   const showChatFromPane = useCallback(
     (session: number, pane?: number) => {
@@ -8408,11 +8362,8 @@ export const PlaneView = memo(function PlaneView({
                 task: nameOfNow.current(task),
                 session: now.current.byId[does.tab]?.name ?? "",
               };
-        // **Its tasks that have a tab of their own** (#1489): the dialog says how many, since
-        // they go back to the list or go with it by the answer given here.
-        const ownTabs = tasksPlacedBelow(now.current, session, askedByNow).filter(
-          (one) => one.placed === "tab",
-        ).length;
+        // Its tasks in panes of other tabs stay where they are (#4757): a chat leaving moves no
+        // other pane, so the dialog has nothing to say of them.
         setEndingChat({
           offer,
           session,
@@ -8421,7 +8372,6 @@ export const PlaneView = memo(function PlaneView({
           closing,
           shows,
           back,
-          ownTabs,
           drafts,
           fromALink,
         });
@@ -8577,7 +8527,6 @@ export const PlaneView = memo(function PlaneView({
       }
       const gone = Array.isArray(stopped.data) ? stopped.data : [];
       if (gone.length > 0) {
-        const before = now.current;
         change((tabs) =>
           gone.reduce(
             (left, one) => closeChat(left, one, filedIn, isPinned, inTheBackground.current),
@@ -8585,11 +8534,10 @@ export const PlaneView = memo(function PlaneView({
           ),
         );
         // Whatever below them the core did not end (it ends what is at work) has no tab left.
-        tasksGoBack(gone, before);
       }
       return true;
     },
-    [change, filedIn, isPinned, plane, tasksGoBack],
+    [change, filedIn, isPinned, plane],
   );
 
   const press = useCallback(
