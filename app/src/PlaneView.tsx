@@ -1091,10 +1091,13 @@ export const PlaneView = memo(function PlaneView({
     busy: boolean;
     trouble?: string;
   }>();
-  /** What the core last said about where a chat is working, and which directory it was
-   *  asked about — so an answer about the chat that WAS in front is never drawn under the
-   *  one that is now. `workspaceState` keys its answers the same way, for the same reason. */
-  const [located, setLocated] = useState<{ cwd: string; piece?: ChatWorktree }>();
+  /** What the core last said about where each chat is working, by the directory it was asked
+   *  about — so an answer about a chat that WAS there is never drawn under one that is now.
+   *  `workspaceState` keys its answers the same way, for the same reason. Every chat's, not only
+   *  the one in front's: each chat's list has its own Branch rows (#4851). */
+  const [located, setLocated] = useState<ReadonlyMap<string, ChatWorktree | undefined>>(
+    () => new Map(),
+  );
   /** Bumped when something changed the answer, so it is asked again rather than guessed. */
   const [relocate, setRelocate] = useState(0);
   /**
@@ -4704,47 +4707,82 @@ export const PlaneView = memo(function PlaneView({
     (session: number) => backSaid(reports[session] ?? [], stoppedBelow[session] ?? []),
     [reports, stoppedBelow],
   );
-  // Where that chat is working. The sidebar's chats carry it, and so does the record the
-  // core put back at this launch; a chat the operator just opened is in the first.
-  const frontCwd =
-    frontSession === undefined
-      ? null
-      : ([...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []), ...(sidebar?.unfiled ?? [])]
-          .concat(reopened)
-          .find((chat) => chat.session === frontSession)?.cwd ?? null);
+  // Where each chat is working. The sidebar's chats carry it, and so does the record the
+  // core put back at this launch; a chat the operator just opened is in the first. Spelled as
+  // one line per chat first, so a re-read of the sidebar that moved no chat makes nothing new:
+  // not the map, not `worktreeOf`, not the catalogue that reads it.
+  const chatCwds = useMemo(() => {
+    const seen = new Set<number>();
+    const lines: string[] = [];
+    for (const chat of [
+      ...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []),
+      ...(sidebar?.unfiled ?? []),
+      ...reopened,
+    ])
+      if (chat.cwd !== null && !seen.has(chat.session)) {
+        seen.add(chat.session);
+        lines.push(`${chat.session}\t${chat.cwd}`);
+      }
+    return lines.sort().join("\n");
+  }, [sidebar, reopened]);
+  const cwdOf = useMemo(
+    () =>
+      new Map(
+        chatCwds === ""
+          ? []
+          : chatCwds.split("\n").map((line) => {
+              const tab = line.indexOf("\t");
+              return [Number(line.slice(0, tab)), line.slice(tab + 1)] as const;
+            }),
+      ),
+    [chatCwds],
+  );
+  const frontCwd = frontSession === undefined ? null : (cwdOf.get(frontSession) ?? null);
+  /** The directories to ask about, one line each in a fixed order: the effect's key. */
+  const cwdsAsked = useMemo(() => [...new Set(cwdOf.values())].sort().join("\n"), [cwdOf]);
+  /** The directories already asked about, and the plane and `relocate` they were asked at:
+   *  only a new directory is asked about, until a removal says every answer may have moved.
+   *  The effect below is all that reads or writes it. */
+  const locatedAt = useRef({ plane, relocate, asked: new Set<string>() });
 
-  // Which piece the chat in front sits in. `worktree_of_chat` is path arithmetic plus one
-  // git listing, asked only when the directory in front changes — never per keystroke, and
-  // never for a palette that is not open.
+  // Which piece each chat sits in (#4851). `worktree_of_chat` is path arithmetic plus one git
+  // listing for a directory in a piece, asked once per directory — never per keystroke, and
+  // never for a palette that is not open — and again for every one after a removal.
   //
   // The plane travels with the directory (charter-app#127): the answer is about a piece of
-  // THIS project, and the core used to derive the plane by walking up from `frontCwd` alone.
+  // THIS project, and the core used to derive the plane by walking up from the cwd alone.
   useEffect(() => {
-    if (frontCwd === null) return;
-    let gone = false;
-    void commands
-      .worktreeOfChat(plane, frontCwd)
-      .then((answer) => {
-        if (gone) return;
-        setLocated({
-          cwd: frontCwd,
-          piece: answer.status === "ok" ? (answer.data ?? undefined) : undefined,
+    if (cwdsAsked === "") return;
+    const was = locatedAt.current;
+    if (was.plane !== plane || was.relocate !== relocate)
+      locatedAt.current = { plane, relocate, asked: new Set() };
+    const { asked } = locatedAt.current;
+    const cwds = cwdsAsked.split("\n").filter((cwd) => !asked.has(cwd));
+    for (const cwd of cwds) asked.add(cwd);
+    // **An answer lands even after the directories changed**: it is keyed by the directory it
+    // is about, so it is still true of that directory. Only one about another plane is dropped.
+    for (const cwd of cwds)
+      void commands
+        .worktreeOfChat(plane, cwd)
+        .then((answer) => (answer.status === "ok" ? (answer.data ?? undefined) : undefined))
+        // A window that cannot ask simply offers no Branch rows for that chat.
+        .catch(() => undefined)
+        .then((piece) => {
+          if (locatedAt.current.plane === plane) setLocated((was) => new Map(was).set(cwd, piece));
         });
-      })
-      // A window that cannot ask simply offers no worktree row — which the catalogue then
-      // lists with its reason rather than dropping.
-      .catch(() => {
-        if (!gone) setLocated({ cwd: frontCwd });
-      });
-    return () => {
-      gone = true;
-    };
-  }, [frontCwd, plane, relocate]);
+  }, [cwdsAsked, plane, relocate]);
 
-  // Only an answer about the directory in front. Nothing is cleared when the focus moves —
+  // Only an answer about the directory a chat is in now. Nothing is cleared when a chat moves —
   // clearing state from inside an effect is a render the window does not need, and a stale
   // answer is simply not this chat's.
-  const worktree = located?.cwd === frontCwd ? located.piece : undefined;
+  const worktree = frontCwd === null ? undefined : located.get(frontCwd);
+  const worktreeOf = useCallback(
+    (session: number) => {
+      const cwd = cwdOf.get(session);
+      return cwd === undefined ? undefined : located.get(cwd);
+    },
+    [cwdOf, located],
+  );
 
   /**
    * Removes the piece THE ROW NAMED. The core's refusal travels back whole.
@@ -4764,7 +4802,7 @@ export const PlaneView = memo(function PlaneView({
       // it can neither follow that repair nor search for it.
       if (answer.status === "error") return { ok: false, refused: answer.error };
       // The core is asked again rather than the window assuming what it now says — both about
-      // where the chat in front is working, and about the workspace, because the explorer and
+      // where every chat is working, and about the workspace, because the explorer and
       // the bottom bar are still drawing the row that has just gone.
       setRelocate((asked) => asked + 1);
       setRereadWorkspace((asked) => asked + 1);
@@ -7860,7 +7898,7 @@ export const PlaneView = memo(function PlaneView({
             workspaces: strips,
             live: liveNames,
             focused,
-            worktree,
+            worktreeOf,
             pieces,
             clones,
             absent: absentHere,
@@ -7975,7 +8013,7 @@ export const PlaneView = memo(function PlaneView({
       browsersOffered,
       views,
       extensionCommands,
-      worktree,
+      worktreeOf,
       liveNames,
       wrapping,
       restoringChats,

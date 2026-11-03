@@ -221,6 +221,11 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.stop": stopped(WARNS.stops),
   "chat.stop.below": stopped(WARNS.stopsBelow),
   "chat.stop.tasks": stopped(WARNS.stopsTasks, SAID.stopAllTasks),
+  // **Its Branch ▸** (#4851): drawn after Stop ▸ and before End…. Merging takes nothing away and
+  // a folder with work in it is refused, so neither is in the danger colour; the discard is.
+  "chat.branch.merge": { said: SAID.mergeItsBranch, slot: "end", under: "branch" },
+  "chat.branch.remove": { said: SAID.removeItsBranchFolder, slot: "end", under: "branch" },
+  "chat.branch.discard": { said: SAID.discardAnyway, slot: "end", under: "branch", danger: true },
   "chat.end": { said: SAID.end, slot: "end", danger: true, warns: WARNS.ends },
   "task.stop": { said: SAID.taskStop, slot: "end", danger: true, warns: WARNS.taskStops },
   "task.close": { said: SAID.taskClose, slot: "end", danger: true, warns: WARNS.taskCloses },
