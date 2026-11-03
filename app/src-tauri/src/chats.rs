@@ -2037,6 +2037,12 @@ impl Chats {
         self.shipped = shipped;
     }
 
+    /// Keeps each open chat's skill stamp in `skills_now`, which the app's sweep of the levels'
+    /// records shares (#4884): set before any chat is started.
+    pub fn keeping_skills_in(&mut self, skills_now: Arc<SkillsNow>) {
+        self.skills_now = skills_now;
+    }
+
     /// The arguments and the environment that arm this harness on this session alone, if any.
     ///
     /// `cwd` is the chat's own directory, which decides whether charter may also fill Claude

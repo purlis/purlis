@@ -708,6 +708,7 @@ fn writing_a_plane_s_record_vouches_for_it_in_the_same_breath() {
         config: Some(config.clone()),
         allowed: AtomicBool::new(true),
         clone_seat: reopen::CloneSeat::of(&root, None),
+        skills_now: Arc::default(),
     };
 
     // A record that appeared behind charter's back is exactly what the question is for.
@@ -740,6 +741,7 @@ fn a_plane_nobody_approved_is_not_vouched_into_consent_by_its_record_being_writt
         config: Some(config.clone()),
         allowed: AtomicBool::new(true),
         clone_seat: reopen::CloneSeat::of(&root, None),
+        skills_now: Arc::default(),
     };
 
     records.write(&one_chat_on("/bin/true"));
@@ -759,6 +761,7 @@ fn writing_the_record_deletes_the_theme_drafts_of_every_chat_it_no_longer_holds(
         config: None,
         allowed: AtomicBool::new(true),
         clone_seat: reopen::CloneSeat::of(&root, None),
+        skills_now: Arc::default(),
     };
     let (kept, gone) = (reopen::mint(), reopen::mint());
     let place = purlis_core::theme::drafts::Place {

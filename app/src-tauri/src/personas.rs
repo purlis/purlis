@@ -54,6 +54,7 @@ pub async fn persona_create(
     crate::off_the_window(WRITING, move || {
         let said = create_in(
             held.root(),
+            &held.chats().skills_now(),
             &name,
             role.as_deref(),
             delegate_when.as_deref(),
@@ -80,6 +81,7 @@ fn given(value: Option<&str>) -> Option<&str> {
 /// The creation itself, against a root the registry has already vouched for.
 fn create_in(
     root: &Path,
+    skills_now: &crate::chats::SkillsNow,
     name: &str,
     role: Option<&str>,
     delegate_when: Option<&str>,
@@ -103,7 +105,7 @@ fn create_in(
     // The person made it, in their window: no chat did, so its skills reach chats (SK-9), where
     // the create made its folder.
     if code == 0
-        && let Some(note) = purlis_core::skills::levels::vouch_if_made(root, &owner, was_there)
+        && let Some(note) = crate::skilldrafts::vouched_if_made(root, skills_now, &owner, was_there)
     {
         said.push(Say::Info(note.into()));
     }
@@ -348,6 +350,7 @@ fn definition_of(root: &Path, name: &str) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chats::SkillsNow;
 
     fn plane() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
@@ -360,10 +363,24 @@ mod tests {
     }
 
     #[test]
+    fn a_persona_made_in_the_window_makes_the_chats_read_their_skills_again() {
+        // #4884: the create vouches for its folder in every open chat's record of the levels it
+        // could have made, which is what a chat would start on now, in the app state the plane's
+        // watch never tells of.
+        let dir = plane();
+        let skills_now = SkillsNow::default();
+
+        create_in(dir.path(), &skills_now, "qa", None, Some("tests"), None).expect("created");
+
+        assert_eq!(skills_now.forgotten(), 1);
+    }
+
+    #[test]
     fn a_persona_is_created_as_the_cli_creates_one_a_draft_with_its_routing_line() {
         let dir = plane();
         let said = create_in(
             dir.path(),
+            &SkillsNow::default(),
             "devops",
             Some("DevOps Engineer"),
             Some("CI/CD pipelines, k8s deploys"),
@@ -388,7 +405,15 @@ mod tests {
     #[test]
     fn a_persona_with_no_routing_line_and_no_parent_is_refused_in_the_cores_words() {
         let dir = plane();
-        let refused = create_in(dir.path(), "qa", None, Some("   "), None).unwrap_err();
+        let refused = create_in(
+            dir.path(),
+            &SkillsNow::default(),
+            "qa",
+            None,
+            Some("   "),
+            None,
+        )
+        .unwrap_err();
         assert!(refused.contains("--delegate-when is required"), "{refused}");
         assert!(!defined(dir.path(), "qa"));
     }
@@ -396,11 +421,27 @@ mod tests {
     #[test]
     fn a_name_already_defined_is_refused_and_its_definition_is_left_alone() {
         let dir = plane();
-        create_in(dir.path(), "qa", None, Some("tests"), None).unwrap();
+        create_in(
+            dir.path(),
+            &SkillsNow::default(),
+            "qa",
+            None,
+            Some("tests"),
+            None,
+        )
+        .unwrap();
         let file = dir.path().join("personas/qa/persona.md");
         std::fs::write(&file, "---\nname: qa\n---\nmine\n").unwrap();
 
-        let refused = create_in(dir.path(), "qa", None, Some("other"), None).unwrap_err();
+        let refused = create_in(
+            dir.path(),
+            &SkillsNow::default(),
+            "qa",
+            None,
+            Some("other"),
+            None,
+        )
+        .unwrap_err();
 
         assert!(refused.contains("already exists"), "{refused}");
         assert_eq!(
@@ -412,7 +453,15 @@ mod tests {
     #[test]
     fn a_persona_is_removed_with_its_directory() {
         let dir = plane();
-        create_in(dir.path(), "qa", None, Some("tests"), None).unwrap();
+        create_in(
+            dir.path(),
+            &SkillsNow::default(),
+            "qa",
+            None,
+            Some("tests"),
+            None,
+        )
+        .unwrap();
 
         let said = remove_in(dir.path(), "qa").unwrap();
 
@@ -426,8 +475,24 @@ mod tests {
     #[test]
     fn a_persona_another_one_extends_is_refused_and_both_stay() {
         let dir = plane();
-        create_in(dir.path(), "base", None, Some("everything"), None).unwrap();
-        create_in(dir.path(), "child", None, None, Some("base")).unwrap();
+        create_in(
+            dir.path(),
+            &SkillsNow::default(),
+            "base",
+            None,
+            Some("everything"),
+            None,
+        )
+        .unwrap();
+        create_in(
+            dir.path(),
+            &SkillsNow::default(),
+            "child",
+            None,
+            None,
+            Some("base"),
+        )
+        .unwrap();
 
         let refused = remove_in(dir.path(), "base").unwrap_err();
 
@@ -438,7 +503,15 @@ mod tests {
     #[test]
     fn removing_the_plane_wide_selection_clears_it() {
         let dir = plane();
-        create_in(dir.path(), "qa", None, Some("tests"), None).unwrap();
+        create_in(
+            dir.path(),
+            &SkillsNow::default(),
+            "qa",
+            None,
+            Some("tests"),
+            None,
+        )
+        .unwrap();
         let active = purlis_core::active::active_persona_file(dir.path());
         std::fs::create_dir_all(active.parent().unwrap()).unwrap();
         std::fs::write(&active, "qa\n").unwrap();
@@ -451,7 +524,15 @@ mod tests {
     #[test]
     fn a_personas_profile_is_read_and_set_among_the_profiles_the_project_offers() {
         let dir = plane();
-        create_in(dir.path(), "qa", None, Some("tests"), None).unwrap();
+        create_in(
+            dir.path(),
+            &SkillsNow::default(),
+            "qa",
+            None,
+            Some("tests"),
+            None,
+        )
+        .unwrap();
 
         let before = profile_in(dir.path(), "qa").unwrap();
         assert_eq!(before.named, None);
@@ -474,7 +555,15 @@ mod tests {
         );
 
         // A child is told whose profile it has, and none on it means none (M2).
-        create_in(dir.path(), "junior", None, None, Some("qa")).unwrap();
+        create_in(
+            dir.path(),
+            &SkillsNow::default(),
+            "junior",
+            None,
+            None,
+            Some("qa"),
+        )
+        .unwrap();
         let inherited = profile_in(dir.path(), "junior").unwrap();
         assert_eq!(inherited.named.as_deref(), Some("codex"));
         assert_eq!(inherited.inherited_from.as_deref(), Some("qa"));
@@ -487,7 +576,15 @@ mod tests {
     #[test]
     fn the_definition_opened_is_the_personas_own_file_and_nothing_a_name_can_reach() {
         let dir = plane();
-        create_in(dir.path(), "qa", None, Some("tests"), None).unwrap();
+        create_in(
+            dir.path(),
+            &SkillsNow::default(),
+            "qa",
+            None,
+            Some("tests"),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(
             definition_of(dir.path(), "qa").unwrap(),

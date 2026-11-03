@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::chats::SkillsNow;
 use std::path::PathBuf;
 
 /// A plane charter would read, with the settings a workspace's layer is cut from.
@@ -52,10 +53,24 @@ fn clone_in(root: &Path, workspace: &str, name: &str) -> PathBuf {
 }
 
 #[test]
+fn a_workspace_made_in_the_window_makes_the_chats_read_their_skills_again() {
+    // #4884: the create vouches for its folder in every open chat's record of the levels it
+    // could have made, which is what a chat would start on now, in the app state the plane's
+    // watch never tells of.
+    let (_dir, root) = plane();
+    let skills_now = SkillsNow::default();
+
+    create_in(&root, &skills_now, "alpha", None, false).expect("created");
+
+    assert_eq!(skills_now.forgotten(), 1);
+}
+
+#[test]
 fn a_workspace_is_created_with_the_baseline_the_cli_gives_it() {
     let (_dir, root) = plane();
 
-    let said = create_in(&root, "alpha", None, false).expect("a plain name is created");
+    let said = create_in(&root, &SkillsNow::default(), "alpha", None, false)
+        .expect("a plain name is created");
 
     let ws = root.join("workspaces/alpha");
     assert!(ws.join("workspace.json").exists(), "{said:?}");
@@ -75,7 +90,7 @@ fn the_name_is_the_cores_rule_and_the_refusal_is_the_cores_sentence() {
     let (_dir, root) = plane();
 
     for bad in ["../escape", "/absolute", ".hidden", "", "has space"] {
-        let refused = create_in(&root, bad, None, false)
+        let refused = create_in(&root, &SkillsNow::default(), bad, None, false)
             .expect_err(&format!("'{bad}' is not a workspace name"));
         assert!(
             refused.contains("invalid workspace name"),
@@ -93,9 +108,16 @@ fn the_name_is_the_cores_rule_and_the_refusal_is_the_cores_sentence() {
 fn a_vision_is_recorded_and_an_empty_box_is_not_a_vision() {
     let (_dir, root) = plane();
 
-    create_in(&root, "alpha", Some("  ship the thing  "), false).expect("created");
-    create_in(&root, "beta", Some("   "), false).expect("created");
-    create_in(&root, "gamma", None, false).expect("created");
+    create_in(
+        &root,
+        &SkillsNow::default(),
+        "alpha",
+        Some("  ship the thing  "),
+        false,
+    )
+    .expect("created");
+    create_in(&root, &SkillsNow::default(), "beta", Some("   "), false).expect("created");
+    create_in(&root, &SkillsNow::default(), "gamma", None, false).expect("created");
 
     // Read back the way charter reads it, which answers "" for its own placeholder — so
     // "no vision" is the core's own judgement and not this test's reading of a file.
@@ -134,7 +156,7 @@ fn a_vision_is_recorded_and_an_empty_box_is_not_a_vision() {
 #[test]
 fn an_empty_workspace_is_deleted() {
     let (_dir, root) = plane();
-    create_in(&root, "alpha", None, false).expect("created");
+    create_in(&root, &SkillsNow::default(), "alpha", None, false).expect("created");
 
     let said = remove_in(&root, "alpha", false).expect("nothing is at risk in it");
 
@@ -366,7 +388,7 @@ fn a_workspace_that_is_a_link_out_of_the_plane_is_refused_and_its_target_survive
 fn a_vision_added_later_is_the_one_the_cli_would_record_and_a_refusal_is_the_cores() {
     // #3344: the window's Add a vision, after the workspace was made without one.
     let (_dir, root) = plane();
-    create_in(&root, "gamma", None, false).expect("created");
+    create_in(&root, &SkillsNow::default(), "gamma", None, false).expect("created");
 
     let said = vision_in(&root, "gamma", "  keep the CI green  ").expect("recorded");
     assert_eq!(said, "gamma has a vision now.");
