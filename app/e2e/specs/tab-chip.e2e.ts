@@ -3,6 +3,7 @@
 
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
+import { closeTheViewTabsOpenedSince } from "../reach.js";
 import { REST_MS } from "../../src/tabRest.ts";
 import { bringSideBack, putSideAway, sideIsAway, type SideRegion } from "../sides.js";
 import {
@@ -76,30 +77,6 @@ async function strip(): Promise<{ tabs: string[]; front: string | null; panes: n
       ),
     };
   }, STRIP);
-}
-
-/**
- * **A probe of the strip at each step of a start** (#4758, while tab-chip's three starts land in
- * one tab on CI and nowhere else): the strip, its front tab and the panes, every tab selected
- * anywhere in the window (the workspace in front among them), and the empty panes drawn, written
- * to the run's log.
- */
-function probe(start: number): (step: string) => Promise<void> {
-  return async (step) => {
-    const seen = await strip();
-    const elsewhere = await browser.execute(() => ({
-      selected: [...document.querySelectorAll('[role="tab"][aria-selected="true"]')].map(
-        (tab) => tab.textContent ?? "",
-      ),
-      empty: document.querySelectorAll('[data-testid="empty-pane"]').length,
-      dialogs: [...document.querySelectorAll('[role="dialog"]')].map(
-        (one) => one.getAttribute("aria-label") ?? one.getAttribute("aria-labelledby") ?? "",
-      ),
-    }));
-    console.log(
-      `tab-chip probe: start ${start}, ${step}: ${JSON.stringify({ ...seen, ...elsewhere })}`,
-    );
-  };
 }
 
 async function untilShows(text: string): Promise<void> {
@@ -530,7 +507,11 @@ describe("the chip a session's tab wears for its tasks", () => {
     // so what earlier files left open decides which of this file's tabs are drawn, and how
     // wide each is: measured in CI, eleven tabs left behind, and this file's three not drawn.
     // The chatsLeft guard now starts every file with no chat running, so nothing is ended here
-    // that this file did not start.
+    // that this file did not start. **And the tabs earlier files left are closed**: every strip
+    // also keeps one empty tab now (#4758), so at 1280 wide a Settings tab or two left behind
+    // was enough to put this file's first two tabs behind "Show N tabs" when the third opened.
+    // Closing one ends nothing (#4756); the strip's kept empty tab stays.
+    await closeTheViewTabsOpenedSince([]);
     wereAlreadyOpen = await tabNames();
     // Only the dispatched pointer is ever on the strip (#3521, the file's comment).
     await fenceRealPointer(true);
@@ -546,7 +527,7 @@ describe("the chip a session's tab wears for its tasks", () => {
     started = [];
     for (let opened = 0; opened < 3; opened++) {
       const known = new Set([...wereAlreadyOpen, ...(await tabNames()), ...mine]);
-      started.push(await startAChat("New tab", probe(opened + 1)));
+      started.push(await startAChat());
       let saw = "nothing was read";
       let came: string | undefined;
       await browser

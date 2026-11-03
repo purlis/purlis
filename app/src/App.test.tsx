@@ -923,6 +923,19 @@ describe("App", () => {
     expect(panes()).toEqual(["session 2"]);
   });
 
+  it("keeps every chat's tab when + opens another (#4758)", async () => {
+    core();
+    render(<App />);
+    await openAChat();
+    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+    await openAChat();
+    await waitFor(() => expect(tabs()).toEqual(["steward 1", "steward 2"]));
+
+    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+
+    await waitFor(() => expect(tabs()).toEqual(["steward 1", "steward 2", "New chat"]));
+  });
+
   it("draws its empty pane when the plane's sidebar cannot be read (#4758)", async () => {
     mockIPC((cmd) => {
       if (cmd === "plane_at_launch")
