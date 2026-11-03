@@ -98,3 +98,17 @@ export function movedBetweenWindows(
   }
   return { tabs: next, changed: true };
 }
+
+/**
+ * **Whether a tab dragged along the strip was torn off** (#4768, ruled on #4701): let go with the
+ * pointer past an edge of the window. A drop inside the window, its edge included, is a move
+ * along the strip as it always was; the keyboard's way to the same is Move to new window. A
+ * pointer never seen is no tear-off.
+ */
+export function tornOff(
+  point: { x: number; y: number } | undefined,
+  window: { width: number; height: number },
+): boolean {
+  if (point === undefined) return false;
+  return point.x < 0 || point.y < 0 || point.x > window.width || point.y > window.height;
+}

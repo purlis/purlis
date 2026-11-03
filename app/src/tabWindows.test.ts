@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { LaidNode, LaidOut, LaidTab } from "./bindings";
 import { layoutOf, type Reopening, type Saying, tabsOf } from "./laidOut";
-import { movedBetweenWindows } from "./tabWindows";
+import { movedBetweenWindows, tornOff } from "./tabWindows";
 import { noTabs, openTab, openView, selectTab, type Tabs, type ViewRef } from "./tabs";
 
 const onOps: Saying = {
@@ -175,5 +175,26 @@ describe("what a window does when the core moves tabs between windows (#4768)", 
 
     expect(moved.changed).toBe(false);
     expect(moved.tabs).toBe(tabs);
+  });
+});
+
+describe("a tab dragged off the window (#4768)", () => {
+  const window = { width: 1200, height: 800 };
+
+  it("is torn off once the pointer is let go past any edge of the window", () => {
+    expect(tornOff({ x: -5, y: 300 }, window)).toBe(true);
+    expect(tornOff({ x: 1210, y: 300 }, window)).toBe(true);
+    expect(tornOff({ x: 600, y: -2 }, window)).toBe(true);
+    expect(tornOff({ x: 600, y: 805 }, window)).toBe(true);
+  });
+
+  it("stays a move along the strip while the pointer is inside the window, its edge included", () => {
+    expect(tornOff({ x: 0, y: 0 }, window)).toBe(false);
+    expect(tornOff({ x: 1200, y: 800 }, window)).toBe(false);
+    expect(tornOff({ x: 600, y: 400 }, window)).toBe(false);
+  });
+
+  it("is not torn off where the pointer was never seen", () => {
+    expect(tornOff(undefined, window)).toBe(false);
   });
 });
