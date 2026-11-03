@@ -3246,9 +3246,9 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
         )
         .ok()
     });
-    // A login whose form is on another origin keeps none yet (#4995): a kept login holds its
-    // browser to one site.
-    let store = store.filter(|_| login.form.is_none());
+    // A login whose form is on another origin keeps one too (#5014): reopened, its browser is
+    // held to its page's site, and reaches its form's only while a login signs in there anew
+    // (the person's ruling of 2026-11-03).
     let opens = match (&store, purlis_core::datahome::root()) {
         (Some(store), Some(data)) => store.exists(&data),
         _ => false,
