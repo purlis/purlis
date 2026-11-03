@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793705444478,
+  "lastUpdate": 1793708580643,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37548,6 +37548,48 @@ window.BENCHMARK_DATA = {
             "value": 101.067692,
             "unit": "ms",
             "extra": "median of 5 runs: 100.840, 101.062, 101.068, 101.551, 102.590 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "635708edb78616ccbe77d31f7e8bdc3247fc015b",
+          "message": "Copy diagnostics in About purlis, with the slow-answer log's newest entries (#4774) (#5009)\n\nAbout gets a Copy diagnostics button: the version, the system, the\nharnesses, the open and hot chats and the slow-answer log's newest\nentries, for a bug report, with nothing secret in it. diagnostics_here\nanswers the core's part from memory and one uname(2); it is the window's\nalone, as the slow log it travels with is.\n\nReplaces #4853 on current main: #4853's commit and its fix #4910 (guard\nlists, regenerated bindings and UI RPC client, About's story baselines\ndrawn by #4910's run), laid onto main after #4808 merged.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6F0ZHQQDGZVCBC9F6NFDTKR\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T10:03:16Z",
+          "tree_id": "21cbf85916242eab84a312688893b26b00d97fe1",
+          "url": "https://github.com/purlis/purlis/commit/635708edb78616ccbe77d31f7e8bdc3247fc015b"
+        },
+        "date": 1793708575496,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6669705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.650, 0.666, 0.667, 0.670, 0.673 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5537155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.432, 16.466, 16.554, 16.579, 16.787 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9721145,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.662, 101.965, 101.972, 102.556, 102.680 ms"
           }
         ]
       }
