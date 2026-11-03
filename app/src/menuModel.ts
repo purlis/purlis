@@ -305,7 +305,7 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "worktree.remove": { said: SAID.removeFolder, slot: "end" },
   "worktree.discard": { said: SAID.discardAnyway, slot: "end", danger: true },
   "clone.focus": { said: SAID.focus, slot: "first" },
-  "clone.chat": { said: SAID.newTab, slot: "open" },
+  "clone.chat": { said: SAID.newChat, slot: "open" },
   "clone.branch": { said: SAID.newBranch, slot: "open" },
   "clone.pick": { said: SAID.startChatsHere, slot: "run" },
   "absent.clone": { said: SAID.clone, slot: "first" },

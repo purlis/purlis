@@ -419,8 +419,9 @@ export type Tabs = {
   order: number[];
   /** The tab on screen, or none when every tab has closed. */
   inFront?: number;
-  /** Ids already handed out, so a new tab or pane never reuses one. */
-  named: { tabs: number; panes: number };
+  /** Ids already handed out, so a new tab or pane never reuses one, and the chats the window
+   *  has named ({@link newChatNumber}); without it, a window counts its chats by its tabs. */
+  named: { tabs: number; panes: number; chats?: number };
   /**
    * Where each view's divider was, by {@link viewKey}: its first side's share of the pane in
    * percent — a file tab's tree beside its preview (FM-2). **Kept for a view whose tab closed**,
@@ -451,7 +452,7 @@ export function setSplit(tabs: Tabs, view: ViewRef, split: number): Tabs {
 }
 
 export function noTabs(): Tabs {
-  return { byId: {}, order: [], named: { tabs: 0, panes: 0 } };
+  return { byId: {}, order: [], named: { tabs: 0, panes: 0, chats: 0 } };
 }
 
 /**
@@ -487,6 +488,44 @@ export function openEmptyTab(tabs: Tabs, workspace: string): Tabs {
   const opened = withTab(tabs, EMPTY_TAB, { kind: "empty", workspace }, tabs.order.length);
   const id = opened.named.tabs;
   return { ...opened, byId: { ...opened.byId, [id]: { ...opened.byId[id], workspace } } };
+}
+
+/**
+ * **The number a chat the window starts now is named with** (#4758): one more than the chats it
+ * has named. Not the next tab's, as when every chat opened a tab: every strip keeps a tab, so a
+ * fresh window's empty tab is tab 1, and a chat that takes the focused pane opens none, so two
+ * chats would share a number. A window put back from a layout counts from its tabs, as before.
+ */
+export function newChatNumber(tabs: Tabs): number {
+  return (tabs.named.chats ?? tabs.named.tabs) + 1;
+}
+
+/** `tabs` with chat number `number` taken, so {@link newChatNumber} gives the one after it. */
+export function chatNamed(tabs: Tabs, number: number): Tabs {
+  const chats = Math.max(tabs.named.chats ?? tabs.named.tabs, number);
+  return { ...tabs, named: { ...tabs.named, chats } };
+}
+
+/**
+ * **The empty tabs of workspaces the plane no longer has, gone** (#4758): a workspace renamed
+ * or removed on disk takes its strip with it, and an empty tab, which holds nothing but its
+ * strip, would keep the window on a workspace that is not there. `onPlane` says which are,
+ * and says yes for the strip outside every workspace. The same `tabs` where none goes. An
+ * empty tab shows no chat, so the strip its chats are filed on is never asked.
+ */
+export function dropEmptyTabsOfGoneWorkspaces(
+  tabs: Tabs,
+  onPlane: (workspace: string) => boolean,
+): Tabs {
+  const gone = tabs.order.filter((id) => {
+    const layout = tabs.byId[id]?.layout;
+    return (
+      layout?.kind === "pane" &&
+      layout.content.kind === "empty" &&
+      !onPlane(layout.content.workspace)
+    );
+  });
+  return gone.reduce((left, id) => closeTab(left, id, () => ""), tabs);
 }
 
 /**
@@ -565,7 +604,7 @@ function withTab(
     },
     order,
     inFront: id,
-    named: { tabs: id, panes: pane },
+    named: { ...tabs.named, tabs: id, panes: pane },
   };
 }
 

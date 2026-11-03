@@ -277,6 +277,9 @@ import {
   closeTab,
   otherTabsToClose,
   focusPane,
+  chatNamed,
+  dropEmptyTabsOfGoneWorkspaces,
+  newChatNumber,
   noTabs,
   chatNameOf,
   chatInFrontOf,
@@ -1041,6 +1044,9 @@ export const PlaneView = memo(function PlaneView({
     [],
   );
   const [sidebar, setSidebar] = useState<SidebarModel>();
+  /** The plane's sidebar could not be read: the window still keeps a tab on its root strip
+   *  (#4758), so it is never blank. */
+  const [sidebarUnread, setSidebarUnread] = useState(false);
   /** The sidebar held, for its read's answer to compare with outside React's own update. */
   const sidebarHeld = useRef<SidebarModel>(undefined);
   useEffect(() => {
@@ -1715,6 +1721,17 @@ export const PlaneView = memo(function PlaneView({
     [askedByNow, plane],
   );
 
+  /**
+   * **Takes the number the chat being started is named with** (#4758), at once, so two starts
+   * that overlap are never given the same one. A count and nothing on screen: no layout is told.
+   */
+  const takeChatNumber = useCallback((): number => {
+    const number = newChatNumber(now.current);
+    now.current = chatNamed(now.current, number);
+    setTabs(now.current);
+    return number;
+  }, []);
+
   // What the core already has open in this project, which at a launch is the record put back
   // before there was a window. The window draws them; it never ends them — a reload during
   // development, or a crash in the window, would otherwise take the day's sessions with it.
@@ -2101,8 +2118,10 @@ export const PlaneView = memo(function PlaneView({
         const next = answer.status === "ok" ? answer.data : undefined;
         if (!next?.workspaces) {
           setSidebar(undefined);
+          setSidebarUnread(true);
           return;
         }
+        setSidebarUnread(false);
         // An equal answer moves nothing the finished tasks are read on, so they are read
         // again here: a finished row can change while the sidebar does not (Clear finished).
         const held = sidebarHeld.current;
@@ -2129,21 +2148,32 @@ export const PlaneView = memo(function PlaneView({
         // The plane root always stands: it is the plane's own directory (SI-1).
         const stands = (name: string) =>
           name === OUTSIDE || next.workspaces.some((ws) => ws.name === name);
+        // Never a workspace that has gone: the front tab can be an empty tab of the one that
+        // did (#4758), and it goes below.
         setPicked((current) =>
           current !== undefined && stands(current)
             ? current
-            : (ofFront ?? next.workspaces[0]?.name ?? OUTSIDE),
+            : ofFront !== undefined && stands(ofFront)
+              ? ofFront
+              : (next.workspaces[0]?.name ?? OUTSIDE),
         );
         // A view tab is on the strip it was opened from, which it carries; when the plane stops
         // having that workspace nothing else would move it, and it would be on a strip that is
         // never drawn. It goes where a chat working in no workspace goes.
+        // An empty tab holds nothing but its strip, so it goes with it (#4758), and the window
+        // lands where the rule above puts it.
         change((tabs) =>
-          refileViews(tabs, (name) => next.workspaces.some((ws) => ws.name === name), OUTSIDE),
+          dropEmptyTabsOfGoneWorkspaces(
+            refileViews(tabs, (name) => next.workspaces.some((ws) => ws.name === name), OUTSIDE),
+            stands,
+          ),
         );
       })
       // A window with no readable plane still runs its panes; the header already says so.
       .catch(() => {
-        if (!gone) setSidebar(undefined);
+        if (gone) return;
+        setSidebar(undefined);
+        setSidebarUnread(true);
       });
     return () => {
       gone = true;
@@ -3536,7 +3566,7 @@ export const PlaneView = memo(function PlaneView({
       const name =
         oneJob && typed?.line !== undefined
           ? loginName(typed.line)
-          : `shell ${now.current.named.tabs + 1}`;
+          : `shell ${takeChatNumber()}`;
       void start(name)
         .then((opened) => {
           if (opened.status === "error") {
@@ -3603,7 +3633,7 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch((err: unknown) => refusedBy("shell", String(err)));
     },
-    [change, plane, refusedBy, showStarted, signingOutIn, succeeded],
+    [change, plane, refusedBy, showStarted, signingOutIn, succeeded, takeChatNumber],
   );
   const openShell = useCallback(
     (cwd: string | null, filed: string, typed?: Typed) =>
@@ -3932,7 +3962,7 @@ export const PlaneView = memo(function PlaneView({
       const name =
         ("split" in where && inFrontTab !== undefined
           ? chatNameOf(now.current, inFrontTab)
-          : undefined) ?? String(now.current.named.tabs + 1);
+          : undefined) ?? String(takeChatNumber());
       const started = await commands
         .startChat(
           plane,
@@ -3975,13 +4005,17 @@ export const PlaneView = memo(function PlaneView({
       }
       // The tab that was to be split can have gone while the picker was open: the chat goes on
       // in the sidebar, as every chat in no pane does (#4756). A split is a layout change, so
-      // Undo puts it back (#4763); its chat runs on in the sidebar.
+      // Undo puts it back (#4763); its chat runs on in the sidebar. **Only the tab that was
+      // split**: every strip keeps a tab (#4758), so another one, such as the empty tab left
+      // where that one went, can be in front by now, and is not the tab the person split.
       change((tabs) =>
-        recorded(tabs, splitFocusedPane(tabs, where.split, session, name), "Split the pane."),
+        inFrontTab === undefined || tabs.inFront !== inFrontTab
+          ? tabs
+          : recorded(tabs, splitFocusedPane(tabs, where.split, session, name), "Split the pane."),
       );
       return undefined;
     },
-    [change, focused, plane, showStarted, startIn],
+    [change, focused, plane, showStarted, startIn, takeChatNumber],
   );
 
   /** A row was picked: the chat starts on that profile, with that persona, either drawing
@@ -5384,11 +5418,12 @@ export const PlaneView = memo(function PlaneView({
    * is the window's only empty state.
    */
   useEffect(() => {
-    if (!viewsHeard || sidebar === undefined || tabs.inFront !== undefined) return;
+    if (!viewsHeard || (sidebar === undefined && !sidebarUnread) || tabs.inFront !== undefined)
+      return;
     const strip = focused ?? OUTSIDE;
     if (tabsIn(tabs, strip, filedIn).some((id) => !isBackground(id))) return;
     change((was) => openEmptyTab(was, strip));
-  }, [change, filedIn, focused, isBackground, sidebar, tabs, viewsHeard]);
+  }, [change, filedIn, focused, isBackground, sidebar, sidebarUnread, tabs, viewsHeard]);
   // The session the next worktree question is about: the chat in the pane that has the
   // keyboard, which is the one "this chat's worktree" means.
   // The chat SHOWN there (#1486): while the tab shows a task, the task is what is typed into.
@@ -6566,7 +6601,7 @@ export const PlaneView = memo(function PlaneView({
    */
   const resumeSession = useCallback(
     async (path: string, insteadOf?: number, into?: number): Promise<Ran> => {
-      const name = String(now.current.named.tabs + 1);
+      const name = String(takeChatNumber());
       const afterFailure = insteadOf !== undefined;
       const said = await commands
         .resumeSession(
@@ -6605,7 +6640,7 @@ export const PlaneView = memo(function PlaneView({
         );
       return { ok: true };
     },
-    [change, focused, forgetEndedHere, plane, showAgain, showStarted],
+    [change, focused, forgetEndedHere, plane, showAgain, showStarted, takeChatNumber],
   );
 
   /**
@@ -6668,7 +6703,7 @@ export const PlaneView = memo(function PlaneView({
   );
   /**
    * **Reopen a finished task** (#1485): the core starts a new chat on the task's conversation,
-   * and its tab opens in front as any chat's does. It is an ordinary chat from then on. A
+   * and it takes the focused pane as any chat started does (#4758). It is an ordinary chat from then on. A
    * refusal is the row's to say.
    */
   const reopenFinished = useCallback(

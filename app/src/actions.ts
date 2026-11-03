@@ -2133,9 +2133,11 @@ export function catalogue(now: Now): Offer[] {
       : cannot(
           PASS_THROUGH_ID,
           sendKey,
-          front
-            ? "The pane in focus shows a view, not a chat, so there is nowhere to send it."
-            : "No chat is in front, so there is nowhere to send it.",
+          front === undefined
+            ? "No chat is in front, so there is nowhere to send it."
+            : focusedOn?.kind === "empty"
+              ? "The pane in focus shows nothing, so there is nowhere to send it."
+              : "The pane in focus shows a view, not a chat, so there is nowhere to send it.",
         ),
   );
 
