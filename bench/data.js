@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793747452282,
+  "lastUpdate": 1793748875900,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38136,6 +38136,48 @@ window.BENCHMARK_DATA = {
             "value": 101.068002,
             "unit": "ms",
             "extra": "median of 5 runs: 100.907, 100.955, 101.068, 101.664, 102.690 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9d9a5aada38e52d25ad98ae68e4262b8b3ddaec6",
+          "message": "Secret ask: a missing secret asks the person, waits to the timeout margin, one ask per key (#5068, #5071) (#5082)\n\n* Secret ask (#5068, #5071): WIP, reshaped into one commit per ticket before review\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H3Z42DV4MKM11FMXXMS33M\nPurlis-Persona: steward\n\n* Secret ask: the notification's words, the generated bindings, the story's title\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H3Z42DV4MKM11FMXXMS33M\nPurlis-Persona: steward\n\n* Secret ask: a chat that tries again isn't nudged for the command its retry replaced\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H3Z42DV4MKM11FMXXMS33M\nPurlis-Persona: steward\n\n* Secret ask: the waiting note names vault/key, the bindings as specta writes them, the box named in the guard, no count in the log\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H3Z42DV4MKM11FMXXMS33M\nPurlis-Persona: steward\n\n* Stories: SecretFill baselines from #5082's stories run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H3Z42DV4MKM11FMXXMS33M\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T23:00:42Z",
+          "tree_id": "ef011c0d16890a4de6feaac615b1db31678a4cbd",
+          "url": "https://github.com/purlis/purlis/commit/9d9a5aada38e52d25ad98ae68e4262b8b3ddaec6"
+        },
+        "date": 1793748870994,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.49706999999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.484, 0.484, 0.497, 0.500, 0.509 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.364295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.218, 16.221, 16.364, 16.433, 16.569 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.38222350000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.535, 100.591, 101.382, 101.481, 102.327 ms"
           }
         ]
       }
