@@ -3,7 +3,14 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render as renderBare, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { LaidOut } from "./bindings";
@@ -232,10 +239,12 @@ describe("a narrow pane showing another workspace's chat (#4982)", () => {
     panesOf(500);
     await twoPanes(7);
 
-    // The head has drawn its narrow form: the state button's and mark's words are still there
-    // to drop later, and harness · workspace, badge and all, is gone.
+    // The head has drawn its narrow form: harness · workspace, badge and all, is gone, and the
+    // parts the ruled order drops after it are still there.
     await waitFor(() => expect(headOf(7).querySelector(".pane-name")).not.toBeNull());
     expect(whereOf(7)).toBeNull();
     expect(headOf(7)).not.toHaveTextContent("beta");
+    expect(headOf(7).querySelector(".pane-state-mark")).not.toBeNull();
+    expect(within(headOf(7)).getByRole("button", { name: "Split down" })).toBeInTheDocument();
   });
 });

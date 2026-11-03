@@ -7574,7 +7574,15 @@ export const PlaneView = memo(function PlaneView({
         chat,
         sandbox: sandboxOf(session),
         wrapping: wrapping.has(session),
-        ...(elsewhere === undefined ? {} : { elsewhere: { colour: colourOf(elsewhere) } }),
+        // Named and coloured by the one answer, `filedIn`'s, so the two never disagree.
+        ...(elsewhere === undefined
+          ? {}
+          : {
+              elsewhere: {
+                workspace: elsewhere === OUTSIDE ? ROOT_WORD : elsewhere,
+                colour: colourOf(elsewhere),
+              },
+            }),
       };
     };
   }, [colourOf, filedIn, listedChats, sandboxOf, tabs, wrapping]);

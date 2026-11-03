@@ -16,7 +16,8 @@ import {
   type RefObject,
 } from "react";
 import { Badge } from "./ui/badge/Badge";
-import { inForce, onDrawn, tintVariables, type Token } from "./theme/theme";
+import { inForce, tintVariables, type Token } from "./theme/theme";
+import { followTheme } from "./PersonaMark";
 import { Group, Panel, useParentGroup } from "react-resizable-panels";
 import { Separator } from "./ui/panel/Separator";
 import {
@@ -366,7 +367,7 @@ export function PaneFrame({
                       )}
                       {harnessWord(head, harness) !== "" && head.chat.workspace !== "" && " · "}
                       {head.elsewhere ? (
-                        <FiledElsewhere workspace={head.chat.workspace} {...head.elsewhere} />
+                        <ElsewhereBadge {...head.elsewhere} />
                       ) : (
                         head.chat.workspace
                       )}
@@ -482,11 +483,6 @@ export function PaneActions({
  *  its own (`PersonaMark.MARK_TOKENS`), whatever the theme's recipe tints. */
 const ELSEWHERE_TOKENS: readonly Token[] = ["accent.surface"];
 
-/** Redraws the badge when the theme in force changes: its colour is a hue shift of it. */
-function followTheme(changed: () => void): () => void {
-  return onDrawn(() => changed());
-}
-
 /**
  * **The badge of the workspace a pane's chat is filed in, where it is not its tab's** (#4982;
  * #4583 rule 2): drawn in "harness · workspace" in place of the workspace's plain name, so a
@@ -494,7 +490,7 @@ function followTheme(changed: () => void): () => void {
  * the window's accent is the front workspace's colour, and a badge in it would say the
  * opposite. A screen reader hears that the chat is filed there, as the drop's sentence says.
  */
-function FiledElsewhere({ workspace, colour }: { workspace: string; colour: string | null }) {
+function ElsewhereBadge({ workspace, colour }: { workspace: string; colour: string | null }) {
   const theme = useSyncExternalStore(followTheme, inForce);
   // The colour is put on the badge's ground, which its tokens inherit: a badge takes a place,
   // never a look, of its own (`ui/badge`).

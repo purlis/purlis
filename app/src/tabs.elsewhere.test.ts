@@ -78,6 +78,23 @@ describe("the workspace a pane's chat is filed in, where it is not its tab's (#4
     expect(filedElsewhere(tabs, id, 9, filedIn)).toBe("web");
   });
 
+  it("reads a tab no press gave a workspace as its first pane's, as the strip files it", () => {
+    // Web's chat 9 first, then ops's chat 2 beside it: the tab is on web's strip, so it is chat
+    // 2, not chat 9, that is filed elsewhere.
+    const one = openTab(noTabs(), 9, "9", "steward");
+    const [id] = one.order;
+    const tabs = insertPane(one, {
+      tab: id,
+      pane: contentsOf(one, id)[0].pane,
+      direction: "row",
+      side: "after",
+      content: chat(2),
+    });
+
+    expect(filedElsewhere(tabs, id, 9, filedIn)).toBeUndefined();
+    expect(filedElsewhere(tabs, id, 2, filedIn)).toBe("ops");
+  });
+
   it("names nothing for a tab the model does not hold", () => {
     expect(filedElsewhere(noTabs(), 7, 9, filedIn)).toBeUndefined();
   });
