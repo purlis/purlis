@@ -264,8 +264,9 @@ pub fn outside_the_projects(
         said.insert(
             0,
             format!(
-                "the runner holds files a task wrote outside the project's folder, which can't \
-                 come here: {}{}",
+                "the task saved files on the runner outside its project, which purlis can't \
+                 bring here: {}{}. Fetch again brings back only what is in the project, so \
+                 discard the runner once you no longer need them",
                 named.join(", "),
                 if more > 0 {
                     format!(" and {more} more")

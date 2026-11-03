@@ -638,7 +638,7 @@ fn a_file_a_task_wrote_in_the_runners_home_keeps_the_runner() {
     let said = outside_the_projects(&home, &[], started);
 
     assert!(
-        says(&said, "~/notes/findings.md") && says(&said, "outside the project's folder"),
+        says(&said, "~/notes/findings.md") && says(&said, "outside its project"),
         "{said:?}"
     );
 }
