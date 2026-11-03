@@ -16,6 +16,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { PanelRow, TodoView } from "./bindings";
 import { chipName, showThePanel, stripNamed, workspaceChips } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A todo's tab, against the whole window** (#1214): a todo row opens the todo as a view tab on
@@ -120,6 +121,8 @@ function core(extra?: Pick<TodoView, "title" | "body">) {
       };
     if (cmd === "opened_chats")
       return [{ ...chat(), unreported: null, guessed: null, pinned: false }];
+    // The layout stored gives the chat its tab on its workspace (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat([chat()], () => named);
     if (cmd === "reopened_views") return [];
     if (["chat_states", "chats_that_would_not_start", "running_sessions"].includes(cmd)) return [];
     if (["extension_views", "extension_commands", "extension_panels"].includes(cmd)) return [];

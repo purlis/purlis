@@ -15,6 +15,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { stripNamed } from "./test-strips";
 
 /**
@@ -108,6 +109,8 @@ function core({
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "plane_sidebar") return SIDEBAR;
     if (cmd === "opened_chats") return open;
+    // Each chat put back has its tab, as the stored layout keeps it (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(open, () => "alpha");
     if (cmd === "running_sessions") return [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
@@ -137,9 +140,24 @@ const theTab = () => within(strip()).getAllByRole("tab")[0];
 const renameBox = () => within(strip()).getByRole("textbox", { name: /^Rename chat/ });
 const asked = (asks: Asked[], cmd: string) => asks.filter((one) => one.cmd === cmd);
 
-/** New tab, then Start — with `name` typed into the picker's Name field first, if given. */
+/**
+ * New chat in the empty pane in front (#4758): a chat takes the focused pane, so where a chat
+ * shows already the strip's `+` opens a new tab first, and the chat gets a tab of its own as it
+ * did when `+` started one. The sidebar's `+` is called New chat too, so the empty pane's is
+ * asked for by where it is.
+ */
+async function pressNewChat() {
+  const empty = await screen.findByTestId("empty-pane").catch(() => undefined);
+  if (empty === undefined)
+    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await userEvent.click(
+    within(await screen.findByTestId("empty-pane")).getByRole("button", { name: "New chat" }),
+  );
+}
+
+/** New chat, then Start — with `name` typed into the picker's Name field first, if given. */
 async function openAChat(name?: string) {
-  await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await pressNewChat();
   const picker = await screen.findByRole("dialog", { name: "Start a chat" });
   if (name !== undefined) await userEvent.type(within(picker).getByLabelText(/^Name/), name);
   await userEvent.click(within(picker).getByRole("button", { name: "Start chat" }));
@@ -179,7 +197,7 @@ describe("a new chat's name", () => {
     core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await pressNewChat();
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
     await userEvent.click(within(picker).getByRole("option", { name: "No persona" }));
     await userEvent.click(within(picker).getByRole("button", { name: "Start chat" }));
@@ -191,7 +209,7 @@ describe("a new chat's name", () => {
     core({ refuse: "That name holds a control character or an invisible formatting one." });
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await pressNewChat();
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
     await userEvent.type(within(picker).getByLabelText(/^Name/), "x");
     await userEvent.click(within(picker).getByRole("button", { name: "Start chat" }));

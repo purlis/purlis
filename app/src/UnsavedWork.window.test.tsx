@@ -16,6 +16,7 @@ import App from "./App";
 import { closeFromTheRail, stripNamed } from "./test-strips";
 import { settingsView, type ViewRef } from "./tabs";
 import type { OpenChat } from "./bindings";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { keepUnsaved, unsavedNow, type UnsavedWork } from "./unsavedWork";
 
 vi.mock("./SessionPane", () => ({
@@ -88,6 +89,8 @@ function core(restore: string[], chats: Record<string, OpenChat[]> = {}) {
     if (cmd === "plane_sidebar")
       return { root: plane, workspaces: [], personas: [], persona: null, unfiled: [] };
     if (cmd === "opened_chats") return chats[plane] ?? [];
+    // Each project's chats have their tabs from its stored layout (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(chats[plane] ?? []);
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
@@ -238,14 +241,15 @@ describe("a view tab's close, with its unsaved work", () => {
       within(stripNamed("Tabs"))
         .queryAllByRole("tab")
         .map((tab) => (tab.textContent ?? "").includes("Settings"));
-    await vi.waitFor(() => expect(tabs()).toEqual([true]));
+    // Beside the empty tab every strip keeps (#4758).
+    await vi.waitFor(() => expect(tabs()).toEqual([false, true]));
     const deploy = work(ONE);
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
     await userEvent.keyboard("Close this view{Enter}");
     await userEvent.click(within(await question()).getByRole("button", { name: "Keep editing" }));
-    expect(tabs()).toEqual([true]);
+    expect(tabs()).toEqual([false, true]);
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
@@ -254,7 +258,7 @@ describe("a view tab's close, with its unsaved work", () => {
       within(await question()).getByRole("button", { name: "Discard and leave" }),
     );
     expect(deploy.discard).toHaveBeenCalledOnce();
-    // Settings is gone; the strip's last tab keeps one empty pane (#4756).
+    // Settings is gone, and the empty tab stays (#4756).
     await vi.waitFor(() => expect(tabs()).toEqual([false]));
   });
 });

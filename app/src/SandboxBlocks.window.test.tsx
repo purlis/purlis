@@ -25,6 +25,7 @@ import { HOLD_RAN_OUT, RETRY_LINE } from "./SandboxBlockNotice";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 import { forgetInbox } from "./inboxRules";
 import { onTheWire } from "./chatEvents.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A sandbox block becomes a Notice on the chat's tab** (#1338), against the whole window: the
@@ -165,6 +166,8 @@ function core(
         answered((args ?? {}) as Record<string, unknown>);
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
+      // The layout stored gives the chat its tab (#4758), where its Notices are drawn.
+      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,

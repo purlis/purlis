@@ -19,6 +19,7 @@ import App from "./App";
 import type { FinishedTask, OpenChat } from "./bindings";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
@@ -130,6 +131,8 @@ function core(rows: FinishedTask[], open: OpenChat[] = [STEWARD], refuses?: stri
       asked.push({ cmd, args: a });
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return chats;
+      // The layout stored gives each chat open at the launch a tab on alpha (#4758).
+      if (cmd === "reopened_layout") return aTabForEachChat(open, () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,
@@ -543,7 +546,7 @@ describe("a chat's finished tasks", () => {
     expect(screen.queryByRole("region", { name: "Report of check prod" })).toBeNull();
   });
 
-  it("reopens a finished task as an ordinary chat with a tab, and its row goes", async () => {
+  it("reopens a finished task as an ordinary chat in the focused pane, and its row goes", async () => {
     const said = core([FAILED]);
     render(<App />);
     const group = await theirs();
@@ -556,8 +559,9 @@ describe("a chat's finished tasks", () => {
         { plane: PLANE, id: FAILED.id, columns: expect.any(Number), rows: expect.any(Number) },
       ]),
     );
-    // A tab of its own, named as the task was, beside the chat that asked.
-    await waitFor(() => expect(tabNames()).toEqual(["steward 4", "check staging"]));
+    // It takes the focused pane, as any chat started there does (#4758), and its tab is named
+    // as the task was; the chat that asked runs on in the sidebar.
+    await waitFor(() => expect(tabNames()).toEqual(["check staging"]));
     // Its row has gone: it is a chat now, and no finished task.
     await waitFor(() =>
       expect(screen.queryByRole("group", { name: "Finished tasks of steward 4" })).toBeNull(),

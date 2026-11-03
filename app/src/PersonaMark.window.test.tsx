@@ -8,6 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { PersonaMark as Mark } from "./bindings";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { findStripNamed, stripNamed, showThePanel } from "./test-strips";
 
 /**
@@ -125,6 +126,8 @@ function core(marks: Mark[], chats = [chat(1, "devops"), chat(2, null)]) {
       return null;
     }
     if (cmd === "opened_chats") return chats;
+    // Each chat has a tab on alpha's strip only from the stored layout (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(chats, () => "alpha");
     if (cmd === "reopened_views") return [];
     if (cmd === "chat_states")
       return [
@@ -304,7 +307,7 @@ describe("a persona with an icon and a colour is drawn with them", () => {
   it("on its choice in the new-chat picker, where each persona wears its own", async () => {
     await opened();
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Start a chat" });
     const personas = within(dialog).getByRole("listbox", { name: "Persona" });
