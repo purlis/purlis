@@ -647,6 +647,15 @@ export function briefOfShown(crumbs: Crumbs): BriefAsk {
   return { chat: shown.session, name: shown.name };
 }
 
+/** **A chat ended on purpose in its pane** (#5019), as its ended band draws it. */
+export type EndedChat = {
+  /** Its name as it ended, since the core no longer lists it. */
+  name: string;
+  /** **Its way back, which is Resume**, where it has one: the record a Smart close wrote, or
+   *  else its conversation (a chat on a harness; a shell has none). */
+  resumes: boolean;
+};
+
 /** A chat that lives in a pane and is not the one the pane shows, with what purlis has to say
  *  of it. */
 export type HiddenChat = {
@@ -792,6 +801,7 @@ export function LayoutPanes({
   crumbs,
   placed,
   endedTasks,
+  endedChats,
   unread,
   finished,
   explaining,
@@ -839,6 +849,7 @@ export function LayoutPanes({
   onClearPane,
   onResumeTask,
   names,
+  onResumeEnded,
   path = "",
   room,
   faceOf,
@@ -863,6 +874,10 @@ export function LayoutPanes({
   /** **The panes left on a task that has ended** (#4757), by pane: the path it last had. Each
    *  keeps the task's last screen, read-only, under the ended band (#4756). */
   endedTasks: Readonly<Record<number, Crumbs>>;
+  /** **The chats ended on purpose in a pane** (#5019), by session: End…, a Smart close whose
+   *  record is written, or a task's End…. Each keeps its pane, its last screen read-only under
+   *  the ended band, named as it was, with Resume where it has a way back. */
+  endedChats: ReadonlyMap<number, EndedChat>;
   /** The panes whose task is not known yet (the list of chats is not read): nothing is drawn. */
   unread: ReadonlySet<number>;
   /** The finished row of each task a pane was left on when it ended, by pane (#1485). */
@@ -974,6 +989,8 @@ export function LayoutPanes({
   /** What a reader calls each pane of the tab, by where it is (#4767, `panePlaces.ts`): worked
    *  out once at the tab's root and handed down. */
   names?: ReadonlyMap<number, string>;
+  /** Resume, on the band of chat `session` ended on purpose (#5019). */
+  onResumeEnded: (session: number) => void;
   /** This layout's path from its tab's root: `a` for a split's first child, `b` for its
    *  second. The tab's own layout is `""`. */
   path?: string;
@@ -1149,6 +1166,9 @@ export function LayoutPanes({
           ? endedState(endedTask)
           : shownOf(row);
     const shownPath = endedTask ?? path;
+    // **A chat ended on purpose in this pane** (#5019): the core closed it, so its band is drawn
+    // from what the window held of it as it ended. A task the pane has a path for says it above.
+    const endedChat = endedTask === undefined ? endedChats.get(content.session) : undefined;
     const doing = (
       <PaneActions
         pane={layout.pane}
@@ -1250,6 +1270,13 @@ export function LayoutPanes({
               resume={row?.reopens ? () => onResumeTask(layout.pane, row) : undefined}
               onClear={() => onClearPane(layout.pane)}
             />
+          ) : endedChat !== undefined ? (
+            <EndedBand
+              session={content.session}
+              name={endedChat.name}
+              resume={endedChat.resumes ? () => onResumeEnded(content.session) : undefined}
+              onClear={() => onClearPane(layout.pane)}
+            />
           ) : ended && !restoring.has(content.session) ? (
             <EndedBand
               session={content.session}
@@ -1276,7 +1303,7 @@ export function LayoutPanes({
               tab,
               onPress: (offer) => onPaneDoes(layout.pane, offer),
             }}
-            readOnly={ended || endedTask !== undefined}
+            readOnly={ended || endedTask !== undefined || endedChat !== undefined}
           />
         )}
       </PaneFrame>
@@ -1312,6 +1339,7 @@ export function LayoutPanes({
       crumbs={crumbs}
       placed={placed}
       endedTasks={endedTasks}
+      endedChats={endedChats}
       unread={unread}
       finished={finished}
       explaining={explaining}
@@ -1361,6 +1389,7 @@ export function LayoutPanes({
       chatName={chatName}
       onClearPane={onClearPane}
       onResumeTask={onResumeTask}
+      onResumeEnded={onResumeEnded}
       names={named}
     />
   );

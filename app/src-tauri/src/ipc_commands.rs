@@ -426,6 +426,7 @@ macro_rules! app_commands {
                 finished::finished_tasks,
                 finished::clear_finished_tasks,
                 reopen_finished_task,
+                resume_ended_chat,
                 taskbrief::task_brief,
                 activity::activity,
                 activity::activity_chat,

@@ -678,14 +678,15 @@ describe("App", () => {
     expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
-  it("ends a chat only by End…, which ends its program and takes its pane (#4753)", async () => {
+  it("ends a chat only by End…, which ends its program and leaves its pane on the ended band (#4753, #5019)", async () => {
     const { asked } = core();
     render(<App />);
     await openAChat();
 
     await endChat("steward 1");
 
-    expect(screen.queryAllByTestId("pane")).toEqual([]);
+    expect(await screen.findByRole("status", { name: /ended/i })).toBeInTheDocument();
+    expect(panes()).toEqual(["session 1"]);
     // The plane travels with the session, because a session number alone names a chat in
     // every plane the process holds.
     expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
@@ -791,7 +792,8 @@ describe("App", () => {
     await userEvent.keyboard("{Enter}");
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(screen.queryAllByTestId("pane")).toEqual([]);
+    // Its pane stays, under the ended band (#5019).
+    expect(await screen.findByRole("status", { name: /ended/i })).toBeInTheDocument();
     expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
       { plane: "/home/dev/plane", session: 1 },
     ]);
@@ -843,14 +845,14 @@ describe("App", () => {
     // `×` the only way there is — by leaving the picker first. Escape does not call the start
     // back; it is already in flight, which is exactly the race this test is about.
     await userEvent.keyboard("{Escape}");
-    await endChat("steward 1");
+    // The tab goes by its close, which ends nothing (#4756). End… would leave the chat's pane on
+    // the ended band, and the tab with it (#5019).
+    await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
     letTheSecondSessionStart();
 
     await waitFor(() => expect(opened).toBe(2));
-    expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
-      { plane: "/home/dev/plane", session: 1 },
-    ]);
-    expect(screen.queryAllByTestId("pane")).toEqual([]);
+    // Neither chat is ended: the one the split started goes on in the sidebar.
+    expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
   it("says why a chat would not start, in the picker, and opens no tab", async () => {

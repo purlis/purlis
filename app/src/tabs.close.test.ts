@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   closeFocusedPane,
   closeLayout,
+  closePaneOf,
   contentsOf,
   EMPTY_TAB,
   focusPane,
@@ -171,5 +172,39 @@ describe("where the keyboard goes on Close pane (#4756, spec #4750)", () => {
     const left = closeFocusedPane(onB, filed);
 
     expect(left.byId[front(left)].focused).toBe(c);
+  });
+});
+
+describe("closing a pane that is not focused, as Clear pane does (#5019)", () => {
+  it("collapses the split and leaves the keyboard in the pane that had it", () => {
+    const tabs = splitFocusedPane(openTab(noTabs(), 11), "row", 12);
+    const id = front(tabs);
+    const [first, second] = contentsOf(tabs, id).map((one) => one.pane);
+    const focusedFirst = focusPane(tabs, first);
+
+    const left = closePaneOf(focusedFirst, id, second, filed);
+
+    expect(visibleSessions(left)).toEqual([11]);
+    expect(left.byId[id].focused).toBe(first);
+  });
+
+  it("closes a tab's only pane with its tab, and the strip's last tab keeps one empty pane", () => {
+    const two = openTab(openTab(noTabs(), 11), 12);
+    const behind = two.order[1];
+    const [pane] = contentsOf(two, behind).map((one) => one.pane);
+
+    expect(closePaneOf(two, behind, pane, filed).order).toEqual([two.order[0]]);
+
+    const one = openTab(noTabs(), 11);
+    const id = front(one);
+    const left = closePaneOf(one, id, contentsOf(one, id)[0].pane, filed);
+    expect(left.order).toEqual(one.order);
+    expect(contentsOf(left, id).map((it) => it.content.kind)).toEqual(["empty"]);
+  });
+
+  it("changes nothing for a pane the tab does not have", () => {
+    const tabs = openTab(noTabs(), 11);
+
+    expect(closePaneOf(tabs, front(tabs), 999, filed)).toBe(tabs);
   });
 });

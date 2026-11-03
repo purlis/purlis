@@ -730,8 +730,9 @@ describe("the session's End…, the one way it ends (#4756)", () => {
     expect(ended(asked)).toEqual([]);
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
 
-    await waitFor(() => expect(tabNames()).not.toContain("steward 1"));
-    expect([...tabNames()].sort()).toEqual(["steward 2", "sweep", "talk"]);
+    // Its own tab stays, its pane on the ended band (#5019), behind the tab in front.
+    await waitFor(() => expect(commandsOf(asked, "close_session")).toHaveLength(1));
+    expect([...tabNames()].sort()).toEqual(["steward 1", "steward 2", "sweep", "talk"]);
     // Only the session ended. Its tasks go on, in their tabs.
     expect(ended(asked)).toEqual([{ cmd: "close_session", args: { plane: PLANE, session: 1 } }]);
     expect(commandsOf(asked, "close_chat_tab")).toEqual([]);
@@ -749,7 +750,7 @@ describe("the session's End…, the one way it ends (#4756)", () => {
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
 
     // talk's tab stays until the core says it has ended, and then shows it as ended (#4757).
-    await waitFor(() => expect(tabNames()).not.toContain("steward 1"));
+    await waitFor(() => expect(commandsOf(asked, "close_chat_stopping")).toHaveLength(1));
     expect(tabNames()).toContain("talk");
     expect(commandsOf(asked, "close_chat_stopping")).toEqual([
       { plane: PLANE, session: 1, then: "close" },
@@ -947,11 +948,21 @@ describe("a session's pane goes: its tasks' own tabs stay where they are, by eve
     await waitFor(() => expect(onScreen()).toEqual([1]));
     return held;
   }
-  /** steward 1's tab is gone; talk's stays, talk is not ended, and no tab of it is closed:
-   *  a chat leaving moves no other pane. */
-  async function talkStays({ asked, tree }: { asked: Asked[]; tree: HTMLElement }) {
-    await waitFor(() => expect(tabNames()).not.toContain("steward 1"));
-    expect([...tabNames()].sort()).toEqual(["steward 2", "talk"]);
+  /** steward 1's tab is gone, or, where the person ended it, on the ended band (#5019); talk's
+   *  stays, talk is not ended, and no tab of it is closed: a chat leaving moves no other pane. */
+  async function talkStays(
+    { asked, tree }: { asked: Asked[]; tree: HTMLElement },
+    session: "gone" | "ended" = "gone",
+  ) {
+    if (session === "ended") {
+      expect(await screen.findByRole("status", { name: /^Ended/ })).toHaveTextContent(
+        "steward 1 ended",
+      );
+      expect([...tabNames()].sort()).toEqual(["steward 1", "steward 2", "talk"]);
+    } else {
+      await waitFor(() => expect(tabNames()).not.toContain("steward 1"));
+      expect([...tabNames()].sort()).toEqual(["steward 2", "talk"]);
+    }
     expect(row(tree, "talk")).toBeTruthy();
     expect(commandsOf(asked, "close_chat_tab")).toEqual([]);
     expect(ended(asked).filter((one) => one.args.session === 4 || one.cmd === "stop_chat")).toEqual(
@@ -972,7 +983,7 @@ describe("a session's pane goes: its tasks' own tabs stay where they are, by eve
     const question = await askToEnd("steward 1");
     expect(question.textContent).not.toContain("of its own");
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
-    await talkStays(held);
+    await talkStays(held, "ended");
     expect(commandsOf(held.asked, "close_session")).toEqual([{ plane: PLANE, session: 1 }]);
   });
 
@@ -982,7 +993,7 @@ describe("a session's pane goes: its tasks' own tabs stay where they are, by eve
     await act(() =>
       emit("smart-close", { plane: PLANE, session: 1, phase: "closed", record: null }),
     );
-    await talkStays(held);
+    await talkStays(held, "ended");
   });
 
   it("the session ending, as a stop ends it", async () => {
@@ -997,7 +1008,7 @@ describe("a session's pane goes: its tasks' own tabs stay where they are, by eve
     const question = await askToEnd("steward 1");
     await userEvent.click(within(question).getByRole("radio", { name: "Stop them" }));
     await userEvent.click(within(question).getByRole("button", { name: "Close" }));
-    await talkStays(held);
+    await talkStays(held, "ended");
   });
 
   it("the session's pane closed in a split: the task beside it takes the tab, still running", async () => {

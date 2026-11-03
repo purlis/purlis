@@ -128,9 +128,7 @@ describe("when the window reads the sidebar again", () => {
     fireEvent.click(within(asking).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     await waitFor(() =>
-      expect(
-        screen.queryByRole("tab", { name: (name) => name.startsWith("steward steward 3") }),
-      ).toBeNull(),
+      expect(asked.slice(from).some((one) => one.cmd === "close_session")).toBe(true),
     );
     await settled(asked);
 

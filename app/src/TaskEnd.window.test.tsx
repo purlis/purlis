@@ -586,6 +586,45 @@ describe("a task that has a tab of its own", () => {
   });
 });
 
+describe("a task's End… (#5019, spec #4750 story 62)", () => {
+  const tabOf = (name: string) =>
+    within(stripNamed("Tabs"))
+      .queryAllByRole("tab")
+      .find((one) => one.querySelector(".tab-name")?.textContent === name);
+
+  it("leaves the task's own tab on the ended band, and Clear pane takes the tab away", async () => {
+    const { tree, asked, ended } = await drawn({}, true);
+    const own = tabOf("sweep");
+    if (own === undefined) throw new Error("sweep has no tab of its own");
+    await userEvent.click(own);
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+
+    await menuOf(tree, "sweep");
+    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_IT }));
+    await userEvent.click(
+      within(await second("Close sweep now, with no report?")).getByRole("button", {
+        name: "Close it",
+      }),
+    );
+    await waitFor(() => expect(ends(asked)).toHaveLength(1));
+    // The core closes it, as it does once a task's End… is carried out.
+    await ended(5);
+
+    const band = await screen.findByRole("status", { name: /^Ended/ });
+    expect(band.textContent).toContain("sweep ended");
+    expect(within(band).getByRole("button", { name: "Clear pane" })).toBeInTheDocument();
+    // Its last screen stays where it was, in its own tab.
+    expect(onScreen()).toEqual([5]);
+    expect(tabOf("sweep")).toBeDefined();
+
+    await userEvent.click(within(band).getByRole("button", { name: "Clear pane" }));
+
+    // Not the strip's last tab, so the tab goes with its one pane, and nothing more is ended.
+    await waitFor(() => expect(tabOf("sweep")).toBeUndefined());
+    expect(asked.filter((one) => one.cmd === "close_session")).toEqual([]);
+  });
+});
+
 describe("where purlis may not type into the task", () => {
   const why =
     "'sweep' is showing a prompt that is yours to answer, and purlis types nothing into a chat that is.";

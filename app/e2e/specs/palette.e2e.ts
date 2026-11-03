@@ -4,6 +4,7 @@
 import { browser, expect, $, $$ } from "@wdio/globals";
 import {
   answerTheAsk,
+  clearEndedPanes,
   pickAndStart,
   pressAndStart,
   pressOnly,
@@ -298,9 +299,10 @@ describe("the command palette", () => {
   });
 
   it("ends the chat once the question is answered yes", async () => {
-    // The pane the test above opened is that tab's only one, so ending its chat closes the tab
-    // with it — which is what makes this checkable without counting panes across tabs. Its
-    // End…, the one row that ends a chat: Close pane ends nothing (#4756).
+    // The pane the test above opened is that tab's only one, so ending its chat and clearing the
+    // ended band it leaves (#5019) closes the tab with it — which is what makes this checkable
+    // without counting panes across tabs. Its End…, the one row that ends a chat: Close pane
+    // ends nothing (#4756).
     //
     // **The yes is a click here, and only because a scenario cannot press a button by
     // keyboard at all** — see the spec above for the trace that measured it. What this proves
@@ -315,6 +317,13 @@ describe("the command palette", () => {
     await browser.keys(["Enter"]);
 
     await answerTheAsk(ending);
+    // Its pane is left on the ended band (#5019), and its Clear pane takes the tab away.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => document.querySelector('[data-cause^="chat-ended:"]') !== null),
+      { timeout: 15_000, timeoutMsg: "the ended chat's pane never drew the ended band" },
+    );
+    await clearEndedPanes();
 
     await browser.waitUntil(async () => (await tabNames()).length === before.length - 1, {
       timeout: 15_000,

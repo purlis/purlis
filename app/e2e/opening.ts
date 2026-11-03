@@ -242,7 +242,8 @@ async function openThePalette(): Promise<void> {
  * Ends every chat of the project in front, on a strip or in no pane at all: each one's End…
  * (#4753), the one row that ends a chat, since a close ends nothing (#4756). Run from the
  * palette, which lists an End… for every chat, one at a time, and bounded so that an End which
- * stops taking is a failure and not a hang.
+ * stops taking is a failure and not a hang. Then the panes End… left on the ended band are
+ * cleared (#5019).
  */
 export async function endEveryChat(most = 200): Promise<void> {
   for (let pressed = 0; pressed < most; pressed++) {
@@ -258,11 +259,55 @@ export async function endEveryChat(most = 200): Promise<void> {
     if (row === null) {
       await browser.keys(["Escape"]);
       await $(PALETTE).waitForDisplayed({ reverse: true, timeout: 10_000 });
+      await clearEndedPanes(undefined, most);
       return;
     }
     await answerTheAsk("");
   }
   throw new Error(`${most} presses did not end every chat`);
+}
+
+/**
+ * **Clears the panes End… left on the ended band** (#5019): each ended chat's pane stays, its
+ * last screen under the band, until Clear pane takes it away, as a person does. Every tab of the
+ * strip is looked at in turn, since a band is drawn only in the tab in front, until a whole pass
+ * finds none: chat `session`'s alone where one is named, and every one where none is. Bounded,
+ * so a Clear pane that stops taking is a failure and not a hang.
+ */
+export async function clearEndedPanes(session?: number, most = 200): Promise<void> {
+  const cause =
+    session === undefined ? '[data-cause^="chat-ended:"]' : `[data-cause="chat-ended:${session}"]`;
+  /** Presses Clear pane on a band drawn now; whether there was one. */
+  const clearedOne = () =>
+    browser.execute((css: string) => {
+      const band = document.querySelector(css);
+      const clear = [...(band?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
+        (button) => button.textContent?.trim() === "Clear pane",
+      );
+      clear?.click();
+      return clear !== undefined;
+    }, cause);
+  let cleared = 0;
+  for (let pass = 0; pass < most; pass++) {
+    let found = false;
+    const tabs = await browser.execute(
+      () => document.querySelectorAll('[data-strip="Tabs"] [role="tab"]').length,
+    );
+    for (let at = 0; at <= tabs; at++) {
+      if (await clearedOne()) {
+        found = true;
+        if (++cleared >= most) throw new Error(`${most} presses did not clear every ended pane`);
+        await browser.pause(100);
+        break;
+      }
+      if (at === tabs) break;
+      await browser.execute((index: number) => {
+        document.querySelectorAll<HTMLElement>('[data-strip="Tabs"] [role="tab"]')[index]?.click();
+      }, at);
+      await browser.pause(100);
+    }
+    if (!found) return;
+  }
 }
 
 /**
