@@ -296,6 +296,13 @@
   .pane-head {
     padding-inline: var(--space-5) var(--space-3);
   }
+
+  /* **And a task's line keeps the grip's room too** (#4764): with a breadcrumb on it, the grip
+     is not drawn in a narrow pane, so the state word stays whole (it needs about 17px more in a
+     pane of two in the narrowest window). ⌘⇧M and a drag of the head still pick the pane up. */
+  .pane-head:has(> .pane-chips > .pane-crumbs) > [data-pane-grip-handle] {
+    display: none;
+  }
 }
 
 /* **The header is the top of the pane** (#4754): it keeps the runway, band or none. */
