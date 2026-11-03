@@ -14,10 +14,11 @@
 //                                                   <out>, under its path in `app/` (the
 //                                                   stories job, after drawing them again)
 //   node tools/story-baselines.mjs take <drawn> <app>
-//                                                   write what `gather` copied into <app> and
-//                                                   delete every other baseline there (the
-//                                                   labelled job's commit, run from a trusted
-//                                                   checkout against the pull request's, and
+//                                                   write what `gather` copied into <app> where
+//                                                   it differs, and delete every other baseline
+//                                                   there (the labelled job's commit, run from
+//                                                   a trusted checkout against the pull
+//                                                   request's, and the pull tool,
 //                                                   `tools/story-baselines-pull.mjs`)
 //
 // <index> is Storybook's own index of the stories, which `storybook index` writes. A story is
@@ -52,10 +53,14 @@ import { crc32 } from "node:zlib";
 export const BASELINE =
   /^src\/(?:[\w.-]+\/)*__screenshots__\/[\w.-]+\.stories\.tsx\/[a-z0-9-]+_[a-z0-9-]+_[a-z0-9-]+(?:_[a-z]+)?-(?:chromium|webkit)-linux\.png$/;
 
-/** How much `take` takes at most: bytes in one baseline, baselines in one run, and bytes in
- *  all of them together, which bounds what one commit pushes. A story's picture is tens of
- *  kilobytes; a dialog's on the page, a few hundred. Each story has a picture in each pictured
- *  cell and each browser, twenty today (#3040). */
+/** How much `take` takes at most: bytes in one baseline, baselines written or deleted in one
+ *  take, and bytes in all it writes together, which bound what one commit pushes. They count
+ *  what a take changes, never the whole set: a picture that matches its baseline is left as
+ *  it is and counts for nothing, so the set grows with the stories while a take stays as big
+ *  as the change. Every drawn picture is still read and checked, one at a time, and only those
+ *  written are held. A story's picture is tens of kilobytes; a dialog's on the page, a few
+ *  hundred. Each story has a picture in each pictured cell and each browser, twenty today
+ *  (#3040). */
 export const LIMITS = {
   bytes: 2 * 1024 * 1024,
   files: 12000,
@@ -288,24 +293,23 @@ export function gather(
 }
 
 /**
- * Writes the baselines `gather` copied to `drawn` into `app`, deletes every other file in a
- * `__screenshots__` directory of `app/src`, and says which it wrote and which it deleted.
- * Everything in `drawn` must be a baseline: a path a baseline has, a plain file reached through
- * no link, a whole PNG, all of them within {@link LIMITS}. Nothing in `app` written or deleted may be a link
- * or be reached through one, `app` included. Unless all of it holds, nothing is written or
- * deleted.
+ * Writes the baselines `gather` copied to `drawn` into `app` where they differ from what is
+ * there, deletes every other file in a `__screenshots__` directory of `app/src`, and says which
+ * it wrote, which it deleted and which already matched. Everything in `drawn` must be a
+ * baseline: a path a baseline has, a plain file reached through no link, a whole PNG, each
+ * within {@link LIMITS}' bytes; what it writes and deletes must be within the rest of them.
+ * Nothing in `app` read, written or deleted may be a link or be reached through one, `app`
+ * included. Unless all of it holds, nothing is written or deleted.
  */
 export function take(drawn, app, within = LIMITS) {
   const limits = { ...LIMITS, ...within };
   if (lstatSync(app).isSymbolicLink())
     throw new Error(`not a baseline, so nothing was taken: ${app} is a link`);
   const all = files(drawn).sort();
-  if (all.length > limits.files)
-    throw new Error(
-      `not a baseline, so nothing was taken: more than ${limits.files} files`,
-    );
+  const taken = [];
+  const unchanged = [];
   let total = 0;
-  const taken = all.map((path) => {
+  for (const path of all) {
     if (!BASELINE.test(path))
       throw new Error(`not a baseline, so nothing was taken: ${path}`);
     confined(drawn, path);
@@ -317,20 +321,36 @@ export function take(drawn, app, within = LIMITS) {
       throw new Error(
         `not a baseline, so nothing was taken: ${path} is over the cap of ${limits.bytes} bytes`,
       );
-    total += lstatSync(from).size;
-    if (total > limits.total)
-      throw new Error(
-        `not a baseline, so nothing was taken: the baselines are over the cap of ${limits.total} bytes in all`,
-      );
     const bytes = readFileSync(from);
     if (!isWholePng(bytes))
       throw new Error(
         `not a baseline, so nothing was taken: ${path} is not a whole PNG`,
       );
-    return { path, bytes };
-  });
+    const to = join(app, path);
+    if (existsSync(to)) {
+      if (!lstatSync(to).isFile())
+        throw new Error(
+          `not a baseline, so nothing was taken: ${path} is not a plain file`,
+        );
+      if (readFileSync(to).equals(bytes)) {
+        unchanged.push(path);
+        continue;
+      }
+    }
+    // A picture that matches counts for nothing: the caps bound what one commit pushes.
+    total += bytes.length;
+    if (total > limits.total)
+      throw new Error(
+        `not a baseline, so nothing was taken: the baselines that changed are over the cap of ${limits.total} bytes in all`,
+      );
+    taken.push({ path, bytes });
+  }
   const drew = new Set(all);
   const removed = baselinesIn(app).filter((path) => !drew.has(path));
+  if (taken.length + removed.length > limits.files)
+    throw new Error(
+      `not a baseline, so nothing was taken: more than ${limits.files} files written or deleted`,
+    );
   for (const path of removed) {
     confined(app, path);
     if (!lstatSync(join(app, path)).isFile())
@@ -353,7 +373,7 @@ export function take(drawn, app, within = LIMITS) {
   }
   // `unlink` takes away the name, never what a link would point to; none is on the way here.
   for (const path of removed) unlinkSync(join(app, path));
-  return { taken: all, removed };
+  return { taken: taken.map(({ path }) => path), removed, unchanged };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -396,9 +416,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     ))
       console.log(path);
   } else if (command === "take" && given.length === 2) {
-    const { taken, removed } = take(resolve(given[0]), resolve(given[1]));
-    for (const path of taken) console.log(`drawn: ${path}`);
+    const { taken, removed, unchanged } = take(
+      resolve(given[0]),
+      resolve(given[1]),
+    );
+    for (const path of taken) console.log(`written: ${path}`);
     for (const path of removed) console.log(`deleted: ${path}`);
+    console.log(
+      `${taken.length} baselines written and ${removed.length} deleted (${unchanged.length} already matched)`,
+    );
   } else {
     console.error(
       "usage: story-baselines.mjs check <index> [<report> ...] | gather <index> <out> [<report> ...] | take <drawn> <app>",
