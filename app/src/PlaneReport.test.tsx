@@ -134,8 +134,8 @@ describe("a project the window opens behind the one in front", () => {
     // of asks is the same for a view kept as for one built again, and only when that read lands
     // differs (#4695).
     const view1 = document.querySelector(".project-view");
-    expect(view1).not.toBeNull();
-    const drawnThen = [view1!, ...view1!.querySelectorAll("*")];
+    if (view1 === null) throw new Error("the project's view is not drawn");
+    const drawnThen = [view1, ...view1.querySelectorAll("*")];
     view.rerender(drawn("/home/dev/plane", false, true, onReport));
     view.rerender(drawn("/home/dev/plane", true, true, onReport));
     await act(async () => {});
