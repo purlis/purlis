@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793728506330,
+  "lastUpdate": 1793731773155,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37884,6 +37884,48 @@ window.BENCHMARK_DATA = {
             "value": 102.341027,
             "unit": "ms",
             "extra": "median of 5 runs: 102.042, 102.188, 102.341, 102.713, 103.299 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e7c42315d155bd37c4c8304ee751e5286a836aef",
+          "message": "CI: faster theme import tuning (#5056), browser e2e host ends with its test (#5057) (#5085)\n\n* A browser end-to-end test's session host ends with the test's process (#5057)\n\nMerge-group run 41655870888 (rust tests part 3) left\ntarget/debug/purlis serve running for 16 minutes, and\ntools/no-orphans.sh failed the step. The run's annotations put it\nbeside the retried browsers::tests::end_to_end test\na_chats_downloads_and_uploads_go_through_every_hop: its panicking\nthread was 9742 and the leftover host was pid 9745. That end-to-end\nhelper (Host) is the only place in purlis-app that runs the CLI's\npurlis serve, and the purlis-cli tests that start one already end it\nwith a kill-on-drop guard.\n\nHost's drop already ends the host after a failed assertion. But the\nhost runs in a process group of its own, as the window's does, so\nnextest's kill of a hung test never reaches it. A test process that\nends without unwinding leaves it serving out the ten-minute grace\nperiod a crashed window gets (ADR 0068 §2).\n\nThe test's host now gets PR_SET_PDEATHSIG(SIGKILL) before exec: the\nkernel kills it when the thread that started it (the host's\nsupervisor) goes, so it also goes when the test process dies, on any\npath. It checks the parent is still the test after the prctl, to close\nthe race of a parent that went first. The test runs on Linux only, and\nso does the guard.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H08M6ZMFVG8VS0SY3DPRQH\nPurlis-Persona: steward\n\n* A theme import's tuning reuses the colours and loads it already worked out (#5056)\n\npurlis-core's theme::import_tests took 50-250 s each in the debug test\nbuild. the_state_and_icon_hues_stay_apart_from_each_other_after_tuning\nreached the 300 s hang limit in merge-group run 41655870888.\n\nA profile of an import (sample, debug build) put about 97% of it in\ntune -> toward -> findings_for -> floors::hold. Most of that was\ntint::tint_hex_within, a 32-step bisection with pow and gamut checks\nper call. The walk asks for the same value, hue and chroma again and\nagain: each trial point redraws every rule side at all 360 degrees and\neach chroma step, and only one token changed since the last point.\n\n- tint_hex_within keeps what it answered on its thread, by (hue, most\n  chroma), then by value. The lookup comes before any colour maths and\n  allocates nothing on a hit. oklab_of keeps its answers the same way.\n  Both are pure functions, so every answer is the one it was. Each map\n  is emptied once it holds 65,536 answers.\n- tune loaded the appearance again before each walked token, even when\n  no recipe had changed a token since the last load. It now reuses the\n  last load while the tokens are the same, compared in order.\n\nWhat the import writes is unchanged: the theme suite (1,209 tests)\npasses as it was. Local debug times, before -> after, measured\ninterleaved on a loaded machine, are in the PR.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H08M6ZMFVG8VS0SY3DPRQH\nPurlis-Persona: steward\n\n* The e2e host's parent-death signal is set by setpriv, not an unsafe block (#5057)\n\nThe workspace denies unsafe_code and keeps its unsafe blocks to an\naudited few, so clippy refused the pre_exec block. The test's host is\nnow started through util-linux's setpriv --pdeathsig KILL, which sets\nPR_SET_PDEATHSIG and execs purlis serve. The signal survives the exec,\nso the kernel still kills the host when the test's process goes. Where\nthere is no /usr/bin/setpriv, the host starts as it did before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6H08M6ZMFVG8VS0SY3DPRQH\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T18:06:03Z",
+          "tree_id": "f563e221c87d6f94350baee855a0178ddbe01dea",
+          "url": "https://github.com/purlis/purlis/commit/e7c42315d155bd37c4c8304ee751e5286a836aef"
+        },
+        "date": 1793731755359,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6793255,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.664, 0.676, 0.679, 0.680, 0.682 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5821975,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.474, 16.488, 16.582, 16.614, 16.643 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.13115450000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.702, 101.923, 102.131, 102.137, 103.097 ms"
           }
         ]
       }
