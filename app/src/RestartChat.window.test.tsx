@@ -15,6 +15,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
+import { theFrameNow } from "./frame.testkit";
 import App from "./App";
 import { chatList } from "./menus.testkit";
 import type { Moved, OlderSandbox } from "./bindings";
@@ -26,6 +27,13 @@ import { SandboxChangedNotice } from "./SandboxChanged";
 import { theCard } from "./chatCard.testkit";
 import { stripNamed } from "./test-strips";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
+
+/** The core says the chat moved, and the window draws it: the chat stores tell their readers
+ *  once a frame (`heldStore.ts`), and this test reads the result on the next line. */
+async function moved(payload: Record<string, unknown>) {
+  await emit("chat-moved", payload);
+  theFrameNow();
+}
 
 /**
  * **Restart chat, and the Notice after a sandbox setting changes** (#1428), against the whole
@@ -208,7 +216,7 @@ afterEach(() => forgetInboxOpen());
 describe("Restart chat on a chat's tab", () => {
   it("restarts a chat whose turn has ended at once, on its conversation, in its own pane", async () => {
     const { asked } = await aChat();
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => moved(WAITING));
 
     await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
 
@@ -221,7 +229,7 @@ describe("Restart chat on a chat's tab", () => {
 
   it("waits for the turn to end mid-turn, and its row says so", async () => {
     const { asked } = await aChat();
-    await act(() => emit("chat-moved", RUNNING));
+    await act(() => moved(RUNNING));
 
     const menu = await chatMenu();
     expect(within(menu).queryByRole("menuitem", { name: "Restart" })).toBeNull();
@@ -235,7 +243,7 @@ describe("Restart chat on a chat's tab", () => {
     expect(asked("restart_chat")).toEqual([]);
     expect(screen.getByText("session 4")).toBeInTheDocument();
 
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => moved(WAITING));
 
     await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
     expect(await screen.findByText("session 9")).toBeInTheDocument();
@@ -246,7 +254,7 @@ describe("Restart chat on a chat's tab", () => {
   it("waits for a chat's own work as for its turn, and restarts it once that turn ends with nothing in flight", async () => {
     const { asked } = await aChat();
     await act(() =>
-      emit("chat-moved", {
+      moved({
         ...WAITING,
         own_work: { helpers: 0, workflows: 0, monitors: 1, shells: 1 },
       }),
@@ -261,7 +269,7 @@ describe("Restart chat on a chat's tab", () => {
     expect(await screen.findByText(RESTART_WAITS_FOR_THE_TURN)).toBeInTheDocument();
     expect(asked("restart_chat")).toEqual([]);
 
-    await act(() => emit("chat-moved", { ...WAITING, moved_at: 3, sequence: 3 }));
+    await act(() => moved({ ...WAITING, moved_at: 3, sequence: 3 }));
 
     await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
   });
@@ -269,7 +277,7 @@ describe("Restart chat on a chat's tab", () => {
   // qw351: an Allow pressed while the chat was mid-turn showed nothing until the turn ended.
   it("says on the pane that an owed restart waits for the turn, and Restart now ends the turn", async () => {
     const { asked } = await aChat();
-    await act(() => emit("chat-moved", RUNNING));
+    await act(() => moved(RUNNING));
     const menu = await chatMenu();
     await userEvent.click(
       within(menu).getByRole("menuitem", {
@@ -296,7 +304,7 @@ describe("Restart chat on a chat's tab", () => {
       await screen.findByText(/Its harness does not say when a turn ends/),
     ).toBeInTheDocument();
 
-    await act(() => emit("chat-moved", RUNNING));
+    await act(() => moved(RUNNING));
 
     expect(await screen.findByText(RESTART_WAITS_FOR_THE_TURN)).toBeInTheDocument();
     expect(screen.queryByText(/Its harness does not say when a turn ends/)).toBeNull();
@@ -305,7 +313,7 @@ describe("Restart chat on a chat's tab", () => {
 
   it("says the wait beside the row of a chat whose turns purlis can see", async () => {
     await aChat();
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => moved(WAITING));
 
     expect(
       within(await chatMenu()).getByRole("menuitem", { name: "Restart" }),
@@ -363,7 +371,7 @@ describe("Restart chat on a chat's tab", () => {
     // S7: the press was once answered by nothing, and by a restart later.
     const notYet = "It is waiting on a permission prompt, so it restarts once that is answered.";
     const held = await aChat({ notYet });
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => moved(WAITING));
 
     await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
 
@@ -372,7 +380,7 @@ describe("Restart chat on a chat's tab", () => {
 
     // The prompt is answered, the chat moves, and the restart it is still owed happens.
     held.core.notYet = undefined;
-    await act(() => emit("chat-moved", { ...WAITING, moved_at: 3, sequence: 3 }));
+    await act(() => moved({ ...WAITING, moved_at: 3, sequence: 3 }));
 
     expect(await screen.findByText("session 9")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText(notYet)).toBeNull());
@@ -382,7 +390,7 @@ describe("Restart chat on a chat's tab", () => {
     const line =
       "This chat ran without the sandbox until this restart. It runs in the sandbox now, because that choice lasts for one start.";
     await aChat({ notices: [line] });
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => moved(WAITING));
 
     await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
 
@@ -395,7 +403,7 @@ describe("Restart chat on a chat's tab", () => {
     const refused =
       "purlis did not restart chat 4: it has no conversation to resume. If it has only just started, send it a message and restart it again. Start fresh on its tab's menu starts it again without a conversation.";
     const { asked } = await aChat({ refused });
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => moved(WAITING));
 
     await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
 
@@ -515,7 +523,7 @@ describe("the Notice after a sandbox setting changes", () => {
 
   it("says once how many chats keep the old sandbox, and restarts them on a press", async () => {
     const held = await aChat({ older: null });
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => moved(WAITING));
     expect(screen.queryByRole("status", { name: "Sandbox changed" })).toBeNull();
 
     held.core.older = BEHIND;
@@ -547,7 +555,7 @@ describe("the Notice after a sandbox setting changes", () => {
 
   it("restarts a chat mid-turn only when its turn ends", async () => {
     const held = await aChat({ older: BEHIND });
-    await act(() => emit("chat-moved", RUNNING));
+    await act(() => moved(RUNNING));
 
     const notice = await screen.findByRole("status", { name: "Sandbox changed" });
     await userEvent.click(within(notice).getByRole("button", { name: "Restart it" }));
@@ -555,7 +563,7 @@ describe("the Notice after a sandbox setting changes", () => {
     await settled();
     expect(held.asked("restart_chat")).toEqual([]);
 
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => moved(WAITING));
     await waitFor(() => expect(held.asked("restart_chat")).toEqual(RESTARTED));
   });
 
@@ -580,7 +588,7 @@ describe("the Notice after a sandbox setting changes", () => {
     // D-1428-10: a folder every chat may write, revoked in Settings' Granted list, is kept in
     // the project's state folder, and no watcher reports a write there.
     const held = await aChat({ older: null });
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => moved(WAITING));
     const before = held.asked("chats_on_older_sandbox").length;
     expect(screen.queryByRole("status", { name: "Sandbox changed" })).toBeNull();
 
@@ -595,7 +603,7 @@ describe("the Notice after a sandbox setting changes", () => {
     // What no watcher reports, such as a sandbox file another window or a hand wrote, or the
     // administrator's policy, is caught when the person comes back to the window.
     const held = await aChat({ older: null });
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => moved(WAITING));
     const before = held.asked("chats_on_older_sandbox").length;
 
     held.core.older = BEHIND;
@@ -609,7 +617,7 @@ describe("the Notice after a sandbox setting changes", () => {
 
   it("asks again when a task with no tab starts or ends, as the Chats list hears it (#1462)", async () => {
     const held = await aChat({ older: null });
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => moved(WAITING));
     const before = held.asked("chats_on_older_sandbox").length;
 
     // Chat 4 dispatched a task, which has no tab, and is behind. Only the sidebar's read says
