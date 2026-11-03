@@ -253,7 +253,10 @@ async function lineOf(pane: number) {
     return {
       frame: frames[at].getBoundingClientRect().width,
       line: said(line),
-      on: [...line.children].map((child) => said(child as HTMLElement)),
+      // What the line draws: a part the head drew and this file hid is not on it.
+      on: [...line.children]
+        .filter((child) => getComputedStyle(child).display !== "none")
+        .map((child) => said(child as HTMLElement)),
       ways: [...line.querySelectorAll<HTMLElement>(".pane-task-ends > *")].map(said),
     };
   }, pane);
@@ -367,8 +370,9 @@ async function measured(pane: number) {
       corner: box(frame?.querySelector(".pane-head")),
       line: box(line),
       // The line's other items, which were there before the breadcrumb: the gauge, the harness.
+      // A part the head drew and this file hid (its name and state mark, #4760) is not one.
       others: [...(line?.children ?? [])]
-        .filter((one) => one !== crumbs)
+        .filter((one) => one !== crumbs && getComputedStyle(one).display !== "none")
         .map((one) => ({ what: one.className, box: box(one) })),
       controls: box(frame?.querySelector(".pane-head > .pane-actions > .pane-doing")),
       crumbs: box(crumbs),
@@ -377,7 +381,7 @@ async function measured(pane: number) {
       briefNeeds: brief ? brief.scrollWidth : 0,
       // Everything of the line after the breadcrumb, in order, and whether each is cut.
       after: [...(line?.children ?? [])]
-        .filter((one) => one !== crumbs)
+        .filter((one) => one !== crumbs && getComputedStyle(one).display !== "none")
         .map((one) => ({ what: one.className, box: box(one), cut: cut(one) })),
       names: [...(crumbs?.querySelectorAll(".crumb") ?? [])].map((name) => ({
         text: name.textContent ?? "",
@@ -536,7 +540,8 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
   });
 
   // Each narrow pane twice: with the controls a pane showing a task draws (the chat's ⋯ and
-  // the two splits, #4753), and with the four every other pane draws. The line reserves what is there, measured, so
+  // the two splits, #4753; ⋯ before the bell since #4760), and with the four every other pane
+  // draws. The line reserves what is there, measured, so
   // neither is a number this file or the stylesheet has to know.
   for (const [pane, task] of [
     [0, true],
@@ -548,7 +553,9 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
       // 1024 px is the narrowest window purlis supports (ADR 0054), and with two panes side by
       // side each is a few hundred pixels.
       await windowIs(1024, 768);
-      if (task) expect(await asATaskPane(pane)).toBe(3);
+      // The splits: the chat's ⋯ is drawn before the bell since #4760, outside this cluster,
+      // and takes the same room from the line it took inside it.
+      if (task) expect(await asATaskPane(pane)).toBe(2);
       else await untilReserved(pane);
       expect(
         await draw(pane, { path: LONG_PATH, state: LONGEST_STATE, elsewhere: "release-train" }),
@@ -779,7 +786,9 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
   // the breadcrumb, and five controls in the pane's corner taking room from the line.
   it("keeps the longest state whole in a narrow pane with Brief, two word buttons and five pane controls, by cutting everything else first", async () => {
     await windowIs(1024, 768);
-    expect(await oneMoreControl(1)).toBe(5);
+    // The splits, the close and the one added: the chat's ⋯ is drawn before the bell since
+    // #4760, outside this cluster, so the corner holds five controls as before.
+    expect(await oneMoreControl(1)).toBe(4);
     expect(
       await draw(1, {
         path: LONG_PATH,

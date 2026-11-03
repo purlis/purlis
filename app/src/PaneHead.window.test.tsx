@@ -298,6 +298,7 @@ describe("a narrow pane's head", () => {
     await aPaneOf(520);
 
     expect(head().querySelector(".pane-where")).not.toBeNull();
+    expect(within(head()).getByRole("img", { name: "floor" })).toBeInTheDocument();
     expect(controls()).toContain("Split down");
   });
 
@@ -305,6 +306,8 @@ describe("a narrow pane's head", () => {
     await aPaneOf(500);
 
     expect(head().querySelector(".pane-where")).toBeNull();
+    // The sandbox goes with it: it says how the chat runs, as "harness · workspace" does.
+    expect(within(head()).queryByRole("img", { name: "floor" })).toBeNull();
     expect(controls()).toContain("Split down");
   });
 

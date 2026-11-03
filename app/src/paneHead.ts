@@ -60,8 +60,8 @@ export function stateButtonOf(chat: {
  * The parts of a pane head a narrow pane can drop. The bell, ⋯, Split right and Close are not
  * among them: they never go.
  *
- * - `where`: "harness · workspace", with the line's chips (where a handed-off chat came from,
- *   its work item, its gauge), which are the same kind of detail.
+ * - `where`: "harness · workspace", with the line's chips (its sandbox, where a handed-off
+ *   chat came from, its work item, its gauge), which are the same kind of detail.
  * - `markWord`: the state mark's word, its dot staying.
  * - `buttonWord`: the state button's word, its icon staying with the word as its name.
  * - `mark`: the state mark, dot and all.
