@@ -3245,6 +3245,8 @@ impl Planes {
             Arc::new(move |report| {
                 if let Some(held) = held.upgrade() {
                     crate::smartclose::reported(&held, report);
+                    // The first report after a start timed at a launch: the chat is live (#4988).
+                    crate::starttiming::heard(report.chat);
                     // Whether its harness runs with its permission prompts off, which a
                     // dispatch from it is held to (#1446). Only a report the board took: a
                     // harness nested in the chat never marks the chat.
