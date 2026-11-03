@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793717577907,
+  "lastUpdate": 1793719236702,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37716,6 +37716,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4094575,
             "unit": "ms",
             "extra": "median of 5 runs: 101.519, 101.941, 102.409, 102.625, 102.806 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1f15e956ed2df3bd2aac1b8b3a44f645ab7d7bfa",
+          "message": "Browser login: record the form's host, and ask to replace a recorded site (#5003)\n\n* Browser login: record the login form's host, not the app's address (#4995)\n\nBefore the person is asked about a suggested browser login, purlis opens the\npage in a browser of its own that reaches what the chat's browser reaches,\nfollows it to its login form, and records the form's origin: the one place the\npassword is typed. The notice shows the page and that host, both large, and\nwarns when they differ. A typed site is followed to its own form. Always writes\nthe origin as the login line's new form key, only where it differs.\n\nThe login fills on the form's origin alone, binds the browser to the page's\nsite and the form's, and counts a browser sent back to its page as a login\nthat went through. Session protocol 1.70 adds the find_login_form act and the\nlogin's form.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G77BFP1Q9354B256NCV6H7\nPurlis-Persona: steward\n\n* Browser login: a call naming another site asks to replace the recorded one (#4996)\n\nWhen a chat calls browser_login naming a different site for a login its persona\nalready declares, purlis follows the new site to its form and shows the site\nrecorded now beside the one proposed, with the vault and key names. The choices\nare Allow once, Allow for this chat, Always replace and Keep the recorded site.\nOnce and this chat write nothing; Always swaps that login's one line, shown\nfirst, only while it still reads as the notice showed, and allows it here;\nproposed-changes = off holds it back. Only the site moves: another vault or\nother keys are refused in words. A call naming the recorded site is no ask.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G77BFP1Q9354B256NCV6H7\nPurlis-Persona: steward\n\n* Browser login: review fixes for the form host and the replace notice (#4995, #4996)\n\nA browser kept off is followed to no form, whatever the persona's Always. A\nlogin with a form is sent to no session host older than 1.70, which would fill\nit on the page's origin. A login's identity includes its form. A key a form\nalready serves for another site's page is said. What needs no browser (the\nvault, a declared login's keys, a declared page whose line records its form)\nis judged before any page is followed, and a declared login on its own page\nfills as declared where the page can't be followed. One page is followed at a\ntime per chat, and a typed site is followed before the press lock is held. A\nfield for a user name alone counts as the form only after half the wait. The\nengine starts with the back-forward cache off. What follows a press names the\nhost the password is typed on, a later call after Keep on a replacement is told\nits site was kept, and refusals say what to do.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G77BFP1Q9354B256NCV6H7\nPurlis-Persona: steward\n\n* Box a browser login where it travels, for clippy's enum size\n\nThe login's new form made Command::LogIn and the window's read of a login\nfar larger than their siblings: both are boxed now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G77BFP1Q9354B256NCV6H7\nPurlis-Persona: steward\n\n* Browser skill: say the page is followed, in words no lint reads as a command\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G77BFP1Q9354B256NCV6H7\nPurlis-Persona: steward\n\n* Story baselines for the browser login notice, drawn by this PR's stories run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G77BFP1Q9354B256NCV6H7\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T13:59:15Z",
+          "tree_id": "92f380c1d63d6c9dcc586ef63abc8e8de160179a",
+          "url": "https://github.com/purlis/purlis/commit/1f15e956ed2df3bd2aac1b8b3a44f645ab7d7bfa"
+        },
+        "date": 1793719228477,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.549886,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.544, 0.544, 0.550, 0.552, 0.554 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.402028,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.951, 16.378, 16.402, 16.485, 16.534 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.81964450000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.524, 101.601, 101.820, 102.013, 102.560 ms"
           }
         ]
       }
