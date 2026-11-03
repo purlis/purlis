@@ -44,15 +44,15 @@ import { SessionPane } from "./SessionPane";
 import { droppedReference, overChat, useReferenceChats } from "./references";
 import { NoticeOf, NoticePaneRow } from "./Notice";
 import { WaitingStrip } from "./WaitingStrip";
-import { paneBand } from "./noticeSettle";
+import { keepHolds, keptHolds, paneBand } from "./noticeSettle";
 import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
 import { SkillsChip } from "./UseSkill";
 import { harnessCardView, isOneJob, panes, type Content, type Layout, type ViewRef } from "./tabs";
 import { EVEN, shareOf, WHOLE } from "./laidOut";
 import { floorAlong, type Size } from "./paneDrop";
-import { drawnOf, refusedAt, type Drawn, type Folded } from "./paneFold";
-import { keepHolds, keptHolds, PaneRail, type RailPane } from "./PaneRail";
+import { drawnOf, offerInRoom, type Drawn, type Folded } from "./paneFold";
+import { PaneRail, type RailPane } from "./PaneRail";
 import { dropPane, GRIP } from "./paneDrag";
 import { paneNamesOf } from "./panePlaces";
 import { type Crumbs } from "./tabChats";
@@ -751,11 +751,10 @@ export type PaneFace = { name: string; mark: ReactNode };
 
 /** A pane's face where the window gives none: its chat's own name, a view's, or what an empty
  *  pane would do, each with its kind's mark. */
-function faceByKind(content: Content): PaneFace {
+function faceByKind(content: Content, title: string): PaneFace {
   if (content.kind === "session")
     return { name: content.chat, mark: <SquareTerminal aria-hidden="true" /> };
-  if (content.kind === "view")
-    return { name: content.view.view, mark: <Puzzle aria-hidden="true" /> };
+  if (content.kind === "view") return { name: title, mark: <Puzzle aria-hidden="true" /> };
   return { name: NEW_CHAT, mark: <Plus aria-hidden="true" /> };
 }
 
@@ -765,14 +764,15 @@ function railOf(
   side: Layout,
   folded: Folded,
   plane: PlaneId,
-  faceOf: (content: Content) => PaneFace | undefined,
+  faceOf: ((content: Content) => PaneFace | undefined) | undefined,
+  title: string,
   waiting: readonly Shown[] | undefined,
 ): RailPane[] {
   return panes(side)
     .filter(({ pane }) => folded.panes.includes(pane))
     .map(({ pane, content }) => ({
       pane,
-      ...(faceOf(content) ?? faceByKind(content)),
+      ...(faceOf?.(content) ?? faceByKind(content, title)),
       holds: keptHolds(paneBand(plane, pane)),
       asks:
         content.kind === "session" &&
@@ -837,7 +837,8 @@ export function LayoutPanes({
   names,
   path = "",
   room,
-  faceOf = faceByKind,
+  faceOf,
+  onOpenFolded,
   drawn: given,
 }: {
   /** The chats the launch has still to start (`restoring.rs`): each one's pane says so, in the
@@ -975,8 +976,12 @@ export function LayoutPanes({
   /** The room the window gives the tab's panes, once it has been laid out: a split that cannot
    *  give each side its minimum folds the side without the focus to a rail (#4766). */
   room?: Size;
-  /** What a folded pane's rail shows for what it holds: its name and its icon. */
+  /** What a folded pane's rail shows for what it holds: its name and its icon. A view is named
+   *  as its pane is titled, and anything else this does not answer by its kind. */
   faceOf?: (content: Content) => PaneFace | undefined;
+  /** A press on a folded pane: it takes the focus and the keyboard, since the rail's button
+   *  goes as the other side folds. Without it, the pane only takes the focus (`onFocus`). */
+  onOpenFolded?: (pane: number) => void;
   /** What the tab's root drew in `room` (`paneFold.ts`), handed down to each side. */
   drawn?: Drawn;
 }) {
@@ -1347,6 +1352,7 @@ export function LayoutPanes({
       runningIn={runningIn}
       tab={tab}
       faceOf={faceOf}
+      onOpenFolded={onOpenFolded}
       drawn={drawn}
       chatName={chatName}
       onClearPane={onClearPane}
@@ -1361,8 +1367,8 @@ export function LayoutPanes({
     const rail = (
       <PaneRail
         as={folded.as}
-        panes={railOf(layout.children[folded.side], folded, plane, faceOf, waiting)}
-        onOpen={onFocus}
+        panes={railOf(layout.children[folded.side], folded, plane, faceOf, name, waiting)}
+        onOpen={onOpenFolded ?? onFocus}
       />
     );
     return (
@@ -1516,7 +1522,7 @@ export function PaneDoing({
   ];
   return <div className="pane-doing">{rows.map(draw)}</div>;
   function draw(id: string) {
-    const offer = refusedAt(id === "pane.close" ? closeOf(pane) : offerFor(id), size);
+    const offer = offerInRoom(id === "pane.close" ? closeOf(pane) : offerFor(id), size);
     if (!offer) return null;
     const Mark = markOf(offer);
     return (

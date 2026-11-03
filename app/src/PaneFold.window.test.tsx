@@ -100,15 +100,17 @@ describe("a split below the minimum (#4766)", () => {
     expect(screen.getByText("An empty pane")).toBeInTheDocument();
   });
 
-  it("opens a folded pane on its press, which folds the other side instead", async () => {
-    const onFocus = vi.fn();
+  it("opens a folded pane on its press, with the keyboard, which folds the other side instead", async () => {
+    // The rail's button goes as the other side folds, so the press is the window's to give the
+    // keyboard to the pane it opened (`onOpenFolded`), not a focus the pane merely reports.
+    const onOpenFolded = vi.fn();
     const layout = row(empty(1), empty(2));
-    const props = propsOf(layout, { room: { width: 500, height: 600 }, onFocus });
+    const props = propsOf(layout, { room: { width: 500, height: 600 }, onOpenFolded });
     const { rerender } = render(<LayoutPanes {...props} />);
     const before = structuredClone(layout);
 
     await userEvent.click(within(rails()[0]).getByRole("button", { name: "New chat, folded" }));
-    expect(onFocus).toHaveBeenCalledWith(2);
+    expect(onOpenFolded).toHaveBeenCalledWith(2);
 
     rerender(<LayoutPanes {...props} focused={2} />);
     expect(rails()).toHaveLength(1);
@@ -116,6 +118,21 @@ describe("a split below the minimum (#4766)", () => {
     // Drawn only: the tree, and its shares, are as they were, and no share was said.
     expect(layout).toEqual(before);
     expect(props.split.shared).not.toHaveBeenCalled();
+  });
+
+  it("names a folded view as its pane is titled", () => {
+    const view: Layout = {
+      kind: "pane",
+      pane: 2,
+      content: { kind: "view", view: { from: null, view: "saving", key: "" }, workspace: "ops" },
+    };
+    render(
+      <LayoutPanes
+        {...propsOf(row(empty(1), view), { room: { width: 500, height: 600 }, name: "Saving" })}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Saving, folded" })).toBeInTheDocument();
   });
 
   it("folds to a bar when stacked, which names each pane", () => {
@@ -162,7 +179,9 @@ describe("a 3 × 3 grid at 770px (#4766)", () => {
 
     const second = rails()[1];
     const asks = within(second).getByRole("button", { name: "chat 6, folded, asks you" });
-    expect(asks.querySelector('[data-mark="needs-you"]')).not.toBeNull();
+    expect(
+      asks.closest(".pane-rail-item")?.querySelector('[data-mark="needs-you"]'),
+    ).not.toBeNull();
     expect(within(second).getByRole("button", { name: "chat 5, folded" })).toBeInTheDocument();
   });
 });

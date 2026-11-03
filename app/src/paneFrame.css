@@ -668,7 +668,8 @@
   flex: none;
   align-items: center;
   gap: var(--space-1);
-  overflow: hidden;
+  /* No pane goes off screen: a rail too short (or a bar too narrow) for its panes scrolls. */
+  overflow: auto;
   background-color: var(--surface-raised);
   border-radius: var(--radius-lg);
 }
@@ -684,14 +685,27 @@
   padding-inline: var(--space-2);
 }
 
-/* Each pane a target the pointer can't miss (WCAG 2.5.8): the rail's width, and at least a
-   control tall. */
-.pane-rail[data-fold="rail"] .pane-rail-pane {
+/* A folded pane: its button, then its count and ✋, under it on a rail and after it on a bar. */
+.pane-rail-item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+.pane-rail[data-fold="rail"] .pane-rail-item {
   flex-direction: column;
   align-self: stretch;
-  block-size: auto;
-  min-block-size: var(--size-control);
-  padding-block: var(--space-1);
+}
+
+/* Placed only: on a rail, the rail's width, a target the pointer can't miss (WCAG 2.5.8). */
+.pane-rail[data-fold="rail"] .pane-rail-pane {
+  align-self: stretch;
+}
+
+.pane-rail[data-fold="bar"] .pane-rail-pane {
+  min-inline-size: 0;
 }
 
 /* The button's words, one flex item: a bar's name ends in an ellipsis where it runs out of room. */

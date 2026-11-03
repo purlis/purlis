@@ -3,6 +3,7 @@
 
 import { shareOf, WHOLE } from "./laidOut";
 import { floorAlong, PANE_FLOOR, type Size } from "./paneDrop";
+import type { Offer } from "./actions";
 import { panes, type Layout } from "./tabs";
 
 /**
@@ -110,21 +111,12 @@ export function splitRefused(
 }
 
 /** The splits a pane's head and the palette offer, by their catalogue row. */
-const SPLITS: Readonly<Record<string, "row" | "column">> = {
-  "pane.split.right": "row",
-  "pane.split.down": "column",
-};
-
 /**
  * **`offer` for a pane of `size`**: a split row greyed with {@link splitRefused}'s reason where a
  * half would be under the minimum, and any other row, or a split that fits, as it is.
  */
-export function refusedAt<T extends { id: string; available: boolean; reason: string }>(
-  offer: T | undefined,
-  size: Size | undefined,
-): T | undefined {
-  const direction = offer === undefined ? undefined : SPLITS[offer.id];
-  if (offer === undefined || direction === undefined || !offer.available) return offer;
-  const why = splitRefused(size, direction);
+export function offerInRoom(offer: Offer | undefined, size: Size | undefined): Offer | undefined {
+  if (offer === undefined || !offer.available || offer.does.verb !== "split") return offer;
+  const why = splitRefused(size, offer.does.direction);
   return why === undefined ? offer : { ...offer, available: false, reason: why };
 }

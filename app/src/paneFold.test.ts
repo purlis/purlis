@@ -1,6 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BAR, drawnOf, RAIL, splitRefused } from "./paneFold";
 import { PANE_FLOOR } from "./paneDrop";
@@ -166,5 +168,15 @@ describe("Split right and Split down below the minimum (#4766)", () => {
       splitRefused({ width: 2 * PANE_FLOOR.width, height: 2 * PANE_FLOOR.height }, "row"),
     ).toBeUndefined();
     expect(splitRefused(undefined, "row")).toBeUndefined();
+  });
+});
+
+describe("the rail as the stylesheet draws it (#4766)", () => {
+  it("is as wide, and the bar as tall, as the model gives them", () => {
+    const css = readFileSync(join(process.cwd(), "src/paneFrame.css"), "utf8");
+    const rule = (selector: string) => css.slice(css.indexOf(`${selector} {`)).split("}")[0];
+
+    expect(rule('.pane-rail[data-fold="rail"]')).toContain(`inline-size: ${RAIL}px;`);
+    expect(rule('.pane-rail[data-fold="bar"]')).toContain(`block-size: ${BAR}px;`);
   });
 });

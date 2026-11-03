@@ -627,7 +627,7 @@ import {
 } from "./ChatNotices";
 import { LayoutPanes, type PaneFace } from "./LayoutPanes";
 import { drawnOf } from "./paneFold";
-import { usePaneRoom } from "./PaneRail";
+import { usePaneRoom } from "./usePaneRoom";
 import { ChatPersonaState } from "./ChatPersonaState";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
 import { useWorkedHere } from "./workedHere";
@@ -10624,6 +10624,9 @@ export const PlaneView = memo(function PlaneView({
                               onShowChat={showChatFromPane}
                               focused={frontTab.focused}
                               onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
+                              onOpenFolded={(pane) =>
+                                keyboardInto(change((tabs) => focusPane(tabs, pane)))
+                              }
                               offerFor={by}
                               offers={found}
                               heads={paneHeads}
