@@ -16,6 +16,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { ClosingChat, PersonaChat } from "./bindings";
 import { forgetDismissals } from "./dismissals";
+import { askToEnd } from "./menus.testkit";
 import { stripNamed } from "./test-strips";
 
 /**
@@ -141,8 +142,9 @@ async function closingTheStewardChat(theirs: ClosingChat) {
   await screen.findAllByTestId("pane");
   await settled();
   expect(tabNames()).toEqual(["steward 4", "check prod"]);
-  await userEvent.click(screen.getByRole("button", { name: "End chat steward 4" }));
-  return { ...said, asking: await screen.findByRole("alertdialog") };
+  // Its End… (#4753): the one row that ends a chat, and so the one that asks about the chats at
+  // work below it. A close ends nothing (#4756).
+  return { ...said, asking: await askToEnd("steward 4") };
 }
 
 function tabNames() {
@@ -154,7 +156,7 @@ function tabNames() {
 
 const ONE_RUNNING = below([RUNNING], ["check prod"]);
 
-describe("closing a chat with chats at work below it", () => {
+describe("ending a chat with chats at work below it", () => {
   it("asks once, with both choices, and starts on keeping them", async () => {
     const { asking, asked } = await closingTheStewardChat(ONE_RUNNING);
 
@@ -246,7 +248,7 @@ describe("closing a chat with chats at work below it", () => {
   });
 });
 
-describe("closing a chat with nothing at work below it", () => {
+describe("ending a chat with nothing at work below it", () => {
   it("asks nothing about them, and says which reported tasks close with it", async () => {
     const { asking, asked } = await closingTheStewardChat(
       below(
