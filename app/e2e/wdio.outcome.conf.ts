@@ -19,6 +19,11 @@ import { PANIC_LOG } from "./processes.js";
  * **The Skill studio's outcome bars, one run per harness** (SK-23, #4343), each on its stand-in:
  * `PURLIS_OUTCOME_HARNESS=claude|codex|opencode npm run e2e:outcome`.
  *
+ * CI judges them on a `dev-release` build (#4351). To measure what CI measures, build with
+ * `npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p
+ * purlis-app -p fake-harness -p purlis-cli --profile dev-release` and run with
+ * `CHARTER_TARGET_DIR=<the checkout>/target/dev-release`; without it the run takes the debug build.
+ *
  * A run of its own, since the app keeps one process and one harness for a run, and the bars are
  * about one harness at a time; and a plane of its own, since two hundred skills would reach every
  * other spec. Codex's profile is the state run's, the only way a Codex chat starts (#2037), with

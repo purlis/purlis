@@ -988,6 +988,8 @@ test("the outcome bars run on a pull request that touches what they measure, and
     "app/e2e/wdio.outcome.conf.ts",
     "app/e2e/specs/skill-outcome-bars.outcome.e2e.ts",
     ".github/workflows/ci.yml",
+    // The profiles the bars are built with (`dev-release`, inheriting `release`, #4351).
+    "Cargo.toml",
   ])
     assert.equal(on(path), true, path);
   for (const path of ["app/src/App.tsx", "crates/host/src/lib.rs", "app/e2e/specs/tabs.e2e.ts"])
