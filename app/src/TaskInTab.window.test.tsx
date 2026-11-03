@@ -38,6 +38,7 @@ import { askOfBlock, askOfDispatch } from "./test-asks";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 import { findResult } from "./actionResult.testkit";
 import { theFrameNow } from "./frame.testkit";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * **A task opens inside its session's tab** (#1486), against the whole window: pressing a task
@@ -415,6 +416,7 @@ function core(open: Listed[]) {
     return null;
   });
   const said = async (event: string, payload: unknown) => {
+    [event, payload] = onTheWire(event, payload);
     const handlers = listeners.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
     await act(async () => {

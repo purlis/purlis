@@ -14,10 +14,12 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import type { SessionRecordRow } from "./bindings";
+import type { Moved, SessionRecordRow } from "./bindings";
 import { heardFrom, lostOnResume, type Resuming } from "./sessions";
 import { goToWorkspace, showThePanel, stripNamed } from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { aBatchOf } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * **The Sessions panel and Resume** (SI-8d, ADR 0064) against the whole window: the operator's
@@ -134,7 +136,7 @@ function core(
     const given = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: given });
     if (cmd === "plugin:event|listen") {
-      if (given.event === "chat-moved") moves.push(given.handler as number);
+      if (given.event === CHAT_EVENTS) moves.push(given.handler as number);
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
@@ -189,7 +191,11 @@ function core(
     /** Fires one `chat-moved`, the way the core pushes one. */
     move(payload: Record<string, unknown>) {
       for (const handler of moves)
-        window.__TAURI_INTERNALS__.runCallback(handler, { event: "chat-moved", id: 1, payload });
+        window.__TAURI_INTERNALS__.runCallback(handler, {
+          event: CHAT_EVENTS,
+          id: 1,
+          payload: aBatchOf("moved", payload as Moved),
+        });
     },
   };
 }

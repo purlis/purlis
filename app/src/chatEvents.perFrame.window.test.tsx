@@ -10,6 +10,8 @@ import type { ChatDoing, ChatSkillRun, Moved, OpenChat } from "./bindings";
 import type { State } from "./chatState";
 import { stripNamed } from "./test-strips";
 import { aFramePassed } from "./frame.testkit";
+import { onTheWire } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * **A burst of chat events is one commit per frame** (#4731, part of #4724).
@@ -91,7 +93,8 @@ function core(): (event: string, payload: unknown) => void {
     if (cmd === "chats_that_would_not_start") return [];
     return null;
   });
-  return (event, payload) => {
+  return (sent, told) => {
+    const [event, payload] = onTheWire(sent, told);
     const handlers = listeners.get(event);
     if (handlers === undefined) throw new Error(`the window is not listening for ${event}`);
     act(() => {
@@ -234,5 +237,40 @@ describe("chat events arriving within one frame", () => {
     expect(shown[2]).toMatch(/working/i);
     expect(shown[3]).toMatch(/done/i);
     expect(shown[0]).not.toMatch(/working|done/i);
+  });
+});
+
+describe("a batch of chat events (#4746)", () => {
+  it("is applied in one commit, whatever it carries for however many chats", async () => {
+    const send = core();
+    render(
+      <Profiler id="window" onRender={() => (commits += 1)}>
+        <App />
+      </Profiler>,
+    );
+    await waitFor(() => expect(marks()).toHaveLength(CHATS.length));
+    for (let turn = 0; turn < 10; turn += 1) await act(async () => {});
+    await aFramePassed();
+
+    commits = 0;
+    send("chat-moved", moving(1, "running"));
+    await aFramePassed();
+    const one = commits;
+
+    // Twenty tellings across five chats, as the core sends them: one event.
+    commits = 0;
+    send(CHAT_EVENTS, {
+      plane: PLANE,
+      events: CHATS.flatMap((session) => [
+        { kind: "moved", told: moving(session, "running") },
+        { kind: "doing", told: doing(session, "thinking") },
+        { kind: "skill-run", told: running(session) },
+        { kind: "touching", told: { plane: PLANE, session, path: "src/main.rs" } },
+      ]),
+    });
+    await aFramePassed();
+
+    expect(commits).toBe(one);
+    expect(marks().every((mark) => /running/i.test(mark))).toBe(true);
   });
 });

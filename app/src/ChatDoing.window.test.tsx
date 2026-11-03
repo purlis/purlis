@@ -21,6 +21,8 @@ import type { State } from "./chatState";
 import { forgetThisLaunch } from "./regions";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { theFrameNow } from "./frame.testkit";
+import { onTheWire } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * **What a working chat is doing, in its row's card, against the whole window** (#1493,
@@ -139,6 +141,8 @@ const done = (kind: string, name: string | null = null, count = 0) =>
 /** The core, holding `open` chats in two workspaces, and answering `first` for their lines. */
 function core(open: Filed[], first: ChatDoing[] = []) {
   const listeners = new Map<string, number>();
+  /** Every listener for the chat events: each chat store, and the asks, listen for them. */
+  const batches: number[] = [];
   let sequence = 0;
   let tellings = 100;
   mockIPC((cmd, args) => {
@@ -146,6 +150,7 @@ function core(open: Filed[], first: ChatDoing[] = []) {
     if (cmd === "plugin:event|listen") {
       const { event, handler } = args as { event: string; handler: number };
       listeners.set(event, handler);
+      if (event === CHAT_EVENTS) batches.push(handler);
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
@@ -189,11 +194,13 @@ function core(open: Filed[], first: ChatDoing[] = []) {
     if (cmd === "alerts_everywhere") return [{ plane: PLANE, alerts: [], stopped: null }];
     return null;
   });
-  const send = (event: string, payload: unknown) => {
-    const handler = listeners.get(event);
-    if (handler === undefined) throw new Error(`the window is not listening for ${event}`);
+  const send = (sent: string, told: unknown) => {
+    const [event, payload] = onTheWire(sent, told);
+    const handlers = event === CHAT_EVENTS ? batches : [listeners.get(event) ?? -1];
+    if (handlers.length === 0 || handlers.includes(-1))
+      throw new Error(`the window is not listening for ${event}`);
     act(() => {
-      heard(handler, { event, id: 1, payload });
+      for (const handler of handlers) heard(handler, { event, id: 1, payload });
     });
   };
   return {

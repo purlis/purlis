@@ -23,6 +23,8 @@ import type { Shown } from "./shownState";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { theFrameNow } from "./frame.testkit";
+import { aBatchOf } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * **A session waiting on its tasks says so, counts them, and is flagged only for what
@@ -241,8 +243,8 @@ function core(open: OpenChat[], rows: FinishedTask[] = []) {
       queue: number[] = [],
       more: Partial<Moved> = {},
     ) => {
-      const handler = listeners.get("chat-moved");
-      if (handler === undefined) throw new Error("the window is not listening for moves");
+      const handlers = everyListener.get(CHAT_EVENTS) ?? [];
+      if (handlers.length === 0) throw new Error("the window is not listening for moves");
       const moved: Moved = {
         plane: PLANE,
         session,
@@ -259,11 +261,8 @@ function core(open: OpenChat[], rows: FinishedTask[] = []) {
         ...more,
       };
       act(() => {
-        heard(handler, {
-          event: "chat-moved",
-          id: 1,
-          payload: moved,
-        });
+        for (const handler of handlers)
+          heard(handler, { event: CHAT_EVENTS, id: 1, payload: aBatchOf("moved", moved) });
       });
     },
   };
