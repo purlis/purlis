@@ -1088,6 +1088,25 @@ export function workspaceOf(tabs: Tabs, id: number, filedIn: FiledIn): string | 
 }
 
 /**
+ * **The workspace a chat in tab `id` is filed in, where it is not the tab's** (#4982; #4583
+ * rule 2): what its pane head names with that workspace's badge. A drag may put another
+ * workspace's chat in a pane, and a press may leave one there ({@link Tab.workspace}); the chat
+ * stays filed in its own workspace, and the head says which. `undefined` for a chat of the
+ * tab's own workspace, and for a tab with no workspace to differ from.
+ */
+export function filedElsewhere(
+  tabs: Tabs,
+  id: number,
+  session: number,
+  filedIn: FiledIn,
+): string | undefined {
+  const own = workspaceOf(tabs, id, filedIn);
+  if (own === undefined) return undefined;
+  const filed = filedIn(session);
+  return filed === own ? undefined : filed;
+}
+
+/**
  * Whether a tab is pinned, which is a fact about the operator and not about the chat.
  *
  * A function, as `FiledIn` and `LastMoved` are, so the strip's rules ask one question whatever
