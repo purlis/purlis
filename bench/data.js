@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793697361648,
+  "lastUpdate": 1793702098757,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37422,6 +37422,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5824255,
             "unit": "ms",
             "extra": "median of 5 runs: 101.137, 101.227, 101.582, 102.129, 103.624 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a41ab2238edcbb9c886e7ef80ed221cd8910d76c",
+          "message": "Purlis light and high contrast: refinements from the appearances review (#4663)\n\n* Purlis light and high contrast: the review's refinements (#3182)\n\nLight's waiting ring is its hue's purest colour at dark's alpha, high contrast's syntax\ncomments and punctuation take the muted tier, the washes' hue test covers every ground they\nare drawn on, the selection test pins a light system asking for more contrast, and a story\npictures the danger wash.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6D5T2VVJMWAWQ6VRR2DTZRQ\nPurlis-Persona: steward\n\n* Stories: baselines for the waiting ring, high contrast's greys and the closing question (#3182)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6D5T2VVJMWAWQ6VRR2DTZRQ\nPurlis-Persona: steward\n\n* Stories: SkillPage editing pictures redrawn after main's merge, high contrast's punctuation (#3182)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6EK05VRHRSVGJEZH1Z06GT5\nPurlis-Persona: steward\n\n* Stories: the ring and high contrast's punctuation redrawn after main's merge (#3182)\n\nTaken from stories run 41587434053 of 038397287: Purlis light's waiting ring in PaneBand and Tabs (60 pictures, every changed pixel along #523601 to #fdb005 within the ring's alpha), and high contrast's comment and punctuation in SkillStudioDrafts (52 pictures, every changed pixel along #a09eab to #c9c7d2 apart from 6 one-level corner pixels). EmptyPane's 20 are main's #4949 and are left for main's own pictures.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FZSBVP036HC74VD4KHG2HV\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T08:05:40Z",
+          "tree_id": "74b231f2bdda5133dd462857a2883edf8fb7a597",
+          "url": "https://github.com/purlis/purlis/commit/a41ab2238edcbb9c886e7ef80ed221cd8910d76c"
+        },
+        "date": 1793702094965,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.640694,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.629, 0.635, 0.641, 0.641, 0.650 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.702982,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.366, 16.398, 16.703, 16.940, 16.962 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.715774,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.467, 101.533, 101.716, 101.918, 102.830 ms"
           }
         ]
       }
