@@ -271,6 +271,7 @@ describe("a batch of chat events (#4746)", () => {
     await aFramePassed();
 
     expect(commits).toBe(one);
-    expect(marks().every((mark) => /running/i.test(mark))).toBe(true);
+    // The tab says its row's word (#4935): a running chat is "working".
+    expect(marks().every((mark) => /working/i.test(mark))).toBe(true);
   });
 });

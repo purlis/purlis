@@ -15,6 +15,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
+import { onTheWire } from "./chatEvents.testkit";
 import type { Moved } from "./bindings";
 import { forgetDismissals } from "./dismissals";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
@@ -114,7 +115,7 @@ async function anEndedChat() {
   render(<App />);
   await screen.findByTestId("pane");
   await settled();
-  await act(() => emit("chat-moved", WAITING));
+  await act(() => emit(...onTheWire("chat-moved", WAITING)));
   return said;
 }
 
@@ -133,7 +134,7 @@ describe("a chat whose program ended (#4756)", () => {
     const { asked } = await anEndedChat();
     expect(screen.getByTestId("pane")).not.toHaveAttribute("data-read-only");
 
-    await act(() => emit("chat-moved", DONE));
+    await act(() => emit(...onTheWire("chat-moved", DONE)));
 
     const ended = await band();
     expect(ended).toHaveTextContent("claude 4 ended. Resume or Clear pane.");
@@ -147,7 +148,7 @@ describe("a chat whose program ended (#4756)", () => {
     await anEndedChat();
     const before = document.activeElement;
 
-    await act(() => emit("chat-moved", DONE));
+    await act(() => emit(...onTheWire("chat-moved", DONE)));
     await band();
 
     expect(document.activeElement).toBe(before);
@@ -155,7 +156,7 @@ describe("a chat whose program ended (#4756)", () => {
 
   it("clears the pane on Clear pane, and ends nothing", async () => {
     const { asked } = await anEndedChat();
-    await act(() => emit("chat-moved", DONE));
+    await act(() => emit(...onTheWire("chat-moved", DONE)));
 
     await userEvent.click(within(await band()).getByRole("button", { name: "Clear pane" }));
 
@@ -166,7 +167,7 @@ describe("a chat whose program ended (#4756)", () => {
 
   it("starts it again on its conversation on Resume, in its pane", async () => {
     const { asked } = await anEndedChat();
-    await act(() => emit("chat-moved", DONE));
+    await act(() => emit(...onTheWire("chat-moved", DONE)));
 
     await userEvent.click(within(await band()).getByRole("button", { name: "Resume" }));
 
