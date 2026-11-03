@@ -10,7 +10,12 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { NotStarted, OpenChat } from "./bindings";
 import { forgetThisLaunch } from "./regions";
-import { restoredSince, RESTORING_HAS_NO_CLOSE, seenFirst } from "./restoringChats";
+import {
+  restoredSince,
+  RESTORE_LOOKS_EVERY,
+  RESTORING_HAS_NO_CLOSE,
+  seenFirst,
+} from "./restoringChats";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { findResult } from "./actionResult.testkit";
 
@@ -261,6 +266,32 @@ describe("a launch's chats, coming back behind the window", () => {
     expect(tabs()).toEqual(after);
   });
 
+  it("one the window's own look finds under a new number, before any event, keeps its tab (#4962)", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const the = core([
+        restoring(4, { in_front: true }),
+        restoring(5, { name: "five", pinned: true }),
+        restoring(6),
+      ]);
+      render(<App />);
+      await waitFor(() => expect(tabs().filter((tab) => tab.pinned)).toHaveLength(1));
+      const before = tabs();
+      const five = before.findIndex((tab) => tab.pinned);
+
+      // No event yet: the look the window takes every few seconds is the first to see it.
+      await the.startsAs(5, 9, { pinned: false }, { told: false });
+      await act(() => vi.advanceTimersByTimeAsync(RESTORE_LOOKS_EVERY));
+      const after = before.map((tab, at) => (at === five ? { ...tab, restoring: false } : tab));
+      await waitFor(() => expect(tabs()).toEqual(after));
+
+      await the.tell(5, 9);
+      expect(tabs()).toEqual(after);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("an event about another project's chat reads nothing of this one", async () => {
     const the = core([restoring(4, { in_front: true })]);
     render(<App />);
@@ -359,6 +390,43 @@ describe("what a read says has become of the restoring chats", () => {
     const shows = restoredSince(was, [restoring(4), chat(9), restoring(6)], null, () => true, seen);
     expect(shows.renumbered).toEqual([]);
     expect([...shows.still].sort()).toEqual([4, 5, 6]);
+  });
+
+  it("takes no chat by its place where two neighbours went together", () => {
+    // 5 did not start and 6 started as 9: the list says only that 9 is where 5 and 6 were.
+    const seen = seenFirst([chat(4), restoring(5), restoring(6)]);
+    const said = restoredSince(new Set([5, 6]), [chat(4), chat(9)], null, shown, seen);
+    expect(said.renumbered).toEqual([]);
+    expect(said.gone).toEqual([]);
+    expect([...said.still].sort()).toEqual([5, 6]);
+    // Their events say which is which.
+    const nine = restoredSince(
+      said.still,
+      [chat(4), chat(9)],
+      { number: 6, session: 9 },
+      shown,
+      said.seen,
+    );
+    expect(nine.renumbered.map(({ from, chat }) => [from, chat.session])).toEqual([[6, 9]]);
+  });
+
+  it("never closes a held chat on reads another chat's event asks for", () => {
+    let now = restoredSince(
+      new Set([5, 6]),
+      [chat(4), restoring(5)],
+      { number: 4, session: 4 },
+      shown,
+    );
+    for (let read = 0; read < 3; read += 1)
+      now = restoredSince(
+        now.still,
+        [chat(4), chat(5)],
+        { number: 5, session: 5 },
+        shown,
+        now.seen,
+      );
+    expect(now.gone).toEqual([]);
+    expect([...now.still]).toEqual([6]);
   });
 
   it("takes a held chat whose event never comes as gone, once nothing else is restoring", () => {

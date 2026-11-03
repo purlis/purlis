@@ -19,9 +19,11 @@ import { listen } from "./here";
 import {
   CHAT_RESTORED,
   isRestoring,
+  RESTORE_LOOKS_EVERY,
   restoredSince,
   seenFirst,
   type ChatRestored,
+  type RestoreSaid,
   type RestoreSeen,
 } from "./restoringChats";
 import { QueueRead } from "./QueueRead";
@@ -6619,7 +6621,7 @@ export const PlaneView = memo(function PlaneView({
    * session it started as.
    */
   const readRestored = useCallback(
-    async (said: Pick<ChatRestored, "number" | "session"> | null) => {
+    async (said: RestoreSaid | null) => {
       if (restoringNow.current.size === 0 && said === null) return;
       const answer = await commands.openedChats(plane).catch(() => undefined);
       if (answer?.status !== "ok") return;
@@ -11233,9 +11235,6 @@ function recalledCrumbs(
 const A_DOUBLE_CLICK = 250;
 /** How long after a drag a click on a tab is the drag's own, and not a press. */
 const AFTER_A_DRAG = 400;
-
-/** How often a window with chats still restoring reads them again (`readRestored`). */
-const RESTORE_LOOKS_EVERY = 3000;
 
 /** Whether any tab already shows `session`, in any of its panes. */
 function alreadyShows(tabs: Tabs, session: number): boolean {

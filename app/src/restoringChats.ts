@@ -24,6 +24,9 @@ export const RESTORING_HAS_NO_CLOSE =
 /** The event the core sends as each chat of a launch starts, or is found not to. */
 export const CHAT_RESTORED = "chat-restored";
 
+/** How often a window with chats still restoring reads them again (`readRestored`). */
+export const RESTORE_LOOKS_EVERY = 3000;
+
 /** What {@link CHAT_RESTORED} carries (`restoring::ChatRestored`). */
 export type ChatRestored = {
   plane: string;
@@ -40,19 +43,26 @@ export function isRestoring(chat: Pick<OpenChat, "restoring">): boolean {
   return chat.restoring !== undefined && chat.restoring !== null;
 }
 
+/** What an event said of one chat: the number its tab was drawn under, and the session it
+ *  started as. */
+export type RestoreSaid = Pick<ChatRestored, "number" | "session">;
+
+/** A chat that started under a new number, and the number its tab was drawn under. */
+export type Renumbered = { from: number; chat: OpenChat };
+
 /**
  * What the reads of the project's chats have seen so far, for the next to go on from: the order
  * the last one listed them in, and each number drawn as restoring that a read found missing
- * without an event naming it, with how many reads have found it so.
+ * without an event naming it, with how many of the window's own looks have found it so.
  */
 export type RestoreSeen = {
   order: readonly number[];
-  missing: ReadonlyMap<number, number>;
+  missedLooks: ReadonlyMap<number, number>;
 };
 
 /** What a launch's first read has seen: the chats in the order it listed them. */
 export function seenFirst(open: readonly OpenChat[]): RestoreSeen {
-  return { order: open.map((chat) => chat.session), missing: new Map() };
+  return { order: open.map((chat) => chat.session), missedLooks: new Map() };
 }
 
 /**
@@ -66,14 +76,14 @@ export function seenFirst(open: readonly OpenChat[]): RestoreSeen {
  *
  * - **An event names it** (`said`): the number its tab was drawn under, and the session it
  *   started as.
- * - **A read finds it before the event does**: its number is no longer listed, and in its
- *   place on the list (the core puts the new session where the old number was) is a session the
- *   read before did not list, started, and that no tab shows.
+ * - **A read finds it before the event does**, in its place on the list ({@link inItsPlace}).
  *
  * A number a read finds missing that neither says is **held**, still drawn as restoring, for the
  * event to say whether it started under a new number or did not start. Only an event that says
- * it did not start makes it `gone`, or, where that event never comes, a look of the window's
- * own (`said` is `null`) that finds it missing again with nothing else restoring.
+ * it did not start makes it `gone`, or, where that event never comes (it went to another
+ * window), a second look of the window's own (`said` is `null`) that finds it missing with
+ * nothing else restoring. A read an event of another chat asks for never closes it: the events
+ * of several chats can be heard in any order.
  *
  * Where an event names a session whose old tab is gone already, the chat is `arrived`: it is
  * drawn as a chat that has just been started.
@@ -81,15 +91,15 @@ export function seenFirst(open: readonly OpenChat[]): RestoreSeen {
 export function restoredSince(
   was: ReadonlySet<number>,
   open: readonly OpenChat[],
-  said: Pick<ChatRestored, "number" | "session"> | null,
+  said: RestoreSaid | null,
   shown: (session: number) => boolean,
-  seen: RestoreSeen = { order: [], missing: new Map() },
+  seen: RestoreSeen = seenFirst([]),
 ): {
   still: Set<number>;
   started: OpenChat[];
   gone: number[];
   arrived: OpenChat[];
-  renumbered: { from: number; chat: OpenChat }[];
+  renumbered: Renumbered[];
   seen: RestoreSeen;
 } {
   // Only ever fewer: the launch draws every one at once, and a chat that has started never
@@ -98,61 +108,77 @@ export function restoredSince(
   const still = new Set(
     open.filter((chat) => isRestoring(chat) && was.has(chat.session)).map((chat) => chat.session),
   );
-  const restoringElse = still.size > 0;
+  const othersRestoring = still.size > 0;
   const started = open.filter((chat) => !isRestoring(chat) && was.has(chat.session));
   const listed = (number: number) => open.some((chat) => chat.session === number);
   /** A chat that has started and that no tab shows: one a renumbered tab can take. */
   const unshown = (chat: OpenChat | undefined): chat is OpenChat =>
     chat !== undefined && !isRestoring(chat) && !was.has(chat.session) && !shown(chat.session);
-  /** And, found by its place alone, one the read before did not list and no other has taken. */
-  const fresh = (chat: OpenChat | undefined, claimed: readonly OpenChat[]): chat is OpenChat =>
-    unshown(chat) && !seen.order.includes(chat.session) && !claimed.includes(chat);
-  const named = said?.session ?? null;
   const gone: number[] = [];
-  const renumbered: { from: number; chat: OpenChat }[] = [];
-  const missing = new Map<number, number>();
+  const renumbered: Renumbered[] = [];
+  const missedLooks = new Map<number, number>();
   for (const number of was) {
     if (listed(number)) continue;
-    if (said?.number === number) {
-      const chat = open.find((one) => one.session === named);
-      if (named !== null && named !== number && unshown(chat)) {
-        renumbered.push({ from: number, chat });
-      } else gone.push(number);
+    if (said !== null && said.number === number) {
+      const chat = open.find((one) => one.session === said.session);
+      if (said.session !== number && unshown(chat)) renumbered.push({ from: number, chat });
+      else gone.push(number);
       continue;
     }
-    const times = seen.missing.get(number);
-    if (times === undefined) {
-      // In its place on the list: after the nearest chat the read before listed ahead of it
-      // that this one lists still.
-      const ahead = seen.order.slice(0, Math.max(seen.order.indexOf(number), 0));
-      const after = [...ahead].reverse().find(listed);
-      const at = after === undefined ? 0 : open.findIndex((one) => one.session === after) + 1;
-      const chat = open[at];
-      const claimed = renumbered.map((one) => one.chat);
-      if (seen.order.includes(number) && fresh(chat, claimed)) {
+    const before = seen.missedLooks.get(number);
+    if (before === undefined) {
+      const chat = inItsPlace(number, open, seen.order);
+      if (unshown(chat) && !renumbered.some((one) => one.chat === chat)) {
         renumbered.push({ from: number, chat });
         continue;
       }
     }
-    const now = (times ?? 0) + 1;
-    // Its event lost (it went to another window): a look of the window's own, after one that
-    // found it missing already, with nothing else restoring, takes it as one that did not start.
-    if (said === null && now >= 2 && !restoringElse) gone.push(number);
+    const looks = (before ?? 0) + (said === null ? 1 : 0);
+    if (said === null && looks >= 2 && !othersRestoring) gone.push(number);
     else {
-      missing.set(number, now);
+      missedLooks.set(number, looks);
       still.add(number);
     }
   }
   const arrived =
-    named === null || was.has(said?.number ?? NaN) || was.has(named)
+    said === null || said.session === null || was.has(said.number) || was.has(said.session)
       ? []
-      : open.filter((chat) => chat.session === named && !isRestoring(chat) && !shown(chat.session));
+      : open.filter(
+          (chat) => chat.session === said.session && !isRestoring(chat) && !shown(chat.session),
+        );
   return {
     still,
     started,
     gone,
     arrived,
     renumbered,
-    seen: { order: open.map((chat) => chat.session), missing },
+    seen: { order: open.map((chat) => chat.session), missedLooks },
   };
+}
+
+/**
+ * The chat in `number`'s place on the list, where only one can be: the core puts a chat that
+ * started under a new number where the old number was (`Chats::finish_put_back`). Between the
+ * nearest chats listed both times on either side of it, the read before listed `number` alone
+ * and this one lists one chat it did not list before. Where two neighbours went together (one
+ * that did not start beside one that started anew) no place is sure, and none is answered.
+ */
+export function inItsPlace(
+  number: number,
+  open: readonly OpenChat[],
+  order: readonly number[],
+): OpenChat | undefined {
+  const at = order.indexOf(number);
+  if (at < 0) return undefined;
+  const kept = (session: number) => open.some((chat) => chat.session === session);
+  let ahead = at - 1;
+  while (ahead >= 0 && !kept(order[ahead])) ahead -= 1;
+  const behind = order.slice(at + 1).findIndex(kept);
+  const gapBefore = order.slice(ahead + 1, behind < 0 ? order.length : at + 1 + behind);
+  const from = ahead < 0 ? 0 : open.findIndex((chat) => chat.session === order[ahead]) + 1;
+  const to =
+    behind < 0 ? open.length : open.findIndex((chat) => chat.session === order[at + 1 + behind]);
+  const gapNow = open.slice(from, to);
+  if (gapBefore.length !== 1 || gapNow.length !== 1) return undefined;
+  return order.includes(gapNow[0].session) ? undefined : gapNow[0];
 }
