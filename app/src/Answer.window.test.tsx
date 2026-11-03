@@ -190,7 +190,14 @@ describe("Answer, from a task's row menu in the Chats list (#1551)", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     // Once, by the number the core gave the question: what the answer is for.
     expect(said.sent()).toEqual([
-      { plane: PLANE, session: 9, number: 3, question: QUESTION, text: "Staging only." },
+      {
+        plane: PLANE,
+        session: 9,
+        number: 3,
+        question: QUESTION,
+        text: "Staging only.",
+        overrides: false,
+      },
     ]);
   });
 

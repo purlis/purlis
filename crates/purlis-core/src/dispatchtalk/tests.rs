@@ -886,13 +886,24 @@ fn the_person_answers_first_and_the_asking_chat_s_answer_is_refused_saying_so() 
 
 #[test]
 fn the_asking_chat_answers_first_and_the_person_s_later_word_overrides_it() {
-    // #4566 reverses #1496's refusal: the person keeps the last say (spec #4551 story 37), and
-    // the chat's answer stands as the chat's (`override_tests` holds the rest).
+    // #4566: the person keeps the last say (spec #4551 story 37) when they say otherwise to
+    // the chat's answer they were shown, and the chat's answer stands as the chat's
+    // (`override_tests` holds the rest). A plain answer after it is still refused.
     let mut talk = asked();
     talk.answer(TASK, ASKER, "check the queue", an_answer())
         .expect("answered");
 
-    assert_eq!(the_person_answers(&mut talk, "The first one."), Ok(None));
+    assert_eq!(
+        talk.person_overrides(
+            TASK,
+            "check the queue",
+            Some(ASKER),
+            1,
+            "Which queue?",
+            "The first one."
+        ),
+        Ok(None)
+    );
 
     assert_eq!(
         talk.answered(TASK),

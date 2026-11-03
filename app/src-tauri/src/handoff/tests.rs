@@ -11275,6 +11275,38 @@ fn the_person_and_the_asking_chat_answering_at_once_is_one_answer_and_one_plain_
 }
 
 #[test]
+fn a_plain_answer_after_the_chat_s_is_refused_and_only_say_otherwise_overrides_it() {
+    // #5005: the person pressed Send a moment after the asking chat answered, before the
+    // window drew that answer. They never saw it, so nothing reaches the task as an override.
+    let (_plane, _planes, id, held, asking, task) = a_dispatched_task();
+    asks(&held, &id, task, question("Which queue?"));
+    let number = asked_number(&held, task);
+    assert!(matches!(
+        asks(&held, &id, asking, the_answer(task, "The first.")),
+        Answer::Task(_)
+    ));
+
+    let refused =
+        crate::dispatched::person_answers(&held, task, number, "Which queue?", "The second.");
+
+    assert!(
+        refused.as_ref().is_err_and(|why| why
+            .starts_with("The chat 'steward 1' answered that question of 'check the queue'")),
+        "{refused:?}"
+    );
+    assert!(from_the_person(&held, &id, task).is_empty());
+    assert!(from_the_person(&held, &id, asking).is_empty());
+
+    // Shown the chat's answer, the person says otherwise: that is their word, in its place.
+    crate::dispatched::person_overrides(&held, task, number, "Which queue?", "The second.")
+        .expect("overridden");
+    assert!(matches!(
+        from_the_person(&held, &id, task).as_slice(),
+        [PersonSaid::Overrode { text, .. }] if text == "The second."
+    ));
+}
+
+#[test]
 fn the_person_s_answer_is_refused_whole_where_there_is_nothing_of_theirs_to_answer() {
     let (_plane, _planes, id, held, asking, task) = a_dispatched_task();
     let answers = |chat: u32, shown: &str, text: &str| {

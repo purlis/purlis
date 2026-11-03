@@ -66,6 +66,9 @@ beforeEach(() => {
         : { task: "developer 7", asked: "steward 4", number: 1, question: "Which one should win?" };
     if (cmd === "answer_task_question") {
       sent.push(args as Record<string, unknown>);
+      // As the core does (#5005): only Say otherwise overrides an answer a chat gave first.
+      if (chatAnswered !== null && (args as { overrides?: boolean }).overrides !== true)
+        throw "The chat 'steward 4' answered that question of 'developer 7' first.";
       return null;
     }
     if (cmd === "task_question_answered") return chatAnswered;
@@ -171,6 +174,7 @@ describe("several questions at once (#4566)", () => {
     await waitFor(() => expect(box).not.toBeDisabled());
     await user.type(box, "Per project{Enter}");
     await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ overrides: false });
     // The registry's next list has it gone, and the next one waiting.
     rerender(<Pane session={4} asks={[SECOND]} />);
     expect(screen.getByText("Sent to developer 7.")).toBeInTheDocument();
@@ -190,7 +194,9 @@ describe("several questions at once (#4566)", () => {
     const { rerender } = render(<Pane session={4} asks={[QUESTION]} />);
     expect(quiz()).toBeInTheDocument();
     rerender(<Pane session={4} asks={[]} />);
-    expect(await screen.findByText('steward 4 told developer 7: "Per project."')).toBeInTheDocument();
+    expect(
+      await screen.findByText('steward 4 told developer 7: "Per project."'),
+    ).toBeInTheDocument();
     expect(quiz()).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     // It stays, whatever the registry lists next (the person's ruling).
@@ -208,7 +214,9 @@ describe("several questions at once (#4566)", () => {
     const { rerender } = render(<Pane session={4} asks={[QUESTION]} />);
     rerender(<Pane session={4} asks={[]} />);
     await user.click(await screen.findByRole("button", { name: "Say otherwise…" }));
-    expect(screen.getByText("developer 7 is told this replaces steward 4's answer.")).toBeInTheDocument();
+    expect(
+      screen.getByText("developer 7 is told this replaces steward 4's answer."),
+    ).toBeInTheDocument();
     // The person's own press: the box may take the keyboard, as no quiz arriving ever does.
     const box = screen.getByRole("textbox", { name: "What you want instead" });
     expect(box).toHaveFocus();
@@ -220,6 +228,7 @@ describe("several questions at once (#4566)", () => {
       number: 1,
       question: "Which one should win?",
       text: "Per runner",
+      overrides: true,
     });
     expect(
       await screen.findByText("developer 7 was told your word replaces steward 4's answer."),
@@ -246,7 +255,31 @@ describe("several questions at once (#4566)", () => {
     );
     await user.click(screen.getByRole("button", { name: "Send as your word" }));
     await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toMatchObject({ session: 7, number: 1, text: "Per runner" });
+    expect(sent[0]).toMatchObject({ session: 7, number: 1, text: "Per runner", overrides: true });
+  });
+
+  it("never turns a Send pressed just after the chat answered into an override", async () => {
+    // #5005: the asking chat answered, and the person pressed Enter before the registry dropped
+    // the quiz. They never saw the chat's answer, so the core refuses it and the closing line
+    // shows that answer, with what they typed still in the box.
+    const user = userEvent.setup();
+    chatAnswered = AGENT_SAID;
+    const { rerender } = render(<Pane session={4} asks={[QUESTION]} />);
+    const box = screen.getByRole("textbox", { name: "Your answer" });
+    await waitFor(() => expect(box).not.toBeDisabled());
+    await user.type(box, "Per runner{Enter}");
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ text: "Per runner", overrides: false });
+    rerender(<Pane session={4} asks={[]} />);
+    expect(
+      await screen.findByText(
+        'steward 4 answered first: "Per project." What you typed is still in the box.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Sent to developer 7.")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "What you want instead" })).toHaveValue(
+      "Per runner",
+    );
   });
 
   it("leaves no line and no error where the person answered it elsewhere", async () => {
@@ -280,7 +313,9 @@ describe("several questions at once (#4566)", () => {
     } as unknown as Shown;
     render(<Pane session={4} asks={[prompt]} />);
     expect(
-      screen.getByText("developer 7 asks something this tab cannot draw. Answer it in the task's pane."),
+      screen.getByText(
+        "developer 7 asks something this tab cannot draw. Answer it in the task's pane.",
+      ),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open task" }));
     expect(openTask).toHaveBeenCalledWith(7);

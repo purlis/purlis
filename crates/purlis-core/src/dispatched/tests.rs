@@ -3066,8 +3066,9 @@ fn the_person_s_word_on_a_question_the_chat_answered_overrides_it_and_each_chat_
         .expect("answered");
     ledger.landed(TASK, Landed::Answer);
 
-    // #4566: the person's later word overrides the chat's answer (spec #4551 story 37).
-    let taken = ledger.person_answers(
+    // #4566: the person's later word overrides the chat's answer (spec #4551 story 37), said
+    // through Say otherwise (#5005).
+    let taken = ledger.person_overrides(
         TASK,
         "check the queue",
         Some(ASKER),

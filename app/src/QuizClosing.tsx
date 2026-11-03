@@ -84,7 +84,7 @@ export function QuizClosing({
     setSending(true);
     setRefused(undefined);
     const answer = await commands
-      .answerTaskQuestion(plane, session, number, question, text)
+      .answerTaskQuestion(plane, session, number, question, text, true)
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
     setSending(false);
     if (answer.status === "error") setRefused(answer.error);

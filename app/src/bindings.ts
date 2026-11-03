@@ -2689,11 +2689,15 @@ export const commands = {
 	 *  nothing was sent: the question was answered first by the asking chat, the task has moved
 	 *  on, or the text is empty, too long or holds a character purlis hands to no chat.
 	 * 
+	 *  `overrides` is the person's Say otherwise to an answer the asking chat gave first, which
+	 *  the window drew (`task_question_answered`), and nothing else sends it (#5005): without it,
+	 *  an answer that arrives after the chat's is refused, as the person never saw that answer.
+	 * 
 	 *  **The window's alone.** No chat's command, hook or tool reaches it, and no link serves it
 	 *  (`purlis_session_protocol::ui::WINDOW_ONLY`): what it sends reaches a chat marked as the
 	 *  person's. On a blocking thread, as it writes the dispatch's record.
 	 */
-	answerTaskQuestion: (plane: PlaneId, session: number, number: number, question: string, text: string) => typedError<null, string>(__TAURI_INVOKE("answer_task_question", { plane, session, number, question, text })),
+	answerTaskQuestion: (plane: PlaneId, session: number, number: number, question: string, text: string, overrides: boolean) => typedError<null, string>(__TAURI_INVOKE("answer_task_question", { plane, session, number, question, text, overrides })),
 	/**
 	 *  Resumes a session from its record (SI-8d): a NEW chat in the record's place, on its harness,
 	 *  given its conversation where it can be, and told the record in its briefing
