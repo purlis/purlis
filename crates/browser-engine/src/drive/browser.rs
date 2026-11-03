@@ -1384,11 +1384,10 @@ pub(crate) struct Inner {
     back: Mutex<Option<Back>>,
 }
 
-/// **A login whose page is to come back to its page's origin** (#4995): the page purlis opened
-/// for it, that origin, the form's, and who is told.
+/// **A login whose page is to leave its form's origin** (#4995): the page purlis opened for it,
+/// the form's origin, and who is told.
 struct Back {
     target: String,
-    origin: String,
     form: String,
     hold: Arc<dyn Hold>,
 }
@@ -4229,11 +4228,10 @@ impl Drop for Browser {
 
 impl Inner {
     /// **`hold` is told once page `target` shows a document anywhere but on `form`** (#4995):
-    /// back on `origin`, its page's, or elsewhere. In place of any login told before.
-    pub(crate) fn watch_back(&self, target: &str, origin: &str, form: &str, hold: Arc<dyn Hold>) {
+    /// back on its login's page's origin, or elsewhere. In place of any login told before.
+    pub(crate) fn watch_back(&self, target: &str, form: &str, hold: Arc<dyn Hold>) {
         *lock(&self.back) = Some(Back {
             target: target.to_owned(),
-            origin: origin.to_owned(),
             form: form.to_owned(),
             hold,
         });

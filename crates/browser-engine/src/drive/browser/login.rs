@@ -330,8 +330,8 @@ impl Browser {
         })?;
         // Its holder is told once this page leaves the form's origin (#4995): back on the
         // login's page's, or anywhere else.
-        if let Some(back) = &login.back_to {
-            self.inner.watch_back(&target, back, origin, hold);
+        if login.back_to.is_some() {
+            self.inner.watch_back(&target, origin, hold);
         }
         let mut filled: Vec<NodeKey> = Vec::new();
         let done = self.fill_and_submit(&target, login, &mut filled);
