@@ -70,6 +70,28 @@ step. This page is the reference behind it.
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```
 
+- **Build provenance and an SBOM:** each published image carries SLSA build provenance,
+  attached to its multi-architecture index, and a CycloneDX SBOM of each architecture's image,
+  listing the image's Ubuntu packages and the crates the operator's binary was built from. Each
+  is stored by GitHub and pushed to the registry beside the image, and the run verifies each one
+  before it moves `main`. To check them yourself (`gh attestation` needs `gh` signed in to any
+  GitHub account, to read GitHub's attestation API; the registry needs no sign-in):
+
+  ```bash
+  # Provenance: built by operator-image.yml in purlis/purlis, on a GitHub-hosted runner.
+  gh attestation verify oci://ghcr.io/purlis/purlis-cluster-operator@sha256:<digest> \
+    --repo purlis/purlis \
+    --cert-identity https://github.com/purlis/purlis/.github/workflows/operator-image.yml@refs/heads/main \
+    --deny-self-hosted-runners
+
+  # The SBOM of one architecture's image: its digest is in `docker buildx imagetools inspect`.
+  gh attestation verify oci://ghcr.io/purlis/purlis-cluster-operator@sha256:<arch digest> \
+    --repo purlis/purlis \
+    --cert-identity https://github.com/purlis/purlis/.github/workflows/operator-image.yml@refs/heads/main \
+    --predicate-type https://cyclonedx.org/bom \
+    --format json | jq '.[0].verificationResult.statement.predicate'
+  ```
+
 ## Before you install: doctor
 
 `doctor` says what the cluster lacks for the cluster operator, one line per finding, each with the next

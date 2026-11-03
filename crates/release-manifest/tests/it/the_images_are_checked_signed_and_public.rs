@@ -21,7 +21,8 @@
 //!   into a folder;
 //! - nothing is tagged or signed before the images were shown public and served to a puller
 //!   who has not signed in;
-//! - each published image is then pulled and its signature checked by a job with no sign-in;
+//! - each published image is then pulled, and its signature and provenance checked, by a job
+//!   with no sign-in;
 //! - `main` is tagged last, by a job of its own after that check from outside (#4512), only
 //!   when `tools/image-registry.mjs order` says it moves forward, and only to the index that
 //!   passed;
@@ -292,18 +293,11 @@ fn the_workflow_grants_nothing_and_each_job_only_what_it_needs() {
         let file = image.file;
         assert!(text.lines().any(|l| l == "permissions: {}"), "{file}");
         let names: Vec<&str> = jobs.iter().map(|j| j.name.as_str()).collect();
-        // The runner image's SBOM and attestations (#2191) are held to their own test,
-        // `the_runner_image_carries_its_sbom_and_provenance.rs`.
-        let attested: &[&str] = if image.released {
-            &["sbom", "attest"]
-        } else {
-            &[]
-        };
-        let made: Vec<&str> = ["plan", "binary", "image", "index"]
-            .into_iter()
-            .chain(attested.iter().copied())
-            .chain(["outside", "tag-main"])
-            .collect();
+        // Each image's SBOM and attestations (#2191, #4513) are held to their own test,
+        // `the_images_carry_their_sbom_and_provenance.rs`.
+        let made = [
+            "plan", "binary", "image", "index", "sbom", "attest", "outside", "tag-main",
+        ];
         assert_eq!(names, made, "{file}");
         assert_eq!(
             job_named(&jobs, "tag-main", file).permissions(),
@@ -333,12 +327,7 @@ fn the_workflow_grants_nothing_and_each_job_only_what_it_needs() {
             .filter(|j| j.can_mint_an_oidc_token())
             .map(|j| j.name.as_str())
             .collect();
-        let signers: &[&str] = if image.released {
-            &["index", "attest"]
-        } else {
-            &["index"]
-        };
-        assert_eq!(minting, signers, "{file}");
+        assert_eq!(minting, ["index", "attest"], "{file}");
     }
 }
 
@@ -385,8 +374,8 @@ fn every_checkout_is_the_planned_commit_without_credentials() {
                 .into_iter()
                 .filter(|s| action(s) == Some("actions/checkout"))
                 .collect();
-            // The runner image's SBOM and attestations, and the check from outside, read the
-            // pushed image and run nothing of the commit's, so they check nothing out (#2191).
+            // Each image's SBOM and attestations, and the check from outside, read the pushed
+            // image and run nothing of the commit's, so they check nothing out (#2191, #4513).
             let checks_out = !matches!(job.name.as_str(), "sbom" | "attest" | "outside");
             assert_eq!(
                 checkouts.len(),
@@ -708,12 +697,11 @@ fn each_published_image_is_pulled_and_checked_with_no_sign_in() {
         let (_, jobs) = workflow(image);
         let file = image.file;
         let outside = job_named(&jobs, "outside", file);
-        let held = if image.released {
-            pairs(&[("attestations", "read"), ("contents", "read")])
-        } else {
-            pairs(&[("contents", "read")])
-        };
-        assert_eq!(outside.permissions(), Some(held), "{file}");
+        assert_eq!(
+            outside.permissions(),
+            Some(pairs(&[("attestations", "read"), ("contents", "read")])),
+            "{file}"
+        );
         assert_eq!(
             outside.condition(),
             Some("needs.plan.outputs.publish == 'true'"),
@@ -726,12 +714,7 @@ fn each_published_image_is_pulled_and_checked_with_no_sign_in() {
                 .all(|s| action(s) != Some("docker/login-action")),
             "{file}: it never signs in to the registry"
         );
-        let needs: &[&str] = if image.released {
-            &["plan", "index", "attest"]
-        } else {
-            &["plan", "index"]
-        };
-        assert_eq!(outside.needs(), needs, "{file}");
+        assert_eq!(outside.needs(), ["plan", "index", "attest"], "{file}");
         let commands = steps.iter().flat_map(|s| run_lines(s)).collect::<Vec<_>>();
         // #4784: one daemon refuses to pull the same index a second time for another platform,
         // so the index is read with no sign-in and each architecture's own image is pulled by
@@ -775,24 +758,22 @@ fn each_published_image_is_pulled_and_checked_with_no_sign_in() {
                 "{file}: {step:#?}"
             );
         }
-        if image.released {
-            assert!(
-                commands.iter().any(|l| l
-                    == "--cert-identity \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF\" \\")
-                    && commands.iter().any(|l| l == "--deny-self-hosted-runners"),
-                "{file}: the provenance is pinned to the ref: {commands:#?}"
-            );
-        }
+        // The provenance, pinned to the same signer (#4513 for the operator's).
+        let identity = exact.replace("--certificate-identity", "--cert-identity");
+        assert!(
+            commands.contains(&identity)
+                && commands.iter().any(|l| l == "--deny-self-hosted-runners"),
+            "{file}: the provenance is pinned to the ref: {commands:#?}"
+        );
         assert!(
             commands.iter().all(|l| !l.contains("docker login")),
             "{file}: {commands:#?}"
         );
-        assert_eq!(
+        assert!(
             commands
                 .iter()
                 .any(|l| l.starts_with("gh attestation verify \"oci://$LINE\"")),
-            image.released,
-            "{file}: only the runner image carries attestations"
+            "{file}: each image carries its attestations"
         );
     }
 }
