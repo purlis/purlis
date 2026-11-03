@@ -552,7 +552,7 @@ describe("a task that has a tab of its own", () => {
     expect(closeOf("sweep").getAttribute("aria-label")).toBe(
       "Send sweep back into steward 1's tab",
     );
-    expect(closeOf("sweep").className).toContain("keeps");
+    expect(closeOf("sweep").className).not.toContain("ends-a-chat");
 
     await userEvent.click(closeOf("sweep"));
 
@@ -569,7 +569,7 @@ describe("a task that has a tab of its own", () => {
     await waitFor(() => expect(onScreen()).toEqual([5]));
   });
 
-  it("is sent back by the close shortcut too, and a session's own close is as it was", async () => {
+  it("is sent back by the close shortcut too, and a session's own close ends nothing either", async () => {
     const { tree, asked } = await drawn({}, true);
 
     act(() => tabOf("sweep")?.focus());
@@ -578,9 +578,11 @@ describe("a task that has a tab of its own", () => {
     await waitFor(() => expect(tabOf("sweep")).toBeUndefined());
     expect(asked.filter((one) => ending.includes(one.cmd))).toEqual([]);
     expect(row(tree, "sweep")).toBeTruthy();
-    // A session is not a task: its close still asks the close question.
+    // A session's close closes its tab and ends nothing (#4756): nothing is asked.
     await userEvent.click(closeOf("steward 1"));
-    expect(await screen.findByRole("alertdialog", { name: "End chat steward 1?" })).toBeTruthy();
+    await waitFor(() => expect(tabOf("steward 1")).toBeUndefined());
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(asked.filter((one) => ending.includes(one.cmd))).toEqual([]);
   });
 });
 

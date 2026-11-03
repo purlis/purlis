@@ -130,7 +130,17 @@ function core(
 async function openAChat() {
   await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
   await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
-  await screen.findByRole("button", { name: "End chat steward 1" });
+  await screen.findByRole("button", { name: "More for steward 1" });
+}
+
+/**
+ * Presses chat steward 1's End… in its pane's ⋯ (#4753): the one row that ends a chat, so the
+ * one that asks about its drafts. A close ends nothing (#4756). Waits for no question: one test
+ * holds the question back.
+ */
+async function pressEnd() {
+  await userEvent.click(screen.getByRole("button", { name: "More for steward 1" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "End…" }));
 }
 
 /** Answers the close dialog on screen: Keep its drafts, then Close. */
@@ -148,7 +158,7 @@ describe("a close that keeps several theme drafts", () => {
     const { asked: log } = core(["dusk", "dawn"]);
     render(<App />);
     await openAChat();
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
+    await pressEnd();
     await keepAndClose();
 
     await waitFor(() =>
@@ -175,7 +185,7 @@ describe("a link's close of a chat with theme drafts", () => {
     await openAChat();
     await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1] }));
 
-    const asking = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
+    const asking = await screen.findByRole("alertdialog", { name: "End chat steward 1…?" });
     expect(asking.textContent).toContain(FROM_A_LINK_SAYS);
     // It starts on Cancel: a stray Return closes nothing a link asked for.
     await waitFor(() =>
@@ -195,7 +205,7 @@ describe("a link's close of a chat with theme drafts", () => {
     const { asked: log } = core(["dusk"]);
     render(<App />);
     await openAChat();
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
+    await pressEnd();
     const asking = await screen.findByRole("alertdialog");
     const raised = asked(log, "show_window_holding").length;
     await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1] }));
@@ -210,7 +220,7 @@ describe("a link's close of a chat with theme drafts", () => {
     const { asked: log } = core(["dusk"], true);
     render(<App />);
     await openAChat();
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
+    await pressEnd();
     const asking = await screen.findByRole("alertdialog");
     const raised = asked(log, "show_window_holding").length;
     await act(() => emit(CLOSE_HANDED, { plane: OTHER, sessions: [1] }));
@@ -255,13 +265,13 @@ describe("a link's close of a chat with theme drafts", () => {
     const { asked: log } = core(["dusk"], false, held);
     render(<App />);
     await openAChat();
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
+    await pressEnd();
     // The person's close is asking the core what it ends: no question is drawn yet.
     expect(screen.queryByRole("alertdialog")).toBeNull();
     const raised = asked(log, "show_window_holding").length;
     await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1] }));
     await act(async () => answer());
-    const asking = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
+    const asking = await screen.findByRole("alertdialog", { name: "End chat steward 1…?" });
     await act(async () => {});
     expect(screen.getAllByRole("alertdialog")).toEqual([asking]);
     expect(asking.textContent).not.toContain(FROM_A_LINK_SAYS);
@@ -274,16 +284,17 @@ describe("a link's close of a chat with theme drafts", () => {
     await openAChat();
     const raised = asked(log, "show_window_holding").length;
     await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1] }));
-    await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
+    await screen.findByRole("alertdialog", { name: "End chat steward 1…?" });
     expect(asked(log, "show_window_holding").slice(raised)).toEqual([{ plane: PLANE }]);
   });
 
-  it("asks nothing for chats no tab here holds alone, and says to close them here", async () => {
+  it("asks nothing for several chats at once, and says to end each here (#4756)", async () => {
+    // End… is one chat's, so a link naming two is not asked as one question.
     core(["dusk"]);
     render(<App />);
     await openAChat();
     await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1, 7] }));
-    expect(await findResult(/no tab here holds just those chats/)).toBeTruthy();
+    expect(await findResult(/can't be asked about together here/)).toBeTruthy();
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 

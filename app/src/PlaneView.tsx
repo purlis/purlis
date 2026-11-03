@@ -274,6 +274,7 @@ import {
   showIn,
   closeLayout,
   closeTab,
+  openTabFilling,
   otherTabsToClose,
   focusPane,
   noTabs,
@@ -3667,7 +3668,9 @@ export const PlaneView = memo(function PlaneView({
       setStartedIn((was) => ({ ...was, [session]: filed }));
       if ("tab" in where) {
         const held = started.data.label ?? null;
-        change((tabs) => openTab(tabs, session, name, whoOf(persona, kind), held));
+        // Into its strip's empty tab where it has one (#4756), so a closed last tab and a new
+        // chat leave one tab.
+        change((tabs) => openTabFilling(tabs, filed, session, name, whoOf(persona, kind), held));
         return undefined;
       }
       // The tab that was to be split can have gone while the picker was open: the chat goes on

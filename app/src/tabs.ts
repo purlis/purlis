@@ -467,6 +467,38 @@ export function openTab(
 }
 
 /**
+ * **A new chat, opened as a tab, that fills its strip's empty tab** (#4756): where the strip of
+ * `workspace` holds a tab that is one empty pane (what a close leaves on the strip's last tab),
+ * the chat takes that tab's place, named as {@link openTab} names it, and comes to the front.
+ * Otherwise it is {@link openTab}. So closing the last tab and starting a chat leaves one tab,
+ * not an empty one beside it.
+ */
+export function openTabFilling(
+  tabs: Tabs,
+  workspace: string,
+  session: number,
+  chat = "",
+  who: string | null = null,
+  label: string | null = null,
+): Tabs {
+  const opened = openTab(tabs, session, chat, who, label);
+  const isEmpty = (id: number | undefined) => {
+    const layout = id === undefined ? undefined : tabs.byId[id]?.layout;
+    return (
+      layout?.kind === "pane" &&
+      layout.content.kind === "empty" &&
+      layout.content.workspace === workspace
+    );
+  };
+  const empty = [tabs.inFront, ...tabs.order].find(isEmpty);
+  if (empty === undefined || opened.inFront === undefined) return opened;
+  const made = opened.byId[opened.inFront];
+  const byId = { ...opened.byId, [empty]: { ...made, id: empty } };
+  delete byId[made.id];
+  return { ...opened, byId, order: tabs.order, inFront: empty };
+}
+
+/**
  * Gives a chat's tab the name `label`, or its default back with `null` (charter-app#254).
  *
  * **The tab's name and nothing else**: the chat's own name, which its harness was started

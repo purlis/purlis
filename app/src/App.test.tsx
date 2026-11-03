@@ -609,6 +609,19 @@ describe("App", () => {
     expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
+  it("starts the next chat in the empty tab a close left, not in a tab beside it (#4756)", async () => {
+    core();
+    render(<App />);
+    await openAChat();
+    await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
+    await screen.findByText("Nothing in this pane");
+
+    await openAChat();
+
+    expect(tabs()).toEqual(["steward 2"]);
+    expect(panes()).toEqual(["session 2"]);
+  });
+
   it("clears a pane on Close pane, and its chat goes on (#4756)", async () => {
     const { asked } = core();
     render(<App />);
