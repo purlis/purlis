@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793741544402,
+  "lastUpdate": 1793745469072,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38052,6 +38052,48 @@ window.BENCHMARK_DATA = {
             "value": 101.412423,
             "unit": "ms",
             "extra": "median of 5 runs: 101.141, 101.325, 101.412, 102.490, 102.932 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cf78e2d9a90a9476b34d7c417f85d50606d43e63",
+          "message": "stories: EndedBand's light high-contrast baselines are missing on main (#5101)\n\n* stories: EndedBand's light high-contrast baselines are missing on main (#4957 with #4880)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXWJPHQ5BB6097XR7GGZ9Q\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-03T21:05:34Z",
+          "tree_id": "f4772626d0d3efdeb0a34bedbaec6c5bc536a110",
+          "url": "https://github.com/purlis/purlis/commit/cf78e2d9a90a9476b34d7c417f85d50606d43e63"
+        },
+        "date": 1793745460930,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6478995000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.644, 0.647, 0.648, 0.649, 0.662 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7925855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.754, 16.756, 16.793, 16.823, 16.892 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4899325,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.001, 102.190, 102.490, 102.582, 103.485 ms"
           }
         ]
       }
