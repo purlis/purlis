@@ -1608,11 +1608,10 @@ impl purlis_host::Code for Moves {
         purlis_host::protocol::session::Refusal,
     > {
         let (repos, mut unread) = held::repos_held(projects);
-        // **And what a task kept outside them** (#4781), in the runner's home and, where it is
-        // looked through, the rest of its file system (#4933): the projects, purlis's data home
-        // they are in and every other folder purlis keeps for itself are left out by name,
-        // wherever they are (#5028). Since the first program,
-        // as marked beside them, so a host started again keeps that time.
+        // **And what a task kept outside them** (#4781), in the runner's home, purlis's data home
+        // (#5029) and, where it is looked through, the rest of its file system (#4933): every
+        // folder purlis keeps for itself is left out by name, wherever it is (#5028). Since the
+        // first program, as marked beside them, so a host started again keeps that time.
         let marked = held::first_program_at(projects).unwrap_or_else(|why| {
             unread.push(why);
             None
@@ -1639,13 +1638,39 @@ impl purlis_host::Code for Moves {
                             std::iter::once(one).chain(real)
                         })
                         .collect();
+                    // The data home the projects are in, as the walks meet it: only where they
+                    // are its `projects`, as a runner keeps them (#5029).
+                    let projects_real =
+                        std::fs::canonicalize(projects).unwrap_or_else(|_| projects.into());
+                    let data = projects_real
+                        .parent()
+                        .filter(|_| {
+                            projects_real.file_name()
+                                == Some(std::ffi::OsStr::new(crate::datahome::PROJECTS))
+                        })
+                        .map(Path::to_path_buf);
+                    let listed: Vec<std::path::PathBuf> = repos
+                        .iter()
+                        .map(|one| {
+                            let mut at = projects_real.join(&one.project);
+                            if !one.path.is_empty() {
+                                at.push(&one.path);
+                            }
+                            at
+                        })
+                        .collect();
                     let since = since.checked_sub(held::CHANGED_WITHIN).unwrap_or(since);
                     let beyond = self.beyond.as_deref().map(|root| held::Beyond {
                         root,
                         owner: rustix::process::geteuid().as_raw(),
                     });
-                    unread.extend(held::outside_the_projects_and_beyond(
+                    unread.extend(held::outside_with(
                         &home,
+                        data.as_deref().map(|data| held::DataHome {
+                            data,
+                            projects: &projects_real,
+                            listed: &listed,
+                        }),
                         &kept,
                         Some(since),
                         beyond,

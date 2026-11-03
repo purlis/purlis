@@ -1028,6 +1028,187 @@ fn a_mark_that_is_not_the_file_purlis_made_keeps_the_runner_and_refuses_a_start(
     assert!(refused.contains("not a file purlis made"), "{refused}");
 }
 
+/// A runner's home with purlis's data home in it, as purlis's own image has it
+/// (`~/.local/share/purlis`), its projects folder made and marked, and when that was.
+#[cfg(unix)]
+fn a_home_with_its_data() -> (tempfile::TempDir, PathBuf, PathBuf, std::time::SystemTime) {
+    let (dir, home, _) = a_home();
+    let data = home.join(".local/share/purlis");
+    std::fs::create_dir_all(data.join(crate::datahome::PROJECTS)).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let started = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    first_program_starting(&data.join(crate::datahome::PROJECTS)).unwrap();
+    (dir, home, data, started)
+}
+
+/// **A file a task saved in the data home outside any repository keeps the runner** (#5029):
+/// beside the projects, loose in the projects folder, or in a project's folder that holds no
+/// repository. No repository lists it.
+#[cfg(unix)]
+#[test]
+fn a_file_a_task_saved_in_the_data_home_outside_any_repository_keeps_the_runner() {
+    let (_dir, home, data, started) = a_home_with_its_data();
+    let projects = data.join(crate::datahome::PROJECTS);
+    std::fs::write(data.join("beside.md"), "a task's\n").unwrap();
+    std::fs::write(projects.join("loose.txt"), "a task's\n").unwrap();
+    std::fs::create_dir_all(projects.join(PROJECT).join("notes")).unwrap();
+    std::fs::write(projects.join(PROJECT).join("notes/found.md"), "a task's\n").unwrap();
+    std::fs::write(projects.join(".notes"), "a task's, hidden\n").unwrap();
+
+    let said = outside_with(
+        &home,
+        Some(DataHome {
+            data: &data,
+            projects: &projects,
+            listed: &[],
+        }),
+        std::slice::from_ref(&data),
+        Some(started),
+        None,
+    );
+
+    for file in [
+        "~/.local/share/purlis/beside.md",
+        "~/.local/share/purlis/projects/loose.txt",
+        "~/.local/share/purlis/projects/.notes",
+        &format!("~/.local/share/purlis/projects/{PROJECT}/notes/found.md"),
+    ] {
+        assert!(says(&said, file), "{file}: {said:?}");
+    }
+}
+
+/// **What purlis keeps in its data home keeps no runner** (#5029): its own stores (a browser's
+/// profile, the host's events), the mark of the first program, a transfer's scratch, and each
+/// repository listed on its own.
+#[cfg(unix)]
+#[test]
+fn what_purlis_keeps_in_its_data_home_keeps_no_runner() {
+    let (_dir, home, data, started) = a_home_with_its_data();
+    let projects = data.join(crate::datahome::PROJECTS);
+    for (folder, file) in [
+        ("browsers/chat-7/Default", "Cookies"),
+        ("events/device", "events.jsonl"),
+        ("app-state/key", "state.json"),
+        ("cache-homes/key", "x"),
+        ("projects/.code-random", "bundle"),
+    ] {
+        std::fs::create_dir_all(data.join(folder)).unwrap();
+        std::fs::write(data.join(folder).join(file), "purlis's own\n").unwrap();
+    }
+    let repo = projects.join(PROJECT);
+    std::fs::create_dir_all(&repo).unwrap();
+    init(&repo);
+    std::fs::write(repo.join("work.txt"), "in a repository\n").unwrap();
+    let (held, unread) = repos_held(&projects);
+    assert_eq!(unread, Vec::<String>::new());
+    let listed: Vec<PathBuf> = held.iter().map(|one| projects.join(&one.project)).collect();
+    assert_eq!(listed.len(), 1, "{held:?}");
+
+    assert_eq!(
+        outside_with(
+            &home,
+            Some(DataHome {
+                data: &data,
+                projects: &projects,
+                listed: &listed,
+            }),
+            std::slice::from_ref(&data),
+            Some(started),
+            None
+        ),
+        Vec::<String>::new()
+    );
+}
+
+/// **A folder whose `.git` git does not take for a repository of its own is said** (#5029): git
+/// would read the next repository up in its place, and its files would be in no list.
+#[test]
+fn a_folder_with_a_git_folder_that_is_not_a_repository_keeps_the_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let projects = dir.path().join("projects");
+    let project = projects.join(PROJECT);
+    std::fs::create_dir_all(&project).unwrap();
+    init(&project);
+    std::fs::create_dir_all(project.join("notes/.git")).unwrap();
+    std::fs::write(project.join("notes/found.md"), "a task's\n").unwrap();
+
+    let (held, unread) = repos_held(&projects);
+
+    assert!(
+        says(&unread, "notes in project") && says(&unread, "repository of its own"),
+        "{unread:?} {held:?}"
+    );
+}
+
+/// **A home inside the data home is looked through by the home's rules, not the data home's**
+/// (#5029): what programs keep hidden in it keeps no runner.
+#[cfg(unix)]
+#[test]
+fn a_home_inside_the_data_home_is_looked_through_as_a_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().canonicalize().unwrap().join("var/lib/purlis");
+    let home = data.join("home");
+    let projects = data.join(crate::datahome::PROJECTS);
+    std::fs::create_dir_all(home.join(".config")).unwrap();
+    std::fs::create_dir_all(&projects).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let started = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    std::fs::write(home.join(".config/tool.toml"), "a program's\n").unwrap();
+    let look = || {
+        outside_with(
+            &home,
+            Some(DataHome {
+                data: &data,
+                projects: &projects,
+                listed: &[],
+            }),
+            std::slice::from_ref(&data),
+            Some(started),
+            None,
+        )
+    };
+
+    assert_eq!(look(), Vec::<String>::new());
+
+    std::fs::write(home.join("report.md"), "a task's\n").unwrap();
+    let said = look();
+    assert!(says(&said, "~/report.md"), "{said:?}");
+    assert!(!says(&said, "/var/lib/purlis/home"), "named once: {said:?}");
+}
+
+/// **Every store the plane format names in the data home is one the walk of it leaves out**
+/// (#5029): a store added there without it would keep every fresh runner.
+#[test]
+fn every_store_the_plane_format_names_in_the_data_home_is_left_out_of_its_walk() {
+    let format = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/plane-format.md"),
+    )
+    .unwrap();
+    let mut named: Vec<&str> = format
+        .match_indices("<data>/")
+        .map(|(at, found)| {
+            let rest = &format[at + found.len()..];
+            let end = rest
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.'))
+                .unwrap_or(rest.len());
+            &rest[..end]
+        })
+        .filter(|name| !name.is_empty())
+        .collect();
+    named.sort_unstable();
+    named.dedup();
+    assert!(named.contains(&"events"), "{named:?}");
+
+    let missing: Vec<&&str> = named
+        .iter()
+        .filter(|name| **name != crate::datahome::PROJECTS && !PURLIS_KEEPS.contains(name))
+        .collect();
+
+    assert!(missing.is_empty(), "add to PURLIS_KEEPS: {missing:?}");
+}
+
 /// **Each folder purlis keeps for itself is left out wherever the environment puts it** (#5028):
 /// its config, data, log and socket homes moved outside the runner's home keep no runner, and a
 /// file of another program's beside them still does.

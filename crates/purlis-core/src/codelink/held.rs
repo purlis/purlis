@@ -196,11 +196,40 @@ const TOOLS_KEEP: &[&str] = &["go/pkg"];
 /// knows it.
 pub const FIRST_PROGRAM: &str = ".first-program";
 
+/// How the folder a transfer's bundle is kept in beside the projects is named, as
+/// `.code-<random>` (`purlis_host`'s code transfer): removed as the transfer ends.
+pub const TRANSFER_SCRATCH: &str = ".code-";
+
 /// Folders of the runner's file system, by their path from its root, that hold nothing a task
 /// could keep (#4933): the kernel's views of itself (`proc`, `sys`, `dev`, with `/dev/shm`), and
 /// what is temporary by the file system's convention (`run`, `tmp`, `var/tmp`), as a temporary
 /// folder in the home is.
 const NO_TASKS_WORK: &[&str] = &["proc", "sys", "dev", "run", "tmp", "var/tmp"];
+
+/// **What purlis keeps in its data home itself** (#5029), by name at its top: every store
+/// `docs/plane-format.md` names there but the projects, and the homes it makes for chats. None
+/// holds a task's work, and the walk of the data home leaves each out. A store added there and
+/// not here would keep every fresh runner, so a test holds this to the plane format.
+pub const PURLIS_KEEPS: &[&str] = &[
+    "app-state",
+    "audit",
+    "browser-logins",
+    crate::datahome::BROWSERS,
+    "cache-homes",
+    "codex-homes",
+    "docker-settings",
+    "engines",
+    "events",
+    "harnesses",
+    "index",
+    "local-project",
+    "network",
+    "profiles",
+    "reviews",
+    "runners",
+    "sign-ins-waiting",
+    "telemetry",
+];
 
 /// **Every folder purlis keeps for itself on a runner whose home is `home`** (#5028), wherever
 /// the environment `var` puts it, under each name it has had: its config home's folder (as
@@ -387,15 +416,96 @@ pub fn outside_the_projects_and_beyond(
     since: Option<std::time::SystemTime>,
     beyond: Option<Beyond<'_>>,
 ) -> Vec<String> {
+    outside_with(home, None, skip, since, beyond)
+}
+
+/// **purlis's data home on a runner, as the walk of it needs it** (#5029): the folder, the
+/// projects folder in it (`<data>/projects`), and each repository [`repos_held`] listed there,
+/// left out since it is listed on its own.
+#[derive(Debug, Clone, Copy)]
+pub struct DataHome<'a> {
+    pub data: &'a Path,
+    pub projects: &'a Path,
+    pub listed: &'a [std::path::PathBuf],
+}
+
+/// **What a task keeps on its runner outside every repository** (#4781, #4933, #5029, #5030), in
+/// sentences: each file changed since `since` in the runner's `home` ([`outside_the_projects`]);
+/// in purlis's data home, but what purlis keeps there itself ([`PURLIS_KEEPS`]), the mark of the
+/// first program and a transfer's scratch beside the projects, and each repository listed; and,
+/// where `beyond` is given, in the rest of the runner's file system
+/// ([`outside_the_projects_and_beyond`]). `skip` is left out of every walk but where it holds the data home or is in its
+/// projects. A data home that is the home itself is looked through as the home.
+#[cfg(unix)]
+pub fn outside_with(
+    home: &Path,
+    data: Option<DataHome<'_>>,
+    skip: &[std::path::PathBuf],
+    since: Option<std::time::SystemTime>,
+    beyond: Option<Beyond<'_>>,
+) -> Vec<String> {
+    outside_within(home, data, skip, since, beyond, MOST_FOLDERS)
+}
+
+/// [`outside_with`], looking through no more than `most` folders.
+#[cfg(unix)]
+fn outside_within(
+    home: &Path,
+    data: Option<DataHome<'_>>,
+    skip: &[std::path::PathBuf],
+    since: Option<std::time::SystemTime>,
+    beyond: Option<Beyond<'_>>,
+    most: usize,
+) -> Vec<String> {
     let Some(since) = since else {
         return Vec::new();
     };
-    let mut outside = Outside::default();
-    let walked = outside.walk(home, Rules::Home, skip, since);
+    let mut outside = Outside::new(most);
+    // The data home, wherever it is, is looked through by its own rules, so never by another's.
+    let data = data.filter(|data| data.data != home);
+    let mut skip = skip.to_vec();
+    skip.extend(data.map(|data| data.data.to_path_buf()));
+    let mut walked = outside.walk(home, "", Rules::Home, &skip, &[], since);
+    if walked
+        && let Some(DataHome {
+            data,
+            projects,
+            listed,
+        }) = data
+        && let Ok(projects_rel) = projects.strip_prefix(data)
+        && let Some(projects_rel) = projects_rel.to_str()
+    {
+        let shown = match data.strip_prefix(home) {
+            Ok(rel) => format!("~/{}", rel.display()),
+            Err(_) => data.display().to_string(),
+        };
+        // What the other walks leave out but the data home itself and its projects, and the
+        // home where it is in the data home, which its own rules look through.
+        let within: Vec<std::path::PathBuf> = skip
+            .iter()
+            .filter(|kept| !data.starts_with(kept) && !kept.starts_with(projects))
+            .cloned()
+            .chain(home.starts_with(data).then(|| home.to_path_buf()))
+            .collect();
+        walked = outside.walk(
+            data,
+            "",
+            Rules::Data(&shown, projects_rel),
+            &within,
+            listed,
+            since,
+        );
+    }
     if walked && let Some(beyond) = beyond {
-        let mut skip = skip.to_vec();
         skip.push(home.to_path_buf());
-        outside.walk(beyond.root, Rules::Beyond(beyond.owner), &skip, since);
+        outside.walk(
+            beyond.root,
+            "",
+            Rules::Beyond(beyond.owner),
+            &skip,
+            &[],
+            since,
+        );
     }
     outside.sentences()
 }
@@ -404,20 +514,25 @@ pub fn outside_the_projects_and_beyond(
 /// path.
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy)]
-enum Rules {
+enum Rules<'a> {
     /// The runner's home: its hidden entries and what tools keep are left out, and a path is
     /// named from `~`.
     Home,
+    /// purlis's data home, named as the first, with its projects folder at the second, its path
+    /// in it: what purlis keeps there itself and beside the projects is left out (#5029).
+    Data(&'a str, &'a str),
     /// The rest of its file system, for files the user it names owns: a path is named from `/`.
     Beyond(u32),
 }
 
 #[cfg(unix)]
-impl Rules {
+impl Rules<'_> {
     fn shown(self, rel: &str) -> String {
         match (self, rel.is_empty()) {
             (Rules::Home, true) => "~".to_owned(),
             (Rules::Home, false) => format!("~/{rel}"),
+            (Rules::Data(shown, _), true) => shown.to_owned(),
+            (Rules::Data(shown, _), false) => format!("{shown}/{rel}"),
             (Rules::Beyond(_), _) => format!("/{rel}"),
         }
     }
@@ -426,6 +541,7 @@ impl Rules {
     fn hidden_left_out(self, rel: &str) -> bool {
         match self {
             Rules::Home => rel.is_empty(),
+            Rules::Data(..) => false,
             Rules::Beyond(_) => {
                 rel == "root"
                     || rel
@@ -438,13 +554,25 @@ impl Rules {
     fn left_out(self, shown: &str) -> bool {
         match self {
             Rules::Home => TOOLS_KEEP.contains(&shown),
+            // What purlis keeps at the data home's top, and beside the projects the mark of the
+            // first program and a transfer's scratch (`.code-<random>`), no more of what is hidden
+            // there.
+            Rules::Data(_, projects) => {
+                PURLIS_KEEPS.contains(&shown)
+                    || shown
+                        .strip_prefix(projects)
+                        .and_then(|rest| rest.strip_prefix('/'))
+                        .is_some_and(|name| {
+                            name == FIRST_PROGRAM || name.starts_with(TRANSFER_SCRATCH)
+                        })
+            }
             Rules::Beyond(_) => NO_TASKS_WORK.contains(&shown),
         }
     }
 
     fn counts(self, stat: &rustix::fs::Stat) -> bool {
         match self {
-            Rules::Home => true,
+            Rules::Home | Rules::Data(..) => true,
             Rules::Beyond(owner) => stat.st_uid == owner,
         }
     }
@@ -453,30 +581,42 @@ impl Rules {
 /// A folder a walk outside the projects has found and not yet looked through.
 #[cfg(unix)]
 struct Folder {
-    /// Its path from where the walk starts.
+    /// Its path from where the walk's paths are named.
     rel: String,
     /// The folder it is in, held open.
     parent: std::rc::Rc<rustix::fd::OwnedFd>,
     /// Its name there; none for where the walk starts.
     name: Option<std::ffi::CString>,
-    /// Whether it is said where it can't be read, whoever may write in it: always in the home,
-    /// and beyond it where the walk's user owns it or it changed since.
+    /// Whether it is said where it can't be read, whoever may write in it: always in the home and
+    /// the data home, and beyond them where the walk's user owns it or it changed since.
     said_unread: bool,
 }
 
 /// What the walks outside the projects found, and what they could not look at.
 #[cfg(unix)]
-#[derive(Default)]
 struct Outside {
     named: std::collections::BTreeSet<String>,
     found: usize,
     said: Vec<String>,
     unsaid: usize,
     folders: usize,
+    /// The most folders it looks through.
+    most: usize,
 }
 
 #[cfg(unix)]
 impl Outside {
+    fn new(most: usize) -> Outside {
+        Outside {
+            named: std::collections::BTreeSet::new(),
+            found: 0,
+            said: Vec::new(),
+            unsaid: 0,
+            folders: 0,
+            most,
+        }
+    }
+
     fn say(&mut self, sentence: String) {
         if self.said.len() < MOST_SAID_OUTSIDE {
             self.said.push(sentence);
@@ -485,18 +625,34 @@ impl Outside {
         }
     }
 
-    /// Looks through `top` by `rules`: false where it stopped at [`MOST_FOLDERS`], so nothing
-    /// more is looked through.
+    fn found(&mut self, shown: String) {
+        self.found += 1;
+        self.named.insert(shown);
+        if self.named.len() > MOST_NAMED_OUTSIDE {
+            self.named.pop_last();
+        }
+    }
+
+    /// Looks through the folder at `start` in `base` (`base` itself where it is empty) by
+    /// `rules`, naming each path from `base`: false where it stopped at its most folders, so
+    /// nothing more is looked through.
     fn walk(
         &mut self,
-        top: &Path,
-        rules: Rules,
+        base: &Path,
+        start: &str,
+        rules: Rules<'_>,
         skip: &[std::path::PathBuf],
+        listed: &[std::path::PathBuf],
         since: std::time::SystemTime,
     ) -> bool {
         use rustix::fs::{Access, AtFlags, CWD, Mode, OFlags};
         let folder = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
-        let top_fd = match rustix::fs::openat(CWD, top, folder, Mode::empty()) {
+        let top = if start.is_empty() {
+            base.to_path_buf()
+        } else {
+            base.join(start)
+        };
+        let top_fd = match rustix::fs::openat(CWD, &top, folder, Mode::empty()) {
             Ok(fd) => fd,
             Err(rustix::io::Errno::NOENT) => return true,
             Err(e) => {
@@ -505,9 +661,14 @@ impl Outside {
                         "the runner's home could not be read, so what a task kept outside its \
                          project could not be looked for: {e}"
                     ),
+                    Rules::Data(..) => format!(
+                        "purlis's data home on the runner could not be read, so what a task kept \
+                         there outside its project could not be looked for: {e}"
+                    ),
                     Rules::Beyond(_) => format!(
-                        "the runner's files outside its home could not be read, so what a task \
-                         kept there could not be looked for: {e}"
+                        "{} on the runner could not be read, so what a task kept there could not \
+                         be looked for: {e}",
+                        rules.shown(start)
                     ),
                 });
                 return true;
@@ -518,7 +679,7 @@ impl Outside {
         // more than [`MOST_DEPTH`]. Each is counted as it is found, so the folders waiting are
         // bounded too.
         let mut stack: Vec<Folder> = vec![Folder {
-            rel: String::new(),
+            rel: start.to_owned(),
             parent: std::rc::Rc::new(top_fd),
             name: None,
             said_unread: true,
@@ -604,7 +765,10 @@ impl Outside {
                 } else {
                     format!("{rel}/{name}")
                 };
-                if rules.left_out(&rel_now) || skip.contains(&top.join(&rel_now)) {
+                if rules.left_out(&rel_now)
+                    || skip.contains(&base.join(&rel_now))
+                    || listed.contains(&base.join(&rel_now))
+                {
                     continue;
                 }
                 // Never through a link: one made since counts as a file.
@@ -630,15 +794,16 @@ impl Outside {
                             continue;
                         }
                         self.folders += 1;
-                        if self.folders > MOST_FOLDERS {
+                        if self.folders > self.most {
                             self.say(format!(
-                                "the runner holds more than {MOST_FOLDERS} folders outside its \
-                                 projects, so not all were looked through"
+                                "the runner holds more than {} folders outside its projects, so \
+                                 not all were looked through",
+                                self.most
                             ));
                             return false;
                         }
                         stack.push(Folder {
-                            said_unread: matches!(rules, Rules::Home)
+                            said_unread: !matches!(rules, Rules::Beyond(_))
                                 || rules.counts(&stat)
                                 || changed_at(&stat).is_none_or(|at| at >= since),
                             rel: rel_now,
@@ -647,13 +812,10 @@ impl Outside {
                         });
                     }
                     rustix::fs::FileType::RegularFile | rustix::fs::FileType::Symlink
-                        if rules.counts(&stat)
-                            && changed_at(&stat).is_none_or(|at| at >= since) =>
+                        if rules.counts(&stat) =>
                     {
-                        self.found += 1;
-                        self.named.insert(rules.shown(&rel_now));
-                        if self.named.len() > MOST_NAMED_OUTSIDE {
-                            self.named.pop_last();
+                        if changed_at(&stat).is_none_or(|at| at >= since) {
+                            self.found(rules.shown(&rel_now));
                         }
                     }
                     _ => {}
@@ -741,6 +903,24 @@ fn one(dir: &Path, project: &str, rel: &str, kind: Kind) -> Result<Held, String>
             )
         }
     };
+    // **Only a repository of its own** (#5029): a `.git` git can't take as one makes git look
+    // for the next repository up, which would list that one's refs here and leave this folder's
+    // files to no list. So git must name this folder as the repository it reads.
+    let own = match kind {
+        Kind::Bare => "--absolute-git-dir",
+        _ => "--show-toplevel",
+    };
+    let named = run(dir, &["rev-parse", own]).map_err(|why| failed("read", &why.to_string()))?;
+    let real = |path: &Path| std::fs::canonicalize(path).ok();
+    if !named.ok()
+        || real(Path::new(named.line())).is_none()
+        || real(Path::new(named.line())) != real(dir)
+    {
+        return Err(failed(
+            "read",
+            "git does not take its folder for a repository of its own",
+        ));
+    }
     let listed = run(
         dir,
         &[
