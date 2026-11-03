@@ -102,9 +102,44 @@ pub struct Grants {
     /// Held by a press from its read of what waits to its answer: the Inbox and a pane draw one
     /// notice, and two presses never both pass.
     answering: Mutex<()>,
+    /// The chats a page is being followed to its form for now (#4995): one at a time each, so
+    /// calls side by side never open a browser apiece.
+    following: Mutex<Vec<u32>>,
+}
+
+/// Chat `session`'s one page being followed to its form, let go as it's dropped.
+pub struct Following<'a> {
+    grants: &'a Grants,
+    session: u32,
+}
+
+impl Drop for Following<'_> {
+    fn drop(&mut self) {
+        self.grants
+            .following
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|one| *one != self.session);
+    }
 }
 
 impl Grants {
+    /// **Chat `session` follows a page to its form now**, or `None` where it already does.
+    pub fn follow(&self, session: u32) -> Option<Following<'_>> {
+        let mut following = self
+            .following
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if following.contains(&session) {
+            return None;
+        }
+        following.push(session);
+        Some(Following {
+            grants: self,
+            session,
+        })
+    }
+
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -318,7 +353,10 @@ pub fn before_the_login(
     let suggested = suggested.as_ref()?;
     let session = browse.chat;
     let always = crate::chatbrowsers::as_persona_of(held, session).always;
-    if !held.browsers().may_browse(session, always.is_some()) {
+    // A browser kept off is told so by the normal path, and nothing is followed for it.
+    if held.browsers().is_kept_off(session)
+        || !held.browsers().may_browse(session, always.is_some())
+    {
         return None;
     }
     if held.chats().sandboxed_by_its_host(session) {
@@ -351,14 +389,22 @@ pub fn before_the_login(
     }
     // Nothing is opened for a login the person kept blocked here, or while one is being asked
     // about for this chat: following a page to its form opens a browser (#4995).
+    // Kept on a declared login is its recorded site kept, not the login blocked (#4996).
+    let kept = || match declared.as_ref().and_then(|tool| tool.login.as_ref()) {
+        Some(recorded) => kept_where_it_is_said(login, &recorded.url, None),
+        None => kept_said(login, None),
+    };
     if let Ok((origin, _)) = loginask::site_of(&suggested.site)
         && grants.kept(session, login, &origin)
     {
-        return no(kept_said(login, None));
+        return no(kept());
     }
     if grants.waiting().iter().any(|one| one.session == session) {
         return no(ALREADY_ASKED.to_owned());
     }
+    let Some(_following) = grants.follow(session) else {
+        return no(ALREADY_ASKED.to_owned());
+    };
     let finds = |page: &str| follows(held, session, pool, page);
     let wait = match judged(
         held.root(),
@@ -372,7 +418,7 @@ pub fn before_the_login(
         // The site the call names is the one declared: the declared login fills it.
         Ok(None) => return None,
         Ok(Some(judged)) if grants.kept(session, login, &judged.proposal.origin) => {
-            return no(kept_said(login, None));
+            return no(kept());
         }
         Ok(Some(judged)) => LoginWait {
             id: 0,
@@ -469,7 +515,35 @@ fn judged(
     if let Some(why) = locks.refuses_tool(persona, login) {
         return Err(why);
     }
-    let proposal = loginask::proposal(root, persona, login, suggested, finds, held)?;
+    // What needs no browser is judged before a page is followed to its form (#4995).
+    let ctx = Ctx::new(root, Env::from_process());
+    let doc = purlis_core::secrets::registry::load_registry(&ctx)
+        .map_err(|why| why.message.to_string())?;
+    purlis_core::secrets::registry::vault_in(&doc, &suggested.vault)
+        .map_err(|why| why.message.to_string())?;
+    let page = loginask::site_of(&suggested.site).map(|(_, page)| page);
+    let declared_page = declared
+        .and_then(|declared| declared.login.as_ref())
+        .filter(|declared| page.as_ref() == Ok(&declared.url));
+    if let Some(declared) = declared {
+        let same_keys = declared.vault == suggested.vault
+            && declared.login_keys()
+                == Some((suggested.user_key.as_deref(), suggested.key.as_str()));
+        if !same_keys {
+            return Err(loginask::only_its_site_said(login));
+        }
+        // A line that records its form names its site whole: its page is enough to tell.
+        if declared_page.is_some_and(|declared| declared.form.is_some()) {
+            return Ok(None);
+        }
+    }
+    let proposal = match loginask::proposal(root, persona, login, suggested, finds, held) {
+        Ok(proposal) => proposal,
+        // A declared login called on its own page fills as declared where the page can't be
+        // followed: its fill holds the password to its origin all the same.
+        Err(_) if declared_page.is_some() => return Ok(None),
+        Err(why) => return Err(why),
+    };
     let proposal = match declared {
         None => proposal,
         Some(declared) if proposal.is_where(declared) => return Ok(None),
@@ -573,10 +647,7 @@ pub fn answer(
     audit: Audit<'_>,
 ) -> Result<Pressed, String> {
     const NO_MORE: &str = "That ask has gone, and nothing was allowed.";
-    let _one_press = grants
-        .answering
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
+    const CHANGED: &str = "That ask changed, so nothing was allowed. Read it again.";
     let Asked {
         session,
         id,
@@ -585,9 +656,25 @@ pub fn answer(
         typed,
         reason,
     } = *asked;
+    // A typed site is followed to its form before the press is held, so no other notice's press
+    // waits on a browser (#4995); what waits is read again once it is.
+    let followed = match (press, typed.map(str::trim)) {
+        (Press::Keep, _) | (_, None | Some("")) => None,
+        (_, Some(typed)) => {
+            let wait = grants.wait(session, id).ok_or(NO_MORE)?;
+            if wait.proposal.digest() != shown {
+                return Err(CHANGED.to_owned());
+            }
+            Some(wait.proposal.at(root, typed, finds, &grants.held())?)
+        }
+    };
+    let _one_press = grants
+        .answering
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     let wait = grants.wait(session, id).ok_or(NO_MORE)?;
     if wait.proposal.digest() != shown {
-        return Err("That ask changed, so nothing was allowed. Read it again.".to_owned());
+        return Err(CHANGED.to_owned());
     }
     if press == Press::Keep {
         grants.keep(session, &wait.proposal.login, &wait.proposal.origin);
@@ -602,10 +689,12 @@ pub fn answer(
         });
     }
     // A field left empty names no site: it never falls back to the one the chat suggested.
-    let moved = match typed.map(str::trim) {
-        Some("") => return Err("Type the site to fill this on, or Keep blocked.".to_owned()),
-        Some(typed) => Some((typed, wait.proposal.at(root, typed, finds, &grants.held())?)),
-        None => None,
+    let moved = match (typed.map(str::trim), followed) {
+        (Some(""), _) => {
+            return Err("Type the site to fill this on, or Keep blocked.".to_owned());
+        }
+        (Some(typed), Some(followed)) => Some((typed, followed)),
+        _ => None,
     };
     let (proposal, spelled) = match moved {
         Some((typed, moved)) if moved.page != wait.proposal.page => {
@@ -655,8 +744,8 @@ pub fn answer(
     // Always writes a line, and the line is shown before it's written.
     if changed && (!spelled || !judged.proposal.warnings.is_empty() || press == Press::Always) {
         let said = format!(
-            "purlis would fill this on {}. Check it, then choose again.",
-            judged.proposal.origin
+            "purlis would open {} and type the password on {}. Check it, then choose again.",
+            judged.proposal.page, judged.proposal.form
         );
         grants.redraw(id, judged);
         return Ok(Pressed::DrawnAgain { said });
@@ -703,8 +792,8 @@ pub fn answer(
         }
     } else {
         format!(
-            "Allowed. Nothing was written. It fills on {}.",
-            proposal.origin
+            "Allowed. Nothing was written. The password is typed on {} alone.",
+            proposal.form
         )
     };
     if !grants.allow(id, &proposal.persona, tool, once) {

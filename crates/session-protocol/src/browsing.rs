@@ -37,8 +37,8 @@ pub enum Act {
     },
     /// **Where `address` sends a browser to sign in** (1.70, #4995): a new page of purlis's own
     /// opened at `address` and followed until its own document shows a login form. The answer's
-    /// page is that document, as the engine records it. Nothing is typed. purlis's alone: no
-    /// browser tool of a chat's sends it.
+    /// page is that document, as the engine records it. Nothing is typed. No browser tool of a
+    /// chat's sends it; one a chat sent anyway does no more than `Open`.
     FindLoginForm {
         address: String,
     },

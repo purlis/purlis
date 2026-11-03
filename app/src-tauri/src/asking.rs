@@ -145,7 +145,7 @@ pub struct Shown {
 /// value: purlis hasn't read one.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct LoginShown {
-    /// The domain, with a port where it has one, exactly as it's filled: `shop.example.com`.
+    /// The domain of the page it opens, with a port where it has one: `shop.example.com`.
     pub domain: String,
     /// The page's path on it.
     pub path: String,

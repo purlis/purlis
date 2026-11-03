@@ -874,3 +874,82 @@ fn always_is_held_back_by_proposals_off_for_a_replacement_too() {
     );
     assert_eq!(file_of(dir.path()), RECORDED);
 }
+
+/// #4995: a chat's calls side by side never open a browser apiece to follow their pages.
+#[test]
+fn a_chat_follows_one_page_to_its_form_at_a_time() {
+    let grants = Grants::default();
+    let one = grants.follow(7).expect("the first");
+    assert!(
+        grants.follow(7).is_none(),
+        "a second, side by side, is refused"
+    );
+    assert!(grants.follow(8).is_some(), "another chat's is its own");
+    drop(one);
+    assert!(
+        grants.follow(7).is_some(),
+        "once it's done, the next may follow"
+    );
+}
+
+/// Nothing is opened for what needs no browser to judge: a declared login called with other keys,
+/// or on its own page where its line records its form.
+#[test]
+fn a_declared_login_is_judged_before_any_page_is_followed() {
+    let text = RECORDED.replace(
+        "browser = \"https://app.example.test/\",",
+        "browser = \"https://app.example.test/\", form = \"https://auth.example.test\",",
+    );
+    let dir = project(&text);
+    let opened = std::cell::Cell::new(false);
+    let finds = |page: &str| {
+        opened.set(true);
+        Ok(page.to_owned())
+    };
+    let declared = declared_shop(dir.path());
+    let same = super::judged(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &finds,
+        Some(&declared),
+        &[],
+    )
+    .expect("judged");
+    assert!(same.is_none(), "the declared login fills");
+    let other_key = Suggested {
+        key: "other".into(),
+        ..suggested("https://elsewhere.example.test/")
+    };
+    let refused = super::judged(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &other_key,
+        &finds,
+        Some(&declared),
+        &[],
+    )
+    .expect_err("refused");
+    assert!(refused.contains("change its site alone"), "{refused}");
+    assert!(!opened.get(), "no page was followed");
+}
+
+/// A declared login called on its own page fills as declared where the page can't be followed:
+/// its fill keeps the password on its origin all the same.
+#[test]
+fn a_declared_login_on_its_own_page_fills_as_declared_where_the_page_cant_be_followed() {
+    let dir = recorded();
+    let judged = super::judged(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &|_| Err("no login form appeared".to_owned()),
+        Some(&declared_shop(dir.path())),
+        &[],
+    )
+    .expect("judged");
+    assert!(judged.is_none());
+}

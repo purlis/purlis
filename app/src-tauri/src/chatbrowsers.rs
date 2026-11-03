@@ -1615,6 +1615,13 @@ impl ChatBrowsers {
         true
     }
 
+    /// Whether the person kept chat `session`'s browser off: Always answers it no more.
+    pub fn is_kept_off(&self, session: u32) -> bool {
+        self.lock()
+            .get(&session)
+            .is_some_and(|chat| chat.posture == Posture::Off)
+    }
+
     /// **Whether chat `session`'s browser may be used now**: the person allowed it, or `always`
     /// answers for its persona. A login's notice waits behind the browser's own Ask (#4595).
     pub fn may_browse(&self, session: u32, always: bool) -> bool {
@@ -1642,14 +1649,23 @@ impl ChatBrowsers {
         always: Option<bool>,
         page: &str,
     ) -> Result<String, String> {
-        let not_followed =
-            |why: &str| format!("purlis could not follow {page} to its login form: {why}");
+        let not_followed = |why: &str| {
+            format!(
+                "purlis could not follow {page} to its login form ({why}), so nothing was recorded \
+                 or filled. Give the address of the login page itself; where it sends the browser \
+                 to a site this chat's browser doesn't reach yet, open it with browser_open first \
+                 so the person is asked about that site, then call browser_login again"
+            )
+        };
         let (open_web, sites) = {
             let chats = self.lock();
             let chat = chats.get(&session);
+            // Always answers only an Ask not yet answered, as on every browser call: a browser
+            // the person kept off follows nothing.
             let open_web = match chat.map(|chat| &chat.posture) {
                 Some(Posture::Allowed { open_web }) => Some(*open_web),
-                _ => always,
+                Some(Posture::Off) => None,
+                None | Some(Posture::Unasked | Posture::Asked) => always,
             };
             (
                 open_web,
@@ -1657,7 +1673,7 @@ impl ChatBrowsers {
             )
         };
         let Some(open_web) = open_web else {
-            return Err(not_followed("this chat's browser isn't allowed yet"));
+            return Err(not_followed("this chat's browser isn't allowed"));
         };
         let Some(driver) = driver else {
             return Err(not_followed(NO_HOST));

@@ -1413,6 +1413,7 @@ fn identity_of_ready(
             user_key,
             password_key: pass_key,
             page: &login.url,
+            form: login.form.as_deref(),
         },
     ))
 }

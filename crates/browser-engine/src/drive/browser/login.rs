@@ -432,12 +432,17 @@ impl Browser {
             .clone()
             .ok_or(Refusal::NoPage)?;
         let within = self.inner.limits.login_within;
-        let deadline = Instant::now() + within;
+        let began = Instant::now();
+        let deadline = began + within;
+        // A field for a user name alone counts only once half the wait is gone: a page that asks
+        // for the name first may send the browser elsewhere for the password.
+        let names_count = began + within / 2;
         let mut seen: Option<String> = None;
         loop {
             let here = self.document_origin(&target);
             let shows = self.shows(&target, PASSWORD_FIELD)? == Some(true)
-                || self.shows(&target, SAYS_IT_IS_A_NAME)? == Some(true);
+                || (Instant::now() >= names_count
+                    && self.shows(&target, SAYS_IT_IS_A_NAME)? == Some(true));
             // Read again after the look: a page that moved meanwhile is looked at again.
             let still = here.is_some() && self.document_origin(&target) == here;
             if shows && still && seen == here {

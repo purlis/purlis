@@ -6810,7 +6810,7 @@ export type LocalModelRow = {
  *  value: purlis hasn't read one.
  */
 export type LoginShown = {
-	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
+	/**  The domain of the page it opens, with a port where it has one: `shop.example.com`. */
 	domain: string,
 	/**  The page's path on it. */
 	path: string,

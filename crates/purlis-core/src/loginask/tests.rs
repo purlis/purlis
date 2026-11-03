@@ -631,10 +631,10 @@ fn a_form_s_name_in_another_alphabet_and_its_port_are_said() {
     );
 }
 
-/// The site a key is on is where its password was typed: a login whose form is on the same host
-/// is no other site, and one on its start page's host is.
+/// The site a key is on is where its password is typed, and a sign-in form it already serves for
+/// another site's page is said as that site: either way the person hears where else it goes.
 #[test]
-fn a_key_is_on_the_site_its_password_is_typed_on() {
+fn a_key_is_on_the_site_its_password_is_typed_on_and_the_sites_its_form_serves() {
     let dir = project(
         "[sandbox.personas.ops.tools]\nold = { vault = \"qa\", browser = \
          \"https://portal.example.test/\", form = \"https://auth.example.test\", key = \
@@ -642,10 +642,9 @@ fn a_key_is_on_the_site_its_password_is_typed_on() {
     );
     let same_form = signs_in_elsewhere(dir.path());
     assert!(
-        !same_form
-            .warnings
-            .iter()
-            .any(|warning| matches!(warning, Warning::KeyElsewhere { .. })),
+        same_form.warnings.contains(&Warning::KeyElsewhere {
+            origins: vec!["https://portal.example.test".to_owned()]
+        }),
         "{:?}",
         same_form.warnings
     );

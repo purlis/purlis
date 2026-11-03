@@ -466,6 +466,13 @@ pub const KNOWS_PROGRAMS_NOT_KNOWN: Version = Version {
     minor: 68,
 };
 
+/// The version that first fills a login on its form's origin and follows a page to its form
+/// (#4995): a login with a `form` is sent to no host before it.
+pub const KNOWS_LOGIN_FORMS: Version = Version {
+    major: 1,
+    minor: 70,
+};
+
 /// The version that first answers `repos_held` (#4569).
 pub const KNOWS_REPOS_HELD: Version = Version {
     major: 1,

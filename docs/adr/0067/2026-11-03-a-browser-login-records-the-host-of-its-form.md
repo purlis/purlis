@@ -16,7 +16,11 @@ approve of 2026-11-02 recorded the page's origin, so the next login was refused 
   (`docs/plane-format.md`), only where it differs from the page's; a line without it keeps its
   line and its Allow.
 
-*Decided in implementation (D-4995-1 to D-4995-5 in the pull request):* from the first fill the
+*Decided in implementation (D-4995-1 to D-4995-7 in the pull request):* from the first fill the
 browser is held to the page's site and the form's, so the form can send it back to the page; a
-login whose form is on another origin keeps no kept login yet; a login whose browser has gone
-back to its page since it was submitted went through.
+login whose browser has gone back to its page since it was submitted went through; a login whose
+form is on another origin keeps no kept login yet, and is sent to no session host too old to
+hold it to its form; the page is followed only as far as the chat's browser reaches, so a form
+on a site it doesn't reach yet is refused with the step to take (open the page first, so the
+person is asked about that site); a declared login called on its own page, whose line records
+its form, opens nothing; no page comes back from the browser's back-forward cache.

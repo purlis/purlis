@@ -35,9 +35,10 @@ address), `vault` and `key`, plus `user_key` if the page asks for a user name. G
 address even where it signs in on another host: purlis follows it to its login form and shows the
 person both hosts. The person sees one notice and confirms the site, which they may change. If a
 login your persona declares is on the wrong site, call `browser_login` again with its name, its
-`vault` and keys, and the right `site`: the person is asked whether to replace the recorded one. Your call waits for their answer; on Allow it
-goes on to log in. Fill in only what you know, never guess a key name, and if they keep it blocked,
-tell them what needs the login and don't suggest it again.
+`vault` and keys, and the right `site`: the person is asked whether to replace the recorded one.
+Your call waits for their answer; on Allow it goes on to log in. Fill in only what you know, never
+guess a key name, and if they keep it blocked, tell them what needs the login and don't suggest it
+again.
 
 A project may also declare a login once, in its committed settings, and the user allows it on
 their machine with the persona's hosts:

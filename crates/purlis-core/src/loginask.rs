@@ -49,6 +49,16 @@ const MOST_SITE: usize = 512;
 /// The longest vault key or vault name a notice shows.
 const MOST_NAME: usize = 128;
 
+/// What a chat is told where it names another vault or other keys for login `login`, which is
+/// declared already (#4996): a call moves its site alone.
+pub fn only_its_site_said(login: &str) -> String {
+    format!(
+        "{login} is declared with another vault or other keys, and a call may change its site \
+         alone, so nothing was filled. Call browser_login without site to log in as it is \
+         declared"
+    )
+}
+
 /// **Where a page sends the browser to sign in** (#4995): the address its login form showed on, as
 /// the browser recorded it, or why none did.
 pub type FindsForm<'a> = &'a dyn Fn(&str) -> Result<String, String>;
@@ -447,8 +457,18 @@ fn elsewhere(declared: &[Tool], proposal: &Proposal, granted: &[Tool]) -> Vec<St
             tool.login_keys()
                 .is_some_and(|(user, key)| same(key) || user.is_some_and(same))
         })
-        .filter_map(|tool| tool.login.as_ref().map(|login| login.fills_on().to_owned()))
-        .filter(|origin| *origin != proposal.form)
+        // Where its password is typed elsewhere, that origin; where it's typed on this form for
+        // another site's page, that site: a sign-in it already serves.
+        .filter_map(|tool| {
+            let login = tool.login.as_ref()?;
+            if login.fills_on() != proposal.form {
+                Some(login.fills_on().to_owned())
+            } else if login.origin != proposal.origin {
+                Some(login.origin.clone())
+            } else {
+                None
+            }
+        })
         .collect();
     origins.sort();
     origins.dedup();
@@ -465,12 +485,7 @@ impl Proposal {
             declared.vault == self.vault
                 && keys == Some((self.user_key.as_deref(), self.key.as_str()))
         }) else {
-            return Err(format!(
-                "{} is declared with another vault or other keys, and a call may change its site \
-                 alone, so nothing was filled. Call browser_login without site to log in as it \
-                 is declared",
-                self.login
-            ));
+            return Err(only_its_site_said(&self.login));
         };
         let mut replacing = Self {
             replaces: Some(Replaced {
@@ -524,7 +539,7 @@ impl Proposal {
     /// length-prefixed, so a press on one proposal never answers another.
     pub fn digest(&self) -> String {
         let mut digest = sha2::Sha256::new();
-        digest.update(b"purlis proposed browser login v3\0");
+        digest.update(b"purlis proposed browser login v2\0");
         let warnings: Vec<String> = self.warnings.iter().map(Warning::said).collect();
         let warnings = warnings.join("\n");
         for field in [
