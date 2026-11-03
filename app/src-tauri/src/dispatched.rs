@@ -2169,17 +2169,21 @@ pub fn chat_answered_of(held: &Held, task: u32, number: u32) -> Option<ChatAnswe
 /// the person had open when an agent answered it first, for the line it leaves. `null` where
 /// nobody but the person can be said to have answered it, or it can no longer be overridden.
 ///
-/// **The window's alone**, as `task_question` is: it reads words a chat wrote.
+/// **The window's alone**, as `task_question` is: it reads words a chat wrote. On a blocking
+/// thread, as it waits on the dispatch ledger's lock (#1949).
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn task_question_answered(
+pub(crate) async fn task_question_answered(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     session: u32,
     number: u32,
 ) -> Result<Option<ChatAnsweredShown>, String> {
     let held = planes.held(&plane)?;
-    Ok(chat_answered_of(&held, session, number))
+    crate::off_the_window("reading what a chat answered a task", move || {
+        Ok(chat_answered_of(&held, session, number))
+    })
+    .await
 }
 
 /// **The person answers the question a task put to its asking chat** (#1496, V100-46): chat

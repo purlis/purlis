@@ -2680,7 +2680,8 @@ export const commands = {
 	 *  the person had open when an agent answered it first, for the line it leaves. `null` where
 	 *  nobody but the person can be said to have answered it, or it can no longer be overridden.
 	 * 
-	 *  **The window's alone**, as `task_question` is: it reads words a chat wrote.
+	 *  **The window's alone**, as `task_question` is: it reads words a chat wrote. On a blocking
+	 *  thread, as it waits on the dispatch ledger's lock (#1949).
 	 */
 	taskQuestionAnswered: (plane: PlaneId, session: number, number: number) => typedError<{
 	/**  The task, by the name the person sees it under. */
