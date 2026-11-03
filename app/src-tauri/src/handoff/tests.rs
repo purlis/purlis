@@ -7145,7 +7145,7 @@ fn from_a_steward_chat_ask_devops_starts_a_devops_chat_that_may_use_the_devops_v
     assert_eq!(purlis_core::handoff::stamped(&first), None, "{first}");
     let (stamp, rest) = first.split_once('\n').expect("a stamp line");
     assert!(
-        stamp.starts_with("⟨the person asks, from the tab of `steward 1` · workspace alpha · "),
+        stamp.starts_with("⟨the person asks, from `steward 1` · workspace alpha · "),
         "{stamp}"
     );
     assert_eq!(
@@ -7273,7 +7273,7 @@ fn the_report_on_a_task_the_person_started_reaches_the_chat_it_was_launched_from
     );
     let told = purlis_core::handback::context(&waiting, false).expect("a turn's context");
     assert!(
-        told.contains("on a task the person started from this chat's tab"),
+        told.contains("on a task the person started from this chat"),
         "{told}"
     );
     // For that chat's next turn, and no needs-you item: the person asked, and reads it

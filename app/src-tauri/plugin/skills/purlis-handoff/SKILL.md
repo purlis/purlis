@@ -24,9 +24,10 @@ person's work moves to a chat they will read themselves.
   `purlis-persona` skill has the command.
 
 **2. Will the operator read the new chat themselves?** Then it is a **handoff**: a bug to
-fix, a chore, a question for another workspace to own. It gets a tab of its own and this chat
-hears nothing back. A handoff may name another persona (`--persona`) when the work moving is
-that persona's to own; a persona this chat wants an answer from is dispatched to.
+fix, a chore, a question for another workspace to own. It starts in that workspace's sidebar
+without taking a pane, and this chat hears nothing back. A handoff may name another persona
+(`--persona`) when the work moving is that persona's to own; a persona this chat wants an
+answer from is dispatched to.
 
 **3. This workspace or another — does the ask serve this workspace's vision?** Yes → a new
 chat here. No → another workspace. Either way it is one mechanism, because a chat belongs to
@@ -67,7 +68,7 @@ answered in one line.
 **Constraints** — what must not change, what has already been tried, what the deadline is.
 ```
 
-Make the first line a title somebody scanning a strip of tabs would recognise.
+Make the first line a title somebody scanning the sidebar's list of chats would recognise.
 
 **A brief never carries a secret.** It reaches the harness as a command-line argument, so
 any process on the machine can read it while the chat starts. purlis refuses a
@@ -110,9 +111,10 @@ current one included. Write the name, never a placeholder in angle brackets: the
 `<` as a redirect and purlis refuses the call.
 
 **Always pass `--name`, first**: a short task name you write from the brief, a few words a person
-scanning a strip of tabs recognises, such as `drop account-console-commons`, not `handoff` and
-not the workspace's name. At most 64 characters, plain text. It is what the new chat's tab
-says; without it the tab says `<persona> <N>`, and four handoffs look alike.
+scanning the sidebar's list of chats recognises, such as `drop account-console-commons`, not
+`handoff` and not the workspace's name. At most 64 characters, plain text. It is what the new
+chat's row in the sidebar says, and its pane once someone shows it; without it they say
+`<persona> <N>`, and four handoffs look alike.
 
 Add `--create --vision "<vision>"` for a workspace that does not exist yet.
 
@@ -130,8 +132,9 @@ exactly the text you wrote. There is no `--brief-file`.
 
 The app decides a handoff, by the rules it decides a task by.
 
-- **`opened chat N in workspace '…'`**: the new chat is a tab in that workspace, already
-  started on the brief. To this chat's own persona, that is the answer, except on a pool's runner.
+- **`opened chat N in workspace '…'`**: the new chat runs in that workspace, already started on
+  the brief. It is in that workspace's sidebar and takes no pane until the operator picks it. To
+  this chat's own persona, that is the answer, except on a pool's runner.
 - **`held for the person`**: the handoff is to another persona, and nobody has yet allowed this
   pair. purlis is asking the operator, on this chat's tab, with the brief in front of them.
   Nothing has opened. **Carry on with other work and do not hand it off again**: if they allow

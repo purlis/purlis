@@ -2228,7 +2228,7 @@ fn the_list_marks_a_task_the_person_asked_for_as_theirs() {
             "2 tasks under this chat:\n\
              - chat 8 · 'check the queue' · devops · {place} · running · started 3m ago\n\
              - chat 9 · 'check prod' · devops · {place} · running · started 3m ago · started \
-             by the person from this chat's tab: its report comes here, and it is not this \
+             by the person from this chat: its report comes here, and it is not this \
              chat's to wait on, tell, answer or cancel\n"
         )
     );

@@ -285,7 +285,7 @@ pub enum NotStarted {
     #[error("the ACP agent speaks protocol version {offered}, and purlis speaks version 1")]
     Version { offered: u16 },
     #[error(
-        "the ACP agent needs a login, which purlis never supplies: log in through the harness's own flow in a shell tab"
+        "the ACP agent needs a login, which purlis never supplies: log in through the harness's own flow in a shell"
     )]
     Login,
     #[error("the ACP agent did not complete its handshake: {0}")]

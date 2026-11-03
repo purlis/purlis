@@ -658,8 +658,9 @@ enum Command {
     /// app starts on Claude Code runs that spelling without its harness asking first; a line
     /// that starts with the workspace is still a handoff, and the harness asks about it.
     ///
-    /// **The app opens the chat.** Run from a chat the purlis app started, the new chat
-    /// opens there as a tab in the workspace you name. With no app running, nothing is
+    /// **The app starts the chat.** Run from a chat the purlis app started, the new chat
+    /// starts there, in the sidebar of the workspace you name, and takes no pane until the
+    /// person picks it. With no app running, nothing is
     /// opened and purlis says to open the app. In front of that purlis refuses a handoff
     /// from a helper sub-agent, and one whose brief it cannot read as it is written
     /// (`purlis_core::handoff`).
@@ -4526,7 +4527,7 @@ fn pool_sign_in(
         return Err(format!(
             "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool so far. \
              Sign '{}' in from its line in Settings › Pools, with a project open: its Sign in \
-             opens a shell tab on the runner.",
+             opens a shell on the runner.",
             record.name
         ));
     }

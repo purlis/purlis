@@ -996,7 +996,7 @@ fn a_persona_chat_the_person_asked_for_is_ended_both_ways_and_the_tab_s_chat_is_
         assert!(text.contains(outcome), "{way:?}: {text}");
         assert!(text.contains(PERSON_ENDED), "{way:?}: {text}");
         assert!(
-            text.contains("a task the person started from this chat's tab"),
+            text.contains("a task the person started from this chat, which you did not dispatch"),
             "{way:?}: {text}"
         );
     }

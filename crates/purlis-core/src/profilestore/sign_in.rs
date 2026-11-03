@@ -421,7 +421,7 @@ pub fn refusal(profile: &Profile, passed: &[String], look: &dyn Look) -> Option<
     (standing_remembered(profile, look) == Standing::SignedOut).then(|| {
         format!(
             "the profile '{name}' is not signed in on {here}. Nothing was started. It waits in \
-             the Inbox as Sign in {name}, which runs {title}'s own sign-in in a shell tab, or \
+             the Inbox as Sign in {name}, which runs {title}'s own sign-in in a shell, or \
              run purlis profile sign-in {name} in your own terminal; then start the chat again.",
             name = crate::shown::short(&profile.name),
             here = super::this_device(),
