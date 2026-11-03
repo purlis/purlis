@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793725347171,
+  "lastUpdate": 1793728506330,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37842,6 +37842,48 @@ window.BENCHMARK_DATA = {
             "value": 101.785455,
             "unit": "ms",
             "extra": "median of 5 runs: 101.211, 101.584, 101.785, 102.405, 102.666 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b81d18c44eb13071bd2e7db7a9c5551a771595aa",
+          "message": "Close never ends a chat (#4756) (#4957)\n\n* Close never ends a chat (#4756)\n\nClose pane clears a pane and Close tab closes a layout; their chats go\non in the sidebar, nothing is asked, and the danger cue on close goes.\nEnding a chat is End..., the chat's own row. The strip's last tab keeps\none empty pane. The core no longer refuses a tab close of a chat that\nis not a task. A chat whose program exits keeps its last screen,\nread-only, under an ended band with Resume and Clear pane, and focus\nstays where it was. The e2e helpers end chats by End... by its id.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FAB4AQJV8QCP3NXFDAN6TQ\nPurlis-Persona: steward\n\n* Close never ends a chat: the ended band, its tests and the changelog fragment (#4756)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FAB4AQJV8QCP3NXFDAN6TQ\nPurlis-Persona: steward\n\n* Close never ends a chat: a new chat fills the empty tab a close left; tests moved to End... (#4756)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6FAB4AQJV8QCP3NXFDAN6TQ\nPurlis-Persona: steward\n\n* Close never ends a chat: openTabFilling rebuilds its tabs rather than deleting a key (#4756)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6FAB4AQJV8QCP3NXFDAN6TQ\nPurlis-Persona: steward\n\n* Close never ends a chat: the chats-at-work question is End…'s, tested there (#4756)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6FAB4AQJV8QCP3NXFDAN6TQ\nPurlis-Persona: steward\n\n* Close never ends a chat: TaskInTab moved to the new close and End…; e2e cleanup accepts the strip's kept empty tab (#4756)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6FAB4AQJV8QCP3NXFDAN6TQ\nPurlis-Persona: steward\n\n* Close never ends a chat: the stories hold a quiet pane close, not the removed cue (#4756)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6FAB4AQJV8QCP3NXFDAN6TQ\nPurlis-Persona: steward\n\n* Close never ends a chat: story baselines from the stories run (#4756)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6FAB4AQJV8QCP3NXFDAN6TQ\nPurlis-Persona: steward\n\n* Close never ends a chat: endEveryChat opens the palette as runFromThePalette does (#4756)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6FAB4AQJV8QCP3NXFDAN6TQ\nPurlis-Persona: steward\n\n* Close never ends a chat: review fixes (#4756)\n\nClose pane gives the keyboard to the pane that takes the space (spec\n#4750). The kept-open Notice's button that ends the chat says End chat.\nComments and copy that still said a close ends a chat are corrected;\none empty-tab check; no re-export of EMPTY_TAB; the unused hook goes;\nthe constants say how many chats; a precondition waits with Testing\nLibrary's waitFor; End...'s sentence for one task reads 'stays'.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6FAB4AQJV8QCP3NXFDAN6TQ\nPurlis-Persona: steward\n\n* Close never ends a chat: an ended task's pane keeps its last screen under the ended band (#4756, #4757)\n\nFolds #4757's TaskAway into the ended band, as #4952 (D14) and this PR agreed.\nA task left in a pane as it ended keeps its last screen, read-only, under the\nband: it says how the task ended in its finished row's words, shows its report\nas text, offers Resume (its finished row's Reopen, in that pane) where the row\ncan be reopened, and Clear pane. The keyboard stays where it was. TaskAway, its\nstyles and the pane's Back button go; Cmd+Shift+H still goes back from the pane.\n\nOn the rebase onto #4952: Close pane and Close tab end nothing and move no\nother pane (tasksGoBack is gone); End... no longer counts tasks' own tabs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GTVSHZN5D736D37AJG12CX\nPurlis-Persona: steward\n\n* Close never ends a chat: the sidebar-read cost test ends its chat by End... (#4756)\n\nA test from main ended a chat by its tab's close, which ends nothing now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GTVSHZN5D736D37AJG12CX\nPurlis-Persona: steward\n\n* Close never ends a chat: Undo puts a closed pane or tab back (#4756, #4763)\n\nClose pane and Close tab record their change on the window's one Undo, as\n#4948 left for whichever of the two PRs landed second: a close ends nothing\nnow, so its Undo brings back panes on running chats. A tab still on its\ndefault name is named again as it was, so the strip's last tab, which a close\nleaves empty and renamed, comes back under its own name; a name the person\ngave since stays.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GTVSHZN5D736D37AJG12CX\nPurlis-Persona: steward\n\n* Close never ends a chat: story baselines from the stories run at df66a2b0 (#4756)\n\nThe ended band's TaskWithReport story, new, and PaneBand's Actions light pictures,\ntaken from that run's story-baselines (head df66a2b0, base 1fb0f6ad, not behind).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GTVSHZN5D736D37AJG12CX\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T17:17:56Z",
+          "tree_id": "e06d742bc376a6bb62cc6afde2c15a0de3b87883",
+          "url": "https://github.com/purlis/purlis/commit/b81d18c44eb13071bd2e7db7a9c5551a771595aa"
+        },
+        "date": 1793728475316,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6776265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.644, 0.662, 0.678, 0.681, 0.691 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.591569,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.379, 16.493, 16.592, 16.699, 16.977 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.341027,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.042, 102.188, 102.341, 102.713, 103.299 ms"
           }
         ]
       }
