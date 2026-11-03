@@ -57,6 +57,13 @@ fn held_for_nothing(asks: &Asks, need: Need) -> (Held, Vec<String>) {
     (held, said)
 }
 
+/// [`Asks::hold`] for a minute, telling `waits` once it waits.
+fn asks_hold_telling(asks: &Asks, need: Need, waits: &std::sync::mpsc::Sender<()>) -> Held {
+    asks.hold(need, Duration::from_secs(60), &mut |_| {
+        let _ = waits.send(());
+    })
+}
+
 /// The value `key` of vault `team` holds now.
 fn stored(root: &Path, key: &str) -> Option<String> {
     let ctx = ctx(root);
@@ -226,6 +233,30 @@ fn a_slow_answer_leaves_the_ask_open_and_nudges_the_chat_that_stopped_waiting() 
     );
     // The chat's next run finds the value: nothing is asked again.
     assert_eq!(stored(project.path(), "MISSING").as_deref(), Some(VALUE));
+}
+
+#[test]
+fn a_chat_that_tries_again_while_its_ask_is_open_is_not_nudged_once_its_retry_hears_the_fill() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, need(7, "MISSING"));
+    let id = asks.open()[0].id;
+    let (waits, waiting) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let asked = &asks;
+        let retry = scope.spawn(move || asks_hold_telling(asked, need(7, "MISSING"), &waits));
+        waiting.recv().unwrap();
+        let answered = asks
+            .answer(
+                &ctx(project.path()),
+                id,
+                Answer::Fill(VALUE.to_owned().into()),
+                window(),
+            )
+            .unwrap();
+        assert!(answered.nudge.is_empty(), "{answered:?}");
+        assert_eq!(retry.join().unwrap(), Held::Filled);
+    });
 }
 
 #[test]

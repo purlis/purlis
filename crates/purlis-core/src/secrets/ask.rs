@@ -268,6 +268,11 @@ impl Asks {
             };
             let at = (vault.clone(), key.clone());
             let joined = if let Some(asked) = inner.open.get_mut(&at) {
+                // A chat that tries again waits again: a command of its that stopped waiting is
+                // no longer one to nudge, since this one hears the answer.
+                asked
+                    .waiters
+                    .retain(|one| one.chat != chat || one.tell.is_some());
                 asked.waiters.push(waiter);
                 Some(chats_of(asked).len())
             } else {
@@ -294,11 +299,14 @@ impl Asks {
             (answered, n)
         };
         say(&asked_said(&vault, &key, within));
-        match answered.recv_timeout(within) {
-            Ok(Settled::Filled) => Held::Filled,
-            Ok(Settled::Declined) => Held::Declined {
+        let settled_as = |settled: Settled| match settled {
+            Settled::Filled => Held::Filled,
+            Settled::Declined => Held::Declined {
                 line: declined_said(&vault, &key),
             },
+        };
+        match answered.recv_timeout(within) {
+            Ok(settled) => settled_as(settled),
             // Its chat closed meanwhile.
             Err(mpsc::RecvTimeoutError::Disconnected) => Held::StillOpen {
                 line: still_open_said(&vault, &key),
@@ -314,12 +322,7 @@ impl Asks {
                     .is_some();
                 drop(inner);
                 if !still && let Ok(settled) = answered.try_recv() {
-                    return match settled {
-                        Settled::Filled => Held::Filled,
-                        Settled::Declined => Held::Declined {
-                            line: declined_said(&vault, &key),
-                        },
-                    };
+                    return settled_as(settled);
                 }
                 Held::StillOpen {
                     line: still_open_said(&vault, &key),
