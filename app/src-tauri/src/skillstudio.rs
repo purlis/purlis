@@ -1523,13 +1523,13 @@ pub(crate) async fn skill_studio(
     let asked = std::time::Instant::now(); // [DEBUG-4351]
     crate::off_the_window("reading the project's skills", move || {
         let t0 = std::time::Instant::now(); // [DEBUG-4351]
-        eprintln!(
+        tracing::info!(
             "[DEBUG-4351] studio queued {} ms",
             asked.elapsed().as_millis()
         ); // [DEBUG-4351]
         let built_in =
             crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
-        eprintln!(
+        tracing::info!(
             "[DEBUG-4351] studio built_in {} ms",
             t0.elapsed().as_millis()
         ); // [DEBUG-4351]
@@ -1546,7 +1546,7 @@ pub(crate) async fn skill_studio(
                 &purlis_core::harness_plugin::Env::of(&[]),
                 more,
             );
-            eprintln!(
+            tracing::info!(
                 "[DEBUG-4351] studio linted {} ms ({} lints)",
                 t.elapsed().as_millis(),
                 more.len()
@@ -1560,7 +1560,7 @@ pub(crate) async fn skill_studio(
         } else {
             read(&[])
         };
-        eprintln!(
+        tracing::info!(
             "[DEBUG-4351] studio with_list_lints total {} ms",
             t1.elapsed().as_millis()
         ); // [DEBUG-4351]
@@ -1580,7 +1580,7 @@ pub(crate) async fn skill_studio(
                 .map(|one| StudioRouted::of(one.session, &one.routed, one.last_prompt.as_ref()))
                 .collect();
         }
-        eprintln!(
+        tracing::info!(
             "[DEBUG-4351] studio needs+router {} ms; whole {} ms",
             t2.elapsed().as_millis(),
             t0.elapsed().as_millis()
