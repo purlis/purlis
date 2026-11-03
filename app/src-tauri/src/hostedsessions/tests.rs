@@ -3013,6 +3013,7 @@ fn a_project_the_runner_will_not_hold_again_is_said_to_be_not_held_in_the_runner
 /// the Pools group draws the mark, in the runner's words.
 #[test]
 fn a_project_the_runner_will_not_hold_again_is_marked_until_it_is_held() {
+    let _marks = crate::notheld::rechecking();
     let (hosted, holds, between, project) = hosted_holding();
     a_drawn_chat(&hosted);
     let held = holds.tried();

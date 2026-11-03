@@ -124,7 +124,7 @@ pub async fn runners_away(
     tauri::async_runtime::spawn_blocking(move || {
         let workspaces = config
             .map(|config| {
-                let mut on = purlis_core::pools::workspaces_on_pools(&config, &root);
+                let mut on = purlis_core::pools::workspaces_to_fetch(&config, &root);
                 let kept = purlis_core::runners::pool_names(&config).unwrap_or_default();
                 let every = purlis_core::workspaces::Plane::open(&root)
                     .workspaces()

@@ -14,6 +14,7 @@ fn of(root: &Path, config: Option<&Path>) -> Option<ProjectNotHeld> {
 
 #[test]
 fn a_project_not_held_is_kept_with_the_runners_words_until_it_is_held_again() {
+    let _one = rechecking();
     let root = PathBuf::from("/projects/notheld-test/alpha");
     not_held(&root, "that folder is not there");
     assert_eq!(
@@ -34,6 +35,7 @@ fn a_project_not_held_is_kept_with_the_runners_words_until_it_is_held_again() {
 
 #[test]
 fn the_runners_words_are_kept_as_plain_text_and_cut_short() {
+    let _one = rechecking();
     let root = PathBuf::from("/projects/notheld-test/words");
     not_held(&root, "line one\nline\u{202e} two\u{7}");
     assert_eq!(of(&root, None).unwrap().why, "line one line two");
@@ -55,6 +57,7 @@ fn the_runners_words_are_kept_as_plain_text_and_cut_short() {
 /// removed, or the project forgotten.
 #[test]
 fn a_mark_names_its_pool_and_goes_once_the_project_runs_on_none() {
+    let _one = rechecking();
     let config = tempfile::tempdir().unwrap();
     let root = config.path().join("beta");
     std::fs::create_dir_all(&root).unwrap();
@@ -84,4 +87,46 @@ fn a_mark_names_its_pool_and_goes_once_the_project_runs_on_none() {
     purlis_core::runners::forget_pool(config.path(), "builds").unwrap();
     recheck(config.path());
     assert_eq!(of(&root, Some(config.path())), None);
+}
+
+/// A project's pool counts for its mark only while a workspace of it follows that pool (#4591).
+#[test]
+fn a_projects_pool_marks_it_only_while_a_workspace_follows_that_pool() {
+    let _one = rechecking();
+    let config = tempfile::tempdir().unwrap();
+    let root = config.path().join("gamma");
+    let folder = |workspace: &str| {
+        std::fs::create_dir_all(root.join("workspaces").join(workspace)).unwrap();
+    };
+    folder("alpha");
+    let image = Image::pinned(&format!(
+        "ghcr.io/purlis/purlis-runner@sha256:{}",
+        "0".repeat(64)
+    ))
+    .unwrap();
+    purlis_core::runners::record_pool(
+        config.path(),
+        &Pool::new("builds", image, Set::default()).unwrap(),
+    )
+    .unwrap();
+    purlis_core::machine::update(config.path(), |store| {
+        store.remember(&root, 1);
+        store
+            .set_project_chats_run_on(&root, Some("builds"))
+            .unwrap();
+        store.set_chats_run_here(&root, "alpha").unwrap();
+    })
+    .unwrap();
+    not_held(&root, "that folder is not there");
+
+    // Its one workspace runs here: nothing follows the project's pool.
+    recheck(config.path());
+    assert_eq!(of(&root, Some(config.path())), None);
+
+    // A workspace that follows it marks the project again.
+    folder("beta");
+    not_held(&root, "that folder is not there");
+    recheck(config.path());
+    assert_eq!(of(&root, Some(config.path())).unwrap().pools, ["builds"]);
+    held(&root);
 }

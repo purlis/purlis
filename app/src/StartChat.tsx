@@ -998,6 +998,18 @@ export function runsOnReason(runsOn: StartRunsOn): string {
 }
 
 /**
+ * **What a workspace's first chat on `pool` does** (#4591), said before anything is sent there:
+ * nothing where the chat runs on this machine, or where the workspace has run on that pool.
+ */
+export function firstOnPoolSaid(runsOn: StartRunsOn, pool: string | null): string | undefined {
+  if (pool === null || runsOn.at_root || runsOn.ran_on.includes(pool)) return undefined;
+  return (
+    `This is this workspace's first chat on pool ${pool}. Its code is copied to that pool's ` +
+    "runner. The chat's work comes back here when it ends."
+  );
+}
+
+/**
  * **The Runs on row** (#4536, the person's rulings of 2026-11-01): where this chat would run and
  * which level says so, and a pool or this machine for this start alone. The levels are this
  * start, then the workspace, then the project, then this machine, and the most specific wins. A
@@ -1037,10 +1049,13 @@ function RunsOnRow({
     { value: HERE, label: "This machine" },
     ...runsOn.pools.map((pool) => ({ value: pool, label: `Pool ${pool}` })),
   ];
-  const why =
+  const chosen = choice === AS_SET ? runsOn.pool : choice === HERE ? null : choice;
+  const said =
     choice === AS_SET
       ? runsOnReason(runsOn)
-      : `${capital(poolSaid(choice === HERE ? null : choice))} for this start only. No setting changes.`;
+      : `${capital(poolSaid(chosen))} for this start only. No setting changes.`;
+  const first = firstOnPoolSaid(runsOn, chosen);
+  const why = first === undefined ? said : `${said} ${first}`;
   return (
     <>
       <Select

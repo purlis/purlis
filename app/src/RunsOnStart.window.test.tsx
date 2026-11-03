@@ -66,7 +66,13 @@ function core(refusing = 0) {
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "start_options") return START_OPTIONS;
     if (cmd === "start_runs_on")
-      return { pool: "builds", level: "project", at_root: false, pools: ["builds", "gpu"] };
+      return {
+        pool: "builds",
+        level: "project",
+        at_root: false,
+        pools: ["builds", "gpu"],
+        ran_on: ["builds", "gpu"],
+      };
     if (cmd === "start_chat") {
       if (refused < refusing) {
         refused += 1;

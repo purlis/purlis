@@ -4048,6 +4048,12 @@ impl Planes {
         if let Err(why) = machine::update(config, move |store| {
             store.remember(&plane, when);
             store.pin_the_most_active(&plane);
+            // A workspace removed or renamed outside purlis leaves its Runs on under a name no
+            // folder has: a pool there becomes This machine (#4591). Read under the store's lock,
+            // so a rename's carry can't fall between the list and the write.
+            if let Some(there) = machine::workspaces_surely_there(&plane) {
+                store.tidy_workspaces(&plane, &there);
+            }
         }) && why.kind() != std::io::ErrorKind::Unsupported
         {
             tracing::warn!(

@@ -678,19 +678,27 @@ pub(crate) fn goes_to_a_runner_of_yours(
 /// **Why a move did not start where it went** (#2048): why, in a sentence, for the chat's pane,
 /// which says where it still runs itself (#3646). Where the workspace's setting could not be put
 /// back as well (`put_back`), the setting names the other place while the chat runs where it
-/// was, so the sentence says how to set the workspace back, so its next chat starts with it.
+/// was, so the sentence says how to set the workspace back to what it said `before`, so its
+/// next chat starts with it (#4591).
 pub(crate) fn did_not_start_said(
     why: &str,
     put_back: Result<(), String>,
-    from: &Place,
+    before: &purlis_core::machine::WorkspacePlace,
     to: &Place,
     workspace: &str,
 ) -> String {
+    use purlis_core::machine::WorkspacePlace;
     let place = |place: &Place| match place {
         Some(pool) => format!("pool {pool}"),
         None => "this machine".to_owned(),
     };
-    let (from, to) = (place(from), place(to));
+    // The setting it had, by the name its settings give it: following the project is no place.
+    let from = match before {
+        WorkspacePlace::Pool(pool) => format!("pool {pool}"),
+        WorkspacePlace::ThisMachine => "This machine".to_owned(),
+        WorkspacePlace::Project => "Same as the project".to_owned(),
+    };
+    let to = place(to);
     match put_back {
         Ok(()) => format!("It did not start on {to}: {why}"),
         Err(back) => format!(
@@ -1102,7 +1110,7 @@ impl crate::planes::Held {
                     return Err(did_not_start_said(
                         &why,
                         put_back(),
-                        &one.from,
+                        &said_before,
                         &one.to,
                         movers.workspace(),
                     ));
@@ -1120,7 +1128,7 @@ impl crate::planes::Held {
             return Err(did_not_start_said(
                 &why,
                 put_back(),
-                &one.from,
+                &said_before,
                 &one.to,
                 movers.workspace(),
             ));
