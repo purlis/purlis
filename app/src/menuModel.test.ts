@@ -557,10 +557,11 @@ describe("a tab's menu (#4753)", () => {
   const [behind, front] = tabs.order;
 
   it("holds the tab's own rows and no chat's", () => {
-    // The tab's press switches to it, so Switch to is no row (#4760); Tile all is (#4765).
+    // The tab's press switches to it, so Switch to is no row; and a tab behind has its own
+    // Close other tabs (#4760), and its own Tile all (#4765).
     expect(said(menuOf({ on: "tab", tab: behind }, offers))).toEqual([
       ["Pinned", "Tile all"],
-      ["Close"],
+      ["Close other tabs", "Close"],
     ]);
     const inFront = rowsOf(menuOf({ on: "tab", tab: front }, offers));
     expect(inFront.map((row) => row.said)).not.toContain(SAID.switchTo);
@@ -653,6 +654,12 @@ describe("the other tabs' menus", () => {
     expect(said(menuOf({ on: "pane" }, offers))).toEqual([
       ["Split right", "Split down", "Send F2 to the chat in front"],
       ["Close this pane"],
+    ]);
+    // The panes of a tab list that tab's Tile all, greyed at one pane (#4765).
+    const [tab] = world().tabs.order;
+    expect(said(menuOf({ on: "pane", tab }, offers))).toEqual([
+      ["Split right", "Split down", "Tile all", "Send F2 to the chat in front"],
+      ["End this pane's chat"],
     ]);
     // A workspace's tab opens a shell in that workspace, which has no key.
     expect(

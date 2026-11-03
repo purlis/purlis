@@ -165,18 +165,18 @@ export function PaneHeadMenued({
   children: ReactNode;
 }) {
   /** The terminal as the menu opened: whether anything was selected is read then, once. */
-  const [clip, setClip] = useState<PaneTerminal | null>(null);
+  const [terminalNow, setTerminalNow] = useState<PaneTerminal | null>(null);
   const on: MenuOn = { on: "chat", session };
   if (menuIsEmpty(on, offers) && menuIsEmpty({ on: "pane" }, pane)) return <>{children}</>;
   return (
     <ContextMenu
-      onOpenChange={(open) => setClip(open ? (terminal?.current ?? null) : null)}
+      onOpenChange={(open) => setTerminalNow(open ? (terminal?.current ?? null) : null)}
       menu={() => (
         <PaneHeadMenu
           session={session}
           offers={offers}
           pane={pane}
-          terminal={clip}
+          terminal={terminalNow}
           onPress={onPress}
         />
       )}
@@ -208,7 +208,7 @@ function PaneHeadMenu({
 }) {
   const chat = menuOf({ on: "chat", session }, offers);
   const [rows, ...below] = menuOf({ on: "pane" }, pane).groups;
-  const clip =
+  const copyPaste =
     terminal === null
       ? []
       : terminalGroup(
@@ -221,16 +221,16 @@ function PaneHeadMenu({
   );
   const paneRows: GroupDrawn[] =
     rows === undefined
-      ? clip.length === 0
+      ? copyPaste.length === 0
         ? []
-        : [{ entries: clip }]
+        : [{ entries: copyPaste }]
       : [
           {
             ...rows,
             entries:
               at === -1
-                ? [...rows.entries, ...clip]
-                : [...rows.entries.slice(0, at), ...clip, ...rows.entries.slice(at)],
+                ? [...rows.entries, ...copyPaste]
+                : [...rows.entries.slice(0, at), ...copyPaste, ...rows.entries.slice(at)],
           },
         ];
   return (

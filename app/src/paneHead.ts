@@ -3,6 +3,7 @@
 
 import { answerId, briefId, smartCloseCancelId, stopId } from "./actions";
 import type { ListedChat } from "./chatsTree";
+import { SAID } from "./menuWords";
 import type { SandboxSaid } from "./SandboxMark";
 
 /**
@@ -47,11 +48,12 @@ export function stateButtonOf(chat: {
   has: (id: string) => boolean;
 }): StateButton | undefined {
   const { session, task, working, has } = chat;
+  // The words are the menus' (`menuWords.ts`), written once.
   const picks: StateButton[] = [
-    { id: smartCloseCancelId(session), word: "Cancel smart close" },
-    { id: answerId(session), word: "Answer" },
-    ...(task ? [{ id: briefId(session), word: "Brief" }] : []),
-    ...(!task && working ? [{ id: stopId(session), word: "Stop" }] : []),
+    { id: smartCloseCancelId(session), word: SAID.cancelSmartClose },
+    { id: answerId(session), word: SAID.answerButton },
+    ...(task ? [{ id: briefId(session), word: SAID.brief }] : []),
+    ...(!task && working ? [{ id: stopId(session), word: SAID.stopButton }] : []),
   ];
   return picks.find((pick) => has(pick.id));
 }

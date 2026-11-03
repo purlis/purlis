@@ -4,10 +4,12 @@
 /**
  * **The head of a pane showing a task, drawn by the button family** (#3129, #4760): at its start
  * the task's path and "harness · workspace", the harness its card's button; at its end the one
- * state button (Brief, on a task), the chat's ⋯ and the pane's splits. Each is the window's own
- * component in the window's own header (`PaneHead`, `.pane-chips`, `PaneDoing`), so what is
- * drawn is what a pane draws: no control on the head takes a border in Purlis, and each is
- * reached by Tab with its ring in sight. A task's two ways to end it are rows of its ⋯ since
+ * state button (Brief, on a task), the chat's ⋯ and the pane's splits, and no close, as a pane
+ * showing a task of its session draws none. The controls are the window's own (`PaneHead`,
+ * `PaneActions`, `BriefButton`, `HarnessChip`); the path stands in as its words, since the real
+ * one (`PaneCrumbs`) reads the chats' store, and `PaneCrumbs.test.tsx` holds its shape. No
+ * control on the head takes a border in Purlis, and each is reached by Tab with its ring in
+ * sight. A task's two ways to end it are rows of its ⋯ since
  * #4760, one of them unavailable here, with its reason.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
@@ -16,8 +18,7 @@ import { expect, waitFor, within } from "storybook/test";
 import { catalogued, type Offer } from "./actions";
 import { BriefButton, BriefOpener, type BriefAsk } from "./Brief";
 import { HarnessChip } from "./HarnessCard";
-import { PaneDoing, PaneHead } from "./LayoutPanes";
-import { ChatMenuButton } from "./Menus";
+import { PaneActions, PaneHead } from "./LayoutPanes";
 import { expectFocusInSight } from "./stories.testkit";
 
 const SESSION = 7;
@@ -71,21 +72,17 @@ function PaneLine() {
           <BriefOpener value={(of: BriefAsk) => setSaid(`Brief of ${of.name}`)}>
             <PaneHead
               doing={
-                <div className="pane-actions">
-                  <BriefButton of={{ name: "fix-login", chat: SESSION }} word="Brief" />
-                  <ChatMenuButton
-                    session={SESSION}
-                    offers={LIST}
-                    onPress={(offer) => setSaid(offer.title)}
-                  />
-                  <PaneDoing
-                    pane={1}
-                    offerFor={(id) => SPLITS.find((offer) => offer.id === id)}
-                    closeOf={() => undefined}
-                    onPaneDoes={(_pane, offer) => setSaid(offer?.title ?? "")}
-                    task
-                  />
-                </div>
+                <PaneActions
+                  pane={1}
+                  // Its one state button: Brief, on a task (`PaneStateButton` draws this one).
+                  state={<BriefButton of={{ name: "fix-login", chat: SESSION }} word="Brief" />}
+                  chat={{ session: SESSION, offers: LIST }}
+                  offerFor={(id) => SPLITS.find((offer) => offer.id === id)}
+                  closeOf={() => undefined}
+                  onPaneDoes={(_pane, offer) => setSaid(offer?.title ?? "")}
+                  // A pane showing a task of its session draws no close (#1486).
+                  task
+                />
               }
             >
               <div className="pane-chips">

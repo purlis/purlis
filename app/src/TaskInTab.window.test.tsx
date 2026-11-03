@@ -1556,6 +1556,16 @@ describe("closing, while a tab shows a task", () => {
     expect(within(list).getByRole("menuitem", { name: /^Stop and get its report/ })).toBeTruthy();
     expect(within(list).getByRole("menuitem", { name: /^Close now/ })).toBeTruthy();
     await userEvent.keyboard("{Escape}");
+    // Its head's right-click lists the pane's rows, and no Close pane where the head draws none.
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    fireEvent.contextMenu(
+      screen.getByRole("navigation", { name: "Chat path" }).closest(".pane-chips") as HTMLElement,
+    );
+    const rows = [...(await screen.findByRole("menu")).querySelectorAll('[role^="menuitem"]')].map(
+      (one) => one.getAttribute("aria-label") ?? one.textContent,
+    );
+    expect(rows).toContain("Split right");
+    expect(rows).not.toContain("End this pane's chat");
     // The splits are the pane's still.
     expect(screen.getAllByRole("button", { name: /^Split/ })).toHaveLength(2);
   });
