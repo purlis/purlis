@@ -4003,6 +4003,30 @@ fn a_runner_a_look_would_hold_is_named_among_the_held_before_it_is_noted() {
     );
 }
 
+/// **A draining runner whose container went with its home kept may hold a conversation**, so
+/// removing its pool asks about it; one whose home went too holds none, and is not named (#4860).
+#[test]
+fn a_gone_runner_is_named_only_where_its_home_is_still_there() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining(config.path(), &fake);
+    fake.set("inspect", "no such container");
+    fake.set("containers", "");
+    fake.set("volumes", "purlis-runner-first-home\n");
+
+    assert_eq!(
+        held_of(config.path(), &fake.docker(), "first").unwrap(),
+        ["first"]
+    );
+
+    fake.set("volumes", "");
+    assert!(
+        held_of(config.path(), &fake.docker(), "first")
+            .unwrap()
+            .is_empty()
+    );
+}
+
 /// **A runner discarded while its home was read is not said to be held** (#4861): the home is
 /// read outside the runners lock, so what changed meanwhile is looked at again under it, and a
 /// runner that no longer stands as it did is left to the next look.
@@ -4029,9 +4053,8 @@ fn a_runner_discarded_while_its_home_was_read_is_not_said_to_be_held() {
     // Docker lists the home the read's mount made again of its name.
     fake.set("volumes", "purlis-runner-first-home\n");
 
-    let refused = held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap_err();
+    assert!(!held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap());
 
-    assert!(refused.to_string().contains("removed while"), "{refused}");
     assert!(runners::named(config.path(), "first").unwrap().is_none());
     // A home the read's mount made again of its name goes with it.
     let log = fake.file("log");

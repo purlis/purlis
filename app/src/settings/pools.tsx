@@ -224,12 +224,14 @@ export function RemovePool({
         description={
           <p className="came-back">
             {elsewhere
-              ? `They stay on that engine, but purlis forgets them with pool ${name} and can no longer bring them back. To keep them, cancel and keep the pool.`
+              ? `They stay on the Docker engine that Docker doesn't reach now, but purlis forgets them with pool ${name} and can no longer bring them back. To keep them, cancel and keep the pool.`
               : `They are deleted with pool ${name} and cannot be brought back. To keep them, cancel and keep the pool.`}
           </p>
         }
         main={{
-          children: "Remove pool and conversations",
+          children: elsewhere
+            ? "Remove pool and forget conversations"
+            : "Remove pool and conversations",
           variant: "danger",
           onPress: () => onRemove(discarding),
         }}

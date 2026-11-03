@@ -1298,8 +1298,9 @@ pub async fn pool_named_by(name: String) -> Result<Vec<PoolNamedBy>, String> {
     }
 }
 
-/// **The held runners of a pool** (#4860), by name: each an older runner kept with its chats'
-/// conversations, which removing the pool discards, so its question names them and asks again.
+/// **The runners of a pool that hold, or may hold, their chats' conversations** (#4860), by name
+/// ([`purlis_core::pools::held_of`]): each older runner kept with them, or that no look has read
+/// yet, whose conversations removing the pool discards, so its question names them and asks again.
 /// None for a cluster pool, whose runners are never held.
 #[tauri::command]
 #[specta::specta]

@@ -1173,9 +1173,8 @@ pub fn held_for_its_conversations(
                 "purlis: what a read of runner {name}'s home left was not removed: {why}"
             );
         }
-        return Err(Refused::Other(format!(
-            "runner {name} was removed while its home was read"
-        )));
+        // Gone, it holds nothing to keep: the look goes on as for a home with none.
+        return Ok(false);
     };
     if !holds? {
         return Ok(false);
@@ -1228,10 +1227,9 @@ impl ConversationReads {
         let left = until
             .checked_duration_since(now)
             .filter(|left| !left.is_zero())?;
-        let minutes = left.as_secs().div_ceil(60);
         Some(format!(
-            "{why}; its home is read again in about {minutes} {}",
-            if minutes == 1 { "minute" } else { "minutes" }
+            "{why}; its home is read again in about {}",
+            crate::counts::counted(left.as_secs().div_ceil(60), "minute", "minutes")
         ))
     }
 
