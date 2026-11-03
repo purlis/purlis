@@ -5291,6 +5291,8 @@ pub struct Showing {
     held: Mutex<HashMap<String, Holding>>,
     /// The last split window's number, so a label is never used twice in one process.
     split: std::sync::atomic::AtomicU32,
+    /// Each tab window, by label (#4768): which project it is of, and its number there.
+    tab_windows: Mutex<HashMap<String, TabWindow>>,
 }
 
 impl Showing {
@@ -5388,10 +5390,11 @@ impl Showing {
     /// A label for a new split window, never one this process has used before.
     pub fn fresh_label(&self) -> String {
         let taken = self.held();
+        let tabs: Vec<String> = self.tab_windows().keys().cloned().collect();
         loop {
             let next = self.split.fetch_add(1, Ordering::Relaxed) + 1;
             let label = crate::windows::split_label(next);
-            if !taken.contains_key(&label) {
+            if !taken.contains_key(&label) && !tabs.contains(&label) {
                 return label;
             }
         }
@@ -5784,8 +5787,16 @@ fn the_host_s_stop(
 /// do (#2494).
 pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
 
+#[path = "planes/tab_windows.rs"]
+mod tab_windows;
+pub use tab_windows::TabWindow;
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "planes/tests/tab_windows.rs"]
+mod tab_windows_tests;
 
 #[cfg(test)]
 #[path = "planes/tests/restoring.rs"]

@@ -1218,6 +1218,8 @@ pub struct Store {
     pub browsers: BrowserLimits,
     /// The flags turned on on this machine (#2764): each off until turned on.
     pub flags: Flags,
+    /// Where each tab window was on screen (#4768, [`places`]).
+    pub places: Vec<Place>,
 }
 
 /// **The browser limits set on this machine** (#2023): `browsers.per_project`,
@@ -2059,6 +2061,7 @@ impl Store {
         for window in &mut self.windows {
             window.active = window.active.min(window.planes.len() - 1);
         }
+        self.places.retain(|place| place.plane != plane);
         self.recents.len() != had
     }
 
@@ -2838,6 +2841,7 @@ fn load(doc: &serde_json::Value, dropped: &mut Vec<Dropped>) -> Store {
             .and_then(crate::updates::IsoWeek::named),
         browsers: browsers_of(doc.get("browsers")),
         flags: flags_of(doc.get("flags")),
+        places: places::places_of(doc.get("tabWindows")),
     }
 }
 
@@ -3156,6 +3160,9 @@ struct OnDisk {
     /// Left out while no flag is on, for the same reason (#2764).
     #[serde(skip_serializing_if = "FlagsOnDisk::is_unset")]
     flags: FlagsOnDisk,
+    /// Left out while no tab window has a place, for the same reason (#4768).
+    #[serde(rename = "tabWindows", skip_serializing_if = "Vec::is_empty")]
+    tab_windows: Vec<places::PlaceOnDisk>,
 }
 
 #[derive(serde::Serialize)]
@@ -3283,6 +3290,11 @@ impl From<&Store> for OnDisk {
             flags: FlagsOnDisk {
                 skill_studio: store.flags.skill_studio,
             },
+            tab_windows: store
+                .places
+                .iter()
+                .filter_map(places::PlaceOnDisk::of)
+                .collect(),
             recents: store
                 .recents
                 .iter()
@@ -3353,6 +3365,9 @@ impl From<&Store> for OnDisk {
 /// Two attributes rather than `cfg(all(test, unix))`, because cargo-mutants recognises test
 /// code by a bare `#[cfg(test)]`: under the combined form it mutated this module's own
 /// helpers and reported a changed fixture as untested production code.
+mod places;
+pub use places::{MOST_PLACES, Place};
+
 #[cfg(test)]
 #[cfg(unix)]
 mod tests;
