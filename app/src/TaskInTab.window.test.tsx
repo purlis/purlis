@@ -15,7 +15,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { chatList } from "./menus.testkit";
+import { askToEnd, chatList } from "./menus.testkit";
 import type {
   ChatBlocked,
   DispatchPending,
@@ -1456,23 +1456,48 @@ describe("a file dropped on a tab", () => {
 });
 
 describe("closing, while a tab shows a task", () => {
-  it("says nothing of a task in the close of a tab that shows its own chat", async () => {
-    await drawn(withTasks());
-    const close = tab("steward 1").closest(".tab")?.querySelector<HTMLElement>("button.closer");
+  it("closes the tab a press gave the task, asking nothing and ending neither chat (#4756)", async () => {
+    const { tree, asked } = await drawn(withTasks());
+    await userEvent.click(row(tree, "talk"));
+    await waitFor(() => expect(onScreen()).toEqual([4]));
+
+    // The tab is talk's now: its pane was given talk (#4757).
+    const close = tab("talk").closest(".tab")?.querySelector<HTMLElement>("button.closer");
+    expect(close?.getAttribute("aria-label")).toBe("Close talk");
     await userEvent.click(close as HTMLElement);
-    const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
+
+    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(commandsOf(asked, "close_session")).toEqual([]);
+    // Both go on in the sidebar.
+    expect(row(tree, "steward 1")).toBeTruthy();
+    expect(row(tree, "talk")).toBeTruthy();
+  });
+
+  it("ends the session, not the task, by the session's End… (#4753)", async () => {
+    const { tree, asked } = await drawn(withTasks());
+    await userEvent.click(row(tree, "talk"));
+    await waitFor(() => expect(onScreen()).toEqual([4]));
+
+    const question = await askToEnd("steward 1");
     expect(question.textContent).not.toContain("This tab is showing");
+    expect(commandsOf(asked, "close_session")).toEqual([]);
+    await userEvent.click(within(question).getByRole("button", { name: "Close" }));
+
+    await waitFor(() =>
+      expect(commandsOf(asked, "close_session")).toEqual([{ plane: PLANE, session: 1 }]),
+    );
   });
 
   it("draws no close on the pane, and the only controls that end the task are the breadcrumb's two", async () => {
     const { tree } = await drawn(withTasks());
     // The session's own pane has its close in its corner, as it always had.
-    expect(screen.getByRole("button", { name: "End this pane's chat" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close this pane" })).toBeTruthy();
 
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
 
-    expect(screen.queryByRole("button", { name: "End this pane's chat" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close this pane" })).toBeNull();
     const ending = screen
       .queryAllByRole("button")
       .map((button) => button.getAttribute("aria-label") ?? button.textContent ?? "")
@@ -1522,7 +1547,7 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
 
     expect(tabNames()).toEqual(["steward 1", "drop commons"]);
     const close = tab("drop commons").closest(".tab")?.querySelector("button.closer");
-    expect(close?.getAttribute("aria-label")).toBe("End chat drop commons");
+    expect(close?.getAttribute("aria-label")).toBe("Close drop commons");
     // The task is under the chat that asked; the handoff is beside it.
     expect(levels(tree)).toEqual(["1 steward 1", "2 talk", "1 drop commons"]);
     expect(onScreen()).toEqual([1]);

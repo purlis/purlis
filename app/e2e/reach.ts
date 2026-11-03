@@ -96,6 +96,9 @@ export async function endTheSessionsStartedSince(before: readonly number[]): Pro
   await endChatsStartedHere(started.map((session) => ({ plane, session, name: "" })));
 }
 
+/** What the strip's kept empty tab is called (`tabs.EMPTY_TAB`, #4755). */
+const KEPT_EMPTY = "New chat";
+
 /**
  * Closes every view tab that was not on the strip in `before`, by its own `Close <name>`, and
  * waits until the strip is as it was: one app process serves the whole run. A view tab ends
@@ -103,8 +106,11 @@ export async function endTheSessionsStartedSince(before: readonly number[]): Pro
  * ({@link endTheSessionsStartedSince}) first, and a chat's tab still on the strip fails here.
  */
 export async function closeTheViewTabsOpenedSince(before: readonly string[]): Promise<void> {
+  // **The strip's kept empty tab is not left over** (#4756): closing a strip's last tab keeps one
+  // empty pane, named "New chat", and closing that changes nothing.
+  const opened = (tab: string) => !before.includes(tab) && tab !== KEPT_EMPTY;
   for (let round = 0; round < 5; round++) {
-    const left = (await tabNames()).filter((tab) => !before.includes(tab));
+    const left = (await tabNames()).filter(opened);
     if (left.length === 0) break;
     for (const name of left)
       await browser.execute(
@@ -122,7 +128,7 @@ export async function closeTheViewTabsOpenedSince(before: readonly string[]): Pr
   await browser
     .waitUntil(
       async () => {
-        left = (await tabNames()).filter((tab) => !before.includes(tab));
+        left = (await tabNames()).filter(opened);
         return left.length === 0;
       },
       { timeout: 20_000, interval: 250 },
