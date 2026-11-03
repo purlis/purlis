@@ -37,6 +37,7 @@ fn a_named_open(chat: u32, ticket: &str, message: String, name: Option<&str>) ->
 /// that asks for one is refused (#1471). It used to ride a reporting open.
 fn a_task_into_alpha(chat: u32, ticket: &str, name: Option<&str>) -> Ask {
     Ask::Dispatch(Box::new(DispatchAsk {
+        runs_on: None,
         chat,
         to: None,
         name: name.unwrap_or("ship it").to_owned(),
@@ -3834,6 +3835,7 @@ fn a_chat_without_sandbox_as(held: &Held, root: &Path, persona: Option<&str>, cw
 
 fn a_dispatch(chat: u32, ticket: &str, to: Option<&str>, name: &str) -> Ask {
     Ask::Dispatch(Box::new(DispatchAsk {
+        runs_on: None,
         chat,
         to: to.map(str::to_owned),
         name: name.to_owned(),
@@ -4309,6 +4311,7 @@ fn many_dispatches_at_once_from_one_chat_start_no_more_than_its_limit() {
     let held = planes.held(&id).expect("held");
     let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
     let ask = |n: usize| Wanted {
+        runs_on: None,
         chat: asking,
         to: None,
         name: format!("task {n}"),
@@ -4730,6 +4733,7 @@ fn dispatch_in(
         tickets,
         1,
         Ask::Dispatch(Box::new(DispatchAsk {
+            runs_on: None,
             chat: asking,
             to: to.map(str::to_owned),
             name: name.to_owned(),
@@ -5883,6 +5887,7 @@ fn dispatch_with(
         &tickets,
         1,
         Ask::Dispatch(Box::new(DispatchAsk {
+            runs_on: None,
             chat: asking,
             to: to.map(str::to_owned),
             name: name.to_owned(),
@@ -6663,6 +6668,7 @@ fn the_list_holds_a_handoff_the_person_s_ask_and_the_persona_s_own_profile() {
         let ticket = ticket(&held, &id, &tickets, asking);
         let ask = if task {
             Ask::Dispatch(Box::new(DispatchAsk {
+                runs_on: None,
                 to: Some("devops".to_owned()),
                 ..match a_task_into_alpha(asking, &ticket, None) {
                     Ask::Dispatch(dispatch) => *dispatch,
@@ -12286,6 +12292,7 @@ fn many_dispatches_at_once_under_one_name_start_one_task() {
     let held = planes.held(&id).expect("held");
     let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
     let ask = Wanted {
+        runs_on: None,
         chat: asking,
         to: None,
         name: "check prod".to_owned(),
@@ -12437,3 +12444,90 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
 
 /// A chat's open or dispatch heard from a pool waits for the person's Approve.
 mod heard_from_a_pool;
+
+/// **A dispatch that names where the levels already put it starts at once, and follows them**
+/// (#4536): `--this-machine` in a workspace that runs here asks nobody, and the chat keeps no
+/// choice of its own, so a later change of the levels holds for it. A word purlis can't read is
+/// refused, and nothing is started where the levels say instead.
+#[test]
+fn a_dispatch_naming_where_the_levels_put_it_follows_them_and_a_word_purlis_cannot_read_starts_nothing()
+ {
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+    let dispatched = |runs_on: &str| {
+        let ticket = ticket(&held, &id, &tickets, asking);
+        let Ask::Dispatch(mut ask) = a_task_into_alpha(asking, &ticket, Some("lint")) else {
+            unreachable!("a dispatch");
+        };
+        ask.runs_on = Some(runs_on.to_owned());
+        answer(&held, &id, &tickets, 1, Ask::Dispatch(ask), &|_| {})
+    };
+
+    let Answer::Dispatched { chat, .. } = dispatched("this-machine") else {
+        panic!("dispatched");
+    };
+    let record = held.chats().record();
+    let started = record
+        .chats
+        .iter()
+        .find(|one| one.number == Some(chat))
+        .expect("the task's chat is recorded");
+    assert_eq!(started.runs_on, None, "it follows the levels");
+
+    let before = held.chats().record().chats.len();
+    let refused = dispatched("pool:../elsewhere");
+    assert!(
+        matches!(&refused, Answer::No { why } if why.contains("where this task was to run")),
+        "{refused:?}"
+    );
+    assert_eq!(held.chats().record().chats.len(), before, "nothing started");
+}
+
+/// **A chat's dispatch that moves work waits for the person's Approve** (#4536, the person's
+/// ruling of 2026-11-02): one to no persona, which no grant asks about, that names a pool its
+/// workspace doesn't run on, starts nothing and is held for the person, saying where it would run.
+#[test]
+fn a_chats_dispatch_that_names_another_place_than_its_workspaces_waits_for_the_person() {
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+    let ticket = ticket(&held, &id, &tickets, asking);
+    let Ask::Dispatch(mut ask) = a_task_into_alpha(asking, &ticket, Some("lint")) else {
+        unreachable!("a dispatch");
+    };
+    ask.runs_on = Some("pool:builds".to_owned());
+    let before = held.chats().record().chats.len();
+
+    let answered = answer(&held, &id, &tickets, 1, Ask::Dispatch(ask), &|_| {});
+
+    assert_eq!(
+        answered,
+        Answer::HeldToMove {
+            to: "a chat".to_owned(),
+            runs_on: "pool:builds".to_owned(),
+        }
+    );
+    assert_eq!(held.chats().record().chats.len(), before, "nothing started");
+    let waiting = held.runner_dispatches().every();
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(
+        waiting[0].pool, None,
+        "held for the move, not for a pool's chat"
+    );
+    let whole = crate::runnerdispatches::whole_of(&held, &waiting[0]).expect("drawn");
+    assert_eq!(whole.runs_on, "Pool builds, as the chat asks");
+    assert!(
+        waiting[0].said().contains("on pool builds"),
+        "{}",
+        waiting[0].said()
+    );
+}

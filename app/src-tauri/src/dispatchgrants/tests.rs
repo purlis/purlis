@@ -251,6 +251,24 @@ fn the_notice_names_the_task_and_the_profile_its_chat_would_start_on() {
         told(&PlaneId::for_tests(world.root()), world.root(), &none).task,
         None
     );
+    // Where the dispatch asked to run is in front of the person before any Allow (#4536).
+    assert_eq!(
+        told(&PlaneId::for_tests(world.root()), world.root(), &none).runs_on,
+        None
+    );
+    let moving = Pending {
+        task: Task {
+            runs_on: Some("pool builds".to_owned()),
+            ..Task::default()
+        },
+        ..none
+    };
+    assert_eq!(
+        told(&PlaneId::for_tests(world.root()), world.root(), &moving)
+            .runs_on
+            .as_deref(),
+        Some("pool builds")
+    );
 }
 
 #[test]

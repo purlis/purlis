@@ -154,6 +154,7 @@ function held(session: number, id: number): DispatchPending {
     task_cut: false,
     profile: null,
     mode: "task",
+    runs_on: null,
   };
 }
 

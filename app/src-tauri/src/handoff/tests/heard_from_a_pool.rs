@@ -47,8 +47,8 @@ fn a_dispatch_heard_from_a_pool_to_the_chats_own_persona_is_held_and_starts_noth
     let waiting = held.runner_dispatches().every();
     assert_eq!(waiting.len(), 1);
     assert_eq!(
-        (waiting[0].session, waiting[0].pool.as_str()),
-        (asking, POOL)
+        (waiting[0].session, waiting[0].pool.as_deref()),
+        (asking, Some(POOL))
     );
     assert!(
         held.dispatch_grants().waiting(asking).is_empty(),

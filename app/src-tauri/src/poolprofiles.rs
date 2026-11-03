@@ -886,23 +886,85 @@ pub(crate) fn offer_of(refused: purlis_core::poollimits::Refused) -> PoolLimitOf
 pub struct LimitRefused {
     pub words: String,
     pub limit: Option<PoolLimitOffer>,
+    /// **The pool a start was to run on, where that pool is gone, stopped or not reached**
+    /// (#4536, ruled 2026-11-01): nothing started, and the window offers Try again, Pool setup
+    /// and Run on this machine this once. Never set by a runner's words: only where this machine
+    /// found the pool missing or its link down ([`unavailable`]). Absent for every other refusal.
+    #[specta(optional)]
+    pub pool_unavailable: Option<String>,
 }
 
 impl From<String> for LimitRefused {
     fn from(words: String) -> Self {
-        Self { words, limit: None }
+        Self {
+            words,
+            limit: None,
+            pool_unavailable: None,
+        }
     }
 }
 
-/// `work`, refused with the limits it hit ([`purlis_core::poollimits::attempt`]). Run on the
-/// thread `work` runs on, from where the window's ask starts.
+std::thread_local! {
+    /// The pool the attempt running on this thread could not start on: outside
+    /// [`offering_limits`], nothing is kept, so an earlier refusal never marks a later one.
+    static UNAVAILABLE: std::cell::RefCell<Option<Option<(String, String)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **`why`, a start's refusal because pool `pool` is gone, stopped or not reached** (#4536),
+/// kept for the attempt it refused so the window offers this machine for this start alone. Kept
+/// with its words: a step the attempt got past offers nothing beside a later refusal.
+pub(crate) fn unavailable(pool: &str, why: String) -> String {
+    UNAVAILABLE.with_borrow_mut(|now| {
+        if let Some(kept) = now {
+            *kept = Some((pool.to_owned(), why.clone()));
+        }
+    });
+    why
+}
+
+/// **A start's refusal because pool `pool`'s runner was not reached** (#4536): said in purlis's
+/// own words alone, since what came back over the link may be the runner's, and a runner's words
+/// never stand beside the offer to run here. What was said goes to the log.
+pub(crate) fn not_reached(pool: &str, why: &str) -> String {
+    tracing::warn!(pool, why, "purlis: a start did not reach its pool's runner");
+    unavailable(
+        pool,
+        format!(
+            "purlis couldn't reach pool {pool}'s runner for this chat, so nothing was started. \
+             Try again once the runner is back, check the pool in Pool setup, or run this chat \
+             on this machine this once."
+        ),
+    )
+}
+
+/// `work`, refused with the limits it hit ([`purlis_core::poollimits::attempt`]) and the pool it
+/// could not reach ([`unavailable`]). Run on the thread `work` runs on, from where the window's
+/// ask starts.
 pub(crate) fn offering_limits<T>(
     work: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, LimitRefused> {
+    /// Puts back the attempt this one is inside, however it ends.
+    struct Ends(Option<Option<(String, String)>>);
+    impl Drop for Ends {
+        fn drop(&mut self) {
+            UNAVAILABLE.set(self.0.take());
+        }
+    }
+    let ends = Ends(UNAVAILABLE.replace(Some(None)));
     let (done, refused) = purlis_core::poollimits::attempt(work);
-    done.map_err(|words| LimitRefused {
-        words,
-        limit: refused.map(offer_of),
+    let marked = UNAVAILABLE.with_borrow_mut(|now| now.as_mut().and_then(Option::take));
+    drop(ends);
+    done.map_err(|words| {
+        // Only the refusal the mark was made for: one said in other words came of another step.
+        let pool_unavailable = marked
+            .filter(|(_, said)| words.contains(said.as_str()))
+            .map(|(pool, _)| pool);
+        LimitRefused {
+            words,
+            limit: refused.map(offer_of),
+            pool_unavailable,
+        }
     })
 }
 

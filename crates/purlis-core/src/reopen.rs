@@ -210,6 +210,12 @@ pub struct Chat {
     /// again without it. `None` is every other chat, and every record written before this
     /// field — not a format change, for [`Self::pinned`]'s reason.
     pub renamed_from: Option<String>,
+    /// **Where this chat's start chose to run it** (#4536): a pool for this start only, or this
+    /// machine against what its workspace or project names. `None` follows the levels
+    /// ([`crate::machine::Store::chat_place`]). Kept for a relaunch, since its conversation is
+    /// where it ran: a chat started on a pool is started there again, and refused in words where
+    /// that pool is gone, never moved here. Never a setting: nothing else reads it.
+    pub runs_on: Option<crate::machine::StartChoice>,
     /// Whether the chat's last run started without the sandbox in a project that has it on: a
     /// person's opt-out, or a system with no backend (ADR 0067 §7).
     ///
@@ -1611,6 +1617,10 @@ struct ChatOnDisk {
     /// [`Chat::renamed_from`]. A value that is not a workspace name reads as absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     renamed_from: String,
+    /// Where the chat's start chose to run it, or absent — see [`Chat::runs_on`]:
+    /// `"this-machine"` or `"pool:<name>"`. Any other word reads as absent.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    runs_on: String,
     /// `"off"` where the chat's last run was unsandboxed — see [`Chat::unsandboxed`] — and
     /// absent otherwise. Any other word reads as absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -1871,6 +1881,11 @@ impl From<&Record> for OnDisk {
                     shows: chat.shows.unwrap_or_default(),
                     beside: chat.beside.unwrap_or_default(),
                     renamed_from: chat.renamed_from.clone().unwrap_or_default(),
+                    runs_on: chat
+                        .runs_on
+                        .as_ref()
+                        .map(crate::machine::StartChoice::word)
+                        .unwrap_or_default(),
                     sandbox: if chat.unsandboxed {
                         SANDBOX_OFF.to_owned()
                     } else {
@@ -1961,6 +1976,7 @@ impl From<ChatOnDisk> for Chat {
             beside: (chat.beside > 0).then_some(chat.beside),
             renamed_from: Some(chat.renamed_from)
                 .filter(|name| crate::contain::workspace_name_ok(name)),
+            runs_on: crate::machine::StartChoice::read(&chat.runs_on),
             unsandboxed: chat.sandbox == SANDBOX_OFF,
             identity: Identity {
                 id: a_ulid(&chat.id),

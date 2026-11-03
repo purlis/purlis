@@ -49,8 +49,10 @@ import {
   type LimitRefused,
   type PoolLimitOffer,
   type Refused,
+  type RunsOnPick,
   type Sidebar as SidebarModel,
   type StartOptions,
+  type StartRunsOn,
   type ViewTab,
   type WindowDraft,
 } from "./bindings";
@@ -974,6 +976,8 @@ export const PlaneView = memo(function PlaneView({
   const [picking, setPicking] = useState<{
     options: StartOptions;
     where: Where;
+    /** Where a chat started here would run, and why (#4536): the picker's Runs on row. */
+    runsOn?: StartRunsOn;
   }>();
   /** Why the last start did not happen, shown in the picker rather than behind it. */
   const [pickerTrouble, setPickerTrouble] = useState<string>();
@@ -988,8 +992,21 @@ export const PlaneView = memo(function PlaneView({
     refused: string;
     profile: string;
   }>();
+  /** The pool a start was to run on and could not reach (#4536), with that refusal: the picker
+   *  offers Try again, Pool setup and Run on this machine this once beside it, and beside no
+   *  other. */
+  const [pickerPoolGone, setPickerPoolGone] = useState<{ pool: string; refused: string }>();
   /** Whether the picker's fix (NO-8: its `local-ignore`) is running. */
   const [pickerFixing, setPickerFixing] = useState(false);
+  /** **Where a new chat in `workspace` would run** (#4536), read as the picker opens so its Runs
+   *  on row is drawn with it: `undefined` where the core could not say, and no row is drawn. */
+  const readRunsOn = useCallback(
+    async (workspace: string | null): Promise<StartRunsOn | undefined> => {
+      const said = await commands.startRunsOn(plane, workspace).catch(() => undefined);
+      return said?.status === "ok" && Array.isArray(said.data?.pools) ? said.data : undefined;
+    },
+    [plane],
+  );
   /** The chat tab whose name is open for editing on the strip, if one is (charter-app#254). */
   const [renaming, setRenaming] = useState<number>();
   /** The work item each chat works on, by session, as the core answered (V60, ADR 0088). */
@@ -3166,27 +3183,29 @@ export const PlaneView = memo(function PlaneView({
   const ask = useCallback(
     async (where: Where) => {
       setPickerTrouble(undefined);
-      const [options, found] = await Promise.all([
+      const cwd = ("in" in where ? where.in : undefined) ?? startIn;
+      // The workspace the chat would be filed in, or none at the project's root.
+      const filed = filedFor(cwd, focused);
+      const [options, found, runsOn] = await Promise.all([
         commands
           .startOptions(plane)
           .catch((err: unknown) => ({ status: "error" as const, error: String(err) })),
         commands.harnessSetupFound().catch(() => undefined),
+        readRunsOn(filed === OUTSIDE ? null : filed),
       ]);
       if (options.status === "error") {
         refusedBy("start-options", options.error);
         return;
       }
       succeeded("start-options");
-      const cwd = ("in" in where ? where.in : undefined) ?? startIn;
       if (cwd !== null && found?.status === "ok" && nothingCanStart(options.data, found.data)) {
-        const filed = filedFor(cwd, focused);
         const title = harnessSetupTitle(filed === OUTSIDE ? OUTSIDE_TITLE : filed);
         change((tabs) => openView(tabs, harnessSetupView(cwd), title, filed));
         return;
       }
-      setPicking({ options: options.data, where });
+      setPicking({ options: options.data, where, runsOn });
     },
-    [change, focused, plane, refusedBy, startIn, succeeded],
+    [change, focused, plane, readRunsOn, refusedBy, startIn, succeeded],
   );
 
   /**
@@ -3589,6 +3608,7 @@ export const PlaneView = memo(function PlaneView({
       newBranch: boolean,
       filedIn?: string,
       withoutSandbox: WithoutSandbox | null = null,
+      runsOn: RunsOnPick | null = null,
     ): Promise<LimitRefused | undefined> => {
       // A tab asked for in one directory starts there; everything else starts where the
       // explorer's pick says (charter-app#174).
@@ -3614,7 +3634,14 @@ export const PlaneView = memo(function PlaneView({
           label,
           // The core cuts the branch only when `cwd` is a repo's clone (GL-1).
           // The opt-out is the picker's alone (ADR 0067 §7): every other start sends none.
-          { show_footer: showFooter, new_branch: newBranch, without_sandbox: withoutSandbox },
+          // Runs on for this start alone (#4536), sent only where the person chose one: left out,
+          // the workspace's and the project's own decide.
+          {
+            show_footer: showFooter,
+            new_branch: newBranch,
+            without_sandbox: withoutSandbox,
+            ...(runsOn === null ? {} : { runs_on: runsOn }),
+          },
           STARTING_SIZE.columns,
           STARTING_SIZE.rows,
         )
@@ -3652,7 +3679,10 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the picker's start is in flight: the ref is the guard, the state is the button. */
   const startingNow = useRef(false);
   const [starting, setStarting] = useState(false);
-  const readStage = useCallback(() => readRunnerStage(plane, ofWorkspace), [plane, ofWorkspace]);
+  const readStage = useCallback(
+    (runsOn: RunsOnPick | null) => readRunnerStage(plane, ofWorkspace, runsOn),
+    [plane, ofWorkspace],
+  );
   /** The person cancelled the start in flight: what it answers is said to nobody. */
   const startLeft = useRef(false);
   /** Which start is the dialog's: one the person cancelled may still be winding down. */
@@ -3665,6 +3695,7 @@ export const PlaneView = memo(function PlaneView({
       label: string | null,
       newBranch: boolean,
       withoutSandbox: WithoutSandbox | null,
+      runsOn: RunsOnPick | null = null,
     ) => {
       if (picking === undefined || startingNow.current) return;
       const kind = picking.options.profiles.find((one) => one.name === profile)?.kind;
@@ -3685,6 +3716,7 @@ export const PlaneView = memo(function PlaneView({
         newBranch,
         undefined,
         withoutSandbox,
+        runsOn,
       ).finally(() => {
         if (startRun.current !== thisStart) return;
         startingNow.current = false;
@@ -3699,6 +3731,9 @@ export const PlaneView = memo(function PlaneView({
         setPickerTrouble(refused);
         setPickerSignIn(undefined);
         setPickerLimit(offer === null ? undefined : { offer, refused, profile });
+        // A pool that is gone, stopped or not reached, as the core found it (#4536).
+        const gone = started.pool_unavailable ?? undefined;
+        setPickerPoolGone(gone === undefined ? undefined : { pool: gone, refused });
         // The refusal left an Ask to sign the profile in (#2035): the Inbox reads it now.
         asksMoved(plane);
         // A profile of this machine's its harness says is not signed in here points to that
@@ -3719,6 +3754,7 @@ export const PlaneView = memo(function PlaneView({
       setPicking(undefined);
       setPickerTrouble(undefined);
       setPickerSignIn(undefined);
+      setPickerPoolGone(undefined);
     },
     [picking, plane, startOn],
   );
@@ -3734,6 +3770,7 @@ export const PlaneView = memo(function PlaneView({
       label: string | null,
       newBranch: boolean,
       withoutSandbox: WithoutSandbox | null,
+      runsOn: RunsOnPick | null = null,
     ) => {
       // A start already running from this picker is the one start it gets (GL-1).
       if (startingNow.current) return;
@@ -3749,7 +3786,7 @@ export const PlaneView = memo(function PlaneView({
       // away the choice on the one path where a profile is being used for the first time.
       // The footer choice rides the same path, and for the same reason: a first run of a
       // profile is exactly where a dropped choice would go unnoticed.
-      await startPicked(profile, persona, showFooter, label, newBranch, withoutSandbox);
+      await startPicked(profile, persona, showFooter, label, newBranch, withoutSandbox, runsOn);
     },
     [plane, startPicked],
   );
@@ -4508,12 +4545,25 @@ export const PlaneView = memo(function PlaneView({
           const { words: refused, limit: offer } = started;
           setPickerTrouble(refused);
           setPickerLimit(offer === null ? undefined : { offer, refused, profile: only.name });
+          // A pool that could not be reached is offered its three answers there (#4536).
+          const gone = started.pool_unavailable ?? undefined;
+          setPickerPoolGone(gone === undefined ? undefined : { pool: gone, refused });
         } else setPickerTrouble(undefined);
         offerBeside();
-        setPicking({ options: options.data, where });
+        setPicking({ options: options.data, where, runsOn: await readRunsOn(workspace) });
       })
       .catch((err: unknown) => refusedBy("start-options", String(err)));
-  }, [change, firstChatAsked, focusWorkspace, plane, refusedBy, sidebar, startOn, succeeded]);
+  }, [
+    change,
+    firstChatAsked,
+    focusWorkspace,
+    plane,
+    readRunsOn,
+    refusedBy,
+    sidebar,
+    startOn,
+    succeeded,
+  ]);
 
   /** What each chat the project lists is called (`shownName`, #1484), by its number: the one
    *  rule, asked once per chat, for every surface that names a chat by number. */
@@ -10739,10 +10789,27 @@ export const PlaneView = memo(function PlaneView({
                     setPickerLimit((was) => was && { ...was, refused });
                     return false;
                   }}
-                  onStart={(profile, persona, footer, label, newBranch, withoutSandbox) =>
-                    void startPicked(profile, persona, footer, label, newBranch, withoutSandbox)
+                  onStart={(profile, persona, footer, label, newBranch, withoutSandbox, runsOn) =>
+                    void startPicked(
+                      profile,
+                      persona,
+                      footer,
+                      label,
+                      newBranch,
+                      withoutSandbox,
+                      runsOn ?? null,
+                    )
                   }
-                  onApprove={(profile, persona, footer, shown, label, newBranch, withoutSandbox) =>
+                  onApprove={(
+                    profile,
+                    persona,
+                    footer,
+                    shown,
+                    label,
+                    newBranch,
+                    withoutSandbox,
+                    runsOn,
+                  ) =>
                     void approveAndStart(
                       profile,
                       persona,
@@ -10751,8 +10818,24 @@ export const PlaneView = memo(function PlaneView({
                       label,
                       newBranch,
                       withoutSandbox,
+                      runsOn ?? null,
                     )
                   }
+                  runsOn={picking.runsOn}
+                  // Only beside the refusal it came with, never beside a later one (#4536).
+                  poolUnavailable={
+                    pickerPoolGone !== undefined && pickerPoolGone.refused === pickerTrouble
+                      ? pickerPoolGone.pool
+                      : undefined
+                  }
+                  // Pool setup, where the pool is added or mended: the picker closes, as it does
+                  // for Settings, since the chat it was for starts after the mend.
+                  onPoolSetup={() => {
+                    setPicking(undefined);
+                    setPickerTrouble(undefined);
+                    setPickerPoolGone(undefined);
+                    showView(POOL_SETUP_VIEW, POOL_SETUP_TITLE);
+                  }}
                   // SD-30's install action: a shell tab at the project root with the command typed and
                   // not run. The picker closes, since the chat it was for starts after the install.
                   onInstall={

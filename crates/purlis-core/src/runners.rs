@@ -562,8 +562,7 @@ pub fn runner_for(config_root: &Path, pool: &str) -> Result<Kept, Refused> {
     let held = load(config_root)?;
     if !held.pools.iter().any(|kept| kept.name() == pool) {
         return Err(Refused::Other(format!(
-            "this workspace's chats run on pool {pool}, which is not on this machine, so \
-             nothing was started"
+            "pool {pool} is not on this machine, so nothing was started"
         )));
     }
     let image = held

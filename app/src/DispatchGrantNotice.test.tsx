@@ -52,6 +52,7 @@ const WAITING: DispatchPending = {
   task_cut: false,
   profile: null,
   mode: "task",
+  runs_on: null,
 };
 
 /** The same question where steward's definition wants qa and docs too. */
@@ -158,6 +159,14 @@ describe("the dispatch grant Notice", () => {
     expect(notice).toHaveTextContent(
       "The work moves to runners: an Allow holds for work there only",
     );
+  });
+
+  it("says where the dispatch asks to run before any Allow", async () => {
+    // #4536, the person's ruling of 2026-11-02.
+    core([{ ...WAITING, runs_on: "pool builds" }]);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
+    const line = await screen.findByText(/wants to dispatch to devops/);
+    expect(line).toHaveTextContent("It asks to run on pool builds.");
   });
 
   it("names the task apart from its own words, the profile in its sentence, and leads with the target's mark", async () => {

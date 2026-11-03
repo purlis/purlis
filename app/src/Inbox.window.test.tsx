@@ -126,6 +126,7 @@ const HELD: DispatchPending = {
   task_cut: false,
   profile: null,
   mode: "task",
+  runs_on: null,
 };
 
 const QUESTION: Shown = {

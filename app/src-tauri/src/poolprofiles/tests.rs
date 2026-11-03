@@ -1169,3 +1169,32 @@ fn a_stop_between_two_asks_says_its_reason() {
         "that sign-in is over"
     );
 }
+
+/// **A pool not reached is offered beside its own refusal alone** (#4536): a step the attempt got
+/// past marks nothing on a later refusal, and an attempt outside [`offering_limits`] keeps none.
+#[test]
+fn a_pool_not_reached_is_offered_only_beside_the_refusal_it_made() {
+    let refused = offering_limits(|| -> Result<(), String> {
+        Err(unavailable(
+            "builds",
+            "pool builds is not reached".to_owned(),
+        ))
+    })
+    .unwrap_err();
+    assert_eq!(refused.pool_unavailable.as_deref(), Some("builds"));
+
+    let got_past = offering_limits(|| -> Result<(), String> {
+        let _ = unavailable("builds", "pool builds is not reached".to_owned());
+        Err("its profile is signed out".to_owned())
+    })
+    .unwrap_err();
+    assert_eq!(got_past.pool_unavailable, None);
+
+    let _ = unavailable("builds", "outside any attempt".to_owned());
+    let later = offering_limits(|| -> Result<(), String> { Err("outside any attempt".to_owned()) })
+        .unwrap_err();
+    assert_eq!(
+        later.pool_unavailable, None,
+        "nothing kept outside an attempt"
+    );
+}

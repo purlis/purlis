@@ -259,9 +259,14 @@ fn a_task_is_dispatched_on_one_ticket_and_the_request_says_only_what_the_agent_c
         place,
         ticket,
         long: _,
+        runs_on,
     } = the_dispatch(&asked);
     assert_eq!(profile, None, "no profile asked for");
     assert_eq!(place, None, "no place asked for: the asking chat's folder");
+    assert_eq!(
+        runs_on, None,
+        "no place to run asked for: the levels decide"
+    );
     assert_eq!(chat, ASKING, "the chat whose token the line carries");
     assert_eq!(to, None, "no persona named: the asking chat's own");
     assert_eq!(name, "check the queue", "trimmed");
@@ -316,6 +321,57 @@ fn where_the_new_chat_works_rides_the_ask_as_one_word_and_the_app_s_answer_is_sa
          from the task's Changes in the window (a chat may ask them to), and its report \
          reaches this chat as context on its next turn.\n"
     );
+}
+
+#[test]
+fn where_the_new_chat_runs_rides_the_ask_as_one_word() {
+    // #4536: `--pool <name>` or `--this-machine`, before the target workspace's own and its
+    // project's; the app looks the pool up among the ones this machine keeps.
+    for (asked_for, word) in [
+        (&["--pool", "builds"][..], "pool:builds"),
+        (&["--this-machine"][..], "this-machine"),
+    ] {
+        let tmp = daily();
+        let (app, _reading, asked) = an_app(&tmp, |tickets, connection, ask| {
+            on_a_ticket(tickets, connection, ask, |ask| match ask {
+                Ask::Dispatch(dispatch) => Answer::Dispatched {
+                    chat: STARTED,
+                    name: dispatch.name.clone(),
+                    persona: Some("steward".to_owned()),
+                    note: None,
+                    works: None,
+                },
+                _ => Answer::No {
+                    why: "not a dispatch".to_owned(),
+                },
+            })
+        });
+        let mut args = vec!["--name", "check the queue"];
+        args.extend_from_slice(asked_for);
+
+        let out = dispatch(&root(&tmp), Some(&app), &args);
+
+        assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+        assert_eq!(the_dispatch(&asked).runs_on.as_deref(), Some(word));
+    }
+}
+
+#[test]
+fn a_pool_no_pool_could_be_named_or_both_places_are_refused_before_the_app_is_asked() {
+    let tmp = daily();
+    let root = root(&tmp);
+    for args in [
+        &["--name", "x", "--pool", "Not/A Pool"][..],
+        &["--name", "x", "--pool", "builds", "--this-machine"][..],
+    ] {
+        let out = dispatch(&root, None, args);
+        assert_ne!(out.status.code(), Some(0), "{args:?}");
+        assert!(
+            !text(&out.stderr).contains("no purlis app"),
+            "refused before an app is looked for: {}",
+            text(&out.stderr)
+        );
+    }
 }
 
 #[test]
@@ -1505,6 +1561,7 @@ fn a_dispatch_as_another_chat_is_never_heard_by_the_app() {
     let (app, _reading, asked) = an_app(&tmp, starts_it);
 
     let forged = Ask::Dispatch(Box::new(DispatchAsk {
+        runs_on: None,
         chat: STARTED,
         to: None,
         name: "forged".to_owned(),

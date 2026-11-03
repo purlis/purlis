@@ -1661,6 +1661,7 @@ export const commands = {
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
 	followProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	projectChatsRunOn: __WINDOW_ONLY_RESULT,
+	startRunsOn: __WINDOW_ONLY_RESULT,
 	setProjectChatsRunOn: __WINDOW_ONLY_RESULT,
 	poolNamedBy: __WINDOW_ONLY_RESULT,
 	sendLeavesOut: __WINDOW_ONLY_RESULT,
@@ -3139,6 +3140,12 @@ export type Boxes = {
 	 *  a chat, a file or the CLI sends can carry one.
 	 */
 	without_sandbox: WithoutSandbox | null,
+	/**
+	 *  Where the person chose to run this chat, for this start only (#4536): a pool, or this
+	 *  machine (a null pool), before its workspace's and its project's own. Absent follows them.
+	 *  It never writes a setting.
+	 */
+	runs_on?: RunsOnPick | null,
 };
 
 /**  What `branch-changed` carries: the branches, of those this window listens to, that moved. */
@@ -4580,6 +4587,12 @@ export type DispatchPending = {
 	 *  work off. The Notice says "hand off" for a handoff.
 	 */
 	mode: string,
+	/**
+	 *  **Where the dispatch asked its chat to run** (#4536, the person's ruling of 2026-11-02):
+	 *  `pool <name>` or `this machine`, read before any Allow. Null where it named none, and it
+	 *  runs where its workspace's levels say.
+	 */
+	runs_on: string | null,
 };
 
 /**  One dispatch, as the Dispatches tab draws its row. */
@@ -6665,6 +6678,13 @@ export type LevelWaiting = {
 export type LimitRefused = {
 	words: string,
 	limit: PoolLimitOffer | null,
+	/**
+	 *  **The pool a start was to run on, where that pool is gone, stopped or not reached**
+	 *  (#4536, ruled 2026-11-01): nothing started, and the window offers Try again, Pool setup
+	 *  and Run on this machine this once. Never set by a runner's words: only where this machine
+	 *  found the pool missing or its link down ([`unavailable`]). Absent for every other refusal.
+	 */
+	pool_unavailable?: string | null,
 };
 
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
@@ -10476,8 +10496,11 @@ export type RunnerDispatchWhole = {
 	/**  The chat that asked, by its number and as its tab names it. */
 	session: number,
 	chat: string,
-	/**  The pool it runs on. */
-	pool: string,
+	/**
+	 *  The pool the asking chat runs on, where that is why it is held; null where it is held
+	 *  because it names a place to run other than its workspace's own (#4536).
+	 */
+	pool: string | null,
 	/**  The persona the new chat would run as, none for a chat on no persona. */
 	persona: string | null,
 	/**  Whether it hands the chat's work off, rather than asking for a task that reports back. */
@@ -10490,6 +10513,11 @@ export type RunnerDispatchWhole = {
 	profile: string | null,
 	/**  Whether it asks for a long-running task. */
 	long: boolean,
+	/**
+	 *  Where it would run (#4536): this machine or a pool, as the chat asked, else where its
+	 *  workspace runs its chats.
+	 */
+	runs_on: string,
 	/**  The brief whole, drawn inertly: escapes written out for what would draw otherwise. */
 	brief: string,
 };
@@ -10577,6 +10605,23 @@ export type RunnerWriteWhole = {
 	applies: boolean,
 	/**  Why Apply is not offered, in a sentence. */
 	why: string | null,
+};
+
+/**  **Which level decides where a new chat runs** (#4536), as Start chat's Runs on row says why. */
+export type RunsOnLevel = 
+/**  The workspace's own setting. */
+"workspace" | 
+/**  The project's setting, which the workspace follows. */
+"project" | 
+/**  No level names a pool, or the chat starts at the project's root. */
+"this_machine";
+
+/**
+ *  The Runs on row's choice for one start (#4536): `pool` names a pool this machine keeps, and
+ *  null is this machine.
+ */
+export type RunsOnPick = {
+	pool: string | null,
 };
 
 /**  What the picker says about the sandbox for one profile, before anything starts. */
@@ -12428,6 +12473,19 @@ export type StartRefused = {
 	 *  before any start was tried, or on a profile with nothing to approve.
 	 */
 	approval: NeedsApproval | null,
+};
+
+/**
+ *  **Where a new chat in a workspace would run, and why** (#4536): what Start chat's Runs on row
+ *  shows before the person picks anything, and every pool this machine keeps, which the row
+ *  offers for this start only. `at_root` is a chat at the project's root, which runs here and is
+ *  offered no pool. Nothing here is checked against the pool's runner: the start does that.
+ */
+export type StartRunsOn = {
+	pool: string | null,
+	level: RunsOnLevel,
+	at_root: boolean,
+	pools: string[],
 };
 
 /**  A chat that started: its session, and the name it was given as charter holds it. */

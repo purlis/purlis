@@ -896,6 +896,16 @@ pub static TOOLS: [Tool; 28] = [
                         "description": "With wait, how long to wait: 100 seconds when left \
                                         out, 540 at most.",
                     },
+                    "pool": {
+                        "type": "string",
+                        "description": "Run it on this pool's runner, whatever its workspace \
+                                        and its project say. Leave it out to follow them.",
+                    },
+                    "this_machine": {
+                        "type": "boolean",
+                        "description": "Run it on this machine, whatever its workspace and \
+                                        its project say. Not with pool.",
+                    },
                 },
                 "required": ["name", "brief"],
                 "additionalProperties": false,
@@ -1518,6 +1528,25 @@ pub fn dispatch_long(args: &Map<String, Value>) -> Result<bool, String> {
         Some(Value::Bool(long)) => Ok(*long),
         Some(_) => Err("`long` is true or false".to_owned()),
     }
+}
+
+/// The `dispatch` tool's `pool` and `this_machine` (#4536): where the task runs, as the command
+/// takes them. Both is refused where the command reads them.
+pub fn dispatch_runs_on(args: &Map<String, Value>) -> Result<(Option<String>, bool), String> {
+    let pool = match args.get("pool") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(pool)) if pool.trim().is_empty() => {
+            return Err("`pool` is a pool's name: leave it out to follow the levels".to_owned());
+        }
+        Some(Value::String(pool)) => Some(pool.trim().to_owned()),
+        Some(_) => return Err("`pool` is a pool's name".to_owned()),
+    };
+    let this_machine = match args.get("this_machine") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(here)) => *here,
+        Some(_) => return Err("`this_machine` is true or false".to_owned()),
+    };
+    Ok((pool, this_machine))
 }
 
 /// The `dispatch_read` tool's argument (#2084): the task's chat, by its number.

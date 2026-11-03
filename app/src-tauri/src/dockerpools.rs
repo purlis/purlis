@@ -835,6 +835,91 @@ pub fn version_read(read: Result<String, String>) -> (Option<String>, Option<Str
 #[cfg(test)]
 mod tests;
 
+/// **Which level decides where a new chat runs** (#4536), as Start chat's Runs on row says why.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RunsOnLevel {
+    /// The workspace's own setting.
+    Workspace,
+    /// The project's setting, which the workspace follows.
+    Project,
+    /// No level names a pool, or the chat starts at the project's root.
+    ThisMachine,
+}
+
+/// **Where a new chat in a workspace would run, and why** (#4536): what Start chat's Runs on row
+/// shows before the person picks anything, and every pool this machine keeps, which the row
+/// offers for this start only. `at_root` is a chat at the project's root, which runs here and is
+/// offered no pool. Nothing here is checked against the pool's runner: the start does that.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct StartRunsOn {
+    pub pool: Option<String>,
+    pub level: RunsOnLevel,
+    pub at_root: bool,
+    pub pools: Vec<String>,
+}
+
+/// [`StartRunsOn`] for a chat in `workspace` of the plane at `plane`, on `config`.
+pub fn start_runs_on_at(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    workspace: Option<&str>,
+) -> Result<StartRunsOn, String> {
+    use purlis_core::machine::PlaceLevel;
+    let pools = purlis_core::runners::pool_names(config).map_err(|why| why.to_string())?;
+    let Some(workspace) = workspace else {
+        return Ok(StartRunsOn {
+            pool: None,
+            level: RunsOnLevel::ThisMachine,
+            at_root: true,
+            pools,
+        });
+    };
+    let place = purlis_core::machine::read(config)
+        .store
+        .chat_place(plane, workspace, None);
+    let level = match place.level {
+        PlaceLevel::Workspace => RunsOnLevel::Workspace,
+        PlaceLevel::Project => RunsOnLevel::Project,
+        PlaceLevel::Start | PlaceLevel::Default => RunsOnLevel::ThisMachine,
+    };
+    Ok(StartRunsOn {
+        pool: place.pool,
+        level,
+        at_root: false,
+        pools,
+    })
+}
+
+/// **Where a new chat in `workspace` would run, and why**, for Start chat's Runs on row (#4536).
+#[tauri::command]
+#[specta::specta]
+pub async fn start_runs_on(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+) -> Result<StartRunsOn, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading where a new chat would run", move || {
+            start_runs_on_at(&config_root()?, &root, workspace.as_deref())
+        })
+        .await
+    }
+    // No pool runs here: every chat runs on this machine.
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        Ok(StartRunsOn {
+            pool: None,
+            level: RunsOnLevel::ThisMachine,
+            at_root: workspace.is_none(),
+            pools: Vec::new(),
+        })
+    }
+}
+
 /// **Where a workspace's chats run on this machine** (#2046, #4536): what the workspace itself
 /// says (`pool`, or `here` for this machine, or neither to follow the project), what the project
 /// says, and every pool this machine keeps, which the setting offers.

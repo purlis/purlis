@@ -632,6 +632,16 @@ enum Command {
         /// and it ends when it reports done or failed, or is cancelled (#3905).
         #[arg(long)]
         long: bool,
+        /// Run the new chat on this pool's runner, whatever its workspace and its project say
+        /// (#4536). A chat on a runner that asks this is held for the person, as all its
+        /// dispatches are.
+        #[arg(long, value_name = "NAME", conflicts_with = "this_machine")]
+        pool: Option<String>,
+        /// Run the new chat on this machine, whatever its workspace and its project say
+        /// (#4536). A chat on a runner that asks this is held for the person, as all its
+        /// dispatches are.
+        #[arg(long)]
+        this_machine: bool,
         #[command(subcommand)]
         command: Option<dispatch::DispatchCommand>,
     },
@@ -5514,6 +5524,8 @@ fn main() -> ExitCode {
         timeout,
         place,
         long,
+        pool,
+        this_machine,
         command,
     } = &cli.command
     {
@@ -5536,6 +5548,10 @@ fn main() -> ExitCode {
                 profile: profile.as_deref(),
                 place: place.as_deref(),
                 long: *long,
+                runs_on: dispatch::RunsOn {
+                    pool: pool.as_deref(),
+                    this_machine: *this_machine,
+                },
             },
             waits,
         );

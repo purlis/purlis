@@ -142,6 +142,8 @@ pub struct Named {
     pub resume: Option<String>,
     pub first_message: Option<String>,
     pub without_sandbox: bool,
+    /// Where its start chose to run it (#4536): what the router asks before the levels.
+    pub runs_on: Option<purlis_core::machine::StartChoice>,
     /// What the person allowed of its persona here, as its digest: what arms its tools on a
     /// runner (1.55, #4071).
     pub tools_allowed: Option<String>,
@@ -305,11 +307,15 @@ pub trait SessionHost: Send + Sync {
     }
 
     /// **Whether a harness chat started in `workspace` is composed by the host it runs on**
-    /// (#2046): where the window routes each workspace's chats to the host that runs them, a
-    /// workspace whose chats run on a pool's runner is started by its names there. Every other
+    /// (#2046), with what its `start` chose (#4536): where the window routes each chat to the
+    /// host that runs it, a chat that runs on a pool's runner is started by its names there. Every other
     /// host answers as [`Self::composes_its_harness_chats`] does.
-    fn composes_its_harness_chats_in(&self, workspace: Option<&str>) -> bool {
-        let _ = workspace;
+    fn composes_its_harness_chats_in(
+        &self,
+        workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
+    ) -> bool {
+        let _ = (workspace, start);
         self.composes_its_harness_chats()
     }
 
@@ -323,11 +329,15 @@ pub trait SessionHost: Send + Sync {
         self.composes_its_harness_chats()
     }
 
-    /// **The pool a chat started in `workspace` runs on** (#2049), where the window routes that
-    /// workspace's chats to a pool's runner: what the profile it starts on is kept on, and
-    /// signed in on, before it starts. None, where it starts on this machine.
-    fn pool_for(&self, workspace: Option<&str>) -> Option<String> {
-        let _ = workspace;
+    /// **The pool a chat started in `workspace` runs on** (#2049), with what its `start` chose
+    /// (#4536), where the window routes chats to a pool's runner: what the profile it starts on
+    /// is kept on, and signed in on, before it starts. None, where it starts on this machine.
+    fn pool_for(
+        &self,
+        workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
+    ) -> Option<String> {
+        let _ = (workspace, start);
         None
     }
 
@@ -613,6 +623,18 @@ pub trait SessionHost: Send + Sync {
     fn left_running_in(&self, number: u32, workspace: Option<&str>) -> bool {
         let _ = workspace;
         self.left_running(number)
+    }
+
+    /// [`Self::left_running_in`], of a chat whose start chose where it runs (#4536): the pool it
+    /// chose is the one asked where no record names one, never the one its workspace names.
+    fn left_running_as_started(
+        &self,
+        number: u32,
+        workspace: Option<&str>,
+        start: Option<&purlis_core::machine::StartChoice>,
+    ) -> bool {
+        let _ = start;
+        self.left_running_in(number, workspace)
     }
 
     /// [`Self::left_running`], `None` where this host could not say (#4590): what settles a
@@ -1278,7 +1300,11 @@ pub(crate) mod pretend {
                 .find(|(chat, _)| *chat == id)
                 .map(|(_, pool)| pool.clone())
         }
-        fn pool_for(&self, _workspace: Option<&str>) -> Option<String> {
+        fn pool_for(
+            &self,
+            _workspace: Option<&str>,
+            _start: Option<&purlis_core::machine::StartChoice>,
+        ) -> Option<String> {
             lock(&self.seen.pool).clone()
         }
         fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {

@@ -222,6 +222,34 @@ pub struct Options<'a> {
     /// `--long`: a long-running task (#3905), whose notes are its heartbeat and which purlis
     /// never asks for a report.
     pub long: bool,
+    /// `--pool` or `--this-machine` (#4536): where the new chat runs.
+    pub runs_on: RunsOn<'a>,
+}
+
+/// **Where a dispatch asks its chat to run** (#4536), as the command was told: neither follows
+/// the target workspace's and its project's own.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RunsOn<'a> {
+    pub pool: Option<&'a str>,
+    pub this_machine: bool,
+}
+
+/// `--pool` and `--this-machine` as the app will read them, in one word, or the refusal: said
+/// before a brief is read. Whether this machine keeps the pool is the app's to say.
+fn runs_where(runs_on: RunsOn<'_>) -> Result<Option<String>, String> {
+    use purlis_core::machine::StartChoice;
+    match (runs_on.pool.map(str::trim), runs_on.this_machine) {
+        (Some(_), true) => Err(format!(
+            "{SAYS} --pool and --this-machine name two places. Give one. {NOTHING}"
+        )),
+        (Some(pool), false) => {
+            purlis_core::runners::usable_pool_name(pool)
+                .map_err(|why| format!("{SAYS} {why}. {NOTHING}"))?;
+            Ok(Some(StartChoice::Pool(pool.to_owned()).word()))
+        }
+        (None, true) => Ok(Some(StartChoice::ThisMachine.word())),
+        (None, false) => Ok(None),
+    }
 }
 
 /// `purlis dispatch --name <task> [--to <persona>] [--profile <profile>] [--in <where>]
@@ -243,7 +271,10 @@ pub fn dispatch(
     };
     // The name and the persona are asked before the read: neither needs the brief, and a
     // refusal that waited for stdin would wait on a terminal.
-    if let Err(why) = checked(here, to, name).and_then(|_| placed(options.place)) {
+    if let Err(why) = checked(here, to, name)
+        .and_then(|_| placed(options.place))
+        .and_then(|_| runs_where(options.runs_on))
+    {
         voice::err(refusal(why));
         return ExitCode::FAILURE;
     }
@@ -329,6 +360,7 @@ pub fn send(
 ) -> Result<String, String> {
     let name = checked(here, to, name)?;
     let place = placed(options.place)?;
+    let runs_on = runs_where(options.runs_on)?;
     if !brief
         .split(purlis_core::memstore::is_python_space)
         .any(|word| !word.is_empty())
@@ -380,6 +412,7 @@ pub fn send(
         place,
         ticket,
         long: options.long,
+        runs_on,
     }));
     // A worktree is cut before the chat starts: a checkout, which on a large repo takes far
     // longer than a start alone, and from a workspace's folder a question to the remote too.
@@ -447,6 +480,7 @@ pub fn send(
             waiting: None,
             held_by: None,
         }) => Ok(held_for_the_person(from.as_deref(), &to, &ask_name(&ask))),
+        Ok(Answer::HeldToMove { runs_on, .. }) => Ok(held_to_move(&runs_on, &ask_name(&ask))),
         // Not held: the person is already being asked about this pair for another task, and
         // this one was dropped. Nothing of it will start, so it is a refusal.
         Ok(Answer::NeedsGrant {
@@ -537,6 +571,25 @@ fn held_for_the_person(from: Option<&str>, to: &str, task: &str) -> String {
          with other work, and do not dispatch it again.",
         who_asks(from),
         one(to),
+        one(task)
+    )
+}
+
+/// What a chat is told where its task waits for the person's Approve because it names a place
+/// to run other than its workspace's own (#4536).
+fn held_to_move(runs_on: &str, task: &str) -> String {
+    use purlis_core::machine::StartChoice;
+    let one = purlis_core::personas::one_line;
+    let place = match StartChoice::read(runs_on) {
+        Some(StartChoice::Pool(pool)) => format!("on pool '{}'", one(&pool)),
+        Some(StartChoice::ThisMachine) | None => "on this machine".to_owned(),
+    };
+    format!(
+        "{SAYS} held for the person. It asks to run {place}, which is not where its workspace \
+         runs its chats, so the person approves it in the window, with this brief in front of \
+         them. Nothing has started. If they approve it, '{}' is decided then, and this chat is \
+         told what became of it; if they refuse it, this chat is told on its next turn. Carry \
+         on with other work, and do not dispatch it again.",
         one(task)
     )
 }
@@ -723,6 +776,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }
+            | Answer::HeldToMove { .. }
             | Answer::WaitingOnMemory { .. }
             | Answer::Task(_)
             | Answer::Browsed { .. }
