@@ -589,9 +589,15 @@ export const commands = {
 	inboxShown: (plane: PlaneId, open: boolean) => __TAURI_INVOKE<void>("inbox_shown", { plane, open }),
 	sendInput: __WINDOW_ONLY_RESULT,
 	sendInputBytes: __WINDOW_ONLY_RESULT,
-	/**  Tells a session how big the pane showing it now is. */
+	/**
+	 *  Tells a session how big the pane showing it now is, in the chat's lane: it answers at once
+	 *  (#4734, ADR 0108).
+	 */
 	resizeSession: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("resize_session", { plane, session, columns, rows })),
-	/**  Closes a view, for a pane that has gone off screen. The session keeps running. */
+	/**
+	 *  Closes a view, for a pane that has gone off screen, in the chat's lane: it answers at once
+	 *  (#4734, ADR 0108). The session keeps running.
+	 */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
 	openBrowser: __WINDOW_ONLY_RESULT,
 	unwatchBrowser: __WINDOW_ONLY_RESULT,
@@ -2221,6 +2227,8 @@ export const commands = {
 	 */
 	cold: number | null,
 } | null, string>(__TAURI_INVOKE("chat_usage", { plane, session })),
+	recordSlow: __WINDOW_ONLY_RESULT,
+	slowLogRecent: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the
@@ -6398,6 +6406,13 @@ export type InboxUpdate = {
  *  page having moved on from the frame it was aimed at; or it was refused, in words to show.
  */
 export type InputOutcome = { outcome: "taken" } | { outcome: "missed" } | { outcome: "refused"; why: string };
+
+/**  What a pane sent its chat that was refused, and why, as the Notice on its pane says it. */
+export type InputRefused = {
+	plane: PlaneId,
+	session: number,
+	why: string,
+};
 
 /**  **An install review**, summary first, and what accepting it says. */
 export type InstallReview = {
@@ -12266,6 +12281,19 @@ export type SkillsMissing = {
 	 */
 	beside_a_built_in: string[],
 };
+
+/**
+ *  One slow moment the window felt, as it sends it. `at` is milliseconds since 1970 by the
+ *  window's clock, a number because `specta` exports no `u64`.
+ */
+export type SlowMoment = 
+/**  An answer to `command` that took `ms`, asked at `at`, while `hot` chats were working. */
+{ kind: "answer"; command: string; ms: number; at: number | null; hot: number } | 
+/**
+ *  A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
+ *  working, with the tab in front (`front`) and whether a view of a chat was opening.
+ */
+{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {

@@ -13,7 +13,8 @@
 // When a pull request's `stories` run fails on its pictures alone, the run draws them again,
 // writing the baselines as they are now, and keeps them as `story-baselines`
 // (`.github/workflows/stories.yml`). This takes that artifact from the newest `stories` run of
-// the pull request's head and writes it into `app/` with `tools/story-baselines.mjs take`. The
+// the pull request's head and writes the pictures that differ into `app/` with
+// `tools/story-baselines.mjs take`. The
 // same check the `update-baselines` label's job does is done first: this checkout is the head
 // that run tested, and that head has every commit of the base the run merged it with, so the
 // pictures are of this tree. The person then reviews the pictures, commits them and pushes. A
@@ -169,10 +170,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
     // An artifact keeps no empty directory: with no baseline drawn, every one is deleted.
     mkdirSync(join(into, "app"), { recursive: true });
-    const { taken, removed } = take(join(into, "app"), join(root, "app"));
+    const { taken, removed, unchanged } = take(join(into, "app"), join(root, "app"));
     for (const path of removed) console.log(`deleted: ${path}`);
     console.log(
-      `${taken.length} baselines written and ${removed.length} deleted, from ${chosen.run.html_url}: ` +
+      `${taken.length} baselines written and ${removed.length} deleted (${unchanged.length} already matched), from ${chosen.run.html_url}: ` +
         "review the pictures that changed (git status), then commit and push them",
     );
   } finally {

@@ -131,9 +131,14 @@ export function MenuTrigger({
       }}
     >
       {pressableTrigger(trigger)}
-      <SurfaceGone.Provider value={gone}>
-        <RootMenu.Provider value="trigger">{menu}</RootMenu.Provider>
-      </SurfaceGone.Provider>
+      {/* **The menu is drawn only while it is open** (#4783): closed, React Aria's popover
+          draws nothing but is still mounted, one for each ⋯ in a window, and every pane's came
+          forward with its project. Nothing of a menu stays up as it leaves, so it goes at once. */}
+      {isOpen && (
+        <SurfaceGone.Provider value={gone}>
+          <RootMenu.Provider value="trigger">{menu}</RootMenu.Provider>
+        </SurfaceGone.Provider>
+      )}
     </AriaMenuTrigger>
   );
 }

@@ -1275,8 +1275,10 @@ export const commands = {
 	 */
 	inboxShown: (plane: PlaneId, open: boolean) => __TAURI_INVOKE<void>("inbox_shown", { plane, open }),
 	/**
-	 *  Sends what a pane typed to the session's program. Anything but the terminal's own answer
-	 *  drops a curation prompt still waiting to be typed into it (`Held::operator_input`).
+	 *  Sends what a pane typed to the session's program, in the chat's lane: it answers at once,
+	 *  and a send the host refuses is said on the chat's pane (#4734, ADR 0108). Anything but the
+	 *  terminal's own answer drops a curation prompt still waiting to be typed into it
+	 *  (`Held::queue_operator_input`).
 	 */
 	sendInput: (plane: PlaneId, session: number, text: string) => typedError<null, string>(__TAURI_INVOKE("send_input", { plane, session, text })),
 	/**
@@ -1285,14 +1287,23 @@ export const commands = {
 	 *  (charter#493). Sent as text, a byte above 127 would reach the program as two.
 	 */
 	sendInputBytes: (plane: PlaneId, session: number, bytes: number[]) => typedError<null, string>(__TAURI_INVOKE("send_input_bytes", { plane, session, bytes })),
-	/**  Tells a session how big the pane showing it now is. */
+	/**
+	 *  Tells a session how big the pane showing it now is, in the chat's lane: it answers at once
+	 *  (#4734, ADR 0108).
+	 */
 	resizeSession: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("resize_session", { plane, session, columns, rows })),
 	/**
 	 *  Opens a view of a session for a pane that is now on screen: the channel is sent the screen
 	 *  as it already is, and then the session's output. Answers with the id that closes the view.
+	 * 
+	 *  Off the window's thread, in its turn in the chat's lane (#4734, ADR 0108): after every
+	 *  resize the pane sent before it (#891), and answered once the host has.
 	 */
 	watchSession: (plane: PlaneId, session: number, output: Channel<string>) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output })),
-	/**  Closes a view, for a pane that has gone off screen. The session keeps running. */
+	/**
+	 *  Closes a view, for a pane that has gone off screen, in the chat's lane: it answers at once
+	 *  (#4734, ADR 0108). The session keeps running.
+	 */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
 	/**  Starts a browser in project `plane`, and answers its id. Refused while Stop all holds. */
 	openBrowser: (plane: PlaneId) => typedError<string, string>(__TAURI_INVOKE("open_browser", { plane })),
@@ -4557,6 +4568,16 @@ export const commands = {
 	 */
 	cold: number | null,
 } | null, string>(__TAURI_INVOKE("chat_usage", { plane, session })),
+	/**
+	 *  **Writes one slow moment to the log**, on a blocking thread: a file is not the window's to
+	 *  wait for, least of all while it is slow.
+	 */
+	recordSlow: (moment: SlowMoment) => typedError<null, string>(__TAURI_INVOKE("record_slow", { moment })),
+	/**
+	 *  **The log's recent entries on this machine, newest last**, or none when there is no log
+	 *  (#4774): what a person's diagnostics carry. On a blocking thread, as the write is.
+	 */
+	slowLogRecent: () => typedError<SlowMoment[], string>(__TAURI_INVOKE("slow_log_recent")),
 	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the
@@ -8790,6 +8811,13 @@ export type InboxUpdate = {
  *  page having moved on from the frame it was aimed at; or it was refused, in words to show.
  */
 export type InputOutcome = { outcome: "taken" } | { outcome: "missed" } | { outcome: "refused"; why: string };
+
+/**  What a pane sent its chat that was refused, and why, as the Notice on its pane says it. */
+export type InputRefused = {
+	plane: PlaneId,
+	session: number,
+	why: string,
+};
 
 /**  **An install review**, summary first, and what accepting it says. */
 export type InstallReview = {
@@ -14658,6 +14686,19 @@ export type SkillsMissing = {
 	 */
 	beside_a_built_in: string[],
 };
+
+/**
+ *  One slow moment the window felt, as it sends it. `at` is milliseconds since 1970 by the
+ *  window's clock, a number because `specta` exports no `u64`.
+ */
+export type SlowMoment = 
+/**  An answer to `command` that took `ms`, asked at `at`, while `hot` chats were working. */
+{ kind: "answer"; command: string; ms: number; at: number | null; hot: number } | 
+/**
+ *  A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
+ *  working, with the tab in front (`front`) and whether a view of a chat was opening.
+ */
+{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {

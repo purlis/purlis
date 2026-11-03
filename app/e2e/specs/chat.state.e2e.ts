@@ -103,15 +103,16 @@ describe("what a chat is doing", () => {
   it("shows a turn running, because the harness's hook said so", async () => {
     // The shell the app opens runs `charter hook userpromptsubmit` before it writes a byte,
     // and then holds its output. Nothing about the app knows this is a test, and nothing
-    // about this state came from anything the session printed.
-    await until("running");
+    // about this state came from anything the session printed. The tab says its row's word
+    // for it (#4935).
+    await until("working");
   });
 
   it("counts the running chat on the status line, where the title bar's count moved", async () => {
     // ADR 0054 took the breadcrumb off the title bar, and `N chats running` with it. This is
     // the one run whose harness reports through hooks, so it is the one place a scenario can
     // see a chat that is really running, counted.
-    await until("running");
+    await until("working");
     const count = await $('[data-testid="status-line"] [data-testid="status-running"]');
     await count.waitForExist({
       timeout: 20_000,
@@ -147,7 +148,8 @@ describe("what a chat is doing", () => {
       { timeout: 30_000, interval: 250, timeoutMsg: "the harness never finished its output" },
     );
 
-    await until("waiting on you");
+    // Queued, so its tab says what its row says (#4935): it needs you.
+    await until("needs you");
 
     // Queued, in the title bar: a hand and a count (charter-app#249), the asks registry's
     // (#1690): one thing waits on you.
@@ -190,6 +192,7 @@ describe("what a chat is doing", () => {
     // faint hand again rather than the count.
     const faint = await untilTheHandSays(/^Nothing has asked for you, but /);
     await expect(faint).toHaveAttribute("data-tone", "quiet");
-    expect(await doing(await theTab())).toBe("waiting on you");
+    // Its turn ended and the person set it aside: idle, as its row says (#4935).
+    expect(await doing(await theTab())).toBe("idle");
   });
 });
