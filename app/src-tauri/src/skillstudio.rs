@@ -1520,11 +1520,23 @@ pub(crate) async fn skill_studio(
 ) -> Result<Studio, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
+    let asked = std::time::Instant::now(); // [DEBUG-4351]
     crate::off_the_window("reading the project's skills", move || {
+        let t0 = std::time::Instant::now(); // [DEBUG-4351]
+        eprintln!(
+            "[DEBUG-4351] studio queued {} ms",
+            asked.elapsed().as_millis()
+        ); // [DEBUG-4351]
         let built_in =
             crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
+        eprintln!(
+            "[DEBUG-4351] studio built_in {} ms",
+            t0.elapsed().as_millis()
+        ); // [DEBUG-4351]
         let on = purlis_core::skills::studio_on_here();
         let read = |more: &[&dyn purlis_core::skills::SkillLint]| {
+            let t = std::time::Instant::now(); // [DEBUG-4351]
+            let r = // [DEBUG-4351]
             studio_linted(
                 held.root(),
                 built_in.as_deref(),
@@ -1533,14 +1545,26 @@ pub(crate) async fn skill_studio(
                 persona.as_deref(),
                 &purlis_core::harness_plugin::Env::of(&[]),
                 more,
-            )
+            );
+            eprintln!(
+                "[DEBUG-4351] studio linted {} ms ({} lints)",
+                t.elapsed().as_millis(),
+                more.len()
+            ); // [DEBUG-4351]
+            r // [DEBUG-4351]
         };
         // The extensions' lints only while the studio is on: off, nothing is read at all.
+        let t1 = std::time::Instant::now(); // [DEBUG-4351]
         let mut studio = if on {
             with_list_lints(&executor, held.root(), read)
         } else {
             read(&[])
         };
+        eprintln!(
+            "[DEBUG-4351] studio with_list_lints total {} ms",
+            t1.elapsed().as_millis()
+        ); // [DEBUG-4351]
+        let t2 = std::time::Instant::now(); // [DEBUG-4351]
         with_the_projects_needs(
             &mut studio,
             held.root(),
@@ -1556,6 +1580,11 @@ pub(crate) async fn skill_studio(
                 .map(|one| StudioRouted::of(one.session, &one.routed, one.last_prompt.as_ref()))
                 .collect();
         }
+        eprintln!(
+            "[DEBUG-4351] studio needs+router {} ms; whole {} ms",
+            t2.elapsed().as_millis(),
+            t0.elapsed().as_millis()
+        ); // [DEBUG-4351]
         Ok(studio)
     })
     .await
