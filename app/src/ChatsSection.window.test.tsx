@@ -2300,6 +2300,30 @@ const threeTasks = () => [
   chat(4, "alpha", { persona: "devops", from: by(1, "task") }),
 ];
 
+describe("a chat's row places its chat (#4764)", () => {
+  it("picks its chat up for placement mode on a press of its Place…", async () => {
+    const { move } = core(threeTasks());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+    move(3, "running", 13);
+    const one = row(tree, "devops 3");
+    const place = one.querySelector<HTMLElement>(".ui-row-place");
+    expect(place).not.toBeNull();
+    fireEvent.click(place as HTMLElement);
+    await waitFor(() =>
+      expect(document.querySelector("[data-pane-drag-said]")?.textContent).toMatch(
+        /^Picked up devops 3\. Arrow keys choose a side/,
+      ),
+    );
+    // Drawn and said where it is seen, never inside a section that hides itself (the Inbox's
+    // Notices hide with none to show, and once held this layer).
+    expect(document.querySelector("[data-pane-drag-said]")?.closest("[hidden]")).toBeNull();
+    // The keyboard is on placement mode's first target.
+    await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
+  });
+});
+
 describe("a chat's row is one line, with a hover card (#1675)", () => {
   it("draws its persona's badge with its state on it, and its name, and nothing more", async () => {
     const { move } = core(threeTasks());
@@ -2313,12 +2337,16 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
       // One line, and no second line: the name, then the state, which is drawn first and
       // heard after the name, then the persona's badge at the row's end (DS-11).
       expect(one.querySelector(".line.two")).toBeNull();
-      const parts = [...one.children].filter((part) => !part.matches(".ui-tree-twist"));
+      // The twist and Place… are the pointer's, out of the accessibility tree (#4764).
+      const parts = [...one.children].filter(
+        (part) => !part.matches(".ui-tree-twist, .ui-row-place"),
+      );
       expect(parts.map((part) => part.className)).toEqual([
         "ui-row-label session ui-text-body",
         "ui-row-lead",
         "ui-row-trail",
       ]);
+      expect(one.querySelector(".ui-row-place")).toHaveAttribute("aria-hidden", "true");
       expect(drawnAs(parts[1], "order")).toBe("-1");
       // The persona's mark leads, with the state on it, and both are said (#3342).
       expect(parts[1].children[0]).toHaveClass("chat-persona");

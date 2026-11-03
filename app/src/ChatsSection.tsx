@@ -1,10 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { CHAT_ROW } from "./paneDrag";
+import { CHAT_ROW, PickUpHere } from "./paneDrag";
+import { keySaid } from "./keys/registry";
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useMemo,
@@ -17,7 +19,7 @@ import {
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { AnchoredPopover } from "./ui/popover/Popover";
-import { ChevronRight, Ellipsis, Hand, LayoutGrid, Plus, Search } from "lucide-react";
+import { ChevronRight, Ellipsis, Hand, LayoutGrid, Move, Plus, Search } from "lucide-react";
 import {
   BROWSERS_SHOW,
   besideId,
@@ -1502,6 +1504,8 @@ const Row = memo(function Row({
   };
   /** The row itself, which takes the keyboard back when the second step is answered Keep. */
   const self = useRef<HTMLButtonElement>(null);
+  /** Placement mode's pick-up, for the row's Place… (#4764): it never changes. */
+  const pickUp = useContext(PickUpHere);
   // Asked once, as the row is drawn: whether its chat's state changed while it was not.
   const [changed] = useState(() => clock.missed(session));
   // A task's tokens, in its card (#1500): read as the pointer or the keyboard rests on the
@@ -1669,6 +1673,25 @@ const Row = memo(function Row({
             <span className="ui-row-lead">
               <ChatPersonaState persona={persona} {...state} changed={changed} />
             </span>
+            {/* **Place…** (#4764): the pointer's single press for what dragging the row does,
+                    placement mode's targets. As the twist, inside the row, which is a button, so
+                    no button itself and not in the accessibility tree: ⌘⇧M on the row is the
+                    keyboard's way to the same. Drawn under the pointer only, over the row's end. */}
+            {pickUp !== undefined && (
+              <Tooltip tip={`Place ${name}… (${keySaid("pane.place")})`}>
+                <span
+                  className="ui-row-place"
+                  aria-hidden="true"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    pickUp({ kind: "chat", session, chat: "" }, self.current);
+                  }}
+                >
+                  <Move aria-hidden="true" />
+                </span>
+              </Tooltip>
+            )}
             <span className="ui-row-trail" data-gives-way={questioned || undefined}>
               {open === false && (
                 <>

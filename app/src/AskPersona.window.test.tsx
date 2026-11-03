@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { GRIP_HANDLE } from "./paneDrag";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -462,10 +463,12 @@ describe("a refused vault, on a pane whose chat has already asked that persona",
     // The chat at a glance is the header's one line, and the Notices are not items of it: they
     // are the pane's band, above the header and the terminal, inside the pane (#1647, #3142).
     const head = document.querySelector(".pane-head");
-    expect([...(head?.children ?? [])].map((one) => one.className)).toEqual([
-      "pane-chips",
-      "pane-actions",
-    ]);
+    expect(
+      [...(head?.children ?? [])].map((one) =>
+        // Its grip first, which picks the pane up (#4764).
+        one.hasAttribute(GRIP_HANDLE) ? "grip" : one.className,
+      ),
+    ).toEqual(["grip", "pane-chips", "pane-actions"]);
     const frame = head?.closest(".pane-frame");
     expect([...(frame?.children ?? [])].map((one) => one.className)).toEqual([
       "pane-top",

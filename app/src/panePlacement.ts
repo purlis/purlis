@@ -132,6 +132,26 @@ export function sameTarget(a: Target, b: Target): boolean {
   );
 }
 
+/**
+ * **What a target is called where it can't be dropped on**: its place by the pane it is on, or
+ * the strip's New tab. Its reason is its description (the button family's hint).
+ */
+export function targetSaid(target: Target, there: string): string {
+  if (target.kind === "strip") return "New tab";
+  switch (target.place) {
+    case "left":
+      return `Left of ${there}`;
+    case "right":
+      return `Right of ${there}`;
+    case "top":
+      return `Above ${there}`;
+    case "bottom":
+      return `Below ${there}`;
+    case "middle":
+      return `In place of ${there}`;
+  }
+}
+
 /** **What is said as something is picked up** (#4583's ruling, politely). */
 export function pickedUpSaid(name: string): string {
   return `Picked up ${name}. Arrow keys choose a side, Tab the next pane, Enter drops, Escape cancels.`;
