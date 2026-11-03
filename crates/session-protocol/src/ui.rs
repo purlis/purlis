@@ -1255,6 +1255,11 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "smart_closing",
     "stale_clones",
     "start_options",
+    // `start_options` in two answers (#4736): the cheap first one the dialog opens on, and
+    // each row's approval, sandbox and billing by name. Together they answer what
+    // `start_options` does, so they are served where it is.
+    "start_options_first",
+    "start_details",
     "stopping_chats",
     "tab_shows",
     "take_repos",
