@@ -19,7 +19,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { Button } from "./ui/button/Button";
-import { expectFocusInSight, pictureNow, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 function Pressable({ autoFocus = false }: { autoFocus?: boolean }) {
   return (
@@ -53,13 +53,11 @@ export const EndsOnAPress: Story = {
  *  alone. It ends on a press too, for the story after it. */
 export const FocusTakenAfterAPress: Story = {
   args: { autoFocus: true },
-  parameters: { screenshot: "frame" },
   play: async (context) => {
     const cancel = context.canvas.getByRole("button", { name: "Cancel" });
     await untilFocused(() => cancel, "Cancel, focused as it is drawn");
     expectFocusInSight();
     await expect(cancel).toHaveAttribute("data-focus-visible");
-    await pictureNow();
     await pressTheWords(context);
   },
 };
