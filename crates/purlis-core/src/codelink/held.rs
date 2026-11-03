@@ -45,6 +45,9 @@ pub const MOST_FOLDERS: usize = 200_000;
 /// The ref under which `HEAD` is listed: the commit checked out, on a branch or on none.
 pub const HEAD: &str = "HEAD";
 
+/// The ref a repository's newest stash is under.
+const STASH: &str = "refs/stash";
+
 /// **Every repository in the projects kept in `projects`** (1.69, #4569), each project a folder
 /// named by its id, and what could not be looked through, in sentences. No link is followed, and
 /// nothing inside a repository's own git folder is looked through.
@@ -251,6 +254,21 @@ fn one(dir: &Path, project: &str, rel: &str, kind: Kind) -> Result<Held, String>
             oid: commit.to_owned(),
         });
     }
+    // **Every stash, not only the newest** (#4781): `refs/stash` names the last one, and those
+    // under it live only in its log, which no fetch carries.
+    if refs.iter().any(|one| one.name == STASH) {
+        let logged = run(dir, &["log", "--walk-reflogs", "--format=%H", STASH])
+            .map_err(|why| failed("read", &why.to_string()))?;
+        if !logged.ok() {
+            return Err(failed("read", &logged.err));
+        }
+        for (n, oid) in logged.out.lines().enumerate().skip(1) {
+            refs.push(Ref {
+                name: format!("{STASH}@{{{n}}}"),
+                oid: oid.trim().to_owned(),
+            });
+        }
+    }
     let head = run(dir, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
         .map_err(|why| failed("read", &why.to_string()))?;
     if head.ok() && !head.line().is_empty() {
@@ -329,6 +347,33 @@ fn uncommitted(dir: &Path, project: &str, rel: &str) -> Result<Vec<Changed>, Str
             continue;
         }
         paths.push(path.to_owned());
+    }
+    // **What git is told not to look at** (#4781): `status` shows no change to a file marked
+    // unchanged (`assume-unchanged`, a lower-case tag) or to skip the work tree (`skip-worktree`,
+    // `S`), so each one there is listed as it is, and is no loss only where it is the same here.
+    // One that is not there holds nothing: a sparse checkout leaves its files out so.
+    let flagged = run(dir, &["ls-files", "-z", "-v"]).map_err(|why| unread(why.to_string()))?;
+    if !flagged.ok() {
+        return Err(unread(flagged.err.trim().to_owned()));
+    }
+    for entry in flagged.out.split('\0').filter(|entry| entry.len() > 2) {
+        let (tag, path) = entry.split_at(2);
+        let tag = tag.chars().next().unwrap_or(' ');
+        if !(tag.is_ascii_lowercase() || tag == 'S') {
+            continue;
+        }
+        if path.contains(char::REPLACEMENT_CHARACTER) {
+            return Err(unread(format!(
+                "a file whose name is not text, `{path}`, can't be compared"
+            )));
+        }
+        let top = path.split('/').next().unwrap_or(path);
+        if left_out.iter().any(|out| out == top) {
+            continue;
+        }
+        if std::fs::symlink_metadata(dir.join(path)).is_ok() {
+            paths.push(path.to_owned());
+        }
     }
     paths.sort();
     paths.dedup();

@@ -516,3 +516,96 @@ fn what_is_kept_beside_the_projects_is_not_looked_through() {
 
     assert_eq!(world.not_home(), Vec::<String>::new());
 }
+
+/// **A file git is told not to look at still counts** (#4781): `git status` does not show a
+/// change to one marked unchanged, so the runner looks at what it holds itself.
+#[test]
+fn a_file_marked_as_unchanged_that_the_task_changed_keeps_the_runner() {
+    let world = World::new();
+    git(
+        &world.web(),
+        &["update-index", "--assume-unchanged", "index.html"],
+    );
+    std::fs::write(
+        world.web().join("index.html"),
+        "changed where git won't look\n",
+    )
+    .unwrap();
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "differ here: index.html"), "{missing:?}");
+}
+
+/// **A file left out of git's view of the work tree still counts** (#4781): one marked to skip
+/// the work tree, as a sparse checkout marks it.
+#[test]
+fn a_file_marked_to_skip_the_work_tree_that_the_task_changed_keeps_the_runner() {
+    let world = World::new();
+    git(
+        &world.web(),
+        &["update-index", "--skip-worktree", "index.html"],
+    );
+    std::fs::write(
+        world.web().join("index.html"),
+        "changed outside git's view\n",
+    )
+    .unwrap();
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "differ here: index.html"), "{missing:?}");
+}
+
+/// **What a sparse checkout leaves out is no loss** (#4781): a file marked to skip the work tree
+/// and not there holds nothing, and its commit is home.
+#[test]
+fn a_file_a_sparse_checkout_leaves_out_is_no_loss() {
+    let world = World::new();
+    git(
+        &world.web(),
+        &["update-index", "--skip-worktree", "index.html"],
+    );
+    std::fs::remove_file(world.web().join("index.html")).unwrap();
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
+}
+
+/// **A file marked as unchanged that is as it is here is no loss** (#4781).
+#[test]
+fn a_file_marked_as_unchanged_that_is_as_it_is_here_is_no_loss() {
+    let world = World::new();
+    git(
+        &world.web(),
+        &["update-index", "--assume-unchanged", "index.html"],
+    );
+
+    assert_eq!(world.not_home(), Vec::<String>::new());
+}
+
+/// **Every stash counts, not only the newest** (#4781): `refs/stash` names the last one, and
+/// the ones under it are only in its log.
+#[test]
+fn a_stash_under_the_newest_keeps_the_runner() {
+    let world = World::new();
+    let stash = |text: &str| {
+        std::fs::write(world.web().join("index.html"), text).unwrap();
+        git(
+            &world.web(),
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "stash",
+                "-q",
+            ],
+        );
+    };
+    stash("stashed first\n");
+    stash("stashed last\n");
+
+    let missing = world.not_home();
+
+    assert!(says(&missing, "refs/stash@{1}"), "{missing:?}");
+}
