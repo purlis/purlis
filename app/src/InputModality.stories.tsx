@@ -19,7 +19,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { Button } from "./ui/button/Button";
-import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, pictureNow, untilFocused } from "./stories.testkit";
 
 function Pressable({ autoFocus = false }: { autoFocus?: boolean }) {
   return (
@@ -59,6 +59,7 @@ export const FocusTakenAfterAPress: Story = {
     await untilFocused(() => cancel, "Cancel, focused as it is drawn");
     expectFocusInSight();
     await expect(cancel).toHaveAttribute("data-focus-visible");
+    await pictureNow();
     await pressTheWords(context);
   },
 };
