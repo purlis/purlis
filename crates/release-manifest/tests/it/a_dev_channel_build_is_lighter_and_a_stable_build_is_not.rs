@@ -57,7 +57,7 @@ fn dev_release_is_release_with_a_lighter_link_and_nothing_else() {
             "codegen-units = 1",
             "lto = true",
             "opt-level = 3",
-            r#"panic = "abort""#,
+            r#"panic = "unwind""#,
             "strip = true",
         ]
     );
