@@ -48,9 +48,11 @@ import { paneBand } from "./noticeSettle";
 import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
 import { SkillsChip } from "./UseSkill";
-import { harnessCardView, isOneJob, type Layout, type ViewRef } from "./tabs";
+import { harnessCardView, isOneJob, panes, type Content, type Layout, type ViewRef } from "./tabs";
 import { EVEN, shareOf, WHOLE } from "./laidOut";
-import { floorAlong } from "./paneDrop";
+import { floorAlong, type Size } from "./paneDrop";
+import { drawnOf, refusedAt, type Drawn, type Folded } from "./paneFold";
+import { keepHolds, keptHolds, PaneRail, type RailPane } from "./PaneRail";
 import { dropPane, GRIP } from "./paneDrag";
 import { paneNamesOf } from "./panePlaces";
 import { type Crumbs } from "./tabChats";
@@ -78,7 +80,7 @@ import {
   ChatNotices,
 } from "./ChatNotices";
 import { Button, IconButton } from "./ui/button/Button";
-import { Bell, Reply, ScrollText, Square, Undo2 } from "lucide-react";
+import { Bell, Plus, Puzzle, Reply, ScrollText, Square, SquareTerminal, Undo2 } from "lucide-react";
 import { droppedAt, stateButtonOf, type ChatHead, type HeadPart } from "./paneHead";
 import { PaneTerminalAt, type PaneTerminal } from "./paneTerminal";
 import { stemOf } from "./menuModel";
@@ -86,6 +88,7 @@ import { ChatShownState } from "./ChatRows";
 import { ChatPersonaState } from "./ChatPersonaState";
 import { SandboxMark } from "./SandboxMark";
 import { WrappingUp } from "./NeedsYou";
+import { NEW_CHAT } from "./tabFace";
 import { bellCount, bellSays, HOLDS_NOTHING, type BandHolds } from "./paneNotices";
 import { showNotices, useNoticesMinimised } from "./paneNoticesPref";
 import { useSaidAtMost } from "./ui/said";
@@ -246,7 +249,15 @@ export function PaneFrame({
   const roomy = width === undefined || width > NARROW_REM * remPx();
   /** What the band holds, for the bell in the pane's header (#4754), and the bell itself, which
    *  the band's Dismiss all hands the keyboard to once it has cleared the band. */
-  const [holds, setHolds] = useState<BandHolds>(HOLDS_NOTHING);
+  const [holds, setHolding] = useState<BandHolds>(HOLDS_NOTHING);
+  // And kept by its band, for the rail that says it while the pane is folded (#4766).
+  const setHolds = useCallback(
+    (now: BandHolds) => {
+      setHolding(now);
+      if (pane !== undefined) keepHolds(paneBand(plane, pane), now);
+    },
+    [plane, pane],
+  );
   const bellAt = useRef<HTMLButtonElement>(null);
   /** The terminal the pane draws, for Copy and Paste on its head's right-click (#4760). */
   const terminalAt = useRef<PaneTerminal | null>(null);
@@ -735,6 +746,40 @@ export function NoticeOfChat({
 /** No chat's head facts: a pane head then says what its pane line says without them. */
 const NO_HEADS = (): ChatHead | undefined => undefined;
 
+/** **What a folded pane's rail shows for what it holds** (#4766): its name and its icon. */
+export type PaneFace = { name: string; mark: ReactNode };
+
+/** A pane's face where the window gives none: its chat's own name, a view's, or what an empty
+ *  pane would do, each with its kind's mark. */
+function faceByKind(content: Content): PaneFace {
+  if (content.kind === "session")
+    return { name: content.chat, mark: <SquareTerminal aria-hidden="true" /> };
+  if (content.kind === "view")
+    return { name: content.view.view, mark: <Puzzle aria-hidden="true" /> };
+  return { name: NEW_CHAT, mark: <Plus aria-hidden="true" /> };
+}
+
+/** The panes of a folded side, as its rail draws them: each one's face, the notes its band
+ *  last held, and whether the chat it shows asks the person now. */
+function railOf(
+  side: Layout,
+  folded: Folded,
+  plane: PlaneId,
+  faceOf: (content: Content) => PaneFace | undefined,
+  waiting: readonly Shown[] | undefined,
+): RailPane[] {
+  return panes(side)
+    .filter(({ pane }) => folded.panes.includes(pane))
+    .map(({ pane, content }) => ({
+      pane,
+      ...(faceOf(content) ?? faceByKind(content)),
+      holds: keptHolds(paneBand(plane, pane)),
+      asks:
+        content.kind === "session" &&
+        (waiting ?? []).some((ask) => ask.session === content.session),
+    }));
+}
+
 /** A tab's layout, as panes with a handle between each split. */
 export function LayoutPanes({
   plane,
@@ -791,6 +836,9 @@ export function LayoutPanes({
   onResumeTask,
   names,
   path = "",
+  room,
+  faceOf = faceByKind,
+  drawn: given,
 }: {
   /** The chats the launch has still to start (`restoring.rs`): each one's pane says so, in the
    *  place its terminal takes. */
@@ -924,7 +972,16 @@ export function LayoutPanes({
   /** This layout's path from its tab's root: `a` for a split's first child, `b` for its
    *  second. The tab's own layout is `""`. */
   path?: string;
+  /** The room the window gives the tab's panes, once it has been laid out: a split that cannot
+   *  give each side its minimum folds the side without the focus to a rail (#4766). */
+  room?: Size;
+  /** What a folded pane's rail shows for what it holds: its name and its icon. */
+  faceOf?: (content: Content) => PaneFace | undefined;
+  /** What the tab's root drew in `room` (`paneFold.ts`), handed down to each side. */
+  drawn?: Drawn;
 }) {
+  // **Folding is decided here, as the tab is drawn, and never written to its tree** (#4766).
+  const drawn = given ?? (room === undefined ? undefined : drawnOf(layout, focused, room));
   // The pane is one side of a split. Read here: a chat's pane names its breadcrumb `path`.
   const inSplit = path !== "";
   // **Whether the chat this pane draws has ended** (#4756): read for every layout, so the hooks
@@ -952,6 +1009,7 @@ export function LayoutPanes({
             doing={
               <PaneActions
                 pane={layout.pane}
+                size={drawn?.sizes[layout.pane]}
                 offerFor={offerFor}
                 closeOf={closeOf}
                 onPaneDoes={onPaneDoes}
@@ -991,6 +1049,7 @@ export function LayoutPanes({
             doing={
               <PaneActions
                 pane={layout.pane}
+                size={drawn?.sizes[layout.pane]}
                 offerFor={offerFor}
                 closeOf={closeOf}
                 onPaneDoes={onPaneDoes}
@@ -1084,6 +1143,7 @@ export function LayoutPanes({
     const doing = (
       <PaneActions
         pane={layout.pane}
+        size={drawn?.sizes[layout.pane]}
         offerFor={offerFor}
         closeOf={closeOf}
         onPaneDoes={onPaneDoes}
@@ -1233,6 +1293,86 @@ export function LayoutPanes({
     const first = sizes[`pane-${sideOf(0)}`];
     if (typeof first === "number") split.shared?.(path, Math.round(first * 10));
   };
+  /** One side of this split, drawn whole: its own panes and splits. */
+  const drawSide = (side: 0 | 1) => (
+    <LayoutPanes
+      path={sideOf(side)}
+      plane={plane}
+      restoring={restoring}
+      layout={layout.children[side]}
+      crumbs={crumbs}
+      placed={placed}
+      endedTasks={endedTasks}
+      unread={unread}
+      finished={finished}
+      explaining={explaining}
+      others={others}
+      asked={asked}
+      asks={asks}
+      waiting={waiting}
+      onShowInbox={onShowInbox}
+      onAnswer={onAnswer}
+      closeOf={closeOf}
+      onShowChat={onShowChat}
+      focused={focused}
+      onFocus={onFocus}
+      offerFor={offerFor}
+      offers={offers}
+      heads={heads}
+      onPaneDoes={onPaneDoes}
+      name={name}
+      handedFrom={handedFrom}
+      glances={glances}
+      workItems={workItems}
+      byHand={byHand}
+      onByHand={onByHand}
+      startNotes={startNotes}
+      onDismissStartNote={onDismissStartNote}
+      onRestartChat={onRestartChat}
+      blocks={blocks}
+      onDismissBlock={onDismissBlock}
+      onRestarted={onRestarted}
+      onAllowed={onAllowed}
+      restartsSaid={restartsSaid}
+      onRestartAnswer={onRestartAnswer}
+      offered={offered}
+      onOpenView={onOpenView}
+      onOpenViewBeside={onOpenViewBeside}
+      onAsk={onAsk}
+      onVaultChanged={onVaultChanged}
+      memory={memory}
+      firstTask={firstTask}
+      onNewChatOn={onNewChatOn}
+      split={split}
+      runningIn={runningIn}
+      tab={tab}
+      faceOf={faceOf}
+      drawn={drawn}
+      chatName={chatName}
+      onClearPane={onClearPane}
+      onResumeTask={onResumeTask}
+      names={named}
+    />
+  );
+  // **A split that cannot give each side its minimum** (#4766): the side without the focus is
+  // a rail beside the other, or a bar above or below it, and the other takes the rest.
+  const folded = drawn?.folds[path];
+  if (folded !== undefined) {
+    const rail = (
+      <PaneRail
+        as={folded.as}
+        panes={railOf(layout.children[folded.side], folded, plane, faceOf, waiting)}
+        onOpen={onFocus}
+      />
+    );
+    return (
+      <div className="pane-folds" data-direction={layout.direction}>
+        {folded.side === 0 && rail}
+        <div className="pane-folds-kept">{drawSide(folded.side === 0 ? 1 : 0)}</div>
+        {folded.side === 1 && rail}
+      </div>
+    );
+  }
   return (
     <Group
       // **A tab's sizes are its own** (#4755): the library reads a side's size once, as it
@@ -1274,62 +1414,7 @@ export function LayoutPanes({
             minSize={floorAlong(child, layout.direction)}
             {...regionOf(child)}
           >
-            <LayoutPanes
-              path={sideOf(side)}
-              plane={plane}
-              restoring={restoring}
-              layout={child}
-              crumbs={crumbs}
-              placed={placed}
-              endedTasks={endedTasks}
-              unread={unread}
-              finished={finished}
-              explaining={explaining}
-              others={others}
-              asked={asked}
-              asks={asks}
-              waiting={waiting}
-              onShowInbox={onShowInbox}
-              onAnswer={onAnswer}
-              closeOf={closeOf}
-              onShowChat={onShowChat}
-              focused={focused}
-              onFocus={onFocus}
-              offerFor={offerFor}
-              offers={offers}
-              heads={heads}
-              onPaneDoes={onPaneDoes}
-              name={name}
-              handedFrom={handedFrom}
-              glances={glances}
-              workItems={workItems}
-              byHand={byHand}
-              onByHand={onByHand}
-              startNotes={startNotes}
-              onDismissStartNote={onDismissStartNote}
-              onRestartChat={onRestartChat}
-              blocks={blocks}
-              onDismissBlock={onDismissBlock}
-              onRestarted={onRestarted}
-              onAllowed={onAllowed}
-              restartsSaid={restartsSaid}
-              onRestartAnswer={onRestartAnswer}
-              offered={offered}
-              onOpenView={onOpenView}
-              onOpenViewBeside={onOpenViewBeside}
-              onAsk={onAsk}
-              onVaultChanged={onVaultChanged}
-              memory={memory}
-              firstTask={firstTask}
-              onNewChatOn={onNewChatOn}
-              split={split}
-              runningIn={runningIn}
-              tab={tab}
-              chatName={chatName}
-              onClearPane={onClearPane}
-              onResumeTask={onResumeTask}
-              names={named}
-            />
+            {drawSide(side as 0 | 1)}
           </Panel>
         </Fragment>
       ))}
@@ -1398,8 +1483,12 @@ export function PaneDoing({
   onPaneDoes,
   task = false,
   oneJob = false,
+  size,
 }: {
   pane: number;
+  /** The pane's size as drawn (`paneFold.ts`): Split right and Split down grey out, with their
+   *  reason, where a half would be under the minimum (#4766). Not known, they split. */
+  size?: Size;
   offerFor: (id: string) => Offer | undefined;
   /** This pane's close, which is not the focused pane's where the two differ (#1486): a pane
    *  beside one that shows a task still closes. For a task's own pane it is the minimise
@@ -1427,7 +1516,7 @@ export function PaneDoing({
   ];
   return <div className="pane-doing">{rows.map(draw)}</div>;
   function draw(id: string) {
-    const offer = id === "pane.close" ? closeOf(pane) : offerFor(id);
+    const offer = refusedAt(id === "pane.close" ? closeOf(pane) : offerFor(id), size);
     if (!offer) return null;
     const Mark = markOf(offer);
     return (

@@ -108,3 +108,23 @@ export function splitRefused(
     ? "Too short to split: each side would be under about 8 rows. Make the window taller or close a pane."
     : undefined;
 }
+
+/** The splits a pane's head and the palette offer, by their catalogue row. */
+const SPLITS: Readonly<Record<string, "row" | "column">> = {
+  "pane.split.right": "row",
+  "pane.split.down": "column",
+};
+
+/**
+ * **`offer` for a pane of `size`**: a split row greyed with {@link splitRefused}'s reason where a
+ * half would be under the minimum, and any other row, or a split that fits, as it is.
+ */
+export function refusedAt<T extends { id: string; available: boolean; reason: string }>(
+  offer: T | undefined,
+  size: Size | undefined,
+): T | undefined {
+  const direction = offer === undefined ? undefined : SPLITS[offer.id];
+  if (offer === undefined || direction === undefined || !offer.available) return offer;
+  const why = splitRefused(size, direction);
+  return why === undefined ? offer : { ...offer, available: false, reason: why };
+}
