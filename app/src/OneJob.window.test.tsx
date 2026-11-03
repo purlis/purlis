@@ -67,6 +67,22 @@ function core(chats: OpenChat[]) {
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return chats;
+    if (cmd === "plane_sidebar")
+      return {
+        root: PLANE,
+        personas: [],
+        persona: null,
+        unfiled: [],
+        workspaces: [
+          {
+            name: "ide",
+            path: `${PLANE}/workspaces/ide`,
+            vision: "",
+            todos: [],
+            chats: chats.filter((one) => !closed.includes(one.session)),
+          },
+        ],
+      };
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "close_session") {
@@ -164,5 +180,33 @@ describe("a terminal editor opened from a file", () => {
     expect(focusedSession()).toBe("session 1");
     expect(tabNames()).toEqual(["ide.1"]);
     await waitFor(() => expect(closed).toEqual([2]));
+  });
+});
+
+/**
+ * **A shell whose program exits leaves an empty pane, and no ended band** (#4761; spec #4750
+ * story 64, ADR 0062 as amended 2026-11-02): it is not a chat to Resume. Its row goes, since the
+ * core closes it, and no band is drawn on the way, not even for a frame.
+ */
+describe("a shell whose program exits", () => {
+  it("leaves its pane empty, draws no ended band, and the core closes it", async () => {
+    const { exited, closed } = core([chat(1)]);
+    render(<App />);
+    await waitFor(() => expect(frameOf(1)).toBeDefined());
+    const bands: string[] = [];
+    const watching = new MutationObserver(() => {
+      for (const one of document.querySelectorAll("[role=status]"))
+        if (/ended/i.test(one.textContent ?? "")) bands.push(one.textContent ?? "");
+    });
+    watching.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    await exited(1);
+    await act(() => new Promise((done) => setTimeout(done, 50)));
+
+    watching.disconnect();
+    expect(bands).toEqual([]);
+    expect(frameOf(1)).toBeUndefined();
+    await waitFor(() => expect(closed).toEqual([1]));
+    expect(tabNames()).toHaveLength(1);
   });
 });
