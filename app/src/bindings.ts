@@ -3271,6 +3271,12 @@ export const commands = {
 	 */
 	poolSetupTry: (plane: PlaneId, pool: string, workspace: string | null) => typedError<PoolSetupTried, string>(__TAURI_INVOKE("pool_setup_try", { plane, pool, workspace })),
 	/**
+	 *  **Cancels the Try it under way on pool `pool`** (#4976), on the person's press, as Cancel on
+	 *  the picker stops a start: its start stops waiting for the runner, its wait for the chat's start
+	 *  ends, and its chat is closed. Nothing is kept. Silent where no Try it is under way there.
+	 */
+	poolSetupTryCancel: (pool: string) => __TAURI_INVOKE<void>("pool_setup_try_cancel", { pool }),
+	/**
 	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 	 *  elsewhere, with what to do instead.
 	 */
@@ -11429,8 +11435,13 @@ export type PoolSetupStep = {
 
 /**  What Try it found. */
 export type PoolSetupTried = {
-	/**  Why it didn't pass; null where a real chat started and the proof is kept. */
+	/**
+	 *  Why it didn't pass; null where a real chat started and the proof is kept, or where the
+	 *  person cancelled it.
+	 */
 	failed: PoolSetupFailed | null,
+	/**  The person cancelled it (#4976): nothing was kept, and its chat is closed. */
+	cancelled: boolean,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
 };

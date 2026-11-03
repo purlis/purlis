@@ -70,7 +70,9 @@ afterEach(() => {
 
 describe("TryStep", () => {
   it("starts a real chat only on its own button", async () => {
-    const calls = core({ pool_setup_try: () => ({ failed: null, workspace: "web" }) });
+    const calls = core({
+      pool_setup_try: () => ({ failed: null, cancelled: false, workspace: "web" }),
+    });
     const { changed } = draw(READY);
     expect(calls.some((call) => call.cmd === "pool_setup_try")).toBe(false);
     await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
@@ -83,7 +85,9 @@ describe("TryStep", () => {
   });
 
   it("starts its chat in the workspace the tab is filed in", async () => {
-    const calls = core({ pool_setup_try: () => ({ failed: null, workspace: "web" }) });
+    const calls = core({
+      pool_setup_try: () => ({ failed: null, cancelled: false, workspace: "web" }),
+    });
     const { changed } = draw(READY, "web");
     await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
     await waitFor(() => expect(changed).toHaveBeenCalled());
@@ -114,6 +118,43 @@ describe("TryStep", () => {
     );
   });
 
+  it("can be cancelled while its chat starts, and goes back to its start with nothing kept", async () => {
+    let answer: (tried: unknown) => void = () => undefined;
+    const calls = core({
+      pool_setup_try: () => new Promise((resolve) => (answer = resolve)),
+      pool_setup_try_cancel: () => {
+        answer({ failed: null, cancelled: true, workspace: null });
+        return null;
+      },
+    });
+    const { changed } = draw(READY);
+    await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(calls.find((call) => call.cmd === "pool_setup_try_cancel")?.args).toEqual({
+      pool: "dev-box",
+    });
+    expect(await screen.findByRole("button", { name: "Start a test chat" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Try it for real" })).toBeTruthy();
+    expect(screen.queryByText("What happened")).toBeNull();
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it("cancels a try still under way when the person leaves the step", async () => {
+    const calls = core({ pool_setup_try: () => new Promise(() => undefined) });
+    draw(READY);
+    await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
+    await screen.findByRole("button", { name: "Cancel" });
+    cleanup();
+    expect(calls.some((call) => call.cmd === "pool_setup_try_cancel")).toBe(true);
+  });
+
+  it("cancels nothing when the person leaves a step with no try under way", () => {
+    const calls = core();
+    draw(READY);
+    cleanup();
+    expect(calls.some((call) => call.cmd === "pool_setup_try_cancel")).toBe(false);
+  });
+
   it("ends on what passed, with one button to open a chat there", async () => {
     core();
     const { onOpenChat } = draw(PASSED);
@@ -124,7 +165,7 @@ describe("TryStep", () => {
 
   it("opens a chat in the workspace its test chat started in", async () => {
     let step = READY;
-    core({ pool_setup_try: () => ({ failed: null, workspace: "web" }) });
+    core({ pool_setup_try: () => ({ failed: null, cancelled: false, workspace: "web" }) });
     const props = { changed: vi.fn(), onGo: vi.fn(), onOpenChat: vi.fn() };
     const { rerender } = render(<TryStep step={step} pool="dev-box" plane="p" {...props} />);
     await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
@@ -151,6 +192,7 @@ describe("TryStep", () => {
     core({
       pool_setup_try: () => ({
         failed: { why: "work isn't signed in on this pool.", step: "signins" },
+        cancelled: false,
       }),
     });
     const { onGo, changed } = draw(READY);
@@ -167,8 +209,11 @@ describe("TryStep", () => {
       pool_setup_try: () => {
         tries += 1;
         return tries === 1
-          ? { failed: { why: "work isn't signed in on this pool.", step: "signins" } }
-          : { failed: null, workspace: "web" };
+          ? {
+              failed: { why: "work isn't signed in on this pool.", step: "signins" },
+              cancelled: false,
+            }
+          : { failed: null, cancelled: false, workspace: "web" };
       },
     });
     const { changed } = draw(READY);
@@ -189,7 +234,7 @@ describe("TryStep", () => {
       pool_setup_try: () => {
         tries += 1;
         if (tries === 1) throw "the runner didn't answer";
-        return { failed: null, workspace: "web" };
+        return { failed: null, cancelled: false, workspace: "web" };
       },
     });
     const { changed } = draw(READY);

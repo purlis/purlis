@@ -511,6 +511,7 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup_skip,
                 poolsetuptab::pool_setup_wake,
                 poolsetuptab::pool_setup_try,
+                poolsetuptab::pool_setup_try_cancel,
                 poolsetuptab::pool_setup_open_docker,
                 dockerpools::add_docker_pool,
                 dockerpools::remove_docker_pool,

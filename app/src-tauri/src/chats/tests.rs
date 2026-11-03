@@ -1428,6 +1428,30 @@ fn saying_the_same_chat_order_again_writes_nothing() {
 }
 
 #[test]
+fn a_chat_no_relaunch_puts_back_is_never_written_into_the_record() {
+    // #4976: Try it's chat lives for the seconds it takes to report its start. A quit in those
+    // seconds must not bring back a chat nobody asked to keep.
+    let dir = tempfile::tempdir().unwrap();
+    let claude = a_claude(dir.path());
+    let (chats, wrote) = recorded();
+    chats.start(&chat(&claude, "kept", None), SIZE).unwrap();
+    let trying = Chat {
+        unrecorded: true,
+        ..chat(&claude, "try", None)
+    };
+    chats.start(&trying, SIZE).unwrap();
+
+    assert_eq!(names_in(&chats.record()), ["kept"]);
+    let written = lock(&wrote);
+    assert!(
+        written
+            .iter()
+            .all(|record| !names_in(record).contains(&"try".to_owned())),
+        "a record holding it was written"
+    );
+}
+
+#[test]
 fn saying_the_order_the_record_already_has_writes_nothing() {
     // The window says the order after every change to its tabs, opening a chat included,
     // and a chat it has just opened is already last in the record.

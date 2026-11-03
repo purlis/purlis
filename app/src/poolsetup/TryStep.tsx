@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MessageSquarePlus } from "lucide-react";
 import { commands, type PlaneId, type PoolSetupCheck, type PoolSetupStep } from "../bindings";
 import { Badge } from "../ui/badge/Badge";
@@ -47,6 +47,8 @@ export function TryStep({
   onOpenChat: (workspace?: string) => void;
 }) {
   const [trying, setTrying] = useState(false);
+  /** A try under way, so leaving the step cancels it rather than leave it running unseen. */
+  const under = useRef(false);
   const [failed, setFailed] = useState<Failed>();
   /** Where Try it's chat started, this visit: where Open a chat opens. */
   const [triedIn, setTriedIn] = useState<string>();
@@ -55,13 +57,25 @@ export function TryStep({
   // Anything that didn't pass, skipped or not done, keeps the end from reading as done.
   const except = checks.some((check) => check.verdict !== "ok");
 
+  // Leaving the step, or closing the tab, cancels a try still under way (#4976).
+  useEffect(
+    () => () => {
+      if (under.current) void commands.poolSetupTryCancel(pool);
+    },
+    [pool],
+  );
+
   const run = async () => {
     setTrying(true);
+    under.current = true;
     setFailed(undefined);
     const tried = await commands.poolSetupTry(plane, pool, workspace ?? null);
+    under.current = false;
     setTrying(false);
     if (tried.status === "error") return setFailed({ why: tried.error, step: null });
     if (tried.data.failed !== null) return setFailed(tried.data.failed);
+    // Cancelled: back to the start, with nothing kept and nothing to say.
+    if (tried.data.cancelled) return;
     setTriedIn(tried.data.workspace ?? undefined);
     changed();
   };
@@ -160,7 +174,13 @@ export function TryStep({
           reserve={START_WORDS}
           busy={trying}
           onMain={() => void run()}
-        />
+        >
+          {trying && (
+            <Button variant="secondary" onPress={() => void commands.poolSetupTryCancel(pool)}>
+              Cancel
+            </Button>
+          )}
+        </Action>
       )}
     </>
   );
