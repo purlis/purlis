@@ -307,6 +307,8 @@ pub struct Held {
     /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
     /// wait on one (#2047).
     pool_tools: crate::pooltools::PoolTools,
+    /// The Secret asks the chats' brokered runs wait on (#5068, ADR 0109).
+    secret_asks: purlis_core::secrets::ask::Asks,
     /// Where the chats' browsers run: the window's session host, where it has one.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each time a browser is added to its chats' or taken from them (#2024).
@@ -645,6 +647,11 @@ impl Held {
     /// wait on one (#2047).
     pub fn pool_tools(&self) -> &crate::pooltools::PoolTools {
         &self.pool_tools
+    }
+
+    /// The Secret asks the chats' brokered runs wait on (#5068, ADR 0109).
+    pub fn secret_asks(&self) -> &purlis_core::secrets::ask::Asks {
+        &self.secret_asks
     }
 
     /// Where the chats' browsers run: none where the window has no session host.
@@ -1302,6 +1309,8 @@ impl Held {
         self.removal_asks.forget(session);
         // What its runner's commands wait on goes with it (#2047).
         self.pool_tools.forget(session);
+        // And what it waits on or declined of a vault (#5068).
+        self.secret_asks.forget(session);
         // Its browsers end with it (#2013), and leave its rows and its tab (#2024); a pinned
         // one runs on, listed by what the chat was called (#2022).
         let was = self
@@ -4779,6 +4788,7 @@ impl Planes {
         let tasks: Arc<crate::dispatched::Tasks> = Arc::default();
         let masked_kept =
             crate::dispatched::masked_kept_when_remembered(&tasks, hooks.shared_board());
+        let secret_asks = purlis_core::secrets::ask::Asks::new(&root);
         Held {
             id,
             root,
@@ -4814,6 +4824,7 @@ impl Planes {
                 .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
             browser_driver: self.browser_driver.clone(),
             pool_tools: crate::pooltools::PoolTools::default(),
+            secret_asks,
             browsers_listed,
             browser_timeline,
             proposals: crate::proposals::Proposals::default(),

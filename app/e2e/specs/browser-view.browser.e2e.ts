@@ -3,7 +3,7 @@
 
 import { $, browser, expect } from "@wdio/globals";
 import { openThroughTheTrustQuestion } from "../opening.js";
-import { runFromThePalette } from "../reach.js";
+import { closeTheViewTabsOpenedSince, runFromThePalette, tabNames } from "../reach.js";
 
 /**
  * **A browser view tab draws frames and takes a click** (#2025, spec #2008's one window
@@ -44,8 +44,18 @@ async function until(done: () => Promise<boolean>, timeout: number, what: string
 }
 
 describe("a browser view tab", () => {
+  /** The tabs on the strip once the project was trusted, before the browser: what `after`
+   *  leaves. `null` until then, when there is no strip to put back. */
+  let wereOpen: string[] | null = null;
+
+  after(async () => {
+    // The browser view tab it opened, by its own ×, until the strip is as it was (#5111).
+    if (wereOpen !== null) await closeTheViewTabsOpenedSince(wereOpen);
+  });
+
   it("draws the engine's frames and takes a click, which takes the browser over", async () => {
     await openThroughTheTrustQuestion({ within: 5_000, ifAsked: true });
+    wereOpen = await tabNames();
 
     await runFromThePalette("New browser", "browser.new");
 

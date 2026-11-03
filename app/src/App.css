@@ -6156,6 +6156,14 @@ nav.piece-files-head {
   overflow-wrap: anywhere;
 }
 
+/* A linked entry's target, under its name (#5069): a secondary line, as long as it needs. */
+.vault-secret-link {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
 /* A revealed value, under its name: the only place one is ever drawn, for 30 seconds. It wraps
    rather than widening the table, and is selectable (it is `code`: the opt-in list near the top),
    because reading it is what it is for. */

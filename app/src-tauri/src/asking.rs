@@ -139,6 +139,24 @@ pub struct Shown {
     /// any, so a question a later turn pushed aside can be read back. Absent otherwise.
     #[specta(optional)]
     pub earlier_messages: Option<Vec<String>>,
+    /// **The key a Secret ask asks for** (#5068, ADR 0109): drawn with a masked field the value
+    /// is typed in. Absent for any other ask.
+    #[specta(optional)]
+    pub secret: Option<SecretShown>,
+}
+
+/// **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
+/// its chats miss, and how many wait on it. Names only: no value is ever here.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SecretShown {
+    pub persona: String,
+    pub vault: String,
+    pub key: String,
+    /// The declared tool whose run missed it, where it is one.
+    #[specta(optional)]
+    pub tool: Option<String>,
+    /// How many chats wait on it.
+    pub waiting: u32,
 }
 
 /// **A suggested login, as its notice draws it** (#4595). The vault and key names, and never a
@@ -246,6 +264,9 @@ pub enum AskSource {
     /// A browser login a chat suggested, which its persona doesn't declare (#4595): an Allow
     /// lets purlis fill it on the one origin the person confirmed.
     BrowserLogin,
+    /// A key a chat's brokered run found missing from its persona's vault (#5068, ADR 0109):
+    /// answered by a value typed in the window, or Not now.
+    Secret,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -326,6 +347,9 @@ pub enum AnswerPath {
     /// `answer_browser_login` at the press an option names, on held login `id`, for the proposal
     /// whose digest is `shown`, with the domain the person typed (#4595).
     BrowserLogin { id: u32, shown: String },
+    /// `answer_secret_ask` on Secret ask `id` (#5068): Fill with the value typed in the ask's
+    /// masked field, Not now with none.
+    Secret { id: u32 },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -433,6 +457,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -631,6 +656,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -675,6 +701,7 @@ pub fn sandbox_host(
             last_message: None,
             login: None,
             earlier_messages: None,
+            secret: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -711,6 +738,7 @@ pub fn sandbox_host(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -776,6 +804,7 @@ pub fn sandbox_write(
             last_message: None,
             login: None,
             earlier_messages: None,
+            secret: None,
         });
     }
     Some(Shown {
@@ -802,6 +831,7 @@ pub fn sandbox_write(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -868,6 +898,7 @@ pub fn sandbox_runner(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -945,6 +976,7 @@ pub fn sandbox_port(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -1019,6 +1051,7 @@ pub fn sandbox_local(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -1060,6 +1093,7 @@ pub fn terminal(
         last_message: asked,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1082,6 +1116,7 @@ pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>
         last_message,
         login: None,
         earlier_messages: (!earlier.is_empty()).then_some(earlier),
+        secret: None,
     }
 }
 
@@ -1113,6 +1148,7 @@ pub fn task_question(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1171,6 +1207,7 @@ pub fn workspace_removal(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1286,6 +1323,7 @@ pub fn browser_posture(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1353,6 +1391,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1459,6 +1498,7 @@ pub fn browser_login(
             }),
         }),
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1527,6 +1567,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1591,11 +1632,72 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
 /// The id of Allow on a pool tool Ask (#2047).
 pub const POOL_TOOL_ALLOW: &str = "allow";
+
+/// The key of Secret ask `id` (#5068).
+fn secret_key(id: u32) -> String {
+    format!("secret:{id}")
+}
+
+/// The id of Fill on a Secret ask (#5068).
+pub const SECRET_FILL: &str = "fill";
+
+/// **The Secret ask adapter** (#5068, #5071, ADR 0109): a chat's brokered run found a key
+/// missing from its persona's vault, and the command waits on the person. One ask per vault and
+/// key, however many chats wait on it; it is drawn under the first to ask. Fill stores the value
+/// typed in its masked field in the vault and lets every waiting command run; Not now tells them
+/// it was declined. Every word is purlis's but the names, which are the registry's and are data.
+pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
+    let (key, vault, persona) = (&open.key, &open.vault, &open.persona);
+    let used_by = open
+        .tool
+        .as_deref()
+        .map_or_else(String::new, |tool| format!(" for {tool}"));
+    let others = match open.waiting() {
+        0 | 1 => String::new(),
+        n => format!(". {n} chats wait on it"),
+    };
+    let says = format!(
+        "Needs {key} from {persona}'s vault {vault}{used_by}. Fill stores it in that vault on \
+         this machine; the chat never sees it{others}"
+    );
+    Shown {
+        session: open.chats.first().copied().unwrap_or_default(),
+        ask: secret_key(open.id),
+        says: said_inertly(&says),
+        options: vec![
+            Offered {
+                id: SECRET_FILL.to_owned(),
+                label: "Fill".to_owned(),
+                allows: true,
+                preselected: None,
+            },
+            refuses(KEEP, "Not now"),
+        ],
+        source: AskSource::Secret,
+        chain: Vec::new(),
+        answer: AnswerPath::Secret { id: open.id },
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        earlier_messages: None,
+        secret: Some(SecretShown {
+            persona: persona.clone(),
+            vault: vault.clone(),
+            key: key.clone(),
+            tool: open.tool.clone(),
+            waiting: u32::try_from(open.waiting()).unwrap_or(u32::MAX),
+        }),
+    }
+}
 
 /// The key of chat `session`'s browser sites Ask (#2018): one per chat, every site it waits on.
 fn browser_sites_key(session: u32) -> String {
@@ -1636,6 +1738,7 @@ pub fn browser_sites(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1808,6 +1911,7 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1836,6 +1940,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1892,6 +1997,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1949,6 +2055,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -2006,6 +2113,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -2064,6 +2172,7 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -2095,6 +2204,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -2176,6 +2286,8 @@ pub struct Waiting<'a> {
     pub pool_tools: Vec<crate::pooltools::PoolToolWaits>,
     /// The logins chats suggested that wait on the person (#4595).
     pub browser_logins: Vec<crate::loginasks::LoginWait>,
+    /// The Secret asks chats' brokered runs wait on (#5068).
+    pub secrets: Vec<purlis_core::secrets::ask::Open>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// Whether a browser site for everyone in the project reaches a browser here: only where the
@@ -2268,6 +2380,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
     asks.extend(waiting.pool_tools.iter().map(pool_tool));
+    // A chat whose brokered run missed a key waits on the person to fill it (#5068).
+    asks.extend(waiting.secrets.iter().map(secret_ask));
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
@@ -2483,6 +2597,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &pool_tools {
         since.insert(pool_tool_key(one.session, one.run), one.since);
     }
+    let secrets = held.secret_asks().open();
+    for one in &secrets {
+        since.insert(secret_key(one.id), one.since);
+    }
     let declared = purlis_core::sandbox::services::declared(root);
     let tasks = held.tasks();
     let waiting = Waiting {
@@ -2492,6 +2610,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         pool_logins,
         pool_tools,
         browser_logins,
+        secrets,
         sandbox_only,
         sign_ins,
         pool_sign_ins,
