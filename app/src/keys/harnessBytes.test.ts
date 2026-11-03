@@ -45,7 +45,7 @@ const { evaluateKeyboardEvent } = (await import(/* @vite-ignore */ KEYBOARD)) as
 
 /** The window's keys this ruling claims. Their chords are read from the registry, so a chord
  *  added to one of them is covered; a new key is added here. */
-const CLAIMED = ["pane.focus", "tab.next", "tab.previous", "tasks.menu", "pane.back"];
+const CLAIMED = ["pane.focus", "tab.next", "tab.previous", "tasks.menu", "pane.back", "pane.place"];
 
 /** The key codes xterm.js reads, for the keys these chords use. */
 const KEY_CODES: Record<string, number> = {
@@ -59,6 +59,8 @@ const KEY_CODES: Record<string, number> = {
   "}": 221,
   j: 74,
   h: 72,
+  // Placement mode's ⌘⇧M, Ctrl+Shift+M off a Mac (#4764).
+  m: 77,
 };
 
 /** What xterm.js would send for `chord`, typed on a `platform` keyboard; nothing when it sends
