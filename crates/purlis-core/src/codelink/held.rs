@@ -207,9 +207,9 @@ pub const TRANSFER_SCRATCH: &str = ".code-";
 const NO_TASKS_WORK: &[&str] = &["proc", "sys", "dev", "run", "tmp", "var/tmp"];
 
 /// **What purlis keeps in its data home itself** (#5029), by name at its top: every store
-/// `docs/plane-format.md` names there but the projects, and the homes it makes for chats. None
-/// holds a task's work, and the walk of the data home leaves each out. A store added there and
-/// not here would keep every fresh runner, so a test holds this to the plane format.
+/// `docs/plane-format.md` names there but the projects, and no other (#5052). None holds a
+/// task's work, and the walk of the data home leaves each out. A store added there and not
+/// here would keep every fresh runner, so a test holds this to the plane format.
 pub const PURLIS_KEEPS: &[&str] = &[
     "app-state",
     "audit",
@@ -221,6 +221,7 @@ pub const PURLIS_KEEPS: &[&str] = &[
     "engines",
     "events",
     "harnesses",
+    "inbox",
     "index",
     "local-project",
     "network",

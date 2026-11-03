@@ -1214,8 +1214,9 @@ fn a_home_inside_the_data_home_is_looked_through_as_a_home() {
     assert!(!says(&said, "/var/lib/purlis/home"), "named once: {said:?}");
 }
 
-/// **Every store the plane format names in the data home is one the walk of it leaves out**
-/// (#5029): a store added there without it would keep every fresh runner.
+/// **The stores the walk of the data home leaves out are those the plane format names there**
+/// (#5029, #5052): a store added there without it would keep every fresh runner, and a name left
+/// out that the plane format does not name would hide a task's work there.
 #[test]
 fn every_store_the_plane_format_names_in_the_data_home_is_left_out_of_its_walk() {
     let format = std::fs::read_to_string(
@@ -1243,6 +1244,14 @@ fn every_store_the_plane_format_names_in_the_data_home_is_left_out_of_its_walk()
         .collect();
 
     assert!(missing.is_empty(), "add to PURLIS_KEEPS: {missing:?}");
+    let unnamed: Vec<&&str> = PURLIS_KEEPS
+        .iter()
+        .filter(|kept| !named.contains(kept))
+        .collect();
+    assert!(
+        unnamed.is_empty(),
+        "name in docs/plane-format.md, with its tier: {unnamed:?}"
+    );
 }
 
 /// **Each folder purlis keeps for itself is left out wherever the environment puts it** (#5028):
