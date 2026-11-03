@@ -329,19 +329,11 @@ describe("what a task's record says of it", () => {
     expect(taskFactsOf(chat({ ...from, unreported: true }))).toEqual(inItsPlace(null));
   });
 
-  it("names the chat it is asking as that chat is called now, so a rename is followed", () => {
-    const asking = chat({ ...from, asking: true });
-    const renamed = (session: number) => (session === 4 ? "the release" : undefined);
-    expect(taskFactsOf(asking, renamed)?.asking).toBe("the release");
-    expect(rowFactsOf({ ...asking, harness: "claude", card: null }, renamed).asking).toBe(
-      "the release",
-    );
-  });
-
-  it("falls back to the name that chat had at the dispatch once it has closed", () => {
-    const asking = chat({ ...from, asking: true });
-    expect(taskFactsOf(asking, () => undefined)?.asking).toBe("steward 4");
-    expect(taskFactsOf(asking)?.asking).toBe("steward 4");
+  it("says nothing of a question, which the asks registry holds (#4564)", () => {
+    // An older core's flag is never read: the list fills the question in from the registry.
+    const asking = chat({ ...from, asking: true } as typeof from);
+    expect(taskFactsOf(asking)?.asking).toBeNull();
+    expect(rowFactsOf({ ...asking, harness: "claude", card: null }).asking).toBeNull();
   });
 });
 

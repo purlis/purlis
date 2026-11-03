@@ -855,6 +855,14 @@ impl crate::planes::Held {
         if &from == to {
             return Err("This chat is there already.".to_owned());
         }
+        // Its runner holds its clones alone, and goes with it (#4569).
+        if chats.on_its_own_runner(session) {
+            return Err(
+                "This task has a runner of its own, so it was not moved. Close it when it's \
+                 done, and its work comes back here."
+                    .to_owned(),
+            );
+        }
         let first = self.mover(asked, to)?;
         let workspace = first.1.workspace.clone();
         let mut group = vec![first];
@@ -863,6 +871,8 @@ impl crate::planes::Held {
             .filter(|other| other.session != session)
             .filter(|other| other.workspace.as_deref() == Some(workspace.as_str()))
             .filter(|other| chats.pool_of(other.session) == from)
+            // A task on a runner of its own shares no clone with them, and stays (#4569).
+            .filter(|other| !chats.on_its_own_runner(other.session))
         {
             let one = self.mover(other, to).map_err(|why| {
                 let name = other.label.clone().unwrap_or_else(|| other.name.clone());

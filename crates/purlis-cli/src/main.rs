@@ -1051,8 +1051,10 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                         // On a runner only the browser engine may make namespaces (D-2050-25).
                         serve_terminals(),
                         // Each held project's hooks, heard as the window's own host hears them
-                        // (#2447).
-                        purlis_core::hookchannel::HookChannels::keeping(log.clone()),
+                        // (#2447), and what its chats queued for the app carried to it, since
+                        // the window does not read this disk (#4804).
+                        purlis_core::hookchannel::HookChannels::keeping(log.clone())
+                            .carrying_dispatch_messages(),
                         Confines,
                     )
                     // What a chat's end leaves, kept as the window's own host keeps it (#2494),

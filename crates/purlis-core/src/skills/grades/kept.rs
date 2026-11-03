@@ -173,9 +173,18 @@ pub fn keep_of(root: &Path, of: &Of, grade: &str, chat: &str, screen: &str) -> s
 }
 
 /// **What chat `chat` of `skill`'s grade `grade` showed as it ended**, where this machine kept
-/// it: read through no link, at most [`MOST_SCREEN_BYTES`].
+/// it: read through no link, at most [`MOST_SCREEN_BYTES`]. A grade of a draft of it too
+/// ([`of_draft`]): a grade's id is its own, so a scorecard need not say which it is.
 pub fn kept(root: &Path, skill: &str, grade: &str, chat: &str) -> Option<String> {
     kept_of(root, &Of::Skill(skill.to_owned()), grade, chat)
+        .or_else(|| kept_of(root, &of_draft(skill), grade, chat))
+}
+
+/// **Whose chats a grade of a draft of `skill` keeps** (#2780): a folder of their own, by a name
+/// no skill can take as a skill's name has no dot, so a draft graded over and over never pushes
+/// the skill's own grades' chats out of its [`KEPT_GRADES`].
+pub fn of_draft(skill: &str) -> Of {
+    Of::Skill(format!("{skill}.draft"))
 }
 
 /// [`kept`], of `of`'s grade `grade`: a skill's, or a router's (#3617).

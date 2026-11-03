@@ -128,6 +128,12 @@ impl Default for Opening {
 /// where its own sandbox does not give them, and asks about (#2590).
 #[derive(Debug, Clone)]
 pub struct Named {
+    /// The runner it starts on where that is not its pool's own: a chat's fresh runner, by the
+    /// name a link reaches it by (#3818).
+    pub runner: Option<String>,
+    /// Whether its runner holds its code from an earlier start: a chat's fresh runner holds the
+    /// only copy of its work, which sending this machine's branches over would undo (#4569).
+    pub its_code_is_there: bool,
     pub chat: Option<String>,
     pub run: Option<String>,
     pub profile: Option<String>,
@@ -201,6 +207,10 @@ pub const NOT_COMPOSED_HERE: &str =
 
 /// Where a view's text goes. It is called on the view's own thread, one batch at a time.
 pub type Sink = Box<dyn FnMut(String) + Send>;
+
+/// What a fresh runner's end is told once its work came back or did not (#4569): what did not, in
+/// sentences. It answers whether the runner went.
+pub type FreshDone = Box<dyn FnOnce(Vec<String>) -> bool + Send>;
 
 /// Told how each session ended, as it ends, with the session's id. An `Arc` so each session
 /// can hold it for as long as its program runs.
@@ -373,6 +383,30 @@ pub trait SessionHost: Send + Sync {
     fn fetch_back_left(&self, workspace: &str, pool: &str) -> Vec<String> {
         self.fetch_back(workspace, pool)
     }
+
+    /// **Everything a chat's fresh runner `runner` (`<pool>/fresh-…`) has of `workspace` comes
+    /// back to stay** (#4569): each clone it holds, one made there among them, each clone's
+    /// branches kept under `refs/remotes/<runner>/`, as the runner is about to go. Answers what
+    /// did not come, in sentences. A runner goes only on none, so a host that reaches no runner
+    /// says so.
+    fn fetch_back_whole(&self, workspace: &str, runner: &str) -> Vec<String> {
+        vec![format!(
+            "this host does not reach runner {runner}, so nothing of {workspace} came back"
+        )]
+    }
+
+    /// **A chat's fresh runner `runner` is finished with** (#4569): what it has of `workspace`
+    /// comes back ([`Self::fetch_back_whole`]), off this thread where it crosses a link, and
+    /// `done` is told what did not. No workspace is a runner nothing ran on: `done` is told at
+    /// once, and nothing is sent or asked of it.
+    fn take_back_fresh(&self, runner: &str, workspace: Option<&str>, done: FreshDone) {
+        done(workspace.map_or_else(Vec::new, |workspace| {
+            self.fetch_back_whole(workspace, runner)
+        }));
+    }
+
+    /// **The way to a runner kept no more goes** (#4569): its link ends.
+    fn let_go_of_runner(&self) {}
 
     /// **Readies the runner of `pool` for a chat in `workspace` to move there** (#2048): the
     /// project held there, and each clone's branch sent ahead, while the chat keeps working
@@ -566,6 +600,13 @@ pub trait SessionHost: Send + Sync {
         false
     }
 
+    /// [`Self::left_running`], asked of `runner` (`<pool>/fresh-…`), the chat's own fresh runner
+    /// (#4569): a chat found there is kept as that runner's.
+    fn left_running_on(&self, number: u32, runner: &str) -> bool {
+        let _ = (number, runner);
+        false
+    }
+
     /// [`Self::left_running`], of a chat that worked in `workspace` (#2046): where the
     /// project's chats are routed, it is asked of this machine's host and of one pool, the one it
     /// was kept on or else the one the workspace runs its chats on, and no other (#4590).
@@ -678,6 +719,10 @@ pub struct Glance {
     /// Whether its turn ended waiting on work of its own (#3878,
     /// `purlis_core::state::Chat::own_work`): it is still at work through it.
     pub own_work: bool,
+    /// Whether a turn it begins now may be its own work's wake (#4647,
+    /// `purlis_core::state::Chat::wakes_on_its_own_work`): it waits on that work, or the work is
+    /// still out though the wait on it ended for the person.
+    pub wakes_on_its_own_work: bool,
 }
 
 impl Glance {
@@ -851,10 +896,12 @@ pub(crate) mod pretend {
         /// Each fetch back it was asked for, by workspace and pool, and how many ran at once
         /// at most (#2046).
         fetched: Mutex<Vec<(String, String)>>,
-        /// Why a fetch back fails, while a test says one does.
+        /// Why a fetch back fails, while a test says one does: a fresh runner's whole fetch too.
         fetch_fails: Mutex<Option<String>>,
         /// Whether it can't say what it has left ([`Pretend::cannot_say_what_it_left`]).
         says_nothing_left: std::sync::atomic::AtomicBool,
+        /// How many times the way to this runner was let go of.
+        let_go: Mutex<usize>,
         /// Each move asked of it (#2048): `ahead`, `in` or `out`, the pool and the workspace.
         moved: Mutex<Vec<(&'static str, String, String)>>,
         fetching: AtomicU32,
@@ -903,6 +950,16 @@ pub(crate) mod pretend {
         /// It can't say what it left running from now on (#4590).
         pub fn cannot_say_what_it_left(&self) {
             self.seen.says_nothing_left.store(true, Ordering::SeqCst);
+        }
+
+        /// A fetch of a fresh runner's work fails with `why`.
+        pub fn fetch_fails(&self, why: &str) {
+            *lock(&self.seen.fetch_fails) = Some(why.to_owned());
+        }
+
+        /// How many times the way to this runner was let go of.
+        pub fn let_go(&self) -> usize {
+            *lock(&self.seen.let_go)
         }
 
         /// The most fetches back that ran at once.
@@ -1071,6 +1128,11 @@ pub(crate) mod pretend {
             lock(&self.seen.reconnecting).extend_from_slice(ids);
         }
 
+        /// The link to the runner sessions `ids` run on is back: they are reconnecting no more.
+        pub fn link_back(&self, ids: &[u32]) {
+            lock(&self.seen.reconnecting).retain(|id| !ids.contains(id));
+        }
+
         /// Session `id`'s program ends with a pool's runner gone for good (#4350).
         pub fn program_ends_with_its_runner(&self, id: u32) {
             lock(&self.seen.lost_with_runner).push(id);
@@ -1188,6 +1250,16 @@ pub(crate) mod pretend {
                 lock(&self.seen.moved).push(("out", pool.to_owned(), chat.workspace.clone()));
             }
             Ok(super::CameBack::default())
+        }
+        fn fetch_back_whole(&self, workspace: &str, runner: &str) -> Vec<String> {
+            if let Some(why) = lock(&self.seen.fetch_fails).clone() {
+                return vec![why];
+            }
+            lock(&self.seen.fetched).push((workspace.to_owned(), runner.to_owned()));
+            Vec::new()
+        }
+        fn let_go_of_runner(&self) {
+            *lock(&self.seen.let_go) += 1;
         }
         fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
             let now = self.seen.fetching.fetch_add(1, Ordering::SeqCst) + 1;

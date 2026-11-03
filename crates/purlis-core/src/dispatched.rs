@@ -155,6 +155,15 @@ pub enum What {
     /// **Deliver what this chat queued** (#3902, [`crate::dispatchqueue`]), oldest first: `id` is
     /// the message the asking command has just queued, whose fate it is answered with.
     Deliver { id: String },
+    /// **Deliver message `id`, which this chat queued on a pool's runner** (#4804), carried by
+    /// that runner's host, which reads the queue there where the app cannot. Answered as the
+    /// message itself would be, or [`Answered::Queued`] `delivered: false` where a limit holds
+    /// it back, and it stays queued there. The app delivers one id once: a message carried
+    /// again, because its answer was lost with the link, is answered as delivered.
+    Carried {
+        id: String,
+        message: crate::dispatchqueue::Queued,
+    },
 }
 
 /// What the app answers an [`Asked`] with.

@@ -81,6 +81,7 @@ fn glance(state: State, asking: bool) -> Glance {
         turns: 1,
         prompt: None,
         own_work: false,
+        wakes_on_its_own_work: false,
     }
 }
 

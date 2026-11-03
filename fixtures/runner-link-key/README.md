@@ -24,3 +24,10 @@ The same operator, rolling its key (#3305):
 - `key-roll.txt`: the current key's word for the next one, exactly as signed, as a Pool's
   `status.nextSigningKeyVouch.statement` carries it.
 - `key-roll-signature.txt`: the current key's signature over `key-roll.txt`.
+
+The same operator's word for what it does (#4569):
+
+- `capabilities.txt`: its word, exactly as signed, as a Pool's `status.capabilitiesVouch.statement`
+  carries it: the cluster, what it does that an older operator does not, and until when it holds,
+  ten minutes after the roll tests' `now`.
+- `capabilities-signature.txt`: the current key's signature over `capabilities.txt`.

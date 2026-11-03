@@ -466,6 +466,7 @@ export function DispatchGrantNotice({
       label={label}
       persona={first.target}
       fixes={fixes}
+      waits
       under={
         <>
           {where}

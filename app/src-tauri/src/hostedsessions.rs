@@ -146,6 +146,9 @@ pub const SANDBOXED_ON_A_RUNNER: &str = "a chat on a runner starts in its sandbo
 /// How long a start waits for the host's link to be ready, before it says why there is none.
 const LINK_WITHIN: Duration = Duration::from_secs(30);
 
+/// Every repository a runner holds, and what it could not look through (1.69, #4569).
+pub(crate) type ReposHeld = (Vec<purlis_session_protocol::session::RepoHeld>, Vec<String>);
+
 /// How long a command waits for the host's answer.
 pub(crate) const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
@@ -199,6 +202,26 @@ std::thread_local! {
         const { std::cell::RefCell::new(None) };
     /// Whether this thread runs a dispatch's start, which holds no lock around it (#4415).
     static A_DISPATCHS_START: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether this thread starts a short task, which purlis gives a fresh runner (#3818).
+    static A_SHORT_TASK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `start` as a short dispatched task's: a task, not a handoff, and not a long one (#3818).
+pub(crate) fn a_short_task<T>(start: impl FnOnce() -> T) -> T {
+    struct Forgets;
+    impl Drop for Forgets {
+        fn drop(&mut self) {
+            A_SHORT_TASK.set(false);
+        }
+    }
+    A_SHORT_TASK.set(true);
+    let _forgets = Forgets;
+    start()
+}
+
+/// Whether this thread starts a short dispatched task.
+pub(crate) fn is_a_short_task() -> bool {
+    A_SHORT_TASK.get()
 }
 
 /// Runs `start` as a dispatch's start: it waits for a runner on its way back as a person's does,
@@ -677,10 +700,37 @@ impl Connection {
         self.to_a_pool.as_ref().map(|(_, named)| pool_named(named))
     }
 
-    /// The draining runner this connection's links name, where they name one (#4271).
+    /// The draining runner this connection's links name, where they name one (#4271): a chat's
+    /// fresh runner is named under its pool too, and never drains.
     fn draining_runner(&self) -> Option<&str> {
         let (_, named) = self.to_a_pool.as_ref()?;
-        named.split_once('/').map(|(_, runner)| runner)
+        named
+            .split_once('/')
+            .map(|(_, runner)| runner)
+            .filter(|runner| !runner.starts_with("fresh-"))
+    }
+
+    /// Whether this connection reaches a chat's fresh runner, `<pool>/fresh-…` (#4569).
+    fn names_a_fresh_runner(&self) -> bool {
+        self.to_a_pool.as_ref().is_some_and(|(_, named)| {
+            named
+                .split_once('/')
+                .is_some_and(|(_, runner)| runner.starts_with("fresh-"))
+        })
+    }
+
+    /// **The runner this connection reaches is kept no more** (#4569): what the window holds of it
+    /// goes, each link to it ended.
+    fn fresh_runner_went(&self) {
+        let Some((window, named)) = &self.to_a_pool else {
+            return;
+        };
+        lock(&window.pools).remove(named);
+        let links: Vec<Arc<HostLink>> =
+            lock(&self.projects).drain().map(|(_, link)| link).collect();
+        for link in links {
+            link.end();
+        }
     }
 
     /// Whether this connection names a draining runner that is kept no more (#4271).
@@ -1862,6 +1912,18 @@ impl HostLink {
         }
     }
 
+    /// **Every repository the host holds in the projects it keeps** (1.69, #4569), with what it
+    /// could not look through: `None` from a host before 1.69, which cannot say.
+    pub(crate) fn repos_held(&self) -> Result<Option<ReposHeld>, String> {
+        if self.version() < session::KNOWS_REPOS_HELD {
+            return Ok(None);
+        }
+        match self.call(Command::ReposHeld)? {
+            Answer::ReposHeld { repos, unread } => Ok(Some((repos, unread))),
+            _ => Err("the runner did not say which repositories it holds".to_owned()),
+        }
+    }
+
     /// Whether the host names where each clone it holds came from (1.54, #3985), so a clone it
     /// made comes back with its remote.
     pub(crate) fn names_clone_origins(&self) -> bool {
@@ -2995,7 +3057,11 @@ impl HostedSessions {
         {
             return Ok(());
         }
-        crate::runnercode::send(link, project, &self.root, "", &self.sent)?;
+        // **Nor ever to a chat's fresh runner that holds it already** (#4569): what it holds may be
+        // the only copy of its task's work, which this machine's branches would move.
+        if !(self.connection.names_a_fresh_runner() && holds_its_own_code(link, project)?) {
+            crate::runnercode::send(link, project, &self.root, "", &self.sent)?;
+        }
         if let Some(on) = held.as_mut().filter(|on| on.on == link.id) {
             on.code_sent = true;
         }
@@ -3007,6 +3073,12 @@ impl HostedSessions {
         let (link, project) = self.link()?;
         self.sends_the_code(&link, &project)?;
         Ok((link, project))
+    }
+
+    /// [`Self::link_of_a_start`], for the tests of what a start sends (#4569).
+    #[cfg(test)]
+    pub(crate) fn link_of_a_start_in_a_test(&self) -> Result<(Arc<HostLink>, String), String> {
+        self.link_of_a_start()
     }
 
     /// [`Self::moving_link`], for the tests of what moves over it.
@@ -3207,6 +3279,24 @@ fn reconnects_of(
             tell(chats, reconnection);
         }
     })
+}
+
+/// **Whether the runner `link` reaches holds the project `project`'s own repository with a
+/// commit** (#4569), which no hold sends code over. A runner that can't say holds no fresh
+/// runner's task: one that cannot list what it holds can never be proved to hold nothing more. A
+/// list that is not whole is taken as holding it, so nothing is sent over what it missed.
+fn holds_its_own_code(link: &HostLink, project: &str) -> Result<bool, String> {
+    let Some((repos, unread)) = link.repos_held()? else {
+        return Err(
+            "This pool's runner image is too old to give a task a runner of its own, since it \
+             can't list what it holds. Update the pool's runner image to this purlis's version."
+                .to_owned(),
+        );
+    };
+    Ok(!unread.is_empty()
+        || repos
+            .iter()
+            .any(|repo| repo.project == project && repo.path.is_empty() && !repo.refs.is_empty()))
 }
 
 /// The project at `root`'s own link to the host `connection` reaches, with the project held on
@@ -4140,7 +4230,11 @@ impl SessionHost for HostedSessions {
         let (link, project) = self.link_of_a_start()?;
         // The workspace's clones as they are here, uncommitted work and all, before the chat
         // starts on them there (#2046).
-        if let (true, Some(workspace)) = (self.kept_on_the_runner, &named.workspace) {
+        if let (true, false, Some(workspace)) = (
+            self.kept_on_the_runner,
+            named.its_code_is_there,
+            &named.workspace,
+        ) {
             crate::runnercode::send_workspace(&link, &project, &self.root, workspace, &self.sent)?;
         }
         let id = self.number_for(wanted)?;
@@ -4506,6 +4600,22 @@ impl SessionHost for HostedSessions {
 
     fn fetch_back_left(&self, workspace: &str, pool: &str) -> Vec<String> {
         self.fetches_back(workspace, pool, true)
+    }
+
+    /// Over this project's own link to the chat's fresh runner.
+    fn fetch_back_whole(&self, workspace: &str, runner: &str) -> Vec<String> {
+        match self.link() {
+            Ok((link, project)) => {
+                crate::runnercode::fetch_whole(&link, &project, &self.root, workspace, runner)
+            }
+            Err(why) => vec![why],
+        }
+    }
+
+    /// Its links end, and the window keeps no connection under its name: no fresh runner's name
+    /// is ever used again.
+    fn let_go_of_runner(&self) {
+        self.connection.fresh_runner_went();
     }
 
     /// Only of a link already open: a tab drawn never opens one to the runner.
