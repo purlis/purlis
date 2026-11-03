@@ -15,6 +15,7 @@ import {
   type Catalogued,
   type MenuOn,
   type Offer,
+  windowSaid,
 } from "./actions";
 import { cardRowsFor } from "./cardLink";
 import { storeLabel } from "./memoryMoves";
@@ -165,10 +166,10 @@ function movedToSaid(offer: Offer): string {
 }
 
 /** A Move to window ▸ row's words (#4768): the window alone, as the submenu says the move. */
-function windowSaid(offer: Offer): string {
+function toWindowSaid(offer: Offer): string {
   const does = offer.does;
   if (does.verb !== "moveToWindow" || does.to === null) return offer.title;
-  return does.to === 0 ? SAID.projectWindow : `Tab window ${does.to}`;
+  return windowSaid(does.to);
 }
 
 /** Whether a pin row's thing is pinned now: the row would unpin it. */
@@ -604,7 +605,7 @@ export function menuOf(what: MenuOn, offers: Catalogued): MenuDrawn {
     const moves = toWindowRows(what.on === "tab" ? what.tab : undefined, offers);
     if (moves.length > 0)
       folded("toWindow", what.on === "tab" ? "first" : "run").groups[0].entries.push(
-        ...moves.map((offer) => plain(offer, windowSaid(offer), true)),
+        ...moves.map((offer) => plain(offer, toWindowSaid(offer), true)),
       );
   }
   const curating = curateSubjectOf(what);

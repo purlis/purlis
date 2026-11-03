@@ -303,6 +303,23 @@ fn a_tab_s_only_pane_moves_as_the_tab_and_an_empty_pane_is_never_picked_up() {
 }
 
 #[test]
+fn a_tab_of_only_empty_panes_is_never_picked_up() {
+    let mut empty = tab(Some("ops"), 0, false, 1);
+    empty.tree = Node::split(
+        Direction::Row,
+        EVEN,
+        Node::Pane(Pane::Empty),
+        Node::Pane(Pane::Empty),
+    );
+    let mut layout = ops(vec![tab(Some("ops"), 0, true, 3), empty]);
+    let before = layout.clone();
+
+    assert_eq!(layout.move_tab(1, None), Err(Refused::EmptyTab));
+    assert_eq!(layout.move_pane(1, &[], None), Err(Refused::NoSuchPane));
+    assert_eq!(layout, before);
+}
+
+#[test]
 fn a_move_never_shows_a_chat_twice() {
     let mut layout = ops(vec![
         tab(Some("ops"), 0, true, 1),

@@ -57,6 +57,8 @@ pub enum Refused {
     NoSuchPane,
     /// An empty pane is never picked up.
     EmptyPane,
+    /// Nor is a tab of only empty panes.
+    EmptyTab,
     /// It is in that window already.
     AlreadyThere,
     /// The project has no window of that number.
@@ -69,6 +71,7 @@ impl std::fmt::Display for Refused {
             Self::NoSuchTab => write!(f, "that tab is not open in this project"),
             Self::NoSuchPane => write!(f, "that pane is not in the tab"),
             Self::EmptyPane => write!(f, "an empty pane has nothing to move"),
+            Self::EmptyTab => write!(f, "an empty tab has nothing to move"),
             Self::AlreadyThere => write!(f, "it is in that window already"),
             Self::NoSuchWindow(n) => write!(f, "this project has no tab window {n}"),
         }
@@ -232,10 +235,14 @@ impl Layout {
     /// The tab beside it comes forward where it was the front. The drawn strip's last tab in
     /// the project window leaves an empty pane behind, so the strip is never bare; a tab
     /// window's last tab leaving takes the window with it. A tab moved into the project window
-    /// brings its strip forward there. A new window is the lowest number no tab names.
+    /// brings its strip forward there. A new window is the lowest number no tab names. A tab of
+    /// only empty panes is never picked up: it has nothing to move.
     pub fn move_tab(&mut self, at: usize, to: Option<u32>) -> Result<u32, Refused> {
-        let from = self.tabs.get(at).ok_or(Refused::NoSuchTab)?.window;
-        let to = self.window_for(from, to)?;
+        let tab = self.tabs.get(at).ok_or(Refused::NoSuchTab)?;
+        if tab.tree.chats().is_empty() && !tab.tree.holds_a_view() {
+            return Err(Refused::EmptyTab);
+        }
+        let to = self.window_for(tab.window, to)?;
         let mut tab = self.tabs.remove(at);
         self.left(&tab, at);
         self.land(&mut tab, to);

@@ -4608,6 +4608,11 @@ pub fn run() {
             {
                 asknotify::reopened(app, has_visible_windows);
             }
+            // Before any window goes: a tab window closed by the quit is not closed by the
+            // person, so its tabs stay where they were for the next launch (#4768).
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                tabwindows::quitting(app);
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 // First, so a restart finds the lock free (`instance.rs`).
                 instance::let_go_at_exit(app);

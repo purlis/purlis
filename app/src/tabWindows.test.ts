@@ -5,7 +5,15 @@ import { describe, expect, it } from "vitest";
 import type { LaidNode, LaidOut, LaidTab } from "./bindings";
 import { layoutOf, type Reopening, type Saying, tabsOf } from "./laidOut";
 import { movedBetweenWindows, tornOff } from "./tabWindows";
-import { noTabs, openTab, openView, selectTab, type Tabs, type ViewRef } from "./tabs";
+import {
+  noTabs,
+  openTab,
+  openView,
+  selectTab,
+  splitFocusedPane,
+  type Tabs,
+  type ViewRef,
+} from "./tabs";
 
 const onOps: Saying = {
   workspaceOf: () => "ops",
@@ -109,6 +117,24 @@ describe("what a window does when the core moves tabs between windows (#4768)", 
     expect(moved.changed).toBe(true);
     expect(shown(moved.tabs)).toEqual([[1]]);
     expect(inFrontOf(moved.tabs)).toEqual([1]);
+  });
+
+  it("a pane moved to another window leaves its split to the pane beside it, so its chat is drawn once", () => {
+    let tabs = openTab(noTabs(), 3, "3");
+    tabs = openTab(tabs, 1, "1");
+    tabs = splitFocusedPane(tabs, "row", 2);
+    const laid: LaidOut = {
+      strip: "ops",
+      tabs: [tab(0, false, chat(3)), tab(0, true, chat(1)), tab(1, true, chat(2))],
+    };
+
+    const moved = movedBetweenWindows(laid, tabs, 0, allBack, () => "ops");
+
+    expect(moved.changed).toBe(true);
+    expect(shown(moved.tabs)).toEqual([[3], [1]]);
+    expect(inFrontOf(moved.tabs)).toEqual([1]);
+    const front = moved.tabs.byId[moved.tabs.inFront as number];
+    expect(front.layout).toMatchObject({ kind: "pane", pane: front.focused });
   });
 
   it("a tab moved into a window that is open lands as its front tab", () => {

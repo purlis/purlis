@@ -18,6 +18,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use purlis_core::machine::{self, Place};
@@ -266,6 +267,14 @@ pub fn closing<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
     let Some(showing) = app.try_state::<Showing>() else {
         return false;
     };
+    // At a quit every window goes, and a tab window keeps its tabs and its place in the record,
+    // so the next launch puts it back where it was.
+    if app
+        .try_state::<Places>()
+        .is_some_and(|places| places.quitting.load(Ordering::SeqCst))
+    {
+        return showing.tab_window(label).is_some();
+    }
     let Some(tab) = showing.tab_window_gone(label) else {
         return false;
     };
@@ -303,12 +312,8 @@ pub fn close_unnamed<R: Runtime>(app: &AppHandle<R>, plane: &PlaneId, held: &cra
         .map(|layout| layout.tab_windows())
         .unwrap_or_default();
     for (label, number) in showing.tab_windows_of(plane) {
-        if named.contains(&number) {
-            continue;
-        }
-        showing.tab_window_gone(&label);
-        if let Some(window) = app.get_webview_window(&label) {
-            let _ = window.destroy();
+        if !named.contains(&number) {
+            shut(app, &showing, &label);
         }
     }
 }
@@ -320,11 +325,16 @@ pub fn project_closed<R: Runtime>(app: &AppHandle<R>, plane: &PlaneId) {
         return;
     };
     for (label, _) in showing.tab_windows_of(plane) {
-        // Forgotten first, so its end sends nothing back to a project that is gone.
-        showing.tab_window_gone(&label);
-        if let Some(window) = app.get_webview_window(&label) {
-            let _ = window.destroy();
-        }
+        shut(app, &showing, &label);
+    }
+}
+
+/// **Tab window `label` shuts with nothing sent back**: forgotten first, so its end finds no
+/// tab window to send back from, then destroyed.
+fn shut<R: Runtime>(app: &AppHandle<R>, showing: &Showing, label: &str) {
+    showing.tab_window_gone(label);
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.destroy();
     }
 }
 
@@ -359,12 +369,23 @@ pub fn looked_at_again<R: Runtime>(window: &tauri::Window<R>) {
 pub struct Places {
     now: Mutex<HashMap<(PathBuf, u32), Place>>,
     written: Arc<WrittenBehind<(PathBuf, Vec<Place>)>>,
+    /// The app is quitting: a tab window that goes now is not closed by the person.
+    quitting: AtomicBool,
+}
+
+/// **The app is quitting** (#4768): from here on a tab window that goes sends nothing back and
+/// keeps its place, since a quit is not the person closing it.
+pub fn quitting<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(places) = app.try_state::<Places>() {
+        places.quitting.store(true, Ordering::SeqCst);
+    }
 }
 
 impl Default for Places {
     fn default() -> Self {
         Self {
             now: Mutex::default(),
+            quitting: AtomicBool::new(false),
             written: WrittenBehind::new(|(config, places): (PathBuf, Vec<Place>)| {
                 if let Err(why) = machine::update(&config, move |store| {
                     for place in places {
@@ -421,4 +442,51 @@ pub fn moved<R: Runtime>(window: &tauri::Window<R>) {
         now.values().cloned().collect()
     };
     places.written.hand((config.to_path_buf(), all));
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use tauri::Manager;
+
+    use super::*;
+
+    #[test]
+    fn a_tab_window_that_goes_as_the_app_quits_stays_in_the_record() {
+        let app = tauri::test::mock_builder()
+            .build(tauri_context!(test = true))
+            .expect("the app builds");
+        app.manage(Showing::default());
+        app.manage(Places::default());
+        let plane = PlaneId::for_tests(Path::new("/home/dev/one"));
+        app.state::<Showing>()
+            .tab_window_made("window-3", &plane, 1);
+
+        quitting(app.handle());
+
+        assert!(closing(app.handle(), "window-3"));
+        assert_eq!(
+            app.state::<Showing>()
+                .tab_window("window-3")
+                .map(|tab| tab.number),
+            Some(1),
+            "a quit sends no tab window's tabs back"
+        );
+    }
+
+    #[test]
+    fn a_tab_window_the_person_closes_is_let_go_of() {
+        let app = tauri::test::mock_builder()
+            .build(tauri_context!(test = true))
+            .expect("the app builds");
+        app.manage(Showing::default());
+        app.manage(Places::default());
+        let plane = PlaneId::for_tests(Path::new("/home/dev/one"));
+        app.state::<Showing>()
+            .tab_window_made("window-3", &plane, 1);
+
+        assert!(closing(app.handle(), "window-3"));
+        assert!(app.state::<Showing>().tab_window("window-3").is_none());
+    }
 }

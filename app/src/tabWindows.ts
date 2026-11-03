@@ -3,7 +3,16 @@
 
 import type { LaidNode, LaidOut } from "./bindings";
 import { type Reopening, tabsOf } from "./laidOut";
-import { type FiledIn, type Layout, type Tabs, closeTab, viewKey } from "./tabs";
+import {
+  type Content,
+  type FiledIn,
+  type Layout,
+  type Tabs,
+  closePane,
+  closeTab,
+  contentsOf,
+  viewKey,
+} from "./tabs";
 
 /**
  * **Tab windows, as one window sees them** (#4768, ruled on #4701): a tab torn off into a bare
@@ -29,8 +38,12 @@ export type LayoutMoved = { plane: string; layout: LaidOut };
 function shownBy(layout: Layout, shows?: Readonly<Record<number, number>>): string[] {
   if (layout.kind === "split")
     return [...shownBy(layout.children[0], shows), ...shownBy(layout.children[1], shows)];
-  const content = layout.content;
-  if (content.kind === "session") return [`chat:${shows?.[layout.pane] ?? content.session}`];
+  return paneShows(layout.content, shows?.[layout.pane]);
+}
+
+/** What one pane shows, by identity: nothing for an empty pane. */
+function paneShows(content: Content, shown?: number): string[] {
+  if (content.kind === "session") return [`chat:${shown ?? content.session}`];
   if (content.kind === "view") return [`view:${viewKey(content.view)}`];
   return [];
 }
@@ -46,7 +59,7 @@ function laidShows(node: LaidNode): string[] {
 /**
  * **What window `window` holds once the core moved tabs between the project's windows**: each
  * of its tabs the core now has in another window leaves (the tab beside it coming forward, as
- * a close sends it), and each tab the core has in this window that this window does not draw
+ * a close sends it), each pane it has there leaves its split to the pane beside it, and each tab the core has in this window that this window does not draw
  * arrives. One the core says is in front comes forward (Move to window); one that is not goes
  * just behind the tab in front, and nothing it holds comes forward (a closed tab window's tabs
  * sent back). Answers `tabs` itself, unchanged, when nothing moved.
@@ -67,6 +80,18 @@ export function movedBetweenWindows(
     return shows.length > 0 && shows.every((one) => elsewhere.has(one));
   });
   let next = leaving.reduce((now, id) => closeTab(now, id, filedIn), tabs);
+  // A pane moved out of a split (`move_pane`) leaves it to the pane beside it.
+  let panesLeft = 0;
+  for (const id of next.order) {
+    const shows = next.byId[id]?.shows;
+    for (const { pane, content } of contentsOf(next, id)) {
+      const what = paneShows(content, shows?.[pane]);
+      if (what.length > 0 && what.every((one) => elsewhere.has(one))) {
+        next = closePane(next, id, pane, filedIn);
+        panesLeft += 1;
+      }
+    }
+  }
   const here = new Set(
     next.order.flatMap((id) => {
       const tab = next.byId[id];
@@ -78,7 +103,8 @@ export function movedBetweenWindows(
     const shows = laidShows(one.tree);
     return shows.length > 0 && !shows.some((each) => here.has(each));
   });
-  if (leaving.length === 0 && arriving.length === 0) return { tabs, changed: false };
+  if (leaving.length === 0 && panesLeft === 0 && arriving.length === 0)
+    return { tabs, changed: false };
   for (const one of arriving) {
     const before = next;
     const back = tabsOf({ strip: laid.strip, tabs: [one] }, before, reopening, window);
