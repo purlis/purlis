@@ -376,3 +376,16 @@ fn each_tab_window_and_its_front_tab_come_back_after_a_relaunch() {
     assert_eq!(back.tab_windows(), [1, 3]);
     assert_eq!(back.on_screen(), [1, 5, 7]);
 }
+
+#[test]
+fn a_window_names_a_tab_by_its_place_among_its_own_tabs() {
+    let layout = ops(vec![
+        tab(Some("ops"), 0, true, 1),
+        tab(Some("ops"), 2, true, 5),
+        tab(Some("ops"), 0, false, 3),
+    ]);
+
+    assert_eq!(layout.place_of(0, 1), Some(2));
+    assert_eq!(layout.place_of(2, 0), Some(1));
+    assert_eq!(layout.place_of(2, 1), None);
+}

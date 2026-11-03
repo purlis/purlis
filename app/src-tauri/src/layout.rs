@@ -159,19 +159,32 @@ impl From<core::Layout> for LaidOut {
 /// relaunch puts each split, its sizes, its views and each strip's front tab back, and what is
 /// on screen is derived from it (`Chats::looked_at`).
 ///
+/// **Each window says its own tabs** (#4768): the project window's, or a tab window's, filed
+/// under that window whatever window the tabs name, and every other window's stand. A window
+/// that is not one of the project's is refused: it cannot report another's tabs.
+///
 /// **A press sends its new layout here, in the same call** that shows the chat, so a task the
 /// person presses onto is held from that moment and is not ended under them. A layout that
-/// names a chat twice, or a chat that is not open, is refused with why, and nothing changes. A
-/// window command only: no chat can call it.
+/// names a chat twice across the project's windows, or a chat that is not open, is refused
+/// with why, and nothing changes. A window command only: no chat can call it.
 #[tauri::command]
 #[specta::specta]
 pub(crate) fn window_layout(
+    window: tauri::Window,
+    showing: tauri::State<'_, crate::planes::Showing>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     layout: LaidOut,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    held.chats().lay_out(layout.into())?;
+    // A window that has not said it holds the project yet (it is drawing it for the first
+    // time) reports as its project window, as every window did before tab windows.
+    let number = match showing.tab_window(window.label()) {
+        Some(tab) if tab.plane == plane => tab.number,
+        Some(_) => return Err("This window does not show that project.".to_owned()),
+        None => 0,
+    };
+    held.chats().lay_out_window(number, layout.into())?;
     // A reported task that was held because the person was reading it is looked at again, as
     // it is whenever what is on screen moves (#1485).
     crate::dispatched::front_moved(&held);

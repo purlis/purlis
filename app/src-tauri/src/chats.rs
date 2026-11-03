@@ -19,6 +19,7 @@ use purlis_core::engine::Size;
 use purlis_core::eventlog::{Attributes, Began, RunOf};
 use purlis_core::harness::{Harness, SessionId};
 use purlis_core::hoststart::Armed;
+use purlis_core::reopen::layout::Refused;
 use purlis_core::reopen::{Chat, Focus, Layout, Record, Reopened, View};
 
 use crate::host::{Opening, SessionHost};
@@ -837,6 +838,10 @@ pub struct Chats {
     /// **The window's to say, for the reason [`Self::views`] is**, and held to two rules here
     /// ([`Self::lay_out`]): no chat in two panes, and no chat that is not open.
     layout: Mutex<Option<Layout>>,
+    /// **The project's windows that are not on screen** (#4768): minimised or hidden, as the
+    /// window says it. Never recorded. A chat in one of them is not looked at
+    /// ([`Self::looked_at`]): a minimised window counts as nothing.
+    away: Mutex<purlis_core::reopen::layout::Away>,
     /// The order the window's strip draws the chats in, by session, as it last said — or, at
     /// a launch, the order the record listed them in (ADR 0039, as amended by SI-6).
     ///
@@ -1443,6 +1448,7 @@ impl Chats {
             views: Mutex::new(Vec::new()),
             focus: Mutex::new(None),
             layout: Mutex::new(None),
+            away: Mutex::default(),
             order: Mutex::new(Vec::new()),
             skills_now: Arc::default(),
             record_it,
@@ -5325,7 +5331,7 @@ impl Chats {
         // **Derived from the tree once there is one** (#4751): every chat in a pane of the front
         // tab of each window on screen ([`Layout::on_screen`]). Before that, the old way.
         if let Some(layout) = lock(&self.layout).as_ref() {
-            return layout.on_screen();
+            return layout.on_screen_but(&lock(&self.away));
         }
         let Some(front) = self.front() else {
             return Vec::new();
@@ -5439,6 +5445,88 @@ impl Chats {
             self.write_it_down();
         }
         Ok(())
+    }
+
+    /// **Window `window`'s own report of its tabs** (#4768): the project window's (`0`) or one
+    /// of its tab windows'. Its tabs take the place of the ones held for it, every other
+    /// window's stand, and the whole is held to [`Self::lay_out`]'s rules: a chat named in a
+    /// pane of another window as well is refused, so a chat is shown once across every window
+    /// of the project. A refusal changes nothing.
+    pub fn lay_out_window(&self, window: u32, report: Layout) -> Result<(), String> {
+        let held = lock(&self.layout).clone().unwrap_or_default();
+        self.lay_out(held.with_window(window, report))
+    }
+
+    /// **Window `window` went away from the screen or came back** (#4768): minimised or hidden,
+    /// or shown again. A chat on screen only there is not looked at while it is away. Answers
+    /// whether that changed anything, so a caller looks at held tasks again only then.
+    pub fn window_away(&self, window: u32, away: bool) -> bool {
+        lock(&self.away).set(window, away)
+    }
+
+    /// The window whose front tab shows chat `session` (`0` the project window), or none where
+    /// no window's does, or no layout is held. What a notification about it asks: whether
+    /// **that** window has the keyboard.
+    pub fn window_showing(&self, session: u32) -> Option<u32> {
+        lock(&self.layout).as_ref()?.window_showing(session)
+    }
+
+    /// **Move to new window** (`to` none) or **Move to window ▸**: the `nth` tab of window
+    /// `from` goes to that window as its front tab, in one step (`Layout::move_tab`). Answers
+    /// the window it is in now. Refused, saying why and changing nothing, where no layout is
+    /// held or the move is not one.
+    pub fn move_tab(&self, from: u32, nth: usize, to: Option<u32>) -> Result<u32, String> {
+        self.moved(|layout| {
+            let at = layout.place_of(from, nth).ok_or(Refused::NoSuchTab)?;
+            layout.move_tab(at, to)
+        })
+    }
+
+    /// A pane's **Move to new window** or **Move to window ▸**: the pane at `path` in the `nth`
+    /// tab of window `from` becomes a tab of its own, the front tab of that window (`Layout::move_pane`).
+    pub fn move_pane(
+        &self,
+        from: u32,
+        nth: usize,
+        path: &[purlis_core::reopen::layout::Side],
+        to: Option<u32>,
+    ) -> Result<u32, String> {
+        self.moved(|layout| {
+            let at = layout.place_of(from, nth).ok_or(Refused::NoSuchTab)?;
+            layout.move_pane(at, path, to)
+        })
+    }
+
+    fn moved(
+        &self,
+        change: impl FnOnce(&mut Layout) -> Result<u32, Refused>,
+    ) -> Result<u32, String> {
+        let mut held = lock(&self.layout);
+        let Some(layout) = held.as_mut() else {
+            return Err(
+                "purlis did not move that: this project's tabs are not known yet.".to_owned(),
+            );
+        };
+        let mut next = layout.clone();
+        let to = change(&mut next).map_err(|why| format!("purlis did not move that: {why}."))?;
+        *layout = next.held();
+        drop(held);
+        self.write_it_down();
+        Ok(to)
+    }
+
+    /// **Tab window `window` closed** (#4768): its tabs go back to the project window, behind
+    /// the front tab of each one's strip, and every chat in them goes on running: closing
+    /// never ends anything. Answers whether any tab moved. The window is not away any more.
+    pub fn send_back(&self, window: u32) -> bool {
+        let moved = lock(&self.layout)
+            .as_mut()
+            .is_some_and(|layout| layout.send_back(window));
+        lock(&self.away).set(window, false);
+        if moved {
+            self.write_it_down();
+        }
+        moved
     }
 
     /// The tabs the window last reported, or at a launch the record's; `None` for a record
@@ -7899,3 +7987,7 @@ mod restoring_tests;
 #[cfg(test)]
 #[path = "chats/tests/letting_go.rs"]
 mod letting_go_tests;
+
+#[cfg(test)]
+#[path = "chats/tests/windows.rs"]
+mod windows_tests;

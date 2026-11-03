@@ -111,6 +111,17 @@ impl Layout {
             .map(|tab| tab.window)
     }
 
+    /// Where the `nth` tab of window `window` is among every tab: what a window, which knows
+    /// only its own tabs, names a tab by.
+    pub fn place_of(&self, window: u32, nth: usize) -> Option<usize> {
+        self.tabs
+            .iter()
+            .enumerate()
+            .filter(|(_, tab)| tab.window == window)
+            .nth(nth)
+            .map(|(at, _)| at)
+    }
+
     /// Every tab window a tab names, in number order.
     pub fn tab_windows(&self) -> Vec<u32> {
         let windows: BTreeSet<u32> = self
