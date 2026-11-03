@@ -492,3 +492,23 @@ fn a_sweep_spares_a_timeline_just_written() {
 
     assert_eq!(read(dir.path(), CHAT).len(), 1);
 }
+
+#[test]
+fn a_secret_fill_names_its_key_and_field_and_a_refused_one_says_why_never_a_value() {
+    let filled = filled_secret("b1", "dash-api-key", "e12", 3);
+    assert_eq!(filled.moment.did, "purlis filled dash-api-key into e12");
+    assert_eq!(filled.moment.by, By::Purlis);
+    assert!(filled.png.is_none() && filled.moment.page.is_none());
+    let refused = fill_refused(
+        "b1",
+        "dash-api-key",
+        "e12 is in a document on https://pay.example.test, not on https://dash.example.test",
+        4,
+    );
+    assert!(
+        refused
+            .moment
+            .did
+            .starts_with("purlis filled nothing of dash-api-key: e12 is in")
+    );
+}

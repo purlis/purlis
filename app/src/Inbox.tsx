@@ -75,6 +75,7 @@ import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { LoginSite, useTypedSite } from "./LoginSite";
 import { SecretFill } from "./SecretFill";
+import { SecretFillSite } from "./SecretFillNotice";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
@@ -954,6 +955,8 @@ function Ask({
             <SecretFill secret={ask.secret} box={secretBox} />
           </Stop>
         )}
+        {/* What a secret fill puts where (#5115): words to read, nothing to reach. */}
+        {ask.fill != null && <SecretFillSite fill={ask.fill} />}
         {shape.reason && (
           <Stop id={`${key}:reason`}>
             <TextField

@@ -1577,3 +1577,17 @@ fn the_window_holds_a_runner_browser_to_the_more_of_its_pools_limits_and_the_def
         }
     );
 }
+
+#[test]
+fn a_host_before_secret_fill_is_sent_no_field_read_and_no_fill() {
+    use purlis_session_protocol::session::KNOWS_SECRET_FILL;
+    use purlis_session_protocol::version::Version;
+    let before = Version {
+        major: 1,
+        minor: KNOWS_SECRET_FILL.minor - 1,
+    };
+    let refused = super::fills_secrets(before).expect_err("refused");
+    assert!(refused.contains("too old to fill a secret"), "{refused}");
+    assert!(refused.contains("nothing was filled"), "{refused}");
+    assert_eq!(super::fills_secrets(KNOWS_SECRET_FILL), Ok(()));
+}

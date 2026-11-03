@@ -877,7 +877,6 @@ pub fn browsed(answer: drive::Answer, most: usize) -> Browsed {
     out
 }
 
-/// A download as the protocol says it (#2020).
 /// **A field the engine read, in the protocol's words** (#5115).
 fn field_said(field: drive::FieldInfo) -> wire::FieldSaid {
     wire::FieldSaid {
@@ -892,6 +891,7 @@ fn field_said(field: drive::FieldInfo) -> wire::FieldSaid {
     }
 }
 
+/// A download as the protocol says it (#2020).
 fn download_said(download: drive::DownloadInfo) -> wire::DownloadSaid {
     wire::DownloadSaid {
         download: download.id,
