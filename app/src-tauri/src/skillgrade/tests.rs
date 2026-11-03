@@ -278,6 +278,7 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
                 plane: plane.clone(),
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
+                draft: None,
                 step: RunningStep::Skill(SkillGradeStep {
                     plane: plane.clone(),
                     skill: "deploy".into(),
@@ -292,6 +293,7 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
                     asked: 0,
                     ended: None,
                     said: None,
+                    draft: None,
                 }),
             },
         );
@@ -394,6 +396,7 @@ fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
         model: Some("claude-sonnet-4-5".into()),
         previous: None,
         after_edit: false,
+        draft: None,
     };
     let card = GradeScorecard::of(&graded, |chat| chat != "01B");
     assert_eq!(card.against, None, "no previous version was compared");
@@ -544,6 +547,7 @@ fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_difference
         model: None,
         previous: Some("fedcba9876543210fedcba9876543210fedcba98".into()),
         after_edit: true,
+        draft: None,
     };
     let card = GradeScorecard::of(&graded, |_| false);
     assert_eq!(card.against.as_deref(), Some("fedcba987654"));
@@ -713,6 +717,7 @@ fn a_skills_grade_is_read_by_its_id_in_its_plane_and_a_routers_is_not() {
         plane: plane.clone(),
         stop: Arc::new(AtomicBool::new(false)),
         after_edit: None,
+        draft: None,
         step,
     };
     let skill = SkillGradeStep {
@@ -729,6 +734,7 @@ fn a_skills_grade_is_read_by_its_id_in_its_plane_and_a_routers_is_not() {
         asked: 0,
         ended: None,
         said: None,
+        draft: None,
     };
     let router = crate::routergrade::RouterGradeStep {
         plane: plane.clone(),
@@ -814,6 +820,7 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
         asked: 0,
         ended: None,
         said: None,
+        draft: None,
     };
     let grades_running = [
         ("g-3928-other-skill", &plane, "other-3928", &shared),
@@ -827,6 +834,7 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
                 plane: at.clone(),
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
+                draft: None,
                 step: RunningStep::Skill(step(at, skill, level, grade)),
             },
         );
@@ -838,6 +846,7 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
             plane: plane.clone(),
             stop: Arc::new(AtomicBool::new(false)),
             after_edit: None,
+            draft: None,
             step: RunningStep::Router(crate::routergrade::RouterGradeStep {
                 plane: plane.clone(),
                 router: "relevance".to_owned(),
@@ -992,6 +1001,7 @@ fn a_graders_failure_is_in_its_scorecard() {
         model: None,
         previous: None,
         after_edit: false,
+        draft: None,
     };
     let card = GradeScorecard::of(&graded, |_| false);
     assert!(

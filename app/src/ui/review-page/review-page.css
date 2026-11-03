@@ -91,6 +91,25 @@
   display: none;
 }
 
+/* Ways on that answer nothing: beside the answers, never squeezed by the summary. */
+[data-scope="review-page"][data-part="actions"] {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* With ways on the bar holds more than a line can, so the summary keeps its room and they and the
+   answers wrap under it, rather than leaving it a column too thin to read. */
+[data-scope="review-page"][data-part="bar"]:has(> [data-part="actions"]) {
+  flex-wrap: wrap;
+}
+
+[data-scope="review-page"][data-part="bar"]:has(> [data-part="actions"]) > [data-part="summary"] {
+  flex: 1 1 18rem;
+}
+
 /* The answers at the trailing edge, in the dialog's places, never squeezed by the summary. */
 [data-scope="review-page"][data-part="answers"] {
   display: flex;

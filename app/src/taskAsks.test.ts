@@ -111,6 +111,26 @@ describe("one question for tasks hitting the same block", () => {
     expect(taskBlockGroups(ours, 4, tasks)).toEqual([]);
   });
 
+  it("asks a held folder under one question only of tasks told the same of what it means", () => {
+    const held = (session: number, route: string): ChatBlocked => ({
+      ...hostBlock(session),
+      operation: "write",
+      kind: "protected-file",
+      offer: "write",
+      target: "/Users/a/.config/gh",
+      route,
+      levels: ["chat"],
+    });
+    const blocks = {
+      7: [held(7, "this one folder")],
+      8: [held(8, "any folder of this name")],
+      9: [held(9, "this one folder")],
+    };
+    const groups = taskBlockGroups(blocks, 4, tasks);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].members.map((one) => one.session)).toEqual([7, 9]);
+  });
+
   it("offers only the levels every task's block may be allowed at", () => {
     const blocks = {
       7: [hostBlock(7)],

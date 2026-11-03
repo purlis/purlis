@@ -100,6 +100,7 @@ mod useskill;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
 #[cfg(all(test, unix))]
 mod behaviour;
+mod freshkept;
 #[cfg(unix)]
 mod hostedconfinement;
 #[cfg(unix)]
@@ -863,10 +864,6 @@ pub struct HandedFromNote {
     /// report, and where no record says how.
     #[specta(optional)]
     pub outcome: Option<String>,
-    /// Whether, as a task, it has a question open with the chat that dispatched it, and is
-    /// paused until that chat answers (#1484): its row says whom it is asking.
-    #[specta(optional)]
-    pub asking: Option<bool>,
     /// Whether, as a task, the person asked for it themselves from that chat's tab (#1492,
     /// V100-70): its row and its breadcrumb say `asked by you`. The app's own record of how it
     /// was started, never a word a chat said.
@@ -894,7 +891,6 @@ impl HandedFromNote {
             // What the project's own records say of it, which a list of rows asks for
             // ([`with_task_standing`]): not the chat's record, so not read here.
             outcome: None,
-            asking: None,
             by_person: (from.mode == purlis_core::reopen::Mode::Task && from.by_person)
                 .then_some(true),
             asker_waiting: None,
@@ -943,12 +939,10 @@ fn with_task_standing(
     if let Some(from) = drawn.from.as_mut() {
         from.asker_waiting = held.chats().waits_to_start(from.chat).then_some(true);
     }
-    if let Some(from) = drawn.from.as_mut().filter(|from| from.task) {
-        if from.reported || from.unreported {
-            from.outcome = outcomes.of_task(session).map(str::to_owned);
-        } else {
-            from.asking = dispatched::asks_its_asker(held, session).then_some(true);
-        }
+    if let Some(from) = drawn.from.as_mut().filter(|from| from.task)
+        && (from.reported || from.unreported)
+    {
+        from.outcome = outcomes.of_task(session).map(str::to_owned);
     }
     drawn
 }
@@ -3018,6 +3012,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<smartclose::SmartClosing>()
         // What `chats-reconnecting` carries (#2496).
         .typ::<reconnecting::ChatsReconnecting>()
+        // What `fresh-runners-kept` carries (#4569).
+        .typ::<freshkept::FreshRunnersKept>()
         // What `projects_not_held` answers, read again on `projects-not-held` (#2846).
         .typ::<notheld::ProjectNotHeld>()
         // What `chat-stop` carries (#1448).
@@ -4308,6 +4304,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             reconnecting::EVENT,
+                            &told,
+                        );
+                    })
+                })
+                // A task's fresh runner kept since its work is not all here: the window's Notice
+                // offers Fetch again and Discard (#4569).
+                .telling_fresh_kept({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: freshkept::FreshRunnersKept| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            freshkept::EVENT,
                             &told,
                         );
                     })

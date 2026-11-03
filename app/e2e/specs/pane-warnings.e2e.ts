@@ -86,6 +86,8 @@ async function raise(pane: number, sentence: string, ways: string[]): Promise<vo
       });
       box.dataset.raised = "pane-warnings.e2e";
       box.setAttribute("data-asks", "");
+      // It stands whatever the bell's choice (#4754): what this file measures is the card.
+      box.setAttribute("data-waits", "");
       const line = el("div", "");
       Object.assign(line.dataset, { scope: "button-row", size: "sm", wraps: "" });
       line.setAttribute("role", "status");
@@ -290,23 +292,19 @@ describe("a pane's warnings, inside the pane", () => {
     const seen = await measured(0);
     const frame = seen.frame as Box;
 
-    // The band, the header, then the terminal: all inside the pane.
+    // The header, the band under it (#4754), then the terminal: all inside the pane.
     inside(seen.band, frame, "the band");
     inside(seen.head, frame, "the header");
     inside(seen.warnings[0].box, frame, "the warning");
     check(
-      "the header is not under the band",
-      (seen.head as Box).top >= (seen.band as Box).bottom - 1,
+      "the band is not under the header",
+      (seen.band as Box).top >= (seen.head as Box).bottom - 1,
       seen,
     );
     offTheTerminal(seen);
 
-    // The runway: the warning starts below the pane's top, on the pane's own fill.
-    check(
-      "the warning touches the pane's top",
-      (seen.warnings[0].box as Box).top >= frame.top + 6,
-      seen,
-    );
+    // The runway: the header starts below the pane's top, on the pane's own fill.
+    check("the header touches the pane's top", (seen.head as Box).top >= frame.top + 2, seen);
 
     // Docked (Purlis): the chosen tab's bottom is the pane's top, in the same fill.
     if (seen.joined === "1") {

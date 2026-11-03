@@ -89,7 +89,7 @@ impl IndexLock {
             "who holds it:  ps -eo pid,lstart,command | grep '[g]it'".to_string(),
             format!(
                 "nobody does:   rm -f {}   (purlis never removes a lock — a held one is real)",
-                self.path.display()
+                crate::shown::shell_path(&self.path)
             ),
         ]
     }

@@ -1245,9 +1245,10 @@ body {
 
    **How far that holds.** With the longest state there is ("ended without a report") the
    breadcrumb's least width is about 14rem, and the line also holds the gauge and the harness's
-   name, cut to their padding. In a pane narrower than about 24rem the line cannot hold that,
-   and what is cut is its END: first the gauge and the harness's name, then, under about 20rem,
-   the end of the state word. A pane that narrow shows about thirty columns of terminal. Past
+   name, cut to their padding. In a pane narrower than about 28rem (24rem before the bell's
+   fixed slot took 4rem of the header, #4754) the line cannot hold that, and what is cut is its
+   END: first the gauge and the harness's name, then, under about 24rem, the end of the state
+   word. A pane that narrow shows about thirty columns of terminal. Past
    the names' least widths the path is cut from its START (`justify-content: flex-end` under
    `overflow: hidden`), so the task on screen is the name kept. The whole path is the
    breadcrumb's tooltip at any width. */
@@ -3636,6 +3637,27 @@ body {
   flex: none;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* **A task question's words at its row's end** (#4564): `asking steward 2 · 1m`. The asker's
+   name gives way as the row's name does, so a name with no space to break at never pushes the
+   time out of the row; the time stays whole. The trail shrinks by the list family's own
+   `data-gives-way`, since this layer sits under it. */
+.chats-section .question-waits {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+}
+
+.chats-section .question-who {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chats-section .question-since {
+  flex: none;
+  white-space: pre;
 }
 
 /* **Every tree in the window is the shared tree** (#1672, DS-12): `.ui-tree` and its
@@ -8200,6 +8222,27 @@ nav.piece-files-head {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+/* A draft's grade in its footer (#2780): the line over what Accept does. */
+.skill-draft-summary {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.skill-draft-summary p {
+  margin: 0;
+}
+
+.skill-draft-figures {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.skill-draft-figure b {
+  font-variant-numeric: tabular-nums;
 }
 
 .skill-draft-try {

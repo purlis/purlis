@@ -290,10 +290,11 @@ leave, so no Notice is ever drawn over what a chat wrote. They were in the pane'
 the terminal, until the operator's screenshot of three of them hiding the conversation; then in a
 row above the pane, between the chosen tab and its pane, until the operator's screenshot of
 2026-10-24 showed it breaking the tab's join. **A pane is three rows** (`paneFrame.css`, the
-operator's variant A): the band, on the terminal's own fill with an 8px runway at its top so the
-chosen tab joins the terminal; the header (`PaneHead`), the chat at a glance at its start and the
-pane's actions at its end (`PaneActions`, the one cluster of split side by side, split stacked and
-close, which a view's pane draws too, #3147); then the terminal, pinned to its bottom so a warning
+operator's variant A, and #4754): the header (`PaneHead`), with a runway at its top so the chosen
+tab joins the terminal's fill, the chat at a glance at its start and the pane's actions at its
+end (`PaneActions`, the one cluster of the bell, split side by side, split stacked and close,
+which a view's pane draws too, without the bell, #3147); then the band, under the header so a
+Notice arriving never moves it; then the terminal, pinned to its bottom so a warning
 coming or going moves its top and never its last line. **A view's pane carries no title of its
 own** (#3147, the operator's ruling of 2026-10-24): its tab is its name and the content panel is
 that tab's panel, so the view starts on the fill its chosen tab joins, with no band; the same
@@ -301,22 +302,29 @@ that tab's panel, so the view starts on the fill its chosen tab joins, with no b
 done to what the view is about (or Settings' levels) and keeps the actions' room at its end. In
 the band each Notice is a washed card
 (`wash.warning`, `danger.wash` for trouble, no edge), its words above its ways out, a consent's
-Allow set apart from Keep blocked and the only answer with an edge. The band is a `region`, "Warnings
-for this pane"; a card never shrinks in it, so past its room the cards scroll inside it whole. Esc
+Allow set apart from Keep blocked and the only answer with an edge. The band is a `region`, "Pane
+notices", as its bell is "Pane notices: …" (apart from the status line's Notices and a chip's
+"Notices for …"); a card never shrinks in it, so past its room the cards scroll inside it whole. Esc
 on a warning with a Dismiss puts it away, and the keyboard goes on to the next warning or to the
 terminal, never onto an Allow: a consent is landed on by its line. A consent has no Dismiss and
 Esc leaves it. The press-settle guard (#1695) reads where each line is drawn against the band
 itself, scrolling aside, never its `offsetTop`, which a card positioned for its mark would pin. In the row they are stacked (the notice family's `stack`), in the
 order the pane writes them: the shown chat's own, the one that waits for an answer before
-anything starts first, then each hidden chat's. **At most two stand, and the rest are behind
-"+N more"**, on a row of its own under them, as wide as the longer of "+N more" and the Show
-fewer it says while open (both are drawn in one cell, the one not said hidden); it opens the rest in the band, closing on Escape (back on "+N more") or a press outside it.
-A Notice past two is `hidden` where it is drawn, never moved, so it keeps its state, and one the
+anything starts first, then each hidden chat's. **There is no cap** (#4754): the band is
+**minimised or expanded**, one choice for every pane, minimised by default and kept in the layout
+file (`paneNotices.ts`). Minimised, its notes fold into **the bell** (`PaneBell`), in the pane's
+header in a fixed slot before split and close, and only its asks stand, as full cards (`waits`:
+a consent, or a blocking question, which has no Dismiss beside its answers). Expanded, every
+Notice stands, under a head row that says how many and how many wait on you, with Dismiss all,
+which skips the asks and counts what it clears, and Minimise. The bell's count is the pane's
+notes, never its asks, the same number in both states, in the trouble colour while one note is
+trouble; a new Notice never opens the band or takes the focus, and the bell says its count
+politely. A folded note is `hidden` where it is drawn, never moved, so it keeps its state, and one the
 keyboard is on stays until the focus leaves it. The band and the header are never more than
 about half the pane, and inside it the stack is never wider or taller than the pane: the sentence has the row,
 the ways out go under it when they do not fit beside it, and the stack scrolls (#1481). Every
 change of the row's height refits the terminal, which resizes the chat's pty and redraws its
-harness; with two at most, a third Notice and every one after it change only the count. The
+harness; minimised, a note arriving changes only the bell's count. The
 chat at a glance (the gauge, the harness, the breadcrumb) is the header's line, never over the
 terminal. `Notice.pane.test.tsx` and `PaneBand.test.tsx` hold the shape and the rules, and
 `pane-notices.e2e.ts` and `pane-warnings.e2e.ts` measure them, with no Notice over the terminal in a narrow pane and a
@@ -665,7 +673,7 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 | Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
 | View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages; `ViewBar`, `ViewHistoryButtons`, `ViewCrumbs` (`ui/panel/ViewBar.tsx`), its top bar | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead`, `bar`, `history`, `path`, `crumb`, `crumb-separator` | none |
 | View nav | a page in the view frame's navigation, drawn by `ViewNav` | `item`, `label`, `indicator` | none |
-| Review page     | `ReviewPage` (`ui/review-page/ReviewPage.tsx`), a review too long for a dialog: its body over a fixed action bar                                                                                       | `root`, `body`, `bar`, `summary`, `answers`                                                                           | none                               |
+| Review page     | `ReviewPage` (`ui/review-page/ReviewPage.tsx`), a review too long for a dialog: its body over a fixed action bar                                                                                       | `root`, `body`, `bar`, `summary`, `actions`, `answers`                                                                | none                               |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
 
@@ -749,7 +757,9 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   whose rows list every item the bar draws, stay up for the next move and say each move to a
   reader. A cell of the bar is no Tab stop, so the rows start from the menu and not from an item.
   The order is kept under `status.order`; an item absent today keeps its place in it, and one it
-  never named stays after the item it follows by priority. A press runs the item's command:
+  never named stays after the item it follows by priority. Once the bar draws its items otherwise
+  than their priorities do, the menu's last row is Reset order (#4776), which forgets the order and
+  closes the menu. A press runs the item's command:
   purlis's own items are `StatusItem`s whose press
   is the command, and an item given as data names a command the bar runs through `onCommand`.
   An item that comes and goes sits on its end's inner side, so its arrival moves no neighbour;
@@ -836,7 +846,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   button, the text input and the textarea in no colour, at every size; Allow and danger, the
   consent variants, keep theirs, and a refused field keeps its danger edge, drawn as an outline over the box's own edge that no part reaches (the focus ring takes its place while the field holds the caret).
 - **Stories hold them** (`Card.stories.tsx`, `Notice.stories.tsx`, `Badge.stories.tsx`,
-  `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's row with +N more, the
+  `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's band minimised and expanded, the
   Inbox's list, a Notice alone, what needs a decision in all three places, every badge and count, the hosts' statuses, a badge's hint, and a
   line across a card and down a strip, each walked by the keyboard and checked by axe.
 ## The steps family

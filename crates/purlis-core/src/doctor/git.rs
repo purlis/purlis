@@ -345,18 +345,19 @@ pub(super) fn plane_root(d: &Doctor) -> Row {
             findings.push("detached HEAD".to_owned());
             actions.push(format!(
                 "Put the root back on a branch: git -C {} checkout {}.",
-                super::fsx::path_field(root),
-                default
-                    .as_deref()
-                    .filter(|d| !d.is_empty())
-                    .unwrap_or("<your default branch>")
+                crate::shown::shell_path(root),
+                default.as_deref().filter(|d| !d.is_empty()).map_or_else(
+                    || "<your default branch>".to_owned(),
+                    crate::shown::shell_word
+                )
             ));
         }
         (Some(branch), Some(default)) if !default.is_empty() && branch != default => {
             findings.push(format!("on {branch}, not {default}"));
             actions.push(format!(
-                "Put the root back: git -C {} checkout {default}.",
-                super::fsx::path_field(root)
+                "Put the root back: git -C {} checkout {}.",
+                crate::shown::shell_path(root),
+                crate::shown::shell_word(default)
             ));
         }
         _ => {}
@@ -750,7 +751,7 @@ pub(super) fn index_lock(d: &Doctor) -> Row {
              `git add` in this plane will refuse until it is gone. Check nothing holds it (ps \
              -eo pid,lstart,command | grep '[g]it'), then remove it yourself: rm -f {}  — \
              purlis never removes a lock.",
-            super::fsx::path_field(&path)
+            crate::shown::shell_path(&path)
         ),
     )
 }

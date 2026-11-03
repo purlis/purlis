@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Pages this site writes</title></head>
+<body>
+  <button type="button" id="blank">Open a blank page</button>
+  <button type="button" id="blob">Open a blob page</button>
+  <script>
+    document.getElementById("blank").addEventListener("click", () => {
+      const opened = window.open("", "_blank");
+      opened.document.write("<!doctype html><title>Written</title><input aria-label='Written page field'>");
+      opened.document.close();
+    });
+    document.getElementById("blob").addEventListener("click", () => {
+      const made = new Blob(["<!doctype html><title>Made</title><input aria-label='Blob page field'>"], { type: "text/html" });
+      window.open(URL.createObjectURL(made), "_blank");
+    });
+  </script>
+</body></html>

@@ -345,6 +345,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "LayoutPanes.tsx": {
+    count: 1,
+    why:
+      "the pane bell's polite count, said once as a notice arrives (#4754): it announces how " +
+      "many the band holds, and each Notice in the band is its own",
+  },
   "LiveDialog.tsx": {
     count: 4,
     why:

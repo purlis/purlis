@@ -4,7 +4,10 @@
 name: ci
 
 on:
+  # `ready_for_review` too: a draft runs no macOS job (below), so marking it ready starts the run
+  # that does.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   # The merge queue's run of the group a pull request joins: main, or the entries ahead of it, with
@@ -63,6 +66,18 @@ on:
 # minutes. In the 2.5 days to 2026-10-31, 24 pull request runs failed them with Linux's passing,
 # about 10 a day. In the queue each would fail a 275-minute run and every group behind it, where
 # about 8 groups a day failed in those days, 14 of those 19 on macOS's scenarios alone.
+#
+# **A draft pull request runs no macOS job (2026-11-02).** The repository gets 50 macOS runners at
+# once. At 14:56 UTC on 2026-11-02 all 50 were busy, 35 of them on pull request runs, and 98 macOS
+# jobs waited, 19 of them the merge queue's: nothing had merged for over an hour. Runners start
+# jobs first come, first served, so a pull request's run holds the queue back. 8 of the 22 pull
+# requests with a run going were drafts, which are pushed again and again while their author works
+# and cannot be merged. So the macOS scenarios, the scoped macOS jobs and the outcome bars (both
+# legs: one matrix) wait for the pull request to be marked ready (`ready_for_review` starts that
+# run), and `scenario tests (macos-latest)` passes on a draft with its legs skipped. That green is
+# the draft run's, so `tools/land.mjs` waits for the ready's run to finish before it reads the
+# checks. A macOS failure still shows on its pull request, before the queue, for the reason above.
+# `app builds (macos-latest)` still runs on a draft: one job, against the scenarios' six.
 
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
@@ -1294,7 +1309,7 @@ jobs:
   browser-engine-macos:
     name: browser engine on macos (real Chrome, when the engine changes)
     needs: changes
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.browser-engine != 'false') }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.browser-engine != 'false') && !github.event.pull_request.draft }}
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -1337,7 +1352,7 @@ jobs:
   studio-confinement-macos:
     name: studio confinement on macos (Seatbelt, when the confinement changes)
     needs: changes
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.confinement != 'false') }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.confinement != 'false') && !github.event.pull_request.draft }}
     runs-on: macos-latest
     timeout-minutes: 40
     steps:
@@ -1539,11 +1554,11 @@ jobs:
   # `scenario-linux`.
   #
   # Skipped whole, and no macOS runner held, when nothing the scenarios run has changed
-  # (`changes`); `scenario-checks` says so.
+  # (`changes`), or on a draft pull request; `scenario-checks` says so.
   scenario:
     name: scenario tests (${{ matrix.os }}, ${{ matrix.specs && format('part {0} of {1}', matrix.shard, matrix.shards) || matrix.sandbox && 'the sandbox runs' || 'the single-app runs' }})
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' && !github.event.pull_request.draft }}
     strategy:
       fail-fast: false
       matrix:
@@ -1918,10 +1933,12 @@ jobs:
       - name: Every leg passed
         env:
           SCOPE: ${{ needs.changes.outputs.scenario }}
+          DRAFT: ${{ github.event.pull_request.draft || false }}
           RESULT: ${{ needs.scenario.result }}
         run: |
-          if [ "$SCOPE" = false ]; then want=skipped; else want=success; fi
-          echo "scope: ${SCOPE:-unknown}, result: $RESULT"
+          if [ "$SCOPE" = false ] || [ "$DRAFT" = true ]; then want=skipped; else want=success; fi
+          echo "scope: ${SCOPE:-unknown}, draft: $DRAFT, result: $RESULT"
+          if [ "$DRAFT" = true ]; then echo "::notice::a draft runs no macOS scenarios; marking it ready runs them"; fi
           test "$RESULT" = "$want"
 
   # Its own job, not a leg of `scenario`'s matrix, so that `scenario-checks` waits on macOS
@@ -1975,7 +1992,7 @@ jobs:
     # rust-cache saved anything, so the cache main writes was never warm. Warm, a release run took
     # 31 minutes.
     timeout-minutes: 75
-    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) && !github.event.pull_request.draft }}
     # Where the specs find the build: the profile the build step names for `outcome` (one place
     # for the path, so no harness's run can take another build's program).
     env:

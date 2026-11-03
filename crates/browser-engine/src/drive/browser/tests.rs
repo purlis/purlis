@@ -427,11 +427,11 @@ impl Engine {
                     && super::lock(&self.model).frame_unnamed =>
             {
                 Ok(
-                    json!({"node":{"nodeId":0,"backendNodeId":50,"nodeType":1,"nodeName":"IFRAME","localName":"iframe","nodeValue":""}}),
+                    json!({"node":{"nodeId":0,"backendNodeId":50,"nodeType":1,"nodeName":"IFRAME","localName":"iframe","nodeValue":"","attributes":[]}}),
                 )
             }
             "DOM.describeNode" if p["objectId"].is_null() => Ok(if p["backendNodeId"] == 50 {
-                json!({"node":{"nodeId":0,"backendNodeId":50,"nodeType":1,"nodeName":"IFRAME","localName":"iframe","nodeValue":"","frameId":"PAYMENT-FRAME"}})
+                json!({"node":{"nodeId":0,"backendNodeId":50,"nodeType":1,"nodeName":"IFRAME","localName":"iframe","nodeValue":"","attributes":[],"frameId":"PAYMENT-FRAME"}})
             } else {
                 json!({"node":{"nodeId":0,"backendNodeId":p["backendNodeId"],"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":""}})
             }),
