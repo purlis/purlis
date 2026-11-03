@@ -144,10 +144,12 @@ function StewardsPane({
   );
 }
 
-/** The pretend core: each task is paused on its question; an answer moves the list on. */
+/** The pretend core: each task is paused on its question; an answer moves the list on. As the
+ *  core does, it says no chat answered a question the person answered. */
 function theCore() {
   forgetThisLaunch();
   setWhereYouAnswer({ answer: "top", offered: true });
+  const theirs = new Set<number | undefined>();
   mockIPC((cmd, args) => {
     const session = (args as { session?: number } | undefined)?.session;
     if (cmd === "task_question")
@@ -158,10 +160,11 @@ function theCore() {
         question: "Which one?",
       };
     if (cmd === "answer_task_question") {
+      theirs.add(session);
       window.dispatchEvent(new Event(MOVE));
       return null;
     }
-    if (cmd === "task_question_answered") return STEWARD_SAID;
+    if (cmd === "task_question_answered") return theirs.has(session) ? null : STEWARD_SAID;
     return null;
   });
 }

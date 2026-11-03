@@ -53,11 +53,14 @@ function Pane({ session, asks }: { session: number | number[]; asks: Shown[] }) 
 /** What the pretend core was sent to answer, and what it says an asking chat answered. */
 let sent: Record<string, unknown>[] = [];
 let chatAnswered: unknown = null;
+/** Set, the pretend core holds its answer to a send until it is called. */
+let holdAnswer: Promise<void> | undefined;
 
 beforeEach(() => {
   forgetThisLaunch();
   sent = [];
   chatAnswered = null;
+  holdAnswer = undefined;
   mockIPC((cmd, args) => {
     const session = (args as { session?: number } | undefined)?.session;
     if (cmd === "task_question")
@@ -69,7 +72,7 @@ beforeEach(() => {
       // As the core does (#5005): only Say otherwise overrides an answer a chat gave first.
       if (chatAnswered !== null && (args as { overrides?: boolean }).overrides !== true)
         throw "The chat 'steward 4' answered that question of 'developer 7' first.";
-      return null;
+      return holdAnswer === undefined ? null : holdAnswer.then(() => null);
     }
     if (cmd === "task_question_answered") return chatAnswered;
     return null;
@@ -188,6 +191,22 @@ describe("several questions at once (#4566)", () => {
     expect(screen.queryByText("Sent to developer 7.")).not.toBeInTheDocument();
   });
 
+  it("says where the answer went though the list moved on before the core said it was taken", async () => {
+    // The registry's next list can reach the window before the answer's own reply does.
+    const user = userEvent.setup();
+    let taken = () => {};
+    holdAnswer = new Promise((done) => (taken = done));
+    const { rerender } = render(<Pane session={4} asks={[QUESTION, SECOND]} />);
+    const box = screen.getByRole("textbox", { name: "Your answer" });
+    await waitFor(() => expect(box).not.toBeDisabled());
+    await user.type(box, "Per project{Enter}");
+    await waitFor(() => expect(sent).toHaveLength(1));
+    rerender(<Pane session={4} asks={[SECOND]} />);
+    await act(async () => taken());
+    expect(await screen.findByText("Sent to developer 7.")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "designer 8 asks" })).not.toBeInTheDocument();
+  });
+
   it("closes quietly when the asking chat answers first, leaving who said what until dismissed", async () => {
     const user = userEvent.setup();
     chatAnswered = AGENT_SAID;
@@ -202,6 +221,10 @@ describe("several questions at once (#4566)", () => {
     // It stays, whatever the registry lists next (the person's ruling).
     rerender(<Pane session={4} asks={[]} />);
     expect(screen.getByText('steward 4 told developer 7: "Per project."')).toBeInTheDocument();
+    // Its ways out in the prototype's order: Go to task, Say otherwise, Dismiss.
+    expect(
+      screen.getAllByRole("button").map((button) => button.textContent || button.ariaLabel),
+    ).toEqual(["Go to task", "Say otherwise…", "Dismiss"]);
     await user.click(screen.getByRole("button", { name: "Go to task" }));
     expect(openTask).toHaveBeenCalledWith(7);
     await user.click(screen.getByRole("button", { name: "Dismiss" }));

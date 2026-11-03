@@ -117,6 +117,9 @@ function useQuizzes(plane: PlaneId, quiz: QuizHere | undefined, asks: readonly S
   const typed = useRef(new Map<string, string>());
   /** The questions the person answered in this band. */
   const sent = useRef(new Set<string>());
+  /** The quiz that went last before the person's answer to it was taken, as the registry's
+   *  next list may reach the window before the answer's own reply does. */
+  const gone = useRef<{ ask: string; task: string }>(undefined);
   const box = useRef<HTMLDivElement>(null);
   const key = quiz?.ask.ask;
 
@@ -129,11 +132,14 @@ function useQuizzes(plane: PlaneId, quiz: QuizHere | undefined, asks: readonly S
     const kept = typed.current.get(before.ask);
     typed.current.delete(before.ask);
     const number = numberOf(before);
+    gone.current = left && !ours ? { ask: before.ask, task: taskOf(before) } : undefined;
     if (left && !ours && number !== undefined) {
       void commands
         .taskQuestionAnswered(plane, before.session, number)
         .then((answer) => {
           if (answer.status !== "ok" || answer.data === null) return;
+          // Their own answer was taken after all: there is nothing they did not see.
+          if (sent.current.has(before.ask)) return;
           const answered = answer.data;
           setClosings((now) =>
             now.some((one) => one.session === before.session && one.number === number)
@@ -175,7 +181,13 @@ function useQuizzes(plane: PlaneId, quiz: QuizHere | undefined, asks: readonly S
     closings,
     dismiss: (closed: Closed) => setClosings((now) => now.filter((one) => one !== closed)),
     box,
-    answered: (ask: string) => sent.current.add(ask),
+    answered: (ask: string) => {
+      sent.current.add(ask);
+      const went = gone.current;
+      if (went?.ask !== ask) return;
+      gone.current = undefined;
+      setPause((now) => (now === undefined ? now : { ...now, sent: went.task }));
+    },
     typedIn: (ask: string, text: string) => typed.current.set(ask, text),
   };
 }
