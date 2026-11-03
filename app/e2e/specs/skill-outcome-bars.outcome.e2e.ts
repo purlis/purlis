@@ -223,6 +223,32 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
           else watch.disconnect();
         }; // [DEBUG-4351]
         requestAnimationFrame(frame); // [DEBUG-4351]
+        // [DEBUG-4351] where the thread goes: a task kept running through a MessageChannel, and each
+        // frame callback; a pause over 30 ms says what ran before it (task: script; frame: then the
+        // browser's style, layout and paint) and what ran after.
+        let lastAt = performance.now(); // [DEBUG-4351]
+        let lastKind = "start"; // [DEBUG-4351]
+        const mark = (kind: string) => {
+          const now = performance.now();
+          if (now - lastAt > 30)
+            tl.push(
+              `${(now - started).toFixed(0)} pause ${(now - lastAt).toFixed(0)} ms ${lastKind}->${kind}`,
+            );
+          lastAt = now;
+          lastKind = kind;
+        }; // [DEBUG-4351]
+        const channel = new MessageChannel(); // [DEBUG-4351]
+        let ticks = 0; // [DEBUG-4351]
+        channel.port1.onmessage = () => {
+          mark("task");
+          if (++ticks < 4000 && holder.__openedInMs === undefined) channel.port2.postMessage(0);
+        }; // [DEBUG-4351]
+        channel.port2.postMessage(0); // [DEBUG-4351]
+        const rafMark = () => {
+          mark("frame");
+          if (holder.__openedInMs === undefined) requestAnimationFrame(rafMark);
+        }; // [DEBUG-4351]
+        requestAnimationFrame(rafMark); // [DEBUG-4351]
         const started = performance.now();
         (globalThis as { __t04351?: number }).__t04351 = started; // [DEBUG-4351]
         row.click();
