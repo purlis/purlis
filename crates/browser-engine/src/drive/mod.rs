@@ -519,7 +519,7 @@ pub const MOST_LABEL_CHARS: usize = 80;
 /// **What kind of field it is** (#5115): only a one-line field takes a secret for now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldKind {
-    /// An input of type password, text, email, number, tel, url or search that takes typing.
+    /// An input of type password, text, email, number, tel or url that takes typing.
     OneLine,
     /// A text area.
     MultiLine,
