@@ -18,7 +18,7 @@
 //                                                   it differs, and delete every other baseline
 //                                                   there (the labelled job's commit, run from
 //                                                   a trusted checkout against the pull
-//                                                   request's, and
+//                                                   request's, and the pull tool,
 //                                                   `tools/story-baselines-pull.mjs`)
 //
 // <index> is Storybook's own index of the stories, which `storybook index` writes. A story is
@@ -57,7 +57,8 @@ export const BASELINE =
  *  take, and bytes in all it writes together, which bound what one commit pushes. They count
  *  what a take changes, never the whole set: a picture that matches its baseline is left as
  *  it is and counts for nothing, so the set grows with the stories while a take stays as big
- *  as the change. A story's picture is tens of kilobytes; a dialog's on the page, a few
+ *  as the change. Every drawn picture is still read and checked, one at a time, and only those
+ *  written are held. A story's picture is tens of kilobytes; a dialog's on the page, a few
  *  hundred. Each story has a picture in each pictured cell and each browser, twenty today
  *  (#3040). */
 export const LIMITS = {
@@ -336,17 +337,13 @@ export function take(drawn, app, within = LIMITS) {
         continue;
       }
     }
-    // Only what is written counts towards the caps, which bound what one commit pushes.
+    // A picture that matches counts for nothing: the caps bound what one commit pushes.
     total += bytes.length;
     if (total > limits.total)
       throw new Error(
         `not a baseline, so nothing was taken: the baselines that changed are over the cap of ${limits.total} bytes in all`,
       );
     taken.push({ path, bytes });
-    if (taken.length > limits.files)
-      throw new Error(
-        `not a baseline, so nothing was taken: more than ${limits.files} files written or deleted`,
-      );
   }
   const drew = new Set(all);
   const removed = baselinesIn(app).filter((path) => !drew.has(path));
@@ -423,9 +420,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       resolve(given[0]),
       resolve(given[1]),
     );
-    for (const path of taken) console.log(`drawn: ${path}`);
+    for (const path of taken) console.log(`written: ${path}`);
     for (const path of removed) console.log(`deleted: ${path}`);
-    console.log(`${unchanged.length} baselines already match what was drawn`);
+    console.log(
+      `${taken.length} baselines written and ${removed.length} deleted (${unchanged.length} already matched)`,
+    );
   } else {
     console.error(
       "usage: story-baselines.mjs check <index> [<report> ...] | gather <index> <out> [<report> ...] | take <drawn> <app>",

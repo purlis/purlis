@@ -582,12 +582,13 @@ test("take leaves a picture that matches what is there untouched", () => {
     [at(1)]: PNG,
     [at(2)]: PNG,
   });
-  const long = new Date("2020-01-01T00:00:00Z");
-  utimesSync(join(app, at(1)), long, long);
-  utimesSync(join(app, at(2)), long, long);
+  const before = new Date("2020-01-01T00:00:00Z");
+  utimesSync(join(app, at(1)), before, before);
+  utimesSync(join(app, at(2)), before, before);
   take(drawn, app);
-  assert.equal(statSync(join(app, at(1))).mtimeMs, long.getTime());
-  assert.notEqual(statSync(join(app, at(2))).mtimeMs, long.getTime());
+  assert.equal(statSync(join(app, at(1))).mtimeMs, before.getTime());
+  assert.deepEqual(readFileSync(join(app, at(1))), PNG);
+  assert.notEqual(statSync(join(app, at(2))).mtimeMs, before.getTime());
 });
 
 test("the count cap counts the pictures written and deleted, not those that match", () => {
@@ -639,4 +640,20 @@ test("take still refuses a picture that is not a baseline when the rest match", 
     );
     assert.equal(existsSync(join(app, at(2))), false, why);
   }
+  for (const [why, path] of [
+    ["a path no baseline has", at(2).replace("-linux.png", "-darwin.png")],
+    ["a size past the side", at(2)],
+  ]) {
+    const drawn = tree({
+      [at(1)]: PNG,
+      [path]: why === "a size past the side" ? png(100_000, 2) : PNG,
+    });
+    assert.throws(() => take(drawn, app), /not a baseline/, why);
+    assert.equal(existsSync(join(app, path)), false, why);
+  }
+  const elsewhere = tree({ "picture.png": PNG });
+  const drawn = tree({ [at(1)]: PNG });
+  symlinkSync(join(elsewhere, "picture.png"), join(drawn, at(2)));
+  assert.throws(() => take(drawn, app), /not a baseline/, "a link");
+  assert.equal(existsSync(join(app, at(2))), false, "a link");
 });
