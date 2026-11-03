@@ -11,8 +11,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
-import type { ProfileRow, StartOptions, StartRunsOn } from "./bindings";
-import { StartChat } from "./StartChat";
+import type { ProfileRow, StartOptions } from "./bindings";
+import { StartChat, type RunsOnInPicker } from "./StartChat";
 import {
   SHORT_WINDOW,
   expectAnchored,
@@ -106,8 +106,9 @@ function Window({
   poolUnavailable,
 }: {
   options?: StartOptions;
-  /** Where a new chat would run, and why: the Runs on row (#4536). */
-  runsOn?: StartRunsOn;
+  /** Where a new chat would run, and why: the Runs on row (#4536), with how each pool stands
+   *  (#4484). */
+  runsOn?: RunsOnInPicker;
   trouble?: string;
   poolUnavailable?: string;
 }) {
@@ -125,8 +126,8 @@ function Window({
           runsOn={runsOn}
           trouble={trouble}
           poolUnavailable={poolUnavailable}
-          onPoolSetup={() => {
-            setSaid("Pool setup");
+          onPoolSetup={(pool) => {
+            setSaid(pool === undefined ? "Pool setup" : `Pool setup on ${pool}`);
             setOpen(false);
           }}
           onStart={(profile, persona, footer, label, _branch, _sandbox, where) => {
@@ -396,6 +397,41 @@ export const RunsOnFollowsTheProject: Story = {
       expect(page.getByRole("status", { hidden: true })).toHaveTextContent(
         "Started steward as steward on claude on pool gpu",
       ),
+    );
+  },
+};
+
+/** **A pool whose setup isn't finished** (#4484): marked in the list, said under the row, with
+ *  Finish Pool setup… on that pool, reached by the keyboard. */
+export const RunsOnSetupNotFinished: Story = {
+  args: {
+    runsOn: {
+      pool: "builds",
+      level: "project",
+      at_root: false,
+      pools: POOLS,
+      ran_on: POOLS,
+      notFinished: {
+        builds:
+          "Setup not finished: chats start there, but gh and git push have no account to act as.",
+      },
+    },
+  },
+  play: async ({ userEvent }) => {
+    const page = await opened();
+    const runsOn = page.getByRole("button", { name: /Runs on$/ });
+    await expect(runsOn).toHaveAccessibleDescription(
+      "Pool builds, as this project's chats run. Setup not finished: chats start there, but gh and git push have no account to act as.",
+    );
+    const finish = page.getByRole("button", { name: "Finish Pool setup…" });
+    runsOn.focus();
+    await userEvent.tab();
+    await untilFocused(() => finish, "Finish Pool setup…: the next stop after Runs on");
+    expectFocusInSight();
+    await pictureNow();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(page.getByRole("status", { hidden: true })).toHaveTextContent("Pool setup on builds"),
     );
   },
 };

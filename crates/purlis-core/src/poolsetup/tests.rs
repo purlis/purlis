@@ -771,3 +771,43 @@ fn only_a_runner_asleep_is_offered_to_be_woken() {
     let unread = answer(&on_a_pool(Runner::Running, SignIns::NotAsked));
     assert_eq!(next(&unread, StepId::Signins), ActionId::CheckAgain);
 }
+
+#[test]
+fn a_pool_whose_chats_have_no_identity_is_offered_as_setup_not_finished() {
+    assert_eq!(
+        in_the_picker_by(&Identity::None),
+        InThePicker::NotFinished(NO_IDENTITY_IN_THE_PICKER.into())
+    );
+    assert_eq!(
+        in_the_picker_by(&Identity::NotAllowed {
+            persona: "steward".into(),
+            tool: "gh".into()
+        }),
+        InThePicker::NotFinished(NO_IDENTITY_IN_THE_PICKER.into())
+    );
+    assert_eq!(
+        in_the_picker_by(&Identity::Set {
+            persona: "steward".into(),
+            tool: "gh".into()
+        }),
+        InThePicker::Offered
+    );
+}
+
+#[test]
+fn a_docker_pool_with_no_runner_that_starts_chats_is_not_offered_and_one_not_kept_is() {
+    let config = tempfile::tempdir().unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    let names = ["team".to_owned(), "dev-box".to_owned()];
+    assert_eq!(
+        in_the_picker(config.path(), None, &names),
+        vec![
+            ("team".to_owned(), InThePicker::Offered),
+            (
+                "dev-box".to_owned(),
+                InThePicker::NotOffered(CANNOT_START_IN_THE_PICKER.into())
+            ),
+        ],
+        "a pool not kept here is offered; a Docker pool kept with no runner is not"
+    );
+}

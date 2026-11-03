@@ -756,6 +756,58 @@ fn try_on(
     })
 }
 
+/// One pool as the chat picker offers it (#4484, D on #4469).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolInPicker {
+    pub pool: String,
+    /// False where a chat can't start there: the picker doesn't offer it.
+    pub offered: bool,
+    /// "Setup not finished", and why: where setup isn't finished, and where a chat can't start.
+    pub said: Option<String>,
+}
+
+/// **How each pool this machine keeps stands in the chat picker of `plane`** (#4484): read from
+/// what this machine keeps and the plane's personas, with nothing asked of Docker or a runner.
+/// It changes nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_in_the_picker(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<PoolInPicker>, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading how your pools stand", move || {
+            use purlis_core::poolsetup::{InThePicker, in_the_picker};
+            let config = config_root()?;
+            let pools = purlis_core::runners::pool_names(&config).map_err(|why| why.to_string())?;
+            Ok(in_the_picker(&config, Some(&root), &pools)
+                .into_iter()
+                .map(|(pool, standing)| {
+                    let (offered, said) = match standing {
+                        InThePicker::Offered => (true, None),
+                        InThePicker::NotFinished(said) => (true, Some(said)),
+                        InThePicker::NotOffered(said) => (false, Some(said)),
+                    };
+                    PoolInPicker {
+                        pool,
+                        offered,
+                        said,
+                    }
+                })
+                .collect())
+        })
+        .await
+    }
+    // No pool runs here.
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        Ok(Vec::new())
+    }
+}
+
 /// **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 /// elsewhere, with what to do instead.
 #[tauri::command]

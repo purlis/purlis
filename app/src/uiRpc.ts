@@ -1630,6 +1630,7 @@ export const commands = {
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,
 	poolSetupTry: __WINDOW_ONLY_RESULT,
+	poolSetupInThePicker: __WINDOW_ONLY_RESULT,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -8692,6 +8693,15 @@ export type PoolDisk = {
 	 *  said apart rather than counted as nothing.
 	 */
 	not_listed: number,
+};
+
+/**  One pool as the chat picker offers it (#4484, D on #4469). */
+export type PoolInPicker = {
+	pool: string,
+	/**  False where a chat can't start there: the picker doesn't offer it. */
+	offered: boolean,
+	/**  "Setup not finished", and why: where setup isn't finished, and where a chat can't start. */
+	said: string | null,
 };
 
 /**  **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced. */

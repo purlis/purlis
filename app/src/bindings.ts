@@ -3268,6 +3268,12 @@ export const commands = {
 	 */
 	poolSetupTry: (plane: PlaneId, pool: string, workspace: string | null) => typedError<PoolSetupTried, string>(__TAURI_INVOKE("pool_setup_try", { plane, pool, workspace })),
 	/**
+	 *  **How each pool this machine keeps stands in the chat picker of `plane`** (#4484): read from
+	 *  what this machine keeps and the plane's personas, with nothing asked of Docker or a runner.
+	 *  It changes nothing.
+	 */
+	poolSetupInThePicker: (plane: PlaneId) => typedError<PoolInPicker[], string>(__TAURI_INVOKE("pool_setup_in_the_picker", { plane })),
+	/**
 	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 	 *  elsewhere, with what to do instead.
 	 */
@@ -11117,6 +11123,15 @@ export type PoolDisk = {
 	 *  said apart rather than counted as nothing.
 	 */
 	not_listed: number,
+};
+
+/**  One pool as the chat picker offers it (#4484, D on #4469). */
+export type PoolInPicker = {
+	pool: string,
+	/**  False where a chat can't start there: the picker doesn't offer it. */
+	offered: boolean,
+	/**  "Setup not finished", and why: where setup isn't finished, and where a chat can't start. */
+	said: string | null,
 };
 
 /**  **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced. */

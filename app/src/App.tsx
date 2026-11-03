@@ -1334,6 +1334,16 @@ function App() {
    *  Only once the core has said what the launch resolved and the restore has finished
    *  opening what it remembered: both are about to decide whether there is a project here. */
   const openerUp = inFront === undefined && launch !== undefined && !restoring;
+  /** Run chats on another machine was pressed on the welcome (#4484): Pool setup opens in the
+   *  next project that comes to the front, since the tab lives in a project. A project another
+   *  launch or another window hands this one takes it back, so only the person's own open from
+   *  the welcome opens Pool setup. */
+  const [runElsewhereNext, setRunElsewhereNext] = useState(false);
+  useEffect(() => {
+    if (!runElsewhereNext || inFront === undefined) return;
+    setRunElsewhereNext(false);
+    windowDoes.openPoolSetup(inFront);
+  }, [runElsewhereNext, inFront, windowDoes]);
   useLayoutEffect(() => {
     inFrontNow.current = inFront;
     // A project arriving ends the stand-in: from here Settings is a tab, and the opener a later
@@ -1596,6 +1606,8 @@ function App() {
   // tab rather than being said on screen, which is what tabs were the missing half of.
   useEffect(() => {
     const listening = listen<string>("open-plane", (event) => {
+      // Not the person's own open from the welcome: Run chats on another machine waits on.
+      setRunElsewhereNext(false);
       void restoreOver.done.then(() => openInto(event.payload, true));
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
@@ -1608,6 +1620,7 @@ function App() {
       "projects-arrived",
       (event) => {
         const { planes: arrived, front } = event.payload;
+        setRunElsewhereNext(false);
         setPlanes((was) => [...was, ...arrived.filter((plane) => !was.includes(plane))]);
         if (front !== null) setShowing({ at: "plane", plane: front });
       },
@@ -2652,8 +2665,9 @@ function App() {
               ))}
             {/* A browser sign-in a forge ended, with Sign in again (#729). */}
             <ForgeSignInEnded />
-            {/* Add a pool… (#2679): a dialog, opened from the palette or the Pools group. */}
-            <AddDockerPoolHost plane={inFront} />
+            {/* Add a pool… (#2679): Pool setup for a Docker pool in the project in front (#4484),
+                else a dialog, opened from the palette or the Pools group. */}
+            <AddDockerPoolHost plane={inFront} onPoolSetup={windowDoes.openPoolSetup} />
             {/* An entry the store itself would not take back, said the same way. */}
             {notRestored.map((line) => (
               <Notice
@@ -2701,6 +2715,8 @@ function App() {
                       openingRepo={openingRepo}
                       repoTrouble={repoTrouble}
                       repoForgeAsk={repoForgeAsk}
+                      onRunElsewhere={() => setRunElsewhereNext(true)}
+                      runElsewhereAsked={runElsewhereNext}
                     />
                   </WindowLinesAt.Provider>
                 </div>

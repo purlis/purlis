@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { CloudDownload, FolderOpen, FolderPlus, LogIn } from "lucide-react";
+import { CloudDownload, FolderOpen, FolderPlus, LogIn, Server } from "lucide-react";
 import { commands, type ForgeRow, type Recents, type TemplateChoice } from "./bindings";
 import { CreateOnForge, type Where, WhereItLives } from "./CreateOnForge";
 import { Launcher } from "./DoorPage";
@@ -101,6 +101,8 @@ export function Welcome({
   onSignedIn,
   stepSaid,
   signInEnd,
+  onRunElsewhere,
+  runElsewhereAsked = false,
 }: {
   /** Whether the launch had a directory to go on at all. */
   here: boolean;
@@ -148,6 +150,11 @@ export function Welcome({
   stepSaid?: ReactNode;
   /** The sign-in page's way on, from the guided steps: Skip for now, or Continue. */
   signInEnd?: ReactNode;
+  /** **Run chats on another machine** (#4484, spec #4469 story 7): Pool setup, kept out of the
+   *  ways in. Absent, the row isn't drawn. */
+  onRunElsewhere?: () => void;
+  /** Whether it was pressed with no project to open Pool setup in: it opens in the next one. */
+  runElsewhereAsked?: boolean;
 }) {
   const [recents, setRecents] = useState<Recents>();
   /** The Notices dismissed here, by cause, for this run (NO-2 keeps them across a relaunch). */
@@ -641,6 +648,23 @@ export function Welcome({
               onPress={signInToAForge}
             />
           </div>
+          {onRunElsewhere && (
+            <div className="welcome-elsewhere">
+              <CardButton
+                variant="row"
+                title="Run chats on another machine"
+                line="Set up a pool on your Docker, step by step."
+                mark={<Server aria-hidden="true" />}
+                onPress={onRunElsewhere}
+              />
+              {/* Said once it is pressed, for a screen reader as for the eye. */}
+              {runElsewhereAsked && (
+                <p className="welcome-elsewhere-said" role="status">
+                  Pool setup opens in the project you open or create next.
+                </p>
+              )}
+            </div>
+          )}
           {stepSaid}
         </>
       }
