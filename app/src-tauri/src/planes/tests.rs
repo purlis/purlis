@@ -3317,7 +3317,11 @@ fn a_curation_prompt_waits_for_a_harness_still_editing_lines_when_it_starts() {
         .sessions()
         .watch(session, {
             let seen = Arc::clone(&seen);
-            Box::new(move |text| seen.lock().unwrap().push_str(&text))
+            Box::new(move |bytes: Vec<u8>| {
+                seen.lock()
+                    .unwrap()
+                    .push_str(&String::from_utf8_lossy(&bytes));
+            })
         })
         .expect("watched");
     held.typed()

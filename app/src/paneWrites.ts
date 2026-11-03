@@ -1,16 +1,26 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-/** What the core writes a view before the screen of its next epoch (`hostedsessions.rs`). */
-export const RESET = "\x1bc";
+/**
+ * What the core writes a view, as a piece of its own, before the screen of its next epoch
+ * (`hostedsessions.rs`): `ESC c`.
+ */
+export const RESET = new Uint8Array([0x1b, 0x63]);
 
-/** What a pane writes to its terminal: xterm's `write`, text and a callback once it is parsed. */
-export type Write = (text: string, parsed?: () => void) => void;
+/** Whether `bytes` is a whole {@link RESET} piece. */
+const isReset = (bytes: Uint8Array) =>
+  bytes.length === RESET.length && bytes.every((byte, at) => byte === RESET[at]);
+
+/**
+ * What a pane writes to its terminal: xterm's `write`, the bytes its program wrote and a
+ * callback once they are parsed. The terminal decodes them (#4745).
+ */
+export type Write = (bytes: Uint8Array, parsed?: () => void) => void;
 
 /** A pane's output, gathered until the next frame. */
 export interface FrameWrites {
-  /** Text the view sent, and what to call once it is in the terminal's grid (a benchmark's). */
-  add(text: string, parsed?: () => void): void;
+  /** Bytes the view sent, and what to call once they are in the terminal's grid. */
+  add(bytes: Uint8Array, parsed?: () => void): void;
   /** Drops what is gathered and asks for no more frames: the pane is gone. */
   dispose(): void;
 }
@@ -27,37 +37,49 @@ export function writePerFrame(
   write: Write,
   nextFrame: (then: () => void) => () => void = onNextFrame,
 ): FrameWrites {
-  let texts: string[] = [];
+  let chunks: Uint8Array[] = [];
   let parsed: (() => void)[] = [];
   let cancel: (() => void) | undefined;
 
   const flush = () => {
     cancel = undefined;
-    const text = texts.join("");
+    const bytes = joined(chunks);
     const told = parsed;
-    texts = [];
+    chunks = [];
     parsed = [];
-    write(text, told.length ? () => told.forEach((then) => then()) : undefined);
+    write(bytes, told.length ? () => told.forEach((then) => then()) : undefined);
   };
 
   return {
-    add(text, then) {
+    add(bytes, then) {
       // A reset starts the view over from a fresh screen, so what is gathered ahead of it is
       // never drawn: while frames stop (a hidden window) that would be a backlog written in
       // one go on return. Its waiters stay, told with the reset's write, so every piece is
       // still reported drawn and the core's count of them stays exact.
-      if (text === RESET) texts = [];
-      texts.push(text);
+      if (isReset(bytes)) chunks = [];
+      chunks.push(bytes);
       if (then) parsed.push(then);
       cancel ??= nextFrame(flush);
     },
     dispose() {
       cancel?.();
       cancel = undefined;
-      texts = [];
+      chunks = [];
       parsed = [];
     },
   };
+}
+
+/** `chunks` as one run of bytes, in order: the one chunk itself where there is only one. */
+function joined(chunks: Uint8Array[]): Uint8Array {
+  if (chunks.length === 1) return chunks[0];
+  const all = new Uint8Array(chunks.reduce((length, chunk) => length + chunk.length, 0));
+  let at = 0;
+  for (const chunk of chunks) {
+    all.set(chunk, at);
+    at += chunk.length;
+  }
+  return all;
 }
 
 function onNextFrame(then: () => void): () => void {

@@ -2567,11 +2567,12 @@ const A_SCREEN_IS_WHOLE_AFTER: Duration = Duration::from_millis(300);
 /// `grades::kept::MOST_SCREEN_BYTES`. `None` where no view could be opened or nothing came.
 fn screen_of(host: &dyn crate::host::SessionHost, session: u32) -> Option<String> {
     let (send, pieces) = std::sync::mpsc::channel();
+    let mut text = crate::sessions::Utf8Stream::default();
     let view = host
         .watch(
             session,
-            Box::new(move |text| {
-                let _ = send.send(text);
+            Box::new(move |bytes: Vec<u8>| {
+                let _ = send.send(text.push(&bytes));
             }),
         )
         .ok()?;
