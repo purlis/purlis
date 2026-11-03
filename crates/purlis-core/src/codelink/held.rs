@@ -234,8 +234,8 @@ pub const PURLIS_KEEPS: &[&str] = &[
 /// **Every folder purlis keeps for itself on a runner whose home is `home`** (#5028), wherever
 /// the environment `var` puts it, under each name it has had: its config home's folder (as
 /// `$PURLIS_CONFIG_HOME` or `$XDG_CONFIG_HOME` places it, and as the session host finds its
-/// default), its data home (as `$PURLIS_DATA_HOME` or `$XDG_DATA_HOME` places it, or under the
-/// home), the app's own folder under the data folder (its logs among them), the lock it holds
+/// default), its data home (as `$XDG_DATA_HOME` places it, or under the home; one
+/// `$PURLIS_DATA_HOME` names is the data home in use, looked through by [`outside_with`]), the app's own folder under the data folder (its logs among them), the lock it holds
 /// beside the config home's folder, and the folder of its session host's socket in
 /// `$XDG_RUNTIME_DIR`. purlis keeps nothing of its own in a state or cache home. Each is left
 /// out of the walks outside the projects; the data home in use is looked through by its own
@@ -612,7 +612,24 @@ fn writable_within(
     since: std::time::SystemTime,
     most: usize,
 ) -> Writable {
+    writable_bounded(beyond, skip, since, most, MOST_OWN_FILES, true)
+}
+
+/// [`writable_within`], recording no more than `most_files` files of the user's own, with
+/// `owned_is_a_place` false only for a test: there a folder the test's own user owns stands for
+/// an image's, shut to the runner's user, since only root could make one another user owns.
+#[cfg(unix)]
+fn writable_bounded(
+    beyond: Beyond<'_>,
+    skip: &[std::path::PathBuf],
+    since: std::time::SystemTime,
+    most: usize,
+    most_files: usize,
+    owned_is_a_place: bool,
+) -> Writable {
     let mut outside = Outside::new(most);
+    outside.most_files = most_files;
+    outside.owned_is_a_place = owned_is_a_place;
     outside.finding = Some(Writable::default());
     outside.walk(
         beyond.root,
@@ -721,6 +738,10 @@ struct Outside {
     folders: usize,
     /// The most folders it looks through.
     most: usize,
+    /// The most files of the user's own it records outside the places ([`writable`]).
+    most_files: usize,
+    /// Whether a folder the user owns is a place ([`writable_bounded`]).
+    owned_is_a_place: bool,
     /// Where the walk only finds the places its user may write ([`writable`]), what it found.
     finding: Option<Writable>,
 }
@@ -735,6 +756,8 @@ impl Outside {
             unsaid: 0,
             folders: 0,
             most,
+            most_files: MOST_OWN_FILES,
+            owned_is_a_place: true,
             finding: None,
         }
     }
@@ -854,7 +877,8 @@ impl Outside {
             // place, looked through at each check, and nothing in it is looked at here. A check
             // that can't be made makes it a place.
             if let (Some(finding), Rules::Beyond(owner)) = (&mut self.finding, rules) {
-                let owned = rustix::fs::fstat(&*fd).is_ok_and(|stat| stat.st_uid == owner);
+                let owned = self.owned_is_a_place
+                    && rustix::fs::fstat(&*fd).is_ok_and(|stat| stat.st_uid == owner);
                 let may_write = !matches!(
                     rustix::fs::accessat(&*fd, ".", Access::WRITE_OK, AtFlags::EACCESS),
                     Err(rustix::io::Errno::ACCESS | rustix::io::Errno::ROFS)
@@ -953,10 +977,11 @@ impl Outside {
                         // Outside every place, a file of its own is kept to be looked at
                         // again at each check, whatever its time now.
                         if let Some(kept) = self.finding.as_ref().map(|found| found.files.len()) {
-                            if kept >= MOST_OWN_FILES {
+                            if kept >= self.most_files {
                                 self.say(format!(
-                                    "the runner's user owns more than {MOST_OWN_FILES} files \
-                                     where it may not write, so not all were looked at"
+                                    "the runner's user owns more than {} files \
+                                     where it may not write, so not all were looked at",
+                                    self.most_files
                                 ));
                                 return false;
                             }
@@ -1069,7 +1094,12 @@ fn one(dir: &Path, project: &str, rel: &str, kind: Kind) -> Result<Held, String>
     {
         return Err(failed(
             "read",
-            "git does not take its folder for a repository of its own",
+            &format!(
+                "git does not take its folder for a repository of its own {}",
+                named.err.trim()
+            )
+            .trim_end()
+            .to_owned(),
         ));
     }
     let listed = run(

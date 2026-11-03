@@ -1411,3 +1411,93 @@ fn a_folder_its_user_owns_is_a_place_it_may_write_however_shut() {
         "the root is the user's own: {found:?}"
     );
 }
+
+/// **A file of its user's own outside every place it may write is looked at again at each
+/// check** (#5030): the user may change it wherever it is, and a change keeps the runner.
+#[cfg(unix)]
+#[test]
+fn a_file_its_user_owns_where_it_may_not_write_keeps_the_runner_once_changed() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    std::fs::create_dir_all(root.join("etc/tool")).unwrap();
+    std::fs::write(root.join("etc/tool/settings.conf"), "as the image had it\n").unwrap();
+    let _shut = Shut::folders(
+        &root,
+        &[
+            "",
+            "etc",
+            "etc/tool",
+            "usr",
+            "usr/share",
+            "usr/share/doc",
+            "var",
+            "var/lib",
+        ],
+    );
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let since = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user(),
+    };
+    // As an image's folders, shut to its user, which the test's own user can only stand for.
+    let found = writable_bounded(
+        beyond,
+        std::slice::from_ref(&home),
+        since,
+        MOST_IMAGE_FOLDERS,
+        MOST_OWN_FILES,
+        false,
+    );
+    assert_eq!(found.places(), ["var/lib/purlis"], "{found:?}");
+    let look = || outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+
+    assert_eq!(look(), Vec::<String>::new());
+
+    std::fs::write(root.join("etc/tool/settings.conf"), "as the task left it\n").unwrap();
+    let said = look();
+    assert!(says(&said, "/etc/tool/settings.conf"), "{said:?}");
+}
+
+/// **Past the most files of its user's own it records, the look is said and not whole**
+/// (#5030), so it keeps the runner and is made again at the next check.
+#[cfg(unix)]
+#[test]
+fn too_many_files_of_its_users_own_where_it_may_not_write_are_said() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    std::fs::create_dir_all(root.join("etc")).unwrap();
+    for n in 0..3 {
+        std::fs::write(root.join(format!("etc/{n}.conf")), "the image's\n").unwrap();
+    }
+    let _shut = Shut::folders(
+        &root,
+        &[
+            "",
+            "etc",
+            "usr",
+            "usr/share",
+            "usr/share/doc",
+            "var",
+            "var/lib",
+        ],
+    );
+    let since = std::time::SystemTime::now();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user(),
+    };
+
+    let found = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 2, false);
+
+    assert!(!found.whole(), "{found:?}");
+    let said = outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+    assert!(says(&said, "more than 2 files"), "{said:?}");
+    let whole = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 10, false);
+    assert!(whole.whole(), "{whole:?}");
+}
