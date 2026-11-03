@@ -71,7 +71,7 @@ that names the key and the exact site the field is on; your call waits for their
 fills it only into a one-line field (password, text, email, number, tel, url), and only where
 the field's own frame is still on that site when it fills, so a field in a frame from another
 site is refused. The value never reaches you: every snapshot, find, wait and screenshot of that
-browser leaves it out, and from then on that browser copies and cuts nothing for you. If they
+browser leaves it out, and from then on that browser copies, cuts and drags nothing for you. If they
 keep it blocked, tell them what needs it and don't ask again.
 
 **In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
