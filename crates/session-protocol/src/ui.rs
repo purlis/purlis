@@ -1224,6 +1224,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "plane_saving",
     "plane_sidebar",
     "planes_to_restore",
+    "press_elsewhere",
     "project_extensions",
     "project_icons_drawn",
     "project_saving_in_force",

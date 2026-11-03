@@ -93,11 +93,60 @@ pub async fn move_to_window(
         )?,
     };
     tell_moved(&app, &plane, &held);
+    close_unnamed(&app, &plane, &held);
     crate::dispatched::front_moved(&held);
     Ok(MovedTo {
         window: moved,
         label,
     })
+}
+
+/// The event a window is sent to show a chat it has in a pane: a press in another window of
+/// the project landed on it ([`press_elsewhere`]).
+pub const PRESS_HERE: &str = "press-here";
+
+/// What [`PRESS_HERE`] carries.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PressHere {
+    pub plane: PlaneId,
+    pub chat: u32,
+}
+
+/// **A press on chat `chat` in a project with tab windows** (#4768, ruled on #4701): where
+/// another of the project's windows has it in a pane, that window comes forward and shows it
+/// there, and its label is answered; a chat is never shown in two windows. Null where no other
+/// window has it, and the press is the asking window's.
+#[tauri::command]
+#[specta::specta]
+pub fn press_elsewhere(
+    app: AppHandle,
+    window: tauri::Window,
+    showing: tauri::State<'_, Showing>,
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    chat: u32,
+) -> Result<Option<String>, String> {
+    let held = planes.held(&plane)?;
+    let Some(number) = held.chats().window_naming(chat) else {
+        return Ok(None);
+    };
+    if showing.window_of(window.label(), &plane) == Some(number) {
+        return Ok(None);
+    }
+    let Some(label) = window_label(&showing, &plane, number) else {
+        return Ok(None);
+    };
+    crate::windows::raise(&app, &label);
+    let _ = tauri::Emitter::emit_to(
+        &app,
+        label.as_str(),
+        PRESS_HERE,
+        PressHere {
+            plane: plane.clone(),
+            chat,
+        },
+    );
+    Ok(Some(label))
 }
 
 /// The label of window `number` of `plane`: the window holding it for `0`, else its tab window.
@@ -240,6 +289,28 @@ pub fn closing<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
     }
     crate::windows::tell_windows_changed(app, Some(label));
     true
+}
+
+/// **A tab window goes with its last tab** (#4768): each of `plane`'s tab windows its layout no
+/// longer names closes. It has nothing to send back.
+pub fn close_unnamed<R: Runtime>(app: &AppHandle<R>, plane: &PlaneId, held: &crate::planes::Held) {
+    let Some(showing) = app.try_state::<Showing>() else {
+        return;
+    };
+    let named = held
+        .chats()
+        .layout()
+        .map(|layout| layout.tab_windows())
+        .unwrap_or_default();
+    for (label, number) in showing.tab_windows_of(plane) {
+        if named.contains(&number) {
+            continue;
+        }
+        showing.tab_window_gone(&label);
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = window.destroy();
+        }
+    }
 }
 
 /// **`plane` closed**: each of its tab windows closes too, and its tabs stay in the record as

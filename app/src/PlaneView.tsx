@@ -354,7 +354,8 @@ import {
 } from "./tabs";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
-import { layoutOf, tabsOf, withShare } from "./laidOut";
+import { layoutOf, type Reopening, tabsOf, withShare } from "./laidOut";
+import { LAYOUT_MOVED, type LayoutMoved, movedBetweenWindows, PRESS_HERE } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
 import {
@@ -787,6 +788,7 @@ export const PlaneView = memo(function PlaneView({
   poolSetupAsked,
   licencesAsked,
   focusMode = false,
+  tabWindow,
   settingsTabAsked,
   settingsLinkAsked,
   yourSettingsAsked,
@@ -855,6 +857,13 @@ export const PlaneView = memo(function PlaneView({
   licencesAsked?: number;
   /** Focus mode is on (#2921): its palette row says it brings the window's parts back. */
   focusMode?: boolean;
+  /**
+   * **This is tab window `tabWindow` of the project** (#4768): a bare window holding the strip
+   * and panes of its own tabs, and no sidebar. It draws only the tabs the core holds for it,
+   * says only those, and opens no tab for a chat by itself: a chat arriving is the project
+   * window's to announce. Absent in the project window.
+   */
+  tabWindow?: number;
   /** The same, for the Settings tab (`WindowDoing.openSettingsTab`, SE-16): a count that goes
    *  up each time the window asks for it on THIS project's strip. */
   settingsTabAsked?: number;
@@ -1601,6 +1610,9 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the record's tabs have been heard: tabs said before would be the empty window's,
    *  written over the record it is about to read. */
   const layoutHeard = useRef(false);
+  /** **Whether the project has a tab window** (#4768), as the record and the core's last move
+   *  said: a press asks the core where the chat is only then. */
+  const otherWindows = useRef(false);
   const change = useCallback(
     (how: (tabs: Tabs) => Tabs): Tabs => {
       const done = how(now.current);
@@ -1644,6 +1656,27 @@ export const PlaneView = memo(function PlaneView({
       }
     },
     [settleNotices],
+  );
+  /** **What came back, as a layout's tabs are drawn from it** (#4751, #4768): each open chat by
+   *  its names, and each view as it is named now (a studio's as the one studio). */
+  const reopeningOf = useCallback(
+    (named: ReadonlyMap<number, OpenChat>): Reopening => ({
+      chat: (session) => {
+        const chat = named.get(session);
+        return chat === undefined
+          ? undefined
+          : { name: chat.name, who: whoOf(chat.persona, chat.harness), label: chat.label };
+      },
+      view: (view, title) => {
+        const now = viewNamedNow(view, title);
+        const studio = isSkillStudio(now.view) || studioOfSkillTab(now.view) !== undefined;
+        return {
+          view: studioPutBack(plane, now.view),
+          title: studio ? SKILL_STUDIO_TITLE : now.title,
+        };
+      },
+    }),
+    [plane],
   );
   useEffect(() => {
     if (adopted.current) return;
@@ -1744,26 +1777,18 @@ export const PlaneView = memo(function PlaneView({
         // of its own it always had, until chats stop getting tabs.
         if (laid !== null && laid !== undefined) {
           const named = new Map(open.map((chat) => [chat.session, chat]));
-          const back = tabsOf(laid, noTabs(), {
-            chat: (session) => {
-              const chat = named.get(session);
-              return chat === undefined
-                ? undefined
-                : {
-                    name: chat.name,
-                    who: whoOf(chat.persona, chat.harness),
-                    label: chat.label,
-                  };
-            },
-            view: (view, title) => {
-              const now = viewNamedNow(view, title);
-              const studio = isSkillStudio(now.view) || studioOfSkillTab(now.view) !== undefined;
-              return {
-                view: studioPutBack(plane, now.view),
-                title: studio ? SKILL_STUDIO_TITLE : now.title,
-              };
-            },
-          });
+          const back = tabsOf(laid, noTabs(), reopeningOf(named), tabWindow ?? 0);
+          // **A tab window draws its own tabs and nothing more** (#4768): every other chat is
+          // the project window's.
+          if (tabWindow !== undefined) {
+            layoutHeard.current = true;
+            if (back.tabs.order.length > 0)
+              change(() =>
+                back.inFront === undefined ? back.tabs : selectTab(back.tabs, back.inFront),
+              );
+            setViewsHeard(true);
+            return;
+          }
           const all = pinnedAsBefore(
             open
               .filter((chat) => chat.from?.tab !== false && !back.placed.has(chat.session))
@@ -1788,6 +1813,15 @@ export const PlaneView = memo(function PlaneView({
           layoutHeard.current = true;
           if (all.order.length > 0)
             change(() => (inFront === undefined ? all : selectTab(all, inFront)));
+          setViewsHeard(true);
+          // **Each tab window the record names comes back** (#4768), in its place on screen.
+          otherWindows.current = laid.tabs.some((one) => one.window !== 0);
+          if (otherWindows.current) void commands.tabWindowsBack(plane).catch(() => undefined);
+          return;
+        }
+        // A tab window of a record with no layout has nothing of its own to draw.
+        if (tabWindow !== undefined) {
+          layoutHeard.current = true;
           setViewsHeard(true);
           return;
         }
@@ -1876,7 +1910,7 @@ export const PlaneView = memo(function PlaneView({
         layoutHeard.current = true;
         setViewsHeard(true);
       });
-  }, [change, plane, settleChatNotes]);
+  }, [change, plane, reopeningOf, settleChatNotes, tabWindow]);
 
   /**
    * The window's view tabs, told to the core whenever they change — so the record brings them
@@ -1936,7 +1970,8 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     const listening = listen<Arrived>("handoff-arrived", (event) => {
       const arrived = event.payload;
-      if (arrived.plane !== plane) return;
+      // A chat arriving is the project window's to put on its strip, never a tab window's.
+      if (arrived.plane !== plane || tabWindow !== undefined) return;
       // Already drawn: the adoption above can race the event and draw it first.
       if (alreadyShows(now.current, arrived.session)) return;
       // A task dispatched by a chat at the project's root is in no workspace, as that chat is.
@@ -1961,7 +1996,7 @@ export const PlaneView = memo(function PlaneView({
       );
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
-  }, [change, plane]);
+  }, [change, plane, tabWindow]);
 
   /**
    * The persona chats that still owe a report. A task's report is followed by the end of its
@@ -3111,11 +3146,16 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     sayLayout.current = (next: Tabs) => {
       if (!layoutHeard.current) return;
-      const laid = layoutOf(next, {
-        workspaceOf: (id) => workspaceOf(next, id, filedIn),
-        frontOf: (workspace) => lastFront.current[workspace],
-        told: (session) => !pretendedNow.current.has(session) && !endedInPanes.current.has(session),
-      });
+      const laid = layoutOf(
+        next,
+        {
+          workspaceOf: (id) => workspaceOf(next, id, filedIn),
+          frontOf: (workspace) => lastFront.current[workspace],
+          told: (session) =>
+            !pretendedNow.current.has(session) && !endedInPanes.current.has(session),
+        },
+        tabWindow ?? 0,
+      );
       const text = JSON.stringify(laid);
       if (text === layoutSaid.current || text === layoutRefused.current) return;
       layoutSaid.current = text;
@@ -3137,7 +3177,44 @@ export const PlaneView = memo(function PlaneView({
         .catch(unsaid);
     };
     sayLayout.current(tabs);
-  }, [filedIn, plane, tabs, viewsHeard]);
+  }, [filedIn, plane, tabs, tabWindow, viewsHeard]);
+
+  /**
+   * **Tabs moved between the project's windows** (#4768): Move to new window, Move to window ▸,
+   * a tear-off or a tab window closing. The core moved them in one step and tells every window
+   * of the project what it holds now; this window lets go of its tabs that are elsewhere and
+   * draws the ones that came to it (`tabWindows.ts`). Nothing ends: a tab that left takes its
+   * chats on screen with it.
+   */
+  useEffect(() => {
+    const listening = listen<LayoutMoved>(LAYOUT_MOVED, (event) => {
+      const moved = event.payload;
+      if (moved.plane !== plane) return;
+      otherWindows.current = moved.layout.tabs.some((one) => one.window !== 0);
+      void commands
+        .openedChats(plane)
+        .then((answer) => {
+          const open = answer.status === "ok" ? (answer.data ?? []) : [];
+          const reopening = reopeningOf(new Map(open.map((chat) => [chat.session, chat])));
+          change(
+            (tabs) =>
+              movedBetweenWindows(moved.layout, tabs, tabWindow ?? 0, reopening, filedIn).tabs,
+          );
+        })
+        .catch(() => undefined);
+    }).catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [change, filedIn, plane, reopeningOf, tabWindow]);
+
+  /** **A press in another of the project's windows landed on a chat this one has in a pane**
+   *  (#4768): it is shown here, in its pane, and this window has come forward. */
+  const showChatHere = useRef<(session: number) => void>(() => undefined);
+  useEffect(() => {
+    const listening = listen<{ plane: string; chat: number }>(PRESS_HERE, (event) => {
+      if (event.payload.plane === plane) showChatHere.current(event.payload.chat);
+    }).catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [plane]);
 
   /**
    * Asks which profile and which persona. It starts nothing by itself.
@@ -4050,11 +4127,28 @@ export const PlaneView = memo(function PlaneView({
    */
   const showChat = useCallback(
     (session: number, into?: PaneAt) => {
-      landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
       stoppedFor(session, undefined);
+      const here = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
+      // **A chat in a pane of another of the project's windows** (#4768): that window comes
+      // forward and shows it, and this window changes nothing. Asked only while the project
+      // has another window, so a project of one window presses at once.
+      if (into !== undefined || (tabWindow === undefined && !otherWindows.current)) {
+        here();
+        return;
+      }
+      void commands
+        .pressElsewhere(plane, session)
+        .then((answer) => {
+          if (answer.status !== "ok" || answer.data === null) here();
+        })
+        .catch(here);
     },
-    [landOn, pressedOf, pressing, stoppedFor],
+    [landOn, plane, pressedOf, pressing, stoppedFor, tabWindow],
   );
+  useEffect(() => {
+    showChatHere.current = (session) =>
+      landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
+  }, [landOn, pressedOf, pressing]);
   /**
    * **⌘⇧H: the focused pane goes back to the chat it showed before** (#4757), and again to
    * come back; where that chat is on screen in another pane, that pane comes forward instead.
@@ -6793,10 +6887,11 @@ export const PlaneView = memo(function PlaneView({
         noteStarted(chat);
         change((tabs) => replaceSession(tabs, from, chat.session));
       }
-      // Started under another number, its old tab gone already: a chat just started.
+      // Started under another number, its old tab gone already: a chat just started. The
+      // project window's to put on a strip, never a tab window's (#4768).
       for (const chat of arrived) {
         noteStarted(chat);
-        if (chat.from?.tab === false) continue;
+        if (chat.from?.tab === false || tabWindow !== undefined) continue;
         change((tabs) =>
           pinnedAsBefore(
             openTabBehind(
@@ -6825,7 +6920,7 @@ export const PlaneView = memo(function PlaneView({
       // Every chat has said how it came back: the dismissed notes are settled against them.
       if (still.size === 0) settleChatNotes(open);
     },
-    [keepsItsPane, change, filedIn, isPinned, noteStarted, plane, settleChatNotes],
+    [keepsItsPane, change, filedIn, isPinned, noteStarted, plane, settleChatNotes, tabWindow],
   );
   const readRestoredNow = useRef(readRestored);
   useEffect(() => {

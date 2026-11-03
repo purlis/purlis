@@ -326,6 +326,13 @@ export const commands = {
 	 */
 	moveToWindow: (plane: PlaneId, tab: number, pane: string | null, to: number | null) => typedError<MovedTo, string>(__TAURI_INVOKE("move_to_window", { plane, tab, pane, to })),
 	/**
+	 *  **A press on chat `chat` in a project with tab windows** (#4768, ruled on #4701): where
+	 *  another of the project's windows has it in a pane, that window comes forward and shows it
+	 *  there, and its label is answered; a chat is never shown in two windows. Null where no other
+	 *  window has it, and the press is the asking window's.
+	 */
+	pressElsewhere: (plane: PlaneId, chat: number) => typedError<string | null, string>(__TAURI_INVOKE("press_elsewhere", { plane, chat })),
+	/**
 	 *  What this window is a tab window of, and its number there: null for a window that is not
 	 *  one. A tab window asks it once, as it first draws, and draws that project's strip and panes
 	 *  with no sidebar.
