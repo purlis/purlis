@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793673808175,
+  "lastUpdate": 1793675322418,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -37002,6 +37002,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9593005,
             "unit": "ms",
             "extra": "median of 5 runs: 101.726, 101.863, 101.959, 102.083, 102.243 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a5b6079805bda93abd36ea5d531d61a6a821cebf",
+          "message": "CI: CodeQL skips test code (#4901)\n\nEvery Rust and JS alert CodeQL raised in tests (~330 across 2026-11-01 and\n2026-11-03) was a false positive: panic!/assert! messages printing a test's\nown values, fake tokens in fixtures, http:// iframes between local fixture\nhosts. Each new batch of tests brought a new batch to dismiss by hand.\n\nA config file with paths-ignore for tests/, tests.rs, *_tests.rs and the JS\n*.test.* / *.spec.* files, read by both jobs. Shipped code is scanned as\nbefore; inline #[cfg(test)] modules in source files still are.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6BW92B6JDMYKNEV62KBE82V\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T01:45:17Z",
+          "tree_id": "49f1a6590c5a5eeba8375a511fcb9c307247977f",
+          "url": "https://github.com/purlis/purlis/commit/a5b6079805bda93abd36ea5d531d61a6a821cebf"
+        },
+        "date": 1793675318177,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.331734,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.303, 0.318, 0.332, 0.334, 0.335 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.526366000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.481, 16.507, 16.526, 16.558, 16.659 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4911115,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.333, 100.373, 101.491, 101.741, 102.428 ms"
           }
         ]
       }
