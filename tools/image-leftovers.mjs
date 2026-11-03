@@ -31,7 +31,7 @@
 // image (it calls `runner-image.yml`), `operator-image.yml` for the operator's. Needs IMAGE,
 // GH_TOKEN, GITHUB_REPOSITORY and GITHUB_REPOSITORY_OWNER, as `image-leftovers.yml` sets them.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -90,10 +90,11 @@ const subjectOf = (tag) => {
  * Every digest a tag reaches: each tag's own manifest, every child of every index under it, and
  * each subject a `sha256-<digest>` referrers tag names, with everything under that subject too.
  * `tags` maps a tag to its digest; `manifests` maps a digest to its manifest, and holds every
- * tagged one, every index a tag reaches, and every subject the registry still has. Throws when a
- * tagged manifest or an index under one is missing: what it holds cannot be told.
+ * tagged one, every index a tag reaches, and every subject the registry still has. `roots` are
+ * untagged indexes to keep with everything under them (`untaggedIndexes`). Throws when a tagged
+ * manifest or an index under one is missing: what it holds cannot be told.
  */
-export function reachable({ tags, manifests }) {
+export function reachable({ tags, manifests, roots = [] }) {
   const kept = new Set();
   const visit = (digest, from, required) => {
     if (kept.has(digest)) return;
@@ -117,7 +118,26 @@ export function reachable({ tags, manifests }) {
     const subject = subjectOf(tag);
     if (subject) visit(subject, tag, false);
   }
+  for (const root of roots) visit(digestOf(root, "an untagged index"), `the untagged index ${root}`, true);
   return kept;
+}
+
+/**
+ * The untagged versions nothing reaches that were pushed while a run that could publish ran: the
+ * ones whose manifests `report` reads before it lists anything, so that an index among them (a
+ * failed run's index whose `sha-<commit>` tag a later run moved, never signed) keeps its images.
+ */
+export function pushedDuringRuns({ versions, kept, runs, repo, workflow }) {
+  const windows = runs
+    .filter((run) => couldPublish(run, { repo, workflow }))
+    .map((run) => [timeOf(run.created_at, `run ${run.id}'s created_at`), timeOf(run.updated_at, `run ${run.id}'s updated_at`)]);
+  return versions
+    .filter((v) => (v?.metadata?.container?.tags ?? []).length === 0 && !kept.has(v.name))
+    .filter((v) => {
+      const created = timeOf(v.created_at, `version ${v.id}'s created_at`);
+      return windows.some(([from, to]) => from <= created && created <= to);
+    })
+    .map((v) => digestOf(v.name, `version ${v.id}'s name`));
 }
 
 /** A single image's manifest: not an index, not a referrer, not an artifact. */
@@ -359,13 +379,14 @@ export async function graph(reg) {
 
 /**
  * The publishing workflow's runs created since `since`, each with the digests its artifacts
- * recorded when it is a failed run that could publish (`download(run, artifact)` answers an
- * artifact's text).
+ * recorded when it could publish, whatever its outcome so far: a run under way or one that passed
+ * keeps what it recorded (`download(run, artifact)` answers an artifact's text). A skipped run
+ * built nothing.
  */
 export function publishingRuns({ api, download, repo, workflow, since }) {
   const runs = pages(api, `repos/${repo}/actions/workflows/${workflow}/runs?created=>=${since}`, "workflow_runs");
   return runs.map((run) => {
-    if (run.status !== "completed" || !FAILED.has(run.conclusion) || !couldPublish(run, { repo, workflow })) {
+    if (!couldPublish(run, { repo, workflow }) || (run.status === "completed" && run.conclusion === "skipped")) {
       return { ...run, digests: [] };
     }
     const artifacts = pages(api, `repos/${repo}/actions/runs/${run.id}/artifacts`, "artifacts");
@@ -380,7 +401,17 @@ export async function report({ org, name, repo, workflow, now, api, get, downloa
   const runs = publishingRuns({ api, download, repo, workflow, since });
   const versions = pages(api, `orgs/${org}/packages/container/${name}/versions`, null);
   const reg = await registry(`${org}/${name}`, get);
-  const kept = reachable(await graph(reg));
+  const read = await graph(reg);
+  // An untagged index a run left (its tag moved on) still holds its images: read every version
+  // pushed while a run ran, and keep what any index among them holds.
+  const pushed = pushedDuringRuns({ versions, kept: reachable(read), runs, repo, workflow });
+  const roots = [];
+  for (const digest of pushed) {
+    const { manifest } = await reg.manifest(digest);
+    read.manifests[digest] = manifest;
+    if (isIndex(manifest)) roots.push(digest);
+  }
+  const kept = reachable({ ...read, roots });
   const first = leftovers({ versions, kept, runs, repo, workflow, now });
   const manifests = {};
   const referrers = {};
@@ -404,12 +435,15 @@ function ghApi(path) {
 
 function ghDownload(repo) {
   return (run, artifact) => {
+    // By the artifact's id: a rerun's attempt can upload a second artifact of the same name.
     const dir = mkdtempSync(join(tmpdir(), "leftovers-"));
     try {
-      execFileSync("gh", ["run", "download", String(run.id), "-R", repo, "-n", artifact.name, "-D", dir], { stdio: ["ignore", "pipe", "pipe"] });
-      const files = readdirSync(dir);
+      const zip = join(dir, "artifact.zip");
+      const bytes = execFileSync("gh", ["api", `repos/${repo}/actions/artifacts/${artifact.id}/zip`], { stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1024 * 1024 });
+      writeFileSync(zip, bytes);
+      const files = execFileSync("unzip", ["-Z1", zip], { encoding: "utf8" }).split("\n").filter(Boolean);
       if (files.length !== 1) throw new Error(`${artifact.name} of run ${run.id} holds ${files.length} files`);
-      return readFileSync(join(dir, files[0]), "utf8");
+      return execFileSync("unzip", ["-p", zip, files[0]], { encoding: "utf8" });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

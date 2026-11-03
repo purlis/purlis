@@ -20,6 +20,7 @@ import {
   isPlainImage,
   leftovers,
   pages,
+  pushedDuringRuns,
   reachable,
   registry,
   removable,
@@ -114,6 +115,29 @@ test("a referrers tag's subject is kept, and so is everything under it when no o
   assert.ok(kept.has(signed));
   assert.ok(kept.has("sha256:aa446a16e363def3509006924a51b04ce76b93f038309ad9b25b6aab897971bc"));
   assert.ok(kept.has("sha256:a4de49e7d983fb6738eddc8fbb6f66dcbbd483c0d9bc5e3bd4a5afd24740d17d"));
+});
+
+test("an untagged index a failed run left keeps its images when its tag moved on", () => {
+  // A run tagged its index `sha-<commit>`, then failed before signing it; a later run of the same
+  // commit moved the tag. Only the index's own manifest, read as a root, still holds its images.
+  const left = { mediaType: INDEX, manifests: [{ digest: LEFTOVER, mediaType: IMAGE }] };
+  const manifests = { ...recordedRegistry.manifests, [OTHER]: left };
+  assert.ok(!reachable({ tags: recordedRegistry.tags, manifests }).has(LEFTOVER));
+  const kept = reachable({ tags: recordedRegistry.tags, manifests, roots: [OTHER] });
+  assert.ok(kept.has(OTHER) && kept.has(LEFTOVER));
+  assert.deepEqual(select({ kept }).candidates, []);
+  assert.throws(() => reachable({ tags: {}, manifests: {}, roots: [OTHER] }), /was not read/);
+});
+
+test("every untagged version nothing reaches that was pushed while a run that could publish ran is read first", () => {
+  const versions = versionsOf(recordedRegistry, [
+    untagged(LEFTOVER, "2026-11-03T04:40:00Z"),
+    untagged(OTHER, "2026-11-03T04:41:00Z", 700_000_002),
+    untagged(`sha256:${"d".repeat(64)}`, "2026-11-02T01:00:00Z", 700_000_003),
+  ]);
+  const fork = { ...cancelled, id: 1, head_repository: { full_name: "someone/purlis" }, created_at: "2026-11-02T00:00:00Z", updated_at: "2026-11-02T02:00:00Z" };
+  const read = pushedDuringRuns({ versions, kept: reachable(recordedRegistry), runs: [cancelled, fork], repo: REPO, workflow: WORKFLOW });
+  assert.deepEqual(read, [LEFTOVER, OTHER]);
 });
 
 test("the graph cannot be told when a tagged manifest or an index it holds was not read", () => {
@@ -342,8 +366,8 @@ test("the referrers API: ghcr's 404 means its referrers tags hold them; a list i
   await assert.rejects((await ask({ status: 200, body: "{}" })).referrers(LEFTOVER), /listed no manifests/);
 });
 
-test("the report, end to end on the recorded answers: one leftover listed, the release's images kept", async () => {
-  const manifests = { ...recordedRegistry.manifests, [LEFTOVER]: plain };
+async function endToEnd({ extraManifests = {}, extraVersions = [] } = {}) {
+  const manifests = { ...recordedRegistry.manifests, [LEFTOVER]: plain, ...extraManifests };
   const { get } = fakeRegistry({ manifests });
   const fork = { ...failedRun({ id: 1, head_repository: { full_name: "someone/purlis" } }), digests: undefined };
   const runs = [...releaseRuns.filter((run) => run.id !== cancelled.id), { ...cancelled }, fork];
@@ -351,18 +375,33 @@ test("the report, end to end on the recorded answers: one leftover listed, the r
   const api = (path) => {
     if (path.startsWith(`repos/${REPO}/actions/workflows/${WORKFLOW}/runs?created=>=2026-10-31`)) return { total_count: runs.length, workflow_runs: runs };
     if (path.startsWith(`repos/${REPO}/actions/runs/${cancelled.id}/artifacts`)) {
-      return { total_count: 1, artifacts: [{ ...recordedArtifacts.find((a) => a.name === "digest-amd64"), workflow_run: { id: cancelled.id } }] };
+      return { total_count: 1, artifacts: [{ ...recordedArtifacts.find((a) => a.name === "digest-amd64"), id: 1, workflow_run: { id: cancelled.id } }] };
     }
-    if (path.startsWith("orgs/purlis/packages/container/purlis-runner/versions")) return versionsOf(recordedRegistry, [untagged(LEFTOVER, "2026-11-03T04:40:00Z")]);
+    if (path.startsWith(`repos/${REPO}/actions/runs/41581143090/artifacts`)) return { total_count: recordedArtifacts.length, artifacts: recordedArtifacts };
+    if (/^repos\/purlis\/purlis\/actions\/runs\/\d+\/artifacts/.test(path)) return { total_count: 0, artifacts: [] };
+    if (path.startsWith("orgs/purlis/packages/container/purlis-runner/versions")) {
+      return versionsOf(recordedRegistry, [untagged(LEFTOVER, "2026-11-03T04:40:00Z"), ...extraVersions]);
+    }
     throw new Error(`unexpected ${path}`);
   };
   const download = (run, artifact) => {
     downloaded.push(`${run.id}/${artifact.name}`);
-    return `${LEFTOVER}\n`;
+    return run.id === cancelled.id ? `${LEFTOVER}\n` : `${recorded[artifact.name.slice("digest-".length)]}\n`;
   };
   const found = await report({ org: "purlis", name: "purlis-runner", repo: REPO, workflow: WORKFLOW, now: NOW, api, get, download });
+  return { found, downloaded };
+}
+
+test("the report, end to end on the recorded answers: one leftover listed, the release's images kept", async () => {
+  const { found, downloaded } = await endToEnd();
   assert.deepEqual(found.removable, [{ id: 700_000_001, digest: LEFTOVER, run: cancelled.id }]);
   assert.deepEqual(found.keep, []);
-  // Only the failed run that could publish had its artifacts read: not the fork's.
-  assert.deepEqual(downloaded, [`${cancelled.id}/digest-amd64`]);
+  // Every run that could publish had its artifacts read, the one that passed too; not the fork's.
+  assert.deepEqual(downloaded.sort(), [`${cancelled.id}/digest-amd64`, "41581143090/digest-amd64", "41581143090/digest-arm64"]);
+});
+
+test("the report, end to end: an untagged index the failed run left keeps the image it holds", async () => {
+  const left = { mediaType: INDEX, manifests: [{ digest: LEFTOVER, mediaType: IMAGE }] };
+  const { found } = await endToEnd({ extraManifests: { [OTHER]: left }, extraVersions: [untagged(OTHER, "2026-11-03T04:45:00Z", 700_000_002)] });
+  assert.deepEqual(found.removable, []);
 });
