@@ -128,12 +128,12 @@ import {
   AGENT_IDENTITY_VIEW,
   DEVICES_TITLE,
   DEVICES_VIEW,
-  viewKey,
   type AskedBy,
   type Direction,
   type Tabs,
   type ViewRef,
 } from "./tabs";
+import { canTileAll, canUndoLayout, isSplit, zoomedOf } from "./tiling";
 import { isBrowser } from "./browsers";
 import { anyPoolKept, startAddingAPool } from "./pools";
 import { isDriven } from "./browserDriving";
@@ -391,6 +391,12 @@ export type Does =
    *  workspace's go in the machine store and a chat's goes in the plane's own app record
    *  (ADR 0040). A design that treated "pin" as one thing would discover that in review. */
   | { verb: "pinTab"; tab: number; pinned: boolean }
+  /** Tile all (#4765): evens `tab`'s own panes into a grid, with Undo. */
+  | { verb: "tileAll"; tab: number }
+  /** Focus this pane in a split (#4765): zooms the focused pane, or brings the split back. */
+  | { verb: "zoomPane" }
+  /** Undo (#4765): `tab`'s last tree back, once. */
+  | { verb: "undoLayout"; tab: number }
   | { verb: "pinWorkspace"; workspace: string; pinned: boolean }
   | { verb: "pinProject"; plane: string; pinned: boolean }
   | { verb: "focusWorkspace"; workspace: string }
@@ -887,14 +893,12 @@ export type Now = {
   /**
    * What this operator has pinned (ADR 0039).
    *
-   * Three lists rather than a flag on each thing, because a pin is not a property of the
-   * chat, the workspace or the plane — it is the operator's arrangement of them, held
-   * somewhere else entirely (ADR 0040), and a copy on the thing would be a second answer.
+   * Lists rather than a flag on each thing, because a pin is not a property of the workspace
+   * or the plane — it is the operator's arrangement of them, held somewhere else entirely (ADR
+   * 0040), and a copy on the thing would be a second answer. A tab's pin is the tab's own
+   * (`Tab.pinned`, #4935), so it is read off {@link Now.tabs}.
    */
   pinned?: {
-    readonly chats: readonly number[];
-    /** View tabs, by `tabs.viewKey`. A tab with no chat is pinned as the view it shows. */
-    readonly views?: readonly string[];
     readonly workspaces: readonly string[];
     readonly projects: readonly string[];
   };
@@ -1044,6 +1048,12 @@ export type Doing = {
    *  "charter pins at most 32 projects — unpin one first" is a sentence the operator can act
    *  on and must therefore reach them. */
   pinTab: (tab: number, pinned: boolean) => Promise<Ran>;
+  /** Tiles `tab`'s own panes into an even grid (#4765). */
+  tileAll: (tab: number) => void;
+  /** Zooms the focused pane of the tab in front, or brings its split back (#4765). */
+  zoomPane: () => void;
+  /** Puts `tab`'s last tree back (#4765). */
+  undoLayout: (tab: number) => void;
   pinWorkspace: (workspace: string, pinned: boolean) => Promise<Ran>;
   pinProject: (plane: string, pinned: boolean) => Promise<Ran>;
   focusWorkspace: (workspace: string) => void;
@@ -1593,8 +1603,18 @@ export const TOGGLE_NAVIGATION_ID = "view.toggle:navigation";
 export const TOGGLE_ATTENTION_ID = "view.toggle:aside";
 /** The palette's row that shows the Panel or hides it, ⌘J's (#1737, P-6). */
 export const TOGGLE_PANEL_ID = "view.toggle:panel";
-/** Focus mode's row (#2921). */
+/** Focus this pane's row (#2921, #4765): zoom in a split, Focus mode in a one-pane tab. */
 export const FOCUS_MODE_ID = "focus.toggle";
+/** What Focus this pane's row says while it would zoom or hide (#4765). */
+export const FOCUS_THIS_PANE = "Focus this pane";
+/** Tile all's row for tab `tab` (#4765). */
+export function tileAllId(tab: number): string {
+  return `tab.tile:${tab}`;
+}
+/** Undo's row: the tab in front's last layout back (#4765). */
+export const UNDO_LAYOUT_ID = "layout.undo";
+/** Why Tile all cannot run on a tab of one pane (#4765). */
+export const ONE_PANE_TO_TILE = "It has one pane, so there is nothing to tile.";
 /** The keyboard shortcuts' row (#2921). */
 export const SHORTCUTS_ID = "shortcuts.show";
 /** The Devices view's row (#2052). */
@@ -1962,14 +1982,36 @@ export function catalogue(now: Now): Offer[] {
   // **Focus mode** (#2921, N32): one row whose words say what pressing it does now, as each
   // region's do; and **the keyboard shortcuts**, the key registry's cheat sheet in a tab of its
   // own (N25). Their keys are drawn on the rows from the registry.
+  // **Focus this pane** (#4765): in a split it zooms the focused pane and the same row brings
+  // the split back; in a one-pane tab it is focus mode, which, once on, it leaves first.
+  const zooms = now.focusMode !== true && isSplit(now.tabs, front?.id);
+  const zoomed = zooms && front !== undefined && zoomedOf(now.tabs, front.id) !== undefined;
+  const [focusTitle, focusVerb, focusNote]: [string, Does, string] = zooms
+    ? zoomed
+      ? [
+          "Back to the split",
+          { verb: "zoomPane" },
+          "Every pane of this tab drawn again, as it was.",
+        ]
+      : [
+          FOCUS_THIS_PANE,
+          { verb: "zoomPane" },
+          "This pane fills the tab for now, and the others keep running.",
+        ]
+    : now.focusMode === true
+      ? [
+          "Leave focus mode",
+          { verb: "toggleFocusMode" },
+          "The rail, the bars and the panels back where they were.",
+        ]
+      : [
+          FOCUS_THIS_PANE,
+          { verb: "toggleFocusMode" },
+          "The rail, the bars and the panels hidden: the work alone.",
+        ];
   offers.push({
-    ...can(FOCUS_MODE_ID, now.focusMode === true ? "Leave focus mode" : "Focus mode", {
-      verb: "toggleFocusMode",
-    }),
-    note:
-      now.focusMode === true
-        ? `The rail, the bars and the panels back where they were. ${FOCUS_KEY_SAID}.`
-        : `The rail, the bars and the panels hidden: the work alone. ${FOCUS_KEY_SAID}.`,
+    ...can(FOCUS_MODE_ID, focusTitle, focusVerb),
+    note: `${focusNote} ${FOCUS_KEY_SAID}.`,
   });
   offers.push({
     ...can(SHORTCUTS_ID, "Keyboard shortcuts", {
@@ -2061,7 +2103,7 @@ export function catalogue(now: Now): Offer[] {
   );
   offers.push(...stoppedRows(now.stopped ?? {}, now.needsYou, now.nameOf, now.tabs));
 
-  const pinned = now.pinned ?? { chats: [], workspaces: [], projects: [] };
+  const pinned = now.pinned ?? { workspaces: [], projects: [] };
 
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
@@ -2079,14 +2121,9 @@ export function catalogue(now: Now): Offer[] {
   // thing gets on its strip is a mark, and pressing the mark runs this same row.
   for (const tab of now.tabs.order) {
     const name = now.tabs.byId[tab].name;
-    // **The one pin is the tab's** (#4762): the window keys it by the tab's first pane, its
-    // chat or the view it opened on, and the record holds it on the tab.
-    const chat = chatOf(now.tabs, tab);
-    const first = contentsOf(now.tabs, tab)[0]?.content;
-    const held =
-      chat !== undefined
-        ? isPinned(pinned.chats, chat)
-        : first?.kind === "view" && isPinned(pinned.views ?? [], viewKey(first.view));
+    // **The one pin is the tab's** (#4762, #4935): its own, whatever its panes hold, so a tab
+    // whose only pane is empty is pinned as any other.
+    const held = now.tabs.byId[tab].pinned === true;
     offers.push({
       ...can(
         `tab.pin:${tab}`,
@@ -2097,6 +2134,33 @@ export function catalogue(now: Now): Offer[] {
       note: held ? UNPIN_NOTE : PIN_NOTE,
     });
   }
+
+  // **Tile all** (#4765): one row per tab, as Pin tab's, so the tab menu of a tab behind has its
+  // own; it evens only that tab's panes, and a tab of one pane has nothing to even.
+  for (const tab of now.tabs.order) {
+    const name = now.tabs.byId[tab].name;
+    const id = tileAllId(tab);
+    const title = `Tile all in ${name}`;
+    offers.push(
+      canTileAll(now.tabs, tab)
+        ? {
+            ...can(id, title, { verb: "tileAll", tab }, name),
+            note: "Its panes, evened into a grid in reading order. Undo puts them back.",
+          }
+        : cannot(id, title, ONE_PANE_TO_TILE, name),
+    );
+  }
+
+  // **Undo** (#4765): the tab in front's last tree, while nothing in it has changed since. Only
+  // while it can run, as the change it undoes was just made; the toast and ⌘Z come with #4763.
+  if (front !== undefined && canUndoLayout(now.tabs, front.id))
+    offers.push({
+      ...can(UNDO_LAYOUT_ID, "Undo the last layout change", {
+        verb: "undoLayout",
+        tab: front.id,
+      }),
+      note: "This tab's panes back where they were before.",
+    });
 
   offers.push(...chatRows(now));
 
@@ -3314,6 +3378,15 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "pinTab":
       return doing.pinTab(does.tab, does.pinned);
+    case "tileAll":
+      doing.tileAll(does.tab);
+      return DID;
+    case "zoomPane":
+      doing.zoomPane();
+      return DID;
+    case "undoLayout":
+      doing.undoLayout(does.tab);
+      return DID;
     case "pinWorkspace":
       return doing.pinWorkspace(does.workspace, does.pinned);
     case "pinProject":
@@ -5233,7 +5306,12 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
     }
     case "tab":
       return {
-        above: [`tab.select:${what.tab}`, `tab.pin:${what.tab}`, `tab.keep:${what.tab}`],
+        above: [
+          `tab.select:${what.tab}`,
+          `tab.pin:${what.tab}`,
+          tileAllId(what.tab),
+          `tab.keep:${what.tab}`,
+        ],
         below: [`tab.close:${what.tab}`],
       };
     case "workspace":

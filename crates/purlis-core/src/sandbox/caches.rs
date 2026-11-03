@@ -293,8 +293,14 @@ fn unwritable(path: &Path, err: &std::io::Error) -> String {
 
 /// Writes `bytes` to `path` through a new file beside it, made without following a link and
 /// renamed into place, so a link at `path` is replaced, never written through.
+///
+/// **The new file is this write's alone**, by the process and a count within it: a launch
+/// starts several chats of one project at once, each writing the same home, and a name shared
+/// between them let one start take the other's file away before it was renamed, so that chat
+/// did not start. Each rename is whole, and every start writes the same bytes.
 fn write_beside(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
+    static WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let parent = path
         .parent()
         .ok_or_else(|| std::io::Error::other("no folder"))?;
@@ -302,9 +308,10 @@ fn write_beside(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         .file_name()
         .ok_or_else(|| std::io::Error::other("no name"))?;
     let temp = parent.join(format!(
-        ".{}.purlis-{}",
+        ".{}.purlis-{}-{}",
         name.to_string_lossy(),
-        std::process::id()
+        std::process::id(),
+        WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let _ = std::fs::remove_file(&temp);
     let mut options = std::fs::OpenOptions::new();
@@ -870,6 +877,48 @@ mod tests {
                 .join(crate::leftovers::HOME_NOTE)
                 .starts_with(path)),
             "a chat could write the note"
+        );
+    }
+
+    /// A launch starts a project's chats a few at a time (`restoring.rs` in the app), all in
+    /// one process and all preparing the one cache home: no start may take another's file away
+    /// from under it, or that chat does not start, with "No such file or directory".
+    #[test]
+    fn chats_of_one_project_starting_at_once_each_prepare_its_cache_home() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let base = dir.path().canonicalize().expect("the directory");
+        let home = CacheHome {
+            root: base.join("data/cache-homes").join("0".repeat(32)),
+            project: base.join("projects/shop"),
+            cargo_config: "[net]\nretry = 2\n".repeat(64),
+            ..CacheHome::default()
+        };
+
+        let refused: Vec<String> = std::thread::scope(|scope| {
+            let starts: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        (0..40)
+                            .filter_map(|_| home.prepare().err())
+                            .collect::<Vec<String>>()
+                    })
+                })
+                .collect();
+            starts
+                .into_iter()
+                .flat_map(|start| start.join().expect("a start"))
+                .collect::<Vec<String>>()
+        });
+
+        assert!(
+            refused.is_empty(),
+            "{} of 320 starts were refused, the first: {}",
+            refused.len(),
+            refused.first().map_or("", String::as_str)
+        );
+        assert_eq!(
+            std::fs::read_to_string(home.cargo_config_path()).expect("cargo's config"),
+            home.cargo_config
         );
     }
 

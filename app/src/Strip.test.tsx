@@ -549,6 +549,39 @@ describe("the strip's tabs (#4762)", () => {
     expect(await hoverTipOf(tab)).toBe("ide.1 · ide.2");
   });
 
+  it("draws Tile all at its right end only while the tab in front is split (#4765)", async () => {
+    core([chat(1), chat(2)], {
+      strip: null,
+      tabs: [
+        {
+          workspace: null,
+          pinned: false,
+          window: 0,
+          front: true,
+          focused: "a",
+          tree: {
+            kind: "split",
+            direction: "row",
+            share: 500,
+            a: { kind: "chat", chat: 1 },
+            b: { kind: "chat", chat: 2 },
+          },
+        },
+      ],
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Tile all" })).toBeEnabled();
+  });
+
+  it("draws no Tile all for a tab of one pane, so it takes no room from the tabs (#4765)", async () => {
+    core([chat(1)]);
+    render(<App />);
+
+    await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
+    expect(screen.queryByRole("button", { name: "Tile all" })).toBeNull();
+  });
+
   it("always draws the tab in front, in the last place that fits", async () => {
     // `chat()` puts chat 1 in front; here the core says 4 is.
     core([{ ...chat(1), in_front: false }, chat(2), chat(3), { ...chat(4), in_front: true }]);
@@ -561,7 +594,8 @@ describe("the strip's tabs (#4762)", () => {
   });
 
   it("says its state on its first `.state` mark, the corner dot being only seen", async () => {
-    // The scenario specs read `tab.$(".state")` for the state's word (`chat.state.e2e.ts`).
+    // The scenario specs read `tab.$(".state")` for the state's word (`chat.state.e2e.ts`). It
+    // is the row's word (#4935): a turn ended with nothing asked of the person is idle.
     const { move } = core([chat(1)]);
     render(<App />);
     await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
@@ -570,7 +604,7 @@ describe("the strip's tabs (#4762)", () => {
 
     const tab = within(strip()).getAllByRole("tab")[0];
     await waitFor(() =>
-      expect(tab.querySelector(".state")?.getAttribute("aria-label")).toBe("waiting on you"),
+      expect(tab.querySelector(".state")?.getAttribute("aria-label")).toBe("idle"),
     );
     expect(tab.querySelectorAll(".state")).toHaveLength(1);
   });

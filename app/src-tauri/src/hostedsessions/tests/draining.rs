@@ -75,15 +75,27 @@ struct Pool {
 
 impl Pool {
     fn on(runtime: &tokio::runtime::Runtime) -> Pool {
+        Pool::whose_old_runner_starts_after(Duration::ZERO, runtime)
+    }
+
+    /// [`Pool::on`], its old runner answering a start only after `after`: a runner older than
+    /// the desktop that holds a start relayed to it (#4988).
+    fn whose_old_runner_starts_after(after: Duration, runtime: &tokio::runtime::Runtime) -> Pool {
         let (old, new) = (StandIns::default(), StandIns::default());
-        let host_of = |stand_ins: &StandIns| {
-            Hosting::confining(
+        let host_of = |stand_ins: &StandIns, after: Duration| SlowToStart {
+            inner: Hosting::confining(
                 ComposesConfined,
                 StandInConfines::default(),
                 stand_ins.clone(),
-            )
+            ),
+            after,
+            closed: Arc::default(),
+            next_hold_takes: Arc::default(),
+            holds: Arc::default(),
+            code_taken: Arc::default(),
         };
-        let (old_host, new_host) = runtime.block_on(async { (host_of(&old), host_of(&new)) });
+        let (old_host, new_host) =
+            runtime.block_on(async { (host_of(&old, after), host_of(&new, Duration::ZERO)) });
         let followed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let relays = Arc::<Mutex<Vec<String>>>::default();
         let (desktop, runner) = (
@@ -822,10 +834,9 @@ fn on_an_idle_runner(takes: Duration) -> OnAnIdleRunner {
     let projects = top.join("runner");
     std::fs::create_dir_all(&projects).unwrap();
     let mut host = a_host_slow_by(Duration::ZERO, &runtime);
-    host.inner = host
-        .inner
-        .keeping_projects_in(projects)
-        .moving_code_with(purlis_core::codelink::Moves);
+    host.inner = host.inner.keeping_projects_in(projects).moving_code_with(
+        purlis_core::codelink::Moves::in_home(top.join("runner-home")),
+    );
     *host.next_hold_takes.lock().unwrap() = Some(takes);
     let holds = Arc::clone(&host.holds);
     let code_taken = Arc::clone(&host.code_taken);
@@ -1040,4 +1051,79 @@ fn a_short_tasks_start_says_so_only_while_it_runs() {
     assert!(!is_a_short_task());
     let _ = std::panic::catch_unwind(|| a_short_task(|| panic!("a start that fails")));
     assert!(!is_a_short_task());
+}
+
+/// Pool `builds` under `config` waits `secs` for its runner's answer (spec #4275).
+fn answers_awaited_for(config: &Path, secs: u64) {
+    let path = purlis_core::machine::dir(config).join(purlis_core::machine::RUNNERS_FILE);
+    let mut kept: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    kept["pools"][0]["answerWait"] = secs.into();
+    write_private(&path, &kept.to_string());
+}
+
+/// The pool's least answer wait, which a test waits through for real.
+const LEAST_ANSWER_WAIT: u64 = 5;
+
+/// `sessions`' start, on a thread of its own, given `at_most` before the test says it hung.
+fn started_within(
+    sessions: &Arc<crate::routedsessions::RoutedSessions>,
+    at_most: Duration,
+) -> Result<u32, String> {
+    let (said, heard) = std::sync::mpsc::channel();
+    let sessions = Arc::clone(sessions);
+    std::thread::spawn(move || {
+        let _ = said.send(started(sessions.as_ref()));
+    });
+    heard
+        .recv_timeout(at_most)
+        .unwrap_or_else(|_| panic!("the start still waited after {at_most:?}"))
+}
+
+/// **A start nobody can cancel never waits on a runner past its pool's answer wait** (#4988):
+/// a launch's put-back has no Cancel, and a runner older than the desktop held one relayed to it
+/// for 4 minutes, until the pool's follow-up removed it. It fails in plain words, and Retry is
+/// what is left. Waits that long, for real.
+#[test]
+fn a_start_nobody_can_cancel_ends_at_its_pools_answer_wait_when_the_runner_never_answers() {
+    let runtime = a_runtime();
+    let pool = Pool::whose_old_runner_starts_after(Duration::from_secs(3600), &runtime);
+    answers_awaited_for(pool.config.path(), LEAST_ANSWER_WAIT);
+    let (_dir, root) = a_project();
+    let sessions = Arc::new(routed(&pool, &root));
+
+    let asked = Instant::now();
+    let said = started_within(&sessions, Duration::from_secs(LEAST_ANSWER_WAIT * 4))
+        .expect_err("a start the runner never answers fails");
+
+    assert!(
+        asked.elapsed() >= Duration::from_secs(LEAST_ANSWER_WAIT),
+        "it waited the pool's answer wait, not less: {:?}",
+        asked.elapsed()
+    );
+    assert!(
+        said.starts_with("the runner did not answer in time"),
+        "{said}"
+    );
+}
+
+/// **A Retry once the pool's follow-up moved it runs on the new runner** (#4988), while the old
+/// one still holds the start that failed.
+#[test]
+fn a_retry_after_the_pool_moved_on_runs_on_its_new_runner() {
+    let runtime = a_runtime();
+    let pool = Pool::whose_old_runner_starts_after(Duration::from_secs(3600), &runtime);
+    answers_awaited_for(pool.config.path(), LEAST_ANSWER_WAIT);
+    let (_dir, root) = a_project();
+    let sessions = Arc::new(routed(&pool, &root));
+    started_within(&sessions, Duration::from_secs(LEAST_ANSWER_WAIT * 4))
+        .expect_err("the old runner never answers");
+
+    pool.follows();
+    answers_awaited_for(pool.config.path(), LEAST_ANSWER_WAIT);
+    started_within(&sessions, Duration::from_secs(LEAST_ANSWER_WAIT * 4))
+        .unwrap_or_else(|why| panic!("the retry starts on the new runner: {why}"));
+
+    until("the new runner runs it", || pool.new.ran().len() == 1);
+    assert!(pool.old.ran().is_empty(), "the old runner never ran it");
 }

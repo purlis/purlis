@@ -22,7 +22,8 @@ name: stories-baselines
 # who already holds write access, which is all the token grants. The rest is defence in depth.
 # The artifact comes from a run of the pull request's code and is treated as hostile: `commit`
 # takes it with the baseline tool from a checkout of the base, which takes only whole PNG
-# baselines within its limits, written nowhere but under the pull request's `app/src`, and
+# baselines and writes only those that differ, within its limits on what one take writes and
+# deletes, nowhere but under the pull request's `app/src`, and
 # deletes nothing but the other files in that tree's `__screenshots__` directories, each reached
 # through no link (`tools/story-baselines.mjs take`). The pull request's checkout keeps no
 # credentials; the token is handed to git for the push alone. A pull request from a fork stops

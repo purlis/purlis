@@ -6,7 +6,14 @@ import { QueueRead } from "./QueueRead";
 import { closestCenter, DndContext } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { SquareTerminal } from "lucide-react";
-import { renameId, workItemSaid, RENAMES_ON_F2, type Offer, type Catalogued } from "./actions";
+import {
+  renameId,
+  tileAllId,
+  workItemSaid,
+  RENAMES_ON_F2,
+  type Offer,
+  type Catalogued,
+} from "./actions";
 import { Menued } from "./Menus";
 import {
   ALONG_THE_STRIP,
@@ -40,7 +47,7 @@ import { NONE_RESTORING, RESTORING } from "./restoringChats";
 import { closeOnDelete, renameOnF2 } from "./tabKeys";
 import { TabRename } from "./TabRename";
 import { type ChatRow } from "./chatsTree";
-import { showsStopping, TabMarks } from "./ChatRows";
+import { showsStopping, TabMarks, type TabFacts } from "./ChatRows";
 import { faceOf, type Naming, type TabFace } from "./tabFace";
 import type { Ref } from "./fits";
 import type { StateClock } from "./stateClock";
@@ -120,6 +127,7 @@ export function ChatStrip({
   stopping,
   shells,
   personaOf,
+  factsOf,
   naming,
   pinsIconOnly,
   narrow,
@@ -153,6 +161,8 @@ export function ChatStrip({
   openBrowser,
   openSkillRun,
 }: ChatStripProps) {
+  /** Tile all on the tab in front, as the catalogue holds it (#4765). */
+  const tileAll = tabs.inFront === undefined ? undefined : by(tileAllId(tabs.inFront));
   // The tabs drawn, as React Aria's tablist knows them (`ui/tabs/TabStrip`): not a tab being
   // renamed, whose name box is drawn in its place and is not a tab.
   /** The Rename… row of the tab's own chat (#4753): a double-click on its name and F2 on it
@@ -421,6 +431,7 @@ export function ChatStrip({
                               id={id}
                               face={faceAt(id)}
                               personaOf={personaOf}
+                              factsOf={factsOf}
                               sandbox={sandboxOf?.(chatOf(tabs, id))}
                               shells={shells}
                               wrapping={wrapping}
@@ -532,6 +543,7 @@ export function ChatStrip({
                     id={id}
                     face={faceAt(id)}
                     personaOf={personaOf}
+                    factsOf={factsOf}
                     sandbox={sandboxOf?.(chatOf(tabs, id))}
                     updates={planeUpdates}
                     shells={shells}
@@ -548,6 +560,14 @@ export function ChatStrip({
           )}
         </QueueRead>
       </div>
+      {/* **Tile all, at the strip's right end** (#4765): the tab in front's panes evened into a
+        grid. **Drawn only while it can run**, as the show-more is only while something is
+        hidden: at one pane it has nothing to say, and a button there would take room from the
+        tabs on every strip that is not split. The tab menu and the palette keep its row,
+        greyed with its reason. */}
+      {tileAll?.available === true && (
+        <Doer offer={tileAll} onPress={press} words="Tile all" iconOnly />
+      )}
       {/* **`Split right`, `Split down` and `End this pane's chat` were here and are on the
         panes now** — the operator: *"harnesses panes should each have close button and
         spliting buttons in pane right top corner … so this will fully replace separate
@@ -621,6 +641,9 @@ type ChatStripProps = {
   narrow: boolean;
   /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it. */
   sandboxOf?: (session: number | undefined) => SandboxSaid | null;
+  /** What chat `session`'s row reads its state from beside the board, so its tab says the
+   *  row's word (#4935). */
+  factsOf?: (session: number) => TabFacts | undefined;
   taskNameOf: (id: number) => string | undefined;
   taskTabOf: (id: number) => { asker: string | undefined } | undefined;
   tabHasTasks: (id: number) => boolean;

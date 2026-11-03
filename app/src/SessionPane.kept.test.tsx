@@ -50,7 +50,9 @@ vi.stubGlobal("matchMedia", (query: string) => ({
 
 const PLANE = "/planes/one";
 
-type Output = { onmessage: (text: string) => void };
+type Output = { onmessage: (body: ArrayBuffer) => void };
+/** Text from the program, as the core sends a view's output: its bytes (#4745). */
+const sent = (text: string) => new TextEncoder().encode(text).buffer;
 /** Each view the core opened, in order: whose, and the channel its output goes down. */
 let views: { session: number; view: number; output: Output }[] = [];
 /** Each view the window closed, by number. */
@@ -143,11 +145,11 @@ describe("the last three chats shown keep their terminals", () => {
     const { show } = window();
     await opened(1);
     const first = views[0];
-    first.output.onmessage("before\r\n");
+    first.output.onmessage(sent("before\r\n"));
     show(2);
     await opened(2);
 
-    first.output.onmessage("while away\r\n");
+    first.output.onmessage(sent("while away\r\n"));
     await waitFor(() => expect(screenOf(made[0])).toContain("while away"));
     show(1);
 

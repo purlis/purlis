@@ -939,6 +939,8 @@
   "window": [
    "accent.base",
    "accent.surface",
+   "accent.wash",
+   "accent.wash-hover",
    "accent.text",
    "accent.fill",
    "accent.fill-hover",
@@ -953,6 +955,8 @@
   "tabs": [
    "accent.base",
    "accent.surface",
+   "accent.wash",
+   "accent.wash-hover",
    "accent.text",
    "accent.fill",
    "accent.fill-hover",
@@ -1093,7 +1097,26 @@
     "distance": 0.1,
     "words": true
    }
-  ]
+  ],
+  "with_words": [
+   "accent.wash",
+   "accent.wash-hover"
+  ],
+  "no_nearer": {
+   "tokens": [
+    "accent.surface",
+    "accent.wash",
+    "accent.wash-hover"
+   ],
+   "from": [
+    "wash.warning",
+    "danger.wash"
+   ],
+   "over": [
+    "surface.base",
+    "surface.deep"
+   ]
+  }
  },
  "apart": [
   {
@@ -2960,6 +2983,14 @@
    "held": true
   },
   {
+   "token": "accent.wash",
+   "held": true
+  },
+  {
+   "token": "accent.wash-hover",
+   "held": true
+  },
+  {
    "token": "accent.text",
    "held": true
   },
@@ -3176,6 +3207,8 @@
    "tokens": {
     "accent.base": "#554691",
     "accent.surface": "#e2dfcb",
+    "accent.wash": "#7507ff24",
+    "accent.wash-hover": "#7507ff3a",
     "accent.text": "#403667",
     "accent.fill": "#7c6601",
     "accent.fill-hover": "#836d01",
@@ -3197,6 +3230,8 @@
    "tokens": {
     "accent.base": "#c3baf5",
     "accent.surface": "#2d281b",
+    "accent.wash": "#a99cf024",
+    "accent.wash-hover": "#a99cf03a",
     "accent.text": "#c3baf5",
     "accent.fill": "#7c6601",
     "accent.fill-hover": "#836d01",
@@ -3218,6 +3253,8 @@
    "tokens": {
     "accent.base": "#c3baf5",
     "accent.surface": "#212b21",
+    "accent.wash": "#a99cf024",
+    "accent.wash-hover": "#a99cf03a",
     "accent.text": "#c3baf5",
     "accent.fill": "#137824",
     "accent.fill-hover": "#1e7f2c",
@@ -3239,6 +3276,8 @@
    "tokens": {
     "accent.base": "#554691",
     "accent.surface": "#e2dfcb",
+    "accent.wash": "#7507ff24",
+    "accent.wash-hover": "#7507ff3a",
     "accent.text": "#403667",
     "accent.fill": "#796701",
     "accent.fill-hover": "#816e01",
@@ -3260,6 +3299,8 @@
    "tokens": {
     "accent.base": "#554691",
     "accent.surface": "#dedcef",
+    "accent.wash": "#7507ff24",
+    "accent.wash-hover": "#7507ff3a",
     "accent.text": "#403667",
     "accent.fill": "#6d58bb",
     "accent.fill-hover": "#745fc3",
@@ -3281,6 +3322,8 @@
    "tokens": {
     "accent.base": "#71aaf1",
     "accent.surface": "#212936",
+    "accent.wash": "#71aaf124",
+    "accent.wash-hover": "#71aaf13a",
     "accent.text": "#9dc4f7",
     "accent.fill": "#1e68bc",
     "accent.fill-hover": "#276fc5",
@@ -3295,6 +3338,537 @@
     "layer.chat": "#141e2b",
     "layer.selected": "#1b2533"
    }
+  },
+  {
+   "appearance": "dark",
+   "colour": "yellow",
+   "tokens": {
+    "accent.base": "#bea643",
+    "accent.surface": "#292735",
+    "accent.wash": "#a99cf024",
+    "accent.wash-hover": "#a99cf03a",
+    "accent.text": "#c3baf5",
+    "accent.fill": "#7c6601",
+    "accent.fill-hover": "#836d01",
+    "accent.fill-edge": "#00000000",
+    "focus.ring": "#bea643",
+    "tab.active": "#252010",
+    "list.selected": "#2e2a1d",
+    "list.selected-edge": "#bea643",
+    "markdown.link": "#c5b15e",
+    "chart.1": "#bea643",
+    "layer.workspace": "#1c1706",
+    "layer.chat": "#221d0d",
+    "layer.selected": "#292414"
+   }
+  },
+  {
+   "appearance": "dark",
+   "colour": "purple",
+   "tokens": {
+    "accent.base": "#bc97e7",
+    "accent.surface": "#292735",
+    "accent.wash": "#a99cf024",
+    "accent.wash-hover": "#a99cf03a",
+    "accent.text": "#cfb7ef",
+    "accent.fill": "#8251b1",
+    "accent.fill-hover": "#8958b9",
+    "accent.fill-edge": "#00000000",
+    "focus.ring": "#bc97e7",
+    "tab.active": "#251d2d",
+    "list.selected": "#2d2835",
+    "list.selected-edge": "#bc97e7",
+    "markdown.link": "#c3a4ea",
+    "chart.1": "#bc97e7",
+    "layer.workspace": "#1c1423",
+    "layer.chat": "#221a2a",
+    "layer.selected": "#292132"
+   }
+  }
+ ],
+ "toward": [
+  {
+   "under": "#292735",
+   "accent": "#2bb3a3",
+   "toward": "#192c2a"
+  },
+  {
+   "under": "#292735",
+   "accent": "#0b6359",
+   "toward": "#1a2c28"
+  },
+  {
+   "under": "#292735",
+   "accent": "#c0392b",
+   "toward": "#362422"
+  },
+  {
+   "under": "#292735",
+   "accent": "#e5c08a",
+   "toward": "#31271a"
+  },
+  {
+   "under": "#292735",
+   "accent": "#9a9a9a",
+   "toward": "#292829"
+  },
+  {
+   "under": "#292735",
+   "accent": "#abc",
+   "toward": "#1f2935"
+  },
+  {
+   "under": "#292735",
+   "accent": "#2bb3a380",
+   "toward": "#192c2a"
+  },
+  {
+   "under": "#a99cf024",
+   "accent": "#2bb3a3",
+   "toward": "#34baa924"
+  },
+  {
+   "under": "#a99cf024",
+   "accent": "#0b6359",
+   "toward": "#69b4a924"
+  },
+  {
+   "under": "#a99cf024",
+   "accent": "#c0392b",
+   "toward": "#ed8d7d24"
+  },
+  {
+   "under": "#a99cf024",
+   "accent": "#e5c08a",
+   "toward": "#c6a16c24"
+  },
+  {
+   "under": "#a99cf024",
+   "accent": "#9a9a9a",
+   "toward": "#a6a7a724"
+  },
+  {
+   "under": "#a99cf024",
+   "accent": "#abc",
+   "toward": "#98a9b924"
+  },
+  {
+   "under": "#a99cf024",
+   "accent": "#2bb3a380",
+   "toward": "#34baa924"
+  },
+  {
+   "under": "#a99cf03a",
+   "accent": "#2bb3a3",
+   "toward": "#34baa93a"
+  },
+  {
+   "under": "#a99cf03a",
+   "accent": "#0b6359",
+   "toward": "#69b4a93a"
+  },
+  {
+   "under": "#a99cf03a",
+   "accent": "#c0392b",
+   "toward": "#ed8d7d3a"
+  },
+  {
+   "under": "#a99cf03a",
+   "accent": "#e5c08a",
+   "toward": "#c6a16c3a"
+  },
+  {
+   "under": "#a99cf03a",
+   "accent": "#9a9a9a",
+   "toward": "#a6a7a73a"
+  },
+  {
+   "under": "#a99cf03a",
+   "accent": "#abc",
+   "toward": "#98a9b93a"
+  },
+  {
+   "under": "#a99cf03a",
+   "accent": "#2bb3a380",
+   "toward": "#34baa93a"
+  },
+  {
+   "under": "#dedcef",
+   "accent": "#2bb3a3",
+   "toward": "#cbe3df"
+  },
+  {
+   "under": "#dedcef",
+   "accent": "#0b6359",
+   "toward": "#cbe3df"
+  },
+  {
+   "under": "#dedcef",
+   "accent": "#c0392b",
+   "toward": "#f0d9d5"
+  },
+  {
+   "under": "#dedcef",
+   "accent": "#e5c08a",
+   "toward": "#e8ddcb"
+  },
+  {
+   "under": "#dedcef",
+   "accent": "#9a9a9a",
+   "toward": "#dededd"
+  },
+  {
+   "under": "#dedcef",
+   "accent": "#abc",
+   "toward": "#d0e0ef"
+  },
+  {
+   "under": "#dedcef",
+   "accent": "#2bb3a380",
+   "toward": "#cbe3df"
+  },
+  {
+   "under": "#7507ff24",
+   "accent": "#2bb3a3",
+   "toward": "#006a6024"
+  },
+  {
+   "under": "#7507ff24",
+   "accent": "#0b6359",
+   "toward": "#17696024"
+  },
+  {
+   "under": "#7507ff24",
+   "accent": "#c0392b",
+   "toward": "#b2291e24"
+  },
+  {
+   "under": "#7507ff24",
+   "accent": "#e5c08a",
+   "toward": "#78582324"
+  },
+  {
+   "under": "#7507ff24",
+   "accent": "#9a9a9a",
+   "toward": "#5d5e5e24"
+  },
+  {
+   "under": "#7507ff24",
+   "accent": "#abc",
+   "toward": "#515f6f24"
+  },
+  {
+   "under": "#7507ff24",
+   "accent": "#2bb3a380",
+   "toward": "#006a6024"
+  },
+  {
+   "under": "#7507ff3a",
+   "accent": "#2bb3a3",
+   "toward": "#006a603a"
+  },
+  {
+   "under": "#7507ff3a",
+   "accent": "#0b6359",
+   "toward": "#1769603a"
+  },
+  {
+   "under": "#7507ff3a",
+   "accent": "#c0392b",
+   "toward": "#b2291e3a"
+  },
+  {
+   "under": "#7507ff3a",
+   "accent": "#e5c08a",
+   "toward": "#7858233a"
+  },
+  {
+   "under": "#7507ff3a",
+   "accent": "#9a9a9a",
+   "toward": "#5d5e5e3a"
+  },
+  {
+   "under": "#7507ff3a",
+   "accent": "#abc",
+   "toward": "#515f6f3a"
+  },
+  {
+   "under": "#7507ff3a",
+   "accent": "#2bb3a380",
+   "toward": "#006a603a"
+  },
+  {
+   "under": "#17302a",
+   "accent": "#2bb3a3",
+   "toward": "#15302d"
+  },
+  {
+   "under": "#17302a",
+   "accent": "#0b6359",
+   "toward": "#16302b"
+  },
+  {
+   "under": "#17302a",
+   "accent": "#c0392b",
+   "toward": "#3c2622"
+  },
+  {
+   "under": "#17302a",
+   "accent": "#e5c08a",
+   "toward": "#362919"
+  },
+  {
+   "under": "#17302a",
+   "accent": "#9a9a9a",
+   "toward": "#2c2b2c"
+  },
+  {
+   "under": "#17302a",
+   "accent": "#abc",
+   "toward": "#202c3b"
+  },
+  {
+   "under": "#17302a",
+   "accent": "#2bb3a380",
+   "toward": "#15302d"
+  },
+  {
+   "under": "#1f3530",
+   "accent": "#2bb3a3",
+   "toward": "#1e3531"
+  },
+  {
+   "under": "#1f3530",
+   "accent": "#0b6359",
+   "toward": "#1e3531"
+  },
+  {
+   "under": "#1f3530",
+   "accent": "#c0392b",
+   "toward": "#402c28"
+  },
+  {
+   "under": "#1f3530",
+   "accent": "#e5c08a",
+   "toward": "#3a2f21"
+  },
+  {
+   "under": "#1f3530",
+   "accent": "#9a9a9a",
+   "toward": "#303131"
+  },
+  {
+   "under": "#1f3530",
+   "accent": "#abc",
+   "toward": "#253240"
+  },
+  {
+   "under": "#1f3530",
+   "accent": "#2bb3a380",
+   "toward": "#1e3531"
+  },
+  {
+   "under": "#dcf1ea",
+   "accent": "#2bb3a3",
+   "toward": "#dbf1ed"
+  },
+  {
+   "under": "#dcf1ea",
+   "accent": "#0b6359",
+   "toward": "#dbf1ed"
+  },
+  {
+   "under": "#dcf1ea",
+   "accent": "#c0392b",
+   "toward": "#fde8e3"
+  },
+  {
+   "under": "#dcf1ea",
+   "accent": "#e5c08a",
+   "toward": "#f6ebdb"
+  },
+  {
+   "under": "#dcf1ea",
+   "accent": "#9a9a9a",
+   "toward": "#edeced"
+  },
+  {
+   "under": "#dcf1ea",
+   "accent": "#abc",
+   "toward": "#e1eefb"
+  },
+  {
+   "under": "#dcf1ea",
+   "accent": "#2bb3a380",
+   "toward": "#dbf1ed"
+  },
+  {
+   "under": "#c9e8de",
+   "accent": "#2bb3a3",
+   "toward": "#c8e8e1"
+  },
+  {
+   "under": "#c9e8de",
+   "accent": "#0b6359",
+   "toward": "#c8e8e1"
+  },
+  {
+   "under": "#c9e8de",
+   "accent": "#c0392b",
+   "toward": "#f9dbd5"
+  },
+  {
+   "under": "#c9e8de",
+   "accent": "#e5c08a",
+   "toward": "#f0dfc8"
+  },
+  {
+   "under": "#c9e8de",
+   "accent": "#9a9a9a",
+   "toward": "#e2e1e1"
+  },
+  {
+   "under": "#c9e8de",
+   "accent": "#abc",
+   "toward": "#d1e4f5"
+  },
+  {
+   "under": "#c9e8de",
+   "accent": "#2bb3a380",
+   "toward": "#c8e8e1"
+  },
+  {
+   "under": "#292735",
+   "accent": "platform",
+   "toward": "#292735"
+  },
+  {
+   "under": "platform",
+   "accent": "#2bb3a3",
+   "toward": "platform"
+  }
+ ],
+ "no_nearer": [
+  {
+   "turned": "#312b18",
+   "written": "#17302a",
+   "values": {
+    "wash.warning": "#d299221f",
+    "danger.wash": "#c974741f",
+    "surface.base": "#191917",
+    "surface.deep": "#141413"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#3b2625",
+   "written": "#17302a",
+   "values": {
+    "wash.warning": "#d299221f",
+    "danger.wash": "#c974741f",
+    "surface.base": "#191917",
+    "surface.deep": "#141413"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#212c3c",
+   "written": "#17302a",
+   "values": {
+    "wash.warning": "#d299221f",
+    "danger.wash": "#c974741f",
+    "surface.base": "#191917",
+    "surface.deep": "#141413"
+   },
+   "holds": true
+  },
+  {
+   "turned": "#d2e7d2",
+   "written": "#c9e8de",
+   "values": {
+    "wash.warning": "#8055001f",
+    "danger.wash": "#a832321f",
+    "surface.base": "#fcfbf8",
+    "surface.deep": "#e8e6df"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#362423",
+   "written": "#292735",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#192c2a",
+   "written": "#292735",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": true
+  },
+  {
+   "turned": "#d2999124",
+   "written": "#a99cf024",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#34baa924",
+   "written": "#a99cf024",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": true
+  },
+  {
+   "turned": "#d299913a",
+   "written": "#a99cf03a",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": false
+  },
+  {
+   "turned": "#34baa93a",
+   "written": "#a99cf03a",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": false
+  },
+  {
+   "turned": "platform",
+   "written": "#a99cf024",
+   "values": {
+    "wash.warning": "#e5c08a1f",
+    "danger.wash": "#f0a9a81f",
+    "surface.base": "#17171b",
+    "surface.deep": "#141417"
+   },
+   "holds": true
   }
  ]
 }

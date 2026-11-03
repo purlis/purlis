@@ -292,6 +292,7 @@ fn a_chat(first_message: Option<&str>, resume: Option<String>) -> Named {
     Named {
         runner: None,
         its_code_is_there: false,
+        asked_to_run: crate::host::AskedToRun::default(),
         workspace: Some(WORKSPACE.to_owned()),
         first_message: first_message.map(str::to_owned),
         resume,
@@ -584,6 +585,12 @@ fn in_the_journey(
         again.sign_ins_kept,
         "its home was there, so its sign-ins came (marked before the make: {marked})"
     );
+    // Its home holds the first chat's conversation, so it is kept, held (#4859).
+    assert_eq!(
+        again.old_home,
+        crate::dockerpools::OldHome::Held,
+        "its home holds a conversation"
+    );
     assert!(
         crate::dockerpools::removed_on(machine)
             .expect("asked")
@@ -592,6 +599,18 @@ fn in_the_journey(
     let runner = the_runner(machine, pool);
     the_row_says(machine, pool, &Standing::SignedIn);
     the_settings_went_whole_to(&runner, &settings);
+    // Once the runner made again keeps the pool's profile, as the window has it keep them, the
+    // conversation is brought back to it, and the gone runner goes.
+    let gone = purlis_core::runners::draining(&machine.config)
+        .expect("read")
+        .into_iter()
+        .find(|kept| kept.held)
+        .expect("the gone runner is kept, held");
+    let brought =
+        purlis_core::pools::bring_back(&machine.config, &machine.docker, gone.name(), None)
+            .expect("the gone runner's conversations are brought back");
+    assert_eq!(brought.left, 0, "{brought:?}");
+    assert!(brought.removed.is_some_and(|removed| removed.forgotten));
     let (old_chat, old_pane) =
         a_chat_runs(target, machine, pool, &a_chat(Some("Hello again."), None));
     a_conversation_on(&runner);
@@ -1090,6 +1109,13 @@ mod a_stopped_runners_conversation_comes_back {
             .expect("the old runner is kept");
         assert!(held.draining && held.held, "{held:?}");
 
+        // The pool's runner has the places they go to, as once the window keeps the pool's
+        // profile there and Claude Code ran: bring back makes none of them (#4633).
+        the_runner(&machine, &pool).runs(
+            false,
+            "umask 077 && mkdir -p \"$HOME/.local/share/purlis/profiles/work/config\" \"$HOME/.claude\"",
+            b"",
+        );
         let brought =
             purlis_core::pools::bring_back(&machine.config, &machine.docker, &old_name, None)
                 .expect("its conversations are brought back");

@@ -358,7 +358,24 @@ export type Tab = {
    * tab is in front and goes with the tab when it closes.
    */
   shows?: Readonly<Record<number, number>>;
+  /**
+   * **Whether the operator pinned the tab** (#4935): the tab's own, never its first pane's chat
+   * or view, so a tab whose only pane is empty can be pinned and the pin stays whatever that
+   * pane goes on to show. The record keeps it as the tab's `pinned` (`laidOut.layoutOf`).
+   * Absent on a tab that is not pinned.
+   */
+  pinned?: true;
+  /** **The pane zoomed to fill the tab for now** (#4765): drawn alone while the tree stays
+   *  whole, in memory only and never told to the core (`tiling.ts` `zoomedOf`). */
+  zoomed?: number;
+  /** **What Undo puts back** (#4765): the tab's last tree and focus, kept while the tab's
+   *  layout is still `after`, in memory only (`tiling.ts` `undoLayout`). */
+  undo?: LayoutUndo;
 };
+
+/** **What Undo puts back** (#4765): a tab's tree and focus before a move, and the tree the move
+ *  left, which the tab must still be for the Undo to run. */
+export type LayoutUndo = { layout: Layout; focused: number; after: Layout };
 
 /**
  * Which workspace a chat is filed under — the strip its tab appears on.
@@ -780,17 +797,6 @@ export function renamedView(
 }
 
 /**
- * A pinned view's key ({@link viewKey}) after the rename {@link renamedView} follows, or the key
- * itself when it names no view the rename touches.
- */
-export function renamedViewKey(key: string, from: string, to: string, root?: string): string {
-  const [space, view, ...rest] = key.split("/");
-  if (space !== "charter" || view === undefined || rest.length === 0) return key;
-  const moved = renamedView({ from: null, view, key: rest.join("/") }, from, to, root);
-  return moved ? viewKey(moved) : key;
-}
-
-/**
  * Every view tab follows a workspace renamed from `from` to `to` (charter#367): a view on its
  * strip moves to the new strip, and **every view keyed by the workspace's name is keyed by the
  * new one** ({@link renamedView}, #1248) — its settings, its changes, a todo, a memory, a piece's
@@ -976,11 +982,25 @@ export function workspaceOf(tabs: Tabs, id: number, filedIn: FiledIn): string | 
 /**
  * Whether a tab is pinned, which is a fact about the operator and not about the chat.
  *
- * A function rather than a field, for the same reasons `FiledIn` and `LastMoved` are: it is
- * answered somewhere else — the plane's own app record, through the core (ADR 0040) — and a
- * copy on the tab would be a second answer nothing invalidates.
+ * A function, as `FiledIn` and `LastMoved` are, so the strip's rules ask one question whatever
+ * answers it: the window answers it from the tab's own pin ({@link pinsOf}).
  */
 export type Pinned = (id: number) => boolean;
+
+/** Each tab's own pin (#4935), as {@link Pinned} asks it. */
+export function pinsOf(tabs: Tabs): Pinned {
+  return (id) => tabs.byId[id]?.pinned === true;
+}
+
+/** Tab `id` pinned, or unpinned (#4935). Answers `tabs` itself when it already was, or when
+ *  there is no such tab. */
+export function setPinned(tabs: Tabs, id: number, pinned: boolean): Tabs {
+  const tab = tabs.byId[id];
+  if (tab === undefined || (tab.pinned === true) === pinned) return tabs;
+  const next: Tab = { ...tab, pinned: true };
+  if (!pinned) delete next.pinned;
+  return { ...tabs, byId: { ...tabs.byId, [id]: next } };
+}
 
 /** Nothing pinned, which is what every caller that does not care about pins passes. */
 export const nothingPinned: Pinned = () => false;
@@ -1352,6 +1372,18 @@ function viewsFollow(tabs: Tabs, from: number, to: number): Tabs {
     if (layout !== byId[id].layout) byId = { ...byId, [id]: { ...byId[id], layout } };
   }
   return byId === tabs.byId ? tabs : { ...tabs, byId };
+}
+
+/**
+ * **The chats open in this window, as one key** (#4729): every session a tab's pane holds, in
+ * ascending order. Equal for two `Tabs` that differ only in which tab is in front, how they are
+ * ordered or split, or what a pane shows in place of its own chat, so what is read again when a
+ * chat is opened or closed is not read again for a switch.
+ */
+export function openChatsKey(tabs: Tabs): string {
+  const open = new Set<number>();
+  for (const id of tabs.order) for (const { session } of panesOf(tabs, id)) open.add(session);
+  return [...open].sort((one, other) => one - other).join(",");
 }
 
 /** The sessions with a pane on screen: the only ones a terminal is drawing. */

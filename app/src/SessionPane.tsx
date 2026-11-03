@@ -49,7 +49,7 @@ import {
 } from "./theme/theme";
 import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
-import { writePerFrame } from "./paneWrites";
+import { drawnReports, writePerFrame } from "./paneWrites";
 import { useProjectShown } from "./projectShown";
 import {
   chatShown,
@@ -58,6 +58,7 @@ import {
   takeKeptTerminal,
   type KeptTerminal,
 } from "./keptTerminals";
+import { viewOpening } from "./slowLog";
 
 /**
  * One pane, drawing one session.
@@ -498,19 +499,37 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   // for, so a line the session wrapped is not wrapped again somewhere else. A benchmark
   // wants to know when its text reached the grid, so what it gives back travels with the
   // text it belongs to.
-  const waiting: { text: string; written?: () => void }[] = [];
+  const waiting: { bytes: Uint8Array; written?: () => void }[] = [];
   let ready = false;
   // **Kept or drawn, it takes what the program writes** (`keptTerminals.ts`), so a chat shown
   // again has its screen as it is now and nothing to catch up.
   // What arrives within a frame is one write to the terminal, not one per chunk (#4732).
-  const writes = writePerFrame((text, parsed) => pane.write(text, parsed));
-  const output = new Channel<string>();
-  output.onmessage = (text) => {
+  const writes = writePerFrame((bytes, parsed) => pane.write(bytes, parsed));
+  // What the terminal has drawn is told back, one report per write, and the session host
+  // paces the view by it (#4733): a pane that falls behind is sent a fresh screen, not a
+  // backlog.
+  const drawn = drawnReports((pieces) => {
+    if (gone || view === undefined) return;
+    void commands.sessionDrawn(plane, session, view, pieces);
+  });
+  // Each piece is the bytes the program wrote, a raw body over IPC rather than a string
+  // escaped into JSON (#4745); the terminal decodes them, a character cut between two
+  // pieces included.
+  const output = new Channel<ArrayBuffer>();
+  output.onmessage = (buffer) => {
     if (gone) return;
-    const written = bench.paneSent(pane, text);
-    if (ready) writes.add(text, written);
-    else waiting.push({ text, written });
+    const bytes = new Uint8Array(buffer);
+    const benched = bench.paneSent(pane, bytes);
+    const written = () => {
+      benched?.();
+      drawn.piece();
+    };
+    if (ready) writes.add(bytes, written);
+    else waiting.push({ bytes, written });
   };
+  // Opening the view, until its screen is handed to the terminal: what the stall log says was
+  // going on (`slowLog.ts`).
+  const openingDone = viewOpening();
   // The pane's own size first: a session nobody is showing keeps whatever size it had.
   void (async () => {
     fit();
@@ -518,10 +537,12 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
       .watchSession(plane, session, output)
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
     if (opened.status === "error") {
+      openingDone();
       say(opened.error);
       return;
     }
     if (gone) {
+      openingDone();
       void commands.unwatchSession(plane, session, opened.data.view);
       return;
     }
@@ -532,13 +553,15 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
     newline = opened.data.newline ?? undefined;
     pane.resize(opened.data.columns, opened.data.rows);
     ready = true;
-    for (const held of waiting.splice(0)) writes.add(held.text, held.written);
+    for (const held of waiting.splice(0)) writes.add(held.bytes, held.written);
     // Now that the screen is drawn, the pane's own size applies again.
     fit();
+    openingDone();
   })();
 
   live.release = () => {
     gone = true;
+    openingDone();
     unfollow();
     unsize();
     unfont();

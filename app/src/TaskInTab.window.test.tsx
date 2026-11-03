@@ -347,8 +347,10 @@ function core(open: Listed[]) {
     if (cmd === "owed_restarts") return [];
     if (cmd === "finished_tasks") return [...finished];
     if (cmd === "stopping_chats") return [];
+    // A copy, as the core's answer reaches the window over IPC: the window keeps an answer
+    // equal to the one it holds (#4729), so one sharing this fake's chats would change with them.
     if (cmd === "plane_sidebar")
-      return {
+      return structuredClone({
         root: PLANE,
         personas: ["steward", "devops"],
         persona: "steward",
@@ -362,7 +364,7 @@ function core(open: Listed[]) {
           live: false,
           chats: open.filter((chat) => chat.workspace === name).map(asListed),
         })),
-      };
+      });
     if (cmd === "workspace_panels")
       return {
         workspace: a.workspace,
@@ -1252,8 +1254,9 @@ describe("a task that needs you and is not on screen", () => {
     await waitFor(() => expect(onScreen()).toEqual([2]));
 
     expect(handSays("steward 1")).toBe("talk needs you");
-    // And the tab's own state mark is still the session's, not the task's.
-    expect(within(tab("steward 1")).queryByRole("img", { name: "waiting on you" })).toBeNull();
+    // And the tab's own state mark is still the session's, not the task's, which needs you
+    // (the word the tab says is its row's, #4935).
+    expect(within(tab("steward 1")).queryByRole("img", { name: "needs you" })).toBeNull();
   });
 
   it("puts the hand on the tab for the session's own chat, while the tab shows a task", async () => {

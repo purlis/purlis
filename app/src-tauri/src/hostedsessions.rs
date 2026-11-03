@@ -74,7 +74,7 @@ use purlis_core::hookwire::relay::{Heard, Replied, Reply};
 use crate::hooks::Relayed;
 use crate::host::{Ends, Named, Opening, Readiness, Reconnecting, SessionHost, Sink, Watching};
 use crate::reconnecting::Reconnection;
-use crate::sessions::{ENDED, STOPPED, Utf8Stream};
+use crate::sessions::{ENDED, STOPPED};
 
 /// The start-time switch: set to `0`, it runs this launch's chats in the window's own process,
 /// the way back while the window's own path is still built (#2004). Read once, as the app
@@ -190,6 +190,11 @@ pub(crate) const START_CANCELLED: &str = "the person cancelled this start";
 
 /// The code of a start that was cancelled, which is the window's own, never a host's.
 const CANCELLED: &str = "cancelled";
+
+/// The code of a start nobody could cancel that its runner did not answer within its pool's
+/// answer wait (#4988): the window's own, never a host's. As with [`CANCELLED`], what the runner
+/// answers after is the late answer's to settle.
+const WAITED_OUT: &str = "waited-out";
 
 /// What anything but a start waiting for it says while a start waits for its runner (#4415): it
 /// waits on nothing, so the window's commands never wait on a runner coming back.
@@ -1223,8 +1228,59 @@ impl HeldFrames {
 /// a whole frame at a time.
 #[derive(Clone)]
 enum Draws {
-    Text(Arc<Mutex<Sink>>),
+    Text(Arc<Mutex<TextSink>>),
     Frames(Arc<Mutex<FrameSinks>>),
+}
+
+/// A pane's sink, and, for a pane that reports what it drew (#4733), what paces its view.
+struct TextSink {
+    sink: Sink,
+    paced: Option<Paced>,
+}
+
+/// **A view paced by what its pane has drawn** (#4733): each piece handed to the pane is
+/// acknowledged to the host only once the pane says it drew it, so a pane that falls behind is
+/// behind where the host's watermarks see it, and the host drops it and opens it again from a
+/// fresh snapshot rather than the window holding a backlog.
+#[derive(Default)]
+struct Paced {
+    /// Each piece handed and not yet drawn, in order: the epoch of the stream it came from, and
+    /// how many of that stream's bytes it carries.
+    handed: std::collections::VecDeque<(u32, usize)>,
+    /// The stream being drawn now: its epoch, and where what the pane drew of it is sent.
+    stream: Option<(u32, tokio::sync::mpsc::UnboundedSender<usize>)>,
+}
+
+impl TextSink {
+    /// Hand `piece` to the pane: `bytes` of the stream of `epoch`, counted once it is drawn.
+    fn hand(&mut self, epoch: u32, bytes: usize, piece: Vec<u8>) {
+        if let Some(paced) = self.paced.as_mut() {
+            paced.handed.push_back((epoch, bytes));
+        }
+        (self.sink)(piece);
+    }
+
+    /// The pane drew `pieces` more of what it was handed: the bytes of the current stream they
+    /// carry go to the host. Pieces of a stream that has since ended count for nothing.
+    fn drawn(&mut self, pieces: u32) {
+        let Some(paced) = self.paced.as_mut() else {
+            return;
+        };
+        let current = paced.stream.as_ref().map(|(epoch, _)| *epoch);
+        let mut bytes = 0;
+        for _ in 0..pieces {
+            match paced.handed.pop_front() {
+                Some((epoch, n)) if Some(epoch) == current => bytes += n,
+                Some(_) => {}
+                None => break,
+            }
+        }
+        if bytes > 0
+            && let Some((_, acks)) = &paced.stream
+        {
+            let _ = acks.send(bytes);
+        }
+    }
 }
 
 /// What draws one view: the pane's sink, and where its stream stands.
@@ -1729,11 +1785,21 @@ impl HostLink {
     /// **Starts a program, waiting as a start does** (#4264). Where the person cancels, what the
     /// host answers after goes to `late`: the window's giving up and the answer's arrival are
     /// decided under one lock, so a chat that comes up after is never left running unseen.
+    ///
+    /// **A start nobody can cancel, on a pool's runner, waits at most the pool's answer wait**
+    /// (#4988): a launch's put-back and a dispatch have no Cancel, and a runner that keeps its link
+    /// and never answers held one for 4 minutes, until the pool's follow-up removed it. Past the
+    /// wait it gives up as a Cancel does, and what the runner answers after goes to `late` too.
     fn call_start(
         &self,
         start: StartProgram,
         late: impl FnOnce(Result<Answer, session::CallError>, Arc<Client>) + Send + 'static,
     ) -> Result<Answer, session::Refusal> {
+        use purlis_core::poollimits::LimitId::AnswerWait;
+        let waits = (self.pool.is_some() && !can_be_cancelled()).then(|| {
+            let secs = self.limits().in_force(AnswerWait);
+            (Instant::now() + Duration::from_secs(secs), secs)
+        });
         let (answered, answer) = std::sync::mpsc::channel();
         let waited_for = Arc::new(Mutex::new(Some(answered)));
         let client = Arc::clone(&self.client);
@@ -1767,6 +1833,22 @@ impl HostLink {
                         return Err(session::Refusal {
                             code: CANCELLED.to_owned(),
                             why: START_CANCELLED.to_owned(),
+                        });
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                    if waits.is_some_and(|(until, _)| Instant::now() >= until) =>
+                {
+                    // Only this machine's own clock says the wait ran out: no words of a runner can.
+                    if lock(&waited_for).take().is_some() {
+                        let secs = waits.map_or(0, |(_, secs)| secs);
+                        let hit = self.limits().waited(AnswerWait, secs, None);
+                        return Err(session::Refusal {
+                            code: WAITED_OUT.to_owned(),
+                            why: format!(
+                                "the runner did not answer in time: {}",
+                                self.limit_said(hit)
+                            ),
                         });
                     }
                 }
@@ -2197,8 +2279,20 @@ impl HostLink {
     }
 
     /// Draw view `view` with `sink`: its stream may already be here.
-    fn draw(&self, view: u32, sink: Sink) {
+    /// `paced`: acknowledged only as the pane reports it drew it (#4733), not as it is handed.
+    fn draw(&self, view: u32, sink: Sink, paced: bool) {
+        let sink = TextSink {
+            sink,
+            paced: paced.then(Paced::default),
+        };
         self.draw_into(view, Draws::Text(Arc::new(Mutex::new(sink))));
+    }
+
+    /// The pane drawing view `view` drew `pieces` more of what it was handed (#4733).
+    pub(crate) fn drawn(&self, view: u32, pieces: u32) {
+        if let Some(sink) = text_sink(&self.shared, view) {
+            lock(&sink).drawn(pieces);
+        }
     }
 
     /// Which link this is, never another's.
@@ -2526,9 +2620,9 @@ async fn take_views(mut views: Acceptor, shared: Arc<Shared>) {
     }
 }
 
-/// Draw one stream of a view into its pane, as text, acknowledging what was handed over. A
-/// stream after the first (the view fell behind, and came back at its next epoch) starts its
-/// pane over.
+/// Draw one stream of a view into its pane, each chunk handed over as the bytes it is (#4745),
+/// acknowledging what was handed over, or, for a paced pane, what it drew. A stream after the
+/// first (the view fell behind, and came back at its next epoch) starts its pane over.
 async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
     let view = reader.view().0;
     let frames = lock(&shared.views)
@@ -2541,23 +2635,44 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
     if let Some(sink) = frames {
         return draw_frames_from(reader, &shared, &sink).await;
     }
-    let again = reader.epoch().0 > 1;
-    let mut text = Utf8Stream::default();
-    if again {
-        give(&shared, view, RESET.to_owned());
+    let epoch = reader.epoch().0;
+    let mut drawn = paced_stream(&shared, view, epoch);
+    if epoch > 1 {
+        give(&shared, view, epoch, 0, RESET.as_bytes().to_vec());
     }
     let mut first = true;
-    while let Some(Ok(chunk)) = reader.next().await {
+    loop {
+        let chunk = tokio::select! {
+            chunk = reader.next() => chunk,
+            // What the pane drew of this stream (#4733), acknowledged as it is reported.
+            Some(bytes) = async {
+                match drawn.as_mut() {
+                    Some(drawn) => drawn.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if reader.ack(bytes).await.is_err() {
+                    break;
+                }
+                continue;
+            }
+        };
+        let Some(Ok(chunk)) = chunk else {
+            break;
+        };
         let bytes = match chunk {
             Chunk::Snapshot(bytes) | Chunk::Live(bytes) => bytes,
         };
-        give(&shared, view, text.push(&bytes));
+        // Each chunk is one piece, and carries exactly its own bytes: a character cut between
+        // two chunks is the pane's terminal's to put together, so nothing is held back here.
+        give(&shared, view, epoch, bytes.len(), bytes.to_vec());
         // It draws a snapshot, which comes only over a link that is up: whatever was said of its
         // runner's link, it is reconnected (#2496).
         if std::mem::take(&mut first) {
             reconnect(&shared, Reconnect::Drawn(view));
         }
-        if reader.ack(bytes.len()).await.is_err() {
+        // A view nobody paces is acknowledged as it is handed over.
+        if drawn.is_none() && reader.ack(bytes.len()).await.is_err() {
             break;
         }
     }
@@ -2656,20 +2771,40 @@ pub(crate) fn an_origin(said: Option<String>) -> Option<String> {
     })
 }
 
-/// Hand `text` to view `view`'s pane, if it still has one.
-fn give(shared: &Shared, view: u32, text: String) {
-    if text.is_empty() {
-        return;
-    }
-    let sink = lock(&shared.views)
+/// View `view`'s pane's text sink, if it still has one.
+fn text_sink(shared: &Shared, view: u32) -> Option<Arc<Mutex<TextSink>>> {
+    lock(&shared.views)
         .drawing
         .get(&view)
         .and_then(|drawing| match &drawing.sink {
             Draws::Text(sink) => Some(Arc::clone(sink)),
             Draws::Frames(_) => None,
-        });
-    if let Some(sink) = sink {
-        (lock(&sink))(text);
+        })
+}
+
+/// Where what view `view`'s pane draws of the stream of `epoch` is sent, for a pane that paces
+/// its view (#4733): the stream before it, if any, is acknowledged no more.
+fn paced_stream(
+    shared: &Shared,
+    view: u32,
+    epoch: u32,
+) -> Option<tokio::sync::mpsc::UnboundedReceiver<usize>> {
+    let sink = text_sink(shared, view)?;
+    let mut sink = lock(&sink);
+    let paced = sink.paced.as_mut()?;
+    let (acks, drawn) = tokio::sync::mpsc::unbounded_channel();
+    paced.stream = Some((epoch, acks));
+    Some(drawn)
+}
+
+/// Hand `piece`, which carries `bytes` of the stream of `epoch`, to view `view`'s pane, if it
+/// still has one. Nothing is handed for an empty piece.
+fn give(shared: &Shared, view: u32, epoch: u32, bytes: usize, piece: Vec<u8>) {
+    if piece.is_empty() {
+        return;
+    }
+    if let Some(sink) = text_sink(shared, view) {
+        lock(&sink).hand(epoch, bytes, piece);
     }
 }
 
@@ -2686,7 +2821,7 @@ fn finish_view(shared: &Shared, view: u32) {
         }
     };
     match sink {
-        Some(Draws::Text(sink)) => (lock(&sink))(ENDED.to_owned()),
+        Some(Draws::Text(sink)) => lock(&sink).hand(0, 0, ENDED.as_bytes().to_vec()),
         Some(Draws::Frames(sink)) => (lock(&sink).frames)(None, bytes::Bytes::new()),
         None => {}
     }
@@ -4097,6 +4232,7 @@ impl HostedSessions {
         start: StartProgram,
         operator_shell: bool,
         announce: &dyn Fn(u32),
+        asked_to_run: &crate::host::AskedToRun,
     ) -> Result<Begun, String> {
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);
@@ -4148,6 +4284,8 @@ impl HostedSessions {
                 }
             }
         };
+        // From here its program may run there, whatever the window hears (#4781).
+        asked_to_run.mark();
         let started = match link.call_start(start, late) {
             // The host runs it under the number the window announced, or the window would key
             // it under one its hooks do not carry: it is closed, and the start fails.
@@ -4186,8 +4324,13 @@ impl HostedSessions {
             // Only a refusal whose code says nothing started is taken at its word (#3702).
             Err(refused)
                 if refused.code == CANCELLED
+                    || refused.code == WAITED_OUT
                     || NOTHING_STARTED.contains(&refused.code.as_str()) =>
             {
+                // A cancel is this window giving up on the answer: the host may start it yet.
+                if refused.code != CANCELLED {
+                    asked_to_run.unmark();
+                }
                 return Err(refused.why);
             }
             Err(refused) => return Err(unclear(refused.why)),
@@ -4248,6 +4391,35 @@ struct Begun {
 }
 
 /// Each call is documented once, on [`SessionHost`].
+impl HostedSessions {
+    /// Opens a terminal view of session `id` into `sink`, `paced` by what the pane reports it
+    /// drew (#4733) or acknowledged as it is handed over.
+    fn watch_paced(&self, id: u32, sink: Sink, paced: bool) -> Result<Watching, String> {
+        let (link, program) = self.program(id)?;
+        let attached = match link.call(Command::AttachView {
+            program,
+            kind: ViewKind::Terminal,
+            role: None,
+            rate: None,
+        })? {
+            Answer::Attached(attached) => attached,
+            other => return Err(format!("the session host answered a view with {other:?}")),
+        };
+        // Listed before it draws, so its first snapshot finds whose view it is (#2496).
+        if let Some(program) = lock(&self.running).get_mut(&id) {
+            program.views.push(attached.view);
+        }
+        link.draw(attached.view, sink, paced);
+        Ok(Watching {
+            view: attached.view,
+            size: Size {
+                columns: attached.cols,
+                rows: attached.rows,
+            },
+        })
+    }
+}
+
 impl SessionHost for HostedSessions {
     fn open(
         &self,
@@ -4283,11 +4455,18 @@ impl SessionHost for HostedSessions {
             ends_with_its_window: opening.ends_with_its_window,
             ..StartProgram::of(project, kind_of(opening))
         };
-        self.started(&link, id, start, opening.operator_shell, announce)
-            .map(|begun| {
-                lock(&self.keys_started).insert(begun.id, begun.prompt_key);
-                begun.id
-            })
+        self.started(
+            &link,
+            id,
+            start,
+            opening.operator_shell,
+            announce,
+            &crate::host::AskedToRun::default(),
+        )
+        .map(|begun| {
+            lock(&self.keys_started).insert(begun.id, begun.prompt_key);
+            begun.id
+        })
     }
 
     fn open_named(
@@ -4358,7 +4537,7 @@ impl SessionHost for HostedSessions {
             ran,
             prompt_key,
         } = self
-            .started(&link, id, start, false, announce)
+            .started(&link, id, start, false, announce, &named.asked_to_run)
             .inspect_err(|_| unheard(&confinement))?;
         // Held from here, where the host named it to this window: dropping it, on any path, lets
         // the host end it. A host that named none tells this window nothing of it.
@@ -4414,28 +4593,25 @@ impl SessionHost for HostedSessions {
     }
 
     fn watch(&self, id: u32, sink: Sink) -> Result<Watching, String> {
-        let (link, program) = self.program(id)?;
-        let attached = match link.call(Command::AttachView {
-            program,
-            kind: ViewKind::Terminal,
-            role: None,
-            rate: None,
-        })? {
-            Answer::Attached(attached) => attached,
-            other => return Err(format!("the session host answered a view with {other:?}")),
-        };
-        // Listed before it draws, so its first snapshot finds whose view it is (#2496).
-        if let Some(program) = lock(&self.running).get_mut(&id) {
-            program.views.push(attached.view);
+        self.watch_paced(id, sink, false)
+    }
+
+    fn watch_drawn(&self, id: u32, sink: Sink) -> Result<Watching, String> {
+        self.watch_paced(id, sink, true)
+    }
+
+    fn drawn(&self, id: u32, view: u32, pieces: u32) -> Result<(), String> {
+        let watched = lock(&self.running)
+            .get(&id)
+            .is_some_and(|program| program.views.contains(&view));
+        if !watched {
+            return Err(format!("session {id} has no view {view}"));
         }
-        link.draw(attached.view, sink);
-        Ok(Watching {
-            view: attached.view,
-            size: Size {
-                columns: attached.cols,
-                rows: attached.rows,
-            },
-        })
+        // Never waits for a link: a report while it is down is of a stream that has ended.
+        if let Ok(link) = self.own_link(Duration::ZERO) {
+            link.drawn(view, pieces);
+        }
+        Ok(())
     }
 
     fn unwatch(&self, id: u32, view: u32) -> Result<(), String> {

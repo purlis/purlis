@@ -34,7 +34,6 @@ import {
   refileViews,
   followRename,
   renamedView,
-  renamedViewKey,
   contentsOf,
   renameTab,
   workspaceSettingsTitle,
@@ -907,15 +906,6 @@ describe("a workspace's rename, in the keys of its views (#1248)", () => {
     expect(renamedView(firstTask, "alpha", "beta", "/home/dev/plane")).toEqual(
       charter("first-task", "/home/dev/plane/workspaces/beta/api"),
     );
-  });
-
-  it("rekeys a pinned view, and no other pin", () => {
-    expect(renamedViewKey("charter/todo/alpha/one", "alpha", "beta")).toBe("charter/todo/beta/one");
-    expect(renamedViewKey("charter/workspace-settings/alpha", "alpha", "beta")).toBe(
-      "charter/workspace-settings/beta",
-    );
-    expect(renamedViewKey("charter/persona/alpha", "alpha", "beta")).toBe("charter/persona/alpha");
-    expect(renamedViewKey("ext/acme/stats/alpha", "alpha", "beta")).toBe("ext/acme/stats/alpha");
   });
 
   it("moves an open todo and memory with it, so opening either again finds the same tab", () => {

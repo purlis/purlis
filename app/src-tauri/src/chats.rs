@@ -1291,7 +1291,7 @@ impl LetGo {
 enum Going {
     /// Only once this project is proved to hold all of its work.
     OnProof,
-    /// A start made it and failed: nothing ran there.
+    /// A start made it and failed before its program was asked to run: nothing ran there.
     NothingRan,
     /// The person discarded what it holds.
     Discarded,
@@ -1342,12 +1342,17 @@ impl Drop for FreshEnding {
 
 /// **A start that gives a chat a runner of its own, while it lasts** (#4569): no sweep takes the
 /// chat for gone meanwhile, and **a start that fails lets go of the runner it made**, whichever
-/// of its many steps failed, since a retry of a dispatch is a chat of another id. A runner a
-/// start did not make keeps what its chat did there, for that chat's close.
+/// of its many steps failed, since a retry of a dispatch is a chat of another id: with no proof
+/// where its program was never asked to run, and only on proof where it was, since it may have
+/// begun and left work there (#4781). A runner a start did not make keeps what its chat did
+/// there, for that chat's close.
 struct StartOnItsOwnRunner<'a> {
     chats: &'a Chats,
     id: String,
     made: bool,
+    /// Marked once its program is asked to run there: a start that fails after that may have
+    /// left work on the runner, so the runner goes only on proof (#4781).
+    asked_to_run: crate::host::AskedToRun,
 }
 
 impl<'a> StartOnItsOwnRunner<'a> {
@@ -1357,6 +1362,7 @@ impl<'a> StartOnItsOwnRunner<'a> {
             chats,
             id: id.to_owned(),
             made: false,
+            asked_to_run: crate::host::AskedToRun::default(),
         }
     }
 }
@@ -1366,7 +1372,8 @@ impl Drop for StartOnItsOwnRunner<'_> {
         lock(&self.chats.fresh_starting).remove(&self.id);
         #[cfg(unix)]
         if self.made {
-            self.chats.fresh_runner_ends(&self.id, false);
+            self.chats
+                .fresh_runner_ends(&self.id, self.asked_to_run.was());
         }
     }
 }
@@ -1685,8 +1692,9 @@ impl Chats {
     /// (#3818, #4569), **only on proof** that this project holds every commit and change it holds.
     /// A runner whose work is not all here stays, with its record, and the window's Notice says
     /// what is missing and offers Fetch again and Discard ([`Self::fresh_runners_kept`]); one on
-    /// its way already is left to that. `ran` is false for a start that made a runner and failed:
-    /// it holds nothing, and asking it could fail as that start did. Said to be ending before a
+    /// its way already is left to that. `ran` is false for a start that made a runner and failed
+    /// before its program was asked to run: it holds nothing, and asking it could fail as that
+    /// start did. Said to be ending before a
     /// start's word is read, as a start says its word before it reads this one, so one of the two
     /// always sees the other.
     #[cfg(unix)]
@@ -4932,6 +4940,10 @@ impl Chats {
                     &crate::host::Named {
                         runner: own_runner.clone(),
                         its_code_is_there,
+                        asked_to_run: own_start
+                            .as_ref()
+                            .map(|start| start.asked_to_run.clone())
+                            .unwrap_or_default(),
                         chat: identity.id.clone(),
                         run: identity.run.clone(),
                         profile: chat.profile.clone(),
@@ -6916,7 +6928,7 @@ impl Chats {
     fn start_what_is_coming(&self, size: Size, opened: &Mutex<Vec<u32>>) {
         PUTTING_BACK_HERE.set(true);
         loop {
-            let place = self.gate.enter(&|| crate::restoring::Rank {
+            let place = self.gate.enter(&self.project, &|| crate::restoring::Rank {
                 behind: crate::restoring::is_behind(&self.project),
                 hidden: !self.front_is_coming(),
             });

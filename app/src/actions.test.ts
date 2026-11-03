@@ -86,6 +86,8 @@ import {
   openView,
   selectTab,
   panesOf,
+  setPinned,
+  showIn,
   splitFocusedPane,
   switchTabTo,
   viewKey,
@@ -106,6 +108,9 @@ function doing(): Doing & { calls: string[] } {
     newChat: note("newChat"),
     newShell: note("newShell"),
     newBrowser: note("newBrowser"),
+    tileAll: note("tileAll"),
+    zoomPane: note("zoomPane"),
+    undoLayout: note("undoLayout"),
     resumeSession: async (...args: unknown[]) => {
       note("resumeSession")(...args);
       return { ok: true };
@@ -1570,17 +1575,9 @@ describe("the one list of actions", () => {
       const id = tabs.inFront as number;
 
       expect(by(catalogue(now({ tabs })), `tab.pin:${id}`)?.title).toBe("Pin tab steward");
-      expect(
-        by(
-          catalogue(
-            now({
-              tabs,
-              pinned: { chats: [], views: [viewKey(STEWARD)], workspaces: [], projects: [] },
-            }),
-          ),
-          `tab.pin:${id}`,
-        )?.title,
-      ).toBe("Unpin tab steward");
+      expect(by(catalogue(now({ tabs: setPinned(tabs, id, true) })), `tab.pin:${id}`)?.title).toBe(
+        "Unpin tab steward",
+      );
     });
 
     it("offers no rename, because a view's tab is named after what it shows", () => {
@@ -2113,12 +2110,31 @@ describe("the one pin, a tab's (#4762)", () => {
     const id = tabs.inFront as number;
 
     expect(by(catalogue(now({ tabs })), `tab.pin:${id}`)?.title).toBe("Pin tab 3 steward");
-    expect(
-      by(
-        catalogue(now({ tabs, pinned: { chats: [7], workspaces: [], projects: [] } })),
-        `tab.pin:${id}`,
-      )?.title,
-    ).toBe("Unpin tab 3 steward");
+    expect(by(catalogue(now({ tabs: setPinned(tabs, id, true) })), `tab.pin:${id}`)?.title).toBe(
+      "Unpin tab 3 steward",
+    );
+  });
+
+  it("is offered on a tab whose only pane is empty, and is the tab's whatever it shows (#4935)", () => {
+    const opened = openTab(noTabs(), 7, "3 steward");
+    const id = opened.inFront as number;
+    const empty = showIn(opened, id, 1, { kind: "empty", workspace: OUTSIDE });
+
+    const offered = by(catalogue(now({ tabs: empty })), `tab.pin:${id}`);
+    expect(offered?.available).toBe(true);
+    expect(offered?.does).toEqual({ verb: "pinTab", tab: id, pinned: true });
+
+    // Pinned, and its pane then shows another chat: the row still unpins the same tab.
+    const other = showIn(setPinned(empty, id, true), id, 1, {
+      kind: "session",
+      session: 8,
+      chat: "8",
+    });
+    expect(by(catalogue(now({ tabs: other })), `tab.pin:${id}`)?.does).toEqual({
+      verb: "pinTab",
+      tab: id,
+      pinned: false,
+    });
   });
 });
 
@@ -2170,6 +2186,9 @@ describe("the catalogue as the tabs change", () => {
       // and ends nothing, and `frame/leave.py`'s rule is that only the destructive go last.
       "tab.pin:1",
       "tab.pin:2",
+      // Tile all, per tab, as Pin is (#4765): its tab menu's row.
+      "tab.tile:1",
+      "tab.tile:2",
       "tab.close:1",
       "tab.close:2",
       // One Close other tabs, the tab in front's (#4762).
@@ -2541,7 +2560,8 @@ describe("the palette at fifty chats", () => {
     // since #4536: the project's Runs on. 924 since #4485: Agent identity.
     // 974 since #4753: End…, each of the fifty chats' own row.
     // 975 since #4762: Close other tabs, one row, the tab in front's.
-    expect(offers).toHaveLength(975);
+    // 1025 since #4765: Tile all, each of the fifty tabs' own row, as Pin tab is.
+    expect(offers).toHaveLength(1025);
   });
 
   /**
@@ -2583,18 +2603,19 @@ describe("the palette at fifty chats", () => {
       return offers.lookups;
     }
 
-    it("asks for four rows per tab and never walks the list", () => {
+    it("asks for five rows per tab and never walks the list", () => {
       const offers = new Counting(loaded().map((offer) => [offer.id, offer]));
 
-      // 50 tabs × the four ids a tab's menu lists: Switch to, Pin, Keep open and Close. A
+      // 50 tabs × the five ids a tab's menu lists: Switch to, Pin, Tile all (#4765), Keep open
+      // and Close. A
       // chat's rows are its own list's since #4753, which a strip never draws.
       // **Not fifty scans of 291 rows**, which is
       // what this cost before the lookup was built once for the window — and the number that
       // does not move when the catalogue grows again.
-      expect(strip(offers)).toBe(200);
+      expect(strip(offers)).toBe(250);
     });
 
-    it("is the same 200 whether the catalogue carries the pieces or not", () => {
+    it("is the same 250 whether the catalogue carries the pieces or not", () => {
       // The property, not the timing: the cost of a menu is flat in the length of the list it
       // reads. A scan is not, which is why #174's hundred rows needed this first.
       const small = new Counting(
@@ -2603,7 +2624,7 @@ describe("the palette at fifty chats", () => {
         ),
       );
 
-      expect(strip(small)).toBe(200);
+      expect(strip(small)).toBe(250);
     });
   });
 });

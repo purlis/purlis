@@ -15,6 +15,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { dequal } from "dequal/lite";
 import { listen } from "./here";
 import { CHAT_RESTORED, isRestoring, restoredSince, type ChatRestored } from "./restoringChats";
 import { QueueRead } from "./QueueRead";
@@ -22,6 +23,7 @@ import { QuestionsHere } from "./QuestionsHere";
 import { standingOf, waitingOnYou, type QuestionsHeld } from "./taskQuestions";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
+import { frontTabIs } from "./slowLog";
 import { createPortal } from "react-dom";
 import {
   AsLastShown,
@@ -270,6 +272,7 @@ import {
   chatOf,
   contentsOf,
   findView,
+  openChatsKey,
   openTab,
   openTabBehind,
   openView,
@@ -288,7 +291,6 @@ import {
   splitOf,
   refileViews,
   followRename,
-  renamedViewKey,
   SAVING_TITLE,
   POOL_SETUP_TITLE,
   POOL_SETUP_VIEW,
@@ -301,7 +303,9 @@ import {
   workspaceSettingsView,
   renameTab,
   viewKey,
+  pinsOf,
   selectTab,
+  setPinned,
   showWorkspace,
   splitFocusedPane,
   stopWaiting,
@@ -333,9 +337,11 @@ import {
   type Pinned,
   type Tabs,
   type ViewRef,
-  type Content,
 } from "./tabs";
+import { tileAll, undoLayout, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { layoutOf, tabsOf, withShare } from "./laidOut";
+import type { TabFacts } from "./ChatRows";
+import { rowFactsOf } from "./shownState";
 import {
   BROWSER_TITLE,
   browserView,
@@ -875,6 +881,9 @@ export const PlaneView = memo(function PlaneView({
   shellAsked?: { typed: string; at: number };
 }) {
   const [tabs, setTabs] = useState<Tabs>(noTabs);
+  // The tab in front of the project in front, for what the stall log writes (`slowLog.ts`).
+  const frontTabName = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront]?.name;
+  useEffect(() => (inFront ? frontTabIs(frontTabName) : undefined), [inFront, frontTabName]);
   const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
   // used again, so one gone from every tab is gone for good.
@@ -950,6 +959,13 @@ export const PlaneView = memo(function PlaneView({
     [],
   );
   const [sidebar, setSidebar] = useState<SidebarModel>();
+  /** The sidebar held, for its read's answer to compare with outside React's own update. */
+  const sidebarHeld = useRef<SidebarModel>(undefined);
+  useEffect(() => {
+    sidebarHeld.current = sidebar;
+  }, [sidebar]);
+  /** Reads the finished tasks again, drawing nothing if they are as held (set further down). */
+  const finishedQuietly = useRef<() => void>(() => undefined);
   /** How many chats a stop has ended: the sidebar is read again for each, since a task chat
    *  with no tab leaves the list without any tab changing (#1448). */
   const [stopsEnded, setStopsEnded] = useState(0);
@@ -1381,15 +1397,6 @@ export const PlaneView = memo(function PlaneView({
    * so several Undos in any order, or an unpin made in between, give back the order they had.
    */
   const [forgottenPins, setForgottenPins] = useState<{ name: string; after: string[] }[]>([]);
-  /** The chats this operator has pinned, by session. Seeded from the record the core put
-   *  back, and kept current by the one handler that writes it. */
-  const [pinnedChats, setPinnedChats] = useState<number[]>([]);
-  /**
-   * The view tabs this operator has pinned, by `tabs.viewKey`. A tab with no chat is pinned as
-   * the view it opened on, and the pin rides that view tab's line of the plane's record — the
-   * same file and the same reason as a chat's pin (ADR 0040).
-   */
-  const [pinnedViews, setPinnedViews] = useState<string[]>([]);
   /**
    * Whether the core has said which view tabs the record put back. Until it has, the window
    * says nothing about its own: an empty list sent first would be written over the record
@@ -1655,10 +1662,6 @@ export const PlaneView = memo(function PlaneView({
               }),
             ),
           }));
-          // **A record written before tabs were recorded says each chat's pin** (#4762): read
-          // once, at this upgrade, and carried on its tab from the first layout said. A record
-          // with tabs says the pin on the tab, below, and the chat's own has retired.
-          setPinnedChats(open.filter((chat) => chat.pinned).map((chat) => chat.session));
           // A shell comes back a shell: on no profile, running no harness. One still restoring
           // says once it has started (`readRestored`): its harness is its start's to say.
           setShells(
@@ -1669,16 +1672,25 @@ export const PlaneView = memo(function PlaneView({
             ),
           );
         }
-        // A studio tab an older launch kept per scope is pinned as the one studio tab (#3681).
-        setPinnedViews(
-          back
-            .filter((view) => view.pinned)
-            .map((view) => {
-              // Only a studio's own tab (or a skill's old one) is the one studio tab.
-              const kept = studioOfSkillTab(refOf(view)) ?? refOf(view);
-              return viewKey(isSkillStudio(kept) ? studioOpening(kept, () => true).tab : kept);
-            }),
-        );
+        // **What a record from before tabs were recorded says is pinned** (#4762, #4935): each
+        // chat's pin and each view tab's, read once, at this upgrade, onto the tab that opens on
+        // it. A record with tabs says the pin on the tab, and the chat's own has retired. A
+        // studio tab an older launch kept per scope is pinned as the one studio tab (#3681).
+        const laid = layoutAnswer?.status === "ok" ? layoutAnswer.data : null;
+        const pinnedBefore: PinnedBefore = {
+          chats: new Set(
+            laid == null ? open.filter((chat) => chat.pinned).map((chat) => chat.session) : [],
+          ),
+          views: new Set(
+            back
+              .filter((view) => view.pinned)
+              .map((view) => {
+                // Only a studio's own tab (or a skill's old one) is the one studio tab.
+                const kept = studioOfSkillTab(refOf(view)) ?? refOf(view);
+                return viewKey(isSkillStudio(kept) ? studioOpening(kept, () => true).tab : kept);
+              }),
+          ),
+        };
         const focusedBack = focusAnswer?.status === "ok" ? focusAnswer.data : null;
         if (focusedBack !== null && focusedBack !== undefined)
           setFocusedBranch({
@@ -1689,7 +1701,6 @@ export const PlaneView = memo(function PlaneView({
         // **The record's tabs, where it has them** (#4751): each split with its sizes, its views
         // and each strip's front tab, as the window left them. A chat no pane holds gets the tab
         // of its own it always had, until chats stop getting tabs.
-        const laid = layoutAnswer?.status === "ok" ? layoutAnswer.data : null;
         if (laid !== null && laid !== undefined) {
           const named = new Map(open.map((chat) => [chat.session, chat]));
           /** The chat whose tab a task with no tab of its own is drawn in: its nearest asker
@@ -1724,23 +1735,23 @@ export const PlaneView = memo(function PlaneView({
               };
             },
           });
-          const all = open
-            .filter((chat) => chat.from?.tab !== false && !back.placed.has(chat.session))
-            .reduce(
-              (tabs, chat) =>
-                openTab(
-                  tabs,
-                  chat.session,
-                  chat.name,
-                  whoOf(chat.persona, chat.harness),
-                  chat.label,
-                ),
-              back.tabs,
-            );
+          const all = pinnedAsBefore(
+            open
+              .filter((chat) => chat.from?.tab !== false && !back.placed.has(chat.session))
+              .reduce(
+                (tabs, chat) =>
+                  openTab(
+                    tabs,
+                    chat.session,
+                    chat.name,
+                    whoOf(chat.persona, chat.harness),
+                    chat.label,
+                  ),
+                back.tabs,
+              ),
+            pinnedBefore,
+          );
           lastFront.current = { ...lastFront.current, ...back.fronts };
-          if (back.pinnedViews.length > 0)
-            setPinnedViews((was) => [...new Set([...was, ...back.pinnedViews])]);
-          setPinnedChats(back.pinnedChats);
           const frontChat = open.find((chat) => chat.in_front);
           const inFront =
             back.inFront ??
@@ -1800,12 +1811,15 @@ export const PlaneView = memo(function PlaneView({
         // **What each session's tab showed** (#1486): the record keeps it on the session's
         // own entry, and it is put back only where the chat it names is open and is a task
         // below that session. Anything else shows the session's own chat.
-        const shownBack = open.reduce((tabs, chat) => {
-          const shown = chat.shows ?? undefined;
-          if (shown === undefined || homeOf(tabs, shown, askedBy)?.own !== chat.session)
-            return tabs;
-          return restoreShown(tabs, [shown], askedBy);
-        }, besideBack);
+        const shownBack = pinnedAsBefore(
+          open.reduce((tabs, chat) => {
+            const shown = chat.shows ?? undefined;
+            if (shown === undefined || homeOf(tabs, shown, askedBy)?.own !== chat.session)
+              return tabs;
+            return restoreShown(tabs, [shown], askedBy);
+          }, besideBack),
+          pinnedBefore,
+        );
         // **A view tab in front comes first**: the chat the core holds in front can be one
         // beside that view (`chatInFrontOf`), and that chat's own tab is not the one the person
         // left in front.
@@ -1846,12 +1860,12 @@ export const PlaneView = memo(function PlaneView({
   const lastViewsSaid = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!viewsHeard) return;
-    const said = viewTabsOf(tabs, pinnedViews);
+    const said = viewTabsOf(tabs);
     const text = JSON.stringify(said);
     if (text === lastViewsSaid.current) return;
     lastViewsSaid.current = text;
     void commands.windowViews(plane, said).catch(() => undefined);
-  }, [pinnedViews, plane, tabs, viewsHeard]);
+  }, [plane, tabs, viewsHeard]);
 
   /** The branch the explorer is focused on (FM-5), told to the core when it changes, after the
    *  record is heard for the views' reason: a focus said first would write over the record's. */
@@ -1948,15 +1962,22 @@ export const PlaneView = memo(function PlaneView({
 
   // The sidebar is read from the plane, and re-read whenever the chats change: the plane is a
   // directory the operator also edits by hand and another charter process writes, so there is
-  // nothing to invalidate a cache of it. `tabs` is the dependency because opening or ending a
-  // chat is what this window can change about the answer, and `sidebarChanges` because the core
-  // says when something else changed it (charter-app#264) — a change of a kind the sidebar
-  // reads (FD-10).
+  // nothing to invalidate a cache of it. `openHere` is the dependency because opening or ending
+  // a chat is what this window can change about the answer, and `sidebarChanges` because the
+  // core says when something else changed it (charter-app#264) — a change of a kind the sidebar
+  // reads (FD-10). **Not `tabs`** (#4729): a switch between chats already open changes the tabs
+  // and not the answer, and each switch read the plane again and drew the window again.
+  //
+  // **An answer equal to the one held is not drawn** (#4729): the state keeps the object it
+  // holds, so nothing that reads the sidebar is drawn again for a read that found no change.
+  // Equal is structural (`dequal`): it walks the two answers once and does not care in which
+  // order a key was written, where comparing them as JSON serialised both whole each time.
   //
   // **Only the newest read is drawn.** The core reads the sidebar off the window's thread
   // (SC-2), so two reads can answer in either order, and one asked before a workspace was
   // renamed must not put it back after the read that saw the rename. `gone` is set when a
   // newer read is asked, which is when this effect runs again.
+  const openHere = useMemo(() => openChatsKey(tabs), [tabs]);
   useEffect(() => {
     let gone = false;
     void commands
@@ -1973,7 +1994,11 @@ export const PlaneView = memo(function PlaneView({
           setSidebar(undefined);
           return;
         }
-        setSidebar(next);
+        // An equal answer moves nothing the finished tasks are read on, so they are read
+        // again here: a finished row can change while the sidebar does not (Clear finished).
+        const held = sidebarHeld.current;
+        if (held !== undefined && dequal(held, next)) finishedQuietly.current();
+        setSidebar((held) => (held !== undefined && dequal(held, next) ? held : next));
         // Focus follows the plane rather than being guessed: whichever workspace was picked,
         // while it still exists — and otherwise **the workspace of the chat in front**,
         // because the strip below shows that workspace's chats and a strip that opened on
@@ -2017,12 +2042,12 @@ export const PlaneView = memo(function PlaneView({
   }, [
     change,
     sidebarChanges,
+    openHere,
     plane,
     replan,
     sandboxMoved,
     startedIn,
     stopsEnded,
-    tabs,
     tasksMoved,
   ]);
 
@@ -2106,20 +2131,33 @@ export const PlaneView = memo(function PlaneView({
     },
     [sidebar],
   );
+  /** Chat `session` as the plane's chats list it, in a workspace or outside them all. */
+  const listedChatOf = useCallback(
+    (session: number | undefined) => {
+      if (session === undefined || sidebar === undefined) return undefined;
+      return [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled].find(
+        (chat) => chat.session === session,
+      );
+    },
+    [sidebar],
+  );
   /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it, or `null`. */
   const sandboxOf = useCallback(
     (session: number | undefined): SandboxSaid | null => {
-      if (session === undefined || sidebar === undefined) return null;
-      for (const chats of [...sidebar.workspaces.map((ws) => ws.chats), sidebar.unfiled]) {
-        const found = chats.find((chat) => chat.session === session);
-        if (found)
-          return found.sandbox == null
-            ? null
-            : { level: found.sandbox, why: found.sandbox_why, sites: found.browser_sites };
-      }
-      return null;
+      const found = listedChatOf(session);
+      if (found?.sandbox == null) return null;
+      return { level: found.sandbox, why: found.sandbox_why, sites: found.browser_sites };
     },
-    [sidebar],
+    [listedChatOf],
+  );
+  /** What chat `session`'s row reads its state from beside the board (#4935), as the plane's
+   *  chats say it: so its tab says its row's word. */
+  const factsOf = useCallback(
+    (session: number): TabFacts | undefined => {
+      const found = listedChatOf(session);
+      return found === undefined ? undefined : rowFactsOf(found);
+    },
+    [listedChatOf],
   );
   /** How many chats run in `workspace`, as the sidebar lists them: what an empty pane says
    *  (#4755). */
@@ -2148,22 +2186,8 @@ export const PlaneView = memo(function PlaneView({
     [pretended, sidebar, startedIn],
   );
 
-  /** Whether a tab is pinned: its own chat is, which is its first pane's. */
-  /** Whether a tab that opens on `lead` is pinned: its chat's pin or its view's. An empty pane
-   *  holds no pin of its own yet (#4762 gives the tab its own). */
-  const leadPinned = useCallback(
-    (lead: Content | undefined) => {
-      if (lead === undefined || lead.kind === "empty") return false;
-      return lead.kind === "session"
-        ? pinnedChats.includes(lead.session)
-        : pinnedViews.includes(viewKey(lead.view));
-    },
-    [pinnedChats, pinnedViews],
-  );
-  const isPinned = useCallback<Pinned>(
-    (id) => leadPinned(contentsOf(tabs, id)[0]?.content),
-    [leadPinned, tabs],
-  );
+  /** Whether a tab is pinned: the tab's own pin (#4935), whatever its panes hold. */
+  const isPinned = useMemo<Pinned>(() => pinsOf(tabs), [tabs]);
 
   /**
    * **The chats whose Smart close the operator has just pressed**, until the core's first step
@@ -3146,7 +3170,6 @@ export const PlaneView = memo(function PlaneView({
       if (!layoutHeard.current) return;
       const laid = layoutOf(next, {
         workspaceOf: (id) => workspaceOf(next, id, filedIn),
-        pinned: (id) => leadPinned(contentsOf(next, id)[0]?.content),
         frontOf: (workspace) => lastFront.current[workspace],
         told: (session) => !pretendedNow.current.has(session),
       });
@@ -3171,7 +3194,7 @@ export const PlaneView = memo(function PlaneView({
         .catch(unsaid);
     };
     sayLayout.current(tabs);
-  }, [filedIn, leadPinned, plane, tabs, viewsHeard]);
+  }, [filedIn, plane, tabs, viewsHeard]);
 
   /**
    * Asks which profile and which persona. It starts nothing by itself.
@@ -3794,6 +3817,14 @@ export const PlaneView = memo(function PlaneView({
   );
 
   const split = useCallback((direction: Direction) => void ask({ split: direction }), [ask]);
+  // Tile all, its Undo and Focus this pane (#4765): the tab's own panes rearranged, nothing
+  // started or ended.
+  const tileAllIn = useCallback((tab: number) => change((tabs) => tileAll(tabs, tab)), [change]);
+  const undoLayoutIn = useCallback(
+    (tab: number) => change((tabs) => undoLayout(tabs, tab)),
+    [change],
+  );
+  const zoomPane = useCallback(() => change(zoomFocusedPane), [change]);
 
   useEffect(() => {
     listedNow.current = chatsByNumber;
@@ -5312,7 +5343,6 @@ export const PlaneView = memo(function PlaneView({
       // Through `change`, as every other write to the tabs is: a write past it is undone by the
       // next one, which starts from `now` (#1248).
       change((was) => followRename(was, workspace, name, root));
-      setPinnedViews((was) => was.map((key) => renamedViewKey(key, workspace, name, root)));
       setPicked((was) => (was === workspace ? name : was));
       setPickedSpot((was) => (was?.workspace === workspace ? undefined : was));
       setReport({
@@ -5447,34 +5477,15 @@ export const PlaneView = memo(function PlaneView({
    * the tab's `pinned`, in the same write as the tab, so the mark is drawn at once and there is
    * no answer to wait for.
    */
-  const pinTab = useCallback(async (id: number, pinned: boolean): Promise<Ran> => {
-    const lead = contentsOf(now.current, id)[0]?.content;
-    if (lead?.kind === "view") {
-      // **Its own record line, written by the one effect that tells the core the view tabs**
-      // — so the pin lands with the tab it pins, in the same write, and there is nothing
-      // here for the core to refuse.
-      const key = viewKey(lead.view);
-      setPinnedViews((was) =>
-        pinned ? (was.includes(key) ? was : [...was, key]) : was.filter((one) => one !== key),
-      );
+  const pinTab = useCallback(
+    async (id: number, pinned: boolean): Promise<Ran> => {
+      // Its own, whatever its panes hold, so a tab whose only pane is empty is pinned too
+      // (#4935). Nothing is said: the mark appearing on the tab is the answer.
+      change((tabs) => setPinned(tabs, id, pinned));
       return { ok: true };
-    }
-    // **The pin is the tab's** (#4762): it rides the layout the core is told
-    // (`window_layout`), in the same write as the tab it pins, so there is nothing here for
-    // the core to refuse either. A tab is pinned by its first pane's chat.
-    const session = chatOf(now.current, id);
-    if (session === undefined) return { ok: false, refused: "That tab has no chat to pin." };
-    setPinnedChats((was) =>
-      pinned
-        ? was.includes(session)
-          ? was
-          : [...was, session]
-        : was.filter((one) => one !== session),
-    );
-    // Nothing is said: the mark appearing on the tab is the answer, and a banner after
-    // every pin is noise about something the operator can already see.
-    return { ok: true };
-  }, []);
+    },
+    [change],
+  );
 
   /**
    * A chat or view tab dragged onto another on the chat strip (SI-6): moved to where it was put
@@ -5969,16 +5980,15 @@ export const PlaneView = memo(function PlaneView({
 
   /**
    * **A chat the window started again** — a Retry now, or a Start fresh (NO-3) — known the way a
-   * chat a relaunch put back is: where it is filed, its notes on how it came back, and its pin
-   * and its shell's mark.
+   * chat a relaunch put back is: where it is filed, its notes on how it came back, and its
+   * shell's mark. Its pin is its tab's (#4935): a restart keeps the tab, and a chat that opens
+   * a tab of its own carries a pin only a record from before tabs were recorded says
+   * (`pinnedAsBefore`).
    */
   const noteStarted = useCallback(
     (chat: OpenChat) => {
       setStartedIn((was) => ({ ...was, [chat.session]: filedFor(chat.cwd, focused) }));
       setReopened((was) => [...was.filter((one) => one.session !== chat.session), chat]);
-      // Only a record from before tabs were recorded still says a chat's pin (#4762).
-      if (chat.pinned)
-        setPinnedChats((was) => (was.includes(chat.session) ? was : [...was, chat.session]));
       if (isShell(chat)) setShells((was) => new Set(was).add(chat.session));
     },
     [focused],
@@ -5991,8 +6001,12 @@ export const PlaneView = memo(function PlaneView({
   const {
     finished: finishedTasks,
     read: rereadFinished,
+    readQuietly: rereadFinishedQuietly,
     settled: finishedSettled,
   } = useFinishedTasks(plane, sidebar);
+  useEffect(() => {
+    finishedQuietly.current = rereadFinishedQuietly;
+  }, [rereadFinishedQuietly]);
   useEffect(() => {
     finishedNow.current = finishedTasks;
   }, [finishedTasks]);
@@ -6075,7 +6089,6 @@ export const PlaneView = memo(function PlaneView({
     (was: number, chat: OpenChat) => {
       setReopened((all) => all.filter((one) => one.session !== was));
       // Its tab keeps its pin: the tab is the same, its chat in a new session.
-      setPinnedChats((all) => all.map((one) => (one === was ? chat.session : one)));
       noteStarted(chat);
       followRestart(was, chat.session);
       change((tabs) => replaceSession(tabs, was, chat.session));
@@ -6612,7 +6625,10 @@ export const PlaneView = memo(function PlaneView({
       setWouldNotStart((was) => was.filter((one) => one.id !== id));
       noteStarted(chat);
       change((tabs) =>
-        openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+        pinnedAsBefore(
+          openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+          recordedPin(chat),
+        ),
       );
     },
     [change, noteStarted, plane],
@@ -6653,12 +6669,15 @@ export const PlaneView = memo(function PlaneView({
         noteStarted(chat);
         if (chat.from?.tab === false) continue;
         change((tabs) =>
-          openTabBehind(
-            tabs,
-            chat.session,
-            chat.name,
-            whoOf(chat.persona, chat.harness),
-            chat.label ?? null,
+          pinnedAsBefore(
+            openTabBehind(
+              tabs,
+              chat.session,
+              chat.name,
+              whoOf(chat.persona, chat.harness),
+              chat.label ?? null,
+            ),
+            recordedPin(chat),
           ),
         );
       }
@@ -6871,7 +6890,6 @@ export const PlaneView = memo(function PlaneView({
     setFreshening(undefined);
     setReopened((was) => was.filter((one) => one.session !== asked.session));
     // Its tab keeps its pin: the tab is the same, its chat in a new session.
-    setPinnedChats((was) => was.map((one) => (one === asked.session ? chat.session : one)));
     noteStarted(chat);
     followRestart(asked.session, chat.session);
     change((tabs) => replaceSession(tabs, asked.session, chat.session));
@@ -7130,6 +7148,9 @@ export const PlaneView = memo(function PlaneView({
       runAction,
       split,
       closePane,
+      tileAll: tileAllIn,
+      zoomPane,
+      undoLayout: undoLayoutIn,
       closeTab: close,
       // Each as its own close (#4762): the chats asked about once, by the row, before this.
       closeOtherTabs: (closing) => {
@@ -7281,6 +7302,9 @@ export const PlaneView = memo(function PlaneView({
       cancelSmartClose,
       close,
       closePane,
+      tileAllIn,
+      undoLayoutIn,
+      zoomPane,
       curate,
       createVault,
       createWorkspace,
@@ -8066,8 +8090,6 @@ export const PlaneView = memo(function PlaneView({
             // The projects' pins are the WINDOW's, and travel down with the projects: a
             // project that is not in front draws nothing, so its pin cannot be held here.
             pinned: {
-              chats: pinnedChats,
-              views: pinnedViews,
               workspaces: pinnedWorkspaces,
               projects: pinnedProjects,
             },
@@ -8119,9 +8141,7 @@ export const PlaneView = memo(function PlaneView({
       nameOf,
       personas,
       pieces,
-      pinnedChats,
       pinnedProjects,
-      pinnedViews,
       pinnedWorkspaces,
       plane,
       projects,
@@ -10126,6 +10146,7 @@ export const PlaneView = memo(function PlaneView({
                     stopping={stopping}
                     shells={shells}
                     personaOf={personaOf}
+                    factsOf={factsOf}
                     sandboxOf={sandboxOf}
                     taskNameOf={taskNameOf}
                     taskTabOf={taskTabOf}
@@ -10174,7 +10195,12 @@ export const PlaneView = memo(function PlaneView({
                             restoring={restoringChats}
                             // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
                             // session that asked, while the tab is switched to it.
-                            layout={layoutShown(tabs, frontTab.id) ?? frontTab.layout}
+                            // A zoomed pane is drawn alone, the tree kept whole (#4765).
+                            layout={zoomedLayout(
+                              tabs,
+                              frontTab.id,
+                              layoutShown(tabs, frontTab.id) ?? frontTab.layout,
+                            )}
                             crumbs={frontCrumbs}
                             placed={frontPlaced}
                             away={frontAway}
@@ -11316,6 +11342,33 @@ function giveViewTheKeyboard(view: ViewId): void {
   )?.focus();
 }
 
+/** What a record from before tabs were recorded says is pinned (#4762, #4935): chats by
+ *  session, view tabs by `tabs.viewKey`. */
+type PinnedBefore = { chats: ReadonlySet<number>; views: ReadonlySet<string> };
+
+/** Chat `chat`'s own pin, where only a record from before tabs were recorded still says one:
+ *  the core clears every chat's own pin once the window has told it a layout
+ *  (`Chats::lay_out`), which the launch does at once. */
+function recordedPin(chat: OpenChat): PinnedBefore {
+  return { chats: new Set(chat.pinned ? [chat.session] : []), views: new Set() };
+}
+
+/**
+ * `tabs` with the pins `before` says carried onto the tabs that open on them (#4935): each tab
+ * whose first pane is a chat or a view `before` names is pinned, read once, at the upgrade, and
+ * the tab's own pin from then on.
+ */
+function pinnedAsBefore(tabs: Tabs, before: PinnedBefore): Tabs {
+  if (before.chats.size === 0 && before.views.size === 0) return tabs;
+  return tabs.order.reduce((next, id) => {
+    const lead = contentsOf(next, id)[0]?.content;
+    const was =
+      (lead?.kind === "session" && before.chats.has(lead.session)) ||
+      (lead?.kind === "view" && before.views.has(viewKey(lead.view)));
+    return was ? setPinned(next, id, true) : next;
+  }, tabs);
+}
+
 /**
  * The view tabs, as the record keeps them: every tab whose first pane is a view.
  *
@@ -11323,7 +11376,7 @@ function giveViewTheKeyboard(view: ViewId): void {
  * split is not recorded either, and both come back as what they are: the chat as its own tab,
  * the view as nothing, to be opened again.
  */
-function viewTabsOf(tabs: Tabs, pinnedViews: readonly string[]): ViewTab[] {
+function viewTabsOf(tabs: Tabs): ViewTab[] {
   return tabs.order.flatMap((id, at) => {
     const lead = contentsOf(tabs, id)[0]?.content;
     if (lead?.kind !== "view") return [];
@@ -11338,7 +11391,7 @@ function viewTabsOf(tabs: Tabs, pinnedViews: readonly string[]): ViewTab[] {
         workspace: lead.workspace === OUTSIDE ? null : lead.workspace,
         at,
         active: tabs.inFront === id,
-        pinned: pinnedViews.includes(viewKey(lead.view)),
+        pinned: tabs.byId[id].pinned === true,
         split: splitOf(tabs, lead.view) ?? null,
       },
     ];

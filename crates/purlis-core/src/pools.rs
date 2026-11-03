@@ -139,12 +139,28 @@ pub fn on_another_engine(config_root: &Path, docker: &Docker, name: &str) -> boo
 /// **Removes the pool `name`**: its runner whole ([`runners::remove`]), with `unpair` taking
 /// this desktop out of its peers when its link is up, then the pool's record once its runner is
 /// gone. A pool whose runner was never kept is forgotten at once. What [`runners::remove`] did,
-/// where it ran.
+/// where it ran. Refused, with nothing removed, where a runner of the pool is held for its chats'
+/// conversations ([`held_of`]): only [`remove_discarding`], naming it, discards them.
 pub fn remove(
     config_root: &Path,
     docker: &Docker,
     name: &str,
     unpair: Option<&Unpair<'_>>,
+) -> Result<Option<Removed>, Refused> {
+    remove_discarding(config_root, docker, name, unpair, &[])
+}
+
+/// **[`remove`], discarding the conversations of the held runners `discarding` names** (#4860,
+/// D-4860-1): the runners the person's question named, and asked again about, as Discard does. A
+/// runner of the pool held now that it does not name, one held since the question was asked among
+/// them, refuses the whole removal, with nothing removed, so no conversation goes that the person
+/// was not asked about. A held runner is never kept once its pool is gone.
+pub fn remove_discarding(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    unpair: Option<&Unpair<'_>>,
+    discarding: &[String],
 ) -> Result<Option<Removed>, Refused> {
     let locked = runners::lock(config_root);
     if !runners::pools(config_root)?
@@ -160,6 +176,18 @@ pub fn remove(
         .into_iter()
         .filter(|kept| kept.pool() == name)
         .collect();
+    let unasked: Vec<String> = held_among(docker, &of_it)
+        .into_iter()
+        .filter(|held| !discarding.contains(held))
+        .collect();
+    if !unasked.is_empty() {
+        return Err(Refused::Other(format!(
+            "{} of pool {name} may hold chats' conversations that you were not asked about, so \
+             nothing was removed. Remove the pool again to see {}",
+            runners_said(&unasked),
+            if unasked.len() == 1 { "it" } else { "them" }
+        )));
+    }
     of_it.sort_by_key(|kept| !kept.draining);
     let mut removed = None;
     let mut all_gone = true;
@@ -185,6 +213,49 @@ pub fn remove(
         })?;
     }
     Ok(removed)
+}
+
+/// `runner a`, or `runners a, b and c`, for a sentence the window shows.
+fn runners_said(names: &[String]) -> String {
+    match names {
+        [one] => format!("runner {one}"),
+        [rest @ .., last] => format!("runners {} and {last}", rest.join(", ")),
+        [] => "no runner".to_owned(),
+    }
+}
+
+/// **The runners of pool `pool` that hold, or may hold, their chats' conversations** (#4860), by
+/// name: what removing the pool asks about before it discards them. Held ones, as the window shows
+/// them: noted held, or draining and found as a look would hold them ([`DrainLook::Held`]). And
+/// those no look has read yet: a draining runner stopped before its drain began, one whose home
+/// Docker keeps after its container went, or one Docker cannot say anything of. Only a draining
+/// runner a look asks (it runs), or one known to have no chat left, is not named.
+pub fn held_of(config_root: &Path, docker: &Docker, pool: &str) -> Result<Vec<String>, Refused> {
+    let of_it: Vec<Kept> = runners::read(config_root)?
+        .into_iter()
+        .filter(|kept| kept.pool() == pool)
+        .collect();
+    Ok(held_among(docker, &of_it))
+}
+
+/// The runners among `kept` that hold, or may hold, a conversation ([`held_of`]).
+fn held_among(docker: &Docker, kept: &[Kept]) -> Vec<String> {
+    kept.iter()
+        .filter(|kept| {
+            kept.draining
+                && (kept.held
+                    || match docker.ran(&kept.made) {
+                        Ok(ran) => {
+                            !matches!(drain_look(kept, ran), DrainLook::Ask | DrainLook::NoChat)
+                        }
+                        Err(_) => !matches!(
+                            docker.gone(&kept.made),
+                            Ok(Some(crate::dockerpool::Gone { home_kept: false }))
+                        ),
+                    })
+        })
+        .map(|kept| kept.name().to_owned())
+        .collect()
 }
 
 /// **What names pool `name` on this machine** (#4678), plane by plane in the order this machine
@@ -633,6 +704,20 @@ fn noted_where_made(
 pub struct MadeAgain {
     pub kept: Kept,
     pub sign_ins_kept: bool,
+    /// What became of the gone runner's home (#4859).
+    pub old_home: OldHome,
+}
+
+/// **What Make the runner again did with the gone runner's home** (#4859).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OldHome {
+    /// It held no conversation, or was gone too: it was removed, as before.
+    Removed,
+    /// It holds a chat's conversation, so the runner stays held, for the person to bring them
+    /// back or discard them in Devices.
+    Held,
+    /// It could not be read, so it is not known to hold none: the runner stays held all the same.
+    Unread,
 }
 
 /// **Makes the pool `name`'s runner again, once it was removed outside purlis** (#4149): Docker
@@ -641,7 +726,9 @@ pub struct MadeAgain {
 /// own image, held to its limits and its time before it suspends, on a home of its own; the
 /// sign-ins of the gone runner's home are carried to it where that home is still there and is
 /// the one purlis made for it ([`Docker::copy_profiles`]); it is checked, paired with `desktop`
-/// and kept as the pool's runner. The gone runner is then removed, its home with it. The
+/// and kept as the pool's runner. The gone runner is then removed, its home with it, unless that
+/// home holds a chat's conversation or could not be read: then it stays, held, for the person to
+/// bring them back or discard them (#4859, the rule of #4633). The
 /// profiles the pool keeps are kept on it again as after the pool was added: the window asks for
 /// them.
 ///
@@ -730,7 +817,51 @@ fn make_again_as(
             });
         }
     };
-    // The gone runner goes now, its home with it: nothing of it is linked to again.
+    // The gone runner goes now, its home with it, nothing of it linked to again: unless that home
+    // holds a chat's conversation, when it stays held as a draining one is (#4859, the rule of
+    // #4633). A home that could not be read is held too: this press is the only look it gets.
+    // It reads under the runners lock, as the whole of this press runs (D-4859-2): only a look's
+    // read runs outside it (#4861).
+    let old_home = match holds_a_conversation(config_root, docker, &old, &made) {
+        Ok(true) => OldHome::Held,
+        Ok(false) => OldHome::Removed,
+        Err(why) => {
+            tracing::warn!(
+                "purlis: runner {} of pool {name} was made again, and the home of the one \
+                 removed outside purlis could not be read, so it is kept until it is discarded \
+                 in Devices: {why}",
+                old.name()
+            );
+            OldHome::Unread
+        }
+    };
+    if old_home != OldHome::Removed {
+        // Its sign-ins were carried here already: a later Discard or bring back carries none
+        // again.
+        let held = runners::note_locked(
+            config_root,
+            old.name(),
+            |kept| {
+                kept.held = true;
+                kept.carried |= sign_ins_kept;
+            },
+            &locked,
+        );
+        if let Err(why) = held {
+            // Unnoted, it is a draining runner with its home kept: the next look reads it, and
+            // removing its pool asks about it (`held_of`).
+            tracing::warn!(
+                "purlis: runner {} of pool {name} was made again, and the one removed outside \
+                 purlis, whose home is kept, was not noted as held: {why}",
+                old.name()
+            );
+        }
+        return Ok(MadeAgain {
+            kept,
+            sign_ins_kept,
+            old_home,
+        });
+    }
     match runners::remove_locked(config_root, docker, old.name(), None, &locked) {
         Ok(removed) => {
             if let Some(left) = removed.left() {
@@ -750,6 +881,7 @@ fn make_again_as(
     Ok(MadeAgain {
         kept,
         sign_ins_kept,
+        old_home,
     })
 }
 
@@ -998,37 +1130,165 @@ pub fn remove_held(
 /// ([`Docker::conversations`]), so it is not started. A home made of its name since its container
 /// went is not its own and holds nothing of it. Refused where the home could not be read, which
 /// says nothing of it: the runner then stays as it is until a look reads it.
+///
+/// **The read runs outside the runners lock** (#4861): it may take minutes, and every runner
+/// operation of the window waits on that lock. So, once it found a conversation, the lock is
+/// taken and the runner is held only where it, and its pool's runner, still stand as they did
+/// before the read; otherwise it is refused, and the next look reads it again. **A read that
+/// failed is paced** ([`read_again_after`]): it is not tried again until its wait is over, and is
+/// refused, saying why, in the meantime.
 pub fn held_for_its_conversations(
     config_root: &Path,
     docker: &Docker,
     name: &str,
 ) -> Result<bool, Refused> {
-    let locked = runners::lock(config_root);
-    let kept = runners::named(config_root, name)?
+    let before = runners::named(config_root, name)?
         .filter(|kept| kept.draining)
         .ok_or_else(|| Refused::Other(format!("no runner {name} is draining on this machine")))?;
-    if kept.held {
+    if before.held {
         return Ok(true);
     }
-    let to = runners::runner_for(config_root, kept.pool())?;
+    let to = runners::runner_for(config_root, before.pool())?;
+    let whose = (
+        config_root.to_path_buf(),
+        before.made.container.as_str().to_owned(),
+    );
+    if let Some(why) = conversation_reads().waiting(&whose, std::time::Instant::now()) {
+        return Err(Refused::Other(why));
+    }
+    let holds = holds_a_conversation(config_root, docker, &before, &to.made);
+    match &holds {
+        Ok(_) => conversation_reads().cleared(&whose),
+        Err(why) => {
+            conversation_reads().failed(&whose, &why.to_string(), std::time::Instant::now())
+        }
+    }
+    let locked = runners::lock(config_root);
+    let Some(now) = runners::named(config_root, name)? else {
+        // Removed while it was read: a home the read's mount made again of its name goes too.
+        // Nothing else claims that name: it was a draining runner, never its pool's runner now,
+        // though the pool may share it.
+        if let Err(why) = docker.remove_leftovers_of(name, &runners::desktop_label(config_root)) {
+            tracing::warn!(
+                "purlis: what a read of runner {name}'s home left was not removed: {why}"
+            );
+        }
+        // Gone, it holds nothing to keep: the look goes on as for a home with none.
+        return Ok(false);
+    };
+    if !holds? {
+        return Ok(false);
+    }
+    if now.held {
+        return Ok(true);
+    }
+    let stands = now == before
+        && runners::runner_for(config_root, before.pool())
+            .ok()
+            .as_ref()
+            == Some(&to);
+    if !stands {
+        return Err(Refused::Other(format!(
+            "runner {name} changed while its home was read, so it is read again at the next look"
+        )));
+    }
+    runners::note_locked(config_root, name, |kept| kept.held = true, &locked)?;
+    Ok(true)
+}
+
+/// **How long a read of a home that failed `failures` times in a row waits before the next**
+/// (#4861): ten minutes, twice as long after each failure, and never more than four hours. The
+/// looks come every five minutes, so a Docker that cannot read a home is not asked at each.
+fn read_again_after(failures: u32) -> std::time::Duration {
+    READ_AGAIN_FIRST
+        .checked_mul(1 << failures.saturating_sub(1).min(16))
+        .map_or(READ_AGAIN_MOST, |wait| wait.min(READ_AGAIN_MOST))
+}
+
+/// How long a read of a home that failed once waits before the next (#4861).
+const READ_AGAIN_FIRST: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// The longest a read of a home that keeps failing waits before the next (#4861).
+const READ_AGAIN_MOST: std::time::Duration = std::time::Duration::from_secs(4 * 60 * 60);
+
+/// Whose read of a home is paced: this machine's config root and the runner's container's id,
+/// which no other runner ever has, as a name may be had again.
+type Whose = (std::path::PathBuf, String);
+
+/// **The reads of homes that failed** (#4861), in memory: a restart reads each again at once.
+#[derive(Default)]
+struct ConversationReads {
+    held: std::sync::Mutex<std::collections::HashMap<Whose, (u32, std::time::Instant, String)>>,
+}
+
+impl ConversationReads {
+    fn waiting(&self, whose: &Whose, now: std::time::Instant) -> Option<String> {
+        let held = self
+            .held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (_, until, why) = held.get(whose)?;
+        let left = until
+            .checked_duration_since(now)
+            .filter(|left| !left.is_zero())?;
+        Some(format!(
+            "{why}; its home is read again in about {}",
+            crate::counts::counted(left.as_secs().div_ceil(60), "minute", "minutes")
+        ))
+    }
+
+    fn failed(&self, whose: &Whose, why: &str, now: std::time::Instant) {
+        let mut held = self
+            .held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A wait long over is forgotten, so this does not grow with runners that went.
+        held.retain(|_, (_, until, _)| now.saturating_duration_since(*until) < READ_AGAIN_MOST);
+        let failures = held.get(whose).map_or(0, |(failures, ..)| *failures) + 1;
+        held.insert(
+            whose.clone(),
+            (failures, now + read_again_after(failures), why.to_owned()),
+        );
+    }
+
+    fn cleared(&self, whose: &Whose) {
+        self.held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(whose);
+    }
+}
+
+fn conversation_reads() -> &'static ConversationReads {
+    static READS: std::sync::OnceLock<ConversationReads> = std::sync::OnceLock::new();
+    READS.get_or_init(ConversationReads::default)
+}
+
+/// **Whether the home of `kept`, a runner whose drain began, holds a chat's conversation**
+/// (#4633), read by a container of `with`'s image, `with` the pool's runner now
+/// ([`Docker::conversations`]), so `kept` is not started. A home Docker lists no more, or one made
+/// of its name since its container went, is not its own and holds nothing of it. Refused where
+/// Docker did not answer or the home could not be read, which says nothing of it.
+fn holds_a_conversation(
+    config_root: &Path,
+    docker: &Docker,
+    kept: &Kept,
+    with: &crate::dockerpool::Made,
+) -> Result<bool, Refused> {
     // Docker not answering says nothing of it, and a mount of a home not there would make one.
     let gone = docker
         .gone(&kept.made)
         .map_err(|why| Refused::Other(why.0))?;
     if gone.is_some_and(|gone| !gone.home_kept)
         || (gone.is_some()
-            && !is_its_own_home(docker, &kept).map_err(|why| Refused::Other(why.0))?)
+            && !is_its_own_home(docker, kept).map_err(|why| Refused::Other(why.0))?)
     {
         return Ok(false);
     }
     let found = docker
-        .conversations(&kept.made, &to.made, &runners::desktop_label(config_root))
+        .conversations(&kept.made, with, &runners::desktop_label(config_root))
         .map_err(|why| Refused::Other(why.0))?;
-    if found.found == 0 {
-        return Ok(false);
-    }
-    runners::note_locked(config_root, name, |kept| kept.held = true, &locked)?;
-    Ok(true)
+    Ok(found.found > 0)
 }
 
 /// **What bringing back a held runner's conversations did** (#4633): how many files it found, how

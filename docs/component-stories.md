@@ -222,8 +222,10 @@ add or change one:
    names every such story, and each shard's summary lists them before every picture that failed
    alone, since GitHub shows only ten annotations of a step.
 2. Take the baselines, in either of two ways. Neither draws again, and both take only whole PNG
-   baselines within a size and a count limit, and delete every other file in the
-   `__screenshots__` directories (`tools/story-baselines.mjs take`):
+   baselines, write only those whose bytes differ from the baseline already there, and delete
+   every other file in the `__screenshots__` directories (`tools/story-baselines.mjs take`).
+   Each picture has a size limit; what one take writes and deletes has a count and a total size
+   limit, which bound what one commit pushes, so the whole set can grow past them:
    - **Your own push** (the way that runs no extra checks): in a checkout of the pull request's
      head, run `node tools/story-baselines-pull.mjs <pull request>`. It takes the newest
      `stories` run's `story-baselines` into `app/`. Review the pictures, then commit and push

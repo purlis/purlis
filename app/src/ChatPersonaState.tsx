@@ -5,7 +5,7 @@ import { memo } from "react";
 import { SquareTerminal } from "lucide-react";
 import { markOf, ownWorkOf, useChatsHere, useChatsSelect } from "./chatState";
 import { PersonaMark } from "./PersonaMark";
-import { shownState, type Shown, type TaskFacts } from "./shownState";
+import { shownState, type RowFacts, type Shown } from "./shownState";
 import { StateShown } from "./StateShown";
 import { useQuestionStanding } from "./QuestionsHere";
 import { tasksAtWorkOf } from "./sessionTasks";
@@ -17,41 +17,37 @@ export function sameShown(one: Shown | undefined, other: Shown | undefined): boo
   return one === other || (one?.kind === other?.kind && one?.word === other?.word);
 }
 
+/** What a chat's shown state is read from beside the board: its row's facts (`RowFacts`), of
+ *  which its question is read here, from the asks registry (#4564). A chat that is no task
+ *  leaves `report` and `outcome` out. */
+export type ShownOf = {
+  session: number;
+  /** A shell tab, which shows no state until something reports one. */
+  shell: boolean;
+} & Partial<Pick<RowFacts, "report" | "outcome">> &
+  Pick<RowFacts, "harness">;
+
 /**
- * **Who a chat runs as, with its state on it** (#3342, the operator's ruling of 2026-10-26): the
- * persona's mark in the persona's colour, first on the chat's row. A chat that asks for the person
- * or is at work wears its state's own mark on the persona's corner, shape and colour (`App.css`
- * draws `StateShown`'s mark as that badge); a chat at rest wears none. A chat with no persona
- * wears the terminal's mark. Its tooltip and what a screen reader hears both say the two:
- * `steward, needs you`.
+ * **A chat's state, as every place that says it reads it** (#1484, #4935): its row in the
+ * Chats list, its persona's badge and its tab, through the one function (`shownState`), so they
+ * say one word for it. Subscribed to its own chat, the queue's answer about it, its question
+ * and its tasks below, and changed only when what it shows changes (`sameShown`).
  *
- * **Its look is shared** (#4762): `chatPersona.css` holds it, and the place it stands sets only
- * its size (`--chat-persona-size`) and the ground its badge is ringed in (`--chat-badge-ground`).
- * The sidebar's row draws this component. A tab on the strip wears the same look with its own
- * marks (`ChatRows.TabMarks`): its persona's or its shell's, and the board state's dot, so the
- * state it says after its name is the one its dot shows.
+ * **A chat waiting on its tasks says so, and how many** (#1491): it reads its own tasks
+ * (`useTasksBelow`) and counts the ones that have not finished, by the one count
+ * (`sessionTasks.tasksAtWorkOf`), so the word agrees with the count on its row.
  */
-export const ChatPersonaState = memo(function ChatPersonaState({
-  persona,
+export function useShownState({
   session,
   shell,
   report = null,
   outcome = null,
   harness,
-  changed = false,
-}: {
-  persona: string | null;
-  session: number;
-  changed?: boolean;
-  shell: boolean;
-  report?: TaskFacts["report"] | null;
-  outcome?: string | null;
-  harness: string | null;
-}) {
+}: ShownOf): Shown | undefined {
   const below = useTasksBelow(session);
   // Its question, where the asks registry says it stands (#4564): never a copy of its own.
   const question = useQuestionStanding(session);
-  const shown = useChatsSelect(
+  return useChatsSelect(
     useChatsHere(),
     (states) =>
       shownState({
@@ -67,6 +63,35 @@ export const ChatPersonaState = memo(function ChatPersonaState({
       }),
     sameShown,
   );
+}
+
+/**
+ * **Who a chat runs as, with its state on it** (#3342, the operator's ruling of 2026-10-26): the
+ * persona's mark in the persona's colour, first on the chat's row. A chat that asks for the person
+ * or is at work wears its state's own mark on the persona's corner, shape and colour (`App.css`
+ * draws `StateShown`'s mark as that badge); a chat at rest wears none. A chat with no persona
+ * wears the terminal's mark. Its tooltip and what a screen reader hears both say the two:
+ * `steward, needs you`.
+ *
+ * **Its look is shared** (#4762): `chatPersona.css` holds it, and the place it stands sets only
+ * its size (`--chat-persona-size`) and the ground its badge is ringed in (`--chat-badge-ground`).
+ * The sidebar's row draws this component. A tab on the strip wears the same look with its own
+ * marks (`ChatRows.TabMarks`): its persona's or its shell's, and the board state's dot. The word
+ * it says after its name is this one's (`useShownState`, #4935).
+ */
+export const ChatPersonaState = memo(function ChatPersonaState({
+  persona,
+  session,
+  shell,
+  report = null,
+  outcome = null,
+  harness,
+  changed = false,
+}: ShownOf & {
+  persona: string | null;
+  changed?: boolean;
+}) {
+  const shown = useShownState({ session, shell, report, outcome, harness });
   const who = persona ?? "terminal";
   const said = shown === undefined ? who : `${who}, ${shown.word}`;
   return (

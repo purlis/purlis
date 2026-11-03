@@ -128,10 +128,18 @@ describe("a project the window opens behind the one in front", () => {
     const built = asked.filter((cmd) => VIEW_ASKS.includes(cmd)).length;
     expect(built).toBeGreaterThan(0);
 
-    // And it stays drawn behind another, once it has been in front.
+    // And it stays drawn behind another, once it has been in front: back in front, it is the
+    // view it was, every element of it. Its reads are no sign of a build here: each part reads
+    // once more after it is painted again (`useOnShownAgain`, `usePlaneChanged`), so the count
+    // of asks is the same for a view kept as for one built again, and only when that read lands
+    // differs (#4695).
+    const view1 = document.querySelector(".project-view");
+    if (view1 === null) throw new Error("the project's view is not drawn");
+    const drawnThen = [view1, ...view1.querySelectorAll("*")];
     view.rerender(drawn("/home/dev/plane", false, true, onReport));
     view.rerender(drawn("/home/dev/plane", true, true, onReport));
     await act(async () => {});
-    expect(asked.filter((cmd) => VIEW_ASKS.includes(cmd))).toHaveLength(built);
+    expect(document.querySelector(".project-view")).toBe(view1);
+    expect(drawnThen.filter((one) => !one.isConnected)).toEqual([]);
   });
 });

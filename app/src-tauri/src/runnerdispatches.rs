@@ -20,6 +20,7 @@
 use std::sync::{Mutex, PoisonError};
 
 use purlis_core::hookwire::Answer;
+use purlis_core::machine::StartChoice;
 
 use crate::handoff::{Arrived, Wanted};
 use crate::planes::{Held, PlaneId, Planes};
@@ -28,18 +29,32 @@ use crate::planes::{Held, PlaneId, Planes};
 pub const AT_MOST_PER_CHAT: usize = 8;
 
 /// What a refused dispatch's chat is told, after the task's name.
-pub fn refused_said(pool: Option<&str>) -> String {
-    let Some(pool) = pool else {
-        return "the person refused it: it asked to run somewhere other than where its \
-                workspace runs its chats, and that waits for the person's Approve. Nothing was \
-                started. Do not ask again for it; dispatch it without naming where it runs, or \
-                tell the person it waits."
-            .to_owned();
+pub fn refused_said(one: &HeldDispatch) -> String {
+    let Some(pool) = &one.pool else {
+        let place = moves_said(&one.wanted);
+        return format!(
+            "the person refused it: it asked to run {place}, which is not where its workspace \
+             runs its chats, and that waits for the person's Approve. Nothing was started. This \
+             chat's dispatches to run {place} are refused from now on without asking the \
+             person. Dispatch it without naming where it runs, or tell the person why it needs \
+             to run there."
+        );
     };
     format!(
         "the person refused it: this chat runs on pool {pool}'s runner, and a chat there starts \
          a chat on the person's machine only with their Approve. Nothing was started. Do not \
          ask again for it; do the work on the runner, or tell the person it waits."
+    )
+}
+
+/// What a chat is told where the person refused its dispatch to `runs_on` before (#4862): this
+/// one is refused without asking them again.
+fn refused_before_said(runs_on: &StartChoice) -> String {
+    let place = place_said(Some(runs_on));
+    format!(
+        "the person refused this chat's dispatch to run {place} before, so this one is refused \
+         without asking them again. Nothing was started. Dispatch it without naming where it \
+         runs, or tell the person why it needs to run there."
     )
 }
 
@@ -100,31 +115,80 @@ impl HeldDispatch {
 /// A project's held opens and dispatches, until the person answers.
 #[derive(Debug, Default)]
 pub struct RunnerDispatches {
-    held: Mutex<(u32, Vec<HeldDispatch>)>,
+    held: Mutex<Inner>,
+}
+
+/// What [`RunnerDispatches`] keeps, under one lock, so a refusal and a new ask of the same chat
+/// are decided one after the other, never between each other's steps.
+#[derive(Debug, Default)]
+struct Inner {
+    /// The last id given.
+    next: u32,
+    held: Vec<HeldDispatch>,
+    /// The places each chat asked to run its work and the person refused (#4862): a later
+    /// dispatch of that chat to one of them is refused without asking, until the chat closes.
+    refused_moves: Vec<(u32, StartChoice)>,
+}
+
+impl Inner {
+    fn refused_before(&self, session: u32, runs_on: &StartChoice) -> bool {
+        self.refused_moves
+            .iter()
+            .any(|(chat, place)| *chat == session && place == runs_on)
+    }
+}
+
+/// Why [`RunnerDispatches::note`] held nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotHeld {
+    /// The chat has [`AT_MOST_PER_CHAT`] held already.
+    Full,
+    /// The person refused this chat's dispatch to run at this place before (#4862).
+    RefusedBefore(StartChoice),
+}
+
+/// What the person's Refuse took out: the dispatch refused, and the same chat's other moves to
+/// the same place that still waited, refused with it (#4862).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refused {
+    pub one: HeldDispatch,
+    pub with_it: Vec<HeldDispatch>,
 }
 
 impl RunnerDispatches {
-    fn lock(&self) -> std::sync::MutexGuard<'_, (u32, Vec<HeldDispatch>)> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Holds `wanted`, of a chat running as `from` on `pool`: its id, or none where the chat
-    /// has [`AT_MOST_PER_CHAT`] held already.
+    /// Holds `wanted`, of a chat running as `from` on `pool`: its id, or why not. A move (no
+    /// pool, a place named) to a place the person refused this chat before is not held: the
+    /// person isn't asked again ([`NotHeld::RefusedBefore`]).
     pub fn note(
         &self,
         pool: Option<&str>,
         from: Option<String>,
         wanted: Wanted,
         now: u64,
-    ) -> Option<u32> {
-        let mut held = self.lock();
-        let (next, list) = &mut *held;
-        if list.iter().filter(|one| one.session == wanted.chat).count() >= AT_MOST_PER_CHAT {
-            return None;
+    ) -> Result<u32, NotHeld> {
+        let mut inner = self.lock();
+        if pool.is_none()
+            && let Some(runs_on) = &wanted.runs_on
+            && inner.refused_before(wanted.chat, runs_on)
+        {
+            return Err(NotHeld::RefusedBefore(runs_on.clone()));
         }
-        *next = next.wrapping_add(1).max(1);
-        let id = *next;
-        list.push(HeldDispatch {
+        if inner
+            .held
+            .iter()
+            .filter(|one| one.session == wanted.chat)
+            .count()
+            >= AT_MOST_PER_CHAT
+        {
+            return Err(NotHeld::Full);
+        }
+        inner.next = inner.next.wrapping_add(1).max(1);
+        let id = inner.next;
+        inner.held.push(HeldDispatch {
             id,
             session: wanted.chat,
             pool: pool.map(str::to_owned),
@@ -132,24 +196,77 @@ impl RunnerDispatches {
             wanted,
             since: now,
         });
-        Some(id)
+        Ok(id)
     }
 
     /// Every dispatch held, oldest first.
     pub fn every(&self) -> Vec<HeldDispatch> {
-        self.lock().1.clone()
+        self.lock().held.clone()
     }
 
     /// Takes dispatch `id` out: it waits no more.
     pub fn take(&self, id: u32) -> Option<HeldDispatch> {
-        let mut held = self.lock();
-        let at = held.1.iter().position(|one| one.id == id)?;
-        Some(held.1.remove(at))
+        let mut inner = self.lock();
+        let at = inner.held.iter().position(|one| one.id == id)?;
+        Some(inner.held.remove(at))
     }
 
-    /// Chat `session` has closed: its held dispatches go with it.
+    /// Takes dispatch `id` out because the person refused it. Where it was held because it
+    /// moves work, its chat's later dispatches to the same place are refused without asking
+    /// ([`Self::refused_before`]), and the ones to that place still waiting go with it.
+    pub fn refuse(&self, id: u32) -> Option<Refused> {
+        let mut inner = self.lock();
+        let at = inner.held.iter().position(|one| one.id == id)?;
+        let one = inner.held.remove(at);
+        let mut with_it = Vec::new();
+        if one.pool.is_none()
+            && let Some(runs_on) = &one.wanted.runs_on
+        {
+            let (same, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut inner.held)
+                .into_iter()
+                .partition(|other| {
+                    other.session == one.session
+                        && other.pool.is_none()
+                        && other.wanted.runs_on.as_ref() == Some(runs_on)
+                });
+            inner.held = rest;
+            with_it = same;
+            if !inner.refused_before(one.session, runs_on) {
+                inner.refused_moves.push((one.session, runs_on.clone()));
+            }
+        }
+        Some(Refused { one, with_it })
+    }
+
+    /// Whether the person refused chat `session`'s dispatch to run at `runs_on` while it runs.
+    /// [`Self::note`] asks it under the same lock as it holds; this is for the tests.
+    #[cfg(test)]
+    pub fn refused_before(&self, session: u32, runs_on: &StartChoice) -> bool {
+        self.lock().refused_before(session, runs_on)
+    }
+
+    /// Chat `session` is now `started`, the same chat started again under a new number: the
+    /// places the person refused it follow it, so a restart doesn't ask them again.
+    pub fn followed(&self, session: u32, started: u32) {
+        let mut inner = self.lock();
+        let carried: Vec<StartChoice> = inner
+            .refused_moves
+            .iter()
+            .filter(|(chat, _)| *chat == session)
+            .map(|(_, place)| place.clone())
+            .collect();
+        for place in carried {
+            if !inner.refused_before(started, &place) {
+                inner.refused_moves.push((started, place));
+            }
+        }
+    }
+
+    /// Chat `session` has closed: its held dispatches, and the places it was refused, go with it.
     pub fn forget(&self, session: u32) {
-        self.lock().1.retain(|one| one.session != session);
+        let mut inner = self.lock();
+        inner.held.retain(|one| one.session != session);
+        inner.refused_moves.retain(|(chat, _)| *chat != session);
     }
 }
 
@@ -171,15 +288,12 @@ pub fn hold(held: &Held, pool: Option<&str>, wanted: Wanted) -> Answer {
         .clone()
         .or_else(|| from.clone())
         .unwrap_or_else(|| "a chat".to_owned());
-    let runs_on = wanted
-        .runs_on
-        .as_ref()
-        .map(purlis_core::machine::StartChoice::word);
+    let runs_on = wanted.runs_on.as_ref().map(StartChoice::word);
     match held
         .runner_dispatches()
         .note(pool, from.clone(), wanted, crate::sandboxing::now_secs())
     {
-        Some(_) => {
+        Ok(_) => {
             held.chats().asks_may_have_moved();
             match (pool, runs_on) {
                 (None, Some(runs_on)) => Answer::HeldToMove { to, runs_on },
@@ -191,7 +305,13 @@ pub fn hold(held: &Held, pool: Option<&str>, wanted: Wanted) -> Answer {
                 },
             }
         }
-        None => Answer::No {
+        // **A place the person refused this chat is not asked about again** (#4862), while the
+        // chat runs. Only a refusal: nothing here ever starts a dispatch or stands in for an
+        // Approve.
+        Err(NotHeld::RefusedBefore(place)) => Answer::No {
+            why: refused_before_said(&place),
+        },
+        Err(NotHeld::Full) => Answer::No {
             why: format!(
                 "this chat has {AT_MOST_PER_CHAT} dispatches waiting for the person already: wait \
                  for their answers before asking for another"
@@ -262,10 +382,10 @@ pub fn whole_of(held: &Held, one: &HeldDispatch) -> Result<RunnerDispatchWhole, 
 /// The chat's own choice, else where its target workspace's levels put it now.
 pub(crate) fn runs_on_said(
     held: &Held,
-    runs_on: Option<&purlis_core::machine::StartChoice>,
+    runs_on: Option<&StartChoice>,
     workspace: Option<&str>,
 ) -> String {
-    use purlis_core::machine::{PlaceLevel, StartChoice};
+    use purlis_core::machine::PlaceLevel;
     match runs_on {
         Some(StartChoice::ThisMachine) => return "This machine, as the chat asks".to_owned(),
         Some(StartChoice::Pool(pool)) => return format!("Pool {pool}, as the chat asks"),
@@ -301,8 +421,12 @@ pub(crate) fn runs_on_said(
 
 /// What a dispatch held because it moves work asks, in words: where it asks to run.
 fn moves_said(wanted: &Wanted) -> String {
-    use purlis_core::machine::StartChoice;
-    match &wanted.runs_on {
+    place_said(wanted.runs_on.as_ref())
+}
+
+/// Where a chat asked to run, in words: "on pool <name>" or "on this machine".
+fn place_said(runs_on: Option<&StartChoice>) -> String {
+    match runs_on {
         Some(StartChoice::Pool(pool)) => format!("on pool {pool}"),
         Some(StartChoice::ThisMachine) | None => "on this machine".to_owned(),
     }
@@ -401,11 +525,18 @@ pub async fn refuse_runner_dispatch(
 
 /// [`refuse_runner_dispatch`]'s work, for project `held`: the chat is told on its next turn.
 pub fn refused(held: &Held, id: u32) -> Result<(), String> {
-    let one = held
+    let Refused { one, with_it } = held
         .runner_dispatches()
-        .take(id)
+        .refuse(id)
         .ok_or_else(|| WAITS_NO_MORE.to_owned())?;
-    crate::handoff::tell_refused(held, &one.wanted, &refused_said(one.pool.as_deref()));
+    crate::handoff::tell_refused(held, &one.wanted, &refused_said(&one));
+    // Its chat's other asks to the same place go with it, each told so (#4862).
+    for other in with_it {
+        if let Some(place) = &other.wanted.runs_on {
+            crate::handoff::tell_refused(held, &other.wanted, &refused_before_said(place));
+        }
+        held.held_dispatches().kept_blocked(other.wanted);
+    }
     // Listed on the Dispatches tab with the ones kept blocked, as a refused grant is (#1456).
     held.held_dispatches().kept_blocked(one.wanted);
     held.chats().asks_may_have_moved();

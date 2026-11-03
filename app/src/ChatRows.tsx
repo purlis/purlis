@@ -3,21 +3,18 @@
 
 import { SandboxMark, type SandboxSaid } from "./SandboxMark";
 import { memo, useMemo, type ReactNode } from "react";
-import { Columns2, Hand, ListTodo, Plus, SquareTerminal } from "lucide-react";
+import { Columns2, Hand, ListTodo, Maximize2, Plus, SquareTerminal } from "lucide-react";
 import { PersonaMark } from "./PersonaMark";
 import { ChatMark, StoppingMark, WrappingUp } from "./NeedsYou";
 import { markOf, ownWorkOf, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { PlaneUpdatedMark, type PlaneUpdates } from "./PlaneUpdated";
 import { contentsOf, panesOf, shownIn, type Tabs } from "./tabs";
 import type { TabFace } from "./tabFace";
-import { sameShown } from "./ChatPersonaState";
+import { sameShown, useShownState, type ShownOf } from "./ChatPersonaState";
 import { ViewMark } from "./Views";
-import { shownState, type Shown, type TaskFacts } from "./shownState";
+import { shownState, type RowFacts, type Shown } from "./shownState";
 import { StateShown } from "./StateShown";
 import { needsSaid } from "./tabTasks";
-import { useQuestionStanding } from "./QuestionsHere";
-import { tasksAtWorkOf } from "./sessionTasks";
-import { useTasksBelow } from "./TasksBelow";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { tabPart } from "./ui/tabs/Tabs";
 
@@ -28,80 +25,40 @@ import { tabPart } from "./ui/tabs/Tabs";
  */
 
 /**
- * **One chat's state mark, which reads that chat's state itself** (SC-3).
+ * **One chat's state as a row says it, a mark and a word, which reads that chat's state
+ * itself** (#1484, SC-3). The Chats list's row and the explorer's both draw this, from the same
+ * facts through the one function (`useShownState`), so they say the same of a chat, and so does
+ * its tab (`TabStateMark`, #4935).
  *
- * Every row that draws a chat — its tab on the strip, its line in the show-more menu, its row in
- * the explorer — draws this, and this is all of the row that a move changes. Subscribed to its
- * own chat and nothing else, so a move redraws the moved chat's marks and no other row; held
- * (`memo`), so a row redrawn for its own reasons does not redraw it.
+ * Redrawn only when what it shows changes: a move redraws the moved chat's state and no row.
+ * Held on plain values, so a row redrawn for its own reasons does not redraw it.
  */
-export const ChatStateMark = memo(function ChatStateMark({
-  session,
-  shell,
-}: {
-  /** The chat, or none: a tab with no chat in it draws `unknown`, as `markOf` says. */
-  session: number | undefined;
-  /** Whether it is a shell tab, which draws no mark until something reports a state for it. */
-  shell: boolean;
+export const ChatShownState = memo(function ChatShownState({
+  changed = false,
+  ...of
+}: ShownOf & {
+  /** Its state changed while its row was not drawn, so it arrives in it (`StateShown`). */
+  changed?: boolean;
 }) {
-  const state = useChatsSelect(useChatsHere(), (states) => markOf(states, session ?? -1, shell));
-  return <ChatMark state={state} />;
+  const shown = useShownState(of);
+  return shown === undefined ? null : <StateShown shown={shown} changed={changed} />;
 });
 
 /**
- * **One chat's state as a row says it, a mark and a word, which reads that chat's state
- * itself** (#1484, SC-3). The Chats list's row and the explorer's both draw this, from the same
- * facts through the one function (`shownState`), so they say the same of a chat.
+ * **What a chat's tab says it is doing** (#4935): the word its row says (`useShownState`), on
+ * the tab's one `.state` mark, coloured by the board's state as the corner's dot is. A chat with
+ * nothing to show draws no mark.
  *
- * Subscribed to its own chat and to the queue's answer about it, and redrawn only when what it
- * shows changes: a move redraws the moved chat's state and no row. Held on plain values, so a
- * row redrawn for its own reasons does not redraw it.
- *
- * **A chat waiting on its tasks says so, and how many** (#1491): it reads its own tasks
- * (`useTasksBelow`) and counts the ones that have not finished, by the one count
- * (`sessionTasks.tasksAtWorkOf`), so the word agrees with the count on its row. A task below it
- * that finishes redraws this, and no other chat's.
+ * Every row that draws a chat's tab — on the strip, and in the show-more menu — draws this, and
+ * it is all of the tab that a move changes (SC-3): subscribed to its own chat, so a move redraws
+ * the moved chat's marks and no other row; held (`memo`), so a tab redrawn for its own reasons
+ * does not redraw it.
  */
-export const ChatShownState = memo(function ChatShownState({
-  session,
-  shell,
-  report = null,
-  outcome = null,
-  harness,
-  changed = false,
-}: {
-  session: number;
-  /** Its state changed while its row was not drawn, so it arrives in it (`StateShown`). */
-  changed?: boolean;
-  /** A shell tab, which shows no state until something reports one. */
-  shell: boolean;
-  /** As a task, the report it owes (`TaskFacts`); nothing for a chat that is not one. */
-  report?: TaskFacts["report"] | null;
-  /** How it reported, where it has and the app knows. */
-  outcome?: string | null;
-  /** Its harness as the person calls it: named in what is not known of it. */
-  harness: string | null;
-}) {
-  const below = useTasksBelow(session);
-  // Its question, where the asks registry says it stands (#4564): never a copy of its own.
-  const question = useQuestionStanding(session);
-  const shown = useChatsSelect(
-    useChatsHere(),
-    (states) =>
-      shownState({
-        board: markOf(states, session, shell),
-        needsYou: states.needsYou.includes(session) || question?.level === "needs-you",
-        task:
-          report === null
-            ? null
-            : { report, outcome, asking: question?.level === "with-asker" ? question.asker : null },
-        harness,
-        tasksAtWork: tasksAtWorkOf(states, below),
-        ownWork: ownWorkOf(states, session),
-      }),
-    sameShown,
-  );
-  return shown === undefined ? null : <StateShown shown={shown} changed={changed} />;
+const TabStateMark = memo(function TabStateMark(of: ShownOf) {
+  const shown = useShownState(of);
+  const board = useChatsSelect(useChatsHere(), (states) => markOf(states, of.session, of.shell));
+  if (shown === undefined) return null;
+  return <ChatMark state={board ?? "unknown"} word={shown.word} />;
 });
 
 /**
@@ -114,6 +71,13 @@ export function showsStopping(tabs: Tabs, id: number, stopping: ReadonlySet<numb
 
 /** No chats: what a tab is handed where nothing is being stopped. */
 const NO_SESSIONS: ReadonlySet<number> = new Set();
+
+/** What a tab says of a chat it is told nothing of: no task, and no harness to name. */
+const NO_FACTS: TabFacts = { report: null, outcome: null, harness: null };
+
+/** What a tab is told of its chat beside the board, as its row has it (#4935). Its question is
+ *  read where its state is (`useShownState`). */
+export type TabFacts = Pick<RowFacts, "report" | "outcome" | "harness">;
 
 /** No names: what a tab with no hidden task that needs you is handed. */
 const NO_NAMES: readonly string[] = [];
@@ -136,6 +100,7 @@ export function TabMarks({
   stopping = NO_SESSIONS,
   face,
   personaOf,
+  factsOf,
   sandbox,
   task,
   taskOf,
@@ -162,6 +127,9 @@ export function TabMarks({
   face: TabFace;
   /** The persona a chat runs as, when it runs as one: its mark is the combined icon's. */
   personaOf: (session: number) => string | null | undefined;
+  /** What a chat's row reads its state from beside the board ({@link TabFacts}), so its tab
+   *  says the row's word (#4935). A chat it knows nothing of is a chat that is no task. */
+  factsOf?: (session: number) => TabFacts | undefined;
   /** How much the tab's chat's sandbox holds (#2071): its mark is drawn after the name. */
   sandbox?: SandboxSaid | null;
   /** The chats wrapping up — being smart-closed (ADR 0064). */
@@ -193,13 +161,15 @@ export function TabMarks({
         <span className={preview ? "tab-name is-preview" : "tab-name"} {...tabPart("label")}>
           {face.name}
         </span>
-        <SplitMore more={face.more} />
+        <SplitMore more={face.more} zoomed={face.zoomed} />
       </>
     );
   }
   const chat = lead.session;
   const shell = shells.has(chat);
   const persona = personaOf(chat);
+  // What its row reads its state from beside the board (#4935), so the two say one word.
+  const facts = factsOf?.(chat) ?? NO_FACTS;
   return (
     <>
       {/* **A pinned tab shows its pin before its icon** (#4762), and the pin is the tab's. */}
@@ -207,7 +177,7 @@ export function TabMarks({
       {/* **The focused pane's chat's combined icon** (#4762): who it runs as, a persona's
           mark or a shell's terminal (#1449), with its state's mark on its corner, in the
           sidebar's look (`chatPersona.css`). The marks are the tab's own, as before: the state
-          is the board's (`ChatStateMark`). The badge is only seen: the tab says its state after
+          dot is the board's. The badge is only seen: the tab says its state after
           its name, below, as it always has. A chat with neither wears the state mark alone. A
           task's own tab wears the task mark (#1489), whose state is said after its name. */}
       {taskOf !== undefined ? (
@@ -225,7 +195,7 @@ export function TabMarks({
       <span className="tab-name" {...tabPart("label")}>
         {face.name}
       </span>
-      <SplitMore more={face.more} />
+      <SplitMore more={face.more} zoomed={face.zoomed} />
       <SandboxMark level={sandbox?.level} why={sandbox?.why} sites={sandbox?.sites} />
       <PlaneUpdatedMark files={updates?.[chat]} />
       {/* **What the tab is doing, said after what it is**: its own element, so a tab whose text
@@ -233,10 +203,10 @@ export function TabMarks({
           where it shows one (#1486). A task's own tab draws it here (#1489); any other tab wears
           it as the icon's badge, so here it is heard and not seen. */}
       {taskOf !== undefined ? (
-        <ChatStateMark session={chat} shell={shell} />
+        <TabStateMark session={chat} shell={shell} {...facts} />
       ) : (
         <span className="hidden-words">
-          <ChatStateMark session={chat} shell={shell} />
+          <TabStateMark session={chat} shell={shell} {...facts} />
         </span>
       )}
       {/* **`talk · steward 4`, on a task's own tab** (#1489): whose task it is, dimmer. To a
@@ -291,7 +261,7 @@ export function TabMarks({
 
 /**
  * **The state's dot on a tab's icon** (#4762): seen and not heard, since the tab says its state
- * after its name (`ChatStateMark`, in hidden words). A dot of its own, read off the chat's
+ * after its name (`TabStateMark`, in hidden words). A dot of its own, read off the chat's
  * state as that mark reads it, so a move redraws the two and no other row (SC-3). A chat with
  * no mark to draw (`markOf`) wears none.
  */
@@ -313,14 +283,24 @@ const StateBadge = memo(function StateBadge({
  * **`⊟+N`: how many other panes share a split tab** (#4762), after its name and never giving way
  * to it: the name is cut first. A screen reader hears it as words.
  */
-function SplitMore({ more }: { more: number }) {
+function SplitMore({ more, zoomed }: { more: number; zoomed?: true }) {
   if (more <= 0) return null;
   return (
-    <span className="tab-split-more" data-mark="split">
-      <Columns2 aria-hidden="true" />
-      <span aria-hidden="true">+{more}</span>
-      <span className="hidden-words">, split, {more + 1} panes</span>
-    </span>
+    <>
+      <span className="tab-split-more" data-mark="split">
+        <Columns2 aria-hidden="true" />
+        <span aria-hidden="true">+{more}</span>
+        <span className="hidden-words">, split, {more + 1} panes</span>
+      </span>
+      {/* **A zoomed pane's mark** (#4765): one pane fills the tab for now, and Focus this pane
+          brings the others back. */}
+      {zoomed && (
+        <span className="tab-zoomed" data-mark="zoomed">
+          <Maximize2 aria-hidden="true" />
+          <span className="hidden-words">, one pane zoomed</span>
+        </span>
+      )}
+    </>
   );
 }
 

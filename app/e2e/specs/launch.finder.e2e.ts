@@ -161,8 +161,9 @@ describe("an app opened from Finder", () => {
   it("lets a hook that names charter by its bare word reach charter", async () => {
     // No `charter` anywhere in this `$HOME`: the one found is the app's own, beside its
     // executable — the floor under a machine where the app is the only charter there is.
+    // Its session began and nothing has asked for the person: idle, as its row says (#4935).
     await theNewestTabComesToSay(
-      "waiting on you",
+      "idle",
       "charter-app#136: the plugin-spelled `charter hook sessionstart` never reached the board",
     );
   });
@@ -204,8 +205,9 @@ describe("an app opened from Finder", () => {
     chmodSync(installed, 0o755);
 
     await startAChatOnTheBuiltIn();
+    // Its session began and nothing has asked for the person: idle, as its row says (#4935).
     await theNewestTabComesToSay(
-      "waiting on you",
+      "idle",
       "charter-app#136: the second chat's bare `charter` hook never reached the board",
     );
     expect(existsSync(asked) ? readFileSync(asked, "utf8") : "").toBe("");
