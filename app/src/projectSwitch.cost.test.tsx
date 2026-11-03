@@ -7,6 +7,7 @@ import { cleanup } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { switches, type Shape, type Switch } from "./projectSwitch.testkit";
 import { keepTheirOrder } from "./commandOrder";
+import { countReactsCommits } from "./reactCommits.testkit";
 
 // As the window runs: the lanes that keep a read and a change in order (#1949), whose reads
 // must not queue behind each other on a switch.
@@ -33,10 +34,7 @@ keepTheirOrder();
  * second project alone), and `SWITCH_OUT=<file>` writes what each switch cost as a line of JSON.
  */
 
-await vi.hoisted(async () => {
-  const { countReactsCommits } = await import("./reactCommits.testkit");
-  countReactsCommits();
-});
+countReactsCommits();
 
 vi.mock("./SessionPane", async () => ({
   SessionPane: (await import("./countedPane.testkit")).CountedPane,
