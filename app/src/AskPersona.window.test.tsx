@@ -19,6 +19,7 @@ import App from "./App";
 import { askOfDispatch } from "./test-asks";
 import type { AskOffer, DispatchPending, VaultRefused } from "./bindings";
 import { forgetDismissals } from "./dismissals";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { stripNamed } from "./test-strips";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 import { pickIn } from "./ui/select/select.testkit";
@@ -148,6 +149,8 @@ function core(now: Core) {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
+      // A chat has a tab only from the stored layout (#4758): this one is on alpha's strip.
+      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,
@@ -225,7 +228,7 @@ describe("Ask a persona from a chat's tab", () => {
     expect(within(sub).getByRole("menuitem", { name: "steward…" })).toBeEnabled();
   });
 
-  it("asks for a task name and what to ask, and starts a devops chat under this one", async () => {
+  it("asks for a task name and what to ask, and starts a devops chat under this one that takes no tab", async () => {
     const { asked } = await aStewardChat();
 
     await chatMenu();
@@ -263,8 +266,9 @@ describe("Ask a persona from a chat's tab", () => {
     );
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Ask devops" })).toBeNull());
 
-    // The core tells the window of the chat it started, as it does for one a chat started:
-    // its tab arrives behind the one being read.
+    // The core tells the window of the chat it started, as it does for one a chat started. A
+    // started task shows in the sidebar only (#4758): the strip keeps the one tab it had, and
+    // the chat being read stays in front.
     await act(() =>
       emit("handoff-arrived", {
         plane: PLANE,
@@ -277,13 +281,10 @@ describe("Ask a persona from a chat's tab", () => {
         harness: "claude",
       }),
     );
-    const strip = stripNamed("Tabs");
-    const tabs = await waitFor(() => {
-      const all = within(strip).getAllByRole("tab");
-      expect(all).toHaveLength(2);
-      return all;
-    });
-    expect(tabs[1]).toHaveTextContent("check prod");
+    await settled();
+    const tabs = within(stripNamed("Tabs")).getAllByRole("tab");
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]).not.toHaveTextContent("check prod");
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
   });
 
@@ -596,6 +597,8 @@ describe("where policy locks all dispatch", () => {
       (cmd) => {
         if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
         if (cmd === "opened_chats") return [CHAT];
+        // A chat has a tab only from the stored layout (#4758): this one is on alpha's strip.
+        if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
         if (cmd === "plane_sidebar")
           return {
             root: PLANE,

@@ -22,6 +22,7 @@ import { cascadeOf, drawnWith, type Drawn } from "./cascade.testkit";
 import { card, cardOf as cardOfRow, facts, theCard } from "./chatCard.testkit";
 import { CARD_DELAY_MS, CARD_LEAVE_MS, CARD_SKIP_MS } from "./ChatsSection";
 import { forgetThisLaunch } from "./regions";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { GLOBAL } from "./windowprefs";
 import type { Shown } from "./shownState";
 import { goToWorkspace, rowSays, stripNamed } from "./test-strips";
@@ -157,8 +158,13 @@ function usedFor(a: Record<string, unknown>) {
  */
 function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask[] = []) {
   const asked: Asked[] = [];
-  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it. */
-  let laidOut: unknown = null;
+  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it.
+   *  At the launch, a tab for each chat the record kept a tab for, on its workspace's strip, as
+   *  the stored layout keeps them (#4758): every session, and a task or handoff that has one. */
+  let laidOut: unknown = aTabForEachChat(
+    open.filter((one) => one.from == null || one.from.tab),
+    (session) => open.find((one) => one.session === session)?.workspace ?? null,
+  );
   const listeners = new Map<string, number>();
   /** Every listener of an event: `plane-changed` has one per answer the window reads. */
   const everyListener = new Map<string, number[]>();
@@ -698,7 +704,7 @@ describe("a task chat", () => {
     expect(tabNames()).toEqual(["devops 3"]);
   });
 
-  it("is still listed, and still what its pane shows, after the window is loaded again", async () => {
+  it("is still listed, and still what its pane shows, after the window is loaded again, where its session gets no tab back (#4758)", async () => {
     // The same core across both windows: a reload, and a relaunch that put the chats back,
     // both ask it what is open and which chat was in front.
     const open = sixTasks();
@@ -732,9 +738,9 @@ describe("a task chat", () => {
         "2 devops 7",
       ]),
     );
-    // Chat 4 comes back in its pane. Steward 1, in no pane, still gets a tab of its own at a
-    // launch until chats stop getting tabs (#4758).
-    expect(tabNames()).toEqual(["devops 4", "steward 1"]);
+    // Chat 4 comes back in its pane. Steward 1, in no pane since chat 4 took its place, gets
+    // no tab: a launch draws the tabs the layout kept and no others (#4758).
+    expect(tabNames()).toEqual(["devops 4"]);
     await waitFor(() => expect(screen.getByTestId("pane").textContent).toBe("session 4"));
     expect(row(again, "devops 2").getAttribute("data-tab")).toBe("false");
   });
@@ -756,7 +762,7 @@ describe("a task chat", () => {
     expect(tabNames()).toEqual(["steward 1", "devops 4"]);
   });
 
-  it("arrives as a row and no tab, where a handoff arrives as a tab", async () => {
+  it("arrives as a row and no tab, and so does a handoff, as a row of its own (#4758)", async () => {
     const open = [chat(1, "alpha")];
     const { arrive } = core(open);
     render(<App />);
@@ -770,11 +776,10 @@ describe("a task chat", () => {
 
     open.push(chat(3, "alpha", { persona: "devops", from: by(1, "handoff") }));
     arrive(open[2]);
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "devops 3"]));
-    // And as a row of its own at the top: it is not a task of the chat it came from (#1492).
-    // Waited on, not read once (#2158): the arrival opens its tab in the event's own handler,
-    // but its row is drawn from the sidebar the window reads again after, which answers later.
+    // A handoff takes no pane and no tab either (#4758): it is a row of its own at the top, not
+    // a task of the chat it came from (#1492).
     await waitFor(() => expect(shape(tree)).toEqual(["1 steward 1", "2 devops 2", "1 devops 3"]));
+    expect(tabNames()).toEqual(["steward 1"]);
     expect((await cardOf(tree, "devops 3")).text).toContain("from steward 1");
   });
 });

@@ -95,7 +95,7 @@ describe("Runs on, from the picker to the start (#4536)", () => {
     const { asked } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
 
     await waitFor(() => expect(selectNamed("Runs on")).toHaveTextContent("As set (pool builds)"));
     expect(asked.filter(({ cmd }) => cmd === "start_runs_on")).toHaveLength(1);
@@ -105,7 +105,7 @@ describe("Runs on, from the picker to the start (#4536)", () => {
     const { boxes } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
     await waitFor(() => expect(selectNamed("Runs on")).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "Start chat" }));
 
@@ -118,7 +118,7 @@ describe("Runs on, from the picker to the start (#4536)", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole("button", { name: "New tab" }));
+    await user.click(await screen.findByRole("button", { name: "New chat" }));
     await waitFor(() => expect(selectNamed("Runs on")).toBeInTheDocument());
     act(() => selectNamed("Runs on").focus());
     await user.keyboard("{Enter}");
@@ -134,7 +134,7 @@ describe("Runs on, from the picker to the start (#4536)", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole("button", { name: "New tab" }));
+    await user.click(await screen.findByRole("button", { name: "New chat" }));
     await waitFor(() => expect(selectNamed("Runs on")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "Start chat" }));
 

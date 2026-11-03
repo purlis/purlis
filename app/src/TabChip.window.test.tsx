@@ -25,6 +25,7 @@ import { GRACE_MS, REST_MS } from "./tabTasks";
 import { goToWorkspace, stripNamed } from "./test-strips";
 import { hoverPlacementOf, hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 import { theFrameNow } from "./frame.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A session's tab wears a chip of its tasks, which opens the menu to switch between them**
@@ -168,8 +169,13 @@ let withAskingChat: { session: number; asker: string; since: number }[] = [];
 
 function core(open: Listed[], finished: FinishedTask[] = []) {
   const asked: Asked[] = [];
-  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it. */
-  let laidOut: unknown = null;
+  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it.
+   *  Before the window has said any, the layout stored gives a tab to each chat its lineage
+   *  says has one (#4758): a task sits in its asker's chip until the person opens it. */
+  let laidOut: unknown = aTabForEachChat(
+    open.filter((one) => one.from?.tab !== false),
+    (session) => open.find((one) => one.session === session)?.workspace ?? null,
+  );
   const listeners = new Map<string, number[]>();
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;

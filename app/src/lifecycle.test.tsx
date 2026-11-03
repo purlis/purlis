@@ -16,6 +16,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { LaidOut, Moved, NotStarted, OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 // The Inbox lists a chat that came back as an update too (#1693), after its Notices (#1695):
 // these tests are about the Notice, so the update is not what they find.
@@ -41,7 +42,8 @@ const START_OPTIONS = {
   declares_none: true,
 };
 
-/** Opens a chat the way the operator does now: New tab, then a row, then Start.
+/** Opens a chat the way the operator does now: the empty pane's New chat, then a row, then
+ *  Start (#4758: the strip's `+` opens an empty tab, and New chat fills the pane).
  *
  *  A harness starts only once a row is picked (ADR 0022) — the dialog shows even when one
  *  profile is available, because skipping it would bring back the harness nobody picked on
@@ -50,7 +52,8 @@ const START_OPTIONS = {
  *  every one of these fails.
  */
 async function openAChat() {
-  await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  const empty = await screen.findByTestId("empty-pane");
+  await userEvent.click(within(empty).getByRole("button", { name: "New chat" }));
   await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
@@ -155,9 +158,15 @@ function core(
     }
     if (cmd === "plane_at_launch")
       return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
+    // A plane with no workspace: the window opens its one empty pane once it has read the
+    // plane (#4758), and these tests start a chat from it.
+    if (cmd === "plane_sidebar")
+      return { root: "/home/dev/plane", workspaces: [], personas: [], persona: null, unfiled: [] };
     if (cmd === "start_options") return START_OPTIONS;
     if (cmd === "start_chat") return { session: ++opened };
     if (cmd === "opened_chats") return open;
+    // The layout stored gives each chat a tab (#4758): a relaunch draws what it says.
+    if (cmd === "reopened_layout") return aTabForEachChat(open);
     if (cmd === "chat_states") return states;
     if (cmd === "chats_that_would_not_start") return wouldNot;
     if (cmd === "open_session") return open.length + ++opened;
@@ -620,14 +629,15 @@ describe("being asked to quit", () => {
     const { asked, settled } = core();
     render(<App />);
     // And settled: the window asks its plane first and what it has open second, so "no tabs"
-    // is only "nothing to end" once that second answer is back.
+    // is only "nothing to end" once that second answer is back. What it then shows is its one
+    // empty pane (#4758), which holds no chat.
     //
     // **The precondition is awaited, not polled** (charter-app#138): `untilTheCoreHas` says
     // why, and `core`'s `settled` says which two answers the window's own `settled` is made
     // of. What the next line fires at is a window that has committed both, as a fact rather
     // than as something a poll caught in time.
     await untilTheCoreHas(settled);
-    expect(screen.getByTestId("empty-window")).toBeInTheDocument();
+    expect(await screen.findByTestId("empty-pane")).toBeInTheDocument();
 
     const listen = of("plugin:event|listen", asked).find(
       (one) => (one.args as { event: string }).event === "quit-asked",

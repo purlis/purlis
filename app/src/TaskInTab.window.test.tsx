@@ -28,7 +28,7 @@ import type {
 } from "./bindings";
 import type { State } from "./chatState";
 import { chatsOf } from "./laidOut";
-import { leadOf, onScreenOf } from "./laidOut.testkit";
+import { aTabForEachChat, leadOf, onScreenOf } from "./laidOut.testkit";
 import { cardOf as cardOfRow } from "./chatCard.testkit";
 import { forgetKeyboard } from "./paneKeyboard";
 import { REFERENCE_TYPE } from "./references";
@@ -237,7 +237,19 @@ function blockedOnHost(session: number, host = "registry.npmjs.org"): ChatBlocke
  * (`window_layout`, #4751), as the record does, and what it holds for the person: dispatches
  * waiting for a grant and vaults it refused, by chat.
  */
-function core(open: Listed[]) {
+/**
+ * The layout a launch is answered when a test says none: a tab for each chat the record kept a
+ * tab for (every session, and a handoff or task whose lineage says it has one), on its
+ * workspace's strip. Since #4758 a chat gets a tab only from the stored layout.
+ */
+function tabbed(open: Listed[]): LaidOut {
+  return aTabForEachChat(
+    open.filter((one) => one.from == null || one.from.tab),
+    (session) => open.find((one) => one.session === session)?.workspace ?? null,
+  );
+}
+
+function core(open: Listed[], atLaunch: LaidOut = tabbed(open)) {
   const asked: Asked[] = [];
   const listeners = new Map<string, number[]>();
   const dispatches = new Map<number, DispatchPending[]>();
@@ -247,7 +259,7 @@ function core(open: Listed[]) {
   /** How many of the next `window_layout`s the core refuses. */
   const refusing = { layouts: 0, calls: 0 };
   /** Every tab as the window last said it, and the core took it: a reload is answered it. */
-  const laid: { now: LaidOut | null } = { now: null };
+  const laid: { now: LaidOut | null } = { now: atLaunch };
   /** The tasks the core's next answer to several allows, where keeping fails part way. */
   const answering: { only?: number[] } = {};
   /** The queue the core said last: what its asks registry says waits on a reply (#1690). */
@@ -573,9 +585,9 @@ const withTasks = () => [
   chat(7, "alpha", { persona: "devops", label: "deep", from: taskOf(4, { name: "talk" }) }),
 ];
 
-/** The window, drawn, with every chat of `open` listed. */
-async function drawn(open: Listed[]) {
-  const held = core(open);
+/** The window, drawn, with every chat of `open` listed, on the stored layout `laid` if given. */
+async function drawn(open: Listed[], laid?: LaidOut) {
+  const held = core(open, laid);
   render(<App />);
   const tree = await section();
   await waitFor(() => expect(rows(tree)).toHaveLength(open.length));
@@ -691,7 +703,7 @@ describe("a tab remembers which chat it shows", () => {
     expect(crumbsSay()).toContain("talk");
   });
 
-  it("tells the core what each tab shows, and every tab comes back on it when the window is loaded again", async () => {
+  it("tells the core what each tab shows, and every tab comes back on it, and only those, when the window is loaded again (#4758)", async () => {
     const open = [...withTasks(), chat(8, "alpha", { label: "notes", from: taskOf(2) })];
     const first = core(open);
     const window = render(<App />);
@@ -718,9 +730,9 @@ describe("a tab remembers which chat it shows", () => {
     await section();
 
     await waitFor(() => expect(onScreen()).toEqual([5]));
-    // Each tab comes back on its task, in its pane. The two sessions, in no pane, still get a
-    // tab of their own at a launch until chats stop getting tabs (#4758).
-    expect(tabNames()).toEqual(["sweep", "notes", "steward 1", "steward 2"]);
+    // Each tab comes back on its task, in its pane. The two sessions, in no pane, get no tab:
+    // a launch draws the tabs the layout kept and no others (#4758).
+    expect(tabNames()).toEqual(["sweep", "notes"]);
     expect(tab("sweep").getAttribute("aria-selected")).toBe("true");
     expect(crumbsSay()).toContain("sweep");
     // And the tab behind is on its task too.
@@ -740,38 +752,19 @@ describe("a tab remembers which chat it shows", () => {
     expect(panedIn(laidSaid(asked))).not.toContain(5);
   });
 
-  it("comes back on the session's own chat when the task the record names is gone, or is not below it", async () => {
-    // The record says steward 1's tab showed chat 5, which did not come back, and that
-    // steward 2's showed chat 4, which is a task of steward 1 and not of steward 2.
-    const open = withTasks().filter((one) => one.session !== 5);
-    open[0].shows = 5;
-    open[1].shows = 4;
-    await drawn(open);
-
-    expect(onScreen()).toEqual([1]);
-    expect(crumbs()).toBeNull();
-    expect(away()).toBeNull();
-    expect(tab("steward 1").querySelector(".tab-task")).toBeNull();
-    expect(tab("steward 2").querySelector(".tab-task")).toBeNull();
-  });
-
-  it("tells the core each tab is on its own chat where what the record said it showed was not put back", async () => {
-    // The core takes the chat a tab shows for the one the person is looking at. A number
-    // left in the record for a chat that is gone would have it take them to be looking at
-    // nothing, and notify them about the session on their screen.
-    const open = withTasks().filter((one) => one.session !== 5);
-    open[0].shows = 5;
-    open[1].shows = 4;
-    const { asked } = await drawn(open);
-
-    await waitFor(() => expect(onScreenSaid(asked)).toEqual([1]));
-    expect(panedIn(laidSaid(asked))).toEqual([1, 2]);
-  });
-
-  it("tells the core the task a tab came back on, as the record said it showed", async () => {
+  it("tells the core the task a tab came back on, as the stored layout said it showed (#4758)", async () => {
+    // A record keeps which chat each pane showed in its layout (#4751): steward 1's tab was on
+    // sweep. A record from before layouts said it in the chat's `shows`, which the core's
+    // upgrade reads into a layout (#4758), so the window reads the layout only.
     const open = withTasks();
-    open[0].shows = 5;
-    const { asked } = await drawn(open);
+    const laid = aTabForEachChat(
+      [
+        { session: 5, in_front: true },
+        { session: 2, in_front: false },
+      ],
+      () => "alpha",
+    );
+    const { asked } = await drawn(open, laid);
 
     await waitFor(() => expect(onScreen()).toEqual([5]));
     await waitFor(() => expect(onScreenSaid(asked)).toEqual([5]));

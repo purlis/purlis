@@ -9,6 +9,7 @@ import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { OpenChat } from "./bindings";
 import { findStripNamed, goToWorkspace, stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A tab strip owns only tabs** (#1204): the rule axe calls `aria-required-children`. A
@@ -270,6 +271,8 @@ function core() {
     (cmd) => {
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [chat(1), chat(2)];
+      // The layout stored gives both a tab on alpha (#4758).
+      if (cmd === "reopened_layout") return aTabForEachChat([chat(1), chat(2)], () => "alpha");
       if (cmd === "chats_plane_updated") return [{ session: 1, files: ["CLAUDE.md"] }];
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions") return [];

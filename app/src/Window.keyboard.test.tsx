@@ -9,6 +9,7 @@ import { cleanup, render as renderBare, screen, waitFor, within } from "@testing
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetThisLaunch } from "./regions";
 import { sequenceIn } from "./tabSequence";
 import { closeFromTheRail, showTheExplorer, stripNamed, workspaceChips } from "./test-strips";
@@ -101,6 +102,8 @@ function core({
     if (cmd === "branch_tree") return { entries: [], more: 0 };
     if (cmd === "branch_status") return { changes: [], folders: [], more: 0, base: "main" };
     if (cmd === "opened_chats") return chats;
+    // Each chat has its tab on alpha's strip from the stored layout (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(chats, () => "alpha");
     // The operator has pinned every workspace, so every one is on the strip and can be
     // clicked there: the strip draws what is pinned and the one you are in (ADR 0054).
     if (cmd === "plane_pins") return { project: false, workspaces: ["alpha", "beta"], missing: [] };
@@ -394,7 +397,7 @@ describe("the window's tab order", () => {
       "tab Repos",
       // The left region, top to bottom, as the Chats view's top stacks it (#3342, Q1 A): the
       // new chat and More on its title's line, the filter's box (#1499), the scope switch (#1679, ONE
-      // stop, the arrows between This tab, Workspace and All), then the chips, needs you and
+      // stop, the arrows between Workspace and All), then the chips, needs you and
       // working, ONE stop with the arrows between them.
       "button New chat",
       "button More",

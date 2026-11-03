@@ -524,8 +524,13 @@ describe("deleting a workspace", () => {
       // this plane picks none.
       "theme_levels_adopt",
     ];
+    // One write besides: the window tells the core its tabs whenever they change (#4751), and
+    // the delete changed them, as the strip it lands on keeps one empty tab (#4758). That is
+    // the window's own record, and nothing on the plane.
     const during = asked.slice(before).map((one) => one.cmd);
-    expect(during.filter((cmd) => !READS.includes(cmd))).toEqual(["workspace_remove"]);
+    expect(during.filter((cmd) => !READS.includes(cmd) && cmd !== "window_layout")).toEqual([
+      "workspace_remove",
+    ]);
   });
 
   it("says what the core said when it worked", async () => {
@@ -646,7 +651,8 @@ describe("a plane with no workspace yet", () => {
     const { calls } = core({ workspaces: [] });
     render(<App />);
 
-    const empty = await screen.findByTestId("empty-plane");
+    // The one empty pane (#4758), which says so and offers Create a workspace first.
+    const empty = await screen.findByTestId("empty-pane");
     expect(empty).toHaveTextContent("No workspaces yet");
     // And New workspace…, the last row of the title bar's ⌄ (#2916, R108).
     expect(

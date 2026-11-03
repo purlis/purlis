@@ -29,7 +29,9 @@ function offer(id: string, title: string, on: Partial<Offer> = {}): Offer {
 
 describe("the bar's buttons carry a mark beside their words", () => {
   it.each([
-    ["chat.new", "New tab", "lucide-plus"],
+    // The strip's `+` opens an empty tab; New chat, an empty pane's way out, starts one (#4758).
+    ["tab.new", "New tab", "lucide-plus"],
+    ["chat.new", "New chat", "lucide-plus"],
     ["pane.split.right", "Split right", "lucide-square-split-horizontal"],
     ["pane.split.down", "Split down", "lucide-square-split-vertical"],
     ["pane.close", "Close this pane", "lucide-x"],
@@ -38,7 +40,7 @@ describe("the bar's buttons carry a mark beside their words", () => {
     // Two icon-only buttons an inch apart carrying one icon is a strip aimed at by memory.
     ["project.create", "New project…", "lucide-folder-plus"],
     ["project.open", "Open a project…", "lucide-folder-open"],
-    // And the workspace strip's own `+` (charter-app#193), which shares `chat.new`'s glyph
+    // And the workspace strip's own `+` (charter-app#193), which shares `tab.new`'s glyph
     // rather than taking a third folder icon: each is the one control at the end of its own
     // strip, a whole row apart from the other, and both mean *make one more of what this
     // strip lists*. #178's rule above is about two controls drawn side by side.
@@ -76,6 +78,8 @@ describe("the bar's buttons carry a mark beside their words", () => {
         "project.open",
         // The project switcher's button, at the start of the strip's controls (FR-27).
         "project.switch",
+        // The chat strip's `+` (#4758).
+        "tab.new",
         // Tile all at the strip's right end (#4765), found by its row's stem.
         "tab.tile",
         "workspace.create",
@@ -95,7 +99,7 @@ describe("the bar's buttons carry a mark beside their words", () => {
    * at the time the whole set was one group.
    *
    * It is not any more. `workspace.create` is the one control at the end of the workspace
-   * strip and `chat.new` is the one control on the bar, a whole row apart, and they share
+   * strip and `tab.new` is the one control on the bar, a whole row apart, and they share
    * `Plus` on purpose: the `+` at the end of a strip makes one more of what the strip lists,
    * which is the thing an operator learns once and then reads on every strip in the window.
    * Holding the whole set to be distinct would forbid exactly that, so the groups are written
@@ -108,7 +112,7 @@ describe("the bar's buttons carry a mark beside their words", () => {
     // arriving on either strip has somewhere to be added and something to fail against.
     "the workspace strip": ["workspace.create"],
     // The `+`, and Tile all at the strip's right end (#4765).
-    "the chat strip": ["chat.new", "tab.tile"],
+    "the chat strip": ["tab.new", "tab.tile"],
   };
 
   it.each(Object.keys(SIDE_BY_SIDE))("never gives %s two rows with the same mark", (strip) => {
@@ -255,7 +259,7 @@ describe("the show-more button", () => {
   it("is the same quiet ghost as the `+` beside it", () => {
     render(
       <>
-        <Doer offer={offer("chat.new", "New tab")} onPress={() => {}} iconOnly />
+        <Doer offer={offer("tab.new", "New tab")} onPress={() => {}} iconOnly />
         <ShowMore
           noun="tab"
           hidden={[{ key: "a", offer: offer("tab.select:a", "a"), needs: 0, children: "a" }]}

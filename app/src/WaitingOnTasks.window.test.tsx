@@ -18,6 +18,7 @@ import App from "./App";
 import type { FinishedTask, Moved, OpenChat } from "./bindings";
 import type { State } from "./chatState";
 import { cardOf, theCard } from "./chatCard.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetThisLaunch } from "./regions";
 import type { Shown } from "./shownState";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
@@ -159,6 +160,8 @@ function core(open: OpenChat[], rows: FinishedTask[] = []) {
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return [...open];
+    // Each chat has its tab on alpha's strip from the stored layout (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(open, () => "alpha");
     if (cmd === "stopping_chats") return [];
     if (cmd === "finished_tasks") return [...rows];
     // A copy, as the core's answer reaches the window over IPC: the window keeps an answer

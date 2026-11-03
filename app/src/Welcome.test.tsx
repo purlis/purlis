@@ -9,6 +9,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { closeFromTheRail } from "./test-strips";
 import type { PlaneContribution } from "./bindings";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /** The project the status line names, found by its directory: the line draws the project's
  *  name, and its directory is the item's tooltip (qw357). */
@@ -78,6 +79,13 @@ function core(answers: (cmd: string, args: Record<string, unknown>) => unknown) 
     asked.push({ cmd, args: given });
     const answer = answers(cmd, given);
     if (answer !== undefined) return answer;
+    // Each chat the test puts back has its tab, as the stored layout keeps it (#4758).
+    if (cmd === "reopened_layout") {
+      const open = answers("opened_chats", given);
+      return Array.isArray(open)
+        ? aTabForEachChat(open as { session: number; in_front: boolean }[])
+        : null;
+    }
     if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
     // A machine that remembers a project: the welcome is the same either way (#1812).
     if (cmd === "recent_planes")

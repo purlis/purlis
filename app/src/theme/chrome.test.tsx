@@ -106,6 +106,7 @@ import { forgetThisLaunch } from "../regions";
 import { complaints } from "./complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn, drawTint, inForce, tinted } from "./theme";
 import { themeInForce } from "./inForce.testkit";
+import { aTabForEachChat } from "../laidOut.testkit";
 
 vi.mock("../SessionPane", () => ({
   SessionPane: ({ session }: { session: number }) => (
@@ -178,6 +179,9 @@ function core(theme: string, colour: string | null) {
           return { project: false, workspaces: ["alpha", "beta"], missing: [] };
         case "opened_chats":
           return [CHAT];
+        // The chat's tab, as the stored layout keeps it (#4758).
+        case "reopened_layout":
+          return aTabForEachChat([CHAT], () => "alpha");
         case "plane_sidebar":
           return {
             root: PLANE,

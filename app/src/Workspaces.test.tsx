@@ -8,6 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
+import { aTabForEachChat } from "./laidOut.testkit";
 import type { Moved, OpenChat } from "./bindings";
 import {
   goToWorkspace,
@@ -108,6 +109,19 @@ const question = (session: number) => ({
   answer: { via: "in-its-pane" },
 });
 
+/**
+ * The stored layout a launch is answered (#4758): since a chat gets a tab only from it, each
+ * chat put back has one, on the strip of the workspace its directory is in.
+ */
+function tabsFor(put: ReturnType<typeof chat>[]) {
+  return aTabForEachChat(put, (session) => {
+    const cwd = put.find((one) => one.session === session)?.cwd ?? "";
+    if (cwd.startsWith(ALPHA)) return "alpha";
+    if (cwd.startsWith(BETA)) return "beta";
+    return null;
+  });
+}
+
 function core(opened: ReturnType<typeof chat>[] = [], waiting: number[] = []) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const chats = [...opened];
@@ -129,6 +143,7 @@ function core(opened: ReturnType<typeof chat>[] = [], waiting: number[] = []) {
       registry = registry.filter((one) => one !== session);
     }
     if (cmd === "opened_chats") return chats.filter((one) => opened.includes(one));
+    if (cmd === "reopened_layout") return tabsFor(opened);
     if (cmd === "start_chat") {
       const cwd = (args as { cwd: string | null }).cwd;
       const name = (args as { name: string }).name;
@@ -198,9 +213,24 @@ const chatTabs = () =>
 
 const panes = () => screen.queryAllByTestId("pane").map((pane) => pane.textContent);
 
-/** Opens a chat where the operator is standing: New tab, a row, Start. */
+/**
+ * New chat in the empty pane in front (#4758): a chat takes the focused pane, so where a chat
+ * shows already the strip's `+` opens a new tab first, and the chat gets a tab of its own as it
+ * did when `+` started one. The sidebar's `+` is called New chat too, so the empty pane's is
+ * asked for by where it is.
+ */
+async function pressNewChat() {
+  const empty = await screen.findByTestId("empty-pane").catch(() => undefined);
+  if (empty === undefined)
+    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await userEvent.click(
+    within(await screen.findByTestId("empty-pane")).getByRole("button", { name: "New chat" }),
+  );
+}
+
+/** Opens a chat where the operator is standing: New chat, a row, Start. */
 async function openAChat() {
-  await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await pressNewChat();
   await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
@@ -287,7 +317,7 @@ describe("the workspace strip", () => {
     );
   });
 
-  it("says a workspace has no chats rather than leaving another workspace's on screen", async () => {
+  it("draws an empty pane in a workspace with no chats rather than leaving another workspace's on screen (#4758)", async () => {
     core();
     render(<App />);
     expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
@@ -295,8 +325,12 @@ describe("the workspace strip", () => {
 
     await focus("beta");
 
-    expect(await screen.findByText(/No chats in this workspace/)).toBeInTheDocument();
-    expect(chatTabs()).toEqual([]);
+    // Beta's strip keeps one tab, an empty one, whose pane says nothing runs there (#4758).
+    expect(await screen.findByTestId("empty-pane")).toHaveTextContent(
+      "Nothing runs in this workspace yet.",
+    );
+    expect(chatTabs()).toEqual(["New chat"]);
+    expect(panes()).toEqual([]);
   });
 
   it("comes back to the chat that was in front on that strip", async () => {
@@ -542,6 +576,7 @@ describe("the strip that is drawn", () => {
       const given = (args ?? {}) as Record<string, unknown>;
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return chats;
+      if (cmd === "reopened_layout") return tabsFor(opened);
       if (cmd === "start_options") return START_OPTIONS;
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
@@ -583,7 +618,7 @@ describe("the strip that is drawn", () => {
     };
   }
 
-  it("follows the chat in front when the plane refiles it under another workspace", async () => {
+  it("keeps a tab the layout put back on its strip when the plane refiles its chat under another workspace (#4757, #4758)", async () => {
     const plane = movingPlane([chat(1, "one", DEEP, { in_front: true }), chat(2, "two", ALPHA)]);
     render(<App />);
     expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
@@ -600,9 +635,11 @@ describe("the strip that is drawn", () => {
       async () => expect(await strip()).toEqual(["Plane root", "alpha", "beta", "gamma"]),
       { timeout: 5000 },
     );
-    // The pane on screen is chat one's, so the strip drawn has to be chat one's too.
+    // A launch puts every tab back from the stored layout (#4758), and a tab put back keeps the
+    // strip the layout says it is on (#4757): the chat is filed under gamma, and its tab stays
+    // on alpha, which stays drawn.
     expect(panes()).toEqual(["session 1"]);
-    expect(focused()).toEqual(["gamma"]);
+    expect(focused()).toEqual(["alpha"]);
     expect(chatTabs()).toEqual(["steward one"]);
   });
 });

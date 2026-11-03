@@ -9,6 +9,7 @@ import type { Moved, OpenChat } from "./bindings";
 import type { State } from "./chatState";
 import { chipSays, stripNamed } from "./test-strips";
 import { theFrameNow } from "./frame.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A chat moving re-renders that chat's row and nothing else** (SC-3, research 02 §5.6).
@@ -91,6 +92,9 @@ function core(open: OpenChat[]): (moved: Moved) => void {
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return open;
+    // Each chat has a tab on ide's strip from the stored layout, the only place a tab comes
+    // from at launch (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(open, () => "ide");
     // Read, so every chat is filed in its workspace and that workspace's tab counts it.
     if (cmd === "plane_sidebar")
       return {

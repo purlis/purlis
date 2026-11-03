@@ -11,6 +11,7 @@ import { LEAST, leastAt } from "./fits";
 import { DEFAULT_TEXT } from "./textSize";
 import type { LaidOut, Moved, OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 import { measuring, type Room } from "./stripRoom.testkit";
 
@@ -66,11 +67,23 @@ function chat(session: number): OpenChat {
   };
 }
 
+/** A layout with a tab for each of `open`, pinned as its chat is. */
+function eachInATab(open: OpenChat[]): LaidOut {
+  const laid = aTabForEachChat(open);
+  return {
+    ...laid,
+    tabs: laid.tabs.map((tab, at) => ({ ...tab, pinned: open[at]?.pinned ?? false })),
+  };
+}
+
 /** The core, holding `open` chats and nothing else. There is no sidebar, so every chat is on
- *  one strip — which is what a window that has not read the plane yet draws (ADR 0036). */
+ *  one strip — which is what a window that has not read the plane yet draws (ADR 0036). The
+ *  layout stored gives each chat a tab, pinned where the chat is (#4758): a chat gets a tab
+ *  only from the layout now, and these tests are about the strip, not about how it got its
+ *  tabs. */
 function core(
   open: OpenChat[],
-  laid: LaidOut | null = null,
+  laid: LaidOut | null = eachInATab(open),
 ): { move: (moved: Moved) => void; ended: number[] } {
   const listeners = new Map<string, number>();
   const ended: number[] = [];

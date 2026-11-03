@@ -80,12 +80,16 @@ function core(refusals: number) {
 
 const trouble = () => screen.queryByText(REFUSED)?.closest("[data-cause]") ?? null;
 
+/** The empty pane's New chat (#4758), which opens the picker: the strip's `+` opens a tab. */
+const newChat = async () =>
+  within(await screen.findByTestId("empty-pane")).getByRole("button", { name: "New chat" });
+
 describe("a window action's refusal", () => {
   it("is a Notice the operator can dismiss", async () => {
     core(1);
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await userEvent.click(await newChat());
 
     await waitFor(() => expect(trouble()).not.toBeNull());
     await userEvent.click(
@@ -97,10 +101,10 @@ describe("a window action's refusal", () => {
   it("clears itself when the same action next succeeds", async () => {
     core(1);
     render(<App />);
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await userEvent.click(await newChat());
     await waitFor(() => expect(trouble()).not.toBeNull());
 
-    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+    await userEvent.click(await newChat());
 
     await screen.findByRole("dialog", { name: "Start a chat" });
     expect(trouble()).toBeNull();
