@@ -933,10 +933,8 @@ fn sending_a_task_s_tab_back_to_the_list_ends_nothing_and_tells_nobody() {
     assert_eq!(host.typed(task), Vec::<Vec<u8>>::new());
     assert_eq!(told(&held, For::Chat(steward)), Vec::new());
     assert!(record_of(&held, task).running());
-    // Asked twice, it is as it was. A chat that is not a task is its tab: refused.
+    // Asked twice, it is as it was.
     held.chats().close_tab(task).expect("already back");
-    assert!(held.chats().close_tab(steward).is_err());
-    assert!(open_chats(&held).contains(&steward));
 }
 
 #[test]

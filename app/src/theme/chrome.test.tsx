@@ -919,17 +919,16 @@ const DIALOGS: Opened[] = [
       render(
         <EndingChat
           offer={{
-            id: "tab.close:1",
-            title: "End chat claude 4",
+            id: "chat.end:4",
+            title: "End chat claude 4…",
             available: true,
             reason: "",
-            does: { verb: "closeTab", tab: 1, ends: true },
+            does: { verb: "endChat", session: 4 },
             note: ENDS_IT,
           }}
           smart={{ available: true, why: null, close_first: false }}
           running={["devops 6"]}
           closing={["steward 2"]}
-          back={["web 5"]}
           ownTabs={1}
           drafts={[
             {

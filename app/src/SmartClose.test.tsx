@@ -21,6 +21,7 @@ import { dragWithTheKeyboard, laidOutInARow, stripNamed } from "./test-strips";
 import { DEFAULT_TEXT } from "./textSize";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { findResult } from "./actionResult.testkit";
+import { askToEnd } from "./menus.testkit";
 
 /**
  * **Smart close, as the window draws it** (ADR 0064, SI-8c): the close dialog's three answers,
@@ -187,8 +188,7 @@ describe("the close dialog's three answers", () => {
     render(<App />);
     await openAChat();
 
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
-    const asking = await screen.findByRole("alertdialog");
+    const asking = await askToEnd("steward 1");
 
     const answers = within(asking).getAllByRole("button");
     expect(answers.map((answer) => answer.textContent)).toEqual(["Cancel", "Close", "Smart close"]);
@@ -201,8 +201,7 @@ describe("the close dialog's three answers", () => {
     render(<App />);
     await openAChat();
 
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
-    const asking = await screen.findByRole("alertdialog");
+    const asking = await askToEnd("steward 1");
 
     await waitFor(() =>
       expect(within(asking).getByRole("button", { name: "Close" })).toHaveFocus(),
@@ -216,8 +215,7 @@ describe("the close dialog's three answers", () => {
     render(<App />);
     await openAChat();
 
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
-    const asking = await screen.findByRole("alertdialog");
+    const asking = await askToEnd("steward 1");
 
     const smart = within(asking).getByRole("button", { name: "Smart close" });
     expect(smart).toBeDisabled();
@@ -233,8 +231,7 @@ describe("the close dialog's three answers", () => {
     render(<App />);
     await openAChat();
 
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
-    const asking = await screen.findByRole("alertdialog");
+    const asking = await askToEnd("steward 1");
     await userEvent.click(within(asking).getByRole("button", { name: "Smart close" }));
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -250,8 +247,7 @@ describe("the close dialog's three answers", () => {
     render(<App />);
     await openAChat();
 
-    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
-    const asking = await screen.findByRole("alertdialog");
+    const asking = await askToEnd("steward 1");
     await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
 
     expect(asked(log, "close_session")).toEqual([{ plane: PLANE, session: 1 }]);
@@ -377,7 +373,7 @@ describe("a chat wrapping up", () => {
   const keptOpenNotice = (session: number) =>
     document.querySelector<HTMLElement>(`[data-cause="smart-close-kept-open:${session}"]`);
 
-  it("stays open after a Smart close it held no pass for, says so, and Close tab closes it plainly", async () => {
+  it("stays open after a Smart close it held no pass for, says so, and End chat ends it plainly", async () => {
     const { asked: log } = core();
     render(<App />);
     await openAChat();
@@ -388,12 +384,12 @@ describe("a chat wrapping up", () => {
     const notice = keptOpenNotice(1) as HTMLElement;
     expect(notice).toHaveTextContent(
       "steward 1 saved its session record. purlis did not see " +
-        "/purlis-smart-close typed in it, so its tab stayed open.",
+        "/purlis-smart-close typed in it, so it was not ended.",
     );
     expect(tabOf("steward 1")).toBeDefined();
     expect(asked(log, "close_session")).toEqual([]);
 
-    await userEvent.click(within(notice).getByRole("button", { name: "Close tab" }));
+    await userEvent.click(within(notice).getByRole("button", { name: "End chat" }));
 
     await waitFor(() => expect(tabOf("steward 1")).toBeUndefined());
     expect(asked(log, "close_session")).toEqual([{ plane: PLANE, session: 1 }]);
@@ -497,8 +493,7 @@ function coreWith(
 
 /** Smart close on the tab called `name`, answered through the close dialog. */
 async function smartClose(name: string) {
-  await userEvent.click(await screen.findByRole("button", { name: `End chat ${name}` }));
-  const asking = await screen.findByRole("alertdialog");
+  const asking = await askToEnd(name);
   await userEvent.click(within(asking).getByRole("button", { name: "Smart close" }));
 }
 

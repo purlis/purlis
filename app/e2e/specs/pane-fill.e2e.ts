@@ -179,8 +179,7 @@ describe("the terminal in the centre region", () => {
     await navigationBack();
   });
 
-  // Every chat this file opened is ended. A split tab's `End chat` may leave its other pane
-  // behind as a tab of its own, which `endChatById` presses again.
+  // Every chat this file opened is ended, each by its End… (`endChatById`).
   after(async () => {
     // Each chat this file started, by the number the core gave it (#1796): a tab's name may be
     // one an older chat has too.

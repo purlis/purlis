@@ -342,7 +342,7 @@ describe("a terminal keeps its Tab", () => {
     terminal.focus();
     await userEvent.keyboard("{Control>}{Shift>}{Tab}{/Shift}{/Control}");
     // And the one before it: the focused pane's own controls, drawn in its top corner.
-    await waitFor(() => expect(document.activeElement).toHaveAccessibleName(/End this pane|Close/));
+    await waitFor(() => expect(document.activeElement).toHaveAccessibleName(/Close/));
   });
 });
 
@@ -421,7 +421,7 @@ describe("the window's tab order", () => {
       "button More for steward two",
       "button Split right",
       "button Split down",
-      "button End this pane's chat",
+      "button Close this pane",
       "textarea Terminal 2",
       "separator Resize the right sidebar",
       // The right panel's × (R125), on its header.
@@ -604,8 +604,8 @@ describe("a pane's controls", () => {
  * pattern, and on a Mac the only keyboard way to close a tab short of the palette: a tab's `×`
  * is not a stop, and a Mac keyboard has no context-menu key to open the tab's menu with.
  *
- * It runs the row the `×` runs, so it asks what the `×` asks: ending a chat asks first, and a
- * view tab closes without asking (`ViewTabs.test.tsx`).
+ * It runs the row the `×` runs, so it does what the `×` does: it closes the tab, asks nothing
+ * and ends no chat (#4756).
  */
 describe("Delete on a focused tab", () => {
   /** Pretends the window runs on a Mac, or not, for the length of one test. */
@@ -613,8 +613,8 @@ describe("Delete on a focused tab", () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
   afterEach(() => vi.restoreAllMocks());
 
-  it("asks before it ends the chat on the tab the keyboard is on, and Cancel keeps it", async () => {
-    core();
+  it("closes the tab the keyboard is on, not the one in front, asking nothing", async () => {
+    const { asked } = core();
     render(<App />);
     await waitFor(() => expect(tabsOf("Tabs")).toHaveLength(3));
     const [, two] = tabsOf("Tabs");
@@ -623,28 +623,12 @@ describe("Delete on a focused tab", () => {
 
     await userEvent.keyboard("{Delete}");
 
-    // The tab the keyboard is on, not the one in front.
-    const asking = await screen.findByRole("alertdialog");
-    expect(asking).toHaveTextContent("End chat steward one");
-    await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
-    expect(tabsOf("Tabs")).toHaveLength(3);
-    // And the keyboard is back on the tab it pressed Delete on.
-    await waitFor(() => expect(tabsOf("Tabs")[0]).toHaveFocus());
-  });
-
-  it("ends it once the question is answered", async () => {
-    const { asked } = core();
-    render(<App />);
-    await waitFor(() => expect(tabsOf("Tabs")).toHaveLength(3));
-    tabsOf("Tabs")[1].focus();
-
-    await userEvent.keyboard("{Delete}");
-    const asking = await screen.findByRole("alertdialog");
-    await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
-
     await waitFor(() => expect(tabsOf("Tabs")).toHaveLength(2));
-    expect(asked).toContain("close_session");
+    expect(tabsOf("Tabs").map((tab) => tab.textContent)).not.toContainEqual(
+      expect.stringContaining("steward one"),
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(asked).not.toContain("close_session");
     // The keyboard is not dropped on the page with the tab it was on: it is on the strip's stop,
     // so the next Delete or arrow works.
     await waitFor(() => expect(tabsOf("Tabs").find((tab) => tab.tabIndex === 0)).toHaveFocus());
@@ -688,7 +672,7 @@ describe("Delete on a focused tab", () => {
 
     await userEvent.keyboard("{Backspace}");
 
-    expect(await screen.findByRole("alertdialog")).toHaveTextContent("End chat steward two");
+    await waitFor(() => expect(tabsOf("Tabs")).toHaveLength(2));
   });
 
   it("is not Backspace anywhere else, where Backspace on a tab means nothing", async () => {

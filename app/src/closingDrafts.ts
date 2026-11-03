@@ -20,7 +20,8 @@ const COULD_NOT_TELL = (why: string) =>
   `purlis could not tell whether this chat has a theme draft, so it is not closed: ${why}`;
 
 /**
- * **The theme drafts of every chat a close ends** (#2332), which it asks Keep or Revert about.
+ * **The theme drafts of the chat End… ends** (#2332, #4756: a close ends none), which it asks
+ * Keep or Revert about.
  * Where purlis cannot tell, the close does not go on unasked: it is refused, and says why. **On a
  * link nothing is asked** (#2708): closing a chat, and its drafts' Keep and Revert, are the
  * window's alone. **The close is handed to the window** (#2761), which asks the person about a

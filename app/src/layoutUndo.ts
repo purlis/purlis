@@ -54,6 +54,12 @@ export function undone(now: Tabs, before: Tabs, after: Tabs): Tabs | undefined {
       const is = now.byId[id];
       if (is === undefined) return [id, was];
       const back: Tab = { ...is, layout: was.layout, focused: was.focused };
+      // A tab no one has named since is named for what it shows: a close that left the strip's
+      // last tab empty named it so, and its Undo names it as it was (#4756).
+      if (is.name === is.defaultName) {
+        back.name = was.name;
+        back.defaultName = was.defaultName;
+      }
       delete back.shows;
       if (was.shows !== undefined) back.shows = was.shows;
       if (is.layout !== was.layout) delete back.zoomed;
