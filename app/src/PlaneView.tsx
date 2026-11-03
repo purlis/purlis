@@ -335,6 +335,7 @@ import {
   pinsFollowed,
   press as pressChat,
   shownBeside,
+  showIn,
   type PaneAt,
   type Press,
   type PressedChat,
@@ -2209,6 +2210,21 @@ export const PlaneView = memo(function PlaneView({
   /** {@link isBackground} as of the last render, for handlers the set it reads is made from,
    *  which so cannot take it as a dependency. */
   const inTheBackground = useRef<Backgrounded>(() => false);
+  /**
+   * **The tasks that ended in a pane, kept there as ended** (#4757): a press put each in its
+   * pane, and its end does not take the pane away (`closeChat`'s `keeps`). The core is told
+   * the pane is empty (`sayLayout`'s `told`), since it has no such chat open to hold.
+   */
+  const endedInPanes = useRef<Set<number>>(new Set());
+  /** Whether chat `session`, as it ends, stays in its pane: a task does. */
+  const keepsItsPane = useCallback(
+    (session: number) => {
+      const keep = askedByNow(session) !== undefined;
+      if (keep) endedInPanes.current.add(session);
+      return keep;
+    },
+    [askedByNow],
+  );
 
   const stoppedFor = useCallback((session: number, why: string | undefined) => {
     setStopped((was) => {
@@ -2231,7 +2247,9 @@ export const PlaneView = memo(function PlaneView({
     (step: SmartClosing) => {
       settle(step.session);
       if (step.phase === "closed") {
-        change((tabs) => closeChat(tabs, step.session, filedIn, isPinned, inTheBackground.current));
+        change((tabs) =>
+          closeChat(tabs, step.session, filedIn, isPinned, inTheBackground.current, keepsItsPane),
+        );
         stoppedFor(step.session, undefined);
         setSavedNotice({ record: step.record });
         return;
@@ -2252,7 +2270,7 @@ export const PlaneView = memo(function PlaneView({
         setReport({ from: `smartclose:${step.session}`, refused: true, words: said });
       stoppedFor(step.session, stoppedWhy(step.phase));
     },
-    [change, filedIn, isPinned, settle, stoppedFor],
+    [keepsItsPane, change, filedIn, isPinned, settle, stoppedFor],
   );
   /** The chats wrapping up, as the core tells it. */
   const told = useSmartClosing(plane, smartCloseEnded);
@@ -2262,11 +2280,13 @@ export const PlaneView = memo(function PlaneView({
    */
   const chatStopped = useCallback(
     (session: number) => {
-      change((tabs) => closeChat(tabs, session, filedIn, isPinned, inTheBackground.current));
+      change((tabs) =>
+        closeChat(tabs, session, filedIn, isPinned, inTheBackground.current, keepsItsPane),
+      );
       stoppedFor(session, undefined);
       setStopsEnded((count) => count + 1);
     },
-    [change, filedIn, isPinned, stoppedFor],
+    [keepsItsPane, change, filedIn, isPinned, stoppedFor],
   );
   /** The chats being stopped, as the core tells it. */
   const stopping = useStopping(plane, chatStopped);
@@ -2488,10 +2508,12 @@ export const PlaneView = memo(function PlaneView({
   const closeKeptOpen = useCallback(
     (session: number) => {
       forgetKeptOpen(session);
-      change((tabs) => closeChat(tabs, session, filedIn, isPinned, inTheBackground.current));
+      change((tabs) =>
+        closeChat(tabs, session, filedIn, isPinned, inTheBackground.current, keepsItsPane),
+      );
       void commands.closeSession(plane, session);
     },
-    [change, filedIn, forgetKeptOpen, isPinned, plane],
+    [keepsItsPane, change, filedIn, forgetKeptOpen, isPinned, plane],
   );
   /**
    * **End…, a chat's own row, once it is answered** (#4753): the chat's pane goes, wherever it
@@ -2500,10 +2522,12 @@ export const PlaneView = memo(function PlaneView({
    */
   const endChat = useCallback(
     (session: number) => {
-      change((tabs) => closeChat(tabs, session, filedIn, isPinned, inTheBackground.current));
+      change((tabs) =>
+        closeChat(tabs, session, filedIn, isPinned, inTheBackground.current, keepsItsPane),
+      );
       void commands.closeSession(plane, session);
     },
-    [change, filedIn, isPinned, plane],
+    [keepsItsPane, change, filedIn, isPinned, plane],
   );
   /** …and the ones just pressed: their tabs, their explorer rows and their menus say so. */
   const wrapping = useMemo<ReadonlySet<number>>(
@@ -3125,7 +3149,7 @@ export const PlaneView = memo(function PlaneView({
       const laid = layoutOf(next, {
         workspaceOf: (id) => workspaceOf(next, id, filedIn),
         frontOf: (workspace) => lastFront.current[workspace],
-        told: (session) => !pretendedNow.current.has(session),
+        told: (session) => !pretendedNow.current.has(session) && !endedInPanes.current.has(session),
       });
       const text = JSON.stringify(laid);
       if (text === layoutSaid.current || text === layoutRefused.current) return;
@@ -6679,7 +6703,8 @@ export const PlaneView = memo(function PlaneView({
       if (gone.length > 0) {
         change((tabs) =>
           gone.reduce(
-            (left, one) => closeChat(left, one, filedIn, isPinned, inTheBackground.current),
+            (left, one) =>
+              closeChat(left, one, filedIn, isPinned, inTheBackground.current, keepsItsPane),
             tabs,
           ),
         );
@@ -6694,7 +6719,7 @@ export const PlaneView = memo(function PlaneView({
       // Every chat has said how it came back: the dismissed notes are settled against them.
       if (still.size === 0) settleChatNotes(open);
     },
-    [change, filedIn, isPinned, noteStarted, plane, settleChatNotes],
+    [keepsItsPane, change, filedIn, isPinned, noteStarted, plane, settleChatNotes],
   );
   const readRestoredNow = useRef(readRestored);
   useEffect(() => {
@@ -7491,6 +7516,12 @@ export const PlaneView = memo(function PlaneView({
     if (sidebar === undefined) return live;
     const open = (session: number) => chatsByNumber.has(session);
     for (const id of tabs.order) {
+      // **A task a press put in a pane, with its path** (#4757): remembered like a shown one,
+      // so the pane can still say it once the task has ended.
+      for (const [pane, said] of Object.entries(placedCrumbsOf(tabs, id, listedChats))) {
+        const last = said.path[said.path.length - 1];
+        if (last.mode === "task") live.set(`${id}:${pane}:${last.session}`, said);
+      }
       if (tabs.byId[id].shows === undefined) continue;
       const crumbs = crumbsOf(tabs, id, listedChats);
       for (const one of shownLive(tabs, id, askedBy, open)) {
@@ -7535,8 +7566,15 @@ export const PlaneView = memo(function PlaneView({
     const id = tabs.inFront;
     if (id === undefined) return { frontCrumbs: crumbs, frontAway: away };
     for (const one of frontShown) {
-      if (one.session === one.own) continue;
       const key = `${id}:${one.pane}:${one.session}`;
+      if (one.session === one.own) {
+        // **A task a press put in this pane, ended** (#4757): it stays, as ended, with the
+        // path it last had, until the person leaves it. #4756's ended band replaces this.
+        const last = recalled.get(key);
+        if (sidebar !== undefined && !chatsByNumber.has(one.session) && last !== undefined)
+          away[one.pane] = { why: "ended", crumbs: last };
+        continue;
+      }
       const live = one.live ? liveCrumbs.get(key) : undefined;
       if (live !== undefined) {
         crumbs[one.pane] = live;
@@ -7567,6 +7605,21 @@ export const PlaneView = memo(function PlaneView({
     }
     return rows;
   }, [finishedTasks, frontAway]);
+  /**
+   * **Where each ended task a press put in a pane goes back to** (#4757): the chat the pane
+   * showed before, where that is still open, and otherwise nowhere: the pane is cleared.
+   */
+  const frontBackTo = useMemo(() => {
+    const to: Record<number, string | null> = {};
+    const tab = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
+    if (tab === undefined) return to;
+    for (const pane of Object.keys(frontAway).map(Number)) {
+      if (tab.shows?.[pane] !== undefined) continue;
+      const before = tab.previous?.[pane];
+      to[pane] = before !== undefined && chatsByNumber.has(before) ? nameOf(before) : null;
+    }
+    return to;
+  }, [chatsByNumber, frontAway, nameOf, tabs]);
   /**
    * **The breadcrumb of each pane of the tab in front that shows its own chat and has a path
    * to say** (#1489): a task in a pane of its own, and the session it is beside.
@@ -8529,7 +8582,8 @@ export const PlaneView = memo(function PlaneView({
       if (gone.length > 0) {
         change((tabs) =>
           gone.reduce(
-            (left, one) => closeChat(left, one, filedIn, isPinned, inTheBackground.current),
+            (left, one) =>
+              closeChat(left, one, filedIn, isPinned, inTheBackground.current, keepsItsPane),
             tabs,
           ),
         );
@@ -8537,7 +8591,7 @@ export const PlaneView = memo(function PlaneView({
       }
       return true;
     },
-    [change, filedIn, isPinned, plane],
+    [keepsItsPane, change, filedIn, isPinned, plane],
   );
 
   const press = useCallback(
@@ -8857,16 +8911,36 @@ export const PlaneView = memo(function PlaneView({
     [askedBy, nameOf, restoringChats, tabs],
   );
   /** Pane `pane` of the tab in front goes back to its session's own chat (#1486): the person's
-   *  way out of a task that has ended. Its terminal takes the keyboard. */
+   *  way out of a task that has ended. Its terminal takes the keyboard. **A task a press put
+   *  in the pane** (#4757) goes back to the chat the pane showed before, where that is still
+   *  open, and otherwise the pane is cleared. */
   const backInPane = useCallback(
     (pane: number) => {
       const id = now.current.inFront;
       if (id === undefined) return;
+      const tab = now.current.byId[id];
+      if (tab.shows?.[pane] === undefined) {
+        const before = tab.previous?.[pane];
+        if (before !== undefined && listedNow.current.has(before)) {
+          showChat(before, { tab: id, pane });
+          return;
+        }
+        change((tabs) =>
+          focusPane(
+            showIn(tabs, id, pane, {
+              kind: "empty",
+              workspace: workspaceOf(tabs, id, filedIn) ?? OUTSIDE,
+            }),
+            pane,
+          ),
+        );
+        return;
+      }
       const own = panesOf(now.current, id).find((one) => one.pane === pane)?.session;
       change((tabs) => focusPane(showOwnIn(tabs, id, pane), pane));
       if (own !== undefined) giveKeyboardTo(plane, own);
     },
-    [change, plane],
+    [change, filedIn, plane, showChat],
   );
   const onPaneDoes = useCallback(
     (pane: number, offer: Offer | undefined) => {
@@ -10196,6 +10270,7 @@ export const PlaneView = memo(function PlaneView({
                             crumbs={frontCrumbs}
                             placed={frontPlaced}
                             away={frontAway}
+                            backTo={frontBackTo}
                             finished={frontFinished}
                             explaining={chipToExplain}
                             others={frontOthers}
@@ -11221,7 +11296,6 @@ function recalledCrumbs(
   const next = new Map<string, Crumbs>();
   for (const id of tabs.order)
     for (const one of shownIn(tabs, id)) {
-      if (one.session === one.own) continue;
       const key = `${id}:${one.pane}:${one.session}`;
       const said = live.get(key) ?? was.get(key);
       if (said !== undefined) next.set(key, said);

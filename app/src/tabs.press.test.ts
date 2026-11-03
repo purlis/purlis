@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { layoutOf, type Reopening, type Saying, tabsOf } from "./laidOut";
 import {
   back,
+  closeChat,
   type Content,
   contentsOf,
   focusedChat,
@@ -382,5 +383,26 @@ describe("the sidebar's marks (#4757)", () => {
 
     expect(focusedChat(withOther)).toBe(2);
     expect(shownBeside(withOther)).toEqual([1]);
+  });
+});
+
+describe("a task that ends in a pane a press put it in (#4757)", () => {
+  it("stays in its pane, as ended, where the window says it keeps it", () => {
+    const { tabs, second } = twoTabs();
+    const { tabs: on5 } = press(tabs, pressed(5), pressing());
+
+    const kept = closeChat(on5, 5, filedIn, undefined, undefined, (session) => session === 5);
+
+    expect(kept).toBe(on5);
+    expect(shows(kept, second)).toEqual([chat(5)]);
+  });
+
+  it("takes the pane away for a chat the window does not keep", () => {
+    const { tabs, second } = twoTabs();
+    const { tabs: on5 } = press(tabs, pressed(5), pressing());
+
+    const gone = closeChat(on5, 5, filedIn);
+
+    expect(gone.order).not.toContain(second);
   });
 });

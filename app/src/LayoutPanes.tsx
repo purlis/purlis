@@ -444,6 +444,7 @@ export function LayoutPanes({
   crumbs,
   placed,
   away,
+  backTo,
   finished,
   explaining,
   others,
@@ -503,6 +504,9 @@ export function LayoutPanes({
   explaining?: ChipToExplain;
   /** The panes that show a task they cannot draw, by pane, and why (`TaskAway`). */
   away: Readonly<Record<number, Away>>;
+  /** Where each such pane's way back goes, for a task a press put there (#4757): the chat
+   *  the pane showed before, or `null` to clear it. */
+  backTo?: Readonly<Record<number, string | null>>;
   /** The finished row of each task a pane was left on when it ended, by pane (#1485). */
   finished: Readonly<Record<number, FinishedTask>>;
   /** The chats that live in each pane other than the one it shows, by pane. */
@@ -799,6 +803,7 @@ export function LayoutPanes({
               finished={row && { state: ended, more: qualifierOf(row) }}
               onBack={() => onBack(layout.pane)}
               onOpenAlone={() => onShowChat(last)}
+              backTo={backTo?.[layout.pane]}
             />
           </div>
         </div>
@@ -926,6 +931,7 @@ export function LayoutPanes({
               crumbs={crumbs}
               placed={placed}
               away={away}
+              backTo={backTo}
               finished={finished}
               explaining={explaining}
               others={others}
