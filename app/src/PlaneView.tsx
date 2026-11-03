@@ -9080,7 +9080,7 @@ export const PlaneView = memo(function PlaneView({
   // with every move, and a report rebuilt here for each one was the whole view redrawn for each.
   // **Nor the queue** (#1034), for the same reason: what reads it is added there too (`queued`).
   const mine = useMemo<
-    Omit<PlaneReport, "ending" | "moved" | "asking" | "offers" | "workspaces"> & {
+    Omit<PlaneReport, "ending" | "asking" | "offers" | "workspaces"> & {
       workspaces?: Omit<ReportedWorkspaces, "waiting">;
     }
   >(
@@ -9147,9 +9147,12 @@ export const PlaneView = memo(function PlaneView({
   // used before there was anything to report to.
   //
   // **And again whenever a chat moves, straight off the store** (SC-3): what each chat is doing
-  // and when the newest of them moved are the report's, so the quit warning and the project
-  // strip's order stay current, and this view is not redrawn to say so. A move that changes
-  // neither is not reported at all.
+  // is the report's, so the quit warning stays current, and this view is not redrawn to say so.
+  // A move that changes nothing the report holds is not reported at all.
+  //
+  // **When a chat moved is not the report's** (#4727): a busy chat moves many times a second,
+  // and each report is the window's root drawn again. What ordered projects by it was the
+  // project strip's show-more, which went with the strip (ADR 0054, amended 2026-10-23).
   /** Its sessions, for the status line's count of the ones running. */
   const quitSessions = useMemo(() => quitting.map((chat) => chat.session), [quitting]);
   // **Who it was sent to, and for which project, are part of what was sent** (#1037): a new
@@ -9163,7 +9166,6 @@ export const PlaneView = memo(function PlaneView({
         waitingIn: typeof waitingIn;
         quitting: Leaving[];
         doing: State[];
-        moved: number;
         queued: typeof queued;
         queue: readonly number[];
         fromQueue: ReturnType<typeof queued>;
@@ -9174,7 +9176,6 @@ export const PlaneView = memo(function PlaneView({
     const report = () => {
       const states = chats.store.statesFor(chats.plane);
       const doing = quitting.map((chat) => stateOf(states, chat.session));
-      const moved = Math.max(0, ...Object.values(states.movedAt));
       const queue = states.needsYou;
       const was = reported.current;
       const sameQueue = was?.queued === queued && sameList(was.queue, queue);
@@ -9184,7 +9185,6 @@ export const PlaneView = memo(function PlaneView({
         was.mine === mine &&
         was.waitingIn === waitingIn &&
         was.quitting === quitting &&
-        was.moved === moved &&
         sameList(was.doing, doing) &&
         sameQueue
       )
@@ -9198,7 +9198,6 @@ export const PlaneView = memo(function PlaneView({
         waitingIn,
         quitting,
         doing,
-        moved,
         queued,
         queue,
         fromQueue,
@@ -9218,7 +9217,6 @@ export const PlaneView = memo(function PlaneView({
         workspaces,
         ...fromQueue,
         ending: quitting.map(({ chat }, at) => ({ ...chat, state: doing[at] })),
-        moved,
       });
     };
     report();
