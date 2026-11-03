@@ -20,6 +20,7 @@ import { RAIL_MODE } from "./railMode";
 import { SKILLS_VIEW } from "./skillsViewPrefs";
 import { OFFERS } from "./offersPref";
 import { PANE_NOTICES } from "./paneNoticesPref";
+import { WHERE_YOU_ANSWER, type WhereYouAnswerPrefs } from "./whereYouAnswer";
 import { APPEARANCE, type Appearance } from "./appearance";
 import { NOTIFICATIONS, type NotificationPrefs } from "./notificationPrefs";
 import { STATUS_BAR, type StatusBarPrefs } from "./statusBarPrefs";
@@ -549,6 +550,7 @@ const LAYOUT_PREFS = [
   SKILLS_VIEW,
   PANE_NOTICES,
   OFFERS,
+  WHERE_YOU_ANSWER,
 ] as const satisfies readonly {
   readonly key: PrefField;
 }[];
@@ -600,6 +602,9 @@ type Document = {
   notices?: "expanded";
   /** The extensions whose offers the person stopped (`offersPref.ts`, #4769), while any is. */
   offers?: { off: string[] };
+  /** Where the person answers a task's question, and whether that was offered
+   *  (`whereYouAnswer.ts`, #4565), the fields off their default. */
+  questions?: Partial<WhereYouAnswerPrefs>;
 };
 
 /** One project's entry: its own arrangement, once it has one, and what its views keep

@@ -29,6 +29,7 @@ import {
 } from "./restoringChats";
 import { QueueRead } from "./QueueRead";
 import { QuestionsHere } from "./QuestionsHere";
+import { QuizPlaces } from "./QuizBand";
 import { standingOf, waitingOnYou, type QuestionsHeld } from "./taskQuestions";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
@@ -355,6 +356,7 @@ import {
   type Pinned,
   type Tabs,
   type ViewRef,
+  sessionOf,
 } from "./tabs";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
@@ -4583,6 +4585,17 @@ export const PlaneView = memo(function PlaneView({
     settingsLinkHandled.current = settingsLinkAsked.at;
     openSettingsAt(settingsLinkAsked.link);
   }, [settingsLinkAsked, openSettingsAt]);
+
+  /** **Where a task's question is drawn** (#4565): a task's top is the nearest chat above it
+   *  with a tab, as its session's tab is (`sessionOf`); Open task is the person's own press. */
+  const quizPlaces = useMemo(
+    () => ({
+      topOf: (task: number) => sessionOf(tabs, task, askedBy)?.own,
+      openTask: (task: number) => showChat(task),
+      openSettings: () => openSettingsAt({ group: "you.chats", setting: "you.chats.answer" }),
+    }),
+    [tabs, askedBy, showChat, openSettingsAt],
+  );
 
   /**
    * The Settings tab, opened the same way and for the same reason (SE-16), **at the focused
@@ -10528,6 +10541,7 @@ export const PlaneView = memo(function PlaneView({
                       {frontTab ? (
                         <TaskEndContext.Provider value={taskEndHand}>
                           <OfferOpeningContext.Provider value={offerOpening}>
+                            <QuizPlaces.Provider value={quizPlaces}>
                             <LayoutPanes
                               plane={plane}
                               restoring={restoringChats}
@@ -10607,6 +10621,7 @@ export const PlaneView = memo(function PlaneView({
                               onClearPane={clearPane}
                               onResumeTask={(pane, task) => void resumeTaskIn(pane, task)}
                             />
+                            </QuizPlaces.Provider>
                           </OfferOpeningContext.Provider>
                         </TaskEndContext.Provider>
                       ) : tabs.order.length > 0 ? (
