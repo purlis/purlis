@@ -3175,13 +3175,15 @@ impl KeptKey {
 
 /// The runner's connector, in memory: each connection is answered by the runner's host.
 #[derive(Clone)]
-struct ToTheRunner {
-    runner_host: Hosting,
+struct ToTheRunner<H = Hosting> {
+    runner_host: H,
     runner: Arc<KeptKey>,
     desktop: purlis_session_protocol::hostlink::Pinned,
 }
 
-impl purlis_session_protocol::hostlink::Connector for ToTheRunner {
+impl<H: session::Host + Clone + Send + Sync + 'static> purlis_session_protocol::hostlink::Connector
+    for ToTheRunner<H>
+{
     type Io = tokio::io::DuplexStream;
 
     fn connect(
