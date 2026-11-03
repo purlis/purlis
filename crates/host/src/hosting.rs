@@ -3808,7 +3808,9 @@ impl session::Host for Hosting {
             }
             Command::ReposHeld => self.repos_held().await,
             Command::StartProgram(start) => {
-                self.code().program_starting();
+                if let Some(projects) = self.projects_kept_in() {
+                    self.code().program_starting(&projects)?;
+                }
                 match start.kind {
                     ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
                     ProgramKind::Browser => self.start_browser(*start, peer).await,
