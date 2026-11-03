@@ -645,6 +645,12 @@
   padding: var(--space-4) var(--space-4) 0;
 }
 
+/* Each keeps its own height, so a short pane scrolls the band and never squeezes the line over
+   the quiz. */
+.quiz-band > * {
+  flex: none;
+}
+
 .task-quiz.inbox-ask {
   margin: 0;
   padding: var(--space-3) var(--space-4);
