@@ -156,6 +156,51 @@ describe("what a workspace has on", () => {
     }
   });
 
+  it("never lets an older answer replace a newer one after a question failed twice (#4872)", async () => {
+    vi.useFakeTimers();
+    try {
+      // A is held; B fails twice; C is answered. A's late answer must not replace C's.
+      let releaseA: (ids: string[]) => void = () => undefined;
+      const answers: (() => unknown)[] = [
+        () => new Promise<string[]>((resolve) => (releaseA = resolve)),
+        () => {
+          throw new Error("could not read");
+        },
+        () => {
+          throw new Error("could not read");
+        },
+        () => ["c"],
+      ];
+      const asked = vi.fn();
+      mockIPC((cmd, args) => {
+        if (cmd !== "extensions_on") return undefined;
+        asked(args);
+        return answers.shift()?.();
+      });
+      const project = renderHook(() => useExtensionsOn(PLANE));
+      const unread = renderHook(() => useExtensionsOnUnread(PLANE));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(asked).toHaveBeenCalledTimes(1);
+
+      extensionsChanged(PLANE);
+      await vi.advanceTimersByTimeAsync(EXTENSIONS_ON_ASKED_AGAIN_AFTER);
+      expect(asked).toHaveBeenCalledTimes(3);
+      expect(unread.result.current).toContain("could not read");
+
+      extensionsChanged(PLANE);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(asked).toHaveBeenCalledTimes(4);
+      expect(project.result.current).toEqual(new Set(["c"]));
+
+      releaseA(["a"]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(project.result.current).toEqual(new Set(["c"]));
+      expect(unread.result.current).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("says why once the second question failed too, and asks no more until a save (#4822)", async () => {
     vi.useFakeTimers();
     try {
