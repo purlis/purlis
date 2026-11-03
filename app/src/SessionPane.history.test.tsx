@@ -8,6 +8,7 @@ import type { Channel } from "@tauri-apps/api/core";
 import type { Terminal } from "@xterm/xterm";
 import { SessionPane } from "./SessionPane";
 import { FIRST_PAGE, PAGE } from "./historyPages";
+import { letGoOfKeptTerminals } from "./keptTerminals";
 
 /**
  * **A view opens on the screen and a page of history, and older lines are paged in as the
@@ -124,6 +125,9 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  // A chat shown last keeps its terminal (`keptTerminals.ts`), and letting go of it closes its
+  // view through the core: let go while this file's IPC mock still answers.
+  letGoOfKeptTerminals();
   clearMocks();
   vi.restoreAllMocks();
 });
