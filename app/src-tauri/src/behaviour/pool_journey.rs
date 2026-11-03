@@ -237,7 +237,12 @@ fn the_row_says(machine: &Machine, pool: &str, wanted: &Standing) {
         let said = match keep(machine, pool, &kept) {
             Ok(said) => Some(said.expect("this runner keeps profiles")),
             Err(why) if why == crate::runnerlinks::LATE => {
-                eprintln!("the row's ask was not answered in time; it asks again");
+                // As the journey's steps are said: read where it fails or runs out of time.
+                use std::io::Write as _;
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "the row's ask was not answered in time; it asks again"
+                );
                 None
             }
             Err(why) => panic!("the runner did not keep the profile: {why}"),
