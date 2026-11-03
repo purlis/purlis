@@ -395,11 +395,13 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         keep: None,
         identity: None,
         suggested: false,
+        form: None,
     })
     .unwrap();
     assert_eq!(login.origin, "https://shop.example.test");
-    assert_eq!(site, Site::of("shop.example.test", 443));
+    assert_eq!(site, vec![Site::of("shop.example.test", 443)]);
     assert!(login.user.is_none());
+    assert_eq!(login.back_to, None);
     let local = super::login_of(&LogIn {
         address: "http://127.0.0.1:8123/login".into(),
         user: Some(Secret::new("fixture-user".into())),
@@ -407,10 +409,11 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         keep: None,
         identity: None,
         suggested: false,
+        form: None,
     })
     .unwrap();
     assert_eq!(local.0.origin, "http://127.0.0.1:8123");
-    assert_eq!(local.1, Site::of("127.0.0.1", 8123));
+    assert_eq!(local.1, vec![Site::of("127.0.0.1", 8123)]);
     let refused = super::login_of(&LogIn {
         address: "file:///etc/passwd".into(),
         user: None,
@@ -418,6 +421,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         keep: None,
         identity: None,
         suggested: false,
+        form: None,
     })
     .unwrap_err();
     assert!(refused.contains("not one a browser opens"), "{refused}");
@@ -435,6 +439,7 @@ fn a_login_is_refused_on_plain_http_but_this_machines_loopback() {
         keep: None,
         identity: None,
         suggested: false,
+        form: None,
     })
     .unwrap_err();
     assert!(refused.contains("plain http"), "{refused}");
@@ -445,10 +450,46 @@ fn a_login_is_refused_on_plain_http_but_this_machines_loopback() {
         keep: None,
         identity: None,
         suggested: false,
+        form: None,
     })
     .unwrap();
     assert_eq!(login.origin, "https://xn--bcher-kva.example");
-    assert_eq!(site, Site::of("xn--bcher-kva.example", 443));
+    assert_eq!(site, vec![Site::of("xn--bcher-kva.example", 443)]);
+}
+
+/// #4995: a login whose form is on another host fills on the form's origin alone, is held to the
+/// form's site and its page's, and has gone through once the browser is back on its page.
+#[test]
+fn a_login_whose_form_is_elsewhere_fills_there_and_is_held_to_both_sites() {
+    use purlis_host::protocol::browsing::{LogIn, Secret};
+    let login = |form: &str| LogIn {
+        address: "https://app.example.test/".into(),
+        user: None,
+        password: Secret::new("fixture-word".into()),
+        keep: None,
+        identity: None,
+        suggested: true,
+        form: Some(form.into()),
+    };
+    let (driven, sites) = super::login_of(&login("https://auth.example.test")).unwrap();
+    assert_eq!(driven.origin, "https://auth.example.test");
+    assert_eq!(driven.back_to.as_deref(), Some("https://app.example.test"));
+    assert_eq!(
+        sites,
+        vec![
+            Site::of("auth.example.test", 443),
+            Site::of("app.example.test", 443)
+        ]
+    );
+    let (same, sites) = super::login_of(&login("https://app.example.test")).unwrap();
+    assert_eq!(same.back_to, None);
+    assert_eq!(sites, vec![Site::of("app.example.test", 443)]);
+    for refused in [
+        "http://auth.example.test",
+        "https://auth.example.test/realm",
+    ] {
+        assert!(super::login_of(&login(refused)).is_err(), "{refused}");
+    }
 }
 
 /// A login performed through a real reach proxy and judge (#2016): the run is handed what binds
@@ -499,7 +540,7 @@ fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
     };
     assert_eq!(status(other_port), "HTTP/1.1 200 Connection established");
     let login_site = Site::of("127.0.0.1", login_port);
-    let bound = super::performed(&sites, &proxy, &login_site, "http://127.0.0.1", |bind| {
+    let bound = super::performed(&sites, &proxy, &[login_site], "http://127.0.0.1", |bind| {
         bind()
     })
     .expect("performed");
@@ -510,7 +551,7 @@ fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
     let refused = super::performed(
         &sites,
         &proxy,
-        &Site::of("127.0.0.1", other_port),
+        &[Site::of("127.0.0.1", other_port)],
         "http://127.0.0.1",
         |_| ran.set(true),
     )

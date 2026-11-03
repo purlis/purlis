@@ -24,6 +24,28 @@ fn project(text: &str) -> tempfile::TempDir {
     dir
 }
 
+/// Where a page's own form shows: on the page.
+fn on_its_page(page: &str) -> Result<String, String> {
+    Ok(page.to_owned())
+}
+
+/// [`super::proposal`] for a site whose form is on its own page, as every suggestion was before
+/// #4995.
+fn proposal(
+    root: &Path,
+    persona: &str,
+    login: &str,
+    suggested: &Suggested,
+    granted: &[Tool],
+) -> Result<Proposal, String> {
+    super::proposal(root, persona, login, suggested, &on_its_page, granted)
+}
+
+/// [`Proposal::at`] where the typed page's form is on its own page.
+fn at(one: &Proposal, root: &Path, typed: &str) -> Result<Proposal, String> {
+    one.at(root, typed, &on_its_page, &[])
+}
+
 fn proposed(root: &Path, site: &str) -> Proposal {
     proposal(root, "qa", "shop-login", &suggested(site), &[]).expect("a proposal")
 }
@@ -357,10 +379,8 @@ fn the_tool_is_what_the_line_says() {
 fn what_the_person_typed_keeps_the_path_and_is_read_as_a_suggestion_is() {
     let dir = project("");
     let one = proposed(dir.path(), "https://evil.example.test/login");
-    let moved = one.at(dir.path(), "SHOP.example.test", &[]).expect("moved");
-    let page = one
-        .at(dir.path(), "shop.example.test/", &[])
-        .expect("moved");
+    let moved = at(&one, dir.path(), "SHOP.example.test").expect("moved");
+    let page = at(&one, dir.path(), "shop.example.test/").expect("moved");
     assert_eq!(
         page.page, "https://shop.example.test/",
         "a typed page is the page"
@@ -368,7 +388,7 @@ fn what_the_person_typed_keeps_the_path_and_is_read_as_a_suggestion_is() {
     assert_eq!(moved.origin, "https://shop.example.test");
     assert_eq!(moved.page, "https://shop.example.test/login");
     assert_ne!(moved.digest(), one.digest());
-    assert!(one.at(dir.path(), "http://shop.example.test", &[]).is_err());
+    assert!(at(&one, dir.path(), "http://shop.example.test").is_err());
 }
 
 #[test]
@@ -402,6 +422,10 @@ fn the_digest_moves_with_everything_the_notice_shows() {
         },
         Proposal {
             page: "https://shop.example.test/b".into(),
+            ..one.clone()
+        },
+        Proposal {
+            form: "https://auth.example.test".into(),
             ..one.clone()
         },
         Proposal {
@@ -486,4 +510,240 @@ fn the_written_login_reads_back_as_the_tool_the_person_allowed() {
     let policy = said.policy.or(said.unset).expect("a policy");
     let tools = &policy.personas["qa"].tools;
     assert_eq!(tools.as_slice(), &[one.tool().expect("a tool")]);
+}
+
+/// Where the SSO page of #4995 sent the browser: a form on another host, with what the site
+/// handed the browser in its address.
+const FOUND_ELSEWHERE: &str =
+    "https://auth.example.test/realms/x/protocol/openid-connect/auth?client_id=app&state=s3cr3t";
+
+fn signs_in_elsewhere(root: &Path) -> Proposal {
+    super::proposal(
+        root,
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &|page| {
+            assert_eq!(page, "https://app.example.test/");
+            Ok(FOUND_ELSEWHERE.to_owned())
+        },
+        &[],
+    )
+    .expect("a proposal")
+}
+
+/// #4995: the page opens, and its form's origin is the one place the password goes. The person
+/// is told plainly that the two differ, with both hosts.
+#[test]
+fn a_form_on_another_host_is_where_the_password_goes_and_is_said() {
+    let dir = project("");
+    let one = signs_in_elsewhere(dir.path());
+    assert_eq!(one.origin, "https://app.example.test");
+    assert_eq!(one.page, "https://app.example.test/");
+    assert_eq!(one.form, "https://auth.example.test");
+    let warning = Warning::FormElsewhere {
+        page_host: "app.example.test".into(),
+        form_host: "auth.example.test".into(),
+    };
+    assert_eq!(one.warnings, vec![warning.clone()]);
+    let said = warning.said();
+    assert!(
+        said.contains("The password goes to auth.example.test, not app.example.test"),
+        "{said}"
+    );
+    let login = one.tool().expect("a tool").login.expect("a login");
+    assert_eq!(login.url, "https://app.example.test/");
+    assert_eq!(login.fills_on(), "https://auth.example.test");
+    assert!(!one.line().contains("s3cr3t"), "{}", one.line());
+}
+
+/// A form on the page's own origin is a proposal as before #4995: no warning, and no `form` in
+/// the line.
+#[test]
+fn a_form_on_the_page_s_own_origin_is_said_as_before_and_writes_no_form() {
+    let dir = project("");
+    let one = super::proposal(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://shop.example.test/login"),
+        &|_| Ok("https://shop.example.test/login?next=%2F".to_owned()),
+        &[],
+    )
+    .expect("a proposal");
+    assert_eq!(one.form, one.origin);
+    assert!(one.warnings.is_empty(), "{:?}", one.warnings);
+    assert!(!one.line().contains("form"), "{}", one.line());
+}
+
+#[test]
+fn a_form_that_isnt_https_or_cant_be_confirmed_is_refused_naming_its_host_alone() {
+    let dir = project("");
+    for (found, said) in [
+        ("http://auth.example.test/login?token=s3cr3t", "not https"),
+        ("https://10.0.0.7/login?token=s3cr3t", "an address"),
+        ("https://intranet/login?token=s3cr3t", "a bare name"),
+        (
+            "https://sso.corp/login?token=s3cr3t",
+            "a name on this machine",
+        ),
+        ("about:blank", "not https"),
+        ("", "not https"),
+    ] {
+        let refused = super::proposal(
+            dir.path(),
+            "qa",
+            "shop-login",
+            &suggested("https://app.example.test/"),
+            &|_| Ok(found.to_owned()),
+            &[],
+        )
+        .expect_err(found);
+        assert!(refused.contains(said), "{found}: {refused}");
+        assert!(refused.contains("records nothing"), "{found}: {refused}");
+        assert!(!refused.contains("s3cr3t"), "{found}: {refused}");
+    }
+}
+
+#[test]
+fn a_form_s_name_in_another_alphabet_and_its_port_are_said() {
+    let dir = project("");
+    let one = super::proposal(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &|_| Ok("https://xn--80ak6aa92e.example.test:8443/login".to_owned()),
+        &[],
+    )
+    .expect("a proposal");
+    assert!(
+        one.warnings
+            .iter()
+            .any(|warning| matches!(warning, Warning::OtherAlphabet { .. })),
+        "{:?}",
+        one.warnings
+    );
+    assert!(
+        one.warnings.contains(&Warning::OtherPort { port: 8443 }),
+        "{:?}",
+        one.warnings
+    );
+}
+
+/// The site a key is on is where its password was typed: a login whose form is on the same host
+/// is no other site, and one on its start page's host is.
+#[test]
+fn a_key_is_on_the_site_its_password_is_typed_on() {
+    let dir = project(
+        "[sandbox.personas.ops.tools]\nold = { vault = \"qa\", browser = \
+         \"https://portal.example.test/\", form = \"https://auth.example.test\", key = \
+         \"password\" }\n",
+    );
+    let same_form = signs_in_elsewhere(dir.path());
+    assert!(
+        !same_form
+            .warnings
+            .iter()
+            .any(|warning| matches!(warning, Warning::KeyElsewhere { .. })),
+        "{:?}",
+        same_form.warnings
+    );
+    let on_the_portal = proposed(dir.path(), "https://portal.example.test/");
+    assert_eq!(
+        on_the_portal.warnings,
+        vec![Warning::KeyElsewhere {
+            origins: vec!["https://auth.example.test".to_owned()]
+        }]
+    );
+}
+
+#[test]
+fn always_writes_the_form_beside_the_page_and_it_reads_back_as_allowed() {
+    let dir = project("");
+    let one = signs_in_elsewhere(dir.path());
+    let text = with_line("[sandbox]\nmode = \"on\"\n", &one).expect("written");
+    let table: toml::Table = text.parse().expect("TOML");
+    assert_eq!(
+        login_in(&table)["form"].as_str(),
+        Some("https://auth.example.test")
+    );
+    let plane = crate::sandbox::Plane::of(Some(&text));
+    let said = plane.said();
+    let policy = said.policy.or(said.unset).expect("a policy");
+    assert_eq!(
+        policy.personas["qa"].tools.as_slice(),
+        &[one.tool().expect("a tool")]
+    );
+}
+
+/// A typed site is followed to its form again: the form found for the old page never stands for
+/// a new one.
+#[test]
+fn a_typed_site_takes_the_form_found_for_it() {
+    let dir = project("");
+    let one = signs_in_elsewhere(dir.path());
+    let moved = one
+        .at(
+            dir.path(),
+            "shop.example.test",
+            &|page| {
+                assert_eq!(
+                    page, "https://shop.example.test/",
+                    "the typed page is followed"
+                );
+                Ok(page.to_owned())
+            },
+            &[],
+        )
+        .expect("moved");
+    assert_eq!(moved.form, "https://shop.example.test");
+    assert!(
+        moved
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, Warning::FormElsewhere { .. }))
+    );
+}
+
+/// Nobody is asked about a login purlis couldn't follow to its form, and a suggestion that's
+/// refused for what it names is refused before the page is opened at all.
+#[test]
+fn a_page_that_cant_be_followed_to_its_form_is_refused_and_a_bad_name_never_opens_it() {
+    let dir = project("");
+    let refused = super::proposal(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &|_| Err("no login form appeared".to_owned()),
+        &[],
+    )
+    .expect_err("refused");
+    assert!(refused.contains("no login form appeared"), "{refused}");
+    let opened = std::cell::Cell::new(false);
+    let bad = Suggested {
+        vault: "a vault".to_owned(),
+        ..suggested("https://app.example.test/")
+    };
+    for one in [bad, suggested("http://app.example.test/")] {
+        assert!(
+            super::proposal(
+                dir.path(),
+                "qa",
+                "shop-login",
+                &one,
+                &|page| {
+                    opened.set(true);
+                    Ok(page.to_owned())
+                },
+                &[],
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        !opened.get(),
+        "nothing is opened for a suggestion that's refused"
+    );
 }

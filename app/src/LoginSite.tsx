@@ -36,16 +36,25 @@ export function LoginSite({
 }) {
   return (
     <div className="login-site" data-testid="login-site">
+      <p className="ui-text-meta">Opens</p>
       <p className="login-site-domain ui-text-title">
         https://{login.domain}
         <span className="ui-text-body">{login.path}</span>
       </p>
       <TextField
-        aria-label="Change the site this login is filled on"
+        aria-label="Change the site this login opens"
         value={typed ?? siteOf(login)}
         spellCheck={false}
         onChange={onTyped}
       />
+      <p className="ui-text-meta">
+        {login.form === login.domain
+          ? "The password is typed on this site alone"
+          : "That site sends the browser to sign in elsewhere. The password is typed only on"}
+      </p>
+      <p className="login-site-domain ui-text-title" data-testid="login-site-form">
+        https://{login.form}
+      </p>
       <p className="ui-text-meta">
         Fills{" "}
         {login.user_key != null && (

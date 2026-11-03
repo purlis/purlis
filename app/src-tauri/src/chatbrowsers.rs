@@ -724,7 +724,7 @@ fn called(asked: &Browsing) -> Called {
         Browsing::NeedsYou { .. } => Called::NeedsYou,
         Browsing::LogIn { .. } => Called::LogIn,
         Browsing::Act(act) => match act {
-            Act::Open { .. } => Called::Open,
+            Act::Open { .. } | Act::FindLoginForm { .. } => Called::Open,
             Act::Navigate { .. } => Called::Navigate,
             Act::Snapshot { .. } => Called::Snapshot,
             Act::Find { .. } => Called::Find,
@@ -1623,6 +1623,78 @@ impl ChatBrowsers {
                 .lock()
                 .get(&session)
                 .is_some_and(|chat| matches!(chat.posture, Posture::Allowed { .. }))
+    }
+
+    /// **Where `page` sends chat `session`'s browser to sign in** (#4995): a browser of purlis's
+    /// own, started where the chat's would be and reaching what the chat's reaches now, never
+    /// more, opened at `page`, followed to its login form, and ended. Nothing is typed, and the
+    /// chat never sees it. Answers the address the form showed on, as the engine recorded it, or
+    /// why there is none. `always` is the open web of the persona's Always, where it answers the
+    /// chat's Ask.
+    #[allow(clippy::too_many_arguments)]
+    pub fn find_login_form(
+        &self,
+        driver: Option<&Arc<dyn Driver>>,
+        root: &Path,
+        pool: Option<&str>,
+        session: u32,
+        reach: BrowserReach,
+        always: Option<bool>,
+        page: &str,
+    ) -> Result<String, String> {
+        let not_followed =
+            |why: &str| format!("purlis could not follow {page} to its login form: {why}");
+        let (open_web, sites) = {
+            let chats = self.lock();
+            let chat = chats.get(&session);
+            let open_web = match chat.map(|chat| &chat.posture) {
+                Some(Posture::Allowed { open_web }) => Some(*open_web),
+                _ => always,
+            };
+            (
+                open_web,
+                chat.map(|chat| chat.sites.clone()).unwrap_or_default(),
+            )
+        };
+        let Some(open_web) = open_web else {
+            return Err(not_followed("this chat's browser isn't allowed yet"));
+        };
+        let Some(driver) = driver else {
+            return Err(not_followed(NO_HOST));
+        };
+        let reach = with_sites(
+            reach,
+            open_web,
+            &sites,
+            &purlis_core::sandbox::policy::Locks::of(root),
+        );
+        let program = driver
+            .start(root, pool, reach.clone(), None)
+            .map_err(|not| match not {
+                NotStarted::Failed(why) => not_followed(&why),
+                _ => not_followed("no browser could be started for it"),
+            })?;
+        // The browser is its own, so its one call needs no id of its own.
+        let found = driver.act(
+            &program,
+            "login-form",
+            Act::FindLoginForm {
+                address: page.to_owned(),
+            },
+            reach,
+        );
+        // It holds nothing, so it ends now, whatever it found.
+        if driver.close(&program).is_err() {
+            let _ = driver.stop(&program);
+        }
+        match found {
+            Ok(browsed) => browsed
+                .page
+                .map(|page| page.address)
+                .ok_or_else(|| not_followed("the browser showed no page")),
+            Err(Refused::Said(why)) => Err(not_followed(&why)),
+            Err(Refused::Gone) => Err(not_followed("the browser ended")),
+        }
     }
 
     /// **Allow** on chat `session`'s Ask, with the open web or not. Answers whether it waited.
@@ -3160,6 +3232,9 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
         )
         .ok()
     });
+    // A login whose form is on another origin keeps none yet (#4995): a kept login holds its
+    // browser to one site.
+    let store = store.filter(|_| login.form.is_none());
     let opens = match (&store, purlis_core::datahome::root()) {
         (Some(store), Some(data)) => store.exists(&data),
         _ => false,
@@ -3345,7 +3420,7 @@ pub(crate) fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPerso
 /// sandboxed chat reattached under a sandbox whose compile was not recorded (D-2006-11) lists
 /// nothing. Its own
 /// sites, for this chat alone, are added by [`ChatBrowsers::answer`].
-fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
+pub(crate) fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
     let Some(confines) = held.chats().confines_now(session) else {
         // Held by a sandbox whose compile was not recorded (D-2006-11): nothing is listed.
         if !held.chats().started_unsandboxed(session) {

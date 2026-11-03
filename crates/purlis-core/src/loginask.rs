@@ -11,6 +11,10 @@
 //! - **The origin is what's confirmed** ([`site_of`]): `https` alone, a name a browser spells the
 //!   same way, and never an address or a name of one label. The page is rebuilt from that origin
 //!   and the path, so nothing a chat wrote survives that the notice doesn't show.
+//! - **So is the form's** ([`form_from`], #4995, the person's ruling of 2026-11-03): before the
+//!   person is asked, purlis opens the page in a browser of its own and follows it to its login
+//!   form. The origin the form showed on is the one place the password is typed, held to the
+//!   same rules, and the notice names it beside the page, with a warning where they differ.
 //! - **A key a `mint` line names is never offered** ([`proposal`]), nor any key while the
 //!   project's file can't be read to tell.
 //! - **What the person is warned of** ([`Warning`]): a password key used on another site, and a
@@ -40,6 +44,10 @@ const MOST_SITE: usize = 512;
 
 /// The longest vault key or vault name a notice shows.
 const MOST_NAME: usize = 128;
+
+/// **Where a page sends the browser to sign in** (#4995): the address its login form showed on, as
+/// the browser recorded it, or why none did.
+pub type FindsForm<'a> = &'a dyn Fn(&str) -> Result<String, String>;
 
 /// **What a chat suggests**, as its `browser_login` call says it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -72,6 +80,12 @@ pub enum Warning {
     ToolsKey { tool: String, key: String },
     /// The persona is the project's default, so Always reaches every chat that names no persona.
     DefaultPersona { persona: String },
+    /// The page sent the browser to a login form on another host (#4995): the password goes
+    /// there, not to the page's.
+    FormElsewhere {
+        page_host: String,
+        form_host: String,
+    },
 }
 
 impl Warning {
@@ -105,6 +119,13 @@ impl Warning {
                 "{persona} is this project's default persona, so Always allow reaches every chat \
                  that names no persona too."
             ),
+            Self::FormElsewhere {
+                page_host,
+                form_host,
+            } => format!(
+                "The password goes to {form_host}, not {page_host}: {page_host} sent the browser \
+                 there to sign in. Allow only if you know {form_host} as this site's sign-in."
+            ),
         }
     }
 }
@@ -121,6 +142,9 @@ pub struct Proposal {
     pub origin: String,
     /// The origin, then the path. Never a query or a fragment.
     pub page: String,
+    /// **The origin the login form showed on** (#4995): the one place the password is typed.
+    /// [`Self::origin`] where the form is on the page's own.
+    pub form: String,
     pub warnings: Vec<Warning>,
 }
 
@@ -191,6 +215,29 @@ pub fn site_of(site: &str) -> Result<(String, String), String> {
     Ok((origin, page))
 }
 
+/// **The origin of the address a login form showed on** (#4995), as the browser recorded it, held
+/// to [`site_of`]'s rules, or why the password may not be typed there. Only its scheme and host
+/// are ever said: the rest of a form's address may carry what the site handed the browser.
+pub fn form_from(found: &str) -> Result<String, String> {
+    let (scheme, rest) = found.split_once("://").unwrap_or(("", found));
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let shown = crate::shown::short(&format!("{scheme}://{authority}"));
+    if !scheme.eq_ignore_ascii_case("https") || authority.is_empty() {
+        return Err(format!(
+            "the page sends the browser to a login form on {shown}, which is not https, so \
+             purlis records nothing and fills nothing there. Give the https address of a login \
+             page whose form is on https"
+        ));
+    }
+    let (origin, _) = site_of(&format!("https://{authority}/")).map_err(|why| {
+        format!(
+            "the page sends the browser to a login form on {shown}, so purlis records nothing \
+             and fills nothing there: {why}"
+        )
+    })?;
+    Ok(origin)
+}
+
 /// The host of `origin`, as [`site_of`] and [`login::origin_of`] write one.
 fn host_of(origin: &str) -> &str {
     let host = origin.strip_prefix("https://").unwrap_or(origin);
@@ -228,11 +275,15 @@ const USUAL_PAGES: [&str; 10] = [
 /// login's name and the vault's keys are plain, no key is one a `mint` line names, and the
 /// project's file can be read to tell. `granted` are the logins the person allowed for now,
 /// counted as declared for [`Warning::KeyElsewhere`].
+///
+/// `finds` follows the page to its login form, once all else is checked, and answers the address
+/// the form showed on ([`form_from`]), or why none did.
 pub fn proposal(
     root: &Path,
     persona: &str,
     login: &str,
     suggested: &Suggested,
+    finds: FindsForm<'_>,
     granted: &[Tool],
 ) -> Result<Proposal, String> {
     if let Some(why) = tools::refused_name(login) {
@@ -260,6 +311,7 @@ pub fn proposal(
         }
     }
     let (origin, page) = site_of(&suggested.site)?;
+    let form = form_from(&finds(&page)?)?;
     let mut proposal = Proposal {
         persona: persona.to_owned(),
         login: login.to_owned(),
@@ -268,6 +320,7 @@ pub fn proposal(
         key: suggested.key.clone(),
         origin,
         page,
+        form,
         warnings: Vec::new(),
     };
     proposal.warnings = warnings_of(root, &proposal, granted);
@@ -299,15 +352,28 @@ pub fn warnings_of(root: &Path, proposal: &Proposal, granted: &[Tool]) -> Vec<Wa
             });
         }
     }
-    let host = host_of(&proposal.origin);
-    if host.split('.').any(|label| label.starts_with("xn--")) {
-        let (shown_as, _) = idna::domain_to_unicode(host);
-        warnings.push(Warning::OtherAlphabet { shown_as });
+    if proposal.form != proposal.origin {
+        warnings.push(Warning::FormElsewhere {
+            page_host: host_of(&proposal.origin).to_owned(),
+            form_host: host_of(&proposal.form).to_owned(),
+        });
     }
-    if let Some((_, port)) = proposal.origin["https://".len()..].rsplit_once(':')
-        && let Ok(port) = port.parse()
-    {
-        warnings.push(Warning::OtherPort { port });
+    // The page's name and the form's are each read as a browser shows them.
+    let mut origins = vec![proposal.origin.as_str()];
+    if proposal.form != proposal.origin {
+        origins.push(proposal.form.as_str());
+    }
+    for origin in origins {
+        let host = host_of(origin);
+        if host.split('.').any(|label| label.starts_with("xn--")) {
+            let (shown_as, _) = idna::domain_to_unicode(host);
+            warnings.push(Warning::OtherAlphabet { shown_as });
+        }
+        if let Some((_, port)) = origin["https://".len()..].rsplit_once(':')
+            && let Ok(port) = port.parse()
+        {
+            warnings.push(Warning::OtherPort { port });
+        }
     }
     let path = &proposal.page[proposal.origin.len()..];
     if !USUAL_PAGES.contains(&path.trim_end_matches('/')) && path != "/" {
@@ -356,8 +422,8 @@ fn elsewhere(declared: &[Tool], proposal: &Proposal, granted: &[Tool]) -> Vec<St
             tool.login_keys()
                 .is_some_and(|(user, key)| same(key) || user.is_some_and(same))
         })
-        .filter_map(|tool| tool.login.as_ref().map(|login| login.origin.clone()))
-        .filter(|origin| *origin != proposal.origin)
+        .filter_map(|tool| tool.login.as_ref().map(|login| login.fills_on().to_owned()))
+        .filter(|origin| *origin != proposal.form)
         .collect();
     origins.sort();
     origins.dedup();
@@ -366,8 +432,15 @@ fn elsewhere(declared: &[Tool], proposal: &Proposal, granted: &[Tool]) -> Vec<St
 
 impl Proposal {
     /// **The same login where the person typed**: read as a suggestion is, a typed page taking the
-    /// place of the page and a bare domain keeping it, its warnings worked out again.
-    pub fn at(&self, root: &Path, typed: &str, granted: &[Tool]) -> Result<Self, String> {
+    /// place of the page and a bare domain keeping it, its warnings worked out again, and the
+    /// page followed to its form again with `finds`.
+    pub fn at(
+        &self,
+        root: &Path,
+        typed: &str,
+        finds: FindsForm<'_>,
+        granted: &[Tool],
+    ) -> Result<Self, String> {
         let (origin, page) = site_of(typed)?;
         let bare = typed.trim().rsplit("://").next().unwrap_or_default();
         let page = if bare.contains('/') {
@@ -375,9 +448,11 @@ impl Proposal {
         } else {
             format!("{origin}{}", &self.page[self.origin.len()..])
         };
+        let form = form_from(&finds(&page)?)?;
         let mut moved = Self {
             page,
             origin,
+            form,
             warnings: Vec::new(),
             ..self.clone()
         };
@@ -389,7 +464,7 @@ impl Proposal {
     /// length-prefixed, so a press on one proposal never answers another.
     pub fn digest(&self) -> String {
         let mut digest = sha2::Sha256::new();
-        digest.update(b"purlis proposed browser login v1\0");
+        digest.update(b"purlis proposed browser login v2\0");
         let warnings: Vec<String> = self.warnings.iter().map(Warning::said).collect();
         let warnings = warnings.join("\n");
         for field in [
@@ -400,6 +475,7 @@ impl Proposal {
             self.key.as_str(),
             self.origin.as_str(),
             self.page.as_str(),
+            self.form.as_str(),
             warnings.as_str(),
         ] {
             digest.update((field.len() as u64).to_be_bytes());
@@ -418,6 +494,11 @@ impl Proposal {
         let mut table = toml_edit::InlineTable::new();
         table.insert("vault", self.vault.as_str().into());
         table.insert(login::KEY, self.page.as_str().into());
+        // Written only where the form is on another origin: a line without it is the line a
+        // login always had (#4995).
+        if self.form != self.origin {
+            table.insert(login::FORM_KEY, self.form.as_str().into());
+        }
         if let Some(user) = &self.user_key {
             table.insert(login::USER_KEY, user.as_str().into());
         }
@@ -439,7 +520,14 @@ impl Proposal {
             return Err(refused.why.clone());
         }
         match tools.as_slice() {
-            [tool] if tool.login.as_ref().is_some_and(|l| l.url == self.page) => Ok(tool.clone()),
+            [tool]
+                if tool
+                    .login
+                    .as_ref()
+                    .is_some_and(|l| l.url == self.page && l.fills_on() == self.form) =>
+            {
+                Ok(tool.clone())
+            }
             _ => Err("this login can't be written as a line".to_owned()),
         }
     }

@@ -149,6 +149,9 @@ pub struct LoginShown {
     pub domain: String,
     /// The page's path on it.
     pub path: String,
+    /// **The host the password is typed on** (#4995), with a port where it has one: the login
+    /// form's, which the page may have sent the browser to. The domain where they're one.
+    pub form: String,
     pub vault: String,
     #[specta(optional)]
     pub user_key: Option<String>,
@@ -1386,6 +1389,11 @@ pub fn browser_login(
         last_message: None,
         login: Some(LoginShown {
             path: proposal.page[proposal.origin.len()..].to_owned(),
+            form: proposal
+                .form
+                .strip_prefix("https://")
+                .unwrap_or(&proposal.form)
+                .to_owned(),
             domain,
             vault: proposal.vault.clone(),
             user_key: proposal.user_key.clone(),

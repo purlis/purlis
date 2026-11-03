@@ -33,8 +33,35 @@ fn suggested(site: &str) -> Suggested {
     }
 }
 
+/// Where a page's own form shows: on the page itself.
+fn on_its_page(page: &str) -> Result<String, String> {
+    Ok(page.to_owned())
+}
+
+/// [`super::judged`] for a page whose form is on its own origin.
+fn judged(
+    root: &Path,
+    persona: &str,
+    login: &str,
+    suggested: &Suggested,
+    held: &[Tool],
+) -> Result<Judged, String> {
+    super::judged(root, persona, login, suggested, &on_its_page, held)
+}
+
 fn raised(root: &Path, grants: &Grants, site: &str) -> (u32, Proposal, mpsc::Receiver<Heard>) {
-    let judged = judged(root, "qa", "shop-login", &suggested(site), &[]).expect("asked");
+    raised_finding(root, grants, site, &on_its_page)
+}
+
+/// [`raised`], the page followed to its form with `finds`.
+fn raised_finding(
+    root: &Path,
+    grants: &Grants,
+    site: &str,
+    finds: FindsForm<'_>,
+) -> (u32, Proposal, mpsc::Receiver<Heard>) {
+    let judged =
+        super::judged(root, "qa", "shop-login", &suggested(site), finds, &[]).expect("asked");
     let proposal = judged.proposal.clone();
     let (id, heard) = grants
         .raise(LoginWait {
@@ -69,7 +96,18 @@ fn answered(
     audited: &Audited,
     asked: &Asked<'_>,
 ) -> Result<Pressed, String> {
-    answer(root, grants, asked, &|_, one| {
+    answered_finding(root, grants, audited, asked, &on_its_page)
+}
+
+/// [`answered`], a typed page followed to its form with `finds`.
+fn answered_finding(
+    root: &Path,
+    grants: &Grants,
+    audited: &Audited,
+    asked: &Asked<'_>,
+    finds: FindsForm<'_>,
+) -> Result<Pressed, String> {
+    answer(root, grants, asked, finds, &|_, one| {
         audited
             .borrow_mut()
             .push((one.what.to_owned(), one.level.word().to_owned()));
@@ -298,6 +336,7 @@ fn other_site(root: &Path) -> Tool {
         "qa",
         "other",
         &suggested("https://other.example.test/"),
+        &on_its_page,
         &[],
     )
     .expect("a proposal");
@@ -519,4 +558,126 @@ fn a_closed_chat_stops_its_call_waiting() {
     grants.forget(7);
     assert_eq!(heard.try_recv(), Ok(Heard::Gone));
     assert!(grants.waiting().is_empty());
+}
+
+// ---- A form on another host (#4995) ----
+
+const AUTH: &str = "https://auth.example.test/realms/x/protocol/openid-connect/auth?state=s";
+
+fn on_auth(_: &str) -> Result<String, String> {
+    Ok(AUTH.to_owned())
+}
+
+#[test]
+fn a_form_on_another_host_is_drawn_and_once_fills_there_alone() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, heard) =
+        raised_finding(dir.path(), &grants, "https://app.example.test/", &on_auth);
+    assert_eq!(proposal.form, "https://auth.example.test");
+    assert!(
+        proposal
+            .warnings
+            .iter()
+            .any(|warning| matches!(warning, loginask::Warning::FormElsewhere { .. })),
+        "{proposal:?}"
+    );
+    let audited = Audited::default();
+    answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Once, &proposal.digest()),
+    )
+    .expect("allowed");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
+    let login = tool_of(&grants, "shop-login")
+        .and_then(|tool| tool.login)
+        .expect("a login");
+    assert_eq!(login.url, "https://app.example.test/");
+    assert_eq!(login.fills_on(), "https://auth.example.test");
+}
+
+#[test]
+fn a_page_that_cant_be_followed_to_its_form_is_never_asked_about() {
+    let dir = project("");
+    let refused = super::judged(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://app.example.test/"),
+        &|_| Ok("http://auth.example.test/login".to_owned()),
+        &[],
+    )
+    .expect_err("refused");
+    assert!(refused.contains("not https"), "{refused}");
+    assert!(refused.contains("records nothing"), "{refused}");
+}
+
+/// A site the person typed is followed to its own form: the form found for the chat's page
+/// never stands for it, and a form elsewhere is drawn before a press counts.
+#[test]
+fn a_typed_site_is_followed_to_its_own_form_before_anything_is_allowed() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/login");
+    let audited = Audited::default();
+    let digest = proposal.digest();
+    let asked = Asked {
+        typed: Some("app.example.test"),
+        ..press(id, Press::Once, &digest)
+    };
+    let drawn = answered_finding(dir.path(), &grants, &audited, &asked, &on_auth);
+    assert!(matches!(drawn, Ok(Pressed::DrawnAgain { .. })), "{drawn:?}");
+    assert!(heard.try_recv().is_err(), "the chat still waits");
+    assert!(tool_of(&grants, "shop-login").is_none());
+    assert_eq!(
+        grants.waiting()[0].proposal.form,
+        "https://auth.example.test"
+    );
+}
+
+#[test]
+fn a_typed_site_that_cant_be_followed_to_its_form_is_refused_and_the_ask_stays() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/login");
+    let audited = Audited::default();
+    let digest = proposal.digest();
+    let asked = Asked {
+        typed: Some("app.example.test"),
+        ..press(id, Press::Once, &digest)
+    };
+    let refused = answered_finding(dir.path(), &grants, &audited, &asked, &|_| {
+        Err("no login form appeared".to_owned())
+    });
+    assert!(refused.is_err(), "{refused:?}");
+    assert_eq!(
+        grants.waiting()[0].proposal,
+        proposal,
+        "the ask stays as drawn"
+    );
+    assert!(tool_of(&grants, "shop-login").is_none());
+}
+
+#[test]
+fn always_writes_the_form_the_notice_showed() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let grants = Grants::default();
+    let (id, proposal, _heard) =
+        raised_finding(dir.path(), &grants, "https://app.example.test/", &on_auth);
+    let audited = Audited::default();
+    answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Always, &proposal.digest()),
+    )
+    .expect("allowed");
+    let file = file_of(dir.path());
+    assert!(
+        file.contains("form = \"https://auth.example.test\""),
+        "{file}"
+    );
+    assert!(!file.contains("state=s"), "{file}");
 }

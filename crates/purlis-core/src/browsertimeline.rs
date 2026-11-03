@@ -276,7 +276,9 @@ fn did(act: &Act, signed_in: bool) -> Option<String> {
         | Act::Pages
         | Act::Downloads
         | Act::WaitForText { .. } => return None,
-        Act::Open { address: to } => format!("Opened {}", address(to)),
+        Act::Open { address: to } | Act::FindLoginForm { address: to } => {
+            format!("Opened {}", address(to))
+        }
         Act::Navigate { address: to, .. } => format!("Went to {}", address(to)),
         Act::Click { target: on } => format!("Clicked {}", target(on)),
         Act::DoubleClick { target: on } => format!("Double-clicked {}", target(on)),

@@ -30,7 +30,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
-use purlis_core::loginask::{self, Proposal, Suggested};
+use purlis_core::loginask::{self, FindsForm, Proposal, Suggested};
 use purlis_core::sandbox::tools::Tool;
 use purlis_core::sandbox::{self, policy::Locks};
 use purlis_core::secrets::brokered;
@@ -87,6 +87,10 @@ struct Inner {
     filled: Vec<Tool>,
 }
 
+/// What a chat is told while the person is being asked about another of its logins.
+const ALREADY_ASKED: &str = "the person is already being asked about a browser login for this \
+                             chat: wait for their answer before suggesting another";
+
 /// How many Keep blocked one chat is given before it's asked about no more logins, so a chat
 /// can't change a name or a subdomain until someone presses yes.
 const KEPT_AT_MOST: usize = 2;
@@ -114,11 +118,7 @@ impl Grants {
             .iter()
             .any(|(one, _)| one.session == wait.session)
         {
-            return Err(
-                "the person is already being asked about a browser login for this chat: wait for \
-                 their answer before suggesting another"
-                    .to_owned(),
-            );
+            return Err(ALREADY_ASKED.to_owned());
         }
         inner.next += 1;
         wait.id = inner.next;
@@ -333,7 +333,25 @@ pub fn before_the_login(
             return no(format!("no login {login} was filled on pool {pool}: {why}"));
         }
     }
-    let wait = match judged(held.root(), &persona, login, suggested, &grants.held()) {
+    // Nothing is opened for a login the person kept blocked here, or while one is being asked
+    // about for this chat: following a page to its form opens a browser (#4995).
+    if let Ok((origin, _)) = loginask::site_of(&suggested.site)
+        && grants.kept(session, login, &origin)
+    {
+        return no(kept_said(login, None));
+    }
+    if grants.waiting().iter().any(|one| one.session == session) {
+        return no(ALREADY_ASKED.to_owned());
+    }
+    let finds = |page: &str| follows(held, session, pool, page);
+    let wait = match judged(
+        held.root(),
+        &persona,
+        login,
+        suggested,
+        &finds,
+        &grants.held(),
+    ) {
         Ok(judged) if grants.kept(session, login, &judged.proposal.origin) => {
             return no(kept_said(login, None));
         }
@@ -374,6 +392,21 @@ pub fn before_the_login(
     }
 }
 
+/// **Where `page` sends chat `session`'s browser to sign in** (#4995), followed in a browser of
+/// purlis's own that reaches what the chat's reaches, on the runner of `pool` where it runs.
+fn follows(held: &Held, session: u32, pool: Option<&str>, page: &str) -> Result<String, String> {
+    let always = crate::chatbrowsers::as_persona_of(held, session).always;
+    held.browsers().find_login_form(
+        held.browser_driver(),
+        held.root(),
+        pool,
+        session,
+        crate::chatbrowsers::reach_of(held, session),
+        always,
+        page,
+    )
+}
+
 /// **Why a login allowed from its notice may not be filled now**, where policy changed since the
 /// press: a persona's tools forbidden, or a vault its persona isn't tagged for that policy no
 /// longer lets the person allow.
@@ -402,13 +435,14 @@ fn judged(
     persona: &str,
     login: &str,
     suggested: &Suggested,
+    finds: FindsForm<'_>,
     held: &[Tool],
 ) -> Result<Judged, String> {
     let locks = Locks::of(root);
     if let Some(why) = locks.refuses_tool(persona, login) {
         return Err(why);
     }
-    let proposal = loginask::proposal(root, persona, login, suggested, held)?;
+    let proposal = loginask::proposal(root, persona, login, suggested, finds, held)?;
     finish(root, &locks, proposal)
 }
 
@@ -497,11 +531,13 @@ pub struct Asked<'a> {
 }
 
 /// **The person's press** on the login a notice drew. Fails closed: a press on anything but what's
-/// waiting now changes nothing.
+/// waiting now changes nothing. A site the person typed is followed to its form with `finds`
+/// before anything is allowed on it (#4995).
 pub fn answer(
     root: &Path,
     grants: &Grants,
     asked: &Asked<'_>,
+    finds: FindsForm<'_>,
     audit: Audit<'_>,
 ) -> Result<Pressed, String> {
     const NO_MORE: &str = "That ask has gone, and nothing was allowed.";
@@ -531,7 +567,7 @@ pub fn answer(
     // A field left empty names no site: it never falls back to the one the chat suggested.
     let moved = match typed.map(str::trim) {
         Some("") => return Err("Type the site to fill this on, or Keep blocked.".to_owned()),
-        Some(typed) => Some((typed, wait.proposal.at(root, typed, &grants.held())?)),
+        Some(typed) => Some((typed, wait.proposal.at(root, typed, finds, &grants.held())?)),
         None => None,
     };
     let (proposal, spelled) = match moved {
@@ -553,11 +589,14 @@ pub fn answer(
         user_key: proposal.user_key.clone(),
         key: proposal.key.clone(),
     };
+    // The form stays where it was found for this page: what the notice showed.
+    let form = proposal.form.clone();
     let fresh = loginask::proposal(
         root,
         &proposal.persona,
         &proposal.login,
         &again,
+        &|_| Ok(form.clone()),
         &grants.held(),
     )?;
     let judged = finish(root, &locks, fresh)?;
@@ -716,10 +755,13 @@ fn pressed(
 ) -> Result<Pressed, String> {
     use purlis_core::askoutcome::{About, Answer as Said, Outcome, Scope};
     let wait = held.login_grants().wait(asked.session, asked.id);
+    let pool = wait.as_ref().and_then(|wait| wait.pool.clone());
+    let finds = |page: &str| follows(held, asked.session, pool.as_deref(), page);
     let answer = answer(
         held.root(),
         held.login_grants(),
         asked,
+        &finds,
         &held.audit_then_record(network),
     );
     held.chats().asks_may_have_moved();

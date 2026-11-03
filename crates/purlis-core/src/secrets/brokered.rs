@@ -1377,6 +1377,7 @@ fn read_login(
             keep: None,
             identity: Some(identity.clone()),
             suggested: false,
+            form: login.form.clone(),
         },
         identity,
     ))

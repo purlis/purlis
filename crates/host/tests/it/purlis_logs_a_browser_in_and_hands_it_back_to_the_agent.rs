@@ -55,6 +55,7 @@ fn login() -> LogIn {
         keep: None,
         identity: None,
         suggested: false,
+        form: None,
     }
 }
 

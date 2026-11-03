@@ -449,9 +449,15 @@ use crate::view::{Limits, Views};
 /// each one's refs and each file of its work tree that no commit has, for a desktop to prove a
 /// chat's fresh runner holds nothing it lacks before it lets that runner go. The window's alone.
 /// A window does not ask a host before 1.69, and lets go of no fresh runner of one.
+///
+/// 1.70 has a browser find where a page sends it to sign in (`find_login_form`, #4995): a page of
+/// purlis's own followed to its login form, nothing typed, before the person is asked about a
+/// login there; and a login says the origin of its form where it isn't the page's (`form`). A
+/// host before 1.70 refuses the first, so nothing is recorded, and fills a login on its page's
+/// origin alone, so a login whose form is elsewhere fills nothing there.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 69,
+    minor: 70,
 };
 
 /// The version that is first told a runner's programs are not known (#4684).
