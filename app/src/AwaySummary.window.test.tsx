@@ -178,8 +178,10 @@ function core(open: OpenChat[], rows: FinishedTask[] = [], other?: Project) {
     if (cmd === "opened_chats") return [...here.open];
     if (cmd === "stopping_chats") return [];
     if (cmd === "finished_tasks") return [...here.rows];
+    // A copy, as the core's answer reaches the window over IPC: the window keeps an answer
+    // equal to the one it holds (#4729), so one sharing this fake's chats would change with them.
     if (cmd === "plane_sidebar")
-      return {
+      return structuredClone({
         root: (a.plane as string | undefined) ?? PLANE,
         personas: ["steward", "devops"],
         persona: "steward",
@@ -195,7 +197,7 @@ function core(open: OpenChat[], rows: FinishedTask[] = [], other?: Project) {
             chats: [...here.open],
           },
         ],
-      };
+      });
     if (cmd === "workspace_panels")
       return {
         workspace: a.workspace,

@@ -937,6 +937,13 @@ export const PlaneView = memo(function PlaneView({
     [],
   );
   const [sidebar, setSidebar] = useState<SidebarModel>();
+  /** The sidebar held, for its read's answer to compare with outside React's own update. */
+  const sidebarHeld = useRef<SidebarModel>(undefined);
+  useEffect(() => {
+    sidebarHeld.current = sidebar;
+  }, [sidebar]);
+  /** Reads the finished tasks again, drawing nothing if they are as held (set further down). */
+  const finishedQuietly = useRef<() => void>(() => undefined);
   /** How many chats a stop has ended: the sidebar is read again for each, since a task chat
    *  with no tab leaves the list without any tab changing (#1448). */
   const [stopsEnded, setStopsEnded] = useState(0);
@@ -1941,6 +1948,10 @@ export const PlaneView = memo(function PlaneView({
           setSidebar(undefined);
           return;
         }
+        // An equal answer moves nothing the finished tasks are read on, so they are read
+        // again here: a finished row can change while the sidebar does not (Clear finished).
+        const held = sidebarHeld.current;
+        if (held !== undefined && dequal(held, next)) finishedQuietly.current();
         setSidebar((held) => (held !== undefined && dequal(held, next) ? held : next));
         // Focus follows the plane rather than being guessed: whichever workspace was picked,
         // while it still exists — and otherwise **the workspace of the chat in front**,
@@ -5758,8 +5769,12 @@ export const PlaneView = memo(function PlaneView({
   const {
     finished: finishedTasks,
     read: rereadFinished,
+    readQuietly: rereadFinishedQuietly,
     settled: finishedSettled,
   } = useFinishedTasks(plane, sidebar);
+  useEffect(() => {
+    finishedQuietly.current = rereadFinishedQuietly;
+  }, [rereadFinishedQuietly]);
   useEffect(() => {
     finishedNow.current = finishedTasks;
   }, [finishedTasks]);

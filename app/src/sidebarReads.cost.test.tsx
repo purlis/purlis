@@ -69,6 +69,25 @@ describe("when the window reads the sidebar again", () => {
     expect(windowCommits.count).toBe(0);
   });
 
+  it("reads the finished tasks again for an equal answer, and commits nothing when they are equal too", async () => {
+    // A finished row can change while the sidebar does not, as when Clear finished takes the
+    // folded ones, so an equal answer still reads them; equal rows are not drawn again either.
+    const { asked, planeChanged, holdSidebar } = await aWindow(SHAPE);
+    const release = holdSidebar();
+    await planeChanged(rootOf(0), "sidebar");
+    await settled(asked);
+
+    windowCommits.count = 0;
+    const from = asked.length;
+    await act(async () => {
+      release();
+    });
+    await settled(asked);
+
+    expect(asked.slice(from).filter((one) => one.cmd === "finished_tasks")).toHaveLength(1);
+    expect(windowCommits.count).toBe(0);
+  });
+
   it("commits nothing for an equal answer whose keys come in another order", async () => {
     const { asked, planeChanged, holdSidebar, reverseSidebarKeys } = await aWindow(SHAPE);
     reverseSidebarKeys();
