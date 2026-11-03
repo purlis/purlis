@@ -9,6 +9,7 @@ fn facts(engine: Engine) -> Facts {
         engine,
         pool: None,
         identity: Identity::None,
+        repos: true,
     }
 }
 
@@ -216,6 +217,14 @@ fn every_step_a_person_is_on_says_what_to_do_next() {
             ..on_a_pool(Runner::Running, signed_in())
         },
         facts(Engine::Elsewhere),
+        Facts {
+            identity: Identity::Elsewhere {
+                host: "git.acme.internal".into(),
+                program: "gh".into(),
+                persona: None,
+            },
+            ..on_a_pool(Runner::Running, signed_in())
+        },
         on_a_pool(Runner::CannotTell("x".into()), SignIns::NotAsked),
         on_a_pool(Runner::Asleep, SignIns::NotAsked),
         on_a_pool(Runner::Running, SignIns::Read(Vec::new())),
@@ -244,6 +253,53 @@ fn an_identity_read_from_the_plane_finishes_its_step_as_what_it_acts_through() {
         Some("gh through steward")
     );
     assert_eq!(next(&setup, StepId::Try), ActionId::StartTestChat);
+}
+
+#[test]
+fn repos_on_another_forge_host_are_said_plainly_with_the_tool_line_to_add_by_hand() {
+    let mut set = on_a_pool(Runner::Running, signed_in());
+    set.identity = Identity::Elsewhere {
+        host: "git.acme.internal".into(),
+        program: "gh".into(),
+        persona: Some("steward".into()),
+    };
+    let setup = answer(&set);
+    let step = setup.step(StepId::Identity).unwrap();
+    assert_eq!(step.state, Current);
+    assert_eq!(next(&setup, StepId::Identity), ActionId::CheckAgain);
+    assert!(
+        step.findings[0].contains("can't set up git.acme.internal by itself"),
+        "{:?}",
+        step.findings
+    );
+    let see = step.see.as_ref().expect("the line to add by hand");
+    assert_eq!(
+        see.text,
+        "purlis secret set forge token --stdin\n\n\
+         [sandbox.personas.steward.tools]\n\
+         gh = { vault = \"forge\", as = \"GH_ENTERPRISE_TOKEN env\", key = \"token\", host = \"git.acme.internal\" }"
+    );
+    assert!(step.skippable, "it never dead-ends: it can be skipped");
+}
+
+#[test]
+fn a_gitlab_host_is_given_glab_s_line() {
+    let mut set = on_a_pool(Runner::Running, signed_in());
+    set.identity = Identity::Elsewhere {
+        host: "gitlab.com".into(),
+        program: "glab".into(),
+        persona: None,
+    };
+    let setup = answer(&set);
+    let see = setup.step(StepId::Identity).unwrap().see.clone().unwrap();
+    assert!(
+        see.text.ends_with(
+            "[sandbox.personas.<persona>.tools]\n\
+             glab = { vault = \"forge\", as = \"GITLAB_TOKEN env\", key = \"token\" }"
+        ),
+        "{}",
+        see.text
+    );
 }
 
 #[test]
@@ -741,6 +797,25 @@ fn an_identity_set_up_is_a_check_that_passed_and_one_not_set_up_is_not() {
         &tried_on("dev-box"),
     ));
     assert_ne!(unset[2].0, Verdict::Ok);
+}
+
+#[test]
+fn with_no_repo_gh_and_git_push_are_skipped_and_the_end_reads_works_except_for_this() {
+    // C on #4469: nothing to check them against, so a check not made, never one passed.
+    let mut set = on_a_pool(Runner::Running, signed_in());
+    set.identity = Identity::Set {
+        persona: "steward".into(),
+        tool: "gh".into(),
+    };
+    set.repos = false;
+    let lines = try_lines(&of(Kind::Docker, &set, &tried_on("dev-box")));
+    assert_eq!(
+        lines[2],
+        (
+            Verdict::Skip,
+            "gh and git push weren't checked: this project has no repo yet".into()
+        )
+    );
 }
 
 #[test]

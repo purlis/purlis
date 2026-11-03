@@ -487,15 +487,13 @@ pub fn keep_key(ctx: &Ctx, created: &Created) -> Result<(), String> {
     })
 }
 
-/// **The github.com accounts the project's clones are under**, each once: what the person is
-/// offered as the App's owner (Q3). Only a suggestion, which they confirm on GitHub's own page.
-#[must_use]
-pub fn owners_on_github(root: &Path) -> Vec<String> {
+/// The remotes of every clone the project's workspaces hold that a chat could be handed a
+/// token for, as each clone's own config lists them (`git config --local`, no included file):
+/// the clone, and its config's `remote.<name>.url` lines.
+fn remote_lines(root: &Path) -> Vec<(std::path::PathBuf, String)> {
     let plane = crate::workspaces::Plane::open(root.to_path_buf());
-    let known = super::known(root);
-    let forge_of = |url: &str| super::resolve_in(url, &known);
     let out_of_reach = apptoken::grantable_beside(root, &[]);
-    let mut owners: Vec<String> = plane
+    plane
         .workspaces()
         .unwrap_or_default()
         .iter()
@@ -514,15 +512,47 @@ pub fn owners_on_github(root: &Path) -> Vec<String> {
                 crate::worktree::git::READ,
             )
             .ok()?;
-            Some(apptoken::remotes_in(&repo.path, &run.out, &forge_of))
+            Some((repo.path, run.out))
         })
-        .flatten()
+        .collect()
+}
+
+/// **The github.com accounts the project's clones are under**, each once: what the person is
+/// offered as the App's owner (Q3). Only a suggestion, which they confirm on GitHub's own page.
+#[must_use]
+pub fn owners_on_github(root: &Path) -> Vec<String> {
+    let known = super::known(root);
+    let forge_of = |url: &str| super::resolve_in(url, &known);
+    let mut owners: Vec<String> = remote_lines(root)
+        .iter()
+        .flat_map(|(clone, lines)| apptoken::remotes_in(clone, lines, &forge_of))
         .filter(|remote| remote.host == HOST && account_ok(&remote.owner))
         .map(|remote| remote.owner)
         .collect();
     owners.sort();
     owners.dedup();
     owners
+}
+
+/// **The forges the project's clones are on** (#4490, Q49), each once, sorted by host: a forge
+/// the project declares or a kind's own host, as a remote names it. What Pool setup's agent
+/// identity step tells apart: github.com, which it sets up, from a host it can't yet.
+#[must_use]
+pub fn forges_of_the_project(root: &Path) -> Vec<super::Forge> {
+    let known = super::known(root);
+    let mut forges: Vec<super::Forge> = remote_lines(root)
+        .iter()
+        .flat_map(|(_, lines)| {
+            lines
+                .lines()
+                .filter_map(|line| line.split_once(' ').map(|(_, url)| url.trim()))
+                .filter_map(|url| super::resolve_in(url, &known))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    forges.sort_by(|a, b| a.host.cmp(&b.host));
+    forges.dedup();
+    forges
 }
 
 /// **An App a persona's tool line names**, read from the project file.

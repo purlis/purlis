@@ -287,6 +287,14 @@ pub enum Identity {
     KeptOff { persona: String, tool: String },
     /// A persona has `tool`, allowed here.
     Set { persona: String, tool: String },
+    /// No persona declares a forge tool, and the project's repos are on `host`, which purlis
+    /// can't set up by itself yet (Q49): only github.com has one-click setup. `program` is the
+    /// forge's CLI there, and `persona` the project's first, for the line to name.
+    Elsewhere {
+        host: String,
+        program: String,
+        persona: Option<String>,
+    },
 }
 
 /// A pool's facts.
@@ -303,6 +311,9 @@ pub struct Facts {
     pub engine: Engine,
     pub pool: Option<PoolFacts>,
     pub identity: Identity,
+    /// Whether the project's clones have a remote on a forge: with none, gh and git push have
+    /// nothing to be checked against (C on #4469).
+    pub repos: bool,
 }
 
 /// **A person's choices, the only thing stored** (tier: Machine, device-bound).
@@ -669,7 +680,49 @@ fn identity_reading(facts: &Facts) -> Reading {
             set_up(),
         ),
         Identity::Set { persona, tool } => Reading::done(format!("{tool} through {persona}")),
+        Identity::Elsewhere { host, .. } => Reading::to_do(
+            format!(
+                "purlis can't set up {host} by itself yet: one-click setup works for github.com. \
+                 You can still do this by hand, and it works just as well. Make a token on {host} \
+                 for the agent, not for you, keep it in a vault and add the tool line below. \
+                 purlis notices it and marks this step done."
+            ),
+            action(
+                ActionId::CheckAgain,
+                "Check again",
+                "Looks for your tool line again. It changes nothing.",
+            ),
+        ),
     }
+}
+
+/// **The tool line a person adds by hand for a forge purlis can't set up by itself** (Q49), with
+/// the command that keeps its token in a vault first: what the agent identity step's See what
+/// this does shows. github.com and gitlab.com need no `host`.
+fn by_hand(host: &str, program: &str, persona: Option<&str>) -> String {
+    let (var, default) = if program == "glab" {
+        ("GITLAB_TOKEN", "gitlab.com")
+    } else {
+        ("GH_ENTERPRISE_TOKEN", "github.com")
+    };
+    let var = if host == "github.com" {
+        "GH_TOKEN"
+    } else {
+        var
+    };
+    let host = if host == default {
+        String::new()
+    } else {
+        format!(", host = \"{host}\"")
+    };
+    let persona = persona.map_or_else(
+        || "<persona>".to_owned(),
+        |name| toml_edit::Key::new(name).display_repr().into_owned(),
+    );
+    format!(
+        "purlis secret set forge token --stdin\n\n[sandbox.personas.{persona}.tools]\n{program} = \
+         {{ vault = \"forge\", as = \"{var} env\", key = \"token\"{host} }}"
+    )
 }
 
 fn try_reading(facts: &Facts, choices: &Choices) -> Reading {
@@ -746,7 +799,7 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
         pool.as_deref(),
         steps.iter().position(|step| step.id == StepId::Try),
     ) {
-        let checks = try_checks(&steps, name, choices.tried.contains_key(name));
+        let checks = try_checks(&steps, name, choices.tried.contains_key(name), facts.repos);
         steps[at].checks = checks;
     }
     Setup {
@@ -761,7 +814,7 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
 /// **What Try it checks on pool `pool`, by what the steps before it say** (#4483, Q32, C on
 /// #4469): a step that was skipped is a check that wasn't made, said as such, so the end reads
 /// "works, except for this" and never as done.
-fn try_checks(steps: &[Step], pool: &str, tried: bool) -> Vec<Check> {
+fn try_checks(steps: &[Step], pool: &str, tried: bool, repos: bool) -> Vec<Check> {
     let state = |id| steps.iter().find(|step| step.id == id);
     let check = |verdict, title: String, more: Option<&str>| Check {
         verdict,
@@ -809,6 +862,12 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool) -> Vec<Check> {
             "gh and git push weren't checked: agent identity was skipped".to_owned(),
             Some("In these chats, gh and git push say they have no identity."),
         ),
+        // C on #4469: with no repo there is nothing to check them against.
+        _ if !repos => check(
+            Verdict::Skip,
+            "gh and git push weren't checked: this project has no repo yet".to_owned(),
+            Some("Once a workspace holds a clone of a repo, Try it again to check them."),
+        ),
         _ => check(
             Verdict::Todo,
             "The agent's identity is set".to_owned(),
@@ -822,6 +881,22 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool) -> Vec<Check> {
 /// a pool, depend on what the person chose, so they are [`asked::Asked::command`]'s.
 fn see_of(id: StepId, facts: &Facts) -> Option<See> {
     let pool = facts.pool.as_ref();
+    if let (
+        StepId::Identity,
+        Identity::Elsewhere {
+            host,
+            program,
+            persona,
+        },
+    ) = (id, &facts.identity)
+    {
+        return Some(See {
+            note: "Keep the token in a vault, then add this line to your project's settings. \
+                   purlis marks this step done once it is there."
+                .to_owned(),
+            text: by_hand(host, program, persona.as_deref()),
+        });
+    }
     match (id, pool) {
         (StepId::Where, _) => Some(See {
             note: "This is how purlis asks after Docker. It only reads.".to_owned(),
@@ -884,6 +959,9 @@ pub fn read(here: &Here<'_>, pool: Option<&str>) -> Result<Setup, Refused> {
         engine,
         pool,
         identity: identity_in(here.plane),
+        repos: here.plane.is_some_and(|root| {
+            !crate::forge::agentidentity::forges_of_the_project(root).is_empty()
+        }),
     };
     Ok(of(Kind::Docker, &facts, &choices))
 }
@@ -1025,7 +1103,32 @@ fn identity_in(plane: Option<&Path>) -> Identity {
             });
         }
     }
-    short_of_it.unwrap_or(Identity::None)
+    short_of_it.unwrap_or_else(|| elsewhere(root))
+}
+
+/// **No persona has a forge tool**: one-click setup where the project's repos are on github.com
+/// or on no forge purlis knows, and the line by hand where they are only on another (Q49).
+fn elsewhere(root: &Path) -> Identity {
+    use crate::forge::{Kind as Forge, agentidentity};
+    let forges = agentidentity::forges_of_the_project(root);
+    if forges.iter().any(|forge| forge.host == agentidentity::HOST) {
+        return Identity::None;
+    }
+    let Some(forge) = forges.first() else {
+        return Identity::None;
+    };
+    Identity::Elsewhere {
+        host: forge.host.clone(),
+        program: match forge.kind {
+            Forge::GitHub => "gh",
+            Forge::GitLab => "glab",
+        }
+        .to_owned(),
+        persona: crate::workspaces::Plane::open(root.to_path_buf())
+            .personas()
+            .ok()
+            .and_then(|names| names.into_iter().next()),
+    }
 }
 
 /// **The choices kept on this machine.** None where nothing was chosen; refused where the file
