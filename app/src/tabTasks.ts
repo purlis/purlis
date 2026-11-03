@@ -223,23 +223,6 @@ export function menuOf(
   return { lines, finished };
 }
 
-/**
- * **The next (`step` 1) or previous (-1) chat in a tab**, in the menu's order and round its
- * ends (V100-36). From a chat that is not listed any more (a task that ended), the next is the
- * first and the previous the last. Nothing in a tab with one chat.
- */
-export function neighbour(
-  rows: readonly ChatRow[],
-  current: number | undefined,
-  step: 1 | -1,
-): number | undefined {
-  if (rows.length === 0) return undefined;
-  const at = rows.findIndex((row) => row.session === current);
-  if (at < 0) return rows[step === 1 ? 0 : rows.length - 1].session;
-  if (rows.length < 2) return undefined;
-  return rows[(at + step + rows.length) % rows.length].session;
-}
-
 /** The rest and its grace, written in `tabRest.ts` so a scenario spec can read them too. */
 export { GRACE_MS, REST_MS } from "./tabRest";
 

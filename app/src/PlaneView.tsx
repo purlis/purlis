@@ -402,6 +402,9 @@ import { finishedBucketOf, taskBucketOf } from "./taskBuckets";
 import { stateClock } from "./stateClock";
 import { useTabIds } from "./StripTablist";
 import { TASK_KEY_ROW, taskKeyOf } from "./taskKeys";
+import { paneStepOf } from "./moveKeys";
+import { paneToward } from "./panePlaces";
+import { paneSaidOf } from "./paneSaid";
 import { usePretendLimits, usePretendTasks, withPretendedLimits } from "./e2eTasks";
 import { BriefOpener, BriefPanel, type BriefAsk, type OpenBrief } from "./Brief";
 import { AnswerOpener, AnswerPanel, type AnswerAsk, type OpenAnswer } from "./AnswerPanel";
@@ -950,6 +953,16 @@ export const PlaneView = memo(function PlaneView({
   /** The tab whose task menu the keyboard asked for, and a count of the asks (#1487): its
    *  chip opens when the count changes, so being drawn is never being asked. */
   const [tasksAsked, setTasksAsked] = useState<{ tab: number; count: number }>();
+  /**
+   * **The one polite line about a pane the keyboard did not ask for** (#4767, ruled on #4699):
+   * a press that lands on a chat already in another pane of the tab says where it went. Where
+   * the keyboard follows a change into its own pane, the terminal's name says it, and nothing
+   * here does. Counted, so the same line said twice is said twice.
+   */
+  const [paneSaid, setPaneSaid] = useState<{ said: string; count: number }>({
+    said: "",
+    count: 0,
+  });
   const showTabTasks = useCallback(
     (tab: number) => setTasksAsked((was) => ({ tab, count: (was?.count ?? 0) + 1 })),
     [],
@@ -3817,6 +3830,28 @@ export const PlaneView = memo(function PlaneView({
   }, [chatsByNumber]);
 
   /**
+   * **The keyboard goes into the focused pane of `next`** (#4767): its chat's terminal, or, in a
+   * pane with nothing or a view, its first control once it is drawn: New chat, or the view.
+   */
+  const keyboardInto = useCallback(
+    (next: Tabs) => {
+      const session = focusedChat(next);
+      if (session !== undefined) {
+        giveKeyboardTo(plane, session);
+        return;
+      }
+      setTimeout(() => {
+        const pane = document.querySelector<HTMLElement>(".pane.focused");
+        const into =
+          pane?.querySelector<HTMLElement>('[data-scope="view-frame"][data-part="root"]') ??
+          pane?.querySelector<HTMLElement>("button");
+        into?.focus();
+      });
+    },
+    [plane],
+  );
+
+  /**
    * **Close pane: the focused pane is cleared, and its chat goes on in the sidebar** (#4756).
    * Nothing ends, and its tasks stay wherever they are shown (#4757).
    */
@@ -3827,12 +3862,14 @@ export const PlaneView = memo(function PlaneView({
     // A task's own pane is never closed (#1489): its control is the minimise, another verb.
     if (going !== undefined && askedByNow(going.session) !== undefined) return;
     // A close is a layout change, so Undo puts it back (#4763, #4583 rule 3): it ended nothing.
-    change((tabs) =>
-      recorded(tabs, closeFocusedPane(tabs, filedIn, isPinned, isBackground), "Closed the pane."),
+    keyboardInto(
+      change((tabs) =>
+        recorded(tabs, closeFocusedPane(tabs, filedIn, isPinned, isBackground), "Closed the pane."),
+      ),
     );
     // Nothing ends, and its tasks stay in whatever panes they are in: a chat leaving moves no
     // other pane (#4757).
-  }, [askedByNow, change, filedIn, isBackground, isPinned]);
+  }, [askedByNow, change, filedIn, isBackground, isPinned, keyboardInto]);
 
   /**
    * **Clear pane, on an ended chat's band** (#4756): pane `pane` of the tab in front shows
@@ -4013,6 +4050,14 @@ export const PlaneView = memo(function PlaneView({
       if (sidebar !== undefined && landed !== undefined) setPicked(landed);
       const typing = focusedChat(next);
       if (typing !== undefined && typing !== focusedChat(before)) giveKeyboardTo(plane, typing);
+      const said =
+        typing === undefined
+          ? undefined
+          : paneSaidOf(before, next, typing, (session) => {
+              const listed = listedNow.current.get(session);
+              return listed?.label ?? listed?.name ?? String(session);
+            });
+      if (said !== undefined) setPaneSaid((was) => ({ said, count: was.count + 1 }));
     },
     [change, plane, sidebar],
   );
@@ -8853,7 +8898,7 @@ export const PlaneView = memo(function PlaneView({
       if (which === undefined) return;
       const offer = by(TASK_KEY_ROW[which]);
       const runnable = offer?.available === true;
-      if (pressed(e, [`tasks.${which}`], { mac, runnable }) === undefined) return;
+      if (pressed(e, [TASK_KEY_ROW[which]], { mac, runnable }) === undefined) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat || offer?.available !== true) return;
@@ -8862,6 +8907,45 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   }, [by, inFront, press]);
+
+  /**
+   * **The keys that move between panes and tabs** (`moveKeys.ts`, #4767, ruled on #4699): ⌘⌥
+   * and an arrow (Alt and an arrow off a Mac) gives the keyboard to the pane in that direction,
+   * with no wrap; ⌘⇧] and ⌘⇧[ bring the next and previous tab on the strip forward, round its
+   * ends, with the keyboard in its focused pane. Claimed on the window, capture-phase, by the
+   * project in front, with the registry's rules: not under a dialog, and off a Mac Alt and an
+   * arrow is left to a chat's terminal and to a view. Neither key is a byte to a terminal where
+   * it is taken (`keys/harnessBytes.test.ts`). Nothing is announced: the keyboard follows.
+   */
+  useEffect(() => {
+    if (!inFront) return;
+    const key = (e: KeyboardEvent) => {
+      const mac = onAMac();
+      const hit = pressed(e, ["pane.focus", "tab.next", "tab.previous"], { mac });
+      if (hit === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const tabs = now.current;
+      const front = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
+      if (front === undefined) return;
+      if (hit.id === "pane.focus") {
+        const toward = paneStepOf(e, mac);
+        const to =
+          toward === undefined ? undefined : paneToward(front.layout, front.focused, toward);
+        if (to === undefined) return;
+        keyboardInto(change((was) => focusPane(was, to)));
+        return;
+      }
+      const strip = onStrip;
+      const at = strip.indexOf(front.id);
+      if (at < 0 || strip.length < 2) return;
+      const step = hit.id === "tab.next" ? 1 : -1;
+      const id = strip[(at + step + strip.length) % strip.length];
+      keyboardInto(change((was) => selectTab(was, id)));
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [change, inFront, keyboardInto, onStrip]);
 
   /**
    * **The keys of the left side** (`sideKeys.ts`, #1673): ⌘B puts the navigation region away
@@ -9834,6 +9918,10 @@ export const PlaneView = memo(function PlaneView({
             {/* **A chat's theme draft is named on the workspace it is drawn in** (#2332): the
           strip under the workspaces, with Keep, Revert and Compare, and the revert key. */}
             <ThemeDraftStrip plane={plane} workspace={ofWorkspace ?? null} />
+            {/* **One polite line about a pane the keyboard did not ask for** (#4767). */}
+            <p role="status" className="sr-only" data-testid="pane-said">
+              <span key={paneSaid.count}>{paneSaid.said}</span>
+            </p>
 
             {/* **The regions** (ADR 0038): by default the navigation region on the left, the
           panes in the middle, and what is asking for you on the right. What the repos are
