@@ -100,3 +100,32 @@ fn a_relaunch_never_gives_a_chat_a_tab_its_record_did_not_keep() {
 
     assert_eq!(chats.layout(), Some(kept));
 }
+
+#[test]
+fn the_front_tab_of_a_record_written_before_numbers_comes_back_in_front() {
+    // A record from before chats kept their numbers: the upgrade reads it once each chat has
+    // the number it starts under, so the chat that was in front is in front.
+    let project = tempfile::tempdir().expect("a project");
+    let chats = chats_in(project.path());
+    let record = Record {
+        chats: vec![
+            Chat {
+                number: None,
+                ..shell(1, project.path())
+            },
+            Chat {
+                number: None,
+                active: true,
+                ..shell(2, project.path())
+            },
+        ],
+        ..Record::default()
+    };
+
+    chats.begin_put_back(&record, &|_| None);
+
+    let front = chats.front().expect("a chat in front");
+    let layout = chats.layout().expect("the upgrade's layout");
+    assert_eq!(layout.chats(), vec![front]);
+    assert_eq!(chats.looked_at(), vec![front]);
+}

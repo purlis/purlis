@@ -5332,8 +5332,8 @@ fn a_chat_put_back_is_one_the_next_quit_records_again() {
 
 #[test]
 fn a_chat_pin_is_read_once_from_a_record_with_no_tabs_and_then_the_tab_holds_it() {
-    // The upgrade: a record written before tabs were recorded keeps each chat's pin until the
-    // window reports its layout, which carries it on the tab. From then on the chat's own
+    // The upgrade: a record written before tabs were recorded is read into a layout as it is
+    // put back (#4758), and a chat's pin becomes its tab's there. From then on the chat's own
     // field is never written again.
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
@@ -5353,7 +5353,14 @@ fn a_chat_pin_is_read_once_from_a_record_with_no_tabs_and_then_the_tab_holds_it(
         ..Record::default()
     };
     chats.put_back(&old, SIZE);
-    assert!(chats.record().chats[1].pinned, "carried until a layout");
+    let upgraded = chats.record().layout.expect("the upgrade's layout");
+    assert!(
+        upgraded
+            .tabs
+            .iter()
+            .any(|tab| tab.pinned && tab.tree == Node::chat(4)),
+        "the pin is on chat 4's tab from the upgrade: {upgraded:?}"
+    );
 
     let mut pinned = front_tab(Node::chat(4));
     pinned.pinned = true;
