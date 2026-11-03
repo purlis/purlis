@@ -273,7 +273,7 @@ fn host_of(origin: &str) -> &str {
 
 /// Whether `name` is a vault's or a key's plain name: one word, with nothing a provider reads as
 /// a path to another field, and nothing a notice would draw as a sentence.
-fn plain(name: &str) -> bool {
+pub(crate) fn plain(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= MOST_NAME
         && name

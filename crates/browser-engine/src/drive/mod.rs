@@ -352,6 +352,12 @@ pub enum Call {
     FindLoginForm {
         address: WebAddress,
     },
+    /// **What a field is, before a secret goes into it** (#5115): the origin of the document of
+    /// the frame that holds `target`, as the engine records it, its label and its kind. Nothing
+    /// is typed.
+    DescribeField {
+        target: Ref,
+    },
     /// Sends a page to `address`.
     Navigate {
         page: Option<PageId>,
@@ -453,6 +459,7 @@ impl Call {
         matches!(
             self,
             Call::Snapshot { .. }
+                | Call::DescribeField { .. }
                 | Call::Find { .. }
                 | Call::WaitForText { .. }
                 | Call::Pages
@@ -491,6 +498,54 @@ pub enum Content {
     Image(Vec<u8>),
     /// Whether a waited-for text showed (or, waiting for it to go, went).
     Seen(bool),
+    /// The field a [`Call::DescribeField`] read (#5115).
+    Field(FieldInfo),
+}
+
+/// **A field a secret may go into, as the engine reads it** (#5115): never what it holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldInfo {
+    /// The origin of the document of the frame that holds it ([`origin_of`]), as the engine
+    /// recorded that document, never what the page says; none for one of no web origin.
+    pub origin: Option<String>,
+    /// What the page labels it, made plain and at most [`MOST_LABEL_CHARS`] characters.
+    pub label: String,
+    pub kind: FieldKind,
+}
+
+/// The longest label a [`FieldInfo`] gives, in characters.
+pub const MOST_LABEL_CHARS: usize = 80;
+
+/// **What kind of field it is** (#5115): only a one-line field takes a secret for now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldKind {
+    /// An input of type password, text, email, number, tel, url or search that takes typing.
+    OneLine,
+    /// A text area.
+    MultiLine,
+    /// An editable area of the page.
+    Editable,
+    /// Anything else, or a field that takes no typing (disabled, or read-only).
+    Other,
+}
+
+/// **A vault value purlis puts into one field** (#5115): the field, the one origin the person
+/// approved, the key's name and the value. Its `Debug` never shows the value.
+pub struct SecretFill {
+    pub target: Ref,
+    pub origin: String,
+    pub key: String,
+    pub value: zeroize::Zeroizing<String>,
+}
+
+impl fmt::Debug for SecretFill {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecretFill")
+            .field("target", &self.target)
+            .field("origin", &self.origin)
+            .field("key", &self.key)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A call's answer.
@@ -765,6 +820,9 @@ pub enum Refusal {
     /// A login purlis performed did not go through (#2016), in words that name no value.
     #[error("{0}")]
     NotLoggedIn(String),
+    /// A secret purlis was to fill was not filled (#5115), in words that name no value.
+    #[error("{0}")]
+    NotFilled(String),
     #[error("the page changed before this input reached it, so it was dropped")]
     Missed,
     /// What the field being typed into holds could not be read (#2138): the key waits, since

@@ -77,6 +77,7 @@ impl Browsing2 {
             false,
             &AsPersona::default,
             &|_| Err("no logins here".into()),
+            &|_| Err("no secret is filled in this test".to_owned()),
             &|| Err("no folder here".to_owned()),
             1000,
         );

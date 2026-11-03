@@ -720,6 +720,9 @@ pub fn call_of(act: Act) -> Result<drive::Call, String> {
         Act::FindLoginForm { address: to } => Call::FindLoginForm {
             address: address(&to)?,
         },
+        Act::DescribeField { target: on } => Call::DescribeField {
+            target: Ref::new(on),
+        },
         Act::Navigate {
             page: on,
             address: to,
@@ -857,6 +860,7 @@ pub fn browsed(answer: drive::Answer, most: usize) -> Browsed {
         drive::Content::Text(text) => out.text = Some(text),
         drive::Content::Pages(pages) => out.pages = pages.into_iter().map(said).collect(),
         drive::Content::Seen(seen) => out.seen = Some(seen),
+        drive::Content::Field(field) => out.field = Some(field_said(field)),
         drive::Content::Image(png) => match drive::fit::to_fit(&png, most) {
             Ok(fitted) => {
                 if fitted.halved > 0 {
@@ -874,6 +878,20 @@ pub fn browsed(answer: drive::Answer, most: usize) -> Browsed {
 }
 
 /// A download as the protocol says it (#2020).
+/// **A field the engine read, in the protocol's words** (#5115).
+fn field_said(field: drive::FieldInfo) -> wire::FieldSaid {
+    wire::FieldSaid {
+        origin: field.origin,
+        label: field.label,
+        kind: match field.kind {
+            drive::FieldKind::OneLine => wire::FieldKind::OneLine,
+            drive::FieldKind::MultiLine => wire::FieldKind::MultiLine,
+            drive::FieldKind::Editable => wire::FieldKind::Editable,
+            drive::FieldKind::Other => wire::FieldKind::Other,
+        },
+    }
+}
+
 fn download_said(download: drive::DownloadInfo) -> wire::DownloadSaid {
     wire::DownloadSaid {
         download: download.id,
@@ -1754,6 +1772,24 @@ impl Screen for EngineScreen {
             epoch: ended.epoch,
             outcome,
         })
+    }
+
+    fn fill_secret(&self, epoch: u64, fill: &wire::FillSecret) -> Result<Browsed, NotActed> {
+        self.browsed();
+        let fill = drive::SecretFill {
+            target: Ref::new(&fill.target),
+            origin: fill.origin.clone(),
+            key: fill.key.clone(),
+            value: zeroize::Zeroizing::new(fill.value.expose().to_owned()),
+        };
+        // It waits on the engine: made outside the lock, as an act is.
+        let browser = self.with(Arc::clone);
+        browser
+            .map_or(Err(drive::Refusal::Ended), |browser| {
+                browser.fill_secret(epoch, &fill)
+            })
+            .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
+            .map_err(not_acted)
     }
 
     fn take_over(&self) -> u64 {

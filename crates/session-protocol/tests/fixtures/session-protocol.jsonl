@@ -219,3 +219,7 @@
 {"reply":{"re":190,"ok":{"repos_held":{"repos":[{"project":"01J9PRJCT00000000000000000","path":"","refs":[{"name":"refs/heads/main","oid":"1111111111111111111111111111111111111111"},{"name":"HEAD","oid":"1111111111111111111111111111111111111111"}]},{"project":"01J9PRJCT00000000000000000","path":"workspaces/app/web","refs":[{"name":"HEAD","oid":"2222222222222222222222222222222222222222"}],"changed":[{"path":"draft.txt","now":"blob:3333333333333333333333333333333333333333"},{"path":"gone.txt"}]}],"unread":["a folder in workspaces/app/web in project 01J9PRJCT00000000000000000 has a name that is not text, so it was not looked through"]}}}}
 {"call":{"id":191,"command":"attach_view","program":"01J9ZQ3V7K8M2N4P6R8T0V2X4Z","kind":"terminal","history":200}}
 {"reply":{"re":191,"ok":{"attached":{"view":6,"cols":80,"rows":24,"kind":"terminal","older":4800}}}}
+{"call":{"id":192,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-192:field","act":{"do":"describe_field","target":"e12"}}}
+{"reply":{"re":192,"ok":{"browsed":{"settled":true,"field":{"origin":"https://dash.example.test","label":"API key","kind":"one_line"}}}}}
+{"call":{"id":193,"command":"fill_secret","program":"01J9ZQ8000000000000000000D","fill":{"target":"e12","origin":"https://dash.example.test","key":"dash-api-key","value":"fixture-word"}}}
+{"reply":{"re":193,"ok":{"browsed":{"page":{"page":"p1","address":"https://dash.example.test/settings","title":"Settings"},"settled":true,"note":"filled dash-api-key into the field on https://dash.example.test"}}}}

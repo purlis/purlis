@@ -299,6 +299,11 @@ mod hosted {
     /// showing, and its password field going, each within its own limit.
     const A_LOGIN_TAKES_AT_MOST: Duration = Duration::from_secs(150);
 
+    /// What a chat is told where the purlis that runs its browser fills no secret (#5115).
+    const TOO_OLD_TO_FILL: &str = "the purlis that runs this browser is too old to fill a \
+                                   secret, so nothing was filled. Update purlis where the \
+                                   browser runs, then call browser_fill_secret again";
+
     /// **Why a browser's start was refused**, from the host's refusal: the device's budget,
     /// `budget` here, where the host said `device_full` (1.32, #2611); the engine's sandbox
     /// where it said `no_engine_sandbox` (1.36, #2899), or its words for it from any host (one
@@ -339,6 +344,12 @@ mod hosted {
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
             let link = self.link_for(program).map_err(Refused::Said)?;
+            // A host before 1.72 reads no field for a secret fill (#5115).
+            if matches!(act, Act::DescribeField { .. })
+                && link.version() < session::KNOWS_SECRET_FILL
+            {
+                return Err(Refused::Said(TOO_OLD_TO_FILL.to_owned()));
+            }
             let command = Command::Browse {
                 program: program.to_owned(),
                 call_id: call_id.to_owned(),
@@ -430,6 +441,35 @@ mod hosted {
                 self.drove(program, Drives::Agent);
             }
             answered
+        }
+
+        fn fill_secret(
+            &self,
+            program: &str,
+            fill: purlis_session_protocol::browsing::FillSecret,
+        ) -> Result<Browsed, crate::chatbrowsers::Refused> {
+            use crate::chatbrowsers::Refused;
+            let link = self.link_for(program).map_err(Refused::Said)?;
+            if link.version() < session::KNOWS_SECRET_FILL {
+                return Err(Refused::Said(TOO_OLD_TO_FILL.to_owned()));
+            }
+            let command = Command::FillSecret {
+                program: program.to_owned(),
+                fill: Box::new(fill),
+            };
+            match link.call_refused_within(command, AN_ACT_TAKES_AT_MOST) {
+                Ok(Answer::Browsed(browsed)) => Ok(*browsed),
+                Ok(_) => Err(Refused::Said(
+                    "the session host answered a secret fill with something else".into(),
+                )),
+                Err(refusal)
+                    if refusal.code == session::NO_SUCH_CHAT
+                        || refusal.code == session::BROWSER_ENDED =>
+                {
+                    Err(Refused::Gone)
+                }
+                Err(refusal) => Err(Refused::Said(refusal.why)),
+            }
         }
 
         fn close(&self, program: &str) -> Result<(), String> {
