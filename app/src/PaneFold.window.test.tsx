@@ -87,16 +87,6 @@ function propsOf(layout: Layout, more: Partial<Props>): Props {
   return read as unknown as Props;
 }
 
-/**
- * A folded pane's button by its name, matched with the spaces left out: the name's words are
- * spans (`PaneRail`), and how a name computation spaces them depends on how each is laid out
- * (jsdom drops spaces; a browser puts one either side of a `.hidden-words` piece). The words
- * and their order are what is checked, and axe reads them (the last test here).
- */
-const folded = (name: string) => ({
-  name: (heard: string) => heard.replace(/\s/g, "") === name.replace(/\s/g, ""),
-});
-
 const rails = () => screen.queryAllByRole("group", { name: "Folded panes" });
 
 describe("a split below the minimum (#4766)", () => {
@@ -106,7 +96,7 @@ describe("a split below the minimum (#4766)", () => {
     );
 
     expect(rails()).toHaveLength(1);
-    expect(screen.getByRole("button", folded("chat 2, folded"))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "chat 2, folded" })).toBeInTheDocument();
     expect(screen.getByText("An empty pane")).toBeInTheDocument();
   });
 
@@ -117,7 +107,7 @@ describe("a split below the minimum (#4766)", () => {
     const { rerender } = render(<LayoutPanes {...props} />);
     const before = structuredClone(layout);
 
-    await userEvent.click(within(rails()[0]).getByRole("button", folded("New chat, folded")));
+    await userEvent.click(within(rails()[0]).getByRole("button", { name: "New chat, folded" }));
     expect(onFocus).toHaveBeenCalledWith(2);
 
     rerender(<LayoutPanes {...props} focused={2} />);
@@ -171,9 +161,9 @@ describe("a 3 × 3 grid at 770px (#4766)", () => {
     );
 
     const second = rails()[1];
-    const asks = within(second).getByRole("button", folded("chat 6, folded, asks you"));
+    const asks = within(second).getByRole("button", { name: "chat 6, folded, asks you" });
     expect(asks.querySelector('[data-mark="needs-you"]')).not.toBeNull();
-    expect(within(second).getByRole("button", folded("chat 5, folded"))).toBeInTheDocument();
+    expect(within(second).getByRole("button", { name: "chat 5, folded" })).toBeInTheDocument();
   });
 });
 
@@ -219,7 +209,7 @@ describe("a folded pane's name (#4766)", () => {
     );
 
     expect(
-      screen.getByRole("button", folded("devops 2, 3 notices, folded, asks you")),
+      screen.getByRole("button", { name: "devops 2, 3 notices, folded, asks you" }),
     ).toBeInTheDocument();
     const found = await axe.run(container, {
       runOnly: { type: "rule", values: ["label-content-name-mismatch", "button-name"] },

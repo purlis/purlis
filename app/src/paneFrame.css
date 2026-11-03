@@ -694,10 +694,18 @@
   padding-block: var(--space-1);
 }
 
-.pane-rail-name {
+/* The button's words, one flex item: a bar's name ends in an ellipsis where it runs out of room. */
+.pane-rail-words {
+  min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The comma after a bar's name: heard, not seen, and inside the name's run, so no space falls
+   before it. */
+.pane-rail-name .pane-rail-pause {
+  opacity: 0;
 }
 
 .pane-rail-asks {

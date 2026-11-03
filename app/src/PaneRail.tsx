@@ -59,22 +59,27 @@ export function PaneRail({
             icon={one.mark}
             onPress={() => onOpen(one.pane)}
           >
-            {/* The spaces are text between the words, never inside a hidden one, where a
-                name computed from it may drop them. */}
-            <span className={as === "bar" ? "pane-rail-name" : "hidden-words"}>{one.name}</span>
-            <span className="hidden-words">,</span>{" "}
-            {notes > 0 && (
-              <>
-                <span
-                  className="pane-rail-count"
-                  data-trouble={one.holds.trouble > 0 ? "" : undefined}
-                >
-                  {notes}
-                </span>{" "}
-                <span className="hidden-words">{notes === 1 ? "notice," : "notices,"}</span>{" "}
-              </>
-            )}
-            <span className="hidden-words">{one.asks ? "folded, asks you" : "folded"}</span>
+            {/* One run of words, so the button's flex box makes no item (no block, which a name
+                computation spaces either side of) of any one of them: each comma is inside the
+                word it follows, and each space is text between words. */}
+            <span className="pane-rail-words">
+              <span className={as === "bar" ? "pane-rail-name" : "hidden-words"}>
+                {one.name}
+                <span className="pane-rail-pause">,</span>
+              </span>{" "}
+              {notes > 0 && (
+                <>
+                  <span
+                    className="pane-rail-count"
+                    data-trouble={one.holds.trouble > 0 ? "" : undefined}
+                  >
+                    {notes}
+                  </span>{" "}
+                  <span className="hidden-words">{notes === 1 ? "notice," : "notices,"}</span>{" "}
+                </>
+              )}
+              <span className="hidden-words">{one.asks ? "folded, asks you" : "folded"}</span>
+            </span>
             {one.asks && (
               <Hand className="pane-rail-asks" data-mark="needs-you" aria-hidden="true" />
             )}
