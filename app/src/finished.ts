@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { dequal } from "dequal/lite";
 import { commands, type FinishedTask, type PlaneId } from "./bindings";
 import { shownState, type Shown, type TaskFacts } from "./shownState";
 
@@ -108,11 +109,21 @@ const NONE: readonly FinishedTask[] = [];
  *
  * `settled` says the rows are the ones read for this `changed`, or that the read for it has
  * failed: what `useRowsUntilRead` waits for.
+ *
+ * **`readQuietly` reads them again without drawing anything for it** (#4729): rows equal to the
+ * ones held are not drawn again. It is for an answer of the sidebar's equal to the one held,
+ * which moves no `changed`, though a finished row can have changed under it (Clear finished).
+ * Only the newest read, of either kind, is drawn.
  */
 export function useFinishedTasks(
   plane: PlaneId,
   changed: unknown,
-): { finished: ReadonlyMap<number, FinishedTask[]>; read: () => void; settled: boolean } {
+): {
+  finished: ReadonlyMap<number, FinishedTask[]>;
+  read: () => void;
+  readQuietly: () => void;
+  settled: boolean;
+} {
   const [known, setKnown] = useState<{
     plane?: PlaneId;
     tasks: readonly FinishedTask[];
@@ -120,16 +131,22 @@ export function useFinishedTasks(
     readFor?: unknown;
   }>({ tasks: NONE });
   const [asked, setAsked] = useState(0);
+  const newest = useRef(0);
+  const now = useRef(plane);
   useEffect(() => {
+    now.current = plane;
+  }, [plane]);
+  useEffect(() => {
+    const mine = ++newest.current;
     let gone = false;
     // A read that gave no list leaves the rows as they were, and is still an answer.
     const unread = () => {
-      if (!gone) setKnown((was) => ({ ...was, readFor: changed }));
+      if (!gone && mine === newest.current) setKnown((was) => ({ ...was, readFor: changed }));
     };
     void commands
       .finishedTasks(plane)
       .then((answer) => {
-        if (gone) return;
+        if (gone || mine !== newest.current) return;
         if (answer.status !== "ok" || !Array.isArray(answer.data)) return unread();
         setKnown({ plane, tasks: answer.data, readFor: changed });
       })
@@ -142,7 +159,23 @@ export function useFinishedTasks(
   const tasks = known.plane === plane ? known.tasks : NONE;
   const finished = useMemo(() => byAsker(tasks), [tasks]);
   const read = useCallback(() => setAsked((count) => count + 1), []);
-  return { finished, read, settled: known.readFor === changed };
+  const readQuietly = useCallback(() => {
+    const mine = ++newest.current;
+    const at = now.current;
+    void commands
+      .finishedTasks(at)
+      .then((answer) => {
+        if (mine !== newest.current || answer.status !== "ok" || !Array.isArray(answer.data))
+          return;
+        const tasks = answer.data;
+        setKnown((was) =>
+          was.plane === at && dequal(was.tasks, tasks) ? was : { ...was, plane: at, tasks },
+        );
+      })
+      // A read that cannot be read leaves the rows as they were.
+      .catch(() => undefined);
+  }, []);
+  return { finished, read, readQuietly, settled: known.readFor === changed };
 }
 
 /**

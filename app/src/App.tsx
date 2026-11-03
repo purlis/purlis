@@ -107,6 +107,7 @@ import { drawTint, facesAfterTheFirstFrame } from "./theme/theme";
 import { useContributedPanels } from "./Panels";
 import { useExtensionCommands, useExtensionViews } from "./Views";
 import { Palette } from "./Palette";
+import { useProfileNames } from "./profileNames";
 import { placeOf, scopeLadder } from "./fileFind";
 import { useJumpAsks, type Pending } from "./fileJump";
 import type { Place } from "./pieceViews";
@@ -409,6 +410,11 @@ function App() {
   }, []);
   /** The project in front, for a verb that is kept stable across renders. */
   const inFrontNow = useRef<PlaneId | undefined>(undefined);
+  /** Each project's harness profiles, for the palette's rows to their pages (#1201): read for
+   *  the project in front as the palette opens over it. Held here, so a project's view is given
+   *  only its own list, and the palette opening or closing draws no project again (#4351). */
+  const profileNames = useProfileNames();
+  const readProfileNames = profileNames.read;
   /** Why this launch took longer than the limit, when it did — and nothing when it did not
    *  (charter-app#24). The core decides that; the window only draws it. */
   const [slowStart, setSlowStart] = useState<SlowStart>();
@@ -1340,6 +1346,11 @@ function App() {
     // close brings back must be the opener rather than a Settings left behind.
     if (inFront !== undefined) setSettingsAlone(false);
   }, [inFront]);
+  // The profiles of the project the palette is over are read as it opens, and again when another
+  // project comes to front under it (#1201); never as it closes (#4351).
+  useEffect(() => {
+    if (paletteOpen && inFront !== undefined) readProfileNames(inFront);
+  }, [paletteOpen, inFront, readProfileNames]);
   // **Each switch is timed by the window itself** (`switchClock.ts`): once it has drawn the
   // project that came to the front, which is here, and the doctor's dialog lists what it took.
   useLayoutEffect(() => {
@@ -1812,6 +1823,9 @@ function App() {
       stopBrowser: async () => nowhere(),
       openBrowserTimeline: () => undefined,
       pinTab: async () => nowhere(),
+      tileAll: () => undefined,
+      zoomPane: () => undefined,
+      undoLayout: () => undefined,
       pinWorkspace: async () => nowhere(),
       pinProject: windowDoes.pinProject,
       removeWorktree: async () => nowhere(),
@@ -2746,7 +2760,7 @@ function App() {
               inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
               elsewhere={elsewhere}
               windowLines={plane === inFront ? windowLines : undefined}
-              paletteOpen={paletteOpen}
+              profileNames={profileNames.of[plane]}
             />
           ))}
 

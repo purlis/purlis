@@ -1294,17 +1294,24 @@ export const commands = {
 	resizeSession: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("resize_session", { plane, session, columns, rows })),
 	/**
 	 *  Opens a view of a session for a pane that is now on screen: the channel is sent the screen
-	 *  as it already is, and then the session's output. Answers with the id that closes the view.
+	 *  as it already is, and then the session's output, each piece the bytes it is (#4745).
+	 *  Answers with the id that closes the view.
 	 * 
 	 *  Off the window's thread, in its turn in the chat's lane (#4734, ADR 0108): after every
 	 *  resize the pane sent before it (#891), and answered once the host has.
 	 */
-	watchSession: (plane: PlaneId, session: number, output: Channel<string>) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output })),
+	watchSession: (plane: PlaneId, session: number, output: Channel<ArrayBuffer>) => typedError<Watching, string>(__TAURI_INVOKE("watch_session", { plane, session, output })),
 	/**
 	 *  Closes a view, for a pane that has gone off screen, in the chat's lane: it answers at once
 	 *  (#4734, ADR 0108). The session keeps running.
 	 */
 	unwatchSession: (plane: PlaneId, session: number, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_session", { plane, session, view })),
+	/**
+	 *  The pane drawing view `view` of session `session` has drawn `pieces` more of what its
+	 *  channel was sent, in order (#4733). Only what is drawn is acknowledged to the session host,
+	 *  so a pane that cannot keep up is sent a fresh screen rather than a backlog.
+	 */
+	sessionDrawn: (plane: PlaneId, session: number, view: number, pieces: number) => typedError<null, string>(__TAURI_INVOKE("session_drawn", { plane, session, view, pieces })),
 	/**  Starts a browser in project `plane`, and answers its id. Refused while Stop all holds. */
 	openBrowser: (plane: PlaneId) => typedError<string, string>(__TAURI_INVOKE("open_browser", { plane })),
 	/**
@@ -3270,8 +3277,10 @@ export const commands = {
 	 *  the chats on them with them ([`links_end_once_gone`]). `elsewhere` is what the person was told
 	 *  before they agreed: that its runner is on an engine Docker no longer reaches, so nothing there
 	 *  goes. Where that is no longer so, or the other way round, nothing is done (#4325).
+	 *  `discarding` names the held runners whose conversations the person was asked about, and agreed
+	 *  to discard with the pool (#4860): a runner held now that it does not name removes nothing.
 	 */
-	removeDockerPool: (name: string, elsewhere: boolean) => typedError<string | null, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere })),
+	removeDockerPool: (name: string, elsewhere: boolean, discarding: string[]) => typedError<string | null, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere, discarding })),
 	/**
 	 *  **Whether the pool `name`'s runner answers with the key pinned for it**: one link, made and
 	 *  let go of.
@@ -3539,6 +3548,13 @@ export const commands = {
 	setProjectChatsRunOn: (plane: PlaneId, pool: string | null) => typedError<ProjectChatsRunOn, string>(__TAURI_INVOKE("set_project_chats_run_on", { plane, pool })),
 	/**  **What names a pool** (#4678): the projects and workspaces its removal sets back to this machine. */
 	poolNamedBy: (name: string) => typedError<PoolNamedBy[], string>(__TAURI_INVOKE("pool_named_by", { name })),
+	/**
+	 *  **The runners of a pool that hold, or may hold, their chats' conversations** (#4860), by name
+	 *  ([`purlis_core::pools::held_of`]): each older runner kept with them, or that no look has read
+	 *  yet, whose conversations removing the pool discards, so its question names them and asks again.
+	 *  None for a cluster pool, whose runners are never held.
+	 */
+	poolHeldRunners: (name: string) => typedError<string[], string>(__TAURI_INVOKE("pool_held_runners", { name })),
 	/**
 	 *  **What a workspace's sends to a pool's runner leave out** besides what a save to the forge
 	 *  refuses (#2046, the operator's ruling of 2026-10-25): `settings.runners.leave_out` in its
@@ -4569,6 +4585,16 @@ export const commands = {
 	cold: number | null,
 } | null, string>(__TAURI_INVOKE("chat_usage", { plane, session })),
 	/**
+	 *  **Writes one slow moment to the log**, on a blocking thread: a file is not the window's to
+	 *  wait for, least of all while it is slow.
+	 */
+	recordSlow: (moment: SlowMoment) => typedError<null, string>(__TAURI_INVOKE("record_slow", { moment })),
+	/**
+	 *  **The log's recent entries on this machine, newest last**, or none when there is no log
+	 *  (#4774): what a person's diagnostics carry. On a blocking thread, as the write is.
+	 */
+	slowLogRecent: () => typedError<SlowMoment[], string>(__TAURI_INVOKE("slow_log_recent")),
+	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the
 	 *  session's own chat, said beside the total and not in it; `chats` its open tasks, and any it
@@ -4586,6 +4612,11 @@ export const commands = {
 	 *  holds no project for the first moments of every launch.
 	 */
 	aboutCharter: () => __TAURI_INVOKE<About>("about_charter"),
+	/**
+	 *  Copy diagnostics' answer: the system, and the open and hot chats of every project held.
+	 *  Read from memory only, so it costs nothing on the window's thread.
+	 */
+	diagnosticsHere: () => __TAURI_INVOKE<DiagnosticsHere>("diagnostics_here"),
 	/**
 	 *  Links the app's command line into `/usr/local/bin` as `purlis` and as `charter`, asking
 	 *  macOS for an administrator's password once when that directory is not this user's to write.
@@ -6584,6 +6615,19 @@ export type DevicesShown = {
 	 *  row names its project.
 	 */
 	projects: number,
+};
+
+/**  What the report says about where purlis runs and how many chats it holds. */
+export type DiagnosticsHere = {
+	/**  The system, as [`purlis_core::adopt::system`] says it: `Darwin 27.2.0, aarch64`. */
+	os: string,
+	/**  The chats open in every project this app holds, a shell tab not among them. */
+	open: number,
+	/**
+	 *  The open chats whose run has a program (the glossary's **hot chat**): any not done or
+	 *  failed.
+	 */
+	hot: number,
 };
 
 /**  **The disk each pool's runners hold**, as the use table says it (#3493). */
@@ -9332,6 +9376,8 @@ export type MachineWorkspacePin = {
  */
 export type MadeAgain = {
 	sign_ins_kept: boolean,
+	/**  What became of the gone runner's home (#4859). */
+	old_home: OldHome,
 };
 
 /**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */
@@ -9821,6 +9867,21 @@ export type OfferedSource = {
 	why: string,
 	source: SkillSource,
 };
+
+/**
+ *  **What Make the runner again did with the gone runner's home** (#4859), for the pool's row to
+ *  say.
+ */
+export type OldHome = 
+/**  It held no conversation, or was gone too: it was removed. */
+"removed" | 
+/**
+ *  It holds its chats' conversations, so it is kept, held: Devices offers to bring them back
+ *  or discard them.
+ */
+"held" | 
+/**  It could not be read, so it is kept, held, all the same. */
+"unread";
 
 /**
  *  The chats of a project still running under an older sandbox (#1428), for the Notice after
@@ -14677,6 +14738,19 @@ export type SkillsMissing = {
 	beside_a_built_in: string[],
 };
 
+/**
+ *  One slow moment the window felt, as it sends it. `at` is milliseconds since 1970 by the
+ *  window's clock, a number because `specta` exports no `u64`.
+ */
+export type SlowMoment = 
+/**  An answer to `command` that took `ms`, asked at `at`, while `hot` chats were working. */
+{ kind: "answer"; command: string; ms: number; at: number | null; hot: number } | 
+/**
+ *  A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
+ *  working, with the tab in front (`front`) and whether a view of a chat was opening.
+ */
+{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean };
+
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {
 	/**  The one line on screen. */
@@ -16363,6 +16437,17 @@ export type WindowMotion = {
 };
 
 /**
+ *  **A ground of the accent's words comes no nearer a signal's wash than it was** (#4666,
+ *  `purlis_core::theme::NoNearer`): each of `tokens`, turned and laid on each of `over`, is no
+ *  nearer any of `from` laid on the same ground than the value it was turned from.
+ */
+export type WindowNoNearer = {
+	tokens: string[],
+	from: string[],
+	over: string[],
+};
+
+/**
  *  One option of the theme drawn (#2325), as Settings shows it: what it is called, its values,
  *  the value drawn and whether a choice made it (`false`: the theme's default).
  */
@@ -16457,6 +16542,13 @@ export type WindowTint = {
 	hues: WindowHue[],
 	/**  The rules every tint holds, whatever the hue. */
 	apart: WindowApart[],
+	/**  The washes that take the accent's words' answer (#4666). */
+	with_words: string[],
+	/**
+	 *  The grounds a tint keeps as written where turning would bring them nearer the waiting or
+	 *  danger wash, as drawn (#4666, `purlis_core::theme::NO_NEARER`).
+	 */
+	no_nearer: WindowNoNearer,
 };
 
 /**  A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers. */

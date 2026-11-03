@@ -7,6 +7,7 @@ import { cleanup } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { switches, type Shape, type Switch } from "./projectSwitch.testkit";
 import { keepTheirOrder } from "./commandOrder";
+import { countReactsCommits } from "./reactCommits.testkit";
 
 // As the window runs: the lanes that keep a read and a change in order (#1949), whose reads
 // must not queue behind each other on a switch.
@@ -33,10 +34,7 @@ keepTheirOrder();
  * second project alone), and `SWITCH_OUT=<file>` writes what each switch cost as a line of JSON.
  */
 
-await vi.hoisted(async () => {
-  const { countReactsCommits } = await import("./reactCommits.testkit");
-  countReactsCommits();
-});
+countReactsCommits();
 
 vi.mock("./SessionPane", async () => ({
   SessionPane: (await import("./countedPane.testkit")).CountedPane,
@@ -97,11 +95,14 @@ describe("what a project switch costs", () => {
     }, 300_000);
   }
 
-  it("waits on no more commands before the paint, however many panes the tab in front holds", async () => {
+  it("waits on no more commands before the paint, and mounts no more, however many panes the tab in front holds", async () => {
     // A pane's own reads are the ones that grow with a window: a tab split forty ways has forty
     // gauges, and a gauge's command is one the core answers on the window's own thread. Read in
     // the switch, that was a command per pane ahead of the paint. They are read behind it.
+    // So are a pane's mounts: its head's ⋯ mounted its closed menu's popover (#4783), one a
+    // pane, as its project came forward. A menu is drawn only while it is open.
     const atOnce: number[] = [];
+    const mounted: number[] = [];
     for (const panes of [1, 20, 40]) {
       const shape = { projects: 2, chats: 2, workspaces: 2, panes };
       const took = await switches(shape, [1, 0]);
@@ -110,11 +111,13 @@ describe("what a project switch costs", () => {
         expect(one.panes).toBe(panes);
         held(one);
         atOnce.push(one.invokedAtOnce);
+        mounted.push(one.mounted);
       }
       cleanup();
       clearMocks();
     }
     expect(new Set(atOnce).size).toBe(1);
+    expect(new Set(mounted).size).toBe(1);
   }, 600_000);
 });
 

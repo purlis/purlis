@@ -54,7 +54,16 @@ import {
   systemReducesMotion,
   type Motion,
 } from "./motion";
-import { chromaFor, hueOf, mostOf, tintHex, wordsChroma, type Apart } from "./tint";
+import {
+  chromaFor,
+  hueOf,
+  mostOf,
+  noNearer,
+  tintHex,
+  wordsChroma,
+  type Apart,
+  type NoNearer,
+} from "./tint";
 
 /**
  * Every token, in the order a theme file is easiest to read in.
@@ -449,14 +458,17 @@ export type Typed = {
  * A theme's tint recipe, as the engine hands it (`purlis_core::theme::Tint`): the tokens the
  * colour of the workspace in front turns on the whole window, the tokens a workspace's colour
  * turns on its own tab and its chat strip, each workspace colour's hue in this theme, in the
- * order Settings offers them, and the rules every tint holds. Both lists are empty
- * for a theme a workspace's colour does not tint.
+ * order Settings offers them, the rules every tint holds, the washes that take the accent's
+ * words' answer, and the grounds held no nearer the waiting and danger washes (#4666). Both lists
+ * are empty for a theme a workspace's colour does not tint.
  */
 export type TintRecipe = {
   readonly window: readonly string[];
   readonly tabs: readonly string[];
   readonly hues: readonly { readonly name: string; readonly hue: number }[];
   readonly apart: readonly Apart[];
+  readonly with_words: readonly string[];
+  readonly no_nearer: NoNearer;
 };
 
 /** One icon of a theme's set: path data on a 24 grid. */
@@ -730,11 +742,28 @@ function tintedAs(
   for (const one of tokens) {
     const value = theme.values[one as Token];
     // Only the sides of a rule are held to `most`; a side no amount holds is drawn untinted.
-    const chroma = chromaFor(one, most, theme.tint.apart, alone, words);
+    const chroma = chromaFor(one, most, theme.tint.apart, alone, words, theme.tint.with_words);
     // Only a colour turns: a value left to the platform (`platform`) is drawn as it is.
     if (chroma !== undefined && typeof value === "string" && value.startsWith("#"))
       values[one as Token] = tintHex(value, hue, chroma);
   }
+  // A ground of the accent's words that turning brings nearer the waiting or danger wash, as
+  // drawn, stays as written, and so does every token the theme draws in its value
+  // (`tint::Most::kept`, #4666): measured against the washes and grounds as this tint draws them.
+  const drawnValue = (token: string) => values[token as Token] as string | undefined;
+  const kept = theme.tint.no_nearer.tokens
+    .map((ground) => [theme.values[ground as Token], values[ground as Token]] as const)
+    .filter(
+      ([written, turned]) =>
+        typeof written === "string" &&
+        typeof turned === "string" &&
+        turned !== written &&
+        !noNearer(turned, written, drawnValue, theme.tint.no_nearer),
+    )
+    .map(([written]) => written);
+  for (const one of tokens)
+    if (kept.includes(theme.values[one as Token]))
+      values[one as Token] = theme.values[one as Token];
   const tint = { ...theme, values };
   made.set(key, tint);
   return tint;

@@ -28,8 +28,15 @@ const whereOf = new Map<string, Where>();
 const known = new Map<string, ReadonlySet<string>>();
 /** The newest question out per project and workspace: an answer to an older one is dropped, so
  *  a save made while the first question was out is never overwritten by what the file said
- *  before it. */
+ *  before it. Never taken back once asked: each question's number comes from {@link asked}. */
 const latest = new Map<string, number>();
+/** How many questions this window has asked, of every project and workspace (#4872): a
+ *  question's number is never given to another, so an old answer is never taken for a newer
+ *  question's — not even after the place's last question failed. */
+let asked = 0;
+/** The places whose newest question failed twice (#4822, #4872), so the next component to show
+ *  them asks again. */
+const failed = new Set<string>();
 const listeners = new Set<() => void>();
 /** Why the newest question, asked twice, failed per project and workspace (#4822); taken back
  *  once one is answered. */
@@ -51,8 +58,9 @@ function tell() {
 function ask(plane: PlaneId, workspace: string | undefined) {
   const key = keyOf(plane, workspace);
   whereOf.set(key, { plane, workspace });
-  const mine = (latest.get(key) ?? 0) + 1;
+  const mine = ++asked;
   latest.set(key, mine);
+  failed.delete(key);
   const question = () =>
     commands
       .extensionsOn(plane, workspace ?? null)
@@ -73,7 +81,7 @@ function ask(plane: PlaneId, workspace: string | undefined) {
     // ask asks again, and so does a save. Why is kept, so the window can say it and still draw
     // what it can meanwhile.
     if (ids instanceof Error) {
-      latest.delete(key);
+      failed.add(key);
       unread.set(key, ids.message);
       tell();
       return;
@@ -131,7 +139,10 @@ export function useExtensionsOn(
   workspace?: string,
 ): ReadonlySet<string> | undefined {
   useEffect(() => {
-    if (plane !== undefined && !latest.has(keyOf(plane, workspace))) ask(plane, workspace);
+    if (plane === undefined) return;
+    // Asked where nothing was asked yet, or where the newest question failed twice.
+    const key = keyOf(plane, workspace);
+    if (!latest.has(key) || failed.has(key)) ask(plane, workspace);
   }, [plane, workspace]);
   return useSyncExternalStore(subscribe, () => extensionsOnIn(plane, workspace));
 }
@@ -150,5 +161,6 @@ export function forgetExtensionsOn() {
   known.clear();
   unread.clear();
   latest.clear();
+  failed.clear();
   whereOf.clear();
 }

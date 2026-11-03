@@ -145,11 +145,12 @@ pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
 pub use tiers::Lifted;
 pub use tint::{
-    ACCENT_KIN, APART, Apart, Hue, Most, PALETTE, Rule, Tint, WAITING_KIN, alone_chroma_of,
-    apart_chroma, apart_chroma_of, chroma_for, chroma_of, held_apart, hue_of, most_at, tint_hex,
-    tint_hex_within, tinted,
+    ACCENT_KIN, APART, Apart, Hue, Most, NO_NEARER, NoNearer, PALETTE, Rule, Tint, WAITING_KIN,
+    alone_chroma_of, apart_chroma, apart_chroma_of, chroma_for, chroma_of, held_apart, hue_of,
+    most_at, no_nearer, tint_hex, tint_hex_within, tinted,
 };
 pub use typed::Typed;
+pub use vocabulary::ACCENT_WASHES;
 use vocabulary::{
     DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
 };
@@ -198,6 +199,8 @@ mod options_tests;
 // Every family's own tests, `parts_<family>_tests.rs`, declared by `build.rs` (`families`), so a
 // family's pull request adds its file and no line here.
 include!(concat!(env!("OUT_DIR"), "/theme_parts_tests.rs"));
+#[cfg(test)]
+mod accent_grounds_tests;
 #[cfg(test)]
 mod parts_tests;
 #[cfg(test)]

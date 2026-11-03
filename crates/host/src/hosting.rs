@@ -3807,10 +3807,13 @@ impl session::Host for Hosting {
                 self.clones_of(&project, workspace, peer).await
             }
             Command::ReposHeld => self.repos_held().await,
-            Command::StartProgram(start) => match start.kind {
-                ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
-                ProgramKind::Browser => self.start_browser(*start, peer).await,
-            },
+            Command::StartProgram(start) => {
+                self.code().program_starting();
+                match start.kind {
+                    ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
+                    ProgramKind::Browser => self.start_browser(*start, peer).await,
+                }
+            }
             Command::AttachView {
                 program,
                 kind,

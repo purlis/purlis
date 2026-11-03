@@ -209,6 +209,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The parts of a window's own first frame (#4410), by the ticket its creation script handed
     // it. A link is handed no first frame, so it has nothing to ask for.
     "first_frame_parts",
+    // The slow-answer and stall log (#4725): the moments this window felt slow, written as it
+    // feels them and read back for the person's diagnostics (#4774). A window's own felt
+    // speed, of its own frames and answers; a link has no frames here to report, and the log
+    // names the commands this machine's window ran, so no link writes or reads it.
+    "record_slow",
+    "slow_log_recent",
     // The theme in force for the window that asks, which also points that window's theme watch
     // at the project it answers for (#2324). A link has no window here to watch for: it is
     // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
@@ -852,6 +858,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Where a new chat would run and why, for Start chat's Runs on row (#4536): this machine's
     // pools and settings, read for the person's own start in their window.
     "start_runs_on",
+    // A pool's held runners (#4860): named in the person's question before Remove pool discards
+    // their chats' conversations, in their window.
+    "pool_held_runners",
     // What a workspace's sends to a runner leave out (#2046): the person's list, in their window.
     "send_leaves_out",
     "set_send_leaves_out",
@@ -919,6 +928,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "theme_drafts_revert_here",
     "theme_move_to_project",
     "theme_copy_to_machine",
+    // Copy diagnostics' facts about this machine (#4774): its system and how many chats it
+    // holds, for a bug report the person copies from About in their own window. The report
+    // carries the slow-answer log, which is the window's alone, so the facts beside it are too.
+    "diagnostics_here",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -1240,6 +1253,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "see_on_this_machine",
     "seen_on_this_machine",
     "session_bus",
+    // How much of a view its pane has drawn, which paces the view (#4733): beside
+    // `watch_session`, a link's pane reports its own.
+    "session_drawn",
     // Whether the session host is failing, and what the window says of it (#2007).
     "session_host_failing",
     "session_record",

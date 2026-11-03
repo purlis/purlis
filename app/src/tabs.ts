@@ -365,7 +365,17 @@ export type Tab = {
    * Absent on a tab that is not pinned.
    */
   pinned?: true;
+  /** **The pane zoomed to fill the tab for now** (#4765): drawn alone while the tree stays
+   *  whole, in memory only and never told to the core (`tiling.ts` `zoomedOf`). */
+  zoomed?: number;
+  /** **What Undo puts back** (#4765): the tab's last tree and focus, kept while the tab's
+   *  layout is still `after`, in memory only (`tiling.ts` `undoLayout`). */
+  undo?: LayoutUndo;
 };
+
+/** **What Undo puts back** (#4765): a tab's tree and focus before a move, and the tree the move
+ *  left, which the tab must still be for the Undo to run. */
+export type LayoutUndo = { layout: Layout; focused: number; after: Layout };
 
 /**
  * Which workspace a chat is filed under — the strip its tab appears on.
@@ -1362,6 +1372,18 @@ function viewsFollow(tabs: Tabs, from: number, to: number): Tabs {
     if (layout !== byId[id].layout) byId = { ...byId, [id]: { ...byId[id], layout } };
   }
   return byId === tabs.byId ? tabs : { ...tabs, byId };
+}
+
+/**
+ * **The chats open in this window, as one key** (#4729): every session a tab's pane holds, in
+ * ascending order. Equal for two `Tabs` that differ only in which tab is in front, how they are
+ * ordered or split, or what a pane shows in place of its own chat, so what is read again when a
+ * chat is opened or closed is not read again for a switch.
+ */
+export function openChatsKey(tabs: Tabs): string {
+  const open = new Set<number>();
+  for (const id of tabs.order) for (const { session } of panesOf(tabs, id)) open.add(session);
+  return [...open].sort((one, other) => one - other).join(",");
 }
 
 /** The sessions with a pane on screen: the only ones a terminal is drawing. */

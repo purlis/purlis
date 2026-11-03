@@ -128,10 +128,7 @@ export default defineConfig(async () => ({
     watch: { ignored: ["**/src-tauri/**"] },
   },
   // Two pages: the window, and the theme specimen a hidden window photographs (#2330).
-  // [DEBUG-4351] the profiling build of react-dom, unminified, so component names survive.
-  resolve: { alias: [{ find: /^react-dom\/client$/, replacement: "react-dom/profiling" }] }, // [DEBUG-4351]
   build: {
-    minify: false, // [DEBUG-4351]
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL("index.html", import.meta.url)),

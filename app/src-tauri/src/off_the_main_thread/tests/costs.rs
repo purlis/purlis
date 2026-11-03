@@ -384,6 +384,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
         "IN_MEMORY",
         &[
             "about_charter",
+            // Copy diagnostics' facts (#4774): the chats held in memory, and one uname(2).
+            "diagnostics_here",
             "activity_chat",
             "pending_asks",
             "asks_waiting",
@@ -487,6 +489,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "send_input_bytes",
             "resize_session",
             "unwatch_session",
+            // What a pane drew (#4733): in memory, answered at once, and after the writes it reports on.
+            "session_drawn",
         ],
     ),
     (

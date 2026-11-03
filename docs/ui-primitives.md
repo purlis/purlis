@@ -2584,7 +2584,10 @@ test says whether it is free.
 The palette's rows, every menu's rows (`MenuShortcuts`, provided in `main.tsx`) and the activity
 items' tooltips show their key from the registry, through the list, menu and tooltip families'
 `shortcut` parts. The cheat sheet (`keys/ShortcutsView.tsx`, ⌘/ or the *Keyboard shortcuts* row)
-is generated from it. Focus mode (⌘⇧↩, `keys/focusMode.ts`) is one of its keys.
+is generated from it. **Focus this pane** (⌘⇧↩, Ctrl+Shift+Enter off a Mac, `keys/focusMode.ts`
+and `tiling.ts`) is one of its keys (#4765). In a split tab it zooms the focused pane to fill the
+tab; in a one-pane tab it is Focus mode, which hides the sides. The same key brings everything
+back, and while a pane is zoomed the strip's tab wears a zoom mark.
 
 Every pane in this window is a terminal running somebody's shell, and a shell's line editor has
 bindings of its own. So "the window takes this key" is never free: it is taken out of the

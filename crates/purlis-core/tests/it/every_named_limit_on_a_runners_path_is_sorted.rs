@@ -427,6 +427,18 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/purlis-core/src/pools.rs",
+        "READ_AGAIN_FIRST",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/pools.rs",
+        "READ_AGAIN_MOST",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/purlis-core/src/pools.rs",
         "REPOS_WAITED_FOR",
         Candidate,
         "depends on the setup: for the person",

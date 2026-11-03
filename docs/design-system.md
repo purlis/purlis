@@ -274,7 +274,7 @@ resolves and hands the window with the theme (`purlis_core::theme::Tint`, `theme
 window keeps no list of its own (#2393). Purlis Classic's recipe, the one a theme starts from:
 
 - on the whole window, from the workspace in front: `accent.base`, `accent.surface`,
-  `accent.text` (which a recipe turning the accent turns with it where the words stay apart from waiting and danger, #3100), `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
+  `accent.text` and the washes it stands on, `accent.wash` and `accent.wash-hover` (which a recipe turning the accent turns with it where the words stay apart from waiting and danger, #3100; the washes take the words' answer, #4666), `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
   `drawTint`);
 - on that workspace's own tab and on the chat strip, which holds its chats, the same and
   `layer.workspace`, `layer.chat`, `layer.selected` (`tint.tabs`), set on the element as
@@ -407,9 +407,11 @@ naming every token itself, so nothing in it is Purlis Classic's by falling back.
 combination clears the theme check with no warning and holds no consent floor, and a test keeps
 it so (`purlis_tests.rs`). **Light and high contrast ship as drawn** (the operator's ruling of
 2026-10-24, after seeing them beside dark and Classic, #2924). Each can be chosen in Settings, and
-Purlis chosen to follow the system draws light on a light system and high contrast where the
-system asks for more. With nothing chosen, Purlis draws its dark (its high contrast where more is
-asked for), whatever the system's appearance. Where its values come from:
+Purlis chosen to follow the system draws light on a light system and high contrast where a dark
+system asks for more. There is no light high contrast, so a light system that asks for more, or
+more contrast with light chosen, draws standard light (#3182). With nothing chosen, Purlis draws
+its dark (its high contrast where more is asked for), whatever the system's appearance. Where its
+values come from:
 
 - **Dark is the foundation's.** Each colour the record proposes for a token is that token's.
   Where the record lacks a value, one rule derives it from the record's palette:
@@ -454,7 +456,19 @@ asked for), whatever the system's appearance. Where its values come from:
   switcher row's pin and the current explorer row's icon. **The chosen title-bar chip**
   takes the same wash with the primary words, and `accent.wash-hover` (the record's .23
   lavender) under the pointer, while any other chip under the pointer takes the card's fill, so
-  chosen never reads as hovered (R101 as amended by #3345). Section labels are tracked at
+  chosen never reads as hovered (R101 as amended by #3345). **An accent given over Purlis
+  takes its grounds with it** (#4666): a theme or a person that gives `accent.base` and not
+  `accent.surface`, `accent.wash` or `accent.wash-hover` draws Purlis's turned to that accent's
+  hue, at no more chroma than it has and at the luminance and alpha Purlis gave them
+  (`tint::toward`), so a teal says its words on a teal wash and every contrast on it stays where
+  Purlis put it. **No ground of the accent's words comes nearer the waiting or danger wash than
+  the theme's own** (#4666, `tint::NO_NEARER`): each of `accent.surface`, `accent.wash` and
+  `accent.wash-hover`, laid on `surface.base` and `surface.deep` as the screen draws it, is
+  measured in OKLab against `wash.warning` and `danger.wash` laid on the same ground. Where the
+  turned ground would come nearer than the theme's own does, the theme's is drawn, whether the
+  turn comes from an accent given over it or from a workspace's colour; a workspace's colour
+  keeps every token drawn in that ground's value with it, so what a theme draws alike stays
+  alike. Section labels are tracked at
   .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
   that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its
   update pill's primary words.
@@ -464,13 +478,15 @@ asked for), whatever the system's appearance. Where its values come from:
   lightness away from its ground by 0.01 until it clears: the quiet and faint tiers on the row
   under the pointer (`#61606c`, the placeholder too, and `#7c7a87`). **A wash is not reflected** (#2924):
   a hue reflected dark and laid thin on a light ground reads as grey, so `wash.warning`,
-  `danger.wash`, `diff.deleted` and `diff.inserted` are each their hue's purest colour, where
-  sRGB holds the most chroma for it, at dark's alpha: amber `#fdb0051f`, red `#fd04441f`, green
-  `#01fd781f`. Laid on any light ground, each keeps its hue within 40 degrees and at least 0.02 of
-  chroma, and a test holds that.
-- **High-contrast dark** moves each text step up one (primary to white, quiet to the muted
-  `#a09eab`, faint to quiet's `#91909d`), each edge up to a text grey, and the accent to the
-  record's lighter lavender `#c3baf5`. Its strong border and tree guides are the palette's
+  `danger.wash`, `diff.deleted`, `diff.inserted` and the waiting ring's `state.waiting-glow`
+  (#3182) are each their hue's purest colour, where sRGB holds the most chroma for it, at dark's
+  alpha: amber `#fdb0051f` and `#fdb00559`, red `#fd04441f`, green `#01fd781f`. Laid on any light
+  ground, the deepest surface, the editor's and the window's included, each keeps its hue within
+  40 degrees and at least 0.02 of chroma, and a test holds that.
+- **High-contrast dark** moves each text step up one (primary to white, muted to secondary's
+  `#c9c7d2`, quiet to the muted `#a09eab`, faint to quiet's `#91909d`), each edge up to a text
+  grey, and the accent to the record's lighter lavender `#c3baf5`. Syntax comments and punctuation
+  are muted in every appearance, so they move with it (#3182). Its strong border and tree guides are the palette's
   quiet, so they moved with it from `#8a8896` to `#91909d` (#2902): a lighter edge on dark.
 
 **The fonts are bundled as their projects publish them**, unmodified: IBM Plex Sans 3.005

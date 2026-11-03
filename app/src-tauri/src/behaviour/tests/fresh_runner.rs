@@ -4,8 +4,8 @@
 //! **A short task on a runner of its own, for real** (#4569, #4568): the desktop's whole path on a
 //! cluster pool, through `Chats` as the app holds it. A short task's start claims a fresh runner,
 //! readies its profile there and starts on it; a commit made on that runner comes back into the
-//! desktop's clone; closing the task deletes the Claim only after that; and a start that fails
-//! leaves no Claim behind.
+//! desktop's clone; closing the task deletes the Claim only after that; and a task that leaves
+//! a commit on no branch and a file in the runner's home keeps its Claim, the window naming both.
 //!
 //! The profile here has no record of a key, since a recorded key or cloud sign-in reaches no pool's
 //! runner in this version: it is held to start as one the harness alone signs in.
@@ -395,7 +395,8 @@ fn a_short_task_runs_on_a_runner_of_its_own_and_its_commits_are_home_before_its_
         &kept,
         &namespace_there,
         &format!(
-            "cd '{}' && git checkout -q --detach && echo lost > nowhere.txt && git add . \
+            "mkdir -p \"$HOME/notes\" && echo found > \"$HOME/notes/found.md\" \
+             && cd '{}' && git checkout -q --detach && echo lost > nowhere.txt && git add . \
              && git -c user.name=task -c user.email=task@example.com commit -q -m 'on no branch'",
             there.trim()
         ),
@@ -411,6 +412,12 @@ fn a_short_task_runs_on_a_runner_of_its_own_and_its_commits_are_home_before_its_
     assert!(
         said.why.iter().any(|why| why.contains("HEAD")),
         "it says what is missing: {:?}",
+        said.why
+    );
+    // What the task kept outside its project's folder, in the runner's home (#4781).
+    assert!(
+        said.why.iter().any(|why| why.contains("~/notes/found.md")),
+        "it names the file outside the project: {:?}",
         said.why
     );
     assert!(!said.gone);
