@@ -158,8 +158,8 @@ pub async fn projects_not_held() -> Result<Vec<ProjectNotHeld>, String> {
     .await
 }
 
-/// A recheck lets go of every mark its own store doesn't name, so a test that reads the marks
-/// holds them alone.
+/// A recheck lets go of every mark its own store doesn't name, so every test that reads the
+/// marks, or reaches a recheck (a change of Runs on, a pool's removal), holds this first.
 #[cfg(test)]
 pub(crate) fn rechecking() -> std::sync::MutexGuard<'static, ()> {
     static RECHECKING: std::sync::Mutex<()> = std::sync::Mutex::new(());

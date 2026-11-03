@@ -155,6 +155,8 @@ fn a_pool_takes_the_time_typed_before_its_runner_suspends_and_a_day_when_empty()
 #[cfg(unix)]
 #[test]
 fn a_workspace_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
+    // A change of Runs on rechecks the marks other tests read (#4591).
+    let _marks = crate::notheld::rechecking();
     let config = tempfile::tempdir().unwrap();
     let plane = std::path::Path::new("/planes/a");
     purlis_core::machine::update(config.path(), |store| store.remember(plane, 1)).unwrap();
@@ -184,6 +186,8 @@ fn a_workspace_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
 
 #[test]
 fn a_project_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
+    // A change of Runs on rechecks the marks other tests read (#4591).
+    let _marks = crate::notheld::rechecking();
     let config = tempfile::tempdir().unwrap();
     let plane = std::path::Path::new("/planes/a");
     purlis_core::machine::update(config.path(), |store| store.remember(plane, 1)).unwrap();

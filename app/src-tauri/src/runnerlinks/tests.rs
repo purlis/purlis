@@ -133,6 +133,8 @@ fn a_link_to_a_runner_reads_this_desktops_key_and_never_makes_one() {
 /// `purlis-core`'s `a_docker_pool_runner_is_linked_through_docker_exec` does.
 #[test]
 fn a_window_reaches_a_pool_added_on_this_machine_through_its_own_host() {
+    // A change of Runs on rechecks the marks other tests read (#4591).
+    let _marks = crate::notheld::rechecking();
     let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
         return;
     };
