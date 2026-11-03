@@ -24,14 +24,10 @@ export async function pickAndStart(): Promise<void> {
       async () => {
         // Not while the rows' details are read (#4736): until they arrive the button says Start
         // chat even for a profile that asks for its approval, and a press then shows the approval
-        // instead of going, so it is chosen once the picker knows which it is.
-        if (await browser.execute(thePickerIsChecking, PICKER)) return false;
-        for (const words of ["Approve and start", "Start chat"])
-          if (await browser.execute(aDialogOffers, "dialog", PICKER, words, false)) {
-            pressing = words;
-            return true;
-          }
-        return false;
+        // instead of going, so it is chosen once the picker knows which it is. In one look, so
+        // the dialog cannot be drawn between "is it checking?" and "which button?" (#4979).
+        pressing = (await browser.execute(whatThePickerOffers, PICKER)) ?? "";
+        return pressing !== "";
       },
       { timeout: 20_000 },
     )
@@ -88,6 +84,31 @@ export async function pickerDebug4814(): Promise<string> {
 
 /** The picker's title (`StartChat`). */
 const PICKER = "Start a chat";
+
+/**
+ * The words to press in a shown dialog saying `text`, Approve and start or Start chat, or `null`
+ * while there is none to press: no such dialog, or one still reading its rows' details, which it
+ * marks `aria-busy` (#4736). **One look, run in the page**, as {@link aDialogOffers} is: asked in
+ * two calls, "is it checking?" and "which button?", the picker could be drawn between them, and
+ * its Start chat was pressed before it knew whether the profile asks for its approval (#4979).
+ */
+export function whatThePickerOffers(text: string): string | null {
+  for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+    if (!(dialog.textContent ?? "").includes(text)) continue;
+    if (dialog.querySelector('[aria-busy="true"]') !== null) return null;
+    const seen = dialog as Element & { checkVisibility?: (options?: object) => boolean };
+    if (
+      typeof seen.checkVisibility === "function" &&
+      !seen.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+    )
+      continue;
+    const said = [...dialog.querySelectorAll("button")].map((one) =>
+      (one.textContent ?? "").trim(),
+    );
+    for (const words of ["Approve and start", "Start chat"]) if (said.includes(words)) return words;
+  }
+  return null;
+}
 
 /**
  * Whether a dialog saying `text` is still reading its rows' details (#4736): it marks them
