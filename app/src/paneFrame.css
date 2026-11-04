@@ -765,25 +765,16 @@
 }
 
 /* ---------------------------------------------------------------------------------------------
-   A task's question, at the top of the pane (#4565).
+   A task's question, in the pane's notices band (#4565, #5213).
    --------------------------------------------------------------------------------------------- */
 
-/* **Above the Notices, in the same runway**: the line that offers where you answer, then the
-   quiz, the band's width. Past the band's room it scrolls inside it, so Send is always reachable
-   and the terminal below keeps its input where it was. */
-.quiz-band {
-  display: flex;
-  flex: 0 1 auto;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-block-size: 0;
-  overflow-y: auto;
-  padding: var(--space-4) var(--space-4) 0;
-}
-
-/* Each keeps its own height, so a short pane scrolls the band and never squeezes the line over
-   the quiz. */
-.quiz-band > * {
+/* **One box of the band's stack, first under the head**: it keeps its own height, as every
+   warning does, so past the band's room the stack scrolls and Send is always reachable, and the
+   terminal below keeps its input where it was. */
+.pane-top
+  > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"])
+  > :is(.pane-notices, [data-scope="notice-row"][data-part="stack"])
+  > .quiz-band-quiz {
   flex: none;
 }
 

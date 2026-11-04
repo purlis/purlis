@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
+import { X } from "lucide-react";
 import type { PlaneId, ReachedWhy, Shown } from "./bindings";
 import { answerHowSaid, useAnswerQuestion } from "./AnswerQuestion";
 import { KindMark, useNow } from "./InboxRow";
 import { agoSaid } from "./inboxRules";
 import { Count } from "./ui/badge/Badge";
-import { Button } from "./ui/button/Button";
+import { Button, IconButton } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
 import { Form, TextArea } from "./ui/field/Field";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -21,6 +22,9 @@ export const QUIZ_WHY: Record<ReachedWhy, (chat: string) => string> = {
 
 /** How many more wait behind the quiz, short and in full. */
 export const moreSaid = (count: number) => `${count} more`;
+/** What the quiz's close says it does (#5213): the question is put away here, not answered. */
+export const CLOSE_QUIZ = "Close";
+export const closeQuizSaid = "Close here. It stays in the Inbox until you answer it.";
 export const moreSaidFully = (count: number) =>
   `${count} more ${count === 1 ? "question waits" : "questions wait"} after this`;
 
@@ -38,6 +42,8 @@ export const moreSaidFully = (count: number) =>
  *   (`answer_task_question`). One answer clears it from every surface.
  * - **The words are data**: a chat's question and note are text nodes, never markup. A question
  *   is drawn over the lines its task wrote (#5213), as the Inbox draws a chat's message.
+ * - **It closes** (#5213): Close puts the quiz away from this pane and answers nothing, so the
+ *   question stays in the Inbox and on the ✋ until it is answered.
  */
 export function TaskQuiz({
   plane,
@@ -48,6 +54,7 @@ export function TaskQuiz({
   onOpenTask,
   onAnswered,
   onTyped,
+  onClose,
 }: {
   plane: PlaneId;
   /** The question, as the asks registry lists it (`source: "task-question"`). */
@@ -63,6 +70,8 @@ export function TaskQuiz({
   onAnswered: () => void;
   /** What is in the box, as it changes: kept by the band, should an agent answer first. */
   onTyped?: (text: string) => void;
+  /** Put away from this pane, unanswered. Without it the quiz has no close. */
+  onClose?: () => void;
 }) {
   const read = useNow();
   const now = given ?? read;
@@ -107,6 +116,16 @@ export function TaskQuiz({
             </Tooltip>
           )}
           {age !== undefined && <span className="ui-text-meta">{age}</span>}
+          {onClose !== undefined && (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label={CLOSE_QUIZ}
+              tooltip={closeQuizSaid}
+              onPress={onClose}
+              icon={<X aria-hidden="true" />}
+            />
+          )}
         </span>
       </p>
       <p className="inbox-says">

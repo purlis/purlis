@@ -20,11 +20,11 @@ import { Count } from "./ui/badge/Badge";
 import { Card } from "./ui/card/Card";
 import { quizIn, setWhereYouAnswer, useWhereYouAnswer, type QuizHere } from "./whereYouAnswer";
 
-/** What the line above the first question says, and its two answers (the prototype's words). */
-export const FIRST_LINE = "Questions from tasks come to this tab, so you answer them in one place.";
-export const ANSWER_FROM_EACH = "Answer from each session";
-export const KEEP_THIS = "Keep this";
-export const MOVED_LINE = "Questions now wait in each task's tab. Settings changes it back.";
+/** What the note above the first question says, and its one way out (#5213, the prototype of
+ *  the pane's notices band). Keeping the setting is the default, so it needs no answer. */
+export const FIRST_LINE =
+  "Questions from this chat's tasks now come here, so you answer them in one place.";
+export const CHANGE = "Change";
 
 /**
  * **Where the window places a task's question**, lent to every pane by the window (#4565):
@@ -207,10 +207,17 @@ function useQuizzes(
  * a short pause before the next ({@link useQuizzes}), and the line an agent's answer leaves
  * above it. A task's question the window cannot draw is a line linking to its pane, in the same
  * place in the queue. Above the first one that reaches the person, **the choice is offered once**
- * as a quiet line, never a dialog, and in one pane only: Keep this, or Answer from each session,
- * which says where they went and how to change it back. Answering the quiz counts as keeping it.
+ * as a quiet note, never a dialog, and in one pane only: it says the questions come here, with
+ * Change, which opens Settings at Where you answer. Answering the quiz counts as keeping it.
  * The setting is read as it is drawn, so a change applies to every open question at once and
  * reroutes nothing.
+ *
+ * **It is part of the pane's notices band, under the pane's head** (#5213, #4754): each of its
+ * parts is one box of the band's stack, so the band folds them by its one setting. Its notes
+ * (the line about where questions come, an agent's answer) fold into the bell while the band is
+ * minimised, and the quiz stands, as every ask does (`data-waits`). Everything in it closes: the
+ * note for good, by its Dismiss, which counts as keeping the setting, and the quiz from this
+ * pane only, so the question stays in the Inbox and on the ✋ until it is answered.
  */
 export function QuizBand({
   plane,
@@ -226,9 +233,12 @@ export function QuizBand({
   const held = useQuestionsHere();
   const places = useContext(QuizPlaces);
   const prefs = useWhereYouAnswer();
-  const [moved, setMoved] = useState(false);
+  /** The questions closed in this pane: put away here, still the registry's, so still the
+   *  Inbox's and the ✋'s. */
+  const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
   const asks = held?.asks ?? [];
-  const quiz = places === undefined ? undefined : quizIn(asks, session, prefs.answer, places.topOf);
+  const open = asks.filter((ask) => !closed.has(ask.ask));
+  const quiz = places === undefined ? undefined : quizIn(open, session, prefs.answer, places.topOf);
   const { pausing, closings, dismiss, box, answered, typedIn } = useQuizzes(
     plane,
     quiz,
@@ -238,19 +248,9 @@ export function QuizBand({
   const offers = useOffersHere(
     quiz !== undefined && quiz.drawn && !quiz.own && !prefs.offered && prefs.answer === "top",
   );
-  if (quiz === undefined && !moved && closings.length === 0) return null;
+  if (quiz === undefined && closings.length === 0) return null;
   return (
-    <div className="quiz-band">
-      {moved && (
-        <Notice
-          at="pane"
-          cause="where-you-answer:moved"
-          onDismiss={() => setMoved(false)}
-          link={{ label: "Open settings", onPress: () => places?.openSettings() }}
-        >
-          {MOVED_LINE}
-        </Notice>
-      )}
+    <>
       {closings.map((closed) => (
         <QuizClosing
           key={`${closed.session}:${closed.number}`}
@@ -262,7 +262,11 @@ export function QuizBand({
       ))}
       {pausing !== undefined && (
         // The quiz's own height, measured as it went, so nothing under the band moves.
-        <div className="quiz-band-quiz" style={{ minBlockSize: `${pausing.height}px` }}>
+        <div
+          className="quiz-band-quiz"
+          data-waits=""
+          style={{ minBlockSize: `${pausing.height}px` }}
+        >
           <Card variant="ask" className="inbox-ask task-quiz task-quiz-pause">
             {pausing.sent !== undefined && <p className="ui-text-body">{sentSaid(pausing.sent)}</p>}
             <p className="ui-text-secondary">{NEXT_SOON}</p>
@@ -273,22 +277,15 @@ export function QuizBand({
         <Notice
           at="pane"
           cause="where-you-answer:offered"
-          fixes={[
-            {
-              label: ANSWER_FROM_EACH,
-              onPress: () => {
-                setWhereYouAnswer({ answer: "each", offered: true });
-                setMoved(true);
-              },
-            },
-            { label: KEEP_THIS, onPress: () => setWhereYouAnswer({ offered: true }) },
-          ]}
+          link={{ label: CHANGE, onPress: () => places?.openSettings() }}
+          onDismiss={() => setWhereYouAnswer({ offered: true })}
+          dismissSays="Keeps questions here, and never says this again."
         >
           {FIRST_LINE}
         </Notice>
       )}
       {pausing === undefined && quiz !== undefined && places !== undefined && (
-        <div ref={box} className="quiz-band-quiz">
+        <div ref={box} className="quiz-band-quiz" data-waits="">
           {quiz.drawn ? (
             <TaskQuiz
               // A new question is a new quiz: nothing typed for one is carried to the next.
@@ -303,6 +300,7 @@ export function QuizBand({
                 if (!prefs.offered) setWhereYouAnswer({ offered: true });
               }}
               onTyped={(text) => typedIn(quiz.ask.ask, text)}
+              onClose={() => setClosed((now) => new Set(now).add(quiz.ask.ask))}
             />
           ) : (
             <Notice
@@ -325,6 +323,6 @@ export function QuizBand({
           )}
         </div>
       )}
-    </div>
+    </>
   );
 }
