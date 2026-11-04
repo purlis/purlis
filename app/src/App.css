@@ -5476,6 +5476,13 @@ body {
 .chat-text-body :is(ul, ol) {
   padding-inline-start: var(--space-6);
 }
+/* Its own markers, whatever a list item around it says (an Inbox card is an `li` with none). */
+.chat-text-body ul {
+  list-style: disc;
+}
+.chat-text-body ol {
+  list-style: decimal;
+}
 .chat-text-body li {
   margin: 0;
 }
