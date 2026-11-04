@@ -350,7 +350,7 @@ describe("a skill's Grades tab (S6)", () => {
         {
           session: 7,
           name: "chat 7",
-          link: { skill: "deploy", level: LEVEL, job: "outcome-evals" },
+          link: { skill: "deploy", level: LEVEL, job: "outcome-evals", done: false },
         },
       ],
       show,

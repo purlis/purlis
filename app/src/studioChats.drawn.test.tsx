@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 const DEMO = { at: "workspace", name: "purlis-demo", local: false } as const;
-const EVALS: StudioLink = { skill: "test-design", level: DEMO, job: "outcome-evals" };
+const EVALS: StudioLink = { skill: "test-design", level: DEMO, job: "outcome-evals", done: false };
 
 const draftOf = (chat: number): SkillDraft => ({
   id: "d1",

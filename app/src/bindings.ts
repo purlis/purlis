@@ -15674,6 +15674,8 @@ export type StudioLink = {
 	skill: string | null,
 	level: SkillLevel,
 	job: StudioJobKind,
+	/**  Whether the chat wrote its draft: once true, never running again. */
+	done: boolean,
 };
 
 /**

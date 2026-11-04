@@ -18,7 +18,7 @@
  * Only chats still open are lent: a closed chat has no tab to open.
  */
 import { Sparkles } from "lucide-react";
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext, useId, useMemo } from "react";
 import type { SkillDraft, SkillLevel, StudioJobKind, StudioLink } from "./bindings";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { endedBy } from "./EndedBand";
@@ -81,6 +81,12 @@ export function jobSaid(job: StudioJobKind, done: boolean): string {
   return done ? JOBS[job].did : JOBS[job].doing;
 }
 
+/** The job as a line of its own begins it: `Writing outcome evals`, `Wrote outcome evals`. */
+export function jobLine(job: StudioJobKind, done: boolean): string {
+  const said = jobSaid(job, done);
+  return said.charAt(0).toUpperCase() + said.slice(1);
+}
+
 /** What the chat's chip says: `test-design · writing outcome evals`. */
 export function chipSaid(link: StudioLink, done: boolean): string {
   return `${link.skill ?? "New skill"} · ${jobSaid(link.job, done)}`;
@@ -95,12 +101,30 @@ export function chatsOfSkill(
   return chats.filter((one) => one.link.skill === name && sameLevel(one.link.level, level));
 }
 
-/** **Whether a studio chat's job is done**: a draft it wrote waits, or its program ended. */
+/** **Whether a studio chat's job is done**: its draft came (kept on its record, so a draft
+ *  accepted or discarded since leaves it done), a draft it wrote waits, or its program ended. */
 export function isDone(chat: StudioChat, drafts: readonly SkillDraft[], ended: boolean): boolean {
-  return ended || drafts.some((one) => one.chat === chat.session);
+  return chat.link.done || ended || drafts.some((one) => one.chat === chat.session);
 }
 
-/** The studio's chats whose skill a level is: where a skill of `level` is seen. */
+/** **The links a read of the drafts makes done** (#5185): each chat's whose draft came, as the
+ *  core marks its record. `links` itself where none changes, so nothing is drawn anew. */
+export function doneByDrafts(
+  links: Readonly<Record<number, StudioLink>>,
+  drafts: readonly SkillDraft[],
+): Readonly<Record<number, StudioLink>> {
+  const wrote = drafts.flatMap((one) =>
+    one.chat !== null && links[one.chat]?.done === false ? [one.chat] : [],
+  );
+  if (wrote.length === 0) return links;
+  return {
+    ...links,
+    ...Object.fromEntries(wrote.map((session) => [session, { ...links[session], done: true }])),
+  };
+}
+
+/** **The studio's scope a skill of `level` is seen on**: its workspace's, its persona's, or the
+ *  project's root. */
 export function scopeOfLevel(level: SkillLevel): StudioScope {
   switch (level.at) {
     case "project":
@@ -128,17 +152,17 @@ export function studioPlaceOf(
 export function linkOfAsk(ask: SkillChatAsk): StudioLink | undefined {
   switch (ask.kind) {
     case "draft":
-      return { skill: null, level: ask.level, job: "draft" };
+      return { skill: null, level: ask.level, job: "draft", done: false };
     case "triggers":
-      return { skill: ask.name, level: ask.level, job: "trigger-tests" };
+      return { skill: ask.name, level: ask.level, job: "trigger-tests", done: false };
     case "evals":
-      return { skill: ask.name, level: ask.level, job: "outcome-evals" };
+      return { skill: ask.name, level: ask.level, job: "outcome-evals", done: false };
     case "checks":
-      return { skill: ask.name, level: ask.level, job: "checks" };
+      return { skill: ask.name, level: ask.level, job: "checks", done: false };
     case "improve":
-      return { skill: ask.name, level: ask.level, job: "improve" };
+      return { skill: ask.name, level: ask.level, job: "improve", done: false };
     case "redo":
-      return { skill: ask.name, level: ask.level, job: "redo" };
+      return { skill: ask.name, level: ask.level, job: "redo", done: false };
     case "try":
       return undefined;
   }
@@ -256,8 +280,7 @@ function StartedRow({
   const ended = useEnded(chat.session);
   const drafted = drafts.some((one) => one.chat === chat.session);
   const done = isDone(chat, drafts, ended);
-  const job = jobSaid(chat.link.job, done);
-  const said = `${job.charAt(0).toUpperCase()}${job.slice(1)}`;
+  const said = jobLine(chat.link.job, done);
   return (
     <ListRow id={String(chat.session)} textValue={said} data-testid={`studio-chat-${chat.session}`}>
       <RowLabel>{said}</RowLabel>
@@ -288,16 +311,17 @@ export function StudioChatsStarted({
   drafts: readonly SkillDraft[];
 }) {
   const { chats, show } = useStudioChats();
+  const titleId = useId();
   const mine = useMemo(() => chatsOfSkill(chats, name, level), [chats, name, level]);
   if (mine.length === 0) return null;
   return (
     <section
       className="skill-page-studio-started"
-      aria-labelledby="skill-studio-started"
+      aria-labelledby={titleId}
       data-testid="skill-studio-started"
     >
-      <PanelSectionTitle id="skill-studio-started">Chats the studio started</PanelSectionTitle>
-      <List aria-labelledby="skill-studio-started" size="sm" onAction={(key) => show(Number(key))}>
+      <PanelSectionTitle id={titleId}>Chats the studio started</PanelSectionTitle>
+      <List aria-labelledby={titleId} size="sm" onAction={(key) => show(Number(key))}>
         {mine.map((chat) => (
           <StartedRow
             key={chat.session}
@@ -322,10 +346,13 @@ export function useRunningJob(
   const { chats } = useStudioChats();
   const states = useChatsHere();
   const ofKinds = chatsOfSkill(chats, name, level).filter((one) => kinds.includes(one.link.job));
-  const ended = useChatsSelect(states, (now) =>
-    ofKinds.map((one) => endedBy(stateOf(now, one.session))).join(","),
-  ).split(",");
-  return ofKinds.find((one, at) => !isDone(one, drafts, ended[at] === "true"));
+  // The first not done, by its session: a number the store's select compares as it is.
+  const running = useChatsSelect(
+    states,
+    (now) =>
+      ofKinds.find((one) => !isDone(one, drafts, endedBy(stateOf(now, one.session))))?.session,
+  );
+  return ofKinds.find((one) => one.session === running);
 }
 
 /** **The Grades card's running job** (#5185): what the chat does and where, with Open chat. */

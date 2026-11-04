@@ -18,6 +18,9 @@ pub struct StudioJob {
     /// Where the skill lives, and so where the chat started (#5184).
     pub level: Level,
     pub job: StudioWork,
+    /// **Whether the job is done**: the chat wrote its draft (#5185). Set once and never unset,
+    /// so a draft the person then accepts or discards leaves the chat done, not running again.
+    pub done: bool,
 }
 
 /// The studio's jobs a chat is started for.
@@ -77,6 +80,8 @@ pub(super) struct StudioOnDisk {
     name: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     local: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    done: bool,
 }
 
 impl StudioOnDisk {
@@ -92,6 +97,7 @@ impl StudioOnDisk {
             at: at.to_owned(),
             name: name.to_owned(),
             local: job.level.local,
+            done: job.done,
         }
     }
 
@@ -115,6 +121,7 @@ impl StudioOnDisk {
             skill,
             level: level.local(self.local),
             job,
+            done: self.done,
         })
     }
 }

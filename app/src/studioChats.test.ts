@@ -6,6 +6,7 @@ import type { SkillDraft, StudioLink } from "./bindings";
 import {
   chatsOfSkill,
   chipSaid,
+  doneByDrafts,
   isDone,
   jobSaid,
   linkOfAsk,
@@ -15,7 +16,12 @@ import {
 } from "./studioChats";
 
 const DEMO = { at: "workspace", name: "purlis-demo", local: false } as const;
-const EVALS: StudioLink = { skill: "test-design", level: DEMO, job: "outcome-evals" };
+const EVALS: StudioLink = {
+  skill: "test-design",
+  level: DEMO,
+  job: "outcome-evals",
+  done: false,
+};
 
 const chat = (session: number, link: StudioLink): StudioChat => ({
   session,
@@ -47,7 +53,7 @@ describe("what a studio chat says of its job (#5185)", () => {
 
   it("names the skill and the job on the chat's chip", () => {
     expect(chipSaid(EVALS, false)).toBe("test-design · writing outcome evals");
-    expect(chipSaid({ skill: null, level: DEMO, job: "draft" }, true)).toBe(
+    expect(chipSaid({ skill: null, level: DEMO, job: "draft", done: false }, true)).toBe(
       "New skill · drafted a skill",
     );
   });
@@ -59,7 +65,7 @@ describe("which chats are a skill's (#5185)", () => {
       chat(3, EVALS),
       chat(4, { ...EVALS, level: { at: "project", local: false } }),
       chat(5, { ...EVALS, skill: "deploy" }),
-      chat(6, { skill: null, level: DEMO, job: "draft" }),
+      chat(6, { skill: null, level: DEMO, job: "draft", done: false }),
     ];
 
     expect(chatsOfSkill(chats, "test-design", DEMO).map((one) => one.session)).toEqual([3]);
@@ -83,7 +89,9 @@ describe("where a studio chat's link opens (#5185)", () => {
       skill: "test-design",
       tab: "runs",
     });
-    expect(studioPlaceOf({ skill: null, level: DEMO, job: "draft" })).toEqual({ page: "drafts" });
+    expect(studioPlaceOf({ skill: null, level: DEMO, job: "draft", done: false })).toEqual({
+      page: "drafts",
+    });
   });
 });
 
@@ -96,10 +104,11 @@ describe("the link a studio start leaves on its chat (#5185)", () => {
       skill: null,
       level: DEMO,
       job: "draft",
+      done: false,
     });
     expect(
       linkOfAsk({ plane: "p", kind: "redo", id: "d1", name: "test-design", level: DEMO, chat: 3 }),
-    ).toEqual({ skill: "test-design", level: DEMO, job: "redo" });
+    ).toEqual({ skill: "test-design", level: DEMO, job: "redo", done: false });
     expect(linkOfAsk({ plane: "p", kind: "try", id: "d1", profile: null })).toBeUndefined();
   });
 
@@ -107,5 +116,17 @@ describe("the link a studio start leaves on its chat (#5185)", () => {
     expect(isDone(chat(3, EVALS), [draft(3)], false)).toBe(true);
     expect(isDone(chat(3, EVALS), [draft(4), draft(null)], false)).toBe(false);
     expect(isDone(chat(3, EVALS), [], true)).toBe(true);
+  });
+
+  it("stays done once its draft came, after the draft is accepted or discarded", () => {
+    const links = { 3: EVALS, 4: { ...EVALS, job: "trigger-tests" as const } };
+
+    const read = doneByDrafts(links, [draft(3)]);
+    expect(read[3].done).toBe(true);
+    expect(read[4].done).toBe(false);
+    // The draft is gone (accepted, or discarded): the chat is still done.
+    expect(isDone(chat(3, read[3]), [], false)).toBe(true);
+    // A read that changes nothing is the same value, so nothing is drawn anew.
+    expect(doneByDrafts(read, [draft(3)])).toBe(read);
   });
 });

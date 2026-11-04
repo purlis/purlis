@@ -28,7 +28,7 @@ const SKILL = skill("test-design", {
   folder: `workspaces/${WHERE}/skills/test-design`,
   description: "Designs a test plan for a change: what to test, at which level, and the cases.",
 });
-const LINK: StudioLink = { skill: "test-design", level: LEVEL, job: "outcome-evals" };
+const LINK: StudioLink = { skill: "test-design", level: LEVEL, job: "outcome-evals", done: false };
 
 /** The draft chat 7 wrote: test-design's outcome evals. */
 const DRAFT: SkillDraft = {

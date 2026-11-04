@@ -77,7 +77,7 @@ describe("what it names and starts again", () => {
         level: { at: "project", local: false },
         chat: null,
       }),
-    ).toBe("Ask a chat to redo deploy");
+    ).toBe("Ask a chat at the project's root to redo deploy");
     expect(
       studioStartNamed({
         plane: PLANE,

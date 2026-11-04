@@ -5714,6 +5714,23 @@ impl Chats {
         Ok(label)
     }
 
+    /// **Marks the Skill studio's job of chat `session` done** (#5185): its draft came. Kept on
+    /// its record, so the chat stays done across a relaunch, and once the draft is accepted or
+    /// discarded. Nothing for a chat the studio did not start, or one already done.
+    pub fn studio_job_done(&self, session: u32) {
+        let mut open = lock(&self.open);
+        let Some(job) = open
+            .get_mut(&session)
+            .and_then(|one| one.chat.studio.as_mut())
+            .filter(|job| !job.done)
+        else {
+            return;
+        };
+        job.done = true;
+        drop(open);
+        self.write_it_down();
+    }
+
     /// The name `session` is shown under — the one it was given, or its default — or `None`
     /// for a chat charter does not have open (charter-app#258).
     pub fn shown_name(&self, session: u32) -> Option<String> {

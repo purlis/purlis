@@ -22,7 +22,7 @@ export function studioStartNamed(wanted: SkillChatAsk): string {
     case "try":
       return "Try it";
     case "redo":
-      return `Ask a chat to redo ${wanted.name}`;
+      return askAChat(wanted.level, `redo ${wanted.name}`);
     case "triggers":
       return askAChat(wanted.level, `write the trigger tests of ${wanted.name}`);
     case "checks":

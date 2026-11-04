@@ -2985,11 +2985,14 @@ fn what_the_studio_started_a_chat_for_survives_a_relaunch_5185() {
         skill: Some("test-design".to_owned()),
         level: crate::skills::verbs::Level::workspace("purlis-demo"),
         job: StudioWork::OutcomeEvals,
+        done: false,
     };
+    // A job whose draft came is done, and stays so across a relaunch.
     let draft = StudioJob {
         skill: None,
         level: crate::skills::verbs::Level::persona("steward").local(true),
         job: StudioWork::Draft,
+        done: true,
     };
     let record = Record {
         chats: vec![
