@@ -11343,8 +11343,15 @@ export type SecretFilled = {
 	key: string,
 	/**  The origin of the field's own frame it went into (`https://dash.example.test`). */
 	origin: string,
+	/**
+	 *  The origin of the page that frame was in, where it was known: the field may be in a
+	 *  part of the page from another site.
+	 */
+	page: string | null,
 	/**  What the page labels the field: the page's words, never purlis's. */
 	label: string,
+	/**  A 2FA code the seed under `key` made (#5118), not the value itself. */
+	code: boolean,
 };
 
 /**

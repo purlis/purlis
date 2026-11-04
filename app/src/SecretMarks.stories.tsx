@@ -14,7 +14,13 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const dash = { key: "dash-api-key", origin: "https://dash.example.test", label: "API key" };
+const dash = {
+  key: "dash-api-key",
+  origin: "https://dash.example.test",
+  page: "https://dash.example.test",
+  label: "API key",
+  code: false,
+};
 
 /** One secret filled on the page's site: a Tab stop whose hint says the field and the site, and
  *  Escape takes the hint down. */
@@ -42,8 +48,8 @@ export const Several: Story = {
   args: {
     secrets: [
       dash,
-      { key: "dash-2fa", origin: "https://dash.example.test", label: "Authentication code" },
-      { key: "dev-token", origin: "http://localhost:3000", label: "" },
+      { ...dash, key: "dash-2fa", label: "Authentication code", code: true },
+      { ...dash, key: "dev-token", origin: "http://localhost:3000", page: null, label: "" },
     ],
   },
   play: async ({ canvas, userEvent }) => {

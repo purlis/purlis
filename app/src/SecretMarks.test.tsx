@@ -15,9 +15,25 @@ import { SecretMarks, marksOn, secretMarkSaid } from "./SecretMarks";
 const DASH: SecretFilled = {
   key: "dash-api-key",
   origin: "https://dash.example.test",
+  page: "https://dash.example.test",
   label: "API key",
+  code: false,
 };
-const LOCAL: SecretFilled = { key: "dev-token", origin: "http://localhost:3000", label: "" };
+const LOCAL: SecretFilled = {
+  key: "dev-token",
+  origin: "http://localhost:3000",
+  page: null,
+  label: "",
+  code: false,
+};
+/** A card number in a part of a shop's page from its payment site. */
+const PAY: SecretFilled = {
+  key: "card",
+  origin: "https://pay.example.test",
+  page: "https://shop.example.test",
+  label: "Card number",
+  code: false,
+};
 
 afterEach(cleanup);
 
@@ -38,6 +54,12 @@ describe("SecretMarks", () => {
       'purlis filled dash-api-key from your vault into the field the page labels "API key" on dash.example.test. The chat never saw the value.',
     );
     expect(secretMarkSaid(LOCAL)).toContain("into a field on http://localhost:3000");
+    expect(secretMarkSaid(PAY)).toContain(
+      "on pay.example.test, in a part of a page from shop.example.test",
+    );
+    expect(secretMarkSaid({ ...DASH, key: "dash-2fa", code: true })).toContain(
+      "purlis filled a 2FA code from dash-2fa into",
+    );
   });
 
   it("draws nothing where nothing was filled", () => {
@@ -51,5 +73,7 @@ describe("marksOn", () => {
     expect(marksOn([DASH, LOCAL], "https://dash.example.test")).toEqual([DASH]);
     expect(marksOn([DASH, LOCAL], "https://other.example.test")).toEqual([]);
     expect(marksOn([DASH], null)).toEqual([]);
+    // A field in a part of the page from another site is marked on the page's site too.
+    expect(marksOn([PAY], "https://shop.example.test")).toEqual([PAY]);
   });
 });

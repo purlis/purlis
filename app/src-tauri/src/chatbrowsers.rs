@@ -680,8 +680,13 @@ pub struct SecretFilled {
     pub key: String,
     /// The origin of the field's own frame it went into (`https://dash.example.test`).
     pub origin: String,
+    /// The origin of the page that frame was in, where it was known: the field may be in a
+    /// part of the page from another site.
+    pub page: Option<String>,
     /// What the page labels the field: the page's words, never purlis's.
     pub label: String,
+    /// A 2FA code the seed under `key` made (#5118), not the value itself.
+    pub code: bool,
 }
 
 /// **Who drives a browser, where its chat's agent does not** (#2300), as its row and thumbnail
@@ -3022,7 +3027,12 @@ impl ChatBrowsers {
             SecretFilled {
                 key,
                 origin,
+                page: asked
+                    .page
+                    .as_deref()
+                    .and_then(purlis_session_protocol::browsing::origin_of),
                 label: purlis_core::shown::short(&asked.field.label),
+                code,
             },
         );
         Ok(filled)
@@ -3349,7 +3359,9 @@ pub fn timeline_of(
             timeline::acted(browser, act, browsed, at, seen)
         }
         Browsing::LogIn { login, .. } => Some(timeline::signed_in(browser, login, at)),
-        Browsing::FillSecret { key, target, .. } => {
+        Browsing::FillSecret {
+            key, target, code, ..
+        } => {
             // The site it went to (#5119, SF-8): what the person's view marked.
             let origin = browsers
                 .which(browse.chat, Some(browser))
@@ -3359,6 +3371,7 @@ pub fn timeline_of(
                 key,
                 target,
                 origin.as_deref(),
+                *code,
                 at,
             ))
         }

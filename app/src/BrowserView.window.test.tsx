@@ -726,7 +726,15 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
         login: null,
         driver: null,
         pool: null,
-        secrets: [{ key: "dash-api-key", origin: "https://dash.example.test", label: "API key" }],
+        secrets: [
+          {
+            key: "dash-api-key",
+            origin: "https://dash.example.test",
+            page: "https://dash.example.test",
+            label: "API key",
+            code: false,
+          },
+        ],
       },
     ];
     const host = await opened();

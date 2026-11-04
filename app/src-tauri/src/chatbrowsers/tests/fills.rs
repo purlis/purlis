@@ -329,7 +329,9 @@ fn a_filled_field_is_marked_on_its_browser_by_key_site_and_label_never_value() {
         [SecretFilled {
             key: "dash-api-key".into(),
             origin: "https://dash.example.test".into(),
+            page: Some("https://dash.example.test".into()),
             label: "API key".into(),
+            code: false,
         }]
     );
     assert!(!format!("{:?}", browsers.listed()).contains(VALUE));
@@ -421,4 +423,23 @@ fn a_browser_taken_over_while_the_person_is_asked_is_filled_nothing() {
     assert!(told.contains("taken b1 over"), "{told}");
     assert!(hosted.fills.lock().unwrap().is_empty());
     assert!(marks(&browsers).is_empty());
+}
+
+#[test]
+fn a_field_in_a_part_of_the_page_from_another_site_is_marked_with_the_pages_site_too() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://pay.example.test"));
+    let asked = RefCell::new(Vec::new());
+
+    answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    );
+
+    let marked = marks(&browsers);
+    assert_eq!(marked[0].origin, "https://pay.example.test");
+    assert_eq!(marked[0].page.as_deref(), Some("https://dash.example.test"));
 }

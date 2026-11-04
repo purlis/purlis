@@ -15,18 +15,27 @@ export function secretMarkName(one: SecretFilled): string {
   return `Secret ${one.key}, filled on ${siteOf(one.origin)}`;
 }
 
-/** What a mark's hint says: the key, the field the page labels and the site. */
+/** What a mark's hint says: the key, or the code its seed made, the field the page labels and
+ *  the site. */
 export function secretMarkSaid(one: SecretFilled): string {
   const field = one.label.trim() === "" ? "a field" : `the field the page labels "${one.label}"`;
-  return `purlis filled ${one.key} from your vault into ${field} on ${siteOf(one.origin)}. The chat never saw the value.`;
+  const what = one.code ? `a 2FA code from ${one.key}` : `${one.key} from your vault`;
+  const where =
+    one.page !== null && one.page !== one.origin
+      ? `${siteOf(one.origin)}, in a part of a page from ${siteOf(one.page)}`
+      : siteOf(one.origin);
+  return `purlis filled ${what} into ${field} on ${where}. The chat never saw the value.`;
 }
 
-/** The secrets of `secrets` filled on the site `origin` shows: what a view marks there. */
+/** The secrets of `secrets` filled on the site `origin` shows, in the page or a part of it from
+ *  another site: what a view marks there. */
 export function marksOn(
   secrets: readonly SecretFilled[],
   origin: string | null,
 ): readonly SecretFilled[] {
-  return origin === null ? [] : secrets.filter((one) => one.origin === origin);
+  return origin === null
+    ? []
+    : secrets.filter((one) => one.origin === origin || one.page === origin);
 }
 
 /**

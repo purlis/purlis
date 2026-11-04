@@ -221,23 +221,27 @@ pub fn signed_in(browser: &str, login: &str, at: u64) -> Happened {
     )
 }
 
-/// **purlis filled vault key `key` into field `target` of `browser`, on site `origin`** (#5115,
-/// #5119, SF-8): the key's name, the field and the site it went to, never a value.
+/// **purlis filled vault key `key`, or the 2FA code its seed made, into field `target` of
+/// `browser`, on site `origin`** (#5115, #5118, #5119, SF-8): the key's name, the field and the
+/// site it went to, never a value.
 pub fn filled_secret(
     browser: &str,
     key: &str,
     target: &str,
     origin: Option<&str>,
+    code: bool,
     at: u64,
 ) -> Happened {
     let on = origin.map_or_else(String::new, |origin| {
         format!(" on {}", cut_to(origin, MOST_TARGET_CHARS))
     });
+    // A 2FA code says it is one (#5118): the seed itself went nowhere.
+    let what = if code { "a 2FA code from " } else { "" };
     plain(
         browser,
         By::Purlis,
         &format!(
-            "purlis filled {} into {}{on}",
+            "purlis filled {what}{} into {}{on}",
             cut_to(key, MOST_TARGET_CHARS),
             cut_to(target, MOST_TARGET_CHARS)
         ),
