@@ -130,17 +130,20 @@ describe("the window's keyboard reach", () => {
         })
         .map((one) => one.name);
       // And inside the focused pane, its own controls before its terminal: its row of Notices
-      // when it has one (#1647), then everything its header draws, left then right (#3142) —
-      // the harness it runs (HP-19) at the left, split and end at the right — and the terminal
-      // last.
+      // when it has one (#1647), then everything its head draws, split and end at the right
+      // (#3142). Then the terminal, and after it the pane foot's parts and nothing else: the
+      // harness it runs (HP-19) is the foot's since #5202 (spec #5191 story 38). The foot is the
+      // only thing after the terminal, and it has a stop.
       const frame = document.querySelector(".pane-frame:has(.pane.focused)");
       const inFrame = frame ? stops.filter((el) => frame.contains(el)) : [];
       const terminal = inFrame.findIndex((el) => el.closest('[data-testid="pane"]') !== null);
+      const afterTerminal = inFrame.slice(terminal + 1);
       const controlsFirst =
         terminal > 0 &&
-        terminal === inFrame.length - 1 &&
         inFrame.slice(0, terminal).every((el) => el.closest(".pane-top, .pane-head") !== null) &&
-        inFrame.some((el) => el.closest(".pane-doing") !== null);
+        inFrame.some((el) => el.closest(".pane-doing") !== null) &&
+        afterTerminal.length > 0 &&
+        afterTerminal.every((el) => el.closest('[data-scope="pane-foot"]') !== null);
       return { tabbed, laidOut, controlsFirst };
     });
     expect(tabbed).toEqual(laidOut);
