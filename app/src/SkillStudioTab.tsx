@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { startTransition, useEffect, useRef, useState, type ReactNode } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { afterPaint } from "./projectShown";
 import { MessageSquarePlus, Plus, Search, Sparkle, Sparkles } from "lucide-react";
 import {
@@ -162,9 +162,14 @@ function searchKeeps(skill: StudioSkill, query: string): boolean {
 const FIRST_ROWS = 40;
 
 /**
- * **The Library's rows, the first screen before the rest** (#4351): the rest are built once that
- * frame has painted, so the tab shows a list while they lay out, which still takes that third of
- * a second. Mounted with the list and keyed by scope, so each list it draws starts from the top.
+ * **The Library's rows, a screen a frame** (#4351): the first screen at once, then one more
+ * screen after each frame has painted, so the tab shows a list at once and no frame waits on the
+ * rest. Built in one go, the other hundred and sixty of two hundred held the next frame for a
+ * quarter of a second: React Aria builds a collection's rows without yielding. Mounted with the
+ * list and keyed by scope, so each list it draws starts from the top.
+ *
+ * A row drawn is never drawn again for the rows that come after it, so a press, the keyboard and
+ * the search box work on the rows there while the rest come.
  */
 function LibraryRows({
   rows,
@@ -176,13 +181,16 @@ function LibraryRows({
   /** Draw every row at once: the chosen one is past the first screen. */
   all: boolean;
 }) {
-  const [painted, setPainted] = useState(false);
-  const cut = !all && !painted && rows.length > FIRST_ROWS;
+  const [screens, setScreens] = useState(1);
+  const drawn = all ? rows.length : Math.min(rows.length, screens * FIRST_ROWS);
+  const more = drawn < rows.length;
   useEffect(() => {
-    if (!cut) return;
-    return afterPaint(() => startTransition(() => setPainted(true)));
-  }, [cut]);
-  return (cut ? rows.slice(0, FIRST_ROWS) : rows).map(row);
+    if (!more) return;
+    return afterPaint(() => startTransition(() => setScreens((was) => was + 1)));
+  }, [more, screens]);
+  // The same elements for the rows already drawn, so adding a screen draws only its own rows.
+  const elements = useMemo(() => rows.map(row), [rows, row]);
+  return elements.slice(0, drawn);
 }
 
 /** The row's line under its name: why it is left out where it is, else what it does. */
