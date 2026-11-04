@@ -172,11 +172,12 @@ export function Table({
  * cell's button past the frame's right edge was seen leaving the frame unscrolled, and at other
  * times scrolled to the button's own edge, its ring cut off.
  *
- * So where the frame ends is worked out when the focus comes, by {@link revealedScrollLeft},
- * from where the frame was left for the focus before it (its {@link settled} place), else from
- * where it stands; and a frame later than React Aria's own scroll (two frames), the control still
- * focused, the frame is set exactly there. Whichever scroll ran in between, and however fast the
- * keys came (a Tab before the last one's frames were drawn), the same keys end in the same place.
+ * So the focus starts from where the frame was left for the focus before it (its {@link settled}
+ * place), else from where it stands when the focus comes; and a frame later than React Aria's
+ * own scroll (two frames), the control still focused, the frame is set exactly where
+ * {@link revealedScrollLeft} says from that start, as the table is drawn by then. Whichever
+ * scroll ran in between, and however fast the keys came (a Tab before the last one's frames were
+ * drawn), the same keys end in the same place.
  * A row, wider than the frame, is left to React Aria.
  */
 function revealInFrame(event: React.FocusEvent<HTMLDivElement>): void {
@@ -184,15 +185,30 @@ function revealInFrame(event: React.FocusEvent<HTMLDivElement>): void {
   const target = event.target;
   if (target === frame) return;
   const start = settled.get(frame) ?? frame.scrollLeft;
+  // Where it ends as the table is drawn now, for a focus that comes before these frames are.
+  settled.set(frame, placeFor(frame, target, start));
+  const later = () =>
+    requestAnimationFrame(() => {
+      if (!frame.isConnected || document.activeElement !== target) return;
+      // And as it is drawn by then: a column may have taken its width since the focus came.
+      const to = placeFor(frame, target, start);
+      settled.set(frame, to);
+      if (frame.scrollLeft !== to) frame.scrollLeft = to;
+    });
+  requestAnimationFrame(later);
+}
+
+/**
+ * **Where `frame` is scrolled to show `target` and its ring, from `start`**: `start` itself for a
+ * row or anything as wide as the frame, which is left to React Aria.
+ */
+function placeFor(frame: HTMLElement, target: Element, start: number): number {
   const room = frame.getBoundingClientRect();
   const box = target.getBoundingClientRect();
-  if (box.width >= frame.clientWidth) {
-    settled.set(frame, start);
-    return;
-  }
+  if (box.width >= frame.clientWidth) return start;
   // The control's edges in the frame's own content, the same whatever it is scrolled to.
   const origin = room.left + frame.clientLeft - frame.scrollLeft;
-  const to = revealedScrollLeft({
+  return revealedScrollLeft({
     start,
     left: box.left - origin,
     right: box.right - origin,
@@ -200,13 +216,6 @@ function revealInFrame(event: React.FocusEvent<HTMLDivElement>): void {
     most: frame.scrollWidth - frame.clientWidth,
     ring: ringOutside(target),
   });
-  settled.set(frame, to);
-  const later = () =>
-    requestAnimationFrame(() => {
-      if (!frame.isConnected || document.activeElement !== target) return;
-      if (frame.scrollLeft !== to) frame.scrollLeft = to;
-    });
-  requestAnimationFrame(later);
 }
 
 /**
