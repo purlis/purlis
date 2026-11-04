@@ -253,6 +253,27 @@ test("what covered the element a test could not press is said", () => {
   );
 });
 
+test("what the window showed as a test failed is said, after the covers, and kept whole", () => {
+  const coreLog = Array.from(
+    { length: 400 },
+    (_, n) =>
+      `2026-11-04T00:00:${String(n).padStart(3, "0")} INFO purlis: line ${n}`,
+  );
+  const shown = [
+    "the strip drew 2 tabs: New chat | steward 14 (selected)",
+    "its overflow: none",
+    "the panes drew: none",
+  ];
+  const text = evidenceOf({ late: [], coreLog, covers: ["focused: body"], shown });
+  assert.ok(text.length <= EVIDENCE_CHARS, `${text.length}`);
+  assert.ok(
+    text.endsWith(
+      `what covered it:\nfocused: body\nwhat the window showed:\n${shown.join("\n")}`,
+    ),
+    text.slice(-400),
+  );
+});
+
 test("a long log is cut to the room the late commands and the covers leave, which stay whole", () => {
   const coreLog = Array.from(
     { length: 400 },

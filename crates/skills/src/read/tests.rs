@@ -330,3 +330,77 @@ fn a_level_of_exactly_the_most_names_purlis_reads_is_scanned() {
 
     assert_eq!(names, ["whole"]);
 }
+
+/// The description of `text`'s skill, as purlis reads it everywhere it reads one (#5182).
+fn description_of(text: &str) -> Option<String> {
+    parsed(text, PathBuf::from("SKILL.md"))
+        .ok()
+        .map(|skill| skill.description)
+}
+
+#[test]
+fn a_folded_description_reads_as_its_text_not_as_its_marker() {
+    let text = "---\nname: test-design\ndescription: >\n  Design a traceable test matrix for a ticket\n  and its acceptance criteria.\n---\nBody\n";
+    assert_eq!(
+        description_of(text).as_deref(),
+        Some("Design a traceable test matrix for a ticket and its acceptance criteria.")
+    );
+}
+
+#[test]
+fn a_literal_quoted_or_plain_multi_line_description_reads_as_claude_code_reads_it() {
+    for (header, read) in [
+        ("description: |\n  One.\n  Two.\n", "One.\nTwo."),
+        ("description: >-\n  One\n  two.\n", "One two."),
+        ("description: \"Use when: quoted\"\n", "Use when: quoted"),
+        ("description: 'it''s single'\n", "it's single"),
+        (
+            "description: A plain value\n  that runs on.\n",
+            "A plain value that runs on.",
+        ),
+        (
+            "description: \"A quoted value\n  that runs on.\"\n",
+            "A quoted value that runs on.",
+        ),
+        ("description: One line, as before\n", "One line, as before"),
+    ] {
+        let text = format!("---\nname: s\n{header}---\nBody\n");
+        assert_eq!(description_of(&text).as_deref(), Some(read), "{header}");
+    }
+}
+
+#[test]
+fn a_frontmatter_that_is_not_yaml_is_read_line_by_line_and_never_as_a_bare_marker() {
+    // `: ` inside a plain value is not YAML, and every harness reads such a line as text.
+    let text = "---\nname: s\ndescription: Use when: the person asks\n---\n";
+    assert_eq!(
+        description_of(text).as_deref(),
+        Some("Use when: the person asks")
+    );
+    // A block whose YAML does not parse cannot be read: no description, never `>`.
+    let text = "---\nname: s\nother: a: b\ndescription: >\n  Words.\n---\n";
+    assert_eq!(description_of(text), None);
+}
+
+#[test]
+fn the_listing_names_a_folded_description_by_its_text() {
+    let text = "---\nname: test-design\ndescription: >\n  Design a test matrix.\n---\n";
+    let skill = parsed(text, PathBuf::from("/s/SKILL.md")).unwrap();
+    let listed = listing(&[skill]).unwrap();
+    assert!(
+        listed.contains("`test-design` — Design a test matrix. ("),
+        "{listed}"
+    );
+}
+
+#[test]
+fn a_literal_description_is_listed_on_its_skills_one_line() {
+    let text = "---\nname: notes\ndescription: |\n  Take notes.\n  Keep them.\n---\n";
+    let skill = parsed(text, PathBuf::from("/s/SKILL.md")).unwrap();
+    assert_eq!(skill.description, "Take notes.\nKeep them.");
+    let listed = listing(&[skill]).unwrap();
+    assert!(
+        listed.ends_with("\n- `notes` — Take notes. Keep them. (`/s/SKILL.md`)"),
+        "{listed}"
+    );
+}

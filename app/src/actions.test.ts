@@ -114,6 +114,7 @@ function doing(): Doing & { calls: string[] } {
   return {
     calls,
     newChat: note("newChat"),
+    newTab: note("newTab"),
     newShell: note("newShell"),
     newBrowser: note("newBrowser"),
     tileAll: note("tileAll"),
@@ -1327,7 +1328,7 @@ describe("the one list of actions", () => {
       const hands = doing();
       const offers = catalogue(now({ clones: [SVC] }));
 
-      expect(by(offers, "clone.chat:svc")?.title).toBe("New tab in svc");
+      expect(by(offers, "clone.chat:svc")?.title).toBe("New chat in svc");
       await run(offers, "clone.chat:svc", hands);
 
       // Not `pickClone`: that would make every later New tab start in the clone too, and then
@@ -1806,6 +1807,8 @@ describe("carrying out a row", () => {
     expect(new Set(hands.calls)).toEqual(
       new Set([
         "newChat",
+        // The strip's `+` (#4758).
+        "newTab",
         "newShell",
         // New browser (#2176).
         "newBrowser",
@@ -1934,7 +1937,7 @@ describe("carrying out a row", () => {
 });
 
 describe("a plain shell tab (SI-5)", () => {
-  it("offers a new shell right after a new tab, on an empty window too", () => {
+  it("offers a new shell right after New chat, on an empty window too", () => {
     const offers = ids(catalogue(now()));
 
     expect(offers.indexOf("shell.new")).toBe(offers.indexOf("chat.new") + 1);
@@ -2214,13 +2217,17 @@ describe("Close other tabs (#4762)", () => {
 describe("the catalogue as the tabs change", () => {
   it("grows a tab's rows per tab, and a chat's rows per chat, as tabs open", () => {
     let tabs: Tabs = noTabs();
-    expect(ids(catalogue(now({ tabs }))).filter((id) => id.startsWith("tab."))).toEqual([]);
+    // The strip's `+` is offered with no tab at all (#4758).
+    expect(ids(catalogue(now({ tabs }))).filter((id) => id.startsWith("tab."))).toEqual([
+      "tab.new",
+    ]);
 
     tabs = openTab(tabs, 7, "one");
     tabs = openTab(tabs, 8, "two");
 
     const offers = ids(catalogue(now({ tabs })));
     expect(offers.filter((id) => id.startsWith("tab."))).toEqual([
+      "tab.new",
       "tab.select:1",
       "tab.select:2",
       // The pin rows sit with the switching rows, above the line: pinning is an arrangement
@@ -2615,8 +2622,9 @@ describe("the palette at fifty chats", () => {
     // 1072 since #4760: Close other tabs on each of the fifty tabs' own right-click. The other
     // forty-nine are menu-only rows, so the palette still lists one.
     // 1123 since #4768: Move to new window, each of the fifty tabs' own row (+50), and the
-    // focused pane's (+1). 1124 since #4484: Add a cluster pool….
-    expect(offers).toHaveLength(1124);
+    // focused pane's (+1). 1124 since #4484: Add a cluster pool…. 1125 since #4758: New tab,
+    // the strip's `+`, apart from New chat.
+    expect(offers).toHaveLength(1125);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
       1,
     );

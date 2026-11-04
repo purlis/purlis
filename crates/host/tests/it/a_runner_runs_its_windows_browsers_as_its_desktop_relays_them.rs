@@ -23,7 +23,7 @@ use purlis_host::standin::{StandInBrowsers, StandInScreen, StandIns};
 use purlis_host::{ComposesNothing, Dial, Hosting, Relay};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::browsing::{
-    Act, Aim, Driver, Input, KeptLogin, KeyAction, LinkFrames, LogIn, Secret,
+    Act, Aim, Driver, FillSecret, Input, KeptLogin, KeyAction, LinkFrames, LogIn, Secret,
 };
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
 use purlis_session_protocol::link::{self, Acceptor, Link};
@@ -176,6 +176,16 @@ fn a_login(keep: Option<KeptLogin>) -> LogIn {
     }
 }
 
+fn a_fill() -> FillSecret {
+    FillSecret {
+        target: "e12".into(),
+        origin: "https://dash.example.test".into(),
+        key: "dash-api-key".into(),
+        value: Secret::new("fixture-key-5122".into()),
+        multi_line: false,
+    }
+}
+
 fn a_key(document: u64) -> Input {
     Input::Key {
         aim: Aim {
@@ -287,6 +297,49 @@ async fn purlis_logs_the_runners_browser_in_for_the_window_and_says_no_value() {
     assert_eq!(screen.shown().logins, ["https://shop.example.test/login"]);
 }
 
+/// #5122, SF-12: a secret the window has purlis fill reaches the runner's browser through the
+/// link, as a login does, and nothing said back carries its value.
+#[tokio::test]
+async fn purlis_fills_a_secret_into_the_runners_browser_for_the_window_and_says_no_value() {
+    let runner = a_runner();
+    let dials = Arc::new(AtomicUsize::new(0));
+    let window = a_window(&runner, &dials).await;
+    let (program, screen) = window.browser(&runner).await;
+
+    let browsed = window
+        .client
+        .fill_secret(&program, a_fill())
+        .await
+        .expect("the fill reaches the runner's browser");
+
+    assert!(browsed.settled);
+    assert!(!format!("{browsed:?}").contains("fixture-key-5122"));
+    assert_eq!(
+        screen.shown().fills,
+        ["dash-api-key into e12 on https://dash.example.test"]
+    );
+}
+
+/// #5122, SF-10: a fill into the runner's browser while the person drives it fills nothing.
+#[tokio::test]
+async fn a_fill_into_the_runners_browser_the_person_drives_fills_nothing() {
+    let runner = a_runner();
+    let dials = Arc::new(AtomicUsize::new(0));
+    let window = a_window(&runner, &dials).await;
+    let (program, screen) = window.browser(&runner).await;
+    window.client.take_over(&program).await.expect("taken over");
+
+    let refused = window
+        .client
+        .fill_secret(&program, a_fill())
+        .await
+        .unwrap_err();
+
+    let refusal = refused.refusal().expect("refused in words");
+    assert!(!refusal.why.contains("fixture-key-5122"), "{}", refusal.why);
+    assert!(screen.shown().fills.is_empty(), "nothing was filled");
+}
+
 #[tokio::test]
 async fn a_login_that_would_keep_its_login_is_not_sent_to_the_runner() {
     let runner = a_runner();
@@ -327,7 +380,7 @@ async fn another_host_on(relay: Relay) -> Client {
 }
 
 #[tokio::test]
-async fn host_a_sends_a_browser_or_a_login_on_for_its_window_alone() {
+async fn host_a_sends_a_browser_a_login_or_a_fill_on_for_its_window_alone() {
     let runner = a_runner();
     let dials = Arc::new(AtomicUsize::new(0));
     let relay = Relay::new(over_the_link(runner.hosting.clone(), Arc::clone(&dials)));
@@ -339,8 +392,15 @@ async fn host_a_sends_a_browser_or_a_login_on_for_its_window_alone() {
     let logged_in = another
         .log_in("01J9ZQ8000000000000000000D", a_login(None))
         .await;
+    let filled = another
+        .fill_secret("01J9ZQ8000000000000000000D", a_fill())
+        .await;
 
-    for refused in [started.unwrap_err(), logged_in.unwrap_err()] {
+    for refused in [
+        started.unwrap_err(),
+        logged_in.unwrap_err(),
+        filled.unwrap_err(),
+    ] {
         let refusal = refused.refusal().expect("host A refuses it");
         assert_eq!(refusal.code, session::NOT_ALLOWED);
     }

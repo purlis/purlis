@@ -19,6 +19,7 @@ import { countsInStatusBar, IMPORTANCE } from "./Notice";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 import { findTheWorkspaces } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A project's Notices, in its Inbox, against the whole window** (NO-2 #1229, rulings V91i,
@@ -116,6 +117,8 @@ function core(
       if (world.chats === "refuses") throw "the project's record could not be read";
       return open;
     }
+    // Each chat put back has its tab, as the stored layout keeps it (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(open, () => "alpha");
     if (cmd === "chat_states") return [];
     if (cmd === "alerts_everywhere") return [{ plane: PLANE, alerts: [], stopped: null }];
     if (cmd === "chats_that_would_not_start") return world.wouldNotStart ?? [];

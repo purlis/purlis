@@ -21,12 +21,12 @@ export async function pickAndStart(): Promise<void> {
   let pressing = "";
   await browser.waitUntil(
     async () => {
-      for (const words of ["Approve and start", "Start chat"])
-        if (await browser.execute(aDialogOffers, "dialog", PICKER, words, false)) {
-          pressing = words;
-          return true;
-        }
-      return false;
+      // Not while the rows' details are read (#4736): until they arrive the button says Start
+      // chat even for a profile that asks for its approval, and a press then shows the approval
+      // instead of going, so it is chosen once the picker knows which it is. In one look, so the
+      // dialog cannot be drawn between "is it checking?" and "which button?" (#4979).
+      pressing = (await browser.execute(whatThePickerOffers, PICKER)) ?? "";
+      return pressing !== "";
     },
     { timeout: 20_000, timeoutMsg: "the picker never offered Start" },
   );
@@ -38,6 +38,43 @@ export async function pickAndStart(): Promise<void> {
 
 /** The picker's title (`StartChat`). */
 const PICKER = "Start a chat";
+
+/**
+ * The words to press in a shown dialog saying `text`, Approve and start or Start chat, or `null`
+ * while there is none to press: no such dialog, or one still reading its rows' details, which it
+ * marks `aria-busy` (#4736). **One look, run in the page**, as {@link aDialogOffers} is: asked in
+ * two calls, "is it checking?" and "which button?", the picker could be drawn between them, and
+ * its Start chat was pressed before it knew whether the profile asks for its approval (#4979).
+ */
+export function whatThePickerOffers(text: string): string | null {
+  for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+    if (!(dialog.textContent ?? "").includes(text)) continue;
+    if (dialog.querySelector('[aria-busy="true"]') !== null) return null;
+    const seen = dialog as Element & { checkVisibility?: (options?: object) => boolean };
+    if (
+      typeof seen.checkVisibility === "function" &&
+      !seen.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+    )
+      continue;
+    const said = [...dialog.querySelectorAll("button")].map((one) =>
+      (one.textContent ?? "").trim(),
+    );
+    for (const words of ["Approve and start", "Start chat"]) if (said.includes(words)) return words;
+  }
+  return null;
+}
+
+/**
+ * Whether a dialog saying `text` is still reading its rows' details (#4736): it marks them
+ * `aria-busy` until they arrive. **Run in the page**, as {@link aDialogOffers} is.
+ */
+export function thePickerIsChecking(text: string): boolean {
+  return [...document.querySelectorAll('[role="dialog"]')].some(
+    (dialog) =>
+      (dialog.textContent ?? "").includes(text) &&
+      dialog.querySelector('[aria-busy="true"]') !== null,
+  );
+}
 
 /**
  * Whether the page shows a `role` dialog whose text holds `text` and which offers a button
@@ -170,10 +207,45 @@ export async function pressOnly(name: string): Promise<void> {
   await button.click();
 }
 
-/** Presses a button that starts a chat, and answers the picker it opens. */
+/**
+ * Presses a button that starts a chat, and answers the picker it opens.
+ *
+ * **"New tab" is the strip's `+`, which opens a tab of one empty pane** (#4758): no chat, and no
+ * picker. A spec that asks for it wants its chat in a tab of its own, so it is what the person
+ * does for that: `+`, then the empty pane's own New chat, which opens the picker for that pane.
+ */
 export async function pressAndStart(name: string): Promise<void> {
   await pressOnly(name);
+  if (name === NEW_TAB) await pressTheEmptyPanesNewChat();
   await pickAndStart();
+}
+
+/** **Opens the picker for a chat in a tab of its own**: the strip's `+`, then the new tab's
+ *  empty pane's New chat (#4758), and nothing picked. */
+export async function openThePicker(): Promise<void> {
+  await pressOnly(NEW_TAB);
+  await pressTheEmptyPanesNewChat();
+}
+
+/** The strip's `+` (`tab.new`). */
+const NEW_TAB = "New tab";
+
+/** Presses New chat on the empty pane drawn in front: the one a `+` just opened. */
+async function pressTheEmptyPanesNewChat(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        const pane = [...document.querySelectorAll<HTMLElement>('[data-testid="empty-pane"]')].find(
+          (one) => one.getBoundingClientRect().width > 0,
+        );
+        const button = [...(pane?.querySelectorAll<HTMLElement>("button") ?? [])].find(
+          (one) => (one.textContent ?? "").trim() === "New chat",
+        );
+        button?.click();
+        return button !== undefined;
+      }),
+    { timeout: 20_000, interval: 200, timeoutMsg: "the new tab drew no empty pane to start in" },
+  );
 }
 
 /**

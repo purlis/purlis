@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { endEveryChat, harnessRowsDrawn, pressAndStart, pressOnly } from "../opening.js";
+import { endEveryChat, harnessRowsDrawn, pressAndStart, openThePicker } from "../opening.js";
 
 /**
  * **The harness capability card** (HP-19, W10), in the built app: what each harness can do,
@@ -379,7 +379,7 @@ describe("a harness's capability card", function () {
       const configWas = existsSync(config) ? readFileSync(config, "utf8") : undefined;
       await noted(null);
       try {
-        await pressOnly("New tab");
+        await openThePicker();
         await harnessRowsDrawn();
         await browser
           .waitUntil(async () => (await pickerNote()) !== "", { timeout: 20_000 })
@@ -399,6 +399,8 @@ describe("a harness's capability card", function () {
         await browser.waitUntil(
           () =>
             browser.execute(() => {
+              // Not while the rows' details are read (#4736): the button does not know yet.
+              if (document.querySelector('[role="dialog"] [aria-busy="true"]')) return false;
               const start = [
                 ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
               ]
@@ -421,7 +423,7 @@ describe("a harness's capability card", function () {
         expect(await notedNow()).toContain("opencode");
         await endEveryChat();
 
-        await pressOnly("New tab");
+        await openThePicker();
         await harnessRowsDrawn();
         // The picker is drawn whole by now; a note would be in it with the rows.
         await browser.pause(1_000);

@@ -444,8 +444,11 @@ export const commands = {
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
 	answerPoolLogin: __WINDOW_ONLY_RESULT,
 	answerBrowserLogin: __WINDOW_ONLY_RESULT,
+	answerSecretFill: __WINDOW_ONLY_RESULT,
 	answerPoolTool: __WINDOW_ONLY_RESULT,
 	answerSecretAsk: __WINDOW_ONLY_RESULT,
+	linkSecretAsk: __WINDOW_ONLY_RESULT,
+	secretAskEntries: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
@@ -463,6 +466,8 @@ export const commands = {
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
+	dismissedSecretNeeds: __WINDOW_ONLY_RESULT,
+	offerSecretNeedAgain: __WINDOW_ONLY_RESULT,
 	removeOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	dismissOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
@@ -1092,6 +1097,9 @@ export const commands = {
 	skillNew: __WINDOW_ONLY_RESULT,
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
+	skillFiles: __WINDOW_ONLY_RESULT,
+	skillFile: __WINDOW_ONLY_RESULT,
+	skillFolderOpen: __WINDOW_ONLY_RESULT,
 	skillSave: __WINDOW_ONLY_RESULT,
 	skillTriggerTestsStart: __WINDOW_ONLY_RESULT,
 	skillRename: __WINDOW_ONLY_RESULT,
@@ -1531,15 +1539,35 @@ export const commands = {
 	 *  What the picker draws: every profile this machine has, every one charter will not use,
 	 *  and the plane's personas.
 	 * 
-	 *  Read fresh every time it is opened, like the sidebar: `charter.local.toml` is a file the
-	 *  operator edits by hand and a chat can write, so a cache here would be a second answer to
-	 *  "what is on disk" that nothing invalidates.
+	 *  Read fresh on every ask: what a fix in the picker reads to draw what is true after it, and
+	 *  what every other caller reads. The dialog's own two answers ([`start_options_first`],
+	 *  [`start_details`]) are kept per project instead, and the plane watch is what drops them
+	 *  (#4737): `charter.local.toml` is a file the operator edits by hand and a chat can write.
 	 * 
 	 *  **Off the main thread**: a sandboxed project's picker asks each approved Claude Code
 	 *  profile's program its `--version` (ruling V87g), which can take seconds, and the window
 	 *  must not freeze for it.
 	 */
 	startOptions: (plane: PlaneId) => typedError<StartOptions, string>(__TAURI_INVOKE("start_options", { plane })),
+	/**
+	 *  **The picker's first answer** (#4736): what [`start_options`] answers, without what takes a
+	 *  moment to read: every row's approval, sandbox and billing are none here, and
+	 *  [`start_details`] answers them. The dialog opens on this, at once, and fills its rows in as
+	 *  the details arrive. A start pressed before then goes through every gate it does today: the
+	 *  window waits for the details, and the core's start asks them again.
+	 * 
+	 *  **Kept per project** (#4737), with [`start_details`]: an open with nothing changed is
+	 *  served from what the last one read ([`planes::Held::kept_start_first`]), and a change to
+	 *  the profiles, the personas, the sandbox or the installed harnesses drops it first.
+	 */
+	startOptionsFirst: (plane: PlaneId) => typedError<StartOptions, string>(__TAURI_INVOKE("start_options_first", { plane })),
+	/**
+	 *  **The picker's second answer** (#4736): each row's approval, sandbox and billing, by its
+	 *  name, the slow part of [`start_options`]: a sandbox compile per harness and a check of
+	 *  each approved profile's program. Kept as [`start_options_first`] is (#4737), so a second open with
+	 *  nothing changed compiles nothing and runs no program.
+	 */
+	startDetails: (plane: PlaneId) => typedError<RowDetails[], string>(__TAURI_INVOKE("start_details", { plane })),
 	/**
 	 *  Every harness the project has, its card at a glance (HP-19): the palette's *What <product>
 	 *  can do here* rows, one per harness, reached with no chat open (#1134).
@@ -1682,6 +1710,7 @@ export const commands = {
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupCommand: __WINDOW_ONLY_RESULT,
 	poolSetupCreate: __WINDOW_ONLY_RESULT,
+	poolSetupSignInsByHand: __WINDOW_ONLY_RESULT,
 	poolSetupSizes: __WINDOW_ONLY_RESULT,
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,
@@ -2789,6 +2818,11 @@ export type AnswerPath =
  *  masked field, Not now with none.
  */
 { via: "secret"; id: number } | 
+/**
+ *  `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
+ *  whose digest is `shown` (#5115).
+ */
+{ via: "secret-fill"; id: number; shown: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2975,7 +3009,12 @@ export type AskSource =
  *  A key a chat's brokered run found missing from its persona's vault (#5068, ADR 0109):
  *  answered by a value typed in the window, or Not now.
  */
-"secret";
+"secret" | 
+/**
+ *  A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
+ *  purlis put that one key into that field, on that one origin, once.
+ */
+"secret-fill";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -4329,6 +4368,12 @@ export type DiskHeld =
 /**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
 { state: "unanswered" };
 
+/**  One Secret need offer the person dismissed (#5159): the persona and the key, names only. */
+export type DismissedNeed = {
+	persona: string,
+	key: string,
+};
+
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
 /**  A commit of the project's history took it out, and the file holds it again. */
@@ -5029,6 +5074,17 @@ export type EngineSandboxShown = {
 	machine: EngineMachine,
 };
 
+/**
+ *  **One vault's entries a Secret ask's picker offers** (#5073): the vault, the keys a link may
+ *  read in it, and why none could be listed, where that is so. Names only, never a value.
+ */
+export type EntriesOf = {
+	vault: string,
+	keys: string[],
+	/**  Why its keys could not be listed: the provider's own first line. */
+	unlisted?: string | null,
+};
+
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */
 export type EntryFieldRefusal = {
 	field: string,
@@ -5422,6 +5478,43 @@ export type FilesUnwatched = {
 	 *  own, and the others are of a branch not watched yet as a whole (#1727, #1745).
 	 */
 	refused: BranchFolder[],
+};
+
+/**
+ *  **A secret fill, as its notice draws it** (#5115): the key's name and its vault, the exact
+ *  site, the page and the field's label; never a value, which purlis hasn't read.
+ */
+export type FillShown = {
+	key: string,
+	vault: string,
+	/**
+	 *  The site the field's own frame is on, as purlis read it: its host, with a port where it
+	 *  has one, and the scheme where it isn't https (`http://localhost:3000`).
+	 */
+	site: string,
+	/**  The page the field is on, where the browser said: an address. */
+	page?: string | null,
+	/**  What the page labels the field: the page's words, never purlis's. */
+	label: string,
+	/**  The chat's browser, by its name to the chat (`b1`). */
+	browser: string,
+	/**  Plain warnings, said above the choices. */
+	warnings: string[],
+	/**  **A card's or payment value's key** (#5116, SF-4): Allow once and Keep blocked alone. */
+	card: boolean,
+	/**
+	 *  **A multi-line text box or an editable area** (#5120, SF-5): asked each time, with Allow
+	 *  once and Keep blocked alone.
+	 */
+	multi_line: boolean,
+	/**  The line Always allow writes, shown before it's pressed (#5116). */
+	line?: string | null,
+	/**  Where the line goes: `[sandbox.personas.<persona>] tools`. */
+	under?: string | null,
+	/**  Why Always allow isn't offered, where it isn't and the key is no card's. */
+	no_always?: string | null,
+	/**  Always also allows the vault for the persona. */
+	vault_too: boolean,
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */
@@ -10585,6 +10678,24 @@ export type RowAction = {
 	deletes: boolean,
 };
 
+/**
+ *  The facts of one picker row that take a moment to read (#4736): whether its command waits
+ *  for an approval, what the sandbox does for a chat on it (a compile per harness and its
+ *  program's check), and what it is billed to. [`start_details`] answers them after
+ *  [`start_options_first`], by the row's name, and the picker draws the row as pending until
+ *  then.
+ */
+export type RowDetails = {
+	/**  The profile's name: the row these are of. */
+	name: string,
+	/**  As [`ProfileRow::approval`]. */
+	approval: string | null,
+	/**  As [`ProfileRow::sandbox`]. */
+	sandbox: SandboxAhead | null,
+	/**  As [`ProfileRow::billed_to`]. */
+	billed_to: string | null,
+};
+
 /**  A dispatch's worktree, as its row lists it (#1453). */
 export type RowWorktree = {
 	/**  The repo it was cut from. */
@@ -11351,6 +11462,12 @@ export type SecretAt = {
 	shown: string | null,
 };
 
+/**  An entry of a vault named in a Secret ask (#5075): the person's to read, never a chat's. */
+export type SecretEntryShown = {
+	vault: string,
+	key: string,
+};
+
 /**
  *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
  *  its chats miss, and how many wait on it. Names only: no value is ever here.
@@ -11378,6 +11495,18 @@ export type SecretShown = {
 	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
+	/**
+	 *  **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
+	 *  chat's. Absent on an ask for a key the vault doesn't hold.
+	 */
+	replace?: string | null,
+	/**
+	 *  The entry the key reads, where it is a Linked entry asked to be replaced (#5075): a new
+	 *  value goes there.
+	 */
+	reads?: SecretEntryShown | null,
+	/**  The entry a broken link read, which is gone (#5075). */
+	gone?: SecretEntryShown | null,
 };
 
 /**
@@ -11755,6 +11884,11 @@ export type Shown = {
 	 *  is typed in. Absent for any other ask.
 	 */
 	secret?: SecretShown | null,
+	/**
+	 *  **The secret a fill would put into a page, and where** (#5115): drawn with its site
+	 *  large. Absent for any other ask.
+	 */
+	fill?: FillShown | null,
 };
 
 /**
@@ -12012,6 +12146,23 @@ export type SkillFit =
 "widens" | 
 /**  A skill purlis hands to no chat. */
 "refused";
+
+/**  A skill's folder, walked whole: each folder's entries straight after it, folders first. */
+export type SkillFolder = {
+	/**  The first 2,000. */
+	entries: SkillFolderEntry[],
+	/**  How many more were listed past them. */
+	more: number,
+};
+
+/**  One entry of a skill's folder. */
+export type SkillFolderEntry = {
+	/**  Its path in the folder, `/` between its parts. */
+	path: string,
+	kind: EntryKind,
+	/**  Why it does not open, in the core's sentence; `null` for a file that opens and a folder. */
+	refused: string | null,
+};
 
 /**  A version's grade, once grading lands (SK-16): always null for now. */
 export type SkillGrade = {

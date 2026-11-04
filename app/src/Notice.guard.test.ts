@@ -504,6 +504,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
+  "SecretFill.tsx": {
+    count: 1,
+    why: "what a picked entry does to the asked key, a live value under the picker in the ask's own row (#5073)",
+  },
   "UnsavedWorkQuestion.tsx": { count: 1, why: ACTION },
   "SkillChangeDialogs.tsx": {
     count: 2,
@@ -543,12 +547,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "It stays mounted, so its word is heard as it comes.",
   },
   "StartChat.tsx": {
-    count: 5,
+    count: 6,
     why:
       "a dialog's refusal: an inline error, not a Notice (V91n). NO-8: the local file git " +
       "would carry offers the doctor's local-ignore fix, refused profiles link to Settings › " +
-      "Harness, a sandbox it cannot apply offers its install, a start's refusal is ACTION's, and a slow " +
-      "start's status says what it waits for, or where its runner has got to, in the dialog's footer",
+      "Harness, a sandbox it cannot apply offers its install, a start's refusal is ACTION's, a slow " +
+      "start's status says what it waits for, or where its runner has got to, in the dialog's " +
+      "footer, and a Start pressed early that the details turned into a grant says, there, why " +
+      "nothing started (#4736, ADR 0097 §6); the turned button above it is the way on",
   },
   "TabRename.tsx": { count: 1, why: "a rename's refusal, beside the box being typed in" },
   "ThemeDraftStrip.tsx": {

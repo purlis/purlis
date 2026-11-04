@@ -104,7 +104,8 @@ function core(plane: string | null) {
       if (cmd === "workspace_settings") return WORKSPACE((args as { workspace: string }).workspace);
       if (cmd === "plane_doctor") return { rows: [ROW], full: true, app_rows: [], path: null };
       if (cmd === "alerts_everywhere") return [];
-      if (cmd === "start_options")
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first")
         return {
           profiles: [
             {
@@ -352,7 +353,7 @@ describe("every way into Settings leaves the keyboard on the nav's current group
     core(PLANE);
     render(<App />);
     await screen.findByRole("tab", { name: /plane/ });
-    await userEvent.click(screen.getAllByRole("button", { name: "New tab" })[0]);
+    await userEvent.click(screen.getAllByRole("button", { name: "New chat" })[0]);
     await userEvent.click(await screen.findByText("1 refused"));
 
     await userEvent.click(screen.getByRole("button", { name: "Open bad in Settings" }));

@@ -59,6 +59,20 @@ pub enum PoolCommand {
         #[arg(long)]
         width: Option<u32>,
     },
+    /// Record profiles of this machine's on a pool, for its chats to use. Its runner keeps them
+    /// the next time their sign-ins are asked, and `purlis profile sign-in <profile> --pool
+    /// <pool>` signs one in there.
+    ///
+    /// This is what Pool setup's Sign-ins button records, with the same checks of the profiles,
+    /// and Pool setup picks it up. It sends nothing. A pool that names no profiles keeps your project's default beside them, so run
+    /// it in your project's folder.
+    AddProfile {
+        /// The pool's name.
+        pool: String,
+        /// The profiles, by name, as `purlis profile list` shows them.
+        #[arg(required = true)]
+        profiles: Vec<String>,
+    },
     /// Pool setup: each step's state and what to do next, for a pool or a new one. It only reads.
     Setup {
         /// The pool. Without it, a new Docker pool.
@@ -109,6 +123,12 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
              purlis pool setup in your own terminal."
                 .to_owned(),
         ),
+        // A chat never chooses which of the person's accounts a pool's runner holds.
+        PoolCommand::AddProfile { .. } if in_a_chat => Err(
+            "Recording a profile on a pool is the person's choice, which a chat doesn't make. \
+             Run it in your own terminal, or use Pool setup in the window."
+                .to_owned(),
+        ),
         PoolCommand::Add { .. } if in_a_chat => Err(
             "Adding a pool uses this machine's Docker, which a chat doesn't reach. Run it in your \
              own terminal, or use Pool setup in the window."
@@ -137,6 +157,23 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
                 width: *width,
             };
             added(&config()?, &asked)
+        }
+        PoolCommand::AddProfile { pool, profiles } => {
+            let project = std::env::current_dir()
+                .ok()
+                .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok());
+            let config = config()?;
+            poolsetup::signins::record(&config, project.as_deref(), pool, profiles)?;
+            // Every profile it keeps now, a project's default added beside them included.
+            let keeps = runners::profiles_of(&config, pool)
+                .map_err(|why| why.to_string())?
+                .unwrap_or_default();
+            crate::voice::info(format!(
+                "Pool {pool} keeps {} now. Its runner keeps them the next time their sign-ins are \
+                 asked, and Pool setup's Sign-ins step picks this up.",
+                keeps.join(", ")
+            ));
+            Ok(0)
         }
         PoolCommand::Setup { name, json } => {
             crate::poolsetup::answered(name.as_deref(), *json)?;

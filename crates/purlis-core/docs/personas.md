@@ -204,10 +204,10 @@ When a task the chat asked for stops on a prompt only the person answers (a perm
 harness asks for, or a question), the chat's next turn is told so in one more line, once for
 each prompt: which task, and whether it is a permission. It is told that only the person
 answers it, in the task's own tab, so that it says so where the person is; nothing it does
-answers the prompt. The window says the same on the session's tab: its chip wears the hand
-from the moment the prompt is held, and its pane names the task, with **Show the task**, until
-the task gets past the prompt, its turn ends or it ends. While purlis holds the prompt (up to
-a minute) the Notice also says what the prompt asks.
+answers the prompt. The window says the same on the session's row in the sidebar: it wears the
+hand from the moment the prompt is held, and its pane, when it is shown, names the task, with
+**Show the task**, until the task gets past the prompt, its turn ends or it ends. While purlis
+holds the prompt (up to a minute) the Notice also says what the prompt asks.
 
 `purlis persona where` prints the same picture at any time, and the `persona_where` tool
 answers it too. Outside a chat the app started, the command says there is no record to read.

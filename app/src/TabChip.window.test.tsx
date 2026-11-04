@@ -24,8 +24,9 @@ import { forgetThisLaunch } from "./regions";
 import { GRACE_MS, REST_MS } from "./tabTasks";
 import { goToWorkspace, stripNamed } from "./test-strips";
 import { hoverPlacementOf, hoverTipOf } from "./ui/tooltip/tooltip.testkit";
-import { theFrameNow } from "./frame.testkit";
+import { heard } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A session's tab wears a chip of its tasks, which opens the menu to switch between them**
@@ -75,19 +76,6 @@ vi.mock("./SessionPane", async () => {
     },
   };
 });
-
-declare global {
-  interface Window {
-    __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
-  }
-}
-
-/** An event from the core, and the frame the window draws it in: the chat stores tell their
- *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
-function heard(handler: number, message: unknown) {
-  window.__TAURI_INTERNALS__.runCallback(handler, message);
-  theFrameNow();
-}
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
@@ -169,8 +157,13 @@ let withAskingChat: { session: number; asker: string; since: number }[] = [];
 
 function core(open: Listed[], finished: FinishedTask[] = []) {
   const asked: Asked[] = [];
-  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it. */
-  let laidOut: unknown = null;
+  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it.
+   *  Before the window has said any, the layout stored gives a tab to each chat its lineage
+   *  says has one (#4758): a task sits in its asker's chip until the person opens it. */
+  let laidOut: unknown = aTabForEachChat(
+    open.filter((one) => one.from?.tab !== false),
+    (session) => open.find((one) => one.session === session)?.workspace ?? null,
+  );
   const listeners = new Map<string, number[]>();
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;

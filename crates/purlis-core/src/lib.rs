@@ -168,6 +168,7 @@ pub mod personamark;
 pub mod personaprofile;
 pub mod personas;
 pub mod personaverbs;
+pub mod pickerstamp;
 pub mod piececlaim;
 pub mod piececmd;
 pub mod pieces;
@@ -234,6 +235,7 @@ pub mod sandboxblock;
 pub mod savefix;
 pub mod scaffold;
 pub mod scanallow;
+pub mod secretfill;
 pub mod secrets;
 pub mod secretshape;
 /// A program in its own pseudo-terminal, from the crate that holds it without the rest of the

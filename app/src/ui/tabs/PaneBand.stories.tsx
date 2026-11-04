@@ -478,6 +478,10 @@ export const ConsentAndNotes: Story = {
 const bellOf = (canvas: ReturnType<typeof within>) =>
   canvas.getByRole("button", { name: /^Pane notices:/ });
 
+/** The bell's count: a pill on its corner, beside the button, said by the bell's own name. */
+const countOf = (bell: HTMLElement) =>
+  bell.parentElement?.querySelector('[data-scope="count"]') ?? null;
+
 /**
  * **Minimised, the window's default** (#4754): the notes fold into the bell's count, in the
  * trouble colour while one is trouble, and the consent stands as a full card under the header.
@@ -495,13 +499,82 @@ export const Minimised: Story = {
     expect(rowsOf(canvasElement).warnings[0]).toContainElement(vault);
     const bell = bellOf(canvas);
     expect(bell).toHaveAccessibleName("Pane notices: 3 notices, 1 in trouble, 1 asking");
-    expect(bell).toHaveTextContent(/^3$/);
+    expect(countOf(bell)).toHaveTextContent(/^3$/);
     expect(bell).toHaveAttribute("aria-expanded", "false");
     // Before split and close, in the header's row.
     const split = canvas.getByRole("button", { name: "Split right" });
     expect(boxOf(bell).right).toBeLessThanOrEqual(boxOf(split).left + 1);
     expect(boxOf(bell).top).toBeCloseTo(boxOf(split).top, 0);
     atRest();
+  },
+};
+
+/** How far the bell's pill may rise above the bell, in px: its one step (`--space-1`, 2px at
+ *  the default text size), and a pixel for rounding. */
+const RISES_AT_MOST = 3;
+
+/** Whether two boxes share any of their area. */
+const overlaps = (a: Box, b: Box) =>
+  a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+
+/**
+ * **The bell beside its neighbours** (#5189): the size of Split right, its count the family's
+ * small pill on its top corner, which leaves the bell to be seen; its hint opens below the
+ * head, as the head's other hints do, over no head button; and the head's buttons stand a small
+ * gap apart, so a hovered or focused one's ground never touches the next (the person's ruling
+ * on the M70 prototype, spec #5191).
+ */
+export const BellBesideItsNeighbours: Story = {
+  args: {
+    shown: "minimised",
+    warnings: ["vault-refused", "mcp-failed", "stale-clone", "skills-missing"],
+  },
+  // No picture: it ends with the bell's hint open, which comes after a delay and a fade; the
+  // head as it rests is pictured in Minimised.
+  parameters: { screenshot: false },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const bell = bellOf(canvas);
+    await waitFor(() => expect(countOf(bell)).toHaveTextContent(/^3$/));
+    const split = canvas.getByRole("button", { name: "Split right" });
+    expect(boxOf(bell).width).toBeCloseTo(boxOf(split).width, 0);
+    expect(boxOf(bell).height).toBeCloseTo(boxOf(split).height, 0);
+    // The pill is the family's small count, on the bell's top corner: it rises a little above
+    // the bell, never past its end towards Split right, and leaves the bell's mark to be seen,
+    // covering no more than a quarter of it.
+    const count = boxOf(countOf(bell));
+    expect(countOf(bell)).toHaveAttribute("data-size", "sm");
+    expect(count.right).toBeLessThanOrEqual(boxOf(bell).right + 0.5);
+    expect(count.top).toBeGreaterThanOrEqual(boxOf(bell).top - RISES_AT_MOST);
+    expect(count.bottom).toBeLessThanOrEqual(boxOf(bell).top + boxOf(bell).height / 2);
+    expect(overlaps(count, boxOf(split))).toBe(false);
+    const mark = boxOf(bell.querySelector("svg"));
+    const covered =
+      Math.max(0, Math.min(count.right, mark.right) - Math.max(count.left, mark.left)) *
+      Math.max(0, Math.min(count.bottom, mark.bottom) - Math.max(count.top, mark.top));
+    expect(covered, "the bell's mark the pill covers").toBeLessThanOrEqual(
+      (mark.width * mark.height) / 4,
+    );
+
+    const { head } = rowsOf(canvasElement);
+    const actions = head?.querySelector(".pane-actions") as HTMLElement;
+    const buttons = within(actions).getAllByRole("button");
+    const boxes = buttons.map(boxOf).sort((a, b) => a.left - b.left);
+    expect(boxes.length).toBeGreaterThanOrEqual(4);
+    for (let i = 1; i < boxes.length; i++) {
+      expect(boxes[i].left - boxes[i - 1].right, `gap before head button ${i}`).toBeGreaterThan(1);
+    }
+
+    canvas.getByRole("button", { name: "Claude Code" }).focus();
+    await userEvent.tab();
+    await untilFocused(() => bell, "Tab onto the bell");
+    const tip = await within(document.body).findByRole("tooltip");
+    await waitFor(() => {
+      const at = boxOf(tip);
+      expect(at.top).toBeGreaterThanOrEqual(boxOf(bell).bottom);
+      for (const one of buttons) {
+        expect(overlaps(at, boxOf(one)), one.getAttribute("aria-label") ?? "").toBe(false);
+      }
+    });
   },
 };
 
@@ -518,7 +591,7 @@ export const Expanded: Story = {
     await heldInThePane(canvasElement);
     const band = within(canvas.getByRole("region", { name: "Pane notices" }));
     expect(band.getByText("4 notices, 1 waiting on you")).toBeVisible();
-    expect(bellOf(canvas)).toHaveTextContent(/^3$/);
+    expect(countOf(bellOf(canvas))).toHaveTextContent(/^3$/);
     expect(bellOf(canvas)).toHaveAttribute("aria-expanded", "true");
     const all = band.getByRole("button", { name: "Dismiss all 3" });
     all.focus();

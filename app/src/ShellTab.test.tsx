@@ -20,6 +20,7 @@ import type { ByHand, Moved, OpenChat } from "./bindings";
 import { onAMac } from "./tabKeys";
 import { askLogin } from "./RepoPicker";
 import { goToWorkspace, stripNamed, workspaceInFront, workspacesListed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * A plain shell tab, and what the window does when a harness is started by hand inside one
@@ -105,8 +106,20 @@ function core(
     (cmd, args) => {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
       if (cmd in answers) return answers[cmd]();
+      // The picker's first answer (#4736) is what a test says the whole answer is.
+      if (cmd === "start_options_first" && "start_options" in answers)
+        return answers.start_options();
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return put;
+      // Each chat put back has its tab on its workspace's strip, as the stored layout keeps it
+      // (#4758).
+      if (cmd === "reopened_layout")
+        return aTabForEachChat(put, (session) => {
+          const cwd = put.find((one) => one.session === session)?.cwd ?? "";
+          return cwd.startsWith(`${PLANE}/workspaces/`)
+            ? cwd.slice(`${PLANE}/workspaces/`.length).split("/")[0]
+            : null;
+        });
       if (cmd === "open_session") {
         const { cwd, name } = args as { cwd: string | null; name: string };
         chats.push(opened(++next, name, cwd));
@@ -152,7 +165,8 @@ function core(
             },
           ],
         };
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       if (cmd === "chat_states") return heard;
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions") return [];
@@ -467,7 +481,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
     render(<App />);
     expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
-    await fromThePalette("New tab");
+    await fromThePalette("New chat");
     await userEvent.click(await screen.findByRole("button", { name: "Add the ignore line" }));
 
     await waitFor(() =>
@@ -498,7 +512,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
     render(<App />);
     expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
-    await fromThePalette("New tab");
+    await fromThePalette("New chat");
     await userEvent.click(await screen.findByRole("button", { name: "Add the ignore line" }));
 
     expect(await screen.findByText(".gitignore is a link git does not read")).toBeInTheDocument();
@@ -521,7 +535,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
     render(<App />);
     expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
-    await fromThePalette("New tab");
+    await fromThePalette("New chat");
     await userEvent.click(await screen.findByText("1 refused"));
     await userEvent.click(screen.getByRole("button", { name: "Open bad in Settings" }));
 
@@ -579,7 +593,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
     render(<App />);
     expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
-    await fromThePalette("New tab");
+    await fromThePalette("New chat");
     await userEvent.click(await screen.findByText("1 refused"));
     await userEvent.click(screen.getByRole("button", { name: "Open bad in Settings" }));
 

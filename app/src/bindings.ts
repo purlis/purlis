@@ -755,6 +755,11 @@ export const commands = {
 	/**  **The person's press on a login's notice** (#4595). The window's alone (`ui::WINDOW_ONLY`). */
 	answerBrowserLogin: (plane: PlaneId, session: number, id: number, press: Press, shown: string, typed: string | null, reason: string | null) => typedError<Pressed, string>(__TAURI_INVOKE("answer_browser_login", { plane, session, id, press, shown, typed, reason })),
 	/**
+	 *  **The person's press on a secret fill's notice** (#5115). The window's alone
+	 *  (`ui::WINDOW_ONLY`).
+	 */
+	answerSecretFill: (plane: PlaneId, session: number, id: number, press: Press, shown: string, reason: string | null) => typedError<Pressed, string>(__TAURI_INVOKE("answer_secret_fill", { plane, session, id, press, shown, reason })),
+	/**
 	 *  **Allow or Keep off on run `run` of chat `session`'s tool on its pool** (#2047): with
 	 *  `allow`, this desktop sends the tool its vault values on the pool's runner for that run
 	 *  alone; Keep off refuses that run. The command that waits goes on, or is refused, at once.
@@ -768,6 +773,17 @@ export const commands = {
 	 *  name.
 	 */
 	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key })),
+	/**
+	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
+	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
+	 *  with that entry's value. The chat hears filled and the key's name, never the entry.
+	 */
+	linkSecretAsk: (plane: PlaneId, id: number, vault: string, key: string) => typedError<null, string>(__TAURI_INVOKE("link_secret_ask", { plane, id, vault, key })),
+	/**
+	 *  **The entries the person could fill Secret ask `id` with** (#5073), vault by vault: every
+	 *  key of every vault that holds a value of its own, but the asked one. Names only.
+	 */
+	secretAskEntries: (plane: PlaneId, id: number) => typedError<EntriesOf[], string>(__TAURI_INVOKE("secret_ask_entries", { plane, id })),
 	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
 	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone
@@ -870,6 +886,17 @@ export const commands = {
 	 *  Window-only.
 	 */
 	dismissProposedChange: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_proposed_change", { plane, id })),
+	/**
+	 *  **The Secret need offers dismissed on this machine that still hold** (#5159), for the vault
+	 *  view to offer each again.
+	 */
+	dismissedSecretNeeds: (plane: PlaneId) => typedError<DismissedNeed[], string>(__TAURI_INVOKE("dismissed_secret_needs", { plane })),
+	/**
+	 *  **Offer a dismissed Secret need again** (#5159), on the person's press in the vault view:
+	 *  the dismissal is lifted, and the change adding `key` to `persona`'s needs is held for them
+	 *  to apply or dismiss. Window-only.
+	 */
+	offerSecretNeedAgain: (plane: PlaneId, persona: string, key: string) => typedError<null, string>(__TAURI_INVOKE("offer_secret_need_again", { plane, persona, key })),
 	/**
 	 *  **Remove** on the Ask: each file's change held for the person to apply, each with its
 	 *  file. Window-only: only the person proposes purlis's own change.
@@ -2118,6 +2145,18 @@ export const commands = {
 	skillNew: (plane: PlaneId, level: SkillLevel, name: string, description: string, template: SkillTemplateId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_new", { plane, level, name, description, template })),
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
+	/**  Every file and folder in the folder of a skill the studio lists, nested. */
+	skillFiles: (plane: PlaneId, workspace: string | null, persona: string | null, folder: string) => typedError<SkillFolder, string>(__TAURI_INVOKE("skill_files", { plane, workspace, persona, folder })),
+	/**
+	 *  One file of the folder of a skill the studio lists, by its path in the folder, as the light
+	 *  editor draws it.
+	 */
+	skillFile: (plane: PlaneId, workspace: string | null, persona: string | null, folder: string, path: string) => typedError<PieceFile, string>(__TAURI_INVOKE("skill_file", { plane, workspace, persona, folder, path })),
+	/**
+	 *  The folder of a skill the studio lists, opened in the system's file manager: Finder, Files
+	 *  or File Explorer.
+	 */
+	skillFolderOpen: (plane: PlaneId, workspace: string | null, persona: string | null, folder: string) => typedError<null, string>(__TAURI_INVOKE("skill_folder_open", { plane, workspace, persona, folder })),
 	/**
 	 *  **Saves an edit**: `now` as the skill's `SKILL.md`, only while it is still `was`, the text the
 	 *  editor opened.
@@ -3088,15 +3127,35 @@ export const commands = {
 	 *  What the picker draws: every profile this machine has, every one charter will not use,
 	 *  and the plane's personas.
 	 * 
-	 *  Read fresh every time it is opened, like the sidebar: `charter.local.toml` is a file the
-	 *  operator edits by hand and a chat can write, so a cache here would be a second answer to
-	 *  "what is on disk" that nothing invalidates.
+	 *  Read fresh on every ask: what a fix in the picker reads to draw what is true after it, and
+	 *  what every other caller reads. The dialog's own two answers ([`start_options_first`],
+	 *  [`start_details`]) are kept per project instead, and the plane watch is what drops them
+	 *  (#4737): `charter.local.toml` is a file the operator edits by hand and a chat can write.
 	 * 
 	 *  **Off the main thread**: a sandboxed project's picker asks each approved Claude Code
 	 *  profile's program its `--version` (ruling V87g), which can take seconds, and the window
 	 *  must not freeze for it.
 	 */
 	startOptions: (plane: PlaneId) => typedError<StartOptions, string>(__TAURI_INVOKE("start_options", { plane })),
+	/**
+	 *  **The picker's first answer** (#4736): what [`start_options`] answers, without what takes a
+	 *  moment to read: every row's approval, sandbox and billing are none here, and
+	 *  [`start_details`] answers them. The dialog opens on this, at once, and fills its rows in as
+	 *  the details arrive. A start pressed before then goes through every gate it does today: the
+	 *  window waits for the details, and the core's start asks them again.
+	 * 
+	 *  **Kept per project** (#4737), with [`start_details`]: an open with nothing changed is
+	 *  served from what the last one read ([`planes::Held::kept_start_first`]), and a change to
+	 *  the profiles, the personas, the sandbox or the installed harnesses drops it first.
+	 */
+	startOptionsFirst: (plane: PlaneId) => typedError<StartOptions, string>(__TAURI_INVOKE("start_options_first", { plane })),
+	/**
+	 *  **The picker's second answer** (#4736): each row's approval, sandbox and billing, by its
+	 *  name, the slow part of [`start_options`]: a sandbox compile per harness and a check of
+	 *  each approved profile's program. Kept as [`start_options_first`] is (#4737), so a second open with
+	 *  nothing changed compiles nothing and runs no program.
+	 */
+	startDetails: (plane: PlaneId) => typedError<RowDetails[], string>(__TAURI_INVOKE("start_details", { plane })),
 	/**
 	 *  Every harness the project has, its card at a glance (HP-19): the palette's *What <product>
 	 *  can do here* rows, one per harness, reached with no chat open (#1134).
@@ -3344,8 +3403,18 @@ export const commands = {
 	 */
 	poolSetupCreate: (adding: PoolAdding) => typedError<PoolSetupCreated, string>(__TAURI_INVOKE("pool_setup_create", { adding })),
 	/**
+	 *  **What Sign-ins' button runs, by hand, for the profiles ticked** (#4718, Q30): `adding`
+	 *  recorded on pool `pool`, then each of `signing_in` signed in there, as the core spells it. None
+	 *  where the button would run nothing. It only spells.
+	 */
+	poolSetupSignInsByHand: (pool: string, adding: string[], signingIn: string[]) => typedError<{
+	note: string,
+	text: string,
+} | null, string>(__TAURI_INVOKE("pool_setup_sign_ins_by_hand", { pool, adding, signingIn })),
+	/**
 	 *  **This machine's profiles against pool `pool`'s limits**, the ones in use in `plane` marked:
-	 *  measured as a send measures them, with no file read. It changes nothing.
+	 *  measured as a send measures them, with no file read, and held to what its runner takes where
+	 *  one link can tell (#4719). It changes nothing.
 	 */
 	poolSetupSizes: (plane: PlaneId, pool: string) => typedError<PoolSetupSizes, string>(__TAURI_INVOKE("pool_setup_sizes", { plane, pool })),
 	/**
@@ -5268,6 +5337,11 @@ export type AnswerPath =
  *  masked field, Not now with none.
  */
 { via: "secret"; id: number } | 
+/**
+ *  `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
+ *  whose digest is `shown` (#5115).
+ */
+{ via: "secret-fill"; id: number; shown: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -5454,7 +5528,12 @@ export type AskSource =
  *  A key a chat's brokered run found missing from its persona's vault (#5068, ADR 0109):
  *  answered by a value typed in the window, or Not now.
  */
-"secret";
+"secret" | 
+/**
+ *  A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
+ *  purlis put that one key into that field, on that one origin, once.
+ */
+"secret-fill";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -6808,6 +6887,12 @@ export type DiskHeld =
 /**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
 { state: "unanswered" };
 
+/**  One Secret need offer the person dismissed (#5159): the persona and the key, names only. */
+export type DismissedNeed = {
+	persona: string,
+	key: string,
+};
+
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
 /**  A commit of the project's history took it out, and the file holds it again. */
@@ -7508,6 +7593,17 @@ export type EngineSandboxShown = {
 	machine: EngineMachine,
 };
 
+/**
+ *  **One vault's entries a Secret ask's picker offers** (#5073): the vault, the keys a link may
+ *  read in it, and why none could be listed, where that is so. Names only, never a value.
+ */
+export type EntriesOf = {
+	vault: string,
+	keys: string[],
+	/**  Why its keys could not be listed: the provider's own first line. */
+	unlisted?: string | null,
+};
+
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */
 export type EntryFieldRefusal = {
 	field: string,
@@ -7901,6 +7997,43 @@ export type FilesUnwatched = {
 	 *  own, and the others are of a branch not watched yet as a whole (#1727, #1745).
 	 */
 	refused: BranchFolder[],
+};
+
+/**
+ *  **A secret fill, as its notice draws it** (#5115): the key's name and its vault, the exact
+ *  site, the page and the field's label; never a value, which purlis hasn't read.
+ */
+export type FillShown = {
+	key: string,
+	vault: string,
+	/**
+	 *  The site the field's own frame is on, as purlis read it: its host, with a port where it
+	 *  has one, and the scheme where it isn't https (`http://localhost:3000`).
+	 */
+	site: string,
+	/**  The page the field is on, where the browser said: an address. */
+	page?: string | null,
+	/**  What the page labels the field: the page's words, never purlis's. */
+	label: string,
+	/**  The chat's browser, by its name to the chat (`b1`). */
+	browser: string,
+	/**  Plain warnings, said above the choices. */
+	warnings: string[],
+	/**  **A card's or payment value's key** (#5116, SF-4): Allow once and Keep blocked alone. */
+	card: boolean,
+	/**
+	 *  **A multi-line text box or an editable area** (#5120, SF-5): asked each time, with Allow
+	 *  once and Keep blocked alone.
+	 */
+	multi_line: boolean,
+	/**  The line Always allow writes, shown before it's pressed (#5116). */
+	line?: string | null,
+	/**  Where the line goes: `[sandbox.personas.<persona>] tools`. */
+	under?: string | null,
+	/**  Why Always allow isn't offered, where it isn't and the key is no card's. */
+	no_always?: string | null,
+	/**  Always also allows the vault for the persona. */
+	vault_too: boolean,
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */
@@ -13064,6 +13197,24 @@ export type RowAction = {
 	deletes: boolean,
 };
 
+/**
+ *  The facts of one picker row that take a moment to read (#4736): whether its command waits
+ *  for an approval, what the sandbox does for a chat on it (a compile per harness and its
+ *  program's check), and what it is billed to. [`start_details`] answers them after
+ *  [`start_options_first`], by the row's name, and the picker draws the row as pending until
+ *  then.
+ */
+export type RowDetails = {
+	/**  The profile's name: the row these are of. */
+	name: string,
+	/**  As [`ProfileRow::approval`]. */
+	approval: string | null,
+	/**  As [`ProfileRow::sandbox`]. */
+	sandbox: SandboxAhead | null,
+	/**  As [`ProfileRow::billed_to`]. */
+	billed_to: string | null,
+};
+
 /**  A dispatch's worktree, as its row lists it (#1453). */
 export type RowWorktree = {
 	/**  The repo it was cut from. */
@@ -13830,6 +13981,12 @@ export type SecretAt = {
 	shown: string | null,
 };
 
+/**  An entry of a vault named in a Secret ask (#5075): the person's to read, never a chat's. */
+export type SecretEntryShown = {
+	vault: string,
+	key: string,
+};
+
 /**
  *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
  *  its chats miss, and how many wait on it. Names only: no value is ever here.
@@ -13857,6 +14014,18 @@ export type SecretShown = {
 	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
+	/**
+	 *  **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
+	 *  chat's. Absent on an ask for a key the vault doesn't hold.
+	 */
+	replace?: string | null,
+	/**
+	 *  The entry the key reads, where it is a Linked entry asked to be replaced (#5075): a new
+	 *  value goes there.
+	 */
+	reads?: SecretEntryShown | null,
+	/**  The entry a broken link read, which is gone (#5075). */
+	gone?: SecretEntryShown | null,
 };
 
 /**
@@ -14234,6 +14403,11 @@ export type Shown = {
 	 *  is typed in. Absent for any other ask.
 	 */
 	secret?: SecretShown | null,
+	/**
+	 *  **The secret a fill would put into a page, and where** (#5115): drawn with its site
+	 *  large. Absent for any other ask.
+	 */
+	fill?: FillShown | null,
 };
 
 /**
@@ -14491,6 +14665,23 @@ export type SkillFit =
 "widens" | 
 /**  A skill purlis hands to no chat. */
 "refused";
+
+/**  A skill's folder, walked whole: each folder's entries straight after it, folders first. */
+export type SkillFolder = {
+	/**  The first 2,000. */
+	entries: SkillFolderEntry[],
+	/**  How many more were listed past them. */
+	more: number,
+};
+
+/**  One entry of a skill's folder. */
+export type SkillFolderEntry = {
+	/**  Its path in the folder, `/` between its parts. */
+	path: string,
+	kind: EntryKind,
+	/**  Why it does not open, in the core's sentence; `null` for a file that opens and a folder. */
+	refused: string | null,
+};
 
 /**  A version's grade, once grading lands (SK-16): always null for now. */
 export type SkillGrade = {

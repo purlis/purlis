@@ -50,6 +50,7 @@ fn every_tool_the_spec_names_is_offered_each_with_a_schema() {
             "browser_new",
             "browser_close",
             "browser_login",
+            "browser_fill_secret",
             "browser_downloads",
             "browser_save_download",
             "browser_upload",
@@ -180,6 +181,8 @@ fn an_act_on_a_page_may_ask_for_what_changed_and_a_read_may_not() {
                 "browser_new",
                 "browser_close",
                 "browser_login",
+                // It names a field and a key; what it does to the page is purlis's to say.
+                "browser_fill_secret",
                 // It writes a file into the chat's folder, and leaves the page as it was.
                 "browser_save_download",
             ]
@@ -187,6 +190,40 @@ fn an_act_on_a_page_may_ask_for_what_changed_and_a_read_may_not() {
         assert_eq!(offers, acts_on_a_page, "{}", tool.name);
     }
     assert_eq!(super::changes_call_id("c-1"), "c-1:changes");
+}
+
+#[test]
+fn a_secret_fill_names_a_field_a_vault_and_a_key_and_never_a_value() {
+    let fill = asked(
+        "browser_fill_secret",
+        &args(json!({ "browser": "b1", "target": " e12 ", "vault": "qa", "key": "dash-api-key" })),
+    )
+    .expect("a fill the tools take");
+    assert_eq!(fill.browser.as_deref(), Some("b1"));
+    assert_eq!(
+        fill.asked,
+        Browsing::FillSecret {
+            target: "e12".into(),
+            vault: "qa".into(),
+            key: "dash-api-key".into(),
+        }
+    );
+    let schema = TOOLS
+        .iter()
+        .find(|tool| tool.name == "browser_fill_secret")
+        .map(|tool| (tool.schema)())
+        .expect("offered");
+    assert_eq!(schema["required"], json!(["target", "vault", "key"]));
+    assert!(
+        schema["properties"].get("value").is_none(),
+        "no value is taken"
+    );
+    for missing in ["target", "vault", "key"] {
+        let mut given = json!({ "target": "e12", "vault": "qa", "key": "dash-api-key" });
+        given.as_object_mut().unwrap().remove(missing);
+        let refused = asked("browser_fill_secret", &args(given)).unwrap_err();
+        assert!(refused.contains(missing), "{refused}");
+    }
 }
 
 #[test]

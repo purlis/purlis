@@ -141,6 +141,7 @@ impl Project {
                 false,
                 &AsPersona::default,
                 &|_| Err("no login here".to_owned()),
+                &|_| Err("no secret is filled in this test".to_owned()),
                 &|| Err("no folder here".to_owned()),
                 1000,
             )

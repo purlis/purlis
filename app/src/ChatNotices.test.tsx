@@ -10,6 +10,7 @@ import App from "./App";
 import { ApprovalSentence } from "./ProfileApproval";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 
 /**
@@ -91,6 +92,8 @@ function core(): Asked[] {
         unfiled: [],
       };
     if (cmd === "opened_chats") return open;
+    // The layout stored gives each chat a tab on alpha (#4758), where its notice is drawn.
+    if (cmd === "reopened_layout") return aTabForEachChat(open, () => "alpha");
     if (cmd === "chat_states")
       return states.map((one, at) => ({
         plane: PLANE,
@@ -142,7 +145,8 @@ function core(): Asked[] {
     }
     if (cmd === "close_session") return null;
     // What a split asks, to start the chat beside the first one.
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat") return { session: 2 };
     return null;
   });

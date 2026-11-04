@@ -3,7 +3,7 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen } from "@testing-library/react";
+import { cleanup, render as renderBare, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -61,13 +61,18 @@ function core(options: typeof START_OPTIONS = START_OPTIONS) {
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "start_options") return options;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return options;
     if (cmd === "approve_profile") return null;
     if (cmd === "start_chat") return { session: ++opened };
     return null;
   });
   return { asked };
 }
+
+/** The empty pane's New chat (#4758), which opens the picker: the strip's `+` opens a tab. */
+const newChat = async () =>
+  within(await screen.findByTestId("empty-pane")).getByRole("button", { name: "New chat" });
 
 describe("approving a profile and starting on it", () => {
   // Both of these were RED.  passed the plane's default persona out of
@@ -82,7 +87,7 @@ describe("approving a profile and starting on it", () => {
     const { asked } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await userEvent.click(await newChat());
     // Pick a persona that is NOT the plane default.
     await userEvent.click(await screen.findByRole("option", { name: "release" }));
     await userEvent.click(screen.getByRole("button", { name: "Approve and start" }));
@@ -99,7 +104,7 @@ describe("approving a profile and starting on it", () => {
     const { asked } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await userEvent.click(await newChat());
     await userEvent.click(await screen.findByRole("option", { name: "No persona" }));
     await userEvent.click(screen.getByRole("button", { name: "Approve and start" }));
 
@@ -118,7 +123,7 @@ describe("approving a profile and starting on it", () => {
     const { asked } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await userEvent.click(await newChat());
     await userEvent.click(screen.getByRole("button", { name: "Approve and start" }));
 
     const approved = await vi.waitFor(() => {

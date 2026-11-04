@@ -8,6 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { LaidOut } from "./bindings";
+import { aTabForEachChat } from "./laidOut.testkit";
 import {
   chipName,
   goToWorkspace,
@@ -81,6 +82,26 @@ function chat(session: number, name: string, workspace: string, pinned = false) 
   };
 }
 
+/**
+ * The stored layout, the only place a chat's tab comes from at launch (#4758): each chat a tab
+ * on its workspace's strip, pinned where the chat was. A record from before tabs said the pin on
+ * the chat, and the core's upgrade reads it onto the chat's tab, so this is what it answers.
+ */
+function laidOutOf(open: ReturnType<typeof chat>[]): LaidOut {
+  const laid = aTabForEachChat(open, (session) => {
+    const cwd = open.find((one) => one.session === session)?.cwd ?? "";
+    return cwd.split("/workspaces/")[1] ?? null;
+  });
+  const pinned = new Set(open.filter((one) => one.pinned).map((one) => one.session));
+  return {
+    ...laid,
+    tabs: laid.tabs.map((tab) => ({
+      ...tab,
+      pinned: tab.tree.kind === "chat" && pinned.has(tab.tree.chat),
+    })),
+  };
+}
+
 /** A plane with three workspaces, so an order is something a pin can change. */
 function sidebar(open: ReturnType<typeof chat>[], names = ["alpha", "beta", "gamma"]) {
   return {
@@ -127,6 +148,7 @@ function core(
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "plane_sidebar") return sidebar(open, names);
     if (cmd === "opened_chats") return open;
+    if (cmd === "reopened_layout") return laidOutOf(open);
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "running_sessions") return [];
@@ -204,7 +226,7 @@ afterEach(() => forgetInboxOpen());
 describe("a pinned tab (#4762: the one pin, the tab's)", () => {
   it("comes back pinned, and is drawn first on its strip", async () => {
     // A record from before tabs were recorded says the pin on the chat: read once, at the
-    // upgrade, onto its tab.
+    // core's upgrade, onto its tab in the layout it answers (`laidOutOf`).
     core([chat(1, "one", "alpha"), chat(2, "two", "alpha"), chat(3, "three", "alpha", true)]);
     render(<App />);
 

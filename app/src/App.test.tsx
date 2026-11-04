@@ -90,7 +90,10 @@ const START_OPTIONS = {
   declares_none: true,
 };
 
-/** Opens a chat the way the operator does now: New tab, then a row, then Start.
+/** Opens a chat the way the operator does now: New chat, then a row, then Start.
+ *
+ *  New chat takes the focused pane (#4758), so a chat wanted beside the one in front gets a
+ *  tab of its own first, from the strip's `+`, whose one pane is empty.
  *
  *  A harness starts only once a row is picked (ADR 0022) — the dialog shows even when one
  *  profile is available, because skipping it would bring back the harness nobody picked on
@@ -99,7 +102,16 @@ const START_OPTIONS = {
  *  every one of these fails.
  */
 async function openAChat() {
-  await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await waitFor(() =>
+    expect([
+      ...screen.queryAllByTestId("pane"),
+      ...screen.queryAllByTestId("empty-pane"),
+    ]).not.toEqual([]),
+  );
+  if (screen.queryByTestId("empty-pane") === null)
+    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+  const empty = await screen.findByTestId("empty-pane");
+  await userEvent.click(within(empty).getByRole("button", { name: "New chat" }));
   await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
@@ -174,12 +186,33 @@ function core(
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "open_session") return ++opened;
-    if (cmd === "start_options") return options;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return options;
     if (cmd === "start_chat") return { session: ++opened };
     if (cmd === "harness_setup_found") return found();
     return null;
   });
   return { asked };
+}
+
+/** Chat `session` as the sidebar lists it, working at the plane root. */
+function chatRow(session: number) {
+  return {
+    session,
+    name: String(session),
+    cwd: "/home/dev/plane",
+    harness: "claude",
+    in_front: false,
+    resumed: null,
+    fresh: null,
+    profile: "claude",
+    persona: "steward",
+    unreported: null,
+    guessed: null,
+    pinned: false,
+    label: null,
+    from: null,
+  };
 }
 
 /** A look at a machine with one harness `installed` (by its word), or none. */
@@ -434,14 +467,15 @@ describe("App", () => {
     render(<App />);
 
     expect(await projectAt("/home/dev/plane")).toBeInTheDocument();
-    expect(await screen.findByTestId("empty-window")).toBeInTheDocument();
+    // The one empty pane every strip keeps (#4758), where the old empty window was.
+    expect(await screen.findByTestId("empty-pane")).toBeInTheDocument();
   });
 
   // What the window does with sessions the core is already holding is in
   // `lifecycle.test.tsx`: it draws them as tabs. It used to end them, which a relaunch and a
   // reload both now depend on it not doing.
 
-  it("opens a session in a new tab", async () => {
+  it("opens a session in the empty tab's pane", async () => {
     const { asked } = core();
     render(<App />);
 
@@ -487,24 +521,24 @@ describe("App", () => {
       expect(screen.queryByRole("dialog", { name: "Start a chat" })).not.toBeInTheDocument();
     }
 
-    it("opens the setup tab from the +, not a picker that cannot start anything", async () => {
+    it("opens the setup tab from New chat, not a picker that cannot start anything", async () => {
       const { asked } = core(START_OPTIONS, () => harnessesHere());
       render(<App />);
 
-      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+      await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
 
       await expectTheSetupTab();
       expect(asked.filter(({ cmd }) => cmd === "start_chat")).toEqual([]);
     });
 
-    it("opens the setup tab from the palette's New tab", async () => {
+    it("opens the setup tab from the palette's New chat", async () => {
       core(START_OPTIONS, () => harnessesHere());
       render(<App />);
-      await screen.findByRole("button", { name: "New tab" });
+      await screen.findByRole("button", { name: "New chat" });
 
       await userEvent.keyboard("{F2}");
       await screen.findByRole("dialog", { name: "Command palette" });
-      await userEvent.keyboard("New tab{Enter}");
+      await userEvent.keyboard("New chat{Enter}");
 
       await expectTheSetupTab();
     });
@@ -529,7 +563,7 @@ describe("App", () => {
       core(START_OPTIONS, () => harnessesHere("codex"));
       render(<App />);
 
-      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+      await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
 
       expect(await screen.findByRole("dialog", { name: "Start a chat" })).toBeInTheDocument();
     });
@@ -541,7 +575,7 @@ describe("App", () => {
       core({ ...START_OPTIONS, profiles: [own], declares_none: false }, () => harnessesHere());
       render(<App />);
 
-      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+      await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
 
       expect(await screen.findByRole("dialog", { name: "Start a chat" })).toBeInTheDocument();
     });
@@ -815,6 +849,111 @@ describe("App", () => {
     expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
+  it("gives each chat started from a + tab's empty pane that tab, three in a row (#4758)", async () => {
+    // As the scenario plane is: the window is on alpha's strip, while each chat starts where
+    // the explorer's pick says, the plane root, and the sidebar read again files it there.
+    const started: { session: number; name: string }[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "plane_at_launch")
+        return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
+      if (cmd === "plane_sidebar")
+        return {
+          ...SIDEBAR,
+          unfiled: started.map(({ session, name }) => ({ ...chatRow(session), name })),
+        };
+      if (cmd === "running_sessions") return started.map(({ session }) => session);
+      if (cmd === "opened_chats") return [];
+      if (cmd === "chat_states") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
+      if (cmd === "start_chat") {
+        const session = started.length + 1;
+        started.push({ session, name: (args as { name: string }).name });
+        return { session };
+      }
+      return null;
+    });
+    render(<App />);
+
+    for (let one = 0; one < 3; one++) {
+      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+      await openAChat();
+      await waitFor(() => expect(panes()).toEqual([`session ${one + 1}`]));
+    }
+
+    expect(tabs().filter((name) => name?.startsWith("steward"))).toEqual([
+      "steward 1",
+      "steward 2",
+      "steward 3",
+    ]);
+  });
+
+  it("starts a chat in the pane New chat was pressed in, though another tab is in front by then (#4758)", async () => {
+    // Starting is a round trip, and the person can go to another tab before it answers: the
+    // chat still takes the pane it was asked for in, not whichever is in front then.
+    let letItStart = () => {};
+    let opened = 0;
+    mockIPC(async (cmd) => {
+      if (cmd === "plane_at_launch")
+        return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
+      if (cmd === "plane_sidebar") return SIDEBAR;
+      if (cmd === "running_sessions") return [];
+      if (cmd === "opened_chats") return [];
+      if (cmd === "chat_states") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
+      if (cmd !== "start_chat") return null;
+      if (++opened === 1) return { session: 1 };
+      await new Promise<void>((starts) => (letItStart = starts));
+      return { session: 2 };
+    });
+    render(<App />);
+    await openAChat();
+    await waitFor(() => expect(panes()).toEqual(["session 1"]));
+
+    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+    await openAChat();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(within(stripNamed("Tabs")).getAllByRole("tab")[0]);
+    await waitFor(() => expect(panes()).toEqual(["session 1"]));
+    letItStart();
+
+    await waitFor(() => expect(tabs()).toEqual(["steward 1", "steward 2"]));
+    // And it comes to the front there, as a chat the person started always has.
+    expect(panes()).toEqual(["session 2"]);
+  });
+
+  it("keeps every chat's tab when + opens another (#4758)", async () => {
+    core();
+    render(<App />);
+    await openAChat();
+    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+    await openAChat();
+    await waitFor(() => expect(tabs()).toEqual(["steward 1", "steward 2"]));
+
+    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+
+    await waitFor(() => expect(tabs()).toEqual(["steward 1", "steward 2", "New chat"]));
+  });
+
+  it("draws its empty pane when the plane's sidebar cannot be read (#4758)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plane_at_launch")
+        return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
+      if (cmd === "plane_sidebar") throw new Error("the plane could not be read");
+      if (cmd === "running_sessions") return [];
+      if (cmd === "opened_chats") return [];
+      if (cmd === "chat_states") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      return null;
+    });
+    render(<App />);
+
+    expect(await screen.findByTestId("empty-pane")).toBeInTheDocument();
+  });
+
   it("keeps a chat it opened for a split whose tab went while it was starting (#4756)", async () => {
     // Starting a session is a real round trip: the tab can be gone by the time it answers. The
     // chat the person started goes on in the sidebar: nothing that takes a pane away ends one.
@@ -830,7 +969,8 @@ describe("App", () => {
       if (cmd === "opened_chats") return [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       if (cmd !== "start_chat") return null;
       if (++opened === 1) return { session: 1 };
       await new Promise<void>((starts) => (letTheSecondSessionStart = starts));
@@ -868,7 +1008,8 @@ describe("App", () => {
       if (cmd === "opened_chats") return [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       // The panels ask the core too, and this test is about the picker: a refusal from them
       // is a second alert, which is not the one being asserted on.
       if (cmd === "workspace_panels" || cmd === "workspace_repos") return null;

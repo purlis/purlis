@@ -7021,7 +7021,8 @@ impl Chats {
         *lock(&self.focus) = record.focus.clone();
         // The stored layout stands until the window reports one (#4751): what is on screen is
         // read from it meanwhile, so a task the person left in front is not ended under them
-        // before the window is drawn.
+        // before the window is drawn. A record from before tabs were recorded is read into one
+        // below, once each chat has the number it starts under.
         *lock(&self.layout) = record.layout.clone();
         // Every chat here starts a program. A record with thousands in it — a runaway, or a
         // file nobody meant — would start them all. The cap is far above the fifty the
@@ -7111,6 +7112,23 @@ impl Chats {
         }
         lock(&self.recorded_order)
             .extend(coming.iter().filter_map(|one| one.chat.identity.id.clone()));
+        // **A record from before tabs were recorded is read into a layout here** (#4758), over
+        // the chats as they start, each under the number it was given above (a record written
+        // before numbers holds none), and filed by where each works, as the sidebar files it:
+        // the front tab at quit, and tabs with a split, a view or a pin, stay; a plain one-chat
+        // tab closes into the sidebar. The next write keeps it, so this runs once.
+        if record.layout.is_none() {
+            let numbered = Record {
+                chats: coming.iter().map(|one| one.chat.clone()).collect(),
+                views: record.views.clone(),
+                ..Record::default()
+            };
+            let plane = purlis_core::workspaces::Plane::open(&self.project);
+            *lock(&self.layout) = Some(purlis_core::reopen::upgrade::upgraded(
+                &numbered,
+                &|chat: &Chat| chat.cwd.as_deref().and_then(|cwd| plane.workspace_of(cwd)),
+            ));
+        }
         lock(&self.coming).extend(coming);
     }
 
@@ -8157,3 +8175,7 @@ mod letting_go_tests;
 #[cfg(test)]
 #[path = "chats/tests/windows.rs"]
 mod windows_tests;
+
+#[cfg(test)]
+#[path = "chats/tests/switching.rs"]
+mod switching_tests;

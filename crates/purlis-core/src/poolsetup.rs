@@ -965,27 +965,23 @@ fn see_of(id: StepId, facts: &Facts) -> Option<See> {
             note: "This lists the pool's limits. It only reads.".to_owned(),
             text: format!("purlis pool limits {}", shell_quote(&pool.name)),
         }),
+        // What Sign-ins' button runs, as the window spells it for what is ticked (#4718): with
+        // nothing chosen yet, a stand-in for the profile to record.
         (StepId::Signins, Some(pool)) => {
             let SignIns::Read(profiles) = &pool.sign_ins else {
                 return None;
             };
-            let lines: Vec<String> = profiles
+            let adding = if profiles.is_empty() {
+                vec!["PROFILE".to_owned()]
+            } else {
+                Vec::new()
+            };
+            let signing_in: Vec<String> = profiles
                 .iter()
                 .filter(|(_, profile)| *profile != Profile::Standing(Standing::SignedIn))
-                .map(|(profile, _)| {
-                    format!(
-                        "purlis profile sign-in {} --pool {}",
-                        shell_quote(profile),
-                        shell_quote(&pool.name)
-                    )
-                })
+                .map(|(profile, _)| profile.clone())
                 .collect();
-            (!lines.is_empty()).then(|| See {
-                note: "This is the sign-in the button runs. Run it yourself if you prefer, and \
-                       purlis marks this step done."
-                    .to_owned(),
-                text: lines.join("\n"),
-            })
+            signins::by_hand(&pool.name, &adding, &signing_in)
         }
         _ => None,
     }

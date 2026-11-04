@@ -240,7 +240,7 @@ fn a_task_the_person_has_typed_in_is_not_cancelled_by_its_asking_chat() {
         matches!(&said, Answer::No { why }
         if why == &format!(
             "the person has typed in 'check prod' (chat {task}), so it is theirs to \
-             cancel, from its tab."
+             cancel, in the window."
         )),
         "{said:?}"
     );

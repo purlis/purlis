@@ -8,6 +8,7 @@ import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * A project the core let go of leaves the window (#1242).
@@ -84,6 +85,8 @@ function core(over: { restore?: string[]; handed?: string[]; chats?: Record<stri
     if (cmd === "plane_sidebar")
       return { root: plane, workspaces: [], personas: [], persona: null, unfiled: [] };
     if (cmd === "opened_chats") return over.chats?.[plane] ?? [];
+    // Each chat's tab, outside every workspace, as the stored layout keeps it (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(over.chats?.[plane] ?? []);
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };

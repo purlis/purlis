@@ -10,8 +10,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use super::{
-    Lane, NewSites, Refusal, Route, Site, Verdict, lookup_bounded, lookup_within, public_address,
-    route,
+    Bound, Lane, LoginSites, NewSites, Refusal, Route, Site, Verdict, lookup_bounded,
+    lookup_within, public_address, route,
 };
 use crate::sandbox::reach::{By, Decision, Reach};
 
@@ -729,4 +729,107 @@ fn a_site_is_written_host_colon_port_and_read_back_the_same() {
     ] {
         assert!(Site::parse(refused).is_err(), "{refused}");
     }
+}
+
+/// #5117: while a page holding a secret purlis filled lives, the browser reaches that secret's
+/// site alone, and takes no secret for another; released, it reaches as before.
+#[test]
+fn a_fill_hold_lets_its_site_alone_until_it_is_released() {
+    let bound = Bound::default();
+    assert!(bound.lets("elsewhere.example.test", 443));
+
+    let held = bound
+        .hold_for_fill(&Site::of("dash.example.test", 443))
+        .expect("held");
+
+    assert!(bound.lets("dash.example.test", 443));
+    assert!(
+        !bound.lets("dash.example.test", 8443),
+        "another port is another site"
+    );
+    let said = bound
+        .refuses("elsewhere.example.test", 443)
+        .expect("refused");
+    assert!(
+        said.contains("holds a secret purlis filled on dash.example.test:443"),
+        "{said}"
+    );
+    let again = bound
+        .hold_for_fill(&Site::of("dash.example.test", 443))
+        .expect("a second fill on the same site");
+    let refused = bound
+        .hold_for_fill(&Site::of("elsewhere.example.test", 443))
+        .unwrap_err();
+    assert!(
+        refused.contains("held to dash.example.test:443"),
+        "{refused}"
+    );
+
+    assert!(bound.fill_released(held));
+    assert!(
+        !bound.lets("elsewhere.example.test", 443),
+        "the other page still holds it"
+    );
+    assert!(bound.fill_released(again));
+    assert!(!bound.fill_released(again), "released once");
+    assert!(bound.lets("elsewhere.example.test", 443));
+    assert_eq!(bound.held_for_fill(), None);
+}
+
+/// #5117: a fill hold narrows a login's hold and never widens it.
+#[test]
+fn a_fill_hold_in_a_browser_holding_a_login_reaches_no_more_than_both() {
+    let bound = Bound::default();
+    bound
+        .to(&LoginSites::page(Site::of("shop.example.test", 443)))
+        .expect("bound to the login");
+
+    bound
+        .hold_for_fill(&Site::of("shop.example.test", 443))
+        .expect("held");
+    assert!(bound.lets("shop.example.test", 443));
+    assert!(!bound.lets("elsewhere.example.test", 443));
+
+    let other = Bound::default();
+    other
+        .to(&LoginSites::page(Site::of("shop.example.test", 443)))
+        .expect("bound to the login");
+    let held = other
+        .hold_for_fill(&Site::of("pay.example.test", 443))
+        .expect("held");
+    assert!(!other.lets("shop.example.test", 443), "the fill's hold");
+    assert!(!other.lets("pay.example.test", 443), "the login's hold");
+    other.fill_released(held);
+    assert!(other.lets("shop.example.test", 443));
+}
+
+/// #5117 with #5152: a login whose form is on another site reaches that site for the browser's
+/// life, signed in or not; a fill hold on the page's site narrows that too, and once released the
+/// browser reaches both again.
+#[test]
+fn a_fill_hold_keeps_a_logged_in_browser_off_its_sign_in_providers_site_until_released() {
+    let bound = Bound::default();
+    let number = bound
+        .to(&LoginSites {
+            page: Site::of("app.example.test", 443),
+            form: Some(Site::of("auth.example.test", 443)),
+        })
+        .expect("bound to the login")
+        .expect("a sign-in");
+    bound.sign_in_over(number).expect("it was open");
+    assert!(bound.lets("auth.example.test", 443), "reached for its life");
+
+    let held = bound
+        .hold_for_fill(&Site::of("app.example.test", 443))
+        .expect("held");
+
+    assert!(bound.lets("app.example.test", 443));
+    assert!(
+        !bound.lets("auth.example.test", 443),
+        "the fill's hold narrows the login's"
+    );
+    let said = bound.refuses("auth.example.test", 443).expect("refused");
+    assert!(said.contains("app.example.test"), "{said}");
+    assert!(bound.fill_released(held));
+    assert!(bound.lets("auth.example.test", 443));
 }

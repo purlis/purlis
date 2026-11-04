@@ -1392,6 +1392,43 @@ fn granted_ready(
     (ready, ctx)
 }
 
+/// **The value of `key` in `vault`, for a secret fill the person allowed** (#5115): read for
+/// chat `asker` as a login the person allowed from its notice is ([`granted_login`]), since that
+/// press confirmed this vault and this key for one exact site. Refused, with a sentence and no
+/// value, for a private key, whoever asked: no private key is filled on a page. `None` where the
+/// vault holds no value under `key` (#5116).
+pub fn fill_value(
+    asker: &Asker,
+    vault: &str,
+    key: &str,
+) -> Result<Option<purlis_session_protocol::browsing::Secret>, String> {
+    let ctx = match &asker.confines {
+        Some(confines) => {
+            Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
+        }
+        None => Ctx::new(&asker.root, asker.env.clone()),
+    };
+    let provider = cmd::provider(&ctx, vault).map_err(|e| e.message.to_string())?;
+    let value = match cmd::get_value(&ctx, &provider, key) {
+        Ok(value) => purlis_session_protocol::browsing::Secret::new(value),
+        // A key the vault holds no value under is the person's to add (#5116, #5054): told by
+        // the provider's kind of failure, never by its sentence.
+        Err(e) if e.kind == super::Kind::NotFound => return Ok(None),
+        Err(e) => {
+            return Err(format!(
+                "vault '{vault}' did not give {key}, so nothing was filled ({})",
+                e.message
+            ));
+        }
+    };
+    if crate::sandbox::tools::mint::a_private_key(value.expose()) {
+        return Err(format!(
+            "{key} in vault '{vault}' is a private key, so purlis filled nothing"
+        ));
+    }
+    Ok(Some(value))
+}
+
 /// `ready`'s values, read from its vault, and its identity. A key the vault holds no value
 /// under is asked of the person through `missing`, as a brokered run's is (#5074, ADR 0109):
 /// the read waits on the ask, and a decline, or no answer in time, fills nothing and says so.
@@ -1434,6 +1471,7 @@ fn read_login(
             )
             .map(|need| need.purpose),
             names_no_vault: false,
+            reason: super::ask::Reason::broken(ctx, vault, key),
         };
         missing
             .read_asking(need, &mut once)
@@ -2487,17 +2525,23 @@ pub(crate) fn serve_recorded(
                 &|| None,
             )
         }
-        // A key the vault holds no value under is asked of the person, where the app asks
-        // (#5068, ADR 0109): the run waits, and reads the vault again once it is filled. Told
-        // by the provider's kind of failure, never by its sentence. Each key is asked once a
-        // run: one still missing after its fill is refused as it was before.
+        // A key the vault holds no value under, or a link whose entry is gone (#5075), is
+        // asked of the person, where the app asks (#5068, ADR 0109): the run waits, and reads
+        // the vault again once it is filled. Told by the provider's kind of failure, never by
+        // its sentence. Each key is asked once a run: one still missing after its fill is
+        // refused as it was before.
         (Some(v), _, None) => {
             let mut filled: Vec<String> = Vec::new();
             loop {
                 let missed: std::sync::Mutex<Option<String>> = std::sync::Mutex::default();
                 let read = |key: &str| {
                     let got = cmd::get_value(&ctx, v, key).map(zeroize::Zeroizing::new);
-                    if matches!(&got, Err(e) if e.kind == super::Kind::NotFound) {
+                    // A Linked entry whose entry is gone is asked for too (#5075), naming
+                    // the gone entry to the person alone.
+                    let asks = got.as_ref().is_err_and(|e| {
+                        matches!(e.kind, super::Kind::NotFound | super::Kind::BrokenLink)
+                    });
+                    if asks {
                         *missed
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner) =
@@ -2526,6 +2570,7 @@ pub(crate) fn serve_recorded(
                     declared: super::needs::declared(&ctx.root, persona, &key)
                         .map(|need| need.purpose),
                     names_no_vault: false,
+                    reason: super::ask::Reason::broken(&ctx, &wanted.vault, &key),
                 };
                 let held = missing.asks.hold(need, missing.within, &mut |line: &str| {
                     (missing.moved)();

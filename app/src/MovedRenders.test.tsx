@@ -8,9 +8,10 @@ import App from "./App";
 import type { Moved, OpenChat } from "./bindings";
 import type { State } from "./chatState";
 import { chipSays, stripNamed } from "./test-strips";
-import { theFrameNow } from "./frame.testkit";
+import { heard } from "./frame.testkit";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A chat moving re-renders that chat's row and nothing else** (SC-3, research 02 §5.6).
@@ -45,19 +46,6 @@ vi.mock("./SessionPane", () => ({
     return <div data-testid="pane">session {session}</div>;
   },
 }));
-
-declare global {
-  interface Window {
-    __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
-  }
-}
-
-/** An event from the core, and the frame the window draws it in: the chat stores tell their
- *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
-function heard(handler: number, message: unknown) {
-  window.__TAURI_INTERNALS__.runCallback(handler, message);
-  theFrameNow();
-}
 
 const PLANE = "/home/dev/plane";
 
@@ -96,6 +84,9 @@ function core(open: OpenChat[]): (moved: Moved) => void {
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return open;
+    // Each chat has a tab on ide's strip from the stored layout, the only place a tab comes
+    // from at launch (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(open, () => "ide");
     // Read, so every chat is filed in its workspace and that workspace's tab counts it.
     if (cmd === "plane_sidebar")
       return {

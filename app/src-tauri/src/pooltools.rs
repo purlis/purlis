@@ -384,6 +384,8 @@ fn need_of(root: &Path, ask: &brokered::Ask, persona: &str, tool: &Tool, key: St
         tool: Some(tool.name.clone()),
         purpose: None,
         names_no_vault: false,
+        // Asked for a key the vault here doesn't hold (#5075's reasons are for keys it has).
+        reason: None,
     }
 }
 
@@ -499,7 +501,8 @@ fn allowed_tool(
     let (declared, allowed) = (gate.tools)(gate.root, persona);
     let armed: Vec<tools::Ready> = allowed
         .into_iter()
-        .filter(|tool| tool.login.is_none())
+        // A login or a secret-fill line runs no program (#5116).
+        .filter(|tool| !tool.runs_no_program())
         .map(|tool| tools::Ready {
             tool,
             program: PathBuf::new(),

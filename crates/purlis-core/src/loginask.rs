@@ -273,7 +273,7 @@ fn host_of(origin: &str) -> &str {
 
 /// Whether `name` is a vault's or a key's plain name: one word, with nothing a provider reads as
 /// a path to another field, and nothing a notice would draw as a sentence.
-fn plain(name: &str) -> bool {
+pub(crate) fn plain(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= MOST_NAME
         && name
@@ -669,36 +669,104 @@ pub fn with_line(text: &str, proposal: &Proposal) -> Result<String, String> {
             _ => return Err(unwritten()),
         }
         let after = doc.to_string();
-        return if only_this_login(text, &after, proposal) {
+        return if only_this_line(
+            text,
+            &after,
+            &proposal.persona,
+            &proposal.login,
+            &proposal.table(),
+        ) {
             Ok(after)
         } else {
             Err(unwritten())
         };
     }
-    match persona.get_mut(tools::KEY) {
+    added(text, doc, &proposal.persona, name, line, &proposal.table()).ok_or_else(unwritten)
+}
+
+/// **The project's file `text`, parsed as `doc`, with line `name` = `line` added to `persona`'s
+/// tools** (#4595, #5116), where none of that name is there: none where the tools aren't a
+/// table, or the file after it holds anything but what it held and this one line, read back and
+/// compared.
+fn added(
+    text: &str,
+    mut doc: toml_edit::DocumentMut,
+    persona: &str,
+    name: &str,
+    line: toml_edit::Value,
+    table: &toml_edit::InlineTable,
+) -> Option<String> {
+    let tools = doc
+        .as_table_mut()
+        .get_mut("sandbox")?
+        .as_table_mut()?
+        .get_mut("personas")?
+        .as_table_mut()?
+        .get_mut(persona)?
+        .as_table_mut()?;
+    match tools.get_mut(tools::KEY) {
         None => {
-            let mut tools = toml_edit::InlineTable::new();
-            tools.insert(name, line);
-            tools.fmt();
-            persona.insert(tools::KEY, toml_edit::value(tools));
+            let mut inline = toml_edit::InlineTable::new();
+            inline.insert(name, line);
+            inline.fmt();
+            tools.insert(tools::KEY, toml_edit::value(inline));
         }
-        Some(toml_edit::Item::Table(tools)) if !tools.contains_key(name) => {
-            tools.insert(name, toml_edit::Item::Value(line));
+        Some(toml_edit::Item::Table(listed)) if !listed.contains_key(name) => {
+            listed.insert(name, toml_edit::Item::Value(line));
         }
-        Some(toml_edit::Item::Value(toml_edit::Value::InlineTable(tools)))
-            if !tools.contains_key(name) =>
+        Some(toml_edit::Item::Value(toml_edit::Value::InlineTable(listed)))
+            if !listed.contains_key(name) =>
         {
-            tools.insert(name, line);
-            tools.fmt();
+            listed.insert(name, line);
+            listed.fmt();
         }
-        Some(_) => return Err(unwritten()),
+        Some(_) => return None,
     }
     let after = doc.to_string();
-    if only_this_login(text, &after, proposal) {
-        Ok(after)
-    } else {
-        Err(unwritten())
-    }
+    only_this_line(text, &after, persona, name, table).then_some(after)
+}
+
+/// **The project's file `text` with secret-fill line `name` = `table` in
+/// `[sandbox.personas.<persona>]`'s tools** (#5116), or why not: a line of that name there
+/// already, a file whose parts aren't tables, or one with no `[sandbox]`. Read back and
+/// compared, as a login's line is ([`with_line`]).
+pub fn with_tool_line(
+    text: &str,
+    persona: &str,
+    name: &str,
+    table: &toml_edit::InlineTable,
+) -> Result<String, String> {
+    let unwritten =
+        || format!("purlis could not add {name} to the project's settings, and wrote nothing");
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|_| unwritten())?;
+    let sandbox = doc
+        .as_table_mut()
+        .get_mut("sandbox")
+        .and_then(toml_edit::Item::as_table_mut)
+        .ok_or_else(unwritten)?;
+    let personas = sandbox
+        .entry("personas")
+        .or_insert_with(|| {
+            let mut table = toml_edit::Table::new();
+            table.set_implicit(true);
+            toml_edit::Item::Table(table)
+        })
+        .as_table_mut()
+        .ok_or_else(unwritten)?;
+    personas
+        .entry(persona)
+        .or_insert_with(toml_edit::table)
+        .as_table_mut()
+        .ok_or_else(unwritten)?;
+    added(
+        text,
+        doc,
+        persona,
+        name,
+        toml_edit::Value::InlineTable(table.clone()),
+        table,
+    )
+    .ok_or_else(unwritten)
 }
 
 /// Login `name` as `persona`'s list in the project's file `text` declares it, read by the reader
@@ -729,21 +797,28 @@ pub fn has_a_sandbox(text: &str) -> bool {
         .is_ok_and(|top| top.get("sandbox").is_some_and(toml::Value::is_table))
 }
 
-/// Whether `after` is `before` with this one login, whole, added or in place of its old line.
-fn only_this_login(before: &str, after: &str, proposal: &Proposal) -> bool {
+/// Whether `after` is `before` with this one line, `name` = `table`, whole, added or in place of
+/// its old line.
+fn only_this_line(
+    before: &str,
+    after: &str,
+    persona: &str,
+    name: &str,
+    table: &toml_edit::InlineTable,
+) -> bool {
     let (Ok(mut expected), Ok(after)) =
         (before.parse::<toml::Table>(), after.parse::<toml::Table>())
     else {
         return false;
     };
-    let Ok(line) = format!("x = {}\n", proposal.table()).parse::<toml::Table>() else {
+    let Ok(line) = format!("x = {table}\n").parse::<toml::Table>() else {
         return false;
     };
     let Some(added) = line.get("x") else {
         return false;
     };
     let mut at = &mut expected;
-    for step in ["sandbox", "personas", proposal.persona.as_str(), tools::KEY] {
+    for step in ["sandbox", "personas", persona, tools::KEY] {
         let next = at
             .entry(step)
             .or_insert_with(|| toml::Value::Table(toml::Table::new()));
@@ -752,7 +827,7 @@ fn only_this_login(before: &str, after: &str, proposal: &Proposal) -> bool {
         };
         at = table;
     }
-    at.insert(proposal.login.clone(), added.clone());
+    at.insert(name.to_owned(), added.clone());
     after == expected
 }
 

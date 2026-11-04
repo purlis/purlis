@@ -143,6 +143,10 @@ pub struct Shown {
     /// is typed in. Absent for any other ask.
     #[specta(optional)]
     pub secret: Option<SecretShown>,
+    /// **The secret a fill would put into a page, and where** (#5115): drawn with its site
+    /// large. Absent for any other ask.
+    #[specta(optional)]
+    pub fill: Option<FillShown>,
 }
 
 /// **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
@@ -168,6 +172,60 @@ pub struct SecretShown {
     pub declared_purpose: Option<String>,
     /// How many chats wait on it.
     pub waiting: u32,
+    /// **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
+    /// chat's. Absent on an ask for a key the vault doesn't hold.
+    #[specta(optional)]
+    pub replace: Option<String>,
+    /// The entry the key reads, where it is a Linked entry asked to be replaced (#5075): a new
+    /// value goes there.
+    #[specta(optional)]
+    pub reads: Option<SecretEntryShown>,
+    /// The entry a broken link read, which is gone (#5075).
+    #[specta(optional)]
+    pub gone: Option<SecretEntryShown>,
+}
+
+/// An entry of a vault named in a Secret ask (#5075): the person's to read, never a chat's.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SecretEntryShown {
+    pub vault: String,
+    pub key: String,
+}
+
+/// **A secret fill, as its notice draws it** (#5115): the key's name and its vault, the exact
+/// site, the page and the field's label; never a value, which purlis hasn't read.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct FillShown {
+    pub key: String,
+    pub vault: String,
+    /// The site the field's own frame is on, as purlis read it: its host, with a port where it
+    /// has one, and the scheme where it isn't https (`http://localhost:3000`).
+    pub site: String,
+    /// The page the field is on, where the browser said: an address.
+    #[specta(optional)]
+    pub page: Option<String>,
+    /// What the page labels the field: the page's words, never purlis's.
+    pub label: String,
+    /// The chat's browser, by its name to the chat (`b1`).
+    pub browser: String,
+    /// Plain warnings, said above the choices.
+    pub warnings: Vec<String>,
+    /// **A card's or payment value's key** (#5116, SF-4): Allow once and Keep blocked alone.
+    pub card: bool,
+    /// **A multi-line text box or an editable area** (#5120, SF-5): asked each time, with Allow
+    /// once and Keep blocked alone.
+    pub multi_line: bool,
+    /// The line Always allow writes, shown before it's pressed (#5116).
+    #[specta(optional)]
+    pub line: Option<String>,
+    /// Where the line goes: `[sandbox.personas.<persona>] tools`.
+    #[specta(optional)]
+    pub under: Option<String>,
+    /// Why Always allow isn't offered, where it isn't and the key is no card's.
+    #[specta(optional)]
+    pub no_always: Option<String>,
+    /// Always also allows the vault for the persona.
+    pub vault_too: bool,
 }
 
 /// **A suggested login, as its notice draws it** (#4595). The vault and key names, and never a
@@ -278,6 +336,9 @@ pub enum AskSource {
     /// A key a chat's brokered run found missing from its persona's vault (#5068, ADR 0109):
     /// answered by a value typed in the window, or Not now.
     Secret,
+    /// A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
+    /// purlis put that one key into that field, on that one origin, once.
+    SecretFill,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -361,6 +422,9 @@ pub enum AnswerPath {
     /// `answer_secret_ask` on Secret ask `id` (#5068): Fill with the value typed in the ask's
     /// masked field, Not now with none.
     Secret { id: u32 },
+    /// `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
+    /// whose digest is `shown` (#5115).
+    SecretFill { id: u32, shown: String },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -467,6 +531,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         lines,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     })
@@ -666,6 +731,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -711,6 +777,7 @@ pub fn sandbox_host(
             lines: None,
             last_message: None,
             login: None,
+            fill: None,
             earlier_messages: None,
             secret: None,
         });
@@ -748,6 +815,7 @@ pub fn sandbox_host(
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     })
@@ -814,6 +882,7 @@ pub fn sandbox_write(
             lines: None,
             last_message: None,
             login: None,
+            fill: None,
             earlier_messages: None,
             secret: None,
         });
@@ -841,6 +910,7 @@ pub fn sandbox_write(
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     })
@@ -908,6 +978,7 @@ pub fn sandbox_runner(
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     })
@@ -986,6 +1057,7 @@ pub fn sandbox_port(
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     })
@@ -1061,6 +1133,7 @@ pub fn sandbox_local(
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     })
@@ -1103,6 +1176,7 @@ pub fn terminal(
         lines: None,
         last_message: asked,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -1126,6 +1200,7 @@ pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>
         lines: None,
         last_message,
         login: None,
+        fill: None,
         earlier_messages: (!earlier.is_empty()).then_some(earlier),
         secret: None,
     }
@@ -1158,6 +1233,7 @@ pub fn task_question(
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -1217,6 +1293,7 @@ pub fn workspace_removal(
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -1333,6 +1410,7 @@ pub fn browser_posture(
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -1401,8 +1479,93 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
+    }
+}
+
+/// The key of the secret fill ask numbered `id` (#5115).
+fn secret_fill_key(id: u32) -> String {
+    format!("secret-fill:{id}")
+}
+
+/// **The secret fill adapter** (#5115, #5116): one notice naming the key, its vault and the exact
+/// site, with the sandbox's own answers. Allow once and Allow for this chat, each unless policy
+/// leaves its scope out; Always allow where its line can be written; Keep blocked. A card's key
+/// is offered Allow once and Keep blocked alone (SF-4), and so is a multi-line text box or an
+/// editable area, which asks each time (SF-5, #5120).
+pub fn secret_fill(
+    wait: &crate::secretfills::FillWait,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Shown {
+    use purlis_core::sandbox::grant::Level;
+    let allow = |level: Level, label: &str| Offered {
+        id: level.word().to_owned(),
+        label: label.to_owned(),
+        allows: true,
+        preselected: None,
+    };
+    let mut options = Vec::new();
+    if locks.scope_removed(Level::Once).is_none() {
+        options.push(allow(Level::Once, "Allow once"));
+    }
+    if !wait.once_only() {
+        if locks.scope_removed(Level::Chat).is_none() {
+            options.push(allow(Level::Chat, "Allow for this chat"));
+        }
+        if wait.no_always.is_none() && wait.line.is_some() {
+            options.push(allow(Level::You, "Always allow"));
+        }
+    }
+    options.push(refuses(KEEP, KEEP_SAID));
+    let site = wait
+        .origin
+        .strip_prefix("https://")
+        .unwrap_or(&wait.origin)
+        .to_owned();
+    Shown {
+        session: wait.session,
+        ask: secret_fill_key(wait.id),
+        says: said_inertly(&format!(
+            "Wants to put {} from vault {} into a field on {site}",
+            wait.key, wait.vault
+        )),
+        options,
+        source: AskSource::SecretFill,
+        chain: Vec::new(),
+        answer: AnswerPath::SecretFill {
+            id: wait.id,
+            shown: wait.digest(),
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        earlier_messages: None,
+        secret: None,
+        fill: Some(FillShown {
+            key: wait.key.clone(),
+            vault: wait.vault.clone(),
+            site,
+            page: wait.page.clone(),
+            label: purlis_core::shown::short(&wait.label),
+            browser: wait.browser.clone(),
+            warnings: wait.warnings.clone(),
+            card: wait.card,
+            multi_line: wait.multi_line,
+            line: (!wait.once_only()).then(|| wait.line.clone()).flatten(),
+            under: wait
+                .persona
+                .as_ref()
+                .map(|persona| format!("[sandbox.personas.{persona}] tools")),
+            no_always: (!wait.once_only())
+                .then(|| wait.no_always.clone())
+                .flatten(),
+            vault_too: wait.vault_too,
+        }),
     }
 }
 
@@ -1484,6 +1647,7 @@ pub fn browser_login(
         writes: None,
         lines: None,
         last_message: None,
+        fill: None,
         login: Some(LoginShown {
             path: proposal.page[proposal.origin.len()..].to_owned(),
             form: proposal
@@ -1577,6 +1741,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -1642,6 +1807,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -1693,24 +1859,63 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
     let what_for = open.purpose.as_deref().map_or_else(String::new, |purpose| {
         format!(". The chat says it is for: “{purpose}”")
     });
-    // A chat on a runner that cannot receive a value was told it was declined (#5077).
-    let says = if open.chats.is_empty() && open.starts == 0 && !open.cannot_receive.is_empty() {
-        format!(
-            "Needs {key}{undeclared} from {persona}'s vault {vault}{used_by}. This chat's runner \
-             can't receive secrets: Fill stores it in that vault for chats on this \
-             machine{declared_for}{what_for}"
-        )
-    } else {
-        let unreached = if open.cannot_receive.is_empty() {
-            ""
-        } else {
-            ". A runner chat that asked can't receive it"
-        };
-        format!(
-            "Needs {key}{undeclared} from {persona}'s vault {vault}{used_by}. Fill stores it in \
-             that vault on this machine; the chat never sees \
-             it{others}{unreached}{declared_for}{what_for}"
-        )
+    use purlis_core::secrets::ask::Reason;
+    let says = match &open.reason {
+        // A chat on a runner that cannot receive a value was told it was declined (#5077).
+        None => {
+            if open.chats.is_empty() && open.starts == 0 && !open.cannot_receive.is_empty() {
+                format!(
+                    "Needs {key}{undeclared} from {persona}'s vault {vault}{used_by}. This chat's runner \
+                 can't receive secrets: Fill stores it in that vault for chats on this \
+                 machine{declared_for}{what_for}"
+                )
+            } else {
+                let unreached = if open.cannot_receive.is_empty() {
+                    ""
+                } else {
+                    ". A runner chat that asked can't receive it"
+                };
+                format!(
+                    "Needs {key}{undeclared} from {persona}'s vault {vault}{used_by}. Fill stores it in \
+                 that vault on this machine; the chat never sees \
+                 it{others}{unreached}{declared_for}{what_for}"
+                )
+            }
+        }
+        // The chat's words are data: the line says whose they are (#5075).
+        Some(reason @ Reason::Replace { reads, .. }) => {
+            let goes = reads.as_ref().map_or_else(
+                || "Fill replaces it in that vault on this machine".to_owned(),
+                |to| {
+                    format!(
+                        "{key} reads {} in vault {}: a new value goes there, or pick another \
+                         entry",
+                        to.key, to.vault
+                    )
+                },
+            );
+            format!(
+                "Replace {key} in {persona}'s vault {vault}{used_by}: {}. {goes}; the chat \
+                 never sees it{others}{declared_for}{what_for}",
+                reason.said(key)
+            )
+        }
+        Some(reason @ Reason::BrokenLink { .. }) => format!(
+            "Mend {key} in {persona}'s vault {vault}{used_by}: {}. Fill gives it a value, or \
+             pick another entry; the chat never sees it{others}{declared_for}{what_for}",
+            reason.said(key)
+        ),
+    };
+    let entry = |to: &purlis_core::secrets::links::Target| SecretEntryShown {
+        vault: to.vault.clone(),
+        key: to.key.clone(),
+    };
+    let (replace, reads, gone) = match &open.reason {
+        None => (None, None, None),
+        Some(Reason::Replace { said, reads }) => {
+            (Some(said.clone()), reads.as_ref().map(entry), None)
+        }
+        Some(Reason::BrokenLink { was }) => (None, None, Some(entry(was))),
     };
     Shown {
         session: open
@@ -1740,6 +1945,7 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        fill: None,
         secret: Some(SecretShown {
             persona: persona.clone(),
             vault: vault.clone(),
@@ -1749,6 +1955,9 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
             declared: open.declared.is_some(),
             declared_purpose: open.declared.clone(),
             waiting: u32::try_from(open.waiting()).unwrap_or(u32::MAX),
+            replace,
+            reads,
+            gone,
         }),
     }
 }
@@ -1791,6 +2000,7 @@ pub fn browser_sites(
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -1964,6 +2174,7 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -1993,6 +2204,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -2050,6 +2262,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -2108,6 +2321,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -2166,6 +2380,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -2225,6 +2440,7 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -2257,6 +2473,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         lines: None,
         last_message: None,
         login: None,
+        fill: None,
         earlier_messages: None,
         secret: None,
     }
@@ -2342,6 +2559,8 @@ pub struct Waiting<'a> {
     pub browser_logins: Vec<crate::loginasks::LoginWait>,
     /// The Secret asks chats' brokered runs wait on (#5068).
     pub secrets: Vec<purlis_core::secrets::ask::Open>,
+    /// The secret fills chats asked for that wait on the person (#5115).
+    pub secret_fills: Vec<crate::secretfills::FillWait>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// Whether a browser site for everyone in the project reaches a browser here: only where the
@@ -2431,6 +2650,13 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .browser_logins
             .iter()
             .map(|wait| browser_login(wait, waiting.locks)),
+    );
+    // A secret a chat asks purlis to fill (#5115).
+    asks.extend(
+        waiting
+            .secret_fills
+            .iter()
+            .map(|wait| secret_fill(wait, waiting.locks)),
     );
     // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
     asks.extend(waiting.pool_tools.iter().map(pool_tool));
@@ -2647,6 +2873,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &browser_logins {
         since.insert(browser_login_key(one.id), one.since);
     }
+    let secret_fills = held.secret_fills().waiting();
+    for one in &secret_fills {
+        since.insert(secret_fill_key(one.id), one.since);
+    }
     let pool_tools = held.pool_tools().waiting();
     for one in &pool_tools {
         since.insert(pool_tool_key(one.session, one.run), one.since);
@@ -2665,6 +2895,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         pool_tools,
         browser_logins,
         secrets,
+        secret_fills,
         sandbox_only,
         sign_ins,
         pool_sign_ins,

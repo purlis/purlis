@@ -220,9 +220,18 @@ export async function press(
 }
 
 /**
- * Opens a context menu with the `contextmenu` event a right-click would have sent, at the
- * element's centre, and waits for the menu: on the first element `selector` names, or, given
- * `words`, on the first button inside it whose words start with them.
+ * Opens a context menu with the events a right-click would have sent, at the element's centre,
+ * and waits for the menu: on the first element `selector` names, or, given `words`, on the first
+ * button inside it whose words start with them.
+ *
+ * **The right button's `pointerdown` comes first, as it does under a person's hand** (#5193).
+ * React Aria hands an opening menu the keyboard by how the person was last using the window.
+ * After a press made with `click()` from the page, it reads that as a screen reader's virtual
+ * cursor, and it then waits for every CSS transition in the window to end before it focuses the
+ * menu, and gives up if the keyboard moved somewhere else in the meantime. Just after a chat
+ * starts the window is still moving, so the menu stayed up without the keyboard and every Escape
+ * went elsewhere. The press says the pointer is in use, and the menu takes the keyboard as it
+ * opens.
  */
 export async function openMenuOn(selector: string, words?: string): Promise<void> {
   await browser.waitUntil(
@@ -252,14 +261,23 @@ export async function openMenuOn(selector: string, words?: string): Promise<void
                 }) ?? null);
           if (element === null) return false;
           const box = element.getBoundingClientRect();
+          const at = {
+            bubbles: true,
+            cancelable: true,
+            clientX: Math.round(box.left + box.width / 2),
+            clientY: Math.round(box.top + box.height / 2),
+          };
+          // The press of the right button first, as a person's right-click starts (#5193).
           element.dispatchEvent(
-            new MouseEvent("contextmenu", {
-              bubbles: true,
-              cancelable: true,
-              clientX: Math.round(box.left + box.width / 2),
-              clientY: Math.round(box.top + box.height / 2),
+            new PointerEvent("pointerdown", {
+              ...at,
+              pointerType: "mouse",
+              isPrimary: true,
+              button: 2,
+              buttons: 2,
             }),
           );
+          element.dispatchEvent(new MouseEvent("contextmenu", { ...at, button: 2, buttons: 2 }));
           return true;
         },
         selector,

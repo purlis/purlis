@@ -361,12 +361,19 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A browser login a chat suggested (#4595): the person's answer alone. No chat confirms the
     // site it suggested.
     "answer_browser_login",
+    // A secret fill a chat asked for (#5115): the person's answer alone.
+    "answer_secret_fill",
     // Whether this desktop sends a persona's tool its vault values on a pool's runner (#2047):
     // the person's answer alone. No chat allows its own tool.
     "answer_pool_tool",
     // A Secret ask (#5068, ADR 0109): only the person, in the window, fills a secret or
     // declines it. No chat, relayed link or other client answers one.
     "answer_secret_ask",
+    // And with an entry the person keeps (#5073): the asked key becomes a link to it. Which
+    // entries the person keeps, vault by vault, is theirs to read in the window, never a
+    // client's: a chat must not learn where a value lives.
+    "link_secret_ask",
+    "secret_ask_entries",
     // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
     // browser a site.
     "allow_browser_sites",
@@ -380,6 +387,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // And the change whole, for its own tab (PC-7): what the configuration file holds is the
     // person's to read, never a chat's through the UI's link.
     "proposed_change",
+    // The Secret need offers the person dismissed, and offering one again (#5159): the
+    // person's own answers, read and undone in the vault view. No chat lifts its own dismissal.
+    "dismissed_secret_needs",
+    "offer_secret_need_again",
     // Remove and Dismiss on the Notice of the old `[harness_plugins]` keys (#3467): Remove holds
     // purlis's own proposed change for the person to apply, and the answer is the person's.
     "remove_old_harness_plugins",
@@ -630,6 +641,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's window alone.
     "plane_tree",
     "plane_file",
+    // A skill's folder, for its page's Files tab (#5183): listed, a file of it opened, and the
+    // folder opened in the file manager. A built-in or third-party skill's folder is outside
+    // the project, so only the person's own window reads it.
+    "skill_files",
+    "skill_file",
+    "skill_folder_open",
     // The Fix on a stale repo's Notice (#1985): it switches a workspace's repo to another
     // branch, or points its `origin` at another address. The person's own press in the window.
     "fix_stale_clone",
@@ -789,6 +806,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_pool",
     "pool_setup_command",
     "pool_setup_create",
+    "pool_setup_sign_ins_by_hand",
     "pool_setup_sizes",
     "pool_setup_skip",
     "pool_setup_wake",
@@ -1319,6 +1337,11 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "smart_closing",
     "stale_clones",
     "start_options",
+    // `start_options` in two answers (#4736): the cheap first one the dialog opens on, and
+    // each row's approval, sandbox and billing by name. Together they answer what
+    // `start_options` does, so they are served where it is.
+    "start_options_first",
+    "start_details",
     "stopping_chats",
     "tab_window_handed",
     "tab_windows_back",

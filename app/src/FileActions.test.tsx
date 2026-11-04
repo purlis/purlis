@@ -15,6 +15,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetYourEditor, setYourEditor } from "./yourEditor";
 import { showTheExplorer, stripNamed } from "./test-strips";
 import { SETTINGS_LINK, type SettingsLinkAsk } from "./settings/links";
@@ -62,6 +63,8 @@ function core({ refuse, chat = false }: { refuse?: string; chat?: boolean } = {}
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats")
       return chat ? [{ ...CHAT, unreported: null, guessed: null, pinned: false }] : [];
+    // The chat has a tab on alpha's strip only from the stored layout (#4758).
+    if (cmd === "reopened_layout") return chat ? aTabForEachChat([CHAT], () => "alpha") : null;
     if (cmd === "reference_into_chat") return { kind: "typed", text: "@README.md" };
     if (cmd === "plane_sidebar")
       return {

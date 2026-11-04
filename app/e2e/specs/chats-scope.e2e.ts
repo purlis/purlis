@@ -4,13 +4,12 @@
 import { browser, expect } from "@wdio/globals";
 import { showView } from "../opening.js";
 import { focusWorkspaceAt, workspaceTabs } from "../reach.js";
-import { bringChatForward, endChatsStartedHere, startAChat, type Started } from "../started.js";
+import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
- * **The Chats view's scope: This tab, Workspace or All** (#1679, #1671 stories 17-19), in the
- * built app, with two real chats in two tabs.
+ * **The Chats view's scope: Workspace or All** (#1679, #1671 stories 17-19; This tab went with
+ * #4758), in the built app, with two real chats.
  *
- * - **This tab** lists the chats of the tab in front, and follows the tab brought forward.
  * - **Workspace** lists the chats of the focused workspace: each chat under exactly one of the
  *   strip's places, and both of these under the same one, since both were started from it.
  * - **All** lists every chat, whichever place is focused.
@@ -19,8 +18,7 @@ import { bringChatForward, endChatsStartedHere, startAChat, type Started } from 
  * does not assume one: it walks every place on the strip and asks where each chat is listed.
  * What `chatsScope.ts` decides row by row is its unit tests'; what is the window's here is the
  * switch drawn by the real engine, its picks reaching the real list, and the tab and the strip
- * driving it. A chat the scope hides that needs you is `chats-scope.state.e2e.ts`, the run whose
- * harness reports a turn's end.
+ * driving it. A chat the scope hides that needs you is `ChatsSection.window.test.tsx`'s.
  *
  * **It leaves the window as it found it**: the scope and the focused place are put back, and
  * both chats are ended.
@@ -149,7 +147,7 @@ describe("the Chats view's scope", function () {
     await endChatsStartedHere([first, second]);
   });
 
-  it("draws the three scopes as one switch, narrowest first", async () => {
+  it("draws the two scopes as one switch, narrowest first", async () => {
     const words = await browser.execute(
       (group: string) =>
         [...document.querySelectorAll(`${group} input[type="radio"]`)].map(
@@ -157,7 +155,7 @@ describe("the Chats view's scope", function () {
         ),
       SWITCH,
     );
-    expect(words).toEqual(["This tab", "Workspace", "All"]);
+    expect(words).toEqual(["Workspace", "All"]);
     // One row of segments: every segment on one line, inside the view.
     const boxes = await browser.execute((group: string) => {
       const section = document
@@ -178,17 +176,6 @@ describe("the Chats view's scope", function () {
       expect(box.inside).toBe(true);
       expect(Math.abs(box.top - boxes[0].top)).toBeLessThanOrEqual(1);
     }
-  });
-
-  it("lists This tab's chats alone, and follows the tab brought forward", async () => {
-    await pick("This tab");
-    await untilListing([other()], [one()], "with the second tab in front");
-
-    await bringChatForward(one());
-    await untilListing([one()], [other()], "with the first tab brought forward");
-
-    await bringChatForward(other());
-    await untilListing([other()], [one()], "with the second tab back in front");
   });
 
   it("lists a chat under exactly one place in Workspace, and both of these under the same", async () => {

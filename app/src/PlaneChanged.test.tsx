@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import type { PlaneAnswer } from "./bindings";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { chipName, workspaceChips } from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
@@ -99,6 +100,12 @@ function core(): {
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return chatsOpen;
+    // Each chat open has its tab on alpha's strip from the stored layout (#4758). With none
+    // open there is no layout stored, so the window picks the workspace it is in by itself.
+    if (cmd === "reopened_layout")
+      return chatsOpen.length === 0
+        ? null
+        : aTabForEachChat(chatsOpen as { session: number; in_front: boolean }[], () => "alpha");
     if (cmd === "chats_plane_updated") return updated;
     if (cmd === "plane_sidebar") {
       const answer = {

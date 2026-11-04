@@ -327,6 +327,17 @@ pub trait Running: Send + Sync + 'static {
             "this program is not a browser, so purlis logs nothing in to it".into(),
         ))
     }
+    /// purlis puts a secret into one of its fields (#5115): refused for every program that is
+    /// not a browser.
+    fn fill_secret(
+        &self,
+        fill: purlis_session_protocol::browsing::FillSecret,
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
+        drop(fill);
+        Err(crate::browsers::NotActed::Refused(
+            "this program is not a browser, so purlis fills nothing into it".into(),
+        ))
+    }
     /// What a browser may reach from now on (#2018): nothing to do for any other program.
     fn reach_now(
         &self,
@@ -767,6 +778,7 @@ fn browser_acted_on(command: &Command) -> Option<&str> {
     match command {
         Command::Browse { program, .. }
         | Command::LogIn { program, .. }
+        | Command::FillSecret { program, .. }
         | Command::TakeOver { program }
         | Command::HandBack { program }
         | Command::BrowserInput { program, .. }
@@ -2759,6 +2771,20 @@ impl Hosting {
             .map_err(not_acted)
     }
 
+    /// purlis puts a secret into a field of browser `program` (#5115), off the runtime.
+    async fn fill_secret(
+        &self,
+        program: &str,
+        fill: purlis_session_protocol::browsing::FillSecret,
+    ) -> Result<Answer, Refusal> {
+        let running = self.running(program)?;
+        tokio::task::spawn_blocking(move || running.fill_secret(fill))
+            .await
+            .map_err(|why| not_started(why.to_string()))?
+            .map(|browsed| Answer::Browsed(Box::new(browsed)))
+            .map_err(not_acted)
+    }
+
     /// One of the person's commands on browser `program` (#2014), carried out off the runtime.
     async fn driving(
         &self,
@@ -4035,6 +4061,7 @@ impl session::Host for Hosting {
                 reach,
             } => self.browse(&program, call_id, act, reach).await,
             Command::LogIn { program, login } => self.log_in(&program, *login).await,
+            Command::FillSecret { program, fill } => self.fill_secret(&program, *fill).await,
             Command::ProgramsOf { project } => self.programs_of(&project, peer),
             // Only the window's link reaches this: the grants refuse every other.
             Command::NoteProgram { program, note } => self.note_program(&program, note, peer),

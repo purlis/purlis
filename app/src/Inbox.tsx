@@ -23,7 +23,7 @@ import {
   type ReachedWhy,
   type Shown,
 } from "./bindings";
-import { answerTaken, asksMoved } from "./asks";
+import { answerTaken, asksMoved, secretAskEntries } from "./asks";
 import { counted as countedSaid } from "./dispatches";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import {
@@ -74,7 +74,9 @@ import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { LoginSite, useTypedSite } from "./LoginSite";
-import { SecretFill } from "./SecretFill";
+import { SecretFill, type FillWith } from "./SecretFill";
+import { SecretFillSite } from "./SecretFillNotice";
+import type { VaultEntry } from "./VaultEntryPicker";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
@@ -557,6 +559,7 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "pool-login",
   "pool-tool",
   "browser-login",
+  "secret-fill",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -640,7 +643,8 @@ function shapeOf(
       (ask.answer.via === "sandbox-block" ||
         ask.answer.via === "browser" ||
         ask.answer.via === "browser-sites" ||
-        ask.answer.via === "browser-login") &&
+        ask.answer.via === "browser-login" ||
+        ask.answer.via === "secret-fill") &&
       ask.options.some((one) => one.id === "keep"),
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
@@ -805,6 +809,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
   secret: "Asks you for a secret its vault doesn't hold",
   "browser-login": "Asks to log its browser in to a site with vault credentials",
+  "secret-fill": "Asks to put a vault secret into a field of its browser",
   terminal: "In its terminal",
   question: "Waiting on your reply",
   "task-question": "Asks you, through its asking chat",
@@ -856,6 +861,10 @@ function Ask({
   const [typed, setTyped] = useTypedSite(ask);
   /** The box a Secret ask's value is typed in (#5068): it holds its own words, read on Fill. */
   const secretBox = useRef<HTMLInputElement>(null);
+  /** The entry a Secret ask is filled with, where the person uses one they keep (#5073). */
+  const [secretPick, setSecretPick] = useState<VaultEntry>();
+  /** Which way the person fills a Secret ask: Fill with nothing picked says so (#5073). */
+  const [secretFillWith, setSecretFillWith] = useState<FillWith>("value");
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
   const openAnswer = useOpenAnswer();
@@ -872,7 +881,7 @@ function Ask({
     ...shape.offers.map((one) => one.label),
     changeDrawn ? "drawn" : "",
     // A login's notice drawn anew has to be read anew (#4595).
-    ask.answer.via === "browser-login" ? ask.answer.shown : "",
+    ask.answer.via === "browser-login" || ask.answer.via === "secret-fill" ? ask.answer.shown : "",
   ].join("\n");
   const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
   /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
@@ -886,12 +895,24 @@ function Ask({
       setSaid(MOVED_JUST_NOW);
       return;
     }
+    if (ask.secret != null && option.allows && secretFillWith === "entry" && !secretPick) {
+      setSaid("Pick an entry first, or choose New value.");
+      return;
+    }
     setBusy(true);
     setSaid(undefined);
     // A Secret ask's value is read from its box as Fill is pressed, and the box emptied.
     const given = ask.secret != null && option.allows ? (secretBox.current?.value ?? "") : typed;
     if (ask.secret != null && secretBox.current) secretBox.current.value = "";
-    void answerTaken(plane, ask, option.id, option.id === "keep" ? reason : undefined, given)
+    const linked = ask.secret != null && option.allows ? secretPick : undefined;
+    void answerTaken(
+      plane,
+      ask,
+      option.id,
+      option.id === "keep" ? reason : undefined,
+      given,
+      linked,
+    )
       .then(({ refused, live, opened }) => {
         if (refused !== undefined) {
           setSaid(refused);
@@ -948,9 +969,18 @@ function Ask({
         )}
         {ask.secret != null && (
           <Stop id={`${key}:secret`}>
-            <SecretFill secret={ask.secret} box={secretBox} />
+            <SecretFill
+              secret={ask.secret}
+              box={secretBox}
+              entries={() => secretAskEntries(plane, ask)}
+              picked={secretPick}
+              onPicked={setSecretPick}
+              onFillWith={setSecretFillWith}
+            />
           </Stop>
         )}
+        {/* What a secret fill puts where (#5115): words to read, nothing to reach. */}
+        {ask.fill != null && <SecretFillSite fill={ask.fill} />}
         {shape.reason && (
           <Stop id={`${key}:reason`}>
             <TextField

@@ -76,7 +76,7 @@ import { Tree, TreeRow } from "./ui/tree/Tree";
  * view) that a test can hold.
  *
  * **A repo's rows have a context menu, and a menu is not a control** (charter-app#174). It is
- * the explorer's clone menu — `New tab in <repo>` and `Start new chats in <repo>` — drawn from
+ * the explorer's clone menu — `New chat in <repo>` and `Start new chats in <repo>` — drawn from
  * the same catalogue rows, now that the core says where a clone is (`Panels.paths`). It is on
  * the heading and on each row that is about the clone (its changes, its branches' count, its
  * pipeline, an extension's value); the menu is drawn in a portal outside this region, and none

@@ -5,7 +5,8 @@
  * **A skill's page inside the Skill studio** (#3682, `prototype/skill-page` variant A): the
  * header with its actions and "…" menu, the banner that says why a skill isn't plainly on with
  * its one fix, and the page's tabs with their counts. Drawn wide beside the Library and narrow
- * alone, for an ordinary skill, one that is off, a built-in one, and on its Text and History.
+ * alone, for an ordinary skill, one that is off, a built-in one, and on its Text, Files and
+ * History.
  * Walked by the keyboard, held to axe, and pictured in every pictured theme cell. The core is
  * faked at its command boundary.
  */
@@ -45,6 +46,11 @@ const BROWSER = skill("purlis-browser", {
   folder: "/app/plugin/skills/purlis-browser",
 });
 const SKILLS = [DEPLOY, LINT, BROWSER];
+/** A skill installed from a source, whose folder purlis does not name: drawn only where chosen. */
+const BRAINSTORM = skill("brainstorming", {
+  folder: "",
+  description: "Turns a rough idea into a design through questions, one at a time.",
+});
 
 const RUNS = {
   group: { kind: "none" },
@@ -68,6 +74,37 @@ const version = (commit: string, subject: string, at: string) => ({
   before: null,
 });
 
+/** deploy's folder as the core walks it. */
+const DEPLOY_FOLDER = {
+  entries: [
+    { path: "evals", kind: "folder", refused: null },
+    { path: "evals/triggers.json", kind: "file", refused: null },
+    { path: "references", kind: "folder", refused: null },
+    { path: "references/rollback.md", kind: "file", refused: null },
+    { path: "references/staging.md", kind: "file", refused: null },
+    { path: "scripts", kind: "folder", refused: null },
+    { path: "scripts/smoke.sh", kind: "file", refused: null },
+    {
+      path: "scripts/shared",
+      kind: "link",
+      refused: "'scripts/shared' is a link, and purlis opens no link in a skill's folder",
+    },
+    { path: "SKILL.md", kind: "file", refused: null },
+  ],
+  more: 0,
+};
+
+/** Each file's text, by its path in the folder. */
+const FILE_TEXT: Record<string, string> = {
+  "SKILL.md":
+    "---\nname: deploy\n---\n\n# deploy\n\n1. Check the preconditions.\n2. Deploy in small steps.\n",
+  "references/rollback.md":
+    "# Rolling back\n\nTag the last good release, then run the rollback job for the service.\n",
+  "references/staging.md": "# Staging\n\nStaging deploys need no approval.\n",
+  "evals/triggers.json": '[{ "prompt": "ship the api", "loads": true }]\n',
+  "scripts/smoke.sh": '#!/bin/sh\ncurl -fsS "$1/health"\n',
+};
+
 /** The studio tab, opened at `chosen`'s page on `tab`, `width` by `height` (560) px. */
 function Tab({
   width,
@@ -86,11 +123,14 @@ function Tab({
 const meta = {
   component: Tab,
   args: { width: 1100, chosen: DEPLOY, tab: "overview" },
-  beforeEach: ({ args }) => {
-    mockIPC((cmd) => {
+  beforeEach: ({ args: args_ }) => {
+    mockIPC((cmd, args) => {
       switch (cmd) {
         case "skill_studio":
-          return studio(SKILLS, { workspace: "smart-ide", workspaces: ["smart-ide"] });
+          return studio(args_.chosen === BRAINSTORM ? [...SKILLS, BRAINSTORM] : SKILLS, {
+            workspace: "smart-ide",
+            workspaces: ["smart-ide"],
+          });
         case "skill_details":
           return {
             copies: [
@@ -138,6 +178,25 @@ const meta = {
           return { running: null };
         case "skill_updates":
           return { offers: [], unconfirmed: [], unasked: [] };
+        case "skill_files":
+          switch ((args as { folder?: string }).folder) {
+            case BROWSER.folder:
+              // A walk cut short: the line under the tree says how many more there are.
+              return { entries: [{ path: "SKILL.md", kind: "file", refused: null }], more: 7 };
+            case LINT.folder:
+              throw "'skills/lint-rs' is not the folder of a skill the studio lists here: the skill may have moved or gone. Open it again from the Library";
+            default:
+              return DEPLOY_FOLDER;
+          }
+        case "skill_file": {
+          const { folder, path } = args as { folder: string; path: string };
+          // Each skill's own files: a built-in skill's SKILL.md is its own, never deploy's.
+          const text =
+            folder === BROWSER.folder
+              ? "---\nname: purlis-browser\n---\n\n# purlis-browser\n\nDrive a real browser, with credentials from a vault.\n"
+              : FILE_TEXT[path];
+          return { kind: "text", text: text ?? "" };
+        }
         case "skill_deletes_cut_short":
           return { settled: [], unsettled: [] };
         default:
@@ -147,8 +206,8 @@ const meta = {
     openViewAt(HISTORY, {
       page: "library",
       scope: SCOPE,
-      skill: skillRowId(args.chosen),
-      tab: args.tab,
+      skill: skillRowId(args_.chosen),
+      tab: args_.tab,
     });
     return () => {
       clearMocks();
@@ -398,5 +457,100 @@ export const Leaving: Story = {
       () => within(asked).getByRole("button", { name: "Keep editing" }),
       "the question starts on Keep editing",
     );
+  },
+};
+
+/**
+ * **Its Files**: the skill's folder as a tree beside the preview. Tab reaches the tree; → opens
+ * a folder and moves into it, ↓ walks it, and Enter shows a file; the picture is a reference
+ * rendered beside the tree.
+ */
+
+/** The Files tab's first draw loads the light editor's chunk and reads the folder: on a busy
+ *  runner, more than the second a find waits by default. */
+const FIRST_DRAW = { timeout: 10_000 };
+
+export const Files: Story = {
+  args: { tab: "files" },
+  play: async ({ canvas }) => {
+    const tree = await canvas.findByRole("treegrid", { name: "Files of deploy" }, FIRST_DRAW);
+    const row = (name: string) => within(tree).getByRole("row", { name });
+    await tabInto(() => tree);
+    await untilFocused(() => row("evals"), "Files: Tab lands on the first row");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => row("references"), "Files: Down moves to references");
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => expect(row("references")).toHaveAttribute("aria-expanded", "true"));
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(() => row("rollback.md"), "Files: Right moves into the open folder");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await expect(await canvas.findByRole("heading", { name: "Rolling back" })).toBeInTheDocument();
+    await untilFocused(() => row("rollback.md"), "Files: the keyboard stays on the file shown");
+  },
+};
+
+/** **A built-in skill's Files**: shown, and said to be read only, with nothing that changes it;
+ *  the walk was cut short, and the line under the tree says so. */
+export const FilesBuiltIn: Story = {
+  args: { chosen: BROWSER, tab: "files" },
+  play: async ({ canvas }) => {
+    const tree = await canvas.findByRole(
+      "treegrid",
+      { name: "Files of purlis-browser" },
+      FIRST_DRAW,
+    );
+    await tabInto(() => tree);
+    await userEvent.keyboard("{Enter}");
+    await expect(await canvas.findByTestId("skill-files-read-only")).toHaveTextContent(
+      "Read only: built-in skills can't be changed.",
+    );
+    await expect(canvas.queryByRole("button", { name: "Edit SKILL.md" })).toBeNull();
+    await expect(canvas.getByTestId("skill-files-more")).toHaveTextContent("At least 7 more");
+    expectFocusInSight();
+  },
+};
+
+/** **Its Files before a file is picked**: the preview says how to pick one, and a link in the
+ *  folder is a row that says why it does not open, on the keyboard too. */
+export const FilesUnpicked: Story = {
+  args: { tab: "files" },
+  play: async ({ canvas }) => {
+    const tree = await canvas.findByRole("treegrid", { name: "Files of deploy" }, FIRST_DRAW);
+    const row = (name: string) => within(tree).getByRole("row", { name });
+    await tabInto(() => tree);
+    await userEvent.keyboard("{End}");
+    await untilFocused(() => row("SKILL.md"), "Files: End moves to the last row");
+    await userEvent.keyboard("{Home}{ArrowDown}{ArrowDown}{ArrowRight}");
+    await waitFor(() => expect(row("scripts")).toHaveAttribute("aria-expanded", "true"));
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    await untilFocused(() => row("shared"), "Files: Down reaches the link");
+    await expect(row("shared")).toHaveAttribute("aria-disabled", "true");
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByText("Pick a file to read it")).toBeVisible();
+    expectFocusInSight();
+  },
+};
+
+/** **A skill with no folder purlis names** (installed from a source): its Files says why. */
+export const FilesNone: Story = {
+  args: { chosen: BRAINSTORM, tab: "files" },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("skill-files-none", {}, FIRST_DRAW)).toHaveTextContent(
+      "its files are kept with the project's pins",
+    );
+  },
+};
+
+/** **A folder that could not be read**: why, in place, with Try again on the keyboard. */
+export const FilesNotRead: Story = {
+  args: { chosen: LINT, tab: "files" },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("skill-page-not-read", {}, FIRST_DRAW),
+    ).toHaveTextContent("Open it again from the Library");
+    const again = canvas.getByRole("button", { name: "Try again" });
+    await tabInto(() => again);
+    expectFocusInSight();
   },
 };

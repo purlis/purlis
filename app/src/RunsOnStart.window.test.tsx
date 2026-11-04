@@ -64,7 +64,9 @@ function core(refusing = 0) {
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "start_options") return START_OPTIONS;
+    // The picker opens on its first answer and fills each row's details in after (#4736).
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_runs_on")
       return {
         pool: "builds",
@@ -95,7 +97,7 @@ describe("Runs on, from the picker to the start (#4536)", () => {
     const { asked } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
 
     await waitFor(() => expect(selectNamed("Runs on")).toHaveTextContent("As set (pool builds)"));
     expect(asked.filter(({ cmd }) => cmd === "start_runs_on")).toHaveLength(1);
@@ -105,7 +107,7 @@ describe("Runs on, from the picker to the start (#4536)", () => {
     const { boxes } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
     await waitFor(() => expect(selectNamed("Runs on")).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "Start chat" }));
 
@@ -118,7 +120,7 @@ describe("Runs on, from the picker to the start (#4536)", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole("button", { name: "New tab" }));
+    await user.click(await screen.findByRole("button", { name: "New chat" }));
     await waitFor(() => expect(selectNamed("Runs on")).toBeInTheDocument());
     act(() => selectNamed("Runs on").focus());
     await user.keyboard("{Enter}");
@@ -134,7 +136,7 @@ describe("Runs on, from the picker to the start (#4536)", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole("button", { name: "New tab" }));
+    await user.click(await screen.findByRole("button", { name: "New chat" }));
     await waitFor(() => expect(selectNamed("Runs on")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "Start chat" }));
 

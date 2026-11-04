@@ -793,12 +793,14 @@ fn asked_through_the_host(
 
 #[test]
 fn a_chats_clone_through_the_host_that_keeps_making_progress_outlasts_the_askers_wait() {
-    // Four seconds of git speaking, four of the asker's waits.
-    let script = "i=0; while [ $i -lt 40 ]; do i=$((i+1)); \
-         printf 'Receiving objects: %d%% (%d/40)\r' $((i*100/40)) $i >&2; sleep 0.1; done; \
+    // Eight seconds of git speaking, four of the asker's waits. Each wait is two seconds, not
+    // one: what lands the clone after git has spoken says nothing, and on a loaded macOS runner
+    // the asker gave up at one second, twice (the nightly of 2026-11-04).
+    let script = "i=0; while [ $i -lt 80 ]; do i=$((i+1)); \
+         printf 'Receiving objects: %d%% (%d/80)\r' $((i*100/80)) $i >&2; sleep 0.1; done; \
          git init -q \"$1\"";
     let (answered, world) =
-        asked_through_the_host(script, Duration::from_secs(60), Duration::from_secs(1));
+        asked_through_the_host(script, Duration::from_secs(60), Duration::from_secs(2));
     let answer = answered.expect("answered, not given up on");
     assert!(
         matches!(answer, crate::hookwire::Answer::Said { code: 0, .. }),

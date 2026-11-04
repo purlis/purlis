@@ -2511,3 +2511,201 @@ fn typing_on_a_fresh_blank_tab_is_refused_as_a_blank_tab() {
     );
     assert!(engine.sent("Input.insertText").is_empty());
 }
+
+/// The payment frame, held in a process of its own at a third site whose document's context
+/// said so, is sent back into its page's process: it starts another document, which the page's
+/// session tells of at `about:blank`.
+fn a_frame_in_its_own_process_sent_back(engine: &super::Engine, browser: &crate::drive::Browser) {
+    let third = "http://third.test/pay.html";
+    frame_moves(engine, third, third, Duration::from_millis(1));
+    frame_read(browser);
+    a_frames_context_on(
+        engine,
+        browser,
+        MOVED,
+        "PAYMENT-FRAME",
+        74,
+        "http://third.test",
+    );
+    assert_eq!(documents_of(browser, "PAYMENT-FRAME").unwrap(), [third]);
+    engine.emit(
+        "Page.frameStartedLoading",
+        json!({"frameId": "PAYMENT-FRAME"}),
+        Some(MOVED),
+    );
+    everything_before_is_taken_in(engine, browser);
+}
+
+/// The page's session says the payment frame now shows `about:blank`.
+fn the_page_says_the_frame_is_blank(engine: &super::Engine, browser: &crate::drive::Browser) {
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame": {"id": "PAYMENT-FRAME", "parentId": "PAGE-1", "name": "payment", "url": "about:blank"}}),
+        Some("S-PAGE-1"),
+    );
+    everything_before_is_taken_in(engine, browser);
+}
+
+/// The payment frame's own session ends.
+fn the_frames_session_ends(engine: &super::Engine, browser: &crate::drive::Browser) {
+    engine.emit(
+        "Target.detachedFromTarget",
+        json!({"sessionId": MOVED, "targetId": "PAYMENT-FRAME"}),
+        Some("S-PAGE-1"),
+    );
+    everything_before_is_taken_in(engine, browser);
+}
+
+#[test]
+fn a_frame_sent_back_into_its_pages_process_before_its_session_ends_is_judged_by_its_new_document()
+{
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    a_frame_in_its_own_process_sent_back(&engine, &browser);
+    the_page_says_the_frame_is_blank(&engine, &browser);
+    assert_eq!(
+        documents_of(&browser, "PAYMENT-FRAME"),
+        Err(Unjudged::Unread)
+    );
+    the_frames_session_ends(&engine, &browser);
+    assert_eq!(
+        documents_of(&browser, "PAYMENT-FRAME"),
+        Err(Unjudged::Unread)
+    );
+    the_pages_frame_has(
+        &engine,
+        &browser,
+        "PAYMENT-FRAME",
+        75,
+        "http://fixture.test",
+    );
+    assert_eq!(
+        documents_of(&browser, "PAYMENT-FRAME").unwrap(),
+        ["http://fixture.test/"]
+    );
+}
+
+#[test]
+fn a_frame_sent_back_into_its_pages_process_after_its_session_ends_is_judged_by_its_new_document() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    a_frame_in_its_own_process_sent_back(&engine, &browser);
+    the_frames_session_ends(&engine, &browser);
+    assert_eq!(
+        documents_of(&browser, "PAYMENT-FRAME"),
+        Err(Unjudged::Unread)
+    );
+    the_page_says_the_frame_is_blank(&engine, &browser);
+    assert_eq!(
+        documents_of(&browser, "PAYMENT-FRAME"),
+        Err(Unjudged::Unread)
+    );
+    the_pages_frame_has(
+        &engine,
+        &browser,
+        "PAYMENT-FRAME",
+        75,
+        "http://fixture.test",
+    );
+    assert_eq!(
+        documents_of(&browser, "PAYMENT-FRAME").unwrap(),
+        ["http://fixture.test/"]
+    );
+}
+
+#[test]
+fn a_frame_sent_back_whose_new_document_is_told_before_the_page_says_where_it_is_is_judged_by_it() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    a_frame_in_its_own_process_sent_back(&engine, &browser);
+    the_pages_frame_has(
+        &engine,
+        &browser,
+        "PAYMENT-FRAME",
+        75,
+        "http://fixture.test",
+    );
+    assert_eq!(
+        documents_of(&browser, "PAYMENT-FRAME"),
+        Err(Unjudged::Unread)
+    );
+    the_page_says_the_frame_is_blank(&engine, &browser);
+    the_frames_session_ends(&engine, &browser);
+    assert_eq!(
+        documents_of(&browser, "PAYMENT-FRAME").unwrap(),
+        ["http://fixture.test/"]
+    );
+}
+
+#[test]
+fn a_frame_whose_own_session_ends_is_not_judged_by_its_old_document_until_the_page_says_where_it_is()
+ {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    let third = "http://third.test/pay.html";
+    frame_moves(&engine, third, third, Duration::from_millis(1));
+    frame_read(&browser);
+    // No context of its document was told: only its address said what it showed.
+    assert_eq!(documents_of(&browser, "PAYMENT-FRAME").unwrap(), [third]);
+    the_frames_session_ends(&engine, &browser);
+    assert_eq!(
+        documents_of(&browser, "PAYMENT-FRAME"),
+        Err(Unjudged::Unread)
+    );
+}
+
+#[test]
+fn a_frames_session_that_no_longer_holds_it_does_not_move_it_back() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    a_frame_in_its_own_process_sent_back(&engine, &browser);
+    the_page_says_the_frame_is_blank(&engine, &browser);
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame": {"id": "PAYMENT-FRAME", "parentId": "PAGE-1", "name": "payment", "url": "http://third.test/late.html"}}),
+        Some(MOVED),
+    );
+    everything_before_is_taken_in(&engine, &browser);
+    assert_eq!(frame_address(&browser, "PAYMENT-FRAME"), "about:blank");
+}
+
+/// What a secret purlis fills (#5115) is judged by in frame `frame` of the page.
+fn fill_origin(browser: &crate::drive::Browser, frame: &str) -> Option<String> {
+    super::super::lock(&browser.inner.state)
+        .document_now("PAGE-1", frame)
+        .and_then(|(_, origin)| origin)
+}
+
+#[test]
+fn a_secret_is_filled_into_no_frame_whose_new_document_the_engine_has_not_placed_yet() {
+    let (browser, engine) = a_web_frame_that_starts_another_document();
+    assert_eq!(
+        fill_origin(&browser, "WEB"),
+        None,
+        "though it is judged by the old document until it is replaced, nothing is filled there"
+    );
+    the_pages_frame_has(&engine, &browser, "WEB", 93, "http://fixture.test");
+    assert_eq!(
+        fill_origin(&browser, "WEB"),
+        None,
+        "its address still says the old origin, but its document may be on another"
+    );
+    the_page_shows_a_frame(
+        &engine,
+        &browser,
+        "WEB",
+        "PAGE-1",
+        "http://fixture.test/b.html",
+    );
+    assert_eq!(
+        fill_origin(&browser, "WEB").as_deref(),
+        Some("http://fixture.test")
+    );
+}
+
+#[test]
+fn a_secret_is_filled_into_no_frame_whose_document_ended() {
+    let (browser, engine) = a_web_frame_that_starts_another_document();
+    the_pages_context_ends(&engine, &browser, 92);
+    assert_eq!(fill_origin(&browser, "WEB"), None);
+}

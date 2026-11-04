@@ -34,12 +34,13 @@ pub fn tool(
     // A call the agent gave no id is given one of its own, so no two calls share one.
     let call_id = asked.call_id.unwrap_or_else(browsertools::fresh_call_id);
     let changes_id = browsertools::changes_call_id(&call_id);
+    // A suggested login and a secret fill wait on the person's answer (#4595, #5115).
     let within = if matches!(
         asked.asked,
         Browsing::LogIn {
             suggested: Some(_),
             ..
-        }
+        } | Browsing::FillSecret { .. }
     ) {
         A_SUGGESTED_LOGIN_WAITS_AT_MOST
     } else {

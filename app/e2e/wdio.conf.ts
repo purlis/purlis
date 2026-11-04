@@ -26,6 +26,7 @@ import { noDialogIsLeftUp } from "./opening.js";
 import { theWindowHoldsTheRail } from "./rail.js";
 import { LOGS, PANIC_LOG, collectEvidence } from "./processes.js";
 import { type Evidence, coreLogTail, recordFailure } from "./failures.js";
+import { whatTheWindowShows } from "./windowShows.js";
 import { aSessionBegins, aSessionEnds, recordTiming } from "./timings.js";
 import { specsOfPart } from "./parts.js";
 
@@ -90,6 +91,7 @@ async function evidence(error?: unknown): Promise<Evidence> {
     late: late.map((one) => ({ command: one.command, ms: one.ms })),
     coreLog: coreLogTail(LOGS),
     covers: covered === undefined ? undefined : await whatCovers(covered),
+    shown: await whatTheWindowShows(),
   };
 }
 
@@ -137,6 +139,9 @@ export const config: WebdriverIO.Config = {
     // A browser view's real engine is downloaded on its run's first browser
     // (`wdio.browser.conf.ts`, #2025).
     "./specs/**/*.browser.e2e.ts",
+    // Pool setup's Docker path needs Docker and the runner image this build makes, which only
+    // Linux's pool leg has (`wdio.pool.conf.ts`, #4985).
+    "./specs/**/*.pool.e2e.ts",
     ...(process.env.STRESS === "1" ? [] : ["./specs/stress.e2e.ts"]),
   ],
   maxInstances: 1,

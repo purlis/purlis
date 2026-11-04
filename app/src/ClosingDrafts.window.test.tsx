@@ -108,7 +108,8 @@ function core(
       if (cmd === "opened_chats") return [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       if (cmd === "start_chat") return { session: ++opened };
       if (cmd === "smart_close_offer") return { available: false, why: null, close_first: true };
       if (cmd === "smart_closing") return [];
@@ -127,8 +128,23 @@ function core(
   return { asked };
 }
 
+/**
+ * New chat in the empty pane in front (#4758): a chat takes the focused pane, so where a chat
+ * shows already the strip's `+` opens a new tab first, and the chat gets a tab of its own as it
+ * did when `+` started one. The sidebar's `+` is called New chat too, so the empty pane's is
+ * asked for by where it is.
+ */
+async function pressNewChat() {
+  const empty = await screen.findByTestId("empty-pane").catch(() => undefined);
+  if (empty === undefined)
+    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await userEvent.click(
+    within(await screen.findByTestId("empty-pane")).getByRole("button", { name: "New chat" }),
+  );
+}
+
 async function openAChat() {
-  await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await pressNewChat();
   await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
   await screen.findByRole("button", { name: "More for steward 1" });
 }
@@ -235,7 +251,7 @@ describe("a link's close of a chat with theme drafts", () => {
     render(<App />);
     await openAChat();
     // The start of a new chat: a dialog, not an alert dialog.
-    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+    await pressNewChat();
     const starting = await screen.findByRole("dialog");
     const raised = asked(log, "show_window_holding").length;
     await act(() => emit(CLOSE_HANDED, { plane: OTHER, sessions: [1] }));
@@ -249,7 +265,7 @@ describe("a link's close of a chat with theme drafts", () => {
     const { asked: log } = core(["dusk"]);
     render(<App />);
     await openAChat();
-    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+    await pressNewChat();
     const starting = await screen.findByRole("dialog");
     const raised = asked(log, "show_window_holding").length;
     await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1] }));

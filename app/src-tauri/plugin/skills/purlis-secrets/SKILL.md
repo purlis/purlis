@@ -42,6 +42,13 @@ The vault is your persona's unless you add `--vault <name>`. A key the vault hol
 answers filled at once, so asking is also how you check. The person may store it under
 another name or vault: use the name you hear. On Codex and opencode, use the command.
 
+A value that doesn't work (a 401, an expired token): ask again with the reason, and the person
+replaces it in the window. You never see the old value or the new one.
+
+```bash
+purlis secret ask STRIPE_KEY --purpose "charge test cards" --replace "the API answers 401"
+```
+
 ## Store one: the value never goes on the command line
 
 ```bash

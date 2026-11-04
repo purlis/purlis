@@ -12,6 +12,7 @@ import { aBatchOf } from "./chatEvents.testkit";
 import { countReactsCommits, counts, drawnOutside } from "./reactCommits.testkit";
 import { measuring, type Room } from "./stripRoom.testkit";
 import { theFrameNow } from "./frame.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A busy chat the strip is not drawing costs the window nothing but its overflow** (#4726).
@@ -73,6 +74,8 @@ function core(open: OpenChat[]): (moved: Moved) => void {
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return open;
+    // The layout stored gives each chat a tab (#4758): this file is about the strip.
+    if (cmd === "reopened_layout") return aTabForEachChat(open);
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     return null;

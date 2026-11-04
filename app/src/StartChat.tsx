@@ -39,7 +39,8 @@ import { ListBox, ListOption } from "./ui/list/List";
 import { FILTERED_FROM, ListFilter, noMatchSaid, type Noun } from "./ui/list/ListFilter";
 import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 import { Select } from "./ui/select/Select";
-import { reachableWords, startAnswer } from "./StartChatApproval";
+import { reachableWords, START_WITHOUT_SANDBOX, startAnswer } from "./StartChatApproval";
+import { Reserved } from "./ui/dialog/Reserved";
 import { RaiseLimit } from "./RaiseLimit";
 
 /**
@@ -66,6 +67,26 @@ const ASKS_THE_STAGE_EVERY_MS = 3000;
 const AS_SET = "@as-set";
 /** The Runs on choice of this machine for this start: no pool's name is empty. */
 const HERE = "";
+
+/** What the opt-out box says of itself: the room a sandbox still being checked keeps (#4736). */
+const OPT_OUT_SAID =
+  "This project runs every chat sandboxed: it reaches only the hosts the " +
+  "project allows, and never your vaults. Ticked, this one chat runs without " +
+  "it, its tab says so, and purlis records that you turned it off. Nothing " +
+  "inherits it: a relaunch or a resume asks the sandbox again.";
+
+/** What a card says of its bill while the details are read (#4736). */
+const CHECKING_A_CARD = "Checking billing and approval…";
+
+/** The room of a profile's approval sentence, in its longer words (`ApprovalSentence`). */
+const approvalRoom = (row: ProfileRow) =>
+  `purlis has not run this profile as it now stands. It would run: ${row.shown}`;
+
+/**
+ * How long a Start pressed before the details arrived holds still once they turn it into a grant
+ * (ADR 0097 §6): long enough that a second click or Return already on its way lands on nothing.
+ */
+const HOLDS_A_TURNED_START_MS = 800;
 
 /**
  * What a new chat asks before anything runs.
@@ -116,6 +137,12 @@ const HERE = "";
  * about to run and not about the profile's name. **No profile icon is drawn beside that
  * approval**: the footer's summary drops the harness's icon while Start is an approval (#2922).
  *
+ * **It opens before every row's details are known** (#4736): `pending` while each profile's
+ * approval, sandbox and billing are still being read, and each card says so until they arrive.
+ * A Start pressed meanwhile waits for them, then goes only where it is a plain start: a profile
+ * that turns out to ask for its approval, or one the sandbox cannot hold, is shown and asks, as
+ * it would have had the details been there first.
+ *
  * **The footer checkbox is asked here and nowhere else** (ADR 0029). Inside a pane
  * charter prints an empty line where its own footer would go, because the app's panels
  * already draw the plane — and this is where an operator says "not this chat". The choice is
@@ -161,6 +188,7 @@ const HERE = "";
  */
 export function StartChat({
   options,
+  pending = false,
   repo,
   place,
   starting = false,
@@ -185,6 +213,8 @@ export function StartChat({
   onCancel,
 }: {
   options: StartOptions;
+  /** Whether the rows' approval, sandbox and billing are still being read (#4736). */
+  pending?: boolean;
   /** The repo whose clone this chat would start in, when it would start in one. */
   repo?: string;
   /** Where the chat starts, by name: its workspace, or the project's (R8). */
@@ -344,14 +374,20 @@ export function StartChat({
   // The words Start can reach in this dialog, and whether one is a grant (B1 of #3378's review):
   // the options are fixed while it is open, so the room kept for them never changes.
   // A mock or an older answer may leave a row's `approval` or `sandbox` out: read as none.
-  const canApprove = options.profiles.some((row) => Boolean(row.approval));
+  // A dialog opened before its details keeps the room of every word they could bring (#4736).
+  const [openedPending] = useState(pending);
+  const canApprove = openedPending || options.profiles.some((row) => Boolean(row.approval));
   const reach = {
     words: reachableWords({
       canApprove,
-      canOptOut: options.profiles.some(
-        (row) =>
-          row.sandbox != null && row.sandbox.locked === null && row.sandbox.state !== "unsandboxed",
-      ),
+      canOptOut:
+        openedPending ||
+        options.profiles.some(
+          (row) =>
+            row.sandbox != null &&
+            row.sandbox.locked === null &&
+            row.sandbox.state !== "unsandboxed",
+        ),
     }),
     grant: canApprove,
   };
@@ -412,14 +448,24 @@ export function StartChat({
     cancelled.current = true;
     onCancel();
   };
+  // A Start pressed before the details arrived (#4736): it waits for them, with the place it was
+  // pressed for.
+  const [pressedEarly, setPressedEarly] = useState(false);
+  const [pressedFor, setPressedFor] = useState<RunsOnPick | undefined>(undefined);
   // `thisOnce` is Run on this machine this once, beside a pool that could not be reached: it
   // goes with this press alone and leaves the row's choice as it was.
   const start = (thisOnce?: RunsOnPick) => {
+    if (holding) return;
     const pick = thisOnce ?? runsOnPick;
-    setStartedOn(pick);
-    // Left out while the row follows the levels, so a start that chose nothing says nothing.
-    const where: [] | [RunsOnPick] = pick === undefined ? [] : [pick];
+    if (pending) {
+      setPressedFor(pick);
+      setPressedEarly(true);
+      return;
+    }
     if (picked?.approval) {
+      setStartedOn(pick);
+      // Left out while the row follows the levels, so a start that chose nothing says nothing.
+      const where: [] | [RunsOnPick] = pick === undefined ? [] : [pick];
       if (picked.harness) noteHarness(picked.harness.name);
       onApprove(
         picked.name,
@@ -433,7 +479,13 @@ export function StartChat({
       );
       return;
     }
+    plainStart(pick);
+  };
+  // A start that grants nothing: no approval, and the sandbox as the project has it, on `pick`.
+  const plainStart = (pick: RunsOnPick | undefined) => {
     if (!profile) return;
+    setStartedOn(pick);
+    const where: [] | [RunsOnPick] = pick === undefined ? [] : [pick];
     if (picked?.harness) noteHarness(picked.harness.name);
     onStart(profile, persona, showFooter, label, newBranch, withoutSandbox, ...where);
   };
@@ -443,6 +495,44 @@ export function StartChat({
   // approval or a start without the sandbox (ADR 0097 §6), and nothing while one is running.
   const [savingLimit, setSavingLimit] = useState(false);
   const byKey = !approves && withoutSandbox === null && !unavailable && !starting && !savingLimit;
+  // Once the details are in, a Start pressed early goes, where it is a plain start; an approval
+  // or a start without the sandbox is shown instead, and is a press of its own (ADR 0097 §6).
+  const wentEarly = useRef(false);
+  // **A Start pressed early that the details turn into a grant** (ADR 0097 §6): the button
+  // under the person's focus and pointer now approves, or starts without the sandbox. So the
+  // keyboard goes to Cancel, the footer says why nothing started, and the button holds still for
+  // a moment, so a second click or Return already on its way grants nothing unread.
+  const grants = approves || withoutSandbox !== null;
+  const [heldLong, setHeldLong] = useState(false);
+  const holding = pressedEarly && !pending && grants && !heldLong;
+  const dialogOf = () => panes.current?.closest<HTMLElement>('[role="dialog"]') ?? null;
+  useEffect(() => {
+    if (pending || !pressedEarly || wentEarly.current) return;
+    wentEarly.current = true;
+    if (byKey) plainStart(pressedFor);
+  });
+  // Before it is painted, so no key lands on the turned button first.
+  const movedOff = useRef(false);
+  useLayoutEffect(() => {
+    if (pending || !pressedEarly || byKey || movedOff.current) return;
+    movedOff.current = true;
+    dialogOf()?.querySelector<HTMLElement>('[data-dialog-action="cancel"]')?.focus();
+  });
+  useEffect(() => {
+    if (pending || !pressedEarly) return;
+    const over = window.setTimeout(() => setHeldLong(true), HOLDS_A_TURNED_START_MS);
+    return () => window.clearTimeout(over);
+  }, [pending, pressedEarly]);
+  const turnedSaid =
+    pressedEarly && !pending && grants
+      ? approves
+        ? `Not started. Its command needs your approval first: read it above, then press ${
+            withoutSandbox === null ? "Approve and start" : "Approve and start without the sandbox"
+          }.`
+        : refused
+          ? `Not started. The sandbox cannot hold this chat here: read why below, then press ${START_WITHOUT_SANDBOX}.`
+          : undefined
+      : undefined;
   // Raising a limit starts the chat too, so it is offered only where that is a plain start of the
   // profile it was refused on: never an approval or a start without the sandbox (ADR 0097 §6).
   const raises =
@@ -621,6 +711,10 @@ export function StartChat({
           <span className="start-chat-summary" role="status" data-testid="start-chat-host">
             Starting the session host…
           </span>
+        ) : turnedSaid !== undefined ? (
+          <span className="start-chat-summary" role="status" data-testid="start-chat-turned">
+            {turnedSaid}
+          </span>
         ) : picked === undefined ? undefined : (
           <span className="start-chat-summary" data-testid="start-chat-summary">
             {who} on{" "}
@@ -636,8 +730,8 @@ export function StartChat({
       main={startAnswer({
         approves,
         withoutSandbox: withoutSandbox !== null,
-        starting: starting || savingLimit,
-        unavailable,
+        starting: starting || savingLimit || (pending && pressedEarly),
+        unavailable: unavailable || holding,
         reach,
         onPress: () => start(),
       })}
@@ -775,7 +869,15 @@ export function StartChat({
                 }}
               />
             )}
-            <ApprovalSentence row={picked} />
+            {/* A dialog opened before its details keeps the room of every profile's approval
+              sentence, so one said late, or on a pick, moves nothing under it (#4736). */}
+            {openedPending ? (
+              <Reserved as="div" texts={options.profiles.map(approvalRoom)}>
+                <ApprovalSentence row={picked} />
+              </Reserved>
+            ) : (
+              <ApprovalSentence row={picked} />
+            )}
             {/* What the picked harness lacks, said once by Start: the first chat on it here
               (#1134, W10). */}
             <FirstOnHarness glance={picked?.harness} />
@@ -802,7 +904,9 @@ export function StartChat({
             </div>
           )}
 
-          <div className="start-chat-section">
+          {/* Busy while each row's details are read (#4736): a screen reader, and a scenario
+              spec, can tell the rows are not final yet. */}
+          <div className="start-chat-section" aria-busy={pending}>
             <h3 className="start-chat-label" id={harnessLabel}>
               Harness
             </h3>
@@ -820,7 +924,7 @@ export function StartChat({
                   title={row.name}
                   // Its facts, the command first among them: the words about to run are read
                   // beside the card that runs them (V69).
-                  detail={<CardFacts row={row} />}
+                  detail={<CardFacts row={row} pending={pending} keep={openedPending} />}
                 />
               ))}
             </OptionCards>
@@ -899,6 +1003,17 @@ export function StartChat({
             </Checkbox>
           )}
 
+          {/* While the details are read, the sandbox is checked, and its room kept (#4736). */}
+          {pending && (
+            <section className="start-chat-section" aria-labelledby={`${nameLabel}-sandbox`}>
+              <h3 className="start-chat-label" id={`${nameLabel}-sandbox`}>
+                Sandbox
+              </h3>
+              <Reserved as="div" texts={[OPT_OUT_SAID]}>
+                <p className="honest">Checking the sandbox…</p>
+              </Reserved>
+            </section>
+          )}
           {/* One heading over every state of it, so the sentence about a sandbox that is off
             or cannot be applied is not a stray line under the Name box. */}
           {sandbox !== null && (
@@ -907,16 +1022,7 @@ export function StartChat({
                 Sandbox
               </h3>
               {sandbox.state === "sandboxed" && locked === null && (
-                <Checkbox
-                  isSelected={optedOut}
-                  onChange={setOptedOut}
-                  description={
-                    "This project runs every chat sandboxed: it reaches only the hosts the " +
-                    "project allows, and never your vaults. Ticked, this one chat runs without " +
-                    "it, its tab says so, and purlis records that you turned it off. Nothing " +
-                    "inherits it: a relaunch or a resume asks the sandbox again."
-                  }
-                >
+                <Checkbox isSelected={optedOut} onChange={setOptedOut} description={OPT_OUT_SAID}>
                   Start without the sandbox
                 </Checkbox>
               )}
@@ -1128,16 +1234,35 @@ function RunsOnRow({
  * **A harness card's facts, in two lines** (R25, R28): what the chat is billed to and the model,
  * then the command that runs — never cut from the card, since it is what is approved (V69) — with
  * where it was declared, whether it is the default and whether it asks for approval. The harness's
- * kind is said only where the profile's name does not say it already.
+ * kind is said only where the profile's name does not say it already. While the details are read
+ * (`pending`, #4736), it says it is checking them.
  */
-function CardFacts({ row }: { row: ProfileRow }) {
-  const bill = [
-    row.billed_to ? `Billed to ${row.billed_to}.` : undefined,
-    row.model ? `Model: ${row.model}.` : undefined,
-  ].filter((said) => said !== undefined);
+function CardFacts({
+  row,
+  pending,
+  keep,
+}: {
+  row: ProfileRow;
+  pending: boolean;
+  /** Opened before the details: the line keeps the room of what it said while they were read. */
+  keep: boolean;
+}) {
+  const model = row.model ? `Model: ${row.model}.` : undefined;
+  const words = (first: string | undefined) =>
+    [first, model].filter((said) => said !== undefined).join(" ");
+  // Until the details arrive (#4736), what it is billed to and whether it asks are not known.
+  const bill = words(
+    pending ? CHECKING_A_CARD : row.billed_to ? `Billed to ${row.billed_to}.` : undefined,
+  );
   return (
     <span className="start-chat-facts">
-      {bill.length > 0 && <span className="start-chat-bill">{bill.join(" ")}</span>}
+      {keep ? (
+        <span className="start-chat-bill">
+          <Reserved texts={[words(CHECKING_A_CARD)]}>{bill}</Reserved>
+        </span>
+      ) : (
+        bill !== "" && <span className="start-chat-bill">{bill}</span>
+      )}
       <span className="meta profile-meta">
         {row.kind !== row.name && <span className="what">{row.kind}</span>}
         {/* Already contained by the core: a profile is a file a chat can write, and a control

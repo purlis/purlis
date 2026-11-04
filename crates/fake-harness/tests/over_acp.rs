@@ -195,7 +195,7 @@ fn an_agent_that_needs_a_login_does_not_start_and_charter_never_authenticates() 
     )
     .expect_err("refused");
     assert_eq!(refused, NotStarted::Login);
-    assert!(refused.to_string().contains("shell tab"), "{refused}");
+    assert!(refused.to_string().contains("in a shell"), "{refused}");
     assert!(sent(&recorded(&record), "authenticate").is_none());
 }
 

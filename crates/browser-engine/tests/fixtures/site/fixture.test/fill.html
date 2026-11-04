@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Settings</title>
+<style>
+  body { margin: 0; font: 24px sans-serif; }
+  input, textarea, div[contenteditable] { display: block; margin: 8px; font: 24px sans-serif; }
+  #key, #echo { color: rgb(255, 0, 0); }
+</style></head>
+<body>
+  <h1>Settings</h1>
+  <label>API key <input name="api-key" id="key"></label>
+  <label>Port <input type="number" name="port"></label>
+  <label>Notes <textarea name="notes"></textarea></label>
+  <div contenteditable="true" role="textbox" aria-label="Editor">Draft</div>
+  <p>The page shows what was typed: <span id="echo"></span></p>
+  <p id="count">The key holds 0 characters</p>
+  <script>
+    // A page that echoes what its field holds, in red, wherever it can.
+    const key = document.getElementById('key');
+    key.addEventListener('input', () => {
+      document.getElementById('echo').textContent = key.value;
+      document.getElementById('count').textContent =
+        'The key holds ' + key.value.length + ' characters';
+    });
+  </script>
+</body></html>

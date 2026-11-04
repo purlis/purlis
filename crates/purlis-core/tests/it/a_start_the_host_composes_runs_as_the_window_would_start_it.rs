@@ -58,8 +58,8 @@ impl Project {
         self.dir.path()
     }
 
-    /// What purlis ships, as stand-ins: a `purlis` that does nothing, and a plugin holding only
-    /// opencode's file.
+    /// What purlis ships, as stand-ins: a `purlis` that does nothing, a plugin holding only
+    /// opencode's file, and a folder for chats' settings files.
     fn kit(&self) -> Kit {
         let plugin = self.bin.path().join("plugin");
         let shim = purlis_core::opencode::shim_in(&plugin);
@@ -74,7 +74,10 @@ impl Project {
             plugin: Some(plugin),
             git_hooks: None,
             skill_sets: None,
-            chat_settings: None,
+            // Where the app keeps a chat's settings too long for its command line (SK-9): a
+            // Claude Code chat's on macOS, which denies each held name under every spelling,
+            // passes that length on a runner.
+            chat_settings: Some(self.bin.path().join("chat-settings")),
         }
     }
 

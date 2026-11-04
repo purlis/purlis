@@ -32,11 +32,15 @@ One of the five concepts: a named piece of work inside a plane, with its own cha
 _Avoid_: task, context
 
 **Chat**:
-One of the five concepts: one conversation with an agent, in a tab, in one workspace or at the
-plane root. It is where work happens and what needs you. It has a number the window shows
-(`steward 3`) and an id that never changes, has one or more **runs**, and shows its
+One of the five concepts: one conversation with an agent, in one workspace or at the plane
+root. It has a row of its own in the sidebar for its whole life, and a **pane** shows it when
+the person picks it. Picking a chat shows it in the focused pane, and the chat it replaces
+keeps running. A chat is in one pane at most. Closing its pane never ends it: **End…** is an
+action on the chat. It is where work happens and what needs you. It has a number the window
+shows (`steward 3`) and an id that never changes, has one or more **runs**, and shows its
 **branches**, one per repo it works in (ADR 0066, ADR 0072).
-_Avoid_: session (that is the process), thread, agent, conversation (that is the harness's)
+_Avoid_: session (that is the process), thread, agent, conversation (that is the harness's),
+chat tab (a chat is not a tab)
 
 **Persona**:
 One of the five concepts: a role a chat runs as for its whole life, with its own charter
@@ -143,7 +147,7 @@ the branch (ADR 0072).
 _Avoid_: the chat's branch (singular: a chat may work in several repos), piece, worktree (in UI text)
 
 **Writing chat**:
-A chat that starts in a repo's shared clone (`workspaces/<ws>/<repo>`), which is what _New tab
+A chat that starts in a repo's shared clone (`workspaces/<ws>/<repo>`), which is what _New chat
 in <repo>_ and _Start new chats in <repo>_ point at. By default it starts on a new branch of its
 own instead: a piece named after the chat, or `chat-<n>`, cut before it starts and taken back if
 the start is refused. The picker's _start on a new branch_ box, ticked by default, is the
@@ -852,14 +856,12 @@ the person's word. The person can dispatch too.
 _Avoid_: spawn, delegate, delegation, sub-agent (that is the harness's child run)
 
 **Task** (of a dispatch):
-A dispatch that expects a **report**, and the chat it starts: work done for the asking chat. It
-is listed under the asking chat, never hidden, and is shown inside its session's tab: the tab
-of the nearest chat above it that has one. Pressing the task switches that tab to it and adds
-no tab; the pane's top line then says the path (`steward 4 › talk · working`). It has a pane
-of its own only when the person asks: **a tab of its own**, drawn with the task mark, whose
-task it is and a minimise where a session's tab has its close, or a pane **beside** its
-session, inside the session's tab. The minimise **sends it back** and ends nothing; a session's
-close is the only close on the strip. "Task" is the
+A dispatch that expects a **report**, and the chat it starts: work done for the asking chat.
+It starts in the sidebar only, listed under the asking chat, never hidden, and takes no pane
+until the person picks it. Picking a task is picking a chat: it replaces what the focused pane
+shows, or goes to the pane that already shows it. The pane's head then says the path
+(`steward 4 › talk · working`), and pressing a step of the path shows that chat in the same
+pane. Closing its pane ends nothing: the task keeps working in the sidebar. "Task" is the
 word in every sentence the app shows for that chat. Its row says its state in a word
 beside a mark with a shape of its own, the same in every list: working, needs you,
 `asking <chat>`, done, failed, cancelled, or ended without a report. A chat at rest that is
@@ -873,10 +875,10 @@ shown sentence, where a task is meant)
 **Ending a task** (by the person):
 The two ways a person ends a task by hand, and no other: **Stop and get its report**, which
 ends its turn and gives it one short turn to say what it did, and **Close now**, which ends its
-program at once. Either takes a second step before anything ends. Closing a task's tab is
-neither: the tab goes, and the task goes **back to the list** and keeps working. A chat's own
+program at once. Either takes a second step before anything ends. Closing a task's pane is
+neither: the pane clears, and the task keeps working in the sidebar. A chat's own
 way to end a task it dispatched is a **cancel**.
-_Avoid_: kill, terminate, close the task's tab (to mean ending it), stop chat (that is a
+_Avoid_: kill, terminate, close the task's pane (to mean ending it), stop chat (that is a
 session's or a handoff's)
 
 **Outcome** (of a task the asking chat is told of):
@@ -902,10 +904,10 @@ _Avoid_: sub-agent (in a shown sentence: that is the harness's word), child agen
 
 **Handoff**:
 A dispatch where the work moves: the persona chat takes it from there, and the asking chat does
-not wait on it. It opens as a tab. It is never a task: its chat is a session of its own, with
-its own tab and a row of its own at the top of the Chats list, under no chat and in no chat's
-counts. Its row says `from <chat>`, and the row of the chat it came from says
-`handed off to <chat>`.
+not wait on it. It starts in the sidebar and takes no pane (#4758): the person opens it from
+its row. It is never a task: its chat is a session of its own, with a row of its own at the top
+of the Chats list, under no chat and in no chat's counts. Its row says `from <chat>`, and the
+row of the chat it came from says `handed off to <chat>`.
 _Avoid_: transfer, session record (that is what a closing chat writes)
 
 **Asking chat**:
@@ -1056,16 +1058,44 @@ the project. Where the person is, is kept per machine, so a quit resumes at the 
 _Avoid_: wizard, onboarding (in the window's words), setup assistant
 
 **Strip**:
-One row of tabs: projects (in the title bar), a project's workspaces, or a workspace's chats.
-A strip's order never changes on its own, and it never scrolls. The operator can drag a tab
-along it; dropped among the pinned tabs it is pinned, and among the others it is unpinned.
+One row of tabs: projects (in the title bar), a project's workspaces, or a workspace's tabs.
+A tab on a workspace's strip is a layout of panes; a chat is never a tab of its own. A strip's
+order never changes on its own, and it never scrolls. The operator can drag a tab along it;
+dropped among the pinned tabs it is pinned, and among the others it is unpinned. Each
+workspace's strip, and the plane root's, always keeps at least one tab.
 _Avoid_: tab bar, scroller
+
+**Tab** (on a workspace's strip):
+A layout of **panes**, kept as a tree: each split holds two parts, side by side or one above
+the other, and each pane holds a chat, a view or nothing. A tab is made only when the person
+asks for one: the strip's `+` (a tab with an empty pane), **Open in new tab** on a chat, or
+opening a view. A chat never gets a tab by starting, by a dispatch or by a handoff, and a
+launch draws only the tabs the record keeps. A tab knows which strip it is on. Closing it ends
+no chat: its chats keep running in the sidebar (ADR 0043 as amended, #4587, #4758).
+_Avoid_: chat tab, session tab (a chat is not a tab), layout (unqualified), project tab or
+workspace tab (those are other strips' tabs)
+
+**Pane**:
+One place in a tab's layout, holding a chat, a view or nothing. Picking a chat in the sidebar
+or the palette shows it in the focused pane, and **New chat** starts one there. A pane holding
+a view is never replaced: the chat goes to the most recently used pane that shows a chat or
+nothing. A chat already in a pane is jumped to, never shown twice. Closing a pane clears it,
+and its chat keeps running in the sidebar.
+_Avoid_: tile, frame, terminal (a pane may hold a view), split (that is two panes and the line
+between them)
+
+**Empty pane**:
+A pane that holds nothing. It says "Nothing in this pane", how many chats are running in the
+workspace, and offers **New chat**. A strip's last tab keeps one when its last pane closes, so
+a focused pane always exists for `+` and a sidebar pick. In a plane with no workspace it says
+"No workspaces yet" and offers **Create a workspace**.
+_Avoid_: blank tab, empty window
 
 **Side**:
 One edge of a project's window: its activity bar, its sidebar beside the editor and its **Panel
 half**, together. Left is navigation, right is what is for you (ADR 0038). A view moves only
 within its own side.
-_Avoid_: pane (a pane is a chat's terminal), column
+_Avoid_: pane (a pane is a place in a tab's layout), column
 
 **Sidebar view**:
 One of the views an activity bar shows in its sidebar, one at a time (Chats, Explorer, Search,

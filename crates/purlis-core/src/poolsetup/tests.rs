@@ -736,6 +736,17 @@ fn signing_in_by_hand_is_the_command_the_step_shows() {
     assert_eq!(see.text, "purlis profile sign-in oss --pool dev-box");
 }
 
+/// **#4718**: a pool with no profiles yet shows the line that records one, to fill in.
+#[test]
+fn a_pool_with_no_profiles_yet_shows_how_to_record_one_by_hand() {
+    let setup = answer(&on_a_pool(Runner::Running, SignIns::Read(Vec::new())));
+    let see = setup
+        .step(StepId::Signins)
+        .and_then(|step| step.see.clone())
+        .expect("commands");
+    assert_eq!(see.text, "purlis pool add-profile dev-box PROFILE");
+}
+
 #[test]
 fn where_says_how_it_asks_and_that_it_only_reads() {
     let setup = answer(&facts(Engine::Ready));

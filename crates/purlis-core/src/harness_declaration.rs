@@ -1080,7 +1080,7 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
     if !levels.terminal {
         return Err(format!(
             "{} says terminal = false — every harness purlis runs starts in its terminal \
-             (level 1), and a chat in a tab always does. Remove the line.",
+             (level 1), and every chat has one, shown in a pane or not. Remove the line.",
             at("[levels]")
         ));
     }

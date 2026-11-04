@@ -7,6 +7,7 @@ import { act, cleanup, render as renderBare, screen, waitFor } from "@testing-li
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **The palette opening and closing draw no project again** (#4351): the window reads the
@@ -63,6 +64,8 @@ function core(entries: unknown[] = []) {
       asked.push(cmd);
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
+      // The chat in a tab of its own on alpha, as the stored layout keeps it (#4758).
+      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,

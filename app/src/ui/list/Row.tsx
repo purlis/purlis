@@ -21,7 +21,6 @@ import {
   type ReactNode,
 } from "react";
 import { Text as AriaText } from "react-aria-components";
-import { drawnCut } from "../drawnCut";
 
 /** The families a row belongs to. */
 export type RowFamily = "list" | "tree" | "table";
@@ -87,11 +86,15 @@ export const RowDescription = slot("description", "description");
 export const RowTrail = slot("trail");
 
 /**
- * **Where a row takes the whole words of a line under it that its clamp cuts** (#4711): what
- * `ListRow` and `ListOption` hand their `RowBelow`, which says its words while they are cut and
- * `undefined` once they fit. `null` in any other row, where `tipWhenCut` does nothing.
+ * **Where a row asks a line under it for its whole words while its clamp cuts them** (#4711):
+ * what `ListRow` and `ListOption` hand their `RowBelow`, which hands back its line's element, or
+ * `null` as it goes. `null` in any other row, where `tipWhenCut` does nothing.
+ *
+ * **Asked only when the row could say them** (#4351): as the pointer comes to the row and as the
+ * keyboard does, so a list's rows measure no line as they are drawn. Two hundred lines measured
+ * as a list was drawn forced its layout before the frame could, and watched each line's size.
  */
-export const RowCutWords = createContext<((words: string | undefined) => void) | null>(null);
+export const RowCutWords = createContext<((line: HTMLElement | null) => void) | null>(null);
 
 /**
  * **A line under the row's words, inside the row**: what a search matched in its body, why it
@@ -117,18 +120,22 @@ export function RowBelow({
   useLayoutEffect(() => {
     const element = line.current;
     if (asks === null || element === null) return;
-    // Measured at rest and again as the row's width moves; the words are the row's text, so a
-    // string, which only a change of words changes.
-    const measure = () => asks(drawnCut(element) ? element.textContent || undefined : undefined);
-    measure();
-    if (typeof ResizeObserver !== "function") return () => asks(undefined);
-    const watch = new ResizeObserver(measure);
-    watch.observe(element);
-    return () => {
-      watch.disconnect();
-      asks(undefined);
-    };
-  }, [asks, children]);
+    asks(element);
+    return () => asks(null);
+  }, [asks]);
+  // Handed again when its words change, as drawn (words drawn as marks are new on every draw):
+  // a row measuring it now measures them.
+  const wordsHanded = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const element = line.current;
+    if (asks === null || element === null) return;
+    const words = element.textContent;
+    if (wordsHanded.current === null) wordsHanded.current = words;
+    else if (words !== wordsHanded.current) {
+      wordsHanded.current = words;
+      asks(element);
+    }
+  });
   return (
     <span {...rest} ref={line} data-scope={scope} data-part="below" data-clamp={clamp}>
       {children}

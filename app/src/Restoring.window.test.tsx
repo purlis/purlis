@@ -18,6 +18,7 @@ import {
 } from "./restoringChats";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { findResult } from "./actionResult.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A launch's chats come back behind the window** (`restoring.rs`), against the whole window:
@@ -75,6 +76,15 @@ function core(first: OpenChat[]) {
       asked.push(cmd);
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return held.chats;
+      // Each chat the launch put back has its tab, as the stored layout keeps it (#4758), and a
+      // pinned chat's tab is pinned: a layout says the pin on the tab.
+      if (cmd === "reopened_layout") {
+        const laid = aTabForEachChat(first, () => "alpha");
+        return {
+          ...laid,
+          tabs: laid.tabs.map((tab, at) => ({ ...tab, pinned: first[at].pinned === true })),
+        };
+      }
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,

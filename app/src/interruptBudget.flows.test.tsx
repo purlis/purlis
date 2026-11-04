@@ -3,11 +3,19 @@
 
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { askOfDispatch } from "./test-asks";
+import { aTabForEachChat } from "./laidOut.testkit";
 import type { DispatchPending, OpenChat, PlaneContribution, RelaunchQuestion } from "./bindings";
 import { type Interrupts, countInterrupts, withinTheBudget } from "./interruptBudget";
 import type { Ending } from "./QuitWarning";
@@ -132,7 +140,8 @@ function core(answers: Answers = () => undefined) {
         persona: "steward",
         unfiled: [],
       };
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat") return { session: 1, label: null };
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];
@@ -180,9 +189,11 @@ async function relaunch(answer: "Reopen all sessions" | "Start fresh") {
   return person;
 }
 
-/** Starts a chat from a new tab, through the picker: the way to a turn after starting fresh. */
+/** Starts a chat from the empty pane's New chat, through the picker: the way to a turn after
+ *  starting fresh. The Chats view has a New chat of its own, so the pane's is asked for. */
 async function startAChat(person: ReturnType<typeof userEvent.setup>, start = "Start chat") {
-  await person.click(await screen.findByRole("button", { name: "New tab" }));
+  const empty = await screen.findByTestId("empty-pane");
+  await person.click(within(empty).getByRole("button", { name: "New chat" }));
   const picker = await screen.findByRole("dialog", { name: "Start a chat" });
   await person.click(within(picker).getByRole("button", { name: start }));
 }
@@ -230,7 +241,7 @@ describe("a restart to update (#1078)", () => {
   async function restartedWith(after: "Reopen every chat" | "Start fresh") {
     // Before the restart: the status line's button opens the update's dialog, and a chat
     // mid-turn is warned about. The dialog is counted although the operator opened it, as the
-    // picker a New tab opens is: it is a dialog that waits for an answer (D-1078-2).
+    // picker a New chat opens is: it is a dialog that waits for an answer (D-1078-2).
     const restart = vi.fn();
     const updates: Updates = {
       state: { kind: "installed", version: "0.2.0" },
@@ -292,7 +303,8 @@ describe("opening someone else's project (#1078)", () => {
       if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
       if (cmd === "open_plane") return { plane: null, ask: asking(TWO, true) };
       if (cmd === "approve_plane") return TWO;
-      if (cmd === "start_options")
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first")
         return { ...START_OPTIONS, profiles: [{ ...START_OPTIONS.profiles[0], approval: "new" }] };
       if (cmd === "plane_sidebar" && args.plane === TWO)
         return { root: TWO, workspaces: [], personas: [], persona: null, unfiled: [] };
@@ -380,6 +392,9 @@ function handingOff(held: DispatchPending[]) {
       return 1;
     }
     if (cmd === "opened_chats") return [READING];
+    // The chat being read has its tab from the stored layout, the only place a tab comes from
+    // at launch (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat([READING]);
     // No sidebar, as `Handoff.test.tsx` has none: the strip then holds every chat of the project.
     if (cmd === "plane_sidebar") return null;
     if (cmd === "dispatch_grants_needed") return waiting;
@@ -413,6 +428,13 @@ function handingOff(held: DispatchPending[]) {
   return { calls, arrive };
 }
 
+/** A turn of the event loop, inside `act`, for what an arrival does to be drawn. */
+async function settled() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 /** The chat tab whose text ends in `name`: a persona's mark comes first. */
 const tabNamed = (name: string) =>
   within(stripNamed("Tabs"))
@@ -420,14 +442,17 @@ const tabNamed = (name: string) =>
     .find((tab) => tab.textContent?.endsWith(name));
 
 describe("a handoff (#1078)", () => {
-  it("costs no prompt to the asking chat's own persona: the chat lands on a tab, behind", async () => {
+  it("costs no prompt to the asking chat's own persona: the chat takes no tab", async () => {
     const { arrive } = handingOff([]);
     render(<App />);
     await waitFor(() => expect(tabNamed("steward 1")).toBeDefined());
 
     arrive("steward");
 
-    await waitFor(() => expect(tabNamed("deploy check")).toBeDefined());
+    // A handoff shows in the sidebar only (#4758): the strip keeps the chat being read, alone.
+    await settled();
+    expect(tabNamed("deploy check")).toBeUndefined();
+    expect(tabNamed("steward 1")).toHaveAttribute("aria-selected", "true");
     expect(interrupts.asked()).toEqual([]);
   });
 
@@ -445,7 +470,9 @@ describe("a handoff (#1078)", () => {
     await vi.waitFor(() => expect(calls("allow_dispatch")).toHaveLength(1));
     arrive("devops");
 
-    await waitFor(() => expect(tabNamed("deploy check")).toBeDefined());
+    // The chat it started shows in the sidebar only (#4758), so nothing more stands in the way.
+    await settled();
+    expect(tabNamed("deploy check")).toBeUndefined();
     expect([...interrupts.asked(), ...byHand]).toEqual(["Dispatch to devops"]);
   });
 });

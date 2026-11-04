@@ -179,6 +179,47 @@ export const Filtered: Story = {
   },
 };
 
+/** Entries a person keeps, vault by vault: a select of groups (#5073). */
+const ENTRIES: SelectOption[] = [
+  { value: "own/GITHUB_TOKEN", label: "GITHUB_TOKEN", group: "own" },
+  { value: "own/STRIPE_KEY", label: "STRIPE_KEY", group: "own" },
+  { value: "team/DB_PASSWORD", label: "DB_PASSWORD", group: "team" },
+  { value: "team/STRIPE_KEY", label: "STRIPE_KEY", group: "team" },
+  {
+    value: "prod/",
+    label: "Its keys could not be listed",
+    group: "prod",
+    isDisabled: true,
+    tooltip: "1Password is locked",
+  },
+];
+
+/**
+ * **Options in groups** (#5073): each group under its name, a filter on top that narrows within
+ * them and leaves out a group nothing in matches; the baseline shows it narrowed to one group.
+ */
+export const Grouped: Story = {
+  args: { "aria-label": "Entry", options: ENTRIES, start: "", filtered: true },
+  play: async ({ canvas, userEvent }) => {
+    const select = theSelect(canvas, "Entry");
+    await userEvent.tab();
+    await untilFocused(() => select, "Grouped: Tab onto the select");
+    await userEvent.keyboard("{Enter}");
+    const filter = await screen.findByRole("textbox", { name: "Filter" });
+    await untilFocused(() => filter, "Grouped: the filter takes the keyboard");
+    const list = screen.getByRole("listbox");
+    await expect(within(list).getAllByRole("group")).toHaveLength(3);
+    await userEvent.keyboard("stripe");
+    await waitFor(() => expect(within(list).getAllByRole("option")).toHaveLength(2));
+    await expect(within(list).getAllByRole("group")).toHaveLength(2);
+    await userEvent.keyboard("{ArrowDown}");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull(), CLOSES);
+    await expect(canvas.getByRole("status")).toHaveTextContent(/Holds (own|team)\/STRIPE_KEY/);
+  },
+};
+
 /** Each size, one select to a row: sm 24, md 28, lg 32. */
 export const Sizes: Story = {
   render: () => (

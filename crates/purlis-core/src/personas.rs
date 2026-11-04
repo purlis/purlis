@@ -324,10 +324,14 @@ pub fn def_path(root: &Path, name: &str) -> PathBuf {
 /// text), each line holding a `:` split at the first one, both halves stripped, and a pair
 /// kept only when its key is not empty.
 ///
-/// The one rule a `SKILL.md`'s frontmatter is read by too, so it is
-/// [`purlis_skills::frontmatter`]'s.
+/// **Not YAML** (`docs/plane-format.md`), unlike a `SKILL.md`'s frontmatter since #5182
+/// ([`purlis_skills::frontmatter`]): a persona's keys are one line each, read as the Python
+/// charter read them and as `persona lint` checks them, quotes kept. The fence's one rule for a
+/// block scalar holds here too: its lines are never read as keys of their own.
 pub fn frontmatter(text: &str) -> Vec<(String, String)> {
-    purlis_skills::frontmatter(text)
+    purlis_skills::fence::Fence::find(text)
+        .map(|fence| fence.pairs())
+        .unwrap_or_default()
 }
 
 /// A persona's own definition, loaded — its frontmatter pairs — or `None` when it does
@@ -349,6 +353,23 @@ pub fn load_text(root: &Path, name: &str) -> Option<String> {
     if !valid_name(name) {
         return None;
     }
+    if let Some(read) = READ_ONCE.with_borrow(|kept| {
+        kept.as_ref()
+            .and_then(|kept| kept.get(&(root.to_path_buf(), name.to_owned())).cloned())
+    }) {
+        return read;
+    }
+    let read = read_text(root, name);
+    READ_ONCE.with_borrow_mut(|kept| {
+        if let Some(kept) = kept {
+            kept.insert((root.to_path_buf(), name.to_owned()), read.clone());
+        }
+    });
+    read
+}
+
+/// [`load_text`] from the disk, every time.
+fn read_text(root: &Path, name: &str) -> Option<String> {
     let path = def_path(root, name);
     if !path.exists() {
         return None;
@@ -357,7 +378,55 @@ pub fn load_text(root: &Path, name: &str) -> Option<String> {
     if crate::contain::readable(root, parent).is_err() || !memstore::readable_file(root, &path) {
         return None;
     }
+    #[cfg(test)]
+    DEFINITION_READS.with(|reads| reads.set(reads.get() + 1));
     memstore::read_text(&path)
+}
+
+/// Each persona's definition as one answer read it, by the plane and the persona's name;
+/// `None` outside one ([`read_once`]).
+type ReadOnce = Option<std::collections::HashMap<(PathBuf, String), Option<String>>>;
+
+thread_local! {
+    static READ_ONCE: std::cell::RefCell<ReadOnce> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread has read a persona's definition from the disk, for a test of
+    /// an answer that reads each one once.
+    pub(crate) static DEFINITION_READS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+/// **`work`, with each persona's definition read once** (#4736): every [`load_text`] in it,
+/// and so every [`load`], [`lineage`] and resolve of a persona, gets what the first read of
+/// that definition found. The new-chat picker reads each persona's `extends:` chain, its
+/// profile, its model, its denied tools and its description, each of which read every
+/// definition of the chain again.
+///
+/// **For one answer, never longer**, as [`crate::profiles::git_asked_once`] is: a definition is
+/// a file the person and a chat edit, so what was read is dropped when `work` returns and the
+/// next answer reads it again. The reads are this thread's; an answer inside another shares
+/// them.
+pub fn read_once<T>(work: impl FnOnce() -> T) -> T {
+    /// Drops what was read when the outermost answer ends, however it ends.
+    struct Answering(bool);
+    impl Drop for Answering {
+        fn drop(&mut self) {
+            if self.0 {
+                READ_ONCE.with_borrow_mut(|kept| *kept = None);
+            }
+        }
+    }
+    let _answering = Answering(READ_ONCE.with_borrow_mut(|kept| {
+        let outermost = kept.is_none();
+        if outermost {
+            *kept = Some(std::collections::HashMap::new());
+        }
+        outermost
+    }));
+    work()
 }
 
 /// The charter below the frontmatter, stripped — `persona._frontmatter`'s second answer.

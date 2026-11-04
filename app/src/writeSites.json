@@ -31,6 +31,12 @@
       "why": "The Docker pool journey's own fixture: it sets where a test workspace's chats run, as a person would in its settings; no window command calls it."
     },
     {
+      "at": "behaviour/pool_setup_try.rs in_a_docker_pool",
+      "writes": "this machine's store: the pins",
+      "by": [],
+      "why": "Try it's parity fixture: it sets a test workspace to run its chats on this machine, as a person would in its settings; no window command calls it."
+    },
+    {
       "at": "behaviour/runs_on_order.rs in_a_docker_pool",
       "writes": "this machine's store: the pins",
       "by": [],
@@ -288,9 +294,14 @@
       "by": ["answerBrowserLogin"]
     },
     {
+      "at": "secretfills.rs answer_secret_fill",
+      "writes": "this machine's network record",
+      "by": ["answerSecretFill"]
+    },
+    {
       "at": "loginasks.rs written",
       "writes": "the project's manifest and its local settings",
-      "by": ["answerBrowserLogin"]
+      "by": ["answerBrowserLogin", "answerSecretFill"]
     },
     {
       "at": "proposals.rs apply_in",

@@ -11,6 +11,7 @@ import { SETTLE_MS as ASKS_SETTLE_MS } from "./asks";
 import { CHAT_EVENTS } from "./chatEvents";
 import { aBatchOf } from "./chatEvents.testkit";
 import { panes } from "./countedPane.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { commitRoots, counts, renderedBy } from "./reactCommits.testkit";
 import { stripNamed } from "./test-strips";
 import { themeInForce } from "./theme/inForce.testkit";
@@ -170,8 +171,16 @@ function core(shape: Shape): Core {
       return reversed ? keysReversed(answer) : answer;
     }
     if (cmd === "opened_chats") return open;
+    // Each chat in a tab of its own on its workspace's strip, as a record would keep them
+    // (#4758): a chat gets a tab only from the stored layout.
+    if (cmd === "reopened_layout")
+      return aTabForEachChat(open, (session) => {
+        const cwd = open.find((one) => one.session === session)?.cwd ?? "";
+        return cwd.split("/workspaces/")[1] ?? null;
+      });
     // A split starts a chat, on the profile its picker offers.
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat") return { session: (started += 1) };
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];

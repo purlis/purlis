@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { Moved, SlowMoment } from "./bindings";
 import { forgetDismissals } from "./dismissals";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetThisLaunch } from "./regions";
 import { hotChats, watchForStalls } from "./slowLog";
 
@@ -90,6 +91,8 @@ function core() {
       const a = (args ?? {}) as Record<string, unknown>;
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
+      // A chat has a tab only from the stored layout (#4758): this one is on alpha's strip.
+      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,

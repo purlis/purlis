@@ -3,7 +3,7 @@
 
 import { Profiler } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { ChatDoing, ChatSkillRun, Moved, OpenChat } from "./bindings";
@@ -12,6 +12,7 @@ import { stripNamed } from "./test-strips";
 import { aFramePassed } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A burst of chat events is one commit per frame** (#4731, part of #4724).
@@ -25,9 +26,35 @@ import { CHAT_EVENTS } from "./chatEvents";
  * **Held by counts** (ADR 0086): the commits React's own `Profiler` reports for the window.
  */
 
-vi.mock("./SessionPane", async () => ({
-  SessionPane: (await import("./countedPane.testkit")).CountedPane,
-}));
+/** The pane, and under it what the window's stores hold for each chat: what it is doing and
+ *  how many tool calls its open skill run has made. Read through the same hooks the window's
+ *  tabs and rows read, inside the project that provides them. */
+vi.mock("./SessionPane", async () => {
+  const { CountedPane } = await import("./countedPane.testkit");
+  const { useDoingOf } = await import("./chatDoing");
+  const { useOpenRunOf } = await import("./skillRuns");
+  function Told({ session }: { session: number }) {
+    const doing = useDoingOf(session);
+    const run = useOpenRunOf(session);
+    return (
+      <li data-testid={`told-${session}`}>
+        {doing?.kind ?? "nothing"}, {run?.tool_calls ?? "no"} tool calls
+      </li>
+    );
+  }
+  return {
+    SessionPane: ({ session }: { session: number }) => (
+      <>
+        <CountedPane session={session} />
+        <ul>
+          {[1, 2, 3, 4, 5].map((one) => (
+            <Told key={one} session={one} />
+          ))}
+        </ul>
+      </>
+    ),
+  };
+});
 
 declare global {
   interface Window {
@@ -71,6 +98,9 @@ function core(): (event: string, payload: unknown) => void {
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return open;
+    // Each chat has a tab on ide's strip from the stored layout, the only place a tab comes
+    // from at launch (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(open, () => "ide");
     if (cmd === "plane_sidebar")
       return {
         root: PLANE,
@@ -89,7 +119,12 @@ function core(): (event: string, payload: unknown) => void {
         persona: null,
         unfiled: [],
       };
-    if (cmd === "chat_states" || cmd === "chat_doings" || cmd === "chat_skill_runs") return [];
+    // Every chat already heard from, as in a window that has been open a while: chat 1 at work,
+    // the others done with their turn. A burst then starts no chat and puts no new item in the
+    // status bar, either of which is a draw of its own.
+    if (cmd === "chat_states")
+      return CHATS.map((session) => moving(session, session === 1 ? "running" : "done"));
+    if (cmd === "chat_doings" || cmd === "chat_skill_runs") return [];
     if (cmd === "chats_that_would_not_start") return [];
     return null;
   });
@@ -136,7 +171,7 @@ function doing(session: number, kind: string): ChatDoing {
   };
 }
 
-function running(session: number): ChatSkillRun {
+function running(session: number, calls = 1): ChatSkillRun {
   return {
     plane: PLANE,
     session,
@@ -144,7 +179,7 @@ function running(session: number): ChatSkillRun {
       skill: "tdd",
       name: "tdd",
       id: `run-${session}`,
-      tool_calls: 1,
+      tool_calls: calls,
       tokens: null,
       level: null,
     },
@@ -178,19 +213,6 @@ describe("chat events arriving within one frame", () => {
     return send;
   }
 
-  /** What one chat moving costs the window: the commit that draws it, and what that commit
-   *  sets off. (Today two more, from `PlaneView` reporting the move up to `App`, which #4727
-   *  takes away.) */
-  async function whatOneMoveCosts() {
-    const send = await aWindowAtRest();
-    send("chat-moved", moving(1, "running"));
-    await aFramePassed();
-    const cost = commits;
-    cleanup();
-    clearMocks();
-    return cost;
-  }
-
   it("draw nothing until the frame", async () => {
     const send = await aWindowAtRest();
 
@@ -203,8 +225,7 @@ describe("chat events arriving within one frame", () => {
     expect(commits).toBeGreaterThan(0);
   });
 
-  it("cost what one move costs, however many arrived", async () => {
-    const one = await whatOneMoveCosts();
+  it("are one commit, however many arrived", async () => {
     const send = await aWindowAtRest();
 
     // Twenty events across five chats, each a task of its own as on the wire. Told as each
@@ -217,8 +238,7 @@ describe("chat events arriving within one frame", () => {
     }
     await aFramePassed();
 
-    expect(commits).toBe(one);
-    expect(one).toBeLessThanOrEqual(3);
+    expect(commits).toBe(1);
   });
 
   it("leave every chat where its last event put it, in the order they arrived", async () => {
@@ -236,7 +256,38 @@ describe("chat events arriving within one frame", () => {
     const shown = marks();
     expect(shown[2]).toMatch(/working/i);
     expect(shown[3]).toMatch(/done/i);
-    expect(shown[0]).not.toMatch(/working|done/i);
+    // The chats no event was about are as they were.
+    expect(shown[0]).toMatch(/working/i);
+    expect(shown[1]).toMatch(/done/i);
+  });
+
+  it("leave every chat's doing and skill run where its last event put it", async () => {
+    const send = await aWindowAtRest();
+
+    // Two chats at once, each telling interleaved with the other's and with its own kinds.
+    send("chat-doing", doing(2, "thinking"));
+    send("chat-skill-run", running(2, 1));
+    send("chat-doing", doing(3, "reading"));
+    send("chat-doing", doing(2, "editing"));
+    send("chat-skill-run", running(3, 2));
+    send("chat-skill-run", running(2, 3));
+    send("chat-doing", doing(3, "command"));
+    await aFramePassed();
+    // And the same again as one batch, as the core sends it.
+    send(CHAT_EVENTS, {
+      plane: PLANE,
+      events: [
+        { kind: "doing", told: doing(2, "thinking") },
+        { kind: "skill-run", told: running(2, 1) },
+        { kind: "doing", told: doing(2, "editing") },
+        { kind: "skill-run", told: running(2, 3) },
+      ],
+    });
+    await aFramePassed();
+
+    expect(screen.getByTestId("told-2")).toHaveTextContent("editing, 3 tool calls");
+    expect(screen.getByTestId("told-3")).toHaveTextContent("command, 2 tool calls");
+    expect(screen.getByTestId("told-4")).toHaveTextContent("nothing, no tool calls");
   });
 });
 
@@ -252,11 +303,6 @@ describe("a batch of chat events (#4746)", () => {
     for (let turn = 0; turn < 10; turn += 1) await act(async () => {});
     await aFramePassed();
 
-    commits = 0;
-    send("chat-moved", moving(1, "running"));
-    await aFramePassed();
-    const one = commits;
-
     // Twenty tellings across five chats, as the core sends them: one event.
     commits = 0;
     send(CHAT_EVENTS, {
@@ -269,8 +315,7 @@ describe("a batch of chat events (#4746)", () => {
       ]),
     });
     await aFramePassed();
-
-    expect(commits).toBe(one);
+    expect(commits).toBe(1);
     // The tab says its row's word (#4935): a running chat is "working".
     expect(marks().every((mark) => /working/i.test(mark))).toBe(true);
   });

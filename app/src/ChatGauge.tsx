@@ -77,6 +77,8 @@ export function useChatUsage(
   running: boolean,
 ): ChatUsage | undefined {
   const [usage, setUsage] = useState<{ session: number; usage: ChatUsage | null }>();
+  /** The reading last drawn, read in the answer's callback to leave an unchanged one undrawn. */
+  const held = useRef(usage);
   // **Nothing is read for a chat of a project that is not in front** (`projectShown.tsx`): its
   // pane is kept and not drawn again, so `running` here is what it was as the project left, and
   // a beat on it would read every three seconds for a number nobody sees.
@@ -107,7 +109,12 @@ export function useChatUsage(
           // Anything that is not a gauge — a test's catch-all, an older core — draws nothing.
           const found = answer.data;
           const gauge = found && typeof found === "object" && !Array.isArray(found) ? found : null;
-          setUsage({ session, usage: gauge });
+          // **A reading that says what the last one said draws nothing** (#4882): every move,
+          // and every beat mid-turn, reads again, and most find the record as it was.
+          const was = held.current;
+          if (was?.session === session && sameReading(was.usage, gauge)) return;
+          held.current = { session, usage: gauge };
+          setUsage(held.current);
         })
         .catch(() => {
           // A read that failed changes nothing on screen: the last known number stays until
@@ -132,6 +139,12 @@ export function useChatUsage(
 
   // Keyed on the session, so a pane handed another chat never shows the last one's numbers.
   return usage?.session === session ? (usage.usage ?? undefined) : undefined;
+}
+
+/** Whether two of the core's readings of a chat's record say the same: plain data, at most
+ *  sixteen turns, so compared whole. */
+function sameReading(a: ChatUsage | null, b: ChatUsage | null): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
 const TONE: Record<GaugeTone, string> = { ok: "gauge-ok", warn: "gauge-warn", bad: "gauge-bad" };

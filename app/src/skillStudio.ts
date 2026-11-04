@@ -129,16 +129,17 @@ export const STUDIO_PAGE_NAMES: Record<StudioPage, string> = {
 };
 
 /**
- * **The tabs of a skill's page** (#3682, the amendment's S3): Overview, Text, History, Grades and
- * Runs. Overview is where a page opens.
+ * **The tabs of a skill's page** (#3682, the amendment's S3): Overview, Text, Files (#5183),
+ * History, Grades and Runs. Overview is where a page opens.
  */
-export const SKILL_PAGE_TABS = ["overview", "text", "history", "grades", "runs"] as const;
+export const SKILL_PAGE_TABS = ["overview", "text", "files", "history", "grades", "runs"] as const;
 export type SkillPageTab = (typeof SKILL_PAGE_TABS)[number];
 
 /** What each of a skill's tabs is called, on the tab and in the path. */
 export const SKILL_PAGE_TAB_NAMES: Record<SkillPageTab, string> = {
   overview: "Overview",
   text: "Text",
+  files: "Files",
   history: "History",
   grades: "Grades",
   runs: "Runs",

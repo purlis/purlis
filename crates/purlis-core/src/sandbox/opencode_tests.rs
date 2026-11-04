@@ -897,12 +897,14 @@ mod live {
         assert!(!store.join("forged.json").exists());
     }
 
-    /// What waits to be told to a chat on its next turn (D-T59-19) is NOT denied under the
-    /// wrap: the wrap is around the whole harness, so the hook that delivers a report runs
-    /// inside it, and it reads the report's file and then removes it. A report left for this
-    /// chat by the app is taken under the wrap, as the hook takes it.
+    /// What waits to be told to a chat on its next turn (D-T59-19) is read under the wrap: the
+    /// wrap is around the whole harness, so the hook that delivers a report runs inside it and
+    /// reads the report's file. It is never written there (#3721): the hook asks the app over
+    /// the hook socket to take what it read (`TookHandbacks`), and the app removes the file, so
+    /// no chat can put a line in purlis's voice into another chat's turn.
     #[test]
-    fn a_report_left_for_a_wrapped_chat_can_still_be_taken_by_its_hook_under_the_wrap() {
+    fn a_report_left_for_a_wrapped_chat_is_read_by_its_hook_under_the_wrap_and_removed_only_by_the_app()
+     {
         use crate::active::Place;
         use crate::handback::{self, For, Handback};
 
@@ -940,16 +942,17 @@ mod live {
         let confinement = applied.confine().expect("confined").expect("a wrap");
         let line = line_in(&applied, &cwd, None, &confinement).expect("starts");
 
-        // What `handback::take` does, under the wrap: read the file, then remove it.
+        // What the hook does under the wrap: read the file.
         let read = run(&line, &format!("cat '{}'", file.display()));
         assert!(read.status.success(), "{read:?}");
         assert!(
             String::from_utf8_lossy(&read.stdout).contains("the queue is clear"),
             "{read:?}"
         );
+        // Removing it is the app's, never the chat's.
         let removed = run(&line, &format!("rm '{}'", file.display()));
-        assert!(removed.status.success(), "{removed:?}");
-        assert!(!file.exists());
+        assert!(!removed.status.success(), "{removed:?}");
+        assert!(file.exists(), "the report waits for the app to take it");
     }
 
     /// A file denial does not stop a connect to a unix socket, which Seatbelt judges as

@@ -91,7 +91,8 @@ function core(
     if (cmd === "running_sessions") return [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat")
       return { session: ++started, label: null, notices, agents_md: agentsMd };
     return null;
@@ -103,7 +104,7 @@ const startNotice = () => screen.findByRole("status", { name: "What this chat's 
 const named = (asked: Asked[], cmd: string) => asked.filter((one) => one.cmd === cmd);
 
 async function openAChat() {
-  await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
   const picker = await screen.findByRole("dialog", { name: "Start a chat" });
   await userEvent.click(within(picker).getByRole("button", { name: "Start chat" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

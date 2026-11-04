@@ -485,9 +485,11 @@ export function ChatStrip({
                 the arrows pass over it and Tab stops on it after the selected tab.
 
                 **`New tab` stays on the strip and did not move onto a pane**, where the
-                splits and the close went: it acts on the strip, and there is one. */}
+                splits and the close went: it acts on the strip, and there is one. **It
+                opens a tab with one empty pane** (#4758; spec story 13), which New chat
+                then fills: a chat is never a tab of its own. */}
             <span className="strip-doing" ref={chatControls}>
-              <Doer offer={by("chat.new")} onPress={press} iconOnly />
+              <Doer offer={by("tab.new")} onPress={press} iconOnly />
             </span>
           </TabStripRow>
         </SortableContext>

@@ -234,8 +234,15 @@ describe("the command palette", () => {
   });
 
   it("starts a chat, by the keyboard alone, and through the picker like every other route", async () => {
+    // New tab is a tab with one empty pane and no chat (#4758): New chat in it is the start, so
+    // the chat has that tab to itself, which the End… tests below close with it.
     await openPalette();
     await typeIntoPalette("new tab");
+    await browser.keys(["Enter"]);
+    await expect($(PALETTE)).not.toBeDisplayed();
+    await $('[data-testid="empty-pane"]').waitForDisplayed({ timeout: 20_000 });
+    await openPalette();
+    await typeIntoPalette("new chat");
 
     await browser.keys(["Enter"]);
 

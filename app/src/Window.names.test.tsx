@@ -10,6 +10,7 @@ import type { OpenChat } from "./bindings";
 import { expectEveryControlNamed, paidDebts } from "./a11y.testkit";
 import { forgetThisLaunch } from "./regions";
 import { findStripNamed, goToWorkspace } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **Every control the window draws has a name** (DS-6, #629): the window itself — its strips,
@@ -100,6 +101,9 @@ function core() {
           return { plane: PLANE, from: PLANE, why: null };
         case "opened_chats":
           return [chat(1), chat(2)];
+        // Their tabs, as the stored layout keeps them (#4758).
+        case "reopened_layout":
+          return aTabForEachChat([chat(1), chat(2)], () => "alpha");
         case "chats_that_would_not_start":
         case "running_sessions":
         case "chat_states":
@@ -114,7 +118,10 @@ function core() {
             unfiled: [],
             workspaces: [workspace("alpha", [chat(1), chat(2)]), workspace("beta")],
           };
+        case "start_details":
+          return [];
         case "start_options":
+        case "start_options_first":
           return START_OPTIONS;
         // The split's second chat (#629).
         case "start_chat":
@@ -182,7 +189,8 @@ const VIEWS = [
 
 /** The palette's rows that open a dialog of the window's own. */
 const OPENS_A_DIALOG = [
-  "New tab",
+  // The picker: "New tab" opens an empty tab and no dialog since #4758.
+  "New chat",
   "Extensions…",
   "New workspace…",
   "New project…",

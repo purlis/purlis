@@ -686,7 +686,18 @@ pub fn add_pool_profile(
     profile: &str,
     default: Option<&str>,
 ) -> Result<(), Refused> {
-    if !crate::profiles::name_ok(profile) {
+    add_pool_profiles(config_root, name, &[profile.to_owned()], default)
+}
+
+/// **Adds the profiles `profiles` to the pool `name`** in one write (#4718), as
+/// [`add_pool_profile`] adds one: all of them, or, where one is not a profile's name, none.
+pub fn add_pool_profiles(
+    config_root: &Path,
+    name: &str,
+    profiles: &[String],
+    default: Option<&str>,
+) -> Result<(), Refused> {
+    if let Some(profile) = profiles.iter().find(|one| !crate::profiles::name_ok(one)) {
         return Err(Refused::Other(format!(
             "'{}' is not a profile's name, so pool {name} keeps it not",
             crate::shown::short(profile)
@@ -694,8 +705,10 @@ pub fn add_pool_profile(
     }
     change_pool_profiles(config_root, name, |chosen| {
         let mut kept = kept_of(chosen, default);
-        if !kept.iter().any(|one| one == profile) {
-            kept.push(profile.to_owned());
+        for profile in profiles {
+            if !kept.iter().any(|one| one == profile) {
+                kept.push(profile.clone());
+            }
         }
         Some(kept)
     })
