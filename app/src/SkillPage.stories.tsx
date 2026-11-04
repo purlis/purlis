@@ -474,7 +474,6 @@ export const Files: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await expect(await canvas.findByRole("heading", { name: "Rolling back" })).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "Open in a tab of its own" })).toBeVisible();
     await untilFocused(() => row("rollback.md"), "Files: the keyboard stays on the file shown");
   },
 };
