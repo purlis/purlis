@@ -315,7 +315,8 @@ fn small(value: u64) -> u32 {
 }
 
 /// **This machine's profiles against pool `pool`'s limits**, the ones in use in `plane` marked:
-/// measured as a send measures them, with no file read. It changes nothing.
+/// measured as a send measures them, with no file read, and held to what its runner takes where
+/// one link can tell (#4719). It changes nothing.
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_setup_sizes(
@@ -327,8 +328,15 @@ pub async fn pool_setup_sizes(
     #[cfg(unix)]
     {
         crate::off_the_window("measuring your profiles", move || {
-            let sizes = purlis_core::poolsetup::signins::sizes(&config_root()?, Some(&root), &pool)
-                .map_err(|why| why.to_string())?;
+            let config = config_root()?;
+            // Held to what the pool's runner takes where it can say, as a send to it is (#4719).
+            let highest = crate::poolprofiles::runner_speaks(&config, &pool).map_or_else(
+                purlis_core::poollimits::Chosen::default,
+                purlis_core::profilestore::onrunner::highest_on_a_runner_of,
+            );
+            let sizes =
+                purlis_core::poolsetup::signins::sizes(&config, Some(&root), &pool, &highest)
+                    .map_err(|why| why.to_string())?;
             Ok(PoolSetupSizes {
                 most_mib: small(sizes.most_mib),
                 most_files: small(sizes.most_files),
@@ -361,6 +369,26 @@ pub async fn pool_setup_sizes(
         let _ = (root, pool);
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
+}
+
+/// **What Sign-ins' button runs, by hand, for the profiles ticked** (#4718, Q30): `adding`
+/// recorded on pool `pool`, then each of `signing_in` signed in there, as the core spells it. None
+/// where the button would run nothing. It only spells.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_sign_ins_by_hand(
+    pool: String,
+    adding: Vec<String>,
+    signing_in: Vec<String>,
+) -> Result<Option<PoolSetupSee>, String> {
+    Ok(
+        purlis_core::poolsetup::signins::by_hand(&pool, &adding, &signing_in).map(|see| {
+            PoolSetupSee {
+                note: see.note,
+                text: see.text,
+            }
+        }),
+    )
 }
 
 /// **Keeps that the person skipped step `step` on pool `pool`, or takes the skip back.** Refused

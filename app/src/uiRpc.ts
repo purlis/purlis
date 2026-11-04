@@ -1705,6 +1705,7 @@ export const commands = {
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupCommand: __WINDOW_ONLY_RESULT,
 	poolSetupCreate: __WINDOW_ONLY_RESULT,
+	poolSetupSignInsByHand: __WINDOW_ONLY_RESULT,
 	poolSetupSizes: __WINDOW_ONLY_RESULT,
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,

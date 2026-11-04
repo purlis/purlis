@@ -3380,8 +3380,18 @@ export const commands = {
 	 */
 	poolSetupCreate: (adding: PoolAdding) => typedError<PoolSetupCreated, string>(__TAURI_INVOKE("pool_setup_create", { adding })),
 	/**
+	 *  **What Sign-ins' button runs, by hand, for the profiles ticked** (#4718, Q30): `adding`
+	 *  recorded on pool `pool`, then each of `signing_in` signed in there, as the core spells it. None
+	 *  where the button would run nothing. It only spells.
+	 */
+	poolSetupSignInsByHand: (pool: string, adding: string[], signingIn: string[]) => typedError<{
+	note: string,
+	text: string,
+} | null, string>(__TAURI_INVOKE("pool_setup_sign_ins_by_hand", { pool, adding, signingIn })),
+	/**
 	 *  **This machine's profiles against pool `pool`'s limits**, the ones in use in `plane` marked:
-	 *  measured as a send measures them, with no file read. It changes nothing.
+	 *  measured as a send measures them, with no file read, and held to what its runner takes where
+	 *  one link can tell (#4719). It changes nothing.
 	 */
 	poolSetupSizes: (plane: PlaneId, pool: string) => typedError<PoolSetupSizes, string>(__TAURI_INVOKE("pool_setup_sizes", { plane, pool })),
 	/**
