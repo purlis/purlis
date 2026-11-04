@@ -44,7 +44,6 @@ fn listed(
     persona: Option<&str>,
     folder: &str,
 ) -> Result<PathBuf, String> {
-    crate::skillchange::flag_on()?;
     purlis_core::skills::folder::listed_folder(
         crate::skillchange::built_in().as_deref(),
         root,
