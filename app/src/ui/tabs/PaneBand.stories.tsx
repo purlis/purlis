@@ -509,6 +509,10 @@ export const Minimised: Story = {
   },
 };
 
+/** How far the bell's pill may rise above the bell, in px: its one step (`--space-1`, 2px at
+ *  the default text size), and a pixel for rounding. */
+const RISES_AT_MOST = 3;
+
 /** Whether two boxes share any of their area. */
 const overlaps = (a: Box, b: Box) =>
   a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
@@ -525,6 +529,8 @@ export const BellBesideItsNeighbours: Story = {
     shown: "minimised",
     warnings: ["vault-refused", "mcp-failed", "stale-clone", "skills-missing"],
   },
+  // No picture: it ends with the bell's hint open, which comes after a delay and a fade; the
+  // head as it rests is pictured in Minimised.
   parameters: { screenshot: false },
   play: async ({ canvas, canvasElement, userEvent }) => {
     const bell = bellOf(canvas);
@@ -538,7 +544,7 @@ export const BellBesideItsNeighbours: Story = {
     const count = boxOf(countOf(bell));
     expect(countOf(bell)).toHaveAttribute("data-size", "sm");
     expect(count.right).toBeLessThanOrEqual(boxOf(bell).right + 0.5);
-    expect(count.top).toBeGreaterThanOrEqual(boxOf(bell).top - 3);
+    expect(count.top).toBeGreaterThanOrEqual(boxOf(bell).top - RISES_AT_MOST);
     expect(count.bottom).toBeLessThanOrEqual(boxOf(bell).top + boxOf(bell).height / 2);
     expect(overlaps(count, boxOf(split))).toBe(false);
     const mark = boxOf(bell.querySelector("svg"));
@@ -550,7 +556,8 @@ export const BellBesideItsNeighbours: Story = {
     );
 
     const { head } = rowsOf(canvasElement);
-    const buttons = [...(head?.querySelectorAll(".pane-actions button") ?? [])];
+    const actions = head?.querySelector(".pane-actions") as HTMLElement;
+    const buttons = within(actions).getAllByRole("button");
     const boxes = buttons.map(boxOf).sort((a, b) => a.left - b.left);
     expect(boxes.length).toBeGreaterThanOrEqual(4);
     for (let i = 1; i < boxes.length; i++) {

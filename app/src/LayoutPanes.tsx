@@ -1625,8 +1625,7 @@ export function PaneBell() {
   const count = bellCount(holds);
   return (
     <>
-      {/* An icon button the size of its neighbours, its count the family's small pill on its
-          top corner (#5189): its name says the count, so the pill is not read twice. */}
+      {/* The pill is unheard: the bell's name says the count (#5189). */}
       <span className="pane-bell-slot">
         <IconButton
           ref={at ?? undefined}

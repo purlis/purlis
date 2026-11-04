@@ -192,7 +192,8 @@ describe("a chat's pane head", () => {
     expect(bell).toHaveAttribute("data-icon-only");
     expect(bell).toHaveAttribute("data-size", "sm");
     // Below the head: a hint at a control's end stood on the row, over the next control.
-    for (const one of head().querySelectorAll("button")) expect(placementFor(one)).toBe("bottom");
+    for (const one of within(head()).getAllByRole("button"))
+      expect(placementFor(one)).toBe("bottom");
   });
 
   it("shows Stop while the chat works, before ⋯, and nothing once it is quiet", async () => {
