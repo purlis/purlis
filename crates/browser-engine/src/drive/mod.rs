@@ -613,13 +613,6 @@ pub enum Gate {
 /// what each request is.
 pub type Judge = std::sync::Arc<dyn Fn(&Outbound) -> Gate + Send + Sync>;
 
-/// **The site the agent is kept off at an address, now** (#5152): told a document's address (or
-/// its origin's), the site (`host:port`) whose documents the agent may neither read nor act on
-/// there, if any. The caller's, asked at each of the agent's calls and of each request a page
-/// sends while the agent drives ([`Browser::keep_off`]): the browser loads that site's documents,
-/// the agent's calls leave them alone.
-pub type KeptOff = std::sync::Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
-
 /// A call refused, or one whose effect is not known, in words that say what to do.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Refusal {
@@ -646,15 +639,6 @@ pub enum Refusal {
          own, so where this would go cannot be told"
     )]
     FrameOpaque,
-    /// **The page, or the frame acted on, is on the site the browser signs in on** (#5152, the
-    /// person's ruling of 2026-11-04), outside a sign-in ([`KeptOff`]): nothing was read or sent.
-    /// Where the page shows its sign-in form again, it says so.
-    #[error(
-        "nothing was read or sent: this is a page of {site}, the site this browser signs in on, \
-         and purlis lets you read or act on its pages only while it logs this browser in{}",
-        kept_off_then(.asks_to_sign_in)
-    )]
-    KeptOff { site: String, asks_to_sign_in: bool },
     /// The tab is a fresh blank one, with no page in it to type into (#4889).
     #[error(
         "nothing was sent: this is a blank tab, with no page to type into: open a page in it \
@@ -797,15 +781,6 @@ pub enum Refusal {
     /// A native drag carried a text kept out of the agent's answers (#2136): cancelled.
     #[error("what this drag carries is kept out of your answers, so the drag was cancelled")]
     DragKeptOut,
-}
-
-/// What the agent may do next on a page it is kept off (#5152).
-fn kept_off_then(asks_to_sign_in: &bool) -> &'static str {
-    if *asks_to_sign_in {
-        ": it asks to sign in again, so log this browser in again"
-    } else {
-        ": go back, or go to another address"
-    }
 }
 
 /// The most a read of a page's whole tree holds by default (#3277): two of the engine's largest

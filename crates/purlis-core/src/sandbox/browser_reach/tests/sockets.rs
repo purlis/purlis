@@ -390,16 +390,15 @@ fn echoes(open: &mut TcpStream) -> bool {
     open.read_exact(&mut back).is_ok() && &back == b"ping"
 }
 
-/// #5152, the person's ruling of 2026-11-04: a login whose form is on another site keeps
-/// reaching it once its sign-in is over, the page's own redirects and frames there included.
-/// The tunnels open before go on, a new one is carried, and every other site is still refused.
+/// #4995, the person's ruling of 2026-11-03: a login whose form is on another site reaches it
+/// while it signs in. Once the sign-in is over, the tunnel to the form's site is ended and a new
+/// one refused, while the page's site goes on, its tunnel open before included.
 #[test]
-fn a_sign_in_that_is_over_keeps_the_form_sites_tunnels_and_refuses_any_other_site() {
+fn a_sign_in_that_is_over_ends_the_form_sites_tunnels_and_keeps_the_pages() {
     let (form_site, form_port) = a_server();
     let (page_site, page_port) = a_server();
-    let (_other_site, other_port) = a_server();
     let (form_echo, page_echo) = (echoing(form_site), echoing(page_site));
-    let proxy = a_bound_proxy(&[form_port, page_port, other_port], Bound::default());
+    let proxy = a_bound_proxy(&[form_port, page_port], Bound::default());
     let sign_in = proxy
         .bind(&LoginSites {
             page: Site::of("127.0.0.1", page_port),
@@ -423,15 +422,10 @@ fn a_sign_in_that_is_over_keeps_the_form_sites_tunnels_and_refuses_any_other_sit
     assert!(proxy.sign_in_over(sign_in));
     assert!(!proxy.sign_in_over(sign_in), "over once");
 
-    assert!(echoes(&mut form), "the form's tunnel goes on");
+    assert!(!echoes(&mut form), "the form's tunnel outlived its sign-in");
     assert!(echoes(&mut page), "the page's tunnel goes on");
     assert_eq!(
         status(&mut to(&proxy), &connect(form_port)),
-        "HTTP/1.1 200 Connection established",
-        "a new tunnel to the form's site is carried"
-    );
-    assert_eq!(
-        status(&mut to(&proxy), &connect(other_port)),
         "HTTP/1.1 403 Forbidden"
     );
     drop((form, page));

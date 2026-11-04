@@ -294,12 +294,11 @@ fn a_browser_bound_to_one_login_is_not_bound_to_another() {
     assert!(!bound.lets("mail.example.test", 443));
 }
 
-/// #5152, the person's ruling of 2026-11-04 (amending #4995's of 2026-11-03): a login whose form
-/// is on another site reaches it from then on, and keeps the agent off it outside a sign-in. A
-/// later login of the same page signs in anew; a sign-in over twice, or one another replaced,
-/// changes nothing.
+/// #4995, the person's ruling of 2026-11-03: a login whose form is on another site reaches it
+/// during its sign-in alone. Over, the browser reaches its page's site alone; a later login of
+/// the same page signs in anew; a sign-in over twice, or one another replaced, changes nothing.
 #[test]
-fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_outside_a_sign_in() {
+fn a_login_whose_form_is_elsewhere_reaches_it_only_while_it_signs_in() {
     let sites = sites(&[], false);
     let bound = sites.bound();
     let app = Site::of("app.example.test", 443);
@@ -308,39 +307,30 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_outside
         page: app.clone(),
         form: Some(auth.clone()),
     };
-    let first = bound.to(&login).unwrap().expect("a sign-in opens");
+    let (first, replaced) = bound.to(&login).unwrap();
+    let first = first.expect("a sign-in opens");
+    assert_eq!(replaced, None);
     assert!(bound.lets("auth.example.test", 443));
     assert!(bound.lets("app.example.test", 443));
     assert_eq!(bound.sites(), Some(vec![auth.clone(), app.clone()]));
-    assert_eq!(bound.form(), Some(auth.clone()));
-    assert_eq!(bound.kept_off("auth.example.test", 443), None, "signing in");
     assert_eq!(bound.sign_in_over(first), Some(auth.clone()));
     assert!(
-        bound.lets("auth.example.test", 443),
-        "over: the form's site is still reached"
+        !bound.lets("auth.example.test", 443),
+        "over: the form's site is gone"
     );
-    assert_eq!(
-        bound.kept_off("auth.example.test", 443),
-        Some(auth.clone()),
-        "over: the agent is kept off it"
-    );
-    assert_eq!(bound.kept_off("app.example.test", 443), None);
-    assert_eq!(
-        bound.kept_off("auth.example.test", 8443),
-        None,
-        "by its port too"
-    );
-    assert_eq!(bound.sites(), Some(vec![auth.clone(), app.clone()]));
+    assert!(bound.lets("app.example.test", 443));
+    assert_eq!(bound.sites(), Some(vec![app.clone()]));
     assert_eq!(bound.sign_in_over(first), None, "over once");
     // A later login of the same page signs in anew, and only it ends its own.
-    let second = bound.to(&login).unwrap().expect("a sign-in opens again");
+    let (second, _) = bound.to(&login).unwrap();
+    let second = second.expect("a sign-in opens again");
     assert_ne!(second, first);
     assert_eq!(
         bound.sign_in_over(first),
         None,
         "an old sign-in ends no newer one"
     );
-    assert_eq!(bound.kept_off("auth.example.test", 443), None);
+    assert!(bound.lets("auth.example.test", 443));
     // Another form's site for the same page is refused: a browser signs in on one.
     let refused = bound
         .to(&LoginSites {
@@ -350,7 +340,8 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_outside
         .unwrap_err();
     assert!(refused.contains("on auth.example.test:443"), "{refused}");
     assert!(!bound.lets("login.other.test", 443));
-    let third = bound.to(&login).unwrap();
+    let (third, replaced) = bound.to(&login).unwrap();
+    assert_eq!(replaced, None, "the same form's site replaces nothing");
     assert_eq!(bound.sign_in_over(second), None, "replaced by the third");
     assert_eq!(bound.sign_in_over(third.unwrap()), Some(auth.clone()));
     // Another page's login is refused, whatever its form.
@@ -364,21 +355,6 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_outside
         refused.contains("holds a login at app.example.test:443"),
         "{refused}"
     );
-    assert!(!bound.lets("other.example.test", 443));
-}
-
-/// #5152: a browser held to a login's page alone, as one opened from kept logins is, keeps the
-/// agent off nothing, and reaches no other site, until a login of its page signs in elsewhere.
-#[test]
-fn a_browser_held_to_its_page_alone_keeps_the_agent_off_nothing() {
-    let sites = sites(&[], false);
-    let bound = sites.bound();
-    assert_eq!(bound.kept_off("auth.example.test", 443), None, "unbound");
-    bound
-        .to(&LoginSites::page(Site::of("app.example.test", 443)))
-        .unwrap();
-    assert_eq!(bound.form(), None);
-    assert_eq!(bound.kept_off("auth.example.test", 443), None);
     assert!(!bound.lets("auth.example.test", 443));
 }
 

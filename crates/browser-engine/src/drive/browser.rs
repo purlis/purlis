@@ -24,8 +24,8 @@ use super::settle::{Activity, Settle, activity};
 use super::site::site;
 use super::tree::{FrameAx, NodeKey, Query, Scrub, Snapshot, View, build_kept};
 use super::{
-    Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, Gate, Hold, Judge, KeptOff, Limits,
-    Outbound, PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
+    Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, Gate, Hold, Judge, Limits, Outbound,
+    PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
 };
 use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Closed, Connection, Event, Tap, TapSink};
@@ -1021,51 +1021,6 @@ impl State {
         }
     }
 
-    /// **The frames of `target`'s page on a site the agent is kept off** (#5152), each by its
-    /// id, with that site: every frame whose address, or whose document's origin
-    /// ([`judged_at`]), `kept_off` names, and every frame inside one. The page's own document is
-    /// judged by its frame's address and the page's both.
-    fn kept_off_frames(&self, target: &str, kept_off: &KeptOff) -> HashMap<String, String> {
-        let Some(page) = self.page(target) else {
-            return HashMap::new();
-        };
-        let own = |id: &str, address: &str| {
-            kept_off(address).or_else(|| match judged_at(page, id, &self.document_origins) {
-                Ok(Judged::At(origin)) => kept_off(&origin),
-                _ => None,
-            })
-        };
-        let mut on: HashMap<String, String> = page
-            .frames
-            .iter()
-            .filter_map(|(id, frame)| Some((id.clone(), own(id, &frame.url)?)))
-            .collect();
-        if let Some(site) = kept_off(&page.url).or_else(|| own(target, &page.url)) {
-            on.entry(target.to_owned()).or_insert(site);
-        }
-        let mut every = on.clone();
-        for id in page.frames.keys() {
-            let mut at = page
-                .frames
-                .get(id)
-                .and_then(|frame| frame.parent.as_deref());
-            for _ in 0..=page.frames.len() {
-                let Some(here) = at else {
-                    break;
-                };
-                if let Some(site) = on.get(here) {
-                    every.entry(id.clone()).or_insert_with(|| site.clone());
-                    break;
-                }
-                at = page
-                    .frames
-                    .get(here)
-                    .and_then(|frame| frame.parent.as_deref());
-            }
-        }
-        every
-    }
-
     /// Keeps `held` out of every later answer about every page, and every page opened later.
     fn keep_out_everywhere(&mut self, held: &Kept) {
         self.kept.take_in(held);
@@ -1456,8 +1411,6 @@ pub(crate) struct Inner {
     held_in: Mutex<Option<std::path::PathBuf>>,
     /// The login whose holder is told once its page is back on its page's origin (#4995).
     back: Mutex<Option<Back>>,
-    /// What says which site's documents the agent is kept off (#5152), once it was told.
-    kept_off: Mutex<Option<KeptOff>>,
 }
 
 /// **A login whose page is to leave its form's origin** (#4995): the page purlis opened for it,
@@ -1590,7 +1543,6 @@ impl Browser {
             worlds: Worlds::default(),
             held_in: Mutex::new(None),
             back: Mutex::new(None),
-            kept_off: Mutex::new(None),
         });
         Screencast::start(&inner);
         if inner.judge.is_some() {
@@ -1822,82 +1774,6 @@ impl Browser {
             )
             .map(drop)
             .map_err(refusal)
-    }
-
-    /// **Keeps the agent off the documents of the site `kept_off` names** (#5152, the person's
-    /// ruling of 2026-11-04): from now, each of the agent's calls is refused on a page whose own
-    /// document is on it, and on an element of a frame that is, or that is inside one; what a
-    /// call reads of any other page leaves such frames out, and a screenshot paints them over.
-    /// A request such a document sends while the agent drives, to that same site, is not sent.
-    /// The browser itself loads them as it would any other. In place of anything told before.
-    pub fn keep_off(&self, kept_off: KeptOff) {
-        *lock(&self.inner.kept_off) = Some(kept_off);
-    }
-
-    /// The frames of `target`'s page the agent is kept off now, with their site (#5152).
-    fn kept_off_frames(&self, target: &str) -> HashMap<String, String> {
-        let Some(kept_off) = lock(&self.inner.kept_off).clone() else {
-            return HashMap::new();
-        };
-        lock(&self.inner.state).kept_off_frames(target, &kept_off)
-    }
-
-    /// **Refuses the agent's address on a site it is kept off** (#5152): nothing is opened.
-    fn not_kept_off_address(&self, address: &WebAddress) -> Result<(), Refusal> {
-        let kept_off = lock(&self.inner.kept_off).clone();
-        match kept_off.and_then(|kept_off| kept_off(address.as_str())) {
-            Some(site) => Err(Refusal::KeptOff {
-                site,
-                asks_to_sign_in: false,
-            }),
-            None => Ok(()),
-        }
-    }
-
-    /// The agent's call refused on `target`'s page, kept off `site` (#5152): where `whole`, the
-    /// page's own document is on it, and whether that asks to sign in again is said.
-    fn kept_off_refusal(&self, target: &str, site: &str, whole: bool) -> Refusal {
-        Refusal::KeptOff {
-            site: site.to_owned(),
-            asks_to_sign_in: whole && self.shows_password_field(target),
-        }
-    }
-
-    /// **Refuses the agent's call on `target`'s page where its own document is on a site the
-    /// agent is kept off** (#5152).
-    fn not_kept_off_page(&self, target: &str) -> Result<(), Refusal> {
-        match self.kept_off_frames(target).remove(target) {
-            Some(site) => Err(self.kept_off_refusal(target, &site, true)),
-            None => Ok(()),
-        }
-    }
-
-    /// **Refuses the agent's keys on `target`'s page where they may go into a document of a site
-    /// it is kept off** (#5152): the page's own, or the focused element's frame's, or, where the
-    /// focus is not known, any frame's.
-    fn not_kept_off_focus(&self, target: &str) -> Result<(), Refusal> {
-        let kept = self.kept_off_frames(target);
-        if kept.is_empty() {
-            return Ok(());
-        }
-        if let Some(site) = kept.get(target) {
-            return Err(self.kept_off_refusal(target, site, true));
-        }
-        let focused = self
-            .snapshot_of(target)
-            .ok()
-            .and_then(|snapshot| match snapshot.focused() {
-                [one] => Some(one.frame.clone()),
-                _ => None,
-            });
-        let site = match focused {
-            Some(frame) => kept.get(&frame).cloned(),
-            None => kept.values().next().cloned(),
-        };
-        match site {
-            Some(site) => Err(self.kept_off_refusal(target, &site, false)),
-            None => Ok(()),
-        }
     }
 
     /// **Where the agent is about to type, keys or choices into the documents at `addresses`
@@ -2304,13 +2180,9 @@ impl Browser {
 
     fn run(&self, call: Call) -> Result<Answer, Refusal> {
         match call {
-            Call::Open { address } => {
-                self.not_kept_off_address(&address)?;
-                self.open(&address)
-            }
+            Call::Open { address } => self.open(&address),
             Call::FindLoginForm { address } => self.find_login_form(&address),
             Call::Navigate { page, address } => {
-                self.not_kept_off_address(&address)?;
                 let target = self.target(page.as_ref())?;
                 let session = self.page_session(&target)?;
                 let _addressing = self.addressing(&target, Why::Addressed);
@@ -2401,7 +2273,6 @@ impl Browser {
             Call::Type { page, fields } => self.type_into(page.as_ref(), &fields),
             Call::Press { page, keys } => {
                 let target = self.target(page.as_ref())?;
-                self.not_kept_off_focus(&target)?;
                 if let Some(held) = self.typing_held(&target, &self.focus_addresses(&target)?) {
                     return Ok(held);
                 }
@@ -2921,50 +2792,7 @@ impl Browser {
         by: Instant,
         since: Option<Instant>,
     ) -> Result<(Snapshot, Option<Duration>), Refusal> {
-        self.not_kept_off_page(target)?;
-        let (mut trees, began) = self.agent_trees(target, by, since)?;
-        // Read now, as the page is after the read: a frame of a site the agent is kept off, or
-        // one that was as it was read, is left out, and a page whose own document is on one is
-        // refused (#5152).
-        let kept = self.kept_off_frames(target);
-        let kept_off = lock(&self.inner.kept_off).clone();
-        let was_kept_off =
-            |tree: &FrameAx| kept_off.as_ref().and_then(|kept_off| kept_off(&tree.url));
-        if let Some(site) = kept.get(target).cloned().or_else(|| {
-            trees
-                .iter()
-                .find(|tree| tree.id == target)
-                .and_then(was_kept_off)
-        }) {
-            return Err(self.kept_off_refusal(target, &site, true));
-        }
-        if kept_off.is_some() {
-            let left_out: HashSet<String> = trees
-                .iter()
-                .filter(|tree| kept.contains_key(&tree.id) || was_kept_off(tree).is_some())
-                .map(|tree| tree.id.clone())
-                .collect();
-            // And every frame inside one left out.
-            let mut out = left_out;
-            loop {
-                let more: Vec<String> = trees
-                    .iter()
-                    .filter(|tree| {
-                        !out.contains(&tree.id)
-                            && tree
-                                .parent
-                                .as_ref()
-                                .is_some_and(|parent| out.contains(parent))
-                    })
-                    .map(|tree| tree.id.clone())
-                    .collect();
-                if more.is_empty() {
-                    break;
-                }
-                out.extend(more);
-            }
-            trees.retain(|tree| !out.contains(&tree.id));
-        }
+        let (trees, began) = self.agent_trees(target, by, since)?;
         Ok((self.snapshot_from(target, &trees), began))
     }
 
@@ -3159,22 +2987,11 @@ impl Browser {
 
     /// Where `target` is, for acting on it.
     fn locate(&self, target: &Ref) -> Result<Located, Refusal> {
-        let kept_off = lock(&self.inner.kept_off).clone();
         let state = lock(&self.inner.state);
         if state.ended {
             return Err(Refusal::Ended);
         }
         let (page_target, key) = live_ref(&state, target)?;
-        // An element in a frame of a site the agent is kept off, or inside one (#5152).
-        if let Some(kept_off) = &kept_off
-            && let Some(site) = state
-                .kept_off_frames(&page_target, kept_off)
-                .remove(&key.frame)
-        {
-            let whole = key.frame == page_target;
-            drop(state);
-            return Err(self.kept_off_refusal(&page_target, &site, whole));
-        }
         let page = state.page(&page_target).ok_or_else(|| stale(target))?;
         let page_session = page.session.clone().ok_or(Refusal::Unknown)?;
         let frame = page.frames.get(&key.frame).ok_or_else(|| stale(target))?;
@@ -3479,14 +3296,8 @@ impl Browser {
         let mut into = Vec::new();
         for field in fields {
             match &field.into {
-                Some(written) => {
-                    self.locate(written)?;
-                    into.extend(self.addresses_of(written)?);
-                }
-                None => {
-                    self.not_kept_off_focus(&target)?;
-                    into.extend(self.focus_addresses(&target)?);
-                }
+                Some(written) => into.extend(self.addresses_of(written)?),
+                None => into.extend(self.focus_addresses(&target)?),
             }
         }
         if let Some(held) = self.typing_held(&target, &into) {
@@ -3964,11 +3775,7 @@ impl Browser {
         let located = at.map(|r| self.locate(r)).transpose()?;
         let target = match &located {
             Some(l) => l.target.clone(),
-            None => {
-                let target = self.target(page)?;
-                self.not_kept_off_page(&target)?;
-                target
-            }
+            None => self.target(page)?,
         };
         let session = self.page_session(&target)?;
         self.acting_on(&target, || {
@@ -4152,7 +3959,6 @@ impl Browser {
             .snapshot_of(target)
             .map_err(|why| Refusal::Withheld(why.to_string()))?;
         keys.extend(echoes.echoes().iter().cloned());
-        keys.extend(self.kept_off_owners(target)?);
         let mut boxes = Boxes::new();
         for key in keys {
             let (session, boundaries) = {
@@ -4169,54 +3975,6 @@ impl Browser {
         }
         self.drawn_boxes(target, placings, &mut boxes)?;
         Ok(boxes)
-    }
-
-    /// **The element holding each frame of `target`'s page on a site the agent is kept off**
-    /// (#5152), the outermost of them, to paint over; refused where the page's own document is
-    /// on one, and withheld where such a frame's element is not found.
-    fn kept_off_owners(&self, target: &str) -> Result<Vec<NodeKey>, Refusal> {
-        let kept = self.kept_off_frames(target);
-        if let Some(site) = kept.get(target) {
-            return Err(self.kept_off_refusal(target, site, true));
-        }
-        let mut owners = Vec::new();
-        let unplaced = || {
-            Refusal::Withheld(
-                "where a frame of the site this browser signs in on is drawn is not known".into(),
-            )
-        };
-        for frame in kept.keys() {
-            let around = {
-                let state = lock(&self.inner.state);
-                let page = state.page(target).ok_or(Refusal::NoPage)?;
-                let parent = page.frames.get(frame).and_then(|one| one.parent.clone());
-                match parent {
-                    // One inside another kept off is painted over with it.
-                    Some(parent) if kept.contains_key(&parent) => continue,
-                    Some(parent) => page
-                        .frames
-                        .get(&parent)
-                        .map(|up| (parent.clone(), up.session.clone())),
-                    None => None,
-                }
-            };
-            let (parent, session) = around.ok_or_else(unplaced)?;
-            let owner = self
-                .devtools()
-                .call(
-                    "DOM.getFrameOwner",
-                    json!({ "frameId": frame }),
-                    Some(&session),
-                )
-                .ok()
-                .and_then(|owner| owner.get("backendNodeId").and_then(Value::as_i64))
-                .ok_or_else(unplaced)?;
-            owners.push(NodeKey {
-                frame: parent,
-                backend: owner,
-            });
-        }
-        Ok(owners)
     }
 
     /// Where the node `backend` of `session` is drawn, in CSS pixels, its session sitting where
@@ -5085,41 +4843,18 @@ impl Inner {
                         } else {
                             Driver::Agent
                         };
-                        // What a document of a site the agent is kept off sends to that site
-                        // while the agent drives is not sent (#5152): a key or a click that
-                        // reached such a page as it came submits nothing there.
-                        let kept_off = lock(&self.kept_off).clone();
-                        let sends_from_kept_off = by == Driver::Agent
-                            && why == Why::Sends
-                            && kept_off.as_ref().is_some_and(|kept_off| {
-                                kept_off(&address).is_some()
-                                    && event
-                                        .session_id
-                                        .as_deref()
-                                        .and_then(|session| state.page_of_session(session))
-                                        .zip(frame.as_deref())
-                                        .is_some_and(|(target, frame)| {
-                                            state
-                                                .kept_off_frames(&target, kept_off)
-                                                .contains_key(frame)
-                                        })
-                            });
-                        if sends_from_kept_off {
-                            follow.push(FollowUp::Refuse(request));
-                        } else {
-                            follow.push(FollowUp::Judge {
-                                paused: Paused {
-                                    id: request,
-                                    document,
-                                },
-                                outbound: Outbound {
-                                    address,
-                                    method,
-                                    why,
-                                    by,
-                                },
-                            });
-                        }
+                        follow.push(FollowUp::Judge {
+                            paused: Paused {
+                                id: request,
+                                document,
+                            },
+                            outbound: Outbound {
+                                address,
+                                method,
+                                why,
+                                by,
+                            },
+                        });
                     }
                 }
                 "Page.frameDetached" => {

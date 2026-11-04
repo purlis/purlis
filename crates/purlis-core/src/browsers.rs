@@ -409,8 +409,8 @@ impl Browsers for EngineBrowsers {
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
         let mut keeping = Keeping::new(&home, data);
         if let (Some(kept), Some(site), Some(sites)) = (kept, &kept_site, &sites) {
-            // Its page's site alone: its form's site, where that is another, is reached once a
-            // login performed in it signs in there (#4995, #5152).
+            // Its page's site alone: a sign-in on its form's site opens only with a login
+            // performed in it (#4995).
             proxy.bind(&LoginSites::page(site.clone()))?;
             sites.bound_to(site);
             keeping.open(kept)?;
@@ -443,11 +443,6 @@ impl Browsers for EngineBrowsers {
             None => Browser::new(engine, Limits::default()),
         }
         .map_err(|why| no_sandbox_or(why.to_string()))?;
-        // The agent is kept off the site its login signs in on, outside a sign-in (#5152).
-        if let Some(sites) = &sites {
-            let bound = sites.bound().clone();
-            browser.keep_off(Arc::new(move |address: &str| kept_off_at(&bound, address)));
-        }
         // Its downloads are held in its own folder, which no chat reads (#2020), before any
         // page of it loads.
         let held_in = data.join(DOWNLOADS);
@@ -1011,21 +1006,20 @@ pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, LoginSites), Strin
     ))
 }
 
-/// **How long a sign-in on a login's form's site lasts at most** (#4995, #5152), from the moment
-/// the browser is held to the login's sites: long enough for the login, and for a step the form's
-/// site asks for after the password, taken by the agent or by the person. Outside it, the agent
-/// is kept off that site's pages, which the browser still reaches.
+/// **How long a sign-in on a login's form's site lasts at most** (#4995, the person's ruling of
+/// 2026-11-03), from the moment the browser is held to the login's sites: long enough for the
+/// login, and for a step the form's site asks for after the password, taken by the agent or by
+/// the person.
 pub const SIGN_IN_WITHIN: Duration = Duration::from_secs(120);
 
 /// **A login purlis performs in a browser whose judge is `sites` and whose reach proxy is
 /// `proxy`** (#2016), at `at`, on `origin`: `run` performs it, and is handed its [`Holder`],
-/// which binds the browser to the login's sites just before the first value goes in. While it
-/// runs, what purlis sends to the login's sites goes; once bound, the proxy carries the page's
-/// site, and its form's where that is another (#4995, #5152), for the browser's life, every
-/// connection it carried before ended. The agent acts on the form's site's pages during the
-/// login's sign-in alone: until the login's page is back on its page's origin, the login fails,
-/// or `within` has passed ([`Holder`]). Refused, running nothing, for a browser that holds
-/// another page's login already.
+/// which binds the browser to the login's page's site alone just before the first value goes in.
+/// While it runs, what purlis sends to the login's sites goes; once bound, the proxy carries the
+/// page's site alone for the browser's life, every connection it carried before ended. A login
+/// whose form is on another site (#4995) reaches it too, during its sign-in alone: until the
+/// login's page is back on its page's origin, the login fails, or `within` has passed
+/// ([`Holder`]). Refused, running nothing, for a browser that holds another page's login already.
 pub fn performed<T>(
     sites: &Arc<judge::SiteJudge>,
     proxy: &Arc<ReachProxy>,
@@ -1059,12 +1053,12 @@ pub fn performed<T>(
 
 /// **What holds a browser to a login purlis performs in it** (#2016, #4995), handed to its
 /// engine. It binds the browser to the login's sites. Where its form is on another site, a
-/// sign-in opens there: from the bind, or, in a browser held to the login's page already (opened
-/// from kept logins, or logged in before), from the moment the login begins. It ends the sign-in
-/// (the agent is kept off the form's site's pages from then on, which the browser still reaches,
-/// the person's ruling of 2026-11-04) as soon as the first of these comes: the login's own page
-/// is back on its page's origin ([`drive::Hold::back`]), the login answered with nothing to
-/// finish there ([`Self::answered`]), or its `within` has passed. Another login asks again.
+/// sign-in reaches that site: from the bind, or, in a browser held to the login's page already
+/// (opened from kept logins, or logged in before), from the moment the login begins. It ends the
+/// sign-in (the browser reaches the page's site alone from then on, the person's ruling of
+/// 2026-11-03) as soon as the first of these comes: the login's own page is back on its page's
+/// origin ([`drive::Hold::back`]), the login answered with nothing to finish there
+/// ([`Self::answered`]), or its `within` has passed. Another login asks again.
 pub struct Holder {
     sites: Arc<judge::SiteJudge>,
     proxy: std::sync::Weak<ReachProxy>,
@@ -1079,8 +1073,9 @@ pub struct Holder {
 }
 
 impl Holder {
-    /// **The sign-in this login opened is over**: the agent is kept off the form's site's pages
-    /// from now (#5152). Nothing where it opened none, or it is over already.
+    /// **The sign-in this login opened is over**: the browser reaches its page's site alone from
+    /// now, and every connection to the form's site is ended. Nothing where it opened none, or
+    /// it is over already.
     pub fn sign_in_over(&self) {
         let number = *self.sign_in.lock().unwrap_or_else(PoisonError::into_inner);
         if let (Some(number), Some(proxy)) = (number, self.proxy.upgrade()) {
@@ -1141,7 +1136,7 @@ impl Holder {
             .ok_or_else(|| "the browser's reach proxy has stopped".to_owned())
     }
 
-    /// **The form's site the agent may act on while this login's sign-in is open**, and how long
+    /// **The form's site the browser reaches while this login's sign-in is open**, and how long
     /// it has left, if it is open.
     pub fn signing_in(&self) -> Option<(Site, Duration)> {
         let number = (*self.sign_in.lock().unwrap_or_else(PoisonError::into_inner))?;
@@ -1438,46 +1433,8 @@ fn closed_word(why: drive::InspectEnded) -> &'static str {
 fn not_acted(refusal: drive::Refusal) -> NotActed {
     match refusal {
         drive::Refusal::Ended => NotActed::Ended,
-        drive::Refusal::KeptOff {
-            site,
-            asks_to_sign_in,
-        } => NotActed::Refused(kept_off_said(&site, asks_to_sign_in)),
         other => NotActed::Refused(other.to_string()),
     }
-}
-
-/// **The site the agent is kept off at `address`, now** (#5152, the person's ruling of
-/// 2026-11-04): the site the browser's login signs in on, where `address` is on it and no
-/// sign-in is open ([`Bound::kept_off`]).
-pub fn kept_off_at(bound: &Bound, address: &str) -> Option<String> {
-    let (host, port) = judge::site_of(address)?;
-    bound.kept_off(&host, port).map(|site| site.to_string())
-}
-
-/// What a chat is told of a call refused on a page or frame of `site`, the site its browser's
-/// login signs in on (#5152): why, and what to do, `browser_login` where the page asks to sign
-/// in again.
-pub fn kept_off_said(site: &str, asks_to_sign_in: bool) -> String {
-    let then = if asks_to_sign_in {
-        "It shows its sign-in form again: call browser_login to sign in anew."
-    } else {
-        "Go back, or navigate to the login's own site; if it asks to sign in again, call \
-         browser_login."
-    };
-    format!(
-        "nothing was read or sent: this is a page of {site}, the site this browser signs in on, \
-         and you may read or act on its pages only while browser_login signs in. {then}"
-    )
-}
-
-/// What a chat is told where the page an act answered with is on `site`, the site its browser's
-/// login signs in on (#5152).
-fn on_kept_off_said(site: &str) -> String {
-    format!(
-        "this page is on {site}, the site this browser signs in on: you may not read or act on it \
-         outside a sign-in. Go back, or navigate to the login's own site; if it asks to sign in \
-         again, call browser_login"
-    )
 }
 
 /// A running browser and its reach proxy, which lives exactly as long as it.
@@ -1715,26 +1672,12 @@ impl Screen for EngineScreen {
         // The call waits on the engine: it is made outside the lock, so frames and a stop are
         // never held up behind it.
         let browser = self.with(Arc::clone);
-        let mut answered = browser
+        browser
             .map_or(Err(drive::Refusal::Ended), |browser| {
                 browser.call_at(epoch, &id, call)
             })
             .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
-            .map_err(not_acted)?;
-        // A page it answers with on the site its login signs in on (#5152): the chat is told
-        // it may not act there, and what to do.
-        let kept_off = self.sites.as_ref().and_then(|sites| {
-            let page = answered.page.as_ref()?;
-            kept_off_at(sites.bound(), &page.address)
-        });
-        if let Some(site) = kept_off {
-            let said = on_kept_off_said(&site);
-            answered.note = Some(match answered.note.take() {
-                Some(note) => format!("{note}; {said}"),
-                None => said,
-            });
-        }
-        Ok(answered)
+            .map_err(not_acted)
     }
 
     fn log_in(&self, asked: &wire::LogIn) -> Result<LoginEnded, NotActed> {
@@ -1780,12 +1723,11 @@ impl Screen for EngineScreen {
             .outcome
             .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
             .map_err(not_acted);
-        // Still signing in on the form's site: what the agent may do there, and for how long
-        // (#4995, #5152).
+        // Still on the form's site: what the agent may do there, and for how long (#4995).
         if let (Ok(browsed), Some((_, left)), Some(page)) = (&mut outcome, signing_in, page) {
             let said = format!(
-                "you may act on the pages of {fills_on} until this browser is back on {page}, for \
-                 {} more seconds at most",
+                "this browser reaches {fills_on} until it is back on {page}, for {} more seconds \
+                 at most, and then {page} alone",
                 left.as_secs().max(1),
             );
             browsed.note = Some(match browsed.note.take() {
