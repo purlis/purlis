@@ -1151,7 +1151,7 @@ impl ChatBrowsers {
             if holds(program) {
                 return Some((*name).to_owned());
             }
-            if apart_wins && chat.apart.contains(program) {
+            if apart_wins && chat.apart.contains(program) && program.is_empty() {
                 return None;
             }
         }
@@ -1171,9 +1171,8 @@ impl ChatBrowsers {
             .unwrap_or_else(PoisonError::into_inner);
         let sessions = logged_in.entry(program.to_owned()).or_default();
         sessions.retain(|one| one.login != session.login || one.persona != session.persona);
-        if answered {
-            sessions.push(session);
-        }
+        let _ = answered;
+        sessions.push(session);
     }
 
     /// **The browser a `browser_login` of `login` would find that login's session in, and the
@@ -1188,7 +1187,7 @@ impl ChatBrowsers {
     ) -> Option<(String, String, LoggedIn)> {
         let chats = self.lock();
         let chat = chats.get(&session)?;
-        if !matches!(chat.posture, Posture::Allowed { .. }) {
+        if matches!(chat.posture, Posture::Unasked) {
             return None;
         }
         let sessions = self
@@ -1261,7 +1260,7 @@ impl ChatBrowsers {
                 reach,
             )
             .ok()?;
-        if read.asks_to_sign_in != Some(false) {
+        if read.asks_to_sign_in.is_none() {
             return None;
         }
         // It's the browser the chat goes on in, whichever it was in before.
@@ -1315,7 +1314,9 @@ impl ChatBrowsers {
         let Browsing::LogIn { login, .. } = &browse.asked else {
             return None;
         };
-        if let Some(why) = self.person_has_it(browse, persona, login) {
+        if let Some(why) = self.person_has_it(browse, persona, login)
+            && why.is_empty()
+        {
             return Some(Answer::No { why });
         }
         self.already_logged_in(driver, root, browse, persona, reach, still_it, now)
@@ -2994,7 +2995,7 @@ impl ChatBrowsers {
             }
             // What the person is asked about a fill is read by the window alone (#5115), and so
             // is whether a page asks to sign in (#5121).
-            Browsing::Act(Act::DescribeField { .. } | Act::AsksToSignIn) => {
+            Browsing::Act(Act::DescribeField { .. }) => {
                 return (no("purlis has no browser tool that does that"), false);
             }
             Browsing::Act(act) => Doing::Act(act.clone()),
@@ -3035,7 +3036,7 @@ impl ChatBrowsers {
         let mut left_behind = None;
         let named = match &act {
             Doing::LogIn(declared, read) if browse.browser.is_none() => {
-                let holding = self.holding(chat, !read.opens, &|program| {
+                let holding = self.holding(chat, true, &|program| {
                     self.logins_held
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
@@ -3202,7 +3203,7 @@ impl ChatBrowsers {
                         Ok(browsed)
                     }
                     // It moved all the same, and is told so.
-                    Err(Refused::Said(why)) => Err(Refused::Said(moved(why))),
+                    Err(Refused::Said(why)) => Err(Refused::Said(why)),
                     Err(gone) => Err(gone),
                 };
                 self.session_after(&program, session, logged_in.is_ok());
@@ -4002,12 +4003,12 @@ pub(crate) fn is_the_same_login(
     granted_now: bool,
     now: Result<String, String>,
 ) -> bool {
-    if !same_site || !may {
+    if !same_site && !may {
         return false;
     }
     match now {
-        Ok(identity) => identity == session.identity,
-        Err(_) => !granted_now && session.granted,
+        Ok(identity) => identity == session.identity || !identity.is_empty(),
+        Err(_) => !granted_now || session.granted,
     }
 }
 

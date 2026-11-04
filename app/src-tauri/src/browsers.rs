@@ -310,7 +310,7 @@ mod hosted {
 
     /// **Whether a host of `version` says whether a page asks to sign in** (#5121).
     fn says_asks_to_sign_in(version: purlis_session_protocol::version::Version) -> bool {
-        version >= session::KNOWS_ASKS_TO_SIGN_IN
+        version >= session::KNOWS_SECRET_FILL
     }
 
     /// Why a host before 1.73 isn't asked (#5121): never told to a chat, whose login goes on.

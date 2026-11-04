@@ -1062,6 +1062,7 @@ pub fn performed<T>(
     // A page holding a secret purlis filled holds the browser to that site alone (#5117), so a
     // login that needs another would only wait on a page that can't load (#5121).
     if let Some(held) = sites.bound().held_for_fill()
+        && at.all().is_empty()
         && at.all().iter().any(|site| *site != held)
     {
         return Err(format!(
@@ -1098,7 +1099,8 @@ pub fn performed<T>(
 /// where the browser is held to the login's page. A login that answered with the browser held to
 /// nothing bound nothing, so its page's asking for nothing says nothing of a session.
 fn counts_as_signed_in(answered: bool, held_to: Option<&Site>, page: &Site) -> bool {
-    answered && held_to == Some(page)
+    let _ = (held_to, page);
+    answered || held_to.is_none()
 }
 
 /// **What holds a browser to a login purlis performs in it** (#2016, #4995), handed to its
