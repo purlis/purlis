@@ -42,14 +42,15 @@
 //! by gitoxide, opened [isolated](gix::open::Options::isolated), and only for repositories it
 //! knows by something a chat cannot write ([`Known`]). A file that is not a regular file is not
 //! opened by this code, and all reading of a repository is held to [`CHECKS_TAKE_AT_MOST`] on a
-//! thread of its own: past that, or if it panics, every name it was asked about is told.
+//! thread of its own: past that, every name it was asked about is told.
 //!
 //! # The app's own work, and the person's
 //!
 //! What the app checks out carries these names too, and the look tells it apart by what is on
-//! disk, so it holds for every way a checkout is made, the person's own terminal included, and
-//! nothing has to remember to say it acted ([`Known`]). One it can't tell apart is told: this
-//! says what appeared and never who put it there.
+//! disk, so it holds for every way a checkout is made, the person's own terminal included
+//! ([`Known`]). Only a new clone is said by the code that makes it ([`made_by_the_app`]), as nothing
+//! on disk tells one from a repository that arrived another way. One it can't tell apart is told:
+//! this says what appeared and never who put it there.
 //!
 //! # The record
 //!
@@ -90,6 +91,9 @@ const MOST_BRANCHES: usize = 256;
 /// The most read of a git pointer or a workspace's manifest.
 const LARGEST_READ: u64 = 1024 * 1024;
 
+/// The file of the clones the app made ([`made_by_the_app`]), beside the records.
+const MADE: &str = "made-by-the-app";
+
 /// The audit event of what a look found.
 pub const AUDITED: &str = "trust.sandbox.arrived";
 
@@ -126,6 +130,95 @@ struct Pin {
     own: [u64; 2],
     folder: [u64; 2],
     changed: i64,
+    /// For a `.git`, what of it says what runs ([`stamp`]).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    inner: u64,
+}
+
+fn is_zero(value: &u64) -> bool {
+    *value == 0
+}
+
+/// Whether `path` is named `.git`, as a disk that folds case takes it.
+fn is_git(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| folded(&name.to_string_lossy()) == ".git")
+}
+
+/// **What of a `.git` says what runs**: a `.git` file's words; a folder's hooks by name, size and
+/// change, and its config without the sections ordinary work rewrites. So a repository that went
+/// away and came back with other hooks is another one, though it is the same inode. Nothing here
+/// is opened but a regular file.
+fn stamp(dot_git: &Path) -> u64 {
+    let mut words = String::new();
+    if is_regular(dot_git) {
+        words.push_str(&small_file(dot_git).unwrap_or_default());
+    } else {
+        let mut section_counts = true;
+        for line in small_file(&dot_git.join("config"))
+            .unwrap_or_default()
+            .lines()
+        {
+            let line = line.trim();
+            if line.starts_with('[') {
+                let section = line.trim_start_matches('[').split([']', ' ', '"']).next();
+                section_counts = !section.is_some_and(|name| {
+                    [
+                        "branch",
+                        "remote",
+                        "user",
+                        "gc",
+                        "maintenance",
+                        "pull",
+                        "push",
+                        "fetch",
+                    ]
+                    .iter()
+                    .any(|ordinary| name.eq_ignore_ascii_case(ordinary))
+                });
+            }
+            if section_counts {
+                words.push_str(line);
+                words.push('\n');
+            }
+        }
+        if let Ok(hooks) = std::fs::read_dir(dot_git.join("hooks")) {
+            let mut listed: Vec<String> = hooks
+                .flatten()
+                .map(|hook| {
+                    let kind = hook.metadata().ok();
+                    format!(
+                        "{} {} {}\n",
+                        hook.file_name().to_string_lossy(),
+                        kind.as_ref().map_or(0, std::fs::Metadata::len),
+                        kind.as_ref().map_or(0, ctime),
+                    )
+                })
+                .collect();
+            listed.sort();
+            words.push_str(&listed.concat());
+        }
+    }
+    gix::objs::compute_hash(
+        gix::hash::Kind::Sha1,
+        gix::objs::Kind::Blob,
+        words.as_bytes(),
+    )
+    .ok()
+    .and_then(|id| id.as_bytes().first_chunk::<8>().copied())
+    .map_or(1, u64::from_le_bytes)
+}
+
+/// When `kind` last changed, which, unlike its modified time, no program sets.
+#[cfg(unix)]
+fn ctime(kind: &std::fs::Metadata) -> i64 {
+    use std::os::unix::fs::MetadataExt;
+    kind.ctime()
+}
+
+#[cfg(not(unix))]
+fn ctime(_: &std::fs::Metadata) -> i64 {
+    0
 }
 
 impl Pin {
@@ -138,7 +231,8 @@ impl Pin {
         Some(Self {
             own: [own.dev(), own.ino()],
             folder: [folder.dev(), folder.ino()],
-            changed: own.mtime(),
+            changed: ctime(&own),
+            inner: if is_git(path) { stamp(path) } else { 0 },
         })
     }
 
@@ -153,9 +247,14 @@ impl Pin {
     /// rewritten where it stands, and an editor's save gives it a new inode. A folder or a `.git`
     /// isn't: another one is another thing.
     fn holds(&self, now: &Self, path: &Path) -> bool {
-        let is_itself = path.file_name().is_some_and(|name| name == ".git")
-            || std::fs::symlink_metadata(path).is_ok_and(|kind| kind.is_dir());
-        self.folder == now.folder && (!is_itself || self.own == now.own)
+        let is_itself =
+            is_git(path) || std::fs::symlink_metadata(path).is_ok_and(|kind| kind.is_dir());
+        self.folder == now.folder && self.inner == now.inner && (!is_itself || self.own == now.own)
+    }
+
+    /// Whether `now`, at a repository's `.git`, is the `.git` this pin was taken of.
+    fn same_repository(&self, now: &Self) -> bool {
+        self.own == now.own && self.inner == now.inner
     }
 
     /// Whether `now` is this very file, unchanged since it was told.
@@ -358,10 +457,10 @@ pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) ->
             .baseline
             .extend(walked.found.iter().map(|(p, found)| (key(p), found.pin)));
         record.repos.extend(repos.clone());
-        if walked.cut_short {
-            record.cut_short = true;
+        record.cut_short |= walked.cut_short;
+        if let Some(whole_to) = walked.bound_at {
             for folder in &new_folders {
-                record.whole_for.insert(key(folder), walked.whole_to);
+                record.whole_for.insert(key(folder), whole_to);
             }
         }
         write(plane, &path, &record)
@@ -374,15 +473,59 @@ fn repos_at_start(folders: &[PathBuf], walked: &Walked) -> BTreeMap<String, Pin>
     let found = walked
         .found
         .keys()
-        .filter(|path| path.file_name().is_some_and(|name| name == ".git"))
+        .filter(|path| is_git(path))
         .filter_map(|path| path.parent().map(Path::to_path_buf));
     let above = folders
         .iter()
         .flat_map(|folder| folder.ancestors().map(Path::to_path_buf));
-    found
-        .chain(above)
-        .filter_map(|top| Pin::of(&top.join(".git")).map(|pin| (key(&top), pin)))
-        .collect()
+    let mut repos = BTreeMap::new();
+    for top in found.chain(above) {
+        let dot_git = top.join(".git");
+        let Some(pin) = Pin::of(&dot_git) else {
+            continue;
+        };
+        // And the repository a branch folder is of, wherever that is.
+        if let Some(common) = pointed(&dot_git).as_deref().and_then(common_of)
+            && let (Some(clone), Some(pin)) = (common.parent(), Pin::of(&common))
+        {
+            repos.insert(key(clone), pin);
+        }
+        repos.insert(key(&top), pin);
+    }
+    repos
+}
+
+/// The `.git` a `git_dir` of a branch folder or a submodule belongs to, read as `commondir` names
+/// it: a directory named `.git`, or none.
+fn common_of(git_dir: &Path) -> Option<PathBuf> {
+    let common = match small_file(&git_dir.join("commondir")) {
+        Some(text) => super::planted::lexical(&git_dir.join(text.trim())),
+        None => git_dir.ancestors().find(|dir| is_git(dir))?.to_path_buf(),
+    };
+    is_git(&common).then_some(common)
+}
+
+/// **A clone the app has just made in `top`**, said by the code that made it, as nothing on disk
+/// tells a clone from a repository that arrived another way. It is held to the `.git` that was
+/// there when this was said ([`Known`]). Only outside a sandbox can this be written.
+pub fn made_by_the_app(plane: &Path, top: &Path) -> io::Result<()> {
+    let Some(pin) = Pin::of(&top.join(".git")) else {
+        return Ok(());
+    };
+    let path = dir(plane).join(MADE);
+    holding(plane, || {
+        let mut made = read_made(plane);
+        made.insert(key(top), pin);
+        let bytes = serde_json::to_vec(&made).map_err(io::Error::other)?;
+        crate::plane::write_private(plane, &path, &bytes)
+    })
+}
+
+fn read_made(plane: &Path) -> BTreeMap<String, Pin> {
+    std::fs::read(dir(plane).join(MADE))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
 }
 
 /// **At the end of a turn of chat `chat`**: what has appeared since its last look, or `None` for a
@@ -399,18 +542,22 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
     let mut unseen = BTreeSet::new();
     for (found, seen) in &walked.found {
         let at = key(found);
-        let told_of = before.arrived.contains(&at) || before.put_away.contains_key(&at);
-        let same = before
-            .baseline
-            .get(&at)
-            .is_some_and(|pin| pin.holds(&seen.pin, found));
-        if told_of || same {
+        // Put away, it stays away only while it is the thing that was put away.
+        let told_of = before.arrived.contains(&at)
+            || before
+                .put_away
+                .get(&at)
+                .is_some_and(|pin| pin.holds(&seen.pin, found));
+        let known = before.baseline.get(&at);
+        if told_of || known.is_some_and(|pin| pin.holds(&seen.pin, found)) {
             continue;
         }
-        let beyond = before
-            .whole_for
-            .iter()
-            .any(|(folder, whole_to)| found.starts_with(folder) && seen.depth > *whole_to);
+        // Known and now another thing is new however deep it is.
+        let beyond = known.is_none()
+            && before
+                .whole_for
+                .iter()
+                .any(|(folder, whole_to)| found.starts_with(folder) && seen.depth > *whole_to);
         if beyond {
             first_reached.insert(found.clone());
         } else {
@@ -435,7 +582,7 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
         for at in ours.iter().chain(&first_reached) {
             record.baseline.insert(key(at), pin_of(at));
             if ours.contains(at)
-                && at.file_name().is_some_and(|name| name == ".git")
+                && is_git(at)
                 && let Some(top) = at.parent()
             {
                 record.repos.insert(key(top), pin_of(at));
@@ -444,6 +591,7 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
         for at in &theirs {
             let found = key(at);
             record.baseline.remove(&found);
+            record.put_away.remove(&found);
             let told_elsewhere = others_showing.contains(&found)
                 || others_put_away
                     .iter()
@@ -484,8 +632,13 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
             record.whole_for.clear();
             record.cut_short_told = false;
         } else {
-            for whole_to in record.whole_for.values_mut() {
-                *whole_to = (*whole_to).max(walked.whole_to);
+            match walked.bound_at {
+                Some(bound_at) => {
+                    for whole_to in record.whole_for.values_mut() {
+                        *whole_to = (*whole_to).max(bound_at);
+                    }
+                }
+                None => record.whole_for.clear(),
             }
         }
         record.name = name.map(str::to_owned).or(record.name);
@@ -683,15 +836,14 @@ struct Walked {
     /// Each folder it could not read, a watched folder that isn't there among them.
     unread: BTreeSet<PathBuf>,
     cut_short: bool,
-    /// Where it was cut short, the deepest level it read whole.
-    whole_to: usize,
+    /// Where it met its bound, the deepest level it read whole. A folder not read is said by name,
+    /// and says nothing of the levels of any other.
+    bound_at: Option<usize>,
 }
 
 impl Walked {
-    fn stop(&mut self, depth: usize) {
-        if !self.cut_short {
-            self.whole_to = depth;
-        }
+    fn not_read(&mut self, folder: PathBuf) {
+        self.unread.insert(folder);
         self.cut_short = true;
     }
 
@@ -721,8 +873,7 @@ fn walk(watched: &Watched) -> Walked {
         if std::fs::symlink_metadata(folder).is_ok_and(|kind| kind.is_dir()) {
             level.push(folder.clone());
         } else {
-            walked.unread.insert(folder.clone());
-            walked.stop(0);
+            walked.not_read(folder.clone());
         }
     }
     let mut looked = 0;
@@ -737,8 +888,7 @@ fn walk(watched: &Watched) -> Walked {
                 Err(why) if why.kind() == io::ErrorKind::NotFound => continue,
                 // A folder not read may hold anything.
                 Err(_) => {
-                    walked.unread.insert(dir);
-                    walked.stop(depth - 1);
+                    walked.not_read(dir);
                     continue;
                 }
             };
@@ -749,7 +899,8 @@ fn walk(watched: &Watched) -> Walked {
             for entry in entries {
                 looked += 1;
                 if looked > LOOKED_AT || walked.found.len() >= MOST_NAMES {
-                    walked.stop(depth - 1);
+                    walked.cut_short = true;
+                    walked.bound_at = Some(depth - 1);
                     return walked;
                 }
                 let name = folded(&entry.file_name().to_string_lossy());
@@ -844,34 +995,39 @@ enum Repo {
 ///   `.git/worktrees` that names it back. Only git outside a sandbox writes there.
 /// - **A new submodule**: a `.git` file naming a directory with a `HEAD` in a known repository's
 ///   `.git/modules`, which is held the same way.
-/// - **A new clone**: a `.git` folder where a workspace's manifest names a repo. Only the app
-///   writes a manifest.
+/// - **A new clone**: a `.git` folder the app said it made ([`made_by_the_app`]).
 /// - **A file of a known repository**: one whose every file is what that repository has at that
 ///   path ([`Repo`]). The name is not enough, nor is what a chat could have committed.
 ///
 /// A repository is known where the record pinned its `.git`, as the chat started or as one of the
-/// above made it, and it is still that `.git`. A `.git` file's git directory must be in a `.git`'s
-/// own `worktrees` or `modules`, which the sandbox holds by name. Anything else is never opened.
+/// above made it, and it is still that `.git`. A `.git` file's git directory must be in the
+/// `worktrees` or `modules` of a `.git` so pinned. Anything else is never opened.
 struct Known {
     tops: Vec<(PathBuf, Repo)>,
     git_dirs: Vec<PathBuf>,
-    clones: BTreeSet<PathBuf>,
+    pinned: BTreeMap<String, Pin>,
 }
 
 impl Known {
     fn of(plane: &Path, record: &Record) -> Self {
+        let mut pinned = read_made(plane);
+        pinned.extend(record.repos.clone());
         let mut known = Self {
             tops: Vec::new(),
             git_dirs: Vec::new(),
-            clones: clones_in_manifests(plane),
+            pinned,
         };
-        for (top, pin) in &record.repos {
-            let top = Path::new(top);
-            if Pin::of(&top.join(".git")).is_some_and(|now| now.own == pin.own) {
-                known.add_as_it_is(top);
-            }
+        for top in record.repos.keys() {
+            known.add_as_it_is(Path::new(top));
         }
         known
+    }
+
+    /// Whether the `.git` of `top` is the one pinned for it.
+    fn is_pinned(&self, top: &Path) -> bool {
+        self.pinned.get(&key(top)).is_some_and(|pin| {
+            Pin::of(&top.join(".git")).is_some_and(|now| pin.same_repository(&now))
+        })
     }
 
     /// `top`, read as its `.git` says, where that is a repository.
@@ -880,29 +1036,28 @@ impl Known {
         let Ok(kind) = std::fs::symlink_metadata(&dot_git) else {
             return;
         };
+        if !self.is_pinned(top) {
+            return;
+        }
         if kind.is_dir() {
             self.git_dirs.push(dot_git);
             self.tops.push((top.to_path_buf(), Repo::Clone));
-        } else if let Some(git_dir) = pointed(&dot_git) {
-            let common = small_file(&git_dir.join("commondir"))
-                .map(|text| super::planted::lexical(&git_dir.join(text.trim())))
-                .unwrap_or_else(|| git_dir.clone());
-            if common.file_name().is_some_and(|name| name == ".git")
-                || git_dir.starts_with(common.join("modules"))
-            {
-                self.git_dirs.push(common);
-                self.tops.push((
-                    top.to_path_buf(),
-                    Repo::Linked {
-                        index: git_dir.join("index"),
-                    },
-                ));
-            }
+        } else if let Some(git_dir) = pointed(&dot_git)
+            && let Some(common) = common_of(&git_dir)
+            && common.parent().is_some_and(|clone| self.is_pinned(clone))
+        {
+            self.git_dirs.push(common);
+            self.tops.push((
+                top.to_path_buf(),
+                Repo::Linked {
+                    index: git_dir.join("index"),
+                },
+            ));
         }
     }
 
     /// Whether the new `dot_git` is a worktree or a submodule of a known repository, or a clone
-    /// a manifest names.
+    /// the app made.
     fn vouches_for_git(&self, dot_git: &Path) -> bool {
         let Some(top) = dot_git.parent() else {
             return false;
@@ -911,7 +1066,7 @@ impl Known {
             return false;
         };
         if kind.is_dir() {
-            return self.clones.contains(top);
+            return self.is_pinned(top);
         }
         // Where it points is looked at only inside a repository already known.
         let Some(named) = pointer_text(dot_git) else {
@@ -923,7 +1078,20 @@ impl Known {
                 let back = small_file(&named.join("gitdir"));
                 back.is_some_and(|back| same_path(Path::new(back.trim()), dot_git))
             } else {
-                named.starts_with(git_dir.join("modules")) && named.join("HEAD").is_file()
+                // The submodule's config names this folder back.
+                named.starts_with(git_dir.join("modules"))
+                    && named.join("HEAD").is_file()
+                    && small_file(&named.join("config")).is_some_and(|config| {
+                        config.lines().any(|line| {
+                            line.split_once('=').is_some_and(|(word, value)| {
+                                word.trim().eq_ignore_ascii_case("worktree")
+                                    && same_path(
+                                        &super::planted::lexical(&named.join(value.trim())),
+                                        top,
+                                    )
+                            })
+                        })
+                    })
             }
         })
     }
@@ -932,14 +1100,14 @@ impl Known {
     fn split(mut self, unseen: BTreeSet<PathBuf>) -> (BTreeSet<PathBuf>, BTreeSet<PathBuf>) {
         let mut ours = BTreeSet::new();
         let mut theirs = BTreeSet::new();
-        let (gits, others): (Vec<PathBuf>, Vec<PathBuf>) = unseen
-            .into_iter()
-            .partition(|path| path.file_name().is_some_and(|name| name == ".git"));
+        let (gits, others): (Vec<PathBuf>, Vec<PathBuf>) =
+            unseen.into_iter().partition(|path| is_git(path));
         let mut checked = 0;
         for dot_git in gits {
             checked += 1;
             if checked <= MOST_CHECKED && self.vouches_for_git(&dot_git) {
-                if let Some(top) = dot_git.parent() {
+                if let (Some(top), Some(pin)) = (dot_git.parent(), Pin::of(&dot_git)) {
+                    self.pinned.insert(key(top), pin);
                     self.add_as_it_is(top);
                 }
                 ours.insert(dot_git);
@@ -991,31 +1159,6 @@ fn same_path(a: &Path, b: &Path) -> bool {
             (std::fs::canonicalize(a), std::fs::canonicalize(b)),
             (Ok(a), Ok(b)) if a == b
         )
-}
-
-/// Each repo every workspace's manifest names, as the folder it is cloned to. A manifest is never
-/// a chat's to write (ADR 0067, amended 2026-10-21).
-fn clones_in_manifests(plane: &Path) -> BTreeSet<PathBuf> {
-    let workspaces = plane.join(super::WORKSPACES);
-    let Ok(entries) = std::fs::read_dir(&workspaces) else {
-        return BTreeSet::new();
-    };
-    let mut out = BTreeSet::new();
-    for entry in entries.flatten() {
-        let workspace = entry.path();
-        let Some(text) = small_file(&workspace.join("workspace.json")) else {
-            continue;
-        };
-        let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&text) else {
-            continue;
-        };
-        let repos = manifest["repos"].as_array().into_iter().flatten();
-        let named = repos.filter_map(|repo| repo["name"].as_str());
-        for name in named.filter(|name| crate::contain::repo_name_ok(name)) {
-            out.insert(workspace.join(name));
-        }
-    }
-    out
 }
 
 /// One look's reading of the repositories it needed, each read once.

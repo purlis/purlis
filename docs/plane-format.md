@@ -6957,9 +6957,10 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   "lifted"?}, "baseline": {<path>: <pin>}, "repos": {<folder>: <pin>}, "arrived": [...],
   "unread": [...], "put_away": {<path>: <pin>}, "cut_short": bool, "cut_short_told": bool,
   "whole_for"?: {<folder>: n}}`, a pin being `{"own": [dev, inode], "folder": [dev, inode],
-  "changed": seconds}`. `<chat>` is the chat's own id. `baseline` holds the paths there as the
+  "changed": seconds, "inner"?: n}`. `<chat>` is the chat's own id. `baseline` holds the paths there as the
   chat started and those a later look vouched for as the app's own; `arrived` what its Inbox
-  Notice names; `repos` each repository a look may read; `unread` each folder the last look could not read;
+  Notice names; `repos` each repository a look may read, and beside the records the file
+  `made-by-the-app` holds each clone the app made, the same way (`{<folder>: <pin>}`); `unread` each folder the last look could not read;
   `put_away` what was told and put away; `whole_for`, for a folder no look has read all of, the
   deepest level below it some look has read whole. Paths only, never a file's contents.
 - **Status:** **internal** — **purlis only** (ADR 0067, amended 2026-11-05). Written by the app as

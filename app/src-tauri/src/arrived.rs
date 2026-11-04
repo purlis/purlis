@@ -99,13 +99,7 @@ pub fn turn_ended(held: &Arc<Held>, chat: u32) {
                         one_ended(&id);
                         return;
                     };
-                    // A panic must not leave the chat's looks marked as running for good.
-                    let looked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        look(&held, chat, &id, name.as_deref());
-                    }));
-                    if looked.is_err() {
-                        tracing::warn!("purlis: the look at chat {chat}'s folders panicked");
-                    }
+                    look(&held, chat, &id, name.as_deref());
                     drop(held);
                     if !one_ended(&id) {
                         return;

@@ -123,6 +123,13 @@ pub(super) fn into_workspace(
         ));
     }
 
+    if let Err(why) = crate::sandbox::arrived::made_by_the_app(root, &dest) {
+        tracing::warn!(
+            "purlis: {} was not recorded as made ({why})",
+            dest.display()
+        );
+    }
+
     match own_upstream(source) {
         Some(upstream) => {
             let _ = git::run(

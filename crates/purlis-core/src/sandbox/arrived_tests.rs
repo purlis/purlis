@@ -172,33 +172,20 @@ fn a_repository_written_after_the_start_vouches_for_nothing() {
 #[test]
 #[cfg(unix)]
 fn a_clone_whose_config_is_a_fifo_holds_no_look_and_what_it_was_asked_about_is_told() {
-    let dir = tempfile::tempdir().expect("a folder");
-    let plane = dir.path().canonicalize().expect("real");
-    let workspace = plane.join("workspaces/alpha");
-    file(
-        &workspace.join("workspace.json"),
-        r#"{"name": "alpha", "repos": [{"name": "named"}]}"#,
-    );
-    let watched = Watched {
-        folders: vec![workspace.clone()],
-        ..Watched::default()
-    };
-    arrived::begin(&plane, CHAT, None, &watched).expect("a record");
-    let git = workspace.join("named/.git");
-    fs::create_dir_all(&git).expect("a folder");
-    file(&git.join("HEAD"), "ref: refs/heads/main\n");
+    let fix = Fixture::new();
+    let top = fix.folder.join("made");
+    let dot_git = top.join(".git");
+    fs::create_dir_all(&dot_git).expect("a folder");
+    file(&dot_git.join("HEAD"), "ref: refs/heads/main\n");
+    fix.begin();
+    arrived::made_by_the_app(&fix.plane, &top).expect("said");
     let made =
-        crate::forklock::status(std::process::Command::new("mkfifo").arg(git.join("config")))
+        crate::forklock::status(std::process::Command::new("mkfifo").arg(dot_git.join("config")))
             .expect("mkfifo");
     assert!(made.success());
-    file(&workspace.join("named/.vscode/tasks.json"), "{}\n");
-    let looked = arrived::look(&plane, CHAT, None)
-        .expect("a look")
-        .expect("a record");
-    assert_eq!(
-        looked.new,
-        [workspace.join("named/.vscode").display().to_string()]
-    );
+    file(&top.join(".vscode/tasks.json"), "{}\n");
+    let told = fix.look();
+    assert!(told.iter().any(|path| path == "made/.vscode"), "{told:?}");
 }
 
 #[test]
@@ -676,32 +663,136 @@ fn a_git_file_that_only_says_it_is_a_branch_folder_is_told() {
 }
 
 #[test]
-fn a_clone_a_workspaces_manifest_names_is_not_told_and_another_is() {
-    let dir = tempfile::tempdir().expect("a folder");
-    let plane = dir.path().canonicalize().expect("real");
-    let workspace = plane.join("workspaces/alpha");
-    fs::create_dir_all(&workspace).expect("a workspace");
-    let watched = Watched {
-        folders: vec![workspace.clone()],
-        ..Watched::default()
-    };
-    arrived::begin(&plane, CHAT, None, &watched).expect("a record");
+fn a_clone_the_app_says_it_made_is_not_told_with_what_its_remote_has_and_another_is() {
+    let fix = Fixture::new();
+    let remote = fix.plane.join("remote");
+    fs::create_dir_all(&remote).expect("a folder");
+    git(&remote, &["init", "-q", "-b", "main"]);
+    file(&remote.join(".vscode/tasks.json"), "tracked\n");
+    git(&remote, &["add", "."]);
+    git(&remote, &["commit", "-q", "-m", "editor"]);
+    fix.begin();
+    git(
+        &fix.folder,
+        &["clone", "-q", remote.to_str().expect("a path"), "made"],
+    );
+    arrived::made_by_the_app(&fix.plane, &fix.folder.join("made")).expect("said");
+    git(
+        &fix.folder,
+        &["clone", "-q", remote.to_str().expect("a path"), "other"],
+    );
+    assert_eq!(fix.look(), ["other/.git", "other/.vscode"]);
+}
+
+#[test]
+fn a_repository_that_went_away_and_came_back_with_other_hooks_is_told() {
+    let fix = Fixture::new();
+    let clone = clone_behind(&fix);
+    fs::create_dir_all(clone.join(".git/hooks")).expect("hooks");
+    fix.begin();
+    let aside = fix.plane.join("aside");
+    fs::rename(&clone, &aside).expect("aside");
+    file(&aside.join(".git/hooks/pre-commit"), "x\n");
+    fs::rename(&aside, &clone).expect("back");
+    assert_eq!(fix.look(), ["clone/.git"]);
+}
+
+#[test]
+fn a_branch_folder_pointed_at_another_git_folder_is_told_and_vouches_for_nothing() {
+    let fix = Fixture::new();
+    let clone = clone_behind(&fix);
+    git(&clone, &["pull", "-q", "--ff-only"]);
+    let branch = fix.folder.join("branch");
+    git(
+        &clone,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "lane",
+            branch.to_str().expect("a path"),
+        ],
+    );
+    fix.begin();
+    let elsewhere = fix.plane.join("y/.git/worktrees/w");
+    file(&elsewhere.join("HEAD"), "ref: refs/heads/main\n");
+    file(&elsewhere.join("commondir"), "../..\n");
+    file(&fix.plane.join("y/.git/HEAD"), "ref: refs/heads/main\n");
     file(
-        &workspace.join("workspace.json"),
-        r#"{"name": "alpha", "repos": [{"name": "named"}]}"#,
+        &branch.join(".git"),
+        &format!("gitdir: {}\n", elsewhere.display()),
     );
-    for repo in ["named", "unnamed"] {
-        let at = workspace.join(repo);
-        fs::create_dir_all(&at).expect("a folder");
-        git(&at, &["init", "-q", "-b", "main"]);
+    file(&branch.join("sub/.envrc"), "x\n");
+    assert_eq!(fix.look(), ["branch/.git", "branch/sub/.envrc"]);
+}
+
+#[test]
+#[cfg(unix)]
+fn a_folder_not_read_at_the_start_leaves_what_appears_elsewhere_told() {
+    use std::os::unix::fs::PermissionsExt;
+    let fix = Fixture::new();
+    let shut = fix.folder.join("shut");
+    fs::create_dir_all(&shut).expect("a folder");
+    fs::set_permissions(&shut, fs::Permissions::from_mode(0o000)).expect("shut");
+    fix.begin();
+    file(&fix.folder.join("sub/.vscode/tasks.json"), "{}\n");
+    let told = fix.look();
+    fs::set_permissions(&shut, fs::Permissions::from_mode(0o755)).expect("open");
+    assert_eq!(told, ["sub/.vscode"]);
+}
+
+#[test]
+fn a_repository_past_where_a_look_is_whole_that_is_now_another_is_told() {
+    let fix = Fixture::new();
+    let many = fix.folder.join("many");
+    for at in 0..=arrived::MOST_NAMES {
+        file(&many.join(format!("{at:06}/.envrc")), "x");
     }
-    let looked = arrived::look(&plane, CHAT, None)
-        .expect("a look")
-        .expect("a record");
-    assert_eq!(
-        looked.new,
-        [workspace.join("unnamed/.git").display().to_string()]
+    let repo = fix.folder.join("aa");
+    fs::create_dir_all(&repo).expect("a folder");
+    git(&repo, &["init", "-q", "-b", "main"]);
+    fix.begin();
+    fs::rename(&repo, fix.plane.join("aside")).expect("aside");
+    fs::create_dir_all(&repo).expect("a folder");
+    git(&repo, &["init", "-q", "-b", "main"]);
+    assert_eq!(fix.look(), ["aa/.git"]);
+}
+
+#[test]
+fn what_was_put_away_and_is_now_another_thing_is_told() {
+    let fix = Fixture::new();
+    fix.begin();
+    let at = fix.folder.join("sub/.vscode");
+    file(&at.join("settings.json"), "{}\n");
+    fix.look();
+    arrived::put_away(&fix.plane, CHAT).expect("put away");
+    fs::rename(&at, fix.plane.join("aside")).expect("aside");
+    file(&at.join("tasks.json"), "{}\n");
+    assert_eq!(fix.look(), ["sub/.vscode"]);
+}
+
+#[test]
+fn a_git_file_naming_a_submodule_it_is_not_is_told() {
+    let fix = Fixture::new();
+    let clone = clone_behind(&fix);
+    let module = clone.join(".git/modules/sub");
+    file(&module.join("HEAD"), "ref: refs/heads/main\n");
+    file(
+        &module.join("config"),
+        "[core]\n\tworktree = ../../../sub\n",
     );
+    fix.begin();
+    file(
+        &fix.folder.join("elsewhere/.git"),
+        &format!("gitdir: {}\n", module.display()),
+    );
+    assert_eq!(fix.look(), ["elsewhere/.git"]);
+    file(
+        &clone.join("sub/.git"),
+        &format!("gitdir: {}\n", module.display()),
+    );
+    assert_eq!(fix.look(), Vec::<String>::new());
 }
 
 #[test]
