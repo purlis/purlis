@@ -1021,6 +1021,14 @@ impl State {
         }
     }
 
+    /// The page whose own frame, or one of whose frames, is `frame` (#5152).
+    fn page_holding(&self, frame: &str) -> Option<String> {
+        self.pages
+            .iter()
+            .find(|page| page.target == frame || page.frames.contains_key(frame))
+            .map(|page| page.target.clone())
+    }
+
     /// **The frames of `target`'s page on a site the agent is kept off** (#5152), each by its
     /// id, with that site: every frame whose address, or whose document's origin
     /// ([`judged_at`]), `kept_off` names, and every frame inside one. The page's own document is
@@ -4118,7 +4126,9 @@ impl Browser {
             .and_then(|i| history.get("entries")?.get(i))
             .ok_or(Refusal::NoEarlierPage)?;
         let url = earlier.get("url").and_then(Value::as_str).unwrap_or("");
-        WebAddress::parse(url).map_err(|_| Refusal::EarlierNotWeb)?;
+        let earlier_address = WebAddress::parse(url).map_err(|_| Refusal::EarlierNotWeb)?;
+        // An earlier page of a site the agent is kept off is not gone back to (#5152).
+        self.not_kept_off_address(&earlier_address)?;
         let entry = earlier.get("id").cloned().unwrap_or_default();
         // A page gone back to was read before: its documents read again (#2018).
         let _revisiting = self.addressing(&target, Why::Reads);
@@ -5201,16 +5211,15 @@ impl Inner {
                             && why == Why::Sends
                             && kept_off.as_ref().is_some_and(|kept_off| {
                                 kept_off(&address).is_some()
-                                    && event
-                                        .session_id
-                                        .as_deref()
-                                        .and_then(|session| state.page_of_session(session))
-                                        .zip(frame.as_deref())
-                                        .is_some_and(|(target, frame)| {
+                                    && frame.as_deref().is_some_and(|frame| {
+                                        // Held for the whole browser, so told on no page's
+                                        // session: the page is the one holding the frame.
+                                        state.page_holding(frame).is_some_and(|target| {
                                             state
                                                 .kept_off_frames(&target, kept_off)
                                                 .contains_key(frame)
                                         })
+                                    })
                             });
                         if addressed_to_kept_off || sends_from_kept_off {
                             follow.push(FollowUp::Refuse(request));

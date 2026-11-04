@@ -46,9 +46,12 @@ what the chat may do on the provider, not what the browser reaches.
   document sends elsewhere (a form posted back to the app) goes, and so does whatever the app's
   own pages send to the provider, and everything outside the chat's calls. This holds even where
   a key or a click reaches a provider page that came as the call was made.
-- A browser holding a login sends to the login's sites without asking the person, its sign-in
-  host included: the person allowed both with the login, and the proxy refuses every other site.
-  A token refresh the app's page sends to its provider goes.
+- A browser holding a login sends to its sign-in host without asking the person: the person
+  allowed it with the login, and a token refresh the app's page sends to its provider goes. What
+  the chat sends to the login's page's site is judged as before.
+- The sign-in host's two default web ports are one site to keep the chat off: an `http://`
+  address on it, which the browser may upgrade, is refused as the `https://` one is. Going back
+  to an earlier page of the sign-in host is refused too.
 - "Shows its form again" is a provider page that shows a password field: its refusal says to log
   in again. Every refusal on the provider says what to do: go back, or call `browser_login` where
   the page asks to sign in.

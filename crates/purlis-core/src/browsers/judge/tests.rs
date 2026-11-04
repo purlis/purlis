@@ -273,9 +273,10 @@ fn a_browser_holding_a_login_asks_about_no_other_site() {
     assert!(!sites.bound().lets("shop.example.test", 80));
 }
 
-/// #5152: a browser holding a login whose form is on another site sends to both of the login's
-/// sites without asking, the agent driving or not: the person allowed them with the login. A
-/// page's token refresh to its sign-in site goes once the sign-in is over.
+/// #5152: a browser holding a login whose form is on another site sends to its sign-in site
+/// without asking, the agent driving or not: the person allowed it with the login. A page's token
+/// refresh to its sign-in site goes once the sign-in is over. Its page's site is judged as before:
+/// what the agent sends there asks where nothing lists it.
 #[test]
 fn a_browser_holding_a_login_sends_to_its_sign_in_site_without_asking() {
     let sites = sites(&[], false);
@@ -289,17 +290,16 @@ fn a_browser_holding_a_login_sends_to_its_sign_in_site_without_asking() {
         .expect("a sign-in opens");
     sites.bound().sign_in_over(number);
     for why in [Why::Sends, Why::Addressed, Why::Reads] {
-        for address in [
-            "https://auth.example.test/token?grant=refresh",
-            "https://app.example.test/api?q=1",
-        ] {
-            assert_eq!(
-                sites.judge(&out(address, why)),
-                Gate::Go,
-                "{address} {why:?}"
-            );
-        }
+        assert_eq!(
+            sites.judge(&out("https://auth.example.test/token?grant=refresh", why)),
+            Gate::Go,
+            "{why:?}"
+        );
     }
+    assert_eq!(
+        sites.judge(&out("https://app.example.test/api?q=1", Why::Sends)),
+        ask("app.example.test:443")
+    );
 }
 
 #[test]
@@ -358,6 +358,11 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_outside
         bound.kept_off("auth.example.test", 8443),
         None,
         "by its port too"
+    );
+    assert_eq!(
+        bound.kept_off("auth.example.test", 80),
+        Some(auth.clone()),
+        "its plain web port is the same site"
     );
     assert_eq!(bound.sites(), Some(vec![auth.clone(), app.clone()]));
     assert_eq!(bound.sign_in_over(first), None, "over once");

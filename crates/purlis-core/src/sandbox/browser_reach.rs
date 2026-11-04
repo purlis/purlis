@@ -514,11 +514,17 @@ impl Bound {
     /// of 2026-11-04): the site its login signs in on, where that is `host` on `port`, while no
     /// sign-in is open. The browser loads that site's documents (the page's own redirects,
     /// frames and token refreshes); the agent neither reads them nor acts on them.
+    ///
+    /// The web's two default ports of the form's host are one site here: an `http://` address
+    /// the browser upgrades reaches the `https://` one.
     pub fn kept_off(&self, host: &str, port: u16) -> Option<Site> {
         let site = Site::of(host, port);
         let bound = self.lock();
         let holding = bound.as_ref()?;
-        (holding.form.as_ref() == Some(&site) && holding.sign_in.is_none()).then_some(site)
+        let form = holding.form.as_ref()?;
+        let web = |port: u16| matches!(port, 80 | 443);
+        let same = *form == site || (form.host == site.host && web(form.port) && web(site.port));
+        (same && holding.sign_in.is_none()).then(|| form.clone())
     }
 }
 
