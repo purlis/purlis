@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { browser, expect } from "@wdio/globals";
-import { closeMenus, openMenuOn, pressMenuRow } from "../acting.js";
+import { closeMenus, menuRows, openMenuOn, pressMenuRow } from "../acting.js";
 import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
@@ -63,7 +63,7 @@ async function drawn() {
 }
 
 // DIAGNOSTIC (#5193, dropped before merge): every round's first test is right after a chat starts.
-const ROUNDS = 30;
+const ROUNDS = 20;
 for (let round = 1; round <= ROUNDS; round++)
   describe(`a terminal's menu (round ${round})`, () => {
     // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
@@ -182,3 +182,74 @@ for (let round = 1; round <= ROUNDS; round++)
       });
     });
   });
+
+// DIAGNOSTIC (#5193, dropped before merge): the race pinned. A transition is held running while
+// the menu opens, as one is just after a chat starts.
+describe("DIAG #5193: a terminal's menu opened while the window is moving", () => {
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
+  let mine: Started | undefined;
+  const terminal = () => `[data-testid="pane"][data-session="${mine?.session}"] .xterm-screen`;
+  const inMenu = () =>
+    browser.execute(() => Boolean(document.activeElement?.closest('[role="menu"]')));
+  const moving = async () => {
+    await browser.execute(() => {
+      const held = document.createElement("div");
+      held.id = "diag-5193-moving";
+      held.style.cssText =
+        "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;transition:opacity 30s linear";
+      document.body.appendChild(held);
+      void held.offsetWidth;
+      held.style.opacity = "1";
+    });
+    // A press from the page, as `pressOnly` makes one.
+    await browser.execute(() => document.body.click());
+    await browser.pause(500);
+  };
+  const still = () => browser.execute(() => document.getElementById("diag-5193-moving")?.remove());
+
+  before(async () => {
+    mine = await startAChat();
+    await $(terminal()).waitForExist({ timeout: 20_000 });
+  });
+  afterEach(async () => {
+    await still();
+    await closeMenus();
+  });
+  after(async () => {
+    await endChatsStartedHere([mine]);
+  });
+
+  it("before the fix: a contextmenu alone leaves the keyboard out of the menu, and Escape closes nothing", async () => {
+    await moving();
+    await browser.execute((css: string) => {
+      const element = document.querySelector<HTMLElement>(css);
+      const box = element!.getBoundingClientRect();
+      element!.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: Math.round(box.left + box.width / 2),
+          clientY: Math.round(box.top + box.height / 2),
+        }),
+      );
+    }, terminal());
+    await $('[role="menu"]').waitForDisplayed({ timeout: 10_000 });
+    await browser.pause(1_000);
+    expect(await inMenu()).toBe(false);
+    await browser.keys(["Escape"]);
+    await browser.pause(1_000);
+    expect((await menuRows()).length).toBeGreaterThan(0);
+  });
+
+  it("after the fix: openMenuOn's press puts the keyboard in the menu at once, and Escape closes it", async () => {
+    await moving();
+    await openMenuOn(terminal());
+    expect(await inMenu()).toBe(true);
+    await browser.keys(["Escape"]);
+    await browser.waitUntil(async () => (await menuRows()).length === 0, {
+      timeout: 3_000,
+      timeoutMsg: "the menu stayed open after one Escape",
+    });
+  });
+});
