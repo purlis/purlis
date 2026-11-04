@@ -849,7 +849,10 @@ describe("a shown task that ends", () => {
 
     await userEvent.click(within(said).getByRole("button", { name: "Clear pane" }));
 
-    await waitFor(() => expect(onScreen()).toEqual([]));
+    // Clear pane closes the pane (#5019): the tab's only pane, and not the strip's last tab, so
+    // the tab goes and the one beside it is in front.
+    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
+    expect(onScreen()).toEqual([2]);
     expect(away()).toBeNull();
     expect(crumbs()).toBeNull();
     // Nothing more is ended by it.

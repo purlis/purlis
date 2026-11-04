@@ -8,6 +8,7 @@ import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLef
 import { bringSideBack, putSideAway, sideIsAway } from "../sides.js";
 import { gutter } from "../gutter.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
+import { openedSince } from "../reach.js";
 
 /**
  * **A terminal fills the centre region, top to bottom** — with one pane, with a split, and
@@ -185,7 +186,7 @@ describe("the terminal in the centre region", () => {
     // one an older chat has too.
     await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
-      async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
+      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
       { timeout: 20_000, timeoutMsg: "the pane-fill spec left a chat open behind it" },
     );
   });
