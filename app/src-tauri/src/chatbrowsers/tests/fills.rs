@@ -35,7 +35,7 @@ fn one_line_on(origin: &str) -> FieldSaid {
 
 /// `browse` answered with `fills` as what asks the person, on the runner of `pool` where one is
 /// named.
-pub(super) fn answered_filling(
+fn answered_filling(
     browsers: &ChatBrowsers,
     hosted: &Arc<Hosted>,
     browse: &BrowseAsk,

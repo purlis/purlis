@@ -26,7 +26,7 @@ const ORIGIN: &str = "https://dash.example.test";
 const KEY: &str = "dash-api-key";
 
 /// A project whose vault `qa`, persona qa's, is a file holding `file`, and is held by the window
-/// with its chats' programs stood in.
+/// on a session host that runs nothing.
 struct Project {
     _dir: tempfile::TempDir,
     _planes: Planes,
@@ -55,22 +55,6 @@ impl Project {
         )
         .expect("a registry");
         std::fs::write(root.join("q.json"), file.to_string()).expect("the vault's file");
-        let program = stand_in::claude_code(dir.path(), "claude-stand-in", "#!/bin/sh\nexit 0\n");
-        std::fs::write(
-            root.join(purlis_core::profiles::LOCAL_FILE),
-            format!(
-                "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\n",
-                program.display().to_string()
-            ),
-        )
-        .expect("the profile");
-        let set = purlis_core::profiles::current(&root);
-        purlis_core::profiletrust::record_launched(
-            &root,
-            "work",
-            &purlis_core::profiletrust::fingerprint(set.get("work").expect("it reads")),
-        )
-        .expect("approved");
         let host = Pretend::default();
         let planes = Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None)
             .running_sessions_on(Arc::new(move |_, _: &Path| Box::new(host.clone())));
@@ -88,7 +72,6 @@ impl Project {
         let chat = Chat {
             program: "/bin/sh".to_owned(),
             name: "1".to_owned(),
-            profile: Some("work".to_owned()),
             persona: Some("qa".to_owned()),
             cwd: Some(self.held.root().to_path_buf()),
             unsandboxed: true,
