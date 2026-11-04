@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793746201983,
+  "lastUpdate": 1793797483650,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8474,6 +8474,42 @@ window.BENCHMARK_DATA = {
             "value": 475.1,
             "unit": "MB",
             "extra": "median of 6 samples: 469.9, 473.3, 474.1, 476.1, 477.1, 499.7 MB; window 262.7 MB, session host 212.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ee8a6e76ef564e94147a7ef644ff36e99b3c66c5",
+          "message": "SkillGrades story: drop inAWindowThatFits and its false 414 px premise (#4672, #5093) (#5178)\n\n@storybook/addon-vitest sets every story test's window to 1200x900 before\nthe story runs, and #5140 measured that every studio frame fits. #4672's\nreal cause was the table's sideways scroll, fixed by #5153.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K2XR94WF87B0TG47PJ8X9B\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T11:26:05Z",
+          "tree_id": "6333b7314baa8647a0b8f340a0f9838f36647c64",
+          "url": "https://github.com/purlis/purlis/commit/ee8a6e76ef564e94147a7ef644ff36e99b3c66c5"
+        },
+        "date": 1793797479042,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1269,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1012, 1269, 1503 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 595.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 577.8, 588, 593.9, 596.2, 596.9, 599.8 MB; window 369.3 MB, session host 224.9 MB"
           }
         ]
       }
