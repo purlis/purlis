@@ -44,6 +44,11 @@
 //! that asks for nothing, in a browser already held to this login, is said to be logged in already. No
 //! sentence it answers carries a value.
 //!
+//! **A login a chat chose starts clean on its own site** (#5121, the person's ruling of 2026-11-05):
+//! once the browser is held to the login, and before anything is filled, the cookies its sites
+//! would be sent, a parent domain's too, and their service workers are gone, and the page is
+//! loaded again. Where that can't be done, nothing is filled. Other sites are left as they are.
+//!
 //! **A login is a preset of secret fill** (#5121, the person's ruling SF-7 on #5096): a fill of the
 //! user name, a fill of the password and a press of submit, under the same rules as any fill. Each
 //! value is kept out as an address or a form would spell it too. A user name goes only into a
@@ -66,7 +71,7 @@ use super::super::tree::NodeKey;
 use super::Browser;
 use super::fill::{GUARD_FIELD, spellings};
 use super::takeover::Carrying;
-use crate::drive::{Answer, Content, Driver, Hold, Login, Refusal, lock};
+use crate::drive::{Answer, Content, Driver, Hold, Login, Refusal, Why, lock};
 
 /// How long a login waits for its form to show, and then for the password field to go, unless
 /// the browser's limits say otherwise ([`crate::drive::Limits::login_within`]).
@@ -364,6 +369,36 @@ impl Browser {
         self.inner
             .copy_withheld
             .store(true, std::sync::atomic::Ordering::SeqCst);
+        // A login a chat chose starts clean on its own site (#5121), held already, and before
+        // anything watches this page leave, as it's loaded again.
+        if login.suggested {
+            self.clear_sites(&target, login).map_err(|why| {
+                not_logged_in(format!(
+                    "purlis could not clear {origin} before the login ({why}), so nothing was \
+                     filled"
+                ))
+            })?;
+            let before = self.document_of(&target);
+            let session = self.page_session(&target)?;
+            {
+                let _addressing = self.addressing(&target, Why::Addressed);
+                self.acting_on(&target, || self.navigate(&session, &login.address))?;
+            }
+            lock(&self.inner.state).current = Some(target.clone());
+            self.wait_until(within, 1, || {
+                Ok(self.document_of(&target) != before && shows_form(self)? == Some(true))
+            })
+            .map_err(|why| {
+                or_said(
+                    why,
+                    format!(
+                        "no login form appeared on {origin} within {} seconds of clearing it, so \
+                         nothing was filled",
+                        within.as_secs()
+                    ),
+                )
+            })?;
+        }
         // Its holder is told once this page leaves the form's origin (#4995): back on the
         // login's page's, or anywhere else.
         if login.back_to.is_some() {
@@ -391,6 +426,65 @@ impl Browser {
             }
         }
         done
+    }
+
+    /// **Clears what the login's sites hold** (module docs): the service workers of its origin and
+    /// of its page's where that's another's, and every cookie either would be sent. Read again
+    /// after: one that's still there is a failure.
+    fn clear_sites(&self, target: &str, login: &Login) -> Result<(), String> {
+        let session = self.page_session(target).map_err(|why| why.to_string())?;
+        let on = Some(session.as_str());
+        let origins: Vec<&str> = std::iter::once(login.origin.as_str())
+            .chain(login.back_to.as_deref())
+            .collect();
+        for origin in &origins {
+            self.devtools()
+                .call(
+                    "Storage.clearDataForOrigin",
+                    json!({ "origin": origin, "storageTypes": "service_workers" }),
+                    on,
+                )
+                .map_err(|_| format!("its service workers on {origin} did not go"))?;
+        }
+        let hosts: Vec<&str> = origins.iter().filter_map(|one| host_of(one)).collect();
+        if hosts.len() != origins.len() {
+            return Err("its address names no host".to_owned());
+        }
+        let cookies = || -> Result<Vec<Value>, String> {
+            let read = self
+                .devtools()
+                .call("Storage.getCookies", json!({}), None)
+                .map_err(|_| "its cookies could not be read".to_owned())?;
+            let all = read
+                .get("cookies")
+                .and_then(Value::as_array)
+                .ok_or_else(|| "its cookies could not be read".to_owned())?;
+            Ok(all
+                .iter()
+                .filter(|cookie| {
+                    let domain = cookie.get("domain").and_then(Value::as_str);
+                    domain.is_some_and(|domain| hosts.iter().any(|host| reaches(domain, host)))
+                })
+                .cloned()
+                .collect())
+        };
+        for cookie in cookies()? {
+            let mut named = json!({
+                "name": cookie.get("name"),
+                "domain": cookie.get("domain"),
+                "path": cookie.get("path"),
+            });
+            if let Some(key) = cookie.get("partitionKey") {
+                named["partitionKey"] = key.clone();
+            }
+            self.devtools()
+                .call("Network.deleteCookies", named, on)
+                .map_err(|_| "a cookie of its did not go".to_owned())?;
+        }
+        if !cookies()?.is_empty() {
+            return Err("a cookie of its did not go".to_owned());
+        }
+        Ok(())
     }
 
     /// Fills the user name where the page asks for one and the password, submits, and waits
@@ -873,6 +967,27 @@ impl Browser {
                 }
             });
         }
+    }
+}
+
+/// The host of `origin` (`scheme://host[:port]`), as a cookie's domain spells it.
+fn host_of(origin: &str) -> Option<&str> {
+    let (_, rest) = origin.split_once("://")?;
+    let host = match rest.rsplit_once(':') {
+        Some((host, port)) if port.bytes().all(|byte| byte.is_ascii_digit()) => host,
+        _ => rest,
+    };
+    (!host.is_empty()).then_some(host)
+}
+
+/// Whether a cookie of `domain` is sent to `host`: `.parent.example` to it and every host under
+/// it, and a bare host to itself alone. Never a host beside it, or one under `host`.
+pub(super) fn reaches(domain: &str, host: &str) -> bool {
+    let domain = domain.to_ascii_lowercase();
+    let host = host.to_ascii_lowercase();
+    match domain.strip_prefix('.') {
+        Some(parent) => host == parent || host.ends_with(&format!(".{parent}")),
+        None => host == domain,
     }
 }
 

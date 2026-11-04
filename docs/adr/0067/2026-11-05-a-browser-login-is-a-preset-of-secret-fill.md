@@ -14,10 +14,16 @@ all the chat reads, in any browser.
   did nothing before. The answer and the person's view say why, and offer to close the browser left
   behind.
 
+- **A login allowed on a notice starts clean on its own site** (the person's ruling of 2026-11-05):
+  before its first fill, the login's origin's cookies and service workers go from that browser,
+  cookies the origin would be sent from a parent domain too, and the form's host's where that's
+  another. The login stays in the current browser, and other sites are untouched. Declared logins
+  and secret fill stay as they are.
+
 The form-host rules (#4995), the replace-site ask (#4996) and the sign-in reach rules (#5099, as
 amended by #5152) stay as they are.
 
-*Decided in implementation (D-5121-1 to D-5121-15 in the pull request):*
+*Decided in implementation (D-5121-1 to D-5121-17 in the pull request):*
 
 - "Holds a session" is judged by two things: a login that answered in that browser, as the same login
   now (identity whole; the site where the call names one; nothing policy forbids since), and the page
@@ -41,5 +47,9 @@ amended by #5152) stay as they are.
   stricter than a fill's refusal. Its hold stays the browser's life (#5099), stricter than a fill's.
 - A login that needs another site than the one a page holding a filled secret holds the browser to is
   refused at once, saying why.
+- Clearing comes after the browser is held to the login and before any fill, on every fill of such a
+  login, not the first alone, as a page that asks to sign in again has nothing to lose. A login whose
+  page asks for nothing clears nothing. Always on a notice counts until purlis restarts, after which
+  its line is a declared login. A host before 1.73 is refused such a login.
 - A login into a browser the person has taken over is refused before any vault is read or anyone is
   asked (SF-10).

@@ -94,6 +94,12 @@ enum Twist {
     PopupAsItOpens,
     /// The login's page lands on another origin, asking for nothing there (#5121).
     LandsElsewhere,
+    /// Its sites' cookies are in the browser, with those of others (#5121).
+    HoldsCookies,
+    /// Those cookies don't go when they're deleted (#5121).
+    CookiesStay,
+    /// Its service workers can't be cleared (#5121).
+    WorkersStay,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -115,6 +121,7 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
     let seen = Arc::clone(&submitted);
     let typed = Arc::new(AtomicUsize::new(0));
     let reused = AtomicBool::new(false);
+    let loads = AtomicUsize::new(0);
     let navigated = |engine: &Engine, session: &str, loader: &str, url: &str| {
         let frame = session.trim_start_matches("S-");
         engine.emit(
@@ -141,8 +148,28 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                 } else {
                     p["url"].as_str().unwrap_or_default()
                 };
-                navigated(engine, on, "LOADER-LOGIN", lands);
-                Some(Ok(json!({ "frameId": on.trim_start_matches("S-"), "loaderId": "LOADER-LOGIN" })))
+                let loader = format!("LOADER-LOGIN-{}", loads.fetch_add(1, Ordering::SeqCst));
+                navigated(engine, on, &loader, lands);
+                Some(Ok(json!({ "frameId": on.trim_start_matches("S-"), "loaderId": loader })))
+            }
+            "Storage.getCookies" if matches!(twist, Twist::HoldsCookies | Twist::CookiesStay) => {
+                let deleted = engine.sent("Network.deleteCookies").len();
+                Some(Ok(if deleted > 0 && twist == Twist::HoldsCookies {
+                    json!({ "cookies": [{ "name": "other", "domain": "other.test", "path": "/" }] })
+                } else {
+                    json!({ "cookies": [
+                        { "name": "own", "domain": "fixture.test", "path": "/deep" },
+                        { "name": "parent", "domain": ".fixture.test", "path": "/" },
+                        { "name": "under", "domain": "under.fixture.test", "path": "/" },
+                        { "name": "other", "domain": "other.test", "path": "/" }
+                    ] })
+                }))
+            }
+            "Storage.clearDataForOrigin" if twist == Twist::WorkersStay => {
+                Some(Err(crate::cdp::CallError::Engine {
+                    code: -32000,
+                    message: "not now".into(),
+                }))
             }
             "Input.insertText" => {
                 let text = p["text"].as_str().unwrap_or_default();
@@ -1142,4 +1169,94 @@ fn a_login_page_that_went_elsewhere_is_not_taken_for_one_signed_in() {
         ended_as(&ended.outcome)
     );
     assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+/// A login a chat chose, on `fixture.test`.
+fn chosen() -> Login {
+    Login {
+        suggested: true,
+        ..login_at(ORIGIN)
+    }
+}
+
+/// #5121, the person's ruling: a login a chat chose starts clean on its own site, with what its
+/// sites hold gone before anything is filled, and what other sites hold left alone.
+#[test]
+fn a_login_a_chat_chose_clears_its_own_site_before_anything_is_filled() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::HoldsCookies);
+    let ended = browser.log_in(&chosen(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let deleted: Vec<_> = engine
+        .sent("Network.deleteCookies")
+        .iter()
+        .map(|sent| sent.params["name"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(deleted, ["own", "parent"], "others' are left alone");
+    let workers = engine.sent("Storage.clearDataForOrigin");
+    assert_eq!(workers.len(), 1);
+    assert_eq!(workers[0].params["storageTypes"], "service_workers");
+    assert_eq!(workers[0].params["origin"], ORIGIN);
+    assert_eq!(
+        engine.sent("Page.navigate").len(),
+        2,
+        "the page is loaded again, with nothing of before"
+    );
+    assert_eq!(inserted(&engine).len(), 1, "and only then filled");
+}
+
+#[test]
+fn a_cookie_that_will_not_go_fills_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::CookiesStay);
+    let ended = browser.log_in(&chosen(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+#[test]
+fn a_service_worker_that_will_not_go_fills_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::WorkersStay);
+    let ended = browser.log_in(&chosen(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+#[test]
+fn a_declared_login_clears_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::HoldsCookies);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(engine.sent("Network.deleteCookies").is_empty());
+    assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
+}
+
+#[test]
+fn a_cookie_reaches_its_host_and_every_host_under_a_parent_domain_alone() {
+    use super::super::login::reaches;
+    assert!(reaches("app.example.test", "app.example.test"));
+    assert!(reaches(".example.test", "app.example.test"), "a parent's");
+    assert!(reaches(".app.example.test", "app.example.test"), "its own");
+    assert!(reaches(".EXAMPLE.test", "app.example.test"), "in any case");
+    assert!(
+        !reaches("example.test", "app.example.test"),
+        "a bare parent"
+    );
+    assert!(!reaches("other.example.test", "app.example.test"), "beside");
+    assert!(
+        !reaches("sub.app.example.test", "app.example.test"),
+        "under"
+    );
+    assert!(!reaches(".notexample.test", "app.example.test"), "alike");
+    assert!(!reaches(".ample.test", "app.example.test"), "alike");
 }

@@ -4166,6 +4166,11 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
     };
     // A login whose names cannot name a store keeps nothing.
     login.keep = kept.filter(|_| store.is_some());
+    // Always on its notice writes a declared line, and this is the call it answered, or one soon
+    // after it: as much the chat's choice as one allowed once (#5121).
+    login.suggested |= held
+        .login_grants()
+        .allowed_from_a_notice(name, &login.address);
     Ok(LoginRead {
         login,
         opens,

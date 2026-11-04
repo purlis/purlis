@@ -10,4 +10,5 @@
 
 - **A browser login follows the rules of any secret fill.** Its fields give nothing to a copy, a cut or
   a drag, the chat copies and drags nothing in that browser from then on, a user name goes only into a
-  one-line field, and only the page purlis opened for the login is filled (#5121).
+  one-line field, and only the page purlis opened for the login is filled. A login you allow on its notice starts clean on
+  its own site, and other sites in that browser are left as they are (#5121).

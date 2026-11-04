@@ -953,3 +953,20 @@ fn a_declared_login_on_its_own_page_fills_as_declared_where_the_page_cant_be_fol
     .expect("judged");
     assert!(judged.is_none());
 }
+
+/// #5121: a login allowed from a notice is known by its name and its page, Always too.
+#[test]
+fn a_login_allowed_from_a_notice_is_known_by_its_name_and_its_page() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    let tool = proposal.tool().expect("a tool");
+    let page = tool.login.as_ref().expect("a login").url.clone();
+    assert!(!grants.allowed_from_a_notice("shop-login", &page));
+
+    assert!(grants.allow(id, "qa", tool, false));
+
+    assert!(grants.allowed_from_a_notice("shop-login", &page));
+    assert!(!grants.allowed_from_a_notice("shop-login", "https://other.example.test/"));
+    assert!(!grants.allowed_from_a_notice("other", &page));
+}

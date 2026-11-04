@@ -472,7 +472,8 @@ use crate::view::{Limits, Views};
 /// 1.73 reads whether a browser's page asks to sign in (`asks_to_sign_in`, #5121, spec #5100): an
 /// act no chat's tool sends, which a window sends before it reads a login's values, so a browser
 /// that holds the login answers "already logged in" with no vault opened. A host before 1.73
-/// refuses it, and the login goes as it always did.
+/// refuses it, and the login goes as it always did. And a login a chat chose starts clean on its
+/// own site, which a host before 1.73 doesn't do, so no such login is sent to one.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 73,

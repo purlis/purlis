@@ -413,6 +413,15 @@ mod hosted {
             if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
                 return Err(Refused::Said(why));
             }
+            // A host before 1.73 doesn't start a chat's chosen login clean (#5121).
+            if login.suggested && !says_asks_to_sign_in(link.version()) {
+                return Err(Refused::Said(
+                    "the purlis that runs this browser is too old to start this login clean on \
+                     its site, so nothing was filled. Update purlis where the browser runs, then \
+                     call browser_login again"
+                        .to_owned(),
+                ));
+            }
             // A host before 1.70 drops a login's form and would fill it on its page's origin
             // (#4995): such a login is never sent to one.
             if let Some(form) = &login.form

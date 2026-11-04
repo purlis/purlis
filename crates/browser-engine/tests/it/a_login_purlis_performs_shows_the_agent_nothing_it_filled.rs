@@ -181,6 +181,52 @@ fn a_login_on_a_page_that_redefines_finding_and_focusing_a_field_goes_through() 
     assert!(!holds_a_value(&shown), "the account page shows no value");
 }
 
+/// #5121, the person's ruling: a login a chat chose starts clean on its own site, so what an earlier
+/// session there showed isn't what it fills.
+#[test]
+fn a_login_a_chat_chose_fills_the_form_of_a_site_with_no_earlier_session() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "clean-earlier-session.html");
+    assert!(
+        sees(&browser, "An earlier session"),
+        "{}",
+        snapshot(&browser)
+    );
+    let login = Login {
+        suggested: true,
+        ..login_on("clean-site.html", "http://fixture.test")
+    };
+    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(sees(&browser, "Account"), "{}", snapshot(&browser));
+    assert!(!snapshot(&browser).contains("Kept for the earlier session"));
+}
+
+/// #5121, the person's ruling: a declared login stays as it is, which is what the test above is
+/// measured against: this page shows its settings field to the earlier session.
+#[test]
+fn a_declared_login_leaves_an_earlier_session_where_it_is() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "clean-earlier-session.html");
+    assert!(
+        sees(&browser, "An earlier session"),
+        "{}",
+        snapshot(&browser)
+    );
+    let login = login_on("clean-site.html", "http://fixture.test");
+    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(
+        sees(&browser, "Kept for the earlier session"),
+        "{}",
+        snapshot(&browser)
+    );
+}
+
 /// #5121, SF-7: a value is kept out as a form spells it, as any fill's is, where the page it sent
 /// the form to writes what its address carries into the page.
 #[test]

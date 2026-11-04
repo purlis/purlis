@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>An earlier session</title></head>
+<body>
+  <h1>An earlier session</h1>
+  <script>
+    // What a session earlier in this browser leaves behind: a cookie of the host, one of its
+    // domain, and each is what the other page tells an earlier session by.
+    document.cookie = 'earlier=host; path=/';
+    document.cookie = 'wider=domain; path=/; domain=fixture.test';
+  </script>
+</body></html>

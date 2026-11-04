@@ -276,6 +276,18 @@ impl Grants {
         self.lock().filled.clone()
     }
 
+    /// Whether login `name` on page `address` was allowed from a notice since purlis started, Always
+    /// too (#5121).
+    pub fn allowed_from_a_notice(&self, name: &str, address: &str) -> bool {
+        self.lock().filled.iter().any(|tool| {
+            tool.name == name
+                && tool
+                    .login
+                    .as_ref()
+                    .is_some_and(|login| login.url == address)
+        })
+    }
+
     /// Chat `session` closed: what it waited on and was allowed go with it, so nothing reaches a
     /// later chat dealt the same number, and its call stops waiting.
     pub fn forget(&self, session: u32) {
