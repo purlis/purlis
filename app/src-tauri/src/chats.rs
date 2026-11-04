@@ -6892,6 +6892,8 @@ impl Chats {
                 ..chat.clone()
             }))
         }));
+        // A chat no relaunch puts back is never written at all (#4976, [`Chat::unrecorded`]).
+        chats.retain(|chat| !chat.unrecorded);
         Record {
             chats,
             // Kept beside the tree (#4751): what each view tab was, where it was, whether it was in
