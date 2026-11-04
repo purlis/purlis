@@ -31,18 +31,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { mode: file, variant: after, browser: chromium, rep: 1 }
-          - { mode: file, variant: after, browser: chromium, rep: 2 }
-          - { mode: file, variant: after, browser: chromium, rep: 3 }
-          - { mode: file, variant: after, browser: chromium, rep: 4 }
-          - { mode: file, variant: after, browser: chromium, rep: 5 }
-          - { mode: file, variant: after, browser: chromium, rep: 6 }
-          - { mode: file, variant: after, browser: chromium, rep: 7 }
-          - { mode: file, variant: after, browser: chromium, rep: 8 }
           - { mode: file, variant: before, browser: webkit, rep: 1 }
           - { mode: file, variant: before, browser: webkit, rep: 2 }
+          - { mode: file, variant: before, browser: webkit, rep: 3 }
           - { mode: file, variant: after, browser: webkit, rep: 1 }
           - { mode: file, variant: after, browser: webkit, rep: 2 }
+          - { mode: file, variant: after, browser: webkit, rep: 3 }
     container:
       image: ${{ needs.image.outputs.image }}
       options: --init --ipc=host
@@ -60,7 +54,7 @@ jobs:
           fetch-depth: 3
       - if: ${{ matrix.variant == 'before' }}
         working-directory: .
-        run: git checkout e84d2acaf12a970d373949e3f1b5b3b2e2cd9e38 -- app/src/ChatsSection.stories.tsx
+        run: git checkout e84d2acaf12a970d373949e3f1b5b3b2e2cd9e38 -- app/src/stories.testkit.ts
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -77,17 +71,17 @@ jobs:
             if [ "${{ matrix.mode }}" = shard ]; then
               set -- --shard=2/7
             else
-              set -- src/ChatsSection.stories.tsx
+              set -- src/SkillGrades.stories.tsx
             fi
             PURLIS_STORY_REPORT="$RUNNER_TEMP/report/report-$i.json" \
               npx vitest run --project "stories * (${{ matrix.browser }})" "$@" \
               --reporter=dot --reporter=../tools/story-failures.mjs > "$RUNNER_TEMP/report/out-$i.txt" 2>&1 || true
-            echo "loop $i: $(grep -c 'Held Across' "$RUNNER_TEMP/report/report-$i.json" 2>/dev/null) gap failures; $(grep -E 'Tests +[0-9]' "$RUNNER_TEMP/report/out-$i.txt" | tail -1)"
+            echo "loop $i: $(grep -o '"story": "Grades"' "$RUNNER_TEMP/report/report-$i.json" 2>/dev/null | wc -l) gap failures; $(grep -E 'Tests +[0-9]' "$RUNNER_TEMP/report/out-$i.txt" | tail -1)"
             grep -o 'PROBE not held[^"]*' "$RUNNER_TEMP/report/report-$i.json" 2>/dev/null | head -3 || true
           done
       - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: probe2-${{ matrix.variant }}-${{ matrix.browser }}-${{ matrix.rep }}
+          name: probe3-${{ matrix.variant }}-${{ matrix.browser }}-${{ matrix.rep }}
           path: ${{ runner.temp }}/report/
           retention-days: 3

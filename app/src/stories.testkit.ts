@@ -51,8 +51,12 @@ export async function inAWindow(width: number, height: number): Promise<boolean>
     return false;
   }
   await (size as (width: number, height: number) => Promise<void>)(width, height);
+  // Both sides: a resize that keeps the height (`SkillGrades`'s window that fits, wider only)
+  // would pass a wait on the height at once, before the new width is laid out, and what the
+  // story does next would happen in the old window (#4098).
   await waitFor(() => {
-    if (window.innerHeight !== height) throw new Error("not resized yet");
+    if (window.innerWidth !== width || window.innerHeight !== height)
+      throw new Error("not resized yet");
   });
   await nextFrame();
   return true;
