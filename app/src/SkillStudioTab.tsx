@@ -282,6 +282,14 @@ export function SkillStudioTab({
   /** Narrow or wide whatever the width: for a story or a test. Measured when left out. */
   narrow?: boolean;
 }) {
+  {
+    // [DEBUG-4351] each render of the studio on the opening's timeline.
+    const probe = globalThis as { __tl4351?: string[]; __t04351?: number }; // [DEBUG-4351]
+    probe.__tl4351?.push(
+      // eslint-disable-next-line react-hooks/purity -- [DEBUG-4351] a probe's clock, never merged
+      `${(performance.now() - (probe.__t04351 ?? 0)).toFixed(0)} render SkillStudioTab`,
+    ); // [DEBUG-4351]
+  }
   const view = { ...SKILL_STUDIO_VIEW, key: tab };
   const historyId = studioHistoryOf(plane, view);
   const walked = useViewHistory<StudioPlace>(historyId, STUDIO_START);
@@ -367,7 +375,16 @@ export function SkillStudioTab({
   );
   useEffect(() => {
     let live = true;
+    // [DEBUG-4351] the read on the opening's timeline (the spec's `__tl4351`), sent and answered.
+    const probe = globalThis as { __tl4351?: string[]; __t04351?: number }; // [DEBUG-4351]
+    const sentAt = performance.now(); // [DEBUG-4351]
+    const since = (at: number) => (at - (probe.__t04351 ?? 0)).toFixed(0); // [DEBUG-4351]
+    probe.__tl4351?.push(`${since(sentAt)} send skill_studio`); // [DEBUG-4351]
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
+      const backAt = performance.now(); // [DEBUG-4351]
+      probe.__tl4351?.push(
+        `${since(backAt)} back skill_studio (${(backAt - sentAt).toFixed(0)} ms${live ? "" : ", stale"})`,
+      ); // [DEBUG-4351]
       if (!live) return;
       if (answer.status === "ok") setRead({ key, studio: answer.data });
       else setRead({ key, refused: answer.error });

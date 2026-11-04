@@ -154,8 +154,217 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         if (row === null) return false;
         const holder = globalThis as { __openedInMs?: number };
         holder.__openedInMs = undefined;
+        // [DEBUG-4351] a timeline of this opening: each core call and the DOM's milestones.
+        const tl: string[] = []; // [DEBUG-4351]
+        (globalThis as { __tl4351?: string[] }).__tl4351 = tl; // [DEBUG-4351]
+        const internals = (
+          globalThis as {
+            __TAURI_INTERNALS__?: {
+              invoke: (...a: unknown[]) => Promise<unknown>;
+              __orig4351?: unknown;
+            };
+          }
+        ).__TAURI_INTERNALS__; // [DEBUG-4351]
+        if (internals !== undefined) {
+          // [DEBUG-4351]
+          const orig = (internals.__orig4351 ?? internals.invoke) as (
+            ...a: unknown[]
+          ) => Promise<unknown>; // [DEBUG-4351]
+          try {
+            // [DEBUG-4351]
+            internals.__orig4351 = orig; // [DEBUG-4351]
+            internals.invoke = (...a: unknown[]) => {
+              // [DEBUG-4351]
+              const at = performance.now(); // [DEBUG-4351]
+              const name = String(a[0]); // [DEBUG-4351]
+              const t = (globalThis as { __tl4351?: string[] }).__tl4351; // [DEBUG-4351]
+              t?.push(`${(at - started).toFixed(0)} send ${name}`); // [DEBUG-4351]
+              const back = orig.apply(internals, a); // [DEBUG-4351]
+              void back.then(
+                () =>
+                  t?.push(
+                    `${(performance.now() - started).toFixed(0)} back ${name} (${(performance.now() - at).toFixed(0)} ms)`,
+                  ),
+                () => t?.push(`${(performance.now() - started).toFixed(0)} fail ${name}`),
+              ); // [DEBUG-4351]
+              return back; // [DEBUG-4351]
+            }; // [DEBUG-4351]
+            tl.push(internals.invoke === orig ? "invoke not patched" : "invoke patched"); // [DEBUG-4351]
+          } catch (e) {
+            tl.push(`invoke patch failed ${String(e)}`);
+          } // [DEBUG-4351]
+        } // [DEBUG-4351]
+        const seen = new Set<string>(); // [DEBUG-4351]
+        const watch = new MutationObserver(() => {
+          // [DEBUG-4351]
+          for (const [label, q] of [
+            ["tab", '[data-testid="skill-studio"]'],
+            ["palette gone", "#palette-query"],
+            ["row", css],
+          ] as const) {
+            // [DEBUG-4351]
+            const here = document.querySelector(q) !== null; // [DEBUG-4351]
+            const key = `${label}:${here}`; // [DEBUG-4351]
+            if (!seen.has(key) && (label === "palette gone" ? !here : here)) {
+              seen.add(key);
+              tl.push(`${(performance.now() - started).toFixed(0)} dom ${label}`);
+            } // [DEBUG-4351]
+          } // [DEBUG-4351]
+        }); // [DEBUG-4351]
+        watch.observe(document.body, { childList: true, subtree: true }); // [DEBUG-4351]
+        let frames = 0; // [DEBUG-4351]
+        let last = performance.now(); // [DEBUG-4351]
+        const frame = () => {
+          const now = performance.now();
+          if (now - last > 50)
+            tl.push(`${(now - started).toFixed(0)} frame gap ${(now - last).toFixed(0)} ms`);
+          last = now;
+          if (++frames < 120 && holder.__openedInMs === undefined) requestAnimationFrame(frame);
+          else watch.disconnect();
+        }; // [DEBUG-4351]
+        requestAnimationFrame(frame); // [DEBUG-4351]
+        // [DEBUG-4351] where the thread goes: a task kept running through a MessageChannel, and each
+        // frame callback; a pause over 30 ms says what ran before it (task: script; frame: then the
+        // browser's style, layout and paint) and what ran after.
+        let lastAt = performance.now(); // [DEBUG-4351]
+        let lastKind = "start"; // [DEBUG-4351]
+        const mark = (kind: string) => {
+          const now = performance.now();
+          if (now - lastAt > 30)
+            tl.push(
+              `${(now - started).toFixed(0)} pause ${(now - lastAt).toFixed(0)} ms ${lastKind}->${kind}`,
+            );
+          lastAt = now;
+          lastKind = kind;
+        }; // [DEBUG-4351]
+        const channel = new MessageChannel(); // [DEBUG-4351]
+        let ticks = 0; // [DEBUG-4351]
+        channel.port1.onmessage = () => {
+          mark("task");
+          if (++ticks < 4000 && holder.__openedInMs === undefined) channel.port2.postMessage(0);
+        }; // [DEBUG-4351]
+        channel.port2.postMessage(0); // [DEBUG-4351]
+        const rafMark = () => {
+          mark("frame");
+          if (holder.__openedInMs === undefined) requestAnimationFrame(rafMark);
+        }; // [DEBUG-4351]
+        requestAnimationFrame(rafMark); // [DEBUG-4351]
+        // [DEBUG-4351] every read that forces a layout, timed, with who asked: patched once.
+        const w = globalThis as { __reflowPatched?: boolean }; // [DEBUG-4351]
+        if (!w.__reflowPatched) {
+          // [DEBUG-4351]
+          w.__reflowPatched = true; // [DEBUG-4351]
+          const styleOf = window.getComputedStyle.bind(window); // [DEBUG-4351]
+          let inside = false; // [DEBUG-4351]
+          const labelOf = (el: Element) => {
+            const d = (el as HTMLElement).dataset ?? {};
+            const cls = typeof el.className === "string" ? el.className.split(" ")[0] : "";
+            const aria = (el.getAttribute("aria-label") ?? "").slice(0, 24);
+            return `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}${cls ? "." + cls : ""}${d.scope ? "[" + d.scope + "/" + (d.part ?? "") + "]" : ""}${aria ? '"' + aria + '"' : ""}`;
+          }; // [DEBUG-4351]
+          const census = () => {
+            const all = document.body.getElementsByTagName("*").length;
+            const heavy: string[] = [];
+            const walk = (el: Element, depth: number) => {
+              const n = el.getElementsByTagName("*").length;
+              if (n < 150 || depth > 14) return;
+              const kids = Array.from(el.children);
+              const big = kids.find((k) => k.getElementsByTagName("*").length >= n * 0.6);
+              if (big) return walk(big, depth + 1);
+              const shown =
+                (el as Element & { checkVisibility?: () => boolean }).checkVisibility?.() ?? true;
+              heavy.push(`${labelOf(el)}=${n}${shown ? "" : " hidden"}`);
+              for (const k of kids) walk(k, depth + 1);
+            };
+            walk(document.body, 0);
+            return `census ${all} elements, sheets ${document.styleSheets.length}: ${heavy.slice(0, 14).join(", ")}`;
+          }; // [DEBUG-4351]
+          const styleFirst = () => {
+            if (inside) return 0;
+            inside = true;
+            const t0 = performance.now();
+            void styleOf(document.documentElement).color;
+            inside = false;
+            return performance.now() - t0;
+          }; // [DEBUG-4351]
+          const note = (name: string, ms: number, styleMs = 0, self?: unknown) => {
+            const t = globalThis as {
+              __tl4351?: string[];
+              __t04351?: number;
+              __census4351?: boolean;
+            };
+            if (ms + styleMs < 3 || t.__tl4351 === undefined || t.__t04351 === undefined) return;
+            const at = self instanceof Element ? ` on ${labelOf(self)}` : ""; // [DEBUG-4351]
+            if (ms + styleMs >= 40 && !t.__census4351) {
+              t.__census4351 = true;
+              t.__tl4351.push(census());
+            } // [DEBUG-4351]
+            const stack = (new Error().stack ?? "")
+              .split("\n")
+              .slice(2, 7)
+              .map((one) =>
+                one
+                  .trim()
+                  .replace(/@?(https?|tauri):\/\/[^ ]*\//, "@")
+                  .slice(0, 60),
+              )
+              .join(" < ");
+            t.__tl4351.push(
+              `${(performance.now() - t.__t04351).toFixed(0)} reflow ${name} style ${styleMs.toFixed(0)} layout ${ms.toFixed(0)} ms${at}: ${stack}`,
+            );
+          }; // [DEBUG-4351]
+          const wrapFn = (proto: object, name: string) => {
+            const was = (proto as Record<string, unknown>)[name] as (...a: unknown[]) => unknown;
+            if (typeof was !== "function") return;
+            (proto as Record<string, unknown>)[name] = function (this: unknown, ...a: unknown[]) {
+              const styleMs = styleFirst(); // [DEBUG-4351]
+              const t0 = performance.now();
+              const r = was.apply(this, a);
+              note(name, performance.now() - t0, styleMs, this);
+              return r;
+            };
+          }; // [DEBUG-4351]
+          const wrapGet = (proto: object, name: string) => {
+            const d = Object.getOwnPropertyDescriptor(proto, name);
+            if (d?.get === undefined) return;
+            const get = d.get;
+            Object.defineProperty(proto, name, {
+              ...d,
+              get(this: unknown) {
+                const styleMs = styleFirst(); // [DEBUG-4351]
+                const t0 = performance.now();
+                const r = get.call(this);
+                note(name, performance.now() - t0, styleMs, this);
+                return r;
+              },
+            });
+          }; // [DEBUG-4351]
+          for (const name of ["getBoundingClientRect", "getClientRects", "scrollIntoView", "focus"])
+            wrapFn(Element.prototype, name); // [DEBUG-4351]
+          wrapFn(HTMLElement.prototype, "focus"); // [DEBUG-4351]
+          wrapFn(window as unknown as object, "getComputedStyle"); // [DEBUG-4351]
+          for (const name of [
+            "offsetWidth",
+            "offsetHeight",
+            "offsetTop",
+            "offsetLeft",
+            "offsetParent",
+          ])
+            wrapGet(HTMLElement.prototype, name); // [DEBUG-4351]
+          for (const name of [
+            "clientWidth",
+            "clientHeight",
+            "scrollWidth",
+            "scrollHeight",
+            "scrollTop",
+          ])
+            wrapGet(Element.prototype, name); // [DEBUG-4351]
+        } // [DEBUG-4351]
         const started = performance.now();
+        (globalThis as { __t04351?: number }).__t04351 = started; // [DEBUG-4351]
+        (globalThis as { __census4351?: boolean }).__census4351 = false; // [DEBUG-4351]
         row.click();
+        tl.push(`${(performance.now() - started).toFixed(0)} click returned`); // [DEBUG-4351]
         const look = () => {
           if (document.querySelector(css) === null) requestAnimationFrame(look);
           else
@@ -181,6 +390,10 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     samples.push(took as number);
     // Probe (#4351, do not merge): each L10 opening as it is timed, so a run cut short keeps them.
     console.log(`L10 opening ${n + 1}/${OPENINGS}: ${Math.round(took as number)} ms`);
+    const tl = await browser.execute(() => (globalThis as { __tl4351?: string[] }).__tl4351 ?? []); // [DEBUG-4351]
+    console.log(
+      `[DEBUG-4351] opening ${n} took ${Math.round(took as number)} ms: ${(tl as string[]).join(" | ")}`,
+    ); // [DEBUG-4351]
   }
   return samples;
 }
