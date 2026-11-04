@@ -742,13 +742,13 @@ export function componentHeights(source: string, from: StyleSource = {}): string
  */
 const HEIGHT_EXCEPTIONS: Record<string, Record<string, string>> = {
   "ui/field/field.css": {
-    '[data-scope="textarea"][data-part="root"][data-strip] > textarea | block-size: 1lh (a control)':
+    '[data-scope="textarea"][data-part="root"][data-foot-strip] > textarea | block-size: 1lh (a control)':
       "a reply strip is as tall as the lines it holds, in its own line height (#5214): one at rest, two holding the caret, up to four; the control around it is the textarea, whose height is its lines",
-    '[data-scope="textarea"][data-part="root"][data-strip][data-rows="2"] > textarea | block-size: 2lh (a control)':
+    '[data-scope="textarea"][data-part="root"][data-foot-strip][data-rows="2"] > textarea | block-size: 2lh (a control)':
       "a reply strip is as tall as the lines it holds, in its own line height (#5214): one at rest, two holding the caret, up to four; the control around it is the textarea, whose height is its lines",
-    '[data-scope="textarea"][data-part="root"][data-strip][data-rows="3"] > textarea | block-size: 3lh (a control)':
+    '[data-scope="textarea"][data-part="root"][data-foot-strip][data-rows="3"] > textarea | block-size: 3lh (a control)':
       "a reply strip is as tall as the lines it holds, in its own line height (#5214): one at rest, two holding the caret, up to four; the control around it is the textarea, whose height is its lines",
-    '[data-scope="textarea"][data-part="root"][data-strip][data-rows="4"] > textarea | block-size: 4lh (a control)':
+    '[data-scope="textarea"][data-part="root"][data-foot-strip][data-rows="4"] > textarea | block-size: 4lh (a control)':
       "a reply strip is as tall as the lines it holds, in its own line height (#5214): one at rest, two holding the caret, up to four; the control around it is the textarea, whose height is its lines",
   },
   "App.css": {

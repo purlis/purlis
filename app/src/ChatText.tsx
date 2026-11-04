@@ -20,15 +20,16 @@ import { Button } from "./ui/button/Button";
 
 /**
  * **What a chat wrote, as markdown under a safe subset** (#5214; the person's ruling of
- * 2026-11-04, a security call). One component for every place the window shows a chat's own
- * words: its question, its message, its note, in the Inbox, a pane's notices and a task's
- * question card. Before it they were text nodes, so a chat's bold and lists read as raw `**`
+ * 2026-11-04, a security call). One component for a chat's own words: its message, a task's
+ * question, a note and a report, in the Inbox and on a pane's band (a task's question card moves
+ * to it in #5213). Before it they were text nodes, so a chat's bold and lists read as raw `**`
  * and `-`.
  *
- * **Drawn**: paragraphs and line breaks (every one the chat wrote, `remark-breaks`), lists,
- * bold and italics, inline code and code blocks, tables (GitHub's markdown, `remark-gfm`), and
- * a heading, drawn as bold words in a paragraph: never larger, and never a heading of the page
- * around it.
+ * **Drawn, and nothing else** (`ALLOWED`): paragraphs and line breaks (every one the chat wrote,
+ * `remark-breaks`), lists, bold and italics, inline code and code blocks, tables (GitHub's
+ * markdown, `remark-gfm`), and a heading, drawn as bold words in a paragraph: never larger, and
+ * never a heading of the page around it. Anything past that, a quote or struck words, is drawn
+ * as its plain words.
  *
  * **Never drawn:**
  * - **Raw HTML.** `skipHtml` drops it, as memories and release notes do (`ReleaseNotes.tsx`):
@@ -38,20 +39,19 @@ import { Button } from "./ui/button/Button";
  *   can carry data out as it loads. A markdown image shows its alt text in its place, and inside
  *   a link it is that link's words.
  *
- * **A link** shows where it goes, its host beside its words, and opens in the browser only when
- * pressed, through the opener (`ExternalLink`, the app's one way to open a link). Anything but
- * an http or https address, a `javascript:` or `data:` one above all, is drawn as its words.
+ * **A link** shows where it goes, its host beside its words unless those words already name
+ * that host, and opens in the browser only when pressed, through the opener (`ExternalLink`, the
+ * app's one way to open a link). Anything but an http or https address, a `javascript:` or
+ * `data:` one above all, is drawn as its words.
  *
  * **A long message folds** to {@link FOLD_LINES} lines with a fade and a "Show all · N lines"
  * button; opened, it shows whole and "Show less" folds it. The fold is only to the eye: the
- * whole text is in the page for a screen reader all along. Where the caller has to show every
- * word (`fold={false}`), it never folds.
+ * whole text is in the page for a screen reader all along.
  */
 export function ChatText({
   text,
   id,
   className,
-  fold = true,
   foldStop = (button) => button,
 }: {
   /** The chat's words, as it wrote them. */
@@ -60,8 +60,6 @@ export function ChatText({
   id?: string;
   /** Places it in its view; never a look. */
   className?: string;
-  /** Whether a message over {@link FOLD_LINES} lines is folded. */
-  fold?: boolean;
   /** Its fold's button as a stop of the roving focus it stands in (the Inbox's list), where
    *  it stands in one. */
   foldStop?: (button: ReactElement) => ReactElement;
@@ -71,7 +69,7 @@ export function ChatText({
   const body = useRef<HTMLDivElement>(null);
   const lines = useDrawnLines(body, text);
   const [open, setOpen] = useState(false);
-  const folds = fold && lines > FOLD_LINES;
+  const folds = lines > FOLD_LINES;
   return (
     <div className={className === undefined ? "chat-text" : `chat-text ${className}`}>
       <div
@@ -82,7 +80,13 @@ export function ChatText({
         data-folded={folds ? String(!open) : undefined}
       >
         <Folded.Provider value={folds && !open}>
-          <Markdown skipHtml remarkPlugins={REMARK} components={COMPONENTS}>
+          <Markdown
+            skipHtml
+            remarkPlugins={REMARK}
+            components={COMPONENTS}
+            allowedElements={ALLOWED}
+            unwrapDisallowed
+          >
             {text}
           </Markdown>
         </Folded.Provider>
@@ -92,7 +96,6 @@ export function ChatText({
           <Button
             variant="link"
             size="sm"
-            className="chat-text-fold"
             aria-expanded={open}
             aria-controls={box}
             onPress={() => setOpen((was) => !was)}
@@ -115,9 +118,9 @@ export function linesIn(text: string): number {
 }
 
 /**
- * **How many lines the words take as drawn**: its height over its line height, measured as it
- * is laid out and again whenever its width changes, so a paragraph that wraps counts each line
- * it wraps to. Where nothing is laid out (a test's page), the lines as written.
+ * **How many lines the words take as drawn**: measured as they are laid out and again whenever
+ * their width changes, so a paragraph that wraps counts each line it wraps to. Where nothing is
+ * laid out (a test's page), the lines as written.
  */
 function useDrawnLines(body: RefObject<HTMLDivElement | null>, text: string): number {
   const [lines, setLines] = useState(() => linesIn(text));
@@ -141,15 +144,60 @@ function useDrawnLines(body: RefObject<HTMLDivElement | null>, text: string): nu
   return lines;
 }
 
-/** Its whole height, folded or not, over its line height: 0 where it is not laid out. */
+/**
+ * **The lines its words are laid out on, folded or not**: the boxes of its text, those starting
+ * within half a line of one another being one line, so inline code a pixel off its line is that
+ * line, and the gaps between paragraphs and a table's cells count for nothing. 0 where nothing
+ * is laid out.
+ */
 function drawnLines(element: HTMLElement): number {
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  if (typeof range.getClientRects !== "function") return 0;
   const style = getComputedStyle(element);
-  const size = Number.parseFloat(style.fontSize);
-  const line = Number.parseFloat(style.lineHeight);
-  const height = Number.isFinite(line) ? line : size * 1.2;
-  if (!(height > 0) || element.scrollHeight === 0) return 0;
-  return Math.round(element.scrollHeight / height);
+  const written = Number.parseFloat(style.lineHeight);
+  const half = (Number.isFinite(written) ? written : Number.parseFloat(style.fontSize) * 1.2) / 2;
+  const tops = Array.from(range.getClientRects())
+    .filter((box) => box.height > 0)
+    .map((box) => box.top)
+    .sort((one, other) => one - other);
+  let lines = 0;
+  let last = Number.NEGATIVE_INFINITY;
+  for (const top of tops) {
+    if (top - last >= half) {
+      lines += 1;
+      last = top;
+    }
+  }
+  return lines;
 }
+
+/** What is drawn (#5214). A picture is drawn as its alt text, never as a picture. */
+const ALLOWED = [
+  "p",
+  "br",
+  "ul",
+  "ol",
+  "li",
+  "strong",
+  "em",
+  "code",
+  "pre",
+  "table",
+  "thead",
+  "tbody",
+  "tr",
+  "th",
+  "td",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "a",
+  "img",
+];
 
 /** GitHub's markdown, and a line break where the chat broke its line: a chat writes for a
  *  terminal, where a new line is a new line. */
@@ -157,24 +205,28 @@ const REMARK = [remarkGfm, remarkBreaks];
 
 /** A heading drawn as bold words in a paragraph: never larger, never one of the page's. */
 const heading: Components["h1"] = ({ children }) => (
-  <p className="chat-text-heading">
+  <p>
     <strong>{children}</strong>
   </p>
 );
 
-/** The host a link goes to, or `undefined` where it is not a web address. */
-function hostOf(href: string | undefined): string | undefined {
+/** A link's web address, or `undefined` where it is not one. */
+function webAddress(href: string | undefined): URL | undefined {
   if (href === undefined || !/^https?:\/\//i.test(href)) return undefined;
   try {
-    return new URL(href).host;
+    return new URL(href);
   } catch {
     return undefined;
   }
 }
 
-/** Whether a link's words are its own address, which already says where it goes. */
-function saysItsAddress(children: ReactNode, href: string): boolean {
-  return typeof children === "string" && (children === href || href.endsWith(`//${children}`));
+/** Whether a link's words name the host it goes to, so nothing beside them need say it. Never
+ *  an address with a user before its host, `https://paypal.com@evil.example`, which reads as
+ *  the user. */
+function saysItsHost(words: ReactNode, address: URL): boolean {
+  if (typeof words !== "string" || address.username !== "" || address.password !== "") return false;
+  const said = webAddress(/^https?:\/\//i.test(words) ? words : `https://${words}`);
+  return said !== undefined && said.username === "" && said.host === address.host;
 }
 
 /** Whether the words are folded: a link in them is then out of the Tab order, since it may be
@@ -185,16 +237,16 @@ const Folded = createContext(false);
 /** A link: where it goes beside its words, and opened only on a press. */
 function Link({ href, children }: { href?: string; children?: ReactNode }) {
   const folded = useContext(Folded);
-  const host = hostOf(href);
+  const address = webAddress(href);
   return (
     <>
-      <ExternalLink href={host === undefined ? undefined : href} reachable={!folded}>
+      <ExternalLink href={address?.href} reachable={!folded}>
         {children}
       </ExternalLink>
-      {host !== undefined && href !== undefined && !saysItsAddress(children, href) && (
+      {address !== undefined && !saysItsHost(children, address) && (
         <>
           {" "}
-          <span className="chat-text-host">({host})</span>
+          <span className="chat-text-host">({address.host})</span>
         </>
       )}
     </>
@@ -209,6 +261,6 @@ const COMPONENTS: Components = {
   h5: heading,
   h6: heading,
   // **No picture is ever loaded** (#5214): its alt text stands in its place.
-  img: ({ alt }) => <span className="chat-text-picture">{alt || "Picture not shown"}</span>,
+  img: ({ alt }) => <span>{alt || "Picture not shown"}</span>,
   a: ({ href, children }) => <Link href={href}>{children}</Link>,
 };

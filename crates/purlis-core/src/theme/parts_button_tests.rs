@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The button family's quiet link (#5214): a card's ways on beside its one answer, Go to chat
-//! and Ignore under an Inbox card's reply box. In the next manifest, its default held to
+//! The button family's quiet link (#5214): a card's way on beside its one answer, Go to chat
+//! in an Inbox card's head. In the next manifest, its default held to
 //! `button.css`, and its words held to the floor.
 
 use serde_json::{Value, json};

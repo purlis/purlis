@@ -2625,9 +2625,9 @@ body {
 }
 /* **An ask card's head, one row in the pane band's style** (#5214): its kind's mark, the chat's
    name over its status line (what it waits on in the waiting amber, then how long and where,
-   quiet), and at its end Go to chat and the ×. The card's edge is the waiting amber, softened. */
+   quiet), and at its end Go to chat and the ×. */
 .inbox-card {
-  border-color: color-mix(in oklab, var(--state-waiting) 55%, transparent);
+  --inbox-card-indent: calc(1em + var(--space-3));
 }
 .inbox-ask-head {
   display: grid;
@@ -2679,7 +2679,7 @@ body {
 /* Its words, under the name, past the mark. */
 .inbox-card > .inbox-says {
   display: block;
-  padding-inline-start: calc(1em + var(--space-3));
+  padding-inline-start: var(--inbox-card-indent);
 }
 /* **A chat's own words on a card** (#5214): the card's smaller size in the secondary tier, its
    bold in the primary words. They wear no text role, so these rules are the words' own. */
@@ -2693,14 +2693,13 @@ body {
 .inbox-card .inbox-said,
 .inbox-card .inbox-note,
 .inbox-card > .inbox-secondary {
-  padding-inline-start: calc(1em + var(--space-3));
+  padding-inline-start: var(--inbox-card-indent);
 }
 .inbox-card :is(.inbox-chat-text, .inbox-said, .inbox-note) strong {
   color: var(--text-primary);
 }
 /* The reply strip runs to the card's edges and sits at its foot (#5214). */
 .inbox-card:has(> .inbox-reply) {
-  padding-block-end: 0;
   overflow: hidden;
 }
 .inbox-card > .inbox-reply {
@@ -2708,6 +2707,11 @@ body {
   flex-direction: column;
   gap: var(--space-2);
   margin-inline: calc(var(--space-5) * -1);
+  margin-block-end: calc(var(--space-4) * -1);
+}
+.inbox-reply > .inbox-refused {
+  margin: 0;
+  padding: 0 var(--space-5) var(--space-2);
 }
 
 /* **A row's words, in three ranks** (qw359, `InboxRow.tsx`): its kind's mark and what needs you
@@ -2752,10 +2756,6 @@ body {
    #5214): folded past six lines, never cut. */
 .inbox-said {
   margin: 0;
-}
-/* Its mark stays by its first line, however many it runs over. */
-.inbox-says:has(> .inbox-chat-text) > .inbox-kind {
-  align-self: start;
 }
 /* A command over several lines, one per line (#3502). */
 .ask-lines {
@@ -5449,7 +5449,7 @@ body {
 }
 
 /* **What a chat wrote** (`ChatText.tsx`, #5214): its markdown under the safe subset, in the
-   words' own size. Its link, code, code block and quote take a markdown render's own colours
+   words' own size. Its link, code and code block take a markdown render's own colours
    from `.release-notes`, which its body wears, so each colour is read in one place; its spacing
    is its own. A heading is bold words, no larger. */
 .chat-text {
@@ -5499,12 +5499,7 @@ body {
   border-radius: var(--radius-sm);
   background-color: var(--surface-sunken);
 }
-.chat-text-body blockquote {
-  margin: 0 0 var(--space-2);
-  padding-inline-start: var(--space-3);
-  border-inline-start: 2px solid var(--border-subtle);
-}
-/* Where a link goes, quiet beside its words. A picture's alt text, in the words' own colour. */
+/* Where a link goes, quiet beside its words. */
 .chat-text-host {
   color: var(--text-secondary);
 }

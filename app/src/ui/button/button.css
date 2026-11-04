@@ -194,9 +194,9 @@
   text-decoration: underline;
 }
 
-/* **A quiet link** (#5214): a card's ways on beside its one answer, Go to chat and Ignore under
-   an Inbox card's reply box. The quiet words and no box at rest; under the pointer and the
-   keyboard, the primary words, underlined, and still no ground. */
+/* **A quiet link** (#5214): a card's way on beside its one answer, Go to chat in an Inbox card's
+   head. The quiet words and no box at rest; under the pointer and the keyboard, the primary
+   words, underlined, and still no ground. */
 [data-scope="button"][data-part="root"][data-variant="quiet-link"] {
   border-color: transparent;
   color: var(--text-quiet);
@@ -204,6 +204,8 @@
   padding-inline: 0;
 }
 
+/* On one line each because the engine reads this rule by its selector
+   (`the_buttons_family_default_is_what_button_css_draws`), which prettier would wrap. */
 /* prettier-ignore */
 [data-scope="button"][data-part="root"][data-variant="quiet-link"][data-open]:not([data-disabled]),
 [data-scope="button"][data-part="root"][data-variant="quiet-link"][data-hovered]:not([data-disabled]) {

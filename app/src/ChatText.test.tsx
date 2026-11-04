@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -65,6 +65,25 @@ describe("ChatText draws the subset", () => {
   });
 });
 
+describe("ChatText draws nothing past the subset", () => {
+  it.each([
+    ["a quote", "> quoted words", "blockquote"],
+    ["struck words", "~~struck words~~", "del"],
+  ])("draws %s as plain words", (_, text, tag) => {
+    const { container } = render(<ChatText text={text} />);
+
+    expect(container.querySelector(tag)).toBeNull();
+    expect(container.textContent).toContain(text.replace(/[>~] ?/g, "").trim());
+  });
+
+  it("draws no rule and no checkbox", () => {
+    const { container } = render(<ChatText text={"one\n\n---\n\n- [x] done"} />);
+
+    expect(container.querySelector("hr, input")).toBeNull();
+    expect(container.textContent).toContain("done");
+  });
+});
+
 describe("ChatText drops and never loads", () => {
   it("drops raw HTML rather than drawing it or printing it", () => {
     const { container } = render(
@@ -84,6 +103,16 @@ describe("ChatText drops and never loads", () => {
     expect(container.querySelector("img, picture, source, [src], [srcset]")).toBeNull();
     expect(container.innerHTML).not.toContain("tracker.example");
     expect(screen.getByText("the graph")).toBeInTheDocument();
+  });
+
+  it("never draws a picture named by reference", () => {
+    const { container } = render(
+      <ChatText text={"![the graph][g]\n\n[g]: https://tracker.example/pixel.png"} />,
+    );
+
+    expect(container.querySelector("img, [src]")).toBeNull();
+    expect(container.innerHTML).not.toContain("tracker.example");
+    expect(container.textContent).toContain("the graph");
   });
 
   it("never draws a picture written as raw HTML", () => {
@@ -119,6 +148,44 @@ describe("ChatText's links", () => {
 
     expect(screen.getByRole("link", { name: "https://example.com/a" })).toBeInTheDocument();
     expect(container.textContent).toBe("See https://example.com/a for it.");
+  });
+
+  it.each([
+    [
+      "words that name another host",
+      "[paypal.com](https://evil.example/x//paypal.com)",
+      "(evil.example)",
+    ],
+    [
+      "an address with a user before its host",
+      "https://paypal.com@evil.example/",
+      "(evil.example)",
+    ],
+    [
+      "words with a user before the host",
+      "[https://paypal.com@evil.example](https://evil.example)",
+      "(evil.example)",
+    ],
+  ])("still shows the host behind %s", (_, text, host) => {
+    render(<ChatText text={text} />);
+
+    expect(screen.getByText(host)).toBeInTheDocument();
+  });
+
+  it("names no host where the link's words already say that host", () => {
+    const { container } = render(<ChatText text={"[example.com](https://example.com/a)"} />);
+
+    expect(container.textContent).toBe("example.com");
+  });
+
+  it("follows a link whose scheme is written in capitals, and opens it as the web address it is", async () => {
+    const urls = opened();
+    render(<ChatText text={"[the plan](HTTPS://example.com/plan)"} />);
+
+    await userEvent.click(screen.getByRole("link", { name: "the plan" }));
+
+    expect(urls).toEqual(["https://example.com/plan"]);
+    expect(screen.getByText("(example.com)")).toBeInTheDocument();
   });
 
   it("opens a link in the browser only when pressed, never in the window", async () => {
@@ -202,9 +269,31 @@ describe("a long message folds", () => {
     expect(link).toHaveAttribute("tabindex", "0");
   });
 
-  it("never folds where the caller says it is drawn whole", () => {
-    render(<ChatText text={long} fold={false} />);
+  it("counts the lines drawn, not the gaps between its paragraphs or a line's mixed type", () => {
+    const line = 20;
+    // Six lines laid out, the first two with inline code a pixel off, two blocks apart.
+    const tops = [0, 1, 20, 21, 40, 60, 90, 110];
+    const rects = tops.map((top) => ({ top, height: line }));
+    const drawn = vi
+      .spyOn(Range.prototype, "getClientRects")
+      .mockReturnValue(rects as unknown as DOMRectList);
+    const computed = document.createElement("div").style;
+    computed.lineHeight = `${line}px`;
+    const style = vi.spyOn(window, "getComputedStyle").mockReturnValue(computed);
 
+    render(<ChatText text={"Six lines as drawn."} />);
     expect(screen.queryByRole("button")).toBeNull();
+
+    drawn.mockReturnValue([
+      ...rects,
+      { top: 130, height: line },
+      { top: 150, height: line },
+    ] as unknown as DOMRectList);
+    cleanup();
+    render(<ChatText text={"Eight lines as drawn."} />);
+    expect(screen.getByRole("button", { name: "Show all · 8 lines" })).toBeInTheDocument();
+
+    drawn.mockRestore();
+    style.mockRestore();
   });
 });

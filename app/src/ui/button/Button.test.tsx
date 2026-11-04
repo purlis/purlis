@@ -296,7 +296,7 @@ describe("the family's look, from the tokens (button.css)", () => {
     expect(drawn("link", "text-decoration", true)).toBe("underline");
   });
 
-  // #5214: a card's ways on beside its one answer, Go to chat and Ignore under a reply box.
+  // #5214: a card's way on beside its one answer, Go to chat in an Inbox card's head.
   it("draws the quiet link's words in the quiet tier, underlined and primary under the pointer and the keyboard", () => {
     render(<Button variant="quiet-link">Ignore</Button>);
     const link = screen.getByRole("button", { name: "Ignore" });

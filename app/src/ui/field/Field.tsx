@@ -943,8 +943,8 @@ function useStripLines(
   useLayoutEffect(() => {
     const element = box?.current;
     if (element == null) return;
-    const measure = () => setLines(linesLaidOut(element));
-    measure();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- what it measures is its own layout, read before the paint
+    setLines(linesLaidOut(element));
   }, [box, value, holds]);
   return lines;
 }
@@ -978,7 +978,7 @@ export function TextArea(given: TextAreaProps) {
         <Group
           data-scope="textarea"
           data-part="root"
-          data-strip={strip ? "" : undefined}
+          data-foot-strip={strip ? "" : undefined}
           data-grows={grows ? "" : undefined}
           data-rows={strip ? stripRows(props.value, holds, drawn) : undefined}
           onMouseDown={intoTheBox}

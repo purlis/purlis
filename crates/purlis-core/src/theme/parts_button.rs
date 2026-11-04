@@ -95,7 +95,7 @@ pub(super) const BUTTON: Family = Family {
         Variant {
             name: "quiet-link",
             since: super::NEXT,
-            description: "A link in quiet words: a card's ways on beside its one answer.",
+            description: "A link in quiet words: a card's way on beside its one answer.",
             consent: None,
         },
     ],

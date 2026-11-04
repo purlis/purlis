@@ -185,7 +185,7 @@
    one again once it is left empty). Its height, ground and divider move at the theme's pace; a
    theme that asks for less motion has none. Its ring is drawn inside it, since it runs to the
    card's edges. */
-[data-scope="textarea"][data-part="root"][data-strip] {
+[data-scope="textarea"][data-part="root"][data-foot-strip] {
   position: relative;
   align-items: flex-end;
   gap: var(--space-2);
@@ -203,7 +203,7 @@
     box-shadow var(--motion-duration-swap) var(--motion-easing-standard);
 }
 
-[data-scope="textarea"][data-part="root"][data-strip][data-focus-within] {
+[data-scope="textarea"][data-part="root"][data-foot-strip][data-focus-within] {
   padding-block-end: calc(var(--space-2) + 1lh);
   box-shadow: inset 0 1px 0 var(--accent-base);
   background-color: var(--surface-hover);
@@ -211,26 +211,26 @@
 }
 
 /* Refused, a strip draws the box's edge, in the danger colour, as every refused box keeps one. */
-[data-scope="textarea"][data-part="root"][data-strip][data-invalid] {
+[data-scope="textarea"][data-part="root"][data-foot-strip][data-invalid] {
   border-width: 1px;
 }
 
-[data-scope="textarea"][data-part="root"][data-strip] > textarea {
+[data-scope="textarea"][data-part="root"][data-foot-strip] > textarea {
   block-size: 1lh;
   overflow-y: hidden;
   resize: none;
   transition: block-size var(--motion-duration-swap) var(--motion-easing-standard);
 }
 
-[data-scope="textarea"][data-part="root"][data-strip][data-rows="2"] > textarea {
+[data-scope="textarea"][data-part="root"][data-foot-strip][data-rows="2"] > textarea {
   block-size: 2lh;
 }
 
-[data-scope="textarea"][data-part="root"][data-strip][data-rows="3"] > textarea {
+[data-scope="textarea"][data-part="root"][data-foot-strip][data-rows="3"] > textarea {
   block-size: 3lh;
 }
 
-[data-scope="textarea"][data-part="root"][data-strip][data-rows="4"] > textarea {
+[data-scope="textarea"][data-part="root"][data-foot-strip][data-rows="4"] > textarea {
   block-size: 4lh;
   overflow-y: auto;
 }

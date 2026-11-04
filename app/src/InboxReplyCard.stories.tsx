@@ -106,7 +106,7 @@ const LONG = `I'm waiting for #5141 to merge before the last part of #5160. Unti
 I've sent you a note saying this. When you tell me #5141 has merged, I'll rebase onto main, do that last part, run tsc and eslint, and push.`;
 
 /** **A long message** (#5214): folded at six lines behind Show all, which ↓ reaches before the
- *  reply box; opened, it shows whole, and the reply box and the links stay at the card's foot. */
+ *  reply box; opened, it shows whole, and the reply strip stays at the card's foot. */
 export const ALongMessage: Story = {
   args: { last_message: LONG },
   play: async ({ canvasElement }) => {
@@ -139,7 +139,7 @@ export const TheReplyStripHeld: Story = {
   play: async ({ canvasElement }) => {
     const card = within(canvasElement);
     const box = card.getByRole("textbox", { name: "Reply to steward 6" });
-    const strip = () => canvasElement.querySelector("[data-strip]");
+    const strip = () => canvasElement.querySelector("[data-foot-strip]");
     await expect(strip()).toHaveAttribute("data-rows", "1");
     await userEvent.click(box);
     await waitFor(() => expect(strip()).toHaveAttribute("data-rows", "2"));

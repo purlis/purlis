@@ -943,9 +943,9 @@ describe("answering in place", () => {
     ).toBeTruthy();
     expect(within(card).queryByRole("button", { name: "Ignore" })).toBeNull();
     // The send is the card's one button, inside the reply strip at its foot.
-    const strip = card.querySelector('[data-scope="textarea"][data-strip]') as HTMLElement;
+    const strip = card.querySelector('[data-scope="textarea"][data-foot-strip]') as HTMLElement;
     expect(within(strip).getByRole("button", { name: /^Send reply to / })).toBeTruthy();
-    expect(strip).toBe(card.querySelector(".inbox-reply")?.querySelector("[data-strip]"));
+    expect(strip).toBe(card.querySelector(".inbox-reply")?.querySelector("[data-foot-strip]"));
     expect(card.querySelectorAll('[data-scope="button"][data-variant="primary"]')).toHaveLength(0);
   });
 
@@ -1033,7 +1033,7 @@ describe("answering in place", () => {
     core();
     draw([{ ...QUESTION, last_message: "Which branch?" }]);
     const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
-    const strip = box.closest("[data-strip]") as HTMLElement;
+    const strip = box.closest("[data-foot-strip]") as HTMLElement;
     expect(box).toHaveAttribute("placeholder", "Reply to steward 6…");
     expect(strip).toHaveAttribute("data-rows", "1");
     const hint = within(strip).getByText(REPLY_HINT);
@@ -1054,7 +1054,7 @@ describe("answering in place", () => {
     const calls = core({ asks_waiting: { asks: [QUESTION] } });
     draw([QUESTION]);
     const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
-    const strip = box.closest("[data-strip]") as HTMLElement;
+    const strip = box.closest("[data-foot-strip]") as HTMLElement;
     await userEvent.type(box, "one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three");
     expect((box as HTMLTextAreaElement).value).toBe("one\ntwo\nthree");
     expect(strip).toHaveAttribute("data-rows", "3");

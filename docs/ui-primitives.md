@@ -450,7 +450,7 @@ own `min-width: max-content` beside the class.
 
 | Prop | Says |
 | --- | --- |
-| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a tab's task chip, #3214, #3264), `quiet-link` (a link in the quiet tier, underlined in the primary words under the pointer and the keyboard and never filled: a card's ways on beside its one answer, Go to chat in an Inbox card's head, #5214) |
+| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a tab's task chip, #3214, #3264), `quiet-link` (a link in the quiet tier, underlined in the primary words under the pointer and the keyboard and never filled: a card's way on beside its one answer, Go to chat in an Inbox card's head, #5214) |
 | `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
 | `inline` | words in a line of words, a breadcrumb's crumb (#3264): as tall as the line, no box padding or edge, cut to an ellipsis where the line squeezes it, underlined (no fill) under the pointer and the keyboard; words only |
 | `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
@@ -545,7 +545,7 @@ the select family's (`purlis/select-family`, an error: [The select and combobox 
   search box in the window has its glass (`fieldIcon.test.tsx`).
 - **A textarea** is three controls tall at least, in the mono face, and as tall as a person
   drags it; with `grows` (a settings list field, DS-10) it is as tall as its lines and never
-  dragged. With `strip` (an Inbox card's reply, #5214) it is a strip at a card's foot: no box
+  dragged. With `strip` (`data-foot-strip`; an Inbox card's reply, #5214) it is a strip at a card's foot: no box
   but a divider above it, in the words' face, one line tall at rest (`data-rows`), two while it
   holds the caret and up to four as its lines need, moving at the theme's pace. Its `hint` part
   (in the quiet tier) shows at its foot only while it holds the caret, and is always the box's

@@ -720,18 +720,20 @@ function markedLine(line: string): ReactNode[] {
   return parts;
 }
 
-/** The stops of one ask's row, in the order it draws them. */
+/** The stops of one ask's row, in the order it draws them. A fold's button is a stop too, and
+ *  not listed: whether it is drawn is `ChatText`'s measure. The keyboard leaving from one comes
+ *  back to the list at its usual stop. */
 function stopIds(key: string, shape: Shape, options: readonly Offered[] = []): string[] {
   return [
     key,
+    // A profile's Ask is about no chat (#2035): there is no chat to go to.
+    ...(shape.go ? [`${key}:go`] : []),
+    ...(shape.ignore ? [`${key}:ignore`] : []),
     ...(shape.site ? [`${key}:site`] : []),
     ...(shape.reason ? [`${key}:reason`] : []),
     ...options.map((option) => `${key}:${option.id}`),
     ...(shape.reply ? [`${key}:reply`, `${key}:send`] : []),
     ...(shape.answerable ? [`${key}:answer`] : []),
-    // A profile's Ask is about no chat (#2035): there is no chat to go to.
-    ...(shape.go ? [`${key}:go`] : []),
-    ...(shape.ignore ? [`${key}:ignore`] : []),
   ];
 }
 
@@ -1202,22 +1204,20 @@ function Ask({
         )}
         {/* A task's question is answered in the Answer form (ADR 0107). */}
         {shape.answerable && openAnswer !== undefined && (
-          <ButtonRow size="sm" className="inbox-acts">
-            {
-              <Stop id={`${key}:answer`}>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  aria-label={`Answer ${who}`}
-                  onPress={() =>
-                    openAnswer({ chat: ask.session, name: ask.chain[ask.chain.length - 1] ?? who })
-                  }
-                >
-                  Answer
-                </Button>
-              </Stop>
-            }
-          </ButtonRow>
+          <div className="inbox-acts">
+            <Stop id={`${key}:answer`}>
+              <Button
+                size="sm"
+                variant="primary"
+                aria-label={`Answer ${who}`}
+                onPress={() =>
+                  openAnswer({ chat: ask.session, name: ask.chain[ask.chain.length - 1] ?? who })
+                }
+              >
+                Answer
+              </Button>
+            </Stop>
+          </div>
         )}
       </Card>
     </Stop>
@@ -1238,8 +1238,8 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
   const send = () => {
     const bytes = replyBytes(text);
     if (bytes === undefined || busy) return;
-    // Send reply is disabled while it sends and once the box is empty, and a disabled button
-    // drops the keyboard to the page (#1700): it goes back to the box instead.
+    // The send is inert while it sends and once the box is empty: the keyboard goes back to the
+    // box rather than stay on a button that does nothing (#1700).
     box.current?.focus();
     setBusy(true);
     setSaid(undefined);
@@ -1289,7 +1289,6 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
         <TextArea
           strip
           inputRef={box}
-          className="inbox-reply-box"
           aria-label={`Reply to ${who}`}
           value={text}
           placeholder={`Reply to ${who}…`}
