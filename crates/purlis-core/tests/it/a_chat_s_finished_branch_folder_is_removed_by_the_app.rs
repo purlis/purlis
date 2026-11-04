@@ -241,12 +241,55 @@ fn a_folder_whose_branch_landed_by_a_squash_merge_is_removed_and_its_branch_kept
     // The clone fetches and prunes; its own main is left where it was.
     git(&clone, &["fetch", "-q", "--prune", "origin"]);
 
-    let (answer, said) = world.removed(&world.workspace(), "lane", true);
+    let (answer, said) = world.removed(&world.workspace(), "lane", false);
     assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
     assert!(said.contains("landed by its files"), "{said}");
-    assert!(said.contains("Its branch was kept"), "{said}");
     assert!(!lane.exists(), "{said}");
-    // The branch stays: the one place its commits are.
+    // Not asked to go, the branch stays: the one place its commits are.
+    git(&clone, &["rev-parse", "--verify", "-q", "refs/heads/lane"]);
+}
+
+#[test]
+fn a_carried_branch_asked_to_go_is_deleted_though_git_does_not_find_it_merged() {
+    purlis_core::unsteered!();
+    // ADR 0110: `--delete-branch` takes a squash-landed branch with `git branch -D`, the local
+    // branch only.
+    let (world, theirs) = World::with_a_forge();
+    let (lane, clone) = squash_merged(&world, &theirs);
+    git(&clone, &["fetch", "-q", "--prune", "origin"]);
+
+    let (answer, said) = world.removed(&world.workspace(), "lane", true);
+
+    assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
+    assert!(!lane.exists(), "{said}");
+    assert!(said.contains("Deleted branch lane"), "{said}");
+    let mut ask = support::unsigned();
+    ask.arg("-C")
+        .arg(&clone)
+        .args(["show-ref", "--verify", "--quiet", "refs/heads/lane"]);
+    let still = purlis_core::forklock::output(&mut ask)
+        .unwrap()
+        .status
+        .success();
+    assert!(!still, "the carried branch went");
+}
+
+#[test]
+fn a_branch_only_found_in_history_is_kept_though_asked_to_go() {
+    purlis_core::unsteered!();
+    // One commit on the base makes its change, but main no longer reads as the branch: not
+    // carried, so `-D` is not taken on that reading.
+    let (world, theirs) = World::with_a_forge();
+    let (lane, clone) = squash_merged(&world, &theirs);
+    git(&theirs, &["revert", "--no-edit", "HEAD"]);
+    git(&theirs, &["push", "-q", "origin", "HEAD:main"]);
+    git(&clone, &["fetch", "-q", "--prune", "origin"]);
+
+    let (answer, said) = world.removed(&world.workspace(), "lane", true);
+
+    assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
+    assert!(!lane.exists(), "{said}");
+    assert!(said.contains("Its branch was kept"), "{said}");
     git(&clone, &["rev-parse", "--verify", "-q", "refs/heads/lane"]);
 }
 
@@ -672,4 +715,40 @@ fn a_change_differing_only_past_a_nul_byte_is_not_found_in_history() {
 
     assert!(matches!(answer, Answer::Said { code: 1, .. }), "{said}");
     assert!(lane.is_dir());
+}
+
+#[test]
+fn an_ignored_link_does_not_keep_a_folder_and_its_target_outlives_it() {
+    purlis_core::unsteered!();
+    // #4245: lanes share an install by linking `app/node_modules` into another folder, and git
+    // lists a link with no closing slash, wherever it points and whatever it is named.
+    let (world, lane) = holding("node_modules\nshared\n", &["app/package.json"], &[]);
+    let elsewhere = world.workspace().join("elsewhere");
+    std::fs::create_dir_all(elsewhere.join("left-pad")).unwrap();
+    std::fs::write(elsewhere.join("left-pad/index.js"), "x\n").unwrap();
+    std::os::unix::fs::symlink(&elsewhere, lane.join("app/node_modules")).unwrap();
+    std::os::unix::fs::symlink(world.workspace().join("nowhere"), lane.join("shared")).unwrap();
+
+    let (answer, said) = world.removed(&world.workspace(), "lane", false);
+
+    assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
+    assert!(!lane.exists(), "{said}");
+    assert!(
+        elsewhere.join("left-pad/index.js").is_file(),
+        "the link's target is kept"
+    );
+}
+
+#[test]
+fn an_ignored_file_that_is_no_link_still_keeps_a_folder() {
+    purlis_core::unsteered!();
+    let (world, lane) = holding(
+        "node_modules\n",
+        &["app/package.json"],
+        &["app/node_modules"],
+    );
+    let (answer, said) = world.removed(&world.workspace(), "lane", false);
+    assert!(matches!(answer, Answer::Said { code: 1, .. }), "{said}");
+    assert!(said.contains("`app/node_modules`"), "{said}");
+    assert!(lane.join("app/node_modules").is_file());
 }

@@ -402,8 +402,9 @@ pub fn history(
 /// `charter worktree remove <repo> <piece>`: `git worktree remove`, refused while the piece
 /// holds uncommitted changes or commits no other ref reaches — each named — unless `force`.
 ///
-/// **Never a branch folder purlis cut for a task** (#1534), `force` or not, with the explorer's
-/// two exceptions, and never with `delete_branch`: [`crate::dispatchplace::kept_from_removal`].
+/// **A branch folder purlis cut for a task only once it is finished** (#1534, as ADR 0110
+/// amends it), and never with `force`, with the explorer's two exceptions:
+/// [`crate::dispatchplace::kept_from_removal`].
 pub fn remove(
     plane: &Path,
     ws: &str,
@@ -425,6 +426,7 @@ pub fn remove(
         ws,
         repo,
         piece,
+        force,
         delete_branch,
         no_discard_there,
     ) {
@@ -432,8 +434,8 @@ pub fn remove(
         return 1;
     }
     // A branch landed by its files, not its commits (a squash merge, #3879): nothing the
-    // folder holds is lost with it, so it goes without `--force`, and the branch stays, as the
-    // one place its commits are. Uncommitted work still refuses it.
+    // folder holds is lost with it, so it goes without `--force`, and the branch stays unless
+    // `--delete-branch` asks it to go (ADR 0110). Uncommitted work still refuses it.
     let how = if force {
         None
     } else {
@@ -450,7 +452,12 @@ pub fn remove(
             Some(Carried::ByItsFiles) => say(Say::Info(
                 format!(
                     "The branch of {repo} · {piece} landed by its files, as a squash merge leaves \
-                     it, so its folder goes without --force and the branch is kept."
+                     it, so its folder goes without --force{}.",
+                    if delete_branch {
+                        ""
+                    } else {
+                        " and the branch is kept"
+                    }
                 )
                 .into(),
             )),
@@ -478,7 +485,21 @@ pub fn remove(
             } else {
                 say(Say::Done(format!("Removed {repo} · {piece}").into()));
             }
-            if delete_branch && carried {
+            // A branch landed by its files holds nothing its base does not, so asked to go it
+            // goes with `-D` (ADR 0110); one only found in history may not read as the base
+            // does, and stays.
+            let dropped = delete_branch
+                && matches!(how, Some(Carried::ByItsFiles))
+                && removed.branch.as_deref().is_some_and(|branch| {
+                    worktree::standing::drop_carried(plane, ws, repo, branch)
+                });
+            if delete_branch && dropped {
+                if let Some(b) = &removed.branch {
+                    say(Say::Done(
+                        format!("Deleted branch {b}, which landed by its files").into(),
+                    ));
+                }
+            } else if delete_branch && carried {
                 say(Say::Warn(
                     "Its branch was kept: git does not find a squashed branch merged.".into(),
                 ));
@@ -518,23 +539,14 @@ pub fn remove(
 /// is. A folder whose ignored files git would not list is refused too. For a chat's removal
 /// only: the person's own terminal removes as git does.
 pub fn ignored_would_go(plane: &Path, ws: &str, repo: &str, piece: &str) -> Option<String> {
-    let folder = worktree::path_for(plane, ws, repo, piece).ok()?;
-    let risk = match worktree::standing::at_risk(plane, ws, repo, piece) {
-        // Not there, or not one purlis can read: the removal says why itself.
-        Ok(None) | Err(_) => return None,
-        Ok(Some(risk)) => risk,
+    let kept = match ignored_kept(plane, ws, repo, piece)? {
+        Ok(kept) => kept,
+        Err(why) => {
+            return Some(format!(
+                "{why}. Nothing was removed. Ask the person to remove it from the window"
+            ));
+        }
     };
-    let Some(ignored) = risk.ignored else {
-        return Some(format!(
-            "git would not say which files it ignores in {repo} · {piece}, and a removal \
-             deletes them, so nothing was removed. Ask the person to remove it from the window"
-        ));
-    };
-    let hidden = crate::guest::hidden_by_purlis(&folder);
-    let kept: Vec<String> = ignored
-        .into_iter()
-        .filter(|path| !crate::guest::is_purlis_own(&hidden, path) && !regenerated(&folder, path))
-        .collect();
     if kept.is_empty() {
         return None;
     }
@@ -552,6 +564,38 @@ pub fn ignored_would_go(plane: &Path, ws: &str, repo: &str, piece: &str) -> Opti
          remove it from the window",
         named.join(", ")
     ))
+}
+
+/// **The paths git ignores in `piece` that are the task's**: less purlis's own layer, the
+/// folders only a build or the harness writes ([`regenerated`]) and links ([`a_link`]). `None`
+/// for a folder that is not there or that purlis cannot read (the removal says why itself);
+/// `Err` where git would not say which files it ignores.
+pub(crate) fn ignored_kept(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+) -> Option<Result<Vec<String>, String>> {
+    let folder = worktree::path_for(plane, ws, repo, piece).ok()?;
+    let risk = match worktree::standing::at_risk(plane, ws, repo, piece) {
+        Ok(None) | Err(_) => return None,
+        Ok(Some(risk)) => risk,
+    };
+    let Some(ignored) = risk.ignored else {
+        return Some(Err(format!(
+            "git would not say which files it ignores in {repo} · {piece}, and a removal \
+             deletes them"
+        )));
+    };
+    let hidden = crate::guest::hidden_by_purlis(&folder);
+    Some(Ok(ignored
+        .into_iter()
+        .filter(|path| {
+            !crate::guest::is_purlis_own(&hidden, path)
+                && !regenerated(&folder, path)
+                && !a_link(&folder, path)
+        })
+        .collect()))
 }
 
 /// The folders only the harness or a known build writes, wherever they stand, by the end of
@@ -592,6 +636,19 @@ fn regenerated(folder: &Path, path: &str) -> bool {
         }),
     };
     named && !may_hold_a_repository(&folder.join(dir))
+}
+
+/// **Whether `path`, an ignored path of the branch folder `folder`, is a symbolic link**
+/// (#4245), wherever it points and whatever it is named: lanes share an install by linking
+/// `app/node_modules` into another folder. Removing the folder deletes the link and never what
+/// it points to, so nothing of the task's goes with it. git lists a link as a file, with no
+/// closing slash.
+fn a_link(folder: &Path, path: &str) -> bool {
+    !path.ends_with('/')
+        && folder
+            .join(path)
+            .symlink_metadata()
+            .is_ok_and(|meta| meta.file_type().is_symlink())
 }
 
 /// The most entries [`may_hold_a_repository`] reads, more than a large `node_modules/` holds.
