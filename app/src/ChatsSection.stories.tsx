@@ -14,7 +14,7 @@ import { aCardIsUp } from "./chatCard";
 import { CARD_LEAVE_MS, ChatsSection, ON_MEMORY_SAID } from "./ChatsSection";
 import { ChatsHere, fixedChats, moved, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
-import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, parkTheEnginesCursor, untilFocused } from "./stories.testkit";
 import { panelRoot } from "./ui/panel/Panel";
 
 /** A chat as the core lists it, open in a tab. */
@@ -266,24 +266,6 @@ function keepTheWindowInUse() {
   // A listener on the window's capture runs before the hold's own, at the window itself.
   window.addEventListener("blur", keep, true);
   return () => window.removeEventListener("blur", keep, true);
-}
-
-/**
- * **The engine's own cursor, out of the story's way** (#4098): the browser has a cursor of its
- * own besides the story's pointer, and it stays where it last was, over the frame's top left,
- * which is where the story draws its panel. As the story lays out under it, Chromium tells the
- * page that cursor came over the panel's wrapper, a real `pointerover` outside the list; heard
- * just after the story's pointer came onto a row, it lets the list's hold go before the card is
- * up, as a person's pointer leaving would. So the cursor is put in the frame's far corner, which
- * the story never draws in, before the story's pointer moves, and left there.
- */
-async function parkTheEnginesCursor() {
-  // The engine's own mouse: imported only where a story runs in it.
-  const { userEvent: engine } = await import("vitest/browser");
-  const page = document.documentElement;
-  await engine.hover(page, {
-    position: { x: page.clientWidth - 1, y: page.clientHeight - 1 },
-  });
 }
 
 /** Two frames: whatever a change asked to draw has been drawn. */
