@@ -673,6 +673,31 @@ impl DocumentOrigins {
         self.replaced.remove(frame);
     }
 
+    /// `frame` of `page` is held by `session` now, where another session held it: what other
+    /// sessions said of its documents, and any document it left before, is of documents it no
+    /// longer shows. Its origin is the one `session` told of, where it told of one, and until
+    /// it does, it is awaited.
+    fn moved(&mut self, page: &str, frame: &str, session: &str) {
+        self.kept
+            .retain(|(on, of), _| !(of == frame && on != session));
+        self.left.retain(|(_, of), _| of != frame);
+        if self
+            .kept
+            .contains_key(&(session.to_owned(), frame.to_owned()))
+        {
+            self.awaiting.remove(frame);
+        } else {
+            self.await_(Some(page), frame);
+        }
+    }
+
+    /// The session that held `frame` of `page` ended: its address may be of a document it no
+    /// longer shows, and until the engine says its next one, it is not judged by it.
+    fn holder_ended(&mut self, page: &str, frame: &str) {
+        self.await_(Some(page), frame);
+        self.mark(page, frame);
+    }
+
     /// `frame` stopped loading: where a document it started away from still has its context,
     /// that load did not replace it (it was stopped, or answered with nothing to show), and the
     /// frame is known by that document again. Whether it is.
@@ -1395,12 +1420,24 @@ impl State {
         // A frame with a session of its own is that session's, whatever its parent says; of two,
         // the one that attached last, as the older may not have been said to be gone yet.
         let holds = |kind: &Session| matches!(kind, Session::Frame { frame, .. } if frame == id);
-        let its_own = self.sessions.get(session).is_some_and(holds)
-            && self
-                .page(&target)
-                .and_then(|page| page.frames.get(id))
-                .is_some_and(|frame| frame.session == session);
+        let a_session_of_its_own = self.sessions.get(session).is_some_and(holds);
+        let held_by = self
+            .page(&target)
+            .and_then(|page| page.frames.get(id))
+            .map(|frame| frame.session.clone());
+        // A session of the frame's own that no longer holds it, as one it was sent back from
+        // into the process around it, says nothing of it (#5162).
+        if a_session_of_its_own && held_by.as_deref().is_some_and(|by| by != session) {
+            return;
+        }
+        // Another session's word that the frame navigated is of a document in that session's
+        // process: the frame was sent back into it, and a session of its own holds it no longer
+        // (#5162). Where it sits, or what a read of that session says, is the parent's word of
+        // a frame that may live elsewhere.
+        let navigated_here = !a_session_of_its_own && matches!(seen, Seen::Navigated);
+        let its_own = a_session_of_its_own && held_by.as_deref() == Some(session);
         let owned_elsewhere = !its_own
+            && !navigated_here
             && self
                 .sessions
                 .iter()
@@ -1462,6 +1499,7 @@ impl State {
                 entry.unread = false;
             }
             Seen::Navigated => {
+                let moved = entry.session != session;
                 entry.session = session.to_owned();
                 entry.name = text("name");
                 entry.url = text("url");
@@ -1484,6 +1522,10 @@ impl State {
                 };
                 self.refs.forget_frame(id);
                 self.excluded.retain(|key| key.frame != id);
+                if moved {
+                    // Only this session's word of its document is of the one it shows now.
+                    self.document_origins.moved(&target, id, session);
+                }
                 // Its address is of the document it shows from now on.
                 self.document_origins.addressed(id);
                 if id == target {
@@ -1672,6 +1714,31 @@ impl State {
         let pages = &self.pages;
         self.document_origins
             .cleared(session, |frame| frame_at(pages, frame));
+    }
+
+    /// `session`, a frame's own, is gone: where it still held its frame, the frame falls back to
+    /// the session around it, and is not judged until the engine says what it shows (#5162).
+    fn frame_session_ended(&mut self, session: &str) {
+        let Some(Session::Frame { page, frame }) = self.sessions.get(session) else {
+            return;
+        };
+        let (target, frame) = (page.clone(), frame.clone());
+        let Some(page) = self.page_mut(&target) else {
+            return;
+        };
+        let around = match page.frames.get(&frame) {
+            Some(at) if at.session == session => match at.parent.as_deref() {
+                Some(parent) if parent != target => {
+                    page.frames.get(parent).map(|up| up.session.clone())
+                }
+                _ => page.session.clone(),
+            },
+            _ => return,
+        };
+        if let (Some(around), Some(at)) = (around, page.frames.get_mut(&frame)) {
+            at.session = around;
+        }
+        self.document_origins.holder_ended(&target, &frame);
     }
 
     /// Page `target` is gone, and every frame of it with it.
@@ -5122,6 +5189,7 @@ impl Inner {
     fn session_ended(&self, state: &mut State, session: &str, now: Instant) {
         self.worlds.cleared(session);
         state.contexts_cleared(session);
+        state.frame_session_ended(session);
         if let Some(target) = state.page_of_session(session)
             && let Some(page) = state.page_mut(&target)
         {
