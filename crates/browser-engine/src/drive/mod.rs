@@ -516,7 +516,8 @@ pub struct FieldInfo {
 /// The longest label a [`FieldInfo`] gives, in characters.
 pub const MOST_LABEL_CHARS: usize = 80;
 
-/// **What kind of field it is** (#5115): only a one-line field takes a secret for now.
+/// **What kind of field it is** (#5115): a one-line field takes a secret as approved, a
+/// multi-line one or an editable area only where the person was asked about that fill (#5120).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldKind {
     /// An input of type password, text, email, number, tel or url that takes typing.
@@ -536,6 +537,9 @@ pub struct SecretFill {
     pub origin: String,
     pub key: String,
     pub value: zeroize::Zeroizing<String>,
+    /// **The person answered a notice for this fill that named a multi-line text box or an
+    /// editable area** (#5120, SF-5): only then does one take it. False, a one-line field alone.
+    pub multi_line: bool,
 }
 
 impl fmt::Debug for SecretFill {
@@ -544,6 +548,7 @@ impl fmt::Debug for SecretFill {
             .field("target", &self.target)
             .field("origin", &self.origin)
             .field("key", &self.key)
+            .field("multi_line", &self.multi_line)
             .finish_non_exhaustive()
     }
 }

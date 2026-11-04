@@ -7896,6 +7896,11 @@ export type FillShown = {
 	warnings: string[],
 	/**  **A card's or payment value's key** (#5116, SF-4): Allow once and Keep blocked alone. */
 	card: boolean,
+	/**
+	 *  **A multi-line text box or an editable area** (#5120, SF-5): asked each time, with Allow
+	 *  once and Keep blocked alone.
+	 */
+	multi_line: boolean,
 	/**  The line Always allow writes, shown before it's pressed (#5116). */
 	line?: string | null,
 	/**  Where the line goes: `[sandbox.personas.<persona>] tools`. */

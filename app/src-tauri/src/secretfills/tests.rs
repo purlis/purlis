@@ -26,6 +26,7 @@ fn wait(origin: &str) -> FillWait {
         since: 1,
         persona: None,
         card: false,
+        multi_line: false,
         line: None,
         // As the notice is offered to a chat that runs as no persona.
         no_always: Some(NO_PERSONA.to_owned()),
@@ -569,5 +570,122 @@ fn a_cards_mark_added_while_the_notice_is_up_draws_it_again_before_a_press_count
     assert!(heard.try_recv().is_err(), "the call still waits");
     assert!(fills.waiting()[0].card);
     assert!(audited.into_inner().is_empty());
+    assert!(!fills.granted(7, "qa", "dash-api-key", "https://dash.example.test"));
+}
+
+/// A fill of key `key` into a field of `kind` whose frame is on dash.example.test.
+fn asked_into(key: &str, kind: FieldKind) -> FillAsked {
+    FillAsked {
+        browser: "b1".into(),
+        target: "e12".into(),
+        vault: "qa".into(),
+        key: key.into(),
+        field: purlis_session_protocol::browsing::FieldSaid {
+            origin: Some("https://dash.example.test".into()),
+            label: "Comment".into(),
+            kind,
+        },
+        page: None,
+    }
+}
+
+#[test]
+fn a_multi_line_box_or_an_editable_area_asks_under_always_and_this_chat_and_a_one_line_field_does_not()
+ {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let fills = Fills::default();
+    let shown = offered_in(
+        dir.path(),
+        "qa",
+        "dash-api-key",
+        "https://dash.example.test",
+    );
+    let (id, _heard) = fills.raise(shown.clone()).expect("raised");
+    answered_in(
+        dir.path(),
+        &fills,
+        &Audited::default(),
+        &press(id, Press::Always, &shown.digest()),
+    )
+    .expect("always");
+    fills.lock().granted.push((
+        7,
+        "qa".into(),
+        "dash-api-key".into(),
+        "https://dash.example.test".into(),
+    ));
+    let origin = "https://dash.example.test";
+
+    for kind in [FieldKind::MultiLine, FieldKind::Editable] {
+        assert!(
+            asks(
+                dir.path(),
+                &fills,
+                7,
+                Some("qa"),
+                &asked_into("dash-api-key", kind),
+                origin
+            ),
+            "{kind:?} asks each time"
+        );
+    }
+    assert!(
+        !asks(
+            dir.path(),
+            &fills,
+            7,
+            Some("qa"),
+            &asked_into("dash-api-key", FieldKind::OneLine),
+            origin
+        ),
+        "a one-line field under the same grant fills without asking"
+    );
+}
+
+#[test]
+fn a_multi_line_notice_takes_allow_once_and_keep_blocked_alone_and_says_so() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let one = offered(
+        dir.path(),
+        FillWait {
+            persona: Some("qa".into()),
+            multi_line: true,
+            no_always: None,
+            ..wait("https://dash.example.test")
+        },
+    );
+    assert_eq!(
+        one.line, None,
+        "nothing to write for a field that asks each time"
+    );
+    let locks = purlis_core::sandbox::policy::Locks::of(dir.path());
+    let shown = crate::asking::secret_fill(&one, &locks);
+    let options: Vec<&str> = shown.options.iter().map(|o| o.label.as_str()).collect();
+    assert_eq!(options, ["Allow once", "Keep blocked"]);
+    assert!(shown.fill.expect("a fill").multi_line);
+
+    let fills = Fills::default();
+    let (id, heard) = fills.raise(one.clone()).expect("raised");
+    let audited = Audited::default();
+    for not_offered in [Press::Chat, Press::Always] {
+        assert!(
+            answered_in(
+                dir.path(),
+                &fills,
+                &audited,
+                &press(id, not_offered, &one.digest())
+            )
+            .is_err()
+        );
+    }
+    assert!(heard.try_recv().is_err(), "the call still waits");
+    answered_in(
+        dir.path(),
+        &fills,
+        &audited,
+        &press(id, Press::Once, &one.digest()),
+    )
+    .expect("once");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
     assert!(!fills.granted(7, "qa", "dash-api-key", "https://dash.example.test"));
 }

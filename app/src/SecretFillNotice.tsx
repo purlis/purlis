@@ -11,7 +11,8 @@ import { Notice, NoticeOf, type NoticeAction } from "./Notice";
  * and its vault by name, never a value, then the exact site large, never cut short, since the
  * part a look-alike hides in is the part that would go. The page and the field's label are the
  * page's own words, said as such. A card's key says it is allowed once each time (SF-4), and
- * the line Always allow writes is shown before it's pressed (#5116).
+ * the line Always allow writes is shown before it's pressed (#5116). A multi-line box or an
+ * editable area says text in one is often posted or published, since it asks each time (#5120).
  */
 export function SecretFillSite({ fill }: { fill: FillShown }) {
   // The label is the page's own words: set apart, so they never read as purlis's.
@@ -45,7 +46,13 @@ export function SecretFillSite({ fill }: { fill: FillShown }) {
           {warning}
         </p>
       ))}
-      {fill.card ? (
+      {fill.multi_line && (
+        <p className="login-site-warning">
+          This is a multi-line box or an editable area. Text in one is often posted or published, so
+          you are asked each time.
+        </p>
+      )}
+      {fill.multi_line ? null : fill.card ? (
         <p className="ui-text-meta">
           This is a card or payment value, so it is allowed once each time.
         </p>

@@ -24,6 +24,9 @@ enum Twist {
     Moves,
     /// The field keeps less than was written into it: a number field given letters.
     Shortens,
+    /// The field is a multi-line one by the time the value is written (#5120): it takes it only
+    /// where the write is told the person was asked about one.
+    TurnsMultiLine,
 }
 
 /// The stand-in's fields, each read as `kind`, and what each write into them answers.
@@ -41,6 +44,12 @@ fn as_fields(engine: &Arc<Engine>, kind: &'static str, twist: Twist) {
                     Twist::None => json!({ "result": { "type": "number", "value": held } }),
                     Twist::Moves => json!({ "result": { "type": "string", "value": "moved" } }),
                     Twist::Shortens => json!({ "result": { "type": "number", "value": 0 } }),
+                    Twist::TurnsMultiLine if p["arguments"][3]["value"] != true => {
+                        json!({ "result": { "type": "string", "value": "kind" } })
+                    }
+                    Twist::TurnsMultiLine => {
+                        json!({ "result": { "type": "number", "value": held } })
+                    }
                 }))
             }
             _ => None,
@@ -54,6 +63,7 @@ fn fill_of(target: Ref, origin: &str) -> SecretFill {
         origin: origin.to_owned(),
         key: "dash-api-key".to_owned(),
         value: VALUE.to_owned().into(),
+        multi_line: false,
     }
 }
 
@@ -151,7 +161,7 @@ fn a_field_in_a_frame_on_another_origin_is_refused_before_anything_is_typed() {
 }
 
 #[test]
-fn a_field_that_is_not_one_line_is_refused_before_anything_is_typed() {
+fn a_field_that_is_not_one_line_is_refused_before_anything_is_typed_where_nobody_was_asked() {
     for kind in ["multi_line", "editable", "other"] {
         let (browser, engine) = browser();
         as_fields(&engine, kind, Twist::None);
@@ -291,4 +301,50 @@ fn a_value_the_page_echoes_away_from_its_field_is_kept_out() {
     let text = snapshot(&browser, 2);
     assert!(!text.contains(ECHOED), "{text}");
     assert!(text.contains("You typed"), "{text}");
+}
+
+/// SF-5 (#5120): a multi-line box or an editable area takes the value only where the person was
+/// asked about this very fill, and the write is told so, to check again in the same step.
+#[test]
+fn a_multi_line_box_or_an_editable_area_takes_it_where_the_person_was_asked_about_it() {
+    for kind in ["multi_line", "editable"] {
+        let (browser, engine) = browser();
+        as_fields(&engine, kind, Twist::None);
+        let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+        let fill = SecretFill {
+            multi_line: true,
+            ..fill_of(secret, "http://fixture.test")
+        };
+
+        browser
+            .fill_secret(browser.epoch(), &fill)
+            .unwrap_or_else(|why| panic!("{kind}: {}", ended_as(&Err::<(), _>(why))));
+
+        assert_eq!(written(&engine), [VALUE], "{kind}");
+        let write = engine
+            .sent("Runtime.callFunctionOn")
+            .into_iter()
+            .find(|sent| sent.params["functionDeclaration"] == WRITE_FIELD)
+            .expect("written");
+        assert_eq!(write.params["arguments"][3]["value"], true, "{kind}");
+    }
+}
+
+/// A one-line fill tells the write so: a field that is a multi-line one when the value is
+/// written takes nothing, though it read as one line a moment before.
+#[test]
+fn a_field_that_turned_multi_line_as_the_value_is_written_takes_nothing() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::TurnsMultiLine);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+
+    let filled = browser.fill_secret(browser.epoch(), &fill_of(secret, "http://fixture.test"));
+
+    match filled {
+        Err(Refusal::NotFilled(why)) => {
+            assert!(why.contains("asked each time"), "{why}");
+            assert!(why.contains("nothing was filled"), "{why}");
+        }
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
 }

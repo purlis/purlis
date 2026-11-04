@@ -8,10 +8,11 @@
 //! **The engine is the one judge at the moment of filling** (SF-2, SF-13). The field is the one
 //! the agent's reference names now; the origin it is judged by is that of the document of the
 //! frame that holds it, as the engine recorded that document, never what the page says. Where
-//! it is not the origin the person approved, nothing is filled, and the refusal says why. Only a
-//! one-line field that takes typing is filled (SF-5, one-line only in this slice): its kind is
-//! read by a function run in purlis's own world, so nothing the page's scripts redefine changes
-//! it.
+//! it is not the origin the person approved, nothing is filled, and the refusal says why. A
+//! one-line field that takes typing is filled as approved; a multi-line text box or an editable
+//! area only where the person answered a notice for this very fill (SF-5, #5120). Its kind is
+//! read by a function run in purlis's own world as it fills, so nothing the page's scripts
+//! redefine changes it, and the write checks it again in the same step.
 //!
 //! **The value is kept out before anything else**, for the browser's life, as a login's are
 //! ([`super::super::kept::Kept`]): every later snapshot, find, wait and screenshot of every page
@@ -68,9 +69,19 @@ pub(crate) const FIELD_KIND: &str = r"function () {
 /// nothing, so no focus and no moment between a check and a write decides where the value goes.
 /// The value goes in through the field's own setter, with the events a page hears for typing,
 /// and the answer is how much the field then holds. A field that holds less is emptied again.
-pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin) {
+/// A multi-line text box or an editable area is written only where `manyLines` says the person
+/// was asked about this fill (#5120), and answers `kind` otherwise, in the same step.
+pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin, manyLines) {
   if (!field.isConnected || field.ownerDocument.location.origin !== origin) return 'moved';
-  const own = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  let own = null;
+  if (field instanceof HTMLInputElement) {
+    own = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  } else if (manyLines === true && field instanceof HTMLTextAreaElement) {
+    own = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+  } else if (manyLines === true && field instanceof HTMLElement && field.isContentEditable) {
+    own = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
+  }
+  if (own === null) return 'kind';
   own.set.call(field, value);
   field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
   field.dispatchEvent(new Event('change', { bubbles: true }));
@@ -146,14 +157,9 @@ impl Browser {
                 here.as_deref().unwrap_or("no web origin")
             )));
         }
+        // SF-5: read again as it fills, so a field that became multi-line since is caught.
         let (kind, _) = self.kind_of(&at, target)?;
-        if kind != FieldKind::OneLine {
-            return Err(not_filled(format!(
-                "{target} is not a one-line field that takes typing ({}), so nothing was filled: \
-                 only a one-line field takes a secret",
-                said_kind(kind)
-            )));
-        }
+        takes(kind, fill, target)?;
         self.blank_node(&at.page, at.key.clone())?;
         if self.frame_now(&at) != Some((document, Some(origin.to_owned()))) {
             return Err(changed(target, origin));
@@ -203,6 +209,7 @@ impl Browser {
                             { "objectId": object },
                             { "value": fill.value.as_str() },
                             { "value": origin },
+                            { "value": fill.multi_line },
                         ],
                         "returnByValue": true,
                     }),
@@ -230,6 +237,7 @@ impl Browser {
             ))),
             Some(Value::String(cut)) if cut == "cut" => Err(Refusal::Interrupted),
             Some(Value::String(moved)) if moved == "moved" => Err(changed(target, origin)),
+            Some(Value::String(kind)) if kind == "kind" => Err(asks_each_time(target)),
             _ => Err(not_filled(format!(
                 "purlis could not reach {target} on {origin}, so nothing was filled: take a new \
                  snapshot"
@@ -331,6 +339,32 @@ fn plain_label(label: &str) -> String {
         .collect::<String>()
         .trim_end()
         .to_owned()
+}
+
+/// **Whether a field of `kind` takes `fill`** (SF-5): a one-line field as approved; a multi-line
+/// text box or an editable area only where the person answered a notice for this very fill
+/// (#5120); nothing else.
+fn takes(kind: FieldKind, fill: &SecretFill, target: &Ref) -> Result<(), Refusal> {
+    match kind {
+        FieldKind::OneLine => Ok(()),
+        FieldKind::MultiLine | FieldKind::Editable if fill.multi_line => Ok(()),
+        FieldKind::MultiLine | FieldKind::Editable => Err(asks_each_time(target)),
+        FieldKind::Other => Err(not_filled(format!(
+            "{target} is not a field that takes typing ({}), so nothing was filled: only a \
+             one-line field, a multi-line text box or an editable area takes a secret",
+            said_kind(kind)
+        ))),
+    }
+}
+
+/// What a fill is refused with where the field is multi-line or editable and nobody was asked
+/// about this fill (#5120).
+fn asks_each_time(target: &Ref) -> Refusal {
+    not_filled(format!(
+        "{target} is a multi-line text box or an editable area rather than a one-line field, so \
+         nothing was filled: the person is asked each time before a secret goes into one. Call \
+         browser_fill_secret again to ask them"
+    ))
 }
 
 /// A kind of field, in words.

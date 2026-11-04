@@ -73,9 +73,7 @@ use std::time::{Duration, Instant};
 use purlis_core::eventlog::browsing::{Called, Closer, Outcome, Said};
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_core::sandbox::browser_reach::Site;
-use purlis_session_protocol::browsing::{
-    Act, Browsed, BrowserReach, FillSecret, KeptLogin, LogIn, Secret,
-};
+use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, FillSecret, KeptLogin, LogIn};
 use purlis_session_protocol::session::{Layer, Listed};
 
 /// Why the session host did not carry an act out.
@@ -2924,7 +2922,7 @@ impl ChatBrowsers {
             field,
             page: read.page.map(|page| page.address),
         };
-        let value = fills(&asked).map_err(Refused::Said)?;
+        let allowed = fills(&asked).map_err(Refused::Said)?;
         // Asked of the person only with an origin, so one is here.
         let Some(origin) = asked.field.origin else {
             return Err(Refused::Said(format!(
@@ -2937,7 +2935,10 @@ impl ChatBrowsers {
                 target,
                 origin,
                 key,
-                value,
+                value: allowed.value,
+                // Only where the person answered a notice naming a multi-line field (#5120): the
+                // engine reads the field again as it fills, and refuses one otherwise.
+                multi_line: allowed.multi_line,
             },
         )
     }
@@ -3004,7 +3005,8 @@ enum Doing {
 
 /// **What asks the person about a secret fill, and reads its value once they allow it** (#5115):
 /// [`crate::secretfills::asked`] in the window, a stand-in in tests.
-pub type Fills<'a> = &'a dyn Fn(&crate::secretfills::FillAsked) -> Result<Secret, String>;
+pub type Fills<'a> =
+    &'a dyn Fn(&crate::secretfills::FillAsked) -> Result<crate::secretfills::Allowed, String>;
 
 /// A fill as the chat asked it, before its browser read the field.
 struct FillAsked {

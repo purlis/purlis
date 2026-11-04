@@ -183,6 +183,9 @@ pub struct FillShown {
     pub warnings: Vec<String>,
     /// **A card's or payment value's key** (#5116, SF-4): Allow once and Keep blocked alone.
     pub card: bool,
+    /// **A multi-line text box or an editable area** (#5120, SF-5): asked each time, with Allow
+    /// once and Keep blocked alone.
+    pub multi_line: bool,
     /// The line Always allow writes, shown before it's pressed (#5116).
     #[specta(optional)]
     pub line: Option<String>,
@@ -1461,7 +1464,8 @@ fn secret_fill_key(id: u32) -> String {
 /// **The secret fill adapter** (#5115, #5116): one notice naming the key, its vault and the exact
 /// site, with the sandbox's own answers. Allow once and Allow for this chat, each unless policy
 /// leaves its scope out; Always allow where its line can be written; Keep blocked. A card's key
-/// is offered Allow once and Keep blocked alone (SF-4).
+/// is offered Allow once and Keep blocked alone (SF-4), and so is a multi-line text box or an
+/// editable area, which asks each time (SF-5, #5120).
 pub fn secret_fill(
     wait: &crate::secretfills::FillWait,
     locks: &purlis_core::sandbox::policy::Locks,
@@ -1477,7 +1481,7 @@ pub fn secret_fill(
     if locks.scope_removed(Level::Once).is_none() {
         options.push(allow(Level::Once, "Allow once"));
     }
-    if !wait.card {
+    if !wait.once_only() {
         if locks.scope_removed(Level::Chat).is_none() {
             options.push(allow(Level::Chat, "Allow for this chat"));
         }
@@ -1522,12 +1526,15 @@ pub fn secret_fill(
             browser: wait.browser.clone(),
             warnings: wait.warnings.clone(),
             card: wait.card,
-            line: (!wait.card).then(|| wait.line.clone()).flatten(),
+            multi_line: wait.multi_line,
+            line: (!wait.once_only()).then(|| wait.line.clone()).flatten(),
             under: wait
                 .persona
                 .as_ref()
                 .map(|persona| format!("[sandbox.personas.{persona}] tools")),
-            no_always: (!wait.card).then(|| wait.no_always.clone()).flatten(),
+            no_always: (!wait.once_only())
+                .then(|| wait.no_always.clone())
+                .flatten(),
             vault_too: wait.vault_too,
         }),
     }

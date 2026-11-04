@@ -24,6 +24,7 @@ const fill = (more: Partial<FillShown> = {}): FillShown => ({
   browser: "b1",
   warnings: [],
   card: false,
+  multi_line: false,
   vault_too: false,
   ...more,
 });
@@ -156,6 +157,19 @@ describe("SecretFillNotice", () => {
     await waitFor(() =>
       expect(screen.getByText(/settings for dash-api-key changed/)).toBeInTheDocument(),
     );
+  });
+
+  it("says a multi-line box is often posted, so it asks each time, and shows no line", () => {
+    render(
+      <SecretFillNotice
+        plane="p"
+        session={7}
+        asks={[ask({ multi_line: true, label: "Comment", line: "k = {}", under: "x" })]}
+      />,
+    );
+    const site = screen.getByTestId("fill-site");
+    expect(site).toHaveTextContent("often posted or published, so you are asked each time");
+    expect(site).not.toHaveTextContent("Always allow adds");
   });
 
   it("draws nothing for another chat", () => {
