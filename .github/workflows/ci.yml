@@ -1433,7 +1433,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1467,6 +1467,11 @@ jobs:
       - name: A chat's server behind its door, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
+      # The Keychain's own rule a held item rests on (V90a), in a keychain of the test's own:
+      # read by the program that made it, and silently by no other.
+      - name: A held keychain item is read silently by no other program
+        if: steps.scope.outputs.run == 'true'
+        run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- secrets::keyhold::held_by_the_keychain::
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused

@@ -2122,3 +2122,140 @@ fn a_vault_only_the_committed_half_declares_is_given_no_token_from_a_terminal() 
         Some("purlis vault add pulled --provider 1password --token-stdin")
     );
 }
+
+// ---- a keyring read in a chat whose environment carries no sandbox mark -------------------
+
+/// A project whose record of open chats names one chat started on `profile`, its program
+/// `program` running as `pid`, with no sandbox where `unsandboxed`.
+fn a_chat_run(set: &Set, pid: u32, program: &str, profile: Option<&str>, unsandboxed: bool) {
+    let record = crate::reopen::Record {
+        chats: vec![crate::reopen::Chat {
+            program: program.into(),
+            name: "chat 3".into(),
+            number: Some(3),
+            profile: profile.map(str::to_owned),
+            unsandboxed,
+            pid: Some(pid),
+            ..Default::default()
+        }],
+        dealt: 3,
+        ..Default::default()
+    };
+    crate::reopen::write(set.tmp.path(), &record).unwrap();
+}
+
+/// Process 70, a command run by chat 30, which the app (20) started.
+fn below_chat_30(pid: u32) -> Option<u32> {
+    match pid {
+        70 => Some(30),
+        30 => Some(20),
+        _ => Some(1),
+    }
+}
+
+#[test]
+fn a_process_below_a_sandboxed_chat_reads_as_sandboxed_whatever_its_environment_says() {
+    let set = Set::new("unused");
+    a_chat_run(&set, 30, "claude", Some("main"), false);
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 70, below_chat_30, |_| Ok(30), |_| None, None),
+        Sandboxed::Yes
+    );
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 70, below_chat_30, |_| Ok(70), |_| None, None),
+        Sandboxed::Yes,
+        "below it by its parents alone, in a session of its own"
+    );
+}
+
+#[test]
+fn a_process_below_a_chat_whose_record_says_it_ran_without_the_sandbox_reads_as_unsandboxed() {
+    let set = Set::new("unused");
+    a_chat_run(&set, 30, "claude", Some("main"), true);
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 70, below_chat_30, |_| Ok(30), |_| None, None),
+        Sandboxed::No
+    );
+}
+
+#[test]
+fn a_process_in_a_plain_shell_tab_reads_as_unsandboxed() {
+    let set = Set::new("unused");
+    a_chat_run(&set, 30, "/bin/zsh", None, false);
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 70, below_chat_30, |_| Ok(30), |_| None, None),
+        Sandboxed::No
+    );
+    // A harness started on no profile is a chat all the same.
+    a_chat_run(&set, 30, "/usr/local/bin/claude", None, false);
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 70, below_chat_30, |_| Ok(30), |_| None, None),
+        Sandboxed::Yes
+    );
+}
+
+#[test]
+fn the_persons_own_terminal_reads_as_unsandboxed_with_a_sandboxed_chat_open() {
+    let set = Set::new("unused");
+    a_chat_run(&set, 30, "claude", Some("main"), false);
+    let terminal = |pid: u32| match pid {
+        70 => Some(60),
+        _ => Some(1),
+    };
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 70, terminal, |_| Ok(60), |_| None, None),
+        Sandboxed::No
+    );
+}
+
+#[test]
+fn the_app_and_what_it_runs_outside_any_chat_read_as_unsandboxed() {
+    // The app resolves a chat's keyring values in its own process: it is never refused them.
+    let set = Set::new("unused");
+    a_chat_run(&set, 30, "claude", Some("main"), false);
+    let at = written(&set);
+    let before = |_| Some(at - std::time::Duration::from_secs(60));
+    let parents = |pid: u32| match pid {
+        30 | 40 => Some(20),
+        _ => Some(1),
+    };
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 20, parents, |_| Ok(20), before, None),
+        Sandboxed::No,
+        "the app itself"
+    );
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 40, parents, |_| Ok(40), before, None),
+        Sandboxed::No,
+        "a program the app started in no recorded chat"
+    );
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 30, parents, |_| Ok(30), before, None),
+        Sandboxed::Yes,
+        "the chat's own program"
+    );
+}
+
+#[test]
+fn a_record_that_cannot_be_read_is_a_doubt_that_says_why() {
+    let set = Set::new("unused");
+    let record = crate::reopen::path(set.tmp.path());
+    std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+    std::fs::write(&record, "not json").unwrap();
+    let Sandboxed::Unsure(why) =
+        sandboxed_chat_around(&set.ctx, 70, below_chat_30, |_| Ok(30), |_| None, None)
+    else {
+        panic!("an unreadable record is a doubt");
+    };
+    assert!(why.contains("record of its open chats"), "{why}");
+}
+
+#[test]
+fn an_ancestry_that_cannot_be_read_is_a_doubt() {
+    let set = Set::new("unused");
+    a_chat_run(&set, 30, "claude", Some("main"), false);
+    assert!(matches!(
+        sandboxed_chat_around(&set.ctx, 70, |_| None, |_| Ok(70), |_| None, None),
+        Sandboxed::Unsure(_)
+    ));
+}

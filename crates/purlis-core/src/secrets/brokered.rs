@@ -323,13 +323,53 @@ pub enum Reader {
 /// chat's sandbox, as before. Resolving every chat's reads in the app is the rest of V16b
 /// (#1180).
 ///
-/// **A courtesy, not the boundary.** The mark it reads is the chat's environment, which the
-/// chat can change; what holds the item is the store's own rule (V90a) and the sandbox. This
-/// keeps purlis itself from raising a question on the chat's behalf, and says what to do.
+/// **Where the mark is gone, where the process runs decides** ([`super::setup::sandboxed_chat`]):
+/// below a chat's program whose record does not say it ran without the sandbox, it is a
+/// sandboxed chat all the same, and where purlis cannot tell, it is refused with why. The
+/// person's terminal, an unsandboxed chat or shell tab, and the app read as before.
+///
+/// **A courtesy, not the boundary.** The mark and the records are what purlis can see, and a
+/// chat's process can leave its chat's ancestry; what holds the item is the store's own rule
+/// (V90a) and the sandbox. This keeps purlis itself from raising a question on the chat's
+/// behalf, and says what to do.
 pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) -> Option<Markup> {
+    refused_where(ctx, vault, reader, &|| super::setup::sandboxed_chat(ctx))
+}
+
+/// [`refused_in_this_chat`], with where this process runs asked of `located` only when the
+/// environment carries no mark and the vault is the keyring's.
+pub(crate) fn refused_where(
+    ctx: &Ctx,
+    vault: &registry::Vault,
+    reader: Reader,
+    located: &dyn Fn() -> super::setup::Sandboxed,
+) -> Option<Markup> {
     let env = |name: &str| ctx.env.get(name);
-    if !crate::sandbox::chat_is_sandboxed_in(&env) || !super::keyring::holds_values_of(ctx, vault) {
+    if !super::keyring::holds_values_of(ctx, vault) {
         return None;
+    }
+    if !crate::sandbox::chat_is_sandboxed_in(&env) {
+        match located() {
+            super::setup::Sandboxed::No => return None,
+            super::setup::Sandboxed::Yes => {}
+            super::setup::Sandboxed::Unsure(doubt) => {
+                return Some(Markup::lines([
+                    Markup::from(format!(
+                        "vault '{}' is read from {}, and purlis cannot tell whether this runs \
+                         inside a sandboxed chat: {}. purlis does not read {} where it cannot \
+                         tell.",
+                        vault.name,
+                        super::keyring::STORE_NAME,
+                        crate::personas::one_line(&doubt),
+                        super::keyring::STORE_NAME,
+                    )),
+                    Markup::from(
+                        "  In a chat, hand the value to a command with `purlis secret exec`, \
+                         which the app runs. Anywhere else, run this again once that is cleared.",
+                    ),
+                ]));
+            }
+        }
     }
     let (why, next) = match reader {
         // The app runs no command for a chat on this system yet ([`NO_WRAP`]).
@@ -368,18 +408,34 @@ pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) 
 ///
 /// Only inside a chat the app started sandboxed ([`crate::sandbox::chat_is_sandboxed_in`]): an
 /// unsandboxed chat reads its vault as the person does. A chat that claims to be sandboxed when
-/// it is not gets the stricter run, and one that hides it gets the vault's own refusal.
+/// it is not gets the stricter run. One that hides the mark but still names the app's socket
+/// and its number is sent there all the same where it runs below a sandboxed chat's program
+/// ([`super::setup::sandboxed_chat`]); one that hides all of it gets the vault's own refusal
+/// ([`refused_in_this_chat`]).
 ///
 /// A persona's MCP server's start ([`super::mcpstart::server_in`]) is tried once more where the
 /// first run failed before the server spoke ([`started_server`]).
 #[cfg(unix)]
 pub fn forwarded(ctx: &Ctx, req: &Request, command: &[String], io: &mut dyn Io) -> Option<i32> {
+    forwarded_where(ctx, req, command, io, &|| super::setup::sandboxed_chat(ctx))
+}
+
+/// [`forwarded`], with where this process runs asked of `located` only when the environment
+/// names the app's socket and a chat but carries no mark.
+#[cfg(unix)]
+pub(crate) fn forwarded_where(
+    ctx: &Ctx,
+    req: &Request,
+    command: &[String],
+    io: &mut dyn Io,
+    located: &dyn Fn() -> super::setup::Sandboxed,
+) -> Option<i32> {
     let env = |name: &str| ctx.env.get(name);
-    if !crate::sandbox::chat_is_sandboxed_in(&env) {
-        return None;
-    }
     let socket = env(crate::hookwire::SOCKET_ENV).filter(|s| !s.is_empty())?;
     let chat = chat_number(&env)?;
+    if !crate::sandbox::chat_is_sandboxed_in(&env) && located() != super::setup::Sandboxed::Yes {
+        return None;
+    }
     let token = crate::hookwire::ChatToken::read(&env);
     let connect = || std::os::unix::net::UnixStream::connect(&socket).ok();
     if let Some(server) = super::mcpstart::server_in(&env) {

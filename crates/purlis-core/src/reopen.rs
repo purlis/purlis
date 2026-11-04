@@ -1112,6 +1112,29 @@ enum Held {
 pub fn chat_pids(
     plane_root: &Path,
 ) -> Result<(Vec<u32>, Option<std::time::SystemTime>), std::io::Error> {
+    let (runs, written) = chat_runs(plane_root)?;
+    Ok((runs.into_iter().map(|run| run.pid).collect(), written))
+}
+
+/// A running chat as [`chat_runs`] reads it from the record: its program's process, and
+/// whether that run was one with no sandbox the record can tell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChatRun {
+    /// The process the app started the chat's program as ([`Chat::pid`]).
+    pub pid: u32,
+    /// **The record says this run had no sandbox**: `sandbox = "off"` ([`Chat::unsandboxed`]),
+    /// or a plain shell tab, which is never sandboxed: no profile, and a program named that is
+    /// no harness ([`Harness::of_command`]). Every other chat, a floorless start among them (whose
+    /// record says nothing), reads as sandboxed: a doubt never reads as "no sandbox".
+    pub unsandboxed: bool,
+}
+
+/// [`chat_pids`] with what each chat's record says of its sandbox ([`ChatRun`]), read as
+/// leniently: only `pid`, `sandbox`, `profile` and `program` of each entry, from a record of
+/// any version.
+pub fn chat_runs(
+    plane_root: &Path,
+) -> Result<(Vec<ChatRun>, Option<std::time::SystemTime>), std::io::Error> {
     let Some((text, written)) = guarded_text(plane_root)? else {
         return Ok((Vec::new(), None));
     };
@@ -1121,15 +1144,30 @@ pub fn chat_pids(
             format!("{} is not JSON", path(plane_root).display()),
         )
     })?;
-    let pids = doc
+    let word = |chat: &serde_json::Value, key: &str| {
+        chat.get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let runs = doc
         .get("chats")
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|chat| chat.get("pid")?.as_u64())
-        .filter_map(|pid| u32::try_from(pid).ok())
+        .filter_map(|chat| {
+            let pid = u32::try_from(chat.get("pid")?.as_u64()?).ok()?;
+            let program = word(chat, "program");
+            let plain_shell = word(chat, "profile").is_empty()
+                && !program.is_empty()
+                && Harness::of_command(&program).is_none();
+            Some(ChatRun {
+                pid,
+                unsandboxed: word(chat, "sandbox") == SANDBOX_OFF || plain_shell,
+            })
+        })
         .collect();
-    Ok((pids, written))
+    Ok((runs, written))
 }
 
 /// The record's text, opened with every guard [`read_held`] asks for, and when it was last

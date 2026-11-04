@@ -5654,3 +5654,132 @@ fn a_fill_reads_a_key_the_vault_holds_and_says_none_of_one_it_doesnt() {
             .is_none()
     );
 }
+
+// ----------------------------------------------------------------------------------------
+// a keyring read where the chat's environment carries no sandbox mark
+
+/// A vault whose values come from the keyring.
+fn a_keyring_vault() -> registry::Vault {
+    registry::Vault {
+        name: "kept".into(),
+        provider: "keyring".into(),
+        persona: None,
+        config: serde_json::Map::new(),
+    }
+}
+
+/// Where this process runs, as a test says it.
+fn runs(said: crate::secrets::setup::Sandboxed) -> impl Fn() -> crate::secrets::setup::Sandboxed {
+    move || said.clone()
+}
+
+#[test]
+fn a_keyring_read_below_a_sandboxed_chat_is_refused_though_its_mark_was_unset() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    let said = refused_where(
+        &ctx,
+        &a_keyring_vault(),
+        Reader::GetOrCp,
+        &runs(crate::secrets::setup::Sandboxed::Yes),
+    )
+    .expect("refused");
+    let said = said.to_string();
+    assert!(said.contains("does not read"), "{said}");
+    assert!(said.contains("purlis secret exec kept"), "{said}");
+}
+
+#[test]
+fn a_keyring_read_in_an_unsandboxed_chat_or_the_persons_terminal_goes_on() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    for reader in [Reader::Exec, Reader::GetOrCp, Reader::Other] {
+        assert_eq!(
+            refused_where(
+                &ctx,
+                &a_keyring_vault(),
+                reader,
+                &runs(crate::secrets::setup::Sandboxed::No)
+            ),
+            None
+        );
+    }
+}
+
+#[test]
+fn a_keyring_read_where_purlis_cannot_tell_where_it_runs_is_refused_saying_why() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    let said = refused_where(
+        &ctx,
+        &a_keyring_vault(),
+        Reader::Other,
+        &runs(crate::secrets::setup::Sandboxed::Unsure(
+            "a parent could not be read".into(),
+        )),
+    )
+    .expect("refused")
+    .to_string();
+    assert!(said.contains("cannot tell"), "{said}");
+    assert!(said.contains("a parent could not be read"), "{said}");
+}
+
+#[test]
+fn where_a_process_runs_is_asked_only_for_a_keyring_vault_with_no_mark() {
+    let project = project();
+    let never = || -> crate::secrets::setup::Sandboxed { panic!("where it runs was asked") };
+    let marked = Ctx::new(
+        project.path(),
+        Env::of(&[(crate::hookwire::SANDBOXED_ENV, "1")]),
+    );
+    assert!(refused_where(&marked, &a_keyring_vault(), Reader::Exec, &never).is_some());
+    let other = registry::Vault {
+        provider: "file".into(),
+        ..a_keyring_vault()
+    };
+    let unmarked = Ctx::new(project.path(), Env::of(&[]));
+    assert_eq!(refused_where(&unmarked, &other, Reader::Exec, &never), None);
+}
+
+#[test]
+fn a_chat_that_unset_its_mark_below_a_sandboxed_chat_has_its_secret_exec_run_by_the_app() {
+    let project = project();
+    for (located, sent) in [
+        (crate::secrets::setup::Sandboxed::Yes, true),
+        (crate::secrets::setup::Sandboxed::No, false),
+        (
+            crate::secrets::setup::Sandboxed::Unsure("unreadable".into()),
+            false,
+        ),
+    ] {
+        let asked = Arc::new(AtomicBool::new(false));
+        let (_dir, _reading, mut env) = an_app(the_app_runs_it(project.path()), Arc::clone(&asked));
+        env.retain(|(k, _)| k != crate::hookwire::SANDBOXED_ENV);
+        let ctx = chat_ctx(project.path(), &env);
+        let req = Request {
+            vault: "team".into(),
+            env: vec!["X=TOKEN".into()],
+            ..Request::default()
+        };
+        let mut rec = Rec::default();
+        let code = forwarded_where(&ctx, &req, &sh("true"), &mut rec, &runs(located.clone()));
+        assert_eq!(asked.load(Ordering::SeqCst), sent, "{located:?}");
+        assert_eq!(code.is_some(), sent, "{located:?}");
+    }
+}
+
+#[test]
+fn where_a_process_runs_is_never_asked_with_no_app_socket_in_its_environment() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[("PATH", "/usr/bin:/bin")]));
+    let never = || -> crate::secrets::setup::Sandboxed { panic!("where it runs was asked") };
+    let mut rec = Rec::default();
+    let req = Request {
+        vault: "team".into(),
+        ..Request::default()
+    };
+    assert_eq!(
+        forwarded_where(&ctx, &req, &sh("true"), &mut rec, &never),
+        None
+    );
+}

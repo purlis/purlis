@@ -1352,15 +1352,107 @@ pub(crate) fn in_a_chat_around(
     {
         return Where::Inside;
     }
+    match located_around(ctx, me, parent, session, started, holder, account_home) {
+        Located::Outside => Where::Outside,
+        Located::Below(_) => Where::Inside,
+        Located::Unsure(why) => Where::Unsure(why),
+    }
+}
+
+/// Where a process runs, by its ancestry and the records alone ([`located_around`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Located {
+    /// Below no chat and no app that started one.
+    Outside,
+    /// Below a chat's program, with what its record says of its run, or `None` below an app
+    /// that started one but in no chat a record names (the app itself, or what it runs).
+    Below(Option<crate::reopen::ChatRun>),
+    /// purlis could not tell, and says why.
+    Unsure(String),
+}
+
+/// Whether a keyring read in this process is one inside a sandboxed chat, for a process whose
+/// environment does not carry the sandbox's mark ([`sandboxed_chat`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sandboxed {
+    /// Not inside a chat a record names as sandboxed: the person's own terminal, an
+    /// unsandboxed chat or shell tab, or the app and what it runs.
+    No,
+    /// Inside a chat's program whose record does not say it ran without the sandbox.
+    Yes,
+    /// purlis could not tell, and says why. A doubt never lets a keyring read through.
+    Unsure(String),
+}
+
+/// **Whether this process runs inside a sandboxed chat, by where it runs and not by what its
+/// environment says**: the fallback for a chat that unset the sandbox's mark
+/// ([`crate::sandbox::chat_is_sandboxed_in`]). Below a chat's program a record names, it is
+/// sandboxed unless that record says the run had none ([`crate::reopen::ChatRun`]). Below only
+/// the app (a program it runs that is in no recorded chat) it is not, and the app itself, which
+/// reads the keyring for every chat, never asks.
+pub fn sandboxed_chat(ctx: &Ctx) -> Sandboxed {
+    if super::keyhold::is_the_app() {
+        return Sandboxed::No;
+    }
+    #[cfg(unix)]
+    {
+        sandboxed_chat_around(
+            ctx,
+            std::process::id(),
+            purlis_same_user::Parents::of,
+            purlis_same_user::session_of,
+            purlis_same_user::Parents::started_at,
+            account_home().as_deref(),
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = ctx;
+        Sandboxed::No
+    }
+}
+
+/// [`sandboxed_chat`] for process `me`, with the kernel's answers handed in as
+/// [`in_a_chat_around`] takes them. No holder of a hook socket is asked: all it could add is an
+/// app, and below only an app is not sandboxed here, so no read of the keyring starts a program.
+pub(crate) fn sandboxed_chat_around(
+    ctx: &Ctx,
+    me: u32,
+    parent: impl Fn(u32) -> Option<u32>,
+    session: impl Fn(u32) -> std::io::Result<u32>,
+    started: impl Fn(u32) -> Option<std::time::SystemTime>,
+    account_home: Option<&std::path::Path>,
+) -> Sandboxed {
+    match located_around(ctx, me, parent, session, started, |_| None, account_home) {
+        Located::Outside | Located::Below(None) => Sandboxed::No,
+        Located::Below(Some(run)) if run.unsandboxed => Sandboxed::No,
+        Located::Below(Some(_)) => Sandboxed::Yes,
+        Located::Unsure(why) => Sandboxed::Unsure(why),
+    }
+}
+
+/// [`in_a_chat_around`] without its reading of the environment: where process `me` runs, by the
+/// records and its ancestry alone, and which recorded chat it is below.
+fn located_around(
+    ctx: &Ctx,
+    me: u32,
+    parent: impl Fn(u32) -> Option<u32>,
+    session: impl Fn(u32) -> std::io::Result<u32>,
+    started: impl Fn(u32) -> Option<std::time::SystemTime>,
+    holder: impl Fn(&std::path::Path) -> Option<u32>,
+    account_home: Option<&std::path::Path>,
+) -> Located {
     let projects = match projects_asked(ctx, account_home) {
         Ok(projects) => projects,
-        Err(why) => return Where::Unsure(why),
+        Err(why) => return Located::Unsure(why),
     };
     let mut programs: Vec<u32> = Vec::new();
+    // The chats' own programs, with what their records say of the run.
+    let mut chats: Vec<crate::reopen::ChatRun> = Vec::new();
     for project in &projects {
         // Only the chats' processes, read leniently: a record of another version still names
         // the programs it knew (#1542 review, D).
-        let (pids, written) = match crate::reopen::chat_pids(project) {
+        let (runs, written) = match crate::reopen::chat_runs(project) {
             Ok(read) => read,
             Err(e) => {
                 let record =
@@ -1378,7 +1470,7 @@ pub(crate) fn in_a_chat_around(
                 } else {
                     ", or forget that project under Settings, This machine"
                 };
-                return Where::Unsure(format!(
+                return Located::Unsure(format!(
                     "purlis could not read {whose} ({}). To clear the doubt, delete {record} \
                      (the app writes it again){forget}, then run this command again",
                     e.kind()
@@ -1387,14 +1479,19 @@ pub(crate) fn in_a_chat_around(
         };
         // 0 and 1 are the kernel's and `init`'s, above every process: a record naming either
         // vouches for nothing.
-        for pid in pids.into_iter().filter(|pid| *pid > 1) {
+        for run in runs.into_iter().filter(|run| run.pid > 1) {
+            let pid = run.pid;
             match (started(pid), written) {
                 (Some(at), Some(written)) if !crate::process::could_be_recorded(at, written) => {}
                 (Some(_), Some(_)) => {
                     programs.push(pid);
+                    chats.push(run);
                     programs.extend(parent(pid).filter(|app| *app > 1));
                 }
-                _ => programs.push(pid),
+                _ => {
+                    programs.push(pid);
+                    chats.push(run);
+                }
             }
         }
         let fallback = fallback_bases(ctx)
@@ -1408,7 +1505,7 @@ pub(crate) fn in_a_chat_around(
         }
     }
     if programs.is_empty() {
-        return Where::Outside;
+        return Located::Outside;
     }
     #[cfg(unix)]
     let answer = purlis_same_user::inside_a_chat(me, &programs, parent, session);
@@ -1418,9 +1515,16 @@ pub(crate) fn in_a_chat_around(
         Err(std::io::Error::other("no process ancestry here"))
     };
     match answer {
-        Ok(None) => Where::Outside,
-        Ok(Some(_)) => Where::Inside,
-        Err(_) => Where::Unsure(
+        Ok(None) => Located::Outside,
+        // Two records naming one process: it is sandboxed if either says so.
+        Ok(Some(found)) => Located::Below(
+            chats
+                .iter()
+                .filter(|run| run.pid == found)
+                .min_by_key(|run| run.unsandboxed)
+                .copied(),
+        ),
+        Err(_) => Located::Unsure(
             "purlis could not read where this process runs: a parent or its session could \
              not be read"
                 .to_owned(),
