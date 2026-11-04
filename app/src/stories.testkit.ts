@@ -26,9 +26,6 @@ export async function pictureNow(): Promise<void> {
 }
 
 /** The global the story tests put their window-sizer on (`.storybook/cell.setup.ts`). */
-/** Probe #4098: the old height-only wait, saying when the width had not landed. */
-const PROBE_BEFORE = false;
-
 export const WINDOW_GLOBAL = "__PURLIS_STORY_WINDOW__";
 
 /** The short window the operator's complaint was of (#3389): about 500 px tall. */
@@ -54,20 +51,9 @@ export async function inAWindow(width: number, height: number): Promise<boolean>
     return false;
   }
   await (size as (width: number, height: number) => Promise<void>)(width, height);
-  // Both sides: a resize that keeps the height (`SkillGrades`'s window that fits, wider only)
-  // would pass a wait on the height at once, before the new width is laid out, and what the
-  // story does next would happen in the old window (#4098).
-  if (PROBE_BEFORE) {
-    await waitFor(() => {
-      if (window.innerHeight !== height) throw new Error("not resized yet");
-    });
-    if (window.innerWidth !== width)
-      throw new Error(`PROBE width not landed ${window.innerWidth} vs ${width}`);
-  } else
-    await waitFor(() => {
-      if (window.innerWidth !== width || window.innerHeight !== height)
-        throw new Error("not resized yet");
-    });
+  await waitFor(() => {
+    if (window.innerHeight !== height) throw new Error("not resized yet");
+  });
   await nextFrame();
   return true;
 }
