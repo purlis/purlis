@@ -941,6 +941,7 @@ test("a job that only asks whether it is needed is not started on a pull request
       parity: false,
       bench: false,
       "outcome-bars": false,
+      "pool-setup": false,
     },
   );
   const yes = (path, gate) =>
@@ -1006,6 +1007,43 @@ test("the outcome bars run on a pull request that touches what they measure, and
   assert.match(
     ci.slice(ci.indexOf("\n  changes:\n"), ci.indexOf("\n  rust:\n")),
     /\boutcome-bars: \$\{\{ steps\.scope\.outputs\.outcome-bars \}\}/,
+  );
+});
+
+test("Pool setup's walk on Docker runs on a pull request that touches it, and on main", () => {
+  const on = (path) => gatesOf({ event: "pull_request", paths: [path] })["pool-setup"];
+  for (const path of [
+    "app/src/poolsetup/TryStep.tsx",
+    "app/src/PoolSetupTab.tsx",
+    "app/src/AddDockerPool.tsx",
+    "app/src/pools.ts",
+    "app/src-tauri/src/poolsetuptab.rs",
+    "app/src-tauri/src/dockerpools.rs",
+    "crates/purlis-core/src/poolsetup.rs",
+    "crates/purlis-core/src/poolsetup/trying.rs",
+    "crates/purlis-core/src/dockerpool/settings.rs",
+    "crates/purlis-core/src/runners.rs",
+    "runner-image/Dockerfile",
+    "app/e2e/pool-runner.Dockerfile",
+    "app/e2e/wdio.pool.conf.ts",
+    "app/e2e/specs/pool-setup-docker.pool.e2e.ts",
+    ".github/workflows/ci.yml",
+  ])
+    assert.equal(on(path), true, path);
+  for (const path of ["app/src/App.tsx", "crates/host/src/lib.rs", "app/e2e/specs/tabs.e2e.ts"])
+    assert.equal(on(path), false, path);
+
+  const ci = read(".github/workflows/ci.yml");
+  const job = ci.slice(ci.indexOf("\n  pool-setup-scenario:\n"), ci.indexOf("\n  scenario-linux-checks:\n"));
+  assert.ok(
+    job.includes(
+      "github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.pool-setup != 'false')",
+    ),
+    "main's push and a pull request its gate lets in, and not the merge group",
+  );
+  assert.match(
+    ci.slice(ci.indexOf("\n  changes:\n"), ci.indexOf("\n  rust:\n")),
+    /\bpool-setup: \$\{\{ steps\.scope\.outputs\.pool-setup \}\}/,
   );
 });
 

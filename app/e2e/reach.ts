@@ -22,7 +22,7 @@ import { goToWorkspaceAt, workspacesListed } from "./titleBarWorkspaces.js";
 // import it from this file.
 export { projectInFront };
 
-const TABS = '[data-strip="Tabs"]';
+export const TABS = '[data-strip="Tabs"]';
 const PALETTE = '[role="dialog"][aria-label="Command palette"]';
 
 /** The names on the tab strip, left to right. */

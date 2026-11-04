@@ -143,6 +143,7 @@ jobs:
       parity: ${{ steps.scope.outputs.parity }}
       bench: ${{ steps.scope.outputs.bench }}
       outcome-bars: ${{ steps.scope.outputs.outcome-bars }}
+      pool-setup: ${{ steps.scope.outputs.pool-setup }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -542,7 +543,7 @@ jobs:
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
           echo "$changed"
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|codelink|session)[^/]*(\.rs$|/)|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/parity/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|codelink|session)[^/]*(\.rs$|/)|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/parity/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the host, the protocol, the sandbox or the browsers has changed; the parity suite is not run against Docker"
@@ -1750,6 +1751,18 @@ jobs:
           (cd "$RUNNER_TEMP/claude-code" && npm ci --ignore-scripts --no-audit --no-fund)
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
             tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- claude_codes_own_sandbox_holds_the_settings_purlis_writes:: --nocapture
+      # **The runner's `purlis`, for Pool setup's run** (#4985): built alone, before the app's
+      # build, so it is purlis as a runner runs it. The app's build compiles the core with its
+      # `fenced` feature (a test build that refuses every plane outside the run's own), and its
+      # `purlis` takes it; a runner's projects are where no fence of this run reaches. The app's
+      # build writes its own `purlis` over this one after.
+      - name: The runner's purlis, for Pool setup's run
+        if: matrix.pool
+        run: |
+          set -euo pipefail
+          cargo build --locked -p purlis-cli --bin purlis
+          mkdir -p "$RUNNER_TEMP/runner"
+          cp target/debug/purlis "$RUNNER_TEMP/runner/purlis"
       # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app, which is
       # what drives it on macOS as well as Linux. It is in no build anyone is given.
       #
@@ -1790,6 +1803,25 @@ jobs:
           name: cargo-timings-${{ matrix.os }}-${{ matrix.shard }}
           path: target/cargo-timings/cargo-timing.html
           retention-days: 7
+      # **The runner image Pool setup's run makes its pool of** (#4985): `runner-image/Dockerfile`
+      # around the `purlis` built above, as the parity job builds it, with a `claude` that reports
+      # its chat's start (`app/e2e/pool-runner.Dockerfile`), pushed to a registry of this job's
+      # own: a pool names its image by digest alone.
+      - name: The runner image of this build, for Pool setup's run, by digest
+        if: matrix.pool
+        run: |
+          set -euo pipefail
+          docker run --detach --publish 127.0.0.1:5000:5000 --name registry registry:3@sha256:01cd312e67026f06f5d89c3e133a4a9adc7cb9eeb9b1194e0b2954dfd770efd2
+          context="$RUNNER_TEMP/runner"
+          cp -R app/src-tauri/plugin "$context/plugin"
+          docker build --file runner-image/Dockerfile --tag purlis-runner:scenario "$context"
+          docker build --build-arg RUNNER=purlis-runner:scenario \
+            --build-arg "VERSION=$(cat tests/fixtures/harness-versions/claude.txt)" \
+            --tag localhost:5000/purlis-runner-scenario:candidate - < app/e2e/pool-runner.Dockerfile
+          docker push localhost:5000/purlis-runner-scenario:candidate
+          image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-scenario:candidate)
+          echo "image $image"
+          echo "PURLIS_E2E_POOL_IMAGE=$image" >> "$GITHUB_ENV"
       # What sccache found, as a notice: whether the experiment pays, without the log.
       - name: sccache's hits and misses
         if: runner.os == 'macOS' && !cancelled()
@@ -1949,6 +1981,20 @@ jobs:
         run: xvfb-run -a npm run e2e:browser
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # Pool setup's Docker path, walked in the real window to Try it's last screen (#4985). Its
+      # own run, since it needs Docker and the image above; Linux's pool leg alone runs it. What
+      # the runners left is listed if it fails.
+      - name: Pool setup's Docker path, in the window
+        run: xvfb-run -a npm run e2e:pool
+        if: runner.os == 'Linux' && matrix.pool
+        working-directory: app
+      - name: What the pool's runner left, if Pool setup's run failed
+        if: failure() && matrix.pool
+        run: |
+          docker ps --all --no-trunc || true
+          for container in $(docker ps --all --quiet --filter label=purlis.runner); do
+            docker logs --tail 200 "$container" || true
+          done
       # The app ended and started again, which no scenario spec can do: WebdriverIO's service
       # keeps one app process for a whole run, so a spec that quits takes the run with it.
       - name: Reopening what was open, across a real relaunch
@@ -2071,6 +2117,36 @@ jobs:
         specs: [false]
         sandbox: [false]
         outcome: [true]
+    runs-on: ${{ matrix.os }}
+    steps: *scenario-steps
+
+  # **Pool setup's Docker path, walked in the window** (#4985, #4484's first acceptance
+  # criterion): the scenario legs' steps with every leg's own flag off and `pool` on, on Linux,
+  # which has Docker. It builds the runner image this build makes, as `parity` does, and its run
+  # (`wdio.pool.conf.ts`) makes a pool of it and presses each step's main button to Try it's last
+  # screen. On main's push, and on a pull request that touches Pool setup, its pools or the runner
+  # image (`GATES`), as the outcome bars are: the image's build fetches from the network, and a
+  # second build of the core without its test fence costs about as much again. Not required yet,
+  # so a fetch that fails doesn't block an unrelated merge (#5176 makes it required once it has
+  # run steadily).
+  pool-setup-scenario:
+    name: scenario tests (${{ matrix.os }}, Pool setup on Docker)
+    needs: changes
+    # Evidence until #5176: its red stays on the job and leaves the `ci` run green, so a fetch that
+    # fails on main's push doesn't stop `tools/land.mjs` or the dev build.
+    continue-on-error: true
+    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.pool-setup != 'false')) }}
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        os: [ubuntu-24.04]
+        shard: [pool]
+        shards: [1]
+        extras: [false]
+        specs: [false]
+        sandbox: [false]
+        outcome: [false]
+        pool: [true]
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 
