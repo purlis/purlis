@@ -2650,8 +2650,8 @@ export const commands = {
 	reopenFinishedTask: (plane: PlaneId, id: string, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("reopen_finished_task", { plane, id, columns, rows })),
 	/**
 	 *  **Resume** on the ended band of a chat the person ended (#5019, spec #4750 story 62): the
-	 *  same chat on its conversation, in a new run ([`crate::chats::Chats::resume_ended`]). The answer is the chat
-	 *  as the window draws it, which takes the pane the ended one was left in.
+	 *  same chat on its conversation, in a new run ([`crate::chats::Chats::resume_ended`]). The
+	 *  answer is the chat as the window draws it, which takes the pane the ended one was left in.
 	 */
 	resumeEndedChat: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("resume_ended_chat", { plane, session, columns, rows })),
 	/**
