@@ -5,7 +5,7 @@
 //! revert per version and that version's runs; its lifecycle state (deprecated, archived) and
 //! owners; the suggestion to deprecate a skill no chat ran for 60 days; and the skills it names
 //! and that name it. Each is `purlis_core::skills`' own (`history`, `lifecycle`, `graph`), which
-//! `purlis skill` calls too. Behind the `skill-studio` flag until its finish line (#2786).
+//! `purlis skill` calls too.
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -13,7 +13,7 @@ use specta::Type;
 use purlis_core::skills::verbs::Level;
 use purlis_core::skills::{Deprecated, Lifecycle, history, lifecycle};
 
-use crate::skillchange::{SkillChanged, SkillLevel, built_in, flag_on, heard};
+use crate::skillchange::{SkillChanged, SkillLevel, built_in, heard};
 use crate::skillstudio::{StatsGroup, StatsRow, small, stats_row};
 
 /// A skill's lifecycle state, as its tab shows and sets it.
@@ -245,7 +245,7 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
 }
 
 /// **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
-/// owners, and the skills it names and that name it. Nothing while the flag is off.
+/// owners, and the skills it names and that name it.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_details(
@@ -255,7 +255,6 @@ pub(crate) async fn skill_details(
 ) -> Result<SkillDetails, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the skill's history", move || {
-        flag_on()?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|at| at.as_secs())
@@ -277,7 +276,6 @@ pub(crate) async fn skill_diff(
 ) -> Result<SkillDiff, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the version's changes", move || {
-        flag_on()?;
         history::diff(held.root(), &(&level).into(), &name, &commit).map(|diff| SkillDiff {
             text: diff.text,
             cut: diff.cut,
@@ -300,7 +298,6 @@ pub(crate) async fn skill_revert_widens(
 ) -> Result<Option<String>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the version", move || {
-        flag_on()?;
         history::revert_widens(held.root(), &(&level).into(), &name, &commit)
     })
     .await
@@ -318,7 +315,6 @@ pub(crate) async fn skill_revert(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reverting the skill", move || {
-        flag_on()?;
         heard(held.root(), |cx| {
             history::revert(cx, &(&level).into(), &name, &commit)
         })
@@ -338,7 +334,6 @@ pub(crate) async fn skill_lifecycle(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("changing the skill's state", move || {
-        flag_on()?;
         heard(held.root(), |cx| {
             lifecycle::set(cx, &(&level).into(), &name, &lifecycle.into())
         })
@@ -358,7 +353,6 @@ pub(crate) async fn skill_owners(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("changing the skill's owners", move || {
-        flag_on()?;
         heard(held.root(), |cx| {
             lifecycle::set_owners(cx, &(&level).into(), &name, &owners)
         })

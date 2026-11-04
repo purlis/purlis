@@ -35,9 +35,8 @@ fn the_studio_lists_built_in_and_project_skills_with_their_level_and_why_one_is_
     );
     skill(&root.join("skills"), "half", "---\nname: half\n---\n");
 
-    let studio = studio(&root, Some(&built_in), true, None, None, &no_harness());
+    let studio = studio(&root, Some(&built_in), None, None, &no_harness());
 
-    assert!(studio.on);
     let rows: Vec<(&str, Level, bool, Option<&str>, &str)> = studio
         .skills
         .iter()
@@ -69,40 +68,6 @@ fn the_studio_lists_built_in_and_project_skills_with_their_level_and_why_one_is_
 }
 
 #[test]
-fn the_studio_shows_nothing_while_its_flag_is_off() {
-    let tmp = tempfile::tempdir().unwrap();
-    skill(
-        &tmp.path().join("skills"),
-        "deploy",
-        "---\nname: deploy\ndescription: Deploys.\n---\n",
-    );
-
-    let studio = studio(tmp.path(), None, false, None, None, &no_harness());
-
-    assert_eq!(
-        studio,
-        Studio {
-            on: false,
-            workspace: None,
-            persona: None,
-            workspaces: Vec::new(),
-            personas: Vec::new(),
-            levels: Vec::new(),
-            skills: Vec::new(),
-            harnesses: Vec::new(),
-            clashes: Vec::new(),
-            first: StudioFirst::default(),
-            pins_refused: None,
-            not_supported: Vec::new(),
-            router: None,
-            places: Vec::new(),
-            levels_to_confirm: None,
-            needs: Vec::new(),
-        }
-    );
-}
-
-#[test]
 fn a_declared_harness_with_neither_a_skill_format_nor_mcp_is_said_in_one_line() {
     // SK-30, #2985: its chats get no skills, and the studio says why.
     let tmp = tempfile::tempdir().unwrap();
@@ -121,7 +86,7 @@ fn a_declared_harness_with_neither_a_skill_format_nor_mcp_is_said_in_one_line() 
     )
     .unwrap();
 
-    let studio = studio(&root, None, true, None, None, &no_harness());
+    let studio = studio(&root, None, None, None, &no_harness());
 
     assert_eq!(
         studio.not_supported,
@@ -166,7 +131,7 @@ fn the_studio_shows_a_workspaces_chat_with_its_own_skills_and_each_hidden_copy()
     );
     std::fs::create_dir_all(root.join("workspaces/beta")).unwrap();
 
-    let studio = studio(&root, None, true, Some("alpha"), None, &no_harness());
+    let studio = studio(&root, None, Some("alpha"), None, &no_harness());
 
     assert_eq!(studio.workspace.as_deref(), Some("alpha"));
     assert_eq!(studio.workspaces, ["alpha", "beta"]);
@@ -222,7 +187,7 @@ fn the_studio_as_a_persona_lists_its_own_skills_and_one_it_names_whatever_was_gr
         "---\nname: triage\ndescription: Triages.\n---\n",
     );
 
-    let studio = studio(&root, None, true, Some("alpha"), Some("ops"), &no_harness());
+    let studio = studio(&root, None, Some("alpha"), Some("ops"), &no_harness());
 
     assert_eq!(studio.persona.as_deref(), Some("ops"));
     let rows: Vec<(&str, Level, bool, &str)> = studio
@@ -347,7 +312,7 @@ fn every_personas_own_skills_are_read_at_once_each_under_its_persona() {
         "---\nname: review\ndescription: Reviews.\n---\n",
     );
 
-    let personas = persona_skills(&root, None, true, Some("alpha"));
+    let personas = persona_skills(&root, None, Some("alpha"));
 
     let read: Vec<(&str, Vec<(&str, Level)>)> = personas
         .iter()
@@ -369,7 +334,6 @@ fn every_personas_own_skills_are_read_at_once_each_under_its_persona() {
             ("reviewer", vec![("review", Level::Persona)]),
         ]
     );
-    assert!(persona_skills(&root, None, false, Some("alpha")).is_empty());
 }
 
 #[test]
@@ -409,7 +373,7 @@ fn the_studio_lists_each_harnesss_own_skills_and_plugins_and_marks_a_clash_with_
         process: false,
     };
 
-    let studio = studio(&root, None, true, None, None, &env);
+    let studio = studio(&root, None, None, None, &env);
 
     let on_claude = &studio.harnesses[0];
     assert_eq!(on_claude.title, "Claude Code");
@@ -536,7 +500,7 @@ fn a_studio_with_only_built_in_skills_lists_them_and_offers_the_starts() {
         "---\nname: secrets\ndescription: Keeps secrets.\n---\n",
     );
 
-    let studio = studio(&root, Some(&built_in), true, None, None, &no_harness());
+    let studio = studio(&root, Some(&built_in), None, None, &no_harness());
 
     assert_eq!(studio.skills.len(), 1);
     assert!(studio.first.starts);
@@ -552,7 +516,7 @@ fn a_studio_with_only_built_in_skills_lists_them_and_offers_the_starts() {
         "notify",
         "---\nname: notify\ndescription: Tells.\n---\n",
     );
-    let studio = super::studio(&root, Some(&built_in), true, None, None, &no_harness());
+    let studio = super::studio(&root, Some(&built_in), None, None, &no_harness());
     assert!(!studio.first.starts);
     assert_eq!(
         studio.first.unmoved,
@@ -626,7 +590,7 @@ fn a_row_says_which_of_the_studios_workspace_and_persona_pin_it_sk15d() {
     }
 
     let pins = |workspace, persona| {
-        studio(&root, None, true, workspace, persona, &no_harness())
+        studio(&root, None, workspace, persona, &no_harness())
             .skills
             .into_iter()
             .map(|row| (row.name, row.pinned_by))
@@ -655,7 +619,7 @@ fn a_row_says_which_of_the_studios_workspace_and_persona_pin_it_sk15d() {
     );
     assert!(pins(None, None).iter().all(|(_, by)| by.is_empty()));
     assert_eq!(
-        studio(&root, None, true, Some("alpha"), None, &no_harness()).pins_refused,
+        studio(&root, None, Some("alpha"), None, &no_harness()).pins_refused,
         None
     );
 
@@ -665,14 +629,14 @@ fn a_row_says_which_of_the_studios_workspace_and_persona_pin_it_sk15d() {
         r#"{"settings": {"skills": {"pinned": ["deploy", "Bad Name"]}}}"#,
     )
     .unwrap();
-    let refused = studio(&root, None, true, Some("alpha"), None, &no_harness())
+    let refused = studio(&root, None, Some("alpha"), None, &no_harness())
         .pins_refused
         .expect("refused");
     assert_eq!(refused.by, alpha);
     assert_eq!(refused.bad.as_deref(), Some("Bad Name"));
     assert_eq!(refused.file, "workspaces/alpha/workspace.json");
     assert!(
-        studio(&root, None, true, None, Some("ops"), &no_harness())
+        studio(&root, None, None, Some("ops"), &no_harness())
             .pins_refused
             .is_none()
     );
@@ -685,7 +649,7 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
     std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
     std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
     let router = |workspace: Option<&str>| {
-        studio(root, None, true, workspace, None, &no_harness())
+        studio(root, None, workspace, None, &no_harness())
             .router
             .expect("a router while the studio is on")
     };
@@ -709,17 +673,10 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
          root."
     );
     assert_eq!(
-        studio(
-            root,
-            None,
-            true,
-            Some("alpha"),
-            Some("reviewer"),
-            &no_harness()
-        )
-        .router
-        .expect("a router")
-        .preview,
+        studio(root, None, Some("alpha"), Some("reviewer"), &no_harness())
+            .router
+            .expect("a router")
+            .preview,
         "The rows' hidden marks are what the built-in router hides for a chat at the \
          workspace's root as reviewer.",
         "the persona the studio is filtered to, whose pins the marks read"
@@ -801,7 +758,7 @@ fn the_studio_says_the_budget_and_what_its_scope_writes_as_its_router_3692() {
     )
     .unwrap();
     let router = |workspace: Option<&str>, persona: Option<&str>| {
-        studio(root, None, true, workspace, persona, &no_harness())
+        studio(root, None, workspace, persona, &no_harness())
             .router
             .expect("a router while the studio is on")
     };

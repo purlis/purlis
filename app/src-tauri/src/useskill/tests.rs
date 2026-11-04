@@ -43,7 +43,6 @@ fn the_window_is_shown_the_chats_skills_with_what_each_takes_and_its_budget() {
 
     let shown = shown(Some(&skills));
 
-    assert!(shown.on);
     assert!(shown.known);
     let names: Vec<&str> = shown.skills.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(names, ["handoff", "release", "review"]);
@@ -81,7 +80,6 @@ fn the_window_is_shown_the_chats_skills_with_what_each_takes_and_its_budget() {
 #[test]
 fn a_chat_on_no_tool_purlis_knows_is_offered_nothing_and_has_no_budget() {
     let shown = shown(None);
-    assert!(shown.on);
     assert!(!shown.known);
     assert!(shown.skills.is_empty());
     assert_eq!(shown.budget, None);
@@ -150,10 +148,10 @@ fn the_budget_names_the_workspace_and_the_persona_that_pin_a_skill_sk15d() {
     );
 }
 
-/// #3445: a chat whose start the plane's skills did not reach (the Skill studio's flag off) was
+/// #3445: a chat whose start the plane's skills did not reach was
 /// handed the built-in skills alone, so Use skill… offers those alone.
 #[test]
-fn a_chat_started_with_the_flag_off_is_offered_the_built_in_skills_alone() {
+fn a_chat_its_plane_skills_did_not_reach_is_offered_the_built_in_skills_alone() {
     let tmp = tempfile::tempdir().unwrap();
     let built_in = tmp.path().join("plugin/skills");
     let root = tmp.path().join("plane");

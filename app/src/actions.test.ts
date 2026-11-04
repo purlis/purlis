@@ -826,7 +826,6 @@ describe("the one list of actions", () => {
       "Your settings: Pools",
       "Your settings: Accounts",
       "Your settings: Profiles",
-      "Your settings: Previews",
     ]);
     const hands = doing();
     await run(alone, "settings.group:you.editor", hands);
@@ -933,7 +932,7 @@ describe("the one list of actions", () => {
       ]),
     );
     // Only the focused workspace's: the other one is a focus away.
-    expect(rows.filter((one) => one.title.startsWith("Workspace settings:"))).toHaveLength(6);
+    expect(rows.filter((one) => one.title.startsWith("Workspace settings:"))).toHaveLength(7);
     expect(by(offers, "settings.group:workspace.repos:web")?.note).toBe(
       "web: Settings at its level, at Repos.",
     );
@@ -2071,6 +2070,15 @@ describe("carrying out a row", () => {
         `newMemory:${JSON.stringify({ kind: "shared" })}`,
         "openView:charter/shared-memory/,Shared memory",
         "openView:charter/shortcuts/,Keyboard shortcuts",
+        // The Skill studio (#2765), on the project and on each workspace and persona, and each
+        // one's Needs you (#3695).
+        "openView:charter/skill-studio/,Skill studio",
+        'openView:charter/skill-studio/at:{"page":"library","scope":{"at":"persona","name":"steward"}},Skill studio',
+        'openView:charter/skill-studio/at:{"page":"library","scope":{"at":"workspace","name":"alpha"}},Skill studio',
+        'openView:charter/skill-studio/at:{"page":"library","scope":{"at":"workspace","name":"beta"}},Skill studio',
+        'openView:charter/skill-studio/at:{"page":"needs","scope":{"at":"persona","name":"steward"}},Skill studio',
+        'openView:charter/skill-studio/at:{"page":"needs","scope":{"at":"workspace","name":"alpha"}},Skill studio',
+        'openView:charter/skill-studio/at:{"page":"needs","scope":{"at":"workspace","name":"beta"}},Skill studio',
         "openView:charter/agent-identity/,Agent identity",
         // #1452: the project's dispatches, in a tab of their own.
         "openView:charter/dispatches/,Dispatches",
@@ -2113,6 +2121,7 @@ describe("carrying out a row", () => {
         "showSideView:todos",
         "showSideView:memory",
         "showSideView:personas",
+        "showSideView:skills",
         "showSideView:sessions",
         "showSideView:vaults",
         "toggleRegion:navigation",
@@ -2896,7 +2905,7 @@ describe("the palette at fifty chats", () => {
     // 914 since #2331: Settings › Theme at You, Project and Workspace. 915 since #2023: Your
     // settings: Browsers. 916 since #2176: New browser. 917 since #2679: Add a Docker pool….
     // 918 since #2765:
-    // Your settings: Previews (Open Skill studio is offered only while its flag is on). 920
+    // Your settings: Previews, gone since #2786 (below). 920
     // since #2925: Your settings: Motion and contrast, and Your colours. 922 since #2921: Focus
     // mode and Keyboard shortcuts, one row each. 920 since #3467: no Plugins group at the Project
     // or the Workspace level. 921 since #2027: Open browsers. 922 since the person's ruling of
@@ -2922,6 +2931,10 @@ describe("the palette at fifty chats", () => {
     // since #6031: Skill sources and Recorded skill acts, the project's two groups of an org's
     // skill controls. 1485 since T1-27: each of the fifty chats' Chat log (R-224). 1486 since
     // #6344: Your settings: Attention › Remind me, a setting's row, listed once typed.
+    // Since #2786: the Skill studio is always on, with no Previews group (-1): Open
+    // Skill studio and Show the Skills view (+2), the studio and its Needs you on each of the six
+    // workspaces (+12) and the eight personas (+16), and the Skills group at the project and at
+    // the focused workspace (+2).
     expect(offers).toHaveLength(1486);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
@@ -4825,13 +4838,8 @@ describe("a harness's card with no chat open (#1134)", () => {
 });
 
 describe("the Skills view's row (#3266)", () => {
-  it("shows the Skills view, with its key, only while the Skill studio's preview is on", () => {
-    const off = catalogue(now()).find((offer) => offer.id === "view.show:skills");
-    expect(off).toBeUndefined();
-
-    const row = catalogue(now({ skillStudio: true })).find(
-      (offer) => offer.id === "view.show:skills",
-    );
+  it("shows the Skills view, with its key", () => {
+    const row = catalogue(now()).find((offer) => offer.id === "view.show:skills");
     expect(row?.title).toBe("Show the Skills view");
     expect(row?.does).toEqual({ verb: "showSideView", view: "skills" });
     expect(row?.note).toMatch(/⌘⇧X|Ctrl\+Shift\+X/);
@@ -5049,8 +5057,8 @@ describe("Use skill… on a chat (#2775)", () => {
   const tabs = openTab(openTab(noTabs(), 7, "3", "steward"), 8, "sh");
   const notAShell = (session: number) => session === 7;
 
-  it("is offered only while the Skill studio is on, on a chat and never a shell", () => {
-    const offers = catalogue(now({ tabs, askable: notAShell, skillStudio: true }));
+  it("is offered on a chat and never a shell", () => {
+    const offers = catalogue(now({ tabs, askable: notAShell }));
     expect(by(offers, usingSkillId(7))).toMatchObject({
       title: "Use skill in steward 3…",
       available: true,
@@ -5058,15 +5066,11 @@ describe("Use skill… on a chat (#2775)", () => {
       does: { verb: "useSkill", session: 7 },
     });
     expect(by(offers, usingSkillId(8))).toBeUndefined();
-    const off = catalogue(now({ tabs, askable: notAShell }));
-    expect(by(off, usingSkillId(7))).toBeUndefined();
   });
 
   it("is in the palette for every chat, and on every chat's list (#4753)", () => {
     const two = openTab(openTab(noTabs(), 7, "3", "steward"), 9, "5", "steward");
-    const offers = catalogue(
-      now({ tabs: two, askable: (s) => s === 7 || s === 9, skillStudio: true }),
-    );
+    const offers = catalogue(now({ tabs: two, askable: (s) => s === 7 || s === 9 }));
     const rows = inPalette(offers).filter((offer) => offer.does.verb === "useSkill");
     expect(rows.map((offer) => offer.does)).toEqual([
       { verb: "useSkill", session: 7 },
@@ -5076,13 +5080,13 @@ describe("Use skill… on a chat (#2775)", () => {
   });
 
   it("says no budget on its row: that is the Skills view's (S8, #3954)", () => {
-    const offers = catalogue(now({ tabs, askable: notAShell, skillStudio: true }));
+    const offers = catalogue(now({ tabs, askable: notAShell }));
     expect(by(offers, usingSkillId(7))?.note).not.toMatch(/budget|token/i);
   });
 
   it("opens the picker through the window's hands, and types nothing by itself", async () => {
     const hands = doing();
-    const offers = catalogue(now({ tabs, askable: notAShell, skillStudio: true }));
+    const offers = catalogue(now({ tabs, askable: notAShell }));
     await run(offers, usingSkillId(7), hands);
     expect(hands.calls).toEqual(["useSkill:7"]);
   });

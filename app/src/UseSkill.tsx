@@ -22,7 +22,7 @@ import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { Button, IconButton } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { counted } from "./dispatches";
-import { AT_THE_ROOT, askSkillStudio, useSkillStudioOn } from "./skillStudio";
+import { AT_THE_ROOT, askSkillStudio } from "./skillStudio";
 import { SKILLS_MISSING_PUT_AWAY, type ChatSkillsAsk } from "./chatSkillsAsk";
 import {
   budgetScope,
@@ -315,9 +315,8 @@ export const skillsInTheSet = (budget: SkillBudget) => budget.skills + budget.ma
 type HeldSet = Omit<ChatSkillsSaid, "changed"> & { budget: SkillBudget };
 
 /**
- * **The skill sets of chats `sessions` of `plane`** (#2775, #3953), read once each while the
- * Skill studio is on, and how to set one read elsewhere (Use skill… reads a chat's skills as it
- * opens). The one place a window holds them: the chip on each pane draws it.
+ * **The skill sets of chats `sessions` of `plane`** (#2775, #3953), read once each, and how to
+ * set one read elsewhere (Use skill… reads a chat's skills as it opens). The one place a window holds them: the chip on each pane draws it.
  *
  * **Read again where it can have moved** (#4094), never on a chat's open:
  * - every open chat's, each time `moved` moves: the window's count of changes on disk to what a
@@ -336,7 +335,6 @@ type HeldSet = Omit<ChatSkillsSaid, "changed"> & { budget: SkillBudget };
 export function useChatSkillSets(
   plane: PlaneId,
   sessions: readonly number[],
-  on: boolean,
   changed: SkillsChangedHere = NOTHING_CHANGED,
   moved = 0,
 ): [ChatSkillSets, (session: number, said: ChatSkills | null) => void] {
@@ -344,9 +342,8 @@ export function useChatSkillSets(
   // Each chat's latest read, by session: only its answer is kept.
   const asked = useRef(new Map<number, number>());
   const reads = useRef(0);
-  // The `moved` the sets were last read for: one past it reads every open chat's again, as does
-  // none (the studio was off).
-  const readFor = useRef<number | undefined>(moved);
+  // The `moved` the sets were last read for: one past it reads every open chat's again.
+  const readFor = useRef(moved);
   // The chats whose "started without" notice was put away: an answer read before that, landing
   // after, does not bring it back.
   const putAway = useRef(new Set<number>());
@@ -378,12 +375,6 @@ export function useChatSkillSets(
   );
   const key = sessions.join(",");
   useEffect(() => {
-    if (!on) {
-      // Read again, all of them, once the studio is on again. Who was asked is kept, so a chat
-      // closed or restarted meanwhile is let go then.
-      readFor.current = undefined;
-      return;
-    }
     const open = key === "" ? [] : key.split(",").map(Number);
     const openNow = new Set(open);
     const again = moved !== readFor.current;
@@ -397,8 +388,8 @@ export function useChatSkillSets(
       if (!again && asked.current.has(session)) continue;
       readOne(session);
     }
-  }, [key, on, readOne, moved]);
-  usePromptRoutingMoved(plane, on, (session) => {
+  }, [key, readOne, moved]);
+  usePromptRoutingMoved(plane, true, (session) => {
     if (asked.current.has(session)) readOne(session);
   });
   // A "started without" notice put away is put away in the core too: the chip says it no more.
@@ -426,7 +417,7 @@ export function useChatSkillSets(
       ),
     [held, changed],
   );
-  return [on ? sets : NO_SETS, set];
+  return [sets, set];
 }
 
 /** `was` without the sets of `sessions`: itself where it holds none of them. */
@@ -437,9 +428,6 @@ function without(
   if (!Object.keys(was).some((one) => sessions.has(Number(one)))) return was;
   return Object.fromEntries(Object.entries(was).filter(([one]) => !sessions.has(Number(one))));
 }
-
-/** No chat's set known: what the window holds while the Skill studio is off. */
-const NO_SETS: ChatSkillSets = {};
 
 /** No chat's skills changed since it started. */
 const NOTHING_CHANGED: SkillsChangedHere = {};
@@ -453,8 +441,8 @@ const NOTHING_CHANGED: SkillsChangedHere = {};
  * the chat's Skills row, the sidebar Skills view, the one answer to what the chat gets and why,
  * where each need has its fix, and says that row's title as every part of the foot does (#5366).
  * With no such row it is its words alone, and says no press. Its set is the window's
- * ({@link ChatSkillSetsHere}). Nothing while the Skill studio is off, or for a chat purlis knows no
- * skills of. A narrow pane shrinks it to its ⚠, named all the same; a chat with nothing wrong says
+ * ({@link ChatSkillSetsHere}). Nothing for a chat purlis knows no skills of. A narrow pane
+ * shrinks it to its ⚠, named all the same; a chat with nothing wrong says
  * nothing here, and the Skills row and the Skills view say the budget (`⌘⇧X`).
  */
 export const SkillsChip = memo(function SkillsChip({
@@ -541,9 +529,8 @@ const SIGN = "\u26A0\uFE0E";
 /** **What chat `session`'s set of skills needs the person for**, in words, or nothing while it
  *  needs nothing or the Skill studio is off: what its pane foot's warning says (#5204). */
 export function useChatSkillsWarn(session: number): string | undefined {
-  const on = useSkillStudioOn();
   const said = useContext(ChatSkillSetsHere)[session];
-  if (!on || said === undefined) return undefined;
+  if (said === undefined) return undefined;
   // The scope only aims each need's fix, which the view offers and the chip does not.
   const needs = chatNeedsOf(said, AT_THE_ROOT);
   return needs.length === 0 ? undefined : needs.map((one) => one.title).join(" · ");

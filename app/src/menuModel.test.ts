@@ -466,6 +466,7 @@ describe("a chat's list (#4753)", () => {
     expect(said(menu)).toEqual([
       [
         "Rename chat…",
+        "Use skill…",
         `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`,
         "Link to work item…",
         "Unlink work item",
@@ -492,6 +493,7 @@ describe("a chat's list (#4753)", () => {
     const none = world({ ask: { personas: [], locked: null } });
     expect(said(menuOf({ on: "chat", session: 7 }, none.offers))[0]).toEqual([
       "Rename chat…",
+      "Use skill…",
       "Link to work item…",
       "Unlink work item",
     ]);
@@ -688,6 +690,7 @@ describe("the other tabs' menus", () => {
     expect(said(menuOf({ on: "chat", session: 11 }, offers))).toEqual([
       [
         "Rename chat…",
+        "Use skill…",
         `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`,
         "Link to work item…",
       ],

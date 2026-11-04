@@ -18,8 +18,7 @@ import { theDefaultProfileApproved } from "../started.js";
 
 /**
  * **The Skill studio's first open and New skill…** (SK-22, #2785; decisions 42 and 13; #3684,
- * S4), in the built app against the real core, with the `skill-studio` flag on for the run
- * (`wdio.conf.ts`).
+ * S4), in the built app against the real core.
  *
  * The fixture project has no skill of its own. New skill… asks how, and each way works: *Install
  * one from a source* moves to the skill sources, *Write it yourself* makes one from the blank

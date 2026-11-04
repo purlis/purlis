@@ -365,8 +365,7 @@ pub(crate) fn of(studio: &Studio) -> Vec<NeedsYou> {
     needs
 }
 
-/// **The old `[harness_plugins]` keys, as an item** (#3467): the Ask the Inbox drew while the
-/// studio is off.
+/// **The old `[harness_plugins]` keys, as an item** (#3467).
 pub(crate) fn old_keys(old: &crate::oldplugins::OldHarnessPlugins) -> NeedsYou {
     NeedsYou {
         id: "tidy-up:old-plugin-keys".to_owned(),

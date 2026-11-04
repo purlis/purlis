@@ -1,7 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useSkillStudioOn } from "../skillStudio";
 import {
   useEffect,
   useId,
@@ -204,11 +203,9 @@ function ProjectLevelTab({ plane, ...switcher }: Switcher & { plane: PlaneId }) 
     if (project.state === "read") await project.readEntries();
     return true;
   };
-  const skillStudio = useSkillStudioOn();
   const groups = useMemo(
-    () =>
-      project.state === "read" ? projectGroups(project.read, project.reread, skillStudio) : [],
-    [project, skillStudio],
+    () => (project.state === "read" ? projectGroups(project.read, project.reread) : []),
+    [project],
   );
   // Each file as its whole text (SE-19, V89d), written through the level's driver: the core
   // checks it and writes it, in the queue every setting's write is in.
@@ -342,10 +339,9 @@ function WorkspaceLevelTab({
   ...switcher
 }: Switcher & { plane: PlaneId; workspace: string }) {
   const level = useWorkspaceLevel(plane, workspace);
-  const skillStudio = useSkillStudioOn();
   const groups = useMemo(
-    () => (level.state === "read" ? workspaceGroups(level.read, level.reread, skillStudio) : []),
-    [level, skillStudio],
+    () => (level.state === "read" ? workspaceGroups(level.read, level.reread) : []),
+    [level],
   );
   // The manifest as its whole text (NO-7, #1232), written through the level's driver as Edit as
   // TOML's files are: the core checks it, against the text the edit began from.

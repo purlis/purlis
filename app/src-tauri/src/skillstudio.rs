@@ -8,7 +8,6 @@
 //! And each harness's own (SK-6, #2769): its plugins, the skills it finds itself in the person's
 //! folders and in the workspace's clones, read only, each with a switch where the harness can
 //! leave it out, and every one that clashes with a skill purlis hands the chat.
-//! Behind the `skill-studio` flag until its finish line (#2786).
 
 use serde::Serialize;
 use specta::Type;
@@ -123,7 +122,6 @@ pub(crate) fn needing_with(
         purlis_core::skills::Reading::Needs,
         root,
         built_in,
-        true,
         workspace,
         persona,
         env,
@@ -134,7 +132,7 @@ pub(crate) fn needing_with(
 }
 
 /// **The project's own items of Needs you, added to `studio`'s** (#3689): the old
-/// `[harness_plugins]` keys, whose Ask Needs you holds while the studio is on. A file whose
+/// `[harness_plugins]` keys, whose Ask Needs you holds. A file whose
 /// removal waits among `waiting`, the files purlis's own proposed changes wait on, is asked
 /// about no more. The one way the studio, its count and the summary lines add them.
 pub(crate) fn with_the_projects_needs(
@@ -142,9 +140,6 @@ pub(crate) fn with_the_projects_needs(
     root: &std::path::Path,
     waiting: &[String],
 ) {
-    if !studio.on {
-        return;
-    }
     let old = crate::oldplugins::notice_of(root, waiting);
     // The project's stopped grades, each saying when Resume can run (#5718).
     let stopped = crate::skillgrade::resumed::needs(root);
@@ -710,16 +705,12 @@ pub struct PersonaSkills {
 }
 
 /// Every persona's own skills in the project at `root`, for a chat in `workspace` or at the
-/// root: nothing while the flag is off (`purlis_core::skills::persona_rows`).
+/// root (`purlis_core::skills::persona_rows`).
 pub(crate) fn persona_skills(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
-    on: bool,
     workspace: Option<&str>,
 ) -> Vec<PersonaSkills> {
-    if !on {
-        return Vec::new();
-    }
     let off = workspace
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
@@ -741,10 +732,9 @@ pub(crate) fn persona_skills(
         .collect()
 }
 
-/// What the studio shows: whether it is on, whose chat it shows, and its skills by name.
+/// What the studio shows: whose chat it shows, and its skills by name.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Studio {
-    pub on: bool,
     /// The workspace whose chats it shows, or `None` for a chat at the project's root.
     pub workspace: Option<String>,
     /// The persona whose chats it shows, which brings its skills into every workspace, or
@@ -771,7 +761,7 @@ pub struct Studio {
     /// and the harnesses' list says why in one line.
     pub not_supported: Vec<StudioNotSupported>,
     /// The router its chats are routed by, and how it did at each one's start (SK-15b). Null
-    /// while the studio is off.
+    /// for a read of Needs you alone.
     pub router: Option<StudioRouter>,
     /// **The clones a chat can be previewed in** (#4227): each of the workspace's that holds
     /// repo skills, in its order. Empty at the project's root, while the studio is off, and
@@ -782,7 +772,7 @@ pub struct Studio {
     /// accepts the folders it lists (`skill_levels_confirm`). Null otherwise.
     pub levels_to_confirm: Option<StudioLevelsToConfirm>,
     /// **What in these skills needs the person** (#3689): the Needs you page's items, by kind,
-    /// each with why and one fix ([`needs`]). Empty while the studio is off.
+    /// each with why and one fix ([`needs`]).
     pub needs: Vec<needs::NeedsYou>,
 }
 
@@ -1091,18 +1081,17 @@ impl From<purlis_core::skills::first_open::FirstOpen> for StudioFirst {
 }
 
 /// The studio of the project at `root`, for a chat at its root (`workspace` `None`) or in
-/// `workspace`, as `persona` or on none, with the built-in skills in `built_in`: nothing while
-/// the flag is off. Its list is the command line's (`purlis_core::skills::studio_list`).
+/// `workspace`, as `persona` or on none, with the built-in skills in `built_in`. Its list is the
+/// command line's (`purlis_core::skills::studio_list`).
 #[cfg(test)]
 pub(crate) fn studio(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
-    on: bool,
     workspace: Option<&str>,
     persona: Option<&str>,
     env: &purlis_core::harness_plugin::Env<'_>,
 ) -> Studio {
-    studio_linted(root, built_in, on, workspace, persona, env, &[])
+    studio_linted(root, built_in, workspace, persona, env, &[])
 }
 
 /// The studio of the project at `root`, read as `studio` reads it, the plane's own skills linted
@@ -1110,7 +1099,6 @@ pub(crate) fn studio(
 pub(crate) fn studio_linted(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
-    on: bool,
     workspace: Option<&str>,
     persona: Option<&str>,
     env: &purlis_core::harness_plugin::Env<'_>,
@@ -1120,7 +1108,6 @@ pub(crate) fn studio_linted(
         purlis_core::skills::Reading::Whole,
         root,
         built_in,
-        on,
         workspace,
         persona,
         env,
@@ -1135,7 +1122,6 @@ fn studio_read(
     reading: purlis_core::skills::Reading,
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
-    on: bool,
     workspace: Option<&str>,
     persona: Option<&str>,
     env: &purlis_core::harness_plugin::Env<'_>,
@@ -1144,26 +1130,6 @@ fn studio_read(
     let whole = reading == purlis_core::skills::Reading::Whole;
     let workspace = workspace.map(str::to_owned);
     let persona = persona.map(str::to_owned);
-    if !on {
-        return Studio {
-            on,
-            workspace,
-            persona,
-            workspaces: Vec::new(),
-            personas: Vec::new(),
-            levels: Vec::new(),
-            skills: Vec::new(),
-            harnesses: Vec::new(),
-            clashes: Vec::new(),
-            first: StudioFirst::default(),
-            pins_refused: None,
-            not_supported: Vec::new(),
-            router: None,
-            places: Vec::new(),
-            levels_to_confirm: None,
-            needs: Vec::new(),
-        };
-    }
     let off = workspace
         .as_deref()
         .map(|ws| purlis_core::skills::turned_off(root, ws))
@@ -1231,7 +1197,6 @@ fn studio_read(
         None => Vec::new(),
     };
     let mut studio = Studio {
-        on,
         workspace,
         persona,
         workspaces,
@@ -1581,8 +1546,7 @@ pub(crate) fn stats(root: &std::path::Path, skill: &str) -> SkillStats {
 }
 
 /// The totals of skill `skill`'s runs in the project, by what they ran on, by persona and by
-/// workspace: none while the flag is off. On a blocking thread, as it reads the project's skill
-/// log.
+/// workspace. On a blocking thread, as it reads the project's skill log.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_stats(
@@ -1592,9 +1556,6 @@ pub(crate) async fn skill_stats(
 ) -> Result<SkillStats, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the skill's runs", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Ok(SkillStats::default());
-        }
         Ok(stats(held.root(), &skill))
     })
     .await
@@ -1603,8 +1564,8 @@ pub(crate) async fn skill_stats(
 /// How many runs a skill's Runs panel lists at most.
 const RUNS_SHOWN: usize = 200;
 
-/// The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
-/// flag is off. On a blocking thread, as it reads the project's skill log.
+/// The runs of skill `skill` in the project, newest first, for its Runs panel. On a
+/// blocking thread, as it reads the project's skill log.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_runs(
@@ -1614,9 +1575,6 @@ pub(crate) async fn skill_runs(
 ) -> Result<Vec<StudioRun>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the skill's runs", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Ok(Vec::new());
-        }
         Ok(runs(held.root(), &skill, RUNS_SHOWN))
     })
     .await
@@ -1734,7 +1692,7 @@ pub(crate) fn panels(
 
 /// **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
 /// run of the skill, newest first, then each extension's. A skill's grades are no panel: its
-/// Grades tab reads them whole ([`crate::skillgrade::skill_grades`]). None while the flag is off.
+/// Grades tab reads them whole ([`crate::skillgrade::skill_grades`]).
 /// On a blocking thread, as it reads the project's skill log and asks each extension.
 #[tauri::command]
 #[specta::specta]
@@ -1747,46 +1705,11 @@ pub(crate) async fn skill_panels(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reading the skill's panels", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Ok(Vec::new());
-        }
         Ok(purlis_core::skills::studio::with_studio(
             &executor,
             held.root(),
             |studio| panels(held.root(), &skill, studio),
         ))
-    })
-    .await
-}
-
-/// Whether the Skill studio is on in this window: this machine's flag, or the variable over it.
-#[tauri::command]
-#[specta::specta]
-pub(crate) async fn skill_studio_on() -> Result<bool, String> {
-    crate::off_the_window("reading this machine's flags", || {
-        Ok(purlis_core::skills::studio_on_here())
-    })
-    .await
-}
-
-/// **Turns the Skill studio on or off on this machine** (Settings › You › Previews), then says
-/// whether it is on, which `PURLIS_SKILL_STUDIO` still decides where it is set.
-#[tauri::command]
-#[specta::specta]
-pub(crate) async fn set_skill_studio_on(
-    planes: tauri::State<'_, crate::planes::Planes>,
-    on: bool,
-) -> Result<bool, String> {
-    let held = planes.every_held();
-    crate::off_the_window("turning the Skill studio preview on or off", move || {
-        let root = purlis_core::machine::config_root()
-            .ok_or_else(|| "There is no config home on this machine to keep it in.".to_owned())?;
-        purlis_core::skills::set_studio_on(&root, on)?;
-        // The old plugin keys' Ask is the Inbox's only while the studio is off (#3689).
-        for one in &held {
-            one.chats().asks_may_have_moved();
-        }
-        Ok(purlis_core::skills::studio_on_here())
     })
     .await
 }
@@ -1808,24 +1731,18 @@ pub(crate) async fn skill_studio(
     crate::off_the_window("reading the project's skills", move || {
         let built_in =
             crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
-        let on = purlis_core::skills::studio_on_here();
         let read = |more: &[&dyn purlis_core::skills::SkillLint]| {
             studio_linted(
                 held.root(),
                 built_in.as_deref(),
-                on,
                 workspace.as_deref(),
                 persona.as_deref(),
                 &purlis_core::harness_plugin::Env::of(&[]),
                 more,
             )
         };
-        // The extensions' lints only while the studio is on: off, nothing is read at all.
-        let mut studio = if on {
-            with_list_lints(&executor, held.root(), read)
-        } else {
-            read(&[])
-        };
+        // With the extensions' lints.
+        let mut studio = with_list_lints(&executor, held.root(), read);
         with_the_projects_needs(
             &mut studio,
             held.root(),
@@ -1863,7 +1780,6 @@ pub(crate) async fn skill_persona_skills(
         Ok(persona_skills(
             held.root(),
             built_in.as_deref(),
-            purlis_core::skills::studio_on_here(),
             workspace.as_deref(),
         ))
     })
@@ -1882,9 +1798,6 @@ pub(crate) async fn skill_share(
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("sharing the skill", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Err("The Skill studio is not turned on on this machine.".to_owned());
-        }
         crate::skillchange::share(held.root(), &(&whose).into(), &name)
     })
     .await
@@ -1909,7 +1822,7 @@ impl From<PersonaSkillChange> for purlis_core::skills::persona::Change {
 
 /// **Adds a skill to a persona's skills, or takes one out** (SK-5, #2768): Add and Remove in the
 /// Skill studio filtered to the persona. `written` is the skill as the studio's row writes it.
-/// Answers whether the persona's definition changed. Refused while the studio's flag is off.
+/// Answers whether the persona's definition changed.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn persona_skill(
@@ -1921,9 +1834,6 @@ pub(crate) async fn persona_skill(
 ) -> Result<bool, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("changing the persona's skills", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Err("The Skill studio is off on this machine.".to_owned());
-        }
         let changed =
             purlis_core::skills::persona::change(held.root(), &persona, &written, change.into())?;
         if changed {
@@ -1949,7 +1859,7 @@ pub(crate) async fn chat_skills_missing(
 
 /// **The repo skills of the branch folder chat `session` works in** (#4326): what the Skills view
 /// lists for it, whose rows from the studio say only what the clone's own branch holds. None for
-/// any other chat, and none while the Skill studio is off. Only the view asks, never a chat's open;
+/// any other chat. Only the view asks, never a chat's open;
 /// on a blocking thread, as it reads the folder.
 #[tauri::command]
 #[specta::specta]
@@ -1962,9 +1872,6 @@ pub(crate) async fn chat_branch_folder_skills(
     crate::off_the_window(
         "reading the skills of the chat's branch folder",
         move || {
-            if !purlis_core::skills::studio_on_here() {
-                return Ok(Vec::new());
-            }
             let Some(chat) = held.chats().skills_of(session) else {
                 return Ok(Vec::new());
             };
@@ -2029,9 +1936,6 @@ pub(crate) async fn skill_studio_switch(
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("turning it on or off", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Err("The Skill studio is not turned on on this machine.".to_owned());
-        }
         let built_in = purlis_core::skills::built_in_names(
             crate::bundled_plugin_here()
                 .and_then(|plugin| purlis_core::skills::in_bundle(&plugin))

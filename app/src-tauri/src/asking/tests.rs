@@ -2960,35 +2960,6 @@ fn a_secret_ask_from_a_runner_that_cannot_receive_says_the_runner_wont_get_it() 
     );
 }
 
-/// #3467: the old harness plugin keys are one Ask about no chat, with Remove only where the
-/// project's own files hold them, and no Allow.
-#[test]
-fn the_old_harness_plugin_keys_are_one_ask_of_no_chat() {
-    let old = crate::oldplugins::OldHarnessPlugins {
-        said: "purlis no longer turns other harnesses' plugins on or off".to_owned(),
-        files: vec!["charter.toml".to_owned()],
-        removable: true,
-    };
-    let shown = old_harness_plugins(&old);
-    assert_eq!(shown.session, 0);
-    assert_eq!(shown.source, AskSource::OldHarnessPlugins);
-    assert_eq!(shown.answer, AnswerPath::OldHarnessPlugins);
-    let ids: Vec<&str> = shown.options.iter().map(|one| one.id.as_str()).collect();
-    assert_eq!(ids, [REMOVE_OLD_PLUGINS, DISMISS]);
-    assert!(shown.options.iter().all(|one| !one.allows));
-
-    let named_only = old_harness_plugins(&crate::oldplugins::OldHarnessPlugins {
-        removable: false,
-        ..old
-    });
-    let ids: Vec<&str> = named_only
-        .options
-        .iter()
-        .map(|one| one.id.as_str())
-        .collect();
-    assert_eq!(ids, [DISMISS]);
-}
-
 /// #5240, spec #5235: the line Remember would write is shown on the ask: the chat's words to edit,
 /// a `vault:` line where the persona names none, and nothing where nothing would be written or
 /// policy turns it off.

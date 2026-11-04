@@ -334,8 +334,8 @@ pub struct Kit<'a> {
     /// [`crate::personaverbs::chatstart`]). `None` for a chat on no persona.
     pub persona: Option<As<'a>>,
     /// The plane whose skills the chat gets beside the built-in ones, and where it works in it
-    /// (ADR 0099): `None` while the `skill-studio` flag is off, and then a chat gets the built-in
-    /// skills alone, as it always did.
+    /// (ADR 0099): `None` where they do not reach it ([`crate::skills::reach_chats`]), and then a
+    /// chat gets the built-in skills alone.
     pub skills: Option<crate::skills::PlaneSkills<'a>>,
     /// **A grade's chat** (SK-16, #2779; the operator's ruling of 2026-10-26): armed with
     /// purlis's MCP server alone, and that server's read tools alone, where the harness can be
