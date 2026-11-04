@@ -350,6 +350,49 @@ fn allow_for_this_chat_holds_that_key_on_that_site_for_that_chat_alone() {
     );
 }
 
+/// #5230, SF-15: a form may be sent to the other sites this key is approved for in this chat, never
+/// the site it was filled on again, another chat's, or a site that isn't `https`.
+#[test]
+fn a_fill_is_approved_for_the_other_sites_its_key_is_allowed_on_in_this_chat() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let fills = Fills::default();
+    let grant = |chat: u32, key: &str, origin: &str| {
+        fills
+            .lock()
+            .granted
+            .push((chat, "qa".into(), key.into(), origin.into()));
+    };
+    grant(7, "dash-api-key", "https://dash.example.test");
+    grant(7, "dash-api-key", "https://sso.example.test");
+    grant(7, "dash-api-key", "http://localhost:3000");
+    grant(7, "another-key", "https://other.example.test");
+    grant(8, "dash-api-key", "https://elsewhere.example.test");
+    let asked = FillAsked {
+        browser: "b1".into(),
+        target: "e12".into(),
+        vault: "qa".into(),
+        key: "dash-api-key".into(),
+        field: FieldSaid {
+            origin: Some("https://dash.example.test".into()),
+            label: "API key".into(),
+            kind: FieldKind::OneLine,
+        },
+        page: None,
+        pool: None,
+    };
+
+    let also = approved_elsewhere(
+        dir.path(),
+        &fills,
+        7,
+        None,
+        &asked,
+        "https://dash.example.test",
+    );
+
+    assert_eq!(also, ["https://sso.example.test"]);
+}
+
 #[test]
 fn allow_for_this_chat_fills_the_next_ask_without_a_notice_and_never_a_cards() {
     let dir = project("[sandbox]\nmode = \"on\"\n");

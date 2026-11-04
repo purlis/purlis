@@ -1,0 +1,44 @@
+<!doctype html>
+<title>Sign in</title>
+<h1>Sign in</h1>
+<!-- #5230: a form on the fill's site, and everything else a page may try while it holds a value. -->
+<form method="post" action="/redirect?to=http://other.test/landed.html?code=1">
+  <label>API key <input type="password" name="key"></label>
+  <button>Sign in</button>
+</form>
+<form method="post" action="/redirect?to=http://third.test/landed.html">
+  <button>Sign in elsewhere</button>
+</form>
+<form method="post" action="/redirect?to=http://other.test/landed.html?code=fixture-key-5230">
+  <button>Sign in with the value</button>
+</form>
+<form method="post" action="/redirect?to=http://other.test/landed.html%23code=fixture%252Dkey%252D5230">
+  <button>Sign in with the value encoded</button>
+</form>
+<form method="post" action="http://other.test/posted.html">
+  <button>Post elsewhere</button>
+</form>
+<a href="http://other.test/landed.html">Leave by a link</a>
+<a href="/redirect?to=http://other.test/landed.html">Leave by a redirected link</a>
+<a href="/hangs-up">Go to a page that fails</a>
+<button id="goes" type="button">Leave by a script</button>
+<button id="asks" type="button">Send from a script</button>
+<script>
+  document.getElementById('goes').addEventListener('click', () => {
+    location.href = 'http://other.test/landed.html';
+  });
+  // Everything a script can send to the destination, from before the form is sent until the page
+  // is gone, and as it goes.
+  const send = () => {
+    fetch('http://other.test/from-script', { mode: 'no-cors' }).catch(() => {});
+    new Image().src = 'http://other.test/from-an-image';
+  };
+  document.getElementById('asks').addEventListener('click', () => {
+    // A moment later, so the click that set it going answers first.
+    setTimeout(() => setInterval(send, 25), 1500);
+    addEventListener('pagehide', () => {
+      navigator.sendBeacon('http://other.test/from-a-beacon', 'x');
+      send();
+    });
+  });
+</script>

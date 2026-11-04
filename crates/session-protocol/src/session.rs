@@ -468,9 +468,15 @@ use crate::view::{Limits, Views};
 /// about (its frame's origin, label and kind), and `fill_secret`, the window's alone, fills it,
 /// the engine checking the field's own frame against the approved origin at that moment. A host
 /// before 1.72 refuses both, so nothing is filled.
+///
+/// 1.74 lets a page holding a filled secret leave for another site (#5230, the person's rulings
+/// SF-14 and SF-15): `fill_secret` may carry `also`, the other origins the key is approved for,
+/// where a form on the page may be sent, and a browser's reach may carry `answered`, the sites the
+/// person allowed when its chat asked. A host before 1.74 ignores both, and holds the browser to
+/// the fill's site as before.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 72,
+    minor: 74,
 };
 
 /// The version that first fills a secret into a field (#5115): no fill is sent to a host before.

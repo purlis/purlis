@@ -1360,6 +1360,32 @@ fn the_sites_a_browser_asked_about_wait_as_one_ask_and_an_allow_for_the_chat_rea
 
 /// #2242: a chat started without the sandbox gets a browser like a sandboxed one, so a site
 /// new to the project its browser held back waits on the person as any chat's does.
+/// #5230, SF-14: what the person allowed when asked reaches the browser, told apart from what its
+/// reach lists; keeping a site blocked is no such answer.
+#[test]
+fn a_site_allowed_when_asked_reaches_the_next_act_and_one_kept_blocked_does_not() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, false));
+    *hosted.asks.lock().unwrap() = vec!["app.example.org:443".into(), "bad.example.org:443".into()];
+    answered(&browsers, &hosted, &ask(3, click()));
+    hosted.asks.lock().unwrap().clear();
+    let (app, bad) = (site("app.example.org:443"), site("bad.example.org:443"));
+
+    browsers
+        .sites_answered(3, std::slice::from_ref(&bad), false)
+        .unwrap();
+    browsers
+        .sites_answered(3, std::slice::from_ref(&app), false)
+        .unwrap();
+    browsers.allowed_when_asked(3, std::slice::from_ref(&app));
+
+    answered(&browsers, &hosted, &ask(3, click()));
+    let reached = hosted.reached.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(reached.answered, ["app.example.org:443"], "{reached:?}");
+}
+
 #[test]
 fn a_chat_without_the_sandbox_is_asked_about_a_new_site_as_any_chat_is() {
     let browsers = ChatBrowsers::default();

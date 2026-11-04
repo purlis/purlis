@@ -777,6 +777,23 @@ fn a_fill_hold_lets_its_site_alone_until_it_is_released() {
 }
 
 /// #5117: a fill hold narrows a login's hold and never widens it.
+/// #5230, SF-15: the sites the key is also approved for are carried, and no other.
+#[test]
+fn a_fill_hold_also_lets_the_sites_its_key_is_approved_for() {
+    let bound = Bound::default();
+    let number = bound
+        .hold_for_fill_also(
+            &Site::of("dash.example.test", 443),
+            &[Site::of("sso.example.test", 443)],
+        )
+        .unwrap();
+    assert!(bound.lets("dash.example.test", 443));
+    assert!(bound.lets("sso.example.test", 443));
+    assert!(!bound.lets("elsewhere.example.test", 443));
+    assert!(bound.fill_released(number));
+    assert!(bound.lets("elsewhere.example.test", 443));
+}
+
 #[test]
 fn a_fill_hold_in_a_browser_holding_a_login_reaches_no_more_than_both() {
     let bound = Bound::default();

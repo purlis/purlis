@@ -85,6 +85,7 @@ fn allowed_as(
         Ok(Allowed {
             value: Secret::new(VALUE.into()),
             multi_line,
+            also: vec!["https://other.example.test".into()],
         })
     }
 }

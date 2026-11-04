@@ -38,10 +38,12 @@
 //! - **A browser holding a secret purlis filled reaches that site alone while the page holding
 //!   it lives** (#5117; the person's ruling SF-3 and decision SF-9 on #5096): from just before the
 //!   value goes in ([`ReachProxy::hold_for_fill`]) every connection to any other site is ended
-//!   and a new one refused, until the browser tells that the page loaded another document in its
-//!   main frame or was closed ([`ReachProxy::fill_released`]). It narrows a login's hold, its
+//!   and a new one refused, until the browser tells that the page loaded another document, or an
+//!   error page, in its main frame or was closed ([`ReachProxy::fill_released`]). It narrows a login's hold, its
 //!   form's site among it, never widens it, and it holds the browser to one site at a time: a
-//!   fill on another site while one holds is refused.
+//!   fill on another site while one holds is refused. It carries a site the key is also approved
+//!   for, where a form may be sent (#5230, SF-15). The page that leaves for another site by a
+//!   redirect goes only once the hold is over (`purlis_browser_engine`'s `drive::Browser`).
 //! - **It fails closed.** The engine resolves no name and sends every request to this proxy
 //!   (`purlis_browser_engine::launch`). When the proxy is dropped it stops listening and ends
 //!   every connection it carries, tunnels included, so every load fails; where this machine's
@@ -407,6 +409,8 @@ struct Binding {
 #[derive(Debug, Clone)]
 struct FillHeld {
     site: Site,
+    /// The other sites its key is approved for (#5230, SF-15): a form may be sent there.
+    also: Vec<Site>,
     number: u64,
 }
 
@@ -448,6 +452,12 @@ impl Bound {
     /// (#5117): answered is the hold's number, for [`Self::fill_released`]. Refused where a page
     /// holding a secret filled on another site lives: the browser is held to one site at a time.
     pub fn hold_for_fill(&self, site: &Site) -> Result<u64, String> {
+        self.hold_for_fill_also(site, &[])
+    }
+
+    /// [`Self::hold_for_fill`], reaching `also` too: the other sites the key is approved for
+    /// (#5230, SF-15).
+    pub fn hold_for_fill_also(&self, site: &Site, also: &[Site]) -> Result<u64, String> {
         let mut bound = self.lock();
         if let Some(other) = bound.fills.iter().find(|held| held.site != *site) {
             return Err(format!(
@@ -460,6 +470,7 @@ impl Bound {
         let number = bound.fills_made;
         bound.fills.push(FillHeld {
             site: site.clone(),
+            also: also.to_vec(),
             number,
         });
         Ok(number)
@@ -484,14 +495,20 @@ impl Bound {
     pub fn refuses(&self, host: &str, port: u16) -> Option<String> {
         let site = Site::of(host, port);
         let bound = self.lock();
-        if let Some(held) = bound.fills.iter().find(|held| held.site != site) {
+        if let Some(held) = bound
+            .fills
+            .iter()
+            .find(|held| held.site != site && !held.also.contains(&site))
+        {
             return Some(fill_held_said(&site, &held.site));
         }
-        let login_lets = bound
-            .login
-            .as_ref()
-            .is_none_or(|holding| holding.page == site || holding.form.as_ref() == Some(&site));
-        (!login_lets).then(|| bound_said(host, port))
+        login_refuses(&bound, host, port)
+    }
+
+    /// **Why a login held in this browser keeps it off `host` on `port`**, whatever a fill holds
+    /// (#5230): a filled page leaves for no site a login keeps the browser off.
+    pub fn login_refuses(&self, host: &str, port: u16) -> Option<String> {
+        login_refuses(&self.lock(), host, port)
     }
 
     /// **Binds the browser to `at`**, one login's sites, or why it may not be: one already bound
@@ -847,7 +864,13 @@ impl ReachProxy {
     /// site: from this moment it carries `site` alone, until [`Self::fill_released`]. Answered is
     /// the hold's number.
     pub fn hold_for_fill(&self, site: &Site) -> Result<u64, String> {
-        let number = self.bound.hold_for_fill(site)?;
+        self.hold_for_fill_also(site, &[])
+    }
+
+    /// [`Self::hold_for_fill`], carrying `also` too: the other sites the key is approved for
+    /// (#5230, SF-15). What it carries there now is ended all the same.
+    pub fn hold_for_fill_also(&self, site: &Site, also: &[Site]) -> Result<u64, String> {
+        let number = self.bound.hold_for_fill_also(site, also)?;
         self.live.end_open_but(site);
         Ok(number)
     }
@@ -1096,6 +1119,16 @@ fn bound_said(host: &str, port: u16) -> String {
         "purlis's reach proxy does not carry this browser to {host}:{port}: the browser holds a \
          login, and reaches only the site it was logged in to"
     )
+}
+
+/// Why the login `bound` holds keeps the browser off `host` on `port`, if it does.
+fn login_refuses(bound: &Binding, host: &str, port: u16) -> Option<String> {
+    let site = Site::of(host, port);
+    let login_lets = bound
+        .login
+        .as_ref()
+        .is_none_or(|holding| holding.page == site || holding.form.as_ref() == Some(&site));
+    (!login_lets).then(|| bound_said(host, port))
 }
 
 /// Why a site was refused to a browser held while a page holding a secret purlis filled lives

@@ -212,6 +212,44 @@ pub trait FillHold: Send + Sync {
     /// closed. Told at most once, after [`Self::hold`] answered, and on the thread that reads the
     /// engine's events, so it must not wait on the browser.
     fn released(&self);
+
+    /// **[`Self::released`], telling `then` once the hold is over** (#5230): the page is leaving
+    /// for another site, and goes there only once the browser may. Told in place of it.
+    fn released_then(&self, then: Box<dyn FnOnce() + Send>) {
+        self.released();
+        then();
+    }
+
+    /// **Whether a redirect from the fill's site's own server, after a form sent there, may take
+    /// the page to `address`** (#5230, SF-14), `been_on` saying the browser was on that site
+    /// before the fill. Refused unless its caller says otherwise. Told on a thread that may wait
+    /// on no browser.
+    fn may_leave_for(&self, address: &str, been_on: bool) -> Leaving {
+        let _ = (address, been_on);
+        Leaving::No {
+            why: "this browser's page holds a secret purlis filled, and it leaves for no other \
+                  site"
+                .to_owned(),
+        }
+    }
+
+    /// **Whether the key filled is approved for `address`'s site too** (#5230, SF-15), so a form
+    /// may be sent there. Not unless its caller says so.
+    fn approved_for(&self, address: &str) -> bool {
+        let _ = address;
+        false
+    }
+}
+
+/// **Whether a filled page may leave for another site** (#5230, SF-14).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Leaving {
+    /// It goes on by itself.
+    Go,
+    /// It waits on the person about `site` (`host:port`), and the act's answer says so.
+    Ask { site: String },
+    /// It stays, and `why` is said.
+    No { why: String },
 }
 
 /// A login that only binds, told nothing of its page coming back: what a caller with one site
