@@ -1,0 +1,324 @@
+/* PROTOTYPE, NOT FOR MERGE (spec #5191). Tokens only; no colour written here. */
+
+.proto-pane {
+  display: flex;
+  flex-direction: column;
+  block-size: 240px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--terminal-background);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.proto-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  min-block-size: var(--size-chrome);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-5) var(--space-3);
+}
+
+.proto-head-chips {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.proto-name {
+  min-inline-size: 3ch;
+  overflow: hidden;
+  font-weight: var(--font-weight-strong);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.proto-crumbs {
+  display: inline-flex;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.proto-crumbs > b {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-strong);
+}
+
+.proto-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.proto-dot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--state-running);
+}
+
+.proto-dot[data-state="ended"] {
+  background: var(--text-muted);
+}
+
+.proto-persona {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  --chat-persona-size: var(--space-6);
+}
+
+.proto-persona > .persona-mark {
+  inline-size: var(--space-6);
+  block-size: var(--space-6);
+}
+
+.proto-persona > .proto-dot {
+  position: absolute;
+  inset-block-end: -1px;
+  inset-inline-end: -1px;
+  outline: 2px solid var(--terminal-background);
+}
+
+.proto-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0;
+}
+
+/* The bell: an icon button like its neighbours (#5189), its count a small pill on its corner. */
+.proto-bell {
+  position: relative;
+  display: inline-flex;
+}
+
+.proto-bell > [data-scope="count"] {
+  position: absolute;
+  inset-block-start: -2px;
+  inset-inline-end: -2px;
+  pointer-events: none;
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  padding: 1px 3px;
+}
+
+.proto-band {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 var(--space-3) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.proto-band > p {
+  flex: 1;
+  margin: 0;
+}
+
+.proto-terminal {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: var(--space-2) var(--space-5);
+  color: var(--terminal-foreground, var(--text-secondary));
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  white-space: pre;
+}
+
+/* ---- The foot -------------------------------------------------------------------------- */
+
+/* One compact line, the compact tab strip's height (a control's height and 3/14 rem). */
+.proto-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  block-size: calc(var(--size-control) + calc(3rem / 14));
+  padding-inline: var(--space-5) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.proto-foot[data-height="chrome"] {
+  block-size: var(--size-chrome);
+}
+
+.proto-foot-start {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+.proto-foot-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  margin-inline-start: auto;
+}
+
+.proto-sep {
+  color: var(--text-muted);
+}
+
+.proto-foot [data-scope="button"] {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.proto-foot [data-scope="button"]:is([data-hovered], [data-focus-visible]) {
+  color: var(--text-primary);
+}
+
+.proto-foot .proto-warn,
+.proto-foot .proto-warn[data-scope="button"] {
+  color: var(--state-waiting);
+}
+
+.proto-sandbox {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.proto-sandbox > svg {
+  inline-size: 14px;
+  block-size: 14px;
+}
+
+/* ctx: its number with its fill as a thin bar under it (variant A, C) or beside it (B). */
+.proto-ctx {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  column-gap: var(--space-2);
+  align-items: center;
+}
+
+.proto-ctx > .proto-bar {
+  grid-column: 1 / -1;
+  block-size: 2px;
+  border-radius: 1px;
+  background: var(--border-subtle);
+  overflow: hidden;
+}
+
+.proto-foot[data-variant="B"] .proto-ctx {
+  grid-template-columns: auto auto auto;
+}
+
+.proto-foot[data-variant="B"] .proto-ctx > .proto-bar {
+  grid-column: auto;
+  inline-size: 32px;
+  block-size: 4px;
+  border-radius: 2px;
+}
+
+.proto-bar > span {
+  display: block;
+  block-size: 100%;
+  background: var(--state-success);
+}
+
+.proto-bar[data-tone="warn"] > span {
+  background: var(--state-waiting);
+}
+
+.proto-label {
+  color: var(--text-muted);
+}
+
+.proto-value {
+  color: var(--text-secondary);
+}
+
+/* Variant C: a raised strip with a hairline above it. */
+.proto-foot[data-variant="C"] {
+  border-block-start: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+/* Variant B: no separators, wider gaps. */
+.proto-foot[data-variant="B"] .proto-foot-start {
+  gap: var(--space-5);
+}
+
+/* An ended chat: the foot kept, its gauge frozen and greyed. */
+.proto-foot[data-ended] .proto-ctx .proto-value,
+.proto-foot[data-ended] .proto-cache .proto-value {
+  color: var(--text-muted);
+}
+
+.proto-foot[data-ended] .proto-bar > span {
+  background: var(--text-muted);
+}
+
+/* ---- Folded pane: a rail, no foot ------------------------------------------------------- */
+
+.proto-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  inline-size: 40px;
+  block-size: 240px;
+  padding-block: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--terminal-background);
+}
+
+.proto-rail > .proto-rail-name {
+  writing-mode: vertical-rl;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+/* ---- The prototype's own frame ---------------------------------------------------------- */
+
+.proto-stack {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.proto-caption {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.proto-model {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
+}
+
+.proto-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-5);
+}
