@@ -86,12 +86,25 @@ import {
 import { Button, IconButton } from "./ui/button/Button";
 import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
 import { Bell, Plus, Puzzle, Reply, ScrollText, Square, SquareTerminal, Undo2 } from "lucide-react";
-import { droppedAt, stateButtonOf, type ChatHead, type HeadPart } from "./paneHead";
+import {
+  droppedAt,
+  paneLinesOf,
+  stateButtonOf,
+  type ChatHead,
+  type HeadPart,
+  type PaneKind,
+} from "./paneHead";
 import { PaneTerminalAt, type PaneTerminal } from "./paneTerminal";
 import { stemOf } from "./menuModel";
 import { ChatShownState } from "./ChatRows";
 import { ChatPersonaState } from "./ChatPersonaState";
 import { SandboxMark } from "./SandboxMark";
+import {
+  PaneFoot,
+  PaneFootEnd,
+  PaneFootSeparator,
+  PaneFootStart,
+} from "./ui/pane-foot/PaneFoot";
 import { WrappingUp } from "./NeedsYou";
 import { NEW_CHAT } from "./tabFace";
 import { bellCount, bellSays, HOLDS_NOTHING, type BandHolds } from "./paneNotices";
@@ -253,6 +266,21 @@ export function PaneFrame({
   const width = usePaneWidth(frame);
   const drops = droppedAt(width);
   const roomy = width === undefined || width > NARROW_REM * remPx();
+  // **Its two lines** (#5202, `paneHead.paneLinesOf`): the head's chips, and the foot's parts,
+  // or no foot for a pane whose program has no harness or gauge to say.
+  const kind: PaneKind = crumbs
+    ? "task"
+    : oneJob
+      ? "oneJob"
+      : head?.chat.shell === true
+        ? "shell"
+        : "chat";
+  const lines = paneLinesOf(kind, width, {
+    from: Boolean(from),
+    skills: roomy,
+    workItem: Boolean(workItem),
+  });
+  const line = new Set(lines.head);
   /** What the band holds, for the bell in the pane's header (#4754), and the bell itself, which
    *  the band's Dismiss all hands the keyboard to once it has cleared the band. */
   const [holds, setHolding] = useState<BandHolds>(HOLDS_NOTHING);
@@ -353,7 +381,7 @@ export function PaneFrame({
               {/* **Its sandbox** (#4760): moved from the tab, which no longer is the chat. It says
               how the chat runs, as "harness · workspace" does, and a narrow pane drops it with
               that, so a task's path and the ways to end it keep their room. */}
-              {head && !drops.has("where") && (
+              {head && line.has("sandbox") && (
                 <SandboxMark
                   level={head.sandbox?.level}
                   why={head.sandbox?.why}
@@ -362,7 +390,7 @@ export function PaneFrame({
               )}
               {/* **Its state**, as its row says it: the mark and its word, the word going
               first in a narrow pane and then the mark (`paneHead.ts`). */}
-              {head && !crumbs && !drops.has("mark") && (
+              {head && line.has("mark") && (
                 <span className="pane-state-mark">
                   <ChatShownState
                     session={session}
@@ -370,7 +398,7 @@ export function PaneFrame({
                     report={head.chat.report}
                     outcome={head.chat.outcome}
                     harness={head.chat.harness}
-                    markOnly={drops.has("markWord")}
+                    markOnly={!line.has("markWord")}
                   />
                 </span>
               )}
@@ -381,38 +409,14 @@ export function PaneFrame({
                   <WrappingUp held />
                 </span>
               )}
-              {!drops.has("where") && (
-                <>
-                  {/* **harness · workspace** (#4760): the harness opens its card (HP-19). */}
-                  {head && (head.chat.workspace !== "" || harnessWord(head, harness) !== "") && (
-                    <span className="pane-where">
-                      {harness ? (
-                        <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />
-                      ) : (
-                        head.chat.harness
-                      )}
-                      {harnessWord(head, harness) !== "" && head.chat.workspace !== "" && " · "}
-                      {head.elsewhere ? (
-                        <ElsewhereBadge {...head.elsewhere} />
-                      ) : (
-                        head.chat.workspace
-                      )}
-                    </span>
-                  )}
-                  {!head && harness && (
-                    <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />
-                  )}
-                  {/* The chat's skills (#2775, S8): not beside a task's path, which is the
-                  fullest line a pane has, nor in a narrow pane. */}
-                  {!crumbs && roomy && <SkillsChip plane={plane} session={session} />}
-                  {/* What the Skill studio started it for, which opens the skill (#5185). */}
-                  {!crumbs && <StudioChatChip plane={plane} session={session} />}
-                  {from && <span className="pane-from">{from}</span>}
-                  {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}
-                  {/* **The gauge last** (#3142, rule 15): it is drawn once the chat's first
-                  usage arrives, and last on the line its arrival moves nothing already there. */}
-                  <ChatGauge usage={usage} />
-                </>
+              {/* The chat's skills (#2775, S8): not beside a task's path, which is the fullest
+              line a pane has, nor in a narrow pane. */}
+              {line.has("skills") && <SkillsChip plane={plane} session={session} />}
+              {/* What the Skill studio started it for, which opens the skill (#5185). */}
+              {!crumbs && !drops.has("where") && <StudioChatChip plane={plane} session={session} />}
+              {line.has("from") && <span className="pane-from">{from}</span>}
+              {line.has("workItem") && workItem && (
+                <span className="pane-work-item">{workItemSaid(workItem)}</span>
               )}
             </div>
           </PaneHead>
@@ -432,6 +436,37 @@ export function PaneFrame({
       <PaneTerminalAt.Provider value={terminalAt}>
         <div className="pane-body">{children}</div>
       </PaneTerminalAt.Provider>
+      {/* **The pane foot** (#5202, spec #5191, look A): under the terminal, where the chat runs
+          and how full it is. Drawn whether or not the gauge is known yet, so the terminal keeps
+          its rows when the first usage arrives; after it in the tab order, as it is drawn. */}
+      {lines.foot !== null && (
+        <PaneFoot className="pane-foot">
+          <PaneFootStart>
+            {/* **harness · workspace** (#4760, #5202): the harness opens its card (HP-19). */}
+            {head && (head.chat.workspace !== "" || harnessWord(head, harness) !== "") && (
+              <span className="pane-where">
+                {harness ? (
+                  <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />
+                ) : (
+                  head.chat.harness
+                )}
+                {harnessWord(head, harness) !== "" && head.chat.workspace !== "" && (
+                  <PaneFootSeparator />
+                )}
+                {head.elsewhere ? <ElsewhereBadge {...head.elsewhere} /> : head.chat.workspace}
+              </span>
+            )}
+            {!head && harness && (
+              <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />
+            )}
+          </PaneFootStart>
+          <PaneFootEnd>
+            {/* **The gauge at the end** (#3142, rule 15; #5202): drawn once the chat's first
+                usage arrives, in a line that is there before it, so its arrival moves nothing. */}
+            <ChatGauge usage={usage} />
+          </PaneFootEnd>
+        </PaneFoot>
+      )}
     </div>
   );
 }

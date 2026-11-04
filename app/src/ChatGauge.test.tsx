@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { AFTER_A_MOVE_MS, ChatGauge, Trend, useChatUsage, WHILE_RUNNING_MS } from "./ChatGauge";
+import { AFTER_A_MOVE_MS, ChatGauge, useChatUsage, WHILE_RUNNING_MS } from "./ChatGauge";
 import type { ChatUsage } from "./bindings";
 import { forgetShown, windowShown } from "./test-shown";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
@@ -36,15 +36,33 @@ const USAGE: ChatUsage = {
   cold: null,
 };
 
-describe("the gauge", () => {
-  it("draws ctx, cache and the rebuilds, each in its tone", () => {
+describe("the gauge, on the pane foot (#5202)", () => {
+  it("draws ctx, cache and the rebuilds as labelled numbers", () => {
     render(<ChatGauge usage={USAGE} />);
 
     const gauge = screen.getByTestId("chat-gauge");
     expect(gauge.textContent?.replace(/\s+/g, " ")).toBe("ctx 83%cache 98%↻2 696k");
-    expect(screen.getByText("83%")).toHaveClass("gauge-bad");
-    expect(screen.getByText("98%")).toHaveClass("gauge-ok");
     expect(tipOf(gauge)).toContain("context window 83% full");
+  });
+
+  it("carries ctx's fill as a thin bar under its number, in the core's tone, and no other bar", () => {
+    render(<ChatGauge usage={USAGE} />);
+
+    const fills = [...screen.getByTestId("chat-gauge").querySelectorAll('[data-part="fill"]')];
+    expect(fills).toHaveLength(1);
+    expect(fills[0]).toHaveAttribute("data-tone", "bad");
+    expect((fills[0] as HTMLElement).style.inlineSize).toBe("83%");
+    // The bar is a mark: the number says the value.
+    expect(fills[0].closest('[data-part="track"]')).toHaveAttribute("aria-hidden", "true");
+    expect(fills[0].closest('[data-part="gauge"]')?.textContent).toContain("ctx 83%");
+  });
+
+  it("draws no row of bars, however many turns are recorded", () => {
+    const turn = { cache: { value: 90, tone: "ok" as const }, context: null, written: null };
+    render(<ChatGauge usage={{ ...USAGE, turns: [turn, turn, turn] }} />);
+
+    expect(screen.queryByTestId("gauge-trend")).toBeNull();
+    expect(screen.getByTestId("chat-gauge").querySelector("svg")).toBeNull();
   });
 
   it("draws nothing at all when charter knows nothing, never a zero", () => {
@@ -71,47 +89,7 @@ describe("the gauge", () => {
     expect(gauge.textContent).not.toContain("ctx");
     expect(gauge.textContent).toContain("cache 40%");
     expect(gauge.textContent).not.toContain("↻");
-  });
-});
-
-describe("the trend", () => {
-  const turn = (value: number, tone: "ok" | "warn" | "bad") => ({
-    cache: { value, tone },
-    context: { value: 20, tone: "ok" as const },
-    written: "1k",
-  });
-
-  it("draws a bar per turn, as tall as its cache share and in its tone", () => {
-    render(<Trend turns={[turn(100, "ok"), turn(10, "bad"), turn(60, "warn")]} />);
-
-    const bars = [...screen.getByTestId("gauge-trend").querySelectorAll("rect")];
-    expect(bars.map((bar) => bar.getAttribute("height"))).toEqual(["10", "1", "6"]);
-    expect(bars.map((bar) => bar.getAttribute("class"))).toEqual([
-      "gauge-ok",
-      "gauge-bad",
-      "gauge-warn",
-    ]);
-    // Each turn is a line of the trend's one tooltip (#2908), never a native title of its bar.
-    expect(bars[1].querySelector("title")).toBeNull();
-    expect(tipOf(screen.getByTestId("gauge-trend"))?.split("\n")[1]).toBe(
-      "turn 2, cache 10%, ctx 20%, wrote 1k",
-    );
-  });
-
-  it("draws a turn whose share is unknown as a muted stub, not as a zero", () => {
-    render(<Trend turns={[turn(90, "ok"), { cache: null, context: null, written: null }]} />);
-
-    const bars = [...screen.getByTestId("gauge-trend").querySelectorAll("rect")];
-    expect(bars[1].getAttribute("class")).toBe("gauge-unknown");
-    expect(tipOf(screen.getByTestId("gauge-trend"))?.split("\n")[1]).toBe("turn 2, cache unknown");
-  });
-
-  it("is drawn beside the gauge only once there are two turns to compare", () => {
-    const { rerender } = render(<ChatGauge usage={{ ...USAGE, turns: [turn(90, "ok")] }} />);
-    expect(screen.queryByTestId("gauge-trend")).toBeNull();
-
-    rerender(<ChatGauge usage={{ ...USAGE, turns: [turn(90, "ok"), turn(95, "ok")] }} />);
-    expect(screen.getByTestId("gauge-trend")).toBeInTheDocument();
+    expect(gauge.querySelector('[data-part="fill"]')).toBeNull();
   });
 
   it("says a cold streak in words once the core says there is one", () => {
@@ -119,7 +97,9 @@ describe("the trend", () => {
     expect(screen.getByTestId("chat-gauge").textContent).not.toContain("cold");
 
     rerender(<ChatGauge usage={{ ...USAGE, cold: 3 }} />);
-    expect(screen.getByText("cold 3")).toHaveClass("gauge-warn");
+    expect(screen.getByTestId("chat-gauge").textContent?.replace(/\s+/g, " ")).toContain(
+      "cold 3",
+    );
   });
 });
 

@@ -3,19 +3,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useOnShownAgain, useProjectShown } from "./projectShown";
-import { commands, type ChatUsage, type GaugeTone, type PlaneId, type UsageTurn } from "./bindings";
+import { commands, type ChatUsage, type GaugeTone, type PlaneId } from "./bindings";
 import { everyWhileShown } from "./whileShown";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { PaneFootGauge, type PaneFootTone } from "./ui/pane-foot/PaneFoot";
 
 /**
- * **A chat's `ctx`/`cache` gauge, in its own pane's corner.**
+ * **A chat's `ctx`/`cache` gauge, on its own pane's foot** (#5202).
  *
  * charter ADR 0019 wrote the loss down: *"A framed Claude Code session has no context/cache
  * gauge on any surface."* charter's statusline IS Claude Code's `statusLine`, so running Claude
  * Code inside charter cost the operator the context percentage he would have seen outside it.
  * ADR 0038 named it again for the app and did not rule where it goes; this is that ruling.
  *
- * # Why the pane's corner, and not the tab or a panel
+ * # Why the pane, and not the tab or a panel
  *
  * - **Not a panel, and not the status line.** Both describe the focused WORKSPACE, and `ctx`
  *   describes one CONVERSATION. A window-wide gauge would be one chat's number under fifty,
@@ -43,20 +44,16 @@ import { Tooltip } from "./ui/tooltip/Tooltip";
  *
  * # What it draws
  *
- * The core's gauge, whole: `ctx NN%`, `cache NN%`, and `↻N cost` when the prefix has been
- * rebuilt — each in the tone the core's threshold gives it, so this and the frame's panel can
- * never colour one number two ways. **Nothing at all when nothing is known**, never `ctx 0%`.
+ * The core's gauge, on the pane foot's end (look A, spec #5191): `ctx NN%` with its fill as a
+ * thin bar under the number, in the tone the core's threshold gives it, so this and the frame's
+ * panel can never colour one number two ways; `cache NN%`; and `↻N cost` when the prefix has
+ * been rebuilt. **Nothing at all when nothing is known**, never `ctx 0%`. Once the cache has
+ * been cold three turns running (`_cache_hint`'s rule, which Python only ever said in the live
+ * footer) it says so in words: `cold 3`.
  *
- * # And the trend beside it
- *
- * ADR 0038 names "usage and the token trend" as its own gap: *"the trend over a session's
- * turns rather than this turn's percentage"*. It lives here and not in a panel of its own,
- * because it is the same conversation's history — a trend window would be a second place to
- * look for one chat's numbers. It is drawn as one bar per recorded turn (at most sixteen, the
- * record's ring), each as tall as that turn's cache share and in its tone, so a rebuild reads
- * as the dip it is. The numbers behind every bar are on the bar's title. And once the cache has
- * been cold three turns running — `_cache_hint`'s rule, which Python only ever said in the
- * live footer — it says so in words: `cold 3`.
+ * **No trend.** ADR 0038 named "the token trend" as its own gap, and for a while a row of bars
+ * stood beside the numbers, one per recorded turn. Spec #5191 took it away (story 15): the bar
+ * under `ctx` says what the number and the row said twice. The turns are still in the record.
  */
 
 /** How long after a move the record is read again, for the render that lands after `Stop`. */
@@ -147,12 +144,13 @@ function sameReading(a: ChatUsage | null, b: ChatUsage | null): boolean {
   return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
-const TONE: Record<GaugeTone, string> = { ok: "gauge-ok", warn: "gauge-warn", bad: "gauge-bad" };
-
-/** The gauge itself, or nothing. */
+/** **The gauge itself, on the pane foot** (#5202, look A), or nothing: `ctx` with its fill as a
+ *  thin bar under its number, then `cache`, then the rebuilds and a cold streak where the core
+ *  says them. The separate row of bars, one per turn, is gone: one figure says what the number
+ *  and the row said twice. */
 export function ChatGauge({ usage }: { usage: ChatUsage | undefined }) {
   if (usage === undefined) return null;
-  const { context, cache, rebuilds, turns, cold } = usage;
+  const { context, cache, rebuilds, cold } = usage;
   const said = [
     context && `context window ${context.value}% full`,
     cache && `${cache.value}% of the last turn's input served from cache`,
@@ -164,84 +162,29 @@ export function ChatGauge({ usage }: { usage: ChatUsage | undefined }) {
     // No live region: a screen reader announcing every turn's percentage in every pane would
     // be noise. The words are in the text and the full sentence is its tooltip.
     <Tooltip tip={said}>
-      <div className="chat-gauge" data-testid="chat-gauge">
+      <span className="chat-gauge" data-testid="chat-gauge">
         {context && (
-          <span className="gauge-part">
-            <span className="gauge-label">ctx</span>{" "}
-            <span className={TONE[context.tone]}>{context.value}%</span>
-          </span>
+          <PaneFootGauge
+            label="ctx"
+            value={`${context.value}%`}
+            fill={{ percent: context.value, tone: TONE[context.tone] }}
+          />
         )}
-        {cache && (
-          <span className="gauge-part">
-            <span className="gauge-label">cache</span>{" "}
-            <span className={TONE[cache.tone]}>{cache.value}%</span>
-          </span>
-        )}
-        {rebuilds && (
-          <span className={`gauge-part ${TONE[rebuilds.tone]}`}>
-            ↻{rebuilds.count} {rebuilds.cost}
-          </span>
-        )}
+        {cache && <PaneFootGauge label="cache" value={`${cache.value}%`} />}
+        {rebuilds && <PaneFootGauge label={`↻${rebuilds.count}`} value={rebuilds.cost} />}
         {cold != null && (
           <Tooltip
             tip={`The cache has been cold ${cold} turns running: something keeps changing the prompt's prefix — a model or effort switch, an MCP server toggling, a /compact. /rewind keeps it; /compact rebuilds it.`}
           >
-            <span className="gauge-part gauge-warn">cold {cold}</span>
+            <span className="gauge-cold">
+              <PaneFootGauge label="cold" value={String(cold)} />
+            </span>
           </Tooltip>
         )}
-        {turns.length > 1 && <Trend turns={turns} />}
-      </div>
+      </span>
     </Tooltip>
   );
 }
 
-/** What one turn's bar says, a line of the trend's tooltip. */
-function turnSaid(turn: UsageTurn, index: number): string {
-  return [
-    `turn ${index + 1}`,
-    turn.cache ? `cache ${turn.cache.value}%` : "cache unknown",
-    turn.context ? `ctx ${turn.context.value}%` : undefined,
-    turn.written ? `wrote ${turn.written}` : undefined,
-  ]
-    .filter(Boolean)
-    .join(", ");
-}
-
-/**
- * The trend: one bar per recorded turn, oldest on the left, as tall as its cache share.
- *
- * An SVG with a bar per turn rather than a charting library: sixteen rectangles is not a chart
- * a library earns its weight on, and the colour comes from the theme through each bar's class,
- * never from a value written here. A turn whose share could not be read draws a stub in the
- * muted colour — a gap in the record, not a zero.
- */
-export function Trend({ turns }: { turns: readonly UsageTurn[] }) {
-  const width = turns.length * 3;
-  return (
-    // Every turn's line in the trend's one tooltip, oldest first: a mark the gauge's words
-    // already say, so the pointer's.
-    <Tooltip tip={turns.map(turnSaid).join("\n")}>
-      <svg
-        className="gauge-trend"
-        data-testid="gauge-trend"
-        viewBox={`0 0 ${width} 10`}
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        {turns.map((turn, i) => {
-          const height = turn.cache ? Math.max(1, Math.round(turn.cache.value / 10)) : 1;
-          return (
-            <rect
-              key={i}
-              x={i * 3}
-              y={10 - height}
-              width={2}
-              height={height}
-              className={turn.cache ? TONE[turn.cache.tone] : "gauge-unknown"}
-            />
-          );
-        })}
-      </svg>
-    </Tooltip>
-  );
-}
+/** The core's tone, as the foot's bar names it. */
+const TONE: Record<GaugeTone, PaneFootTone> = { ok: "ok", warn: "warn", bad: "bad" };

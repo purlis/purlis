@@ -348,9 +348,12 @@
   margin-inline-start: 0;
 }
 
-.pane-chips > .pane-where {
+/* **Harness · workspace, on the pane foot** (#5202): cut short at its end before the gauge
+   gives way, in the foot's muted tier. */
+.pane-foot .pane-where {
   display: inline-flex;
   align-items: center;
+  gap: var(--space-2);
   flex: 0 1 auto;
   min-inline-size: 0;
   overflow: hidden;
@@ -420,37 +423,28 @@
    the text floor, while the engine measures their colour solid. The stories' faded-words gate
    (`.storybook/faded.setup.ts`, #3790) measures words as drawn, opacity included, so a fade
    brought back here or on any box above them fails it. */
-.pane-head > .pane-chips > :is(.chat-gauge, .pane-from, .pane-work-item, .pane-crumbs) {
+.pane-head > .pane-chips > :is(.pane-from, .pane-work-item, .pane-crumbs) {
   border-color: transparent;
   background-color: transparent;
 }
 
-/* **The harness's name keeps the header's tier** (#2914, the operator's ruling of 2026-10-22):
-   muted, primary on the pane of a split that has the keyboard, and under the pointer or the
-   keyboard. **Interim, until the quiet ghost variant (#3214)**: the family's ghost draws primary
-   words, so these rules out-rank its variant (0,3,0) by specificity, naming the button's own
-   attributes, never by where they are written. */
-.pane-head > .pane-chips > .pane-harness[data-scope="button"][data-variant="ghost"] {
+/* **The harness's name keeps the foot's tier** (#2914, the operator's ruling of 2026-10-22;
+   on the foot since #5202): muted, primary on the pane of a split that has the keyboard, and
+   under the pointer or the keyboard. **Interim, until the quiet ghost variant (#3214)**: the
+   family's ghost draws primary words, so these rules out-rank its variant (0,3,0) by
+   specificity, naming the button's own attributes, never by where they are written. */
+.pane-foot .pane-harness[data-scope="button"][data-variant="ghost"] {
   color: var(--text-muted);
 }
 
 [data-scope="panel"][data-variant="content"]
   [data-group]
   .pane-frame[data-focused]
-  .pane-head
-  > .pane-chips
-  > .pane-harness[data-scope="button"][data-variant="ghost"],
-.pane-head
-  > .pane-chips
-  > .pane-harness[data-scope="button"][data-variant="ghost"]:is(
-    [data-hovered],
-    [data-focus-visible]
-  ) {
+  .pane-foot
+  .pane-harness[data-scope="button"][data-variant="ghost"],
+.pane-foot
+  .pane-harness[data-scope="button"][data-variant="ghost"]:is([data-hovered], [data-focus-visible]) {
   color: var(--text-primary);
-}
-
-.pane-head > .pane-chips > .chat-gauge {
-  color: var(--text-muted);
 }
 
 /* **A pane's actions** (`PaneActions`, shared with a view's pane, #3147, #5203): the chat's

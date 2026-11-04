@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { answerId, briefId, smartCloseCancelId, stopId } from "./actions";
-import { HEAD_DROPS, droppedAt, stateButtonOf, type HeadPart } from "./paneHead";
+import { HEAD_DROPS, droppedAt, paneLinesOf, stateButtonOf, type HeadPart } from "./paneHead";
 
 /** A chat whose list holds exactly `ids`. */
 function listing(...ids: string[]) {
@@ -86,5 +86,77 @@ describe("a narrow pane head drops its parts in the ruled order (#4760, #4585 ru
     expect(widths).toEqual([...widths].sort((a, b) => b - a));
     const parts: HeadPart[] = HEAD_DROPS.map((drop) => drop.part);
     expect(new Set(parts).size).toBe(parts.length);
+  });
+});
+
+describe("the pane's two lines: what the head and the foot of a chat's pane draw (#5202)", () => {
+  /** A chat with every fact the head's line still holds until #5204 moves them to the foot. */
+  const full = { from: true, skills: true, workItem: true };
+
+  it.each([
+    // kind, width, the head's line, the foot
+    [
+      "chat",
+      900,
+      ["persona", "name", "sandbox", "mark", "markWord", "skills", "from", "workItem"],
+      ["harness", "workspace", "ctx", "cache"],
+    ],
+    [
+      "chat",
+      undefined,
+      ["persona", "name", "sandbox", "mark", "markWord", "skills", "from", "workItem"],
+      ["harness", "workspace", "ctx", "cache"],
+    ],
+    [
+      "chat",
+      500,
+      ["persona", "name", "mark", "markWord"],
+      ["harness", "workspace", "ctx", "cache"],
+    ],
+    ["chat", 460, ["persona", "name", "mark"], ["harness", "workspace", "ctx", "cache"]],
+    ["chat", 300, ["persona", "name"], ["harness", "workspace", "ctx", "cache"]],
+    [
+      "task",
+      900,
+      ["persona", "crumbs", "sandbox", "from", "workItem"],
+      ["harness", "workspace", "ctx", "cache"],
+    ],
+    ["task", 300, ["persona", "crumbs"], ["harness", "workspace", "ctx", "cache"]],
+    [
+      "shell",
+      900,
+      ["persona", "name", "sandbox", "mark", "markWord", "skills", "from", "workItem"],
+      null,
+    ],
+    ["oneJob", 300, ["persona", "name"], null],
+  ] as const)("a %s pane %s px wide", (kind, width, head, foot) => {
+    const lines = paneLinesOf(kind, width, full);
+    expect(lines.head).toEqual(head);
+    expect(lines.foot).toEqual(foot);
+  });
+
+  it("never draws harness · workspace or the gauge on the head, at any width", () => {
+    for (const kind of ["chat", "task", "shell", "oneJob"] as const)
+      for (const width of [undefined, 1200, 900, 520, 420, 300, 0]) {
+        const head: string[] = paneLinesOf(kind, width, full).head;
+        for (const gone of ["harness", "workspace", "where", "ctx", "cache", "gauge", "trend"])
+          expect(head, `${kind} at ${width}`).not.toContain(gone);
+      }
+  });
+
+  it("keeps the whole foot of a chat at every width, its drops being #5206's", () => {
+    for (const width of [undefined, 1200, 520, 300, 0])
+      expect(paneLinesOf("chat", width, full).foot).toEqual(["harness", "workspace", "ctx", "cache"]);
+  });
+
+  it("draws only the facts a chat has on the head's line", () => {
+    expect(paneLinesOf("chat", 900, {}).head).toEqual([
+      "persona",
+      "name",
+      "sandbox",
+      "mark",
+      "markWord",
+    ]);
+    expect(paneLinesOf("chat", 900, { from: true }).head).toContain("from");
   });
 });

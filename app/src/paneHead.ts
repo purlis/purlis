@@ -8,8 +8,9 @@ import type { SandboxSaid } from "./SandboxMark";
 
 /**
  * **The pane head's model** (#4760, spec #4750 stories 54, 55 and 61; `command-table.md` of
- * #4585, rule 4): which one of a chat's rows the head shows as its state button, and which of
- * its parts a narrow pane drops. Pure, so the rules are read and tested here, and the head
+ * #4585, rule 4), **and the pane foot's** (#5202, spec #5191): which one of a chat's rows the
+ * head shows as its state button, which parts each of the pane's two lines draws, and which a
+ * narrow pane drops. Pure, so the rules are read and tested here, and the pane
  * (`LayoutPanes.PaneFrame`) only draws what these answer.
  */
 
@@ -68,8 +69,9 @@ export function stateButtonOf(chat: {
  * The parts of a pane head a narrow pane can drop. The bell, ⋯, Split right and Close are not
  * among them: they never go.
  *
- * - `where`: "harness · workspace", with the line's chips (its sandbox, where a handed-off
- *   chat came from, its work item, its gauge), which are the same kind of detail.
+ * - `where`: the line's details that are still on the head (its sandbox, its skills, where a
+ *   handed-off chat came from, its work item). "harness · workspace" and the gauge are on the
+ *   pane foot since #5202, which drops nothing yet (#5206); #5204 moves the rest of these there.
  * - `markWord`: the state mark's word, its dot staying.
  * - `buttonWord`: the state button's word, its icon staying with the word as its name.
  * - `mark`: the state mark, dot and all.
@@ -91,4 +93,79 @@ export const HEAD_DROPS: readonly { part: HeadPart; below: number }[] = [
 export function droppedAt(width: number | undefined): ReadonlySet<HeadPart> {
   if (width === undefined) return new Set();
   return new Set(HEAD_DROPS.filter((drop) => width < drop.below).map((drop) => drop.part));
+}
+
+/** **What a pane shows**, as its two lines tell it apart (#5202): a chat, a task shown in a
+ *  chat's pane (#1486), a shell, and a one-job program (#4761). */
+export type PaneKind = "chat" | "task" | "shell" | "oneJob";
+
+/**
+ * **A chip of the head's line** (the **pane line**, `.pane-chips`), in its drawn order: who it
+ * runs as, which chat it is (its name, or the path to the task it shows), its sandbox, its state
+ * mark and the mark's word, then the details still on the head until #5204 moves them to the
+ * foot: its skills, where it came from and its work item.
+ */
+export type LinePart =
+  | "persona"
+  | "name"
+  | "crumbs"
+  | "sandbox"
+  | "mark"
+  | "markWord"
+  | "skills"
+  | "from"
+  | "workItem";
+
+/**
+ * **A part of the pane foot** (#5202, spec #5191, look A), in its drawn order: the harness and the
+ * workspace at its start, then `ctx`, its fill a thin bar under its number, and `cache` at its
+ * end. The gauge's parts are drawn once the chat's first usage arrives; the foot keeps its row
+ * either way, so the terminal never moves for it.
+ */
+export type FootPart = "harness" | "workspace" | "ctx" | "cache";
+
+/** The details a chat has for the head's line: drawn only where it has them. */
+export type LineFacts = {
+  /** It was handed off from, or asked by, another chat. */
+  from?: boolean;
+  /** Its skills chip has room: not beside a task's path, nor in a narrow pane (#2775). */
+  skills?: boolean;
+  /** It works on a work item (V60). */
+  workItem?: boolean;
+};
+
+/** **Both lines of a pane**: the head's chips, and the foot's parts, or `null` for a pane that
+ *  draws no foot. */
+export type PaneLines = { head: LinePart[]; foot: FootPart[] | null };
+
+/** The foot of a chat's pane, whole: it drops nothing yet (#5206 orders its drops). */
+const WHOLE_FOOT: readonly FootPart[] = ["harness", "workspace", "ctx", "cache"];
+
+/**
+ * **What a pane of `kind`, `width` pixels wide (none where not measured), draws on its two lines**
+ * (#5202): the head says which chat this is and what it is doing; the foot, under the terminal,
+ * where it runs and how full it is. Harness · workspace and the gauge are the foot's, never the
+ * head's, at any width. A shell and a one-job program draw no foot: they have no harness or
+ * gauge to say.
+ */
+export function paneLinesOf(
+  kind: PaneKind,
+  width: number | undefined,
+  facts: LineFacts,
+): PaneLines {
+  const drops = droppedAt(width);
+  const head: LinePart[] = ["persona", kind === "task" ? "crumbs" : "name"];
+  if (!drops.has("where")) head.push("sandbox");
+  // A task's path says its state; a chat's head says it with its mark.
+  if (kind !== "task" && !drops.has("mark")) {
+    head.push("mark");
+    if (!drops.has("markWord")) head.push("markWord");
+  }
+  if (!drops.has("where")) {
+    if (facts.skills === true && kind !== "task") head.push("skills");
+    if (facts.from === true) head.push("from");
+    if (facts.workItem === true) head.push("workItem");
+  }
+  const foot = kind === "chat" || kind === "task" ? [...WHOLE_FOOT] : null;
+  return { head, foot };
 }
