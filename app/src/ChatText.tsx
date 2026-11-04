@@ -77,7 +77,8 @@ export function ChatText({
       <div
         ref={body}
         id={box}
-        className="chat-text-body"
+        // `release-notes`: a markdown render's own colours, read in one place (`App.css`).
+        className="chat-text-body release-notes"
         data-folded={folds ? String(!open) : undefined}
       >
         <Folded.Provider value={folds && !open}>
