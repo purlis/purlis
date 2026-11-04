@@ -1237,9 +1237,8 @@ impl ChatBrowsers {
         let (open_web, sites) = {
             let chats = self.lock();
             let chat = chats.get(&browse.chat)?;
-            let open_web = match chat.posture {
-                Posture::Allowed { open_web } => open_web,
-                _ => false,
+            let Posture::Allowed { open_web } = chat.posture else {
+                return None;
             };
             (open_web, chat.sites.clone())
         };
@@ -3032,7 +3031,7 @@ impl ChatBrowsers {
         let mut left_behind = None;
         let named = match &act {
             Doing::LogIn(declared, read) if browse.browser.is_none() => {
-                let holding = self.holding(chat, true, &|program| {
+                let holding = self.holding(chat, !read.opens, &|program| {
                     self.logins_held
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)

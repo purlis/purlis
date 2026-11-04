@@ -250,7 +250,7 @@ impl Browser {
             .iter()
             .map(|user| user.as_str())
             .chain(std::iter::once(login.password.as_str()))
-            .flat_map(|one| spellings(one).into_iter().take(1))
+            .flat_map(spellings)
             .collect();
         held.run(&values);
         lock(&self.inner.state).keep_out_everywhere(&held);

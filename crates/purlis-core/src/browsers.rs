@@ -1925,16 +1925,6 @@ impl Screen for EngineScreen {
 
     fn log_in(&self, asked: &wire::LogIn) -> Result<LoginEnded, NotActed> {
         let (mut login, at) = login_of(asked).map_err(NotActed::Refused)?;
-        // Opened from this very kept login, a page that asks for nothing is signed in already.
-        // Tried from here, whatever comes of it (#2693).
-        let (opened_from, again) = {
-            let mut keeping = self.keeping.lock().unwrap_or_else(PoisonError::into_inner);
-            keeping.tried(asked.keep.as_ref());
-            let again = keeping.went_through(asked.identity.as_deref());
-            (keeping.opened_from.clone(), again)
-        };
-        // And having gone through in it before, it may be signed in with it already (#5121).
-        login.only_if_asked = again || (asked.keep.is_some() && opened_from == asked.keep);
         let Some(sites) = &self.sites else {
             return Err(NotActed::Refused(
                 "this browser was started with no reach, so purlis logs nothing in to it"
@@ -1946,21 +1936,27 @@ impl Screen for EngineScreen {
             let held = held.as_ref().ok_or(NotActed::Ended)?;
             (Arc::clone(&held.browser), Arc::clone(&held.proxy))
         };
-        let (ended, signing_in) = performed(
-            sites,
-            &proxy,
-            &at,
-            &login.origin,
-            SIGN_IN_WITHIN,
-            |holder| {
+        let origin = login.origin.clone();
+        let (ended, signing_in) =
+            performed(sites, &proxy, &at, &origin, SIGN_IN_WITHIN, |holder| {
+                // Opened from this very kept login, a page that asks for nothing is signed in
+                // already. Tried from here, whatever comes of it (#2693), and only a login that
+                // may run: one refused leaves what the browser keeps as it is (#5121).
+                let (opened_from, again) = {
+                    let mut keeping = self.keeping.lock().unwrap_or_else(PoisonError::into_inner);
+                    keeping.tried(asked.keep.as_ref());
+                    let again = keeping.went_through(asked.identity.as_deref());
+                    (keeping.opened_from.clone(), again)
+                };
+                // And having gone through in it before, it may be signed in with it already (#5121).
+                login.only_if_asked = again || (asked.keep.is_some() && opened_from == asked.keep);
                 let ended = browser.log_in(&login, Arc::clone(holder) as Arc<dyn drive::Hold>);
                 // A login with nothing left to finish on its form's site signs in no more
                 // (#4995); one the person took over is theirs to finish meanwhile.
                 holder.answered(&ended);
                 (ended, holder.signing_in())
-            },
-        )
-        .map_err(NotActed::Refused)?;
+            })
+            .map_err(NotActed::Refused)?;
         let ended = ended.map_err(not_acted)?;
         // Only where the browser is held to its page: nothing else counts as signed in (#5121).
         if counts_as_signed_in(
