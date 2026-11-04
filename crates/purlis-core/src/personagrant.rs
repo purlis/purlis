@@ -169,6 +169,10 @@ pub fn resolve(root: &Path, name: &str) -> Option<Resolved> {
 /// (#1451) — `key in persona.KNOWN_KEYS`.
 pub(crate) fn known_key(key: &str) -> bool {
     KNOWN_KEYS.contains(&key)
+        // A Secret need, one line a key (#5072, ADR 0109).
+        || key
+            .strip_prefix(crate::secrets::needs::PREFIX)
+            .is_some_and(crate::secrets::needs::is_key)
 }
 
 /// The KNOWN key `key` is a case-variant of, when it is not itself known —

@@ -167,6 +167,10 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
     if let Some(route) = one_route_note(ask.env) {
         parts.push(route);
     }
+    // A credential the chat lacks is the person's to fill, never to paste (#5072, ADR 0109).
+    if let Some(secrets) = secret_ask_note(ask.env) {
+        parts.push(secrets);
+    }
     if let Some(unshared) = uncommitted_memory_nudge(ask.root) {
         parts.push(unshared);
     }
@@ -301,6 +305,22 @@ fn one_route_note(env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
             format!(
                 "{ONE_ROUTE_IF} {ONE_ROUTE_TOOLS} {ONE_ROUTE_IS_A_TASK} {} {ONE_ROUTE_ONLY_THEN}",
                 crate::handoff::ONE_ROUTE
+            )
+        })
+}
+
+/// **What a chat the app started is told about a credential it lacks** (#5072, ADR 0109):
+/// [`crate::chattools::SECRET_ASK_SAID`], under a heading of its own. Only for a chat the app
+/// started, the one place its hook socket is named: only its window asks the person. Every
+/// harness's chat is told it, Claude Code's, Codex's and opencode's, as each runs this
+/// briefing at its start.
+pub fn secret_ask_note(env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    env(crate::hookwire::SOCKET_ENV)
+        .filter(|socket| !socket.is_empty())
+        .map(|_| {
+            format!(
+                "⬢ **A credential you lack is the person's to fill.** {}",
+                crate::chattools::SECRET_ASK_SAID
             )
         })
 }
