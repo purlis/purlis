@@ -411,6 +411,7 @@ import {
 } from "./tabChats";
 import { useChatsListPrefs } from "./chatsListPrefs";
 import { placeRowId, type Place as TaskPlace } from "./TabChip";
+import { ChatTasksMenu, type ChatTask } from "./ChatTasksMenu";
 import { runningByTab } from "./taskLimits";
 import { hasTasks, type Ended, type Needing } from "./tabTasks";
 import { readUsed, type UsedAsk } from "./tasksUsed";
@@ -1668,6 +1669,33 @@ export const PlaneView = memo(function PlaneView({
   // inside a state update. React may run an update again, and a session must not be opened or
   // ended twice because it did.
   const now = useRef(tabs);
+  /**
+   * **⌘⇧J: the focused chat's own tasks** (#5058, ruled on #4699): whose tasks the keyboard
+   * asked for, where the keyboard was then, and the pane a pick is shown in, the focused one
+   * (`ChatTasksMenu`). Asked again for the same chat while it is open, it closes.
+   */
+  const [chatTasks, setChatTasks] = useState<{
+    session: number;
+    from: Element | null;
+    into: PaneAt;
+    open: boolean;
+  }>();
+  /** What that menu stands under: the focused pane's head, as it was asked for. */
+  const chatTasksAt = useRef<Element | null>(null);
+  const showChatTasks = useCallback((session: number) => {
+    const front = now.current.inFront;
+    if (front === undefined) return;
+    const into = { tab: front, pane: now.current.byId[front].focused };
+    chatTasksAt.current =
+      document.querySelector(".panes .pane-frame[data-focused] .pane-head") ??
+      document.querySelector(".panes");
+    const from = document.activeElement;
+    setChatTasks((was) =>
+      was?.open === true && was.session === session
+        ? { ...was, open: false }
+        : { session, from, into, open: true },
+    );
+  }, []);
   /** The chats a scenario spec pretends (`e2eTasks.ts`, none in a shipped build): the core has
    *  none of them, and is never told one is in front. */
   const pretendedNow = useRef<ReadonlySet<number>>(new Set());
@@ -7947,7 +7975,7 @@ export const PlaneView = memo(function PlaneView({
       ownTab,
       beside: besideOf,
       sendBack: sendBackOf,
-      showTabTasks,
+      showChatTasks,
       showBrief: (session: number) =>
         openBrief({ chat: session, name: nameOfNow.current(session) }),
       answerQuestion: (session: number) =>
@@ -8116,7 +8144,7 @@ export const PlaneView = memo(function PlaneView({
       ownTab,
       besideOf,
       sendBackOf,
-      showTabTasks,
+      showChatTasks,
       showView,
       showViewBeside,
       split,
@@ -8709,6 +8737,39 @@ export const PlaneView = memo(function PlaneView({
       giveKeyboardTo(plane, session);
     },
     [plane],
+  );
+  /** **The lines of ⌘⇧J's menu** (#5058): the tasks the chat asked for and nothing else's, those
+   *  running first, by number, which is the order it asked for them, then those that finished. */
+  const chatTasksLines = useMemo<ChatTask[]>(() => {
+    if (chatTasks === undefined) return [];
+    const asker = chatTasks.session;
+    return [
+      ...listedChats
+        .filter((chat) => chat.mode === "task" && chat.parent === asker)
+        .map((chat) => ({ session: chat.session, key: `${chat.session}`, name: chat.name })),
+      ...(finishedTasks.get(asker) ?? []).map((task) => ({
+        key: task.id,
+        name: task.name,
+        ended: task.outcome,
+      })),
+    ];
+  }, [chatTasks, finishedTasks, listedChats]);
+  /** **A task picked there is shown in the focused pane**, as a press shows it: one on screen
+   *  already is jumped to (D1). That pane, while its tab is still open. */
+  const showChatTask = useCallback(
+    (session: number) => {
+      const into = chatTasks?.into;
+      showChatNow.current(
+        session,
+        into !== undefined && now.current.byId[into.tab] !== undefined ? into : undefined,
+      );
+      giveKeyboardTo(plane, session);
+    },
+    [chatTasks, plane],
+  );
+  const closeChatTasks = useCallback(
+    () => setChatTasks((was) => (was === undefined ? was : { ...was, open: false })),
+    [],
   );
 
   /** The task tab `id` shows in place of its session's own chat, by name (#1486): what its
@@ -10996,6 +11057,18 @@ export const PlaneView = memo(function PlaneView({
                     browsersOfTab={browsersOfTab}
                     openBrowser={openChatBrowser}
                   />
+                  {/* ⌘⇧J's menu of the focused chat's own tasks (#5058), under its pane's head. */}
+                  {chatTasks !== undefined && (
+                    <ChatTasksMenu
+                      open={chatTasks.open}
+                      name={nameOf(chatTasks.session)}
+                      tasks={chatTasksLines}
+                      at={chatTasksAt}
+                      from={chatTasks.from}
+                      onShow={showChatTask}
+                      onClose={closeChatTasks}
+                    />
+                  )}
                   {/* The centre is where a chat is, so its menu is the pane's rows: the two splits,
                 the tab in front's Tile all, the key the palette claimed, and — under the line —
                 Close pane, which ends nothing (#4756). `asChild` again: the panes' box is measured, and it must not gain a

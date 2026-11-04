@@ -437,9 +437,9 @@ export type Does =
   /** Sends a task back out of its own tab or its pane (#1489): the minimise. **It ends
    *  nothing**, so it is never asked about, and it is not a close. */
   | { verb: "sendBack"; session: number }
-  /** Opens the menu of the chats that live in a tab: its session's and its tasks' (#1487).
-   *  It shows nothing by itself: a row of that menu does. */
-  | { verb: "showTabTasks"; tab: number }
+  /** Opens the menu of the tasks chat `session` asked for (#5058, ruled on #4699), under the
+   *  focused pane. It shows nothing by itself: a row of that menu does, in that pane. */
+  | { verb: "showChatTasks"; session: number }
   /** Opens the Brief panel of a task (#1494): the brief it was sent, read back from its
    *  dispatch record. It reads, and changes nothing. */
   | { verb: "showBrief"; session: number }
@@ -1114,8 +1114,8 @@ export type Doing = {
   beside: (session: number) => void;
   /** Takes a task's own tab or pane away. The task goes on, in its session's tab. */
   sendBack: (session: number) => void;
-  /** Opens the menu of that tab's chats, with the keyboard on the chat it shows. */
-  showTabTasks: (tab: number) => void;
+  /** Opens the menu of the tasks chat `session` asked for, with the keyboard on the first. */
+  showChatTasks: (session: number) => void;
   /** Opens the Brief panel of the task chat `session` (#1494). It reads and changes nothing
    *  by itself, so it answers no `Ran`. */
   showBrief: (session: number) => void;
@@ -3520,8 +3520,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "sendBack":
       doing.sendBack(does.session);
       return DID;
-    case "showTabTasks":
-      doing.showTabTasks(does.tab);
+    case "showChatTasks":
+      doing.showChatTasks(does.session);
       return DID;
     case "showBrief":
       doing.showBrief(does.session);
@@ -5156,7 +5156,8 @@ export const PANE_BACK_ID = "pane.back";
  * the tab a chat no longer has.
  *
  * The tasks are those of the chat the focused pane shows, whichever chat that is: its tasks
- * running or finished. They open the tab's task menu, which lists them under that chat.
+ * running or finished. They open a menu of that chat's own tasks and nothing else's, and the
+ * one picked is shown in the focused pane, as a press shows a chat (#5058).
  */
 function tabChatRows(now: Now): Offer[] {
   const mac = onAMac();
@@ -5191,8 +5192,8 @@ function tabChatRows(now: Now): Offer[] {
   return [
     hasTasks
       ? {
-          ...can(TAB_TASKS_ID, titles.tasks, { verb: "showTabTasks", tab: front.id }),
-          note: `${name} and the tasks it asked for, to switch between. ${taskKeySaid("menu", mac)}.`,
+          ...can(TAB_TASKS_ID, titles.tasks, { verb: "showChatTasks", session: shown }),
+          note: `The tasks ${name} asked for, to show in this pane. ${taskKeySaid("menu", mac)}.`,
         }
       : cannot(TAB_TASKS_ID, titles.tasks, `${name} has no tasks.`),
     backRow(now, front, titles.back, mac),
