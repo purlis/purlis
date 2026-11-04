@@ -123,13 +123,6 @@ pub(super) fn into_workspace(
         ));
     }
 
-    if let Err(why) = crate::sandbox::arrived::made_by_the_app(root, &dest) {
-        tracing::warn!(
-            "purlis: {} was not recorded as made ({why})",
-            dest.display()
-        );
-    }
-
     match own_upstream(source) {
         Some(upstream) => {
             let _ = git::run(
@@ -157,6 +150,13 @@ pub(super) fn into_workspace(
     // over HTTPS, no signing. `gitpolicy` is ported in full (M2.5, #64) — the note in
     // `scaffold`'s header that said it was not is what charter-app#175 was filed on.
     crate::gitpolicy::apply(&dest, root);
+    // Said once the app's own writes to its config are done, as what it says is held to them.
+    if let Err(why) = crate::sandbox::arrived::made_by_the_app(root, &dest) {
+        tracing::warn!(
+            "purlis: {} was not recorded as made ({why})",
+            dest.display()
+        );
+    }
 
     let rel = dest
         .strip_prefix(root)

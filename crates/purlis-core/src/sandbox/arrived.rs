@@ -161,7 +161,11 @@ fn stamp(dot_git: &Path) -> u64 {
         {
             let line = line.trim();
             if line.starts_with('[') {
-                let section = line.trim_start_matches('[').split([']', ' ', '"']).next();
+                // Git reads the last header on a line, so that is the section.
+                let section = line
+                    .rsplit('[')
+                    .next()
+                    .and_then(|it| it.split([']', ' ', '"']).next());
                 section_counts = !section.is_some_and(|name| {
                     [
                         "branch",
@@ -182,9 +186,13 @@ fn stamp(dot_git: &Path) -> u64 {
                 words.push('\n');
             }
         }
+        for other in ["config.worktree", "commondir", "objects/info/alternates"] {
+            words.push_str(&small_file(&dot_git.join(other)).unwrap_or_default());
+        }
         if let Ok(hooks) = std::fs::read_dir(dot_git.join("hooks")) {
             let mut listed: Vec<String> = hooks
                 .flatten()
+                .take(MOST_FILES_CHECKED)
                 .map(|hook| {
                     let kind = hook.metadata().ok();
                     format!(
@@ -509,6 +517,10 @@ fn common_of(git_dir: &Path) -> Option<PathBuf> {
 /// tells a clone from a repository that arrived another way. It is held to the `.git` that was
 /// there when this was said ([`Known`]). Only outside a sandbox can this be written.
 pub fn made_by_the_app(plane: &Path, top: &Path) -> io::Result<()> {
+    // No chat has a record here, so the next one to start finds this clone there as it starts.
+    if !dir(plane).is_dir() {
+        return Ok(());
+    }
     let Some(pin) = Pin::of(&top.join(".git")) else {
         return Ok(());
     };
@@ -631,6 +643,17 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
             record.put_away.retain(|path, _| stays(path));
             record.whole_for.clear();
             record.cut_short_told = false;
+            // Whole for every chat on these folders, and none is left saying otherwise.
+            for (other, mut theirs) in records(plane) {
+                if other != chat
+                    && theirs.watched.folders == record.watched.folders
+                    && (theirs.cut_short || theirs.cut_short_told)
+                {
+                    theirs.cut_short = false;
+                    theirs.cut_short_told = false;
+                    write(plane, &file(plane, &other)?, &theirs)?;
+                }
+            }
         } else {
             match walked.bound_at {
                 Some(bound_at) => {

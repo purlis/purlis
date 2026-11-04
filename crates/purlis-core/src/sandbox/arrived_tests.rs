@@ -459,6 +459,51 @@ fn a_look_cut_short_is_told_once_for_a_set_of_folders_and_what_appears_is_still_
 }
 
 #[test]
+fn another_chats_old_put_away_says_nothing_after_a_whole_look_there() {
+    let fix = Fixture::new();
+    let many = fix.folder.join("many");
+    let fill = || {
+        for at in 0..=arrived::MOST_NAMES {
+            file(&many.join(format!("{at:06}/.envrc")), "x");
+        }
+    };
+    fill();
+    fix.begin();
+    arrived::begin(&fix.plane, OTHER, None, &fix.watched()).expect("a record");
+    fix.look_of();
+    arrived::put_away(&fix.plane, CHAT).expect("put away");
+    assert!(arrived::told(&fix.plane).is_empty());
+
+    fs::remove_dir_all(&many).expect("gone");
+    let whole = arrived::look(&fix.plane, OTHER, None)
+        .expect("a look")
+        .expect("a record");
+    assert!(!whole.cut_short);
+    assert!(arrived::told(&fix.plane).is_empty(), "no one is cut short");
+
+    fill();
+    let cut = arrived::look(&fix.plane, OTHER, None)
+        .expect("a look")
+        .expect("a record");
+    assert!(cut.cut_short);
+    let told = arrived::told(&fix.plane);
+    assert_eq!(told.len(), 1);
+    assert!(told[0].words(&fix.plane).contains("incomplete"));
+}
+
+#[test]
+fn a_change_of_core_config_under_a_second_header_on_a_line_is_told() {
+    let fix = Fixture::new();
+    let clone = clone_behind(&fix);
+    fix.begin();
+    let config = clone.join(".git/config");
+    let mut text = fs::read_to_string(&config).expect("its config");
+    text.push_str("[remote \"o\"] [core]\n\thooksPath = /elsewhere\n");
+    fs::write(&config, text).expect("its config");
+    assert_eq!(fix.look(), ["clone/.git"]);
+}
+
+#[test]
 fn the_record_survives_a_restart_and_what_appeared_while_the_app_was_closed_is_told() {
     let fix = Fixture::new();
     fix.begin();
