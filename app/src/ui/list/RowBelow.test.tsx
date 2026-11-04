@@ -21,12 +21,16 @@ const SHORT = "Left out: off here";
 
 /** The lines under whose words are wider than their box, as a browser would draw them. */
 let cut: Set<string>;
+/** How many times a line's width was asked for: each is a layout the browser has to do. */
+let measured = 0;
 
 beforeEach(() => {
   cut = new Set();
+  measured = 0;
   vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (
     this: HTMLElement,
   ) {
+    measured += 1;
     return cut.has(this.textContent ?? "") ? 400 : 100;
   });
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => 100);
@@ -103,5 +107,40 @@ describe("a line under a row's words that asks for its whole in the tooltip (#47
     render(<Skills whole={false} />);
     hover("long");
     expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("is its row's description under the pointer too, while it is shown", () => {
+    vi.useFakeTimers();
+    cut.add(LONG);
+    render(<Skills />);
+    hover("long");
+    expect(row("long")).toHaveAccessibleName("long");
+    expect(row("long")).toHaveAccessibleDescription(LONG);
+  });
+});
+
+describe("whether a line is cut, measured only when its row could say so (#4351)", () => {
+  it("measures no line while the rows are only drawn", () => {
+    cut.add(LONG);
+    render(<Skills />);
+    expect(measured).toBe(0);
+  });
+
+  it("says the whole of a line cut after its row was drawn, as the pointer comes", () => {
+    vi.useFakeTimers();
+    render(<Skills />);
+    // The row grew narrower since: the line is cut now, and the row was told nothing.
+    cut.add(LONG);
+    hover("long");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(LONG);
+  });
+
+  it("says the whole of a line cut after its row was drawn, as the keyboard comes", async () => {
+    render(<Skills />);
+    cut.add(LONG);
+    await userEvent.tab();
+    expect(row("long")).toHaveFocus();
+    expect(screen.getByRole("tooltip")).toHaveTextContent(LONG);
+    expect(row("long")).toHaveAccessibleDescription(LONG);
   });
 });

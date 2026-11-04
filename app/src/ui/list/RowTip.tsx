@@ -58,6 +58,9 @@ export function useRowTip(
   /** Shown to the pointer alone: a tip that only repeats the row (a file's path) would be heard
    *  on every arrow step. Nothing shows it on the keyboard, and so no Esc is spent on it. */
   pointerOnly = false,
+  /** Asks for the tip as the pointer or the keyboard comes, for a row whose tip is known only
+   *  then (`useListRowTip`): the row listens for both whether or not it has one yet. */
+  ask?: () => void,
 ): RowTipped {
   // Where the pointer rested as the delay ran out (its x in the window), while it is shown.
   const [pointed, setPointed] = useState<number | null>(null);
@@ -65,8 +68,13 @@ export function useRowTip(
   const soon = useRef(0);
   const pointer = useRef(0);
   useEffect(() => () => window.clearTimeout(soon.current), []);
+  const asking = useRef(ask);
+  useEffect(() => {
+    asking.current = ask;
+  });
   const onPointerEnter = useCallback((event: React.PointerEvent) => {
     if (event.pointerType === "touch") return;
+    asking.current?.();
     pointer.current = event.clientX;
     window.clearTimeout(soon.current);
     soon.current = window.setTimeout(() => setPointed(pointer.current), TOOLTIP_DELAY);
@@ -80,21 +88,35 @@ export function useRowTip(
     setDismissed(false);
   }, []);
   const has = tip !== undefined && tip !== null && tip !== "";
+  const listens = has || ask !== undefined;
   // Gone from the window, which an engine may not say on the row (#3095).
   useWindowLeft((why) => {
     if (why === "pointer") onPointerLeave();
-  }, has);
-  if (!has) return { hover: {}, drawn: () => null };
+  }, listens);
+  if (!listens) return { hover: {}, drawn: () => null };
   return {
     hover: { onPointerEnter, onPointerMove, onPointerLeave },
-    drawn: (keyboardOn) =>
-      (pointed !== null || (keyboardOn && !pointerOnly)) &&
-      !dismissed && (
-        <Shown pointer={pointed} onEscape={() => setDismissed(true)}>
-          {tip}
-        </Shown>
-      ),
+    drawn: (keyboardOn) => (
+      <>
+        {ask !== undefined && keyboardOn && !pointerOnly && <AskedOnArrival ask={ask} />}
+        {has && (pointed !== null || (keyboardOn && !pointerOnly)) && !dismissed && (
+          <Shown pointer={pointed} onEscape={() => setDismissed(true)}>
+            {tip}
+          </Shown>
+        )}
+      </>
+    ),
   };
+}
+
+/** Asks for a row's tip as the keyboard comes to it, before the frame shows the row: so the
+ *  tooltip it then has stands in that frame. */
+function AskedOnArrival({ ask }: { ask: () => void }) {
+  const asking = useRef(ask);
+  useLayoutEffect(() => {
+    asking.current();
+  }, []);
+  return null;
 }
 
 /**
@@ -110,10 +132,20 @@ export function useListRowTip(tip: Tip | undefined): {
 } {
   const [cut, setCut] = useState<string>();
   const own = tip !== undefined && says(tip);
-  const tipped = useRowTip(own ? tip : cut);
+  // How its `RowBelow` tells its whole words while they are cut: asked only as the pointer or
+  // the keyboard comes, so drawing the row measures nothing (#4351).
+  const words = useRef<(() => string | undefined) | null>(null);
+  const [asks, setAsks] = useState(false);
+  const told = useCallback((how: (() => string | undefined) | null) => {
+    words.current = how;
+    setAsks(how !== null);
+    if (how === null) setCut(undefined);
+  }, []);
+  const ask = useCallback(() => setCut(words.current?.()), []);
+  const tipped = useRowTip(own ? tip : cut, false, !own && asks ? ask : undefined);
   return {
     tipped,
-    hold: (content) => <RowCutWords.Provider value={setCut}>{content}</RowCutWords.Provider>,
+    hold: (content) => <RowCutWords.Provider value={told}>{content}</RowCutWords.Provider>,
   };
 }
 
