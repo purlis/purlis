@@ -526,15 +526,21 @@ fn classic_keeps_today_s_tint_wherever_the_accent_was_already_apart_from_danger(
         }
     }
     // The light appearance's red, orange and pink brought the accent near danger, and each
-    // appearance's orange and yellow bring it near the waiting amber (#3130).
+    // appearance's orange and yellow bring it near the waiting amber (#3130). Red, green and light
+    // teal brought the link and the first chart colour near the failed or success colour, which
+    // they give way to on their own (#4921).
     assert_eq!(
         held,
         [
+            "dark red",
             "dark orange",
             "dark yellow",
+            "dark green",
             "light red",
             "light orange",
             "light yellow",
+            "light green",
+            "light teal",
             "light pink"
         ]
     );
@@ -682,11 +688,18 @@ fn every_tinted_token_is_drawn_as_the_window_draws_it() {
     for case in cases {
         let id = case["appearance"].as_str().unwrap();
         let colour = case["colour"].as_str().unwrap();
-        let theme = purlis()
+        // Purlis's own, unless the case names Purlis Classic (#4921: its light link in a red,
+        // orange or yellow workspace is drawn as written, never as its accent's grey).
+        let built_in = match case["theme"].as_str() {
+            None => purlis(),
+            Some("purlis-classic") => classic(),
+            Some(other) => panic!("no built-in {other}"),
+        };
+        let theme = built_in
             .appearances
             .iter()
             .find(|one| one.id == id)
-            .expect("one of Purlis's appearances");
+            .expect("one of the built-in's appearances");
         let tint = tinted(theme, colour);
         let tokens = case["tokens"].as_object().unwrap();
         assert_eq!(tokens.len(), theme.tint.tabs().len(), "{id} in {colour}");
@@ -837,8 +850,11 @@ fn floors_hold(tint: &ResolvedTheme) -> bool {
 
 /// Every rule of [`APART`] held in `tint`.
 fn rules_hold(tint: &ResolvedTheme) -> bool {
+    // The accent's marks are held no nearer a state colour than the theme writes them (#4921),
+    // which `signal_apart_tests` measures against the theme as written.
     APART
         .iter()
+        .filter(|rule| !rule.signal)
         .all(|rule| oklab_apart(tint.value(rule.token), tint.value(rule.from)) >= rule.distance)
 }
 
@@ -1258,7 +1274,7 @@ fn purlis_classic_s_tints_are_these() {
             "red",
             [
                 "#f69890", "#3b2625", "#3b2625", "#3f2c2b", "#f69890", "#f69890", "#3f2c2b",
-                "#36211f", "#f69890", "#f69890", "#f69890", "#261413", "#2a1817", "#382523",
+                "#36211f", "#f69890", "#52c4a6", "#52c4a6", "#261413", "#2a1817", "#382523",
             ],
         ),
         (
@@ -1266,7 +1282,7 @@ fn purlis_classic_s_tints_are_these() {
             "orange",
             [
                 "#cfaa91", "#3a271c", "#3a271c", "#3e2d24", "#cfaa91", "#cfaa91", "#3e2d24",
-                "#352217", "#cfaa91", "#eca06b", "#eca06b", "#25150c", "#291910", "#37261c",
+                "#352217", "#cfaa91", "#cfaa91", "#cfaa91", "#25150c", "#291910", "#37261c",
             ],
         ),
         (
@@ -1274,7 +1290,7 @@ fn purlis_classic_s_tints_are_these() {
             "yellow",
             [
                 "#bab28d", "#312b18", "#312b18", "#363020", "#bab28d", "#bab28d", "#363020",
-                "#2c2613", "#bab28d", "#c7b156", "#c7b156", "#1e1808", "#221c0c", "#2f2919",
+                "#2c2613", "#bab28d", "#bab28d", "#bab28d", "#1e1808", "#221c0c", "#2f2919",
             ],
         ),
         (
@@ -1282,7 +1298,7 @@ fn purlis_classic_s_tints_are_these() {
             "green",
             [
                 "#7ec180", "#212f20", "#212f20", "#273427", "#7ec180", "#7ec180", "#273427",
-                "#1b2a1c", "#7ec180", "#7ec180", "#7ec180", "#101b10", "#132013", "#202d1f",
+                "#1b2a1c", "#7ec180", "#52c4a6", "#52c4a6", "#101b10", "#132013", "#202d1f",
             ],
         ),
         (
@@ -1322,7 +1338,7 @@ fn purlis_classic_s_tints_are_these() {
             "red",
             [
                 "#5e5d5e", "#fde8e5", "#fde8e5", "#f9dbd6", "#5e5d5e", "#5e5d5e", "#f9dbd6",
-                "#fde1df", "#5e5d5e", "#7b5350", "#7b5350", "#feeae7", "#fef4f2", "#ffffff",
+                "#fde1df", "#5e5d5e", "#086a56", "#086a56", "#feeae7", "#fef4f2", "#ffffff",
             ],
         ),
         (
@@ -1330,7 +1346,7 @@ fn purlis_classic_s_tints_are_these() {
             "orange",
             [
                 "#5e5d5e", "#fbe9df", "#fbe9df", "#f5ddcc", "#5e5d5e", "#5e5d5e", "#f5ddcc",
-                "#f8e4d5", "#5e5d5e", "#7d5438", "#7d5438", "#feebdd", "#fff4ee", "#ffffff",
+                "#f8e4d5", "#5e5d5e", "#086a56", "#086a56", "#feebdd", "#fff4ee", "#ffffff",
             ],
         ),
         (
@@ -1338,7 +1354,7 @@ fn purlis_classic_s_tints_are_these() {
             "yellow",
             [
                 "#5e5d5e", "#f1edda", "#f1edda", "#e8e2c7", "#5e5d5e", "#5e5d5e", "#e8e2c7",
-                "#ede8d1", "#5e5d5e", "#6d5c18", "#6d5c18", "#f5eed8", "#fbf7df", "#ffffff",
+                "#ede8d1", "#5e5d5e", "#086a56", "#086a56", "#f5eed8", "#fbf7df", "#ffffff",
             ],
         ),
         (
@@ -1346,7 +1362,7 @@ fn purlis_classic_s_tints_are_these() {
             "green",
             [
                 "#39673c", "#e3f0e1", "#e3f0e1", "#d2e7d2", "#39673c", "#39673c", "#d2e7d2",
-                "#dbecda", "#39673c", "#39673c", "#39673c", "#e1f3e1", "#e9fbe8", "#ffffff",
+                "#dbecda", "#39673c", "#086a56", "#086a56", "#e1f3e1", "#e9fbe8", "#ffffff",
             ],
         ),
         (
@@ -1354,7 +1370,7 @@ fn purlis_classic_s_tints_are_these() {
             "teal",
             [
                 "#016964", "#dbf1ee", "#dbf1ee", "#c7e8e4", "#016964", "#016964", "#c7e8e4",
-                "#d1edea", "#016964", "#016964", "#016964", "#d7f4f2", "#dffcf9", "#ffffff",
+                "#d1edea", "#016964", "#086a56", "#086a56", "#d7f4f2", "#dffcf9", "#ffffff",
             ],
         ),
         (

@@ -64,6 +64,10 @@ export type Apart = {
   /** A rule of the accent's words (#3100): measured only once the accent is answered, so it
    *  costs the accent no colour; see {@link wordsChroma}. */
   words?: boolean;
+  /** A rule of the accent's marks (#4921): measured only once every other rule is answered, so
+   *  it costs the accent and its kin no colour; the mark gives way on its own; see
+   *  {@link signalChroma}. */
+  signal?: boolean;
 };
 
 /**
@@ -162,6 +166,28 @@ export function wordsChroma(
   if (alone === undefined) return undefined;
   const at = (sideAlone: boolean | undefined) => (sideAlone === true ? alone : shared);
   return words.every((rule) => holdsAt(rule, hue, alone, at(rule.fromAlone))) ? alone : undefined;
+}
+
+/**
+ * **The chroma a mark of the accent is drawn at** (#4921, `purlis_core::theme::signal_chroma_of`):
+ * `shared`, the most it is given, where every one of its `rules` holds there; else `alone`, the
+ * accent's own, since a link reads as the accent (#3049); else `undefined`, the mark as written in
+ * the theme's own colour, as the accent's words are (#3100). Never a grey: a chroma under
+ * {@link GREY} is passed over, so where the accent has given way to danger or waiting all but its
+ * colour (Purlis Classic light's red, orange and yellow), the link keeps the theme's own.
+ */
+export function signalChroma(
+  rules: readonly Rule[],
+  hue: number,
+  shared: number | undefined,
+  alone: number | undefined,
+): number | undefined {
+  return [shared, alone].find(
+    (chroma) =>
+      chroma !== undefined &&
+      chroma >= GREY &&
+      rules.every((rule) => holdsAt(rule, hue, chroma, chroma)),
+  );
 }
 
 /**
@@ -345,12 +371,15 @@ export function chromaFor(
   alone: number | undefined,
   words: number | undefined,
   withWords: readonly string[] = [],
+  signal: Readonly<Record<string, number | undefined>> = {},
 ): number | undefined {
   const side = (rule: Apart) => rule.token === token || rule.from === token;
   // The accent's words, and the washes they stand on, at what {@link wordsChroma} answers (#3100,
   // #4666).
   if (withWords.includes(token)) return words;
   if (rules.some((rule) => rule.words === true && rule.token === token)) return words;
+  // A mark of the accent at what {@link signalChroma} answers for it (#4921).
+  if (rules.some((rule) => rule.signal === true && rule.token === token)) return signal[token];
   // A side of a rule held alone gives way to every rule together (#3130): `alone`.
   if (rules.some((rule) => rule.alone === true && side(rule))) return alone;
   return rules.some(side) ? most : Number.POSITIVE_INFINITY;
