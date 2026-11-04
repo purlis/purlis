@@ -5367,6 +5367,89 @@ body {
   color: var(--markdown-heading);
 }
 
+/* **What a chat wrote** (`ChatText.tsx`, #5214): its markdown under the safe subset, in the
+   words' own size, with a markdown render's own colours. A heading is bold words, no larger. */
+.chat-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.chat-text-body {
+  min-width: 0;
+  inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+.chat-text-body > :first-child {
+  margin-block-start: 0;
+}
+.chat-text-body > :last-child {
+  margin-block-end: 0;
+}
+.chat-text-body :is(p, ul, ol, pre, table) {
+  margin: 0 0 var(--space-2);
+}
+.chat-text-body :is(ul, ol) {
+  padding-inline-start: var(--space-6);
+}
+.chat-text-body li + li {
+  margin-block-start: var(--space-1);
+}
+.chat-text-body a {
+  color: var(--markdown-link);
+}
+.chat-text-body code {
+  font-family: var(--font-mono);
+  color: var(--markdown-code);
+}
+.chat-text-body a code {
+  color: inherit;
+}
+.chat-text-body pre {
+  overflow-x: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-sunken);
+}
+.chat-text-body pre,
+.chat-text-body pre code {
+  color: var(--markdown-code-block);
+}
+.chat-text-body blockquote {
+  margin: 0 0 var(--space-2);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--border-subtle);
+  color: var(--markdown-quote);
+}
+.chat-text-heading {
+  color: var(--markdown-heading);
+}
+/* Where a link goes, quiet beside its words. A picture's alt text, in the words' own colour. */
+.chat-text-host {
+  color: var(--text-secondary);
+}
+/* A table scrolls across in its own box rather than widening the card. */
+.chat-text-body table {
+  display: block;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.chat-text-body :is(th, td) {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  text-align: start;
+}
+/* **Folded** past six lines (#5214): cut at six of its lines, the last of them fading out. The
+   rest is still in the page, for a screen reader. */
+.chat-text-body[data-folded="true"] {
+  max-block-size: 6lh;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, currentcolor calc(100% - 2lh), transparent);
+}
+
 /* =====================================================================================
    THE PANEL CONTRIBUTION CONTRACT — charter-app#191
    =====================================================================================
