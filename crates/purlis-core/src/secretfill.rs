@@ -14,10 +14,8 @@
 //! - **A vault the chat's persona isn't tagged for is warned of on the notice**, as a login's is,
 //!   and refused where policy takes the person's vault grants away.
 
-use std::path::Path;
-
 use crate::sandbox::policy::Locks;
-use crate::sandbox::tools::{Tool, fill, mint};
+use crate::sandbox::tools::{fill, mint};
 use crate::secrets::Ctx;
 use crate::secrets::brokered;
 
@@ -76,28 +74,10 @@ pub struct Lines {
     pub card: bool,
 }
 
-/// [`Lines`] for a chat started as `persona`, read from the project at `root` now.
-pub fn lines(root: &Path, persona: Option<&str>, vault: &str, key: &str, origin: &str) -> Lines {
-    let said = crate::sandbox::Plane::read(root).said();
-    let declared: Vec<Tool> = said
-        .policy
-        .or(said.unset)
-        .map(|policy| {
-            policy
-                .personas
-                .values()
-                .flat_map(|grants| grants.tools.clone())
-                .collect()
-        })
-        .unwrap_or_default();
-    // A provider may read a key in any case: a card's is marked however it's spelled.
-    let card = declared.iter().any(|tool| {
-        tool.vault.eq_ignore_ascii_case(vault)
-            && tool
-                .fill
-                .as_ref()
-                .is_some_and(|fill| fill.card && fill.key.eq_ignore_ascii_case(key))
-    });
+/// [`Lines`] for a chat started as `persona`, read from `ctx`'s project now.
+pub fn lines(ctx: &Ctx, persona: Option<&str>, vault: &str, key: &str, origin: &str) -> Lines {
+    let root = ctx.root.as_path();
+    let card = a_cards(ctx, vault, key);
     let always = !card
         && persona.is_some_and(|persona| {
             let (_, allowed) = crate::sandbox::tools::declared_and_allowed_here(root, persona);
@@ -110,6 +90,65 @@ pub fn lines(root: &Path, persona: Option<&str>, vault: &str, key: &str, origin:
             })
         });
     Lines { always, card }
+}
+
+/// **Whether `key` of `vault` is marked a card's** (SF-4), failing closed: read from the
+/// project's file as written, so a line marked `card` that is otherwise faulty, or a project
+/// whose sandbox is off, still marks it; by any persona's line, on any origin, in any case; and
+/// through a linked entry either way, so a link to a card's key, or a card's mark on a link, is
+/// a card's too. Where the file can't be read, or a link can't be, every key is a card's.
+fn a_cards(ctx: &Ctx, vault: &str, key: &str) -> bool {
+    let file = match std::fs::read_to_string(crate::names::manifest(&ctx.root)) {
+        Ok(file) => file,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return false,
+        Err(_) => return true,
+    };
+    let Ok(top) = file.parse::<toml::Table>() else {
+        return true;
+    };
+    let marked: Vec<(String, String)> = top
+        .get("sandbox")
+        .and_then(|it| it.get("personas"))
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flat_map(|personas| personas.values())
+        .filter_map(|persona| persona.get(crate::sandbox::tools::KEY)?.as_table())
+        .flat_map(|tools| tools.values())
+        .filter_map(toml::Value::as_table)
+        .filter(|tool| {
+            tool.get(fill::CARD_KEY)
+                .is_some_and(|card| card.as_bool() != Some(false))
+        })
+        .filter_map(|tool| {
+            Some((
+                tool.get("vault")?.as_str()?.trim().to_owned(),
+                tool.get("key")?.as_str()?.trim().to_owned(),
+            ))
+        })
+        .collect();
+    if marked.is_empty() {
+        return false;
+    }
+    // An entry, and the one it reads where it is a link: one hop, as a read follows.
+    let entries = |vault: &str, key: &str| -> Option<Vec<(String, String)>> {
+        let mut all = vec![(vault.to_owned(), key.to_owned())];
+        if let Some(to) = crate::secrets::links::of(ctx, vault, key).ok()? {
+            all.push((to.vault, to.key));
+        }
+        Some(all)
+    };
+    let same = |a: &(String, String), b: &(String, String)| {
+        a.0.eq_ignore_ascii_case(&b.0) && a.1.eq_ignore_ascii_case(&b.1)
+    };
+    let Some(asked) = entries(vault, key) else {
+        return true;
+    };
+    marked.iter().any(|(v, k)| match entries(v, k) {
+        Some(card) => card
+            .iter()
+            .any(|one| asked.iter().any(|two| same(one, two))),
+        None => true,
+    })
 }
 
 /// **The line Always writes for `key` of `vault` on `origin`** in `persona`'s tools, as the

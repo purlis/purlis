@@ -74,7 +74,9 @@ pub(crate) const FIELD_KIND: &str = r"function () {
 pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin, manyLines) {
   if (!field.isConnected || field.ownerDocument.location.origin !== origin) return 'moved';
   let own = null;
+  const oneLine = ['password', 'text', 'email', 'number', 'tel', 'url'];
   if (field instanceof HTMLInputElement) {
+    if (!oneLine.includes(field.type) || field.disabled || field.readOnly) return 'kind';
     own = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
   } else if (manyLines === true && field instanceof HTMLTextAreaElement) {
     own = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
@@ -141,7 +143,7 @@ impl Browser {
     fn filling(&self, fill: &SecretFill) -> Result<Answer, Refusal> {
         // What it fills is kept out before anything else, for the browser's life.
         let mut held = Kept::default();
-        held.run(&[fill.value.as_str()]);
+        held.run(&spellings(&fill.value));
         lock(&self.inner.state).keep_out_everywhere(&held);
         let target = &fill.target;
         let origin = fill.origin.as_str();
@@ -367,6 +369,33 @@ fn asks_each_time(target: &Ref) -> Refusal {
     ))
 }
 
+/// **The value, and how a page could spell it back** (#5116): as it is, percent-encoded as an
+/// address carries it, and form-encoded as a form sent by its address does. A page that puts
+/// the value into its address, or echoes it so spelled, shows the agent none of it. Each is
+/// wiped as it goes.
+fn spellings(value: &str) -> Vec<zeroize::Zeroizing<String>> {
+    let encoded = |space: &str| {
+        let mut out = String::with_capacity(value.len() * 3);
+        for byte in value.bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    out.push(char::from(byte));
+                }
+                b' ' => out.push_str(space),
+                _ => out.push_str(&format!("%{byte:02X}")),
+            }
+        }
+        zeroize::Zeroizing::new(out)
+    };
+    let mut all = vec![zeroize::Zeroizing::new(value.to_owned())];
+    for one in [encoded("%20"), encoded("+")] {
+        if !all.iter().any(|seen| **seen == *one) {
+            all.push(one);
+        }
+    }
+    all
+}
+
 /// A kind of field, in words.
 fn said_kind(kind: FieldKind) -> &'static str {
     match kind {
@@ -396,6 +425,19 @@ fn stale(target: &Ref) -> Refusal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_value_is_kept_out_as_an_address_or_a_form_would_spell_it() {
+        let spelled: Vec<String> = spellings("sk+a/b c=")
+            .iter()
+            .map(|one| one.to_string())
+            .collect();
+        assert_eq!(
+            spelled,
+            ["sk+a/b c=", "sk%2Ba%2Fb%20c%3D", "sk%2Ba%2Fb+c%3D"]
+        );
+        assert_eq!(spellings("plain-word").len(), 1, "nothing spelled twice");
+    }
 
     #[test]
     fn a_label_is_one_plain_line_at_most_its_length() {

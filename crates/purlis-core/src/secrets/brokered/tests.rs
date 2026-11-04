@@ -5445,4 +5445,23 @@ fn a_browser_login_missing_its_password_where_nothing_asks_is_refused_as_before(
     )
     .unwrap_err();
     assert!(why.contains("did not give shop-login's login"), "{why}");
+/// A fill of a key its vault holds (#5115) reads its value; one it doesn't hold is `None`, for
+/// the Secret ask, never a refusal that ends the fill (#5116).
+#[test]
+fn a_fill_reads_a_key_the_vault_holds_and_says_none_of_one_it_doesnt() {
+    let tmp = project();
+    let chat = Asker {
+        confines: None,
+        ..asker(tmp.path(), Some("devops"))
+    };
+    let held = fill_value(&chat, "team", "TOKEN").expect("read");
+    assert_eq!(
+        held.map(|value| value.expose().to_owned()).as_deref(),
+        Some(TOKEN)
+    );
+    assert!(
+        fill_value(&chat, "team", "NOT_THERE")
+            .expect("a missing key is no refusal")
+            .is_none()
+    );
 }
