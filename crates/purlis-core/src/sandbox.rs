@@ -766,8 +766,9 @@ pub enum Class {
     RunnerInternals,
     /// What a program run later, outside any sandbox, loads code or settings from: git's
     /// config and hooks, shell startup files, and each harness's and editor's project config
-    /// ([`PLANTED`], ruling V73b), never written by a chat wherever it may write; and the
-    /// project's manifests where they could change a chat's sandbox ([`manifests_held`]).
+    /// ([`PLANTED`], ruling V73b), never written directly by a chat wherever it may write, and
+    /// told where one appears another way ([`arrived`]); and the project's manifests where they
+    /// could change a chat's sandbox ([`manifests_held`]).
     LaterCode,
 }
 
@@ -4280,6 +4281,43 @@ impl Applied {
         make_folders(&self.usual_folders);
     }
 
+    /// **Where this chat's names are looked for** ([`arrived`]), the chat opening at `cwd`: its
+    /// own folder and what a person granted it, and at the floor, which writes everywhere, the
+    /// project's folder and `machine`'s home's own names too. Never a temp folder or a cache.
+    pub fn arrived_watch(&self, cwd: Option<&Path>, machine: &Machine) -> arrived::Watched {
+        let floor = self.level() == Level::Floor;
+        let mut folders: Vec<PathBuf> = vec![cwd.unwrap_or(&self.root).to_path_buf()];
+        if floor {
+            folders.push(self.root.clone());
+        }
+        folders.extend(self.confines.writable.iter().cloned());
+        // Each once, and none inside another, which would be walked twice over.
+        folders.sort();
+        folders.dedup();
+        let mut outer: Vec<PathBuf> = Vec::new();
+        for folder in folders {
+            if !outer.iter().any(|kept| folder.starts_with(kept)) {
+                outer.push(folder);
+            }
+        }
+        arrived::Watched {
+            folders: outer,
+            home: machine.home.clone().filter(|_| floor),
+            lifted: self
+                .confines
+                .widened
+                .lifted
+                .iter()
+                .filter_map(|folder| {
+                    MAY_LIFT
+                        .iter()
+                        .find(|name| folder.ends_with(name))
+                        .map(|name| (*name).to_owned())
+                })
+                .collect(),
+        }
+    }
+
     /// The form as compiled for the project, before the manifests of a chat's own folders are
     /// added: what a chat is handed is [`Self::form_in`] its folder.
     pub fn form(&self) -> &Form {
@@ -7435,6 +7473,7 @@ pub fn at_start(
     }
 }
 
+pub mod arrived;
 pub mod asks;
 pub mod backend;
 pub mod browser_listing;
@@ -7473,6 +7512,8 @@ pub mod tools;
 pub mod tunnel;
 pub mod wrapper;
 
+#[cfg(test)]
+mod arrived_tests;
 #[cfg(test)]
 mod claude_tests;
 #[cfg(all(test, unix))]
