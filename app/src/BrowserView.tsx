@@ -31,13 +31,14 @@ import { leavesTheSurface } from "./leaveKeys";
 import { addressChip, deviceOf, originOfAddress, takeGoWhenShown } from "./browsers";
 import { INSPECTOR_OPENS_AT, askToInspect } from "./inspector";
 import { useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
-import { poolOf, programsOf, useChatBrowsers } from "./chatBrowsers";
+import { poolOf, programsOf, secretsOf, useChatBrowsers } from "./chatBrowsers";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice, type NoticeAction, NoticePaneRow } from "./Notice";
 import { Select } from "./ui/select/Select";
 import { useProjectShown } from "./projectShown";
 import { RECONNECTING_SAID } from "./reconnecting";
 import { sandboxCommandReturned } from "./sandboxAsked";
+import { SecretMarks, marksOn } from "./SecretMarks";
 import { onAMac } from "./tabKeys";
 import { Button } from "./ui/button/Button";
 import { Form, TextField } from "./ui/field/Field";
@@ -200,6 +201,8 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   const listedOn = poolOf(chatBrowsers, kept, program);
   const onPool = listedOn !== undefined ? listedOn : pool;
   const device = onPool === undefined ? null : deviceOf(onPool, mac);
+  /** The secrets purlis filled into it, marked while its page is on their site (#5119). */
+  const marks = marksOn(secretsOf(chatBrowsers, kept, program), origin);
 
   const drivingNow = useCallback((now: boolean) => {
     drives.current = now;
@@ -517,6 +520,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
         {/* **Where the page is, and on which device** (#2024): drawn by purlis, outside the
             page, so a page cannot fake it. */}
         <BrowserChip origin={origin} device={device} />
+        <SecretMarks secrets={marks} />
         <p className="browser-bar-said" role="status">
           {/* The bar is the view's one status: what is said over the page is said here too. */}
           {reconnecting && `${RECONNECTING_SAID} `}

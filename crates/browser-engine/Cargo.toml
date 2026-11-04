@@ -63,6 +63,10 @@ nix = { version = "0.31", default-features = false, features = ["fs", "process",
 
 [dev-dependencies]
 tempfile.workspace = true
+# The fixture site's 2FA verifier (#5118) works a TOTP code out as a site does, apart from
+# purlis-core's: HMAC-SHA-1, the versions purlis-core links, so the tree gains no crate.
+hmac = "0.13"
+sha1 = "0.11"
 minisign = "0.10"
 stand-in.workspace = true
 
