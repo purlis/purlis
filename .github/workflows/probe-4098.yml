@@ -35,6 +35,8 @@ jobs:
           - { mode: file, variant: before, browser: webkit, rep: 2, file: src/SkillGrades.stories.tsx, story: Grades }
           - { mode: shard, variant: before, browser: webkit, rep: 1, file: --shard=4/7, story: Grades }
           - { mode: shard, variant: before, browser: webkit, rep: 2, file: --shard=4/7, story: Grades }
+          - { mode: file, variant: after, browser: webkit, rep: 1, file: src/SkillGrades.stories.tsx, story: Grades }
+          - { mode: file, variant: after, browser: webkit, rep: 2, file: src/SkillGrades.stories.tsx, story: Grades }
           - { mode: shard, variant: after, browser: webkit, rep: 1, file: --shard=4/7, story: Grades }
           - { mode: shard, variant: after, browser: webkit, rep: 2, file: --shard=4/7, story: Grades }
     container:
@@ -54,9 +56,9 @@ jobs:
           fetch-depth: 3
       - if: ${{ matrix.variant == 'before' }}
         run: |
-          sed -i 's/^const PROBE_BEFORE = false;/const PROBE_BEFORE = true;/' src/stories.testkit.ts
+          sed -i 's/^const PROBE_BEFORE = false;/const PROBE_BEFORE = true;/' src/SkillGrades.stories.tsx
           sed -i '/^    await parkTheEnginesCursor();$/d' src/ChatsSection.stories.tsx
-          grep -c "PROBE_BEFORE = true" src/stories.testkit.ts || true
+          grep -c "PROBE_BEFORE = true" src/SkillGrades.stories.tsx || true
           grep -c "await parkTheEnginesCursor" src/ChatsSection.stories.tsx || true
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -76,11 +78,11 @@ jobs:
               npx vitest run --project "stories * (${{ matrix.browser }})" "$@" \
               --reporter=dot --reporter=../tools/story-failures.mjs > "$RUNNER_TEMP/report/out-$i.txt" 2>&1 || true
             echo "loop $i: $(grep -o '"story": "${{ matrix.story }}"' "$RUNNER_TEMP/report/report-$i.json" 2>/dev/null | wc -l) gap failures; $(grep -E 'Tests +[0-9]' "$RUNNER_TEMP/report/out-$i.txt" | tail -1)"
-            grep -o 'PROBE width not landed [0-9]* vs [0-9]*' "$RUNNER_TEMP/report/report-$i.json" 2>/dev/null | head -3 || true
+            grep -o 'PROBE tab during hand-off' "$RUNNER_TEMP/report/report-$i.json" 2>/dev/null | head -3 || true
           done
       - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: probe5-${{ matrix.mode }}-${{ matrix.rep }}-${{ matrix.story }}-${{ matrix.variant }}-${{ matrix.browser }}-${{ matrix.rep }}
+          name: probe6-${{ matrix.mode }}-${{ matrix.rep }}-${{ matrix.story }}-${{ matrix.variant }}-${{ matrix.browser }}-${{ matrix.rep }}
           path: ${{ runner.temp }}/report/
           retention-days: 3
