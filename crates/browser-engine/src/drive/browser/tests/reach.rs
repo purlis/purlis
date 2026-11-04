@@ -1179,6 +1179,114 @@ fn a_blank_frame_is_judged_by_the_origin_its_document_has() {
     assert_eq!(whys(&told).last().unwrap().0, "http://third.test/");
 }
 
+/// The payment frame, on its own session, starts on another document: `method` is the
+/// engine's word of it, with `more` beside the frame's id. No word comes that its old
+/// document's context ended.
+fn the_frame_starts_another_document(
+    engine: &super::Engine,
+    browser: &crate::drive::Browser,
+    method: &str,
+    more: serde_json::Value,
+) {
+    let mut params = json!({"frameId": "PAYMENT-FRAME"});
+    params
+        .as_object_mut()
+        .unwrap()
+        .extend(more.as_object().unwrap().clone());
+    engine.emit(method, params, Some("S-PAYMENT"));
+    events_taken_in(browser, engine);
+}
+
+/// A blank payment frame whose document's origin is `http://third.test`, and a frame that
+/// starts another document by `method`: its origin is not known until the new document's own
+/// context says it, and then it is judged there.
+fn a_blank_frame_reads_its_origin_again_when_it_starts(method: &str, more: serde_json::Value) {
+    let (judge, told) = judge(&["http://third.test/", "http://fourth.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    the_frame_shows(&engine, &browser, "about:blank", Some("://"));
+    the_document_has(&engine, &browser, "http://third.test");
+    the_frame_starts_another_document(&engine, &browser, method, more);
+    assert_eq!(
+        typed_into_the_frame(&browser).err(),
+        Some(crate::drive::Refusal::FrameUnread)
+    );
+    assert!(engine.sent("Input.insertText").is_empty());
+    the_document_has(&engine, &browser, "http://fourth.test");
+    let answer = typed_into_the_frame_as(&browser, 60).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert_eq!(whys(&told).last().unwrap().0, "http://fourth.test/");
+}
+
+#[test]
+fn a_frames_origin_is_read_again_when_it_starts_loading_another_document() {
+    a_blank_frame_reads_its_origin_again_when_it_starts("Page.frameStartedLoading", json!({}));
+}
+
+#[test]
+fn a_frames_origin_is_read_again_when_it_starts_navigating_to_another_document() {
+    a_blank_frame_reads_its_origin_again_when_it_starts(
+        "Page.frameStartedNavigating",
+        json!({"url": "about:blank", "loaderId": "LOADER-8", "navigationType": "differentDocument"}),
+    );
+}
+
+#[test]
+fn a_frame_that_moves_within_its_document_keeps_its_origin() {
+    let (judge, told) = judge(&["http://third.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    the_frame_shows(&engine, &browser, "about:blank", Some("://"));
+    the_document_has(&engine, &browser, "http://third.test");
+    for kind in ["sameDocument", "historySameDocument"] {
+        the_frame_starts_another_document(
+            &engine,
+            &browser,
+            "Page.frameStartedNavigating",
+            json!({"url": "about:blank#top", "loaderId": "LOADER-7", "navigationType": kind}),
+        );
+    }
+    let answer = typed_into_the_frame(&browser).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert_eq!(whys(&told).last().unwrap().0, "http://third.test/");
+}
+
+#[test]
+fn a_frames_origin_is_read_again_when_it_moves_to_another_process() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    // The frame's session had told of a document of this frame before, and no word came that
+    // it ended.
+    engine.emit(
+        "Runtime.executionContextCreated",
+        json!({"context": {
+            "id": 73,
+            "origin": "http://third.test",
+            "name": "",
+            "uniqueId": "U-73",
+            "auxData": {"isDefault": true, "type": "default", "frameId": "PAYMENT-FRAME"},
+        }}),
+        Some(MOVED),
+    );
+    wait_for("the earlier document's origin is kept", || {
+        super::super::lock(&browser.inner.state)
+            .document_origins
+            .origin(MOVED, "PAYMENT-FRAME")
+            .is_some()
+    });
+    frame_moves(&engine, "", "about:blank", Duration::from_millis(1));
+    frame_read(&browser);
+    assert_eq!(
+        super::super::lock(&browser.inner.state)
+            .document_origins
+            .origin(MOVED, "PAYMENT-FRAME"),
+        None
+    );
+    assert_eq!(
+        typed_into_the_frame(&browser).err(),
+        Some(crate::drive::Refusal::FrameUnread)
+    );
+    assert!(engine.sent("Input.insertText").is_empty());
+}
+
 #[test]
 fn a_blob_frame_is_judged_by_the_origin_that_made_it() {
     let (judge, told) = judge(&["http://third.test/"]);
