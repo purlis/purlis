@@ -485,7 +485,14 @@ pub async fn pool_setup_try(
     #[cfg(unix)]
     {
         crate::off_the_window("trying the pool", move || {
-            try_it(&held, &config_root()?, &pool, workspace.as_deref())
+            let docker = purlis_core::poolsetup::docker_here();
+            try_it(
+                &held,
+                &config_root()?,
+                docker.as_ref(),
+                &pool,
+                workspace.as_deref(),
+            )
         })
         .await
     }
@@ -497,12 +504,13 @@ pub async fn pool_setup_try(
 }
 
 /// [`pool_setup_try`]'s work, off the window: Try it on pool `pool` of the project `held`, with
-/// this machine's config home `config`. What the parity suite drives on a real Docker pool
-/// (`behaviour::pool_setup_try`, #4977).
+/// this machine's config home `config` and its `docker`, where it has one. What the parity suite
+/// drives on a real Docker pool (`behaviour::pool_setup_try`, #4977).
 #[cfg(unix)]
 pub(crate) fn try_it(
     held: &std::sync::Arc<crate::planes::Held>,
     config: &std::path::Path,
+    docker: Option<&purlis_core::dockerpool::Docker>,
     pool: &str,
     workspace: Option<&str>,
 ) -> Result<PoolSetupTried, String> {
@@ -510,7 +518,7 @@ pub(crate) fn try_it(
     let Some(trying) = Trying::on(pool) else {
         return Err(format!("Try it is already under way on {pool}."));
     };
-    try_on(held, config, pool, workspace, &trying)
+    try_on(held, config, docker, pool, workspace, &trying)
 }
 
 /// **Cancels the Try it under way on pool `pool`** (#4976), on the person's press, as Cancel on
@@ -781,6 +789,7 @@ fn waited_for_its_start(
 fn try_on(
     held: &std::sync::Arc<crate::planes::Held>,
     config: &std::path::Path,
+    docker: Option<&purlis_core::dockerpool::Docker>,
     pool: &str,
     workspace: Option<&str>,
     trying_now: &Trying,
@@ -789,11 +798,10 @@ fn try_on(
     use purlis_core::reopen::Chat;
 
     let root = held.root().to_path_buf();
-    let docker = poolsetup::docker_here();
     let here = Here {
         config,
         plane: Some(&root),
-        docker: docker.as_ref(),
+        docker,
         engine: purlis_core::dockerpool::Docker::engine_on_this_machine(),
     };
     let facts = poolsetup::read_pool(&here, pool).map_err(|why| why.to_string())?;

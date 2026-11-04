@@ -115,8 +115,14 @@ fn in_a_docker_pool() {
     let held = planes.held(&plane).expect("the project is held");
 
     step("Try it");
-    let tried = crate::poolsetuptab::try_it(&held, &machine.config, &pool, Some(WORKSPACE))
-        .expect("Try it answers");
+    let tried = crate::poolsetuptab::try_it(
+        &held,
+        &machine.config,
+        Some(&machine.docker),
+        &pool,
+        Some(WORKSPACE),
+    )
+    .expect("Try it answers");
     assert_eq!(
         tried,
         crate::poolsetuptab::PoolSetupTried {
