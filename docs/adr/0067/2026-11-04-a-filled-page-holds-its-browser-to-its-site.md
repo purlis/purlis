@@ -7,10 +7,14 @@ SF-9) and that runners follow the same rules (SF-12). Both are built now.
   browser's reach proxy is held to the field's site (scheme's port included), and every
   connection it carries to any other site is ended. A browser that can't be held fills nothing.
 - **It lives as long as the page the field is on.** A new document in that page's main frame
-  (a link, a form, a redirect, a reload, the engine's own page for a load that failed) or the
-  page's close ends it, and the browser reaches as it did before. A route change that loads no
-  document keeps it, and so does a new document in a frame inside the page. A fill refused once
-  the hold was made keeps it too, since something of the value may have reached the page.
+  (a link, a form, a redirect, a reload) or the page's close ends it, a couple of seconds later,
+  since the page that left may still send as it unloads; then the browser reaches as it did
+  before. The engine's own page for a load the hold refused doesn't end it: the refused request
+  is still in the page's history. A route change that loads no document keeps it, and so does a
+  new document in a frame inside the page. A fill refused once the hold was made keeps it too,
+  since something of the value may have reached the page.
+- **What the browser sent is never sent again.** The chat's Back is refused where the earlier
+  address carries a value kept out, wherever it goes.
 - **It narrows a login's hold and never widens it, one site at a time.** While a page holding a
   secret lives, a fill on another site is refused; two on the same site each hold until their own
   page is gone.
@@ -18,16 +22,20 @@ SF-9) and that runners follow the same rules (SF-12). Both are built now.
   browser hears of it, naming the site it is held to and what ends the hold; a page's own
   request elsewhere is refused by the proxy, in words of its own.
 - **The field gives nothing away while it lives.** Before the value is written, a copy, a cut and
-  a drag started on the field are stopped from purlis's own world, whoever starts them, the person
-  and the page's scripts included; and the field is marked as one the browser keeps nothing of,
-  so a page left and gone back to comes back without the value. The back-forward cache was off
-  already.
+  a drag started on the field, or anywhere in its document of a field or a selection that holds
+  the value, are stopped from purlis's own world, the person's included; and the field is marked
+  as one the browser keeps nothing of, so a page left and gone back to comes back without the
+  value. The back-forward cache was off already. The approved site is trusted with the value
+  (SF-1), so this is no guard against the page's own scripts, which can read the field anyway.
 - **The agent's copies, cuts and drags stay withheld for the browser's life** (D-5115-10), and
   aren't narrowed to the field and the page's life: the value is kept out of what the chat reads
   for the browser's life because a later page may echo it, and a copy from such a page could carry
   it to another site once the hold has ended.
 - **On a pool's runner** (SF-12), the notice is answered in this window and warns that the secret
   goes to that runner, naming the pool; no other ask is added, since the person sees each fill.
+  As with a login, only a runner shown to be the person's own is asked about, for a chat in its
+  sandbox there, checked again once the value is read, and only into the browser on the runner
+  the chat's link reached.
   The fill and its hold run on the runner, through its link, as a login's do, and nothing is
   filled on a pool a chat ran on without the sandbox, as no login is.
 

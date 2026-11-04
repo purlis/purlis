@@ -269,6 +269,32 @@ fn judged(held: &Held, session: u32, asked: &FillAsked) -> Result<(String, Vec<S
     Ok((origin, warnings))
 }
 
+/// **The runner of `pool` a chat's fill may go to** (#5122; SF-12, ADR 0089): only one shown to be
+/// the person's own, as a login's is (`purlis_core::poollogins::Bound::over_the_link`), for a
+/// chat in its sandbox there, on a pool no chat ran on without one; or why not, in words the chat
+/// reads. `config` is this machine's pools, `reached` the runner the chat's link reached.
+fn runner_bound(
+    unconfined: bool,
+    config: Option<&std::path::Path>,
+    pool: &str,
+    reached: Option<&str>,
+) -> Result<purlis_core::poollogins::Bound, String> {
+    if unconfined {
+        return Err(format!(
+            "this chat runs on pool {pool}'s runner without the sandbox, so purlis fills no \
+             secret there: start it in its sandbox"
+        ));
+    }
+    let config = config.ok_or_else(|| {
+        format!("purlis keeps no pools on this machine, so nothing was filled on pool {pool}")
+    })?;
+    if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
+        return Err(purlis_core::runnertaint::refused_on(pool));
+    }
+    purlis_core::poollogins::Bound::over_the_link(config, pool, reached)
+        .map_err(|why| format!("nothing was filled on pool {pool}: {why}"))
+}
+
 /// **What the person is warned of where the browser runs on a pool's runner** (#5122, SF-12):
 /// the value is read on this machine and goes over the runner's link to that machine.
 fn runner_warning(pool: &str) -> String {
@@ -295,6 +321,22 @@ fn frame_warning(origin: &str, page: Option<&str>) -> Option<String> {
 /// most [`purlis_core::loginask::THE_PERSON_IS_WAITED_FOR`], under no lock of the browsers'.
 pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<Secret, String> {
     let (origin, warnings) = judged(held, session, asked)?;
+    // On a runner, only one shown to be the person's own, before anyone is asked (#5122).
+    let runner = match asked.pool.as_deref() {
+        Some(pool) => {
+            let unconfined = held
+                .chats()
+                .login_asker(held.root(), session)
+                .is_none_or(|(_, unconfined)| unconfined);
+            let config = held.chats().pools_in();
+            let reached = crate::hooks::reached_over_the_link();
+            let read =
+                move || runner_bound(unconfined, config.as_deref(), pool, reached.as_deref());
+            let bound = read()?;
+            Some((read, bound))
+        }
+        None => None,
+    };
     let fills = held.secret_fills();
     if fills.kept(session, &asked.vault, &asked.key, &origin) {
         return Err(kept_said(&asked.key, &origin, None));
@@ -344,7 +386,18 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<S
                     "this chat is no longer open in purlis's window, so nothing was filled"
                         .to_owned()
                 })?;
-            purlis_core::secrets::brokered::fill_value(&asker, &asked.vault, &asked.key)
+            let value =
+                purlis_core::secrets::brokered::fill_value(&asker, &asked.vault, &asked.key)?;
+            // Again once it is read: the pool or its runner may have changed meanwhile.
+            if let Some((read, bound)) = &runner
+                && read().as_ref() != Ok(bound)
+            {
+                return Err(
+                    "the pool or its runner changed as the secret was read, so nothing was filled"
+                        .to_owned(),
+                );
+            }
+            Ok(value)
         }
         Heard::Kept(reason) => Err(kept_said(&asked.key, &origin, reason.as_deref())),
         Heard::Gone => Err(NOT_ANSWERED.to_owned()),

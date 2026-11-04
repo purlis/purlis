@@ -2796,6 +2796,18 @@ impl ChatBrowsers {
                     .insert(program.clone(), reach_now.clone());
                 driver.act(&program, &browse.call_id, act, reach_now)
             }
+            // Bound to the runner the chat's link reached, as a login is (#4248): during a
+            // drain, a secret goes to no other runner.
+            Doing::Fill { key, .. } if runner_replaced(driver.as_ref(), &program) => {
+                return (
+                    no(&format!(
+                        "this chat's runner is being replaced and its browser runs on the new \
+                         one, so {key} was not filled: open the browser from a chat on the new \
+                         runner"
+                    )),
+                    false,
+                );
+            }
             Doing::Fill { target, vault, key } => self.fill(
                 driver.as_ref(),
                 &program,
@@ -2819,14 +2831,7 @@ impl ChatBrowsers {
                 // Bound to the runner the chat's link reached, so it goes into a browser on no
                 // other: a project's chats and browsers may be on two runners during a drain
                 // (#4248).
-                if let (Some(asked), Some(on)) = (
-                    crate::hooks::reached_over_the_link(),
-                    driver.runner_of(&program),
-                ) && asked
-                    .split_once('/')
-                    .map(|(_, runner)| runner.split_once('@').map_or(runner, |(runner, _)| runner))
-                    != Some(on.as_str())
-                {
+                if runner_replaced(driver.as_ref(), &program) {
                     return (
                         no(&format!(
                             "this chat's runner is being replaced and its browser runs on the \
@@ -3001,6 +3006,21 @@ enum Doing {
         vault: String,
         key: String,
     },
+}
+
+/// **Whether browser `program` runs on another runner than the one the chat's link reached**
+/// (#4248): a project's chats and browsers may be on two runners during a drain.
+fn runner_replaced(driver: &dyn Driver, program: &str) -> bool {
+    let (Some(asked), Some(on)) = (
+        crate::hooks::reached_over_the_link(),
+        driver.runner_of(program),
+    ) else {
+        return false;
+    };
+    asked
+        .split_once('/')
+        .map(|(_, runner)| runner.split_once('@').map_or(runner, |(runner, _)| runner))
+        != Some(on.as_str())
 }
 
 /// **What asks the person about a secret fill, and reads its value once they allow it** (#5115):

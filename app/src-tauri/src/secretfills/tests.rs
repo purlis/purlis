@@ -250,3 +250,20 @@ fn a_fill_on_a_runners_browser_warns_that_the_secret_goes_to_that_runner() {
     assert!(warned.contains("pool builds's runner"), "{warned}");
     assert!(warned.contains("goes to that machine"), "{warned}");
 }
+
+/// #5122, ADR 0089: a fill on a runner is asked about only where the runner is shown to be the
+/// person's own, for a chat in its sandbox there, and refused in words before anyone is asked
+/// otherwise.
+#[test]
+fn a_fill_on_a_runner_not_shown_to_be_the_persons_own_is_refused_before_anyone_is_asked() {
+    let config = tempfile::tempdir().unwrap();
+
+    let unknown = runner_bound(false, Some(config.path()), "builds", None);
+    let sandboxless = runner_bound(true, Some(config.path()), "builds", None);
+    let no_pools = runner_bound(false, None, "builds", None);
+
+    for refused in [unknown, sandboxless, no_pools] {
+        let why = refused.expect_err("refused");
+        assert!(why.contains("builds"), "{why}");
+    }
+}
