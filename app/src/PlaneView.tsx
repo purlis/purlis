@@ -3550,9 +3550,7 @@ export const PlaneView = memo(function PlaneView({
       oneJob = false,
     ) => {
       const name =
-        oneJob && typed?.line !== undefined
-          ? loginName(typed.line)
-          : `shell ${takeChatNumber()}`;
+        oneJob && typed?.line !== undefined ? loginName(typed.line) : `shell ${takeChatNumber()}`;
       void start(name)
         .then((opened) => {
           if (opened.status === "error") {
@@ -7413,7 +7411,7 @@ export const PlaneView = memo(function PlaneView({
       // Every chat has said how it came back: the dismissed notes are settled against them.
       if (still.size === 0) settleChatNotes(open);
     },
-    [keepsItsPane, change, filedIn, isPinned, noteStarted, plane, settleChatNotes, tabWindow],
+    [keepsItsPane, change, filedIn, isPinned, noteStarted, plane, settleChatNotes],
   );
   const readRestoredNow = useRef(readRestored);
   useEffect(() => {
@@ -11074,7 +11072,9 @@ export const PlaneView = memo(function PlaneView({
                                     change((tabs) => withShare(tabs, frontTab.id, path, share)),
                                 }}
                                 runningIn={runningIn}
-                                noWorkspace={sidebar !== undefined && sidebar.workspaces.length === 0}
+                                noWorkspace={
+                                  sidebar !== undefined && sidebar.workspaces.length === 0
+                                }
                                 tab={frontTab.id}
                                 chatName={nameOf}
                                 onClearPane={clearPane}
