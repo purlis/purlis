@@ -67,7 +67,6 @@ function core() {
         // Held, as a read of two hundred skills is while the tab is drawn.
         return new Promise(() => undefined);
       }
-      if (cmd === "skill_studio_on") return true;
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
       // Its tab on alpha's strip, from the stored layout (#4758).
