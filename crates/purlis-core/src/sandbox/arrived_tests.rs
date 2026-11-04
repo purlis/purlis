@@ -504,6 +504,30 @@ fn a_change_of_core_config_under_a_second_header_on_a_line_is_told() {
 }
 
 #[test]
+fn a_change_of_core_config_behind_a_comment_is_told_and_one_of_a_branch_is_not() {
+    for hidden in [
+        "[core] ; [remote]\n\thooksPath = /elsewhere\n",
+        "[core] hooksPath = /elsewhere # [remote]\n",
+    ] {
+        let fix = Fixture::new();
+        let clone = clone_behind(&fix);
+        fix.begin();
+        let config = clone.join(".git/config");
+        let text = fs::read_to_string(&config).expect("its config");
+        fs::write(&config, format!("{text}{hidden}")).expect("its config");
+        assert_eq!(fix.look(), ["clone/.git"], "{hidden}");
+    }
+    let fix = Fixture::new();
+    let clone = clone_behind(&fix);
+    fix.begin();
+    git(
+        &clone,
+        &["config", "branch.main.description", "ordinary work"],
+    );
+    assert_eq!(fix.look(), Vec::<String>::new());
+}
+
+#[test]
 fn the_record_survives_a_restart_and_what_appeared_while_the_app_was_closed_is_told() {
     let fix = Fixture::new();
     fix.begin();

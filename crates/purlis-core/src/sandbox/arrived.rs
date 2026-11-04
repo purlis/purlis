@@ -94,6 +94,18 @@ const LARGEST_READ: u64 = 1024 * 1024;
 /// The file of the clones the app made ([`made_by_the_app`]), beside the records.
 const MADE: &str = "made-by-the-app";
 
+/// The sections of a repository's config ordinary work rewrites, which [`stamp`] leaves out.
+const ORDINARY_SECTIONS: [&str; 8] = [
+    "branch",
+    "remote",
+    "user",
+    "gc",
+    "maintenance",
+    "pull",
+    "push",
+    "fetch",
+];
+
 /// The audit event of what a look found.
 pub const AUDITED: &str = "trust.sandbox.arrived";
 
@@ -154,37 +166,22 @@ fn stamp(dot_git: &Path) -> u64 {
     if is_regular(dot_git) {
         words.push_str(&small_file(dot_git).unwrap_or_default());
     } else {
-        let mut section_counts = true;
-        for line in small_file(&dot_git.join("config"))
-            .unwrap_or_default()
-            .lines()
-        {
-            let line = line.trim();
-            if line.starts_with('[') {
-                // Git reads the last header on a line, so that is the section.
-                let section = line
-                    .rsplit('[')
-                    .next()
-                    .and_then(|it| it.split([']', ' ', '"']).next());
-                section_counts = !section.is_some_and(|name| {
-                    [
-                        "branch",
-                        "remote",
-                        "user",
-                        "gc",
-                        "maintenance",
-                        "pull",
-                        "push",
-                        "fetch",
-                    ]
-                    .iter()
-                    .any(|ordinary| name.eq_ignore_ascii_case(ordinary))
-                });
+        // Read as git reads it, by gitoxide's parser: no spelling hides a section. What doesn't
+        // parse git refuses too, and counts whole.
+        let config = small_file(&dot_git.join("config")).unwrap_or_default();
+        match gix::config::File::try_from(config.as_str()) {
+            Ok(parsed) => {
+                for section in parsed.sections() {
+                    let name = section.header().name().to_string();
+                    if !ORDINARY_SECTIONS
+                        .iter()
+                        .any(|ordinary| name.eq_ignore_ascii_case(ordinary))
+                    {
+                        words.push_str(&section.to_bstring().to_string());
+                    }
+                }
             }
-            if section_counts {
-                words.push_str(line);
-                words.push('\n');
-            }
+            Err(_) => words.push_str(&config),
         }
         for other in ["config.worktree", "commondir", "objects/info/alternates"] {
             words.push_str(&small_file(&dot_git.join(other)).unwrap_or_default());
@@ -192,7 +189,6 @@ fn stamp(dot_git: &Path) -> u64 {
         if let Ok(hooks) = std::fs::read_dir(dot_git.join("hooks")) {
             let mut listed: Vec<String> = hooks
                 .flatten()
-                .take(MOST_FILES_CHECKED)
                 .map(|hook| {
                     let kind = hook.metadata().ok();
                     format!(
@@ -204,6 +200,7 @@ fn stamp(dot_git: &Path) -> u64 {
                 })
                 .collect();
             listed.sort();
+            listed.truncate(MOST_FILES_CHECKED);
             words.push_str(&listed.concat());
         }
     }
