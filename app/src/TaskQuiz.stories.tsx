@@ -179,6 +179,33 @@ export const OneAtATimeWithACount: Story = {
   },
 };
 
+/** A question a task wrote over several lines, as the core gives it: its line ends as themselves. */
+const OVER_LINES =
+  "Which branch should the fix land on?\n\n- main, where the next release is cut\n- the fork the person keeps";
+
+/**
+ * **A question over several lines is drawn over its lines** (#5213): each line end the task
+ * wrote starts a line, and no mark stands in for one. The picture is the quiz at rest.
+ */
+export const AQuestionOverSeveralLines: Story = {
+  args: { asks: [question(7, "developer 7", NOW - 125, { says: OVER_LINES })] },
+  beforeEach: () => {
+    pausedOnItsQuestion();
+    setWhereYouAnswer({ answer: "top", offered: true });
+  },
+  play: async ({ canvasElement }) => {
+    const quiz = within(canvasElement).getByRole("group", { name: "developer 7 asks" });
+    const asked = within(quiz).getByText((_, node) => node?.textContent === OVER_LINES, {
+      selector: "span",
+    });
+    await expect(quiz).not.toHaveTextContent(/⟦U\+/);
+    // An inline run of text has one box for each line it is drawn over, and these three lines
+    // fit on one where their line ends are lost.
+    await expect(asked.getClientRects().length).toBeGreaterThanOrEqual(3);
+    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+  },
+};
+
 /**
  * **A question its asking chat did not answer in time**, with no note: the reason says so, and
  * the line says nothing of an asking chat's own words. The picture is the quiz at rest.

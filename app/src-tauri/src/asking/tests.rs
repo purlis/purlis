@@ -2435,3 +2435,24 @@ fn a_secret_ask_shows_the_line_remember_would_write() {
     assert_eq!(remember(open(Some("words"), false), true), None);
     assert_eq!(remember(open(None, false), false), None, "policy says no");
 }
+
+/// **A task's question keeps its lines** (#5213): the window draws a question as the prose it
+/// is, so its line ends and tabs reach it as themselves and are never written as marks.
+#[test]
+fn a_task_question_keeps_its_line_breaks_and_tabs() {
+    let reached = purlis_core::dispatchtalk::ReachedYou {
+        task: 7,
+        number: 1,
+        text: "Which branch?\r\n\n- **main**\n\t- or a fork\u{202E}".to_owned(),
+        why: purlis_core::dispatchtalk::Reached::PassedOn,
+        at: 0,
+        note: None,
+    };
+
+    let shown = task_question(reached, "lead".to_owned(), Vec::new());
+
+    assert_eq!(
+        shown.says,
+        "Which branch?\n\n- **main**\n\t- or a fork⟦U+202E⟧"
+    );
+}

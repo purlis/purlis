@@ -97,6 +97,21 @@ describe("a task question's quiz (#4565)", () => {
     expect(screen.getByText("steward 4 has closed, so this came to you.")).toBeInTheDocument();
   });
 
+  it("shows a question over several lines as its lines, never a line break's mark (#5213)", () => {
+    core();
+    const says = "Which branch?\n\n- **main**\n\t- or a fork";
+    draw(asked({ says }));
+    const quiz = screen.getByRole("group", { name: "developer 7 asks" });
+    const question = screen.getByText((_, node) => node?.textContent === says, {
+      selector: "span",
+    });
+    expect(quiz).toContainElement(question);
+    expect(quiz.textContent).not.toMatch(/⟦U\+/);
+    // Its words are still a text node, never markup, until chats' text is drawn as markdown.
+    expect(question.childNodes).toHaveLength(1);
+    expect(question.firstChild?.nodeType).toBe(Node.TEXT_NODE);
+  });
+
   it("names the whole chain of a nested task", () => {
     core();
     draw(asked({ chain: ["steward 4", "architect 2", "developer 9", "qa 5"] }));

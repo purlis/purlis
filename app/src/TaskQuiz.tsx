@@ -36,7 +36,8 @@ export const moreSaidFully = (count: number) =>
  * - **It is one item everywhere**: it reads the asks registry's item, the same the ✋ and the
  *   Inbox read, and the answer goes the one path a task's question is answered by
  *   (`answer_task_question`). One answer clears it from every surface.
- * - **The words are data**: a chat's question and note are text nodes, never markup.
+ * - **The words are data**: a chat's question and note are text nodes, never markup. A question
+ *   is drawn over the lines its task wrote (#5213), as the Inbox draws a chat's message.
  */
 export function TaskQuiz({
   plane,
@@ -110,7 +111,7 @@ export function TaskQuiz({
       </p>
       <p className="inbox-says">
         <KindMark kind="reply" />
-        <span className="inbox-primary ui-text-body ui-text-strong" id={`${ids}-asked`}>
+        <span className="inbox-primary inbox-said ui-text-body ui-text-strong" id={`${ids}-asked`}>
           {ask.says}
         </span>
       </p>
