@@ -458,10 +458,15 @@ export const Leaving: Story = {
  * a folder and moves into it, ↓ walks it, and Enter shows a file; the picture is a reference
  * rendered beside the tree.
  */
+
+/** The Files tab's first draw loads the light editor's chunk and reads the folder: on a busy
+ *  runner, more than the second a find waits by default. */
+const FIRST_DRAW = { timeout: 10_000 };
+
 export const Files: Story = {
   args: { tab: "files" },
   play: async ({ canvas }) => {
-    const tree = await canvas.findByRole("treegrid", { name: "Files of deploy" });
+    const tree = await canvas.findByRole("treegrid", { name: "Files of deploy" }, FIRST_DRAW);
     const row = (name: string) => within(tree).getByRole("row", { name });
     await tabInto(() => tree);
     await untilFocused(() => row("evals"), "Files: Tab lands on the first row");
@@ -483,7 +488,11 @@ export const Files: Story = {
 export const FilesBuiltIn: Story = {
   args: { chosen: BROWSER, tab: "files" },
   play: async ({ canvas }) => {
-    const tree = await canvas.findByRole("treegrid", { name: "Files of purlis-browser" });
+    const tree = await canvas.findByRole(
+      "treegrid",
+      { name: "Files of purlis-browser" },
+      FIRST_DRAW,
+    );
     await tabInto(() => tree);
     await userEvent.keyboard("{Enter}");
     await expect(await canvas.findByTestId("skill-files-read-only")).toHaveTextContent(
@@ -500,7 +509,7 @@ export const FilesBuiltIn: Story = {
 export const FilesUnpicked: Story = {
   args: { tab: "files" },
   play: async ({ canvas }) => {
-    const tree = await canvas.findByRole("treegrid", { name: "Files of deploy" });
+    const tree = await canvas.findByRole("treegrid", { name: "Files of deploy" }, FIRST_DRAW);
     const row = (name: string) => within(tree).getByRole("row", { name });
     await tabInto(() => tree);
     await userEvent.keyboard("{End}");
@@ -520,7 +529,7 @@ export const FilesUnpicked: Story = {
 export const FilesNone: Story = {
   args: { chosen: BRAINSTORM, tab: "files" },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByTestId("skill-files-none")).toHaveTextContent(
+    await expect(await canvas.findByTestId("skill-files-none", {}, FIRST_DRAW)).toHaveTextContent(
       "its files are kept with the project's pins",
     );
   },
@@ -530,9 +539,9 @@ export const FilesNone: Story = {
 export const FilesNotRead: Story = {
   args: { chosen: LINT, tab: "files" },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByTestId("skill-page-not-read")).toHaveTextContent(
-      "Open it again from the Library",
-    );
+    await expect(
+      await canvas.findByTestId("skill-page-not-read", {}, FIRST_DRAW),
+    ).toHaveTextContent("Open it again from the Library");
     const again = canvas.getByRole("button", { name: "Try again" });
     await tabInto(() => again);
     expectFocusInSight();
