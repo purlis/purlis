@@ -275,6 +275,11 @@ pub fn read(
                     )
                     .map(|need| need.purpose),
                     names_no_vault: false,
+                    reason: crate::secrets::ask::Reason::broken(
+                        ctx,
+                        &reference.vault,
+                        &reference.key,
+                    ),
                 };
                 missing
                     .read_asking(need, &mut once)
