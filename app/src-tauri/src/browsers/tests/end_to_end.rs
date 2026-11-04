@@ -48,7 +48,7 @@ const PATIENCE: Duration = Duration::from_secs(180);
 const RUN_HERE: &str = "PURLIS_TEST_PINNED_ENGINE";
 
 /// The login the project's persona declares, and what its vault holds for it.
-const LOGIN: &str = "shop-login";
+pub(crate) const LOGIN: &str = "shop-login";
 const USER: &str = "fixture-user-7f3a";
 const PASSWORD: &str = "kept-0ut-9d2c";
 
@@ -373,6 +373,21 @@ impl Window {
 
     /// [`Window::holding`], its session host as `host` starts it.
     pub(crate) fn holding_on(host: fn() -> Host, login: &Site, allowed: &[&Site]) -> Window {
+        let allowed: Vec<_> = allowed.iter().map(|site| site.site()).collect();
+        Window::declaring(
+            host,
+            &format!("browser = \"{}\"", login.at("login.html")),
+            &allowed,
+        )
+    }
+
+    /// [`Window::holding_on`], its login [`LOGIN`] declared with `where_` (its `browser`, and
+    /// its `form` where it has one), its browsers allowed to reach `allowed`.
+    pub(crate) fn declaring(
+        host: fn() -> Host,
+        where_: &str,
+        allowed: &[purlis_core::sandbox::browser_reach::Site],
+    ) -> Window {
         the_log();
         let project = tempfile::tempdir().expect("the project's folder");
         let root = std::fs::canonicalize(project.path()).expect("its path");
@@ -380,9 +395,8 @@ impl Window {
             purlis_core::names::manifest(&root),
             format!(
                 "schema = 1\n\n[sandbox]\nmode = \"on\"\n\n[sandbox.personas.devops]\ntools = {{ \
-                 {LOGIN} = {{ vault = \"team\", browser = \"{}\", user = \"USER\", key = \
-                 \"PASSWORD\" }} }}\n",
-                login.at("login.html")
+                 {LOGIN} = {{ vault = \"team\", {where_}, user = \"USER\", key = \
+                 \"PASSWORD\" }} }}\n"
             ),
         )
         .expect("its file");
@@ -407,7 +421,7 @@ impl Window {
         purlis_core::sandbox::local::allow_persona_hosts(&root, "devops", &devops.digest)
             .expect("its login allowed here");
         for site in allowed {
-            purlis_core::sandbox::local::grant_browser_site(&root, &site.site())
+            purlis_core::sandbox::local::grant_browser_site(&root, site)
                 .expect("a browser site allowed here");
         }
 

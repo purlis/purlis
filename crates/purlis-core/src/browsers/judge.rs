@@ -153,7 +153,9 @@ impl SiteJudge {
             .get(..6)
             .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https:"));
         // A browser holding a login: its proxy refuses every other site, and nobody is asked.
-        if !self.bound.lets(&host, port) {
+        // Its sign-in site, which the person allowed with the login (#4995), is not asked about
+        // either: what its page sends there, a token refresh say, goes (#5152).
+        if !self.bound.lets(&host, port) || self.bound.form() == Some(Site::of(&host, port)) {
             return Gate::Go;
         }
         let own = self.own();

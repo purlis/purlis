@@ -16,6 +16,8 @@ import type {
   PlaneId,
 } from "./bindings";
 import { ProjectShownProvider } from "./projectShown";
+import { onTheWire } from "./chatEvents.testkit";
+import { theFrameNow } from "./frame.testkit";
 import { countReactsCommits, counts, renderedBy } from "./reactCommits.testkit";
 
 /**
@@ -155,8 +157,14 @@ async function settled() {
   });
 }
 
+/** A touch as the core sends it, and the frame its marks are told in (`heldStore.ts`). */
 const touch = (path: string) =>
-  act(() => emit("chat-touching", { plane: PLANE, session: 3, path } satisfies ChatTouching));
+  act(async () => {
+    await emit(
+      ...onTheWire("chat-touching", { plane: PLANE, session: 3, path } satisfies ChatTouching),
+    );
+    theFrameNow();
+  });
 
 const reset = () => {
   Object.assign(counts, { rendered: 0, mounted: 0, unmounted: 0, commits: 0 });

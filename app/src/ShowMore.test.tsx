@@ -9,6 +9,8 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { Moved, OpenChat } from "./bindings";
 import { chipName, openAllWorkspaces, workspaceChips } from "./test-strips";
+import { aBatchOf } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * **What waits on you in a workspace is never hidden** (ADR 0054, charter-app#392): the
@@ -110,11 +112,11 @@ function core(
     asked,
     /** Fires one `chat-moved`, the way the core pushes one. */
     move(moved: Moved) {
-      for (const handler of listeners.get("chat-moved") ?? [])
+      for (const handler of listeners.get(CHAT_EVENTS) ?? [])
         window.__TAURI_INTERNALS__.runCallback(handler, {
-          event: "chat-moved",
+          event: CHAT_EVENTS,
           id: 1,
-          payload: moved,
+          payload: aBatchOf("moved", moved),
         });
     },
   };

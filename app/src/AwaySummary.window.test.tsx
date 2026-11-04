@@ -29,6 +29,7 @@ import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
 import { theFrameNow } from "./frame.testkit";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * **While you were away: one summary in place of a pile of Notices** (#1514, V100-65), against
@@ -237,6 +238,7 @@ function core(open: OpenChat[], rows: FinishedTask[] = [], other?: Project) {
     return null;
   });
   const send = async (event: string, payload: unknown) => {
+    [event, payload] = onTheWire(event, payload);
     const handlers = everyListener.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
     await act(async () => {

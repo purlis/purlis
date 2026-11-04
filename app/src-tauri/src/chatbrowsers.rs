@@ -2851,8 +2851,10 @@ impl ChatBrowsers {
                 );
                 // Its row says purlis drives it while it logs in (#2300).
                 self.purlis_drives(&program, true);
+                let reaches = reaches_said(&login.address, login.form.as_deref());
                 let logged_in = driver.log_in(&program, login).map(|mut browsed| {
-                    browsed.note = Some(logged_in_said(&declared, browsed.note.as_deref()));
+                    browsed.note =
+                        Some(logged_in_said(&declared, &reaches, browsed.note.as_deref()));
                     browsed
                 });
                 self.purlis_drives(&program, false);
@@ -3044,15 +3046,39 @@ const FILL_NEEDS_A_PAGE: &str = "this chat has no browser open, so nothing was f
                                  page, take a snapshot, and name the field from it";
 
 /// What the chat is told once purlis performed its browser login `name` (#2016): that its
-/// password field went, where, and what the browser reaches from now. Never that the person is
-/// signed in, which only the page can show (it may ask for a second step), and never a value.
-fn logged_in_said(name: &str, note: Option<&str>) -> String {
+/// password field went, where, and what the browser reaches from now (`reaches`,
+/// [`reaches_said`]). Never that the person is signed in, which only the page can show (it may
+/// ask for a second step), and never a value.
+fn logged_in_said(name: &str, reaches: &str, note: Option<&str>) -> String {
     let gone = note.unwrap_or("the password field is gone since purlis submitted the login");
     format!(
         "{gone}, with {name}: take a snapshot to see whether the page asks for anything more. \
-         This browser now reaches that site alone; open another with browser_new for any other \
-         site"
+         {reaches}; open another with browser_new for any other site"
     )
+}
+
+/// **The sites a browser logged in at `address` reaches, and what the chat may do on each**
+/// (#5152, the person's ruling of 2026-11-04): the login's page's site, and the site of its
+/// `form` where that is another, whose pages load but which the chat reads and acts on only
+/// while `browser_login` signs in.
+fn reaches_said(address: &str, form: Option<&str>) -> String {
+    let site = |address: &str| {
+        purlis_core::browsers::judge::site_of(address).map(|(host, port)| {
+            purlis_core::sandbox::browser_reach::Site::of(&host, port).to_string()
+        })
+    };
+    let page = site(address).unwrap_or_else(|| "that site".to_owned());
+    // Read as the login reads it, so the site named is the one the browser is held to.
+    let form = form.and_then(|form| purlis_core::sandbox::tools::login::form_of(form).ok());
+    match form.as_deref().and_then(site).filter(|form| *form != page) {
+        Some(form) => format!(
+            "This browser now reaches {page}, where you may read and act, and {form}, the site it \
+             signs in on: the pages of {form} load (the site's own redirects, frames and token \
+             refreshes), but you may read or act on them only while browser_login signs in, and \
+             where one asks to sign in again, call browser_login again"
+        ),
+        None => format!("This browser now reaches {page} alone"),
+    }
 }
 
 /// The event the window hears a chat's browsers ended on, because the person narrowed its

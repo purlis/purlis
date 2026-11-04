@@ -180,6 +180,9 @@ impl Browser {
         lock(&self.reading).forget();
         let answer = {
             let _carrying = Carrying::under(Driver::Agent, epoch);
+            // Counted as the agent's call while it is carried out: nothing it sets off is sent
+            // to a site the agent is kept off (#5152).
+            let _call = super::AgentCall::begins(&self.inner.agent_calls);
             let filled = self.filling(fill, hold);
             if self.cut() {
                 Err(Refusal::Interrupted)

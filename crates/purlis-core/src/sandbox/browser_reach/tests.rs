@@ -802,3 +802,34 @@ fn a_fill_hold_in_a_browser_holding_a_login_reaches_no_more_than_both() {
     other.fill_released(held);
     assert!(other.lets("shop.example.test", 443));
 }
+
+/// #5117 with #5152: a login whose form is on another site reaches that site for the browser's
+/// life, signed in or not; a fill hold on the page's site narrows that too, and once released the
+/// browser reaches both again.
+#[test]
+fn a_fill_hold_keeps_a_logged_in_browser_off_its_sign_in_providers_site_until_released() {
+    let bound = Bound::default();
+    let number = bound
+        .to(&LoginSites {
+            page: Site::of("app.example.test", 443),
+            form: Some(Site::of("auth.example.test", 443)),
+        })
+        .expect("bound to the login")
+        .expect("a sign-in");
+    bound.sign_in_over(number).expect("it was open");
+    assert!(bound.lets("auth.example.test", 443), "reached for its life");
+
+    let held = bound
+        .hold_for_fill(&Site::of("app.example.test", 443))
+        .expect("held");
+
+    assert!(bound.lets("app.example.test", 443));
+    assert!(
+        !bound.lets("auth.example.test", 443),
+        "the fill's hold narrows the login's"
+    );
+    let said = bound.refuses("auth.example.test", 443).expect("refused");
+    assert!(said.contains("app.example.test"), "{said}");
+    assert!(bound.fill_released(held));
+    assert!(bound.lets("auth.example.test", 443));
+}

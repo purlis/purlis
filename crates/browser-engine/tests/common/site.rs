@@ -89,12 +89,19 @@ pub struct Site {
     pub address: SocketAddr,
     /// The host of every request it was sent, in order (#2018).
     heard: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// Every request it was sent, as `METHOD host/path`, in order (#5152).
+    sent: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 impl Site {
     /// Whether any request reached it for `host`.
     pub fn heard_from(&self, host: &str) -> bool {
         self.heard.lock().unwrap().iter().any(|one| one == host)
+    }
+
+    /// Whether it was sent `request`, written `METHOD host/path` (#5152).
+    pub fn was_sent(&self, request: &str) -> bool {
+        self.sent.lock().unwrap().iter().any(|one| one == request)
     }
 }
 
@@ -104,29 +111,48 @@ pub fn serve() -> Site {
     let address = listener.local_addr().unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/site");
     let heard = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let hearing = std::sync::Arc::clone(&heard);
+    let sending = std::sync::Arc::clone(&sent);
     thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let root = root.clone();
             let hearing = std::sync::Arc::clone(&hearing);
-            thread::spawn(move || answer(stream, &root, &hearing));
+            let sending = std::sync::Arc::clone(&sending);
+            thread::spawn(move || answer(stream, &root, &hearing, &sending));
         }
     });
-    Site { address, heard }
+    Site {
+        address,
+        heard,
+        sent,
+    }
 }
 
-fn answer(stream: TcpStream, root: &Path, heard: &std::sync::Mutex<Vec<String>>) {
+fn answer(
+    stream: TcpStream,
+    root: &Path,
+    heard: &std::sync::Mutex<Vec<String>>,
+    sent: &std::sync::Mutex<Vec<String>>,
+) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut first = String::new();
     if reader.read_line(&mut first).is_err() {
         return;
     }
+    let mut length = 0;
     loop {
         let mut header = String::new();
         match reader.read_line(&mut header) {
             Ok(0) | Err(_) => break,
             Ok(_) if header == "\r\n" || header == "\n" => break,
-            Ok(_) => {}
+            Ok(_) => {
+                if let Some((name, value)) = header.split_once(':')
+                    && name.eq_ignore_ascii_case("content-length")
+                {
+                    length = value.trim().parse().unwrap_or(0);
+                }
+            }
         }
     }
     let mut words = first.split_whitespace();
@@ -139,8 +165,20 @@ fn answer(stream: TcpStream, root: &Path, heard: &std::sync::Mutex<Vec<String>>)
         .next()
         .unwrap_or_default();
     heard.lock().unwrap().push(host.to_owned());
+    if let Some(rest) = target.strip_prefix("http://") {
+        let without_query = rest.split(['?', '#']).next().unwrap_or_default();
+        sent.lock()
+            .unwrap()
+            .push(format!("{method} {without_query}"));
+    }
     let mut out = stream;
-    if method != "GET" {
+    // The sign-in host's forms post (#5152): their body is read past, and the page is served.
+    let posts_a_form = method == "POST" && host == "auth.fixture.test";
+    if posts_a_form {
+        let mut body = vec![0; length];
+        let _ = std::io::Read::read_exact(&mut reader, &mut body);
+    }
+    if method != "GET" && !posts_a_form {
         let _ = respond(&mut out, "405 Method Not Allowed", "text/plain", &[], b"");
         return;
     }
