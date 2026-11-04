@@ -17,7 +17,11 @@ import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.test
 import { AT_THE_ROOT } from "./skillStudio";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
+import {
+  expectFocusInSight,
+  expectTheWindowHoldsThePage,
+  untilFocusWithin,
+} from "./stories.testkit";
 
 const BEFORE =
   "---\nname: review-pr\ndescription: Reviews a pull request.\n---\n\n1. Read REVIEW.md.\n2. Check correctness.\n";
@@ -171,6 +175,7 @@ const meta = {
       forgetViewHistory(HISTORY);
     };
   },
+  afterEach: expectTheWindowHoldsThePage,
 } satisfies Meta<typeof Tab>;
 
 export default meta;

@@ -19,7 +19,12 @@ import { inWorkspace, skillRowId, type SkillPageTab } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { forgetSkillEdit } from "./skillEdit";
-import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
+import {
+  expectFocusInSight,
+  expectTheWindowHoldsThePage,
+  untilFocusWithin,
+  untilFocused,
+} from "./stories.testkit";
 import type { StudioSkill } from "./bindings";
 
 const SCOPE = inWorkspace("smart-ide");
@@ -156,6 +161,7 @@ const meta = {
       forgetViewHistory(HISTORY);
     };
   },
+  afterEach: expectTheWindowHoldsThePage,
 } satisfies Meta<typeof Tab>;
 
 export default meta;

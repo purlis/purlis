@@ -16,7 +16,11 @@ import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.test
 import { AT_THE_ROOT } from "./skillStudio";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
+import {
+  expectFocusInSight,
+  expectTheWindowHoldsThePage,
+  untilFocusWithin,
+} from "./stories.testkit";
 
 /** The prototype's three deleted skills. */
 const DELETED: DeletedSkill[] = [
@@ -88,6 +92,7 @@ const meta = {
       forgetViewHistory(HISTORY);
     };
   },
+  afterEach: expectTheWindowHoldsThePage,
 } satisfies Meta<typeof Tab>;
 
 export default meta;

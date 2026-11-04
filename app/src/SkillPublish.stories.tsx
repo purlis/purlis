@@ -17,7 +17,7 @@ import { inWorkspace, skillRowId } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { FORGE_SAYS_NO_PUSH, EXPORT, GITHUB, LOCAL, REVIEW, STOPPED } from "./skillPublish.testkit";
-import { expectFocusInSight } from "./stories.testkit";
+import { expectFocusInSight, expectTheWindowHoldsThePage } from "./stories.testkit";
 import { ExportDialog } from "./SkillPublish";
 
 const DEPLOY = skill("deploy", { description: "Deploys the service and checks it came up." });
@@ -50,6 +50,7 @@ const meta = {
       clearMocks();
     };
   },
+  afterEach: expectTheWindowHoldsThePage,
 } satisfies Meta<typeof Tab>;
 export default meta;
 type Story = StoryObj<typeof meta>;

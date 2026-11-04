@@ -16,7 +16,11 @@ import { AT_THE_ROOT, sourceKey, type SourcesAt } from "./skillStudio";
 import { PROJECT } from "./skillChanges";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
+import {
+  expectFocusInSight,
+  expectTheWindowHoldsThePage,
+  untilFocusWithin,
+} from "./stories.testkit";
 
 const commit = (c: string) => ({ id: c.repeat(40), short: c.repeat(7) });
 
@@ -314,6 +318,7 @@ const meta = {
       forgetViewHistory(HISTORY);
     };
   },
+  afterEach: expectTheWindowHoldsThePage,
 } satisfies Meta<typeof Tab>;
 
 export default meta;

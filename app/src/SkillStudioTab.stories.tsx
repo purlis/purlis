@@ -17,7 +17,12 @@ import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.test
 import { AT_THE_ROOT, inWorkspace, type StudioPage, type StudioScope } from "./skillStudio";
 import { need, skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
+import {
+  expectFocusInSight,
+  expectTheWindowHoldsThePage,
+  untilFocusWithin,
+  untilFocused,
+} from "./stories.testkit";
 import type { Studio } from "./bindings";
 
 /** The prototype's library, cut short: the project's own, a workspace's, and built-in ones. */
@@ -106,6 +111,7 @@ const meta = {
       forgetViewHistory(HISTORY);
     };
   },
+  afterEach: expectTheWindowHoldsThePage,
 } satisfies Meta<typeof Tab>;
 
 export default meta;

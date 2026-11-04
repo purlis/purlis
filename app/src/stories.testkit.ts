@@ -6,7 +6,7 @@
  * Each asserts what a person sees, from the page, never a component's internals.
  */
 
-import { waitFor } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
 import { cellInTest } from "../.storybook/matrix";
 
 /** The global the screenshot gate puts its picture-taker on (`.storybook/screenshots.setup.ts`),
@@ -56,6 +56,21 @@ export async function inAWindow(width: number, height: number): Promise<boolean>
   });
   await nextFrame();
   return true;
+}
+
+/**
+ * **The page fits the story's window sideways** (#4672, #5110): nothing it draws reaches past the
+ * window's right edge, so a control the keyboard focuses can be scrolled into sight. Vitest's
+ * window is 414 px wide by default, narrower than most panels a story draws; there the window
+ * itself scrolls sideways and, in WebKit, a focused control can end outside it. Only checked in a
+ * story test: in Storybook's own page the window is the person's.
+ */
+export async function expectTheWindowHoldsThePage(): Promise<void> {
+  if (cellInTest() === undefined) return;
+  await expect(
+    document.documentElement.scrollWidth,
+    "what the story draws is wider than its window",
+  ).toBeLessThanOrEqual(window.innerWidth);
 }
 
 /** The share of the window's height a dialog's top sits below the window's top (R2, 6vh). */
