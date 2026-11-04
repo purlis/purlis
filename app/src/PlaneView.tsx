@@ -517,9 +517,11 @@ import {
   studioHistoryOf,
   studioOpening,
   studioTabsGone,
+  whoseChats,
   useSkillStudioSaid,
 } from "./skillStudio";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
+import { readStudioAhead } from "./studioReadAhead";
 import { forgetSkillEdit } from "./skillEdit";
 import { discardGone, discardRemoved, unsavedClosedBy, unsavedIn } from "./unsavedWork";
 import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
@@ -4554,7 +4556,15 @@ export const PlaneView = memo(function PlaneView({
         );
         view = opening.tab;
         title = SKILL_STUDIO_TITLE;
-        if (opening.place !== undefined) openViewAt(studioHistoryOf(plane, view), opening.place);
+        if (opening.place !== undefined) {
+          // A tab drawn now asks for its skills now, read while it is drawn (#4351); one already
+          // open has them.
+          if (findView(now.current, view) === undefined) {
+            const { workspace, persona } = whoseChats(opening.place.scope);
+            readStudioAhead(plane, workspace, persona);
+          }
+          openViewAt(studioHistoryOf(plane, view), opening.place);
+        }
       }
       present((tabs, strip) => openView(tabs, view, title, on ?? strip));
       // Opening an extension's view by any route clears its offer (#4769).

@@ -17,6 +17,7 @@ import {
   type StudioSkill,
 } from "./bindings";
 import { BUILT_IN_FIXED, MAKE_MY_OWN_COPY, SkillCopy } from "./SkillCopy";
+import { studioOpeningRead } from "./studioReadAhead";
 import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { HarnessItem, HarnessList, harnessGroups, harnessRowAt } from "./SkillStudioHarnesses";
@@ -294,6 +295,8 @@ export function SkillStudioTab({
   const scope = at.scope;
   const [read, setRead] = useState<{ key: string; studio?: Studio; refused?: string }>();
   const [asked, setAsked] = useState(0);
+  /** What the window's count of skill changes stood at as the tab was opened. */
+  const [changedAtOpening] = useState(changed);
   const [said, setSaid] = useState<Said>();
   const [done, setDone] = useState(0);
   // **A change in progress belongs to the place it was started at**: back, forward or an entry
@@ -367,7 +370,11 @@ export function SkillStudioTab({
   );
   useEffect(() => {
     let live = true;
-    void commands.skillStudio(plane, workspace, persona).then((answer) => {
+    // The read it was opened for, asked as it was opened (#4351), until anything since asks it
+    // to read again: a change on disk, a save, a refresh asked for or another scope picked.
+    const opening = changed === changedAtOpening && done === 0 && switched === 0 && asked === 0;
+    const reading = opening ? studioOpeningRead : commands.skillStudio;
+    void reading(plane, workspace, persona).then((answer) => {
       if (!live) return;
       if (answer.status === "ok") setRead({ key, studio: answer.data });
       else setRead({ key, refused: answer.error });
@@ -375,7 +382,7 @@ export function SkillStudioTab({
     return () => {
       live = false;
     };
-  }, [plane, key, workspace, persona, changed, done, switched, asked]);
+  }, [plane, key, workspace, persona, changed, changedAtOpening, done, switched, asked]);
   // A delete a crash or a quit cut short is finished or undone as the studio opens (SK-35),
   // said in one line each, and the lists read again.
   useEffect(() => {
