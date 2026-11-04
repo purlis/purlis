@@ -18,6 +18,7 @@ import App from "./App";
 import type { Moved } from "./bindings";
 import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { placementFor } from "./ui/tooltip/Tooltip";
 
 /**
  * **A chat's pane head, against the whole window** (#4760, spec #4750 stories 54, 55, 60 and
@@ -180,6 +181,18 @@ describe("a chat's pane head", () => {
     expect([right, down]).toEqual(["Split right", "Split down"]);
     expect(close).toBeTruthy();
     expect(rest).toEqual([]);
+  });
+
+  it("draws the bell as an icon button, and opens every head hint below the head (#5189)", async () => {
+    await aPane();
+    await waitFor(() => expect(controls()[1]).toMatch(/^Pane notices:/));
+
+    const bell = within(head()).getByRole("button", { name: /^Pane notices:/ });
+    // The size of Split right beside it: an icon button, as wide as it is tall.
+    expect(bell).toHaveAttribute("data-icon-only");
+    expect(bell).toHaveAttribute("data-size", "sm");
+    // Below the head: a hint at a control's end stood on the row, over the next control.
+    for (const one of head().querySelectorAll("button")) expect(placementFor(one)).toBe("bottom");
   });
 
   it("shows Stop while the chat works, before ⋯, and nothing once it is quiet", async () => {

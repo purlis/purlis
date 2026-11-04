@@ -358,18 +358,21 @@
   flex: none;
 }
 
-/* **The bell** (`PaneBell`, #4754): a fixed slot, as wide with no count as with two digits, so
-   nothing beside it moves when a notice arrives. The count is neutral, and in the trouble colour
-   while one note is trouble; told by its words too, never the colour alone. */
-.pane-actions > .pane-bell {
-  justify-content: flex-start;
-  min-inline-size: calc(var(--size-control) * 2);
-  font-variant-numeric: tabular-nums;
+/* **The bell** (`PaneBell`, #4754, #5189): an icon button the size of its neighbours, so nothing
+   beside it moves when a notice arrives, with its count a pill on its corner, inside its box.
+   The count is neutral, and hot while one note is trouble; told by the bell's name too, never
+   the colour alone. The pill takes no pointer: a press on it is the bell's. */
+.pane-actions > .pane-bell-slot {
+  position: relative;
+  display: inline-flex;
+  flex: none;
 }
 
-.pane-actions > .pane-bell[data-trouble] [data-part="label"] {
-  color: var(--danger-text);
-  font-weight: var(--font-weight-strong);
+.pane-bell-slot > .pane-bell-count {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  pointer-events: none;
 }
 
 /* The chips take the room the controls leave, and give way in it; the line's own rules decide
@@ -449,13 +452,16 @@
   display: flex;
   flex: none;
   align-items: center;
+  gap: var(--space-1);
   margin-inline-start: auto;
 }
 
-/* No gap between the marks: each is a whole 24px target (WCAG 2.5.8) with its own hover fill,
-   so a gap would only take room a narrow pane's breadcrumb needs (#3214). */
+/* **A small gap between the marks** (the person's ruling on the M70 prototype, spec #5191): each
+   is a whole 24px target (WCAG 2.5.8) with its own hover fill, and the gap keeps a hovered or
+   focused one's ground off its neighbour's. The smallest step, so a narrow pane's breadcrumb
+   loses as little room as it can (#3214). */
 .pane-actions > .pane-doing {
-  gap: 0;
+  gap: var(--space-1);
   padding: 0;
   border: 0;
   background-color: transparent;
@@ -473,9 +479,10 @@
    place: the header's row, over the view's first row rather than a row of its own, so the view
    loses no height to a row with nothing else in it. */
 .pane-frame.pane-viewed {
-  /* What the actions take at the row's end, and the gap before them: three controls' width and
-     the header's own inline padding. A reserve, not a step of the scale. */
-  --pane-actions-room: calc(var(--size-control) * 3 + var(--space-5) * 2);
+  /* What the actions take at the row's end, and the gap before them: three controls' width, the
+     two gaps between them and the header's own inline padding. A reserve, not a step of the
+     scale. */
+  --pane-actions-room: calc(var(--size-control) * 3 + var(--space-1) * 2 + var(--space-5) * 2);
 }
 
 /* Where a chat's header is: at the pane's top, a step down (`.pane-head:first-child`), end to

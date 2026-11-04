@@ -291,16 +291,19 @@ describe("the pane's rules", () => {
     expect(css).toMatch(/:is\(\.pane-notices,[^)]*\)\s*\{[^}]*overflow-y:\s*auto/);
   });
 
-  it("keeps the bell a fixed slot, its count in tabular figures (#4754)", () => {
-    const bell = rule("\\.pane-actions > \\.pane-bell");
-    expect(bell).toMatch(/min-inline-size:\s*calc\(var\(--size-control\) \* 2\)/);
-    expect(bell).toMatch(/font-variant-numeric:\s*tabular-nums/);
+  it("keeps the bell's count on its corner, inside its box, taking no pointer (#5189)", () => {
+    const slot = rule("\\.pane-actions > \\.pane-bell-slot");
+    expect(slot).toMatch(/position:\s*relative/);
+    const pill = rule("\\.pane-bell-slot > \\.pane-bell-count");
+    expect(pill).toMatch(/position:\s*absolute/);
+    expect(pill).toMatch(/inset-block-start:\s*0/);
+    expect(pill).toMatch(/inset-inline-end:\s*0/);
+    expect(pill).toMatch(/pointer-events:\s*none/);
   });
 
-  it("draws the bell's count in the trouble colour while one note is trouble (#4754)", () => {
-    expect(
-      rule('\\.pane-actions > \\.pane-bell\\[data-trouble\\] \\[data-part="label"\\]'),
-    ).toMatch(/color:\s*var\(--danger-text\)/);
+  it("keeps a small gap between the head's buttons (the person's ruling, #5191)", () => {
+    expect(rule("\\.pane-actions")).toMatch(/gap:\s*var\(--space-1\)/);
+    expect(rule("\\.pane-actions > \\.pane-doing")).toMatch(/gap:\s*var\(--space-1\)/);
   });
 
   it("keeps a card shorter than its pane less the header above it (#4754)", () => {

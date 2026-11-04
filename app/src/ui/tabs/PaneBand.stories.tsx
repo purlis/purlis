@@ -478,6 +478,10 @@ export const ConsentAndNotes: Story = {
 const bellOf = (canvas: ReturnType<typeof within>) =>
   canvas.getByRole("button", { name: /^Pane notices:/ });
 
+/** The bell's count: a pill on its corner, beside the button, said by the bell's own name. */
+const countOf = (bell: HTMLElement) =>
+  bell.parentElement?.querySelector('[data-scope="count"]') ?? null;
+
 /**
  * **Minimised, the window's default** (#4754): the notes fold into the bell's count, in the
  * trouble colour while one is trouble, and the consent stands as a full card under the header.
@@ -495,13 +499,63 @@ export const Minimised: Story = {
     expect(rowsOf(canvasElement).warnings[0]).toContainElement(vault);
     const bell = bellOf(canvas);
     expect(bell).toHaveAccessibleName("Pane notices: 3 notices, 1 in trouble, 1 asking");
-    expect(bell).toHaveTextContent(/^3$/);
+    expect(countOf(bell)).toHaveTextContent(/^3$/);
     expect(bell).toHaveAttribute("aria-expanded", "false");
     // Before split and close, in the header's row.
     const split = canvas.getByRole("button", { name: "Split right" });
     expect(boxOf(bell).right).toBeLessThanOrEqual(boxOf(split).left + 1);
     expect(boxOf(bell).top).toBeCloseTo(boxOf(split).top, 0);
     atRest();
+  },
+};
+
+/** Whether two boxes share any of their area. */
+const overlaps = (a: Box, b: Box) =>
+  a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+
+/**
+ * **The bell beside its neighbours** (#5189): the size of Split right, its count a pill inside
+ * that size, on its corner; its hint opens below the head, as the head's other hints do, over no
+ * head button; and the head's buttons stand a small gap apart, so a hovered or focused one's
+ * ground never touches the next (the person's ruling on the M70 prototype, spec #5191).
+ */
+export const BellBesideItsNeighbours: Story = {
+  args: {
+    shown: "minimised",
+    warnings: ["vault-refused", "mcp-failed", "stale-clone", "skills-missing"],
+  },
+  parameters: { screenshot: false },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const bell = bellOf(canvas);
+    await waitFor(() => expect(countOf(bell)).toHaveTextContent(/^3$/));
+    const split = canvas.getByRole("button", { name: "Split right" });
+    expect(boxOf(bell).width).toBeCloseTo(boxOf(split).width, 0);
+    expect(boxOf(bell).height).toBeCloseTo(boxOf(split).height, 0);
+    const count = boxOf(countOf(bell));
+    expect(count.left).toBeGreaterThanOrEqual(boxOf(bell).left - 0.5);
+    expect(count.right).toBeLessThanOrEqual(boxOf(bell).right + 0.5);
+    expect(count.top).toBeGreaterThanOrEqual(boxOf(bell).top - 0.5);
+    expect(count.bottom).toBeLessThanOrEqual(boxOf(bell).bottom + 0.5);
+
+    const { head } = rowsOf(canvasElement);
+    const buttons = [...(head?.querySelectorAll(".pane-actions button") ?? [])];
+    const boxes = buttons.map(boxOf).sort((a, b) => a.left - b.left);
+    expect(boxes.length).toBeGreaterThanOrEqual(4);
+    for (let i = 1; i < boxes.length; i++) {
+      expect(boxes[i].left - boxes[i - 1].right, `gap before head button ${i}`).toBeGreaterThan(1);
+    }
+
+    canvas.getByRole("button", { name: "Claude Code" }).focus();
+    await userEvent.tab();
+    await untilFocused(() => bell, "Tab onto the bell");
+    const tip = await within(document.body).findByRole("tooltip");
+    await waitFor(() => {
+      const at = boxOf(tip);
+      expect(at.top).toBeGreaterThanOrEqual(boxOf(bell).bottom);
+      for (const one of buttons) {
+        expect(overlaps(at, boxOf(one)), one.getAttribute("aria-label") ?? "").toBe(false);
+      }
+    });
   },
 };
 
@@ -518,7 +572,7 @@ export const Expanded: Story = {
     await heldInThePane(canvasElement);
     const band = within(canvas.getByRole("region", { name: "Pane notices" }));
     expect(band.getByText("4 notices, 1 waiting on you")).toBeVisible();
-    expect(bellOf(canvas)).toHaveTextContent(/^3$/);
+    expect(countOf(bellOf(canvas))).toHaveTextContent(/^3$/);
     expect(bellOf(canvas)).toHaveAttribute("aria-expanded", "true");
     const all = band.getByRole("button", { name: "Dismiss all 3" });
     all.focus();
