@@ -465,12 +465,17 @@ const WORKTREE_UPDATE: &str = "worktree update";
 /// spelling on the same terms.
 const WORKTREE_REMOVE: &str = "worktree remove";
 
+/// And a prune of a workspace's finished branch folders the app makes for a chat (ADR 0110),
+/// pre-allowed by its spelling on the same terms.
+const WORKTREE_PRUNE: &str = "worktree prune";
+
 /// The command `own` names, for a sentence: `dispatch`, `handoff`, `commit` or `update`.
 fn called(own: &str) -> &str {
     match own {
         WORKTREE_COMMIT => "commit",
         WORKTREE_UPDATE => "update",
         WORKTREE_REMOVE => "removal",
+        WORKTREE_PRUNE => "prune",
         _ => own,
     }
 }
@@ -481,6 +486,7 @@ fn let_run(own: &str) -> &'static str {
         WORKTREE_COMMIT => "a commit the app makes for a chat",
         WORKTREE_UPDATE => "an update the app makes for a chat",
         WORKTREE_REMOVE => "a removal the app makes for a chat",
+        WORKTREE_PRUNE => "a prune the app makes for a chat",
         _ => "a dispatch or a handoff",
     }
 }
@@ -528,6 +534,7 @@ fn ours(toks: &[String]) -> Option<&'static str> {
             Some("commit") => Some(WORKTREE_COMMIT),
             Some("update") => Some(WORKTREE_UPDATE),
             Some("remove") => Some(WORKTREE_REMOVE),
+            Some("prune") => Some(WORKTREE_PRUNE),
             _ => None,
         };
     }

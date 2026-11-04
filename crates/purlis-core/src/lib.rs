@@ -199,6 +199,7 @@ pub mod projectgit;
 pub mod proposed;
 pub mod proseguard;
 pub mod provenance;
+pub mod prune;
 pub mod publishproject;
 pub mod pyjson;
 pub mod pypath;

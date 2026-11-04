@@ -135,9 +135,29 @@ pub enum WorktreeCommand {
         /// Discard the uncommitted changes and unique commits the refusal named.
         #[arg(long)]
         force: bool,
-        /// Also delete the piece's branch (`git branch -d`, or `-D` with --force).
+        /// Also delete the piece's branch (`git branch -d`; `-D` with --force, or where it
+        /// landed by a squash merge).
         #[arg(long)]
         delete_branch: bool,
+        /// The workspace (default: the active one).
+        #[arg(short = 'w', long = "workspace")]
+        workspace: Option<String>,
+    },
+    /// Remove every finished branch folder of a workspace, task folders and plain ones: no
+    /// uncommitted changes, every commit on its base or carried there by a squash merge, no
+    /// ignored files but a build's folders and links, its task ended, no open chat holding it,
+    /// and no other folder linking into it. A folder that links into another goes first. Each
+    /// removed folder's local branch is deleted. Every folder kept is listed with why. In a
+    /// chat the app runs it, from the workspace's folder or the project root.
+    Prune {
+        /// Only this repo's folders (default: every repo of the workspace).
+        repo: Option<String>,
+        /// List what would go and every folder kept, with why, and remove nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Keep the removed folders' branches.
+        #[arg(long)]
+        keep_branches: bool,
         /// The workspace (default: the active one).
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
@@ -349,6 +369,61 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                     1
                 }
             }
+        }
+        WorktreeCommand::Prune {
+            repo,
+            dry_run,
+            keep_branches,
+            workspace,
+        } => {
+            let ws = here.active_workspace(workspace.as_deref())?;
+            // In a chat the app started, the app prunes, by the route its removal takes (ADR
+            // 0110): never forced, each folder held to its claim against the chats it has.
+            let asked = crate::gitask::told(
+                crate::gitask::forwarded(
+                    &ws,
+                    GitWork::WorktreePrune {
+                        repo: repo.clone(),
+                        dry_run,
+                        keep_branches,
+                    },
+                    crate::gitask::A_WORKTREE_TAKES_AT_MOST,
+                ),
+                &mut say,
+            );
+            if let Some(code) = asked {
+                return Ok(code);
+            }
+            // No app took it: never from a chat the app started under the sandbox, which
+            // cannot finish a removal (#1408). A dry run removes nothing, and runs here.
+            if !dry_run && crate::brokered::removal_held(&root, None) {
+                say(purlis_core::repocmd::Say::Fail(
+                    "a sandboxed chat does not remove branch folders without the purlis app, \
+                     which did not answer, so nothing was removed. Run `purlis worktree prune \
+                     --dry-run` to see what would go, or ask the person to run the prune from \
+                     their own terminal"
+                        .into(),
+                ));
+                return Ok(1);
+            }
+            // Without the app, which chats are open cannot be told: a folder a chat holds is
+            // kept, in a chat and at the person's own terminal alike.
+            purlis_core::prune::prune(
+                &purlis_core::prune::Asked {
+                    ws: &ws,
+                    repo: repo.as_deref(),
+                    dry_run,
+                    keep_branches,
+                },
+                &purlis_core::prune::Asker {
+                    who: &who,
+                    live: None,
+                    brokered: false,
+                },
+                &root,
+                now,
+                &mut say,
+            )
         }
     };
     Ok(code)

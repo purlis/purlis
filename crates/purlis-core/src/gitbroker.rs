@@ -142,6 +142,10 @@ fn isolated_answer(
             bound(root, asker.cwd.as_deref(), &ask.workspace)
                 .and_then(|()| above(root, asker.cwd.as_deref(), repo, piece))
         }
+        // Every finished folder of the chat's own workspace (ADR 0110), from above them all:
+        // never from inside one, whose removal would take the chat's folder from under it.
+        GitWork::WorktreePrune { .. } => bound(root, asker.cwd.as_deref(), &ask.workspace)
+            .and_then(|()| not_in_a_branch_folder(root, asker.cwd.as_deref())),
         // The project root: only for the chat whose place it is.
         GitWork::RootUpdate {} => at_the_root(root, asker.cwd.as_deref()),
         // A clone's own checkout: the chat stands in it, or above it in its workspace.
@@ -300,6 +304,29 @@ fn isolated_answer(
                 (Ok(code), None) => code,
             }
         }
+        // Never forced: a folder that is not finished is kept, and why is said (ADR 0110).
+        // Each folder's git runs in its checked clone and folder, and each removal is held to
+        // its claim, as a chat's own removal is.
+        GitWork::WorktreePrune {
+            repo,
+            dry_run,
+            keep_branches,
+        } => crate::prune::prune(
+            &crate::prune::Asked {
+                ws: &ask.workspace,
+                repo: repo.as_deref(),
+                dry_run: *dry_run,
+                keep_branches: *keep_branches,
+            },
+            &crate::prune::Asker {
+                who: &who(asker),
+                live: asker.live.as_deref(),
+                brokered: true,
+            },
+            root,
+            now,
+            &mut say,
+        ),
         // Answered before anything above was asked ([`claim`]), and never reaches here.
         GitWork::WorktreeClaim { .. } => unreachable!("a claim is answered before any check"),
         GitWork::RootUpdate {} => {
@@ -580,6 +607,27 @@ pub fn above(root: &Path, cwd: Option<&Path>, repo: &str, piece: &str) -> Result
     }
 }
 
+/// Whether a chat standing at `cwd` stands in no branch folder (ADR 0110): a prune removes
+/// folders, and never the one the chat works in. A place that cannot be read is refused.
+pub fn not_in_a_branch_folder(root: &Path, cwd: Option<&Path>) -> Result<(), String> {
+    let Some(cwd) = cwd.filter(|cwd| std::fs::canonicalize(cwd).is_ok()) else {
+        return Err(
+            "the app could not place where this chat stands, so it will not prune branch \
+             folders for it"
+                .to_owned(),
+        );
+    };
+    match crate::worktree::locate(root, cwd) {
+        Some(at) => Err(format!(
+            "this chat stands in branch folder {} · {}, so the app will not prune for it: a \
+             prune could take the folder this chat works in. Run `purlis worktree prune` from \
+             the workspace's folder, or the project root",
+            at.repo, at.piece
+        )),
+        None => Ok(()),
+    }
+}
+
 /// Whether a chat standing at `cwd` stands at the project root itself (#3831): the one chat
 /// whose place the root's working tree is. Anything else, or a place that cannot be read, is
 /// refused.
@@ -790,6 +838,17 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
         }
         GitWork::Clone { .. } => crate::repos::clones(root, ws)
             .map(|found| found.repos.into_iter().map(|repo| repo.path).collect())
+            .unwrap_or_default(),
+        // Every clone of the workspace, or the one named.
+        GitWork::WorktreePrune { repo, .. } => crate::repos::clones(root, ws)
+            .map(|found| {
+                found
+                    .repos
+                    .into_iter()
+                    .filter(|clone| repo.as_deref().is_none_or(|named| clone.name == named))
+                    .map(|clone| clone.path)
+                    .collect()
+            })
             .unwrap_or_default(),
         // A workspace that is not there yet holds no clone; one that is there is refused.
         // The root is the window's own Update's to check, as it checks it for the person.

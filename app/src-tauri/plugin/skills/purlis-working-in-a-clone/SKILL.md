@@ -68,6 +68,7 @@ purlis worktree commit -m "<message>" .worktrees/<repo>/<piece>/<path> …   # o
 env -C .worktrees/<repo>/<piece> purlis worktree push     # pushes the branch after purlis's scan of what it publishes
 env -C .worktrees/<repo>/<piece> purlis worktree done     # finished; or: … purlis worktree abandon "<why>"
 purlis worktree remove <repo> <piece>  # once merged: the app removes the folder if nothing would be lost
+purlis worktree prune --dry-run        # every finished folder of the workspace, and why the others stay
 ```
 
 - `add` takes `--base <branch>` to start from something other than the default branch. Exit 2
@@ -86,10 +87,17 @@ purlis worktree remove <repo> <piece>  # once merged: the app removes the folder
 - **`remove` is for a finished piece**, from the workspace folder, never from inside it. The
   app removes it only when it holds no uncommitted change and no commit that no other branch
   reaches, or its branch landed by a squash merge; otherwise it names what would be lost and
-  removes nothing. A piece another live chat works in is not removed for you. `--force` is the
-  person's: ask them to remove it from the window. Where purlis's tools are offered, the
+  removes nothing. A piece another live chat works in is not removed for you. A piece purlis cut
+  for a task goes the same way once its task has ended and no other folder links into it;
+  otherwise the refusal says why and sends you to its Changes tab. `--delete-branch` deletes a
+  squash-landed branch too. `--force` is the person's: ask them to remove it from the window.
+- **`prune` removes every finished folder of the workspace**, task folders and plain ones, from
+  the workspace folder: nothing uncommitted, every commit on its base or squash-landed, its task
+  ended, no open chat holding it, no folder linking into it. Each one's branch goes with it
+  (`--keep-branches` keeps them). Run `--dry-run` first: it lists what would go and why each
+  other folder stays. Where purlis's tools are offered, the
   `worktree_remove` tool (`repo`, `piece`) does the same, and `worktree_update` updates.
-- Run `commit`, `update` and `remove` alone in their call: a `cd … &&` before them, a pipe or
+- Run `commit`, `update`, `remove` and `prune` alone in their call: a `cd … &&` before them, a pipe or
   redirection, or a `$(…)` anywhere (a message from `$(cat msg)` too) is refused. Write the
   message out in the `-m` text.
 - `commit` only commits: no amend, reset, rebase or push, and the repo's own hooks don't run.

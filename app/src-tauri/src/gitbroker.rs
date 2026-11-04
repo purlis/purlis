@@ -149,6 +149,10 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         GitWork::WorktreePush { repo, piece, .. } => format!("worktree push {repo} {piece}"),
         GitWork::WorktreeRemove { repo, piece, .. } => format!("worktree remove {repo} {piece}"),
         GitWork::CloneUpdate { repo, .. } => format!("worktree update {repo}"),
+        GitWork::WorktreePrune { repo, .. } => match repo {
+            Some(repo) => format!("worktree prune {repo}"),
+            None => "worktree prune".to_owned(),
+        },
         GitWork::RootUpdate {} => "worktree update at the project root".to_owned(),
         // Its own git's claim on a branch folder, asked by the chat's Bash guard (#3931).
         GitWork::WorktreeClaim { repo, piece, act } => {
