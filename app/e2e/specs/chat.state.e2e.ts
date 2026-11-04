@@ -59,13 +59,24 @@ async function doing(tab: WebdriverIO.Element): Promise<string> {
   return (await mark.getAttribute("aria-label")) ?? "";
 }
 
-/** The one tab on screen, once there is one. */
+/** The tab whose pane shows the chat, once there is one: the tab that wears a chat's state
+ *  mark. The empty tab every strip keeps (#4758) shows no chat, and is not it. */
 async function theTab(): Promise<WebdriverIO.Element> {
+  let found: WebdriverIO.Element | undefined;
   await browser.waitUntil(
-    async () => (await $$('[data-strip="Tabs"] [role="tab"]').getElements()).length >= 1,
-    { timeout: 20_000, timeoutMsg: "no tab ever appeared" },
+    async () => {
+      found = undefined;
+      for (const tab of await $$('[data-strip="Tabs"] [role="tab"]').getElements())
+        if (await tab.$(".state").isExisting()) {
+          found = tab;
+          break;
+        }
+      return found !== undefined;
+    },
+    { timeout: 20_000, timeoutMsg: "no tab ever showed the chat" },
   );
-  return await $('[data-strip="Tabs"] [role="tab"]').getElement();
+  if (found === undefined) throw new Error("no tab ever showed the chat");
+  return found;
 }
 
 /** Waits until the tab says `state`, and says what it said instead if it never does. */
