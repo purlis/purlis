@@ -21,6 +21,10 @@
 //! - **The engine judges again at the moment of filling**: the field's own frame must still be
 //!   on the approved origin, and the field one line. The window's read is only what it shows.
 //!
+//! - **A browser on a pool's runner** (#5122, SF-12) is asked about the same way, in this
+//!   window, and the notice warns that the value goes to that runner. The fill and its hold run
+//!   there, through the runner's link, as a login's do.
+//!
 //! In memory only: a relaunch starts with none, and a chat's close takes its waits with it.
 
 use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
@@ -221,6 +225,8 @@ pub struct FillAsked {
     pub field: FieldSaid,
     /// The address of the page the field is on, where the browser said.
     pub page: Option<String>,
+    /// The pool whose runner the browser runs on, where it runs on one (#5122).
+    pub pool: Option<String>,
 }
 
 /// What a chat is told where the person kept a fill blocked.
@@ -259,7 +265,17 @@ fn judged(held: &Held, session: u32, asked: &FillAsked) -> Result<(String, Vec<S
             .into_iter()
             .collect();
     warnings.extend(frame_warning(&origin, asked.page.as_deref()));
+    warnings.extend(asked.pool.as_deref().map(runner_warning));
     Ok((origin, warnings))
+}
+
+/// **What the person is warned of where the browser runs on a pool's runner** (#5122, SF-12):
+/// the value is read on this machine and goes over the runner's link to that machine.
+fn runner_warning(pool: &str) -> String {
+    format!(
+        "This browser runs on pool {pool}'s runner, so the secret goes to that machine. Allow \
+         only if you trust that runner with it."
+    )
 }
 
 /// **What the person is warned of where the field's frame is on another site than its page**

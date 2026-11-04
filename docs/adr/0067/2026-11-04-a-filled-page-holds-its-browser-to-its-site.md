@@ -1,7 +1,7 @@
-# Amended (2026-11-04, spec #5100, built from #5117; the person's ruling SF-3 and the steward's decision SF-9 on #5096): a filled page holds its browser to its site
+# Amended (2026-11-04, spec #5100, built from #5117 and #5122; the person's ruling SF-3 and the steward's decisions SF-9 and SF-12 on #5096): a filled page holds its browser to its site
 
 The amendment of the same day that records secret fill set out what happens after a fill (SF-3,
-SF-9). It is built now.
+SF-9) and that runners follow the same rules (SF-12). Both are built now.
 
 - **The hold starts just before the value goes in.** Once every check of the fill has passed, the
   browser's reach proxy is held to the field's site (scheme's port included), and every
@@ -26,5 +26,9 @@ SF-9). It is built now.
   aren't narrowed to the field and the page's life: the value is kept out of what the chat reads
   for the browser's life because a later page may echo it, and a copy from such a page could carry
   it to another site once the hold has ended.
+- **On a pool's runner** (SF-12), the notice is answered in this window and warns that the secret
+  goes to that runner, naming the pool; no other ask is added, since the person sees each fill.
+  The fill and its hold run on the runner, through its link, as a login's do, and nothing is
+  filled on a pool a chat ran on without the sandbox, as no login is.
 
-*Decided in implementation:* D-5117-1 to D-5117-8 in the pull request.
+*Decided in implementation:* D-5117-1 to D-5117-8 and D-5122-1 to D-5122-3 in the pull request.

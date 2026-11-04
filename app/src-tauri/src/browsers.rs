@@ -456,7 +456,16 @@ mod hosted {
             fill: purlis_session_protocol::browsing::FillSecret,
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
+            // No secret goes to a runner a chat ran on without the sandbox, as no login does
+            // (D-2050-27, #5122).
+            if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
+                return Err(Refused::Said(why));
+            }
             let link = self.link_for(program).map_err(Refused::Said)?;
+            // Again once its link is had, as a login's is (#3702).
+            if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
+                return Err(Refused::Said(why));
+            }
             fills_secrets(link.version()).map_err(Refused::Said)?;
             let command = Command::FillSecret {
                 program: program.to_owned(),

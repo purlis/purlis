@@ -240,3 +240,13 @@ fn a_field_in_a_frame_of_another_site_than_its_page_is_warned_of() {
     );
     assert_eq!(frame_warning("https://shop.example.test", None), None);
 }
+
+/// #5122, SF-12: a fill into a browser on a pool's runner warns that the value goes to that
+/// machine, naming the pool.
+#[test]
+fn a_fill_on_a_runners_browser_warns_that_the_secret_goes_to_that_runner() {
+    let warned = runner_warning("builds");
+
+    assert!(warned.contains("pool builds's runner"), "{warned}");
+    assert!(warned.contains("goes to that machine"), "{warned}");
+}

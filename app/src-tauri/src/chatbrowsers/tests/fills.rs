@@ -239,21 +239,77 @@ fn a_chat_cannot_read_a_field_for_a_fill_itself() {
     );
 }
 
+/// Chat 3 on pool `builds`'s runner allowed a browser, and opened a page in it there (#2050).
+fn using_a_browser_on_a_runner(fills: super::super::Fills<'_>) -> (ChatBrowsers, Arc<Hosted>) {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let on_builds =
+        |browse: &BrowseAsk| answered_filling(&browsers, &hosted, browse, Some("builds"), fills);
+    on_builds(&ask(3, click()));
+    assert!(browsers.allow(3, false));
+    assert!(matches!(
+        on_builds(&ask(3, click())),
+        Answer::Browsed { .. }
+    ));
+    *hosted.at.lock().unwrap() = Some("https://dash.example.test/settings".into());
+    (browsers, hosted)
+}
+
+/// #5122, SF-12: a runner chat's fill is asked in this window like any other, naming the pool
+/// its browser runs on, and goes to that browser on the runner once allowed.
 #[test]
-fn a_fill_on_a_runners_browser_is_refused_for_now() {
-    let (browsers, hosted) = using_a_browser();
-    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+fn a_fill_on_a_runners_browser_asks_here_naming_its_pool_and_goes_to_that_browser() {
     let asked = RefCell::new(Vec::new());
+    let allow = allowed(&asked);
+    let (browsers, hosted) = using_a_browser_on_a_runner(&allow);
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+
+    let answer = answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        Some("builds"),
+        &allow,
+    );
+
+    assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
+    assert_eq!(
+        *hosted.on_pools.lock().unwrap(),
+        [Some("builds".to_owned())],
+        "the browser it went into runs on the runner"
+    );
+    let asked = asked.into_inner();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].pool.as_deref(), Some("builds"));
+    let fills = hosted.fills.lock().unwrap();
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].0, "program-1");
+    assert_eq!(fills[0].1.origin, "https://dash.example.test");
+}
+
+/// #5122: on a runner, as here, a field whose own frame is on another origin than the one the
+/// person allowed is refused by the browser, and the chat is told why.
+#[test]
+fn a_runners_refusal_of_a_field_on_another_origin_reaches_the_chat() {
+    let asked = RefCell::new(Vec::new());
+    let allow = allowed(&asked);
+    let (browsers, hosted) = using_a_browser_on_a_runner(&allow);
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    *hosted.fill_refused.lock().unwrap() = Some(
+        "e12 is in a document on https://pay.example.test, not on https://dash.example.test, \
+         where the person allowed it, so nothing was filled"
+            .to_owned(),
+    );
 
     let told = refusal(answered_filling(
         &browsers,
         &hosted,
         &ask(3, fill("e12")),
-        Some("relayed"),
-        &allowed(&asked),
+        Some("builds"),
+        &allow,
     ));
 
-    assert!(told.contains("pool relayed"), "{told}");
-    assert!(asked.into_inner().is_empty());
-    assert!(hosted.fills.lock().unwrap().is_empty());
+    assert!(told.contains("https://pay.example.test"), "{told}");
+    assert!(told.contains("nothing was filled"), "{told}");
+    assert!(!told.contains(VALUE), "{told}");
 }

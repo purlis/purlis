@@ -67,6 +67,8 @@ struct Hosted {
     field: Mutex<Option<purlis_session_protocol::browsing::FieldSaid>>,
     /// Each secret fill it was handed, by program (#5115).
     fills: Mutex<Vec<(String, purlis_session_protocol::browsing::FillSecret)>>,
+    /// Where set, the browser refuses each fill so, as an engine judging the field does (#5122).
+    fill_refused: Mutex<Option<String>>,
 }
 
 impl Hosted {
@@ -190,6 +192,9 @@ impl Driver for Hosted {
     ) -> Result<Browsed, Refused> {
         if self.ended.lock().unwrap().iter().any(|one| one == program) {
             return Err(Refused::Gone);
+        }
+        if let Some(why) = self.fill_refused.lock().unwrap().clone() {
+            return Err(Refused::Said(why));
         }
         self.fills.lock().unwrap().push((program.to_owned(), fill));
         Ok(Browsed {

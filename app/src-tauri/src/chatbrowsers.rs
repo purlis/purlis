@@ -2704,11 +2704,9 @@ impl ChatBrowsers {
                 return (no("purlis has no browser tool that does that"), false);
             }
             Browsing::Act(act) => Doing::Act(act.clone()),
-            // A secret goes only into a browser the chat uses already, on this machine (#5115).
+            // A secret goes only into a browser the chat uses already (#5115), on this machine or
+            // on its pool's runner, through that runner's link (#5122).
             Browsing::FillSecret { target, vault, key } => {
-                if let Some(pool) = pool {
-                    return (no(&fill_on_a_runner_said(pool)), false);
-                }
                 if named.is_none() {
                     return (no(FILL_NEEDS_A_PAGE), false);
                 }
@@ -2807,6 +2805,7 @@ impl ChatBrowsers {
                     target,
                     vault,
                     key,
+                    pool: pool.map(str::to_owned),
                 },
                 reach_now,
                 fills,
@@ -2902,6 +2901,7 @@ impl ChatBrowsers {
             target,
             vault,
             key,
+            pool,
         } = asked;
         let read = driver.act(
             program,
@@ -2923,6 +2923,7 @@ impl ChatBrowsers {
             key: key.clone(),
             field,
             page: read.page.map(|page| page.address),
+            pool,
         };
         let value = fills(&asked).map_err(Refused::Said)?;
         // Asked of the person only with an origin, so one is here.
@@ -3012,19 +3013,13 @@ struct FillAsked {
     target: String,
     vault: String,
     key: String,
+    /// The pool whose runner the chat, and so its browser, runs on (#5122).
+    pool: Option<String>,
 }
 
 /// What a chat is told of a secret fill with no browser open to fill it in (#5115).
 const FILL_NEEDS_A_PAGE: &str = "this chat has no browser open, so nothing was filled: open the \
                                  page, take a snapshot, and name the field from it";
-
-/// What a runner chat is told of a secret fill (#5115): not there yet (#5122).
-fn fill_on_a_runner_said(pool: &str) -> String {
-    format!(
-        "this browser runs on pool {pool}'s runner, where purlis fills no secret yet, so nothing \
-         was filled: tell the person what needs it, or go on without it"
-    )
-}
 
 /// What the chat is told once purlis performed its browser login `name` (#2016): that its
 /// password field went, where, and what the browser reaches from now. Never that the person is

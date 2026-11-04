@@ -74,7 +74,8 @@ site is refused. The value never reaches you: every snapshot, find, wait and scr
 browser leaves it out, and from then on that browser copies, cuts and drags nothing for you. If they
 keep it blocked, tell them what needs it and don't ask again. While the page you filled stays
 open, the browser reaches only that site: an address for another is refused, saying so. Once that
-page loads another of its pages, or you close it, the browser reaches as before.
+page loads another of its pages, or you close it, the browser reaches as before. It works the
+same on a pool's runner.
 
 **In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
 temp file and points `PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by
