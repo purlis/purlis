@@ -290,6 +290,22 @@ fn a_workspace_manifest(path: &str) -> bool {
     )
 }
 
+/// **Whether `changes` move what the new-chat picker answers** (#4737): its profiles and harness
+/// declarations (`charter.toml`, `charter.local.toml`), the project's sandbox and your own level
+/// in it (`charter.toml`, `purlis.local.toml`), the personas, and the harness settings a sandbox
+/// reads (`.claude/`). `None`, "not known", moves it. A workspace, a todo, a memory, a session
+/// record or a skill never does: none is part of either answer.
+///
+/// The app keeps both answers per project and drops them on such a change, so the dialog opens
+/// on the kept ones while nothing they were read from has moved.
+pub fn moves_a_new_chat(changes: Option<&[Change]>) -> bool {
+    changes.is_none_or(|changes| {
+        changes
+            .iter()
+            .any(|change| matches!(change.kind, Kind::Project | Kind::Persona | Kind::Harness))
+    })
+}
+
 /// **Where a skill's path is**, by the one rule of where a level's skills are
 /// ([`purlis_skills::level_of_rel`]): the level's owner, whether it is the local folder, and the
 /// skill's folder name where the path is in one.
@@ -433,6 +449,40 @@ mod tests {
             !answers_of(&at("workspaces/ops/purlis/workspace.json"))
                 .contains(&Answer::Instructions)
         );
+    }
+
+    #[test]
+    fn a_profile_a_persona_the_sandbox_or_a_harness_moves_the_new_chat_picker() {
+        for path in [
+            "charter.local.toml",
+            "charter.toml",
+            "purlis.local.toml",
+            "personas/steward/persona.md",
+            "personas/reviewer",
+            "personas",
+            ".claude/settings.json",
+        ] {
+            assert!(moves_a_new_chat(Some(&[at(path)])), "{path}");
+        }
+        assert!(moves_a_new_chat(None), "not known moves everything");
+    }
+
+    #[test]
+    fn a_workspace_a_todo_a_memory_a_record_or_a_skill_leaves_the_new_chat_picker() {
+        for path in [
+            "workspaces/alpha/workspace.json",
+            "workspaces/alpha/todos/a.md",
+            "workspaces/alpha/memory/m.md",
+            "personas/steward/memory/m.md",
+            "workspaces/alpha/sessions/r.md",
+            "sessions/r.md",
+            "personas/steward/skills/r/SKILL.md",
+            "skills/deploy/SKILL.md",
+        ] {
+            assert!(!moves_a_new_chat(Some(&[at(path)])), "{path}");
+        }
+        assert!(!moves_a_new_chat(Some(&[saved(), chats()])));
+        assert!(!moves_a_new_chat(Some(&[])));
     }
 
     const ROOT: &str = "/home/dev/plane";

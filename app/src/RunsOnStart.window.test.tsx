@@ -64,7 +64,9 @@ function core(refusing = 0) {
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "start_options") return START_OPTIONS;
+    // The picker opens on its first answer and fills each row's details in after (#4736).
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_runs_on")
       return {
         pool: "builds",

@@ -181,6 +181,7 @@ mod slowstart;
 mod smartclose;
 mod specimen;
 mod staleclones;
+mod startkept;
 mod starttiming;
 mod stopping;
 #[cfg(test)]
@@ -1470,12 +1471,30 @@ struct StartOptions {
     next_number: Option<u32>,
 }
 
+/// The facts of one picker row that take a moment to read (#4736): whether its command waits
+/// for an approval, what the sandbox does for a chat on it (a compile per harness and its
+/// program's check), and what it is billed to. [`start_details`] answers them after
+/// [`start_options_first`], by the row's name, and the picker draws the row as pending until
+/// then.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+struct RowDetails {
+    /// The profile's name: the row these are of.
+    name: String,
+    /// As [`ProfileRow::approval`].
+    approval: Option<String>,
+    /// As [`ProfileRow::sandbox`].
+    sandbox: Option<sandboxing::SandboxAhead>,
+    /// As [`ProfileRow::billed_to`].
+    billed_to: Option<String>,
+}
+
 /// What the picker draws: every profile this machine has, every one charter will not use,
 /// and the plane's personas.
 ///
-/// Read fresh every time it is opened, like the sidebar: `charter.local.toml` is a file the
-/// operator edits by hand and a chat can write, so a cache here would be a second answer to
-/// "what is on disk" that nothing invalidates.
+/// Read fresh on every ask: what a fix in the picker reads to draw what is true after it, and
+/// what every other caller reads. The dialog's own two answers ([`start_options_first`],
+/// [`start_details`]) are kept per project instead, and the plane watch is what drops them
+/// (#4737): `charter.local.toml` is a file the operator edits by hand and a chat can write.
 ///
 /// **Off the main thread**: a sandboxed project's picker asks each approved Claude Code
 /// profile's program its `--version` (ruling V87g), which can take seconds, and the window
@@ -1493,6 +1512,71 @@ async fn start_options(
         .map_err(|err| format!("purlis could not read the profiles: {err}"))??;
     options.next_number = Some(held.chats().next_number());
     Ok(options)
+}
+
+/// **The picker's first answer** (#4736): what [`start_options`] answers, without what takes a
+/// moment to read: every row's approval, sandbox and billing are none here, and
+/// [`start_details`] answers them. The dialog opens on this, at once, and fills its rows in as
+/// the details arrive. A start pressed before then goes through every gate it does today: the
+/// window waits for the details, and the core's start asks them again.
+///
+/// **Kept per project** (#4737), with [`start_details`]: an open with nothing changed is
+/// served from what the last one read ([`planes::Held::kept_start_first`]), and a change to
+/// the profiles, the personas, the sandbox or the installed harnesses drops it first.
+#[tauri::command]
+#[specta::specta]
+async fn start_options_first(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<StartOptions, String> {
+    let held = planes.held(&plane)?;
+    let kept = std::sync::Arc::clone(&held);
+    let mut options = tauri::async_runtime::spawn_blocking(move || {
+        kept.kept_start_first(|| {
+            let root = kept.root();
+            purlis_core::profiles::git_asked_once(|| {
+                let (set, check) = purlis_core::profiles::for_launch(root);
+                let stamp = purlis_core::pickerstamp::Stamp::of(root, set.profiles());
+                Ok((start_first_of(root, &set, &check)?, stamp))
+            })
+        })
+    })
+    .await
+    .map_err(|err| format!("purlis could not read the profiles: {err}"))??;
+    options.next_number = Some(held.chats().next_number());
+    Ok(options)
+}
+
+/// **The picker's second answer** (#4736): each row's approval, sandbox and billing, by its
+/// name, the slow part of [`start_options`]: a sandbox compile per harness and a check of
+/// each approved profile's program. Kept as [`start_options_first`] is (#4737), so a second open with
+/// nothing changed compiles nothing and runs no program.
+#[tauri::command]
+#[specta::specta]
+async fn start_details(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<RowDetails>, String> {
+    let held = planes.held(&plane)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        held.kept_start_details(|| {
+            let root = held.root();
+            Ok(purlis_core::profiles::git_asked_once(|| {
+                let (set, _check) = purlis_core::profiles::for_launch(root);
+                // Stamped before the read, so a change made while it reads breaks the stamp.
+                let stamp = purlis_core::pickerstamp::Stamp::of(root, set.profiles());
+                let details = start_details_of(
+                    root,
+                    &set,
+                    &purlis_core::sandbox::Machine::this(),
+                    &purlis_core::sandbox::backend::installed,
+                );
+                (details, stamp)
+            }))
+        })
+    })
+    .await
+    .map_err(|err| format!("purlis could not read the profiles: {err}"))?
 }
 
 /// Every harness the project has, its card at a glance (HP-19): the palette's *What <product>
@@ -1531,13 +1615,34 @@ fn start_options_in(root: &std::path::Path) -> Result<StartOptions, String> {
     })
 }
 
-/// [`start_options_in`] on `machine`, with `has` saying what is installed.
+/// [`start_options_in`] on `machine`, with `has` saying what is installed: the first answer
+/// with each row's details in it.
 fn start_options_on(
     root: &std::path::Path,
     machine: &purlis_core::sandbox::Machine,
     has: &dyn Fn(&str) -> bool,
 ) -> Result<StartOptions, String> {
     let (set, check) = purlis_core::profiles::for_launch(root);
+    let mut options = start_first_of(root, &set, &check)?;
+    for (row, details) in options
+        .profiles
+        .iter_mut()
+        .zip(start_details_of(root, &set, machine, has))
+    {
+        row.approval = details.approval;
+        row.sandbox = details.sandbox;
+        row.billed_to = details.billed_to;
+    }
+    Ok(options)
+}
+
+/// Each row's details ([`RowDetails`]) of the profiles `set` holds, in its order.
+fn start_details_of(
+    root: &std::path::Path,
+    set: &purlis_core::profiles::ProfileSet,
+    machine: &purlis_core::sandbox::Machine,
+    has: &dyn Fn(&str) -> bool,
+) -> Vec<RowDetails> {
     // The sandbox each row starts under, compiled once per harness for every row (#2179): a
     // New tab no longer pays a compile per profile.
     let sandboxes = sandboxing::ahead_of_each(set.profiles(), root, machine, has);
@@ -1545,46 +1650,49 @@ fn start_options_on(
     // passes its chats, once for every row (#2036).
     let profiles_here = purlis_core::profilestore::listed_here();
     let passed = purlis_core::chatenv::read(root);
+    set.profiles()
+        .iter()
+        .zip(sandboxes)
+        .map(|(p, sandbox)| RowDetails {
+            name: p.name.clone(),
+            approval: purlis_core::profiletrust::approval_needed(root, p)
+                .map(|a| a.as_str().to_owned()),
+            sandbox,
+            billed_to: purlis_core::profilesignin::billed(p, &profiles_here, &passed),
+        })
+        .collect()
+}
+
+/// The picker's first answer ([`start_options_first`]) of the profiles `set` holds, as `check`
+/// found the local file: every row with its details left none.
+fn start_first_of(
+    root: &std::path::Path,
+    set: &purlis_core::profiles::ProfileSet,
+    check: &purlis_core::profiles::IgnoreCheck,
+) -> Result<StartOptions, String> {
     let on_disk = purlis_core::workspaces::Plane::open(root);
     // Every harness the project has, read once for every row (HP-19).
     let cards = purlis_core::harness_card::read(root);
     let personas = on_disk.personas().map_err(|err| err.to_string())?;
     let offered = purlis_core::personaprofile::offers_of(
         root,
-        &set,
+        set,
         &purlis_core::harness_declaration::read(root),
     );
-    let persona_profiles = personas
-        .iter()
-        .filter_map(|who| {
-            let named = purlis_core::personaprofile::named_by(root, who);
-            Some((
-                who.clone(),
-                purlis_core::personaprofile::preselected(&named, &offered)?,
-            ))
-        })
-        .collect();
-    let persona_descriptions = personas
-        .iter()
-        .filter_map(|who| {
-            purlis_core::personaverbs::retired::description_of(root, who)
-                .map(|said| (who.clone(), said))
-        })
-        .collect();
+    // Each persona's own profile and its line, each definition read once (#4736).
+    let said = purlis_core::personaprofile::for_the_picker(root, &personas, &offered);
     // Every row's icon, each person's SVG read once and held to one budget for the answer.
     let mut icons = harnessicon::Icons::default();
     let profiles = set
         .profiles()
         .iter()
-        .zip(sandboxes)
-        .map(|(p, sandbox)| ProfileRow {
+        .map(|p| ProfileRow {
             name: p.name.clone(),
             kind: p.kind.clone(),
             shown: purlis_core::profiletrust::shown(root, p),
             source: p.source.as_str().to_owned(),
             is_default: set.default.as_deref() == Some(p.name.as_str()),
-            approval: purlis_core::profiletrust::approval_needed(root, p)
-                .map(|a| a.as_str().to_owned()),
+            approval: None,
             ready_to_type: purlis_core::harness::Harness::of_kind(&p.kind)
                 .and_then(purlis_core::harness::Harness::ready_to_type)
                 .is_some(),
@@ -1592,9 +1700,9 @@ fn start_options_on(
                 .iter()
                 .find(|card| card.name == p.kind)
                 .map(HarnessGlance::from),
-            sandbox,
+            sandbox: None,
             model: Some(purlis_core::profilesignin::THE_HARNESS_DEFAULT.to_owned()),
-            billed_to: purlis_core::profilesignin::billed(p, &profiles_here, &passed),
+            billed_to: None,
             icon: Some(icons.row(&p.name, &p.kind, set.icon_of(&p.name))),
         })
         .collect();
@@ -1616,8 +1724,8 @@ fn start_options_on(
             })
             .collect(),
         personas,
-        persona_profiles,
-        persona_descriptions: Some(persona_descriptions),
+        persona_profiles: said.profiles,
+        persona_descriptions: Some(said.descriptions),
         // Only a persona this plane HAS. `[persona] default` is a committed line that
         // nothing checks, so it can name a deleted persona or `_shared` — and preselecting
         // one the picker does not draw means the operator presses Start and is refused over

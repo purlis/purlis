@@ -108,7 +108,8 @@ function core(
       if (cmd === "opened_chats") return [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       if (cmd === "start_chat") return { session: ++opened };
       if (cmd === "smart_close_offer") return { available: false, why: null, close_first: true };
       if (cmd === "smart_closing") return [];

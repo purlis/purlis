@@ -859,6 +859,30 @@ pub fn sandbox_ahead(
     AheadOnce::new(root, machine, has, os_release, probe).of(profile)
 }
 
+/// The words [`AheadOnce`] checks `profile`'s program with, `home` the person's: its pinned
+/// install where it has one, else its command resolved. `None` where nothing is checked: a
+/// program that is not there is the start's own refusal, not the sandbox's, and a runner's
+/// pinned version not installed yet is installed by the start (#3446).
+fn checked_words(profile: &Profile, home: &Path) -> Option<Vec<String>> {
+    match crate::profilestore::installs::installed_for(profile) {
+        Some(program) => Some(with_program(profile, home, &program)),
+        None if kept_pinned(profile) => None,
+        None => crate::programs::resolve_argv(&profiles::expanded_command(profile, home)).ok(),
+    }
+}
+
+/// **The program the picker checks for `profile`** (#4737): the one [`AheadOnce`] would ask
+/// its `--version`, as it resolves it now, or `None` where it checks none. What says a harness
+/// was installed, updated or removed under a picker answer the app keeps
+/// ([`crate::pickerstamp`]).
+pub fn program_checked(profile: &Profile) -> Option<PathBuf> {
+    let home = profiles::home().unwrap_or_else(|| PathBuf::from("~"));
+    checked_words(profile, &home)?
+        .into_iter()
+        .next()
+        .map(PathBuf::from)
+}
+
 /// [`sandbox_ahead`] for every row of one picker (#2179): **each harness's sandbox is compiled
 /// once**, however many profiles of it the picker lists.
 ///
@@ -872,8 +896,8 @@ pub fn sandbox_ahead(
 /// profile's own environment, which names the profile (`PURLIS_HARNESS_PROFILE`), so no two
 /// rows ask it the same thing.
 ///
-/// Held for one ask only: the files a compile reads are edited by hand and by chats, and an
-/// answer kept past the ask would be one nothing invalidates.
+/// Held for one ask only. The app keeps a picker's whole answer past the ask (#4737), and drops
+/// it on what the plane watch tells and on [`crate::pickerstamp`]: this type keeps nothing.
 pub struct AheadOnce<'a> {
     root: &'a Path,
     machine: &'a crate::sandbox::Machine,
@@ -917,19 +941,8 @@ impl<'a> AheadOnce<'a> {
                 return Ok(());
             }
             let home = profiles::home().unwrap_or_else(|| PathBuf::from("~"));
-            // A program that is not there is the start's own refusal, not the sandbox's; a
-            // runner's pinned version not installed yet is installed by the start (#3446).
-            let words = match crate::profilestore::installs::installed_for(profile) {
-                Some(program) => with_program(profile, &home, &program),
-                None if kept_pinned(profile) => return Ok(()),
-                None => {
-                    let Ok(words) =
-                        crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
-                    else {
-                        return Ok(());
-                    };
-                    words
-                }
+            let Some(words) = checked_words(profile, &home) else {
+                return Ok(());
             };
             let env = environment(profile, root, None, false, &Standing::of(root, root));
             let mut writable = applied.writable();

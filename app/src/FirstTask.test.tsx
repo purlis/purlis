@@ -141,7 +141,8 @@ function core(answers: (cmd: string, args: Record<string, unknown>) => unknown =
         asks_forge: null,
       };
     if (cmd === "plane_sidebar") return SIDEBAR;
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat") return { session: 1, label: null };
     if (cmd === "first_task_run") {
       const run = given.run as number;
