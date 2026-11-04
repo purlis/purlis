@@ -125,8 +125,9 @@ pub enum WorktreeCommand {
     /// it holds uncommitted changes or commits no other ref reaches, unless its branch landed
     /// by a squash merge, even if the base changed those files again since (the branch is then
     /// kept). In a chat, files git ignores refuse it too, except folders only the harness or a
-    /// build writes. A branch folder purlis
-    /// cut for a task is discarded from that task's Changes tab instead. In a chat the app
+    /// build writes, and links. A branch folder purlis cut for a task goes only once it is
+    /// finished: its task has ended and nothing in it would be lost, and no other folder links
+    /// into it. Otherwise it is discarded from that task's Changes tab. In a chat the app
     /// removes it, from a folder above it; `--force` there is the person's, from the window.
     Remove {
         repo: String,

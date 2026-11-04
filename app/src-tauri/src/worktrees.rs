@@ -318,7 +318,8 @@ pub async fn worktree_remove(
 /// task's folder needs hold (`purlis_core::dispatchplace::merge` and `discard`): the commit the
 /// person was shown, the task ended and no chat standing in the folder, the brokered route, and
 /// only the branch purlis cut. These two have none of them, so a folder the dispatch store
-/// holds is refused here with where to go instead, `force` or not.
+/// holds is refused here with where to go instead, `force` or not, unless it is a finished
+/// folder (ADR 0110): its task ended and nothing in it would be lost, removed without `force`.
 ///
 /// The rule is the core's (`dispatchplace::kept_from_the_explorer`), read as `purlis worktree
 /// remove` reads it: a record that does not read holds the folder its text names, and names
@@ -330,10 +331,11 @@ fn not_a_task_s(
     repo: &str,
     piece: &str,
     merging: bool,
+    force: bool,
 ) -> Result<(), String> {
     let no_discard = || no_discard_there(plane, workspace, repo);
     purlis_core::dispatchplace::kept_from_the_explorer(
-        plane, workspace, repo, piece, merging, no_discard,
+        plane, workspace, repo, piece, merging, force, no_discard,
     )
     .map_or(Ok(()), Err)
 }
@@ -356,7 +358,7 @@ fn remove_piece(
     force: bool,
 ) -> Result<(), String> {
     let _turn = turn(plane, workspace, repo)?;
-    not_a_task_s(plane, workspace, repo, piece, false)?;
+    not_a_task_s(plane, workspace, repo, piece, false, force)?;
     worktree::remove(plane, workspace, repo, piece, force, false)
         .map(|_| ())
         .map_err(|refusal| refusal.in_window())
@@ -628,7 +630,7 @@ pub async fn worktree_merge(
 /// The merge itself, against a root the registry has already vouched for.
 fn merge_piece(plane: &Path, workspace: &str, repo: &str, piece: &str) -> Result<Merged, String> {
     let _turn = turn(plane, workspace, repo)?;
-    not_a_task_s(plane, workspace, repo, piece, true)?;
+    not_a_task_s(plane, workspace, repo, piece, true, false)?;
     worktree::merge(plane, workspace, repo, piece)
         .map(|m| Merged {
             branch: m.branch,

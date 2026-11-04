@@ -135,6 +135,17 @@ a folder git has on no branch as a folder. "Piece" and "worktree" stay in the pl
 code, the `[plane] worktrees` setting and `purlis worktree` (ADR 0072).
 _Avoid_: task, slot, branch (for the directory), worktree (on screen)
 
+**Finished folder**:
+A branch folder whose removal loses nothing and takes nothing from under anyone: no uncommitted
+changes; every commit on its base, or carried there by a squash merge; no ignored files beyond
+the folders only a build or the harness writes, and links; its task, if any, ended (done,
+failed, blocked, cancelled, stopped or ended without a report; working, needs you, asking and
+idle are not ended); no open chat that has declared neither `done` nor `abandoned` holds it; and
+no other remaining folder links into it. `purlis worktree remove` takes one without `--force`,
+a task's folder too, and `purlis worktree prune` removes every one (ADR 0110).
+_Avoid_: landed (for a branch: that is a change member's word; say *on its base* or *carried*),
+merged (git's `-d` does not find a carried branch merged), clean (that is only its files)
+
 **Branch** (of a chat):
 What the window shows for a piece: one row per repo a chat works in, reading _`<branch>` in
 `<repo>`_. A chat working in a repo's shared clone shows the branch the clone has checked out,
@@ -172,7 +183,8 @@ A member whose request the forge reports merged, that purlis landed, and whose m
 purlis's landing log recorded it, is still on the default branch. A merge purlis queued, or
 whose read-back failed, is landed once a later `purlis change land` finds it merged at its
 **pending landing**'s head and logs it.
-_Avoid_: merged (a browser merge is merged but not logged), done
+_Avoid_: merged (a browser merge is merged but not logged), done; landed for a branch or a
+branch folder (landed is a member's alone: a branch is *on its base* or *carried*)
 
 **Pending landing**:
 purlis's evidence that it started landing a member: the request, the head its checks passed on

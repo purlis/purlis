@@ -90,6 +90,7 @@ pub mod extension;
 pub mod fence;
 pub mod filelock;
 pub mod files;
+pub mod finished;
 pub mod firstrun;
 pub mod firsttask;
 pub mod floorguard;

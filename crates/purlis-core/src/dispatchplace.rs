@@ -1050,61 +1050,108 @@ fn cut_before_the_piece(text: &str) -> bool {
     true
 }
 
-/// **What keeps `purlis worktree remove` off a branch folder purlis cut for a task** (#1534):
-/// the explorer's rule for its own Remove, from a terminal, where `None` lets the removal go
-/// on. A folder [`held_in_folder`] finds is refused, `--force` or not, and the person is sent
-/// to the task's Changes tab, where [`discard`] holds the guards a task's folder needs.
+/// **What keeps `purlis worktree remove` off a branch folder purlis cut for a task** (#1534,
+/// as ADR 0110 amends it), from a terminal or a chat, where `None` lets the removal go on.
+///
+/// **A finished task folder goes without `--force`**: its task has ended and nothing in it
+/// would be lost ([`crate::finished::as_it_stands`]), so `--delete-branch` goes with it too.
+/// Any other folder [`held_in_folder`] finds is refused, `--force` or not, saying why it is not
+/// finished, and the person is sent to the task's Changes tab, where [`discard`] holds the
+/// guards a task's folder needs.
 ///
 /// The explorer's two exceptions hold here too: a folder already gone (only git's stale
 /// registration is left, and nothing in it to lose), and the folder of a task that has ended
 /// in a repo the brokered route runs no git in (`no_discard_there`, asked only then): Discard
-/// is refused there and its sentence sends the person to a Remove of their own.
-///
-/// **`delete_branch` is refused for any such folder**, even where the removal would go on:
-/// the branch can hold commits that exist nowhere else, and a discard never deletes a branch
-/// git does not find merged.
+/// is refused there and its sentence sends the person to a Remove of their own. Neither takes
+/// `--delete-branch`: the branch can hold commits that exist nowhere else.
 pub fn kept_from_removal(
     root: &Path,
     workspace: &str,
     repo: &str,
     piece: &str,
+    force: bool,
     delete_branch: bool,
     no_discard_there: impl FnOnce() -> bool,
 ) -> Option<String> {
     let (held, goes) = holding(root, workspace, repo, piece, no_discard_there)?;
-    let shown_piece = crate::shown::short(piece);
     match held {
         InFolder::Unread(id) if !goes || delete_branch => {
             Some(unread_holds(root, &id, piece, "run this again", false))
         }
-        InFolder::Task(record) if !goes => {
-            let task = record.task.unwrap_or(record.worker.chat.name);
-            Some(left_to(
-                &task,
-                piece,
-                false,
-                "Changes tab in the purlis window",
-            ))
+        InFolder::Unread(_) => None,
+        InFolder::Task(record) => {
+            let task = record
+                .task
+                .clone()
+                .unwrap_or(record.worker.chat.name.clone());
+            let tab = "Changes tab in the purlis window";
+            match finished_for_its_task(root, workspace, repo, piece, &record, force) {
+                Some(Ok(())) => return None,
+                Some(Err(why)) if !goes => return Some(not_finished(&task, piece, &why, tab)),
+                _ => {}
+            }
+            if !goes {
+                return Some(left_to(&task, piece, false, tab));
+            }
+            delete_branch.then(|| {
+                format!(
+                    "'{}' is the branch purlis cut for the task '{}', so --delete-branch is \
+                     refused for it: that branch can hold commits nothing else has. Run this \
+                     again without --delete-branch to remove the folder and keep the branch. \
+                     Nothing was removed.",
+                    crate::shown::short(piece),
+                    crate::shown::short(&task)
+                )
+            })
         }
-        InFolder::Task(record) if delete_branch => {
-            let task = crate::shown::short(&record.task.unwrap_or(record.worker.chat.name));
-            Some(format!(
-                "'{shown_piece}' is the branch purlis cut for the task '{task}', so \
-                 --delete-branch is refused for it: that branch can hold commits nothing else \
-                 has. Run this again without --delete-branch to remove the folder and keep the \
-                 branch. Nothing was removed."
-            ))
-        }
-        _ => None,
     }
 }
 
+/// **Whether `piece`, the folder purlis cut for `record`'s task, is finished** (ADR 0110), for
+/// a removal not forced: `Ok` where its task has ended and nothing in it would be lost, else
+/// why not, as a clause. `None` for a forced removal, or a folder that is not there: the
+/// guard's other rules answer those.
+fn finished_for_its_task(
+    root: &Path,
+    workspace: &str,
+    repo: &str,
+    piece: &str,
+    record: &Record,
+    force: bool,
+) -> Option<Result<(), String>> {
+    let there = worktree::path_for(root, workspace, repo, piece)
+        .is_ok_and(|folder| folder.symlink_metadata().is_ok());
+    if force || !there {
+        return None;
+    }
+    if record.running() {
+        return Some(Err("its task has not ended".to_owned()));
+    }
+    Some(
+        crate::finished::as_it_stands(root, workspace, repo, piece)
+            .map(|_| ())
+            .map_err(|why| why.why()),
+    )
+}
+
+/// What a removal says of `piece`, the folder purlis cut for the task `task`, that is not
+/// finished, `why` saying what keeps it, and where the person discards it instead.
+fn not_finished(task: &str, piece: &str, why: &str, tab: &str) -> String {
+    let (task, piece) = (crate::shown::short(task), crate::shown::short(piece));
+    format!(
+        "'{piece}' is the branch purlis cut for the task '{task}', and it is not finished: \
+         {why}. Discard it from that task's {tab}, which shows what would go with it: Review \
+         changes, on its row in the chats list or on the Dispatches tab. Nothing was removed."
+    )
+}
+
 /// **What keeps the explorer's own Merge (`merging`) or Remove off a branch folder purlis cut
-/// for a task** (#1534), in the window's words, where `None` lets the act go on: the same
-/// reading as [`kept_from_removal`], so the window and `purlis worktree remove` cannot drift.
-/// A folder [`held_in_folder`] finds is refused, `force` or not, and the person is sent to the
-/// task's Changes tab; one held by a record that does not read is refused naming that record,
-/// so the person can see what keeps it.
+/// for a task** (#1534, as ADR 0110 amends it), in the window's words, where `None` lets the
+/// act go on: the same reading as [`kept_from_removal`], so the window and `purlis worktree
+/// remove` cannot drift. A finished task folder is removed without `force`. Any other folder
+/// [`held_in_folder`] finds is refused, `force` or not, and the person is sent to the task's
+/// Changes tab; one held by a record that does not read is refused naming that record, so the
+/// person can see what keeps it.
 ///
 /// A Merge is never let through. A Remove is, in the two cases [`kept_from_removal`] lets one
 /// through: a folder already gone, and an ended task's folder in a repo the brokered route
@@ -1115,6 +1162,7 @@ pub fn kept_from_the_explorer(
     repo: &str,
     piece: &str,
     merging: bool,
+    force: bool,
     no_discard_there: impl FnOnce() -> bool,
 ) -> Option<String> {
     let (held, goes) = if merging {
@@ -1122,6 +1170,21 @@ pub fn kept_from_the_explorer(
     } else {
         holding(root, workspace, repo, piece, no_discard_there)?
     };
+    if let InFolder::Task(record) = &held
+        && !merging
+    {
+        let task = record
+            .task
+            .clone()
+            .unwrap_or(record.worker.chat.name.clone());
+        match finished_for_its_task(root, workspace, repo, piece, record, force) {
+            Some(Ok(())) => return None,
+            Some(Err(why)) if !goes => {
+                return Some(not_finished(&task, piece, &why, "Changes tab"));
+            }
+            _ => {}
+        }
+    }
     if goes {
         return None;
     }
