@@ -1743,6 +1743,73 @@ fn a_chat_that_is_not_sandboxed_reads_its_vault_itself() {
     assert_eq!(String::from_utf8_lossy(&rec.out), "***\n");
 }
 
+/// What a sandboxed chat's `purlis secret exec` prints when it was asked with `mode`'s flag,
+/// `--stream` or `--exec`, to run `script` with `TOKEN` as `$X`: run by the app, which masks
+/// what the child writes as it comes (#1407).
+fn printed_in_a_chat_by(mode: &str, script: &str) -> (i32, String, String) {
+    let project = project();
+    let asked = Arc::new(AtomicBool::new(false));
+    let (_dir, _reading, env) = an_app(the_app_runs_it(project.path()), Arc::clone(&asked));
+    let ctx = chat_ctx(project.path(), &env);
+    let req = Request {
+        vault: "team".into(),
+        env: vec!["X=TOKEN".into()],
+        stream: mode == "--stream",
+        exec: mode == "--exec",
+        command: sh(script),
+        ..Request::default()
+    };
+    let mut rec = Rec::default();
+    let code = exec::exec(&ctx, &req, &mut rec);
+    assert!(asked.load(Ordering::SeqCst), "{mode}: the app was asked");
+    (
+        code,
+        String::from_utf8_lossy(&rec.out).into_owned(),
+        String::from_utf8_lossy(&rec.err).into_owned(),
+    )
+}
+
+/// A value the child prints whole, on stdout, comes back masked under `--stream` and `--exec`
+/// alike.
+#[test]
+fn a_value_printed_whole_is_masked_under_stream_and_exec() {
+    for mode in ["--stream", "--exec"] {
+        let (code, out, err) = printed_in_a_chat_by(mode, r#"echo "leak: $X"; echo done"#);
+        assert_eq!(code, 0, "{mode}: {err}");
+        assert_eq!(out, "leak: ***\ndone\n", "{mode}");
+        assert!(!out.contains(TOKEN) && !err.contains(TOKEN), "{mode}");
+    }
+}
+
+/// A value the child writes in two halves, a pause between them, reaches the app in two
+/// reads of its pipe: neither half is shown, under `--stream` and `--exec` alike.
+#[test]
+fn a_value_split_across_two_reads_is_masked_under_stream_and_exec() {
+    // `s3cret-value`, as `s3cret` and then `-value`.
+    let script =
+        r#"printf 'before %s' "${X%??????}"; sleep 0.3; printf '%s after\n' "${X#??????}""#;
+    for mode in ["--stream", "--exec"] {
+        let (code, out, err) = printed_in_a_chat_by(mode, script);
+        assert_eq!(code, 0, "{mode}: {err}");
+        assert_eq!(out, "before *** after\n", "{mode}");
+        assert!(!out.contains("s3cret") && !out.contains("-value"), "{mode}");
+    }
+}
+
+/// A value on stderr is masked as one on stdout is, split or whole, and stays on stderr,
+/// under `--stream` and `--exec` alike.
+#[test]
+fn a_value_printed_on_stderr_is_masked_under_stream_and_exec() {
+    let script = r#"echo "$X" >&2; printf '%s' "${X%??????}" >&2; sleep 0.3; printf '%s\n' "${X#??????}" >&2; echo ok; exit 3"#;
+    for mode in ["--stream", "--exec"] {
+        let (code, out, err) = printed_in_a_chat_by(mode, script);
+        assert_eq!(code, 3, "{mode}: the child's own status");
+        assert_eq!(out, "ok\n", "{mode}");
+        assert_eq!(err, "***\n***\n", "{mode}");
+        assert!(!err.contains("s3cret") && !err.contains("-value"), "{mode}");
+    }
+}
+
 /// The asker's half against the app's, on a connection pair: the line the chat writes is the
 /// one the app reads, token and all, and what the app writes back is what the chat prints.
 #[test]
