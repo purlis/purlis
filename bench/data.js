@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793822562240,
+  "lastUpdate": 1793824994278,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39228,6 +39228,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0036865,
             "unit": "ms",
             "extra": "median of 5 runs: 101.775, 101.935, 102.004, 102.055, 102.395 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fb1ea5ce9932ccb80ac387430e8025b6deaa0cdd",
+          "message": "Pane head: the bell is the size of its neighbours, its hint below the head (#5189) (#5208)\n\n* Pane head: the bell is the size of its neighbours, its hint below the head (#5189)\n\nThe bell was a labelled Button two controls wide, with its count as its words,\nand its hint opened at its end, over Split right. It is now an IconButton the\nsize of Split right, its count a Count pill on its corner inside its box (hot\nwhile a note is trouble, unheard: the bell's name says it), and the pane head\nis TIPS_BELOW, so every head hint opens below the head.\n\nThe head's buttons now stand var(--space-1) apart, so a hovered or focused\none's ground never touches its neighbour: the person's ruling on the M70\nprototype (spec #5191).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KG4MKBHTRDHBC7HPGP34RE\nPurlis-Persona: steward\n\n* Count: a small size for a mark's corner, and the bell's pill takes it (#5189)\n\nThe bell's count, drawn at the count's own least size (about 16px) inside a\n24px icon button, hid the bell (the stories run's pictures at c80902a34). The\ncount family gains size=\"sm\": about 12px tall, tight to its number, drawn by\nbadge.css and kept out of a theme's room for a count (the manifest's\nkeeps_size). The bell's pill takes it and rises the smallest step above the\nbell, as the M70 prototype draws it, never past its end, so it stays off\nSplit right. The bell's story checks that the pill covers no more than a\nquarter of the bell's mark.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KG4MKBHTRDHBC7HPGP34RE\nPurlis-Persona: steward\n\n* Review of #5208: baselines from its stories run, and the review's fixes (#5189)\n\nBaselines from stories run 41890410572 at 5b86cd5a0, which failed on pictures\nalone: PaneBand, ViewTabs, PaneLine (the bell, its small pill and the gap) and\nthe new Badge SmallCounts. Nothing else is taken.\n\nFrom the two-axis review: the bell's story says why it takes no picture; the\npill's lookup is one helper in the window test; the rise the story allows is\nnamed; the head's buttons are asked for by role; the pill's reason is written\nonce.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KG4MKBHTRDHBC7HPGP34RE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T19:44:44Z",
+          "tree_id": "5e50a24930010adcec5c5fdcdcd0bce0a33e679c",
+          "url": "https://github.com/purlis/purlis/commit/fb1ea5ce9932ccb80ac387430e8025b6deaa0cdd"
+        },
+        "date": 1793824990123,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3357275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.323, 0.332, 0.336, 0.342, 0.343 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6225265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.347, 16.502, 16.623, 16.650, 16.709 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.584663,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.967, 101.105, 101.585, 102.251, 102.642 ms"
           }
         ]
       }
