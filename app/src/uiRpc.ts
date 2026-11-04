@@ -11486,18 +11486,6 @@ export type SecretEntryShown = {
 	key: string,
 };
 
-/**  **The line a Secret ask's Remember writes** (#5240): shown whole before it is ticked for. */
-export type SecretNeedShown = {
-	/**  The file it goes in, relative to the project. */
-	file: string,
-	/**  The persona does not declare the key, so a `secret-need.<key>` line goes in. */
-	need: boolean,
-	/**  The chat's words for it, for the person to edit: empty where it said none. */
-	purpose: string,
-	/**  The vault a `vault:` line names, where the persona names none. */
-	vault?: string | null,
-};
-
 /**
  *  **A vault secret purlis filled into a browser** (#5119, SF-8), as its view marks it: the
  *  key's name, the site it went to and the field the page labels, never a value.
@@ -11516,6 +11504,18 @@ export type SecretFilled = {
 	label: string,
 	/**  A 2FA code the seed under `key` made (#5118), not the value itself. */
 	code: boolean,
+};
+
+/**  **The line a Secret ask's Remember writes** (#5240): shown whole before it is ticked for. */
+export type SecretNeedShown = {
+	/**  The file it goes in, relative to the project. */
+	file: string,
+	/**  The persona does not declare the key, so a `secret-need.<key>` line goes in. */
+	need: boolean,
+	/**  The chat's words for it, for the person to edit: empty where it said none. */
+	purpose: string,
+	/**  The vault a `vault:` line names, where the persona names none. */
+	vault?: string | null,
 };
 
 /**
