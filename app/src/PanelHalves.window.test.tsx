@@ -261,7 +261,10 @@ describe("F6 (P-13)", () => {
 
     f6();
     f6();
-    expect(document.activeElement).toHaveAccessibleName("What Claude Code can do here");
+    // The focused pane's first control, on its head: never the pane foot under the terminal,
+    // whose harness is no longer the head's (#5202).
+    expect(document.activeElement).toHaveAccessibleName("More for steward one");
+    expect(document.activeElement?.closest(".pane-head")).not.toBeNull();
     f6();
     f6();
     expect(document.activeElement).toHaveAttribute("role", "row");
