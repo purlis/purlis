@@ -2259,3 +2259,48 @@ fn an_ancestry_that_cannot_be_read_is_a_doubt() {
         Sandboxed::Unsure(_)
     ));
 }
+
+#[test]
+fn a_process_below_a_chat_started_with_no_sandbox_and_no_opt_out_reads_as_unsandboxed() {
+    // A floorless start, or a harness no sandbox is compiled for: no mark, and the record says so.
+    let set = Set::new("unused");
+    let record = crate::reopen::Record {
+        chats: vec![crate::reopen::Chat {
+            program: "codex".into(),
+            name: "chat 3".into(),
+            number: Some(3),
+            profile: Some("main".into()),
+            no_sandbox: true,
+            pid: Some(30),
+            ..Default::default()
+        }],
+        dealt: 3,
+        ..Default::default()
+    };
+    crate::reopen::write(set.tmp.path(), &record).unwrap();
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 70, below_chat_30, |_| Ok(30), |_| None, None),
+        Sandboxed::No
+    );
+    let read = crate::reopen::read_or_refusal(set.tmp.path()).unwrap();
+    assert!(read.chats[0].no_sandbox, "it keeps saying so");
+    assert!(!read.chats[0].unsandboxed, "and it is no opt-out");
+}
+
+#[test]
+fn two_records_of_one_process_read_as_sandboxed_if_either_does() {
+    let set = Set::new("unused");
+    let record = crate::reopen::path(set.tmp.path());
+    std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+    for chats in [
+        r#"[{"pid": 30, "program": "claude", "sandbox": "off"}, {"pid": 30, "program": "claude"}]"#,
+        r#"[{"pid": 30, "program": "claude"}, {"pid": 30, "program": "claude", "sandbox": "off"}]"#,
+    ] {
+        std::fs::write(&record, format!(r#"{{"chats": {chats}}}"#)).unwrap();
+        assert_eq!(
+            sandboxed_chat_around(&set.ctx, 70, below_chat_30, |_| Ok(30), |_| None, None),
+            Sandboxed::Yes,
+            "{chats}"
+        );
+    }
+}

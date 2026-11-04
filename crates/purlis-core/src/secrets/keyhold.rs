@@ -970,8 +970,8 @@ mod tests {
 /// program without a question, and by no other program silently. Every item lives in a keychain
 /// of the test's own, made in a temporary folder and unlocked. Making one puts it on the search
 /// list for as long as it lives (the Keychain's own doing), it is never made the default, and it
-/// is deleted, which takes it off the list again, when the test ends however it ends: the
-/// person's login keychain is never touched.
+/// is deleted, which takes it off the list again, when the test ends, by a failure too: the
+/// person's login keychain is never touched. They run only where CI's step asks for them.
 ///
 /// The `purlis` command is not the other program here: a test build reads a file in place of
 /// the Keychain ([`crate::fence::FENCED`]), and the real store reads only the user's default
@@ -1004,6 +1004,9 @@ mod held_by_the_keychain {
 
     const SECURITY: &str = "/usr/bin/security";
 
+    /// Set by the CI step that runs these (`studio-confinement-macos`), on a runner of its own.
+    const ASKED: &str = "PURLIS_TEST_THROWAWAY_KEYCHAIN";
+
     /// One keychain at a time: making and deleting one each rewrite the search list.
     static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
@@ -1026,7 +1029,7 @@ mod held_by_the_keychain {
     }
 
     impl Throwaway {
-        /// Made and unlocked, or `None` where this process may not make one (a sandboxed chat).
+        /// Made and unlocked, or `None` where this process may not make one.
         fn make() -> Option<Self> {
             let dir = tempfile::tempdir().expect("a temporary folder");
             let path = dir.path().join("held.keychain-db");
@@ -1071,22 +1074,16 @@ mod held_by_the_keychain {
         }
     }
 
-    /// A keychain of the test's own, or `None` (said on stderr) where none can be made here. On
-    /// CI nothing sandboxes the test, so none there is a failure.
+    /// A keychain of the test's own where [`ASKED`] says to make one. Nowhere else: another
+    /// program's read may raise a dialog on the person's Mac, and each keychain is on their
+    /// search list while it lives. Where it is asked for, not being able to make one is a failure.
     fn throwaway() -> Option<Throwaway> {
-        let made = Throwaway::make();
-        if made.is_none() {
-            assert!(
-                std::env::var_os("CI").is_none(),
-                "no keychain of the test's own could be made on CI"
-            );
+        if std::env::var_os(ASKED).is_none() {
             use std::io::Write;
-            let _ = writeln!(
-                std::io::stderr(),
-                "skipped: this process may not make a keychain (a sandboxed chat?)"
-            );
+            let _ = writeln!(std::io::stderr(), "skipped: {ASKED} is not set");
+            return None;
         }
-        made
+        Some(Throwaway::make().expect("a keychain of the test's own"))
     }
 
     /// What `security find-generic-password` printed and how it ended, given [`PATIENCE`] and no

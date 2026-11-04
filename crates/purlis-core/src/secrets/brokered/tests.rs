@@ -5749,7 +5749,7 @@ fn a_chat_that_unset_its_mark_below_a_sandboxed_chat_has_its_secret_exec_run_by_
         (crate::secrets::setup::Sandboxed::No, false),
         (
             crate::secrets::setup::Sandboxed::Unsure("unreadable".into()),
-            false,
+            true,
         ),
     ] {
         let asked = Arc::new(AtomicBool::new(false));
@@ -5929,12 +5929,8 @@ fn under_purlis_wrap_a_brokered_child_reaches_the_network_only_through_its_proxy
             .and_then(|exe| Some(exe.parent()?.parent()?.join("sandbox-probe")))
             .filter(|beside| beside.is_file()),
     };
+    // A build of this package alone has none: the step that names it is what insists on it.
     let Some(probe) = probe else {
-        assert!(
-            std::env::var_os("CI").is_none(),
-            "no sandbox-probe beside this build on CI: build it with \
-             `cargo build -p purlis-linux-sandbox --bin sandbox-probe`"
-        );
         let _ = writeln!(
             std::io::stderr(),
             "skipped: no sandbox-probe beside this build"

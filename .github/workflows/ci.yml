@@ -1479,6 +1479,8 @@ jobs:
       # read by the program that made it, and silently by no other.
       - name: A held keychain item is read silently by no other program
         if: steps.scope.outputs.run == 'true'
+        env:
+          PURLIS_TEST_THROWAWAY_KEYCHAIN: "1"
         run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- secrets::keyhold::held_by_the_keychain::
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.

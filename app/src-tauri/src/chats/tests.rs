@@ -8199,6 +8199,32 @@ fn a_person_lifted_it() -> purlis_core::sandbox::Lifted {
 }
 
 #[test]
+fn a_run_with_no_sandbox_and_no_opt_out_says_so_in_the_record_and_an_opt_out_does_not() {
+    let chats = Chats::new();
+    let chat = Chat {
+        persona: Some("steward".to_owned()),
+        ..chat("/bin/sh", "c", None)
+    };
+    let session = chats
+        .start_ready(&chat, &a_shell_ready(), SIZE)
+        .expect("starts");
+    assert!(chats.record().chats[0].no_sandbox);
+    assert!(!chats.record().chats[0].unsandboxed, "it is no opt-out");
+    let _ = chats.close(session);
+
+    let chats = Chats::new();
+    let ready = purlis_core::start::Ready {
+        harness: Some(Harness::ClaudeCode),
+        unsandboxed: Some(a_person_lifted_it()),
+        ..a_shell_ready()
+    };
+    let session = chats.start_ready(&chat, &ready, SIZE).expect("starts");
+    assert!(!chats.record().chats[0].no_sandbox);
+    assert!(chats.record().chats[0].unsandboxed);
+    let _ = chats.close(session);
+}
+
+#[test]
 fn a_chat_started_without_the_sandbox_is_audited_off_as_its_run_begins_and_counted_once_up() {
     let mut chats = Chats::new();
     let said = saying(&mut chats);
@@ -8261,6 +8287,10 @@ fn a_chat_whose_last_run_was_unsandboxed_is_audited_back_on_when_it_starts_sandb
         "a relaunch is never counted as a new chat"
     );
     assert!(!chats.record().chats[0].unsandboxed);
+    assert!(
+        !chats.record().chats[0].no_sandbox,
+        "it runs in the sandbox it compiled"
+    );
 }
 
 #[test]

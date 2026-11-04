@@ -5193,6 +5193,13 @@ impl Chats {
             } else {
                 unsandboxed.is_some()
             },
+            // And a run with no sandbox and no opt-out says so (`ran_as_started`'s `Off`), for
+            // what runs below it, which has only the record to ask.
+            no_sandbox: if reattaching {
+                chat.no_sandbox
+            } else {
+                sandbox.is_none() && unsandboxed.is_none()
+            },
             identity,
             // The Skill studio's flag this start took (#3466): what its record keeps, and what
             // a later reattach of it takes.

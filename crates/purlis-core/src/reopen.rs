@@ -226,6 +226,14 @@ pub struct Chat {
     /// applied. This is how a sandboxed start knows to say the sandbox came back on
     /// (`trust.sandbox.on`), and how the chat's session record says what it ran under. `false` is every other chat, and every record written before this field.
     pub unsandboxed: bool,
+    /// Whether the chat's last run started with no sandbox and no opt-out: the floor could not
+    /// be applied here, no sandbox is compiled for its harness, or it is a shell tab. On disk as
+    /// `sandbox = "none"`, where [`Self::unsandboxed`] is `"off"`.
+    ///
+    /// **A fact about the run that was**, like [`Self::unsandboxed`], and read by what runs below
+    /// the chat ([`chat_runs`]) and never by a start: it is not an opt-out, and no audit reads it
+    /// as a sandbox that came back on.
+    pub no_sandbox: bool,
     /// Who this chat is beyond this clone: its id, its origin device, its current run and the
     /// chat it was resumed from (ADR 0066). See [`Identity`].
     pub identity: Identity,
@@ -1122,10 +1130,10 @@ pub fn chat_pids(
 pub struct ChatRun {
     /// The process the app started the chat's program as ([`Chat::pid`]).
     pub pid: u32,
-    /// **The record says this run had no sandbox**: `sandbox = "off"` ([`Chat::unsandboxed`]),
-    /// or a plain shell tab, which is never sandboxed: no profile, and a program named that is
-    /// no harness ([`Harness::of_command`]). Every other chat, a floorless start among them (whose
-    /// record says nothing), reads as sandboxed: a doubt never reads as "no sandbox".
+    /// **The record says this run had no sandbox**: `sandbox = "off"` ([`Chat::unsandboxed`]) or
+    /// `"none"` ([`Chat::no_sandbox`]), or a plain shell tab in a record written before that word:
+    /// no profile, and a program named that is no harness ([`Harness::of_command`]). Every other
+    /// chat reads as sandboxed: a doubt never reads as "no sandbox".
     pub unsandboxed: bool,
 }
 
@@ -1161,9 +1169,10 @@ pub fn chat_runs(
             let plain_shell = word(chat, "profile").is_empty()
                 && !program.is_empty()
                 && Harness::of_command(&program).is_none();
+            let sandbox = word(chat, "sandbox");
             Some(ChatRun {
                 pid,
-                unsandboxed: word(chat, "sandbox") == SANDBOX_OFF || plain_shell,
+                unsandboxed: sandbox == SANDBOX_OFF || sandbox == SANDBOX_NONE || plain_shell,
             })
         })
         .collect();
@@ -1667,8 +1676,9 @@ struct ChatOnDisk {
     /// `"this-machine"` or `"pool:<name>"`. Any other word reads as absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     runs_on: String,
-    /// `"off"` where the chat's last run was unsandboxed — see [`Chat::unsandboxed`] — and
-    /// absent otherwise. Any other word reads as absent.
+    /// `"off"` where the chat's last run was unsandboxed — see [`Chat::unsandboxed`] — `"none"`
+    /// where it started with no sandbox and no opt-out — see [`Chat::no_sandbox`] — and absent
+    /// otherwise. Any other word reads as absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     sandbox: String,
     /// The chat's ids — see [`Identity`]. Each is a ULID, absent when not known: every record
@@ -1721,6 +1731,9 @@ pub fn a_ulid(word: &str) -> Option<String> {
 
 /// The one word a record's `sandbox` holds.
 const SANDBOX_OFF: &str = "off";
+
+/// What `sandbox` says for a run with no sandbox and no opt-out ([`Chat::no_sandbox`]).
+const SANDBOX_NONE: &str = "none";
 
 /// A new ULID: how the host mints a chat's id and each of its runs' (ADR 0066).
 pub fn mint() -> String {
@@ -1934,6 +1947,8 @@ impl From<&Record> for OnDisk {
                         .unwrap_or_default(),
                     sandbox: if chat.unsandboxed {
                         SANDBOX_OFF.to_owned()
+                    } else if chat.no_sandbox {
+                        SANDBOX_NONE.to_owned()
                     } else {
                         String::new()
                     },
@@ -2024,6 +2039,7 @@ impl From<ChatOnDisk> for Chat {
                 .filter(|name| crate::contain::workspace_name_ok(name)),
             runs_on: crate::machine::StartChoice::read(&chat.runs_on),
             unsandboxed: chat.sandbox == SANDBOX_OFF,
+            no_sandbox: chat.sandbox == SANDBOX_NONE,
             identity: Identity {
                 id: a_ulid(&chat.id),
                 device: a_ulid(&chat.device),

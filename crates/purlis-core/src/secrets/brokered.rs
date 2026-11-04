@@ -363,10 +363,14 @@ pub(crate) fn refused_where(
                         crate::personas::one_line(&doubt),
                         super::keyring::STORE_NAME,
                     )),
-                    Markup::from(
-                        "  In a chat, hand the value to a command with `purlis secret exec`, \
-                         which the app runs. Anywhere else, run this again once that is cleared.",
-                    ),
+                    Markup::from(match reader {
+                        Reader::Exec => "  Run this again once that is cleared.",
+                        Reader::GetOrCp | Reader::Other => {
+                            "  In a chat, hand the value to a command with `purlis secret exec`, \
+                             which the app runs. Anywhere else, run this again once that is \
+                             cleared."
+                        }
+                    }),
                 ]));
             }
         }
@@ -409,9 +413,9 @@ pub(crate) fn refused_where(
 /// Only inside a chat the app started sandboxed ([`crate::sandbox::chat_is_sandboxed_in`]): an
 /// unsandboxed chat reads its vault as the person does. A chat that claims to be sandboxed when
 /// it is not gets the stricter run. One that hides the mark but still names the app's socket
-/// and its number is sent there all the same where it runs below a sandboxed chat's program
-/// ([`super::setup::sandboxed_chat`]); one that hides all of it gets the vault's own refusal
-/// ([`refused_in_this_chat`]).
+/// and its number is sent there all the same where it runs below a sandboxed chat's program, or
+/// where purlis cannot tell ([`super::setup::sandboxed_chat`]), since the app judges by its own
+/// record; one that hides all of it gets the vault's own refusal ([`refused_in_this_chat`]).
 ///
 /// A persona's MCP server's start ([`super::mcpstart::server_in`]) is tried once more where the
 /// first run failed before the server spoke ([`started_server`]).
@@ -433,7 +437,7 @@ pub(crate) fn forwarded_where(
     let env = |name: &str| ctx.env.get(name);
     let socket = env(crate::hookwire::SOCKET_ENV).filter(|s| !s.is_empty())?;
     let chat = chat_number(&env)?;
-    if !crate::sandbox::chat_is_sandboxed_in(&env) && located() != super::setup::Sandboxed::Yes {
+    if !crate::sandbox::chat_is_sandboxed_in(&env) && located() == super::setup::Sandboxed::No {
         return None;
     }
     let token = crate::hookwire::ChatToken::read(&env);
