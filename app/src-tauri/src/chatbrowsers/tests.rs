@@ -3426,6 +3426,7 @@ fn a_shop_login() -> purlis_core::sandbox::tools::Tool {
         args: None,
         mint: None,
         host: None,
+        fill: None,
     }
 }
 
