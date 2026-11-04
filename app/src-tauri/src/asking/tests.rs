@@ -2566,6 +2566,6 @@ fn a_refused_vault_policy_locks_offers_keep_blocked_alone_and_says_why() {
     assert_eq!(
         ask.says,
         "Runs as steward, and vault loose is tagged for no persona, so purlis did not open it. \
-         Locked by policy, set by IT."
+         Locked by policy, set by IT"
     );
 }
