@@ -32,16 +32,23 @@ const PLACES: readonly Place[] = ["top", "left", "middle", "right", "bottom"];
 /** Where targets are drawn: on a pane of the tab in front, or on the strip. */
 export type Group = { kind: "pane"; tab: number; pane: number } | { kind: "strip"; at: number };
 
+/** Whether pane `pane` of tab `tab` is drawn as a pane, where a target can be. A side folded to a
+ *  rail (#4766, `paneFold.ts`) is not: it is a button on the rail, which takes no drop. */
+export type Shown = (tab: number, pane: number) => boolean;
+
+const EVERY_PANE: Shown = () => true;
+
 /** The keys that walk the targets. `ShiftTab` is Tab with Shift held. */
 export type Step = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Tab" | "ShiftTab";
 
 /**
  * **Where targets are drawn while `source` is held**: every pane of the tab in front, in the
- * tree's reading order, but the pane that would move (`heldPane`); then the strip's New tab, at
+ * tree's reading order, but the pane that would move (`heldPane`) and any not `shown` (a side
+ * folded to a rail, which the pointer cannot drop on either); then the strip's New tab, at
  * its end. A tab brought forward while it is held is the tab whose panes are offered, as a
  * pointer held over a tab brings it forward.
  */
-export function groupsOf(tabs: Tabs, source: Source): Group[] {
+export function groupsOf(tabs: Tabs, source: Source, shown: Shown = EVERY_PANE): Group[] {
   const front = tabs.inFront;
   const held = heldPane(tabs, source);
   // A tab held while it is in front is dropped on another tab's pane or the strip: none of its
@@ -53,6 +60,7 @@ export function groupsOf(tabs: Tabs, source: Source): Group[] {
       ? []
       : contentsOf(tabs, front)
           .filter(({ pane }) => !(held !== undefined && held.tab === front && held.pane === pane))
+          .filter(({ pane }) => shown(front, pane))
           .map(({ pane }) => ({ kind: "pane", tab: front, pane }));
   return [...panes, { kind: "strip", at: tabs.order.length }];
 }
@@ -169,6 +177,7 @@ export function stillHeld(
   tabs: Tabs,
   source: Source,
   at: Target,
+  shown: Shown = EVERY_PANE,
 ): { at: Target } | { gone: string } {
   if (
     source.kind === "pane" &&
@@ -177,7 +186,7 @@ export function stillHeld(
     return { gone: "Not placed: that pane has closed." };
   if (source.kind === "tab" && tabs.byId[source.tab] === undefined)
     return { gone: "Not placed: that tab has closed." };
-  const groups = groupsOf(tabs, source);
+  const groups = groupsOf(tabs, source, shown);
   return { at: groups.some((group) => holds(group, at)) ? at : firstTarget(groups) };
 }
 

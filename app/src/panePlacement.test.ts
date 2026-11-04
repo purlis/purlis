@@ -92,6 +92,21 @@ describe("which targets placement mode shows (#4764)", () => {
     const four = contentsOf(behind, b)[0].pane;
     expect(groupsOf(behind, source)[0]).toEqual({ kind: "pane", tab: b, pane: four });
   });
+
+  it("shows no targets on a side folded to a rail (#4766), and moves past it with what it held", () => {
+    const { tabs, a, one, three, five } = start();
+    const source: Source = { kind: "pane", tab: a, pane: one };
+    const drawn = (_tab: number, pane: number) => pane !== three;
+    const groups = groupsOf(tabs, source, drawn);
+    expect(groups).toEqual([
+      { kind: "pane", tab: a, pane: five },
+      { kind: "strip", at: tabs.order.length },
+    ]);
+    // The keyboard on a pane that has just folded goes to the first target still drawn.
+    expect(
+      stillHeld(tabs, source, { kind: "pane", tab: a, pane: three, place: "left" }, drawn),
+    ).toEqual({ at: { kind: "pane", tab: a, pane: five, place: "middle" } });
+  });
 });
 
 describe("walking the targets with the keys (#4764)", () => {

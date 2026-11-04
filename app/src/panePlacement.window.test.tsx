@@ -65,10 +65,14 @@ function Window({
   first,
   heard,
   width = 800,
+  folded,
 }: {
   first: Tabs;
   heard: (tabs: Tabs) => void;
   width?: number;
+  /** Which pane, by its place in the tab, is a side folded to a rail (#4766): a button on the
+   *  rail, as `PaneRail` draws it, and no pane a drop can land in. */
+  folded?: number;
 }) {
   const [tabs, setTabs] = useState(first);
   const now = useRef(first);
@@ -101,15 +105,21 @@ function Window({
           </div>
         ))}
       </div>
-      {panes.map(({ pane }, at) => (
-        <div key={pane} {...dropPane(front, pane)} data-box={`${at * width},40,${width},600`}>
-          <div {...{ [GRIP]: "" }} data-box={`${at * width},40,${width},20`}>
-            <PaneGrip tab={front} pane={pane} />
-            {`head ${pane}`}
+      {panes.map(({ pane }, at) =>
+        at === folded ? (
+          <div key={pane} className="pane-rail-item" data-pane={pane}>
+            <button type="button">{`rail ${pane}`}</button>
           </div>
-          <textarea aria-label={`terminal ${pane}`} />
-        </div>
-      ))}
+        ) : (
+          <div key={pane} {...dropPane(front, pane)} data-box={`${at * width},40,${width},600`}>
+            <div {...{ [GRIP]: "" }} data-box={`${at * width},40,${width},20`}>
+              <PaneGrip tab={front} pane={pane} />
+              {`head ${pane}`}
+            </div>
+            <textarea aria-label={`terminal ${pane}`} />
+          </div>
+        ),
+      )}
       <button type="button" {...{ [CHAT_ROW]: "7" }} data-box="0,700,200,20">
         chat 7
       </button>
@@ -154,10 +164,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function shown(width?: number): { tabs: () => Tabs; first: Tabs } {
+function shown(width?: number, folded?: number): { tabs: () => Tabs; first: Tabs } {
   const first = start();
   let last = first;
-  render(<Window first={first} heard={(tabs) => (last = tabs)} width={width} />);
+  render(<Window first={first} heard={(tabs) => (last = tabs)} width={width} folded={folded} />);
   return { tabs: () => last, first };
 }
 
@@ -405,5 +415,47 @@ describe("placement mode while the window changes under it (#4764)", () => {
         .getAllByRole("group", { name: /^Places by / })
         .map((g) => g.getAttribute("aria-label")),
     ).toEqual(["Places by chat 1"]);
+  });
+});
+
+describe("placement mode beside a folded side and a hidden grip (#4764, #4766)", () => {
+  it("offers no targets on a side folded to a rail, which the pointer cannot drop on either", async () => {
+    const user = userEvent.setup();
+    shown(undefined, 1);
+    screen.getByRole("button", { name: "Move chat 1" }).focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(said()).toBe(PICKED_1));
+    expect(screen.queryAllByRole("group", { name: /^Places by / })).toEqual([]);
+    // The keyboard starts on the strip's New tab, the one target drawn, and Tab stays on it.
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute("aria-label")).toBe("A new tab with chat 1."),
+    );
+    await user.keyboard("{Tab}");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("A new tab with chat 1.");
+  });
+
+  it("gives the pane's first control the keyboard on Esc where its grip is not drawn (D15)", async () => {
+    const user = userEvent.setup();
+    const { first } = shown();
+    const pane = contentsOf(first, first.order[0])[0].pane;
+    // As `paneFrame.css` hides a narrow task pane's grip.
+    const hide = document.createElement("style");
+    hide.textContent = `[data-drop-pane="${pane}"] [data-pane-grip-handle] { display: none; }`;
+    document.head.append(hide);
+    try {
+      screen.getByRole("textbox", { name: "terminal " + pane }).focus();
+      pressPlace();
+      await waitFor(() => expect(said()).toBe(PICKED_1));
+      await waitFor(() =>
+        expect(document.activeElement?.getAttribute("aria-label")).toBe("Swap chat 1 and chat 3."),
+      );
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(said()).toBe("Put back. Nothing moved."));
+      expect(document.activeElement).toBe(
+        screen.getByRole("textbox", { name: "terminal " + pane }),
+      );
+    } finally {
+      hide.remove();
+    }
   });
 });

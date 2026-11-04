@@ -391,7 +391,7 @@ export function usePaneDrag({
     }
     setHeld({
       source,
-      at: firstTarget(groupsOf(tabs, source)),
+      at: firstTarget(groupsOf(tabs, source, paneShown)),
       from: from instanceof HTMLElement ? from : undefined,
     });
     setSaid(pickedUpSaid(sourceName(tabs, source, ctx)));
@@ -480,7 +480,7 @@ export function usePaneDrag({
       if (step !== undefined) {
         event.preventDefault();
         event.stopPropagation();
-        const at = stepFrom(groupsOf(now.current.tabs, held.source), held.at, step);
+        const at = stepFrom(groupsOf(now.current.tabs, held.source, paneShown), held.at, step);
         setHeld({ ...held, at });
         return;
       }
@@ -525,7 +525,7 @@ export function usePaneDrag({
   useEffect(() => {
     const held = now.current.held;
     if (held === undefined) return;
-    const still = stillHeld(tabs, held.source, held.at);
+    const still = stillHeld(tabs, held.source, held.at, paneShown);
     if ("gone" in still) {
       setHeld(undefined);
       setBoxes(undefined);
@@ -609,11 +609,30 @@ export function usePaneDrag({
 
 const paneKey = (tab: number, pane: number) => `${tab}:${pane}`;
 
-/** Pane `pane` of tab `tab`'s grip, where it is drawn. */
+/** Pane `pane` of tab `tab`, where it is drawn as a pane: not a side folded to a rail (#4766). */
+function paneOf(tab: number, pane: number): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[${PANE}="${pane}"][${TAB}="${tab}"]`);
+}
+
+const paneShown = (tab: number, pane: number) => paneOf(tab, pane) !== null;
+
+/** What a pane gives the keyboard to when its grip is not drawn. */
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+const drawn = (el: HTMLElement) => getComputedStyle(el).display !== "none";
+
+/**
+ * Where pane `pane` of tab `tab` takes the keyboard: its grip; or, where the grip is not drawn
+ * (a narrow task pane, D15), the pane's first control that is, so the keyboard stays in the
+ * pane rather than falling to the page.
+ */
 function gripOf(tab: number, pane: number): HTMLElement | null {
-  return document.querySelector<HTMLElement>(
-    `[${PANE}="${pane}"][${TAB}="${tab}"] [${GRIP_HANDLE}]`,
-  );
+  const at = paneOf(tab, pane);
+  if (at === null) return null;
+  const grip = at.querySelector<HTMLElement>(`[${GRIP_HANDLE}]`);
+  if (grip !== null && drawn(grip)) return grip;
+  return [...at.querySelectorAll<HTMLElement>(FOCUSABLE)].find(drawn) ?? null;
 }
 
 /** Where `source` is drawn and takes the keyboard: a pane's grip, a chat's sidebar row, or a
@@ -757,7 +776,7 @@ function PlacementTargets({
           style={boxStyle(previewOf(atBox, at.place))}
         />
       )}
-      {groupsOf(tabs, source).map((group) => {
+      {groupsOf(tabs, source, paneShown).map((group) => {
         if (group.kind === "strip") {
           if (boxes.strip === undefined) return null;
           return (
