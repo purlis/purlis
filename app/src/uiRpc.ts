@@ -11528,7 +11528,7 @@ export type SecretShown = {
 	/**  The entry a broken link read, which is gone (#5075). */
 	gone?: SecretEntryShown | null,
 	/**
-	 *  **What *Remember this need for the persona* would write** (#5240, ADR 0110), where it
+	 *  **What *Remember this need for the persona* would write** (#5240, spec #5235), where it
 	 *  would write anything and may.
 	 */
 	remember?: SecretNeedShown | null,

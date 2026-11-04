@@ -822,7 +822,7 @@ fn remember(
     fill_remembered_in(root, held, answered, purpose, &|_| Ok(()), 1)
 }
 
-/// ADR 0110, #5240: Remember unticked, a Fill writes nothing and holds nothing, for any key: a
+/// #5240, spec #5235: Remember unticked, a Fill writes nothing and holds nothing, for any key: a
 /// first fill, and one into a vault the persona does not name.
 #[test]
 fn a_fill_with_remember_unticked_writes_and_offers_nothing() {
@@ -842,7 +842,7 @@ fn a_fill_with_remember_unticked_writes_and_offers_nothing() {
     assert!(held.every().is_empty(), "no proposal after a Fill");
 }
 
-/// ADR 0110, #5240: ticked, Fill writes the line the person read, in their words, there and
+/// #5240, spec #5235: ticked, Fill writes the line the person read, in their words, there and
 /// then: no proposal waits, and the chat's own words are not what goes in.
 #[test]
 fn a_fill_with_remember_ticked_writes_the_line_as_edited_and_holds_no_proposal() {
@@ -865,7 +865,7 @@ fn a_fill_with_remember_ticked_writes_the_line_as_edited_and_holds_no_proposal()
     assert!(held.every().is_empty(), "no proposal after a Fill");
 }
 
-/// ADR 0110, #5240: a persona that names no vault gets a `vault:` line with its need.
+/// #5240, spec #5235: a persona that names no vault gets a `vault:` line with its need.
 #[test]
 fn remember_adds_a_vault_line_where_the_persona_names_none() {
     let (_dir, root) = project();
@@ -923,7 +923,7 @@ fn a_remembered_line_that_cannot_be_written_is_held_naming_the_chat_and_ask_behi
 
     let every = held.every();
     assert_eq!(every.len(), 1, "{every:?}");
-    assert_eq!(said, Ok(Remembered::Held(every[0].id)));
+    assert_eq!(said, Ok(Remembered::Held));
     assert_eq!(definition(&root), NAMES_A_VAULT, "not written");
     assert_eq!(every[0].session, BY_PURLIS);
     assert_eq!(
@@ -983,8 +983,40 @@ fn a_change_purlis_holds_names_purlis_and_the_chat_and_ask_behind_it() {
     assert_eq!(alone.chain, ["purlis"]);
 }
 
-/// A project with personas `devops`, naming vault `team`, and `shop`, naming none, and `quiet`,
-/// which holds no credentials.
+/// #5240: Remember is refused before a Fill stores anything, while its row can still say why,
+/// for a definition that has nowhere to hold the line, and is fine for one that does.
+#[test]
+fn a_definition_that_cannot_hold_the_line_is_refused_before_the_fill() {
+    let (_dir, root) = project();
+    std::fs::write(root.join("personas/devops/persona.md"), NAMES_A_VAULT).unwrap();
+    assert_eq!(need_writable(&root, "devops"), Ok(()));
+
+    std::fs::write(root.join("personas/devops/persona.md"), "No frontmatter.\n").unwrap();
+    let why = need_writable(&root, "devops").expect_err("no frontmatter");
+    assert!(why.contains("untick Remember"), "{why}");
+
+    assert!(need_writable(&root, "nobody").is_err(), "no such persona");
+    assert!(
+        need_writable(&root, "../devops").is_err(),
+        "no persona's name"
+    );
+}
+
+/// #5240: under policy that turns proposed changes off, Remember is not offered.
+#[test]
+fn policy_that_turns_proposed_changes_off_turns_remember_off() {
+    let (_dir, root) = project();
+    std::fs::write(root.join("personas/devops/persona.md"), NAMES_A_VAULT).unwrap();
+    purlis_core::sandbox::policy::set_for_this_test(purlis_core::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"proposed-changes": "off"}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    assert!(need_writable(&root, "devops").is_err());
+    assert!(need_personas_in(&root, "team").is_empty());
+}
+
+/// A project with personas `devops`, naming vault `team`, `shop`, naming none, `quiet`, which
+/// holds no credentials, and `other`, on another vault.
 fn three_personas() -> (tempfile::TempDir, PathBuf) {
     let (dir, root) = project();
     for (name, vault) in [

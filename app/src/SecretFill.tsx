@@ -20,7 +20,7 @@ export type FillWith = "value" | "entry";
  * operator's ruling on #5070), whose pick the key comes to read as a Linked entry, never a copy.
  * The chat hears filled or declined and the key's name, never the value and never the entry.
  * Where Fill could also write to the persona, an unticked **Remember this need for the persona**
- * shows the exact line once ticked (#5240, ADR 0110). A plain body for now: the ask's own part
+ * shows the exact line once ticked (#5240, spec #5235). A plain body for now: the ask's own part
  * family replaces it (#5080).
  */
 export function SecretFill({

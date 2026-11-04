@@ -889,7 +889,7 @@ export const commands = {
 	/**  **The personas a key in `vault` may be remembered for**, for its row's menu (#5240). */
 	secretNeedPersonas: (plane: PlaneId, vault: string) => typedError<NeedPersona[], string>(__TAURI_INVOKE("secret_need_personas", { plane, vault })),
 	/**
-	 *  **Remember a key as a persona's Secret need** (#5240, ADR 0110), on the person's press in the
+	 *  **Remember a key as a persona's Secret need** (#5240, spec #5235), on the person's press in the
 	 *  vault view: they read the line, with `purpose` as they edited it, so it is written there and
 	 *  then, with no proposal to apply. Window-only.
 	 */
@@ -14044,7 +14044,7 @@ export type SecretShown = {
 	/**  The entry a broken link read, which is gone (#5075). */
 	gone?: SecretEntryShown | null,
 	/**
-	 *  **What *Remember this need for the persona* would write** (#5240, ADR 0110), where it
+	 *  **What *Remember this need for the persona* would write** (#5240, spec #5235), where it
 	 *  would write anything and may.
 	 */
 	remember?: SecretNeedShown | null,

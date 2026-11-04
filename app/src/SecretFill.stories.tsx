@@ -147,7 +147,7 @@ export const BrokenLink: Story = {
 };
 
 /**
- * #5240, ADR 0110: Remember is unticked; ticking it by keyboard shows the exact line with the
+ * #5240, spec #5235: Remember is unticked; ticking it by keyboard shows the exact line with the
  * chat's words to edit, and a `vault:` line where the persona names none.
  */
 export const RememberTheNeed: Story = {
@@ -185,5 +185,24 @@ export const RememberTheNeed: Story = {
       "the purpose's box",
     );
     expectFocusInSight();
+  },
+};
+
+/** #5240: a key the persona declares, in no vault it names: the `vault:` line alone, no box. */
+export const RememberOnlyTheVault: Story = {
+  args: {
+    secret: {
+      ...secret,
+      remember: { file: "personas/devops/persona.md", need: false, purpose: "", vault: "team" },
+    },
+    box: null,
+  },
+  parameters: { screenshot: "page" },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("checkbox", { name: "Remember this need for the persona" }),
+    );
+    await expect(canvas.getByText("vault: team")).toBeVisible();
+    await expect(canvas.queryByRole("textbox", { name: "What KUBECONFIG is for" })).toBeNull();
   },
 };

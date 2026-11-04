@@ -2391,7 +2391,7 @@ fn the_old_harness_plugin_keys_are_one_ask_of_no_chat() {
     assert_eq!(ids, [DISMISS]);
 }
 
-/// #5240, ADR 0110: the line Remember would write is shown on the ask: the chat's words to edit,
+/// #5240, spec #5235: the line Remember would write is shown on the ask: the chat's words to edit,
 /// a `vault:` line where the persona names none, and nothing where nothing would be written or
 /// policy turns it off.
 #[test]

@@ -183,7 +183,7 @@ pub struct SecretShown {
     /// The entry a broken link read, which is gone (#5075).
     #[specta(optional)]
     pub gone: Option<SecretEntryShown>,
-    /// **What *Remember this need for the persona* would write** (#5240, ADR 0110), where it
+    /// **What *Remember this need for the persona* would write** (#5240, spec #5235), where it
     /// would write anything and may.
     #[specta(optional)]
     pub remember: Option<SecretNeedShown>,
@@ -1940,7 +1940,7 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open, may_remember: bool) ->
     let remember =
         (may_remember && !persona.is_empty() && (need || open.names_no_vault)).then(|| {
             SecretNeedShown {
-                file: format!("personas/{persona}/persona.md"),
+                file: crate::proposals::definition_file(persona),
                 need,
                 purpose: open.purpose.clone().unwrap_or_default(),
                 vault: open.names_no_vault.then(|| vault.clone()),
@@ -2204,8 +2204,7 @@ pub fn proposed_change(
                 )
             }));
             says = format!(
-                "{says}. You asked to remember {} when you answered this chat's Secret ask, and \
-                 purlis could not write it then",
+                "{says}. You ticked Remember for {} on Fill, and purlis could not write it then",
                 behind.key
             );
         }
@@ -2612,9 +2611,8 @@ pub struct Waiting<'a> {
     pub browser_logins: Vec<crate::loginasks::LoginWait>,
     /// The Secret asks chats' brokered runs wait on (#5068).
     pub secrets: Vec<purlis_core::secrets::ask::Open>,
-    /// Whether Remember may write this persona's definition (#5240): policy that turns proposed
-    /// changes off leaves it to the person's own edit, and purlis writes only
-    /// `personas/<name>/persona.md`.
+    /// Whether Remember may write this persona's definition (#5240,
+    /// [`crate::proposals::need_writable`]).
     pub may_remember: &'a dyn Fn(&str) -> bool,
     /// The secret fills chats asked for that wait on the person (#5115).
     pub secret_fills: Vec<crate::secretfills::FillWait>,
@@ -2945,12 +2943,8 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         since.insert(pool_tool_key(one.session, one.run), one.since);
     }
     let secrets = held.secret_asks().open();
-    let remember_locked = !secrets.is_empty()
-        && purlis_core::sandbox::policy::Locks::of(held.root())
-            .proposed_changes_refused()
-            .is_some();
     let may_remember =
-        |persona: &str| !remember_locked && crate::proposals::may_write_need(held.root(), persona);
+        |persona: &str| crate::proposals::need_writable(held.root(), persona).is_ok();
     for one in &secrets {
         since.insert(secret_key(one.id), one.since);
     }

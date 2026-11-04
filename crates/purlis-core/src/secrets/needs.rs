@@ -122,7 +122,7 @@ pub fn declared(root: &Path, persona: &str, key: &str) -> Option<Need> {
 }
 
 /// **What a persona's definition reads with a need added**, as the person remembers it on a
-/// Fill or from a vault's row (#5240, ADR 0110): `text` with a
+/// Fill or from a vault's row (#5240, spec #5235): `text` with a
 /// `secret-need.<key>: <purpose>` line, and a `vault: <vault>` line where the persona named
 /// none. Every other line is left as written ([`purlis_skills::fence::with_keys`]). Refused
 /// for a key no need takes, or a definition with no frontmatter to hold the lines.

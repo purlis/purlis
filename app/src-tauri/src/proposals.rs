@@ -97,6 +97,13 @@ pub struct LimitChange {
     pub file_refused: bool,
 }
 
+/// What one proposal holds beyond a change to a file.
+#[derive(Debug, Default)]
+struct Extra {
+    limit: Option<LimitChange>,
+    behind: Option<Behind>,
+}
+
 /// The proposals of a project's chats, until the person answers.
 #[derive(Debug, Default)]
 pub struct Proposals {
@@ -120,7 +127,7 @@ impl Proposals {
         change: Change,
         now: u64,
     ) -> Option<u32> {
-        self.hold(session, path, base, change, None, None, now)
+        self.hold(session, path, base, change, Extra::default(), now)
     }
 
     /// Holds purlis's own change to `path`, with what it came from (#5240), under the rules of
@@ -133,7 +140,17 @@ impl Proposals {
         behind: Behind,
         now: u64,
     ) -> Option<u32> {
-        self.hold(BY_PURLIS, path, base, change, None, Some(behind), now)
+        self.hold(
+            BY_PURLIS,
+            path,
+            base,
+            change,
+            Extra {
+                behind: Some(behind),
+                ..Extra::default()
+            },
+            now,
+        )
     }
 
     /// Holds chat `session`'s value for a pool's limit, under the rules of [`Self::note`].
@@ -147,7 +164,17 @@ impl Proposals {
         let nothing = Change::Whole {
             content: String::new(),
         };
-        self.hold(session, path, None, nothing, Some(limit), None, now)
+        self.hold(
+            session,
+            path,
+            None,
+            nothing,
+            Extra {
+                limit: Some(limit),
+                ..Extra::default()
+            },
+            now,
+        )
     }
 
     fn hold(
@@ -156,8 +183,7 @@ impl Proposals {
         path: &str,
         base: Option<String>,
         change: Change,
-        limit: Option<LimitChange>,
-        behind: Option<Behind>,
+        extra: Extra,
         now: u64,
     ) -> Option<u32> {
         let mut held = self.lock();
@@ -176,8 +202,8 @@ impl Proposals {
             change,
             since: now,
             stale: false,
-            limit,
-            behind,
+            limit: extra.limit,
+            behind: extra.behind,
         });
         Some(id)
     }
@@ -909,17 +935,17 @@ pub fn dismissed_in(root: &Path, proposals: &Proposals, id: u32) -> Result<Propo
 #[cfg(test)]
 mod tests;
 
-/// **What Fill's Remember came to** (#5240, ADR 0110).
+/// **What Fill's Remember came to** (#5240, spec #5235).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Remembered {
     /// Unticked, a decline, or the definition holds the line already.
     Nothing,
     Written,
-    /// The file could not be written, so what the person confirmed waits for them: its number.
-    Held(u32),
+    /// The file could not be written, so what the person confirmed waits for them.
+    Held,
 }
 
-/// **Remember this need for the persona, on Fill** (#5240, ADR 0110): the person read the line,
+/// **Remember this need for the persona, on Fill** (#5240, spec #5235): the person read the line,
 /// with `purpose` as they edited it, and ticked it, so it is written there and then. Unticked
 /// (`None`), or on a decline, nothing is written or offered. The key, the vault and the persona
 /// are the answered ask's, never the window's. Where the file can't be written the row that
@@ -944,7 +970,7 @@ pub fn fill_remembered_in(
         && purlis_core::secrets::needs::declared(root, persona, &answered.key).is_none();
     let need = undeclared.then_some((answered.key.as_str(), purpose));
     let vault = answered.names_no_vault.then_some(answered.vault.as_str());
-    match written_need(root, proposals, persona, need, vault, audit, now) {
+    match written_need(root, proposals, persona, need, vault, audit) {
         Ok(false) => Ok(Remembered::Nothing),
         Ok(true) => Ok(Remembered::Written),
         Err(refusal) => {
@@ -958,22 +984,59 @@ pub fn fill_remembered_in(
                 chat: answered.asker,
                 key: answered.key.clone(),
             };
-            held_need(root, proposals, persona, need, vault, behind, now)?
-                .map_or(Ok(Remembered::Nothing), |id| Ok(Remembered::Held(id)))
+            held_need(root, proposals, persona, need, vault, behind, now).map(|()| Remembered::Held)
         }
     }
 }
 
-/// `persona`'s definition, relative to the project, as purlis may write it.
-fn definition_path(root: &Path, persona: &str) -> Result<PathBuf, String> {
-    let rel = Path::new("personas").join(persona).join("persona.md");
-    proposed::proposable_by_purlis(root, &root.join(rel))
+/// `persona`'s definition, relative to the project, where the only place purlis writes one.
+pub fn definition_file(persona: &str) -> String {
+    format!("personas/{persona}/persona.md")
 }
 
-/// Whether purlis may write a need into `persona`'s definition: what a Secret ask's Remember is
-/// offered on (#5240).
-pub fn may_write_need(root: &Path, persona: &str) -> bool {
-    purlis_core::personas::valid_name(persona) && definition_path(root, persona).is_ok()
+/// `persona`'s definition as it reads now.
+struct Definition {
+    path: String,
+    base: Option<String>,
+    text: String,
+}
+
+/// `persona`'s definition, read as purlis may write it, or why it can't be.
+fn definition_of(root: &Path, persona: &str) -> Result<Definition, String> {
+    let file = definition_file(persona);
+    let rel = proposed::proposable_by_purlis(root, &root.join(&file))?;
+    let path = rel.display().to_string();
+    let bytes = std::fs::read(root.join(&rel)).map_err(|why| {
+        format!("{path} did not read ({why}), so nothing was written. Check the file is there, then try again.")
+    })?;
+    let base = proposed::base_of(Some(&bytes));
+    let text = String::from_utf8(bytes).map_err(|_| {
+        format!("{path} is not text, so nothing was written. Fix the file, then try again.")
+    })?;
+    Ok(Definition { path, base, text })
+}
+
+/// **Whether a need can be written into `persona`'s definition, or why not** (#5240): asked
+/// before Remember is offered, and again before a Fill stores anything, while its row can still
+/// say so. Policy that turns proposed changes off leaves the file to the person's own edit, and
+/// a definition with no frontmatter has nowhere to hold the line.
+pub fn need_writable(root: &Path, persona: &str) -> Result<(), String> {
+    if let Some(why) = purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused() {
+        return Err(why);
+    }
+    if !purlis_core::personas::valid_name(persona) {
+        return Err(format!(
+            "{persona} is not a persona's name, so nothing was written. Untick Remember, then fill it."
+        ));
+    }
+    let one = definition_of(root, persona)?;
+    purlis_core::secrets::needs::with_need(&one.text, None, Some("vault")).map_err(|why| {
+        format!(
+            "{} can't hold the line: {why}. Fix the file, or untick Remember.",
+            one.path
+        )
+    })?;
+    Ok(())
 }
 
 /// **Writes `need` and `vault` into `persona`'s definition**, as Apply writes a change of
@@ -986,45 +1049,32 @@ fn written_need(
     need: Option<(&str, &str)>,
     vault: Option<&str>,
     audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
-    now: u64,
 ) -> Result<bool, Refusal> {
-    let rel = definition_path(root, persona).map_err(Refusal::Not)?;
-    let path = rel.display().to_string();
-    let bytes = std::fs::read(root.join(&rel)).map_err(|why| {
-        Refusal::Not(format!(
-            "{path} did not read ({why}), so nothing was written. Check the file is there, then try again."
-        ))
-    })?;
-    let base = proposed::base_of(Some(&bytes));
-    let text = String::from_utf8(bytes).map_err(|_| {
-        Refusal::Not(format!(
-            "{path} is not text, so nothing was written. Fix the file, then try again."
-        ))
-    })?;
+    let one = definition_of(root, persona).map_err(Refusal::Not)?;
     let content =
-        purlis_core::secrets::needs::with_need(&text, need, vault).map_err(Refusal::Not)?;
-    if content == text {
+        purlis_core::secrets::needs::with_need(&one.text, need, vault).map_err(Refusal::Not)?;
+    if content == one.text {
         return Ok(false);
     }
-    let one = Proposal {
+    let change = Proposal {
         id: 0,
         session: BY_PURLIS,
-        path,
-        base,
+        path: one.path,
+        base: one.base,
         change: Change::Whole { content },
-        since: now,
+        since: 0,
         stale: false,
         limit: None,
         behind: None,
     };
     // Shown whole by what asked for it: the person read the line, however long the file is.
-    apply_in(root, &one, None, audit, proposals.applying(), From::Tab)?;
+    apply_in(root, &change, None, audit, proposals.applying(), From::Tab)?;
     Ok(true)
 }
 
 /// A change to `persona`'s definition adding `need` and `vault`, held as purlis's on top of one
-/// for the file still waiting, so a second need does not take the first's place: its number, or
-/// none where it would change nothing.
+/// for the file still waiting, so a second need does not take the first's place. Refused where
+/// it can't be held, so the person is told and the line isn't lost in silence.
 fn held_need(
     root: &Path,
     proposals: &Proposals,
@@ -1033,29 +1083,27 @@ fn held_need(
     vault: Option<&str>,
     behind: Behind,
     now: u64,
-) -> Result<Option<u32>, String> {
-    use purlis_core::secrets::needs;
-    let rel = definition_path(root, persona)?;
-    let path = rel.display().to_string();
-    let now_text = std::fs::read(root.join(&rel)).map_err(|why| {
-        format!("{path} did not read ({why}), so nothing was kept. Check the file is there, then add the line by hand.")
-    })?;
-    let base = proposed::base_of(Some(&now_text));
-    let text = String::from_utf8(now_text).map_err(|_| "the definition is not text".to_owned())?;
+) -> Result<(), String> {
+    let one = definition_of(root, persona)?;
     let starting = proposals
         .every()
         .into_iter()
-        .find(|one| one.session == BY_PURLIS && one.path == path && one.base == base)
-        .and_then(|one| match one.change {
+        .find(|held| held.session == BY_PURLIS && held.path == one.path && held.base == one.base)
+        .and_then(|held| match held.change {
             Change::Whole { content } => Some(content),
             Change::Edits { .. } => None,
         })
-        .unwrap_or_else(|| text.clone());
-    let content = needs::with_need(&starting, need, vault)?;
-    if content == text {
-        return Ok(None);
-    }
-    Ok(proposals.note_behind(&path, base, Change::Whole { content }, behind, now))
+        .unwrap_or_else(|| one.text.clone());
+    let content = purlis_core::secrets::needs::with_need(&starting, need, vault)?;
+    proposals
+        .note_behind(&one.path, one.base, Change::Whole { content }, behind, now)
+        .map(|_| ())
+        .ok_or_else(|| {
+            format!(
+                "{} could not be written, and purlis holds too many changes to keep this one. Answer those in the Inbox, then add the line by hand.",
+                one.path
+            )
+        })
 }
 
 /// [`fill_remembered_in`] for project `held`: the chats whose proposals on the file went stale
@@ -1072,14 +1120,14 @@ pub fn fill_remembered(
     match fill_remembered_in(root, held.proposals(), answered, purpose, &audit, now)? {
         Remembered::Nothing => {}
         Remembered::Written => told_written(held, &answered.persona),
-        Remembered::Held(_) => held.chats().asks_may_have_moved(),
+        Remembered::Held => held.chats().asks_may_have_moved(),
     }
     Ok(())
 }
 
 /// Each chat whose proposal on `persona`'s definition a written need made stale is told so.
 fn told_written(held: &Held, persona: &str) {
-    let path = format!("personas/{persona}/persona.md");
+    let path = definition_file(persona);
     for session in held.proposals().others_stale(&path) {
         tell(held, session, ProposalWord::Stale { path: path.clone() });
     }
@@ -1100,16 +1148,10 @@ pub struct NeedPersona {
 }
 
 /// **The personas a key in `vault` may be remembered for** (#5240): those that use it, and those
-/// that name no vault, who come to name it. None under a policy that turns proposed changes
-/// off, or for a definition purlis may not write.
+/// that name no vault, who come to name it. Not `vault: none`, which a persona says of itself,
+/// nor any whose definition can't take a need ([`need_writable`]).
 pub fn need_personas_in(root: &Path, vault: &str) -> Vec<NeedPersona> {
     use purlis_core::personas::Vault;
-    if purlis_core::sandbox::policy::Locks::of(root)
-        .proposed_changes_refused()
-        .is_some()
-    {
-        return Vec::new();
-    }
     let state = purlis_core::plane::state_dir(root);
     purlis_core::personaverbs::names(root)
         .into_iter()
@@ -1119,14 +1161,14 @@ pub fn need_personas_in(root: &Path, vault: &str) -> Vec<NeedPersona> {
                 Vault::Unnamed => true,
                 _ => return None,
             };
-            let file = definition_path(root, &persona).ok()?.display().to_string();
+            need_writable(root, &persona).ok()?;
             let declares = purlis_core::secrets::needs::of(root, &persona)
                 .into_iter()
                 .map(|need| need.key)
                 .collect();
             Some(NeedPersona {
+                file: definition_file(&persona),
                 persona,
-                file,
                 declares,
                 names_no_vault,
             })
@@ -1171,9 +1213,7 @@ pub fn need_remembered_in(
             "Nothing was written. Say what {key} is for, then try again."
         ));
     }
-    if let Some(why) = purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused() {
-        return Err(why);
-    }
+    need_writable(root, persona)?;
     let Some(one) = need_personas_in(root, vault)
         .into_iter()
         .find(|one| one.persona == persona)
@@ -1182,16 +1222,14 @@ pub fn need_remembered_in(
             "{persona} doesn't use vault {vault}, so nothing was written. Read the vault again and choose from the list."
         ));
     };
-    let line = one.names_no_vault.then_some(vault);
-    let now = crate::sandboxing::now_secs();
+    let vault_line = one.names_no_vault.then_some(vault);
     match written_need(
         root,
         proposals,
         persona,
         Some((key, purpose)),
-        line,
+        vault_line,
         audit,
-        now,
     ) {
         Ok(_) => Ok(format!(
             "Added {key} to {persona}'s Secret needs. It rides your next save."
@@ -1204,7 +1242,7 @@ pub fn need_remembered_in(
     }
 }
 
-/// **Remember a key as a persona's Secret need** (#5240, ADR 0110), on the person's press in the
+/// **Remember a key as a persona's Secret need** (#5240, spec #5235), on the person's press in the
 /// vault view: they read the line, with `purpose` as they edited it, so it is written there and
 /// then, with no proposal to apply. Window-only.
 #[tauri::command]

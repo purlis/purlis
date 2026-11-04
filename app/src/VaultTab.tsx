@@ -569,7 +569,14 @@ export function VaultTab({
             if (answer.status === "error") return answer.error;
             setRemembering(undefined);
             setNote({ said: answer.data });
-            setAgain((was) => was + 1);
+            // Declared as committed, so it isn't read back until it is saved: not offered again.
+            setNeedPersonas((was) =>
+              was.map((one) =>
+                one.persona === persona.persona
+                  ? { ...one, declares: [...one.declares, key] }
+                  : one,
+              ),
+            );
             return undefined;
           }}
           onCancel={() => setRemembering(undefined)}

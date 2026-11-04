@@ -168,6 +168,17 @@ fn answered_with(
     named: Named,
     remember: Option<&str>,
 ) -> Result<(), String> {
+    // Before anything is stored, while the row can still say why: after the Fill it is gone.
+    if remember.is_some()
+        && matches!(answer, Answer::Fill(_) | Answer::Link(_))
+        && let Some(open) = held
+            .secret_asks()
+            .open()
+            .into_iter()
+            .find(|open| open.id == id)
+    {
+        crate::proposals::need_writable(held.root(), &open.persona)?;
+    }
     let ctx = Ctx::new(held.root(), Env::from_process());
     let answered =
         held.secret_asks()
