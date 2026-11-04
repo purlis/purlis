@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793770195508,
+  "lastUpdate": 1793772160730,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38472,6 +38472,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9142995,
             "unit": "ms",
             "extra": "median of 5 runs: 101.185, 101.652, 101.914, 102.278, 102.703 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4076b36623c5a3d6f36ca497ca9d3f2da64e2304",
+          "message": "story-baselines-pull: remove its download and unpack folder on every finish (#5066) (#5138)\n\nThe refusals after the download called process.exit inside the try, which\nskips the finally, so each left its story-baselines-* folder in the temp\ndirectory; and gh run download kept its gh-artifact.*.zip there too.\n\nThe pull is now pull(), which throws Refused instead of exiting; the CLI\nsets process.exitCode. gh's download runs with TMPDIR (and TMP, TEMP) set\nto a folder inside the pull's own story-baselines-* folder, which the\nfinally removes, taken or refused. The success line names the app/ folder\nthe pictures went into, the only thing it keeps.\n\nTests run a pull against a stubbed gh and git, for a pull that takes the\nbaselines and one refused after the download, and check the temp folder\nis empty after each.\n\nCloses #5066\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6JD81NKZHSBKH1QEJXCVAYX\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T05:07:45Z",
+          "tree_id": "b7a658d4beb35a018e12ee56caaf7646c1ae5825",
+          "url": "https://github.com/purlis/purlis/commit/4076b36623c5a3d6f36ca497ca9d3f2da64e2304"
+        },
+        "date": 1793772156015,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.529636,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.525, 0.529, 0.530, 0.530, 0.545 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.243943,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.845, 15.969, 16.244, 16.326, 16.414 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.0863545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.575, 101.005, 101.086, 101.195, 101.246 ms"
           }
         ]
       }
