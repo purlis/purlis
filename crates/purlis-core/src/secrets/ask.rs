@@ -19,6 +19,13 @@
 //!   ask stays open, and the chat is nudged when it is answered ([`Answered::nudge`]).
 //! - **One ask per vault and key** in a project, whichever chats miss it: a second chat joins
 //!   the open ask, which says how many wait ([`Open::waiting`]), and one fill settles them all.
+//! - **Every read purlis makes for a chat asks alike** (#5074): a brokered run's, through
+//!   [`Asks::hold`] for each key its run misses, and a browser login's and a profile's
+//!   credential at a chat's start, each through [`Asks::read_asking`].
+//!   A start has no chat number yet ([`Need::chat`] is `None`): the app's waits on nothing and
+//!   is refused, telling the person to fill the ask and start it again. It is counted among the
+//!   waiting, but is never nudged, keeps no decline, and is traced under
+//!   [`crate::trace::NO_SESSION`].
 //! - **A decline settles the chats waiting then, and only them.** Each is not asked about that
 //!   key again for as long as it lives; another chat that misses it later is asked afresh.
 //!
@@ -69,7 +76,8 @@ const KEPT_VERSION: u32 = 1;
 /// chat's line carried but the vault and key it asked for, which the run was authorised for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Need {
-    pub chat: u32,
+    /// The chat that asks; `None` for a chat's start, which has no number yet (#5074).
+    pub chat: Option<u32>,
     pub persona: String,
     pub vault: String,
     pub key: String,
@@ -92,6 +100,8 @@ pub struct Open {
     /// Each chat on a runner that cannot receive the value, which asked for it and was told
     /// it was declined: a fill is not for it, and it is not nudged (#5077).
     pub cannot_receive: Vec<u32>,
+    /// How many chats' starts asked for it, which have no number yet (#5074).
+    pub starts: usize,
     /// When it was raised, in seconds since 1970.
     pub since: u64,
 }
@@ -99,7 +109,7 @@ pub struct Open {
 impl Open {
     /// How many chats wait on it.
     pub fn waiting(&self) -> usize {
-        self.chats.len()
+        self.chats.len() + self.starts
     }
 }
 
@@ -113,6 +123,26 @@ pub enum Held {
     /// Nobody answered before the hold ran out: the ask stays open and the chat is nudged when
     /// it is answered. `line` is what the chat is told.
     StillOpen { line: String },
+}
+
+/// **Why [`Asks::read_asking`] read nothing.** Its `Display` is what the asker is told.
+#[derive(Debug)]
+pub enum Unread {
+    /// The vault refused the read for another reason than a missing key, or the key was still
+    /// missing once filled: as it refused it.
+    Vault(super::VaultError),
+    /// The person declined, now or earlier in this chat, or did not answer in time: what
+    /// [`Held`] says.
+    Asked(String),
+}
+
+impl std::fmt::Display for Unread {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Vault(e) => e.fmt(f),
+            Self::Asked(line) => f.write_str(line),
+        }
+    }
 }
 
 /// The person's answer to a Secret ask.
@@ -144,7 +174,8 @@ enum Settled {
 
 #[derive(Debug)]
 struct Waiter {
-    chat: u32,
+    /// None for a chat's start (#5074).
+    chat: Option<u32>,
     /// Where its command hears the answer; none once it stopped waiting, and is nudged instead.
     tell: Option<mpsc::Sender<Settled>>,
     /// Which of the ask's waiters it is, to stop waiting by.
@@ -215,6 +246,13 @@ struct KeptAsk {
     /// The runner chats that cannot receive it, by number.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     cannot_receive: Vec<u32>,
+    /// How many chats' starts wait on it, which have no number (#5074).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    starts: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 impl KeptAsk {
@@ -237,6 +275,7 @@ impl KeptAsk {
             since: asked.since,
             chats: chats_of(asked),
             cannot_receive: asked.cannot_receive.clone(),
+            starts: starts_of(asked),
         })
     }
 
@@ -247,7 +286,7 @@ impl KeptAsk {
             .into_iter()
             .chain(&self.tool)
             .all(|one| name(one))
-            && !(self.chats.is_empty() && self.cannot_receive.is_empty())
+            && !(self.chats.is_empty() && self.cannot_receive.is_empty() && self.starts == 0)
     }
 }
 
@@ -368,7 +407,9 @@ impl Asks {
             }
             inner.next = inner.next.max(one.id);
             let mut waiters = Vec::new();
-            for chat in one.chats {
+            // A start kept waits on nothing either: its person was told to start it again.
+            let starts = std::iter::repeat_n(None, one.starts);
+            for chat in one.chats.into_iter().map(Some).chain(starts) {
                 inner.next_waiter += 1;
                 waiters.push(Waiter {
                     chat,
@@ -433,11 +474,14 @@ impl Asks {
     }
 
     /// **A launch brought back the chats `back`, by number** (#5079): a chat waiting on a kept
-    /// ask that is not among them waits on nothing, and an ask nobody waits on goes.
+    /// ask that is not among them waits on nothing, and an ask nobody waits on goes. A chat's
+    /// start, which has no number, is no chat a launch brings back, and stays (#5074).
     pub fn only_these_came_back(&self, back: &[u32]) {
         let mut inner = self.inner();
         inner.open.retain(|_, asked| {
-            asked.waiters.retain(|waiter| back.contains(&waiter.chat));
+            asked
+                .waiters
+                .retain(|waiter| waiter.chat.is_none_or(|chat| back.contains(&chat)));
             asked.cannot_receive.retain(|chat| back.contains(chat));
             asked.needed()
         });
@@ -448,11 +492,13 @@ impl Asks {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Records `what` of the ask for `vault`/`key` in chat `chat`'s trace: names, never a value.
-    fn trace(&self, chat: u32, what: &str, vault: &str, key: &str, waiting: usize) {
+    /// Records `what` of the ask for `vault`/`key` in chat `chat`'s trace, a start's under
+    /// [`crate::trace::NO_SESSION`]: names, never a value.
+    fn trace(&self, chat: Option<u32>, what: &str, vault: &str, key: &str, waiting: usize) {
+        let session = chat.map_or_else(|| crate::trace::NO_SESSION.to_owned(), |c| c.to_string());
         crate::trace::record_values(
             &self.root,
-            &chat.to_string(),
+            &session,
             TRACED_AS,
             &[
                 ("what", Value::from(what)),
@@ -479,7 +525,9 @@ impl Asks {
         } = need;
         let (answered, n) = {
             let mut inner = self.inner();
-            if inner.declined.contains(&(chat, vault.clone(), key.clone())) {
+            if let Some(chat) = chat
+                && inner.declined.contains(&(chat, vault.clone(), key.clone()))
+            {
                 return Held::Declined {
                     line: declined_said(&vault, &key),
                 };
@@ -500,7 +548,7 @@ impl Asks {
                     .waiters
                     .retain(|one| one.chat != chat || one.tell.is_some());
                 asked.waiters.push(waiter);
-                Some(chats_of(asked).len())
+                Some(waiting_on(asked))
             } else {
                 inner.next += 1;
                 let id = inner.next;
@@ -573,9 +621,13 @@ impl Asks {
         } = need;
         let mut inner = self.inner();
         let at = (vault.clone(), key.clone());
+        // A runner chat always has its number; a start never reaches a runner.
+        let cannot: Vec<u32> = chat.into_iter().collect();
         let joined = if let Some(asked) = inner.open.get_mut(&at) {
-            if !asked.cannot_receive.contains(&chat) {
-                asked.cannot_receive.push(chat);
+            for chat in cannot {
+                if !asked.cannot_receive.contains(&chat) {
+                    asked.cannot_receive.push(chat);
+                }
             }
             true
         } else {
@@ -589,7 +641,7 @@ impl Asks {
                     tool,
                     since: now_secs(),
                     waiters: Vec::new(),
-                    cannot_receive: vec![chat],
+                    cannot_receive: cannot,
                     answering: false,
                 },
             );
@@ -621,7 +673,9 @@ impl Asks {
             tool,
         } = need;
         let mut inner = self.inner();
-        if inner.declined.contains(&(chat, vault.clone(), key.clone())) {
+        if let Some(chat) = chat
+            && inner.declined.contains(&(chat, vault.clone(), key.clone()))
+        {
             return Err(declined_said(&vault, &key));
         }
         inner.next_waiter += 1;
@@ -662,6 +716,29 @@ impl Asks {
         Ok(unconfirmed_said(&vault, &key))
     }
 
+    /// **Reads `need`'s key with `read`, asking the person where the vault holds none** (#5074):
+    /// what a browser login's and a profile's credential read with, so each asks as a brokered
+    /// run does. `read` is the read of exactly that key, and is read once more once the person
+    /// fills it; a key still missing then is refused as the vault refuses it, never asked
+    /// twice. Any other refusal of the vault's asks nothing. `within` and `say` are
+    /// [`Asks::hold`]'s.
+    pub fn read_asking<T>(
+        &self,
+        need: Need,
+        within: Duration,
+        say: &mut dyn FnMut(&str),
+        read: &mut dyn FnMut() -> Result<T, super::VaultError>,
+    ) -> Result<T, Unread> {
+        match read() {
+            Err(e) if e.kind == super::Kind::NotFound => {}
+            got => return got.map_err(Unread::Vault),
+        }
+        match self.hold(need, within, say) {
+            Held::Filled => read().map_err(Unread::Vault),
+            Held::Declined { line } | Held::StillOpen { line } => Err(Unread::Asked(line)),
+        }
+    }
+
     /// **Every Secret ask open now**, longest waiting first.
     pub fn open(&self) -> Vec<Open> {
         let inner = self.inner();
@@ -676,6 +753,7 @@ impl Asks {
                 tool: asked.tool.clone(),
                 chats: chats_of(asked),
                 cannot_receive: asked.cannot_receive.clone(),
+                starts: starts_of(asked),
                 since: asked.since,
             })
             .collect();
@@ -737,6 +815,8 @@ impl Asks {
         };
         let chats = chats_of(&asked);
         let asked_cannot_receive = asked.cannot_receive.clone();
+        let started = asked.waiters.iter().any(|waiter| waiter.chat.is_none());
+        let waiting = waiting_on(&asked);
         let settled = if filled {
             Settled::Filled
         } else {
@@ -745,8 +825,13 @@ impl Asks {
         let mut nudge = Vec::new();
         for waiter in asked.waiters {
             let told = waiter.tell.is_some_and(|tell| tell.send(settled).is_ok());
-            if !told && !nudge.contains(&waiter.chat) {
-                nudge.push(waiter.chat);
+            // A start that stopped waiting has nobody to nudge: its refusal told the person to
+            // start it again.
+            if let Some(chat) = waiter.chat
+                && !told
+                && !nudge.contains(&chat)
+            {
+                nudge.push(chat);
             }
         }
         if !filled {
@@ -758,7 +843,10 @@ impl Asks {
         drop(inner);
         let what = if filled { "filled" } else { "declined" };
         for &chat in chats.iter().chain(&asked_cannot_receive) {
-            self.trace(chat, what, &vault, &key, chats.len());
+            self.trace(Some(chat), what, &vault, &key, waiting);
+        }
+        if started {
+            self.trace(None, what, &vault, &key, waiting);
         }
         let told = crate::askoutcome::Outcome {
             about: crate::askoutcome::About::Secret {
@@ -786,7 +874,7 @@ impl Asks {
         let mut inner = self.inner();
         inner.declined.retain(|(of, _, _)| *of != chat);
         inner.open.retain(|_, asked| {
-            asked.waiters.retain(|waiter| waiter.chat != chat);
+            asked.waiters.retain(|waiter| waiter.chat != Some(chat));
             asked.cannot_receive.retain(|one| *one != chat);
             asked.needed()
         });
@@ -797,12 +885,28 @@ impl Asks {
 /// Each chat waiting on `asked`, once, the first to ask first.
 fn chats_of(asked: &Asked) -> Vec<u32> {
     let mut chats: Vec<u32> = Vec::new();
-    for waiter in &asked.waiters {
-        if !chats.contains(&waiter.chat) {
-            chats.push(waiter.chat);
+    for chat in asked.waiters.iter().filter_map(|waiter| waiter.chat) {
+        if !chats.contains(&chat) {
+            chats.push(chat);
         }
     }
     chats
+}
+
+/// How many chats' starts asked for `asked`: those holding on it, and one that stopped waiting,
+/// whose person was told to start it again once it is answered. A start that asks again takes
+/// the place of one that stopped ([`Asks::hold`]).
+fn starts_of(asked: &Asked) -> usize {
+    asked
+        .waiters
+        .iter()
+        .filter(|waiter| waiter.chat.is_none())
+        .count()
+}
+
+/// How many wait on `asked`: each chat once, and each start holding on it.
+fn waiting_on(asked: &Asked) -> usize {
+    chats_of(asked).len() + starts_of(asked)
 }
 
 #[cfg(test)]

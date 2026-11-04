@@ -186,6 +186,7 @@ mod stopping;
 #[cfg(test)]
 mod storythemes;
 mod syscontrast;
+mod tabwindows;
 mod taskblocks;
 mod taskbrief;
 mod taskchanges;
@@ -3704,6 +3705,15 @@ pub fn run() {
                 // once for what macOS's file events are late with (#756).
                 tauri::WindowEvent::Focused(focused) => {
                     planewatch::window_focused(window.app_handle(), *focused);
+                    // Shown or restored, or gone behind: a minimised window counts as nothing
+                    // on screen (#4768).
+                    tabwindows::looked_at_again(window);
+                }
+                // Minimised, restored or moved: where a tab window is kept, and whether each
+                // window is on screen looked at again (#4768).
+                tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
+                    tabwindows::looked_at_again(window);
+                    tabwindows::moved(window);
                 }
                 _ => {}
             }
@@ -4048,6 +4058,7 @@ pub fn run() {
             // until a window says, and an empty answer means "not looking", so a notification
             // is sent rather than suppressed.
             app.manage(Showing::default());
+            app.manage(tabwindows::Places::default());
             // The clipboard a vault's Copy writes to, and what it wrote, for the clear a minute
             // later and the one at exit.
             app.manage(vaults::SystemClipboard::default());
@@ -4544,6 +4555,8 @@ pub fn run() {
                                 plane: plane.clone(),
                             },
                         );
+                        // And its tab windows close with it, their tabs kept (#4768).
+                        tabwindows::project_closed(&window, plane);
                     })
                 })
                 // Auto-save saved a plane: the extensions that hear it are told, as after the
@@ -4632,6 +4645,11 @@ pub fn run() {
             } = event
             {
                 asknotify::reopened(app, has_visible_windows);
+            }
+            // Before any window goes: a tab window closed by the quit is not closed by the
+            // person, so its tabs stay where they were for the next launch (#4768).
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                tabwindows::quitting(app);
             }
             if matches!(event, tauri::RunEvent::Exit) {
                 // First, so a restart finds the lock free (`instance.rs`).

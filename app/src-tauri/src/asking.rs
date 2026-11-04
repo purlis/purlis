@@ -1654,16 +1654,18 @@ pub const SECRET_FILL: &str = "fill";
 /// it was declined. Every word is purlis's but the names, which are the registry's and are data.
 pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
     let (key, vault, persona) = (&open.key, &open.vault, &open.persona);
-    let used_by = open
-        .tool
-        .as_deref()
-        .map_or_else(String::new, |tool| format!(" for {tool}"));
+    // A profile's credential a start misses names no tool, and no chat has started (#5074).
+    let used_by = match open.tool.as_deref() {
+        Some(tool) => format!(" for {tool}"),
+        None if open.chats.is_empty() && open.starts > 0 => " to start a chat".to_owned(),
+        None => String::new(),
+    };
     let others = match open.waiting() {
         0 | 1 => String::new(),
         n => format!(". {n} chats wait on it"),
     };
     // A chat on a runner that cannot receive a value was told it was declined (#5077).
-    let says = if open.chats.is_empty() && !open.cannot_receive.is_empty() {
+    let says = if open.chats.is_empty() && open.starts == 0 && !open.cannot_receive.is_empty() {
         format!(
             "Needs {key} from {persona}'s vault {vault}{used_by}. This chat's runner can't \
              receive secrets: Fill stores it in that vault for chats on this machine"

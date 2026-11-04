@@ -4,6 +4,7 @@
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { pressAndStart, pressOnly } from "../opening.js";
+import { roomForTwoPanes } from "../paneRoom.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
@@ -574,6 +575,9 @@ describe("a Notice in a pane", () => {
       },
       { timeout: 20_000, interval: 250, timeoutMsg: "the window never stopped resizing" },
     );
+    // Two panes side by side, never one folded to a rail (#4766): what the window leaves the
+    // panes varies by runner, so it is widened by any shortfall.
+    await roomForTwoPanes();
   }
 
   for (const pane of [0, 1]) {

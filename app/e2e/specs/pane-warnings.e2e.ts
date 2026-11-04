@@ -4,6 +4,7 @@
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { pressAndStart } from "../opening.js";
+import { roomForTwoPanes } from "../paneRoom.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
@@ -284,6 +285,9 @@ describe("a pane's warnings, inside the pane", () => {
       },
       { timeout: 20_000, interval: 250, timeoutMsg: "the window never stopped resizing" },
     );
+    // Two panes side by side, never one folded to a rail (#4766): what the window leaves the
+    // panes varies by runner, so it is widened by any shortfall.
+    await roomForTwoPanes();
   }
 
   it("keeps the chosen tab joined to its pane while a warning shows (rules 1 and 2)", async () => {

@@ -29,6 +29,7 @@ import {
 } from "./restoringChats";
 import { QueueRead } from "./QueueRead";
 import { QuestionsHere } from "./QuestionsHere";
+import { QuizPlaces } from "./QuizBand";
 import { standingOf, waitingOnYou, type QuestionsHeld } from "./taskQuestions";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
@@ -55,6 +56,7 @@ import {
   type NeedsApproval,
   type NotStarted,
   type FinishedTask,
+  type LaidOut,
   type OpenChat,
   type PlaneId,
   type LimitRefused,
@@ -329,6 +331,7 @@ import {
   focusedContent,
   homeOf,
   layoutShown,
+  type Content,
   moveToOwnTab,
   openBeside,
   panesMovedInto,
@@ -356,6 +359,7 @@ import {
   type Pinned,
   type Tabs,
   type ViewRef,
+  sessionOf,
 } from "./tabs";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
@@ -363,7 +367,8 @@ import { heardOffers, offersInForce, viewOpened } from "./offerStore";
 import { OfferNotices, type OfferOpening, OfferOpeningContext } from "./ViewOpen";
 import { paneSize } from "./paneSize";
 import { besideOf as viewBesideOf, besideRefusedSaid } from "./viewBeside";
-import { layoutOf, tabsOf, withShare } from "./laidOut";
+import { layoutOf, pathTo, type Reopening, tabsOf, withShare } from "./laidOut";
+import { LAYOUT_MOVED, type LayoutMoved, movedBetweenWindows, PRESS_HERE } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
 import {
@@ -624,7 +629,10 @@ import {
   type StartNotes,
   withNote,
 } from "./ChatNotices";
-import { LayoutPanes } from "./LayoutPanes";
+import { LayoutPanes, type PaneFace } from "./LayoutPanes";
+import { drawnOf } from "./paneFold";
+import { usePaneRoom } from "./usePaneRoom";
+import { ChatPersonaState } from "./ChatPersonaState";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
 import { useWorkedHere } from "./workedHere";
 
@@ -814,6 +822,7 @@ export const PlaneView = memo(function PlaneView({
   poolSetupAsked,
   licencesAsked,
   focusMode = false,
+  tabWindow,
   settingsTabAsked,
   settingsLinkAsked,
   yourSettingsAsked,
@@ -882,6 +891,13 @@ export const PlaneView = memo(function PlaneView({
   licencesAsked?: number;
   /** Focus mode is on (#2921): its palette row says it brings the window's parts back. */
   focusMode?: boolean;
+  /**
+   * **This is tab window `tabWindow` of the project** (#4768): a bare window holding the strip
+   * and panes of its own tabs, and no sidebar. It draws only the tabs the core holds for it,
+   * says only those, and opens no tab for a chat by itself: a chat arriving is the project
+   * window's to announce. Absent in the project window.
+   */
+  tabWindow?: number;
   /** The same, for the Settings tab (`WindowDoing.openSettingsTab`, SE-16): a count that goes
    *  up each time the window asks for it on THIS project's strip. */
   settingsTabAsked?: number;
@@ -1637,6 +1653,17 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the record's tabs have been heard: tabs said before would be the empty window's,
    *  written over the record it is about to read. */
   const layoutHeard = useRef(false);
+  /** **Whether the project has a tab window** (#4768), as the record and the core's last move
+   *  said: a press asks the core where the chat is only then. */
+  const otherWindows = useRef(false);
+  /** **Every window of the project** (#4768): its project window (`0`) and each tab window, as
+   *  the record and the core's last move said. What Move to window ▸ lists, less this one. */
+  const [windowsHere, setWindowsHere] = useState<readonly number[]>([0]);
+  const windowsOf = useCallback((laid: LaidOut) => {
+    const each = [...new Set([0, ...laid.tabs.map((one) => one.window)])].sort((a, b) => a - b);
+    otherWindows.current = each.length > 1;
+    setWindowsHere((was) => (was.join() === each.join() ? was : each));
+  }, []);
   const change = useCallback(
     (how: (tabs: Tabs) => Tabs): Tabs => {
       const done = how(now.current);
@@ -1680,6 +1707,27 @@ export const PlaneView = memo(function PlaneView({
       }
     },
     [settleNotices],
+  );
+  /** **What came back, as a layout's tabs are drawn from it** (#4751, #4768): each open chat by
+   *  its names, and each view as it is named now (a studio's as the one studio). */
+  const reopeningOf = useCallback(
+    (named: ReadonlyMap<number, OpenChat>): Reopening => ({
+      chat: (session) => {
+        const chat = named.get(session);
+        return chat === undefined
+          ? undefined
+          : { name: chat.name, who: whoOf(chat.persona, chat.harness), label: chat.label };
+      },
+      view: (view, title) => {
+        const now = viewNamedNow(view, title);
+        const studio = isSkillStudio(now.view) || studioOfSkillTab(now.view) !== undefined;
+        return {
+          view: studioPutBack(plane, now.view),
+          title: studio ? SKILL_STUDIO_TITLE : now.title,
+        };
+      },
+    }),
+    [plane],
   );
   useEffect(() => {
     if (adopted.current) return;
@@ -1783,26 +1831,19 @@ export const PlaneView = memo(function PlaneView({
         // of its own it always had, until chats stop getting tabs.
         if (laid !== null && laid !== undefined) {
           const named = new Map(open.map((chat) => [chat.session, chat]));
-          const back = tabsOf(laid, noTabs(), {
-            chat: (session) => {
-              const chat = named.get(session);
-              return chat === undefined
-                ? undefined
-                : {
-                    name: chat.name,
-                    who: whoOf(chat.persona, chat.harness),
-                    label: chat.label,
-                  };
-            },
-            view: (view, title) => {
-              const now = viewNamedNow(view, title);
-              const studio = isSkillStudio(now.view) || studioOfSkillTab(now.view) !== undefined;
-              return {
-                view: studioPutBack(plane, now.view),
-                title: studio ? SKILL_STUDIO_TITLE : now.title,
-              };
-            },
-          });
+          const back = tabsOf(laid, noTabs(), reopeningOf(named), tabWindow ?? 0);
+          // **A tab window draws its own tabs and nothing more** (#4768): every other chat is
+          // the project window's.
+          if (tabWindow !== undefined) {
+            windowsOf(laid);
+            layoutHeard.current = true;
+            if (back.tabs.order.length > 0)
+              change(() =>
+                back.inFront === undefined ? back.tabs : selectTab(back.tabs, back.inFront),
+              );
+            setViewsHeard(true);
+            return;
+          }
           const all = pinnedAsBefore(
             open
               .filter(
@@ -1835,6 +1876,15 @@ export const PlaneView = memo(function PlaneView({
             .filter((chat) => chat.one_job)
             .reduce((tabs, chat) => openOneJob(tabs, chat.session, chat.name), fronted);
           if (withJobs.order.length > 0) change(() => withJobs);
+          setViewsHeard(true);
+          // **Each tab window the record names comes back** (#4768), in its place on screen.
+          windowsOf(laid);
+          if (otherWindows.current) void commands.tabWindowsBack(plane).catch(() => undefined);
+          return;
+        }
+        // A tab window of a record with no layout has nothing of its own to draw.
+        if (tabWindow !== undefined) {
+          layoutHeard.current = true;
           setViewsHeard(true);
           return;
         }
@@ -1923,7 +1973,7 @@ export const PlaneView = memo(function PlaneView({
         layoutHeard.current = true;
         setViewsHeard(true);
       });
-  }, [change, plane, settleChatNotes]);
+  }, [change, plane, reopeningOf, settleChatNotes, tabWindow, windowsOf]);
 
   /**
    * The window's view tabs, told to the core whenever they change — so the record brings them
@@ -1983,7 +2033,8 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     const listening = listen<Arrived>("handoff-arrived", (event) => {
       const arrived = event.payload;
-      if (arrived.plane !== plane) return;
+      // A chat arriving is the project window's to put on its strip, never a tab window's.
+      if (arrived.plane !== plane || tabWindow !== undefined) return;
       // Already drawn: the adoption above can race the event and draw it first.
       if (alreadyShows(now.current, arrived.session)) return;
       // A task dispatched by a chat at the project's root is in no workspace, as that chat is.
@@ -2008,7 +2059,7 @@ export const PlaneView = memo(function PlaneView({
       );
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
-  }, [change, plane]);
+  }, [change, plane, tabWindow]);
 
   /**
    * The persona chats that still owe a report. A task's report is followed by the end of its
@@ -3161,11 +3212,16 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     sayLayout.current = (next: Tabs) => {
       if (!layoutHeard.current) return;
-      const laid = layoutOf(next, {
-        workspaceOf: (id) => workspaceOf(next, id, filedIn),
-        frontOf: (workspace) => lastFront.current[workspace],
-        told: (session) => !pretendedNow.current.has(session) && !endedInPanes.current.has(session),
-      });
+      const laid = layoutOf(
+        next,
+        {
+          workspaceOf: (id) => workspaceOf(next, id, filedIn),
+          frontOf: (workspace) => lastFront.current[workspace],
+          told: (session) =>
+            !pretendedNow.current.has(session) && !endedInPanes.current.has(session),
+        },
+        tabWindow ?? 0,
+      );
       const text = JSON.stringify(laid);
       if (text === layoutSaid.current || text === layoutRefused.current) return;
       layoutSaid.current = text;
@@ -3187,7 +3243,50 @@ export const PlaneView = memo(function PlaneView({
         .catch(unsaid);
     };
     sayLayout.current(tabs);
-  }, [filedIn, plane, tabs, viewsHeard]);
+  }, [filedIn, plane, tabs, tabWindow, viewsHeard]);
+
+  /**
+   * **Tabs moved between the project's windows** (#4768): Move to new window, Move to window ▸,
+   * a tear-off or a tab window closing. The core moved them in one step and tells every window
+   * of the project what it holds now; this window lets go of its tabs that are elsewhere and
+   * draws the ones that came to it (`tabWindows.ts`). Nothing ends: a tab that left takes its
+   * chats on screen with it.
+   */
+  // Heard once per project: what it reads is the window's now, so a workspace removed, which
+  // files chats again, does not listen anew.
+  const layoutMovedHere = useRef<(moved: LayoutMoved) => void>(() => undefined);
+  useEffect(() => {
+    layoutMovedHere.current = (moved) => {
+      windowsOf(moved.layout);
+      void commands
+        .openedChats(plane)
+        .then((answer) => {
+          const open = answer.status === "ok" ? (answer.data ?? []) : [];
+          const reopening = reopeningOf(new Map(open.map((chat) => [chat.session, chat])));
+          change(
+            (tabs) =>
+              movedBetweenWindows(moved.layout, tabs, tabWindow ?? 0, reopening, filedIn).tabs,
+          );
+        })
+        .catch(() => undefined);
+    };
+  }, [change, filedIn, plane, reopeningOf, tabWindow, windowsOf]);
+  useEffect(() => {
+    const listening = listen<LayoutMoved>(LAYOUT_MOVED, (event) => {
+      if (event.payload.plane === plane) layoutMovedHere.current(event.payload);
+    }).catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [plane]);
+
+  /** **A press in another of the project's windows landed on a chat this one has in a pane**
+   *  (#4768): it is shown here, in its pane, and this window has come forward. */
+  const showChatHere = useRef<(session: number) => void>(() => undefined);
+  useEffect(() => {
+    const listening = listen<{ plane: string; chat: number }>(PRESS_HERE, (event) => {
+      if (event.payload.plane === plane) showChatHere.current(event.payload.chat);
+    }).catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [plane]);
 
   /**
    * Asks which profile and which persona. It starts nothing by itself.
@@ -4142,10 +4241,46 @@ export const PlaneView = memo(function PlaneView({
    */
   const showChat = useCallback(
     (session: number, into?: PaneAt) => {
-      landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
       stoppedFor(session, undefined);
+      const here = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
+      // **A chat in a pane of another of the project's windows** (#4768): that window comes
+      // forward and shows it, and this window changes nothing. Asked only while the project
+      // has another window, so a project of one window presses at once.
+      if (into !== undefined || (tabWindow === undefined && !otherWindows.current)) {
+        here();
+        return;
+      }
+      void commands
+        .pressElsewhere(plane, session)
+        .then((answer) => {
+          if (answer.status !== "ok" || answer.data === null) here();
+        })
+        .catch(here);
     },
-    [landOn, pressedOf, pressing, stoppedFor],
+    [landOn, plane, pressedOf, pressing, stoppedFor, tabWindow],
+  );
+  useEffect(() => {
+    showChatHere.current = (session) =>
+      landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
+  }, [landOn, pressedOf, pressing]);
+  /**
+   * **Move to new window, or Move to window ▸** (#4768): tab `tab`, or its focused pane, goes to
+   * another window of the project in one step of the core's, which tells every window what it
+   * holds now (`layout-moved`). This window changes nothing itself: it draws its share then.
+   */
+  const moveToWindow = useCallback(
+    async (tab: number, pane: boolean, to: number | null): Promise<Ran> => {
+      const tabs = now.current;
+      const nth = tabs.order.indexOf(tab);
+      const held = tabs.byId[tab];
+      if (nth < 0 || held === undefined) return { ok: false, refused: "That tab is not open." };
+      const path = pane ? (pathTo(held.layout, held.focused) ?? "") : "";
+      const answer = await commands
+        .moveToWindow(plane, nth, path === "" ? null : path, to)
+        .catch((why: unknown) => ({ status: "error" as const, error: String(why) }));
+      return answer.status === "ok" ? { ok: true } : { ok: false, refused: answer.error };
+    },
+    [plane],
   );
   /**
    * **⌘⇧H: the focused pane goes back to the chat it showed before** (#4757), and again to
@@ -4587,6 +4722,17 @@ export const PlaneView = memo(function PlaneView({
     settingsLinkHandled.current = settingsLinkAsked.at;
     openSettingsAt(settingsLinkAsked.link);
   }, [settingsLinkAsked, openSettingsAt]);
+
+  /** **Where a task's question is drawn** (#4565): a task's top is the nearest chat above it
+   *  with a tab, as its session's tab is (`sessionOf`); Open task is the person's own press. */
+  const quizPlaces = useMemo(
+    () => ({
+      topOf: (task: number) => sessionOf(tabs, task, askedBy)?.own,
+      openTask: (task: number) => showChat(task),
+      openSettings: () => openSettingsAt({ group: "you.chats", setting: "you.chats.answer" }),
+    }),
+    [tabs, askedBy, showChat, openSettingsAt],
+  );
 
   /**
    * The Settings tab, opened the same way and for the same reason (SE-16), **at the focused
@@ -5073,6 +5219,42 @@ export const PlaneView = memo(function PlaneView({
   }, [chatBrowsers, chatBrowsersRead, browsersBeside, change, filedIn]);
 
   const frontTab = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
+  /** **The room the front tab's panes have** (#4766), measured: a split that cannot give each
+   *  side its minimum folds a side to a rail, and a split row greys out where a half would be
+   *  under it. Nothing is measured before the window is laid out, and then nothing folds. */
+  const [panesAt, paneRoom] = usePaneRoom();
+  const focusedRoom = useMemo(
+    () =>
+      frontTab === undefined || paneRoom === undefined
+        ? undefined
+        : drawnOf(
+            zoomedLayout(tabs, frontTab.id, layoutShown(tabs, frontTab.id) ?? frontTab.layout),
+            frontTab.focused,
+            paneRoom,
+          ).sizes[frontTab.focused],
+    [tabs, frontTab, paneRoom],
+  );
+  /** What a folded pane's rail shows (#4766): a chat by its row's name and its persona and
+   *  state icon, as its tab wears them; a view and an empty pane as the panes name them. */
+  const paneFace = useCallback(
+    (content: Content): PaneFace | undefined =>
+      content.kind !== "session"
+        ? undefined
+        : {
+            name: naming.chat(content.session),
+            mark: (
+              <ChatPersonaState
+                persona={personaOf(content.session)}
+                session={content.session}
+                shell={shells.has(content.session)}
+                harness={factsOf(content.session)?.harness ?? null}
+                report={factsOf(content.session)?.report ?? null}
+                outcome={factsOf(content.session)?.outcome ?? null}
+              />
+            ),
+          },
+    [naming, personaOf, shells, factsOf],
+  );
   // The session the next worktree question is about: the chat in the pane that has the
   // keyboard, which is the one "this chat's worktree" means.
   // The chat SHOWN there (#1486): while the tab shows a task, the task is what is typed into.
@@ -6980,10 +7162,11 @@ export const PlaneView = memo(function PlaneView({
         noteStarted(chat);
         change((tabs) => replaceSession(tabs, from, chat.session));
       }
-      // Started under another number, its old tab gone already: a chat just started.
+      // Started under another number, its old tab gone already: a chat just started. The
+      // project window's to put on a strip, never a tab window's (#4768).
       for (const chat of arrived) {
         noteStarted(chat);
-        if (chat.from?.tab === false) continue;
+        if (chat.from?.tab === false || tabWindow !== undefined) continue;
         change((tabs) =>
           pinnedAsBefore(
             openTabBehind(
@@ -7012,7 +7195,7 @@ export const PlaneView = memo(function PlaneView({
       // Every chat has said how it came back: the dismissed notes are settled against them.
       if (still.size === 0) settleChatNotes(open);
     },
-    [keepsItsPane, change, filedIn, isPinned, noteStarted, plane, settleChatNotes],
+    [keepsItsPane, change, filedIn, isPinned, noteStarted, plane, settleChatNotes, tabWindow],
   );
   const readRestoredNow = useRef(readRestored);
   useEffect(() => {
@@ -7497,6 +7680,7 @@ export const PlaneView = memo(function PlaneView({
       split,
       closePane,
       tileAll: tileAllIn,
+      moveToWindow,
       zoomPane,
       undoLayout: undoLayoutIn,
       closeTab: close,
@@ -7653,6 +7837,7 @@ export const PlaneView = memo(function PlaneView({
       close,
       closePane,
       tileAllIn,
+      moveToWindow,
       undoLayoutIn,
       zoomPane,
       curate,
@@ -8497,6 +8682,8 @@ export const PlaneView = memo(function PlaneView({
             restoring: [...restoringChats],
             // Close other tabs skips the pinned ones (#4762).
             otherTabs: (tab) => otherTabsToClose(tabs, tab, filedIn, isPinned),
+            // Move to window ▸ lists every other window of the project (#4768).
+            otherWindows: windowsHere.filter((one) => one !== (tabWindow ?? 0)),
             workItems,
             // A chat filed in a workspace; one at the project root, or outside the project, is
             // offered no work link (ADR 0088 §4).
@@ -8515,6 +8702,7 @@ export const PlaneView = memo(function PlaneView({
             away,
             focusMode,
             sidePanels,
+            paneRoom: focusedRoom,
             profiles: profileNames,
             screenReader,
             skillStudio: studioOn,
@@ -8528,6 +8716,7 @@ export const PlaneView = memo(function PlaneView({
       away,
       focusMode,
       sidePanels,
+      focusedRoom,
       clones,
       cloningNow,
       absentHere,
@@ -8566,6 +8755,8 @@ export const PlaneView = memo(function PlaneView({
       wrapping,
       restoringChats,
       isPinned,
+      windowsHere,
+      tabWindow,
       workItems,
       filedIn,
       planeUpdates,
@@ -10490,6 +10681,7 @@ export const PlaneView = memo(function PlaneView({
                     dragSensors={dragSensors}
                     chatDragWords={chatDragWords}
                     dragTab={dragTab}
+                    tearOff={(tab) => void moveToWindow(tab, false, null)}
                     draggingRef={dragging}
                     draggedAtRef={draggedAt}
                     notGoingBack={notGoingBack}
@@ -10544,89 +10736,101 @@ export const PlaneView = memo(function PlaneView({
                   <Menued on={{ on: "pane", tab: frontTabId }} offers={found} onPress={press}>
                     {/* The content panel, which the chosen tab joins (`ui/tabs`): the tab panel of
                   the chosen tab, named by it, while it is drawn on the strip. */}
-                    <div className="panes" {...panelRoot("content")} {...tabPanelOf(panelNamedBy)}>
+                    <div
+                      ref={panesAt}
+                      className="panes"
+                      {...panelRoot("content")}
+                      {...tabPanelOf(panelNamedBy)}
+                    >
                       {frontTab ? (
                         <TaskEndContext.Provider value={taskEndHand}>
                           <OfferOpeningContext.Provider value={offerOpening}>
-                            <LayoutPanes
-                              plane={plane}
-                              restoring={restoringChats}
-                              // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
-                              // session that asked, while the tab is switched to it.
-                              // A zoomed pane is drawn alone, the tree kept whole (#4765).
-                              layout={zoomedLayout(
-                                tabs,
-                                frontTab.id,
-                                layoutShown(tabs, frontTab.id) ?? frontTab.layout,
-                              )}
-                              crumbs={frontCrumbs}
-                              placed={frontPlaced}
-                              endedTasks={frontEndedPanes}
-                              unread={frontUnread}
-                              finished={frontFinished}
-                              explaining={chipToExplain}
-                              others={frontOthers}
-                              asked={frontAsked}
-                              asks={asksHere}
-                              waiting={waiting}
-                              onShowInbox={showInbox}
-                              onAnswer={answeredOnPane}
-                              closeOf={closeOfPane}
-                              onShowChat={showChatFromPane}
-                              focused={frontTab.focused}
-                              onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
-                              offerFor={by}
-                              offers={found}
-                              heads={paneHeads}
-                              onPaneDoes={onPaneDoes}
-                              name={frontTab.name}
-                              handedFrom={handedFrom}
-                              glances={glances}
-                              workItems={workItems}
-                              byHand={byHand}
-                              onByHand={answerByHand}
-                              startNotes={startNotes}
-                              onDismissStartNote={dismissStartNote}
-                              onRestartChat={askRestart}
-                              blocks={frontBlocks}
-                              onDismissBlock={dismissBlock}
-                              onRestarted={chatRestarted}
-                              onAllowed={oweRestart}
-                              restartsSaid={restartsSaid}
-                              onRestartAnswer={answerRestart}
-                              offered={views}
-                              onOpenView={showView}
-                              onOpenViewBeside={showViewBeside}
-                              onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
-                              onVaultChanged={reloadVaults}
-                              memory={{
-                                // The views follow the disk themselves (`ViewPane`), so a memory saved
-                                // redraws the views and not this whole window (FD-10).
-                                changed: memoryEdits.changed,
-                                onSaved: memoryEdits.onSaved,
-                                onClose: closeView,
-                                showInstead: (from, to, title) => {
-                                  change((tabs) => showInstead(tabs, from, to, title));
-                                  // The level switcher moving Settings is a way into it (#1206).
-                                  const place = placeOfView(to, plane);
-                                  if (place !== undefined) enterSettings(place);
-                                },
-                              }}
-                              firstTask={firstTaskDoes}
-                              onNewChatOn={newChatOn}
-                              split={{
-                                of: (view) => splitOf(tabs, view),
-                                moved: (view, split) =>
-                                  change((tabs) => setSplit(tabs, view, split)),
-                                shared: (path, share) =>
-                                  change((tabs) => withShare(tabs, frontTab.id, path, share)),
-                              }}
-                              runningIn={runningIn}
-                              tab={frontTab.id}
-                              chatName={nameOf}
-                              onClearPane={clearPane}
-                              onResumeTask={(pane, task) => void resumeTaskIn(pane, task)}
-                            />
+                            <QuizPlaces.Provider value={quizPlaces}>
+                              <LayoutPanes
+                                plane={plane}
+                                restoring={restoringChats}
+                                // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
+                                // session that asked, while the tab is switched to it.
+                                // A zoomed pane is drawn alone, the tree kept whole (#4765).
+                                layout={zoomedLayout(
+                                  tabs,
+                                  frontTab.id,
+                                  layoutShown(tabs, frontTab.id) ?? frontTab.layout,
+                                )}
+                                room={paneRoom}
+                                faceOf={paneFace}
+                                crumbs={frontCrumbs}
+                                placed={frontPlaced}
+                                endedTasks={frontEndedPanes}
+                                unread={frontUnread}
+                                finished={frontFinished}
+                                explaining={chipToExplain}
+                                others={frontOthers}
+                                asked={frontAsked}
+                                asks={asksHere}
+                                waiting={waiting}
+                                onShowInbox={showInbox}
+                                onAnswer={answeredOnPane}
+                                closeOf={closeOfPane}
+                                onShowChat={showChatFromPane}
+                                focused={frontTab.focused}
+                                onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
+                                onOpenFolded={(pane) =>
+                                  keyboardInto(change((tabs) => focusPane(tabs, pane)))
+                                }
+                                offerFor={by}
+                                offers={found}
+                                heads={paneHeads}
+                                onPaneDoes={onPaneDoes}
+                                name={frontTab.name}
+                                handedFrom={handedFrom}
+                                glances={glances}
+                                workItems={workItems}
+                                byHand={byHand}
+                                onByHand={answerByHand}
+                                startNotes={startNotes}
+                                onDismissStartNote={dismissStartNote}
+                                onRestartChat={askRestart}
+                                blocks={frontBlocks}
+                                onDismissBlock={dismissBlock}
+                                onRestarted={chatRestarted}
+                                onAllowed={oweRestart}
+                                restartsSaid={restartsSaid}
+                                onRestartAnswer={answerRestart}
+                                offered={views}
+                                onOpenView={showView}
+                                onOpenViewBeside={showViewBeside}
+                                onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
+                                onVaultChanged={reloadVaults}
+                                memory={{
+                                  // The views follow the disk themselves (`ViewPane`), so a memory saved
+                                  // redraws the views and not this whole window (FD-10).
+                                  changed: memoryEdits.changed,
+                                  onSaved: memoryEdits.onSaved,
+                                  onClose: closeView,
+                                  showInstead: (from, to, title) => {
+                                    change((tabs) => showInstead(tabs, from, to, title));
+                                    // The level switcher moving Settings is a way into it (#1206).
+                                    const place = placeOfView(to, plane);
+                                    if (place !== undefined) enterSettings(place);
+                                  },
+                                }}
+                                firstTask={firstTaskDoes}
+                                onNewChatOn={newChatOn}
+                                split={{
+                                  of: (view) => splitOf(tabs, view),
+                                  moved: (view, split) =>
+                                    change((tabs) => setSplit(tabs, view, split)),
+                                  shared: (path, share) =>
+                                    change((tabs) => withShare(tabs, frontTab.id, path, share)),
+                                }}
+                                runningIn={runningIn}
+                                tab={frontTab.id}
+                                chatName={nameOf}
+                                onClearPane={clearPane}
+                                onResumeTask={(pane, task) => void resumeTaskIn(pane, task)}
+                              />
+                            </QuizPlaces.Provider>
                           </OfferOpeningContext.Provider>
                         </TaskEndContext.Provider>
                       ) : tabs.order.length > 0 ? (

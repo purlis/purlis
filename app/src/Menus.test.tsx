@@ -122,7 +122,12 @@ describe("what a menu lists", () => {
     // A tab's own rows (#4753); the tab's press switches to it (#4760). Its close ends nothing
     // (#4756) and is still last, after Close other tabs (#4762).
     const tab = titles({ on: "tab", tab: 1 }, { tabs });
-    expect(tab.above).toEqual(["Pin tab 3 steward", "Tile all in 3 steward"]);
+    expect(tab.above).toEqual([
+      "Pin tab 3 steward",
+      "Tile all in 3 steward",
+      // Into a tab window of the project (#4768).
+      "Move tab 3 steward to new window",
+    ]);
     expect(tab.below).toEqual(["Close other tabs", "Close 3 steward"]);
     // The chat's own list: its Activity only reads (#1495), and End… ends it.
     const chat = titles({ on: "chat", session: 7 }, { tabs });
@@ -220,6 +225,8 @@ describe("what a menu lists", () => {
       "Split right",
       "Split down",
       "Tile all in one",
+      // The focused pane into a tab window of the project (#4768).
+      "Move this pane to new window",
       "Send F2 to the chat in front",
     ]);
     expect(pane.below).toEqual(["Close this pane"]);

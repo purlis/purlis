@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createContext, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { HOLDS_NOTHING, type BandHolds } from "./paneNotices";
 import { useWayPlaces, type WayPlace } from "./wayPlaces";
 
 /**
@@ -65,9 +66,25 @@ const bands = new Map<string, BandMemory>();
 /** The band memory's name for pane `pane` of plane `plane`: a pane's number is never reused. */
 export const paneBand = (plane: string, pane: number) => `${plane}\u0000${pane}`;
 
+/**
+ * **What each pane's band held when it was last drawn**, by its band (#4766): a folded pane's
+ * Notices are not drawn, so its rail says the count its bell last said. Written by the pane's
+ * frame whenever its band changes, and forgotten and carried with the rest of the band's memory.
+ */
+const held = new Map<string, BandHolds>();
+
+export function keepHolds(band: string, holds: BandHolds): void {
+  held.set(band, holds);
+}
+
+export function keptHolds(band: string): BandHolds {
+  return held.get(band) ?? HOLDS_NOTHING;
+}
+
 /** Lets the band memory of a pane closed for good go. */
 export function forgetPaneBand(band: string) {
   bands.delete(band);
+  held.delete(band);
 }
 
 /** Lets every pane's band memory of plane `plane` go, as the window lets the project go; with
@@ -75,6 +92,9 @@ export function forgetPaneBand(band: string) {
 export function forgetPaneBands(plane?: string) {
   for (const band of [...bands.keys()]) {
     if (plane === undefined || band.startsWith(`${plane}\u0000`)) bands.delete(band);
+  }
+  for (const band of [...held.keys()]) {
+    if (plane === undefined || band.startsWith(`${plane}\u0000`)) held.delete(band);
   }
 }
 
@@ -88,6 +108,8 @@ const freshBand = (): BandMemory => ({ hadAny: false, emptiedAt: -Infinity, plac
  * read already it only adds, so it can only hold more.
  */
 export function carryPaneBand(from: string, to: string) {
+  const holds = held.get(from);
+  if (holds !== undefined && !held.has(to)) held.set(to, holds);
   const was = bands.get(from);
   if (was === undefined) return;
   const into = bands.get(to);

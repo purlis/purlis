@@ -225,10 +225,16 @@ impl std::fmt::Debug for Handed {
 /// open to, is handed nothing and does not start, and the refusal says which vault and how to
 /// open it. A missing entry says which variable it was for. Each read is recorded by name
 /// (`profile-sign-in`), never by value.
+///
+/// **A missing entry is a Secret ask where the app asks** (#5074, ADR 0109): with `missing`,
+/// the start waits on the person's answer as a brokered run does, as a start with no chat
+/// number yet, and starts with the value once they fill it. A decline, or no answer in time,
+/// starts nothing and says so; the ask stays open until it is answered.
 pub fn read(
     ctx: &crate::secrets::Ctx,
     persona: Option<&str>,
     credentials: &[(String, Reference)],
+    missing: Option<&crate::secrets::brokered::Missing<'_>>,
 ) -> Result<Handed, String> {
     use crate::secrets::{brokered, cmd};
     let mut pairs = Vec::with_capacity(credentials.len());
@@ -240,17 +246,41 @@ pub fn read(
                 reference.vault
             )
         })?;
-        let value = cmd::provider(ctx, &reference.vault)
-            .and_then(|vault| cmd::get_value(ctx, &vault, &reference.key))
-            .map_err(|e| {
-                format!(
-                    "this chat's profile names {variable} as '{}' in vault '{}', and it could \
-                     not be read ({}), so nothing was started",
-                    crate::shown::short(&reference.key),
-                    reference.vault,
-                    e.message
-                )
-            })?;
+        let refused = |why: &str| {
+            format!(
+                "this chat's profile names {variable} as '{}' in vault '{}', and it could not be \
+                 read ({why}), so nothing was started",
+                crate::shown::short(&reference.key),
+                reference.vault,
+            )
+        };
+        let mut once = || {
+            cmd::provider(ctx, &reference.vault)
+                .and_then(|vault| cmd::get_value(ctx, &vault, &reference.key))
+        };
+        let value = match missing {
+            None => once().map_err(|e| refused(&e.message))?,
+            Some(missing) => {
+                let need = crate::secrets::ask::Need {
+                    chat: None,
+                    persona: persona.unwrap_or_default().to_owned(),
+                    vault: reference.vault.clone(),
+                    key: reference.key.clone(),
+                    tool: None,
+                };
+                missing
+                    .read_asking(need, &mut once)
+                    .map_err(|unread| match unread {
+                        crate::secrets::ask::Unread::Vault(e) => refused(&e.message),
+                        // What to do: the ask waits in the Inbox, and a start once it is
+                        // filled reads the value (a declined one is asked afresh).
+                        crate::secrets::ask::Unread::Asked(line) => format!(
+                            "{}; fill it from the Secret ask in the Inbox, then start the chat again",
+                            refused(&line)
+                        ),
+                    })?
+            }
+        };
         pairs.push((variable.clone(), value));
         resolved.push(format!("{}/{}", reference.vault, reference.key));
     }

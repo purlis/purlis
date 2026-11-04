@@ -329,6 +329,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A question's trail, opened from its line in the Activity above (#4567).
     "question_trail",
     "task_question",
+    // What an asking chat answered a question the person had open (#4566).
+    "task_question_answered",
     // Answers as the person.
     "answer_task_question",
     // What stands and what waits: the person's and every chat's, so never a link's to read.
@@ -790,6 +792,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_wake",
     // Try it starts a real chat on a pool on the person's press, and keeps that it started.
     "pool_setup_try",
+    // And only that press's own Cancel stops it (#4976).
+    "pool_setup_try_cancel",
     "pool_setup_open_docker",
     "add_docker_pool",
     "remove_docker_pool",
@@ -1194,6 +1198,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "memory_unarchive",
     "move_projects",
     "move_their_agents_md_aside",
+    "move_to_window",
     "open_chat_tab",
     "open_local_project",
     "open_plane",
@@ -1227,6 +1232,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "plane_saving",
     "plane_sidebar",
     "planes_to_restore",
+    "press_elsewhere",
     "project_extensions",
     "project_icons_drawn",
     "project_saving_in_force",
@@ -1309,6 +1315,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "stale_clones",
     "start_options",
     "stopping_chats",
+    "tab_window_handed",
+    "tab_windows_back",
     "take_repos",
     "task_branch_merge_question",
     "task_changes",

@@ -1031,7 +1031,16 @@ _Avoid_: link (unqualified: that is a runner's), channel, subscription
 **Split window**:
 An OS window a project tab was moved into, beside the main window. It holds its own projects,
 and closing it moves them back to the main window with every chat still running.
-_Avoid_: detached tab, pop-out, secondary window
+_Avoid_: detached tab, pop-out, secondary window, tab window (that holds one project's torn-off
+tabs)
+
+**Tab window**:
+An OS window that holds tabs torn off one project's strip: the strip and its panes, with no
+sidebar and no project strip. It belongs to the window that holds the project, its **project
+window**, and never holds a project of its own. Closing it sends its tabs back to the project
+window, behind its front tab, and every chat keeps running. Its last tab leaving closes it, and
+it comes back at the next launch, in its place on screen (#4701, #4768, ADR 0033 as amended).
+_Avoid_: detached tab, pop-out, split window (that holds whole projects)
 
 **Welcome**:
 What a window with no project open shows, always, whatever the machine remembers: three doors
@@ -1186,7 +1195,7 @@ _Avoid_: digest, recap, notification
 
 **Ask**:
 A chat's harness handing control to a human: a permission, a question, a request for values (an
-ACP elicitation, which always elicits a secret), or a nudge. Every
+ACP elicitation or a **Secret ask**, each of which elicits a secret), or a nudge. Every
 harness's own form of it is read into one shape: what it would do, the options as the harness
 offered them, who may answer, its deadline, its risk, a masked one-line summary, and whether it
 elicits a secret. One answer per ask, and the first wins; every later one hears "answered
@@ -1992,6 +2001,26 @@ a built-in skill's name is never taken; a **grading framework** produces **trigg
 A named set of secrets purlis keeps in the system keyring and hands to a command, never to
 the model and never to an extension. Vaults are core.
 _Avoid_: secret store, keychain (as the name of the concept)
+
+**Secret need**:
+A key a persona says its work uses, with a one-line purpose, committed with the persona so every
+teammate's chat knows its name and why. It names a key, never a value, and never which entry
+fills it on anyone's machine.
+_Avoid_: required secret, secret binding, declared secret (in UI text)
+
+**Secret ask**:
+An **Ask** that elicits a secret for one key of a vault: raised by purlis when a command it hands
+secrets to finds the key missing, or by the chat itself whenever its work needs a credential,
+declared or not. Only the person, in the window, answers it, by a new value or a **Linked
+entry**, or declines. The chat hears filled or declined and the key's final name, never a
+value.
+_Avoid_: secret request, credential prompt, missing-secret notice
+
+**Linked entry**:
+A key in one vault that holds no value of its own and reads another vault entry's, so a value
+lives once and a rotation reaches every key linked to it. It lives on one machine, like the
+value it points at.
+_Avoid_: alias, copy, reference (that is a vault provider)
 
 **Forge extension**:
 An extension about a code host's pull requests, merge requests or issues, which reaches the

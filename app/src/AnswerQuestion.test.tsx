@@ -45,7 +45,14 @@ describe("the form that answers a task's question", () => {
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(asked("answer_task_question")).toEqual([
       // With the number the core gave the question, which is what the answer is for.
-      { plane: PLANE, session: 7, number: 9, question: "Which host?", text: "prod-2." },
+      {
+        plane: PLANE,
+        session: 7,
+        number: 9,
+        question: "Which host?",
+        text: "prod-2.",
+        overrides: false,
+      },
     ]);
   });
 

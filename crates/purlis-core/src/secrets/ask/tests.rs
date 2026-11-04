@@ -36,7 +36,7 @@ fn ctx(root: &Path) -> Ctx {
 
 fn need(chat: u32, key: &str) -> Need {
     Need {
-        chat,
+        chat: Some(chat),
         persona: "devops".into(),
         vault: "team".into(),
         key: key.into(),
@@ -439,6 +439,159 @@ fn a_harness_is_held_for_three_quarters_of_its_command_timeout() {
     assert_eq!(holds_for(None), holds_for(Some(Harness::Codex)));
 }
 
+// ----------------------------------------------------------------------------------------
+// every brokered read asks alike: a browser login, a profile's credential (#5074)
+
+/// The first ask open, once one is.
+fn first_open(asks: &Asks) -> Open {
+    loop {
+        if let Some(one) = asks.open().into_iter().next() {
+            break one;
+        }
+        std::thread::yield_now();
+    }
+}
+
+/// `key` of vault `team`, read as a brokered read reads it.
+fn read_team(root: &Path, key: &str) -> Result<String, crate::secrets::VaultError> {
+    let ctx = ctx(root);
+    let v = crate::secrets::cmd::provider(&ctx, "team")?;
+    crate::secrets::cmd::get_value(&ctx, &v, key)
+}
+
+#[test]
+fn a_read_of_a_key_the_vault_holds_asks_nothing() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let got = asks.read_asking(need(7, "TOKEN"), Duration::ZERO, &mut |_| {}, &mut || {
+        read_team(project.path(), "TOKEN")
+    });
+    assert_eq!(got.ok().as_deref(), Some("t0ken"));
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn a_read_of_a_missing_key_waits_on_its_secret_ask_and_reads_the_value_filled() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let got = std::thread::scope(|scope| {
+        let read = scope.spawn(|| {
+            asks.read_asking(
+                need(7, "MISSING"),
+                Duration::from_secs(60),
+                &mut |_| {},
+                &mut || read_team(project.path(), "MISSING"),
+            )
+        });
+        let id = first_open(&asks).id;
+        asks.answer(
+            &ctx(project.path()),
+            id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+        read.join().unwrap()
+    });
+    assert_eq!(got.ok().as_deref(), Some(VALUE));
+}
+
+#[test]
+fn a_read_of_a_missing_key_that_is_declined_or_unanswered_says_so_and_reads_nothing() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let unanswered = asks
+        .read_asking(need(7, "MISSING"), Duration::ZERO, &mut |_| {}, &mut || {
+            read_team(project.path(), "MISSING")
+        })
+        .unwrap_err();
+    assert_eq!(
+        unanswered.to_string(),
+        "waiting on you for team/MISSING; retry once answered"
+    );
+    let id = asks.open()[0].id;
+    asks.answer(&ctx(project.path()), id, Answer::Decline, window())
+        .unwrap();
+    let declined = asks
+        .read_asking(need(7, "MISSING"), Duration::ZERO, &mut |_| {}, &mut || {
+            read_team(project.path(), "MISSING")
+        })
+        .unwrap_err();
+    assert_eq!(declined.to_string(), "declined team/MISSING");
+}
+
+#[test]
+fn a_read_the_vault_refuses_for_anything_but_a_missing_key_asks_nothing() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let why = asks
+        .read_asking(need(7, "MISSING"), Duration::ZERO, &mut |_| {}, &mut || {
+            Err::<String, _>(crate::secrets::VaultError::unavailable(
+                "the vault is locked",
+            ))
+        })
+        .unwrap_err();
+    assert_eq!(why.to_string(), "the vault is locked");
+    assert!(asks.open().is_empty(), "nothing asked");
+}
+
+/// A chat's start has no number yet: it waits on the ask as a chat would, and is counted.
+fn a_start(key: &str) -> Need {
+    Need {
+        chat: None,
+        tool: None,
+        ..need(0, key)
+    }
+}
+
+#[test]
+fn a_start_waits_on_the_same_ask_as_a_chat_and_is_counted_but_never_named() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    std::thread::scope(|scope| {
+        let start =
+            scope.spawn(|| asks.hold(a_start("MISSING"), Duration::from_secs(60), &mut |_| {}));
+        first_open(&asks);
+        let (held, _) = held_for_nothing(&asks, need(7, "MISSING"));
+        assert!(matches!(held, Held::StillOpen { .. }), "{held:?}");
+        let open = asks.open();
+        assert_eq!(open.len(), 1, "one ask per vault and key: {open:?}");
+        assert_eq!(open[0].chats, [7]);
+        assert_eq!(open[0].waiting(), 2, "the start and chat 7");
+        let answered = asks
+            .answer(&ctx(project.path()), open[0].id, Answer::Decline, window())
+            .unwrap();
+        assert_eq!(answered.nudge, [7], "a start is never nudged");
+        assert!(matches!(start.join().unwrap(), Held::Declined { .. }));
+    });
+    // A decline is a chat's to keep: the next start is asked afresh.
+    let (held, _) = held_for_nothing(&asks, a_start("MISSING"));
+    assert!(matches!(held, Held::StillOpen { .. }), "{held:?}");
+    let open = asks.open();
+    assert_eq!(open.len(), 1);
+    assert_eq!(
+        open[0].waiting(),
+        1,
+        "a start that stopped waiting is still what the ask is for: {open:?}"
+    );
+    // One that asks again takes its place.
+    held_for_nothing(&asks, a_start("MISSING"));
+    assert_eq!(asks.open()[0].waiting(), 1);
+}
+
+#[test]
+fn a_starts_ask_is_traced_under_no_session() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, a_start("MISSING"));
+    let file = crate::trace::file(project.path(), crate::trace::NO_SESSION);
+    let trace = std::fs::read_to_string(&file).unwrap_or_default();
+    assert!(
+        trace.contains("\"secret.ask\"") && trace.contains("raised"),
+        "{file:?}: {trace}"
+    );
+}
+
 // An open ask across a restart of the app (#5079, #5054's story 59).
 
 /// Where the project at `root` keeps its open Secret asks.
@@ -696,4 +849,23 @@ fn a_chat_whose_runner_was_unreachable_waits_on_the_ask_is_nudged_on_its_fill_an
         )
         .unwrap();
     assert_eq!(answered.nudge, vec![8]);
+}
+
+#[test]
+fn an_ask_only_a_chats_start_raised_is_kept_across_a_restart_and_no_launch_drops_it() {
+    let project = project();
+    let before = {
+        let asks = Asks::kept(project.path());
+        held_for_nothing(&asks, a_start("MISSING"));
+        asks.open()
+    };
+    assert_eq!(before[0].starts, 1, "{before:?}");
+    let restarted = Asks::kept(project.path());
+    assert_eq!(restarted.open(), before);
+    restarted.only_these_came_back(&[]);
+    assert_eq!(
+        restarted.open(),
+        before,
+        "a start is no chat a launch brings back"
+    );
 }

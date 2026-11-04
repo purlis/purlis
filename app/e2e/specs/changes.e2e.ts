@@ -134,7 +134,10 @@ describe("a workspace's changes", function () {
   it("opens from the palette and draws each member with what the forge could say", async () => {
     await runFromThePalette("Open changes");
 
-    const said = await thePaneSays("api-2");
+    // The change's own line is drawn before its members are read, so wait for the member's
+    // forge answer, the last thing drawn; on a slow macOS runner "api-2" alone came too early.
+    await thePaneSays("svc · change/api-2");
+    const said = await thePaneSays("could not ask");
     expect(said).toContain("bump the component API");
     expect(said).toContain("svc · change/api-2");
     // The fixture's clone has no origin: the member says so, in the core's words, and is not

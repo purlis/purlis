@@ -4667,7 +4667,8 @@ fn a_login_allowed_now_answers_the_identity_its_values_are_read_by() {
     .unwrap();
     let mut asker = asker(project.path(), Some("devops"));
     asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("team", "TOKEN", None)];
-    let (_, read_by) = login_and_identity_for(&asker, "shop-login", false).expect("the login");
+    let (_, read_by) =
+        login_and_identity_for(&asker, "shop-login", false, None).expect("the login");
 
     let allowed = login_allowed(&asker, "shop-login", false).expect("allowed");
     assert_eq!(allowed, read_by);
@@ -5327,4 +5328,121 @@ fn a_run_missing_its_key_where_nothing_asks_is_refused_as_before() {
         matches!(frames.last(), Some(Frame::Refused { code: 1, .. })),
         "{frames:?}"
     );
+}
+
+// ----------------------------------------------------------------------------------------
+// a browser login whose vault entry is missing is a Secret ask too (#5074, ADR 0109)
+
+/// Chat 7's `shop-login`, its password under `SHOP_PASS`, which vault `team` does not hold.
+fn a_login_missing_its_password(root: &Path) -> Asker {
+    let mut asker = asker(root, Some("devops"));
+    asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("team", "SHOP_PASS", None)];
+    asker
+}
+
+/// `shop-login` read for `asker`, asking `asks` and holding at most `within`.
+fn login_asking(
+    asker: &Asker,
+    asks: &crate::secrets::ask::Asks,
+    within: Duration,
+) -> Result<purlis_session_protocol::browsing::LogIn, String> {
+    let missing = Missing {
+        asks,
+        within,
+        moved: &|| {},
+    };
+    login_and_identity_for(asker, "shop-login", false, Some(&missing)).map(|(login, _)| login)
+}
+
+fn the_window() -> crate::harness::asks::Answerer {
+    crate::harness::asks::Answerer::admitted(crate::harness::asks::Admitted::LocalUi).unwrap()
+}
+
+#[test]
+fn a_browser_login_missing_its_password_waits_on_a_secret_ask_and_logs_in_with_the_value_filled() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let asker = a_login_missing_its_password(project.path());
+    let login = std::thread::scope(|scope| {
+        let read = scope.spawn(|| login_asking(&asker, &asks, Duration::from_secs(60)));
+        let open = loop {
+            if let Some(one) = asks.open().into_iter().next() {
+                break one;
+            }
+            std::thread::yield_now();
+        };
+        assert_eq!(
+            (
+                open.chats.as_slice(),
+                open.persona.as_str(),
+                open.vault.as_str(),
+                open.key.as_str(),
+                open.tool.as_deref()
+            ),
+            (&[7][..], "devops", "team", "SHOP_PASS", Some("shop-login"))
+        );
+        asks.answer(
+            &Ctx::new(project.path(), Env::of(&[])),
+            open.id,
+            crate::secrets::ask::Answer::Fill("sh0p-pass".to_owned().into()),
+            the_window(),
+        )
+        .unwrap();
+        read.join().unwrap()
+    })
+    .expect("the login proceeds once filled");
+    assert_eq!(login.address, "https://shop.example.test/login");
+    assert_eq!(login.password.expose(), "sh0p-pass");
+}
+
+#[test]
+fn a_browser_login_missing_its_password_that_the_person_declines_fills_nothing() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let asker = a_login_missing_its_password(project.path());
+    let why = std::thread::scope(|scope| {
+        let read = scope.spawn(|| login_asking(&asker, &asks, Duration::from_secs(60)));
+        let id = loop {
+            if let Some(one) = asks.open().first() {
+                break one.id;
+            }
+            std::thread::yield_now();
+        };
+        asks.answer(
+            &Ctx::new(project.path(), Env::of(&[])),
+            id,
+            crate::secrets::ask::Answer::Decline,
+            the_window(),
+        )
+        .unwrap();
+        read.join().unwrap()
+    })
+    .unwrap_err();
+    assert!(why.contains("declined team/SHOP_PASS"), "{why}");
+    assert!(why.contains("nothing was filled"), "{why}");
+}
+
+#[test]
+fn a_browser_login_missing_its_password_that_nobody_answers_in_time_waits_on_the_person() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let asker = a_login_missing_its_password(project.path());
+    let why = login_asking(&asker, &asks, Duration::ZERO).unwrap_err();
+    assert!(
+        why.contains("waiting on you for team/SHOP_PASS; retry once answered"),
+        "{why}"
+    );
+    assert_eq!(asks.open().len(), 1, "the ask stays open");
+}
+
+#[test]
+fn a_browser_login_missing_its_password_where_nothing_asks_is_refused_as_before() {
+    let project = project();
+    let why = login_for(
+        &a_login_missing_its_password(project.path()),
+        "shop-login",
+        false,
+    )
+    .unwrap_err();
+    assert!(why.contains("did not give shop-login's login"), "{why}");
 }

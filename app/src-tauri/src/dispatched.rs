@@ -2046,6 +2046,32 @@ pub fn person_answers(
     question: &str,
     said: &str,
 ) -> Result<(), String> {
+    the_person_s_word(held, task, number, question, said, false)
+}
+
+/// **The person says otherwise to the answer task `task`'s asking chat gave question
+/// `number`** (#4566): the window's Say otherwise, once it drew that answer
+/// ([`chat_answered_of`]). Reaches each chat as [`person_answers`] does, marked as overriding.
+/// Only this says otherwise (#5005): a plain answer that comes after the chat's is refused,
+/// since the person never saw what it would override.
+pub fn person_overrides(
+    held: &Held,
+    task: u32,
+    number: u32,
+    question: &str,
+    said: &str,
+) -> Result<(), String> {
+    the_person_s_word(held, task, number, question, said, true)
+}
+
+fn the_person_s_word(
+    held: &Held,
+    task: u32,
+    number: u32,
+    question: &str,
+    said: &str,
+    overrides: bool,
+) -> Result<(), String> {
     let name = held
         .chats()
         .shown_name(task)
@@ -2064,10 +2090,15 @@ pub fn person_answers(
     // The asking chat, while it is open: one that has closed is told nothing, and its number
     // may be another chat's by now.
     let asker = Some(from.chat).filter(|asker| !seen(held, *asker).ended);
-    let unread = held
-        .tasks()
-        .ledger()
-        .person_answers(task, &name, asker, number, question, &text)?;
+    let unread = if overrides {
+        held.tasks()
+            .ledger()
+            .person_overrides(task, &name, asker, number, question, &text)?
+    } else {
+        held.tasks()
+            .ledger()
+            .person_answers(task, &name, asker, number, question, &text)?
+    };
     // The question the asking chat had not read: it is told it was answered, and not asked it.
     if let Some(file) = unread {
         purlis_core::handback::took(held.root(), &file);
@@ -2101,6 +2132,60 @@ pub(crate) fn task_question(
     Ok(question_of(&held, session))
 }
 
+/// **What an asking chat answered a task's question, as the window shows it** (#4566): the line
+/// a quiz leaves when an agent answered it first, which says who said what and offers the
+/// person's later word.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ChatAnsweredShown {
+    /// The task, by the name the person sees it under.
+    pub task: String,
+    /// The asking chat that answered, by its name.
+    pub from: String,
+    /// What it answered, masked, **as text**: a chat's own words, never drawn as markup.
+    pub said: String,
+    /// The question it answered, in the task's words: what the person's word is held to
+    /// (`answer_task_question`).
+    pub question: String,
+}
+
+/// What task `task`'s asking chat answered its question `number`, while the person may still
+/// say otherwise to it: `None` once the task has asked another, ended or been told the
+/// person's word, and for a chat that is no task.
+pub fn chat_answered_of(held: &Held, task: u32, number: u32) -> Option<ChatAnsweredShown> {
+    let from = held.chats().handed_from(task)?;
+    if from.mode != Mode::Task || seen(held, task).ended {
+        return None;
+    }
+    let answered = held.tasks().ledger().talk.chat_answered(task, number)?;
+    Some(ChatAnsweredShown {
+        task: dispatchtalk::chat_shown(&held.chats().shown_name(task)?),
+        from: dispatchtalk::chat_shown(&answered.from),
+        said: answered.text,
+        question: answered.question,
+    })
+}
+
+/// **What an asking chat answered task `session`'s question `number`** (#4566): read by a quiz
+/// the person had open when an agent answered it first, for the line it leaves. `null` where
+/// nobody but the person can be said to have answered it, or it can no longer be overridden.
+///
+/// **The window's alone**, as `task_question` is: it reads words a chat wrote. On a blocking
+/// thread, as it waits on the dispatch ledger's lock (#1949).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn task_question_answered(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+    number: u32,
+) -> Result<Option<ChatAnsweredShown>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading what a chat answered a task", move || {
+        Ok(chat_answered_of(&held, session, number))
+    })
+    .await
+}
+
 /// **The person answers the question a task put to its asking chat** (#1496, V100-46): chat
 /// `session`'s question `number` (`task_question`, or a line's `asks`), which read `question`
 /// as the window showed it, with `text`. It answers that question and no other: a question
@@ -2110,6 +2195,10 @@ pub(crate) fn task_question(
 /// person answered and does not answer again. An error is a sentence for the person, and
 /// nothing was sent: the question was answered first by the asking chat, the task has moved
 /// on, or the text is empty, too long or holds a character purlis hands to no chat.
+///
+/// `overrides` is the person's Say otherwise to an answer the asking chat gave first, which
+/// the window drew (`task_question_answered`), and nothing else sends it (#5005): without it,
+/// an answer that arrives after the chat's is refused, as the person never saw that answer.
 ///
 /// **The window's alone.** No chat's command, hook or tool reaches it, and no link serves it
 /// (`purlis_session_protocol::ui::WINDOW_ONLY`): what it sends reaches a chat marked as the
@@ -2123,10 +2212,15 @@ pub(crate) async fn answer_task_question(
     number: u32,
     question: String,
     text: String,
+    overrides: bool,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("answering a task's question", move || {
-        person_answers(&held, session, number, &question, &text)
+        if overrides {
+            person_overrides(&held, session, number, &question, &text)
+        } else {
+            person_answers(&held, session, number, &question, &text)
+        }
     })
     .await
 }

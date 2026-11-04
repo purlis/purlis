@@ -214,6 +214,43 @@ export const commands = {
 	 */
 	showWindowHolding: (plane: PlaneId) => __TAURI_INVOKE<string | null>("show_window_holding", { plane }),
 	/**
+	 *  **Move to new window** (`to` null) or **Move to window ▸** (`to` a window of the project,
+	 *  `0` the project window): the `tab`th tab of the asking window, or the pane at `pane` in it
+	 *  (`a` and `b` from the root), goes there as that window's front tab. A new window is made for
+	 *  it; a window there already comes forward. Every window of the project is told what it holds
+	 *  now.
+	 * 
+	 *  **Refused**, saying why and changing nothing, from a window that is not one of the
+	 *  project's, for a tab or pane that is not there, an empty pane, or a window that is not the
+	 *  project's. A window only ever moves its own tabs. Async, as [`crate::windows::move_projects`]
+	 *  is, for its reason: making a window from a synchronous command deadlocks on Windows.
+	 */
+	moveToWindow: (plane: PlaneId, tab: number, pane: string | null, to: number | null) => typedError<MovedTo, string>(__TAURI_INVOKE("move_to_window", { plane, tab, pane, to })),
+	/**
+	 *  **A press on chat `chat` in a project with tab windows** (#4768, ruled on #4701): where
+	 *  another of the project's windows has it in a pane, that window comes forward and shows it
+	 *  there, and its label is answered; a chat is never shown in two windows. Null where no other
+	 *  window has it, and the press is the asking window's.
+	 */
+	pressElsewhere: (plane: PlaneId, chat: number) => typedError<string | null, string>(__TAURI_INVOKE("press_elsewhere", { plane, chat })),
+	/**
+	 *  What this window is a tab window of, and its number there: null for a window that is not
+	 *  one. A tab window asks it once, as it first draws, and draws that project's strip and panes
+	 *  with no sidebar.
+	 */
+	tabWindowHanded: () => __TAURI_INVOKE<{
+	plane: PlaneId,
+	/**  Never `0`, which is the project window. */
+	number: number,
+} | null>("tab_window_handed"),
+	/**
+	 *  **The project window put back `plane`'s tabs** (#4768): each tab window its record names
+	 *  and no window draws yet is made again, in its place on screen where this machine kept one.
+	 *  Answers how many were made. Asked by the window holding the project, once it has drawn the
+	 *  project's tabs; a window that does not hold it makes none.
+	 */
+	tabWindowsBack: (plane: PlaneId) => typedError<number, string>(__TAURI_INVOKE("tab_windows_back", { plane })),
+	/**
 	 *  Makes a NEW project — scaffolds a plane in a directory — **and opens it through the gate**.
 	 * 
 	 *  Two halves, in this order and never the other way round. What is written is
@@ -809,10 +846,14 @@ export const commands = {
 	 *  relaunch puts each split, its sizes, its views and each strip's front tab back, and what is
 	 *  on screen is derived from it (`Chats::looked_at`).
 	 * 
+	 *  **Each window says its own tabs** (#4768): the project window's, or a tab window's, filed
+	 *  under that window whatever window the tabs name, and every other window's stand. A window
+	 *  that is not one of the project's is refused: it cannot report another's tabs.
+	 * 
 	 *  **A press sends its new layout here, in the same call** that shows the chat, so a task the
 	 *  person presses onto is held from that moment and is not ended under them. A layout that
-	 *  names a chat twice, or a chat that is not open, is refused with why, and nothing changes. A
-	 *  window command only: no chat can call it.
+	 *  names a chat twice across the project's windows, or a chat that is not open, is refused
+	 *  with why, and nothing changes. A window command only: no chat can call it.
 	 */
 	windowLayout: (plane: PlaneId, layout: LaidOut) => typedError<null, string>(__TAURI_INVOKE("window_layout", { plane, layout })),
 	/**
@@ -1320,6 +1361,7 @@ export const commands = {
 	activityChat: (plane: PlaneId, key: string) => typedError<number | null, string>(__TAURI_INVOKE("activity_chat", { plane, key })),
 	questionTrail: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
+	taskQuestionAnswered: __WINDOW_ONLY_RESULT,
 	answerTaskQuestion: __WINDOW_ONLY_RESULT,
 	resumeSession: __WINDOW_ONLY_RESULT,
 	/**
@@ -1633,6 +1675,7 @@ export const commands = {
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,
 	poolSetupTry: __WINDOW_ONLY_RESULT,
+	poolSetupTryCancel: __WINDOW_ONLY,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -3538,6 +3581,25 @@ export type ChangedIn = {
 	more: number,
 	/**  Why purlis could not read what changed there, where it could not. */
 	unread: string | null,
+};
+
+/**
+ *  **What an asking chat answered a task's question, as the window shows it** (#4566): the line
+ *  a quiz leaves when an agent answered it first, which says who said what and offers the
+ *  person's later word.
+ */
+export type ChatAnsweredShown = {
+	/**  The task, by the name the person sees it under. */
+	task: string,
+	/**  The asking chat that answered, by its name. */
+	from: string,
+	/**  What it answered, masked, **as text**: a chat's own words, never drawn as markup. */
+	said: string,
+	/**
+	 *  The question it answered, in the task's words: what the person's word is held to
+	 *  (`answer_task_question`).
+	 */
+	question: string,
 };
 
 /**
@@ -7211,6 +7273,12 @@ export type MovedChat = {
 	notices: string[],
 };
 
+/**  Where a move landed: the window's number in its project, and its label. */
+export type MovedTo = {
+	window: number,
+	label: string,
+};
+
 /**
  *  The branch the window's focus is on, by name, in the project a scope puts first. It only
  *  orders the scope: a name no branch of the project has moves nothing.
@@ -8937,6 +9005,8 @@ export type PoolSetupAction = {
 
 /**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
 export type PoolSetupCheck = {
+	/**  What it checks: `chat`, `signins` or `identity`. */
+	about: string,
 	verdict: string,
 	title: string,
 	more: string | null,
@@ -9024,8 +9094,19 @@ export type PoolSetupStep = {
 
 /**  What Try it found. */
 export type PoolSetupTried = {
-	/**  Why it didn't pass; null where a real chat started and the proof is kept. */
+	/**
+	 *  Why it didn't pass; null where a real chat started and the proof is kept, or where the
+	 *  person cancelled it.
+	 */
 	failed: PoolSetupFailed | null,
+	/**  The person cancelled it (#4976): nothing was kept, and its chat is closed. */
+	cancelled: boolean,
+	/**
+	 *  What Try it proved of the agent's identity itself (#4490), for the identity's line: a
+	 *  read-only token GitHub made for the App, read with and revoked. None where the identity
+	 *  step's own line stands: no App of Agent identity's, no repo, or a step not done.
+	 */
+	identity: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
 };
@@ -13084,6 +13165,13 @@ export type SvgIcon = {
 export type SvgShape = {
 	tag: string,
 	attributes: { [key in string]: string },
+};
+
+/**  One tab window: the project it is of, and its number in that project's record. */
+export type TabWindow = {
+	plane: PlaneId,
+	/**  Never `0`, which is the project window. */
+	number: number,
 };
 
 /**  The brief a task was sent, and the facts of its sending. */

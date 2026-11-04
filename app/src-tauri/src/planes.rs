@@ -308,7 +308,7 @@ pub struct Held {
     /// wait on one (#2047).
     pool_tools: crate::pooltools::PoolTools,
     /// The Secret asks the chats' brokered runs wait on (#5068, ADR 0109).
-    secret_asks: purlis_core::secrets::ask::Asks,
+    secret_asks: Arc<purlis_core::secrets::ask::Asks>,
     /// Where the chats' browsers run: the window's session host, where it has one.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each time a browser is added to its chats' or taken from them (#2024).
@@ -4788,8 +4788,10 @@ impl Planes {
         let tasks: Arc<crate::dispatched::Tasks> = Arc::default();
         let masked_kept =
             crate::dispatched::masked_kept_when_remembered(&tasks, hooks.shared_board());
-        // Kept across a restart, as a task's open question is (#5079).
-        let secret_asks = purlis_core::secrets::ask::Asks::kept(&root);
+        // Shared with its chats, whose starts ask through it too (#5074), and kept across a
+        // restart, as a task's open question is (#5079).
+        let secret_asks = Arc::new(purlis_core::secrets::ask::Asks::kept(&root));
+        chats.ask_secrets_in(Arc::clone(&secret_asks));
         Held {
             id,
             root,
@@ -5308,6 +5310,8 @@ pub struct Showing {
     held: Mutex<HashMap<String, Holding>>,
     /// The last split window's number, so a label is never used twice in one process.
     split: std::sync::atomic::AtomicU32,
+    /// Each tab window, by label (#4768): which project it is of, and its number there.
+    tab_windows: Mutex<HashMap<String, TabWindow>>,
 }
 
 impl Showing {
@@ -5405,10 +5409,11 @@ impl Showing {
     /// A label for a new split window, never one this process has used before.
     pub fn fresh_label(&self) -> String {
         let taken = self.held();
+        let tabs: Vec<String> = self.tab_windows().keys().cloned().collect();
         loop {
             let next = self.split.fetch_add(1, Ordering::Relaxed) + 1;
             let label = crate::windows::split_label(next);
-            if !taken.contains_key(&label) {
+            if !taken.contains_key(&label) && !tabs.contains(&label) {
                 return label;
             }
         }
@@ -5801,8 +5806,16 @@ fn the_host_s_stop(
 /// do (#2494).
 pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
 
+#[path = "planes/tab_windows.rs"]
+mod tab_windows;
+pub use tab_windows::TabWindow;
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "planes/tests/tab_windows.rs"]
+mod tab_windows_tests;
 
 #[cfg(test)]
 #[path = "planes/tests/restoring.rs"]

@@ -373,7 +373,7 @@ fn missing_key(missing: &Missing<'_>, tool: &Tool) -> Option<String> {
 /// The Secret ask of run `ask` of `persona`'s `tool` for `key`.
 fn need_of(ask: &brokered::Ask, persona: &str, tool: &Tool, key: String) -> Need {
     Need {
-        chat: ask.chat,
+        chat: Some(ask.chat),
         persona: persona.to_owned(),
         vault: tool.vault.clone(),
         key,

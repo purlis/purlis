@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { type CSSProperties, type ReactNode, useMemo } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef } from "react";
 import { QueueRead } from "./QueueRead";
 import { closestCenter, DndContext } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
@@ -42,6 +42,7 @@ import { type Ended, type Needing } from "./tabTasks";
 import { TabCell, tabsPart, type TabVariant } from "./ui/tabs/Tabs";
 import { StripTab, TabStripRow, useTabStrip } from "./ui/tabs/TabStrip";
 import { isFileView } from "./pieceViews";
+import { tornOff } from "./tabWindows";
 import { WRAPPING_UP } from "./NeedsYou";
 import { NONE_RESTORING, RESTORING } from "./restoringChats";
 import { closeOnDelete, renameOnF2 } from "./tabKeys";
@@ -113,6 +114,7 @@ export function ChatStrip({
   dragSensors,
   chatDragWords,
   dragTab,
+  tearOff,
   draggingRef,
   draggedAtRef,
   notGoingBack,
@@ -160,6 +162,8 @@ export function ChatStrip({
   openBrowser,
   openSkillRun,
 }: ChatStripProps) {
+  /** Where the pointer is while a tab is carried, for a tear-off (#4768). */
+  const pointer = useFollowedPointer();
   /** Tile all on the tab in front, as the catalogue holds it (#4765). */
   const tileAll = tabs.inFront === undefined ? undefined : by(tileAllId(tabs.inFront));
   // The tabs drawn, as React Aria's tablist knows them (`ui/tabs/TabStrip`): not a tab being
@@ -207,17 +211,23 @@ export function ChatStrip({
         onDragStart={() => {
           draggingRef.current = true;
           notGoingBack();
+          pointer.follow();
         }}
         onDragCancel={() => {
           draggingRef.current = false;
           draggedAtRef.current = performance.now();
+          pointer.stop();
         }}
         onDragEnd={({ active, over }) => {
           // The click that ends a drag is the drag's (#1486, `pressTab`).
           draggingRef.current = false;
           draggedAtRef.current = performance.now();
           notGoingBack();
-          if (over) dragTab(Number(active.id), Number(over.id));
+          // **Let go past the window's edge, it is torn off** (#4768) into a tab window.
+          const at = pointer.stop();
+          if (tornOff(at, { width: window.innerWidth, height: window.innerHeight }))
+            tearOff(Number(active.id));
+          else if (over) dragTab(Number(active.id), Number(over.id));
         }}
       >
         <SortableContext items={shown.map(String)} strategy={horizontalListSortingStrategy}>
@@ -561,6 +571,38 @@ function splitTip(face: TabFace): string | undefined {
   return face.more > 0 ? face.panes.join(" · ") : undefined;
 }
 
+/**
+ * **Where the pointer is while a tab is carried** (#4768): `dnd-kit`'s own delta is held to the
+ * strip's axis (`ALONG_THE_STRIP`), so it cannot say whether a tab was let go past the window's
+ * edge. The pointer is followed from the pick-up to the drop, and let go of with it.
+ */
+function useFollowedPointer() {
+  const at = useRef<{ x: number; y: number }>(undefined);
+  const heard = useRef<((event: PointerEvent) => void) | undefined>(undefined);
+  const followed = useMemo(
+    () => ({
+      follow: () => {
+        followed.stop();
+        const seen = (event: PointerEvent) => {
+          at.current = { x: event.clientX, y: event.clientY };
+        };
+        heard.current = seen;
+        window.addEventListener("pointermove", seen, true);
+      },
+      stop: () => {
+        if (heard.current) window.removeEventListener("pointermove", heard.current, true);
+        heard.current = undefined;
+        const was = at.current;
+        at.current = undefined;
+        return was;
+      },
+    }),
+    [],
+  );
+  useEffect(() => () => void followed.stop(), [followed]);
+  return followed;
+}
+
 /** Each is `PlaneView`'s own value of the same name: the strip reads them and holds none. */
 type ChatStripProps = {
   by: (id: string) => Offer | undefined;
@@ -583,6 +625,8 @@ type ChatStripProps = {
   dragSensors: ReturnType<typeof useStripSensors>;
   chatDragWords: ReturnType<typeof stripAccessibility>;
   dragTab: (moved: number, onto: number) => void;
+  /** **A tab let go past the window's edge** (#4768): torn off into a window of its own. */
+  tearOff: (tab: number) => void;
   /** Whether a tab is being carried, for `pressTab` to tell a drag's click from a press. */
   draggingRef: RefObject<boolean>;
   /** When the last drag ended, for the same. */
