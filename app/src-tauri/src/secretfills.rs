@@ -623,6 +623,16 @@ fn read(
         key: asked.key.clone(),
         // What the person reads the key is for.
         tool: Some(format!("a secret fill on {origin}")),
+        // The chat names no purpose for a fill: the notice it answered named the key and site.
+        purpose: None,
+        declared: purlis_core::secrets::needs::declared(
+            held.root(),
+            asker.persona.as_deref().unwrap_or_default(),
+            &asked.key,
+        )
+        .map(|need| need.purpose),
+        // A fill names its vault.
+        names_no_vault: false,
     };
     let within = purlis_core::loginask::THE_PERSON_IS_WAITED_FOR
         .saturating_sub(started.elapsed())
