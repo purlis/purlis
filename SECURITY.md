@@ -225,11 +225,17 @@ it, and never sends that count anywhere.
   (registries and source replacements), never your tokens or credential providers, so a
   private registry that needs a login is not reached from a sandboxed chat. The cost is disk,
   and a first download in each project.
-- **The certificate check is off unless a project turns it on.** Go programs such as `gh` verify
-  a certificate on macOS by asking the system's certificate service. That service also fetches
-  the addresses a certificate names, which is a way out past the egress proxy, so a sandboxed
-  chat may ask it only where the project sets `certificate-checks = true` under `[sandbox]`.
-  Without it, `gh` and other Go tools in a sandboxed chat fail to verify TLS.
+- **The certificate check is on unless a project turns it off.** Go programs such as `gh` verify
+  a certificate on macOS by asking the system's certificate service (`trustd`), so every
+  sandboxed chat may ask it, on every harness, with nothing for anyone to allow (the operator's
+  ruling of 2026-10-13, amending ADR 0093). The known residual, kept by that decision: the
+  service makes its own requests, for revocation and for the certificates a certificate names,
+  and those do not pass the egress proxy, so a chat that can choose a certificate can have
+  `trustd` fetch an address the proxy would refuse. A project closes it with
+  `certificate-checks = false` under `[sandbox]`, and an administrator's
+  `sandbox.socket-grants: false` closes it on that machine whatever the project says; `gh` and
+  other Go tools in a sandboxed chat then fail to verify TLS, and the chat's Notice says who
+  turned the check off.
 - **An embedded bare repository.** A chat can write a directory that git takes for a bare
   repository, and a git run *inside* it later reads its config. No protected name is in it,
   so the sandbox cannot tell it apart. Setting git's `safe.bareRepository = explicit` closes
