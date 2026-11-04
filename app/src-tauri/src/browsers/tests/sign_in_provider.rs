@@ -238,7 +238,10 @@ fn the_sign_in_provider_through_every_hop_in_homes_of_their_own() {
     }
     let sites = Sites::serve();
     let app = purlis_core::sandbox::browser_reach::Site::of("127.0.0.1", sites.app);
-    // The person allowed the app; the provider is reached as the login's form's site.
+    let provider = purlis_core::sandbox::browser_reach::Site::of("127.0.0.1", sites.provider);
+    // A port of this machine is reached only where the person allowed it, as a public sign-in
+    // host is by the login: both are allowed, and once logged in the browser is held to the
+    // login's sites whatever else is allowed.
     let window = Window::declaring(
         Host::serving,
         &format!(
@@ -246,7 +249,7 @@ fn the_sign_in_provider_through_every_hop_in_homes_of_their_own() {
             sites.app_at("start"),
             sites.provider
         ),
-        &[app],
+        &[app, provider],
     );
     let (chat, mut tools) = window.a_chat();
     let first = tools.call("browser_snapshot", json!({}));
