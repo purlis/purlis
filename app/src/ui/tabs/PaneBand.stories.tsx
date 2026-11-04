@@ -557,7 +557,8 @@ export const BellBesideItsNeighbours: Story = {
       expect(boxes[i].left - boxes[i - 1].right, `gap before head button ${i}`).toBeGreaterThan(1);
     }
 
-    canvas.getByRole("button", { name: "Claude Code" }).focus();
+    // The last control before the actions: the harness that stood here is the foot's (#5202).
+    canvas.getByRole("button", { name: "11 skills" }).focus();
     await userEvent.tab();
     await untilFocused(() => bell, "Tab onto the bell");
     const tip = await within(document.body).findByRole("tooltip");
