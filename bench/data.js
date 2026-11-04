@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793780137449,
+  "lastUpdate": 1793782146427,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38640,6 +38640,48 @@ window.BENCHMARK_DATA = {
             "value": 103.1735695,
             "unit": "ms",
             "extra": "median of 5 runs: 101.967, 102.340, 103.174, 103.436, 103.547 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f896a27e3608748e7b278e4d95dcacd51257fbf5",
+          "message": "A press goes to the most recently used pane across the project's windows (#5108) (#5135)\n\n* A press goes to the most recently used pane across the project's windows (#5108)\n\nA press on a chat that no window of the project has in a pane goes to the\nwindow whose pane was used last (Layout::window_pressed, held in memory as\nUsed beside Away), and that window comes forward and shows it in its focused\npane. Each window says when one of its panes is used (pane_used) while its\nproject has another window. With one window nothing changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HYYHJQZ9BMHTQM7HF56EM4\nPurlis-Persona: steward\n\n* Review: a pane's focus is no use of it; a tab window that goes is forgotten (#5108)\n\nA window coming forward hands focus back to the pane that last had it, so\ncounting focus made every sidebar press the pressing window's. A pane is used\nby a pointer press or a key typed in it, said once until the window has been\naway. A tab window emptied by a move is forgotten as one closed is, so a new\nwindow of its number starts unused. One named check for a project of one\nwindow; doc comments brought up to the new press; the press test waits for\nthe core's answer before it reads the panes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HYYHJQZ9BMHTQM7HF56EM4\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T08:07:22Z",
+          "tree_id": "6677f28d71179cb0db7f54751c4d33c516c5f7e3",
+          "url": "https://github.com/purlis/purlis/commit/f896a27e3608748e7b278e4d95dcacd51257fbf5"
+        },
+        "date": 1793782141885,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6815260000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.651, 0.656, 0.682, 0.688, 0.693 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.568040500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.452, 16.508, 16.568, 16.653, 16.762 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.97878800000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.736, 101.425, 101.979, 102.050, 102.176 ms"
           }
         ]
       }
