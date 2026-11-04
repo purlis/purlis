@@ -92,7 +92,7 @@ function core() {
       };
     // The Inbox's updates, kept as the core keeps them: one per key, unread.
     if (cmd === "note_inbox_updates") {
-      for (const one of given.noted as { key: string }[])
+      for (const one of given.noted as { key: string; kind: string }[])
         if (!kept.some((was) => was.key === one.key)) kept.push({ ...one, read: false });
       return kept;
     }
