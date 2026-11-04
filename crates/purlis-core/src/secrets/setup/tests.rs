@@ -2304,3 +2304,109 @@ fn two_records_of_one_process_read_as_sandboxed_if_either_does() {
         );
     }
 }
+
+/// A person's own terminal: a process below no chat.
+fn in_a_terminal(_: u32) -> Option<u32> {
+    Some(1)
+}
+
+#[test]
+fn another_projects_record_or_a_machine_store_it_cannot_read_leaves_a_terminal_reading() {
+    let config = tempfile::tempdir().unwrap();
+    let home = config.path().to_string_lossy().into_owned();
+    let set = Set::with_env("unused", &[("PURLIS_CONFIG_HOME", &home)]);
+    let other = tempfile::tempdir().unwrap();
+    a_project_with_a_chat(other.path(), 90);
+    crate::machine::update(config.path(), |store| store.remember(other.path(), 1)).unwrap();
+    std::fs::write(crate::reopen::path(other.path()), "not a record").unwrap();
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 70, in_a_terminal, |_| Ok(70), |_| None, None),
+        Sandboxed::No,
+        "another project's record"
+    );
+    // The stricter question still says it cannot tell.
+    assert!(matches!(
+        in_a_chat_with(&set.ctx, 70, in_a_terminal, |_| Ok(70), None),
+        Where::Unsure(_)
+    ));
+
+    let store = crate::machine::dir(config.path());
+    std::fs::write(store.join(crate::machine::FILE), "not a store").unwrap();
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 70, in_a_terminal, |_| Ok(70), |_| None, None),
+        Sandboxed::No,
+        "a machine store"
+    );
+}
+
+#[test]
+fn this_projects_own_record_it_cannot_read_is_still_a_doubt_in_a_terminal() {
+    let set = Set::new("unused");
+    a_chat_run(&set, 30, "claude", Some("main"), false);
+    std::fs::write(crate::reopen::path(set.tmp.path()), "not a record").unwrap();
+    assert!(matches!(
+        sandboxed_chat_around(&set.ctx, 70, in_a_terminal, |_| Ok(70), |_| None, None),
+        Sandboxed::Unsure(_)
+    ));
+}
+
+#[test]
+fn a_chat_a_readable_record_names_counts_whatever_another_project_or_store_says() {
+    let config = tempfile::tempdir().unwrap();
+    let home = config.path().to_string_lossy().into_owned();
+    let set = Set::with_env("unused", &[("PURLIS_CONFIG_HOME", &home)]);
+    let garbled = tempfile::tempdir().unwrap();
+    a_project_with_a_chat(garbled.path(), 90);
+    let readable = tempfile::tempdir().unwrap();
+    let record = crate::reopen::Record {
+        chats: vec![crate::reopen::Chat {
+            program: "claude".into(),
+            name: "chat 1".into(),
+            number: Some(1),
+            profile: Some("main".into()),
+            pid: Some(30),
+            ..Default::default()
+        }],
+        dealt: 1,
+        ..Default::default()
+    };
+    crate::reopen::write(readable.path(), &record).unwrap();
+    crate::machine::update(config.path(), |store| {
+        store.remember(garbled.path(), 1);
+        store.remember(readable.path(), 2);
+    })
+    .unwrap();
+    std::fs::write(crate::reopen::path(garbled.path()), "not a record").unwrap();
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 70, below_chat_30, |_| Ok(30), |_| None, None),
+        Sandboxed::Yes,
+        "a chat of another project, past one that cannot be read"
+    );
+
+    // This project's own, with the store gone wrong.
+    a_chat_run(&set, 30, "claude", Some("main"), false);
+    let store = crate::machine::dir(config.path());
+    std::fs::write(store.join(crate::machine::FILE), "not a store").unwrap();
+    assert_eq!(
+        sandboxed_chat_around(&set.ctx, 70, below_chat_30, |_| Ok(30), |_| None, None),
+        Sandboxed::Yes,
+        "this project's record, past a store that cannot be read"
+    );
+}
+
+#[test]
+fn an_ancestry_it_cannot_read_is_still_a_doubt_with_every_record_read() {
+    let set = Set::new("unused");
+    a_chat_run(&set, 30, "claude", Some("main"), false);
+    assert!(matches!(
+        sandboxed_chat_around(
+            &set.ctx,
+            70,
+            |_| Some(1),
+            |_| Err(std::io::Error::other("gone")),
+            |_| None,
+            None
+        ),
+        Sandboxed::Unsure(_)
+    ));
+}

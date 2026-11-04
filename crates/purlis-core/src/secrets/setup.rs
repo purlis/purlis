@@ -1352,11 +1352,31 @@ pub(crate) fn in_a_chat_around(
     {
         return Where::Inside;
     }
-    match located_around(ctx, me, parent, session, started, holder, account_home) {
+    match located_around(
+        ctx,
+        me,
+        parent,
+        session,
+        started,
+        holder,
+        account_home,
+        Doubts::Every,
+    ) {
         Located::Outside => Where::Outside,
         Located::Below(_) => Where::Inside,
         Located::Unsure(why) => Where::Unsure(why),
     }
+}
+
+/// Which doubts make [`located_around`] unsure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Doubts {
+    /// Any: this project's record, another's, a machine store, or the ancestry.
+    Every,
+    /// This project's record and the ancestry. What cannot be read of another project, or of a
+    /// machine store, says nothing of this process, and what can be read still counts: the person's
+    /// own terminal keeps reading its keyring vaults whatever another project's state.
+    OwnAlone,
 }
 
 /// Where a process runs, by its ancestry and the records alone ([`located_around`]).
@@ -1423,7 +1443,16 @@ pub(crate) fn sandboxed_chat_around(
     started: impl Fn(u32) -> Option<std::time::SystemTime>,
     account_home: Option<&std::path::Path>,
 ) -> Sandboxed {
-    match located_around(ctx, me, parent, session, started, |_| None, account_home) {
+    match located_around(
+        ctx,
+        me,
+        parent,
+        session,
+        started,
+        |_| None,
+        account_home,
+        Doubts::OwnAlone,
+    ) {
         Located::Outside | Located::Below(None) => Sandboxed::No,
         Located::Below(Some(run)) if run.unsandboxed => Sandboxed::No,
         Located::Below(Some(_)) => Sandboxed::Yes,
@@ -1433,6 +1462,7 @@ pub(crate) fn sandboxed_chat_around(
 
 /// [`in_a_chat_around`] without its reading of the environment: where process `me` runs, by the
 /// records and its ancestry alone, and which recorded chat it is below.
+#[allow(clippy::too_many_arguments)]
 fn located_around(
     ctx: &Ctx,
     me: u32,
@@ -1441,8 +1471,9 @@ fn located_around(
     started: impl Fn(u32) -> Option<std::time::SystemTime>,
     holder: impl Fn(&std::path::Path) -> Option<u32>,
     account_home: Option<&std::path::Path>,
+    doubts: Doubts,
 ) -> Located {
-    let projects = match projects_asked(ctx, account_home) {
+    let projects = match projects_held_to(ctx, account_home, doubts) {
         Ok(projects) => projects,
         Err(why) => return Located::Unsure(why),
     };
@@ -1454,6 +1485,7 @@ fn located_around(
         // the programs it knew (#1542 review, D).
         let (runs, written) = match crate::reopen::chat_runs(project) {
             Ok(read) => read,
+            Err(_) if doubts == Doubts::OwnAlone && *project != ctx.root => continue,
             Err(e) => {
                 let record =
                     crate::personas::one_line(&crate::reopen::path(project).display().to_string());
@@ -1546,6 +1578,16 @@ pub(crate) fn projects_asked(
     ctx: &Ctx,
     account_home: Option<&std::path::Path>,
 ) -> Result<Vec<std::path::PathBuf>, String> {
+    projects_held_to(ctx, account_home, Doubts::Every)
+}
+
+/// [`projects_asked`], held to `doubts`: under [`Doubts::OwnAlone`] a store that cannot be read
+/// is passed over.
+fn projects_held_to(
+    ctx: &Ctx,
+    account_home: Option<&std::path::Path>,
+    doubts: Doubts,
+) -> Result<Vec<std::path::PathBuf>, String> {
     let mut projects = vec![ctx.root.clone()];
     #[cfg(not(unix))]
     let _ = account_home;
@@ -1582,6 +1624,9 @@ pub(crate) fn projects_asked(
             })
         });
         if let Some(why) = doubt {
+            if doubts == Doubts::OwnAlone {
+                continue;
+            }
             return Err(format!(
                 "purlis could not read which projects this machine opened: its machine store {}",
                 crate::personas::one_line(&why)
