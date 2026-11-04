@@ -703,6 +703,9 @@ fn every_harness_denies_a_chat_reading_or_writing_the_dispatch_records() {
 fn every_harness_denies_a_chat_writing_the_record_of_what_appeared_in_its_folders() {
     for os in [Os::MacOs, Os::Linux] {
         let (plane, denied) = denied_with(None, os);
+        // Nor reading: a chat that could open the folder could hold its lock.
+        let read_and_written = paths(&denied, Class::Integrity, Access::ReadWrite);
+        assert!(read_and_written.contains(&super::arrived::dir(plane.path())));
         let stores: Vec<std::path::PathBuf> = [".charter", ".purlis"]
             .iter()
             .map(|state| {

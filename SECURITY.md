@@ -228,13 +228,10 @@ means.
   authorities, never ones a person added to the keychain.
 - **A directory moved into place, for Claude Code.** Claude Code's own sandbox keeps a chat
   from writing a clone's git config and hooks, but cannot keep it from moving a whole `.git`
-  into place (#1065). purlis's wrap holds this for opencode and Codex. In a sandboxed chat, of
-  every harness, a name a later program loads that appears another way than a direct write is
-  told, not refused: purlis looks through the folders the chat may write when its turn ends, and
-  the Inbox names the chat and what appeared. It changes nothing. The look does not enter
-  `node_modules` or `target`, a temp folder or a cache, or anything below a name that was already
-  there; it stops at a bound, and then says the check was incomplete; and a file a repository's
-  remote also has is not told. See ADR 0067 §5, amended 2026-11-05.
+  into place (#1065). purlis's wrap holds this for opencode and Codex. When a sandboxed chat's
+  turn ends, purlis also looks through the folders it may write, and the Inbox names the chat and
+  any new file that a later program loads. That look tells and changes nothing, within the bounds
+  ADR 0067 §5, amended 2026-11-05, states, and says when it was incomplete.
 - **Temp directories.** A wrapped opencode or Codex chat gets a temp directory of its own, under
   `TMPDIR`, `TMP` and `TEMP`, and `xcrun`'s cache and clang's module cache go there too. Some
   macOS tools read no variable and ask the system for its per-user temp folder, which no

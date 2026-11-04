@@ -43,12 +43,15 @@ impl Fixture {
             .expect("a record");
     }
 
+    fn look_of(&self) -> arrived::Looked {
+        arrived::look(&self.plane, CHAT, None)
+            .expect("a look")
+            .expect("a record")
+    }
+
     /// What a look has newly told, each below the chat's folder.
     fn look(&self) -> Vec<String> {
-        let looked = arrived::look(&self.plane, CHAT, None)
-            .expect("a look")
-            .expect("a record");
-        looked
+        self.look_of()
             .new
             .iter()
             .map(|path| {
@@ -68,7 +71,14 @@ fn file(path: &Path, text: &str) {
 }
 
 fn git(dir: &Path, args: &[&str]) {
-    let ran = testgit::run_unconfigured(dir, args);
+    let mut with_identity = vec![
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.invalid",
+    ];
+    with_identity.extend_from_slice(args);
+    let ran = testgit::run_unconfigured(dir, &with_identity);
     assert!(ran.ok(), "git {args:?}: {}", ran.err);
 }
 
@@ -99,6 +109,96 @@ fn a_name_in_another_case_is_told() {
     fix.begin();
     file(&fix.folder.join("a/.MCP.json"), "{}\n");
     assert_eq!(fix.look(), ["a/.MCP.json"]);
+}
+
+/// A disk that folds case by Unicode opens these as `.vscode` and `.zshrc`.
+#[test]
+fn a_name_only_unicodes_folding_makes_a_protected_one_is_told() {
+    let fix = Fixture::new();
+    fix.begin();
+    file(&fix.folder.join("a/.v\u{17f}code/tasks.json"), "{}\n");
+    file(&fix.folder.join("b/.z\u{17f}hrc"), "x\n");
+    assert_eq!(fix.look(), ["a/.v\u{17f}code", "b/.z\u{17f}hrc"]);
+}
+
+#[test]
+fn a_whole_repository_put_where_one_was_is_told() {
+    let fix = Fixture::new();
+    let clone = clone_behind(&fix);
+    fix.begin();
+    fs::rename(&clone, fix.plane.join("aside")).expect("aside");
+    fs::create_dir_all(&clone).expect("a folder");
+    git(&clone, &["init", "-q", "-b", "main"]);
+    assert_eq!(fix.look(), ["clone/.git"]);
+}
+
+#[test]
+fn a_file_rewritten_where_it_stands_is_not_told_and_one_in_another_folder_of_that_path_is() {
+    let fix = Fixture::new();
+    let name = fix.folder.join("sub/.envrc");
+    file(&name, "there at the start\n");
+    fix.begin();
+    // As an editor saves: a new file, renamed over the name.
+    file(&fix.folder.join("sub/saved"), "saved\n");
+    fs::rename(fix.folder.join("sub/saved"), &name).expect("saved");
+    assert_eq!(fix.look(), Vec::<String>::new());
+
+    fs::rename(fix.folder.join("sub"), fix.plane.join("aside")).expect("aside");
+    file(&name, "another\n");
+    assert_eq!(fix.look(), ["sub/.envrc"]);
+}
+
+/// The files of a repository a chat could lay out itself, and a name its index vouches for.
+#[test]
+fn a_repository_written_after_the_start_vouches_for_nothing() {
+    let fix = Fixture::new();
+    fix.begin();
+    let dir = fix.folder.join("x/worktrees/w");
+    file(&dir.join("HEAD"), "ref: refs/heads/main\n");
+    file(&fix.folder.join("x/HEAD"), "ref: refs/heads/main\n");
+    file(&dir.join("commondir"), "../..\n");
+    file(
+        &dir.join("gitdir"),
+        &format!("{}\n", fix.folder.join(".git").display()),
+    );
+    file(
+        &fix.folder.join(".git"),
+        &format!("gitdir: {}\n", dir.display()),
+    );
+    file(&fix.folder.join(".envrc"), "x\n");
+    assert_eq!(fix.look(), [".envrc", ".git"]);
+}
+
+#[test]
+#[cfg(unix)]
+fn a_clone_whose_config_is_a_fifo_holds_no_look_and_what_it_was_asked_about_is_told() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let plane = dir.path().canonicalize().expect("real");
+    let workspace = plane.join("workspaces/alpha");
+    file(
+        &workspace.join("workspace.json"),
+        r#"{"name": "alpha", "repos": [{"name": "named"}]}"#,
+    );
+    let watched = Watched {
+        folders: vec![workspace.clone()],
+        ..Watched::default()
+    };
+    arrived::begin(&plane, CHAT, None, &watched).expect("a record");
+    let git = workspace.join("named/.git");
+    fs::create_dir_all(&git).expect("a folder");
+    file(&git.join("HEAD"), "ref: refs/heads/main\n");
+    let made =
+        crate::forklock::status(std::process::Command::new("mkfifo").arg(git.join("config")))
+            .expect("mkfifo");
+    assert!(made.success());
+    file(&workspace.join("named/.vscode/tasks.json"), "{}\n");
+    let looked = arrived::look(&plane, CHAT, None)
+        .expect("a look")
+        .expect("a record");
+    assert_eq!(
+        looked.new,
+        [workspace.join("named/.vscode").display().to_string()]
+    );
 }
 
 #[test]
@@ -216,7 +316,6 @@ fn a_look_cut_short_says_so_and_never_reads_as_nothing_appeared() {
         let looked = arrived::look(&fix.plane, CHAT, None)
             .expect("a look")
             .expect("a record");
-        fs::set_permissions(&shut, fs::Permissions::from_mode(0o755)).expect("open");
         // Root reads anything, and that is no folder left unread.
         if fs::read_dir("/root").is_err() {
             assert!(looked.cut_short);
@@ -225,12 +324,77 @@ fn a_look_cut_short_says_so_and_never_reads_as_nothing_appeared() {
             assert!(told[0].paths.is_empty());
             let words = told[0].words(&fix.plane);
             assert!(words.contains("this check is incomplete"), "{words}");
+            assert!(words.contains("could not read work/shut"), "{words}");
 
-            // Put away, it stays away until something does appear, and a whole look says all.
             arrived::put_away(&fix.plane, CHAT).expect("put away");
             assert!(arrived::told(&fix.plane).is_empty());
+            fs::set_permissions(&shut, fs::Permissions::from_mode(0o755)).expect("open");
+
+            // A whole look, then another folder not read: said again, whatever was put away.
+            fs::remove_dir(&shut).expect("gone");
+            assert!(!fix.look_of().cut_short);
+            let other = fix.folder.join("other");
+            fs::create_dir_all(&other).expect("a folder");
+            fs::set_permissions(&other, fs::Permissions::from_mode(0o000)).expect("shut");
+            let looked = fix.look_of();
+            fs::set_permissions(&other, fs::Permissions::from_mode(0o755)).expect("open");
+            assert_eq!(looked.unread, [other.display().to_string()]);
+            assert_eq!(arrived::told(&fix.plane).len(), 1);
         }
     }
+}
+
+#[test]
+#[cfg(unix)]
+fn a_folder_that_is_a_link_or_is_away_is_not_a_whole_look_and_costs_nothing_when_it_is_back() {
+    let fix = Fixture::new();
+    file(&fix.folder.join(".envrc"), "x\n");
+    fix.begin();
+    let away = fix.plane.join("away");
+    fs::rename(&fix.folder, &away).expect("away");
+    let looked = fix.look_of();
+    assert!(looked.cut_short);
+    assert_eq!(looked.unread, [fix.folder.display().to_string()]);
+
+    std::os::unix::fs::symlink(&away, &fix.folder).expect("a link");
+    assert!(fix.look_of().cut_short, "a link is not its folder");
+
+    fs::remove_file(&fix.folder).expect("gone");
+    fs::rename(&away, &fix.folder).expect("back");
+    assert_eq!(fix.look(), Vec::<String>::new());
+}
+
+#[test]
+fn a_folder_granted_later_and_cut_short_keeps_what_is_told_in_the_others() {
+    let fix = Fixture::new();
+    fix.begin();
+    let granted = fix.plane.join("granted");
+    for at in 0..=arrived::MOST_NAMES {
+        file(&granted.join(format!("{at:06}/.envrc")), "x");
+    }
+    let mut watched = fix.watched();
+    watched.folders.push(granted);
+    arrived::begin(&fix.plane, CHAT, None, &watched).expect("a record");
+    file(&fix.folder.join("a/.envrc"), "x\n");
+    let looked = fix.look_of();
+    assert!(
+        looked.new.iter().any(|path| path.ends_with("a/.envrc")),
+        "{looked:?}"
+    );
+}
+
+#[test]
+fn a_chat_at_the_floor_that_comes_back_takes_the_homes_names_as_they_are() {
+    let fix = Fixture::new();
+    let home = fix.plane.join("home");
+    file(&home.join(".zshrc"), "x\n");
+    fix.begin();
+    let watched = Watched {
+        home: Some(home),
+        ..fix.watched()
+    };
+    arrived::begin(&fix.plane, CHAT, None, &watched).expect("a record");
+    assert_eq!(fix.look(), Vec::<String>::new());
 }
 
 #[test]
@@ -355,6 +519,29 @@ fn a_path_is_on_one_chats_notice_only() {
         .expect("a record");
     assert!(other.new.is_empty());
     assert_eq!(arrived::told(&fix.plane).len(), 1);
+}
+
+#[test]
+fn a_name_put_away_on_one_chats_notice_and_made_again_is_told_on_anothers() {
+    let fix = Fixture::new();
+    fix.begin();
+    arrived::begin(&fix.plane, OTHER, None, &fix.watched()).expect("a record");
+    let at = fix.folder.join(".envrc");
+    file(&at, "x\n");
+    fix.look();
+    arrived::put_away(&fix.plane, CHAT).expect("put away");
+    arrived::look(&fix.plane, OTHER, None).expect("a look");
+    assert!(arrived::told(&fix.plane).is_empty());
+
+    fs::remove_file(&at).expect("gone");
+    arrived::look(&fix.plane, OTHER, None).expect("a look");
+    // Its time differs where its inode doesn't.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    file(&at, "again\n");
+    let looked = arrived::look(&fix.plane, OTHER, None)
+        .expect("a look")
+        .expect("a record");
+    assert_eq!(looked.new, [at.display().to_string()]);
 }
 
 #[test]

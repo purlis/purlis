@@ -1928,6 +1928,9 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             app.join(crate::dispatchrecord::DIR_NAME),
             Access::ReadWrite,
         );
+        // What a look found in each chat's folders, and what it knows of them, neither read nor
+        // written: it decides what the person is told, and only the app needs it ([`arrived`]).
+        deny(Class::Integrity, app.join(arrived::DIR), Access::ReadWrite);
         // Every chat's browser timeline (#2017), neither read nor written: a screenshot one
         // persona's chat was given is not for a chat running as another. A chat was handed
         // its own screenshots as its tools answered.

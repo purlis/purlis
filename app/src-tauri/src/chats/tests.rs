@@ -1648,16 +1648,15 @@ fn a_sandboxed_chat_starts_on_a_record_of_its_folder_and_what_appears_after_is_t
         a_sandbox_for(Harness::Opencode, plane.path()),
     );
     std::fs::write(plane.path().join(".envrc"), "there at the start\n").expect("a name");
-    let id = "01M6M3VNN8GNE85XEV3194WJE6";
-    let mut chat = Chat {
+    let chat = Chat {
         cwd: Some(plane.path().to_path_buf()),
         ..chat("/bin/sh", "c", None)
     };
-    chat.identity.id = Some(id.to_owned());
-    chats.start_ready(&chat, &ready, SIZE).expect("starts");
+    let session = chats.start_ready(&chat, &ready, SIZE).expect("starts");
+    let id = chats.id_of(session).expect("an id");
 
     std::fs::write(plane.path().join(".mcp.json"), "{}\n").expect("a name");
-    let looked = arrived::look(plane.path(), id, None)
+    let looked = arrived::look(plane.path(), &id, None)
         .expect("a look")
         .expect("its record");
     let [told] = looked.new.as_slice() else {

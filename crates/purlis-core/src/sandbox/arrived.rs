@@ -21,24 +21,28 @@
 //!   ([`super::manifests_held`], #1336).
 //! - **A name, once.** What is below a name is not looked through, as a whole `.vscode` or `.git`
 //!   is one thing to say. So a change inside a name already there is not told.
+//! - **By where it is, too.** A name already there that is now in another folder of the same path,
+//!   or a `.git` or a folder that is another one, is new ([`Pin`]). A file rewritten where it
+//!   stands is not: a person's editor does that.
 //! - **Nothing empty.** An empty file or folder runs nothing, and on Linux a harness's sandbox
 //!   may hold a path by putting an empty one there while its chat runs ([`has_content`]).
 //!
-//! The walk has a bound ([`LOOKED_AT`], [`MOST_NAMES`]), and stops for a folder it cannot read.
-//! Either way the record says the look was cut short, and the Notice says the check is
-//! incomplete: a look that was cut short never reads as "nothing appeared". A workspace's many
-//! branch folders can hold millions of entries, so the bound is met in ordinary use: the walk goes
-//! level by level, so it covers the top of every folder first, and a name it first reaches
-//! below where it has been whole is taken as there, not as new ([`Record::whole_to`]). The person
-//! is told once a set of folders that the check there is incomplete.
+//! The walk has a bound ([`LOOKED_AT`], [`MOST_NAMES`]). At it, the record says the look was cut
+//! short, and the Notice says the check is incomplete: a look that was cut short never reads as
+//! "nothing appeared". A workspace's many branch folders can hold millions of entries, so the
+//! bound is met in ordinary use: the walk goes level by level, so it covers the top of every
+//! folder first, and a name it first reaches below where it has been whole is taken as there, not
+//! as new. The person is told once a set of folders, until a look there is whole again, that the
+//! check there is incomplete. A folder it can't read is named, as what it holds can't be said.
 //!
 //! # What may never happen here
 //!
 //! **Nothing found is run.** No link is followed, no program is started, and git is never run:
 //! a repository's own config or hooks would run with it. What this reads of a repository it reads
 //! by gitoxide, opened [isolated](gix::open::Options::isolated), and only for repositories it
-//! knows by something a chat cannot write ([`Known`]). A file that is not a regular file is never
-//! opened, so a FIFO cannot hold the look.
+//! knows by something a chat cannot write ([`Known`]). A file that is not a regular file is not
+//! opened by this code, and all reading of a repository is held to [`CHECKS_TAKE_AT_MOST`] on a
+//! thread of its own: past that, or if it panics, every name it was asked about is told.
 //!
 //! # The app's own work, and the person's
 //!
@@ -49,13 +53,14 @@
 //!
 //! # The record
 //!
-//! `<state>/app/arrived/<chat>.json`, by the chat's own id, so it outlives a restart. It is
-//! under the app's folder of the state, which every harness is compiled to deny a chat writing.
+//! `<state>/app/arrived/<chat>.json`, by the chat's own id, so it outlives a restart. Every harness
+//! is compiled to deny a chat reading or writing it: no chat learns what is recorded, or holds the
+//! folder's lock.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs::Metadata;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use super::{PLANTED, Reach};
 
@@ -89,7 +94,10 @@ const LARGEST_READ: u64 = 1024 * 1024;
 pub const AUDITED: &str = "trust.sandbox.arrived";
 
 /// How long a chat's start waits for [`begin`] before it goes on, as a person feels a longer one.
-pub const BEGIN_WAITS_AT_MOST: std::time::Duration = std::time::Duration::from_millis(250);
+pub const BEGIN_WAITS_AT_MOST: Duration = Duration::from_millis(250);
+
+/// How long one look's checks against repositories may take. What holds them longer is told.
+pub const CHECKS_TAKE_AT_MOST: Duration = Duration::from_secs(30);
 
 /// How many paths one Notice names: the rest it counts.
 pub const MOST_SHOWN: usize = 12;
@@ -111,8 +119,53 @@ pub struct Watched {
     pub lifted: Vec<String>,
 }
 
+/// **Which thing is at a path**: its device and inode, its folder's, and when it last changed. A
+/// path says nothing when what is there can be another thing under the same path.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct Pin {
+    own: [u64; 2],
+    folder: [u64; 2],
+    changed: i64,
+}
+
+impl Pin {
+    /// What is at `path`, without following a link there.
+    #[cfg(unix)]
+    fn of(path: &Path) -> Option<Self> {
+        use std::os::unix::fs::MetadataExt;
+        let own = std::fs::symlink_metadata(path).ok()?;
+        let folder = std::fs::symlink_metadata(path.parent()?).ok()?;
+        Some(Self {
+            own: [own.dev(), own.ino()],
+            folder: [folder.dev(), folder.ino()],
+            changed: own.mtime(),
+        })
+    }
+
+    #[cfg(not(unix))]
+    fn of(path: &Path) -> Option<Self> {
+        std::fs::symlink_metadata(path)
+            .ok()
+            .map(|_| Self::default())
+    }
+
+    /// Whether what is at `path` now, `now`, is the thing this pin was taken of. A file may be
+    /// rewritten where it stands, and an editor's save gives it a new inode. A folder or a `.git`
+    /// isn't: another one is another thing.
+    fn holds(&self, now: &Self, path: &Path) -> bool {
+        let is_itself = path.file_name().is_some_and(|name| name == ".git")
+            || std::fs::symlink_metadata(path).is_ok_and(|kind| kind.is_dir());
+        self.folder == now.folder && (!is_itself || self.own == now.own)
+    }
+
+    /// Whether `now` is this very file, unchanged since it was told.
+    fn same_file(&self, now: &Self) -> bool {
+        self.own == now.own && self.changed == now.changed
+    }
+}
+
 /// One chat's record.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct Record {
     v: u32,
     /// What the chat was last called, for the Notice.
@@ -120,20 +173,25 @@ struct Record {
     name: Option<String>,
     watched: Watched,
     /// The names there as the chat started, and what the look took for the app's own since.
-    baseline: BTreeSet<String>,
+    baseline: BTreeMap<String, Pin>,
+    /// The repositories whose `.git` was there as the chat started, by the folder each is in, and
+    /// those the app has made since: what is ever read of a repository ([`Known`]).
+    repos: BTreeMap<String, Pin>,
     /// What is on the Notice now.
     arrived: BTreeSet<String>,
+    /// The folders the last look could not read, on the Notice.
+    unread: BTreeSet<String>,
     /// What was told and put away, here or on another chat's Notice.
-    put_away: BTreeSet<String>,
+    put_away: BTreeMap<String, Pin>,
     /// Whether the last look was cut short.
     cut_short: bool,
-    /// Whether the person put away a Notice that said so.
+    /// Whether the person has put away a Notice that said so, since a look was last whole.
     cut_short_told: bool,
-    /// Where a look was cut short, the deepest level below a folder that some look has read whole,
-    /// and none once one has read all of it. A name found deeper was not known to be missing
-    /// before, so it says nothing about what is new.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    whole_to: Option<usize>,
+    /// By watched folder, where no look has read all of it: the deepest level below it some look
+    /// has read whole. A name found deeper was not known to be missing before, so it says nothing
+    /// about what is new.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    whole_for: BTreeMap<String, usize>,
 }
 
 /// What one look found, for the audit: paths and no contents.
@@ -141,6 +199,8 @@ struct Record {
 pub struct Looked {
     /// What this look put on the Notice.
     pub new: Vec<String>,
+    /// The folders it newly could not read.
+    pub unread: Vec<String>,
     /// Whether it stopped at its bound, or at a folder it could not read.
     pub cut_short: bool,
 }
@@ -153,13 +213,14 @@ impl Looked {
             "actor_kind": "host",
             "actor": "purlis",
             "paths": self.new,
+            "unread": self.unread,
             "cut_short": self.cut_short,
         })
     }
 
     /// Whether this look has anything for the audit.
     pub fn says_anything(&self) -> bool {
-        !self.new.is_empty()
+        !self.new.is_empty() || !self.unread.is_empty()
     }
 }
 
@@ -172,6 +233,8 @@ pub struct Told {
     pub name: Option<String>,
     /// Each path once, as it is on disk.
     pub paths: Vec<String>,
+    /// Each folder that could not be read.
+    pub unread: Vec<String>,
     pub cut_short: bool,
 }
 
@@ -183,10 +246,8 @@ impl Told {
             .name
             .as_deref()
             .map_or_else(|| "A chat".to_owned(), crate::shown::line);
-        let mut out = String::new();
-        if !self.paths.is_empty() {
-            let shown: Vec<String> = self
-                .paths
+        let list = |paths: &[String]| {
+            let shown: Vec<String> = paths
                 .iter()
                 .take(MOST_SHOWN)
                 .map(|path| {
@@ -194,19 +255,27 @@ impl Told {
                     crate::shown::line(&path.strip_prefix(plane).unwrap_or(path).to_string_lossy())
                 })
                 .collect();
-            let more = self.paths.len().saturating_sub(MOST_SHOWN);
+            let more = paths.len().saturating_sub(MOST_SHOWN);
             let rest = if more > 0 {
                 format!(", and {more} more")
             } else {
                 String::new()
             };
+            format!("{}{rest}", shown.join(", "))
+        };
+        let mut out = format!("{chat}:");
+        if !self.paths.is_empty() {
             out.push_str(&format!(
-                "{chat}: these appeared in a folder it can write: {}{rest}. They can run outside \
-                 the sandbox if you or a tool work in that folder. purlis changed nothing.",
-                shown.join(", ")
+                " these appeared in a folder it can write: {}. They can run outside the sandbox \
+                 if you or a tool work in that folder. purlis changed nothing.",
+                list(&self.paths)
             ));
-        } else {
-            out.push_str(&format!("{chat}:"));
+        }
+        if !self.unread.is_empty() {
+            out.push_str(&format!(
+                " purlis could not read {}, so it can't say what they hold.",
+                list(&self.unread)
+            ));
         }
         if self.cut_short {
             out.push_str(
@@ -218,8 +287,8 @@ impl Told {
     }
 }
 
-/// The folder of the records: `<state>/app/arrived/`, which every harness denies a chat writing
-/// ([`super::Denied::of`]).
+/// The folder of the records: `<state>/app/arrived/`, which every harness denies a chat reading
+/// and writing ([`super::Denied::of`]).
 pub fn dir(plane: &Path) -> PathBuf {
     crate::names::state(plane).join("app").join(DIR)
 }
@@ -256,38 +325,27 @@ fn holding<T>(plane: &Path, then: impl FnOnce() -> io::Result<T>) -> io::Result<
 
 /// **As chat `chat` starts**: what is in `watched` now is what it started with. Where the walk
 /// takes longer than a start may wait, the caller lets it finish beside the chat's first moments
-/// ([`BEGIN_WAITS_AT_MOST`]). A chat that comes
-/// back keeps the record it had, so what appeared while the app was closed is told at its next
-/// look; a folder it may write now that it could not before is added as it is.
+/// ([`BEGIN_WAITS_AT_MOST`]). A chat that comes back keeps the record it had, so what appeared
+/// while the app was closed is told at its next look; a folder it may write now that it could not
+/// before is added as it is.
 pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) -> io::Result<()> {
     let path = file(plane, chat)?;
-    let had = read(&path).ok().flatten();
+    let had = read(&path).ok().flatten().unwrap_or_default();
     let new_folders: Vec<PathBuf> = watched
         .folders
         .iter()
-        .filter(|folder| {
-            !had.as_ref()
-                .is_some_and(|had| had.watched.folders.contains(folder))
-        })
+        .filter(|folder| !had.watched.folders.contains(folder))
         .cloned()
         .collect();
     let walked = walk(&Watched {
-        folders: new_folders,
-        home: watched.home.clone().filter(|_| had.is_none()),
+        folders: new_folders.clone(),
+        home: watched.home.clone().filter(|_| had.watched.home.is_none()),
         lifted: watched.lifted.clone(),
     });
+    let repos = repos_at_start(&new_folders, &walked);
     holding(plane, || {
-        let mut record = read(&path).ok().flatten().unwrap_or_else(|| Record {
-            v: 1,
-            name: None,
-            watched: Watched::default(),
-            baseline: BTreeSet::new(),
-            arrived: BTreeSet::new(),
-            put_away: BTreeSet::new(),
-            cut_short: false,
-            cut_short_told: false,
-            whole_to: None,
-        });
+        let mut record = read(&path).ok().flatten().unwrap_or_default();
+        record.v = 1;
         record.name = name.map(str::to_owned).or(record.name);
         for folder in &watched.folders {
             if !record.watched.folders.contains(folder) {
@@ -296,22 +354,40 @@ pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) ->
         }
         record.watched.home = watched.home.clone().or(record.watched.home);
         record.watched.lifted.clone_from(&watched.lifted);
-        record.baseline.extend(walked.found.keys().map(|p| key(p)));
-        record.cut_short |= walked.cut_short;
+        record
+            .baseline
+            .extend(walked.found.iter().map(|(p, found)| (key(p), found.pin)));
+        record.repos.extend(repos.clone());
         if walked.cut_short {
-            record.whole_to = Some(
-                record
-                    .whole_to
-                    .map_or(walked.whole_to, |had| had.min(walked.whole_to)),
-            );
+            record.cut_short = true;
+            for folder in &new_folders {
+                record.whole_for.insert(key(folder), walked.whole_to);
+            }
         }
         write(plane, &path, &record)
     })
 }
 
+/// The repositories known by being there as a chat starts: each `.git` the walk found, and each
+/// above a folder, with what it is.
+fn repos_at_start(folders: &[PathBuf], walked: &Walked) -> BTreeMap<String, Pin> {
+    let found = walked
+        .found
+        .keys()
+        .filter(|path| path.file_name().is_some_and(|name| name == ".git"))
+        .filter_map(|path| path.parent().map(Path::to_path_buf));
+    let above = folders
+        .iter()
+        .flat_map(|folder| folder.ancestors().map(Path::to_path_buf));
+    found
+        .chain(above)
+        .filter_map(|top| Pin::of(&top.join(".git")).map(|pin| (key(&top), pin)))
+        .collect()
+}
+
 /// **At the end of a turn of chat `chat`**: what has appeared since its last look, or `None` for a
 /// chat with no record, which is one purlis started with no sandbox. Each path on one Notice only:
-/// one another chat's Notice has told goes on none here.
+/// one another chat's Notice has told, and that has not changed since, goes on none here.
 pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<Looked>> {
     let path = file(plane, chat)?;
     let Some(before) = read(&path)? else {
@@ -319,72 +395,148 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
     };
     let walked = walk(&before.watched);
     // What no look has been sure of before says nothing, and is known from here on.
-    let (first_reached, unseen): (BTreeSet<PathBuf>, BTreeSet<PathBuf>) = walked
-        .found
-        .iter()
-        .filter(|(found, _)| {
-            let found = key(found);
-            !before.baseline.contains(&found)
-                && !before.arrived.contains(&found)
-                && !before.put_away.contains(&found)
-        })
-        .partition_map_by_depth(before.whole_to);
-    let (ours, theirs) = Known::of(plane, &before).split(unseen);
+    let mut first_reached = BTreeSet::new();
+    let mut unseen = BTreeSet::new();
+    for (found, seen) in &walked.found {
+        let at = key(found);
+        let told_of = before.arrived.contains(&at) || before.put_away.contains_key(&at);
+        let same = before
+            .baseline
+            .get(&at)
+            .is_some_and(|pin| pin.holds(&seen.pin, found));
+        if told_of || same {
+            continue;
+        }
+        let beyond = before
+            .whole_for
+            .iter()
+            .any(|(folder, whole_to)| found.starts_with(folder) && seen.depth > *whole_to);
+        if beyond {
+            first_reached.insert(found.clone());
+        } else {
+            unseen.insert(found.clone());
+        }
+    }
+    let (ours, theirs) = checked(plane, &before, unseen);
     holding(plane, || {
         let Some(mut record) = read(&path)? else {
             return Ok(None);
         };
         let was = record.clone();
-        let told_elsewhere = told_by_others(plane, chat);
+        let (others_showing, others_put_away) = told_by_others(plane, chat);
+        let pin_of = |at: &Path| {
+            walked
+                .found
+                .get(at)
+                .map(|seen| seen.pin)
+                .unwrap_or_default()
+        };
         let mut new = Vec::new();
-        record.baseline.extend(ours.iter().map(|p| key(p)));
-        record.baseline.extend(first_reached.iter().map(|p| key(p)));
-        for found in theirs.iter().map(|p| key(p)) {
-            if told_elsewhere.contains(&found) {
-                record.put_away.insert(found);
+        for at in ours.iter().chain(&first_reached) {
+            record.baseline.insert(key(at), pin_of(at));
+            if ours.contains(at)
+                && at.file_name().is_some_and(|name| name == ".git")
+                && let Some(top) = at.parent()
+            {
+                record.repos.insert(key(top), pin_of(at));
+            }
+        }
+        for at in &theirs {
+            let found = key(at);
+            record.baseline.remove(&found);
+            let told_elsewhere = others_showing.contains(&found)
+                || others_put_away
+                    .iter()
+                    .any(|(path, pin)| *path == found && pin.same_file(&pin_of(at)));
+            if told_elsewhere {
+                record.put_away.insert(found, pin_of(at));
             } else if record.arrived.insert(found.clone()) {
                 new.push(found);
             }
         }
+        // A folder not read is said once, and said again if it is read and then is not.
+        let mut unread = Vec::new();
+        record.unread.clear();
+        for at in &walked.unread {
+            let at = key(at);
+            if !record.put_away.contains_key(&at) {
+                if !was.unread.contains(&at) {
+                    unread.push(at.clone());
+                }
+                record.unread.insert(at);
+            }
+        }
         // What has gone says nothing now, and is told again if it comes back. Only a whole look
-        // can say something has gone.
+        // can say something has gone, and only of a folder it knew to look in.
         if !walked.cut_short {
             let there: BTreeSet<String> = walked.found.keys().map(|p| key(p)).collect();
-            for kept in [
-                &mut record.baseline,
-                &mut record.arrived,
-                &mut record.put_away,
-            ] {
-                kept.retain(|path| there.contains(path));
+            let mut in_scope: Vec<&PathBuf> = before.watched.folders.iter().collect();
+            in_scope.extend(before.watched.home.iter());
+            let stays = |path: &String| {
+                there.contains(path)
+                    || !in_scope
+                        .iter()
+                        .any(|folder| Path::new(path).starts_with(folder))
+            };
+            record.baseline.retain(|path, _| stays(path));
+            record.arrived.retain(|path| stays(path));
+            record.put_away.retain(|path, _| stays(path));
+            record.whole_for.clear();
+            record.cut_short_told = false;
+        } else {
+            for whole_to in record.whole_for.values_mut() {
+                *whole_to = (*whole_to).max(walked.whole_to);
             }
         }
         record.name = name.map(str::to_owned).or(record.name);
         record.cut_short = walked.cut_short;
-        record.whole_to = if walked.cut_short {
-            record.whole_to.map(|had| had.max(walked.whole_to))
-        } else {
-            None
-        };
         if record != was {
             write(plane, &path, &record)?;
         }
         Ok(Some(Looked {
             new,
+            unread,
             cut_short: walked.cut_short,
         }))
     })
 }
 
-/// What every other chat's record has told.
-fn told_by_others(plane: &Path, chat: &str) -> BTreeSet<String> {
-    let mut told = BTreeSet::new();
+/// [`Known::split`], on a thread of its own and for [`CHECKS_TAKE_AT_MOST`] at most. What a chat
+/// can make a read wait on, or a panic, costs this look its checks: every name is told.
+fn checked(
+    plane: &Path,
+    record: &Record,
+    unseen: BTreeSet<PathBuf>,
+) -> (BTreeSet<PathBuf>, BTreeSet<PathBuf>) {
+    if unseen.is_empty() {
+        return (BTreeSet::new(), unseen);
+    }
+    let (done, answer) = std::sync::mpsc::channel();
+    let (plane, record, asked) = (plane.to_path_buf(), record.clone(), unseen.clone());
+    let spawned = std::thread::Builder::new()
+        .name("arrived-checks".to_owned())
+        .spawn(move || {
+            let _ = done.send(Known::of(&plane, &record).split(asked));
+        });
+    if spawned.is_err() {
+        return (BTreeSet::new(), unseen);
+    }
+    answer
+        .recv_timeout(CHECKS_TAKE_AT_MOST)
+        .unwrap_or((BTreeSet::new(), unseen))
+}
+
+/// What every other chat's record shows now, and what each had put away.
+fn told_by_others(plane: &Path, chat: &str) -> (BTreeSet<String>, Vec<(String, Pin)>) {
+    let mut showing = BTreeSet::new();
+    let mut put_away = Vec::new();
     for (other, record) in records(plane) {
         if other != chat {
-            told.extend(record.arrived);
-            told.extend(record.put_away);
+            showing.extend(record.arrived);
+            put_away.extend(record.put_away);
         }
     }
-    told
+    (showing, put_away)
 }
 
 /// Every record of the project, by its chat's id, oldest id first. One that does not read is left
@@ -426,19 +578,21 @@ pub fn told(plane: &Path) -> Vec<Told> {
         .into_iter()
         .filter(|(_, record)| {
             !record.arrived.is_empty()
+                || !record.unread.is_empty()
                 || (record.cut_short && !cut_short_told_for.contains(&record.watched.folders))
         })
         .map(|(chat, record)| Told {
             chat,
             name: record.name,
             paths: record.arrived.into_iter().collect(),
+            unread: record.unread.into_iter().collect(),
             cut_short: record.cut_short,
         })
         .collect()
 }
 
 /// **Put away on chat `chat`'s Notice.** What it named stays on disk, and is not told again. Nor
-/// is a look cut short in these folders, for this chat or another.
+/// is a look cut short in these folders, for this chat or another, until one is whole.
 pub fn put_away(plane: &Path, chat: &str) -> io::Result<()> {
     let path = file(plane, chat)?;
     holding(plane, || {
@@ -446,7 +600,11 @@ pub fn put_away(plane: &Path, chat: &str) -> io::Result<()> {
             return Ok(());
         };
         let arrived = std::mem::take(&mut record.arrived);
-        record.put_away.extend(arrived);
+        let unread = std::mem::take(&mut record.unread);
+        for at in arrived.into_iter().chain(unread) {
+            let pin = Pin::of(Path::new(&at)).unwrap_or_default();
+            record.put_away.insert(at, pin);
+        }
         record.cut_short_told = record.cut_short_told || record.cut_short;
         write(plane, &path, &record)
     })
@@ -455,6 +613,16 @@ pub fn put_away(plane: &Path, chat: &str) -> io::Result<()> {
 /// A path as a record keeps it.
 fn key(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+/// `name` as a disk that folds case compares it, Unicode's folding and not ASCII's: such a disk
+/// opens `.vſcode` as `.vscode`.
+fn folded(name: &str) -> String {
+    if name.is_ascii() {
+        name.to_ascii_lowercase()
+    } else {
+        name.to_uppercase().to_lowercase()
+    }
 }
 
 /// The names a look asks for: every name of [`PLANTED`] that holds what is below it, and `.git`
@@ -473,82 +641,91 @@ fn names(lifted: &[String]) -> impl Iterator<Item = &'static str> + '_ {
         .filter(|path| !lifted.iter().any(|name| name.eq_ignore_ascii_case(path)))
 }
 
-/// [`names`], by its last part in lower case, each as lower-case parts.
+/// [`names`], by its last part folded, each as folded parts.
 fn by_last_part(lifted: &[String]) -> HashMap<String, Vec<Vec<String>>> {
     let mut out: HashMap<String, Vec<Vec<String>>> = HashMap::new();
     for name in names(lifted) {
-        let parts: Vec<String> = name.split('/').map(str::to_ascii_lowercase).collect();
+        let parts: Vec<String> = name.split('/').map(folded).collect();
         let last = parts.last().cloned().unwrap_or_default();
         out.entry(last).or_default().push(parts);
     }
     out
 }
 
-/// Whether `path`, whose last part is `lower`, is one of `asked`.
-fn is_asked(path: &Path, lower: &str, asked: &HashMap<String, Vec<Vec<String>>>) -> bool {
-    let Some(wanted) = asked.get(lower) else {
+/// Whether `path`, whose last part folded is `last`, is one of `asked`.
+fn is_asked(path: &Path, last: &str, asked: &HashMap<String, Vec<Vec<String>>>) -> bool {
+    let Some(wanted) = asked.get(last) else {
         return false;
     };
     wanted.iter().any(|parts| {
         parts.len() == 1
-            || parts
-                .iter()
-                .rev()
-                .zip(path.iter().rev())
-                .all(|(part, on_disk)| on_disk.to_string_lossy().eq_ignore_ascii_case(part))
-                && path.iter().count() >= parts.len()
+            || (path.iter().count() >= parts.len()
+                && parts
+                    .iter()
+                    .rev()
+                    .zip(path.iter().rev())
+                    .all(|(part, on_disk)| folded(&on_disk.to_string_lossy()) == *part))
     })
+}
+
+/// One name a walk found.
+#[derive(Debug, Clone, Copy)]
+struct Found {
+    /// How many levels below its folder it is.
+    depth: usize,
+    pin: Pin,
 }
 
 /// What a walk found.
 #[derive(Debug, Default)]
 struct Walked {
-    /// Each name, and how many levels below its folder it is.
-    found: BTreeMap<PathBuf, usize>,
+    found: BTreeMap<PathBuf, Found>,
+    /// Each folder it could not read, a watched folder that isn't there among them.
+    unread: BTreeSet<PathBuf>,
     cut_short: bool,
     /// Where it was cut short, the deepest level it read whole.
     whole_to: usize,
 }
 
-/// Names split by whether a record cut short at `whole_to` could have seen them before.
-trait ByDepth {
-    fn partition_map_by_depth(
-        self,
-        whole_to: Option<usize>,
-    ) -> (BTreeSet<PathBuf>, BTreeSet<PathBuf>);
-}
-
-impl<'a, I: Iterator<Item = (&'a PathBuf, &'a usize)>> ByDepth for I {
-    fn partition_map_by_depth(
-        self,
-        whole_to: Option<usize>,
-    ) -> (BTreeSet<PathBuf>, BTreeSet<PathBuf>) {
-        let mut first_reached = BTreeSet::new();
-        let mut unseen = BTreeSet::new();
-        for (path, depth) in self {
-            if whole_to.is_some_and(|whole_to| *depth > whole_to) {
-                first_reached.insert(path.clone());
-            } else {
-                unseen.insert(path.clone());
-            }
+impl Walked {
+    fn stop(&mut self, depth: usize) {
+        if !self.cut_short {
+            self.whole_to = depth;
         }
-        (first_reached, unseen)
+        self.cut_short = true;
+    }
+
+    fn keep(&mut self, path: PathBuf, depth: usize) {
+        if has_content(&path)
+            && let Some(pin) = Pin::of(&path)
+        {
+            self.found.insert(path, Found { depth, pin });
+        }
     }
 }
 
-/// **The walk**: shallowest first, each folder in name order so that one bound stops at the same
-/// place twice. No link is followed: one named as a name is itself found, and one that isn't says
-/// nothing.
+/// **The walk**: the home's own names, then shallowest first, each folder in name order so that one
+/// bound stops at the same place twice. No link is followed: one named as a name is itself found,
+/// and one that isn't says nothing. A watched folder that is a link or isn't there is not read, and
+/// says so.
 fn walk(watched: &Watched) -> Walked {
     let asked = by_last_part(&watched.lifted);
     let mut walked = Walked::default();
+    if let Some(home) = &watched.home {
+        for name in names(&watched.lifted) {
+            walked.keep(home.join(name), 0);
+        }
+    }
+    let mut level = Vec::new();
+    for folder in &watched.folders {
+        if std::fs::symlink_metadata(folder).is_ok_and(|kind| kind.is_dir()) {
+            level.push(folder.clone());
+        } else {
+            walked.unread.insert(folder.clone());
+            walked.stop(0);
+        }
+    }
     let mut looked = 0;
-    let mut level: Vec<PathBuf> = watched
-        .folders
-        .iter()
-        .filter(|folder| std::fs::symlink_metadata(folder).is_ok_and(|kind| kind.is_dir()))
-        .cloned()
-        .collect();
     let mut depth = 0;
     while !level.is_empty() {
         depth += 1;
@@ -560,30 +737,25 @@ fn walk(watched: &Watched) -> Walked {
                 Err(why) if why.kind() == io::ErrorKind::NotFound => continue,
                 // A folder not read may hold anything.
                 Err(_) => {
-                    if !walked.cut_short {
-                        walked.whole_to = depth;
-                    }
-                    walked.cut_short = true;
+                    walked.unread.insert(dir);
+                    walked.stop(depth - 1);
                     continue;
                 }
             };
-            let mut entries: Vec<_> = entries.flatten().collect();
+            // No more of one folder is held than the bound allows.
+            let left = LOOKED_AT + 1 - looked.min(LOOKED_AT);
+            let mut entries: Vec<_> = entries.flatten().take(left).collect();
             entries.sort_by_key(std::fs::DirEntry::file_name);
             for entry in entries {
                 looked += 1;
                 if looked > LOOKED_AT || walked.found.len() >= MOST_NAMES {
-                    if !walked.cut_short {
-                        walked.whole_to = depth - 1;
-                    }
-                    walked.cut_short = true;
+                    walked.stop(depth - 1);
                     return walked;
                 }
-                let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+                let name = folded(&entry.file_name().to_string_lossy());
                 let path = entry.path();
                 if is_asked(&path, &name, &asked) {
-                    if has_content(&path) {
-                        walked.found.insert(path, depth);
-                    }
+                    walked.keep(path, depth);
                     continue;
                 }
                 let is_dir = entry.file_type().is_ok_and(|kind| kind.is_dir());
@@ -593,14 +765,6 @@ fn walk(watched: &Watched) -> Walked {
             }
         }
         level = next;
-    }
-    if let Some(home) = &watched.home {
-        for name in names(&watched.lifted) {
-            let path = home.join(name);
-            if has_content(&path) {
-                walked.found.insert(path, 0);
-            }
-        }
     }
     walked
 }
@@ -641,10 +805,14 @@ fn has_content(path: &Path) -> bool {
     false
 }
 
-/// A file read up to [`LARGEST_READ`], where it is a regular file and not a link.
+/// Whether `path` is a regular file, not a link or a FIFO.
+fn is_regular(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|kind| kind.is_file())
+}
+
+/// A file read up to [`LARGEST_READ`], where it is a regular file.
 fn small_file(path: &Path) -> Option<String> {
-    let kind = std::fs::symlink_metadata(path).ok()?;
-    if !kind.is_file() {
+    if !is_regular(path) {
         return None;
     }
     let mut text = String::new();
@@ -681,8 +849,9 @@ enum Repo {
 /// - **A file of a known repository**: one whose every file is what that repository has at that
 ///   path ([`Repo`]). The name is not enough, nor is what a chat could have committed.
 ///
-/// A repository is known where a `.git` was there as the chat started, above one of its folders,
-/// or as above. Anything else is never opened.
+/// A repository is known where the record pinned its `.git`, as the chat started or as one of the
+/// above made it, and it is still that `.git`. A `.git` file's git directory must be in a `.git`'s
+/// own `worktrees` or `modules`, which the sandbox holds by name. Anything else is never opened.
 struct Known {
     tops: Vec<(PathBuf, Repo)>,
     git_dirs: Vec<PathBuf>,
@@ -696,20 +865,11 @@ impl Known {
             git_dirs: Vec::new(),
             clones: clones_in_manifests(plane),
         };
-        let started = record
-            .baseline
-            .iter()
-            .map(PathBuf::from)
-            .filter(|path| path.file_name().is_some_and(|name| name == ".git"))
-            .filter_map(|path| path.parent().map(Path::to_path_buf));
-        let above = record
-            .watched
-            .folders
-            .iter()
-            .flat_map(|folder| folder.ancestors().map(Path::to_path_buf));
-        let tops: BTreeSet<PathBuf> = started.chain(above).collect();
-        for top in tops {
-            known.add_as_it_is(&top);
+        for (top, pin) in &record.repos {
+            let top = Path::new(top);
+            if Pin::of(&top.join(".git")).is_some_and(|now| now.own == pin.own) {
+                known.add_as_it_is(top);
+            }
         }
         known
     }
@@ -727,13 +887,17 @@ impl Known {
             let common = small_file(&git_dir.join("commondir"))
                 .map(|text| super::planted::lexical(&git_dir.join(text.trim())))
                 .unwrap_or_else(|| git_dir.clone());
-            self.git_dirs.push(common);
-            self.tops.push((
-                top.to_path_buf(),
-                Repo::Linked {
-                    index: git_dir.join("index"),
-                },
-            ));
+            if common.file_name().is_some_and(|name| name == ".git")
+                || git_dir.starts_with(common.join("modules"))
+            {
+                self.git_dirs.push(common);
+                self.tops.push((
+                    top.to_path_buf(),
+                    Repo::Linked {
+                        index: git_dir.join("index"),
+                    },
+                ));
+            }
         }
     }
 
@@ -890,13 +1054,17 @@ impl Evidence {
                 self.index
                     .entry(top.to_path_buf())
                     .or_insert_with(|| {
-                        gix::index::File::at(
-                            index,
-                            gix::hash::Kind::Sha1,
-                            false,
-                            gix::index::decode::Options::default(),
-                        )
-                        .ok()
+                        is_regular(index)
+                            .then(|| {
+                                gix::index::File::at(
+                                    index,
+                                    gix::hash::Kind::Sha1,
+                                    false,
+                                    gix::index::decode::Options::default(),
+                                )
+                                .ok()
+                            })
+                            .flatten()
                     })
                     .as_ref()
                     .is_some_and(|index| {
@@ -908,7 +1076,13 @@ impl Evidence {
             Repo::Clone => self
                 .repos
                 .entry(top.to_path_buf())
-                .or_insert_with(|| gix::open_opts(top, gix::open::Options::isolated()).ok())
+                .or_insert_with(|| {
+                    let git = top.join(".git");
+                    // What an opening reads first, each a regular file or no repository.
+                    (is_regular(&git.join("config")) && is_regular(&git.join("HEAD")))
+                        .then(|| gix::open_opts(top, gix::open::Options::isolated()).ok())
+                        .flatten()
+                })
                 .as_ref()
                 .is_some_and(|repo| a_remote_branch_has(repo, relative, blob)),
         }
@@ -961,7 +1135,7 @@ fn files_below(path: &Path) -> Option<Vec<PathBuf>> {
 /// The blob git would store for what is at `path`: a regular file's bytes or a link's target. A
 /// file too large, or anything else, has none. Nothing but a regular file is opened.
 fn blob_of(path: &Path) -> Option<gix::ObjectId> {
-    let kind: Metadata = std::fs::symlink_metadata(path).ok()?;
+    let kind = std::fs::symlink_metadata(path).ok()?;
     let bytes = if kind.is_symlink() {
         std::fs::read_link(path)
             .ok()?

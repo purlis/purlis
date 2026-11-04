@@ -32,8 +32,9 @@ what it does not.
   away takes the Notice back. **Nothing is deleted or changed.**
 - **What it says it does not know.** It says what appeared, never who put it there: a person's
   editor making `.idea` is told as anything else is.
-- **The record** is `<state>/app/arrived/<chat>.json`, under the folder class 2 denies a chat for
-  every harness, so a chat doesn't write what decides what is told, and it survives a restart.
+- **The record** is `<state>/app/arrived/<chat>.json`, denied a chat's reading and writing for every
+  harness under class 2, so a chat neither writes what decides what is told nor holds its lock. It
+  survives a restart. A look that fails is said in the log, not to the person.
 
 ## Bounds
 
@@ -42,13 +43,17 @@ names. Measured: a branch folder of this repository is about 22,000 entries, whi
 247 of them is over four million, so a chat at such a workspace's root meets the bound, and its look
 covers the top of every folder and not the bottom.
 
-- **At the bound, or at a folder it can't read, it says so.** The Notice says the check is
-  incomplete, once a set of folders. A look cut short never reads as "nothing appeared".
+- **At the bound it says so.** The Notice says the check is incomplete, once a set of folders until
+  a look there is whole. A look cut short never reads as "nothing appeared".
+- **A folder it can't read is named**, or a watched folder that is a link or isn't there. So is
+  the next one, whatever was put away.
 - **A name first reached below where a look has read whole isn't told**, because it can't be said
   to be new. It is known from then on.
 - **The first look may overlap a chat's first moments.** A start waits a quarter of a second for it
   and then goes on, so on a very large folder what appears while it runs may count as there at the
   start.
+- **A name already there stays known by its folder.** A file rewritten where it stands isn't told.
+  A folder or `.git` that is now another one, or a name whose folder is now another one, is.
 - **It does not look** in a temp folder or a package cache, in `node_modules` or `target`, or at
   anything below a name that was already there, so a change under a name already there isn't
   told.
@@ -77,7 +82,9 @@ and nothing has to remember to say it acted:
 - a file in a clone: one of its remote-tracking branches has that file. The clone's own index and
   commits are not enough.
 
-A repository is known when a `.git` was there as the chat started, above its folder, or by the
-above. Each file must match what the repository has, by content, so the name alone is never enough.
+A repository is known when its `.git` was there as the chat started, or by the above, and it is
+still that `.git`. A `.git` file's directory must be in a `.git`'s own `worktrees` or `modules`.
+Nothing else is opened. Each file must match what the repository has, by content, so the name alone
+is never enough. These checks take 30 seconds at most, and past that every name is told.
 Something these can't vouch for is told, which is a false alarm at worst: a person's own local
 commit, for one.
