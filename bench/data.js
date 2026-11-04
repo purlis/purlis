@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793753654200,
+  "lastUpdate": 1793755940130,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38262,6 +38262,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0366105,
             "unit": "ms",
             "extra": "median of 5 runs: 100.535, 101.445, 102.037, 102.086, 102.735 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8595da795efb89e8b92e2b4899f940ab0cfa3178",
+          "message": "Several questions at once, and where you answer (#4565, #4566) (#5036)\n\n* Where you answer, and the top-tab quiz (#4565)\n\nA task question that has reached the person is drawn as a quiz at the top\nof its session's pane (from the top, the default) or in its task's own pane\n(from each session): who asks, why it reached them, the asking chat's note\nas its own, and how long it has waited. It never takes the keyboard or\nswitches a tab, and stays in the hand count and the Inbox wherever it is\ndrawn. The choice is offered once as a quiet line above the first question,\nremembered in layout.json and changeable in Settings > Chats list.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FTBQ0J4QZT547K5VZTQKZ9\nPurlis-Persona: steward\n\n* Where you answer: the quiz band scrolls rather than squeezing its line over the quiz (#4565)\n\nThe first stories run drew the offer line's buttons over the quiz's head\nin a short pane, because the band's children shrank instead of the band\nscrolling. Each now keeps its own height. The stories' pane is as tall as\na window's, so the picture shows the quiz whole at the top.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FTBQ0J4QZT547K5VZTQKZ9\nPurlis-Persona: steward\n\n* Where you answer: the stories' baselines, from #4938's stories run (#4565)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6FTBQ0J4QZT547K5VZTQKZ9\nPurlis-Persona: steward\n\n* Several questions at once: the person's later word overrides an agent's (#4566)\n\nThe person's answer to a question its asking chat answered first is no\nlonger refused: it reaches the task as theirs, marked as overriding that\nchat's answer (PersonSaid::Overrode), and the chat is told\n(OverrodeFor). The chat's answer stays the chat's. The window reads what\nthe chat answered (task_question_answered, the window's alone) for the\nline the quiz leaves.\n\nIn the window: one quiz at a time with a pause of about a second before\nthe next, at the quiz's height; the closing line with Go to task and\nSay otherwise, kept until dismissed, with what the person had typed;\na task's prompt the window cannot draw linked from the top in the same\nqueue; Send cleared and held after an answer; the offer line in one\npane only; more counting the questions waiting behind a tabbed chat's\nown; and a story with the waiting strip and a quiz stacked in .pane-top.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G64WQ3DCKQ4T7AX27PXK7Q\nPurlis-Persona: steward\n\n* Only Say otherwise overrides a chat's answer, and the overridden chat's name is quoted safely (#4566)\n\nA plain quiz Send that reached the core after the asking chat answered,\nbefore the window drew that answer, was taken as an override: the person\nnever saw what they replaced. answer_task_question now takes an explicit\noverrides flag, which only QuizClosing's Say otherwise sets; without it the\nold refusal stands, so the race lands in the closing line with the typed\ntext kept. The task's Overrode prompt writes the chat's name through\nsender_of, as OverrodeFor does, so a backtick in it cannot close its quote.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G9SBNNHE4RJ243QTPDQ7H9\nPurlis-Persona: steward\n\n* Prettier: QuizBand and its stories (#4566)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G9SBNNHE4RJ243QTPDQ7H9\nPurlis-Persona: steward\n\n* task_question_answered reads off the window's thread (#4566)\n\nIt waits on the dispatch ledger's lock, so it is async and runs in\noff_the_window like its neighbours (#1949).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G9SBNNHE4RJ243QTPDQ7H9\nPurlis-Persona: steward\n\n* Quiz stories play green: Sent to survives a list that moves first, and the closing line meets contrast (#4566)\n\n- The band says where the person's answer went though the registry's next\n  list reached the window before the answer's own reply did, and leaves no\n  closing line for a question the person answered after all.\n- The stories' pretend core says no chat answered a question the person\n  answered, as the core does.\n- The closing line's ways out run Go to task, Say otherwise, Dismiss, as the\n  prototype draws them; the Notice puts its fixes before a link.\n- The line under the box is ui-text-secondary: ui-text-meta fell to 3.95:1 on\n  the Notice's ground in purlis dark.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G9SBNNHE4RJ243QTPDQ7H9\nPurlis-Persona: steward\n\n* Changelog: only Say otherwise replaces a chat's answer (#4566)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G9SBNNHE4RJ243QTPDQ7H9\nPurlis-Persona: steward\n\n* Story baselines: QuizBand, from #5036's stories run 41644882822 (#4566)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G9SBNNHE4RJ243QTPDQ7H9\nPurlis-Persona: steward\n\n* The pause story holds its pause for its picture (#4566)\n\nThe story pictured the one-second pause before the next quiz, and the\nscreenshot matcher's retries sometimes landed after it, so some cells drew\nthe next quiz instead. QuizBand takes how long the pause lasts (PAUSE_MS\nunless a story says otherwise), and PausesBeforeTheNext holds it; the next\nquiz arriving stays QuizBand.test.tsx's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G9SBNNHE4RJ243QTPDQ7H9\nPurlis-Persona: steward\n\n* Story baselines: QuizBand's pause, held, from #5036's stories run 41663564728 (#4566)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G9SBNNHE4RJ243QTPDQ7H9\nPurlis-Persona: steward\n\n* Story baselines: QuizBand and TaskQuiz in purlis_light-high-contrast, from #5036's stories run 41730878533 (#4566)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6G9SBNNHE4RJ243QTPDQ7H9\nPurlis-Persona: steward\n\n* Prettier: the panes' block nested in both providers after the rebase (#4566)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HVPJ9BBY2YHGCM44PNP263\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T00:54:08Z",
+          "tree_id": "0c4b3c64c8668dcf2db28810536c87b1f9f95b7c",
+          "url": "https://github.com/purlis/purlis/commit/8595da795efb89e8b92e2b4899f940ab0cfa3178"
+        },
+        "date": 1793755935311,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7044475000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.693, 0.697, 0.704, 0.723, 0.733 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6258585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.447, 16.552, 16.626, 16.629, 16.742 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.45948150000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.960, 102.184, 102.459, 102.856, 103.121 ms"
           }
         ]
       }
