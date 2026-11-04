@@ -223,6 +223,11 @@ fn a_harness_lists_charter_s_tools() {
             "browser_save_download",
             "browser_upload",
             "theme_preview",
+            // The skill tools (SK-13): in every chat since the Skill studio's flag went (#2786).
+            "skill_list",
+            "skill_runs",
+            "skill_find",
+            "skill_load",
         ]
     );
 }
