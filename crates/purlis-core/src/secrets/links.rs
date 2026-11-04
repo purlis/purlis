@@ -35,7 +35,7 @@ use super::{Ctx, Kind, VaultError, cmd};
 use crate::tui::Markup;
 
 /// The entry a linked entry reads: a vault and a key in it. Names, never a value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct Target {
     pub vault: String,
     pub key: String,

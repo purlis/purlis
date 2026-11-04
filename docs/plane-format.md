@@ -6260,7 +6260,8 @@ down rather than read off the code.
   (`rewrite::replace`) whenever an ask is raised, joined, answered or loses a chat. `{"v": 1,
   "asked": <n>, "asks": [{"id", "persona", "vault", "key", "tool"?, "purpose"?, "declared"?,
   "names_no_vault"?, "since", "chats": [<n>, ...], "cannot_receive"?: [<n>, ...], "starts"?:
-  <n>}]}`: `asked` is the last number an ask was given, so one
+  <n>, "reason"?: {"kind": "replace", "said", "reads"?: {"vault", "key"}} | {"kind":
+  "broken_link", "was": {"vault", "key"}}}]}`: `asked` is the last number an ask was given, so one
   is never given twice; `since` is seconds since 1970; `chats` the chats that wait on it, by
   the app's number, which a restart keeps (`app/reopen.json`'s `chats[].number`), the first to
   ask first; `cannot_receive` the chats on a pool's runner that cannot receive a value, which
@@ -6269,7 +6270,10 @@ down rather than read off the code.
   `tool` the declared tool whose run missed the key, absent for none; `purpose` what the chat
   said it is for and `declared` what the persona's definition says it is for (#5072, #5076),
   each masked and absent for none; `names_no_vault` true where the chat named no vault, so its
-  persona's own was asked, absent for false.
+  persona's own was asked, absent for false; `reason` why it is asked though the vault has the
+  key (#5075): the chat's masked words that its value doesn't work, with the entry a Linked
+  entry reads, or the entry a broken link read, which is gone. Absent for a key the vault
+  doesn't hold. The entries are named as the links index (`vault-links.json`) names them.
   - **Names only, never a value**: the person's fill goes to the vault's provider and nowhere
     else. Each name is masked as a task's open question is (`dispatchrecord::masked`), and an
     ask with a name that masking would change is not written at all, since read back it would

@@ -2219,3 +2219,16 @@ fn a_secret_ask_line_without_replace_still_reads() {
     let sent = serde_json::to_value(line(7, "K", None)).unwrap();
     assert!(sent.get("replace").is_none(), "{sent}");
 }
+
+#[test]
+fn a_replace_ask_keeps_its_reason_across_a_restart() {
+    let project = project_with_an_entry();
+    linked_to_stripe(project.path());
+    let before = {
+        let asks = Asks::kept(project.path());
+        held_for_nothing(&asks, replacing(project.path(), "KEY"));
+        asks.open()
+    };
+    assert!(before[0].reason.is_some());
+    assert_eq!(Asks::kept(project.path()).open(), before);
+}

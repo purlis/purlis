@@ -116,8 +116,10 @@ pub fn purpose_said(purpose: &str) -> String {
 }
 
 /// **Why a Secret ask is raised for a key the vault has** (#5075). Shown to the person alone:
-/// the entry a link reads is never told to a chat.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// the entry a link reads is never told to a chat. Kept across a restart as [`KEPT_IN`] keeps
+/// the ask, by names only, as the links index already names them.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Reason {
     /// **The chat says the value doesn't work**, in its own words (`said`, one line, masked).
     /// `reads` is the entry the key reads where it is a Linked entry: a new value goes there, and
@@ -426,6 +428,9 @@ struct KeptAsk {
     /// How many chats' starts wait on it, which have no number (#5074).
     #[serde(default, skip_serializing_if = "is_zero")]
     starts: usize,
+    /// Why it is asked though the vault has the key: a replace or a broken link (#5075).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reason: Option<Reason>,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -457,6 +462,7 @@ impl KeptAsk {
             chats: chats_of(asked),
             cannot_receive: asked.cannot_receive.clone(),
             starts: starts_of(asked),
+            reason: asked.reason.clone(),
         })
     }
 
@@ -655,6 +661,7 @@ impl Asks {
                     purpose: one.purpose,
                     declared: one.declared,
                     names_no_vault: one.names_no_vault,
+                    reason: one.reason,
                     since: one.since,
                     waiters,
                     cannot_receive: one.cannot_receive,
@@ -930,6 +937,7 @@ impl Asks {
             purpose,
             declared,
             names_no_vault,
+            reason,
         } = need;
         let mut inner = self.inner();
         if how == Unheld::Waits
@@ -993,6 +1001,7 @@ impl Asks {
                     purpose,
                     declared,
                     names_no_vault,
+                    reason,
                     since: now_secs(),
                     waiters: waiter.into_iter().collect(),
                     cannot_receive: cannot,
