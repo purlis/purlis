@@ -471,7 +471,13 @@ pub fn follow_kin(
             let Some(under) = below.get(token) else {
                 continue;
             };
-            let turned = super::tint::toward(under, &accent);
+            // One `below` draws as its accent is the accent given (#5157), so a ring and an edge
+            // drawn alike stay alike; one drawn in the accent's family turns to its hue.
+            let turned = if below.get(ACCENT) == Some(under) {
+                accent.clone()
+            } else {
+                super::tint::toward(under, &accent)
+            };
             let drawn = |token: &str| given.get(token).or_else(|| below.get(token)).cloned();
             if holds_as_apart(token, &turned, under, drawn) {
                 given.insert(token, turned);
@@ -516,7 +522,11 @@ const ACCENT: &str = "accent.base";
 /// primary's fill, at rest and under the pointer, the focus ring and the selected row's edge. An
 /// accent given over a parent turns the parent's to its hue as it turns the grounds
 /// ([`follow_kin`]): luminance and alpha kept, so the focus ring keeps its 3:1 and the primary's
-/// words their 4.5:1, and chroma no more than the accent's. One that turning would bring nearer
+/// words their 4.5:1, and chroma no more than the accent's. One the parent draws as its accent
+/// is the accent given (#5157), so what the parent draws alike stays alike: a base16 import over
+/// Purlis Classic gives its accent and its ring base0d, and its selected edge is base0d too, as
+/// the accent's words already are (#3100). One that
+/// turning would bring nearer
 /// the waiting or danger colour than the rules of [`super::tint::APART`] allow, and nearer than
 /// the parent's, stays the parent's. One the parent draws alike the token of [`KIN`] that drew
 /// it before follows that token as it always did, not the accent: Purlis Classic's primary is

@@ -57,6 +57,11 @@ fn a_given_teal_turns_the_fill_the_ring_and_the_edge_in_every_purlis_appearance(
         for token in DRAWN_IN_THE_ACCENT {
             let (was, now) = (theme.value(token), drawn.value(token));
             assert_ne!(now, was, "{} {token} stayed Purlis's", theme.id);
+            // What Purlis draws as its accent is the accent given (#5157).
+            if was == theme.value("accent.base") {
+                assert_eq!(now, given, "{} {token}", theme.id);
+                continue;
+            }
             assert!(
                 degrees_apart(hue(now), hue(given)) < 6.0,
                 "{} {token}: {now}",

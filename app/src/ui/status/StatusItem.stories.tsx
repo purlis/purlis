@@ -138,7 +138,9 @@ function OverPurlis() {
   const held = (token: Token) => {
     const kin = DRAWN_IN_THE_ACCENT[token];
     if (kin !== undefined && value(kin) === value(token)) return value(token);
-    const turned = toward(value(token), accent);
+    // What the theme draws as its accent is the accent given (#5157).
+    const turned =
+      value(token) === value("accent.base") ? accent : toward(value(token), accent);
     const holds = inForce()
       .tint.apart.filter((rule) => rule.token === token && !rule.words && !rule.signal)
       .every((rule) => {

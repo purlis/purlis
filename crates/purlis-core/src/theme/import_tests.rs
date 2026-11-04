@@ -155,6 +155,18 @@ fn a_base16_scheme_keeps_its_colours_as_the_palette() {
 }
 
 #[test]
+fn a_base16_scheme_s_selected_edge_is_its_ring_as_purlis_classic_draws_them_alike() {
+    // Purlis Classic draws the selected row's edge as its accent and its ring (#5157): an import
+    // gives the accent and the ring base0d, and the edge must not stay Classic's lightness at
+    // base0d's hue, matching neither.
+    let imported = import(SourceKind::Base16, "harbor.yaml", HARBOR).expect("imported");
+
+    let dark = drawn(&imported).first().clone();
+    assert_eq!(dark.value("focus.ring"), "#61afef");
+    assert_eq!(dark.value("list.selected-edge"), dark.value("focus.ring"));
+}
+
+#[test]
 fn a_base16_scheme_s_unused_colour_and_its_author_are_listed() {
     let imported = import(SourceKind::Base16, "harbor.yaml", HARBOR).expect("imported");
 
