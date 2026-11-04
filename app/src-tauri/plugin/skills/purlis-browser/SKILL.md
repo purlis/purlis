@@ -75,8 +75,10 @@ a field in a frame from another site is refused. A key the vault doesn't hold is
 too, and your call waits for it. The value never reaches you: every snapshot, find, wait and screenshot of that
 browser leaves it out, and from then on that browser copies, cuts and drags nothing for you. If they
 keep it blocked, tell them what needs it and don't ask again. While the page you filled stays
-open, the browser reaches only that site: an address for another is refused, saying so. Once that
-page loads another of its pages, or you close it, the browser reaches as before. It works the
+open, the browser reaches only that site: an address for another is refused, saying so. Nor do
+you press any key in that page, or type or choose anything in it, so type the other fields (a user name) before you fill, and send the form by clicking its button,
+not with Enter. Once that page loads another of its pages, or you close it, the browser reaches
+and takes keys as before. It works the
 same on a pool's runner.
 
 **In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600

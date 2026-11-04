@@ -291,7 +291,11 @@ fn once_a_secret_is_filled_the_agent_copies_and_cuts_nothing_in_that_browser() {
         keys_before,
         "no key of a refused press reached the page"
     );
-    assert!(press(7, &["Tab"]).is_ok(), "other keys still go");
+    assert_eq!(
+        press(7, &["Tab"]),
+        Err(Refusal::KeysWithheld),
+        "nor does any other key, on the page that holds the value"
+    );
     // Nor is any of it dragged out, whole or in part.
     let name = ref_of(&snapshot(&browser, 8), "- textbox \"Name\"");
     let dragged = browser.call(

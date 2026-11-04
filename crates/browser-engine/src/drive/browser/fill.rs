@@ -36,6 +36,14 @@
 //! it. And the field itself gives nothing to a copy, a cut or a drag, whoever makes it: the
 //! function that writes the value stops each of them on the field first, from purlis's own
 //! world, where the page's scripts can't take the stop away.
+//!
+//! **A filled field takes no keys from the chat** (#5115): for as long as the hold lives, the
+//! agent presses no key in the page (a key goes where the focus is, and moves it), and types and
+//! chooses nothing anywhere in it, whichever page the call names. A key in the field would change
+//! the value, and a page that shows what the field holds would show what is left of it; and the
+//! field turns no wheel into a step of its value. What the agent reads is kept free of the value
+//! whole, never of a part of it: a part taken out of what the page shows, text the agent wrote
+//! among it, would tell the agent which part it was.
 
 use std::sync::Arc;
 
@@ -119,6 +127,8 @@ pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin, manyLines
     field.addEventListener(kind, stop, true);
     field.ownerDocument.addEventListener(kind, guard, true);
   }
+  // A wheel over a focused number field steps its value: not this one's.
+  field.addEventListener('wheel', (event) => event.preventDefault(), { capture: true, passive: false });
   field.setAttribute('autocomplete', 'off');
   own.set.call(field, value);
   field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
@@ -232,8 +242,10 @@ impl Browser {
         let mut answer = self.answer_now(&at.page, Content::Nothing);
         answer.note = Some(format!(
             "purlis filled {} into {target} on {origin}; the value is kept out of everything you \
-             read. While this page is open, the browser reaches only {origin}; once the page \
-             loads another document or is closed, it reaches as before",
+             read. While this page is open, the browser reaches only {origin}, and you press no \
+             key and type or choose nothing in it: click the page's own button to send the \
+             form. Once the page loads another document or is closed, it \
+             reaches as before",
             fill.key
         ));
         Ok(answer)

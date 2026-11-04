@@ -2301,10 +2301,6 @@ impl Browser {
             Call::Type { page, fields } => self.type_into(page.as_ref(), &fields),
             Call::Press { page, keys } => {
                 let target = self.target(page.as_ref())?;
-                if let Some(held) = self.typing_held(&target, &self.focus_addresses(&target)?) {
-                    return Ok(held);
-                }
-                let session = self.page_session(&target)?;
                 let mut events = Vec::new();
                 for chord in &keys {
                     events.extend(key_events(chord).map_err(|e| Refusal::NotAKey(e.to_string()))?);
@@ -2317,6 +2313,13 @@ impl Browser {
                 if self.inner.copy_withheld.load(Ordering::SeqCst) && events.iter().any(copies) {
                     return Err(Refusal::CopyWithheld);
                 }
+                // A key goes where the focus is, and moves it: on a page holding a filled
+                // secret, no key is pressed at all (#5115).
+                self.keys_withheld(&target)?;
+                if let Some(held) = self.typing_held(&target, &self.focus_addresses(&target)?) {
+                    return Ok(held);
+                }
+                let session = self.page_session(&target)?;
                 self.acting_on(&target, || {
                     for event in events {
                         self.input("Input.dispatchKeyEvent", event, &session)?;
@@ -3325,6 +3328,13 @@ impl Browser {
             Some(first) if page.is_none() => self.locate(first)?.target,
             _ => self.target(page)?,
         };
+        // Nothing is typed on a page holding a filled secret (#5115): not into a field the call
+        // names, whichever page it is on, nor into the page the keys would go to.
+        self.keys_withheld(&target)?;
+        for written in fields.iter().filter_map(|field| field.into.as_ref()) {
+            let (page, _) = live_ref(&lock(&self.inner.state), written)?;
+            self.keys_withheld(&page)?;
+        }
         let mut into = Vec::new();
         for field in fields {
             match &field.into {
@@ -3375,6 +3385,19 @@ impl Browser {
         Ok(answer)
     }
 
+    /// **Whether the agent's keys are withheld from page `target`** (#5115): it holds a secret
+    /// purlis filled, and lives. Every frame of it: a key goes where the focus is, wherever that
+    /// is by then, and the page may move the focus, or draw the field anew, anywhere in it.
+    fn keys_withheld(&self, target: &str) -> Result<(), Refusal> {
+        let held = lock(&self.inner.fill_holds)
+            .iter()
+            .any(|held| held.target == target);
+        if held {
+            return Err(Refusal::KeysWithheld);
+        }
+        Ok(())
+    }
+
     /// Whether any element of `target`'s page is blanked.
     fn blanks_on(&self, target: &str) -> bool {
         let state = lock(&self.inner.state);
@@ -3423,6 +3446,7 @@ impl Browser {
     fn select(&self, target: &Ref, options: &[String]) -> Result<Answer, Refusal> {
         let at = self.locate(target)?;
         let page = at.target.clone();
+        self.keys_withheld(&page)?;
         if let Some(held) = self.typing_held(&page, &self.addresses_of(target)?) {
             return Ok(held);
         }
@@ -4363,6 +4387,7 @@ impl Inner {
 
     /// **`hold` holds the browser while page `target` keeps the document its main frame showed
     /// as `document`** (#5117), told [`FillHold::released`] once it shows another or is closed.
+    /// Until then the agent's keys are withheld from the page (#5115).
     /// Where it does neither by the time it is held, it is released at once, and why is answered.
     pub(crate) fn hold_while_it_lives(
         &self,
