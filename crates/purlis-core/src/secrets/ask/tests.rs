@@ -1637,3 +1637,101 @@ fn a_broken_link_ask_names_the_entry_that_is_gone_and_a_fill_gives_the_key_a_val
     assert_eq!(the_link(project.path(), "KEY"), None, "no longer a link");
     assert_eq!(stored(project.path(), "KEY").as_deref(), Some(VALUE));
 }
+
+// ----------------------------------------------------------------------------------------
+// what a replace never does (#5075, the adversarial review)
+
+/// `team`'s `TOKEN` marked as a GitHub App's key by a persona's `mint` line.
+fn token_is_an_app_key(project: &Path) {
+    std::fs::write(
+        crate::names::manifest(project),
+        r#"
+[sandbox.personas.devops]
+tools = { gh = { vault = "team", mint = "github-app", app = "Iv1.abc", key = "TOKEN" } }
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_replace_never_overwrites_or_links_over_a_github_apps_key() {
+    let project = project_with_an_entry();
+    token_is_an_app_key(project.path());
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, replacing(project.path(), "TOKEN"));
+    let id = asks.open()[0].id;
+    asks.answer(
+        &ctx(project.path()),
+        id,
+        Answer::Fill(VALUE.to_owned().into()),
+        window(),
+    )
+    .unwrap_err();
+    asks.answer(&ctx(project.path()), id, stripe_in_own(), window())
+        .unwrap_err();
+    let team = std::fs::read_to_string(project.path().join("team.json")).unwrap();
+    assert!(team.contains("t0ken"), "the App's key is as it was: {team}");
+    assert_eq!(the_link(project.path(), "TOKEN"), None);
+}
+
+#[test]
+fn a_replace_of_a_link_re_pointed_since_the_ask_writes_nowhere() {
+    let project = project_with_an_entry();
+    linked_to_stripe(project.path());
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, replacing(project.path(), "KEY"));
+    let id = asks.open()[0].id;
+    // Re-pointed before the person answers: the window showed STRIPE in own.
+    let ctx = ctx(project.path());
+    let team = crate::secrets::cmd::provider(&ctx, "team").unwrap();
+    crate::secrets::links::link(&ctx, &team, "KEY", "team", "TOKEN").unwrap();
+    asks.answer(&ctx, id, Answer::Fill(VALUE.to_owned().into()), window())
+        .unwrap_err();
+    let written = std::fs::read_to_string(project.path().join("team.json")).unwrap()
+        + &std::fs::read_to_string(project.path().join("own.json")).unwrap();
+    assert!(!written.contains(VALUE), "{written}");
+    assert_eq!(asks.open().len(), 1, "the ask stays open");
+}
+
+#[test]
+fn picking_an_entry_mends_a_broken_link() {
+    let project = project_with_an_entry();
+    linked_to_stripe(project.path());
+    std::fs::write(project.path().join("own.json"), "{}").unwrap();
+    let ctx = ctx(project.path());
+    let asks = Asks::new(project.path());
+    held_for_nothing(
+        &asks,
+        Need {
+            reason: Reason::broken(&ctx, "team", "KEY"),
+            ..need(7, "KEY")
+        },
+    );
+    let id = asks.open()[0].id;
+    let token = Answer::Link(crate::secrets::links::Target {
+        vault: "team".into(),
+        key: "TOKEN".into(),
+    });
+    asks.answer(&ctx, id, token, window()).unwrap();
+    assert_eq!(stored(project.path(), "KEY").as_deref(), Some("t0ken"));
+}
+
+#[test]
+fn a_chat_joining_an_ask_never_changes_why_it_was_asked() {
+    let project = project_with_an_entry();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, need(7, "MISSING"));
+    held_for_nothing(
+        &asks,
+        Need {
+            reason: Some(Reason::replace(
+                &ctx(project.path()),
+                "team",
+                "MISSING",
+                SAID,
+            )),
+            ..need(8, "MISSING")
+        },
+    );
+    assert_eq!(asks.open()[0].reason, None);
+}

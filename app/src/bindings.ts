@@ -758,7 +758,16 @@ export const commands = {
 	 *  name.
 	 */
 	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key })),
+	/**
+	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
+	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
+	 *  with that entry's value. The chat hears filled and the key's name, never the entry.
+	 */
 	linkSecretAsk: (plane: PlaneId, id: number, vault: string, key: string) => typedError<null, string>(__TAURI_INVOKE("link_secret_ask", { plane, id, vault, key })),
+	/**
+	 *  **The entries the person could fill Secret ask `id` with** (#5073), vault by vault: every
+	 *  key of every vault that holds a value of its own, but the asked one. Names only.
+	 */
 	secretAskEntries: (plane: PlaneId, id: number) => typedError<EntriesOf[], string>(__TAURI_INVOKE("secret_ask_entries", { plane, id })),
 	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are

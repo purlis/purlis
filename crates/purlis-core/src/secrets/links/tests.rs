@@ -435,3 +435,38 @@ fn a_vault_whose_keys_cannot_be_listed_is_offered_with_why() {
     let team = offered.iter().find(|one| one.vault == "team").unwrap();
     assert_eq!(team.keys, Ok(vec!["STRIPE".to_owned()]));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_link_over_a_value_whose_delete_fails_takes_the_link_away_again() {
+    let plane = Plane::new();
+    let team = plane.plain("team", json!({"STRIPE": STRIPE}));
+    let ops = plane.plain("ops", json!({"OWN": "v"}));
+    // The file made read-only: the link is written to the index, the delete is refused.
+    let file = plane.ctx.vaults_dir().join("ops.json");
+    let mut perms = std::fs::metadata(&file).unwrap().permissions();
+    perms.set_readonly(true);
+    std::fs::set_permissions(&file, perms).unwrap();
+    let dir = file.parent().unwrap();
+    let was = std::fs::metadata(dir).unwrap().permissions();
+    let mut held = was.clone();
+    held.set_readonly(true);
+    std::fs::set_permissions(dir, held).unwrap();
+    let refused = link_over(&plane.ctx, &ops, "OWN", &team.name, "STRIPE");
+    std::fs::set_permissions(dir, was).unwrap();
+    let refused = refused.unwrap_err();
+    assert!(
+        refused
+            .message
+            .to_string()
+            .contains("keeps the value it held"),
+        "refused at the delete, not before: {}",
+        refused.message
+    );
+    assert_eq!(
+        of(&plane.ctx, "ops", "OWN").unwrap(),
+        None,
+        "no link over it"
+    );
+    assert_eq!(cmd::get_value(&plane.ctx, &ops, "OWN").unwrap(), "v");
+}

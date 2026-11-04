@@ -25,6 +25,7 @@ export function SecretFill({
   entries,
   picked,
   onPicked,
+  onFillWith,
 }: {
   secret: SecretShown;
   box: Ref<HTMLInputElement>;
@@ -34,6 +35,8 @@ export function SecretFill({
   picked: VaultEntry | undefined;
   /** A pick, or `undefined` as the person goes back to a new value. */
   onPicked: (entry: VaultEntry | undefined) => void;
+  /** Which way the person chose, so Fill knows whether a pick is missing. */
+  onFillWith?: (to: FillWith) => void;
 }) {
   const [fillWith, setFillWith] = useState<FillWith>("value");
   const listed = useEntries(fillWith === "entry" ? entries : undefined);
@@ -70,6 +73,7 @@ export function SecretFill({
         onChange={(to) => {
           const next = to as FillWith;
           setFillWith(next);
+          onFillWith?.(next);
           if (next === "value") onPicked(undefined);
         }}
       >
@@ -96,7 +100,13 @@ export function SecretFill({
               (listed.entries.length === 0 && listed.read
                 ? "No vault holds an entry to link to yet. Fill it with a new value instead."
                 : picked !== undefined
-                  ? `${secret.key} becomes a link to ${picked.key} in ${picked.vault}: the value isn't copied, and a rotation of ${picked.key} reaches it.`
+                  ? `${secret.key} becomes a link to ${picked.key} in ${picked.vault}: the value isn't copied, and a rotation of ${picked.key} reaches it.${
+                      // A replace of a key that holds a value of its own deletes that value
+                      // (#5075): said before the person links.
+                      secret.replace != null && secret.reads == null
+                        ? ` The value ${secret.key} holds now is deleted from ${secret.vault}.`
+                        : ""
+                    }`
                   : "The value isn't copied: the key reads the entry, so a rotation reaches it.")}
           </p>
         </>
@@ -129,7 +139,7 @@ function useEntries(read: (() => Promise<readonly VaultEntries[]>) | undefined):
           setListed({
             entries: [],
             read: true,
-            refused: `Your vaults' entries could not be listed: ${String(why)}`,
+            refused: `purlis could not list your vaults' entries: ${why instanceof Error ? why.message : String(why)}. Fill it with a new value instead.`,
           });
       },
     );
