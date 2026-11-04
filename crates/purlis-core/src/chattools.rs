@@ -1128,7 +1128,8 @@ pub static TOOLS: [Tool; 29] = [
                       the vault and key to use, or declined. The vault is your persona's unless \
                       you name one. A key the vault holds already answers filled at once. \
                       Pending means the person has not answered yet: you are told when they \
-                      do.",
+                      do. A value that doesn't work: ask again with `replace` saying why, and \
+                      the person replaces it.",
         schema: || {
             json!({
                 "type": "object",
@@ -1146,6 +1147,12 @@ pub static TOOLS: [Tool; 29] = [
                     "vault": {
                         "type": "string",
                         "description": "The vault, where not your persona's.",
+                    },
+                    "replace": {
+                        "type": "string",
+                        "description": "Why the value you have doesn't work (a 401, say), \
+                                        in one line: the person is asked to replace it even \
+                                        though the vault holds it.",
                     },
                 },
                 "required": ["key", "purpose"],
