@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793788808990,
+  "lastUpdate": 1793791543717,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38766,6 +38766,48 @@ window.BENCHMARK_DATA = {
             "value": 101.522817,
             "unit": "ms",
             "extra": "median of 5 runs: 100.946, 101.473, 101.523, 102.532, 103.210 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cc338c1b99b8e48f17019fac95a9171bc8a3c752",
+          "message": "A table's focused control ends at one scroll, its focus ring in its frame (fixes main stories) (#5153)\n\n* A table's focused control ends at one scroll, its focus ring in its frame (#4672)\n\nrevealInFrame scrolled only when the control's border box was outside the\nframe, so WebKit's own focus scroll, when it ran first and stopped at the\ncontrol's edge, left the ring clipped and the frame ~6 px off where the\nfallback would have put it: main's stories red since #5133 (SkillPage\nHistory, SkillGrades Grades). Now the frame's scroll is noted when the\nfocus comes, and two frames later it is set to exactly where\nrevealedScrollLeft says from that start: the control plus its outline\n(width + offset) in at the nearer edge. Same end whichever scroll ran.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JM9CGS15DE758ZSTMGCK7J\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Start the checks held after the baselines commit\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* A table's frame starts each focus from where it left the last one\n\nA Tab that came before the last focus's two frames were drawn started\nfrom a frame not yet moved, so SkillPage History's Revert to this ended\n~5 px off in WebKit on the PR run. The end place is now worked out when\nthe focus comes, from where the frame was left for the focus before it\n(until a person scrolls or points in the frame), and set two frames on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* A table's frame takes the control's place as drawn two frames on\n\nWorked out only when the focus came, the place used a column not yet\nat its width: SkillGrades Grades in Chromium ended with its Scorecard\ncut at the card's edge. The start is still taken then; the place is\nworked out again from it as the table is drawn when it is set.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Start the checks held after the baselines commit\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* A row's focus leaves its table's frame where it is\n\nThe place worked out again two frames on was set for a row too, as the\nstart, over React Aria's own scroll: SkillPublish Clean's grades ended\nat the table's first column. A row, or anything as wide as the frame,\nis again left alone, and the next focus starts from where it stands.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Start the checks held after the baselines commit\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* A table keeps the theme's ring room, not the outline it measured\n\nReact Aria draws a button's ring a render after the focus comes\n(data-focus-visible), and in WebKit a slow frame measured the button\nwith no outline yet: History's Revert to this ended 4 px (the ring)\noff between runs. The room is now the theme's --focus-ring-width plus\n--focus-ring-offset, there whatever the control's state.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Start the checks held after the baselines commit\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-04T10:01:23Z",
+          "tree_id": "b7bab3a63776153c8c013521e814cd69fb0ea0ff",
+          "url": "https://github.com/purlis/purlis/commit/cc338c1b99b8e48f17019fac95a9171bc8a3c752"
+        },
+        "date": 1793791538788,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.35579649999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.346, 0.348, 0.356, 0.357, 0.361 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2385735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.159, 16.175, 16.239, 16.826, 16.933 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5360185,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.100, 101.277, 101.536, 101.607, 102.581 ms"
           }
         ]
       }
