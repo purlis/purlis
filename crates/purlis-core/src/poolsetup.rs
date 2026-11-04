@@ -1258,7 +1258,8 @@ pub fn in_the_picker(
             {
                 InThePicker::Offered
             } else {
-                in_the_picker_by(identity.get_or_insert_with(|| identity_in(plane)))
+                // No clone's remotes are read: only whether the identity reads as set counts here.
+                in_the_picker_by(identity.get_or_insert_with(|| identity_in(plane, &[])))
             };
             (pool.clone(), standing)
         })
