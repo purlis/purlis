@@ -641,6 +641,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's window alone.
     "plane_tree",
     "plane_file",
+    // A skill's folder, for its page's Files tab (#5183): listed, a file of it opened, and the
+    // folder opened in the file manager. A built-in or third-party skill's folder is outside
+    // the project, so only the person's own window reads it.
+    "skill_files",
+    "skill_file",
+    "skill_folder_open",
     // The Fix on a stale repo's Notice (#1985): it switches a workspace's repo to another
     // branch, or points its `origin` at another address. The person's own press in the window.
     "fix_stale_clone",

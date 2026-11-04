@@ -415,7 +415,8 @@ pub(super) const COUNT: Family = Family {
         "surface.overlay",
         "surface.deep",
     ],
-    keeps_size: &[],
+    // The small count on a mark's corner (#5189) keeps the size `badge.css` draws it at.
+    keeps_size: &["[data-size=\"sm\"]"],
     sized_apart: &[],
     height: None,
     font_size: "font-size.xs",

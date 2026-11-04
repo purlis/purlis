@@ -2145,6 +2145,18 @@ export const commands = {
 	skillNew: (plane: PlaneId, level: SkillLevel, name: string, description: string, template: SkillTemplateId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_new", { plane, level, name, description, template })),
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
+	/**  Every file and folder in the folder of a skill the studio lists, nested. */
+	skillFiles: (plane: PlaneId, workspace: string | null, persona: string | null, folder: string) => typedError<SkillFolder, string>(__TAURI_INVOKE("skill_files", { plane, workspace, persona, folder })),
+	/**
+	 *  One file of the folder of a skill the studio lists, by its path in the folder, as the light
+	 *  editor draws it.
+	 */
+	skillFile: (plane: PlaneId, workspace: string | null, persona: string | null, folder: string, path: string) => typedError<PieceFile, string>(__TAURI_INVOKE("skill_file", { plane, workspace, persona, folder, path })),
+	/**
+	 *  The folder of a skill the studio lists, opened in the system's file manager: Finder, Files
+	 *  or File Explorer.
+	 */
+	skillFolderOpen: (plane: PlaneId, workspace: string | null, persona: string | null, folder: string) => typedError<null, string>(__TAURI_INVOKE("skill_folder_open", { plane, workspace, persona, folder })),
 	/**
 	 *  **Saves an edit**: `now` as the skill's `SKILL.md`, only while it is still `was`, the text the
 	 *  editor opened.
@@ -14659,6 +14671,23 @@ export type SkillFit =
 "widens" | 
 /**  A skill purlis hands to no chat. */
 "refused";
+
+/**  A skill's folder, walked whole: each folder's entries straight after it, folders first. */
+export type SkillFolder = {
+	/**  The first 2,000. */
+	entries: SkillFolderEntry[],
+	/**  How many more were listed past them. */
+	more: number,
+};
+
+/**  One entry of a skill's folder. */
+export type SkillFolderEntry = {
+	/**  Its path in the folder, `/` between its parts. */
+	path: string,
+	kind: EntryKind,
+	/**  Why it does not open, in the core's sentence; `null` for a file that opens and a folder. */
+	refused: string | null,
+};
 
 /**  A version's grade, once grading lands (SK-16): always null for now. */
 export type SkillGrade = {

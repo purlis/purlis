@@ -92,6 +92,7 @@ mod routergrade;
 mod signinwatch;
 mod skillchange;
 mod skilldrafts;
+mod skillfiles;
 mod skillgrade;
 mod skillhistory;
 mod skillpublish;

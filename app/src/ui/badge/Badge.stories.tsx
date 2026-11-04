@@ -69,6 +69,43 @@ export const Variants: Story = {
   },
 };
 
+/** **A small count** (#5189): the pill on a mark's corner, in each variant, on both grounds,
+ *  beside the count's own size, so the two are seen side by side. */
+export const SmallCounts: Story = {
+  render: () => (
+    <div style={{ display: "grid", gap: "var(--space-4)" }}>
+      {(["--surface-base", "--surface-raised"] as const).map((ground) => (
+        <div
+          key={ground}
+          style={{
+            display: "flex",
+            gap: "var(--space-3)",
+            alignItems: "center",
+            padding: "var(--space-4)",
+            background: `var(${ground})`,
+          }}
+        >
+          {COUNT_VARIANTS.map((variant, at) => (
+            <Count key={variant} size="sm" variant={variant} said={`${at + 2} ${variant}, small`}>
+              {at + 2}
+            </Count>
+          ))}
+          <Count size="sm" aria-hidden="true">
+            12
+          </Count>
+          <Count aria-hidden="true">12</Count>
+        </div>
+      ))}
+    </div>
+  ),
+  play: async ({ canvas }) => {
+    const small = canvas.getAllByText("12")[0].getBoundingClientRect();
+    const plain = canvas.getAllByText("12")[1].getBoundingClientRect();
+    await expect(small.height).toBeLessThan(plain.height);
+    await expect(canvas.getAllByText("2 neutral, small")).toHaveLength(2);
+  },
+};
+
 /** Your hosts' two statuses (R66): "Waiting for you" on the amber wash, "Confirmed" in the ok
  *  words. */
 export const HostStatuses: Story = {

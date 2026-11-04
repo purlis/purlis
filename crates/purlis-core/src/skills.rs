@@ -43,7 +43,9 @@ pub use purlis_skills::{About, Deprecated, Lifecycle, about_of};
 pub mod budget_setting;
 pub use budget_setting::budget_in;
 
+// A skill's folder, for its page's Files tab (#5183).
 pub mod first_open;
+pub mod folder;
 pub mod grades;
 pub mod graph;
 pub mod history;

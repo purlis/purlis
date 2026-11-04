@@ -96,9 +96,15 @@ installed from a source shows the source's label after its name, such as
 **Built-in**, **On** and **Off or left out**, narrow the list. The built-in skills fold into one
 quiet line, such as *13 built-in skills*, unless one of them needs your attention.
 
-Pick a row to open the skill's page, with its tabs **Overview**, **Text**, **History**,
-**Grades** and **Runs**. **Overview** says who gets it, **Where it lives** (its level and
+Pick a row to open the skill's page, with its tabs **Overview**, **Text**, **Files**,
+**History**, **Grades** and **Runs**. **Overview** says who gets it, **Where it lives** (its level and
 folder), **Reaches** (a project skill's grant) and whether it's pinned.
+
+**Files** shows the skill's whole folder, its `SKILL.md`, `references/`, `evals/`, `scripts/` and
+the rest, as a file tree beside a preview of the file you pick. On the project's own skills,
+**Edit** beside `SKILL.md` opens it in the Text tab's editor, and **Open in a tab of its own**
+opens any file in the project's file tab. A built-in or third-party skill's files are shown read
+only. **⋯ → Open in Finder** (Files or File Explorer elsewhere) opens the skill's folder.
 
 ### Why a skill is left out
 

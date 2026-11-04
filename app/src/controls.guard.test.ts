@@ -928,6 +928,19 @@ export const plantedTall = { minBlockSize: 32 };
     ]);
   });
 
+  it("covers the pane's bell: a control, held to the control heights (#5189)", () => {
+    const controls = new Set(
+      sourceFiles(isView).flatMap((file) => controlClasses(readFileSync(join(SRC, file), "utf8"))),
+    );
+    expect(controls).toContain("pane-bell");
+    expect(
+      cssHeights(
+        ".pane-actions .pane-bell { min-block-size: 30px; } .pane-bell-slot { block-size: 2rem; }",
+        controls,
+      ),
+    ).toEqual([".pane-actions .pane-bell | min-block-size: 30px (a control)"]);
+  });
+
   it("fails an exception whose rule is gone", () => {
     expect(
       offTheHeights(new Map(), { "A.css": { ".gone | height: 3px (a control)": "why" } }),

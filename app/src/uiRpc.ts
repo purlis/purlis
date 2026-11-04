@@ -1097,6 +1097,9 @@ export const commands = {
 	skillNew: __WINDOW_ONLY_RESULT,
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
+	skillFiles: __WINDOW_ONLY_RESULT,
+	skillFile: __WINDOW_ONLY_RESULT,
+	skillFolderOpen: __WINDOW_ONLY_RESULT,
 	skillSave: __WINDOW_ONLY_RESULT,
 	skillTriggerTestsStart: __WINDOW_ONLY_RESULT,
 	skillRename: __WINDOW_ONLY_RESULT,
@@ -12149,6 +12152,23 @@ export type SkillFit =
 "widens" | 
 /**  A skill purlis hands to no chat. */
 "refused";
+
+/**  A skill's folder, walked whole: each folder's entries straight after it, folders first. */
+export type SkillFolder = {
+	/**  The first 2,000. */
+	entries: SkillFolderEntry[],
+	/**  How many more were listed past them. */
+	more: number,
+};
+
+/**  One entry of a skill's folder. */
+export type SkillFolderEntry = {
+	/**  Its path in the folder, `/` between its parts. */
+	path: string,
+	kind: EntryKind,
+	/**  Why it does not open, in the core's sentence; `null` for a file that opens and a folder. */
+	refused: string | null,
+};
 
 /**  A version's grade, once grading lands (SK-16): always null for now. */
 export type SkillGrade = {
