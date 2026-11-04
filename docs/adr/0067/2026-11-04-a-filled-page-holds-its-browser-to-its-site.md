@@ -34,9 +34,9 @@ SF-9) and that runners follow the same rules (SF-12). Both are built now.
 - **A filled field takes no keys from the chat while the hold lives** (D-5115-12). The chat
   presses no key, and types and chooses nothing, anywhere in the page, since a key goes where the
   focus is and may move it; it types other fields before the fill and sends the form by clicking
-  its button. And while the hold lives, a line of the page that shows a long start or end of the
-  value, from four characters or half a short value's length, reaches the chat blanked whole and
-  is painted over in a picture (D-5115-13).
+  its button. What the chat reads is kept free of the value whole, never of a part of it
+  (D-5115-13): a part taken out of what a page shows, among text the chat wrote, would tell it
+  which part it was.
 - **On a pool's runner** (SF-12), the notice is answered in this window and warns that the secret
   goes to that runner, naming the pool; no other ask is added, since the person sees each fill.
   As with a login, only a runner shown to be the person's own is asked about, for a chat in its

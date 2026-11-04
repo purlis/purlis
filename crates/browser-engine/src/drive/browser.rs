@@ -1432,11 +1432,9 @@ pub(crate) struct Inner {
     fill_holds: Mutex<Vec<PageHeld>>,
 }
 
-/// **A page holding a secret purlis filled** (#5117): the page, the value, whose long parts the
-/// page's reads blank while it holds it (#5115), and who is told once it is gone.
+/// **A page holding a secret purlis filled** (#5117): the page, and who is told once it is gone.
 struct PageHeld {
     target: String,
-    value: zeroize::Zeroizing<String>,
     hold: Arc<dyn FillHold>,
 }
 
@@ -2921,14 +2919,7 @@ impl Browser {
                 None => (state.excluded.clone(), Kept::default()),
             }
         };
-        // The values filled into this page while it holds them (#5115).
-        let filled: Vec<zeroize::Zeroizing<String>> = lock(&self.inner.fill_holds)
-            .iter()
-            .filter(|held| held.target == target)
-            .map(|held| held.value.clone())
-            .collect();
-        let parts: Vec<&str> = filled.iter().map(|value| value.as_str()).collect();
-        let snapshot = build_kept(trees, &excluded, &scrub, &parts);
+        let snapshot = build_kept(trees, &excluded, &scrub);
         if let Some(page) = lock(&self.inner.state).page_mut(target) {
             page.keep_out(snapshot.blanked_text());
         }
@@ -3396,8 +3387,7 @@ impl Browser {
 
     /// **Whether the agent's keys are withheld from page `target`** (#5115): it holds a secret
     /// purlis filled, and lives. Every frame of it: a key goes where the focus is, wherever that
-    /// is by then, and what is typed anywhere in the page could be read back against what the
-    /// page shows of the value.
+    /// is by then, and the page may move the focus, or draw the field anew, anywhere in it.
     fn keys_withheld(&self, target: &str) -> Result<(), Refusal> {
         let held = lock(&self.inner.fill_holds)
             .iter()
@@ -4397,13 +4387,11 @@ impl Inner {
 
     /// **`hold` holds the browser while page `target` keeps the document its main frame showed
     /// as `document`** (#5117), told [`FillHold::released`] once it shows another or is closed.
-    /// Until then the agent's keys are withheld from the page, and what it reads of the page
-    /// blanks whole any line that shows a long part of `value` (#5115).
+    /// Until then the agent's keys are withheld from the page (#5115).
     /// Where it does neither by the time it is held, it is released at once, and why is answered.
     pub(crate) fn hold_while_it_lives(
         &self,
         target: &str,
-        value: zeroize::Zeroizing<String>,
         document: u64,
         hold: Arc<dyn FillHold>,
     ) -> Result<(), String> {
@@ -4418,7 +4406,6 @@ impl Inner {
         if lives {
             lock(&self.fill_holds).push(PageHeld {
                 target: target.to_owned(),
-                value,
                 hold,
             });
             return Ok(());

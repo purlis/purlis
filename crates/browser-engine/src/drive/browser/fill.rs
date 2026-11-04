@@ -40,12 +40,9 @@
 //! agent presses no key in the page (a key goes where the focus is, and moves it), and types and
 //! chooses nothing anywhere in it, whichever page the call names. A key in the field would change
 //! the value, and a page that shows what the field holds would show what is left of it; and the
-//! field turns no wheel into a step of its value. And while the hold lives, any line of the page
-//! that shows a long part of the value, a start or an end of at least
-//! [`PART_TAKEN_FROM`](super::super::tree::PART_TAKEN_FROM) characters or of half its length, is
-//! blanked whole in what the agent reads, and painted over in a picture. Whole, never in part,
-//! and only on that page while it holds the value, where the agent can type nothing: a part taken
-//! out of text the agent wrote would tell it which part it was.
+//! field turns no wheel into a step of its value. What the agent reads is kept free of the value
+//! whole, never of a part of it: a part taken out of what the page shows, text the agent wrote
+//! among it, would tell the agent which part it was.
 
 use std::sync::Arc;
 
@@ -217,7 +214,7 @@ impl Browser {
         // The browser reaches only this site while the page lives, from before the value goes in
         // (#5117): where it can't be held, nothing goes in.
         self.inner
-            .hold_while_it_lives(&at.page, fill.value.clone(), page_document, hold)
+            .hold_while_it_lives(&at.page, page_document, hold)
             .map_err(|why| {
                 not_filled(format!(
                     "purlis could not hold this browser to {origin} while the page is open \

@@ -76,7 +76,7 @@ pub(crate) struct NotOnPage;
 const LONGEST_TEXT: usize = 200;
 /// The shortest value of a blanked element that is also taken out of other lines: shorter ones
 /// would take ordinary words out of the page.
-pub(crate) const SHORTEST_SCRUBBED: usize = 3;
+const SHORTEST_SCRUBBED: usize = 3;
 /// The most characters shown between two blanked boxes of one group (a dash, a space).
 const LONGEST_SEPARATOR: usize = 2;
 /// How deep a tree is followed; a page nested deeper shows its content no deeper than this.
@@ -300,63 +300,6 @@ impl<'k> Scrub<'k> {
     }
 }
 
-/// The fewest characters a start or an end of a secret purlis filled is taken out from (#5115),
-/// whatever its length: a shorter secret's are taken out from half its length, and none from
-/// fewer than [`SHORTEST_SCRUBBED`].
-pub(crate) const PART_TAKEN_FROM: usize = 4;
-
-/// The fewest characters a start or an end of a value of `length` characters is taken out from.
-fn fewest_of_a_part(length: usize) -> usize {
-    PART_TAKEN_FROM
-        .min(length.div_ceil(2))
-        .max(SHORTEST_SCRUBBED)
-}
-
-/// A character as it is compared: lower case, where that is one character.
-fn folded(c: char) -> char {
-    let mut lower = c.to_lowercase();
-    match (lower.next(), lower.next()) {
-        (Some(one), None) => one,
-        _ => c,
-    }
-}
-
-/// **Whether `text` holds a long part of any of `values`** (#5115), ignoring case: a run of it
-/// that is a start or an end of one of them, at least [`fewest_of_a_part`] characters. Only
-/// ever asked of what a page holding a secret purlis filled shows, while it holds it, and what
-/// holds one is blanked whole, never in part: what is left around a part taken out would say
-/// which part it was.
-pub(crate) fn holds_a_part(text: &str, values: &[&str]) -> bool {
-    let seen: Vec<char> = text.chars().map(folded).collect();
-    values.iter().any(|value| {
-        let value: Vec<char> = value.chars().map(folded).collect();
-        if value.len() < SHORTEST_SCRUBBED {
-            return false;
-        }
-        let fewest = fewest_of_a_part(value.len());
-        // Where each character stands in the value, so each place of the text tries only those.
-        let mut at_char: HashMap<char, Vec<usize>> = HashMap::new();
-        for (i, c) in value.iter().enumerate() {
-            at_char.entry(*c).or_default().push(i);
-        }
-        (0..seen.len()).any(|here| {
-            at_char
-                .get(&seen[here])
-                .map(Vec::as_slice)
-                .unwrap_or_default()
-                .iter()
-                .any(|&start| {
-                    let run = value[start..]
-                        .iter()
-                        .zip(&seen[here..])
-                        .take_while(|(a, b)| a == b)
-                        .count();
-                    run >= fewest && (start == 0 || start + run == value.len())
-                })
-        })
-    })
-}
-
 /// Whether `text` holds any of `loose`, ignoring case and any spaces or dashes between its
 /// characters.
 pub(crate) fn holds_loosely(text: &str, loose: &[&str]) -> bool {
@@ -427,7 +370,7 @@ fn replace_loosely(text: &[char], needle: &[char]) -> Vec<char> {
 pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[&str]) -> Snapshot {
     let mut kept = Kept::default();
     kept.run(scrub);
-    build_kept(frames, excluded, &kept, &[])
+    build_kept(frames, excluded, &kept)
 }
 
 /// Builds the tree of `frames` (the page's own frame first), blanking every element in
@@ -436,7 +379,6 @@ pub(crate) fn build_kept(
     frames: &[FrameAx],
     excluded: &HashSet<NodeKey>,
     scrub: &Kept,
-    parts: &[&str],
 ) -> Snapshot {
     let Some(main) = frames.first() else {
         return Snapshot {
@@ -484,24 +426,13 @@ pub(crate) fn build_kept(
     all.take_in(&blanked_text);
     let all = Scrub::of(&all);
     title = cut(&all.text(&title));
-    if holds_a_part(&title, parts) {
-        title = "(blanked)".to_owned();
-    }
     let mut echoes = Vec::new();
     for line in &mut lines {
-        // A page holding a secret purlis filled that shows a long part of it, the value cut
-        // short, shows that line's words blanked whole (#5115). A field's value is the agent's
-        // own typing, never asked of.
-        let a_part = holds_a_part(&line.name, parts);
         if let Some(key) = &line.key
-            && (a_part
-                || all.holds(&line.name)
+            && (all.holds(&line.name)
                 || line.value.as_deref().is_some_and(|value| all.holds(value)))
         {
             echoes.push(key.clone());
-        }
-        if a_part {
-            line.name = "(blanked)".to_owned();
         }
         line.name = cut(&all.text(&line.name));
         if let Some(value) = &mut line.value {
