@@ -495,8 +495,20 @@ fn a_sweep_spares_a_timeline_just_written() {
 
 #[test]
 fn a_secret_fill_names_its_key_and_field_and_a_refused_one_says_why_never_a_value() {
-    let filled = filled_secret("b1", "dash-api-key", "e12", 3);
+    let filled = filled_secret("b1", "dash-api-key", "e12", None, 3);
     assert_eq!(filled.moment.did, "purlis filled dash-api-key into e12");
+    // With the site it went to (#5119).
+    let on = filled_secret(
+        "b1",
+        "dash-api-key",
+        "e12",
+        Some("https://dash.example.test"),
+        3,
+    );
+    assert_eq!(
+        on.moment.did,
+        "purlis filled dash-api-key into e12 on https://dash.example.test"
+    );
     assert_eq!(filled.moment.by, By::Purlis);
     assert!(filled.png.is_none() && filled.moment.page.is_none());
     let refused = fill_refused(

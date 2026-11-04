@@ -222,6 +222,7 @@ const B7: ChatBrowser = {
   login: null,
   driver: null,
   pool: null,
+  secrets: [],
 };
 const B8: ChatBrowser = { ...B7, name: "b2", program: "B8" };
 /** A browser pinned by chat 9, which has closed (#2022). */
@@ -235,6 +236,7 @@ const B9: ChatBrowser = {
   login: null,
   driver: null,
   pool: null,
+  secrets: [],
 };
 
 /** Where the project's browsers were at the last quit, as the core says (#2022). */

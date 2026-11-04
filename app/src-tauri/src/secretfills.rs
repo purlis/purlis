@@ -219,6 +219,8 @@ impl Fills {
 pub struct FillAsked {
     /// The chat's browser, by the name the chat knows it by.
     pub browser: String,
+    /// That browser's program in the session host.
+    pub program: String,
     pub target: String,
     pub vault: String,
     pub key: String,
@@ -328,6 +330,12 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<S
         Heard::Allowed => {
             // Judged again as the project reads now: policy may have changed while it waited.
             judged(held, session, asked)?;
+            // And no value is read for a browser the person took over meanwhile (#5119, SF-10).
+            if held.browsers().driver_of(&asked.program)
+                == Some(crate::chatbrowsers::BrowserDriver::Person)
+            {
+                return Err(crate::chatbrowsers::taken_over_said(&asked.browser));
+            }
             let (asker, _) = held
                 .chats()
                 .login_asker(held.root(), session)

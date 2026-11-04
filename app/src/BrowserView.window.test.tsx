@@ -714,6 +714,31 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "Done" })).toBeNull());
   });
 
+  it("marks a secret purlis filled while its page is on the site it went to (#5119)", async () => {
+    besides.chat_browsers = () => [
+      {
+        session: 3,
+        name: "b1",
+        program: "B1",
+        unended: false,
+        pinned: false,
+        was: null,
+        login: null,
+        driver: null,
+        pool: null,
+        secrets: [{ key: "dash-api-key", origin: "https://dash.example.test", label: "API key" }],
+      },
+    ];
+    const host = await opened();
+    const mark = { name: "Secret dash-api-key, filled on dash.example.test" };
+
+    host.page("https://dash.example.test");
+    expect(await screen.findByRole("img", mark)).toHaveTextContent("secret: dash-api-key");
+
+    host.page("https://other.example.test");
+    await waitFor(() => expect(screen.queryByRole("img", mark)).toBeNull());
+  });
+
   it("has no address field on a chat's browser, which its chat drives", async () => {
     let listed = false;
     besides.chat_browsers = () => {
@@ -729,6 +754,7 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
           login: null,
           driver: null,
           pool: null,
+          secrets: [],
         },
       ];
     };

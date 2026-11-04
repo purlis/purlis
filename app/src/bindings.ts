@@ -6200,6 +6200,11 @@ export type ChatBrowser = {
 	 *  what its row and thumbnail name as its device.
 	 */
 	pool: string | null,
+	/**
+	 *  **The vault secrets purlis filled into it** (#5119, SF-8): by key and site, never a value,
+	 *  oldest first. Its view marks each while its page is on that site.
+	 */
+	secrets: SecretFilled[],
 };
 
 /**
@@ -13793,6 +13798,19 @@ export type SecretAt = {
 	 *  nothing to show. Never the value.
 	 */
 	shown: string | null,
+};
+
+/**
+ *  **A vault secret purlis filled into a browser** (#5119, SF-8), as its view marks it: the
+ *  key's name, the site it went to and the field the page labels, never a value.
+ */
+export type SecretFilled = {
+	/**  The key's name in its vault (`dash-api-key`). */
+	key: string,
+	/**  The origin of the field's own frame it went into (`https://dash.example.test`). */
+	origin: string,
+	/**  What the page labels the field: the page's words, never purlis's. */
+	label: string,
 };
 
 /**

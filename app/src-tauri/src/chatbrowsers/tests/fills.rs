@@ -4,13 +4,16 @@
 //! A secret a chat asks purlis to fill (#5115), at the window's browser-call seam with the
 //! session host stood in: it goes into the browser the chat already uses, the person is asked
 //! about the origin the browser read for the field's own frame, and nothing is filled before
-//! they allow it, or at all once they keep it blocked.
+//! they allow it, or at all once they keep it blocked. A 2FA code is asked for as one (#5118).
+//! What was filled is marked on its browser by key and site, and nothing goes into a browser
+//! the person has taken over (#5119).
 
 use std::cell::RefCell;
 
 use purlis_session_protocol::browsing::{FieldKind, FieldSaid};
 
 use super::*;
+use crate::chatbrowsers::SecretFilled;
 use crate::secretfills::FillAsked;
 
 const VALUE: &str = "fixture-key-5115";
@@ -293,4 +296,129 @@ fn a_fill_on_a_runners_browser_is_refused_for_now() {
     assert!(told.contains("pool relayed"), "{told}");
     assert!(asked.into_inner().is_empty());
     assert!(hosted.fills.lock().unwrap().is_empty());
+}
+
+/// What chat 3's browser `b1` lists of the secrets filled into it.
+fn marks(browsers: &ChatBrowsers) -> Vec<SecretFilled> {
+    browsers
+        .listed()
+        .into_iter()
+        .find(|one| one.program == "program-1")
+        .expect("listed")
+        .secrets
+}
+
+#[test]
+fn a_filled_field_is_marked_on_its_browser_by_key_site_and_label_never_value() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    let asked = RefCell::new(Vec::new());
+    assert!(marks(&browsers).is_empty());
+
+    answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    );
+
+    let marked = marks(&browsers);
+    assert_eq!(
+        marked,
+        [SecretFilled {
+            key: "dash-api-key".into(),
+            origin: "https://dash.example.test".into(),
+            label: "API key".into(),
+        }]
+    );
+    assert!(!format!("{:?}", browsers.listed()).contains(VALUE));
+
+    // The same key filled again on that site is marked once.
+    answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    );
+    assert_eq!(marks(&browsers).len(), 1);
+}
+
+#[test]
+fn a_fill_refused_marks_nothing() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    let kept = |_: &FillAsked| -> Result<Secret, String> { Err("kept".into()) };
+
+    answered_filling(&browsers, &hosted, &ask(3, fill("e12")), None, &kept);
+
+    assert!(marks(&browsers).is_empty());
+}
+
+#[test]
+fn the_activity_line_names_the_key_and_the_site_it_went_to() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    let asked = RefCell::new(Vec::new());
+    let browse = ask(3, fill("e12"));
+
+    let answer = answered_filling(&browsers, &hosted, &browse, None, &allowed(&asked));
+
+    let line = super::super::timeline_of(&browsers, &browse, &answer, 5).expect("a moment");
+    assert_eq!(
+        line.moment.did,
+        "purlis filled dash-api-key into e12 on https://dash.example.test"
+    );
+    assert!(!line.moment.did.contains(VALUE));
+}
+
+#[test]
+fn a_browser_the_person_has_taken_over_is_filled_nothing_and_the_chat_told_why() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    browsers.driven("program-1", true, 1000);
+    let acts = hosted.acts.lock().unwrap().len();
+    let asked = RefCell::new(Vec::new());
+
+    let told = refusal(answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    ));
+
+    assert!(told.contains("taken b1 over"), "{told}");
+    assert!(told.contains("nothing was filled"), "{told}");
+    assert!(asked.into_inner().is_empty(), "nobody was asked");
+    assert_eq!(
+        hosted.acts.lock().unwrap().len(),
+        acts,
+        "not even the field was read"
+    );
+    assert!(hosted.fills.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_browser_taken_over_while_the_person_is_asked_is_filled_nothing() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    // The person takes the browser over, then allows the fill.
+    let taken_then_allowed = |_: &FillAsked| -> Result<Secret, String> {
+        browsers.driven("program-1", true, 1001);
+        Ok(Secret::new(VALUE.into()))
+    };
+
+    let told = refusal(answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &taken_then_allowed,
+    ));
+
+    assert!(told.contains("taken b1 over"), "{told}");
+    assert!(hosted.fills.lock().unwrap().is_empty());
+    assert!(marks(&browsers).is_empty());
 }
