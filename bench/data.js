@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793800212770,
+  "lastUpdate": 1793802795967,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38976,6 +38976,48 @@ window.BENCHMARK_DATA = {
             "value": 101.688156,
             "unit": "ms",
             "extra": "median of 5 runs: 100.868, 100.903, 101.688, 102.029, 102.453 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "853c151b632780bf1f68108e6e92c9d68034f054",
+          "message": "Secret ask: a started chat waits past the app's hold (#5192) (#5195)\n\n* Secret ask: a started chat waits past the app's hold (#5192)\n\nThe asker read PURLIS_HARNESS by the kind's word alone (Harness::of_kind), but a\nstart names the harness by the registry's name (claude-code). So every chat purlis\nstarted was taken for an unknown harness and waited 10s + 15s = 25s, while the app,\nwhich knows the chat's harness, held the ask 90s before answering pending. The chat\nalways gave up first: \"the app that started this chat did not answer in time\".\n\nThe cause: of_kind instead of hookwire::chat_harness + of_registry_or_kind, the one\nreader the hooks and the MCP server use. Regression test: a chat started as each\nharness waits longer than the app holds its ask (red before: waits 25s, holds 90s).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXWJPHQ5BB6097XR7GGZ9Q\nPurlis-Persona: steward\n\n* Secret ask: rustfmt the asker's wait (#5192)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXWJPHQ5BB6097XR7GGZ9Q\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T13:55:45Z",
+          "tree_id": "043aaf66671c8532d922786f0c60236bc3c5a9f7",
+          "url": "https://github.com/purlis/purlis/commit/853c151b632780bf1f68108e6e92c9d68034f054"
+        },
+        "date": 1793802791117,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.540692,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.529, 0.540, 0.541, 0.541, 0.553 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3952295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.248, 16.366, 16.395, 16.451, 16.587 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8169265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.991, 101.705, 101.817, 101.920, 102.079 ms"
           }
         ]
       }
