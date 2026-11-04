@@ -292,6 +292,31 @@ fn a_workspace_left_with_no_tab_shows_its_first_tab_s_chat_not_a_task_that_had_n
 }
 
 #[test]
+fn a_workspace_left_with_no_tab_shows_its_first_chat_not_the_task_that_chat_s_tab_showed() {
+    let record = Record {
+        chats: vec![
+            Chat {
+                active: true,
+                ..chat(1, "ops")
+            },
+            Chat {
+                shows: Some(6),
+                ..chat(5, "web")
+            },
+            task_of(6, 5, "web"),
+        ],
+        ..Record::default()
+    };
+
+    let layout = upgrade(&record);
+
+    assert_eq!(
+        tabs_on(&layout, Some("web")),
+        vec![&one_tab(5, Some("web"), true)]
+    );
+}
+
+#[test]
 fn the_plane_root_always_keeps_one_tab_an_empty_pane_where_it_has_no_chat() {
     let record = Record {
         chats: vec![Chat {

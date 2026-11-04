@@ -2060,13 +2060,13 @@ impl Talk {
 /// What an answer is told when the app holds no question from that task for this chat.
 ///
 /// **This is the whole of why an asking chat cannot answer a question addressed to the
-/// person.** Such a question is never held here: it is a prompt in the task's own tab, which
+/// person.** Such a question is never held here: it is a prompt in the task's own chat, which
 /// only the person's keys answer, and nothing an answer says is typed into any chat.
 pub fn no_question(name: &str, task: u32) -> String {
     format!(
         "'{name}' (chat {task}) has asked this chat no question that is still open, so there \
          is nothing here to answer. A question it has put to the person is the person's to \
-         answer, in its own tab: no chat can answer it."
+         answer, in that chat itself: no chat can answer it."
     )
 }
 

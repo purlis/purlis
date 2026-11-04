@@ -169,7 +169,6 @@ const NO_RESTARTS: Readonly<Record<number, string>> = {};
 
 /** No chat that needs you has had the rows above it opened yet. */
 const NONE_OPENED: ReadonlySet<number> = new Set();
-/** The chats of no tab. */
 
 /** A chat with no browser (#2024). */
 const NO_BROWSER_ROWS: readonly BrowserShown[] = [];

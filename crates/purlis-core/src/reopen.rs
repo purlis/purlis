@@ -383,8 +383,8 @@ pub struct HandedFrom {
     pub workspace: crate::active::Place,
     /// Whether it asked for a report, and whether one has been sent.
     pub report: Owed,
-    /// Whether the work moved or a report is expected back: what decides whether the chat
-    /// opens as a tab (#1447), and a task is listed under the chat that asked (#1436).
+    /// Whether the work moved or a report is expected back: what decides whether a
+    /// task is listed under the chat that asked (#1436). Neither takes a pane (#4758).
     pub mode: Mode,
     /// How many dispatches stand between this chat and the chat the person started: 1 for a
     /// chat that one dispatched. 0 is a record written before this field.
@@ -423,7 +423,7 @@ pub struct HandedFrom {
 /// How one chat started another (the spec's two modes of a dispatch, #1434).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Mode {
-    /// The work moved: the chat opens as a tab. Every record written before modes existed.
+    /// The work moved: the chat is a session of its own. Every record written before modes existed.
     #[default]
     Handoff,
     /// The asking chat expects a report: the chat is listed in the Chats section, and has no

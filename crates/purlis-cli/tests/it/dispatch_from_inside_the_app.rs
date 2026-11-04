@@ -2139,8 +2139,8 @@ fn a_refused_message_says_why_in_the_apps_words() {
         ),
         (
             &["dispatch", "answer", "9", "yes, allow it"],
-            "A question it has put to the person is the person's to answer, in its own tab: no \
-             chat can answer it.",
+            "A question it has put to the person is the person's to answer, in that chat itself: \
+             no chat can answer it.",
         ),
         (
             &["dispatch", "note", "half way"],

@@ -904,10 +904,10 @@ _Avoid_: sub-agent (in a shown sentence: that is the harness's word), child agen
 
 **Handoff**:
 A dispatch where the work moves: the persona chat takes it from there, and the asking chat does
-not wait on it. It opens as a tab. It is never a task: its chat is a session of its own, with
-its own tab and a row of its own at the top of the Chats list, under no chat and in no chat's
-counts. Its row says `from <chat>`, and the row of the chat it came from says
-`handed off to <chat>`.
+not wait on it. It starts in the sidebar and takes no pane (#4758): the person opens it from
+its row. It is never a task: its chat is a session of its own, with a row of its own at the top
+of the Chats list, under no chat and in no chat's counts. Its row says `from <chat>`, and the
+row of the chat it came from says `handed off to <chat>`.
 _Avoid_: transfer, session record (that is what a closing chat writes)
 
 **Asking chat**:
