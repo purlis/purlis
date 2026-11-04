@@ -145,6 +145,8 @@ export function Table({
           className={className}
           style={style}
           onFocus={revealInFrame}
+          onWheel={forgetSettled}
+          onPointerDown={forgetSettled}
         >
           {caption !== undefined && <p data-part="caption">{caption}</p>}
           <AriaTable
@@ -168,36 +170,53 @@ export function Table({
  * moves the frame sideways (a row is as wide as the table), and the browser's own scroll to a
  * focused element is not to be counted on: in WebKit, the window's engine on macOS, a Tab to a
  * cell's button past the frame's right edge was seen leaving the frame unscrolled, and at other
- * times scrolled to the button's own edge, its ring cut off. So where the frame stood when the
- * focus came is noted at once, and a frame later than React Aria's own scroll (two frames), the
- * control still focused, the frame is set to exactly where {@link revealedScrollLeft} says from
- * that start — whichever scroll ran in between, it ends in the same place. A row, wider than the
- * frame, is left to React Aria.
+ * times scrolled to the button's own edge, its ring cut off.
+ *
+ * So where the frame ends is worked out when the focus comes, by {@link revealedScrollLeft},
+ * from where the frame was left for the focus before it (its {@link settled} place), else from
+ * where it stands; and a frame later than React Aria's own scroll (two frames), the control still
+ * focused, the frame is set exactly there. Whichever scroll ran in between, and however fast the
+ * keys came (a Tab before the last one's frames were drawn), the same keys end in the same place.
+ * A row, wider than the frame, is left to React Aria.
  */
 function revealInFrame(event: React.FocusEvent<HTMLDivElement>): void {
   const frame = event.currentTarget;
   const target = event.target;
   if (target === frame) return;
-  const start = frame.scrollLeft;
+  const start = settled.get(frame) ?? frame.scrollLeft;
+  const room = frame.getBoundingClientRect();
+  const box = target.getBoundingClientRect();
+  if (box.width >= frame.clientWidth) {
+    settled.set(frame, start);
+    return;
+  }
+  // The control's edges in the frame's own content, the same whatever it is scrolled to.
+  const origin = room.left + frame.clientLeft - frame.scrollLeft;
+  const to = revealedScrollLeft({
+    start,
+    left: box.left - origin,
+    right: box.right - origin,
+    room: frame.clientWidth,
+    most: frame.scrollWidth - frame.clientWidth,
+    ring: ringOutside(target),
+  });
+  settled.set(frame, to);
   const later = () =>
     requestAnimationFrame(() => {
       if (!frame.isConnected || document.activeElement !== target) return;
-      const room = frame.getBoundingClientRect();
-      const box = target.getBoundingClientRect();
-      if (box.width >= frame.clientWidth) return;
-      // The control's edges in the frame's own content, the same whatever it is scrolled to.
-      const origin = room.left + frame.clientLeft - frame.scrollLeft;
-      const to = revealedScrollLeft({
-        start,
-        left: box.left - origin,
-        right: box.right - origin,
-        room: frame.clientWidth,
-        most: frame.scrollWidth - frame.clientWidth,
-        ring: ringOutside(target),
-      });
-      if (to !== frame.scrollLeft) frame.scrollLeft = to;
+      if (frame.scrollLeft !== to) frame.scrollLeft = to;
     });
   requestAnimationFrame(later);
+}
+
+/**
+ * **Where each frame was last left for the keyboard**, until a person scrolls it or points in it
+ * ({@link forgetSettled}): then the next focus starts from where they left it.
+ */
+const settled = new WeakMap<HTMLElement, number>();
+
+function forgetSettled(event: React.SyntheticEvent<HTMLDivElement>): void {
+  settled.delete(event.currentTarget);
 }
 
 /**
