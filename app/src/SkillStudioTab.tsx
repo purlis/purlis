@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { startTransition, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, startTransition, useEffect, useRef, useState, type ReactNode } from "react";
 import { afterPaint } from "./projectShown";
 import { MessageSquarePlus, Plus, Search, Sparkle, Sparkles } from "lucide-react";
 import {
@@ -162,28 +162,63 @@ function searchKeeps(skill: StudioSkill, query: string): boolean {
 const FIRST_ROWS = 40;
 
 /**
- * **The Library's rows, the first screen before the rest** (#4351): the rest are built once that
- * frame has painted, so the tab shows a list while they lay out, which still takes that third of
- * a second. Mounted with the list and keyed by scope, so each list it draws starts from the top.
+ * **The Library's rows, a screen a frame** (#4351): the first screen at once, then one more
+ * screen after each frame has painted, so the tab shows a list at once and no frame waits on the
+ * rest. Built in one go, the other hundred and sixty of two hundred held the next frame for a
+ * quarter of a second: React Aria builds a collection's rows without yielding. Mounted with the
+ * list and keyed by scope, so each list it draws starts from the top.
+ *
+ * The chosen row is drawn on the first frame, with every row before it, wherever the list has
+ * it. What is drawn never shrinks while the list stands, so a row drawn stays drawn, and a press,
+ * the keyboard and the search box work on the rows there while the rest come.
  */
 function LibraryRows({
   rows,
   row,
-  all,
+  chosen,
 }: {
   rows: readonly StudioSkill[];
   row: (skill: StudioSkill) => ReactNode;
-  /** Draw every row at once: the chosen one is past the first screen. */
-  all: boolean;
+  /** The chosen row's id, drawn at once wherever it is. */
+  chosen: string | undefined;
 }) {
-  const [painted, setPainted] = useState(false);
-  const cut = !all && !painted && rows.length > FIRST_ROWS;
+  const [screens, setScreens] = useState(1);
+  const at = chosen === undefined ? -1 : rows.findIndex((one) => skillRowId(one) === chosen);
+  const needed = Math.max(screens, Math.ceil((at + 1) / FIRST_ROWS));
+  // Adjusted as it is drawn (React's state set while rendering), so the chosen row's frame has it.
+  if (needed !== screens) setScreens(needed);
+  const drawn = Math.min(rows.length, needed * FIRST_ROWS);
+  const more = drawn < rows.length;
   useEffect(() => {
-    if (!cut) return;
-    return afterPaint(() => startTransition(() => setPainted(true)));
-  }, [cut]);
-  return (cut ? rows.slice(0, FIRST_ROWS) : rows).map(row);
+    if (!more) return;
+    return afterPaint(() => startTransition(() => setScreens((was) => was + 1)));
+  }, [more, screens]);
+  // A screen at a time, each kept as it was drawn, so a screen added draws its own rows alone.
+  return Array.from({ length: Math.ceil(drawn / FIRST_ROWS) }, (_, n) => (
+    <LibraryScreen
+      key={n}
+      rows={rows}
+      from={n * FIRST_ROWS}
+      to={Math.min(drawn, (n + 1) * FIRST_ROWS)}
+      row={row}
+    />
+  ));
 }
+
+/** One screen of the Library's rows, `from` up to `to`: drawn again only when they change. */
+const LibraryScreen = memo(function LibraryScreen({
+  rows,
+  from,
+  to,
+  row,
+}: {
+  rows: readonly StudioSkill[];
+  from: number;
+  to: number;
+  row: (skill: StudioSkill) => ReactNode;
+}) {
+  return rows.slice(from, to).map(row);
+});
 
 /** The row's line under its name: why it is left out where it is, else what it does. */
 function lineOf(skill: StudioSkill): string {
@@ -1109,10 +1144,6 @@ export function SkillStudioTab({
     const own = shown.filter((skill) => skill.level !== "built-in");
     const builtIns = shown.filter((skill) => skill.level === "built-in");
     const foldsBuiltIns = !chips.has("built-in");
-    // The chosen row is always drawn, wherever the list has it.
-    const chosenIsPast =
-      chosen !== undefined &&
-      own.slice(FIRST_ROWS).some((one) => skillRowId(one) === skillRowId(chosen));
     const row = (skill: StudioSkill) => {
       const mark = markOf(skill);
       return (
@@ -1231,7 +1262,12 @@ export function SkillStudioTab({
                   go({ page: "library", scope, skill: String(first) });
                 }}
               >
-                <LibraryRows key={key} rows={own} row={row} all={chosenIsPast} />
+                <LibraryRows
+                  key={key}
+                  rows={own}
+                  row={row}
+                  chosen={chosen === undefined ? undefined : skillRowId(chosen)}
+                />
                 {foldsBuiltIns ? (
                   <ListRun
                     id={BUILT_IN_RUN}

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { forgetStudio, openSkill, renderStudio, renderStudioAt } from "./SkillStudioTab.testkit";
@@ -23,7 +23,10 @@ import { catalogue, SKILL_STUDIO_SHOW, type Now } from "./actions";
 import { skill, studio } from "./skillsListing.testkit";
 import { noTabs } from "./tabs";
 
-afterEach(() => {
+afterEach(async () => {
+  // Frames a test held and did not let go: run, so the next test's frames are its own.
+  await letHeldFramesGo?.();
+  letHeldFramesGo = undefined;
   cleanup();
   clearMocks();
   forgetStudio();
@@ -38,17 +41,48 @@ function answering(studio: unknown) {
 }
 
 /** Holds every animation frame asked for from here; the answer lets them go, and later ones run. */
-function holdTheFrames(): () => void {
-  const held: FrameRequestCallback[] = [];
+function holdTheFrames(): () => Promise<void> {
+  return stepTheFrames().all;
+}
+
+/** `count` skills' names, `crowd-000` on, in the Library's order. */
+const crowd = (count: number) =>
+  Array.from({ length: count }, (_, n) => `crowd-${String(n).padStart(3, "0")}`);
+
+/** How many skills' rows the Library has drawn: what a screen reader counts in it. */
+const skillRows = () =>
+  within(screen.getByRole("grid", { name: "Skills" }))
+    .getAllByRole("row")
+    .filter((one) => one.getAttribute("data-testid")?.startsWith("skill-crowd-")).length;
+
+/**
+ * Holds every animation frame asked for from here, for the test to let go one at a time: each
+ * `next` runs the frames asked for so far and what they leave for after their paint.
+ */
+function stepTheFrames(): { next: () => Promise<void>; all: () => Promise<void> } {
+  let held: FrameRequestCallback[] = [];
   const spy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((run) => {
     held.push(run);
     return held.length;
   });
-  return () => {
+  const next = () =>
+    act(async () => {
+      const now = held;
+      held = [];
+      for (const run of now) run(performance.now());
+      await new Promise((done) => setTimeout(done, 0));
+    });
+  const all = async () => {
+    for (let n = 0; n < 50 && held.length > 0; n++) await next();
     spy.mockRestore();
-    for (const run of held) run(performance.now());
+    for (const run of held.splice(0)) run(performance.now());
   };
+  letHeldFramesGo = all;
+  return { next, all };
 }
+
+/** The frames held by the test running, for `afterEach` to let go if it did not. */
+let letHeldFramesGo: (() => Promise<void>) | undefined;
 
 describe("the Skill studio", () => {
   it("lists each skill with its level, and why one is left out", async () => {
@@ -158,8 +192,86 @@ describe("the Skill studio", () => {
     await screen.findByTestId("skill-crowd-00");
     expect(screen.queryByTestId("skill-crowd-59")).toBeNull();
 
-    letTheFrameGo();
+    await letTheFrameGo();
     expect(await screen.findByTestId("skill-crowd-59")).toBeTruthy();
+  });
+
+  it("builds the rest of the Library's rows a screen a frame, so no frame waits on them all (#4351)", async () => {
+    answering(studio(crowd(200).map((name) => skill(name))));
+    const frames = stepTheFrames();
+    renderStudio();
+    await screen.findByTestId("skill-crowd-000");
+    expect(skillRows()).toBe(40);
+
+    await frames.next();
+    expect(skillRows()).toBe(80);
+    await frames.next();
+    expect(skillRows()).toBe(120);
+
+    await frames.all();
+    expect(skillRows()).toBe(200);
+  });
+
+  it("keeps a press on an early row made while the Library's rows are still coming (#4351)", async () => {
+    answering(studio(crowd(200).map((name) => skill(name))));
+    const frames = stepTheFrames();
+    renderStudio();
+    await screen.findByTestId("skill-crowd-000");
+    await frames.next();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("skill-crowd-001"));
+    await frames.all();
+
+    expect(screen.getByTestId("skill-studio-skill").getAttribute("data-row")).toBe(
+      screen.getByTestId("skill-crowd-001").getAttribute("data-row"),
+    );
+  });
+
+  it("keeps the keyboard on the row it went to while the Library's rows are still coming (#4351)", async () => {
+    answering(studio(crowd(200).map((name) => skill(name))));
+    const frames = stepTheFrames();
+    renderStudio();
+    const first = await screen.findByTestId("skill-crowd-000");
+    await frames.next();
+
+    const user = userEvent.setup();
+    await act(async () => first.focus());
+    await user.keyboard("{ArrowDown}");
+    await frames.all();
+
+    expect(document.activeElement).toBe(screen.getByTestId("skill-crowd-001"));
+    expect(skillRows()).toBe(200);
+  });
+
+  it("finds what is typed in the search box while the Library's rows are still coming (#4351)", async () => {
+    answering(studio(crowd(200).map((name) => skill(name))));
+    const frames = stepTheFrames();
+    renderStudio();
+    await screen.findByTestId("skill-crowd-000");
+
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("searchbox", { name: "Search skills" }), "crowd-19");
+    await frames.all();
+
+    expect(skillRows()).toBe(10);
+    expect(screen.getByTestId("skill-crowd-199")).toBeTruthy();
+  });
+
+  it("keeps every row drawn for a chosen row past the first screen once an early row is pressed (#4351)", async () => {
+    const skills = crowd(200).map((name) => skill(name));
+    answering(studio(skills));
+    renderStudioAt({ page: "library", scope: AT_THE_ROOT, skill: skillRowId(skills[150]) });
+    await screen.findByTestId("skill-crowd-150");
+    const drawnForIt = skillRows();
+    expect(drawnForIt).toBeGreaterThanOrEqual(151);
+
+    const frames = stepTheFrames();
+    await userEvent.setup().click(screen.getByTestId("skill-crowd-005"));
+
+    expect(skillRows()).toBeGreaterThanOrEqual(drawnForIt);
+    await frames.all();
+    expect(skillRows()).toBe(200);
   });
 
   it("draws a chosen row past the Library's first screen on the tab's first frame (#4351)", async () => {
@@ -201,7 +313,7 @@ describe("the Skill studio", () => {
     await screen.findByTestId("skill-crowd-00");
     expect(screen.queryByTestId("skill-crowd-59")).toBeNull();
 
-    letTheFrameGo();
+    await letTheFrameGo();
     expect(await screen.findByTestId("skill-crowd-59")).toBeTruthy();
   });
 
