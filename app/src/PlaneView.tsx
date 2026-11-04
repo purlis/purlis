@@ -2110,6 +2110,8 @@ export const PlaneView = memo(function PlaneView({
    * stays on that workspace's strip.
    */
   const endedInPanes = useRef<Map<number, string>>(new Map());
+  /** The same workspaces, as the window draws from them: `filedIn` reads these. */
+  const [endedFiled, setEndedFiled] = useState<ReadonlyMap<number, string>>(() => new Map());
   // **A chat ended on purpose counts as gone** (#5019): its pane keeps it, and the core no longer
   // lists it, so its ending is a change to what is open here.
   const openHere = useMemo(
@@ -2335,14 +2337,14 @@ export const PlaneView = memo(function PlaneView({
         // A chat ended on purpose in its pane is listed no more, and stays where it was filed
         // as it ended (#5019), its tab on that workspace's strip; so does a task kept in its pane
         // as it ended (#5106).
-        return startedIn[chat] ?? endedHere.get(chat)?.workspace ?? endedInPanes.current.get(chat);
+        return startedIn[chat] ?? endedHere.get(chat)?.workspace ?? endedFiled.get(chat);
       };
       // A task a scenario spec pretends (`e2eTasks.ts`, none in a shipped build) is in no
       // list of the core's: it is filed where the chat that asked for it is.
       const asker = pretended.find((one) => one.chat.session === session)?.chat.from?.chat;
       return at(session) ?? (asker === undefined ? undefined : at(asker)) ?? OUTSIDE;
     },
-    [endedHere, pretended, sidebar, startedIn],
+    [endedFiled, endedHere, pretended, sidebar, startedIn],
   );
 
   /** What a press reads that the tabs do not hold (#4757): where each chat is filed, and each
@@ -2493,6 +2495,12 @@ export const PlaneView = memo(function PlaneView({
   /** Chat `session`'s pane no longer shows it as ended: cleared, or resumed. */
   const forgetEndedHere = useCallback((session: number) => {
     endedInPanes.current.delete(session);
+    setEndedFiled((was) => {
+      if (!was.has(session)) return was;
+      const left = new Map(was);
+      left.delete(session);
+      return left;
+    });
     if (!endedHereNow.current.delete(session)) return;
     setEndedHere((was) => {
       const left = new Map(was);
@@ -2515,7 +2523,13 @@ export const PlaneView = memo(function PlaneView({
     (session: number) => {
       const keep = askedByNow(session) !== undefined || endedHereNow.current.has(session);
       // Filed where it was as it ends (#5106), before the plane stops listing it.
-      if (keep) endedInPanes.current.set(session, filedIn(session));
+      if (keep) {
+        const workspace = filedIn(session);
+        endedInPanes.current.set(session, workspace);
+        setEndedFiled((was) =>
+          was.get(session) === workspace ? was : new Map(was).set(session, workspace),
+        );
+      }
       return keep;
     },
     [askedByNow, filedIn],
