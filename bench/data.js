@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793797594144,
+  "lastUpdate": 1793800212770,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38934,6 +38934,48 @@ window.BENCHMARK_DATA = {
             "value": 101.299913,
             "unit": "ms",
             "extra": "median of 5 runs: 100.191, 101.120, 101.300, 101.809, 101.979 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6cee9754abf8128786c2119c2e33fbdc1ebf7822",
+          "message": "The Skill studio's Library builds its rows a screen a frame (#4351, step 2b) (#5190)\n\n* The Skill studio's Library builds its rows a screen a frame (#4351)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ7CQ2QWW7W99KZZ8DR168\nPurlis-Persona: steward\n\n* The Library draws through its chosen row and never fewer rows, a screen kept as drawn (#4351)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ7CQ2QWW7W99KZZ8DR168\nPurlis-Persona: steward",
+          "timestamp": "2026-11-04T13:15:43Z",
+          "tree_id": "5aaa755ddab9d6b2d1256b18f564599a5fb0b0ba",
+          "url": "https://github.com/purlis/purlis/commit/6cee9754abf8128786c2119c2e33fbdc1ebf7822"
+        },
+        "date": 1793800207394,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6811695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.664, 0.675, 0.681, 0.691, 0.692 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.624944,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.485, 16.522, 16.625, 16.637, 16.802 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.688156,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.868, 100.903, 101.688, 102.029, 102.453 ms"
           }
         ]
       }
