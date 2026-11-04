@@ -13,6 +13,8 @@ use purlis_session_protocol::browsing::{FieldKind, FieldSaid};
 use super::*;
 use crate::secretfills::{Allowed, FillAsked};
 
+mod grants;
+
 const VALUE: &str = "fixture-key-5115";
 
 fn fill(target: &str) -> Browsing {
@@ -33,7 +35,7 @@ fn one_line_on(origin: &str) -> FieldSaid {
 
 /// `browse` answered with `fills` as what asks the person, on the runner of `pool` where one is
 /// named.
-fn answered_filling(
+pub(super) fn answered_filling(
     browsers: &ChatBrowsers,
     hosted: &Arc<Hosted>,
     browse: &BrowseAsk,
@@ -62,12 +64,17 @@ fn answered_filling(
 fn using_a_browser() -> (ChatBrowsers, Arc<Hosted>) {
     let browsers = ChatBrowsers::default();
     let hosted = Arc::new(Hosted::default());
-    answered(&browsers, &hosted, &ask(3, click()));
-    assert!(browsers.allow(3, false));
-    let (answer, _) = answered(&browsers, &hosted, &ask(3, click()));
+    opens_a_browser(&browsers, &hosted, 3);
+    (browsers, hosted)
+}
+
+/// Chat `chat` allowed a browser, and opened a page in it.
+fn opens_a_browser(browsers: &ChatBrowsers, hosted: &Arc<Hosted>, chat: u32) {
+    answered(browsers, hosted, &ask(chat, click()));
+    assert!(browsers.allow(chat, false));
+    let (answer, _) = answered(browsers, hosted, &ask(chat, click()));
     assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
     *hosted.at.lock().unwrap() = Some("https://dash.example.test/settings".into());
-    (browsers, hosted)
 }
 
 /// The person allows once: the value, as the vault gave it, on a notice for a one-line field.
