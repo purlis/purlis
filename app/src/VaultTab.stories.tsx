@@ -7,7 +7,7 @@
  * break. The core is faked at its command boundary; no value is ever drawn.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { VaultContents, VaultSecret } from "./bindings";
 import { VaultTab } from "./VaultTab";
@@ -133,7 +133,8 @@ export const OfferAsASecretNeed: Story = {
     (await page.findByRole("menuitem", { name: "shop" })).focus();
     await userEvent.keyboard("{Enter}");
     const dialog = await page.findByRole("dialog", { name: "Remember API_TOKEN for shop" });
-    await expect(within(dialog).getByText("secret-need.API_TOKEN:")).toBeVisible();
+    // Once the dialog has come in.
+    await waitFor(() => expect(within(dialog).getByText("secret-need.API_TOKEN:")).toBeVisible());
     await expect(within(dialog).getByText("vault: ops")).toBeVisible();
     const add = within(dialog).getByRole("button", { name: "Add the line" });
     await expect(add).toBeDisabled();

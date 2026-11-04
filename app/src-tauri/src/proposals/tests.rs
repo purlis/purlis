@@ -1002,6 +1002,51 @@ fn a_definition_that_cannot_hold_the_line_is_refused_before_the_fill() {
     );
 }
 
+/// #5240, a steered chat: a definition it swelled or swapped for a link is never read whole, and
+/// what decides the tick on an ask reads no file at all, on the window's thread.
+#[cfg(unix)]
+#[test]
+fn a_swollen_or_linked_definition_is_refused_unread_and_the_tick_reads_no_file() {
+    let (_dir, root) = project();
+    let file = root.join("personas/devops/persona.md");
+    std::fs::write(&file, NAMES_A_VAULT).unwrap();
+    assert!(need_offerable(&root, "devops"));
+
+    // Past the limit, and otherwise a definition that would take the line.
+    let padding = "x".repeat(purlis_core::proposed::MOST_FILE_BYTES);
+    std::fs::write(&file, format!("{NAMES_A_VAULT}{padding}\n")).unwrap();
+    assert!(need_writable(&root, "devops").is_err(), "past the limit");
+    assert!(need_offerable(&root, "devops"), "its size isn't looked at");
+
+    std::fs::remove_file(&file).unwrap();
+    let elsewhere = root.join("elsewhere.md");
+    std::fs::write(&elsewhere, NAMES_A_VAULT).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &file).unwrap();
+    assert!(need_writable(&root, "devops").is_err(), "a link");
+    assert!(!need_offerable(&root, "devops"), "a link");
+}
+
+/// #5240, a steered chat: it took its `vault:` line out as it asked, then put it back. The ask
+/// remembers no vault was named; the file says otherwise now, and the file wins.
+#[test]
+fn remember_never_replaces_a_vault_the_persona_names_by_then() {
+    let (_dir, root) = project();
+    std::fs::write(root.join("personas/devops/persona.md"), NAMES_A_VAULT).unwrap();
+
+    remember(
+        &root,
+        &Proposals::default(),
+        &filled("STRIPE_KEY", "devops", false, true),
+        Some("charge test cards"),
+    )
+    .expect("written");
+
+    assert_eq!(
+        definition(&root),
+        "---\nrole: Ops\nvault: team\nsecret-need.STRIPE_KEY: charge test cards\n---\n\nThe charter.\n"
+    );
+}
+
 /// #5240: under policy that turns proposed changes off, Remember is not offered.
 #[test]
 fn policy_that_turns_proposed_changes_off_turns_remember_off() {
@@ -1012,6 +1057,7 @@ fn policy_that_turns_proposed_changes_off_turns_remember_off() {
         Path::new("/etc/purlis/policy.json"),
     ));
     assert!(need_writable(&root, "devops").is_err());
+    assert!(!need_offerable(&root, "devops"));
     assert!(need_personas_in(&root, "team").is_empty());
 }
 

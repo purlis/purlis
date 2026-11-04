@@ -969,7 +969,12 @@ pub fn fill_remembered_in(
     let undeclared = !answered.declared
         && purlis_core::secrets::needs::declared(root, persona, &answered.key).is_none();
     let need = undeclared.then_some((answered.key.as_str(), purpose));
-    let vault = answered.names_no_vault.then_some(answered.vault.as_str());
+    // The file as it is now, not as it was when the ask was raised: a chat can edit it between.
+    let names_none = matches!(
+        purlis_core::personaverbs::vault(root, &purlis_core::plane::state_dir(root), persona),
+        purlis_core::personas::Vault::Unnamed | purlis_core::personas::Vault::DeclaredNone
+    );
+    let vault = (answered.names_no_vault && names_none).then_some(answered.vault.as_str());
     match written_need(root, proposals, persona, need, vault, audit) {
         Ok(false) => Ok(Remembered::Nothing),
         Ok(true) => Ok(Remembered::Written),
@@ -1006,14 +1011,26 @@ fn definition_of(root: &Path, persona: &str) -> Result<Definition, String> {
     let file = definition_file(persona);
     let rel = proposed::proposable_by_purlis(root, &root.join(&file))?;
     let path = rel.display().to_string();
-    let bytes = std::fs::read(root.join(&rel)).map_err(|why| {
-        format!("{path} did not read ({why}), so nothing was written. Check the file is there, then try again.")
+    // Bounded and pinned: a chat can write this file, so it may be huge, a link or a pipe.
+    let bytes = proposed::read_pinned(root, &rel).ok().flatten().ok_or_else(|| {
+        format!("{path} could not be read as one ordinary file of a sensible size, so nothing was written. Check the file, then try again.")
     })?;
     let base = proposed::base_of(Some(&bytes));
     let text = String::from_utf8(bytes).map_err(|_| {
         format!("{path} is not text, so nothing was written. Fix the file, then try again.")
     })?;
     Ok(Definition { path, base, text })
+}
+
+/// Whether a Secret ask offers Remember for `persona`, on the window's thread: policy and the
+/// file's name alone, reading nothing a chat could swell. A file that can't take the line is
+/// refused at Fill ([`need_writable`]), off the window.
+pub fn need_offerable(root: &Path, persona: &str) -> bool {
+    purlis_core::sandbox::policy::Locks::of(root)
+        .proposed_changes_refused()
+        .is_none()
+        && purlis_core::personas::valid_name(persona)
+        && proposed::proposable_by_purlis(root, &root.join(definition_file(persona))).is_ok()
 }
 
 /// **Whether a need can be written into `persona`'s definition, or why not** (#5240): asked

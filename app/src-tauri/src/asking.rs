@@ -2611,8 +2611,7 @@ pub struct Waiting<'a> {
     pub browser_logins: Vec<crate::loginasks::LoginWait>,
     /// The Secret asks chats' brokered runs wait on (#5068).
     pub secrets: Vec<purlis_core::secrets::ask::Open>,
-    /// Whether Remember may write this persona's definition (#5240,
-    /// [`crate::proposals::need_writable`]).
+    /// Whether Remember is offered for this persona (#5240, [`crate::proposals::need_offerable`]).
     pub may_remember: &'a dyn Fn(&str) -> bool,
     /// The secret fills chats asked for that wait on the person (#5115).
     pub secret_fills: Vec<crate::secretfills::FillWait>,
@@ -2943,8 +2942,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         since.insert(pool_tool_key(one.session, one.run), one.since);
     }
     let secrets = held.secret_asks().open();
-    let may_remember =
-        |persona: &str| crate::proposals::need_writable(held.root(), persona).is_ok();
+    let may_remember = |persona: &str| crate::proposals::need_offerable(held.root(), persona);
     for one in &secrets {
         since.insert(secret_key(one.id), one.since);
     }
