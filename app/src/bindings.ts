@@ -917,6 +917,11 @@ export const commands = {
 	 */
 	putAwayLeftMessages: (plane: PlaneId, report: string) => typedError<null, string>(__TAURI_INVOKE("put_away_left_messages", { plane, report })),
 	/**
+	 *  **Put away on the Notice of what appeared in a chat's folders**: the person has read it. The
+	 *  files are not touched.
+	 */
+	putAwayArrivedFiles: (plane: PlaneId, chat: string) => typedError<null, string>(__TAURI_INVOKE("put_away_arrived_files", { plane, chat })),
+	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
 	 */
@@ -5204,7 +5209,13 @@ autosave: boolean; merge: SaveMerge } |
  *  takes the Notice back ([`put_away_left_messages`]), by `report`, the name purlis keeps
  *  it under.
  */
-{ kind: "left-messages"; report: string };
+{ kind: "left-messages"; report: string } | 
+/**
+ *  **What can run later and appeared in a sandboxed chat's folders** (ADR 0067 §5, amended
+ *  2026-11-05): Put away takes the Notice back ([`put_away_arrived_files`]) by the `chat`'s
+ *  id, and the files stay where they are.
+ */
+{ kind: "arrived-files"; chat: string };
 
 /**
  *  **What Stop all tasks on a session would end** (#1498, V100-53), as the window asks before

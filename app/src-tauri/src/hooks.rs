@@ -3142,6 +3142,23 @@ impl Hooks {
         )
     }
 
+    /// **Audits what appeared in a sandboxed chat's folders** ([`purlis_core::sandbox::arrived`]),
+    /// under chat `number`: paths and no contents.
+    pub fn record_arrived(
+        &self,
+        root: &Path,
+        number: u32,
+        looked: &purlis_core::sandbox::arrived::Looked,
+    ) -> Result<(), String> {
+        self.audit(
+            root,
+            Some(number),
+            purlis_core::sandbox::arrived::AUDITED,
+            looked.body(),
+            ("recorded", "file that appeared in a chat's folder"),
+        )
+    }
+
     /// **Records a proposed change the person applied** (#1975, PC-4), under chat `number`:
     /// before the file is written, so nothing is applied unrecorded.
     pub fn record_proposed(

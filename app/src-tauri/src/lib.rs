@@ -23,6 +23,7 @@ mod about;
 mod activity;
 mod agentidentity;
 mod alerts;
+mod arrived;
 mod asking;
 mod asknotify;
 mod askoutcome;

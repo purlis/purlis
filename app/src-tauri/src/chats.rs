@@ -4905,6 +4905,20 @@ impl Chats {
                         purlis: applied.wrap_program(),
                     },
                 )?;
+                // What is in its folders as it starts, before its program can change them. A
+                // chat on a runner keeps its folders there, and a chat with no id cannot be
+                // told of.
+                if let (false, Some(id)) = (on_the_runner, identity.id.as_deref()) {
+                    crate::arrived::began(
+                        &self.project,
+                        id,
+                        &purlis_core::reopen::shown_name(chat, harness.map(Harness::name)),
+                        applied.arrived_watch(
+                            chat.cwd.as_deref(),
+                            &purlis_core::sandbox::Machine::this(),
+                        ),
+                    );
+                }
                 (line.program, line.args, line.env)
             }
             None => (
