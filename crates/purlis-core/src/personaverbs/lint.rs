@@ -826,15 +826,17 @@ fn skill_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
 /// A `SKILL.md`'s name (its `name:`, else its directory's) and whether a model may invoke it.
 fn read_skill(file: &Path) -> Option<(String, bool)> {
     let text = std::fs::read_to_string(file).ok()?;
-    let fence = purlis_skills::fence::Fence::find(&text)?;
+    // No frontmatter, no skill.
+    purlis_skills::fence::Fence::find(&text)?;
     let mut name: Option<String> = None;
     let mut human_only = false;
-    for entry in fence.entries() {
-        match entry.key {
-            // A harness reads this file as YAML, so a quoted name is the name inside its quotes.
-            "name" => name = Some(entry.value.trim_matches(['"', '\'']).to_string()),
+    // Read as a harness reads it, as YAML (#5182); where it is not YAML, line by line, and a
+    // quoted name is still the name inside its quotes.
+    for (key, value) in purlis_skills::frontmatter(&text) {
+        match key.as_str() {
+            "name" => name = Some(value.trim_matches(['"', '\'']).to_owned()),
             "disable-model-invocation" => {
-                human_only = entry.value.eq_ignore_ascii_case("true");
+                human_only = value.eq_ignore_ascii_case("true");
             }
             _ => {}
         }

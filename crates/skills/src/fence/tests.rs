@@ -224,3 +224,29 @@ fn py_strip_and_rstrip_trim_python_s_whitespace() {
     assert_eq!(py_rstrip(" a \u{1e}\n"), " a");
     assert!(is_python_space('\u{1d}') && !is_python_space('\u{200b}'));
 }
+
+#[test]
+fn a_block_scalars_lines_are_its_keys_and_never_keys_of_their_own() {
+    let text = "---\nrole: r\ndescription: >\n  role: words, not a key\n\n  more words\n\nvault: none\n---\n";
+    assert_eq!(
+        pairs(text),
+        vec![
+            pair("role", "r"),
+            pair("description", ">"),
+            pair("vault", "none")
+        ]
+    );
+    // A line no further in than the key ends the block.
+    let text = "---\nnote: |\nrole: r\n---\n";
+    assert_eq!(pairs(text), vec![pair("note", "|"), pair("role", "r")]);
+}
+
+#[test]
+fn a_block_marker_is_a_bar_or_an_angle_with_at_most_a_sign_and_a_digit() {
+    for marker in [">", "|", ">-", "|+", ">2", "|-2", "|2-", "> # note"] {
+        assert!(is_block_marker(marker), "{marker}");
+    }
+    for words in ["", ">>", "> words", "|--", "|22", "-", ">0", "a > b"] {
+        assert!(!is_block_marker(words), "{words}");
+    }
+}

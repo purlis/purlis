@@ -128,15 +128,72 @@ pub fn read(dir: &Path) -> Vec<Skill> {
     skills
 }
 
-/// A `SKILL.md`'s frontmatter, as `key: value` pairs in the order written: one line per key,
-/// which is how every built-in skill is written.
+/// **A `SKILL.md`'s frontmatter, as `key: value` pairs in the order written, each value the text
+/// a harness reads** (#5182): the one reader of a skill's keys, for the studio, the Skills panel,
+/// the router's listing and the budget alike.
 ///
-/// The one rule purlis reads a frontmatter by, a persona's too
-/// (`purlis_core::personas::frontmatter`): [`crate::fence::Fence`]'s, the lines between the
-/// opening `---` line and the next `---` line, each split at its first `:`, key and value
-/// stripped as Python's `str.strip` strips, and a line with an empty key dropped.
+/// It is read as the YAML it is ([`crate::handed::parse`]), so a folded (`>`), literal (`|`),
+/// quoted or multi-line value is its text, stripped as Python's `str.strip` strips. A list or a
+/// mapping is its key's line as written (`[a, b]`, or empty above a block list).
+///
+/// A frontmatter that is not YAML purlis reads (a plain `Use when: …` value is the common one)
+/// is read by the line format's rule instead ([`crate::fence::Fence`]), as every harness's own
+/// reader falls back to it: each line split at its first `:`. A value there that opens a block
+/// scalar has no text that rule can read, and reads as none, never as `>` or `|`.
+///
+/// A persona's frontmatter is no `SKILL.md`, and is read by the line format alone
+/// (`purlis_core::personas::frontmatter`).
 pub fn frontmatter(text: &str) -> Vec<(String, String)> {
-    Fence::find(text).map(|f| f.pairs()).unwrap_or_default()
+    let lines = Fence::find(text).map(|f| f.pairs()).unwrap_or_default();
+    let Ok(read) = crate::handed::parse(text) else {
+        return lines
+            .into_iter()
+            .map(|(key, value)| {
+                let value = if crate::fence::is_block_marker(&value) {
+                    String::new()
+                } else {
+                    value
+                };
+                (key, value)
+            })
+            .collect();
+    };
+    read.texts()
+        .map(|(key, text)| {
+            let value = match text {
+                Some(text) => crate::fence::py_strip(text).to_owned(),
+                None => lines
+                    .iter()
+                    .find(|(k, _)| k == key)
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default(),
+            };
+            (key.to_owned(), value)
+        })
+        .collect()
+}
+
+/// **Why a `SKILL.md`'s `description:` cannot be read**, where its line is there and says words
+/// but [`frontmatter`] reads none (#5182): its block scalar under a frontmatter that is not YAML.
+/// What the YAML reader said, for the studio's lint to say rather than show `>`.
+pub fn description_unread(text: &str) -> Option<String> {
+    let written = Fence::find(text)?
+        .entries()
+        .into_iter()
+        .find(|entry| entry.key == "description")?
+        .value;
+    let read = frontmatter(text)
+        .into_iter()
+        .find(|(key, _)| key == "description")
+        .is_some_and(|(_, value)| !value.is_empty());
+    if written.is_empty() || read {
+        return None;
+    }
+    Some(match crate::handed::parse(text) {
+        Err(crate::Refusal::NotYaml(why)) => why,
+        Err(why) => why.to_string(),
+        Ok(_) => "its value is no words".to_owned(),
+    })
 }
 
 /// **Where a frontmatter is**, as byte offsets into `text`: from the first byte under the
@@ -177,10 +234,20 @@ pub fn listing(skills: &[Skill]) -> Option<String> {
         .iter()
         .partition(|skill| crate::declared(skill).manual);
     for skill in chosen {
+        // A literal (`|`) description is lines of its own: listed on its skill's one line.
+        let description = if skill.description.contains(crate::fence::is_line_break) {
+            skill
+                .description
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        } else {
+            skill.description.clone()
+        };
         text.push_str(&format!(
             "\n- `{}` — {} (`{}`)",
             skill.name,
-            skill.description,
+            description,
             skill.path.display()
         ));
     }
