@@ -5929,7 +5929,8 @@ fn under_purlis_wrap_a_brokered_child_reaches_the_network_only_through_its_proxy
             .and_then(|exe| Some(exe.parent()?.parent()?.join("sandbox-probe")))
             .filter(|beside| beside.is_file()),
     };
-    // A build of this package alone has none: the step that names it is what insists on it.
+    // A build of this package alone has none. The step that names it insists on it, and on the
+    // marker this test leaves.
     let Some(probe) = probe else {
         let _ = writeln!(
             std::io::stderr(),
@@ -5943,4 +5944,5 @@ fn under_purlis_wrap_a_brokered_child_reaches_the_network_only_through_its_proxy
     let mut asker = asker(&root, Some("devops"));
     asker.confines.as_mut().unwrap().wrap = Some(probe.canonicalize().unwrap());
     a_wrapped_child_reaches_only_through_its_proxy(asker, &root, Wrap::Purlis);
+    crate::secrets::test_really_ran("brokered-network-under-purlis-wrap");
 }

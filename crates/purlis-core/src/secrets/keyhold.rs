@@ -1178,6 +1178,7 @@ mod held_by_the_keychain {
         drop(opened);
         drop(keychain);
         assert!(!search_list().contains(&folder), "{folder} was left listed");
+        crate::secrets::test_really_ran("held-item-read-by-no-other-program");
     }
 
     #[test]
@@ -1211,5 +1212,6 @@ mod held_by_the_keychain {
             .map(|(value, _)| String::from_utf8_lossy(value.as_ref()).into_owned())
             .expect_err("a program the item does not trust is never handed its value");
         assert_eq!(refused.code(), WOULD_ASK, "{refused}");
+        crate::secrets::test_really_ran("item-another-program-holds-refused");
     }
 }

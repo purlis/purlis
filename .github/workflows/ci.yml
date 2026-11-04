@@ -303,8 +303,11 @@ jobs:
           PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
             -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
           # A brokered `secret exec` child under purlis's own wrap: the network through its proxy alone.
+          # Red unless the test really ran and passed: it leaves a marker only then.
+          rm -rf target/tests-that-really-ran
           PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
             -E 'package(purlis-core) & kind(lib) & test(=secrets::brokered::tests::under_purlis_wrap_a_brokered_child_reaches_the_network_only_through_its_proxy)'
+          test -f target/tests-that-really-ran/brokered-network-under-purlis-wrap || { echo "::error::the brokered network test did not really run"; exit 1; }
           # Again with the pod's hand-over folder really mounted, in memory as a pod's is, so the row
           # that denies it compiles and is tried (#4329). It goes as the step ends: no other test
           # expects this machine to have one.
@@ -1481,7 +1484,13 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         env:
           PURLIS_TEST_THROWAWAY_KEYCHAIN: "1"
-        run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- secrets::keyhold::held_by_the_keychain::
+        # Red unless each test really ran and passed: it leaves a marker only then.
+        run: |
+          rm -rf target/tests-that-really-ran
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- secrets::keyhold::held_by_the_keychain::
+          for ran in held-item-read-by-no-other-program item-another-program-holds-refused; do
+            test -f "target/tests-that-really-ran/$ran" || { echo "::error::$ran did not really run"; exit 1; }
+          done
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused
