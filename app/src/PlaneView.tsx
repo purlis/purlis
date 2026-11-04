@@ -331,6 +331,7 @@ import {
   focusedContent,
   homeOf,
   layoutShown,
+  type Content,
   moveToOwnTab,
   openBeside,
   panesMovedInto,
@@ -628,7 +629,10 @@ import {
   type StartNotes,
   withNote,
 } from "./ChatNotices";
-import { LayoutPanes } from "./LayoutPanes";
+import { LayoutPanes, type PaneFace } from "./LayoutPanes";
+import { drawnOf } from "./paneFold";
+import { usePaneRoom } from "./usePaneRoom";
+import { ChatPersonaState } from "./ChatPersonaState";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
 import { useWorkedHere } from "./workedHere";
 
@@ -5215,6 +5219,42 @@ export const PlaneView = memo(function PlaneView({
   }, [chatBrowsers, chatBrowsersRead, browsersBeside, change, filedIn]);
 
   const frontTab = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
+  /** **The room the front tab's panes have** (#4766), measured: a split that cannot give each
+   *  side its minimum folds a side to a rail, and a split row greys out where a half would be
+   *  under it. Nothing is measured before the window is laid out, and then nothing folds. */
+  const [panesAt, paneRoom] = usePaneRoom();
+  const focusedRoom = useMemo(
+    () =>
+      frontTab === undefined || paneRoom === undefined
+        ? undefined
+        : drawnOf(
+            zoomedLayout(tabs, frontTab.id, layoutShown(tabs, frontTab.id) ?? frontTab.layout),
+            frontTab.focused,
+            paneRoom,
+          ).sizes[frontTab.focused],
+    [tabs, frontTab, paneRoom],
+  );
+  /** What a folded pane's rail shows (#4766): a chat by its row's name and its persona and
+   *  state icon, as its tab wears them; a view and an empty pane as the panes name them. */
+  const paneFace = useCallback(
+    (content: Content): PaneFace | undefined =>
+      content.kind !== "session"
+        ? undefined
+        : {
+            name: naming.chat(content.session),
+            mark: (
+              <ChatPersonaState
+                persona={personaOf(content.session)}
+                session={content.session}
+                shell={shells.has(content.session)}
+                harness={factsOf(content.session)?.harness ?? null}
+                report={factsOf(content.session)?.report ?? null}
+                outcome={factsOf(content.session)?.outcome ?? null}
+              />
+            ),
+          },
+    [naming, personaOf, shells, factsOf],
+  );
   // The session the next worktree question is about: the chat in the pane that has the
   // keyboard, which is the one "this chat's worktree" means.
   // The chat SHOWN there (#1486): while the tab shows a task, the task is what is typed into.
@@ -8662,6 +8702,7 @@ export const PlaneView = memo(function PlaneView({
             away,
             focusMode,
             sidePanels,
+            paneRoom: focusedRoom,
             profiles: profileNames,
             screenReader,
             skillStudio: studioOn,
@@ -8675,6 +8716,7 @@ export const PlaneView = memo(function PlaneView({
       away,
       focusMode,
       sidePanels,
+      focusedRoom,
       clones,
       cloningNow,
       absentHere,
@@ -10694,7 +10736,12 @@ export const PlaneView = memo(function PlaneView({
                   <Menued on={{ on: "pane", tab: frontTabId }} offers={found} onPress={press}>
                     {/* The content panel, which the chosen tab joins (`ui/tabs`): the tab panel of
                   the chosen tab, named by it, while it is drawn on the strip. */}
-                    <div className="panes" {...panelRoot("content")} {...tabPanelOf(panelNamedBy)}>
+                    <div
+                      ref={panesAt}
+                      className="panes"
+                      {...panelRoot("content")}
+                      {...tabPanelOf(panelNamedBy)}
+                    >
                       {frontTab ? (
                         <TaskEndContext.Provider value={taskEndHand}>
                           <OfferOpeningContext.Provider value={offerOpening}>
@@ -10710,6 +10757,8 @@ export const PlaneView = memo(function PlaneView({
                                   frontTab.id,
                                   layoutShown(tabs, frontTab.id) ?? frontTab.layout,
                                 )}
+                                room={paneRoom}
+                                faceOf={paneFace}
                                 crumbs={frontCrumbs}
                                 placed={frontPlaced}
                                 endedTasks={frontEndedPanes}
@@ -10726,6 +10775,9 @@ export const PlaneView = memo(function PlaneView({
                                 onShowChat={showChatFromPane}
                                 focused={frontTab.focused}
                                 onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
+                                onOpenFolded={(pane) =>
+                                  keyboardInto(change((tabs) => focusPane(tabs, pane)))
+                                }
                                 offerFor={by}
                                 offers={found}
                                 heads={paneHeads}
