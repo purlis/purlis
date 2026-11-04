@@ -1,0 +1,248 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Studio chat link</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!--
+  PROTOTYPE for purlis#5185 (and #5184's button wording): throwaway, fake data, never merged.
+  Question: where does a chat the Skill studio starts show its link to its skill and job?
+  Three variants (?variant=A|B|C) x four moments (?moment=before|running|finished|needs):
+    A  Line above the tabs   the issue's words, literally: a chip in the pane head, a Notice line
+                             above the skill page's tabs, a "Studio chats" section on Runs, a link
+                             in the Needs-you row.
+    B  At the job's source   the chat says it in a PaneBand under its head; the skill page says it
+                             where the button was (the Grades card) plus a status item in its
+                             header; Runs lists it among the runs; Needs you names the chat in the row.
+    C  A job with steps      a breadcrumb in the pane head; above the tabs a Steps strip
+                             (Asked > Writing > Draft ready > Reviewed); Runs keeps a Jobs table;
+                             the Needs-you detail repeats the strip.
+  Each piece names the family (app/src/ui) it would be built from in its data-family attribute.
+  ← → (or the bar at the bottom) switch variant; the Moment buttons step through the job.
+-->
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --warn:#a15c00; --warn-soft:#fbefdc;
+  --ok:#21724a; --ok-soft:#e2f3ea; --tag:#e7eaf0; --shadow:0 10px 30px rgba(20,24,40,.14);
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding:12px 16px 76px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:4px}
+a{color:var(--accent);text-decoration:none;cursor:pointer}a:hover{text-decoration:underline}
+.top{max-width:1360px;margin:0 auto 10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.top .q{color:var(--muted);flex:1 1 380px}.top .q b{color:var(--fg)}
+.moments{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.moments button{padding:4px 10px;border-right:1px solid var(--line)}.moments button:last-child{border:0}
+.moments button.on{background:var(--accent);color:var(--panel)}
+.win{max-width:1360px;margin:0 auto;height:560px;display:grid;grid-template-columns:minmax(300px,0.8fr) minmax(0,1.6fr);border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+/* chat pane */
+.pane{border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
+.phead{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--line);background:var(--panel2);min-height:38px;flex-wrap:wrap}
+.phead .nm{font-weight:500;white-space:nowrap}
+.phead .h{color:var(--muted);font-size:12px}
+.phead .sp{flex:1}
+.sbtn{border:1px solid var(--line);border-radius:6px;padding:2px 9px;background:var(--panel);font-size:12px}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:1px 8px;border-radius:10px;background:var(--accent-soft);color:var(--accent);white-space:nowrap;border:1px solid transparent}
+.chip:hover{border-color:var(--accent)}
+.chip.done{background:var(--tag);color:var(--muted)}
+.band{display:flex;gap:8px;align-items:center;padding:5px 10px;border-bottom:1px solid var(--line);background:var(--accent-soft);font-size:12px;flex-wrap:wrap}
+.band.done{background:var(--panel2)}
+.band .sp{flex:1}
+.crumbs{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.crumbs a{font-weight:500}.crumbs .sep{opacity:.6}
+.transcript{padding:12px;display:grid;gap:10px;overflow:auto;align-content:start}
+.msg{padding:8px 10px;border-radius:8px;background:var(--panel2);max-width:95%}
+.msg.me{justify-self:end;background:var(--accent-soft)}
+.msg .who{font-size:11px;color:var(--muted);margin-bottom:2px}
+.tool{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+/* studio */
+.studio{display:grid;grid-template-columns:150px minmax(0,1fr);min-width:0;min-height:0}
+.snav{border-right:1px solid var(--line);padding:8px 6px;display:flex;flex-direction:column;gap:1px;background:var(--panel)}
+.snav .t{font-size:11px;color:var(--muted);padding:2px 9px 6px;text-transform:uppercase;letter-spacing:.06em}
+.snav span{padding:5px 9px;border-radius:6px;display:flex;justify-content:space-between;color:var(--muted)}
+.snav span.on{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.cnt{font-size:11px;padding:0 6px;border-radius:9px;background:var(--warn-soft);color:var(--warn)}
+.detail{overflow:auto;min-width:0}
+.dh{padding:14px 20px 10px;display:grid;gap:8px}
+.dh .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dh h1{margin:0;font-family:var(--mono);font-size:18px;font-weight:500}
+.dh p{margin:0;color:var(--muted);max-width:70ch}
+.dh .sp{flex:1}
+.tag{font-size:10.5px;padding:0 6px;border-radius:9px;background:var(--tag);color:var(--muted);white-space:nowrap}
+.btn{border:1px solid var(--line);border-radius:6px;padding:3px 10px;background:var(--panel);white-space:nowrap;font-size:12.5px}
+.btn:hover{background:var(--panel2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn[disabled]{opacity:.55;cursor:default}
+.notice{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 12px;border-radius:8px;background:var(--accent-soft);margin:0 20px 8px}
+.notice.done{background:var(--panel2)}
+.notice span:not(.dot){flex:1 1 240px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;flex:none}
+.dot.live{animation:b 1.4s ease-in-out infinite}@keyframes b{50%{opacity:.35}}
+.dot.ok{background:var(--ok)}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 8px;border:1px solid var(--line);border-radius:12px;white-space:nowrap}
+.tabs{display:flex;gap:2px;padding:0 20px;border-bottom:1px solid var(--line)}
+.tabs span{padding:7px 2px;margin-right:14px;color:var(--muted);border-bottom:2px solid transparent}
+.tabs span.on{color:var(--fg);border-bottom-color:var(--accent)}
+.tabs .n{font-size:11px;margin-left:4px}
+.body{padding:14px 20px;display:grid;gap:14px;max-width:880px}
+.card{border:1px solid var(--line);border-radius:9px;padding:12px 14px;display:grid;gap:8px}
+.card h3{margin:0;font-size:14px;font-weight:600;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.card h3 small{font-weight:400;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.card p{margin:0;color:var(--muted)}
+.card.job{border-color:var(--accent);background:var(--accent-soft)}
+.card.job p{color:var(--fg)}
+.sec{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0}
+.list{border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:8px 12px;border-bottom:1px solid var(--line);align-items:center}
+.li:last-child{border:0}
+.li .a{font-weight:500;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.li .b{grid-column:1/2;color:var(--muted);font-size:12px}
+.li.on{background:var(--accent-soft)}
+.li.studio{background:var(--panel2)}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:500;color:var(--muted);font-size:11.5px}
+.steps{display:flex;align-items:center;gap:0;margin:0 20px 8px;padding:7px 12px;border:1px solid var(--line);border-radius:8px;flex-wrap:wrap;row-gap:6px}
+.st{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.st i{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--line);display:inline-grid;place-items:center;font-style:normal;font-size:10px}
+.st.done i{background:var(--ok);border-color:var(--ok);color:var(--panel)}
+.st.now{color:var(--fg);font-weight:500}.st.now i{border-color:var(--accent);background:var(--accent-soft)}
+.st+.st::before{content:"";width:22px;height:1.5px;background:var(--line);margin:0 8px}
+.steps .sp{flex:1;min-width:10px}
+.needs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);min-height:100%}
+.needs>div{padding:14px 16px}.needs>div:first-child{border-right:1px solid var(--line)}
+.facts{display:grid;grid-template-columns:110px minmax(0,1fr);gap:5px 12px;margin:0}
+.facts dt{color:var(--muted)}.facts dd{margin:0}
+.diff{font-family:var(--mono);font-size:11.5px;background:var(--panel2);border-radius:7px;padding:8px 10px;white-space:pre-wrap}
+.bar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:6px;background:#111;color:#fff;border-radius:999px;padding:5px 8px;box-shadow:var(--shadow);font-size:12.5px;z-index:9}
+.bar button{width:28px;height:28px;border-radius:50%;color:#fff}.bar button:hover{background:#333}
+.bar b{min-width:220px;text-align:center;font-weight:500}
+@media (max-width:860px){.win{grid-template-columns:1fr;height:auto}.pane{border-right:0;border-bottom:1px solid var(--line);max-height:330px}.studio{grid-template-columns:1fr}.snav{display:none}.needs{grid-template-columns:1fr}}
+</style>
+<div class="top">
+  <div class="q"><b>purlis#5185 · prototype.</b> Where a chat the Skill studio starts shows its skill and job. Fake data; <span id="vname"></span></div>
+  <div class="moments" role="group" aria-label="Moment" id="moments"></div>
+</div>
+<div class="win" id="win"></div>
+<div class="bar" role="group" aria-label="Variant">
+  <button id="prev" aria-label="Previous variant">◀</button><b id="label"></b><button id="next" aria-label="Next variant">▶</button>
+</div>
+<script>
+const VARIANTS = { A: "Line above the tabs", B: "At the job's source", C: "A job with steps" };
+const MOMENTS = { before: "1 · Before", running: "2 · Running", finished: "3 · Finished (Runs)", needs: "4 · Draft in Needs you" };
+const p = new URLSearchParams(location.search);
+let v = VARIANTS[p.get("variant")] ? p.get("variant") : "A";
+let m = MOMENTS[p.get("moment")] ? p.get("moment") : "running";
+
+const SKILL = "test-design", WHERE = "purlis-demo", JOB = "writing outcome evals", CHAT = "Outcome evals for test-design";
+
+/* ---------- the chat pane ---------- */
+function pane() {
+  const done = m === "finished" || m === "needs";
+  if (m === "before") return `<div class="pane"><div class="phead"><span class="nm">feature/login-flow</span><span class="h">Claude Code · ${WHERE}</span><span class="sp"></span><button class="sbtn">Stop</button></div>
+    <div class="transcript"><div class="msg"><div class="who">Claude</div>Some other chat in this tab. The studio has started nothing yet.</div></div></div>`;
+  let head = "", band = "";
+  const chip = `<button class="chip ${done ? "done" : ""}" data-family="badge (pressable) → opens the skill page" title="Open ${SKILL} in the Skill studio">✦ ${SKILL} · ${done ? "wrote outcome evals" : JOB}</button>`;
+  if (v === "A") head = `<span class="nm">${CHAT}</span>${chip}<span class="sp"></span><button class="sbtn">${done ? "Review draft" : "Stop"}</button>`;
+  if (v === "B") {
+    head = `<span class="nm">${CHAT}</span><span class="h">Claude Code · ${WHERE}</span><span class="sp"></span><button class="sbtn">${done ? "Review draft" : "Stop"}</button>`;
+    band = `<div class="band ${done ? "done" : ""}" data-family="tabs/PaneBand"><span>✦</span><span>Started by the Skill studio for <b>${SKILL}</b> · ${done ? "draft ready in Needs you" : JOB}</span><span class="sp"></span><a>Open ${SKILL}</a></div>`;
+  }
+  if (v === "C") head = `<nav class="crumbs" aria-label="Where this chat belongs" data-family="breadcrumb (link family)"><span>Skill studio</span><span class="sep">›</span><a>✦ ${SKILL}</a><span class="sep">›</span><span>${done ? "outcome evals · draft ready" : JOB}</span></nav><span class="sp"></span><button class="sbtn">${done ? "Review draft" : "Stop"}</button>`;
+  return `<div class="pane"><div class="phead">${head}</div>${band}<div class="transcript">
+    <div class="msg me"><div class="who">Skill studio · on your behalf</div>Write outcome evals for the skill <code>${SKILL}</code> at ${WHERE} (purlis-skill-studio).</div>
+    <div class="tool">Read skills/test-design/SKILL.md</div><div class="tool">Write skills/test-design/evals/evals.json</div>
+    <div class="msg"><div class="who">Claude</div>${done ? "Wrote 6 outcome evals. The draft is in the studio's Needs you for your review." : "Drafting six cases: three that should pass, three edge cases…"}</div></div></div>`;
+}
+
+/* ---------- the studio ---------- */
+function nav(page) {
+  const n = m === "needs" || m === "finished" ? `<span class="cnt">1</span>` : "";
+  return `<div class="snav"><div class="t">Skill studio</div>
+    <span class="${page === "library" ? "on" : ""}">Library</span><span class="${page === "needs" ? "on" : ""}">Needs you ${n}</span><span>Drafts</span><span>Routing</span><span>Deleted</span></div>`;
+}
+function header() {
+  const running = m === "running";
+  const status = v === "B" && running ? `<span class="status" data-family="status/StatusItem"><span class="dot live"></span>A chat is ${JOB} · <a>Open chat</a></span>` : "";
+  return `<div class="dh"><div class="row"><h1>${SKILL}</h1><span class="tag">project · ${WHERE}</span><span class="sp"></span>${status}<button class="btn">Edit</button><button class="btn">Grade</button><button class="btn">…</button></div>
+    <p>Designs a test plan for a change: what to test, at which level, and the cases that matter.</p></div>`;
+}
+function aboveTabs() {
+  if (v === "A" && m === "running") return `<div class="notice" data-family="notice/Notice (attention tone, fix: Open chat)" role="status"><span class="dot live"></span><span>A chat is writing outcome evals · running</span><button class="btn">Open chat</button></div>`;
+  if (v === "C" && m !== "before") {
+    const at = m === "running" ? 1 : 2;
+    const names = ["Asked", "Writing", "Draft ready", "Reviewed"];
+    return `<div class="steps" data-family="steps/Steps" aria-label="Outcome evals, asked of a chat">${names.map((s, i) => `<span class="st ${i < at ? "done" : i === at ? "now" : ""}"><i>${i < at ? "✓" : i + 1}</i>${s}</span>`).join("")}<span class="sp"></span><span class="tag">Outcome evals · chat at ${WHERE}</span>&nbsp;<button class="btn">${at === 2 ? "Review draft" : "Open chat"}</button></div>`;
+  }
+  return "";
+}
+function tabs(on) {
+  const t = [["Overview"], ["Text"], ["History", 3], ["Grades", 1], ["Runs", 12]];
+  return `<div class="tabs" data-family="tabs/PageTabs">${t.map(([n, c]) => `<span class="${n === on ? "on" : ""}">${n}${c ? `<span class="n">${c}</span>` : ""}</span>`).join("")}</div>`;
+}
+function gradesBody() {
+  const running = m === "running";
+  let evals;
+  if (m === "before" || (running && v !== "B"))
+    evals = `<div class="card"><h3>Does it do the job? <small>outcome evals · evals/evals.json</small></h3><p>None yet. Outcome evals say whether ${SKILL} did what was asked, case by case.</p>
+      <div><button class="btn" data-family="button/Button" ${running ? "disabled title='A chat is already writing these'" : ""}>Ask a chat at ${WHERE} to write these</button></div></div>`;
+  else
+    evals = `<div class="card job" data-family="card + status/StatusItem"><h3>Does it do the job? <small>outcome evals · evals/evals.json</small></h3><p><span class="dot live"></span>&nbsp; A chat at ${WHERE} is writing these · running 2 min</p><div><button class="btn">Open chat</button> <button class="btn">Stop it</button></div></div>`;
+  return `<div class="body"><div class="card"><h3>Does it get picked? <small>trigger tests · evals/triggers.json</small></h3><p>8 tests · 7 picked it, 1 picked another skill.</p></div>${evals}</div>`;
+}
+function runsBody() {
+  const runs = [["Grade 4 · 87%", "2026-11-04 16:58", "Claude Code · smart-ide"], ["Used in feature/login-flow", "2026-11-04 15:20", "Claude Code · purlis-demo"], ["Used in fix/flaky-ci", "2026-11-03 11:04", "Codex · purlis-demo"]];
+  const row = (r) => `<div class="li"><div class="a">${r[0]}</div><span class="tag">${r[1]}</span><div class="b">${r[2]}</div></div>`;
+  if (v === "A") return `<div class="body"><p class="sec">Chats the studio started</p><div class="list" data-family="list/List"><div class="li studio"><div class="a"><span class="dot ok"></span> Writing outcome evals <span class="tag">finished 17:42</span></div><button class="btn">Open chat</button><div class="b">Chat at ${WHERE} · its draft waits in Needs you</div></div></div>
+    <p class="sec">Runs</p><div class="list">${runs.map(row).join("")}</div></div>`;
+  if (v === "B") return `<div class="body"><div class="list" data-family="list/List (one list, newest first)"><div class="li on"><div class="a">✦ Wrote outcome evals <span class="tag">studio chat</span></div><span class="tag">2026-11-04 17:42</span><div class="b">Chat at ${WHERE} · draft waits in Needs you · <a>Open chat</a> · <a>Review draft</a></div></div>${runs.map(row).join("")}</div></div>`;
+  return `<div class="body"><p class="sec">Jobs asked of chats</p><div class="list" data-family="table/Table"><table><thead><tr><th>Job</th><th>Chat</th><th>Asked</th><th>State</th><th></th></tr></thead><tbody>
+    <tr><td>Outcome evals</td><td><a>${CHAT}</a></td><td>17:31</td><td><span class="tag">draft ready</span></td><td><a>Review</a></td></tr>
+    <tr><td>Trigger tests</td><td><a>Trigger tests for test-design</a></td><td>Nov 2</td><td><span class="tag">reviewed · kept</span></td><td></td></tr></tbody></table></div>
+    <p class="sec">Runs</p><div class="list">${runs.map(row).join("")}</div></div>`;
+}
+function needsPage() {
+  const chatLink = { A: `<a>Open chat</a>`, B: `Written by <a>a chat at ${WHERE}</a>`, C: `<a>${CHAT}</a>` }[v];
+  const left = `<div><p class="sec">Changes to review <span class="tag">1</span></p><div class="list" data-family="list/List + RowBelow"><div class="li on"><div class="a">Outcome evals for ${SKILL}</div>${v === "A" ? `<span class="tag">new</span>` : `<span class="tag">draft</span>`}<div class="b">6 cases · ${chatLink}</div></div></div>
+    <p class="sec" style="margin-top:14px">Tidy up</p><div class="list"><div class="li"><div class="a">lint-rs unused 40 days</div><div class="b">Turn it off or delete it</div></div></div></div>`;
+  const strip = v === "C" ? `<div class="steps" style="margin:0 0 10px"><span class="st done"><i>✓</i>Asked</span><span class="st done"><i>✓</i>Writing</span><span class="st now"><i>3</i>Draft ready</span><span class="st"><i>4</i>Reviewed</span></div>` : "";
+  const facts = `<dl class="facts"><dt>Skill</dt><dd><a>✦ ${SKILL}</a> · project · ${WHERE}</dd><dt>Asked by</dt><dd>Ask a chat at ${WHERE} to write these, 17:31</dd><dt>Written by</dt><dd>${v === "B" ? `<a>${CHAT}</a> · Claude Code · finished 17:42` : `${CHAT} · finished 17:42`}</dd></dl>`;
+  const actions = v === "A" ? `<button class="btn primary">Keep</button> <button class="btn">Discard</button> <button class="btn">Open chat</button>` : v === "B" ? `<button class="btn primary">Keep</button> <button class="btn">Discard</button> <button class="btn">Ask the chat to change it</button>` : `<button class="btn primary">Keep</button> <button class="btn">Discard</button> <button class="btn">Open chat</button>`;
+  return `<div class="needs">${left}<div>${strip}<h3 style="margin:0 0 8px;font-size:15px">Outcome evals for ${SKILL}</h3>${facts}<div class="diff" style="margin:10px 0">+ evals/evals.json   6 cases
++ "plans unit tests for a pure function"
++ "asks for the change before planning"
+…</div><div>${actions}</div></div></div>`;
+}
+function studio() {
+  if (m === "needs") return `<div class="studio">${nav("needs")}<div class="detail">${needsPage()}</div></div>`;
+  const tab = m === "finished" ? "Runs" : "Grades";
+  return `<div class="studio">${nav("library")}<div class="detail">${header()}${aboveTabs()}${tabs(tab)}${tab === "Runs" ? runsBody() : gradesBody()}</div></div>`;
+}
+
+function draw() {
+  document.getElementById("win").innerHTML = pane() + studio();
+  document.getElementById("label").textContent = `${v} · ${VARIANTS[v]}`;
+  document.getElementById("vname").textContent = `variant ${v}, ${VARIANTS[v]}, moment ${MOMENTS[m]}.`;
+  document.getElementById("moments").innerHTML = Object.entries(MOMENTS).map(([k, n]) => `<button data-m="${k}" class="${k === m ? "on" : ""}" aria-pressed="${k === m}">${n}</button>`).join("");
+  const q = new URLSearchParams({ variant: v, moment: m });
+  history.replaceState(null, "", "?" + q);
+}
+const keys = Object.keys(VARIANTS);
+const step = (d) => { v = keys[(keys.indexOf(v) + d + keys.length) % keys.length]; draw(); };
+document.getElementById("prev").onclick = () => step(-1);
+document.getElementById("next").onclick = () => step(1);
+document.getElementById("moments").onclick = (e) => { const b = e.target.closest("[data-m]"); if (b) { m = b.dataset.m; draw(); } };
+addEventListener("keydown", (e) => { if (e.target.closest("input,textarea,[contenteditable]")) return; if (e.key === "ArrowLeft") step(-1); if (e.key === "ArrowRight") step(1); });
+draw();
+</script>
