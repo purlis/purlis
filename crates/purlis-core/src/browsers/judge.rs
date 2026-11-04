@@ -151,8 +151,11 @@ impl SiteJudge {
             .address
             .get(..6)
             .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https:"));
-        // A browser holding a login: its proxy refuses every other site, and nobody is asked.
-        if !self.bound.lets(&host, port) {
+        // A browser holding a login: its proxy carries the login's sites alone, which the person
+        // allowed with the login (its page's, and its form's, #4995, #5152), and refuses every
+        // other, so nobody is asked. What its page sends to its sign-in site, a token refresh
+        // say, goes.
+        if self.bound.sites().is_some() {
             return Gate::Go;
         }
         let own = self.own();

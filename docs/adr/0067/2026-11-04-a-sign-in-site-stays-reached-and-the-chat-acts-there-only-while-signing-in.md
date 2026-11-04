@@ -33,14 +33,22 @@ what the chat may do on the provider, not what the browser reaches.
   itself is not refused, since an app may keep such a frame for as long as it is open.
 - Keys go where the focus is: they are refused where the focused element is in a provider frame,
   where the page is the provider's, or where the focus cannot be told and the page holds a
-  provider frame.
-- Leaving a provider page is not acting on it: going back, or to another address, goes on. The
-  browser's pages are listed as they are, a provider page with its address and title, so the chat
-  can tell why a call is refused there.
-- While the agent drives, what a provider document sends to the provider itself (a form, a
-  request with a body) outside a sign-in is not sent. What it sends elsewhere (a form posted back
-  to the app) goes, and so does whatever the app's own pages send to the provider. This holds
-  even where a key or a click reaches a provider page that came as the act was made.
+  provider frame, and each key after the first is judged again. A click, a hover, a drag's drop
+  and a scroll are refused where what is drawn at their point is a provider frame, so a frame
+  drawn over the element aimed at takes nothing.
+- Leaving a provider page is not acting on it: going back, or to another address, goes on. A
+  provider page is listed and answered with its origin alone and no title, so the chat can tell
+  why a call is refused there and reads nothing of the page. A download that came from the
+  provider is not brought into the chat's folder outside a sign-in.
+- While one of the chat's calls is carried out, nothing is sent to the provider by an address the
+  chat wrote, however it was written (judged as the browser itself reads the address), nor by a
+  provider document to the provider itself (a form, a request with a body). What a provider
+  document sends elsewhere (a form posted back to the app) goes, and so does whatever the app's
+  own pages send to the provider, and everything outside the chat's calls. This holds even where
+  a key or a click reaches a provider page that came as the call was made.
+- A browser holding a login sends to the login's sites without asking the person, its sign-in
+  host included: the person allowed both with the login, and the proxy refuses every other site.
+  A token refresh the app's page sends to its provider goes.
 - "Shows its form again" is a provider page that shows a password field: its refusal says to log
   in again. Every refusal on the provider says what to do: go back, or call `browser_login` where
   the page asks to sign in.

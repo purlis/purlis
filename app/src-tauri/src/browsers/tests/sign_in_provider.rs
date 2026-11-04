@@ -360,7 +360,12 @@ fn the_sign_in_provider_through_every_hop_in_homes_of_their_own() {
     );
     let asks = tools.call("browser_snapshot", json!({}));
     assert!(asks.error, "{}", asks.text);
-    assert!(asks.text.contains("browser_login"), "{}", asks.text);
+    assert!(
+        asks.text
+            .contains("It shows its sign-in form again: call browser_login to sign in anew"),
+        "{}",
+        asks.text
+    );
     // And a login signs in anew.
     tools.done("browser_login", json!({ "login": LOGIN }));
     let again = tools.call(
