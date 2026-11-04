@@ -2052,6 +2052,12 @@ lives once and a rotation reaches every key linked to it. It lives on one machin
 value it points at.
 _Avoid_: alias, copy, reference (that is a vault provider)
 
+**Run grant**:
+The person's allowance, given in the window, for one program a persona does not declare to receive
+a vault's value: for one exact command, or for the rest of one chat. It is never committed and ends
+with the chat; a lasting allowance is a persona's declared tool instead.
+_Avoid_: tool (the committed declaration), temporary tool, secret grant
+
 **Forge extension**:
 An extension about a code host's pull requests, merge requests or issues, which reaches the
 forge through `gh` or `glab`'s own login and never through a secret purlis hands it. Once
