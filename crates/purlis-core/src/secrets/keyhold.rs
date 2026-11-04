@@ -998,6 +998,10 @@ mod held_by_the_keychain {
     /// `errSecInteractionNotAllowed`: the read would have asked the person, with dialogs off.
     const WOULD_ASK: i32 = -25308;
 
+    /// `errSecAuthFailed`: the same refusal as CI's macOS runner gave it, with dialogs off
+    /// (`studio-confinement-macos`, the first run of this test).
+    const AUTH_FAILED: i32 = -25293;
+
     /// How long another program is given before it counts as waiting on a question nobody
     /// answers.
     const PATIENCE: Duration = Duration::from_secs(20);
@@ -1211,7 +1215,11 @@ mod held_by_the_keychain {
             .find_generic_password(&service, "kept")
             .map(|(value, _)| String::from_utf8_lossy(value.as_ref()).into_owned())
             .expect_err("a program the item does not trust is never handed its value");
-        assert_eq!(refused.code(), WOULD_ASK, "{refused}");
+        assert!(
+            [WOULD_ASK, AUTH_FAILED].contains(&refused.code()),
+            "refused for another reason: {} {refused}",
+            refused.code()
+        );
         crate::secrets::test_really_ran("item-another-program-holds-refused");
     }
 }
