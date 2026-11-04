@@ -142,7 +142,7 @@ mod at_start {
     fn a_chat_whose_persona_may_use_the_vault_is_handed_each_value_in_its_variable() {
         let plane = plane();
 
-        let handed = read(&plane.ctx, Some("dev"), &work_key()).expect("it is read");
+        let handed = read(&plane.ctx, Some("dev"), &work_key(), None).expect("it is read");
 
         assert_eq!(handed.names(), ["ANTHROPIC_API_KEY"]);
         let env = handed_onto(Vec::new(), &handed);
@@ -160,7 +160,7 @@ mod at_start {
         let plane = plane();
 
         for persona in [None, Some("ops")] {
-            let why = read(&plane.ctx, persona, &work_key()).unwrap_err();
+            let why = read(&plane.ctx, persona, &work_key(), None).unwrap_err();
             assert!(why.contains("providers"), "{persona:?}: {why}");
             assert!(!why.contains("the-work-anthropic-value"), "{why}");
         }
@@ -174,7 +174,7 @@ mod at_start {
             Reference::parse("vault:providers/elsewhere").unwrap(),
         )];
 
-        let why = read(&plane.ctx, Some("dev"), &gone).unwrap_err();
+        let why = read(&plane.ctx, Some("dev"), &gone, None).unwrap_err();
 
         assert!(why.contains("ANTHROPIC_API_KEY"), "{why}");
     }
@@ -182,7 +182,7 @@ mod at_start {
     #[test]
     fn what_is_handed_never_shows_its_values() {
         let plane = plane();
-        let handed = read(&plane.ctx, Some("dev"), &work_key()).unwrap();
+        let handed = read(&plane.ctx, Some("dev"), &work_key(), None).unwrap();
 
         let shown = format!("{handed:?}");
 
@@ -193,7 +193,7 @@ mod at_start {
     #[test]
     fn the_read_is_recorded_by_name_and_never_by_value() {
         let plane = plane();
-        read(&plane.ctx, Some("dev"), &work_key()).unwrap();
+        read(&plane.ctx, Some("dev"), &work_key(), None).unwrap();
 
         let trace = serde_json::to_string(&plane.trace()).unwrap();
 
@@ -204,7 +204,7 @@ mod at_start {
     #[test]
     fn a_handed_value_wins_over_one_the_chat_would_inherit_and_nothing_else_moves() {
         let plane = plane();
-        let handed = read(&plane.ctx, Some("dev"), &work_key()).unwrap();
+        let handed = read(&plane.ctx, Some("dev"), &work_key(), None).unwrap();
         let inherited = vec![
             (OsString::from("ANTHROPIC_API_KEY"), OsString::from("older")),
             (OsString::from("HOME"), OsString::from("/home/a")),
@@ -227,6 +227,86 @@ mod at_start {
             inherited,
             "a chat with nothing handed, a shell tab's among them, is started as it was"
         );
+    }
+
+    // A credential missing from its vault is a Secret ask, and the start waits on it (#5074).
+
+    fn a_missing_key() -> Vec<(String, Reference)> {
+        vec![(
+            "ANTHROPIC_API_KEY".to_owned(),
+            Reference::parse("vault:providers/elsewhere").unwrap(),
+        )]
+    }
+
+    fn reads_asking(
+        plane: &Plane,
+        asks: &crate::secrets::ask::Asks,
+        within: std::time::Duration,
+    ) -> Result<Handed, String> {
+        let missing = crate::secrets::brokered::Missing {
+            asks,
+            within,
+            moved: &|| {},
+        };
+        read(&plane.ctx, Some("dev"), &a_missing_key(), Some(&missing))
+    }
+
+    #[test]
+    fn a_credential_missing_from_its_vault_waits_on_a_secret_ask_and_the_chat_starts_with_it_filled()
+     {
+        let plane = plane();
+        let asks = crate::secrets::ask::Asks::new(plane.root());
+        let handed = std::thread::scope(|scope| {
+            let start =
+                scope.spawn(|| reads_asking(&plane, &asks, std::time::Duration::from_secs(60)));
+            let open = loop {
+                if let Some(one) = asks.open().into_iter().next() {
+                    break one;
+                }
+                std::thread::yield_now();
+            };
+            assert_eq!(
+                (
+                    open.persona.as_str(),
+                    open.vault.as_str(),
+                    open.key.as_str()
+                ),
+                ("dev", "providers", "elsewhere")
+            );
+            assert!(open.chats.is_empty(), "a start has no number yet: {open:?}");
+            assert_eq!(open.waiting(), 1, "the start waits on it");
+            asks.answer(
+                &plane.ctx,
+                open.id,
+                crate::secrets::ask::Answer::Fill("fr3sh-anthropic".to_owned().into()),
+                crate::harness::asks::Answerer::admitted(crate::harness::asks::Admitted::LocalUi)
+                    .unwrap(),
+            )
+            .unwrap();
+            start.join().unwrap()
+        })
+        .expect("the chat starts once filled");
+        assert_eq!(
+            handed_onto(Vec::new(), &handed),
+            [(
+                OsString::from("ANTHROPIC_API_KEY"),
+                OsString::from("fr3sh-anthropic")
+            )]
+        );
+    }
+
+    #[test]
+    fn a_credential_missing_from_its_vault_that_nobody_answers_in_time_starts_nothing() {
+        let plane = plane();
+        let asks = crate::secrets::ask::Asks::new(plane.root());
+        let why = reads_asking(&plane, &asks, std::time::Duration::ZERO).unwrap_err();
+        assert!(why.contains("ANTHROPIC_API_KEY"), "{why}");
+        assert!(
+            why.contains("waiting on you for providers/elsewhere"),
+            "{why}"
+        );
+        assert!(why.contains("nothing was started"), "{why}");
+        assert_eq!(asks.open().len(), 1, "the ask stays open");
     }
 }
 

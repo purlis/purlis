@@ -626,3 +626,69 @@ fn finish_proves_a_real_token_reads_with_it_and_revokes_it() {
         "the proof's token is revoked last"
     );
 }
+
+/// A clone at `workspaces/alpha/<name>` of plane `root`, whose remotes are `urls`.
+fn clone_with_remotes(root: &std::path::Path, name: &str, urls: &[&str]) {
+    let clone = root.join("workspaces/alpha").join(name);
+    std::fs::create_dir_all(&clone).unwrap();
+    let git = |args: &[&str]| {
+        let out = crate::forklock::output(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&clone)
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_SYSTEM", "/dev/null"),
+        )
+        .expect("git runs");
+        assert!(out.status.success(), "git {args:?}");
+    };
+    git(&["init", "-q", "-b", "main", "."]);
+    for (at, url) in urls.iter().enumerate() {
+        git(&["remote", "add", &format!("r{at}"), url]);
+    }
+}
+
+#[test]
+fn the_project_s_forge_hosts_are_read_from_its_clones_with_a_host_it_knows_no_forge_at_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n[[forge]]\nkind = \"github\"\nhost = \"git.acme.internal\"\n",
+    )
+    .unwrap();
+    for folder in ["personas", "inventory", "workspaces"] {
+        std::fs::create_dir_all(root.join(folder)).unwrap();
+    }
+    clone_with_remotes(
+        &root,
+        "svc",
+        &[
+            "https://git.acme.internal/acme/svc.git",
+            "git@bitbucket.org:acme/svc.git",
+            "https://github.com/acme/svc.git",
+        ],
+    );
+    clone_with_remotes(
+        &root,
+        "web",
+        &["https://git.acme.internal/acme/web.git", "not a url"],
+    );
+
+    let found = hosts_of_the_project(&root);
+
+    let said: Vec<(&str, Option<crate::forge::Kind>)> = found
+        .iter()
+        .map(|one| (one.host.as_str(), one.kind))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            ("bitbucket.org", None),
+            ("git.acme.internal", Some(crate::forge::Kind::GitHub)),
+            ("github.com", Some(crate::forge::Kind::GitHub)),
+        ],
+        "each host once, a forge purlis knows by its kind, and nothing that isn't a host"
+    );
+}

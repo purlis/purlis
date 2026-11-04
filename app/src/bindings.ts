@@ -3350,6 +3350,12 @@ export const commands = {
 	 */
 	poolSetupTry: (plane: PlaneId, pool: string, workspace: string | null) => typedError<PoolSetupTried, string>(__TAURI_INVOKE("pool_setup_try", { plane, pool, workspace })),
 	/**
+	 *  **Cancels the Try it under way on pool `pool`** (#4976), on the person's press, as Cancel on
+	 *  the picker stops a start: its start stops waiting for the runner, its wait for the chat's start
+	 *  ends, and its chat is closed. Nothing is kept. Silent where no Try it is under way there.
+	 */
+	poolSetupTryCancel: (pool: string) => __TAURI_INVOKE<void>("pool_setup_try_cancel", { pool }),
+	/**
 	 *  **How each pool this machine keeps stands in the chat picker of `plane`** (#4484): read from
 	 *  what this machine keeps and the plane's personas, with nothing asked of Docker or a runner.
 	 *  It changes nothing.
@@ -11481,6 +11487,8 @@ export type PoolSetupAction = {
 
 /**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
 export type PoolSetupCheck = {
+	/**  What it checks: `chat`, `signins` or `identity`. */
+	about: string,
 	verdict: string,
 	title: string,
 	more: string | null,
@@ -11568,8 +11576,19 @@ export type PoolSetupStep = {
 
 /**  What Try it found. */
 export type PoolSetupTried = {
-	/**  Why it didn't pass; null where a real chat started and the proof is kept. */
+	/**
+	 *  Why it didn't pass; null where a real chat started and the proof is kept, or where the
+	 *  person cancelled it.
+	 */
 	failed: PoolSetupFailed | null,
+	/**  The person cancelled it (#4976): nothing was kept, and its chat is closed. */
+	cancelled: boolean,
+	/**
+	 *  What Try it proved of the agent's identity itself (#4490), for the identity's line: a
+	 *  read-only token GitHub made for the App, read with and revoked. None where the identity
+	 *  step's own line stands: no App of Agent identity's, no repo, or a step not done.
+	 */
+	identity: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
 };

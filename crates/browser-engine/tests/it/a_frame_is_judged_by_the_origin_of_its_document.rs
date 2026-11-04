@@ -6,7 +6,7 @@
 //! frame the origin of the document that made it, and a sandboxed or data frame none, so
 //! nothing is typed into it. A page's own document is judged by its origin the same way: a
 //! blank page another page wrote has the writer's origin. A blob page another page opens does
-//! not stay open.
+//! not stay open. Keys on a fresh blank tab are refused as on a blank tab.
 //!
 //! These need a real Chrome and a loopback port for the fixture site, which a sandboxed agent
 //! does not have: they run where `PURLIS_TEST_ENGINE` names a Chrome executable, and on CI.
@@ -161,4 +161,30 @@ fn a_blob_page_another_page_opens_does_not_stay_open() {
         current.address, "http://other.test/opens-pages.html",
         "{listed:?}"
     );
+}
+
+#[test]
+fn keys_on_a_fresh_blank_tab_are_refused_as_a_blank_tab() {
+    let (judge, _) = judge();
+    let Some((browser, _data, _site)) = started_judged(judge) else {
+        return;
+    };
+    let start = Instant::now();
+    let refused = loop {
+        let refused = browser
+            .call(
+                &next_id(),
+                Call::Press {
+                    page: None,
+                    keys: vec!["a".into()],
+                },
+            )
+            .err();
+        // Until the blank document's own context has said its origin, it is not known.
+        if refused != Some(Refusal::FrameUnread) || start.elapsed() > Duration::from_secs(10) {
+            break refused;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert_eq!(refused, Some(Refusal::BlankTab));
 }

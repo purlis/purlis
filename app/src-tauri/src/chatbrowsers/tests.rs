@@ -3356,3 +3356,67 @@ fn a_chat_whose_pages_cant_be_followed_again_and_again_rests_for_a_while() {
         "another chat is followed"
     );
 }
+
+/// A browser login `shop` in vault `qa`, its user in key `shop-user`, its password in `shop-pass`.
+fn a_shop_login() -> purlis_core::sandbox::tools::Tool {
+    use purlis_core::sandbox::tools::{Handed, Tool, Value, login};
+    Tool {
+        name: "shop".to_owned(),
+        vault: "qa".to_owned(),
+        values: [
+            (login::PASS_VAR, "shop-pass"),
+            (login::USER_VAR, "shop-user"),
+        ]
+        .into_iter()
+        .map(|(var, key)| Value {
+            var: var.to_owned(),
+            handed: Handed::File,
+            key: key.to_owned(),
+        })
+        .collect(),
+        login: Some(login::Login {
+            url: "https://shop.example.test/".to_owned(),
+            origin: "https://shop.example.test".to_owned(),
+            form: None,
+        }),
+        args: None,
+        mint: None,
+        host: None,
+    }
+}
+
+/// An open Secret ask for `vault`/`key`, chat `chat` waiting on it.
+fn an_open_ask(chat: u32, vault: &str, key: &str) -> purlis_core::secrets::ask::Open {
+    purlis_core::secrets::ask::Open {
+        id: 1,
+        persona: "dev".to_owned(),
+        vault: vault.to_owned(),
+        key: key.to_owned(),
+        tool: None,
+        chats: vec![chat],
+        starts: 0,
+        since: 0,
+    }
+}
+
+#[test]
+fn allow_once_is_kept_only_while_its_chat_waits_on_an_ask_for_that_logins_own_keys() {
+    let shop = a_shop_login();
+    let waits =
+        |open: &[purlis_core::secrets::ask::Open]| super::waits_on_its_secret(open, 7, &shop);
+    assert!(waits(&[an_open_ask(7, "qa", "shop-pass")]), "its password");
+    assert!(waits(&[an_open_ask(7, "qa", "shop-user")]), "its user");
+    assert!(
+        !waits(&[an_open_ask(7, "qa", "other-key")]),
+        "another key of its vault"
+    );
+    assert!(
+        !waits(&[an_open_ask(7, "ops", "shop-pass")]),
+        "the same key of another vault"
+    );
+    assert!(
+        !waits(&[an_open_ask(8, "qa", "shop-pass")]),
+        "another chat's ask"
+    );
+    assert!(!waits(&[]), "no ask open");
+}
