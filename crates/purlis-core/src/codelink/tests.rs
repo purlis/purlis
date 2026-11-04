@@ -1431,20 +1431,39 @@ fn a_runner_looks_beyond_its_home_but_not_through_purlis_own_folders() {
 }
 
 /// **A host that can't mark its first program starts none** (#4933): what that program kept
-/// outside its project could not be found afterwards.
+/// outside its project could not be found afterwards. Anything standing at the mark lets the
+/// program start, and each check says it, which keeps the runner (#5103).
 #[cfg(unix)]
 #[test]
 fn a_host_that_cannot_mark_its_first_program_starts_none() {
     use purlis_host::Code;
+    use std::os::unix::fs::PermissionsExt;
     let (dir, home, projects) = a_runner_home();
     std::os::unix::fs::symlink(dir.path().join("gone"), projects.join(held::FIRST_PROGRAM))
         .unwrap();
+    let moves = Moves::in_home(home.clone());
 
-    let refused = Moves::in_home(home)
-        .program_starting(&projects)
-        .unwrap_err();
+    moves.program_starting(&projects).unwrap();
+    let (_, unread) = moves.repos_held(&projects).unwrap();
+    assert!(
+        unread
+            .iter()
+            .any(|one| one.contains("not a file purlis made")),
+        "{unread:?}"
+    );
 
-    assert_eq!(refused.code, purlis_host::protocol::session::NOT_STARTED);
+    if rustix::process::geteuid().is_root() {
+        return; // Every folder is open to root.
+    }
+    std::fs::remove_file(projects.join(held::FIRST_PROGRAM)).unwrap();
+    std::fs::set_permissions(&projects, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let refused = Moves::in_home(home).program_starting(&projects);
+    std::fs::set_permissions(&projects, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert_eq!(
+        refused.unwrap_err().code,
+        purlis_host::protocol::session::NOT_STARTED
+    );
 }
 
 /// **A mark a task removed and a later start made again keeps the host's own first start**
