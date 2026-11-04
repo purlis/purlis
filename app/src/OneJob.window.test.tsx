@@ -9,6 +9,7 @@ import App from "./App";
 import type { Moved, OpenChat } from "./bindings";
 import { onTheWire } from "./chatEvents.testkit";
 import { forgetKeyboard } from "./paneKeyboard";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { GRIP } from "./paneDrag";
 import { stripNamed } from "./test-strips";
 
@@ -68,6 +69,8 @@ function core(chats: OpenChat[]) {
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return chats;
+    // Each chat in a tab of its own on ide, as the stored layout keeps it (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(chats, () => "ide");
     if (cmd === "plane_sidebar")
       return {
         root: PLANE,
