@@ -789,6 +789,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_pool",
     "pool_setup_command",
     "pool_setup_create",
+    "pool_setup_sign_ins_by_hand",
     "pool_setup_sizes",
     "pool_setup_skip",
     "pool_setup_wake",

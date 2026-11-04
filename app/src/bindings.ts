@@ -3348,7 +3348,10 @@ export const commands = {
 	 *  recorded on pool `pool`, then each of `signing_in` signed in there, as the core spells it. None
 	 *  where the button would run nothing. It only spells.
 	 */
-	poolSetupSignInsByHand: (pool: string, adding: string[], signingIn: string[]) => typedError<PoolSetupSee | null, string>(__TAURI_INVOKE("pool_setup_sign_ins_by_hand", { pool, adding, signingIn })),
+	poolSetupSignInsByHand: (pool: string, adding: string[], signingIn: string[]) => typedError<{
+	note: string,
+	text: string,
+} | null, string>(__TAURI_INVOKE("pool_setup_sign_ins_by_hand", { pool, adding, signingIn })),
 	/**
 	 *  **This machine's profiles against pool `pool`'s limits**, the ones in use in `plane` marked:
 	 *  measured as a send measures them, with no file read, and held to what its runner takes where

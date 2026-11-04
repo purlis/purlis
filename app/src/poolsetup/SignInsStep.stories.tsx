@@ -80,9 +80,28 @@ const OVER: PoolSetupSizes = {
   ],
 };
 
+/** What the core spells for the ticked profiles (#4718), as `poolsetup::signins::by_hand` does. */
+function byHand(args: unknown) {
+  const { pool, adding, signingIn } = args as {
+    pool: string;
+    adding: string[];
+    signingIn: string[];
+  };
+  const lines = [
+    ...(adding.length > 0 ? [`purlis pool add-profile ${pool} ${adding.join(" ")}`] : []),
+    ...signingIn.map((name) => `purlis profile sign-in ${name} --pool ${pool}`),
+  ];
+  if (lines.length === 0) return null;
+  return {
+    note: "These record the ticked profiles on the pool, then sign in each one that needs it, as the button does. Run them yourself in your project's folder if you prefer, and purlis picks it up.",
+    text: lines.join("\n"),
+  };
+}
+
 function faked(profiles: PoolProfiles, sizes: PoolSetupSizes) {
   return () => {
-    mockIPC((cmd) => {
+    mockIPC((cmd, args) => {
+      if (cmd === "pool_setup_sign_ins_by_hand") return byHand(args);
       if (cmd === "pool_profiles") return profiles;
       if (cmd === "pool_setup_sizes") return sizes;
       if (cmd === "pool_limits") return { groups: [], advanced: [], waiting: [] };
@@ -139,7 +158,8 @@ export const OverItsLimit: Story = {
 export const SigningIn: Story = {
   beforeEach: () => {
     let added = false;
-    mockIPC((cmd) => {
+    mockIPC((cmd, args) => {
+      if (cmd === "pool_setup_sign_ins_by_hand") return byHand(args);
       if (cmd === "pool_profiles")
         return added
           ? {
