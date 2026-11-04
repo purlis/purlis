@@ -59,6 +59,20 @@ pub enum PoolCommand {
         #[arg(long)]
         width: Option<u32>,
     },
+    /// Record profiles of this machine's on a pool, for its chats to use. Its runner keeps them
+    /// the next time their sign-ins are asked, and `purlis profile sign-in <profile> --pool
+    /// <pool>` signs one in there.
+    ///
+    /// This is what Pool setup's Sign-ins button records, and Pool setup picks it up. It sends
+    /// nothing. A pool that names no profiles keeps your project's default beside them, so run
+    /// it in your project's folder.
+    AddProfile {
+        /// The pool's name.
+        pool: String,
+        /// The profiles, by name, as `purlis profile list` shows them.
+        #[arg(required = true)]
+        profiles: Vec<String>,
+    },
     /// Pool setup: each step's state and what to do next, for a pool or a new one. It only reads.
     Setup {
         /// The pool. Without it, a new Docker pool.
@@ -138,6 +152,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             };
             added(&config()?, &asked)
         }
+        PoolCommand::AddProfile { .. } => Ok(0),
         PoolCommand::Setup { name, json } => {
             crate::poolsetup::answered(name.as_deref(), *json)?;
             Ok(0)

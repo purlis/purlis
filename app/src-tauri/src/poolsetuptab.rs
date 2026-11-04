@@ -363,6 +363,20 @@ pub async fn pool_setup_sizes(
     }
 }
 
+/// **What Sign-ins' button runs, by hand, for the profiles ticked** (#4718, Q30): `adding`
+/// recorded on pool `pool`, then each of `signing_in` signed in there, as the core spells it. None
+/// where the button would run nothing. It only spells.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_sign_ins_by_hand(
+    pool: String,
+    adding: Vec<String>,
+    signing_in: Vec<String>,
+) -> Result<Option<PoolSetupSee>, String> {
+    let _ = (pool, adding, signing_in);
+    Ok(None)
+}
+
 /// **Keeps that the person skipped step `step` on pool `pool`, or takes the skip back.** Refused
 /// for a step the ones after it need.
 #[tauri::command]

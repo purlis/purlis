@@ -260,4 +260,48 @@ describe("SignInsStep", () => {
     expect(await screen.findByText(/isn't running/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Skip for now" })).toBeTruthy();
   });
+
+  it("shows by hand what its button records and signs in, for the profiles ticked (#4718)", async () => {
+    const calls = core({
+      pool_setup_sign_ins_by_hand: (args) => {
+        const { adding, signingIn } = args as { adding: string[]; signingIn: string[] };
+        return {
+          note: "Run these yourself if you prefer.",
+          text: [`purlis pool add-profile P ${adding.join(" ")}`, ...signingIn].join("\n"),
+        };
+      },
+    });
+    draw();
+    await userEvent.click(await screen.findByRole("button", { name: "See what this does" }));
+    expect(await screen.findByText(/purlis pool add-profile P personal/)).toBeTruthy();
+    const list = screen.getByRole("list", { name: "Your profiles" });
+    await userEvent.click(within(list).getByRole("checkbox", { name: /^oss/ }));
+    expect(await screen.findByText(/purlis pool add-profile P personal oss/)).toBeTruthy();
+    const asked = calls.filter((call) => call.cmd === "pool_setup_sign_ins_by_hand").at(-1);
+    expect(asked?.args).toMatchObject({
+      adding: ["personal", "oss"],
+      signingIn: ["personal", "oss"],
+    });
+  });
+
+  it("asks the runner again when the core reads the step anew, so work done by hand shows (#4718)", async () => {
+    const calls = core();
+    const pool = `pool-${++pools}`;
+    const { rerender } = render(
+      <SignInsStep step={STEP} pool={pool} plane="p" changed={vi.fn()} />,
+    );
+    await screen.findByRole("list", { name: "Your profiles" });
+    const before = calls.filter((call) => call.cmd === "pool_profiles").length;
+    rerender(
+      <SignInsStep
+        step={{ ...STEP, findings: ["The runner doesn't keep the profile personal yet."] }}
+        pool={pool}
+        plane="p"
+        changed={vi.fn()}
+      />,
+    );
+    await waitFor(() =>
+      expect(calls.filter((call) => call.cmd === "pool_profiles").length).toBeGreaterThan(before),
+    );
+  });
 });

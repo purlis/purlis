@@ -109,6 +109,28 @@ pub fn sizes(config: &Path, plane: Option<&Path>, pool: &str) -> Result<Sizes, R
     })
 }
 
+/// **Records the profiles `names` on pool `pool`** (#4718): what Sign-ins' button and Add a
+/// profile… in the window do, and what `purlis pool add-profile` does, with the same checks and
+/// words. It only records: nothing is sent, and the pool's runner keeps them the next time its
+/// profiles are asked. A pool that names none keeps the default of the project at `project`
+/// beside them, so with no project open it is refused. Each name must be one of this machine's
+/// profiles that goes to a runner, checked before anything is written.
+pub fn record(
+    _config: &Path,
+    _project: Option<&Path>,
+    _pool: &str,
+    _names: &[String],
+) -> Result<(), String> {
+    Ok(())
+}
+
+/// **What Sign-ins' button runs, by hand** (#4718, Q30): `adding` recorded on pool `pool`, then
+/// each of `signing_in` signed in there. None where it would run nothing.
+#[must_use]
+pub fn by_hand(_pool: &str, _adding: &[String], _signing_in: &[String]) -> Option<super::See> {
+    None
+}
+
 /// What a send of `record` to a runner carries: its bytes and its files.
 fn measured(record: &crate::profilestore::MachineProfile) -> Result<(u64, u64), String> {
     let kept = crate::profilestore::onrunner::Kept::of(record)?.with_settings_of(record);

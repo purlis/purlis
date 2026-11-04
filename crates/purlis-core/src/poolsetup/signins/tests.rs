@@ -46,3 +46,107 @@ fn a_profile_that_couldnt_be_measured_says_why_and_is_over_nothing() {
     assert_eq!(one.unread.as_deref(), Some("no folder"));
     assert!(one.hits.is_empty());
 }
+
+// ---- #4718: recording profiles on a pool, from the window or `purlis pool add-profile` ----
+
+const IMAGE: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+/// A config home keeping the Docker pool `builds`, and this machine's profiles `names`.
+fn a_machine(names: &[&str]) -> tempfile::TempDir {
+    use crate::profilestore::{Homes, MachineSettings};
+    let dir = tempfile::tempdir().unwrap();
+    let pool = runners::Pool::new(
+        "builds",
+        crate::dockerpool::Image::pinned(IMAGE).unwrap(),
+        runners::Set::default(),
+    )
+    .unwrap();
+    runners::record_pool(dir.path(), &pool).unwrap();
+    let store = Homes::at(dir.path(), &dir.path().join("data"));
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let env = |_: &str| -> Option<String> { None };
+    for name in names {
+        crate::profilestore::create(
+            &store,
+            name,
+            "claude",
+            &MachineSettings {
+                home: &home,
+                env: &env,
+            },
+            1,
+        )
+        .expect("made");
+    }
+    dir
+}
+
+fn named(config: &Path) -> Option<Vec<String>> {
+    runners::profiles_of(config, "builds").unwrap()
+}
+
+#[test]
+fn recording_profiles_on_a_pool_that_names_some_adds_each_once() {
+    let machine = a_machine(&["work", "home"]);
+    let config = machine.path();
+    runners::add_pool_profile(config, "builds", "work", None).unwrap();
+    record(config, None, "builds", &["home".into(), "work".into()]).unwrap();
+    assert_eq!(named(config), Some(vec!["work".into(), "home".into()]));
+}
+
+#[test]
+fn a_pool_that_names_none_with_no_project_open_is_refused_and_left_as_it_was() {
+    let machine = a_machine(&["work"]);
+    let config = machine.path();
+    let why = record(config, None, "builds", &["work".into()]).unwrap_err();
+    assert!(why.contains("no project is open"), "{why}");
+    assert_eq!(named(config), None);
+}
+
+#[test]
+fn a_profile_this_machine_hasnt_got_records_none_of_the_names() {
+    let machine = a_machine(&["work"]);
+    let config = machine.path();
+    runners::add_pool_profile(config, "builds", "work", None).unwrap();
+    let why = record(config, None, "builds", &["work".into(), "other".into()]).unwrap_err();
+    assert!(why.contains("no profile named 'other'"), "{why}");
+    assert_eq!(named(config), Some(vec!["work".into()]));
+}
+
+#[test]
+fn a_pool_this_machine_hasnt_got_is_refused() {
+    let machine = a_machine(&["work"]);
+    let why = record(machine.path(), None, "nowhere", &["work".into()]).unwrap_err();
+    assert!(why.contains("nowhere"), "{why}");
+}
+
+#[test]
+fn by_hand_records_the_ticked_profiles_then_signs_in_each_that_needs_it() {
+    let see = by_hand("builds", &["home".into(), "work".into()], &["home".into()]).unwrap();
+    assert_eq!(
+        see.text,
+        "purlis pool add-profile builds home work\npurlis profile sign-in home --pool builds"
+    );
+    assert!(see.note.contains("picks"), "{}", see.note);
+}
+
+#[test]
+fn by_hand_with_nothing_to_record_only_signs_in() {
+    let see = by_hand("builds", &[], &["work".into()]).unwrap();
+    assert_eq!(see.text, "purlis profile sign-in work --pool builds");
+}
+
+#[test]
+fn by_hand_with_nothing_to_do_shows_nothing() {
+    assert_eq!(by_hand("builds", &[], &[]), None);
+}
+
+#[test]
+fn by_hand_spells_no_word_that_isnt_a_name() {
+    let see = by_hand("Not A Pool;", &["$(x)".into()], &["$(x)".into()]).unwrap();
+    assert_eq!(
+        see.text,
+        "purlis pool add-profile POOL PROFILE\npurlis profile sign-in PROFILE --pool POOL"
+    );
+}
