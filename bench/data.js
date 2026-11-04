@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793791543717,
+  "lastUpdate": 1793794261172,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38808,6 +38808,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5360185,
             "unit": "ms",
             "extra": "median of 5 runs: 101.100, 101.277, 101.536, 101.607, 102.581 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ee8a6e76ef564e94147a7ef644ff36e99b3c66c5",
+          "message": "SkillGrades story: drop inAWindowThatFits and its false 414 px premise (#4672, #5093) (#5178)\n\n@storybook/addon-vitest sets every story test's window to 1200x900 before\nthe story runs, and #5140 measured that every studio frame fits. #4672's\nreal cause was the table's sideways scroll, fixed by #5153.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K2XR94WF87B0TG47PJ8X9B\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T11:26:05Z",
+          "tree_id": "6333b7314baa8647a0b8f340a0f9838f36647c64",
+          "url": "https://github.com/purlis/purlis/commit/ee8a6e76ef564e94147a7ef644ff36e99b3c66c5"
+        },
+        "date": 1793794256597,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6911095,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.670, 0.677, 0.691, 0.710, 0.729 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5549995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.417, 16.529, 16.555, 16.608, 16.648 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.03745099999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.876, 101.491, 102.037, 102.807, 103.159 ms"
           }
         ]
       }
