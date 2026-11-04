@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793827988422,
+  "lastUpdate": 1793831415822,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39312,6 +39312,48 @@ window.BENCHMARK_DATA = {
             "value": 101.92839450000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.520, 101.571, 101.928, 102.823, 103.803 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6b43117fa39bae34cacb9212fef53bf4d32394f7",
+          "message": "theme: high-contrast input edges, links off the state colours, accent kin follow a given accent (#4921, #4918) (#5154)\n\n* theme: high contrast draws input edges at 3:1; links and chart.1 held off the state colours (#4921)\n\nborder.control is the strong rule in both high-contrast appearances, 3:1 or more on every ground\nan input or a button stands on. Light high contrast steps its success colour until it is 0.1\nfrom waiting. A new kind of tint rule, signal, holds markdown.link and chart.1 0.1 from the\nwaiting, success, failed and unreadable colours: measured last and answered per mark (the\nkin colour, else the accent, else as written), so it costs the accent no colour. tint.rs and\ntint.ts agree through tint-cases.json; the floors skip the signal rules, which are no consent\nfloor.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD7THDDMRX3S5WH0DM8TB2\nPurlis-Persona: steward\n\n* theme: the primary fill, focus ring and selected edge follow a given accent (#4918)\n\nAn accent given over a parent turns accent.fill, accent.fill-hover, focus.ring and\nlist.selected-edge to its hue as it turns the washes (#4666): luminance and alpha kept, chroma\ncapped at the accent, so the ring keeps 3:1 and the primary words 4.5:1. A turned value that\nwould come nearer waiting or danger than the APART rules allow, and nearer than the parent, stays\nthe parent. A token the parent draws alike its KIN follows that KIN (Classic fills its primary\nwith its surface). tab.active stays Purlis: it is a grey ground there. The accent-over-Purlis\nstory draws the primary, a selected row and the focus ring.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD7THDDMRX3S5WH0DM8TB2\nPurlis-Persona: steward\n\n* theme: a tinted link is never its accent's grey; the accent story reads the engine's rules (#4921, #4918)\n\nIn Purlis Classic light's red, orange and yellow workspaces the accent gives way to danger or\nwaiting all but its colour, and markdown.link and chart.1 fell back to that accent's own chroma,\nabout 0, so they were drawn #5e5d5e, a grey that reads as words. signal_chroma_of (tint.rs) and\nsignalChroma (tint.ts) now pass over a chroma under GREY, so those marks fall through to as\nwritten: Classic's teal #086a56. The pinned Classic tables say so, and the shared fixture's drawn\ncases now carry Classic light red, orange and yellow (a case may name purlis-classic), so both\nengines are held to the same values.\n\nThe accent-over-Purlis story mirrored holds_as_apart from a hardcoded rule table and never\nskipped a token the theme draws as its kin. It now reads the rules from the theme in force\n(tint.apart, words and signal rules left out, as the engine does) and keeps the theme's own\nfill where the theme draws it as its surface, as follow_kin does, so Classic cells no longer\nshow a fill the engine never draws.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6JR5481TENZRAWX2Q4HV922\nPurlis-Persona: steward\n\n* stories: high-contrast input edges and success, and the accent story's pictures (#4921, #4918)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Story pictures: high-contrast cells after taking main\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Story pictures: high-contrast cells after taking main\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T21:31:55Z",
+          "tree_id": "42919b73c174ec10234ba5502fbed7d43dffd54e",
+          "url": "https://github.com/purlis/purlis/commit/6b43117fa39bae34cacb9212fef53bf4d32394f7"
+        },
+        "date": 1793831410412,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.675593,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.664, 0.667, 0.676, 0.679, 0.680 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.554921999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.486, 16.516, 16.555, 16.700, 16.721 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.413488,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.091, 102.174, 102.413, 102.939, 102.960 ms"
           }
         ]
       }
