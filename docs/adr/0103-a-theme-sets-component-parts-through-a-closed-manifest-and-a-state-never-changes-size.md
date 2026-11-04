@@ -76,7 +76,8 @@ before**, because the engine writes nothing for it.
 
 The Rust theme engine reads the parts, layers a child's over its parent's, holds the bounds and
 the floors, and writes **one stylesheet** for the window, handed over the existing channel with
-the resolved theme. Its rules are keyed on the wrapper's `data-scope` and `data-part`, its
+the resolved theme. Its rules are keyed on the wrapper's `data-scope` and `data-part` (as the
+classes those draw, once the window keys them: [amended 2026-11-04](0103/2026-11-04-a-part-is-styled-through-its-classes.md)), its
 `data-variant` and React Aria's state attributes, written without specificity so their order
 alone says which wins: a state over rest, a variant over every variant. Every value is written
 from its parsed form, never copied from the file (ADR 0041, property 4). The window puts it in

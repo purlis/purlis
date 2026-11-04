@@ -17,6 +17,7 @@
  * - **A place, never a look**: `className` gives it a margin, a width or an order.
  */
 import { createElement, type ComponentPropsWithRef, type ReactNode, type Ref } from "react";
+import { parted } from "../partClasses";
 
 /** The family's variants, in the order the manifest names them. */
 export const CARD_VARIANTS = ["raised", "ask"] as const;
@@ -36,14 +37,15 @@ export function Card({
   variant?: CardVariant;
   children?: ReactNode;
 }) {
+  // `createElement` passes JSX's runtime by, so the part's classes are drawn here (#4351).
   return createElement(
     as,
-    {
+    parted({
       ...rest,
       "data-scope": "card",
       "data-part": "root",
       "data-variant": variant,
-    },
+    }),
     children,
   );
 }
@@ -57,5 +59,9 @@ export function CardTitle({
   as?: "p" | "h3" | "h4" | "strong";
   children: ReactNode;
 }) {
-  return createElement(as, { ...rest, "data-scope": "card", "data-part": "title" }, children);
+  return createElement(
+    as,
+    parted({ ...rest, "data-scope": "card", "data-part": "title" }),
+    children,
+  );
 }

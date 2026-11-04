@@ -157,9 +157,10 @@ describe("a pane's breadcrumb", () => {
       "span.shown-state",
     ]);
     expect([...(crumbs.querySelector(".crumb-path")?.children ?? [])].map(shape)).toEqual([
-      "button.crumb.own",
+      // The button family's root, with its part's classes (#4351), as the spec draws them too.
+      "button.crumb.own.ds-button.dp-root",
       "span.crumb-sep",
-      "button.crumb.between",
+      "button.crumb.between.ds-button.dp-root",
       "span.crumb-sep",
       "span.crumb.shown",
     ]);
