@@ -85,7 +85,15 @@ export type SkillChatAsk =
   | { plane: string; kind: "try"; id: string; profile: string | null }
   /** "Ask the chat to redo it" (S9): typed into `chat`, the chat that drafted it, where it is
    *  open; else (`chat` null, or no tab holds it) a chat opened afresh. */
-  | { plane: string; kind: "redo"; id: string; name: string; chat: number | null }
+  | {
+      plane: string;
+      kind: "redo";
+      id: string;
+      name: string;
+      /** The draft's level: what the chat it opens is linked to (#5185). */
+      level: SkillLevel;
+      chat: number | null;
+    }
   /** "Ask a chat to write them" (#3925): the trigger tests of the skill `name` at `level`. */
   | { plane: string; kind: "triggers"; level: SkillLevel; name: string }
   /** "Ask a chat to write outcome evals" (#2780): the outcome evals of the skill `name`. */

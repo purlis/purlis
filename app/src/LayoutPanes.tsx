@@ -72,6 +72,7 @@ import { HarnessChip } from "./HarnessCard";
 import { movedAt, stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { EmptyPane } from "./EmptyPane";
 import { EndedBand, endedBy, endedState, resumeOf } from "./EndedBand";
+import { StudioChatChip } from "./studioChats";
 import { markOf } from "./StripMarks";
 import {
   type RestartAct,
@@ -401,6 +402,8 @@ export function PaneFrame({
                   {/* The chat's skills (#2775, S8): not beside a task's path, which is the
                   fullest line a pane has, nor in a narrow pane. */}
                   {!crumbs && roomy && <SkillsChip plane={plane} session={session} />}
+                  {/* What the Skill studio started it for, which opens the skill (#5185). */}
+                  {!crumbs && <StudioChatChip plane={plane} session={session} />}
                   {from && <span className="pane-from">{from}</span>}
                   {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}
                   {/* **The gauge last** (#3142, rule 15): it is drawn once the chat's first

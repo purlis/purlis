@@ -843,6 +843,10 @@ struct OpenChat {
     /// is never recorded. `null` for every other chat.
     #[specta(optional)]
     one_job: Option<bool>,
+    /// **What the Skill studio started it for** (#5185): its header's chip, which opens the
+    /// skill's page, and the skill page's line while it runs. `null` for every other chat.
+    #[specta(optional)]
+    studio: Option<skilldrafts::StudioLink>,
 }
 
 /// What the window is told of a chat a launch has still to start, beyond its tab.
@@ -2973,6 +2977,7 @@ impl From<chats::Open> for OpenChat {
             untaken: open.untaken,
             restoring: None,
             one_job: open.one_job.then_some(true),
+            studio: open.studio.as_ref().map(skilldrafts::StudioLink::from),
             resumed: match &open.how {
                 Reopened::Resumed(id) => Some(id.to_string()),
                 Reopened::Fresh(_) => None,

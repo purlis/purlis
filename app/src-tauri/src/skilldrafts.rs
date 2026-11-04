@@ -29,6 +29,7 @@ use serde::Serialize;
 use specta::Type;
 
 use purlis_core::hookwire::{Answer, ProposeAsk};
+use purlis_core::reopen::{StudioJob, StudioWork};
 use purlis_core::skills::verbs::drafts;
 
 use crate::curation::{ChatTyped, Curating, StartRefused};
@@ -64,6 +65,45 @@ pub fn drafted(held: &Held, ask: &ProposeAsk) -> Option<Answer> {
         }
         Err(why) => Answer::No { why },
     })
+}
+
+/// **What the Skill studio started a chat for** (#5185), as the window reads it off the chat:
+/// its header's chip, the skill page's running line and its Runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioLink {
+    /// The skill, by its name: `None` for a new skill's draft.
+    pub skill: Option<String>,
+    pub level: SkillLevel,
+    pub job: StudioJobKind,
+}
+
+/// The studio's jobs a chat is started for: [`StudioWork`], by the record's words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum StudioJobKind {
+    Draft,
+    TriggerTests,
+    OutcomeEvals,
+    Checks,
+    Improve,
+    Redo,
+}
+
+impl From<&StudioJob> for StudioLink {
+    fn from(job: &StudioJob) -> StudioLink {
+        StudioLink {
+            skill: job.skill.clone(),
+            level: (&job.level).into(),
+            job: match job.job {
+                StudioWork::Draft => StudioJobKind::Draft,
+                StudioWork::TriggerTests => StudioJobKind::TriggerTests,
+                StudioWork::OutcomeEvals => StudioJobKind::OutcomeEvals,
+                StudioWork::Checks => StudioJobKind::Checks,
+                StudioWork::Improve => StudioJobKind::Improve,
+                StudioWork::Redo => StudioJobKind::Redo,
+            },
+        }
+    }
 }
 
 /// One draft skill, as the studio lists it.
@@ -323,6 +363,11 @@ pub(crate) async fn skill_draft_chat(
                 prompt: drafts::asking(&level, &what),
                 then_a_space: false,
                 starts_runs: None,
+                studio: Some(StudioJob {
+                    skill: None,
+                    level: level.clone(),
+                    job: StudioWork::Draft,
+                }),
             },
             purlis_core::engine::Size { columns, rows },
         )
@@ -352,6 +397,7 @@ pub(crate) async fn skill_trigger_tests_chat(
         open_on_a_skill(
             &held,
             &level,
+            (StudioWork::TriggerTests, &name),
             format!("Trigger tests of {name}"),
             prompt,
             purlis_core::engine::Size { columns, rows },
@@ -381,6 +427,7 @@ pub(crate) async fn skill_outcome_evals_chat(
         open_on_a_skill(
             &held,
             &level,
+            (StudioWork::OutcomeEvals, &name),
             format!("Outcome evals of {name}"),
             prompt,
             purlis_core::engine::Size { columns, rows },
@@ -411,6 +458,7 @@ pub(crate) async fn skill_checks_chat(
         open_on_a_skill(
             &held,
             &level,
+            (StudioWork::Checks, &name),
             format!("Checks of {name}"),
             prompt,
             purlis_core::engine::Size { columns, rows },
@@ -441,6 +489,7 @@ pub(crate) async fn skill_improve_chat(
         open_on_a_skill(
             &held,
             &level,
+            (StudioWork::Improve, &name),
             format!("Improve {name}"),
             prompt,
             purlis_core::engine::Size { columns, rows },
@@ -454,6 +503,7 @@ pub(crate) async fn skill_improve_chat(
 fn open_on_a_skill(
     held: &Arc<Held>,
     level: &purlis_core::skills::verbs::Level,
+    job: (StudioWork, &str),
     label: String,
     prompt: String,
     size: purlis_core::engine::Size,
@@ -471,6 +521,11 @@ fn open_on_a_skill(
             prompt,
             then_a_space: false,
             starts_runs: None,
+            studio: Some(StudioJob {
+                skill: Some(job.1.to_owned()),
+                level: level.clone(),
+                job: job.0,
+            }),
         },
         size,
     )
@@ -515,6 +570,7 @@ pub(crate) async fn skill_draft_try(
                 prompt: drafts::trying(&draft.name),
                 then_a_space: false,
                 starts_runs: None,
+                studio: None,
             },
             purlis_core::engine::Size { columns, rows },
         );
@@ -638,6 +694,11 @@ pub(crate) async fn skill_draft_redo(
                 prompt: drafts::redoing(&draft.level, &draft.name, &stale_of(&draft), false),
                 then_a_space: false,
                 starts_runs: None,
+                studio: Some(StudioJob {
+                    skill: Some(draft.name.clone()),
+                    level: draft.level.clone(),
+                    job: StudioWork::Redo,
+                }),
             },
             purlis_core::engine::Size { columns, rows },
         )
@@ -849,6 +910,25 @@ mod tests {
         .expect("a place");
 
         assert_eq!(at, (plane.path().to_path_buf(), Some("steward".to_owned())));
+    }
+
+    #[test]
+    fn the_window_reads_a_studio_chats_skill_level_and_job_off_its_record() {
+        // #5185: what the chat's chip and the skill page's line are drawn from.
+        let link = StudioLink::from(&StudioJob {
+            skill: Some("test-design".to_owned()),
+            level: purlis_core::skills::verbs::Level::workspace("purlis-demo"),
+            job: StudioWork::OutcomeEvals,
+        });
+
+        assert_eq!(
+            serde_json::to_value(link).expect("json"),
+            serde_json::json!({
+                "skill": "test-design",
+                "level": {"at": "workspace", "name": "purlis-demo", "local": false},
+                "job": "outcome-evals",
+            })
+        );
     }
 
     /// Makes the record of `id` look as if it was written long ago, past the sweep's grace.

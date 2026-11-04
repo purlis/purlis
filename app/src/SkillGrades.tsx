@@ -41,6 +41,7 @@ import {
 } from "./SkillGrade";
 import { NotRead, ReadingRows, useRead } from "./SkillPanels";
 import { askAChat, sameLevel } from "./skillChanges";
+import { RunningJob, useRunningJob } from "./studioChats";
 import { askSkillChat } from "./skillDraftAsks";
 import type { GradingAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -309,6 +310,7 @@ function ChecksDraft({
                 kind: "redo",
                 id: draft.id,
                 name: draft.name,
+                level: draft.level,
                 chat: draft.chat_open ? draft.chat : null,
               })
             }
@@ -419,6 +421,17 @@ export function GradesTab({
   const noChecks = tests === 0 && evals === 0 && testsRefused === null;
   const running = grades.data?.running?.grade ?? null;
   const waiting = draft !== undefined && isChecksDraft(draft) ? draft : undefined;
+  // **A studio chat writing its checks** (#5185, B's Grades card): the card shows the running job
+  // in place of its button, until its draft waits.
+  const drafted = draft === undefined ? [] : [draft];
+  const writingTests = useRunningJob(name, level, ["trigger-tests", "checks"], drafted);
+  const writingEvals = useRunningJob(name, level, ["outcome-evals", "checks"], drafted);
+  const writingChecks = useRunningJob(
+    name,
+    level,
+    ["checks", "trigger-tests", "outcome-evals"],
+    drafted,
+  );
   // Why a file can't be written or opened here, where it can't.
   const heldOf = (file: TestsFile | undefined) =>
     file === undefined
@@ -473,6 +486,7 @@ export function GradesTab({
     // Its own file says whether a chat's write to it would land in the skill.
     const fileHeld = heldOf(file);
     const titleId = `skill-checks-${kind}`;
+    const job = kind === "picked" ? writingTests : writingEvals;
     return (
       <Card as="section" aria-labelledby={titleId} data-testid={titleId}>
         <div className="skill-checks-head">
@@ -484,23 +498,27 @@ export function GradesTab({
         {!any ? (
           <>
             <p className="honest">{`None yet. ${CHECK_KINDS[kind].what(name)}`}</p>
-            <ButtonRow>
-              <Button
-                size="sm"
-                isDisabled={fileHeld !== undefined}
-                tooltip={fileHeld}
-                onPress={() =>
-                  askSkillChat({
-                    plane,
-                    kind: kind === "picked" ? "triggers" : "evals",
-                    level,
-                    name,
-                  })
-                }
-              >
-                {askAChat(level, "write these")}
-              </Button>
-            </ButtonRow>
+            {job !== undefined ? (
+              <RunningJob chat={job} />
+            ) : (
+              <ButtonRow>
+                <Button
+                  size="sm"
+                  isDisabled={fileHeld !== undefined}
+                  tooltip={fileHeld}
+                  onPress={() =>
+                    askSkillChat({
+                      plane,
+                      kind: kind === "picked" ? "triggers" : "evals",
+                      level,
+                      name,
+                    })
+                  }
+                >
+                  {askAChat(level, "write these")}
+                </Button>
+              </ButtonRow>
+            )}
           </>
         ) : (
           <>
@@ -599,26 +617,30 @@ export function GradesTab({
             }
             testid="skill-checks-none"
             action={
-              <ButtonRow>
-                {/* One chat on the project's default profile, the core's prompt typed and not
+              writingChecks !== undefined ? (
+                <RunningJob chat={writingChecks} />
+              ) : (
+                <ButtonRow>
+                  {/* One chat on the project's default profile, the core's prompt typed and not
                     sent, writes both kinds; its write comes back as the skill's one draft. */}
-                <Button
-                  variant="primary"
-                  isDisabled={held !== undefined}
-                  tooltip={held}
-                  onPress={() => askSkillChat({ plane, kind: "checks", level, name })}
-                >
-                  {askAChat(level, "write checks")}
-                </Button>
-                <Button
-                  variant="link"
-                  isDisabled={held !== undefined || writing}
-                  tooltip={held}
-                  onPress={byHand}
-                >
-                  Write them yourself
-                </Button>
-              </ButtonRow>
+                  <Button
+                    variant="primary"
+                    isDisabled={held !== undefined}
+                    tooltip={held}
+                    onPress={() => askSkillChat({ plane, kind: "checks", level, name })}
+                  >
+                    {askAChat(level, "write checks")}
+                  </Button>
+                  <Button
+                    variant="link"
+                    isDisabled={held !== undefined || writing}
+                    tooltip={held}
+                    onPress={byHand}
+                  >
+                    Write them yourself
+                  </Button>
+                </ButtonRow>
+              )
             }
           />
         )

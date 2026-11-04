@@ -69,7 +69,14 @@ describe("what it names and starts again", () => {
     expect(studioStartNamed(DRAFT)).toBe("Ask a chat at the project's root to draft a skill");
     expect(studioStartNamed(TRY)).toBe("Try it");
     expect(
-      studioStartNamed({ plane: PLANE, kind: "redo", id: "d1", name: "deploy", chat: null }),
+      studioStartNamed({
+        plane: PLANE,
+        kind: "redo",
+        id: "d1",
+        name: "deploy",
+        level: { at: "project", local: false },
+        chat: null,
+      }),
     ).toBe("Ask a chat to redo deploy");
     expect(
       studioStartNamed({

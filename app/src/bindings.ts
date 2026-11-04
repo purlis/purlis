@@ -10402,6 +10402,11 @@ export type OpenChat = {
 	 *  is never recorded. `null` for every other chat.
 	 */
 	one_job?: boolean | null,
+	/**
+	 *  **What the Skill studio started it for** (#5185): its header's chip, which opens the
+	 *  skill's page, and the skill page's line while it runs. `null` for every other chat.
+	 */
+	studio?: StudioLink | null,
 };
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */
@@ -15641,6 +15646,9 @@ export type StudioHarness = {
 	plugins_off: PluginOffShown[],
 };
 
+/**  The studio's jobs a chat is started for: [`StudioWork`], by the record's words. */
+export type StudioJobKind = "draft" | "trigger-tests" | "outcome-evals" | "checks" | "improve" | "redo";
+
 /**  A level a skill can be moved to or made at, and its words. */
 export type StudioLevel = {
 	level: SkillLevel,
@@ -15655,6 +15663,17 @@ export type StudioLevel = {
 export type StudioLevelsToConfirm = {
 	said: string,
 	folders: string[],
+};
+
+/**
+ *  **What the Skill studio started a chat for** (#5185), as the window reads it off the chat:
+ *  its header's chip, the skill page's running line and its Runs.
+ */
+export type StudioLink = {
+	/**  The skill, by its name: `None` for a new skill's draft. */
+	skill: string | null,
+	level: SkillLevel,
+	job: StudioJobKind,
 };
 
 /**

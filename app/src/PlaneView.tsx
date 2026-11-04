@@ -57,6 +57,7 @@ import {
   type FinishedTask,
   type LaidOut,
   type OpenChat,
+  type StudioLink,
   type PlaneId,
   type LimitRefused,
   type PoolLimitOffer,
@@ -510,6 +511,7 @@ import {
   inWorkspace,
   isSkillStudio,
   skillRuns as skillRunsAt,
+  skillRowNamed,
   skillStudioAt,
   studioOfSkillTab,
   type ChatToUse,
@@ -608,7 +610,15 @@ import {
 import { enterSettings, placeOfView } from "./settings/entering";
 import { onceTheKeyboardIsBack } from "./keyboardBack";
 import { SessionOffersLent } from "./sessionOffers";
-import { askSkillChat, SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
+import { askSkillChat, SKILL_CHAT, useSkillDrafts, type SkillChatAsk } from "./skillDraftAsks";
+import {
+  StudioChatsHere,
+  doneByDrafts,
+  linkOfAsk,
+  scopeOfLevel,
+  studioPlaceOf,
+  type StudioChatsLent,
+} from "./studioChats";
 import { skillChatRefused } from "./SkillChatApproval";
 import {
   StartApproveAsk,
@@ -1459,6 +1469,22 @@ export const PlaneView = memo(function PlaneView({
    */
   const [handedFrom, setHandedFrom] = useState<Record<number, string>>({});
   /**
+   * **What the Skill studio started each chat for**, by session (#5185): read off each chat the
+   * core puts back (`OpenChat.studio`, kept on its record) and set as the studio starts one. Lent
+   * to the studio and the chats' panes for the chats still open (`studioChats`).
+   */
+  const [studioLinks, setStudioLinks] = useState<Readonly<Record<number, StudioLink>>>({});
+  // A studio chat whose draft came is done for good, as the core marks its record (#5185): read
+  // only while the studio has a chat open here.
+  const studioDrafts = useSkillDrafts(plane, 0, Object.keys(studioLinks).length > 0);
+  // Taken as the read changes, while drawing, as React adjusts state to a new prop: sticky, so a
+  // draft accepted or discarded since leaves its chat done.
+  const [draftsSeen, setDraftsSeen] = useState(studioDrafts);
+  if (draftsSeen !== studioDrafts) {
+    setDraftsSeen(studioDrafts);
+    setStudioLinks((was) => doneByDrafts(was, studioDrafts));
+  }
+  /**
    * The chats that are shell tabs (SI-5): the operator's own shell, no harness, no profile. Its
    * tab wears a terminal's mark rather than nothing, so a shell is told from a harness before
    * its name is read. Filled when one is opened here and when one comes back from the record.
@@ -1835,6 +1861,12 @@ export const PlaneView = memo(function PlaneView({
                 const note = handedFromNote(chat.from);
                 return note ? [[chat.session, note]] : [];
               }),
+            ),
+          }));
+          setStudioLinks((was) => ({
+            ...was,
+            ...Object.fromEntries(
+              open.flatMap((chat) => (chat.studio ? [[chat.session, chat.studio]] : [])),
             ),
           }));
           // A shell comes back a shell: on no profile, running no harness. One still restoring
@@ -5107,6 +5139,35 @@ export const PlaneView = memo(function PlaneView({
       ),
     [sidebar, tabs],
   );
+  /**
+   * **The studio's chats still open** (#5185), lent to the studio and the chats' panes: each with
+   * its name here, Open chat, and the way to its skill's page.
+   */
+  const studioChats = useMemo<StudioChatsLent>(
+    () => ({
+      chats: Object.entries(studioLinks).flatMap(([at, link]) => {
+        const session = Number(at);
+        const listed = chatNames.get(session);
+        const held = tabHolding(tabs, session);
+        const name = listed ?? (held === undefined ? undefined : tabs.byId[held].name);
+        return name === undefined ? [] : [{ session, name, link }];
+      }),
+      show: (session) => showChat(session),
+      openSkill: (link) => {
+        const place = studioPlaceOf(link);
+        showView(
+          place.page === "drafts"
+            ? skillStudioAt(scopeOfLevel(link.level), "drafts")
+            : skillStudioAt(scopeOfLevel(link.level), "library", {
+                skill: skillRowNamed(place.skill),
+                tab: place.tab,
+              }),
+          SKILL_STUDIO_TITLE,
+        );
+      },
+    }),
+    [chatNames, showChat, showView, studioLinks, tabs],
+  );
   /** {@link nameOf} as it stands, for what is decided in a handler and not while drawing. */
   const nameOfNow = useRef<(session: number) => string>((session) => String(session));
   /** What a chat the project lists is called now, or nothing for one it does not list. */
@@ -6497,6 +6558,9 @@ export const PlaneView = memo(function PlaneView({
             return;
           }
           const chat = started.data;
+          // What the core recorded on the chat, so its chip and the skill's page say it at once.
+          const link = linkOfAsk(wanted);
+          if (link !== undefined) setStudioLinks((was) => ({ ...was, [chat.session]: link }));
           showPlaced(chat);
         });
     };
@@ -10554,6 +10618,7 @@ export const PlaneView = memo(function PlaneView({
           chatSkillSets={chatSkillSets}
           brief={openBrief}
           answer={openAnswer}
+          studioChats={studioChats}
         >
           <SessionOffersLent
             plane={plane}
@@ -11727,6 +11792,7 @@ function Lent({
   chatSkillSets,
   brief,
   answer,
+  studioChats,
   children,
 }: {
   chats: ComponentProps<typeof ChatsHere.Provider>["value"];
@@ -11756,6 +11822,8 @@ function Lent({
   brief: OpenBrief;
   /** Opens the Answer dialog for a task's question (`useOpenAnswer`, #1551). */
   answer: OpenAnswer;
+  /** The chats the Skill studio started, still open (#5185). */
+  studioChats: StudioChatsLent;
   children: ReactNode;
 }) {
   return (
@@ -11773,7 +11841,11 @@ function Lent({
                           <UseSkillOpener value={useSkill}>
                             <ChatSkillSetsHere.Provider value={chatSkillSets}>
                               <BriefOpener value={brief}>
-                                <AnswerOpener value={answer}>{children}</AnswerOpener>
+                                <AnswerOpener value={answer}>
+                                  <StudioChatsHere.Provider value={studioChats}>
+                                    {children}
+                                  </StudioChatsHere.Provider>
+                                </AnswerOpener>
                               </BriefOpener>
                             </ChatSkillSetsHere.Provider>
                           </UseSkillOpener>

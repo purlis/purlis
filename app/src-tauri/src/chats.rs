@@ -182,6 +182,8 @@ pub struct Open {
     /// it was opened from and gone when its program exits. Never recorded
     /// ([`Chats::start_one_job`]), and no sidebar row.
     pub one_job: bool,
+    /// What the Skill studio started it for (#5185): [`purlis_core::reopen::Chat::studio`].
+    pub studio: Option<purlis_core::reopen::StudioJob>,
 }
 
 /// Who an open chat is beyond this launch, and the directory it works in.
@@ -6795,6 +6797,7 @@ impl Chats {
                     floorless: floorless.get(&session).cloned(),
                     untaken: untaken.get(&session).cloned(),
                     one_job: is_a_one_job(chat, &one_jobs),
+                    studio: chat.studio.clone(),
                 })
             })
             .collect()
@@ -7381,6 +7384,7 @@ impl Chats {
                 untaken: None,
                 // A one-job program is never recorded, so a launch puts none back.
                 one_job: false,
+                studio: one.chat.studio.clone(),
             })
             .collect()
     }

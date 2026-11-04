@@ -25,6 +25,8 @@ afterEach(() => {
   forgetStudio();
 });
 
+const PROJECT = { at: "project", local: false } as const;
+
 const draft = (name: string, over: Record<string, unknown> = {}) => ({
   id: `${name}-id`,
   name,
@@ -174,8 +176,8 @@ describe("the Drafts page", () => {
     );
     stop();
     expect(asks).toEqual([
-      { plane: "p", kind: "redo", id: "triage-id", name: "triage", chat: 4 },
-      { plane: "p", kind: "redo", id: "lint-id", name: "lint", chat: null },
+      { plane: "p", kind: "redo", id: "triage-id", name: "triage", level: PROJECT, chat: 4 },
+      { plane: "p", kind: "redo", id: "lint-id", name: "lint", level: PROJECT, chat: null },
     ]);
   });
 

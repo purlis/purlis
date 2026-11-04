@@ -18,6 +18,7 @@ import {
   type TestsFile,
 } from "./SkillGrades";
 import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
+import { StudioChatsHere, type StudioChatsLent } from "./studioChats";
 import type { GradeRow, SkillDraft, SkillDraftFile, SkillLevel } from "./bindings";
 
 afterEach(() => {
@@ -341,6 +342,40 @@ describe("a skill's Grades tab (S6)", () => {
     expect(asks).toEqual([{ plane: "p", kind: "evals", level: LEVEL, name: "deploy" }]);
   });
 
+  it("shows a studio chat writing the job's checks in place of its button, with Open chat (#5185)", async () => {
+    core();
+    const show = vi.fn();
+    const lent: StudioChatsLent = {
+      chats: [
+        {
+          session: 7,
+          name: "chat 7",
+          link: { skill: "deploy", level: LEVEL, job: "outcome-evals" },
+        },
+      ],
+      show,
+      openSkill: vi.fn(),
+    };
+    render(
+      <StudioChatsHere.Provider value={lent}>
+        <GradesTab
+          plane="p"
+          name="deploy"
+          level={LEVEL}
+          changed={0}
+          onGrading={vi.fn<GradingGo>()}
+          testsFile={{ open: vi.fn() }}
+          evalsFile={{ open: vi.fn() }}
+        />
+      </StudioChatsHere.Provider>,
+    );
+    const job = await screen.findByRole("region", { name: "Does it do the job?" });
+    expect(job).toHaveTextContent("A chat at the project's root is writing outcome evals.");
+    expect(within(job).queryByRole("button", { name: /to write these/ })).toBeNull();
+    fireEvent.click(within(job).getByRole("button", { name: "Open chat" }));
+    expect(show).toHaveBeenCalledWith(7);
+  });
+
   it("holds a kind's offer where the skill's files can't be opened", async () => {
     core();
     renderTab({ reason: "Its file is outside the project." });
@@ -454,7 +489,16 @@ describe("a skill's Grades tab (S6)", () => {
     window.addEventListener(SKILL_CHAT, heard);
     fireEvent.click(within(draft).getByRole("button", { name: "Ask the chat to redo them" }));
     window.removeEventListener(SKILL_CHAT, heard);
-    expect(asks).toEqual([{ plane: "p", kind: "redo", id: "d1", name: "deploy", chat: 14 }]);
+    expect(asks).toEqual([
+      {
+        plane: "p",
+        kind: "redo",
+        id: "d1",
+        name: "deploy",
+        level: { at: "project", local: false },
+        chat: 14,
+      },
+    ]);
   });
 
   it("says a drafted file it can't read as checks, and holds Accept", async () => {

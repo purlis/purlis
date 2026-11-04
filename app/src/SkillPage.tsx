@@ -84,6 +84,7 @@ import {
 } from "./SkillPanels";
 import { ownerShown } from "./SkillStudioHarnesses";
 import { chatPlace, levelOf, sameLevel, whoseOf } from "./skillChanges";
+import { StudioChatLines, StudioChatsStarted } from "./studioChats";
 import {
   ChatToUseHere,
   SKILL_PAGE_TAB_NAMES,
@@ -857,6 +858,7 @@ export function SkillPage({
       case "runs":
         return (
           <div className="skill-page-panel">
+            {level !== null && <StudioChatsStarted name={name} level={level} drafts={drafts} />}
             <SkillTotals name={name} stats={stats.data} refused={stats.refused} />
             {panels.refused !== undefined ? (
               <NotRead
@@ -928,6 +930,8 @@ export function SkillPage({
           {doing.drawn}
         </div>
       )}
+      {/* A chat the studio started for it, while it runs (#5185). */}
+      {level !== null && <StudioChatLines name={name} level={level} drafts={drafts} />}
       <PageTabs
         label={`${name}'s sections`}
         tabs={tabs}
