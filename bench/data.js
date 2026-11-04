@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793751685427,
+  "lastUpdate": 1793753654200,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38220,6 +38220,48 @@ window.BENCHMARK_DATA = {
             "value": 101.625539,
             "unit": "ms",
             "extra": "median of 5 runs: 101.047, 101.191, 101.626, 101.708, 102.007 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "76d3bc36414eb402ddb484dc1b1ac66e4d8cfcb5",
+          "message": "stories: Shortcuts baselines for main after #5045 and #5090 (#5132)\n\n* stories: Shortcuts baselines for main after #5045 and #5090\n\nBoth changed what the Shortcuts story draws, and each drew its pictures\nwithout the other, so main's stories run fails on 20 Shortcuts pictures.\nThe update-baselines label draws them here.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: start the checks on the drawn baselines\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-04T00:13:09Z",
+          "tree_id": "f7d02117fdff81a5adc0db71564536aaaa556f90",
+          "url": "https://github.com/purlis/purlis/commit/76d3bc36414eb402ddb484dc1b1ac66e4d8cfcb5"
+        },
+        "date": 1793753649371,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4960525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.490, 0.495, 0.496, 0.513, 0.524 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.342369,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.180, 16.340, 16.342, 16.393, 16.799 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0366105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.535, 101.445, 102.037, 102.086, 102.735 ms"
           }
         ]
       }
