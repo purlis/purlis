@@ -229,6 +229,11 @@ fn a_harness_lists_charter_s_tools() {
             "browser_save_download",
             "browser_upload",
             "theme_preview",
+            // The skill tools (SK-13): in every chat since the Skill studio's flag went (#2786).
+            "skill_list",
+            "skill_runs",
+            "skill_find",
+            "skill_load",
             // A chat proposes a pin, which only the person pins, added on purpose (#5963).
             "artifact_propose_pin",
             // The MCP twins of the read-only `purlis artifact` verbs, added on purpose (#5978's
