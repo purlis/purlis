@@ -121,6 +121,8 @@ macro_rules! app_commands {
                 loginasks::answer_browser_login,
                 pooltools::answer_pool_tool,
                 secretasks::answer_secret_ask,
+                secretasks::link_secret_ask,
+                secretasks::secret_ask_entries,
                 chatbrowsers::allow_browser_sites,
                 chatbrowsers::allow_person_browser_sites,
                 chatbrowsers::keep_browser_sites_blocked,

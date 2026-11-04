@@ -373,3 +373,65 @@ fn a_target_that_cannot_be_read_is_said_of_the_link_and_named_only_by_verify() {
         "{said}"
     );
 }
+
+// ----------------------------------------------------------------------------------------
+// the entries a Secret ask's picker offers (#5073)
+
+#[test]
+fn the_picker_offers_each_vaults_keys_that_hold_a_value_grouped_by_vault() {
+    let (plane, ops, _team) = ops_and_team();
+    cmd::set_value(&plane.ctx, &ops, "OWN", "v").unwrap();
+    link(&plane.ctx, &ops, "STRIPE_KEY", "team", "STRIPE").unwrap();
+    let offered = pickable(&plane.ctx, None).unwrap();
+    assert_eq!(
+        offered,
+        [
+            Pickable {
+                vault: "ops".into(),
+                keys: Ok(vec!["OWN".into()]),
+            },
+            Pickable {
+                vault: "team".into(),
+                keys: Ok(vec!["OTHER".into(), "STRIPE".into()]),
+            },
+        ],
+        "a linked entry is never offered: a link never reads another link"
+    );
+}
+
+#[test]
+fn the_picker_leaves_out_the_key_being_linked_and_a_github_apps_key() {
+    let plane = Plane::new();
+    plane.plain(
+        "team",
+        json!({"STRIPE": STRIPE, "MISSING": "x", "agent-identity-github-key": "k"}),
+    );
+    let at = Target {
+        vault: "team".into(),
+        key: "MISSING".into(),
+    };
+    let offered = pickable(&plane.ctx, Some(&at)).unwrap();
+    assert_eq!(offered.len(), 1);
+    let keys = offered[0].keys.as_ref().unwrap();
+    assert!(keys.contains(&"STRIPE".to_owned()), "{keys:?}");
+    assert!(!keys.contains(&"MISSING".to_owned()), "{keys:?}");
+    assert_eq!(keys, &["STRIPE"], "a GitHub App's key is never offered");
+}
+
+#[test]
+fn a_vault_whose_keys_cannot_be_listed_is_offered_with_why() {
+    let plane = Plane::new();
+    plane.plain("team", json!({"STRIPE": STRIPE}));
+    let corrupt = plane.ctx.vaults_dir().join("broken.json");
+    std::fs::write(&corrupt, "{ not json").unwrap();
+    plane.register(
+        "broken",
+        "plain-file",
+        json!({"file": corrupt.to_string_lossy()}),
+    );
+    let offered = pickable(&plane.ctx, None).unwrap();
+    let broken = offered.iter().find(|one| one.vault == "broken").unwrap();
+    assert!(broken.keys.is_err(), "{broken:?}");
+    let team = offered.iter().find(|one| one.vault == "team").unwrap();
+    assert_eq!(team.keys, Ok(vec!["STRIPE".to_owned()]));
+}

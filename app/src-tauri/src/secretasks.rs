@@ -7,9 +7,12 @@
 //! A chat's brokered `secret exec` whose vault holds no value under a key it hands over waits on
 //! a Secret ask (`crate::vaults::run_brokered`), listed with every other ask
 //! (`crate::asking::secret_ask`). The person fills it, with a value typed into the ask's masked
-//! field, or chooses Not now ([`answer_secret_ask`]).
+//! field, or chooses Not now ([`answer_secret_ask`]); or it picks an entry it keeps already, which
+//! the asked key comes to read as a Linked entry ([`link_secret_ask`], #5073), from the entries
+//! [`secret_ask_entries`] lists vault by vault.
 //!
-//! - **Only the window answers.** [`answer_secret_ask`] is a Tauri command of the window's,
+//! - **Only the window answers.** [`answer_secret_ask`] and [`link_secret_ask`] are Tauri
+//!   commands of the window's,
 //!   never served on the link to `charterd` (`purlis_session_protocol::ui::WINDOW_ONLY`), and it
 //!   answers as the window's own scope ([`crate::asking::the_window`]), the one that holds
 //!   `AnswerASecret`. The core refuses any other answerer.
@@ -21,6 +24,7 @@
 //!   (`crate::vaultroute::tell`, ADR 0064's gated send) and otherwise handed to its next turn.
 
 use purlis_core::secrets::ask::{Answer, Answered, Named};
+use purlis_core::secrets::links::{self, Target};
 use purlis_core::secrets::{Ctx, Env, Zeroizing};
 
 use crate::vaultroute::{Told, sent_as, tell};
@@ -52,6 +56,87 @@ pub async fn answer_secret_ask(
     .await
 }
 
+/// **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
+/// Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
+/// with that entry's value. The chat hears filled and the key's name, never the entry.
+#[tauri::command]
+#[specta::specta]
+pub async fn link_secret_ask(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    id: u32,
+    vault: String,
+    key: String,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("linking a secret ask to an entry", move || {
+        answered_with(
+            &held,
+            id,
+            Answer::Link(Target { vault, key }),
+            Named::as_asked(),
+        )
+    })
+    .await
+}
+
+/// **One vault's entries a Secret ask's picker offers** (#5073): the vault, the keys a link may
+/// read in it, and why none could be listed, where that is so. Names only, never a value.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct EntriesOf {
+    pub vault: String,
+    pub keys: Vec<String>,
+    /// Why its keys could not be listed: the provider's own first line.
+    #[specta(optional)]
+    pub unlisted: Option<String>,
+}
+
+/// **The entries the person could fill Secret ask `id` with** (#5073), vault by vault: every
+/// key of every vault that holds a value of its own, but the asked one. Names only.
+#[tauri::command]
+#[specta::specta]
+pub async fn secret_ask_entries(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    id: u32,
+) -> Result<Vec<EntriesOf>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("listing the entries a secret ask may link to", move || {
+        entries_for(&held, id)
+    })
+    .await
+}
+
+/// [`secret_ask_entries`]'s work.
+pub fn entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<EntriesOf>, String> {
+    let asked = held
+        .secret_asks()
+        .open()
+        .into_iter()
+        .find(|open| open.id == id)
+        .map(|open| Target {
+            vault: open.vault,
+            key: open.key,
+        });
+    let ctx = Ctx::new(held.root(), Env::from_process());
+    Ok(links::pickable(&ctx, asked.as_ref())
+        .map_err(|e| e.message.to_string())?
+        .into_iter()
+        .map(|one| match one.keys {
+            Ok(keys) => EntriesOf {
+                vault: one.vault,
+                keys,
+                unlisted: None,
+            },
+            Err(why) => EntriesOf {
+                vault: one.vault,
+                keys: Vec::new(),
+                unlisted: Some(why),
+            },
+        })
+        .collect())
+}
+
 /// [`answer_secret_ask`]'s work.
 pub fn secret_answered(
     held: &crate::planes::Held,
@@ -59,7 +144,17 @@ pub fn secret_answered(
     value: Option<Zeroizing<String>>,
     named: Named,
 ) -> Result<(), String> {
-    let answer = value.map_or(Answer::Decline, Answer::Fill);
+    answered_with(held, id, value.map_or(Answer::Decline, Answer::Fill), named)
+}
+
+/// The person's `answer` to Secret ask `id`, stored as `named`, given to the core as the
+/// window's, and each chat that stopped waiting nudged.
+fn answered_with(
+    held: &crate::planes::Held,
+    id: u32,
+    answer: Answer,
+    named: Named,
+) -> Result<(), String> {
     let ctx = Ctx::new(held.root(), Env::from_process());
     let answered =
         held.secret_asks()

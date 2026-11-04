@@ -436,6 +436,8 @@ export const commands = {
 	answerBrowserLogin: __WINDOW_ONLY_RESULT,
 	answerPoolTool: __WINDOW_ONLY_RESULT,
 	answerSecretAsk: __WINDOW_ONLY_RESULT,
+	linkSecretAsk: __WINDOW_ONLY_RESULT,
+	secretAskEntries: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
@@ -4996,6 +4998,17 @@ export type EngineSandboxShown = {
 	chrome: string | null,
 	/**  The machine whose engine it is (#2990). */
 	machine: EngineMachine,
+};
+
+/**
+ *  **One vault's entries a Secret ask's picker offers** (#5073): the vault, the keys a link may
+ *  read in it, and why none could be listed, where that is so. Names only, never a value.
+ */
+export type EntriesOf = {
+	vault: string,
+	keys: string[],
+	/**  Why its keys could not be listed: the provider's own first line. */
+	unlisted?: string | null,
 };
 
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */

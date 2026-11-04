@@ -20,7 +20,14 @@
  * text; none of it is ever markup or a control.
  */
 import { useEffect, useMemo, useState } from "react";
-import { commands, type Asking, type GrantLevel, type Press, type Shown } from "./bindings";
+import {
+  commands,
+  type Asking,
+  type EntriesOf,
+  type GrantLevel,
+  type Press,
+  type Shown,
+} from "./bindings";
 import type { QuestionsHeld } from "./taskQuestions";
 import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
@@ -240,12 +247,25 @@ const PRESS_OF: Readonly<Record<string, Press | undefined>> = {
  * person decides (a workspace's removal, qw356), so the ask still waits and nothing is to be
  * noted as answered.
  */
+/**
+ * **The entries a Secret ask may be filled with** (#5073): every vault's keys that hold a value,
+ * vault by vault, but the asked one. Names only. Refused for an ask that is not a Secret ask.
+ */
+export async function secretAskEntries(plane: string, ask: Shown): Promise<EntriesOf[]> {
+  if (ask.answer.via !== "secret") throw new Error("only a secret ask is filled with an entry");
+  const listed = await commands.secretAskEntries(plane, ask.answer.id);
+  if (listed.status === "error") throw new Error(listed.error);
+  return listed.data;
+}
+
 export async function answerTaken(
   plane: string,
   ask: Shown,
   option: string,
   reason?: string,
   typed?: string,
+  /** The entry a Secret ask is filled with, where the person picked one they keep (#5073). */
+  picked?: { vault: string; key: string },
 ): Promise<{ refused: string | undefined; live: boolean; opened?: boolean }> {
   const path = ask.answer;
   if (path.via === "in-its-pane") return { refused: IN_ITS_CHAT, live: false };
@@ -413,6 +433,10 @@ export async function answerTaken(
         // A key a chat's brokered run missed (#5068, ADR 0109): Fill stores the value typed in
         // the ask's masked box in the vault, and every command that waits on it runs; Not now
         // tells them it was declined. The chat never hears the value.
+        // An entry the person picked makes the key a Linked entry reading it, never a copy
+        // (#5073); the chat hears filled and the key's name, never the entry.
+        if (option === "fill" && picked !== undefined)
+          return commands.linkSecretAsk(plane, path.id, picked.vault, picked.key);
         if (option === "fill")
           return commands.answerSecretAsk(plane, path.id, typed ?? "", null, null);
         if (option === "keep") return commands.answerSecretAsk(plane, path.id, null, null, null);

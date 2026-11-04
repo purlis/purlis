@@ -13,6 +13,10 @@
 //!   the vault does not hold. Only an [`Answerer`] admitted as the window answers
 //!   ([`Asks::answer`]): `charter inbox` is refused, and a chat, a relayed link or any other
 //!   client is never an answerer at all (V16, V75, ADR 0080 §5.3).
+//! - **Or the person picks an entry they keep** ([`Answer::Link`], #5073): the asked key becomes
+//!   a Linked entry reading it ([`super::links`]), never a copy, and the waiting command reads the
+//!   entry's value through it. The chat hears filled and the key's name, never the entry: what a
+//!   chat learns must not tell it where a value lives.
 //! - **The command waits until just before its harness would kill it** ([`holds_for`]): three
 //!   quarters of the harness's own command timeout. A quick answer is invisible to the chat. A
 //!   slow one ends the command with `waiting on you for <vault>/<key>; retry once answered`; the
@@ -177,6 +181,10 @@ pub type Telling =
 pub enum Answer {
     /// A new value, written into the vault under the asked key. Wiped as it is dropped.
     Fill(Zeroizing<String>),
+    /// **An entry the person keeps already** (#5073): the asked key becomes a Linked entry
+    /// reading it ([`super::links::link`]), so the value is never copied and a rotation of the
+    /// entry reaches the key. The chat hears filled and the key's name, never the entry.
+    Link(super::links::Target),
     /// Not now.
     Decline,
 }
@@ -671,8 +679,20 @@ impl Asks {
                 }
                 true
             }
+            Answer::Link(to) => {
+                let linked = cmd::provider(ctx, &vault)
+                    .and_then(|v| super::links::link(ctx, &v, &key, &to.vault, &to.key));
+                if let Err(e) = linked {
+                    if let Some(asked) = self.inner().open.get_mut(&(vault.clone(), key.clone())) {
+                        asked.answering = false;
+                    }
+                    return Err(e.message.to_string());
+                }
+                true
+            }
             Answer::Decline => false,
         };
+        let linked = matches!(answer, Answer::Link(_));
         // A decline stores nothing, so the chat hears the names it asked for.
         let (vault, key, asked_at) = if filled {
             (into_vault, into_key, (vault, key))
@@ -715,7 +735,12 @@ impl Asks {
             }
         }
         drop(inner);
-        let what = if filled { "filled" } else { "declined" };
+        // A link is traced as one, by the asked names alone: never the entry it reads.
+        let what = match (filled, linked) {
+            (true, true) => "linked",
+            (true, false) => "filled",
+            (false, _) => "declined",
+        };
         for &chat in &chats {
             self.trace(Some(chat), what, &vault, &key, waiting);
         }
