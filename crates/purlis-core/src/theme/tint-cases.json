@@ -3547,6 +3547,78 @@
     "layer.chat": "#d7f5f1",
     "layer.selected": "#ceebe7"
    }
+  },
+  {
+   "theme": "purlis-classic",
+   "appearance": "light",
+   "colour": "red",
+   "tokens": {
+    "accent.base": "#5e5d5e",
+    "accent.surface": "#dcf1ea",
+    "accent.wash": "#dcf1ea",
+    "accent.wash-hover": "#c9e8de",
+    "accent.text": "#5e5d5e",
+    "accent.fill": "#dcf1ea",
+    "accent.fill-hover": "#c9e8de",
+    "accent.fill-edge": "#5e5d5e",
+    "focus.ring": "#5e5d5e",
+    "tab.active": "#c9e8de",
+    "list.selected": "#fde1df",
+    "list.selected-edge": "#5e5d5e",
+    "markdown.link": "#086a56",
+    "chart.1": "#086a56",
+    "layer.workspace": "#feeae7",
+    "layer.chat": "#fef4f2",
+    "layer.selected": "#ffffff"
+   }
+  },
+  {
+   "theme": "purlis-classic",
+   "appearance": "light",
+   "colour": "orange",
+   "tokens": {
+    "accent.base": "#5e5d5e",
+    "accent.surface": "#dcf1ea",
+    "accent.wash": "#dcf1ea",
+    "accent.wash-hover": "#c9e8de",
+    "accent.text": "#5e5d5e",
+    "accent.fill": "#dcf1ea",
+    "accent.fill-hover": "#c9e8de",
+    "accent.fill-edge": "#5e5d5e",
+    "focus.ring": "#5e5d5e",
+    "tab.active": "#c9e8de",
+    "list.selected": "#f8e4d5",
+    "list.selected-edge": "#5e5d5e",
+    "markdown.link": "#086a56",
+    "chart.1": "#086a56",
+    "layer.workspace": "#feebdd",
+    "layer.chat": "#fff4ee",
+    "layer.selected": "#ffffff"
+   }
+  },
+  {
+   "theme": "purlis-classic",
+   "appearance": "light",
+   "colour": "yellow",
+   "tokens": {
+    "accent.base": "#5e5d5e",
+    "accent.surface": "#dcf1ea",
+    "accent.wash": "#dcf1ea",
+    "accent.wash-hover": "#c9e8de",
+    "accent.text": "#5e5d5e",
+    "accent.fill": "#dcf1ea",
+    "accent.fill-hover": "#c9e8de",
+    "accent.fill-edge": "#5e5d5e",
+    "focus.ring": "#5e5d5e",
+    "tab.active": "#c9e8de",
+    "list.selected": "#ede8d1",
+    "list.selected-edge": "#5e5d5e",
+    "markdown.link": "#086a56",
+    "chart.1": "#086a56",
+    "layer.workspace": "#f5eed8",
+    "layer.chat": "#fbf7df",
+    "layer.selected": "#ffffff"
+   }
   }
  ],
  "toward": [

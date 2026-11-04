@@ -1063,13 +1063,16 @@ pub fn alone_chroma_of(rules: &[Rule<'_>], kin: &[Rule<'_>], shared: f64, hue: f
 /// **The chroma a mark of the accent is drawn at** (#4921): the shared answer, [`Most::shared`],
 /// where every one of its `rules` holds there; else the accent's own, [`Most::alone`], since a
 /// link reads as the accent (#3049); else `None`, the mark as written, in the theme's own colour,
-/// as the accent's words are where they cannot hold (#3100). Never a search down to grey: a link
-/// with no colour reads as words. Measured after every other rule, so a link held apart from
+/// as the accent's words are where they cannot hold (#3100). Never a grey: a chroma under
+/// [`GREY`] is passed over, so where the accent has given way to danger or waiting all but its
+/// colour (Purlis Classic light's red, orange and yellow), the link keeps the theme's own rather
+/// than a grey that reads as words. Measured after every other rule, so a link held apart from
 /// success costs the accent no colour. `tint.ts`' `signalChroma` is the same.
 pub fn signal_chroma_of(rules: &[Rule<'_>], hue: f64, most: Most) -> Option<f64> {
     [most.shared, most.alone]
         .into_iter()
         .flatten()
+        .filter(|chroma| *chroma >= GREY)
         .find(|chroma| {
             rules
                 .iter()

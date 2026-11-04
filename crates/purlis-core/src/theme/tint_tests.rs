@@ -688,11 +688,18 @@ fn every_tinted_token_is_drawn_as_the_window_draws_it() {
     for case in cases {
         let id = case["appearance"].as_str().unwrap();
         let colour = case["colour"].as_str().unwrap();
-        let theme = purlis()
+        // Purlis's own, unless the case names Purlis Classic (#4921: its light link in a red,
+        // orange or yellow workspace is drawn as written, never as its accent's grey).
+        let built_in = match case["theme"].as_str() {
+            None => purlis(),
+            Some("purlis-classic") => classic(),
+            Some(other) => panic!("no built-in {other}"),
+        };
+        let theme = built_in
             .appearances
             .iter()
             .find(|one| one.id == id)
-            .expect("one of Purlis's appearances");
+            .expect("one of the built-in's appearances");
         let tint = tinted(theme, colour);
         let tokens = case["tokens"].as_object().unwrap();
         assert_eq!(tokens.len(), theme.tint.tabs().len(), "{id} in {colour}");
@@ -1331,7 +1338,7 @@ fn purlis_classic_s_tints_are_these() {
             "red",
             [
                 "#5e5d5e", "#fde8e5", "#fde8e5", "#f9dbd6", "#5e5d5e", "#5e5d5e", "#f9dbd6",
-                "#fde1df", "#5e5d5e", "#5e5d5e", "#5e5d5e", "#feeae7", "#fef4f2", "#ffffff",
+                "#fde1df", "#5e5d5e", "#086a56", "#086a56", "#feeae7", "#fef4f2", "#ffffff",
             ],
         ),
         (
@@ -1339,7 +1346,7 @@ fn purlis_classic_s_tints_are_these() {
             "orange",
             [
                 "#5e5d5e", "#fbe9df", "#fbe9df", "#f5ddcc", "#5e5d5e", "#5e5d5e", "#f5ddcc",
-                "#f8e4d5", "#5e5d5e", "#5e5d5e", "#5e5d5e", "#feebdd", "#fff4ee", "#ffffff",
+                "#f8e4d5", "#5e5d5e", "#086a56", "#086a56", "#feebdd", "#fff4ee", "#ffffff",
             ],
         ),
         (
@@ -1347,7 +1354,7 @@ fn purlis_classic_s_tints_are_these() {
             "yellow",
             [
                 "#5e5d5e", "#f1edda", "#f1edda", "#e8e2c7", "#5e5d5e", "#5e5d5e", "#e8e2c7",
-                "#ede8d1", "#5e5d5e", "#5e5d5e", "#5e5d5e", "#f5eed8", "#fbf7df", "#ffffff",
+                "#ede8d1", "#5e5d5e", "#086a56", "#086a56", "#f5eed8", "#fbf7df", "#ffffff",
             ],
         ),
         (

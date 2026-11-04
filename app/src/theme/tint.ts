@@ -172,7 +172,9 @@ export function wordsChroma(
  * **The chroma a mark of the accent is drawn at** (#4921, `purlis_core::theme::signal_chroma_of`):
  * `shared`, the most it is given, where every one of its `rules` holds there; else `alone`, the
  * accent's own, since a link reads as the accent (#3049); else `undefined`, the mark as written in
- * the theme's own colour, as the accent's words are (#3100). Never a search down to grey.
+ * the theme's own colour, as the accent's words are (#3100). Never a grey: a chroma under
+ * {@link GREY} is passed over, so where the accent has given way to danger or waiting all but its
+ * colour (Purlis Classic light's red, orange and yellow), the link keeps the theme's own.
  */
 export function signalChroma(
   rules: readonly Rule[],
@@ -181,7 +183,10 @@ export function signalChroma(
   alone: number | undefined,
 ): number | undefined {
   return [shared, alone].find(
-    (chroma) => chroma !== undefined && rules.every((rule) => holdsAt(rule, hue, chroma, chroma)),
+    (chroma) =>
+      chroma !== undefined &&
+      chroma >= GREY &&
+      rules.every((rule) => holdsAt(rule, hue, chroma, chroma)),
   );
 }
 

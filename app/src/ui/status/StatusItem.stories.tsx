@@ -15,7 +15,7 @@ import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { drawWindowText, LEAST_TEXT } from "../../textSize";
 import { reordered } from "../../statusBarPrefs";
 import { StatusBar, type StatusContribution } from "./StatusBar";
-import { property, type Token } from "../../theme/theme";
+import { inForce, property, type Token } from "../../theme/theme";
 import { noNearer, oklabDistance, toward, type NoNearer } from "../../theme/tint";
 import { ActivityGroup, ActivityItem } from "../activity/ActivityItem";
 import { Button } from "../button/Button";
@@ -108,18 +108,16 @@ const NO_NEARER: NoNearer = {
   over: ["surface.base", "surface.deep"],
 };
 
-/** What is drawn in the accent past its words and grounds, which follows the accent too (#4918),
- *  each kept as far from the waiting and danger colours as the engine's rules ask
- *  (`vocabulary::DRAWN_IN_THE_ACCENT`, `tint::APART`), or the theme's own. */
-const DRAWN_IN_THE_ACCENT: Record<string, readonly Token[]> = {
-  "accent.fill": ["danger.base"],
-  "accent.fill-hover": ["danger.base"],
-  "focus.ring": ["danger.base", "state.waiting"],
-  "list.selected-edge": ["danger.base", "state.waiting"],
+/** What is drawn in the accent past its words and grounds, which follows the accent too (#4918,
+ *  `vocabulary::DRAWN_IN_THE_ACCENT`), each beside the token of `vocabulary::KIN` that drew it
+ *  before, if it has one: where the theme draws the two alike, it follows that one as it always
+ *  did (Purlis Classic fills its primary with its surface), not the accent. */
+const DRAWN_IN_THE_ACCENT: Record<string, Token | undefined> = {
+  "accent.fill": "accent.surface",
+  "accent.fill-hover": "tab.active",
+  "focus.ring": undefined,
+  "list.selected-edge": undefined,
 };
-
-/** How far apart the engine holds the accent's kin from waiting and danger (`floors.rs`). */
-const APART = 0.1;
 
 /** An accent set over the cell's theme, its words and grounds as the engine resolves them. */
 function OverPurlis() {
@@ -134,14 +132,20 @@ function OverPurlis() {
       ? turned
       : value(ground);
   };
-  // Each turned the same way, or the theme's own where that would bring it nearer waiting or
-  // danger than the rules allow and than the theme's own is (`vocabulary::holds_as_apart`).
+  // Each turned the same way, or the theme's own where the theme draws it as its kin
+  // (`vocabulary::follow_kin`), or where turning would bring it nearer a colour than the rules
+  // the engine hands this theme allow and than the theme's own is (`vocabulary::holds_as_apart`).
   const held = (token: Token) => {
+    const kin = DRAWN_IN_THE_ACCENT[token];
+    if (kin !== undefined && value(kin) === value(token)) return value(token);
     const turned = toward(value(token), accent);
-    const holds = DRAWN_IN_THE_ACCENT[token].every((from) => {
-      const was = oklabDistance(value(token), value(from));
-      return oklabDistance(turned, value(from)) >= Math.min(APART, was);
-    });
+    const holds = inForce()
+      .tint.apart.filter((rule) => rule.token === token && !rule.words && !rule.signal)
+      .every((rule) => {
+        const from = value(rule.from as Token);
+        const was = oklabDistance(value(token), from);
+        return oklabDistance(turned, from) >= Math.min(rule.distance, was);
+      });
     return holds ? turned : value(token);
   };
   const drawn = {
