@@ -2620,7 +2620,12 @@ describe("the palette at fifty chats", () => {
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
       1,
     );
-t allowed the rows above to exist: `menuRows` looked a
+  });
+
+  /**
+   * What a context menu costs the strip it is on, at the same limits.
+   *
+   * charter-app#174 named this before it allowed the rows above to exist: `menuRows` looked a
    * row up by scanning the catalogue, and a context menu on a strip is drawn per tab per
    * render — so one render of a fifty-tab strip was fifty scans of a list the same change was
    * making 291 long. **Measured on this machine, one render of that strip, min of ten batches
