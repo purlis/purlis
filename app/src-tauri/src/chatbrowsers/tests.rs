@@ -283,6 +283,7 @@ fn reach() -> BrowserReach {
         never: Vec::new(),
         withdrawn: Vec::new(),
         open_web: false,
+        answered: Vec::new(),
     }
 }
 

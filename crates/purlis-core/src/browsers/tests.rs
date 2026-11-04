@@ -172,6 +172,7 @@ fn a_browser_reaches_what_its_chat_lists_and_a_new_site_only_on_the_open_web() {
         never: Vec::new(),
         withdrawn: Vec::new(),
         open_web: false,
+        answered: Vec::new(),
     };
 
     let (reach, new_sites) = reach_of(Some(&listed)).unwrap();
