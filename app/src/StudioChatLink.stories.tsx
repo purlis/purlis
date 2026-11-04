@@ -43,8 +43,9 @@ const DRAFT: SkillDraft = {
     {
       path: "evals/evals.json",
       before: null,
-      after: '{"skill_name": "test-design", "evals": []}\n',
-      hunks: [],
+      // Short lines, as a draft's merge view draws them: none scrolls sideways.
+      after: '{\n  "skill_name": "test-design",\n  "evals": []\n}\n',
+      hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 4 }],
       stale: false,
     },
   ],
