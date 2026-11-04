@@ -97,7 +97,8 @@ describe("forced colours", () => {
     // dragged or has the keyboard.
     const grip = (state: string) =>
       found.rules.find(
-        (rule) => rule.selector.includes('[data-part="grip"]') && rule.selector.includes(state),
+        // Keyed on the part's class once built (#4351, `src/ui/partClasses.ts`).
+        (rule) => rule.selector.includes(".dp-grip") && rule.selector.includes(state),
       );
     expect(lower(grip('[data-separator="hover"]')?.style["background-color"])).toBe("canvastext");
     expect(lower(grip('[data-separator="active"]')?.style["background-color"])).toBe("highlight");
@@ -156,6 +157,12 @@ describe("forced colours", () => {
         '<div data-p="dialog" role="dialog" aria-label="probe">dialog</div>',
         '<div data-p="alertdialog" role="alertdialog" aria-label="probe">alert</div>',
       ].join("");
+      // Each hand-drawn part takes the classes the built stylesheet keys it on (#4351).
+      for (const one of [box, ...box.querySelectorAll("[data-scope], [data-part]")]) {
+        const { scope, part } = (one as HTMLElement).dataset;
+        if (scope) one.classList.add(`ds-${scope}`);
+        if (part) one.classList.add(`dp-${part}`);
+      }
       document.body.appendChild(box);
 
       // What the engine resolves each system colour to, through an inline style no rule beats.

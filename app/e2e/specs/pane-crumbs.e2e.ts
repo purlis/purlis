@@ -110,8 +110,12 @@ async function draw(
             size: "sm",
             inline: "",
           });
+          // The part's classes, which the built stylesheet keys it on (#4351).
+          button.classList.add("ds-button", "dp-root");
           const label = el("span", "", name);
           Object.assign(label.dataset, { scope: "button", part: "label" });
+          // The part's classes, which the built stylesheet keys it on (#4351).
+          label.classList.add("ds-button", "dp-label");
           button.append(label);
           button.setAttribute("type", "button");
           button.tabIndex = 0;
@@ -138,11 +142,15 @@ async function draw(
         size: "sm",
         iconOnly: "",
       });
+      // The part's classes, which the built stylesheet keys it on (#4351).
+      brief.classList.add("ds-button", "dp-root");
       brief.setAttribute("type", "button");
       brief.setAttribute("aria-label", `Brief of ${path[path.length - 1]}`);
       brief.tabIndex = 0;
       const icon = el("span", "");
       Object.assign(icon.dataset, { scope: "button", part: "icon" });
+      // The part's classes, which the built stylesheet keys it on (#4351).
+      icon.classList.add("ds-button", "dp-icon");
       const mark = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       mark.setAttribute("class", "lucide");
       icon.append(mark);
@@ -189,9 +197,13 @@ async function drawEnds(pane: number): Promise<boolean> {
         variant: "secondary",
         size: "sm",
       });
+      // The part's classes, which the built stylesheet keys it on (#4351).
+      button.classList.add("ds-button", "dp-root");
       button.tabIndex = 0;
       const label = document.createElement("span");
       Object.assign(label.dataset, { scope: "button", part: "label" });
+      // The part's classes, which the built stylesheet keys it on (#4351).
+      label.classList.add("ds-button", "dp-label");
       label.textContent = words;
       button.append(label);
       group.append(button);
@@ -734,8 +746,12 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
         const button = document.createElement("button");
         button.type = "button";
         Object.assign(button.dataset, { scope: "button", part: "root", variant, size: "md" });
+        // The part's classes, which the built stylesheet keys it on (#4351).
+        button.classList.add("ds-button", "dp-root");
         const label = document.createElement("span");
         Object.assign(label.dataset, { scope: "button", part: "label" });
+        // The part's classes, which the built stylesheet keys it on (#4351).
+        label.classList.add("ds-button", "dp-label");
         label.textContent = words;
         button.append(label);
         confirm.append(button);

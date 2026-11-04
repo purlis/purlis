@@ -486,7 +486,8 @@ describe("the dispatch grant Notice", () => {
     const under = notice.parentElement?.querySelector("[data-scope=notice][data-part=under]");
     expect([...(under?.children ?? [])].map((one) => one.className)).toEqual([
       "dispatch-also",
-      "block-report",
+      // The card's root, with its part's classes (#4351).
+      "block-report ds-card dp-root",
     ]);
     expect(under?.children[1]).toHaveAttribute("data-scope", "card");
     expect(boxes).toHaveAttribute("data-scope", "checkbox-group");

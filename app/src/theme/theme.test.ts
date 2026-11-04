@@ -238,7 +238,12 @@ describe("putting a theme on the document", () => {
       const drawn = document.getElementById(PARTS_STYLE);
       expect(drawn?.tagName).toBe("STYLE");
       expect(drawn?.parentElement).toBe(document.head);
-      expect(drawn?.textContent).toBe(pill);
+      // Keyed on the parts' classes, which every part carries beside its attributes (#4351,
+      // `ui/partClasses.ts`).
+      expect(drawn?.textContent).toBe(
+        '@layer parts {\n  :where(.ds-button.dp-root[data-size="sm"]) { --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }\n' +
+          "  :where(.ds-button.dp-root) { border-radius: 9999px; }\n}\n",
+      );
       // Drawn again, it is still one stylesheet.
       apply(shaped, element);
       expect(document.querySelectorAll(`#${PARTS_STYLE}`)).toHaveLength(1);
