@@ -221,6 +221,36 @@ pub fn signed_in(browser: &str, login: &str, at: u64) -> Happened {
     )
 }
 
+/// **purlis filled vault key `key` into field `target` of `browser`** (#5115): the key's name and
+/// the field, never a value.
+pub fn filled_secret(browser: &str, key: &str, target: &str, at: u64) -> Happened {
+    plain(
+        browser,
+        By::Purlis,
+        &format!(
+            "purlis filled {} into {}",
+            cut_to(key, MOST_TARGET_CHARS),
+            cut_to(target, MOST_TARGET_CHARS)
+        ),
+        at,
+    )
+}
+
+/// **purlis filled nothing of `key` into `browser`, and why** (#5115): the sentence the chat was
+/// told, which names no value.
+pub fn fill_refused(browser: &str, key: &str, why: &str, at: u64) -> Happened {
+    plain(
+        browser,
+        By::Purlis,
+        &format!(
+            "purlis filled nothing of {}: {}",
+            cut_to(key, MOST_TARGET_CHARS),
+            cut_to(why, MOST_TARGET_CHARS)
+        ),
+        at,
+    )
+}
+
 fn plain(browser: &str, by: By, did: &str, at: u64) -> Happened {
     Happened {
         moment: Moment {
@@ -275,7 +305,8 @@ fn did(act: &Act, signed_in: bool) -> Option<String> {
         | Act::Changes { .. }
         | Act::Pages
         | Act::Downloads
-        | Act::WaitForText { .. } => return None,
+        | Act::WaitForText { .. }
+        | Act::DescribeField { .. } => return None,
         Act::Open { address: to } | Act::FindLoginForm { address: to } => {
             format!("Opened {}", address(to))
         }

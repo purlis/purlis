@@ -434,6 +434,7 @@ export const commands = {
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
 	answerPoolLogin: __WINDOW_ONLY_RESULT,
 	answerBrowserLogin: __WINDOW_ONLY_RESULT,
+	answerSecretFill: __WINDOW_ONLY_RESULT,
 	answerPoolTool: __WINDOW_ONLY_RESULT,
 	answerSecretAsk: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
@@ -2776,6 +2777,11 @@ export type AnswerPath =
  *  masked field, Not now with none.
  */
 { via: "secret"; id: number } | 
+/**
+ *  `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
+ *  whose digest is `shown` (#5115).
+ */
+{ via: "secret-fill"; id: number; shown: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2962,7 +2968,12 @@ export type AskSource =
  *  A key a chat's brokered run found missing from its persona's vault (#5068, ADR 0109):
  *  answered by a value typed in the window, or Not now.
  */
-"secret";
+"secret" | 
+/**
+ *  A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
+ *  purlis put that one key into that field, on that one origin, once.
+ */
+"secret-fill";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -5389,6 +5400,28 @@ export type FilesUnwatched = {
 	 *  own, and the others are of a branch not watched yet as a whole (#1727, #1745).
 	 */
 	refused: BranchFolder[],
+};
+
+/**
+ *  **A secret fill, as its notice draws it** (#5115): the key's name and its vault, the exact
+ *  site, the page and the field's label; never a value, which purlis hasn't read.
+ */
+export type FillShown = {
+	key: string,
+	vault: string,
+	/**
+	 *  The site the field's own frame is on, as purlis read it: its host, with a port where it
+	 *  has one, and the scheme where it isn't https (`http://localhost:3000`).
+	 */
+	site: string,
+	/**  The page the field is on, where the browser said: an address. */
+	page?: string | null,
+	/**  What the page labels the field: the page's words, never purlis's. */
+	label: string,
+	/**  The chat's browser, by its name to the chat (`b1`). */
+	browser: string,
+	/**  Plain warnings, said above the choices. */
+	warnings: string[],
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */
@@ -11680,6 +11713,11 @@ export type Shown = {
 	 *  is typed in. Absent for any other ask.
 	 */
 	secret?: SecretShown | null,
+	/**
+	 *  **The secret a fill would put into a page, and where** (#5115): drawn with its site
+	 *  large. Absent for any other ask.
+	 */
+	fill?: FillShown | null,
 };
 
 /**

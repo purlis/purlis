@@ -130,6 +130,8 @@ pub enum Called {
     NeedsYou,
     /// The chat asks purlis to log the browser in (#2016).
     LogIn,
+    /// The chat asks purlis to put a vault value into a field (#5115).
+    FillSecret,
 }
 
 /// What came of a browser tool's call.
