@@ -402,11 +402,90 @@ export const Grades: Story = {
     const open = within(list).getByRole("button", {
       name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
     });
-    await tabInto(() => open);
-    // The table's cell is scrolled in by React Aria a frame later, late in WebKit (#4026).
-    await untilFocusInSight("Tab to the Scorecard below the checks");
+    const log4672 = watch4672(list); // [DEBUG-4672]
+    try {
+      await tabInto(() => open);
+      // The table's cell is scrolled in by React Aria a frame later, late in WebKit (#4026).
+      await untilFocusInSight("Tab to the Scorecard below the checks");
+    } catch (error) {
+      // eslint-disable-next-line preserve-caught-error -- [DEBUG-4672] temporary probe
+      throw new Error(`${String(error)} [DEBUG-4672 log] ${log4672.said()}`);
+    } finally {
+      log4672.stop();
+    }
   },
 };
+
+/** [DEBUG-4672] Who focuses and scrolls in and around `list`'s frame, with a short stack. */
+function watch4672(list: Element): { said: () => string; stop: () => void } {
+  const frame = list.closest('[data-part="frame"]') as HTMLElement;
+  const t0 = performance.now();
+  const lines: string[] = [];
+  const name = (el: unknown) => {
+    if (!(el instanceof Element)) return String(el);
+    const label = el.getAttribute("aria-label") ?? el.getAttribute("data-part") ?? "";
+    return `${el.getAttribute("role") ?? el.tagName.toLowerCase()}${label ? `(${label.slice(0, 24)})` : ""}`;
+  };
+  const stack = () =>
+    (new Error().stack ?? "")
+      .split("\n")
+      .slice(2, 6)
+      .map((one) =>
+        one
+          .trim()
+          .replace(/^at /, "")
+          .replace(/\(?https?:[^)]*\/([^/)]+)\)?/, "@$1"),
+      )
+      .join(" < ");
+  const say = (what: string) =>
+    lines.push(
+      `${Math.round(performance.now() - t0)}ms ${what} [L${frame.scrollLeft}] {${stack()}}`,
+    );
+  const proto = Element.prototype;
+  const was = {
+    focus: HTMLElement.prototype.focus,
+    scrollIntoView: proto.scrollIntoView,
+    scrollTo: proto.scrollTo,
+  };
+  HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
+    say(`focus() ${name(this)} ${JSON.stringify(options ?? {})}`);
+    return was.focus.call(this, options);
+  };
+  proto.scrollIntoView = function (this: Element, arg?: boolean | ScrollIntoViewOptions) {
+    say(`scrollIntoView ${name(this)} ${JSON.stringify(arg ?? {})}`);
+    return was.scrollIntoView.call(this, arg);
+  };
+  proto.scrollTo = function (this: Element, ...args: unknown[]) {
+    if (this === frame || this === list) say(`scrollTo ${name(this)} ${JSON.stringify(args)}`);
+    return (was.scrollTo as (...a: unknown[]) => void).apply(this, args);
+  };
+  const leftWas = Object.getOwnPropertyDescriptor(proto, "scrollLeft") as PropertyDescriptor;
+  Object.defineProperty(frame, "scrollLeft", {
+    configurable: true,
+    get: () => (leftWas.get as () => number).call(frame),
+    set: (value: number) => {
+      lines.push(
+        `${Math.round(performance.now() - t0)}ms set frame.scrollLeft=${value} {${stack()}}`,
+      );
+      (leftWas.set as (v: number) => void).call(frame, value);
+    },
+  });
+  const onFocus = (e: Event) => say(`focusin ${name(e.target)}`);
+  const onScroll = () => say("frame scroll event");
+  document.addEventListener("focusin", onFocus, true);
+  frame.addEventListener("scroll", onScroll);
+  return {
+    said: () => lines.join(" | "),
+    stop: () => {
+      HTMLElement.prototype.focus = was.focus;
+      proto.scrollIntoView = was.scrollIntoView;
+      proto.scrollTo = was.scrollTo;
+      delete (frame as unknown as Record<string, unknown>).scrollLeft;
+      document.removeEventListener("focusin", onFocus, true);
+      frame.removeEventListener("scroll", onScroll);
+    },
+  };
+}
 
 /** deploy's plan with no checks at all. */
 const NONE: SkillGradePlan = { ...PLAN, tests: [], chats: 0, after_edit_chats: 0, estimate: null };
@@ -666,44 +745,28 @@ export const PlanNarrow: Story = {
   },
 };
 
-// [DEBUG-4672] Temporary probes of the race: the Scorecard is focused as the keyboard lands in the
-// grid, before React Aria's scroll for that landing (a frame later) has run, or after it.
-const frame4672 = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-async function race4672(
-  canvas: Parameters<NonNullable<Story["play"]>>[0]["canvas"],
-  wait: boolean,
-) {
-  const list = await canvas.findByRole("grid", { name: "Grades of deploy" });
-  await waitFor(() => expect(within(list).getAllByRole("row")).toHaveLength(4));
-  await inAWindowThatFits();
-  const open = within(list).getByRole("button", {
-    name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
-  });
-  for (let step = 0; step < 60 && !list.contains(document.activeElement); step++)
-    await userEvent.tab();
-  const landed = `${document.activeElement?.getAttribute("role") ?? document.activeElement?.tagName}`;
-  if (wait) for (let one = 0; one < 3; one++) await frame4672();
-  open.focus();
-  for (let one = 0; one < 10; one++) await frame4672();
-  const frame = open.closest('[data-part="frame"]');
-  try {
-    expectFocusInSight();
-  } catch (error) {
-    // eslint-disable-next-line preserve-caught-error -- [DEBUG-4672] temporary probe
-    throw new Error(
-      `[DEBUG-4672] ${wait ? "WAITED" : "RACED"}: landed on ${landed}; frame scrollLeft ${frame?.scrollLeft}; ${String(error)}`,
-    );
-  }
-}
-/** [DEBUG-4672] The Scorecard focused before the landing's frame. */
-export const Probe4672Raced: Story = {
-  args: { grades: BOTH, evals: 2 },
-  parameters: { screenshot: false },
-  play: async ({ canvas }) => race4672(canvas, false),
-};
-/** [DEBUG-4672] The Scorecard focused after the landing's frame. */
-export const Probe4672Waited: Story = {
-  args: { grades: BOTH, evals: 2 },
-  parameters: { screenshot: false },
-  play: async ({ canvas }) => race4672(canvas, true),
-};
+// [DEBUG-4672] Temporary: fresh mounts of the Grades play, which logs who focused and scrolled.
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672a: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672b: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672c: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672d: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672e: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672f: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672g: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672h: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672i: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672j: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672k: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672l: Story = { ...Grades, parameters: { screenshot: false } };
