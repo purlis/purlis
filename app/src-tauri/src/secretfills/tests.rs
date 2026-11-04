@@ -23,6 +23,7 @@ fn wait(origin: &str) -> FillWait {
         page: Some(format!("{origin}/settings")),
         label: "API key".into(),
         warnings: Vec::new(),
+        code: false,
         since: 1,
         persona: None,
         card: false,
@@ -320,6 +321,73 @@ fn offered_in(root: &Path, vault: &str, key: &str, origin: &str) -> FillWait {
 }
 
 #[test]
+fn a_2fa_codes_notice_says_so_and_a_press_on_the_values_notice_never_allows_it() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let locks = purlis_core::sandbox::policy::Locks::of(dir.path());
+    let mut code = wait("https://dash.example.test");
+    code.key = "dash-2fa".into();
+    code.code = true;
+
+    let shown = crate::asking::secret_fill(&code, &locks);
+    assert!(shown.fill.expect("a fill").code);
+    assert!(
+        shown.says.contains("2FA code from dash-2fa"),
+        "{}",
+        shown.says
+    );
+
+    // The value's notice and the code's are told apart by what a press names.
+    let fills = Fills::default();
+    let (id, heard) = fills.raise(code.clone()).expect("raised");
+    let audited = Audited::default();
+    let mut value = code.clone();
+    value.code = false;
+    let refused = answered(&fills, &audited, &press(id, Press::Once, &value.digest()));
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(heard.try_recv().is_err(), "the call still waits");
+
+    let pressed =
+        answered(&fills, &audited, &press(id, Press::Once, &code.digest())).expect("allowed");
+    let Pressed::Done { said } = pressed else {
+        panic!("{pressed:?}");
+    };
+    assert!(said.contains("A 2FA code from dash-2fa"), "{said}");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
+    // Audited as the seed's approval for that one site, as any key's is (SF-11).
+    assert_eq!(
+        audited.into_inner(),
+        vec![(
+            "secret-fill".to_owned(),
+            "qa/dash-2fa -> https://dash.example.test".to_owned(),
+            true
+        )]
+    );
+}
+
+#[test]
+fn allow_for_this_chat_says_a_code_goes_in_and_holds_the_seed_for_that_site_alone() {
+    let fills = Fills::default();
+    let mut code = wait("https://dash.example.test");
+    code.key = "dash-2fa".into();
+    code.code = true;
+    let (id, _heard) = fills.raise(code.clone()).expect("raised");
+
+    let pressed = answered(
+        &fills,
+        &Audited::default(),
+        &press(id, Press::Chat, &code.digest()),
+    )
+    .expect("allowed for the chat");
+
+    let Pressed::Done { said } = pressed else {
+        panic!("{pressed:?}");
+    };
+    assert!(said.contains("A 2FA code from dash-2fa"), "{said}");
+    assert!(fills.granted(7, "qa", "dash-2fa", "https://dash.example.test"));
+    assert!(!fills.granted(7, "qa", "dash-2fa", "https://other.example.test"));
+}
+
+#[test]
 fn allow_for_this_chat_holds_that_key_on_that_site_for_that_chat_alone() {
     let fills = Fills::default();
     let shown = wait("https://dash.example.test");
@@ -370,6 +438,7 @@ fn allow_for_this_chat_fills_the_next_ask_without_a_notice_and_never_a_cards() {
             label: "API key".into(),
             kind: FieldKind::OneLine,
         },
+        code: false,
         page: None,
         pool: None,
     };
@@ -614,6 +683,7 @@ fn asked_into(key: &str, kind: FieldKind) -> FillAsked {
             label: "Comment".into(),
             kind,
         },
+        code: false,
         page: None,
         pool: None,
     }

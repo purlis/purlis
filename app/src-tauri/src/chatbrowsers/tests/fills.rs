@@ -20,6 +20,7 @@ fn fill(target: &str) -> Browsing {
         target: target.into(),
         vault: "qa".into(),
         key: "dash-api-key".into(),
+        code: false,
     }
 }
 
@@ -154,6 +155,42 @@ fn the_origin_filled_on_is_the_one_the_browser_read_for_the_fields_own_frame() {
         "https://pay.example.test",
         "the engine is held to the origin the person was shown"
     );
+}
+
+#[test]
+fn a_2fa_code_is_asked_for_as_one_and_only_what_the_vault_side_made_reaches_the_browser() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    let asked = RefCell::new(Vec::new());
+    // The vault's side: the code its seed makes now, never the seed.
+    let made = |one: &FillAsked| -> Result<Secret, String> {
+        asked.borrow_mut().push(one.clone());
+        Ok(Secret::new("287082".into()))
+    };
+
+    let answer = answered_filling(
+        &browsers,
+        &hosted,
+        &ask(
+            3,
+            Browsing::FillSecret {
+                target: "e7".into(),
+                vault: "qa".into(),
+                key: "dash-2fa".into(),
+                code: true,
+            },
+        ),
+        None,
+        &made,
+    );
+
+    assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
+    let asked = asked.into_inner();
+    assert!(asked[0].code, "the person is asked about a code");
+    assert_eq!(asked[0].key, "dash-2fa");
+    let fills = hosted.fills.lock().unwrap();
+    assert_eq!(fills[0].1.value.expose(), "287082");
+    assert_eq!(fills[0].1.key, "dash-2fa");
 }
 
 #[test]

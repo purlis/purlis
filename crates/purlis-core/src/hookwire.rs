@@ -1688,6 +1688,10 @@ pub enum Browsing {
         target: String,
         vault: String,
         key: String,
+        /// **The 2FA code the seed under `key` makes, not the value itself** (#5118): the app
+        /// works the code out from the seed as it fills, and the seed reaches no page.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        code: bool,
     },
 }
 

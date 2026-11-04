@@ -65,6 +65,8 @@ pub struct FillWait {
     /// What the person is warned of: a vault the chat's persona isn't tagged for, a field in a
     /// frame of another site than its page's.
     pub warnings: Vec<String>,
+    /// A 2FA code the seed under `key` makes, not the value itself (#5118).
+    pub code: bool,
     pub since: u64,
     /// The persona the chat was started as: whose tools Always writes in.
     pub persona: Option<String>,
@@ -120,6 +122,8 @@ impl FillWait {
             u8::from(self.card),
             u8::from(self.vault_too),
             u8::from(self.multi_line),
+            // A press on the notice of a value never allows a code, nor one on a code a value.
+            u8::from(self.code),
         ]);
         hash.finalize()
             .iter()
@@ -290,6 +294,8 @@ pub struct FillAsked {
     pub target: String,
     pub vault: String,
     pub key: String,
+    /// A 2FA code the seed under `key` makes, not the value itself (#5118).
+    pub code: bool,
     pub field: FieldSaid,
     /// The address of the page the field is on, where the browser said.
     pub page: Option<String>,
@@ -443,6 +449,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
                 page: asked.page.clone(),
                 label: asked.field.label.clone(),
                 warnings,
+                code: asked.code,
                 since: now,
                 persona,
                 card: false,
@@ -612,7 +619,14 @@ fn read(
         .ok_or_else(|| {
             "this chat is no longer open in purlis's window, so nothing was filled".to_owned()
         })?;
-    let read = || brokered::fill_value(&asker, &asked.vault, &asked.key);
+    // A code is worked out from its seed here, as it is filled (#5118): the seed stays.
+    let read = || {
+        if asked.code {
+            brokered::fill_code(&asker, &asked.vault, &asked.key)
+        } else {
+            brokered::fill_value(&asker, &asked.vault, &asked.key)
+        }
+    };
     if let Some(value) = read()? {
         return Ok(value);
     }
@@ -784,6 +798,11 @@ pub fn answer(
             level,
         },
     )?;
+    let what = if wait.code {
+        format!("A 2FA code from {}", wait.key)
+    } else {
+        wait.key.clone()
+    };
     let said = match asked.press {
         Press::Always => {
             let persona = wait.persona.as_deref().ok_or(NO_MORE)?;
@@ -811,16 +830,16 @@ pub fn answer(
                 audit,
             )?;
             format!(
-                "Allowed. {} goes into fields on {} from now on: the line is in the project's \
+                "Allowed. {what} goes into fields on {} from now on: the line is in the project's \
                  settings, and allowed on this machine.",
-                wait.key, wait.origin
+                wait.origin
             )
         }
         Press::Chat => {
             format!(
-                "Allowed for this chat. {} goes into fields on {} in this chat without asking \
+                "Allowed for this chat. {what} goes into fields on {} in this chat without asking \
                  again; nothing was written.",
-                wait.key, wait.origin
+                wait.origin
             )
         }
         Press::Once | Press::Keep => format!(
