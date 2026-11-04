@@ -73,19 +73,19 @@ fn a_chat_is_handed_the_pins_alone_whatever_the_old_keys_say() {
             r#"{"settings": {"harness_plugins": {"claude": {"serena@x": true}}}}"#,
         ),
     ]);
-    for studio in [false, true] {
+    for said in [false, true] {
         for workspace in [None, Some("alpha")] {
             assert_eq!(
-                for_start_as(studio, "claude", plane.path(), workspace).plugins,
+                for_start_as(said, "claude", plane.path(), workspace).plugins,
                 pins_of(&CLAUDE_CODE)
                     .into_iter()
                     .collect::<BTreeMap<_, _>>(),
-                "{studio} {workspace:?}"
+                "{said} {workspace:?}"
             );
             assert_eq!(
-                for_start_as(studio, "codex", plane.path(), workspace),
+                for_start_as(said, "codex", plane.path(), workspace),
                 Chosen::new(),
-                "{studio} {workspace:?}"
+                "{said} {workspace:?}"
             );
         }
     }
@@ -106,9 +106,10 @@ fn the_old_table_is_refused_nothing_so_a_file_that_holds_it_saves_as_it_did() {
     );
 }
 
-/// #4344: a moved project's chats get its skills with the flag off, so they take its choices too.
+/// #4344: a moved project's chats get its skills whatever their start said, so they take its
+/// choices too.
 #[test]
-fn a_moved_projects_turned_off_skills_reach_its_chats_with_the_flag_off() {
+fn a_moved_projects_turned_off_skills_reach_its_chats_whose_start_said_no() {
     let toml = "[harness_skills.codex]\nlangfuse = false\n";
     let unmoved = plane_with(&[("charter.toml", toml)]);
     assert!(
@@ -417,7 +418,7 @@ fn a_chat_is_handed_the_harness_skills_the_project_turned_off_only_while_the_stu
     assert_eq!(
         for_start_as(false, "codex", plane.path(), None),
         Chosen::new(),
-        "behind the Skill studio's flag"
+        "a start that said the plane's skills do not reach it"
     );
 }
 

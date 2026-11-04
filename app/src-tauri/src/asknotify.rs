@@ -288,7 +288,6 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::TaskQuestion => "A task asks you a question",
         AskSource::SignIn => "Asks you to sign a profile in",
         AskSource::SandboxOnly => "Asks you to make a sandbox-only profile",
-        AskSource::OldHarnessPlugins => "Old harness plugin settings, ignored now",
         AskSource::Browser => "Asks what its browser may reach",
         AskSource::BrowserNeedsYou => "Needs you in its browser",
         AskSource::BrowserSite => "Asks to let its browser reach a new site",

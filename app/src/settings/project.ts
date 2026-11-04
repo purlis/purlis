@@ -443,15 +443,11 @@ function loosensTheSandbox(back: readonly SettingsEdit[]): boolean {
  * A file that is not TOML has no settings to show until it is mended: its standing refusals say
  * why, above the groups.
  */
-export function projectGroups(
-  read: ProjectRead,
-  reread?: () => void,
-  skillStudio = false,
-): SettingsGroup[] {
+export function projectGroups(read: ProjectRead, reread?: () => void): SettingsGroup[] {
   const names = namesOf(read);
   // The Sandbox's pages are written with the names in use, and quote hosts a person wrote:
   // nothing in them is renamed (#1340).
-  return declaredGroups(read, reread, skillStudio).map((group) =>
+  return declaredGroups(read, reread).map((group) =>
     WRITTEN_NAMED.has(group.id) ? group : inFiles(group, names),
   );
 }
@@ -529,11 +525,7 @@ function inFiles(
 }
 
 /** The level's groups, as declared: {@link projectGroups} names the files in them. */
-function declaredGroups(
-  read: ProjectRead,
-  reread?: () => void,
-  skillStudio = false,
-): SettingsGroup[] {
+function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[] {
   const shared: Shown = read.shared;
   const local: Shown = read.local;
   const sharedOk = shared.parsed;
@@ -614,8 +606,8 @@ function declaredGroups(
         ? { after: harnessDeclarationRows(read.plane, read.declarations) }
         : {}),
     },
-    // Its chats' skill budget (#4610), behind the Skill studio's flag.
-    ...(skillStudio && read.plane !== undefined ? [projectSkillsGroup(read.plane)] : []),
+    // Its chats' skill budget (#4610).
+    ...(read.plane !== undefined ? [projectSkillsGroup(read.plane)] : []),
     ...profilePages(read),
     {
       id: "project.sandbox",

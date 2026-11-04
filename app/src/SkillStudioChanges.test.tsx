@@ -84,7 +84,6 @@ function core(
     const given = (args ?? {}) as Record<string, unknown>;
     if (cmd === "skill_studio")
       return {
-        on: true,
         workspace,
         persona: (given.persona as string | null) ?? null,
         first: { starts: false, unmoved: null },

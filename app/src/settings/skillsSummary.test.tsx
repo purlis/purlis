@@ -60,27 +60,22 @@ describe("the Workspace level's Skills summary (#2767)", () => {
     expect(group.id).toBe("workspace.skills");
     expect(group.links).toEqual([{ label: "Open Skill studio", action: "skills.studio:alpha" }]);
 
-    const now = (skillStudio: boolean): Now => ({
+    const now: Now = {
       tabs: noTabs(),
       workspaces: ["alpha"],
       focused: "alpha",
       needsYou: [],
       nameOf: (session) => String(session),
       plane: "p",
-      skillStudio,
-    });
-    const row = catalogue(now(true)).find((offer) => offer.id === "skills.studio:alpha");
+    };
+    const ids = catalogue(now).map((offer) => offer.id);
+    const row = catalogue(now).find((offer) => offer.id === "skills.studio:alpha");
     expect(row?.does).toEqual({
       verb: "openView",
       view: skillStudioView(inWorkspace("alpha")),
       title: "Skill studio",
     });
-    const ids = catalogue(now(false)).map((offer) => offer.id);
-    expect(ids).not.toContain("skills.studio:alpha");
-    expect(ids).not.toContain("settings.group:workspace.skills:alpha");
-    expect(catalogue(now(true)).map((offer) => offer.id)).toContain(
-      "settings.group:workspace.skills:alpha",
-    );
+    expect(ids).toContain("settings.group:workspace.skills:alpha");
   });
 });
 
@@ -130,7 +125,6 @@ describe("the summary line's need you (#3695)", () => {
       needsYou: [],
       nameOf: (session) => String(session),
       plane: "p",
-      skillStudio: true,
       personas: ["ops"],
     };
     const rows = catalogue(now);
@@ -148,9 +142,6 @@ describe("the summary line's need you (#3695)", () => {
       view: skillStudioAt(asPersona("ops"), "needs"),
       title: "Skill studio",
     });
-    expect(catalogue({ ...now, skillStudio: false }).map((offer) => offer.id)).not.toContain(
-      "skills.needs:alpha",
-    );
   });
 });
 
@@ -201,18 +192,14 @@ describe("the skill budget's row (#4610, #5353)", () => {
 });
 
 describe("the palette's Skills rows (#4610)", () => {
-  const offered = (skillStudio: boolean) =>
-    catalogue({
+  it("offers the project's Skills group", () => {
+    const offered = catalogue({
       tabs: noTabs(),
       workspaces: [],
       needsYou: [],
       nameOf: (session) => String(session),
       plane: "p",
-      skillStudio,
     }).some((offer) => offer.id === "settings.group:project.skills");
-
-  it("offers the project's Skills group only while the studio's flag is on", () => {
-    expect(offered(true)).toBe(true);
-    expect(offered(false)).toBe(false);
+    expect(offered).toBe(true);
   });
 });

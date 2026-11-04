@@ -10,7 +10,7 @@ import { studioSkill } from "../studio.js";
 
 /**
  * **A project skill in the Skill studio** (SK-2, #2765), in the built app against the real
- * core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * core.
  *
  * The spec puts a skill folder in the project's `skills/`, as a person would, and opens the
  * studio the way a person does: `F2`, "Open Skill studio". The studio lists the skill as a

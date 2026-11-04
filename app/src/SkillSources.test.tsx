@@ -203,7 +203,6 @@ function core({
     switch (cmd) {
       case "skill_studio":
         return {
-          on: true,
           workspace: null,
           persona: null,
           workspaces: [],
@@ -641,7 +640,6 @@ describe("the install review", () => {
     const asked = core({
       answers: {
         skill_studio: () => ({
-          on: true,
           workspace: null,
           persona: null,
           workspaces: [],
@@ -795,7 +793,6 @@ describe("the install review", () => {
     const asked = core({
       answers: {
         skill_studio: () => ({
-          on: true,
           workspace: null,
           persona: null,
           workspaces: ["ops", "web"],
@@ -869,7 +866,6 @@ describe("the install review", () => {
     const asked = core({
       answers: {
         skill_studio: () => ({
-          on: true,
           workspace: null,
           persona: null,
           workspaces: ["ops"],

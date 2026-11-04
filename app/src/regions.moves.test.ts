@@ -457,6 +457,7 @@ describe("where each view lives, for the palette (#1752)", () => {
     expect(places.map((one) => [one.view, one.region, one.to])).toEqual([
       ["chats", "navigation", "panel"],
       ["explorer", "navigation", "panel"],
+      ["skills", "navigation", "panel"],
       ["inbox", "aside", undefined],
       ["personas", "aside", "panel"],
       ["vaults", "aside", "panel"],

@@ -38,7 +38,6 @@ import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { askOpenProposal } from "./proposedChangeOpen";
-import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
 import { askProfileSignIn } from "./settings/links";
@@ -375,19 +374,6 @@ export async function answerTaken(
           return { status: "ok" };
         }
         break;
-      case "old-harness-plugins": {
-        // The old `[harness_plugins]` keys (#3467): Remove holds purlis's proposed change for
-        // each file and opens the first one's tab, where Apply is pressed; nothing is written
-        // before. Dismiss says it no more. Either is said once.
-        if (option === "dismiss") return commands.dismissOldHarnessPlugins(plane);
-        if (option === "remove") {
-          const held = await proposeOldKeysRemoval(plane);
-          if (held.status === "error") return held;
-          opened = true;
-          return held;
-        }
-        break;
-      }
       case "sandbox-only": {
         // Make one makes a sandbox-only Codex profile (#2037), then the project's window opens
         // a shell tab where the core types Codex's own sign-in for it. Dismiss puts it away.

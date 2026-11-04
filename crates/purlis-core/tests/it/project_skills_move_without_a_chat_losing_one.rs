@@ -481,12 +481,12 @@ fn a_project_with_nothing_to_move_says_so() {
 }
 
 #[test]
-fn a_moved_projects_skills_reach_its_chats_with_the_studio_off() {
+fn a_moved_projects_skills_reach_its_chats_whose_start_said_no() {
     purlis_core::unsteered!();
     let f = project();
     assert!(
         !skills::reach_chats(&f.plane, false),
-        "before the move, the flag alone lets the project's skills in"
+        "before the move, only the start's word lets the project's skills in"
     );
 
     said(&apply(&f.plane));
@@ -689,10 +689,10 @@ fn an_unmigrated_projects_chats_keep_every_skill_once_the_reading_is_on() {
     assert!(!skills::reach_chats(&f.plane, false), "it has not moved");
 }
 
-/// The whole upgrade on a machine with the flag off, the one no default machine has run: the
-/// project's chats before, the move asked for by name, and every chat after, with no flag.
+/// The whole upgrade for chats whose start said no (an older desktop's runner chat, #4344): the
+/// project's chats before, the move asked for by name, and every chat after.
 #[test]
-fn an_unmigrated_plane_moves_with_the_flag_off_and_every_chat_keeps_its_skills() {
+fn an_unmigrated_plane_moves_where_a_start_said_no_and_every_chat_keeps_its_skills() {
     purlis_core::unsteered!();
     let f = project();
     let before = every_chat(&f);

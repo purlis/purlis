@@ -161,7 +161,6 @@ fn a_harness_purlis_has_no_adapter_for_finds_and_loads_a_skill_over_mcp_and_the_
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("HOME", &root)
         .env("CHARTER_ROOT", &root)
-        .env("PURLIS_SKILL_STUDIO", "1")
         .env(HARNESS_ENV, "goose")
         .env(SOCKET_ENV, &hooks)
         .env(CHAT_ENV, CHAT.to_string())

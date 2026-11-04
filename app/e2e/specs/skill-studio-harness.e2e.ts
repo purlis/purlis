@@ -16,7 +16,7 @@ import { studioPage, studioSkill } from "../studio.js";
 
 /**
  * **A repo's own skills, and each program's, in the Skill studio** (SK-6, #2769), in the built
- * app against the real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * app against the real core.
  *
  * The spec puts a clone in `alpha` as git leaves one (a `.git` folder) holding a committed
  * `.claude/skills/<name>`, and a project skill of the same name granted to `alpha`. It opens

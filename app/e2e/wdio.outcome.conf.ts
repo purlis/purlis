@@ -43,7 +43,6 @@ const environment = theRunsEnvironment(plane, {
   SHELL: program,
   CHARTER_PANIC_LOG: PANIC_LOG,
   PURLIS_NO_BACKGROUND_CHECKS: "1",
-  PURLIS_SKILL_STUDIO: "1",
 });
 if (kind === "codex") declareTheStateRunsProfile(plane, program, environment);
 else declareAProfile(plane, program, kind);

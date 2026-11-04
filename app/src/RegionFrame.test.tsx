@@ -252,7 +252,6 @@ function WithViews({
   badge,
   badges,
   panels = [],
-  previews,
 }: {
   from: Arrangement;
   to?: Arrangement;
@@ -261,8 +260,6 @@ function WithViews({
   /** Badges by view, in place of {@link badge}'s one on Chats. */
   badges?: Partial<Record<ViewId, React.ReactNode>>;
   panels?: { view: PanelViewId; name: string; mark: LucideIcon }[];
-  /** The views behind a preview that is on (#3266). */
-  previews?: readonly ViewId[];
 }) {
   const [arrangement, setArrangement] = useState(from);
   return (
@@ -273,7 +270,6 @@ function WithViews({
         content={CONTENT}
         views={VIEWS}
         panels={panels}
-        previews={previews}
         badges={badges ?? { chats: badge }}
         onPick={onPick}
         centre={<div data-testid="centre">centre</div>}
@@ -296,6 +292,7 @@ describe("the activity bar of a region with views (#1673)", () => {
       "Chats",
       "Explorer",
       "Search",
+      "Skills",
     ]);
     for (const tab of tabs) expect(tipOf(tab)).toBeTruthy();
     // Its own column, outside the side panel.
@@ -462,44 +459,23 @@ describe("the right side's activity bar (#1678)", () => {
   });
 });
 
-/**
- * **The Skills view, behind the Skill studio's preview** (#3266): its tab under Search only while
- * the preview is on; while it is off the side opens on Chats, and the pick comes back with it.
- */
+/** **The Skills view** (#3266): its tab under Search, one of the left side's own views. */
 describe("the Skills view's place on the left (#3266)", () => {
-  const SKILLS: readonly ViewId[] = ["skills"];
   const picked: Arrangement = DEFAULT_ARRANGEMENT.map((one) =>
     one.id === "navigation" ? { ...one, view: "skills" } : one,
   );
 
-  it("sits under Search while the preview is on, and nowhere while it is off", () => {
-    const { rerender } = render(<WithViews from={DEFAULT_ARRANGEMENT} />);
-    const names = () =>
+  it("sits under Search", () => {
+    render(<WithViews from={DEFAULT_ARRANGEMENT} />);
+    expect(
       within(bar())
         .getAllByRole("tab")
-        .map((tab) => tab.getAttribute("aria-label"));
-    expect(names()).toEqual(["Chats", "Explorer", "Search"]);
-
-    rerender(
-      <StrictMode>
-        <WithViews from={DEFAULT_ARRANGEMENT} previews={SKILLS} />
-      </StrictMode>,
-    );
-    expect(names()).toEqual(["Chats", "Explorer", "Search", "Skills"]);
+        .map((tab) => tab.getAttribute("aria-label")),
+    ).toEqual(["Chats", "Explorer", "Search", "Skills"]);
   });
 
-  it("falls back to Chats while the preview is off, and is back when it is on", () => {
-    const { rerender } = render(<WithViews from={picked} />);
-    expect(screen.getByRole("tabpanel", { name: "Chats" })).toContainElement(
-      screen.getByTestId("v-chats"),
-    );
-    expect(screen.queryByRole("tab", { name: "Skills" })).toBeNull();
-
-    rerender(
-      <StrictMode>
-        <WithViews from={picked} previews={SKILLS} />
-      </StrictMode>,
-    );
+  it("is shown where the side was left on it", () => {
+    render(<WithViews from={picked} />);
     expect(screen.getByRole("tabpanel", { name: "Skills" })).toContainElement(
       screen.getByTestId("v-skills"),
     );

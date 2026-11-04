@@ -3,7 +3,7 @@
 
 //! `purlis skill grant | share` on a temporary project (SK-4, #2767): a grant decides which
 //! workspaces' chats get a project skill, a workspace turns a granted one off and never on one it
-//! was not granted, and Share makes a local skill shared. Behind the `skill-studio` flag.
+//! was not granted, and Share makes a local skill shared.
 
 use crate::support;
 
@@ -44,7 +44,6 @@ impl Project {
             .env("CHARTER_ROOT", &root)
             .env("HOME", self.at.join("home"))
             .env("PURLIS_CONFIG_HOME", self.at.join("home/config"))
-            .env("PURLIS_SKILL_STUDIO", "1")
             .env("NO_COLOR", "1");
         // Run from a terminal, even where this test runs inside a chat: a chat changes no skill
         // itself (#2770).

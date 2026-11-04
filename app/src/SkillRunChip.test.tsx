@@ -32,16 +32,16 @@ const OPEN: OpenRun = {
   level: null,
 };
 
-function studioOn() {
+/** A core that answers nothing: the chip reads only the runs it is given. */
+function aCoreAskedNothing() {
   mockIPC((cmd) => {
-    if (cmd === "skill_studio_on") return true;
     throw new Error(`unexpected ${cmd}`);
   });
 }
 
 describe("the skill run chip on a chat's pane head", () => {
   it("shows the skill in use and its tool calls, and opens the skill's tab on that run", async () => {
-    studioOn();
+    aCoreAskedNothing();
     const onOpen = vi.fn();
     render(
       <SkillRunsHere.Provider
@@ -72,7 +72,7 @@ describe("the skill run chip on a chat's pane head", () => {
   });
 
   it("opens the skill the core counts the run of, never a name of its own reading (#3385)", async () => {
-    studioOn();
+    aCoreAskedNothing();
     const onOpen = vi.fn();
     render(
       <SkillRunsHere.Provider
@@ -101,7 +101,7 @@ describe("the skill run chip on a chat's pane head", () => {
   });
 
   it("shows the tokens spent since the run opened, live, where the harness says usage (SK-26)", async () => {
-    studioOn();
+    aCoreAskedNothing();
     const onOpen = vi.fn();
     const { rerender } = render(
       <SkillRunsHere.Provider
@@ -129,7 +129,7 @@ describe("the skill run chip on a chat's pane head", () => {
   });
 
   it("shows no tokens, never a zero, where the harness says no usage", async () => {
-    studioOn();
+    aCoreAskedNothing();
     render(
       <SkillRunsHere.Provider value={fixedRuns({ 4: OPEN })}>
         <SkillRunChip session={4} onOpen={() => undefined} />
