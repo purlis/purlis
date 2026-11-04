@@ -865,7 +865,8 @@ describe("App", () => {
       if (cmd === "opened_chats") return [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       if (cmd === "start_chat") {
         const session = started.length + 1;
         started.push({ session, name: (args as { name: string }).name });
@@ -901,7 +902,8 @@ describe("App", () => {
       if (cmd === "opened_chats") return [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       if (cmd !== "start_chat") return null;
       if (++opened === 1) return { session: 1 };
       await new Promise<void>((starts) => (letItStart = starts));

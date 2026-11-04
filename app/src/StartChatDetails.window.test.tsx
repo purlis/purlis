@@ -28,6 +28,13 @@ afterEach(() => {
   clearMocks();
 });
 
+/** **Opens the dialog as a person does since #4758**: the plane's one empty pane (a plane with no
+ *  chat keeps one), and its New chat. The strip's `+` opens an empty tab, not the dialog. */
+async function openTheDialog() {
+  const empty = await screen.findByTestId("empty-pane");
+  await userEvent.click(within(empty).getByRole("button", { name: "New chat" }));
+}
+
 const PLANE = "/home/dev/plane";
 
 const FIRST = {
@@ -96,7 +103,7 @@ describe("the new-chat dialog's two answers (#4736)", () => {
     const { answer } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await openTheDialog();
 
     const dialog = await screen.findByRole("dialog", { name: "Start a chat" });
     expect(within(dialog).getByRole("option", { name: "release" })).toBeTruthy();
@@ -117,7 +124,7 @@ describe("the new-chat dialog's two answers (#4736)", () => {
     const { asked, answer } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await openTheDialog();
     await userEvent.click(await screen.findByRole("button", { name: /^Start chat/ }));
     expect(said(asked, "start_chat")).toEqual([]);
 
@@ -134,7 +141,7 @@ describe("the new-chat dialog's two answers (#4736)", () => {
     const { asked, answer } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await openTheDialog();
     await userEvent.click(await screen.findByRole("button", { name: /^Start chat/ }));
 
     answer([{ name: "work", approval: "new", sandbox: null, billed_to: null }]);
@@ -176,7 +183,7 @@ describe("the new-chat dialog's two answers (#4736)", () => {
       const { asked, answer } = core();
       render(<App />);
 
-      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+      await openTheDialog();
       const dialog = await screen.findByRole("dialog", { name: "Start a chat" });
       await userEvent.click(within(dialog).getByRole("button", { name: /^Start chat/ }));
 
@@ -198,7 +205,7 @@ describe("the new-chat dialog's two answers (#4736)", () => {
     const { asked, answer } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await openTheDialog();
     const dialog = await screen.findByRole("dialog", { name: "Start a chat" });
     await userEvent.click(within(dialog).getByRole("button", { name: /^Start chat/ }));
 
@@ -217,7 +224,7 @@ describe("the new-chat dialog's two answers (#4736)", () => {
     const { answer } = core();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+    await openTheDialog();
     const dialog = await screen.findByRole("dialog", { name: "Start a chat" });
     const kept = () =>
       [...dialog.querySelectorAll<HTMLElement>('[data-scope="reserved"][data-part="kept"]')].map(
