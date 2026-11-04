@@ -99,7 +99,14 @@ export const UseAnEntry: Story = {
 export const NoEntryToUse: Story = {
   args: { secret, box: null, entries: () => Promise.resolve([]) },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(canvas.getByRole("radio", { name: "Use an entry I have" }));
+    // By the keyboard, so nothing is under a pointer when it is pictured.
+    await userEvent.tab();
+    await untilFocused(() => canvas.getByRole("radio", { name: "New value" }), "New value");
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(
+      () => canvas.getByRole("radio", { name: "Use an entry I have" }),
+      "Use an entry I have",
+    );
     await waitFor(() =>
       expect(canvas.getByRole("status")).toHaveTextContent("No vault holds an entry"),
     );
