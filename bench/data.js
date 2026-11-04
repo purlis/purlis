@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793772160730,
+  "lastUpdate": 1793774953873,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38514,6 +38514,48 @@ window.BENCHMARK_DATA = {
             "value": 101.0863545,
             "unit": "ms",
             "extra": "median of 5 runs: 100.575, 101.005, 101.086, 101.195, 101.246 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f1f10fce10c1454cd54db83036c346574732826d",
+          "message": "Start chat: the Runs on stories picture the row they are about (#5016) (#5022)\n\n* Start chat: the Runs on stories hold their row in sight before the picture (#5016)\n\nThe check alone, without the scroll: it should fail in the stories run,\nsince the row is under the details pane's fold as the dialog opens.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GH9JHE098HJHPEZ2ZKKSCQ\nPurlis-Persona: steward\n\n* Start chat: the Runs on stories scroll the row into sight for the picture (#5016)\n\nEach Runs on story scrolls the Runs on section into the details pane's\nsight before pictureNow, so its baseline shows the row and the line that\nsays why. An ancestor at a part's middle, such as the pane that clips it,\nno longer counts as the part in sight.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GH9JHE098HJHPEZ2ZKKSCQ\nPurlis-Persona: steward\n\n* Stories testkit: untilInSight holds what a story pictures wholly in sight (#5016)\n\nThe Runs on check moves to the testkit as untilInSight: each part's centre\nand corners on screen and not under anything else, waited for as long as\nthe other focus checks wait for WebKit. The story names what a person reads\nthere (the heading, the row's control, its line) rather than the section's\nchildren: the Select's root draws no box of its own (display: contents), so\nprobing it read the window's corner. A rounded part's corners are probed as\nfar in as it rounds.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GH9JHE098HJHPEZ2ZKKSCQ\nPurlis-Persona: steward\n\n* Stories testkit: scrollIntoItsPane scrolls only the pane a part is in (#5016)\n\nscrollIntoView moves every ancestor that scrolls, the page among them,\nand what it leaves scrolled carries into the next story's picture: the\nstory after the Runs on ones, PoolUnavailable, missed its baseline in the\ntest while its own redraw matched it. The Runs on stories now scroll the\ndetails pane alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GH9JHE098HJHPEZ2ZKKSCQ\nPurlis-Persona: steward\n\n* Start chat: the Runs on stories' baselines, from #5022's stories run (#5016)\n\nTaken with tools/story-baselines-pull.mjs from run 41631560708 at\nf846278f: each shows the Runs on heading, the row and its line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GH9JHE098HJHPEZ2ZKKSCQ\nPurlis-Persona: steward\n\n* Stories testkit: scrollIntoItsPane finds the pane by its overflow alone (#5016)\n\nFrom the second opus review: a pane with nothing under its fold in a tall\nwindow was skipped, and the walk went on to an outer ancestor. The pane is\nnow the nearest one set to scroll, left as it is when nothing overflows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GH9JHE098HJHPEZ2ZKKSCQ\nPurlis-Persona: steward\n\n* Stories: RunsOnFirstOnThePool's baselines, of its Runs on row (#5039)\n\nTaken from this pull request's stories run 41661654656 with\ntools/story-baselines-pull.mjs. Each shows the Runs on row and the line saying the\nworkspace's code is copied to the pool's runner.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Stories: the Runs on baselines in the light high-contrast cells (#5016, #5039)\n\nFrom this pull request's stories run 41686539510 (tools/story-baselines-pull.mjs):\nthe five Runs on stories in the two cells #4880 added, scrolled to the row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T06:03:05Z",
+          "tree_id": "998414eb973e24f0bb4c6b3af6cb66ee5208586e",
+          "url": "https://github.com/purlis/purlis/commit/f1f10fce10c1454cd54db83036c346574732826d"
+        },
+        "date": 1793774949763,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6563920000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.629, 0.656, 0.656, 0.666, 0.696 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6901315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.553, 16.623, 16.690, 16.691, 17.157 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.271441,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.240, 102.270, 102.271, 102.308, 102.833 ms"
           }
         ]
       }
