@@ -372,3 +372,41 @@ fn a_chats_forge_programs_keep_their_settings_in_its_own_temporary_folder() {
     assert!(!crate::sandbox::tools::a_run_starts_from("GH_CONFIG_DIR"));
     assert!(!crate::sandbox::tools::a_run_starts_from("GLAB_CONFIG_DIR"));
 }
+
+/// Chats started together, as a record put back at launch starts them, each write their
+/// settings to a file at once, in a project none has written for yet: every one starts, those
+/// with ids of their own and two that share one (the same settings, the same file) alike. On
+/// macOS a Claude Code chat's settings pass one word's length, so this is every launch there.
+#[test]
+fn chats_that_write_their_settings_at_once_all_start() {
+    const IDS: [&str; 4] = [
+        "01J0000000000000000000000A",
+        "01J0000000000000000000000B",
+        "01J0000000000000000000000C",
+        "01J0000000000000000000000C",
+    ];
+    let long = format!(r#"{{"deny":["{}"]}}"#, "x".repeat(SETTINGS_IN_A_WORD * 2));
+    for _ in 0..20 {
+        let tmp = tempfile::tempdir().unwrap();
+        let plane = plane_in(&tmp);
+        let root = plane.as_path();
+        let ready = std::sync::Barrier::new(IDS.len());
+        let started: Vec<Result<Vec<String>, String>> = std::thread::scope(|scope| {
+            let starts: Vec<_> = IDS
+                .iter()
+                .map(|id| {
+                    let (ready, long) = (&ready, &long);
+                    scope.spawn(move || {
+                        ready.wait();
+                        settings_in_a_file(Some(&data(root)), root, id, words(long))
+                    })
+                })
+                .collect();
+            starts.into_iter().map(|one| one.join().unwrap()).collect()
+        });
+        for (id, start) in IDS.iter().zip(started) {
+            let args = start.unwrap_or_else(|why| panic!("{id}: {why}"));
+            assert_eq!(std::fs::read_to_string(&args[3]).unwrap(), long, "{id}");
+        }
+    }
+}

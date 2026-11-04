@@ -459,16 +459,16 @@ pub fn serve_watching(
     Ok(())
 }
 
-/// Whether the peer closed its end: it sends nothing more after its line, so a read ends at once
-/// where it did, and waits out a moment where it did not.
-fn hung_up(mut peer: &UnixStream) -> bool {
-    if peer
-        .set_read_timeout(Some(Duration::from_millis(1)))
-        .is_err()
-    {
-        return false;
-    }
-    matches!(peer.read(&mut [0u8; 16]), Ok(0))
+/// Whether the peer closed its end: it sends nothing more after its line, so a look at what
+/// waits, which never waits itself, finds the end where it did and nothing yet where it did not.
+/// A look, not a timed read: macOS refuses a read timeout on a socket whose peer has gone
+/// (`EINVAL`), so a timed read never heard a peer hang up there.
+fn hung_up(peer: &UnixStream) -> bool {
+    use rustix::net::{RecvFlags, recv};
+    matches!(
+        recv(peer, &mut [0u8; 1], RecvFlags::PEEK | RecvFlags::DONTWAIT),
+        Ok((0, _))
+    )
 }
 
 /// One peer's line, answered.

@@ -770,7 +770,8 @@ fn a_chat_the_app_did_not_start_sandboxed_is_left_to_run_it_itself() {
 }
 
 /// M1: a Codex chat's own sandbox denies the operator's Codex home (D-88q), so a run for it does
-/// too: the run is held to the list the chat's harness was compiled to, not a neutral one.
+/// too: the run is held to the list the chat's harness was compiled to, not a neutral one. A
+/// Claude Code chat's is denied it as well (#4356).
 #[cfg(target_os = "macos")]
 #[test]
 fn a_codex_chats_run_is_denied_the_operators_codex_home_as_the_chat_is() {
@@ -798,10 +799,13 @@ fn a_codex_chats_run_is_denied_the_operators_codex_home_as_the_chat_is() {
         )),
         "{profile}"
     );
+    // Since #4356 every chat keeps out of other harnesses' default folders, so a Claude Code
+    // chat's own sandbox denies it too, and so does its run.
     let claude = confines_of(Harness::ClaudeCode, &root, &machine);
     assert!(
-        !claude.denied.iter().any(|d| d.path == codex_home),
-        "a Claude Code chat's own sandbox does not deny it, so neither does its run"
+        claude.denied.iter().any(|d| d.path == codex_home),
+        "{:?}",
+        claude.denied
     );
 }
 
@@ -1212,6 +1216,34 @@ fn output_with_no_value_in_it_is_shown_as_it_comes_but_for_a_values_length() {
     assert_eq!(r.finish(), b"rld");
 }
 
+/// Where `profile` denies `path` and everything below it, read and write: as spelled, or (on
+/// macOS, since #3881) under every spelling of its name, as purlis holds what is in the state
+/// folder there. The first rule of either, or none.
+fn denied_at(profile: &str, path: &Path) -> Option<usize> {
+    let real = crate::sandbox::real(path);
+    let as_spelled = format!(
+        "(deny file-read* file-write* file-link (subpath \"{}\"))",
+        real.display()
+    );
+    let in_every_case = crate::sandbox::seatbelt::denial_rules(&crate::sandbox::Denial {
+        class: crate::sandbox::Class::Integrity,
+        path: real,
+        access: crate::sandbox::Access::ReadWrite,
+        named: None,
+        reach: crate::sandbox::Reach::AndBelow,
+        any_case: true,
+    })
+    .expect("rules");
+    profile.find(&as_spelled).or_else(|| {
+        in_every_case
+            .iter()
+            .map(|rule| profile.find(rule))
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .min()
+    })
+}
+
 #[test]
 fn the_childs_profile_gives_back_a_read_of_its_credential_file_alone() {
     let project = project();
@@ -1228,12 +1260,7 @@ fn the_childs_profile_gives_back_a_read_of_its_credential_file_alone() {
         &[4242],
     )
     .expect("a profile");
-    let denied = profile
-        .find(&format!(
-            "(deny file-read* file-write* file-link (subpath \"{}\"))",
-            crate::sandbox::real(&vaults).display()
-        ))
-        .expect("the vaults directory is denied");
+    let denied = denied_at(&profile, &vaults).expect("the vaults directory is denied");
     let given = profile
         .find(&format!(
             "(allow file-read* (literal \"{}\"))",
@@ -4043,12 +4070,7 @@ fn a_login_s_private_folder_is_given_back_to_its_run_alone() {
         &[4242],
     )
     .expect("a profile");
-    let denied = profile
-        .find(&format!(
-            "(deny file-read* file-write* file-link (subpath \"{}\"))",
-            crate::sandbox::real(&vaults).display()
-        ))
-        .expect("the vaults directory is denied");
+    let denied = denied_at(&profile, &vaults).expect("the vaults directory is denied");
     let given = profile
         .find(&format!(
             "(allow file-read* file-write* (subpath \"{}\"))",

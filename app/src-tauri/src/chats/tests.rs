@@ -7570,7 +7570,14 @@ fn a_claude_code_chat_runs_with_purlis_s_pins_alone_whatever_the_old_keys_say() 
         .iter()
         .position(|word| word == "--settings")
         .expect("--settings");
-    let settings: serde_json::Value = serde_json::from_str(&argv[at + 1]).expect("JSON");
+    // On the line where it fits one word, else in the file the line names (SK-9): a Claude Code
+    // chat's on macOS passes that length.
+    let settings: serde_json::Value = if argv[at + 1].starts_with('{') {
+        serde_json::from_str(&argv[at + 1]).expect("JSON")
+    } else {
+        purlis_core::hoststart::settings_from_its_file(std::path::Path::new(&argv[at + 1]))
+            .expect("the settings file purlis wrote")
+    };
     assert_eq!(
         settings["enabledPlugins"],
         serde_json::json!({
