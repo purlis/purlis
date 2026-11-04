@@ -166,76 +166,7 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         if (row === null) return false;
         const holder = globalThis as { __openedInMs?: number };
         holder.__openedInMs = undefined;
-        // [DEBUG-4351] a light timeline: the read (marked by the app), DOM steps, frame gaps and
-        // pauses (a task or a frame held over 30 ms), nothing that measures layout.
-        const tl: string[] = []; // [DEBUG-4351]
-        const probe = globalThis as { __tl4351?: string[]; __t04351?: number }; // [DEBUG-4351]
-        probe.__tl4351 = tl; // [DEBUG-4351]
-        let rowSeen = false; // [DEBUG-4351]
-        const watch = new MutationObserver(() => {
-          if (!rowSeen && document.querySelector(css) !== null) {
-            rowSeen = true;
-            tl.push(`${(performance.now() - started).toFixed(0)} dom row`);
-            watch.disconnect();
-          }
-        }); // [DEBUG-4351]
-        watch.observe(document.body, { childList: true, subtree: true }); // [DEBUG-4351]
-        let lastAt = performance.now(); // [DEBUG-4351]
-        let lastKind = "start"; // [DEBUG-4351]
-        const mark = (kind: string) => {
-          const now = performance.now();
-          if (now - lastAt > 30)
-            tl.push(
-              `${(now - started).toFixed(0)} pause ${(now - lastAt).toFixed(0)} ${lastKind}->${kind}`,
-            );
-          lastAt = now;
-          lastKind = kind;
-        }; // [DEBUG-4351]
-        const channel = new MessageChannel(); // [DEBUG-4351]
-        let ticks = 0; // [DEBUG-4351]
-        channel.port1.onmessage = () => {
-          mark("task");
-          if (++ticks < 4000 && holder.__openedInMs === undefined) channel.port2.postMessage(0);
-        }; // [DEBUG-4351]
-        channel.port2.postMessage(0); // [DEBUG-4351]
-        const rafMark = () => {
-          mark("frame");
-          if (holder.__openedInMs === undefined) requestAnimationFrame(rafMark);
-        }; // [DEBUG-4351]
-        requestAnimationFrame(rafMark); // [DEBUG-4351]
-        // [DEBUG-4351] the panel library's first offsetLeft read in this opening (registerPanel's
-        // sort, in the commit): its style and its layout, timed apart. Only that getter.
-        const w = globalThis as { __offset4351?: boolean; __first4351?: boolean }; // [DEBUG-4351]
-        w.__first4351 = true; // [DEBUG-4351]
-        if (!w.__offset4351) {
-          w.__offset4351 = true;
-          const d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetLeft");
-          const get = d?.get;
-          if (d !== undefined && get !== undefined)
-            Object.defineProperty(HTMLElement.prototype, "offsetLeft", {
-              ...d,
-              get(this: HTMLElement) {
-                const p = globalThis as {
-                  __first4351?: boolean;
-                  __tl4351?: string[];
-                  __t04351?: number;
-                };
-                if (!p.__first4351 || p.__tl4351 === undefined) return get.call(this);
-                p.__first4351 = false;
-                const t0 = performance.now();
-                void getComputedStyle(document.documentElement).color;
-                const t1 = performance.now();
-                const r = get.call(this);
-                const t2 = performance.now();
-                p.__tl4351.push(
-                  `${(t2 - (p.__t04351 ?? 0)).toFixed(0)} first offsetLeft style ${(t1 - t0).toFixed(0)} layout ${(t2 - t1).toFixed(0)} ms`,
-                );
-                return r;
-              },
-            });
-        } // [DEBUG-4351]
         const started = performance.now();
-        probe.__t04351 = started; // [DEBUG-4351]
         row.click();
         const look = () => {
           if (document.querySelector(css) === null) requestAnimationFrame(look);
@@ -260,11 +191,9 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       { timeout: 30_000, interval: 100, timeoutMsg: "the studio's Library drew no row in 30 s" },
     );
     samples.push(took as number);
-    // Probe (#4351, do not merge): each L10 opening as it is timed, so a run cut short keeps them.
-    console.log(`L10 opening ${n + 1}/${OPENINGS}: ${Math.round(took as number)} ms`);
-    const tl = await browser.execute(() => (globalThis as { __tl4351?: string[] }).__tl4351 ?? []); // [DEBUG-4351]
+    // Probe (#4351, do not merge): each L10 opening as it is timed, and what was busy before it.
     console.log(
-      `[DEBUG-4351] ${harness.kind} opening ${n + 1} took ${Math.round(took as number)} ms | busy: ${busy} | ${(tl as string[]).join(" | ")}`,
+      `[DEBUG-4351] ${harness.kind} opening ${n + 1} took ${Math.round(took as number)} ms | busy: ${busy}`,
     ); // [DEBUG-4351]
   }
   return samples;

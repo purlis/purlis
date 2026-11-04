@@ -29,18 +29,6 @@ export function readStudioAhead(plane: string, tab: string, scope: StudioScope):
   forgetStudioReadAhead();
   const { workspace, persona } = whoseChats(scope);
   const answer = commands.skillStudio(plane, workspace, persona);
-  // [DEBUG-4351] the read on the opening's timeline (#5001's probe), sent and answered.
-  const probe = globalThis as { __tl4351?: string[]; __t04351?: number }; // [DEBUG-4351]
-  const sentAt = performance.now(); // [DEBUG-4351]
-  const since = (at: number) => (at - (probe.__t04351 ?? at)).toFixed(0); // [DEBUG-4351]
-  probe.__tl4351?.push(`${since(sentAt)} send ahead`); // [DEBUG-4351]
-  void answer.then(
-    () =>
-      probe.__tl4351?.push(
-        `${since(performance.now())} back ahead (${(performance.now() - sentAt).toFixed(0)} ms)`,
-      ),
-    () => undefined,
-  ); // [DEBUG-4351]
   // A read no tab takes fails unheard: the tab that takes one says what it said.
   answer.catch(() => undefined);
   const read = { tab, scope: scopeKey(scope), answer, stale: false, stop: () => {} };
