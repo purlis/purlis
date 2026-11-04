@@ -1429,12 +1429,14 @@ impl Keeping {
 
     /// A login of `identity` runs now: no other counts as having gone through from here (#5121).
     fn only_goes_through(&mut self, identity: Option<&str>) {
-        self.went_through.retain(|one| Some(one.as_str()) != identity || identity.is_some());
+        self.went_through
+            .retain(|one| Some(one.as_str()) == identity);
     }
 
     /// A login that went through in it failed since: it counts no more (#5121).
     fn did_not_hold(&mut self, identity: Option<&str>) {
-        self.went_through.retain(|one| Some(one.as_str()) != identity || identity.is_some());
+        self.went_through
+            .retain(|one| Some(one.as_str()) != identity);
     }
 
     /// A login of `identity` went through, and left the browser held to its page (#5121).
