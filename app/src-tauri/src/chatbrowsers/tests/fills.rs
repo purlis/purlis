@@ -4,14 +4,19 @@
 //! A secret a chat asks purlis to fill (#5115), at the window's browser-call seam with the
 //! session host stood in: it goes into the browser the chat already uses, the person is asked
 //! about the origin the browser read for the field's own frame, and nothing is filled before
-//! they allow it, or at all once they keep it blocked.
+//! they allow it, or at all once they keep it blocked. A 2FA code is asked for as one (#5118).
+//! What was filled is marked on its browser by key and site, and nothing goes into a browser
+//! the person has taken over (#5119).
 
 use std::cell::RefCell;
 
 use purlis_session_protocol::browsing::{FieldKind, FieldSaid};
 
 use super::*;
+use crate::chatbrowsers::SecretFilled;
 use crate::secretfills::{Allowed, FillAsked};
+
+mod grants;
 
 const VALUE: &str = "fixture-key-5115";
 
@@ -20,6 +25,7 @@ fn fill(target: &str) -> Browsing {
         target: target.into(),
         vault: "qa".into(),
         key: "dash-api-key".into(),
+        code: false,
     }
 }
 
@@ -62,12 +68,17 @@ fn answered_filling(
 fn using_a_browser() -> (ChatBrowsers, Arc<Hosted>) {
     let browsers = ChatBrowsers::default();
     let hosted = Arc::new(Hosted::default());
-    answered(&browsers, &hosted, &ask(3, click()));
-    assert!(browsers.allow(3, false));
-    let (answer, _) = answered(&browsers, &hosted, &ask(3, click()));
+    opens_a_browser(&browsers, &hosted, 3);
+    (browsers, hosted)
+}
+
+/// Chat `chat` allowed a browser, and opened a page in it.
+fn opens_a_browser(browsers: &ChatBrowsers, hosted: &Arc<Hosted>, chat: u32) {
+    answered(browsers, hosted, &ask(chat, click()));
+    assert!(browsers.allow(chat, false));
+    let (answer, _) = answered(browsers, hosted, &ask(chat, click()));
     assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
     *hosted.at.lock().unwrap() = Some("https://dash.example.test/settings".into());
-    (browsers, hosted)
 }
 
 /// The person allows once: the value, as the vault gave it, on a notice for a one-line field.
@@ -155,6 +166,45 @@ fn the_origin_filled_on_is_the_one_the_browser_read_for_the_fields_own_frame() {
         "https://pay.example.test",
         "the engine is held to the origin the person was shown"
     );
+}
+
+#[test]
+fn a_2fa_code_is_asked_for_as_one_and_only_what_the_vault_side_made_reaches_the_browser() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    let asked = RefCell::new(Vec::new());
+    // The vault's side: the code its seed makes now, never the seed.
+    let made = |one: &FillAsked| -> Result<Allowed, String> {
+        asked.borrow_mut().push(one.clone());
+        Ok(Allowed {
+            value: Secret::new("287082".into()),
+            multi_line: false,
+        })
+    };
+
+    let answer = answered_filling(
+        &browsers,
+        &hosted,
+        &ask(
+            3,
+            Browsing::FillSecret {
+                target: "e7".into(),
+                vault: "qa".into(),
+                key: "dash-2fa".into(),
+                code: true,
+            },
+        ),
+        None,
+        &made,
+    );
+
+    assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
+    let asked = asked.into_inner();
+    assert!(asked[0].code, "the person is asked about a code");
+    assert_eq!(asked[0].key, "dash-2fa");
+    let fills = hosted.fills.lock().unwrap();
+    assert_eq!(fills[0].1.value.expose(), "287082");
+    assert_eq!(fills[0].1.key, "dash-2fa");
 }
 
 #[test]
@@ -351,4 +401,185 @@ fn a_fill_lets_a_multi_line_field_take_it_only_where_the_person_was_asked_about_
         let fills = hosted.fills.lock().unwrap();
         assert_eq!(fills[0].1.multi_line, multi_line, "{kind:?}");
     }
+}
+
+/// What chat 3's browser `b1` lists of the secrets filled into it.
+fn marks(browsers: &ChatBrowsers) -> Vec<SecretFilled> {
+    browsers
+        .listed()
+        .into_iter()
+        .find(|one| one.program == "program-1")
+        .expect("listed")
+        .secrets
+}
+
+#[test]
+fn a_filled_field_is_marked_on_its_browser_by_key_site_and_label_never_value() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    let asked = RefCell::new(Vec::new());
+    assert!(marks(&browsers).is_empty());
+
+    answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    );
+
+    let marked = marks(&browsers);
+    assert_eq!(
+        marked,
+        [SecretFilled {
+            key: "dash-api-key".into(),
+            origin: "https://dash.example.test".into(),
+            page: Some("https://dash.example.test".into()),
+            label: "API key".into(),
+            code: false,
+        }]
+    );
+    assert!(!format!("{:?}", browsers.listed()).contains(VALUE));
+
+    // The same key filled again on that site is marked once.
+    answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    );
+    assert_eq!(marks(&browsers).len(), 1);
+}
+
+#[test]
+fn a_fill_refused_marks_nothing() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    let kept = |_: &FillAsked| -> Result<Allowed, String> { Err("kept".into()) };
+
+    answered_filling(&browsers, &hosted, &ask(3, fill("e12")), None, &kept);
+
+    assert!(marks(&browsers).is_empty());
+}
+
+#[test]
+fn the_activity_line_names_the_key_and_the_site_it_went_to() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    let asked = RefCell::new(Vec::new());
+    let browse = ask(3, fill("e12"));
+
+    let answer = answered_filling(&browsers, &hosted, &browse, None, &allowed(&asked));
+
+    let line = super::super::timeline_of(&browsers, &browse, &answer, 5).expect("a moment");
+    assert_eq!(
+        line.moment.did,
+        "purlis filled dash-api-key into e12 on https://dash.example.test"
+    );
+    assert!(!line.moment.did.contains(VALUE));
+}
+
+#[test]
+fn a_browser_the_person_has_taken_over_is_filled_nothing_and_the_chat_told_why() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    browsers.driven("program-1", true, 1000);
+    let acts = hosted.acts.lock().unwrap().len();
+    let asked = RefCell::new(Vec::new());
+
+    let told = refusal(answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    ));
+
+    assert!(told.contains("taken b1 over"), "{told}");
+    assert!(told.contains("nothing was filled"), "{told}");
+    assert!(asked.into_inner().is_empty(), "nobody was asked");
+    assert_eq!(
+        hosted.acts.lock().unwrap().len(),
+        acts,
+        "not even the field was read"
+    );
+    assert!(hosted.fills.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_browser_taken_over_while_the_person_is_asked_is_filled_nothing() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
+    // The person takes the browser over, then allows the fill.
+    let taken_then_allowed = |_: &FillAsked| -> Result<Allowed, String> {
+        browsers.driven("program-1", true, 1001);
+        Ok(Allowed {
+            value: Secret::new(VALUE.into()),
+            multi_line: false,
+        })
+    };
+
+    let told = refusal(answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &taken_then_allowed,
+    ));
+
+    assert!(told.contains("taken b1 over"), "{told}");
+    assert!(hosted.fills.lock().unwrap().is_empty());
+    assert!(marks(&browsers).is_empty());
+}
+
+#[test]
+fn a_field_in_a_part_of_the_page_from_another_site_is_marked_with_the_pages_site_too() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://pay.example.test"));
+    let asked = RefCell::new(Vec::new());
+
+    answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    );
+
+    let marked = marks(&browsers);
+    assert_eq!(marked[0].origin, "https://pay.example.test");
+    assert_eq!(marked[0].page.as_deref(), Some("https://dash.example.test"));
+}
+
+#[test]
+fn a_fill_on_another_page_of_a_frames_site_leaves_the_first_pages_mark() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://pay.example.test"));
+    let asked = RefCell::new(Vec::new());
+    answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    );
+
+    *hosted.at.lock().unwrap() = Some("https://shop.example.test/cart".into());
+    answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    );
+
+    let pages: Vec<Option<String>> = marks(&browsers).into_iter().map(|one| one.page).collect();
+    assert_eq!(
+        pages,
+        [
+            Some("https://dash.example.test".to_owned()),
+            Some("https://shop.example.test".to_owned())
+        ]
+    );
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import { commands, type BrowsersListed, type ChatBrowser } from "./bindings";
+import { commands, type BrowsersListed, type ChatBrowser, type SecretFilled } from "./bindings";
 import { listen } from "./here";
 
 /**
@@ -47,6 +47,22 @@ export const NONE_KEPT: readonly ChatBrowser[] = [];
  * their chats, and each of `kept`, pinned past its chat, which ends when the person stops it.
  * One that could not be ended yet is no chat's, and closing a tab that shows it may end it.
  */
+/** No secret was filled into a browser. */
+const NO_SECRETS: readonly SecretFilled[] = [];
+
+/**
+ * **The vault secrets purlis filled into `program`, as the chats' browsers list them** (#5119):
+ * none for one they do not list.
+ */
+export function secretsOf(
+  browsers: ByChat,
+  kept: readonly ChatBrowser[],
+  program: string,
+): readonly SecretFilled[] {
+  const listed = [...[...browsers.values()].flat(), ...kept].find((one) => one.program === program);
+  return listed?.secrets ?? NO_SECRETS;
+}
+
 /**
  * **The pool whose runner `program` runs on, as the chats' browsers list it** (#2050): `null` for
  * one on this machine, and `undefined` for one they do not list.

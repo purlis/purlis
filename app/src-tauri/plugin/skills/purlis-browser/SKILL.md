@@ -87,6 +87,11 @@ how. Once that page loads another page, an error page, or you close it, the brow
 takes keys as before. It works the
 same on a pool's runner.
 
+**A 2FA code comes from its seed**: name the key that holds the seed (an `otpauth://totp/`
+address or the base32 secret) and set `code` to true. purlis works the current code out from
+the seed as it fills, and only the code goes into the page; the seed never does. A seed asked for
+without `code` is refused.
+
 **In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
 temp file and points `PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by
 name**. Playwright substitutes the value and scrubs it from the output it captures.

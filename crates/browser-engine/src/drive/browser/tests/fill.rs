@@ -587,6 +587,71 @@ fn the_engines_own_page_for_a_load_that_failed_ends_the_hold() {
     wait_for("the hold is released", || holding.told().len() == 2);
 }
 
+/// What a call's answer says, of the page the test just moved (#5150).
+fn note_of_a_read(browser: &crate::drive::Browser, n: u32) -> Option<String> {
+    browser
+        .call(
+            &id(n),
+            Call::Snapshot {
+                page: None,
+                within: None,
+                from: 1,
+                lines: None,
+            },
+        )
+        .unwrap()
+        .note
+}
+
+/// #5150: a page that shows the engine's own page for a load answers what the caller says of that
+/// load, told the address, and says nothing once a document loads, or where the caller did not
+/// refuse it.
+#[test]
+fn an_answer_on_the_engines_own_page_says_why_its_caller_refused_that_load() {
+    let holding = Arc::new(Holding::default());
+    let (browser, engine) = filled_under(&holding);
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let told = Arc::clone(&asked);
+    browser.say_why_refused(Arc::new(move |address: &str| {
+        told.lock().unwrap().push(address.to_owned());
+        address
+            .contains("elsewhere")
+            .then(|| "held to the fixture".to_owned())
+    }));
+    assert_eq!(note_of_a_read(&browser, 2), None, "no load failed");
+
+    let error_page_for = |address: &str| {
+        engine.emit(
+            "Page.frameNavigated",
+            json!({ "frame": {
+                "id": "PAGE-1", "loaderId": "LOADER-ERROR", "name": "",
+                "url": "chrome-error://chromewebdata/",
+                "unreachableUrl": address,
+            } }),
+            Some("S-PAGE-1"),
+        );
+    };
+    error_page_for("http://elsewhere.test/search?q=open%20sesame");
+    // The engine's word is read on its own thread, so each of these waits for it.
+    wait_for("the answer says why", || {
+        note_of_a_read(&browser, 3).as_deref() == Some("held to the fixture")
+    });
+    assert_eq!(
+        asked.lock().unwrap().first().map(String::as_str),
+        Some("http://elsewhere.test/search?q=open%20sesame")
+    );
+
+    error_page_for("http://fixture.test/gone");
+    wait_for("its caller refused none, so nothing is said", || {
+        note_of_a_read(&browser, 4).is_none()
+    });
+
+    error_page_for("http://elsewhere.test/");
+    main_frame_loads(&engine, "http://fixture.test/next.html");
+    wait_for("the hold is released", || holding.told().len() == 2);
+    assert_eq!(note_of_a_read(&browser, 5), None, "a document loaded");
+}
+
 /// Going back to an address that carries a filled value would send it again, wherever that
 /// address goes: refused, and nothing is sent.
 #[test]

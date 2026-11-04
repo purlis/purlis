@@ -26,6 +26,7 @@ const fill = {
   under: null,
   no_always: null,
   vault_too: false,
+  code: false,
 };
 
 export const Plain: Story = {
@@ -92,4 +93,9 @@ export const AMultiLineBox: Story = {
       multi_line: true,
     },
   },
+};
+
+/** A 2FA code says it is made from the seed under the key, and that the seed goes nowhere. */
+export const TwoFactorCode: Story = {
+  args: { fill: { ...fill, key: "dash-2fa", label: "Authentication code", code: true } },
 };
