@@ -2266,7 +2266,6 @@ impl Browser {
         // why (#5150): the answer does.
         let refused = lock(&self.inner.refused_load).clone();
         let said = refused.and_then(|why| failed.iter().find_map(|address| why(address)));
-        let said = said.filter(|_: &String| false);
         if let Some(said) = said {
             answer.note = Some(match answer.note.take() {
                 Some(note) => format!("{note}; {said}"),
