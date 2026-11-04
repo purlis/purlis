@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793802032382,
+  "lastUpdate": 1793807365032,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -16692,6 +16692,42 @@ window.BENCHMARK_DATA = {
             "value": 857.8,
             "unit": "MB",
             "extra": "median of 6 samples: 824.5, 841.9, 853, 862.7, 862.8, 926.2 MB; window 576.8 MB, session host 281.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6cee9754abf8128786c2119c2e33fbdc1ebf7822",
+          "message": "The Skill studio's Library builds its rows a screen a frame (#4351, step 2b) (#5190)\n\n* The Skill studio's Library builds its rows a screen a frame (#4351)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ7CQ2QWW7W99KZZ8DR168\nPurlis-Persona: steward\n\n* The Library draws through its chosen row and never fewer rows, a screen kept as drawn (#4351)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ7CQ2QWW7W99KZZ8DR168\nPurlis-Persona: steward",
+          "timestamp": "2026-11-04T13:15:43Z",
+          "tree_id": "5aaa755ddab9d6b2d1256b18f564599a5fb0b0ba",
+          "url": "https://github.com/purlis/purlis/commit/6cee9754abf8128786c2119c2e33fbdc1ebf7822"
+        },
+        "date": 1793807358613,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1859.4,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1692.6, 1859.4, 2017.6 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 875.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 843, 857.9, 869.3, 881.3, 881.9, 954.6 MB; window 581.7 MB, session host 294.8 MB"
           }
         ]
       }
