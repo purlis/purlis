@@ -45,7 +45,9 @@ name: stories-baselines
 # request off main that touches something in the stories' scope, label it `update-baselines`
 # and `fixes-main`, and land it (#4880 with #4969 and #5003, 2026-11-03; again with #4957's
 # EndedBand stories the same day). The same goes for two pull requests that each change what one
-# story draws, such as a key added to the shortcuts list (#5045 with #5090, 2026-11-04).
+# story draws, such as a key added to the shortcuts list (#5045 with #5090, 2026-11-04). A pull
+# request that takes pictures from its stories run by hand can also leave one appearance behind,
+# since the check is not required (#5208's PaneBand, 2026-11-05).
 
 on:
   pull_request:
