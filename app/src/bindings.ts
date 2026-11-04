@@ -7894,6 +7894,16 @@ export type FillShown = {
 	browser: string,
 	/**  Plain warnings, said above the choices. */
 	warnings: string[],
+	/**  **A card's or payment value's key** (#5116, SF-4): Allow once and Keep blocked alone. */
+	card: boolean,
+	/**  The line Always allow writes, shown before it's pressed (#5116). */
+	line?: string | null,
+	/**  Where the line goes: `[sandbox.personas.<persona>] tools`. */
+	under?: string | null,
+	/**  Why Always allow isn't offered, where it isn't and the key is no card's. */
+	no_always?: string | null,
+	/**  Always also allows the vault for the persona. */
+	vault_too: boolean,
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */

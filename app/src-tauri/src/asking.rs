@@ -181,6 +181,19 @@ pub struct FillShown {
     pub browser: String,
     /// Plain warnings, said above the choices.
     pub warnings: Vec<String>,
+    /// **A card's or payment value's key** (#5116, SF-4): Allow once and Keep blocked alone.
+    pub card: bool,
+    /// The line Always allow writes, shown before it's pressed (#5116).
+    #[specta(optional)]
+    pub line: Option<String>,
+    /// Where the line goes: `[sandbox.personas.<persona>] tools`.
+    #[specta(optional)]
+    pub under: Option<String>,
+    /// Why Always allow isn't offered, where it isn't and the key is no card's.
+    #[specta(optional)]
+    pub no_always: Option<String>,
+    /// Always also allows the vault for the persona.
+    pub vault_too: bool,
 }
 
 /// **A suggested login, as its notice draws it** (#4595). The vault and key names, and never a
@@ -1445,21 +1458,32 @@ fn secret_fill_key(id: u32) -> String {
     format!("secret-fill:{id}")
 }
 
-/// **The secret fill adapter** (#5115): one notice naming the key, its vault and the exact site,
-/// with Allow once, unless policy leaves that scope out, and Keep blocked.
+/// **The secret fill adapter** (#5115, #5116): one notice naming the key, its vault and the exact
+/// site, with the sandbox's own answers. Allow once and Allow for this chat, each unless policy
+/// leaves its scope out; Always allow where its line can be written; Keep blocked. A card's key
+/// is offered Allow once and Keep blocked alone (SF-4).
 pub fn secret_fill(
     wait: &crate::secretfills::FillWait,
     locks: &purlis_core::sandbox::policy::Locks,
 ) -> Shown {
     use purlis_core::sandbox::grant::Level;
+    let allow = |level: Level, label: &str| Offered {
+        id: level.word().to_owned(),
+        label: label.to_owned(),
+        allows: true,
+        preselected: None,
+    };
     let mut options = Vec::new();
     if locks.scope_removed(Level::Once).is_none() {
-        options.push(Offered {
-            id: Level::Once.word().to_owned(),
-            label: "Allow once".to_owned(),
-            allows: true,
-            preselected: None,
-        });
+        options.push(allow(Level::Once, "Allow once"));
+    }
+    if !wait.card {
+        if locks.scope_removed(Level::Chat).is_none() {
+            options.push(allow(Level::Chat, "Allow for this chat"));
+        }
+        if wait.no_always.is_none() && wait.line.is_some() {
+            options.push(allow(Level::You, "Always allow"));
+        }
     }
     options.push(refuses(KEEP, KEEP_SAID));
     let site = wait
@@ -1497,6 +1521,14 @@ pub fn secret_fill(
             label: purlis_core::shown::short(&wait.label),
             browser: wait.browser.clone(),
             warnings: wait.warnings.clone(),
+            card: wait.card,
+            line: (!wait.card).then(|| wait.line.clone()).flatten(),
+            under: wait
+                .persona
+                .as_ref()
+                .map(|persona| format!("[sandbox.personas.{persona}] tools")),
+            no_always: (!wait.card).then(|| wait.no_always.clone()).flatten(),
+            vault_too: wait.vault_too,
         }),
     }
 }

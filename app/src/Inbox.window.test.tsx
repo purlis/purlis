@@ -1807,6 +1807,8 @@ describe("a secret fill (#5115)", () => {
         label: "API key",
         browser: "b1",
         warnings: [],
+        card: false,
+        vault_too: false,
       },
     };
     draw([fill]);

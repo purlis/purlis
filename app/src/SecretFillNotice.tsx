@@ -10,7 +10,8 @@ import { Notice, NoticeOf, type NoticeAction } from "./Notice";
  * **Where a secret a chat asks for would go** (#5115, the person's rulings SF-1, SF-2): the key
  * and its vault by name, never a value, then the exact site large, never cut short, since the
  * part a look-alike hides in is the part that would go. The page and the field's label are the
- * page's own words, said as such.
+ * page's own words, said as such. A card's key says it is allowed once each time (SF-4), and
+ * the line Always allow writes is shown before it's pressed (#5116).
  */
 export function SecretFillSite({ fill }: { fill: FillShown }) {
   // The label is the page's own words: set apart, so they never read as purlis's.
@@ -44,6 +45,21 @@ export function SecretFillSite({ fill }: { fill: FillShown }) {
           {warning}
         </p>
       ))}
+      {fill.card ? (
+        <p className="ui-text-meta">
+          This is a card or payment value, so it is allowed once each time.
+        </p>
+      ) : fill.no_always != null ? (
+        <p className="ui-text-meta">{fill.no_always}.</p>
+      ) : (
+        fill.line != null && (
+          <p className="ui-text-meta">
+            Always allow adds this to <code>{fill.under}</code>
+            {fill.vault_too ? ", and lets this persona use the vault" : ""}:{" "}
+            <code className="login-site-line">{fill.line}</code>
+          </p>
+        )
+      )}
     </div>
   );
 }

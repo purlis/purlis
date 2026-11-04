@@ -20,6 +20,11 @@ const fill = {
   label: "API key",
   browser: "b1",
   warnings: [],
+  card: false,
+  line: null,
+  under: null,
+  no_always: null,
+  vault_too: false,
 };
 
 export const Plain: Story = {
@@ -45,6 +50,32 @@ export const Warned: Story = {
       label: "",
       vault: "prod",
       warnings: ["Vault prod is ops's, not qa's."],
+    },
+  },
+};
+
+/** Always allow shows the line it writes before it's pressed (#5116). */
+export const WithItsAlwaysLine: Story = {
+  args: {
+    fill: {
+      ...fill,
+      line: 'dash-api-key = { vault = "qa", key = "dash-api-key", fill = "https://dash.example.test" }',
+      under: "[sandbox.personas.qa] tools",
+    },
+  },
+};
+
+/** A card's key is allowed once each time, and shows no line (#5116, SF-4). */
+export const ACard: Story = {
+  args: {
+    fill: {
+      ...fill,
+      key: "visa",
+      vault: "pay",
+      site: "shop.example.test",
+      page: "https://shop.example.test/checkout",
+      label: "Card number",
+      card: true,
     },
   },
 };
