@@ -869,3 +869,38 @@ fn an_ask_only_a_chats_start_raised_is_kept_across_a_restart_and_no_launch_drops
         "a start is no chat a launch brings back"
     );
 }
+
+#[test]
+fn a_kept_file_with_two_asks_of_one_number_opens_only_the_first_so_no_fill_goes_to_the_other_key() {
+    let project = project();
+    let file = kept_file(project.path());
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(
+        &file,
+        serde_json::json!({"v": 1, "asked": 3, "asks": [
+            {"id": 3, "persona": "devops", "vault": "team", "key": "FIRST", "since": 1, "chats": [7]},
+            {"id": 3, "persona": "devops", "vault": "team", "key": "SECOND", "since": 2, "chats": [8]},
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let open = Asks::kept(project.path()).open();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!(open[0].key, "FIRST");
+}
+
+#[test]
+fn with_no_record_of_chats_read_no_kept_chat_number_waits_but_a_start_does() {
+    let project = project();
+    {
+        let asks = Asks::kept(project.path());
+        held_for_nothing(&asks, need(7, "MISSING"));
+        asks.cannot_receive(need(8, "RUNNER"));
+        held_for_nothing(&asks, a_start("STARTED"));
+    }
+    let restarted = Asks::kept(project.path());
+    restarted.only_these_came_back(&[]);
+    let open = restarted.open();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!((open[0].key.as_str(), open[0].starts), ("STARTED", 1));
+}

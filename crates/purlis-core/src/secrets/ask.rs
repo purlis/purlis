@@ -397,6 +397,15 @@ impl Asks {
                 );
                 continue;
             }
+            if inner.open.values().any(|asked| asked.id == one.id) {
+                tracing::warn!(
+                    "purlis: {} keeps a second open secret ask numbered {}; only the first is \
+                     open",
+                    path.display(),
+                    one.id
+                );
+                continue;
+            }
             if inner.open.contains_key(&at) {
                 tracing::warn!(
                     "purlis: {} keeps a second open secret ask for one vault and key; only the \

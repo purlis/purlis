@@ -170,9 +170,9 @@ impl Bound {
 
     /// [`Bound::of_a_cluster_pool`], refused by kind ([`NotSent`]): what this machine decides
     /// alone (the link, the mark, a chat run there unconfined, an operator or runner key that
-    /// changed) is [`NotSent::NotYours`]; the cluster not confirming the runner now, or the
-    /// runner moving while it was asked, and this machine's own records not reading, are
-    /// [`NotSent::Unconfirmed`].
+    /// changed, a statement that does not vouch for this runner) is [`NotSent::NotYours`]; the
+    /// cluster not answering, or its wait for a statement running out, the runner moving while
+    /// it was asked, and this machine's own records not reading, are [`NotSent::Unconfirmed`].
     pub fn of_a_cluster_pool_kinded(
         config_root: &Path,
         pool: &str,
@@ -211,11 +211,15 @@ impl Bound {
         let pod = vouch(config_root, link).map_err(|why| {
             tracing::info!("purlis: pool {pool}'s runner was not vouched for now: {why}");
             match why {
-                // A key that changed is a fact about the runner, not about the cluster now.
-                Vouch::KeyChanged { .. } | Vouch::OperatorKeyChanged { .. } => {
-                    NotSent::NotYours(not_vouched_said(pool))
-                }
-                Vouch::NotVouched(_) | Vouch::WaitRanOut(_) | Vouch::Other(_) => {
+                // A key that changed, or a statement that does not vouch for this runner (none
+                // this desktop can trust, of another cluster, claim or requester), is a fact
+                // about the runner, not about the cluster now.
+                Vouch::KeyChanged { .. }
+                | Vouch::OperatorKeyChanged { .. }
+                | Vouch::NotVouched(_) => NotSent::NotYours(not_vouched_said(pool)),
+                // The wait for a statement ran out, or the cluster or its kubectl did not answer:
+                // asked again, it may.
+                Vouch::WaitRanOut(_) | Vouch::Other(_) => {
                     NotSent::Unconfirmed(not_vouched_said(pool))
                 }
             }
