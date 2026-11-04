@@ -155,10 +155,12 @@ impl Kept {
     }
 
     /// This profile, going to a runner speaking `version`: one before 1.64 stages no more than it
-    /// did ([`highest_on_a_runner_of`]).
+    /// did ([`highest_on_a_runner_of`]). A runner from 1.64 leaves what it holds to as it was.
     #[must_use]
     pub fn on_a_runner_of(mut self, version: purlis_session_protocol::version::Version) -> Self {
-        self.highest = highest_on_a_runner_of(version);
+        if version < purlis_session_protocol::session::KNOWS_LARGER_PROFILE_SETTINGS {
+            self.highest = highest_on_a_runner_of(version);
+        }
         self
     }
 }
