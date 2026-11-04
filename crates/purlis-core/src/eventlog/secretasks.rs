@@ -109,9 +109,15 @@ pub fn step_of(event: &Event) -> Option<Step> {
 
 impl Recorder {
     /// **Writes a step of a Secret ask of chat `number`'s** ([`Step`]), under that chat's
-    /// current run, made durable before it answers.
-    pub fn secret_ask(&mut self, plane: &Path, number: u32, step: Step) -> io::Result<Event> {
-        self.audited(plane, Some(number), step.kind(), step.body())
+    /// current run, or under no chat for an ask only a chat's start waits on (#5074), made
+    /// durable before it answers.
+    pub fn secret_ask(
+        &mut self,
+        plane: &Path,
+        number: Option<u32>,
+        step: Step,
+    ) -> io::Result<Event> {
+        self.audited(plane, number, step.kind(), step.body())
     }
 }
 

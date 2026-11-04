@@ -3051,7 +3051,7 @@ impl Hooks {
     pub fn record_secret_ask(
         &self,
         root: &Path,
-        number: u32,
+        number: Option<u32>,
         step: purlis_core::eventlog::secretasks::Step,
     ) -> Result<(), String> {
         let events = self

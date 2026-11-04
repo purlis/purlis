@@ -1426,6 +1426,14 @@ fn read_login(
             vault: vault.clone(),
             key: key.to_owned(),
             tool: Some(name.to_owned()),
+            purpose: None,
+            declared: super::needs::declared(
+                &ctx.root,
+                asker.persona.as_deref().unwrap_or_default(),
+                key,
+            )
+            .map(|need| need.purpose),
+            names_no_vault: false,
         };
         missing
             .read_asking(need, &mut once)

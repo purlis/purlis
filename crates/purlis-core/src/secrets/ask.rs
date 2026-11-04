@@ -167,8 +167,10 @@ fn refused_said(vault: &str, key: &str) -> String {
 /// Why a decline policy made is said to be one (#5078).
 pub const DECLINED_BY_POLICY: &str = "policy";
 
-/// Told each step of an ask's life, for the event log (#5078): the chat and the step.
-pub type Telling = std::sync::Arc<dyn Fn(u32, crate::eventlog::secretasks::Step) + Send + Sync>;
+/// Told each step of an ask's life, for the event log (#5078): the chat, or none for an ask
+/// only a chat's start waits on (#5074), and the step.
+pub type Telling =
+    std::sync::Arc<dyn Fn(Option<u32>, crate::eventlog::secretasks::Step) + Send + Sync>;
 
 /// The person's answer to a Secret ask.
 #[derive(Debug)]
@@ -353,7 +355,7 @@ impl Asks {
     }
 
     /// Tells the step of chat `chat`'s, where anything listens.
-    fn tell(&self, chat: u32, step: crate::eventlog::secretasks::Step) {
+    fn tell(&self, chat: Option<u32>, step: crate::eventlog::secretasks::Step) {
         let told = self
             .told
             .lock()
@@ -549,7 +551,9 @@ impl Asks {
         }
         match self.hold(need, within, say) {
             Held::Filled { .. } => read().map_err(Unread::Vault),
-            Held::Declined { line } | Held::StillOpen { line } => Err(Unread::Asked(line)),
+            Held::Declined { line } | Held::StillOpen { line } | Held::Refused { line } => {
+                Err(Unread::Asked(line))
+            }
         }
     }
 
@@ -718,12 +722,13 @@ impl Asks {
         if started {
             self.trace(None, what, &vault, &key, waiting);
         }
-        // One step for the ask, under the first chat to ask (#5078).
-        if let Some(&first) = chats.first() {
+        // One step for the ask, under the first chat to ask, or under none where only a chat's
+        // start waits on it (#5078, #5074).
+        {
             use crate::eventlog::secretasks::{How, Step};
-            let waiting = u32::try_from(chats.len()).unwrap_or(u32::MAX);
+            let waiting = u32::try_from(waiting).unwrap_or(u32::MAX);
             self.tell(
-                first,
+                chats.first().copied(),
                 if filled {
                     Step::Filled {
                         ask: asked.id,

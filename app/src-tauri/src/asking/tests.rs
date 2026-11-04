@@ -2151,7 +2151,8 @@ fn a_credential_a_start_misses_is_a_secret_ask_of_no_chat_saying_a_start_waits()
         key: "anthropic".into(),
         tool: None,
         purpose: None,
-        declared: true,
+        declared: Some(String::new()),
+        names_no_vault: false,
         chats: Vec::new(),
         starts: 1,
         since: 1_700_000_000,
@@ -2226,6 +2227,7 @@ fn a_declared_keys_ask_shows_the_purpose_its_persona_declares() {
         declared: Some("charge test cards".into()),
         names_no_vault: false,
         chats: vec![6],
+        starts: 0,
         since: 1_700_000_000,
     }];
     let asks = world.asks();

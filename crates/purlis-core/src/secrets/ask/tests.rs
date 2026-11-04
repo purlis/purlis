@@ -603,6 +603,43 @@ fn a_starts_ask_is_traced_under_no_session() {
     );
 }
 
+/// #5078 with #5074: an ask only a chat's start waits on is still recorded, under no chat,
+/// and its decline too, counting the start as one waiting.
+#[test]
+fn a_starts_ask_is_recorded_under_no_chat() {
+    use crate::eventlog::secretasks::Step;
+    let project = project();
+    let asks = Asks::new(project.path());
+    let told = steps_told(&asks);
+    std::thread::scope(|scope| {
+        let start =
+            scope.spawn(|| asks.hold(a_start("MISSING"), Duration::from_secs(60), &mut |_| {}));
+        let id = first_open(&asks).id;
+        asks.answer(&ctx(project.path()), id, Answer::Decline, window())
+            .expect("declined");
+        assert!(matches!(start.join().unwrap(), Held::Declined { .. }));
+        assert_eq!(
+            told.lock().unwrap().as_slice(),
+            [
+                (
+                    None,
+                    Step::Raised {
+                        ask: id,
+                        declared: false
+                    }
+                ),
+                (
+                    None,
+                    Step::Declined {
+                        ask: id,
+                        waiting: 1
+                    }
+                ),
+            ]
+        );
+    });
+}
+
 // ----------------------------------------------------------------------------------------
 // A chat asks: the `secret_ask` line (#5072)
 
@@ -1090,8 +1127,11 @@ fn token_shaped() -> String {
     ["ghp", "_0123456789abcdefABCDEFghij0123456789"].concat()
 }
 
+/// Each step told, with the chat it is of (none for a start's).
+type Told = std::sync::Arc<Mutex<Vec<(Option<u32>, crate::eventlog::secretasks::Step)>>>;
+
 /// The steps `asks` tells, by chat, as the app writes them to the event log.
-fn steps_told(asks: &Asks) -> std::sync::Arc<Mutex<Vec<(u32, crate::eventlog::secretasks::Step)>>> {
+fn steps_told(asks: &Asks) -> Told {
     let told = std::sync::Arc::new(Mutex::new(Vec::new()));
     let kept = std::sync::Arc::clone(&told);
     asks.telling(std::sync::Arc::new(move |chat, step| {
@@ -1123,7 +1163,7 @@ fn policy_refuses_an_undeclared_key_as_declined_policy_and_never_asks_the_person
     assert_eq!(
         told.lock().unwrap().as_slice(),
         [(
-            7,
+            Some(7),
             crate::eventlog::secretasks::Step::Refused {
                 by: crate::eventlog::secretasks::By::Policy,
                 declared: false
@@ -1190,21 +1230,21 @@ fn each_step_of_an_ask_is_one_record_with_no_value_name_or_purpose() {
         steps,
         [
             (
-                7,
+                Some(7),
                 Step::Raised {
                     ask: id,
                     declared: false
                 }
             ),
             (
-                8,
+                Some(8),
                 Step::Joined {
                     ask: id,
                     waiting: 2
                 }
             ),
             (
-                7,
+                Some(7),
                 Step::Filled {
                     ask: id,
                     how: How::Value,

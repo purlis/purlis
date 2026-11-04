@@ -129,11 +129,11 @@ pub enum Entry {
         number: u32,
         step: super::questions::Step,
     },
-    /// A step of a Secret ask of chat `number`'s ([`Recorder::secret_ask`], #5078): counts and
-    /// closed words alone.
+    /// A step of a Secret ask of chat `number`'s, or of a chat's start where none
+    /// ([`Recorder::secret_ask`], #5078): counts and closed words alone.
     SecretAsk {
         plane: PathBuf,
-        number: u32,
+        number: Option<u32>,
         step: super::secretasks::Step,
     },
 }
