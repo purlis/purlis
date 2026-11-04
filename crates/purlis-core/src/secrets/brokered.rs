@@ -1434,6 +1434,7 @@ fn read_login(
             )
             .map(|need| need.purpose),
             names_no_vault: false,
+            reason: super::ask::Reason::broken(ctx, &vault, key),
         };
         missing
             .read_asking(need, &mut once)
