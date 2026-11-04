@@ -112,7 +112,6 @@ function core(
       if (cmd === "skill_persona_skills") return more.personas ?? [];
       if (cmd === "chat_skills")
         return {
-          on: true,
           known: true,
           program: [],
           plugins_off: more.pluginsOff ?? [],

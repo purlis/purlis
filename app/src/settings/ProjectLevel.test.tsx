@@ -330,6 +330,7 @@ describe("the Project level", () => {
         "Saving",
         "Harness & profiles",
         "work",
+        "Skills",
         "Policy",
         "Enforcement log",
         "Sandbox",

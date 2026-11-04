@@ -29,7 +29,7 @@ use purlis_core::skills::verbs::Level;
 
 use super::{Begin, On, begin, chats_on, running};
 use crate::planes::{Held, PlaneId, Planes};
-use crate::skillchange::{SkillLevel, flag_on};
+use crate::skillchange::SkillLevel;
 
 /// How long a skill's editor must go without another save before the last one grades it: a
 /// burst of saves grades once.
@@ -95,7 +95,6 @@ pub(crate) async fn skill_grade_after_edit(
 ) -> Result<Option<SkillGradeAfterEdit>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading a skill's grading after each edit", move || {
-        flag_on()?;
         Ok(after_edit::of(held.root(), &(&level).into(), &skill).map(Into::into))
     })
     .await
@@ -120,7 +119,6 @@ pub(crate) async fn skill_grade_after_edit_on(
 ) -> Result<SkillGradeAfterEdit, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("turning grading after each edit on", move || {
-        flag_on()?;
         let level: Level = (&level).into();
         let root = held.root();
         let on = chats_on(root, profile, model);
@@ -205,7 +203,6 @@ pub(crate) async fn skill_grade_after_edit_off(
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("turning grading after each edit off", move || {
-        flag_on()?;
         let level: Level = (&level).into();
         after_edit::turn_off(held.root(), &level, &skill)?;
         if let Some(key) = after_edit::key(&level, &skill) {

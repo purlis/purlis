@@ -887,7 +887,7 @@ describe("the Search and Changes views", () => {
       within(bar())
         .getAllByRole("tab")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Chats", "Explorer", "Search"]);
+    ).toEqual(["Chats", "Explorer", "Search", "Skills"]);
   });
 
   it("shows Search on its key, with the box given the keyboard", async () => {

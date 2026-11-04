@@ -63,12 +63,6 @@ impl Issue {
     }
 }
 
-/// What is said of a `skills:` line while the project's skills reach no chat
-/// ([`crate::skills::reach_chats`]): the flag is off and the project has not moved.
-const SKILLS_UNREAD: &str = "`skills:` is read only with the Skill studio preview on (Settings \
-     › You › Previews): then a chat as this persona loads each skill it names. Until then a \
-     chat loads a skill when it uses it";
-
 /// `persona.EMPTY_REFERENCE`.
 const EMPTY_REFERENCE: &str = "is empty — remove the key, or name a persona";
 
@@ -83,8 +77,6 @@ pub struct Linter<'a> {
     read_process_env: bool,
     /// The built-in skills' directory a `purlis:` entry is checked against, where there is one.
     built_in: Option<PathBuf>,
-    /// Whether the Skill studio's flag is on, where the caller said; else this machine's.
-    studio: Option<bool>,
     known: BTreeSet<String>,
     skills: OnceLock<Option<BTreeMap<String, bool>>>,
     /// The names of the profiles the project offers, read the first time a `model:` asks.
@@ -102,7 +94,6 @@ impl<'a> Linter<'a> {
             home: crate::profiles::home(),
             read_process_env: true,
             built_in: crate::skills::built_in_here(),
-            studio: None,
             known: super::names(root).into_iter().collect(),
             skills: OnceLock::new(),
             offered: OnceLock::new(),
@@ -122,12 +113,6 @@ impl<'a> Linter<'a> {
     /// built-in skills in `dir` rather than the bundle beside this binary, or against none.
     pub fn with_built_in(mut self, dir: Option<PathBuf>) -> Self {
         self.built_in = dir;
-        self
-    }
-
-    /// This linter, with the Skill studio's flag as `on` rather than as this machine has it.
-    pub fn with_studio(mut self, on: bool) -> Self {
-        self.studio = Some(on);
         self
     }
 
@@ -462,18 +447,12 @@ impl<'a> Linter<'a> {
     /// before a rename (#5724), one written with the old
     /// `charter:` prefix, and one its chats start without
     /// ([`crate::skills::persona::unresolved`]), each with its fix. Read through
-    /// [`Reference`](crate::skills::Reference), as a chat's start reads the list. With the
-    /// project's skills reaching no chat, nothing reads the list, and that is what is said of it.
+    /// [`Reference`](crate::skills::Reference), as a chat's start reads the list.
     fn skills_list_issues(&self, name: &str) -> Vec<Issue> {
         use crate::skills::{Reason, Reference};
         let written = super::declared_skills(self.root, name);
         if written.is_empty() {
             return Vec::new();
-        }
-        let studio = self.studio.unwrap_or_else(crate::skills::studio_on_here);
-        // A moved project's chats read the list whatever the flag says (#4344).
-        if !crate::skills::reach_chats(self.root, studio) {
-            return vec![Issue::warn(SKILLS_UNREAD)];
         }
         let mut issues = Vec::new();
         for entry in &written {

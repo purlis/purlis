@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis skill grade` on a temporary project (SK-16, #2779): what grading a skill runs, cost
-//! first, and the grades the project's eval record holds, behind the `skill-studio` flag.
+//! first, and the grades the project's eval record holds.
 
 use crate::support;
 
@@ -66,7 +66,6 @@ impl Project {
             .env("CHARTER_ROOT", &root)
             .env("HOME", self.at.join("home"))
             .env("PURLIS_CONFIG_HOME", self.at.join("home/config"))
-            .env("PURLIS_SKILL_STUDIO", "1")
             .env("NO_COLOR", "1")
             .output()
             .unwrap()
@@ -189,7 +188,6 @@ fn runs(p: &Project, env: &[(&str, &str)]) -> (bool, String) {
         .env("PURLIS_CONFIG_HOME", p.at.join("home/config"))
         .env("XDG_RUNTIME_DIR", p.at.join("home"))
         .env("TMPDIR", &p.at)
-        .env("PURLIS_SKILL_STUDIO", "1")
         .env("NO_COLOR", "1")
         .env_remove(purlis_core::hookwire::CHAT_ENV)
         .env_remove(purlis_core::hookwire::SOCKET_ENV)

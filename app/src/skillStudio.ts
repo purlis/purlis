@@ -1,9 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { createContext, useEffect, useRef, useSyncExternalStore } from "react";
+import { createContext, useEffect, useRef } from "react";
 import {
-  commands,
   PERSONA_SCOPE_KEY,
   SKILL_NEEDS_IN,
   SKILL_STUDIO_IN,
@@ -21,9 +20,7 @@ import { contentsOf, type Tabs, type ViewRef } from "./tabs";
  *
  * It is a view tab, `{ from: null, view: "skill-studio", key: "" }`: **one per project** (#3681,
  * the amendment's S2), holding its own pages, scope and back/forward history. A second studio tab
- * opens only when the person asks for one (⌘-click), keyed `#2`, `#3`…. It is behind the
- * `skill-studio` flag until its finish line (#2786): while the flag is off the palette offers no
- * row for it.
+ * opens only when the person asks for one (⌘-click), keyed `#2`, `#3`….
  */
 export const SKILL_STUDIO_VIEW: ViewRef = { from: null, view: "skill-studio", key: "" };
 
@@ -565,67 +562,6 @@ export const SKILL_STUDIO_SHOW = "skills.studio";
 /** Whether `view` is the Skill studio. */
 export function isSkillStudio(view: ViewRef): boolean {
   return view.from === null && view.view === SKILL_STUDIO_VIEW.view;
-}
-
-/** What this machine said of the flag, once asked, and who is drawn from it. */
-let said: boolean | undefined;
-/** Whether the last ask was refused or failed: the preview counts as off until an ask is
- *  answered, so nothing waits on it (#3308). */
-let unanswered = false;
-let asking = false;
-const listeners = new Set<() => void>();
-
-function told() {
-  for (const one of listeners) one();
-}
-
-function ask() {
-  if (asking) return;
-  asking = true;
-  void commands
-    .skillStudioOn()
-    .then((answer) => {
-      if (answer.status === "ok") said = answer.data;
-      unanswered = answer.status !== "ok";
-    })
-    .catch(() => {
-      unanswered = true;
-    })
-    .finally(() => {
-      asking = false;
-      told();
-    });
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  if (said === undefined) ask();
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-/** Whether the Skill studio is on in this window: `false` until the core has said. */
-export function useSkillStudioOn(): boolean {
-  return useSyncExternalStore(subscribe, () => said ?? false);
-}
-
-/** What the core said of the Skill studio's preview: `undefined` until it has, which a view
- *  that would otherwise draw something else for a moment holds on (#3308); `false` where it
- *  could not say, as the preview is then drawn off. */
-export function useSkillStudioSaid(): boolean | undefined {
-  return useSyncExternalStore(subscribe, () => said ?? (unanswered ? false : undefined));
-}
-
-/** **Turns the Skill studio's preview on or off on this machine** (Settings › You ›
- *  Previews), then draws what the core says is now in force, or the core's refusal. */
-export async function setSkillStudioOn(on: boolean): Promise<string | undefined> {
-  const answer = await commands
-    .setSkillStudioOn(on)
-    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-  if (answer.status === "ok") said = answer.data;
-  told();
-  return answer.status === "error" ? answer.error : undefined;
 }
 
 /**

@@ -604,7 +604,7 @@ pub fn pretooluse_edit_proposing(
 /// the app on the proposed change's road, and the tool is refused with
 /// [`crate::skills::verbs::drafts::DRAFTED_SAID`]: the harness never writes the skill, and the
 /// app keeps the change as a draft in the Skill studio. None where the edit is not one, or where
-/// the app does not take it (no app, an older one, or the `skill-studio` flag off there): the
+/// the app does not take it (no app, or an older one): the
 /// edit is then [`proposing`]'s and [`pretooluse_edit`]'s, as before.
 fn drafting(hook: &Hook, hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool) -> Option<Answer> {
     use crate::skills::verbs::drafts;

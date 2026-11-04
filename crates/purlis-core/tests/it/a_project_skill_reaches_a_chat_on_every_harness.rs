@@ -65,7 +65,7 @@ fn kit<'a>(here: &'a Here, skills: Option<PlaneSkills<'a>>, laid_out: Option<&'a
     }
 }
 
-/// What the host does before an adapter arms a chat, with the flag on: lay out the folder of
+/// What the host does before an adapter arms a chat whose plane skills reach it: lay out the folder of
 /// links (`hoststart::plane_skills_laid_out`), then arm the chat with it.
 fn host_armed(
     harness: Harness,
@@ -76,7 +76,7 @@ fn host_armed(
     host_armed_on(true, harness, here, workspace, cwd)
 }
 
-/// [`host_armed`] with the flag `on` or off.
+/// [`host_armed`], with the start's word `on` or not (#3084, #2786).
 fn host_armed_on(
     on: bool,
     harness: Harness,
@@ -296,7 +296,7 @@ fn a_codex_chat_at_the_plane_root_is_briefed_on_the_project_skill_from_its_folde
 }
 
 #[test]
-fn with_the_flag_off_every_harness_is_armed_with_the_built_in_skills_alone() {
+fn where_its_start_said_no_every_harness_is_armed_with_the_built_in_skills_alone() {
     purlis_core::unsteered!();
     let here = here();
     // Claude Code and Codex as before: nothing laid out.

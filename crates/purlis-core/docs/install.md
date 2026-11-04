@@ -158,14 +158,13 @@ app), on a project with uncommitted changes, outside git, with a file under both
 purlis may not write. A step that fails puts every file back.
 
 **`project-skills` runs only by name**, as `purlis doctor --fix project-skills`, because it
-makes a commit every teammate pulls (Skill studio preview, #2784). It moves each skill folder of
+makes a commit every teammate pulls (#2784). It moves each skill folder of
 the project's `.claude/skills` into its `skills/`, shared with every workspace (`grant =
 "all"`), rewrites each `charter:<skill>` reference in a persona or a skill's `.md` files to
 `purlis:<skill>`, and makes the manifest require the `project-skills` feature, so a build
 without it opens the project read-only and clones get no copy of `.claude/skills` again. It
 reports every change, each persona reference that names no skill a chat can get, and the `git
-revert` that undoes the commit. From then on the project's skills reach every chat, whether
-the Skill studio is on or off. Your own clones drop their copies at once, a teammate's the next
+revert` that undoes the commit. From then on the project's skills reach every chat. Your own clones drop their copies at once, a teammate's the next
 time a chat starts in them, and a copy someone edited is kept and named. It refuses, writing
 nothing, from inside a chat, anywhere but the project's root, on a project with uncommitted
 changes, outside git, on a detached HEAD or in the middle of a merge, rebase or cherry-pick, when `.claude/skills` holds a link, a file git does

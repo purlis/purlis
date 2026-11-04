@@ -100,7 +100,6 @@ let letHeldFramesGo: (() => Promise<void>) | undefined;
 describe("the Skill studio", () => {
   it("lists each skill with its level, and why one is left out", async () => {
     answering({
-      on: true,
       workspace: null,
       first: { starts: false, unmoved: null },
       places: [],
@@ -519,7 +518,6 @@ describe("the Skill studio", () => {
       ...more,
     });
     answering({
-      on: true,
       workspace: null,
       first: { starts: false, unmoved: null },
       places: [],
@@ -573,7 +571,6 @@ describe("the Skill studio", () => {
       if (cmd !== "skill_studio") throw new Error(`unexpected ${cmd}`);
       asked.push(args);
       return {
-        on: true,
         workspace: "alpha",
         first: { starts: false, unmoved: null },
         places: [],
@@ -665,7 +662,6 @@ describe("the Skill studio", () => {
       if (cmd === "skills_deleted") return [];
       if (cmd !== "skill_studio") throw new Error(`unexpected ${cmd}`);
       return {
-        on: true,
         workspace: null,
         first: { starts: false, unmoved: null },
         places: [],
@@ -721,7 +717,6 @@ describe("the Skill studio", () => {
       calls.push(cmd);
       if (cmd === "skill_studio")
         return {
-          on: true,
           workspace: null,
           persona: null,
           first: { starts: false, unmoved: null },
@@ -776,28 +771,12 @@ describe("the Skill studio", () => {
     expect(notice).toHaveTextContent(`${failed} ${finished}`);
   });
 
-  it("says it is not on while its flag is off", async () => {
-    answering({
-      on: false,
-      workspace: null,
-      first: { starts: false, unmoved: null },
-      places: [],
-      workspaces: [],
-      skills: [],
-      harnesses: [],
-      clashes: [],
-    });
-    renderStudio();
-    expect(await screen.findByTestId("skill-studio-off")).toBeInTheDocument();
-  });
-
   it("shows a persona's chats, with the persona's own skill and one it names", async () => {
     const asked: unknown[] = [];
     mockIPC((cmd, args) => {
       if (cmd !== "skill_studio") throw new Error(`unexpected ${cmd}`);
       asked.push(args);
       return {
-        on: true,
         workspace: null,
         persona: "ops",
         first: { starts: false, unmoved: null },
@@ -931,38 +910,32 @@ describe("the Skill studio", () => {
     expect(skillStudioTitle(asPersona("ops"))).toBe("Skill studio · ops");
   });
 
-  it("offers each persona's studio in the palette only while its flag is on", () => {
-    const now = (skillStudio: boolean): Now => ({
+  it("offers each persona's studio in the palette", () => {
+    const now: Now = {
       tabs: noTabs(),
       workspaces: [],
       needsYou: [],
       nameOf: (session) => String(session),
       plane: "p",
       personas: ["ops"],
-      skillStudio,
-    });
-    const row = (on: boolean) =>
-      catalogue(now(on)).find((offer) => offer.id === skillStudioAs("ops"));
-    expect(row(true)?.does).toEqual({
+    };
+    const row = catalogue(now).find((offer) => offer.id === skillStudioAs("ops"));
+    expect(row?.does).toEqual({
       verb: "openView",
       view: skillStudioView(asPersona("ops")),
       title: SKILL_STUDIO_TITLE,
     });
-    expect(row(false)).toBeUndefined();
   });
 
-  it("is offered in the palette only while its flag is on", () => {
-    const now = (skillStudio: boolean): Now => ({
+  it("is offered in the palette", () => {
+    const now: Now = {
       tabs: noTabs(),
       workspaces: [],
       needsYou: [],
       nameOf: (session) => String(session),
       plane: "p",
-      skillStudio,
-    });
-    const ids = (on: boolean) => catalogue(now(on)).map((offer) => offer.id);
-    expect(ids(true)).toContain(SKILL_STUDIO_SHOW);
-    expect(ids(false)).not.toContain(SKILL_STUDIO_SHOW);
+    };
+    expect(catalogue(now).map((offer) => offer.id)).toContain(SKILL_STUDIO_SHOW);
   });
 });
 
@@ -981,7 +954,6 @@ const ROW = {
 /** A studio with one project skill, `review`, and Claude Code's own skills and plugins. */
 function withClaudeCode(offLangfuse: boolean) {
   return {
-    on: true,
     workspace: null,
     first: { starts: false, unmoved: null },
     places: [],

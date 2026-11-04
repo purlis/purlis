@@ -12,7 +12,7 @@ import { studioPage } from "../studio.js";
 
 /**
  * **Installing a skill from a skill source in the Skill studio** (SK-10, #2773), in the built app
- * against the real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * against the real core.
  *
  * The spec builds a git repository of three skills in a temporary folder (one with a script that
  * fetches from a host and a `!` command, which refers to a second; the third refers to nothing),

@@ -961,7 +961,6 @@ const ORDINARY: Answers = {
   },
   skills_deleted: [],
   skill_studio: {
-    on: true,
     workspace: null,
     first: { starts: false, unmoved: null },
     places: [],
@@ -1821,7 +1820,6 @@ const STATES: State[] = [
     view: { from: null, view: "skill-studio", key: "" },
     answers: {
       skill_studio: {
-        on: true,
         workspace: null,
         first: { starts: true, unmoved: null },
         places: [],
