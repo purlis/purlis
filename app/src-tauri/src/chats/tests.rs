@@ -4858,13 +4858,17 @@ fn a_record_holding_one_id_twice_puts_back_two_chats_with_their_own_ids_and_keep
     // id. The record writes one chat per id (the newest open), which is right only for a
     // retry or a fresh start under way — so the put-back gives the repeat an id of its own,
     // as it does a chat that had none, and neither drops out at the next write.
+    // A chat's id as a record holds one: a ULID (ADR 0066; `reopen` reads any other as none).
+    // A Claude Code chat's settings on macOS go through a file named by it (SK-9), which takes
+    // nothing else.
+    const SHARED: &str = "01J9CHAT000000000000000000";
     let dir = tempfile::tempdir().unwrap();
     let claude = a_claude(dir.path());
     let shared = |name: &str| {
         let one = chat(&claude, name, None);
         Chat {
             identity: purlis_core::reopen::Identity {
-                id: Some(ID.to_owned()),
+                id: Some(SHARED.to_owned()),
                 ..one.identity.clone()
             },
             ..one
@@ -4898,7 +4902,7 @@ fn a_record_holding_one_id_twice_puts_back_two_chats_with_their_own_ids_and_keep
     let last = lock(&wrote).last().cloned().expect("a record was written");
     let ids: Vec<Option<String>> = last.chats.iter().map(|c| c.identity.id.clone()).collect();
     assert_eq!(ids.len(), 2, "both are recorded: {ids:?}");
-    assert_eq!(ids[0].as_deref(), Some(ID), "the first keeps the id");
+    assert_eq!(ids[0].as_deref(), Some(SHARED), "the first keeps the id");
     assert!(
         ids[1].is_some() && ids[1] != ids[0],
         "the repeat has its own: {ids:?}"
