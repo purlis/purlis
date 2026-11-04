@@ -18,6 +18,7 @@ import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { forgetGroups } from "./links";
 import { SettingsTab } from "./SettingsTab";
+import { skill, studio } from "../skillsListing.testkit";
 
 /**
  * **Every control the Settings tab draws has a name** (DS-6, #629): each level it offers — You,
@@ -122,6 +123,9 @@ function core() {
       switch (cmd) {
         case "project_chats_run_on":
           return { pool: null, pools: [] };
+        // The Skills group reads the studio, which is always on since #2786.
+        case "skill_studio":
+          return studio([skill("deploy")]);
         case "project_settings":
           return { shared: SHARED, local: LOCAL };
         case "workspace_settings":
