@@ -25,7 +25,8 @@ use super::site::site;
 use super::tree::{FrameAx, NodeKey, Query, Scrub, Snapshot, View, build_kept};
 use super::{
     Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, FillHold, Gate, Hold, Judge,
-    KeptOff, Limits, Outbound, PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
+    KeptOff, Limits, Outbound, PageId, PageInfo, Painted, Ref, Refusal, RefusedLoad, Settled, Why,
+    lock,
 };
 use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Closed, Connection, Event, Tap, TapSink};
@@ -899,6 +900,10 @@ struct Page {
     frames: HashMap<String, Frame>,
     /// The page that opened this one, if one did.
     opener: Option<String>,
+    /// **The address the engine's own page stands for**, while this page shows that for a load
+    /// that failed (#5150). What a filled page sent may be in it, so it is handed to the caller
+    /// to judge ([`Browser::say_why_refused`]) and never said.
+    failed_load: Option<String>,
 }
 
 impl Page {
@@ -1879,6 +1884,8 @@ pub(crate) struct Inner {
     fill_holds: Mutex<Vec<PageHeld>>,
     /// What says which site's documents the agent is kept off (#5152), once it was told.
     kept_off: Mutex<Option<KeptOff>>,
+    /// Why the caller refused a load, where it says ([`Browser::say_why_refused`], #5150).
+    refused_load: Mutex<Option<RefusedLoad>>,
     /// How many of the agent's calls are being carried out now (#5152).
     agent_calls: AtomicUsize,
 }
@@ -2038,6 +2045,7 @@ impl Browser {
             back: Mutex::new(None),
             fill_holds: Mutex::new(Vec::new()),
             kept_off: Mutex::new(None),
+            refused_load: Mutex::new(None),
             agent_calls: AtomicUsize::new(0),
         });
         Screencast::start(&inner);
@@ -2244,6 +2252,26 @@ impl Browser {
                 None => said,
             });
         }
+        let failed: Vec<String> = answer
+            .page
+            .iter()
+            .chain(&answer.opened)
+            .filter_map(|shown| {
+                let page = state.pages.iter().find(|page| page.id == shown.id)?;
+                page.failed_load.clone()
+            })
+            .collect();
+        drop(state);
+        // A click or Back the caller refused shows the engine's own page, which says nothing of
+        // why (#5150): the answer does.
+        let refused = lock(&self.inner.refused_load).clone();
+        let said = refused.and_then(|why| failed.iter().find_map(|address| why(address)));
+        if let Some(said) = said {
+            answer.note = Some(match answer.note.take() {
+                Some(note) => format!("{note}; {said}"),
+                None => said,
+            });
+        }
         answer
     }
 
@@ -2280,6 +2308,14 @@ impl Browser {
     /// The browser itself loads them as it would any other. In place of anything told before.
     pub fn keep_off(&self, kept_off: KeptOff) {
         *lock(&self.inner.kept_off) = Some(kept_off);
+    }
+
+    /// **Has each of the agent's calls say why a load was refused** (#5150): an answer whose page
+    /// shows the engine's own page for a load that failed says what `why` makes of its address,
+    /// and it is `why`'s to say nothing of a load the caller did not refuse. In place of anything
+    /// told before.
+    pub fn say_why_refused(&self, why: RefusedLoad) {
+        *lock(&self.inner.refused_load) = Some(why);
     }
 
     /// The frames of `target`'s page the agent is kept off now, with their site (#5152).
@@ -5494,6 +5530,7 @@ impl Inner {
                                 title: String::new(),
                                 settle: Settle::new(now),
                                 scrubbed: kept,
+                                failed_load: None,
                                 shows: 0,
                                 gone: 0,
                                 frames: HashMap::new(),
@@ -5621,6 +5658,12 @@ impl Inner {
                                 // closed.
                                 if params.pointer("/frame/unreachableUrl").is_none() {
                                     left.push(target.clone());
+                                }
+                                let failed = text("/frame/unreachableUrl");
+                                if let Some(page) =
+                                    state.pages.iter_mut().find(|page| page.target == target)
+                                {
+                                    page.failed_load = failed;
                                 }
                                 navigated = Some((target, text("/frame/url").unwrap_or_default()));
                             }
