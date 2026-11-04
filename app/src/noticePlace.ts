@@ -24,7 +24,14 @@ export type About =
   | { project: true }
   /** A chat, said on its pane's band; `removes`, the workspace a chat asks to have removed
    *  (qw356), a consent answered on that band that also needs the person on its chip (#3652). */
-  | { pane: number; removes?: string };
+  | { pane: number; removes?: string }
+  /** **A chat in no pane** (#4759): chat `chat`, which works in `workspace` (`OUTSIDE` at the
+   *  plane root). `ask` for something that blocks until the person decides, and not for a plain
+   *  note. A chat on screen is `pane`'s. */
+  | { chat: number; workspace: string; ask: boolean }
+  /** **A chat another chat started, arrived in `arrived`** (#4759): a handoff, or a task on a
+   *  harness purlis has no hooks into, which is announced like one. */
+  | { arrived: string };
 
 /** **A chip of the title bar**, as the placement reads it: the workspace it is, and how it is
  *  drawn. `unpinned` is the dashed `name +` chip of the current workspace while it is not
@@ -42,7 +49,14 @@ export type Place =
    *  dot for it, whose press brings the chat forward (#3652). */
   | { at: "pane"; pane: number; needs?: string }
   /** The Notices centre alone, with a way to open `open`: no chip to hang from. */
-  | { at: "centre"; open: string };
+  | { at: "centre"; open: string }
+  /** The Notices centre, with a mark on chat `marks`' sidebar row: a plain note from a chat in
+   *  no pane (#4759). */
+  | { at: "centre"; marks: number }
+  /** **An ask from chat `row`, in no pane** (#4759): its row and the rows above it, the title
+   *  bar's ✋ and the Inbox, where it is answered; `count`, the chip that counts it, where its
+   *  workspace has one. Never a pane, and never the keyboard. */
+  | { at: "inbox"; row: number; count?: string };
 
 /**
  * **Where a notice about `about` is drawn, given the title bar's `chips`** (spec #3647):
@@ -52,9 +66,20 @@ export type Place =
  *   nothing floats over the wrong chip;
  * - a project's or the app's result: the status bar's card;
  * - a chat's: its pane band, as it always was; a chat's question to remove a workspace that has
- *   a chip also puts a needs-you dot on that chip (#3652), and none where it has no chip.
+ *   a chip also puts a needs-you dot on that chip (#3652), and none where it has no chip;
+ * - a chat's in no pane (#4759): an ask goes to its row, the ✋, its workspace's chip count and
+ *   the Inbox; a plain note to the Notices centre, marking its row;
+ * - a chat another chat started arriving: a card on its workspace's chip, or the Notices centre
+ *   where it has none, as a notice about that workspace is.
  */
 export function placeOf(about: About, chips: readonly Chip[]): Place {
+  if ("chat" in about) {
+    if (!about.ask) return { at: "centre", marks: about.chat };
+    return chips.some((chip) => chip.workspace === about.workspace)
+      ? { at: "inbox", row: about.chat, count: about.workspace }
+      : { at: "inbox", row: about.chat };
+  }
+  if ("arrived" in about) return placeOf({ workspace: about.arrived }, chips);
   if ("pane" in about) {
     const needs = about.removes;
     // The plane root is never removed (the core refuses it), so its house never shows a ✋.
@@ -72,7 +97,8 @@ export function placeOf(about: About, chips: readonly Chip[]): Place {
 /** **What a result is about**: the workspace it names (a workspace made names it), else the
  *  project it was said in. */
 export function aboutOf(said: Said): About {
-  return said.workspace === undefined ? { project: true } : { workspace: said.workspace };
+  if (said.workspace === undefined) return { project: true };
+  return said.arrived === undefined ? { workspace: said.workspace } : { arrived: said.workspace };
 }
 
 /** **What kind of notice a result is** (#3649), which its chip's dot shows when it is the most
