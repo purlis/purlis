@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { ChatText, FOLD_LINES, linesIn } from "./ChatText";
+import { ChatText, FOLD_LINES, linesIn, textOfLine } from "./ChatText";
 
 /**
  * **A chat's text is markdown under a safe subset** (#5214, the person's ruling of 2026-11-04):
@@ -194,5 +194,15 @@ describe("a long message folds", () => {
     render(<ChatText text={long} fold={false} />);
 
     expect(screen.queryByRole("button")).toBeNull();
+  });
+});
+
+describe("a chat's words the core put on one line", () => {
+  it("gets its line breaks back, a CR LF as one", () => {
+    expect(textOfLine("- one⟦U+000A⟧- two⟦U+000D⟧⟦U+000A⟧three")).toBe("- one\n- two\nthree");
+  });
+
+  it("keeps every other mark, and a mark the chat wrote itself, as marks", () => {
+    expect(textOfLine("a⟦U+0009⟧b ⟦U+27E6⟧U+000A⟧")).toBe("a⟦U+0009⟧b ⟦U+27E6⟧U+000A⟧");
   });
 });

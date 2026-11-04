@@ -296,6 +296,21 @@ describe("the family's look, from the tokens (button.css)", () => {
     expect(drawn("link", "text-decoration", true)).toBe("underline");
   });
 
+  // #5214: a card's ways on beside its one answer, Go to chat and Ignore under a reply box.
+  it("draws the quiet link's words in the quiet tier, underlined and primary under the pointer and the keyboard", () => {
+    render(<Button variant="quiet-link">Ignore</Button>);
+    const link = screen.getByRole("button", { name: "Ignore" });
+    expect(link).toHaveAttribute("data-variant", "quiet-link");
+    expect(drawnWith(link, "background")).toBe("transparent");
+    expect(drawnWith(link, "border-color")).toBe("transparent");
+    expect(drawnWith(link, "color")).toBe("var(--text-quiet)");
+    expect(drawnWith(link, "text-decoration")).toBeUndefined();
+    expect(drawnWith(link, "background", { hover: true })).toBe("transparent");
+    expect(drawnWith(link, "color", { hover: true })).toBe("var(--text-primary)");
+    expect(drawnWith(link, "text-decoration", { hover: true })).toBe("underline");
+    heldToTheTokens(link);
+  });
+
   // #3214: a mark at the end of a strip, a crumb, a pane's split and close.
   it("draws the quiet ghost's words in the quiet tier, primary on the hover fill", () => {
     render(<Button variant="quiet">More</Button>);

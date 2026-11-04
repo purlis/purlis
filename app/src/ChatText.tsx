@@ -1,7 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -42,6 +50,7 @@ export function ChatText({
   id,
   className,
   fold = true,
+  foldStop = (button) => button,
 }: {
   /** The chat's words, as it wrote them. */
   text: string;
@@ -51,6 +60,9 @@ export function ChatText({
   className?: string;
   /** Whether a message over {@link FOLD_LINES} lines is folded. */
   fold?: boolean;
+  /** Its fold's button as a stop of the roving focus it stands in (the Inbox's list), where
+   *  it stands in one. */
+  foldStop?: (button: ReactElement) => ReactElement;
 }) {
   const own = useId();
   const box = id ?? `${own}-text`;
@@ -70,20 +82,32 @@ export function ChatText({
           {text}
         </Markdown>
       </div>
-      {folds && (
-        <Button
-          variant="link"
-          size="sm"
-          className="chat-text-fold"
-          aria-expanded={open}
-          aria-controls={box}
-          onPress={() => setOpen((was) => !was)}
-        >
-          {open ? "Show less" : `Show all · ${lines} lines`}
-        </Button>
-      )}
+      {folds &&
+        foldStop(
+          <Button
+            variant="link"
+            size="sm"
+            className="chat-text-fold"
+            aria-expanded={open}
+            aria-controls={box}
+            onPress={() => setOpen((was) => !was)}
+          >
+            {open ? "Show less" : `Show all · ${lines} lines`}
+          </Button>,
+        )}
     </div>
   );
+}
+
+/**
+ * **A chat's words that the core put on one line, with their line breaks back** (#5214): a line
+ * (`purlis_core::shown::one_line`) writes each line end as its mark, `⟦U+000A⟧`, so a question
+ * read as a line shows `⟦U+000A⟧` where the chat broke it. The mark is exact: a `⟦` the chat
+ * wrote itself is marked too (`⟦U+27E6⟧`), so only purlis's own marks are turned back. Every
+ * other mark stays, so a hidden character still shows.
+ */
+export function textOfLine(line: string): string {
+  return line.replace(/(?:⟦U\+000D⟧)?⟦U\+000A⟧/gu, "\n");
 }
 
 /** The most lines a message shows before it folds (#5214). */

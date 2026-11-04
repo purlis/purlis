@@ -4,7 +4,9 @@
 /**
  * **The Inbox's card for a chat waiting on the person's reply** (#4550): what the chat said under
  * the status line, over the lines it wrote and never cut, and the one line that says so where
- * the app heard no message. The person answers from here, so the reply box is walked to.
+ * the app heard no message. The person answers from here, so the reply box is walked to. What
+ * the chat said is its markdown under the safe subset, folded past six lines (#5214); Send is
+ * the card's one button, and Go to chat and Ignore are quiet links under the box.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
@@ -31,6 +33,7 @@ function OneCard({ last_message }: { last_message?: string }) {
         asks={[{ ...QUESTION, last_message }]}
         onGo={() => {}}
         onLeave={() => {}}
+        onIgnore={() => {}}
       />
     </div>
   );
@@ -84,5 +87,40 @@ export const NoMessageToShow: Story = {
     await expect(card.getAllByText(NO_MESSAGE)).toHaveLength(1);
     await expect(card.getAllByText("Waiting on your reply")).toHaveLength(1);
     await theReplyBoxIsReached(canvasElement);
+  },
+};
+
+const LONG = `I'm waiting for #5141 to merge before the last part of #5160. Until then there's nothing left to do on PR #5163.
+
+- **CI on the current head (\`07e0ff5\`):** the Rust tests pass now that the wrong expectation is fixed.
+- **The one remaining failure:** stories WebKit 5/7, on \`SkillPage.stories.tsx\`. These are #4672's pictures, so I'm not pulling any.
+- **Still to do:** remove the Notices-centre \`VaultRefusedNotice\` for a chat with no pane, and add the vault rows to \`noticePlace.test.ts\`.
+
+I've sent you a note saying this. When you tell me #5141 has merged, I'll rebase onto main, do that last part, run tsc and eslint, and push.`;
+
+/** **A long message** (#5214): folded at six lines behind Show all, which ↓ reaches before the
+ *  reply box; opened, it shows whole, and the reply box and the links stay at the card's foot. */
+export const ALongMessage: Story = {
+  args: { last_message: LONG },
+  play: async ({ canvasElement }) => {
+    const card = within(canvasElement);
+    await expect(card.getAllByText("Still to do:")[0]?.tagName).toBe("STRONG");
+    const show = () => card.getByRole("button", { name: /^Show all · \d+ lines$/ });
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(show, "↓ reaches Show all");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await untilFocused(
+      () => card.getByRole("button", { name: "Show less" }),
+      "Enter opens it whole",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => card.getByRole("textbox", { name: "Reply to steward 6" }),
+      "↓ goes on to the reply box at the card's foot",
+    );
+    expectFocusInSight();
   },
 };

@@ -70,6 +70,7 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
 import { useWayPlaces } from "./wayPlaces";
 import { useProjectShown } from "./projectShown";
+import { ChatText, textOfLine } from "./ChatText";
 import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
@@ -871,6 +872,10 @@ function Ask({
   /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */
   const whole =
     ask.source === "dispatch" || (shape.answers && shape.offers.some((one) => one.allows));
+  /** Its words are a chat's own, not a command's or purlis's: a message it ended its turn on,
+   *  or a task's question (#5214). Never an ask an answer here allows, which is read as it is. */
+  const chatWords =
+    shape.message || (ask.source === "task-question" && !whole && shape.lines === undefined);
 
   // An edit's change arrives after its row (#1146): its Allow waits to settle from then.
   const [changeDrawn, setChangeDrawn] = useState(false);
@@ -1047,46 +1052,56 @@ function Ask({
             </Tooltip>
           )}
         </p>
-        <p className="inbox-says">
+        <div className="inbox-says">
           <KindMark kind={kindOfAsk(ask.source)} />
           {/* The ask's words are the source's, drawn as text and never as a control. What an
-              Allow here would let run is never cut (#1146): it is read whole first. So is what
-              a chat said: the person answers it here, and its question is often its last line
-              (#4550). */}
-          <Tooltip tip={shape.message ? undefined : shape.line}>
-            {shape.lines !== undefined && shape.lines.drawn.length > 0 ? (
-              // **A command over several lines is drawn on them** (#3502): each as the line has
-              // it, the first few, and how many more. Never clamped: the cap is its own.
-              <span
-                id={`${id}-says`}
-                className="ask-says ask-lines inbox-primary ui-text-body ui-text-strong"
-              >
-                {shape.lines.drawn.map((one, at) => (
-                  // A space between lines, which a column does not draw, so the row's name
-                  // reads them apart.
-                  <Fragment key={at}>
-                    {at > 0 && " "}
-                    <span className="ask-line">{markedLine(one)}</span>
-                  </Fragment>
-                ))}
-                {shape.lines.more > 0 && (
-                  <>
-                    {" "}
-                    <span className="ask-line ask-more-lines ui-text-secondary">
-                      {moreLines(shape.lines.more)}
-                    </span>
-                  </>
-                )}
-              </span>
-            ) : (
-              <span
-                id={`${id}-says`}
-                className={`ask-says inbox-primary ui-text-body${shape.message ? " inbox-said" : ` ui-text-strong${whole ? "" : " inbox-clamped"}`}`}
-              >
-                {markedLine(shape.line)}
-              </span>
-            )}
-          </Tooltip>
+              Allow here would let run is never cut (#1146): it is read whole first. **A chat's
+              own words** (its message, a task's question) are markdown under the safe subset
+              (`ChatText`, #5214), folded past six lines with Show all: the person answers them
+              here, and a question is often a message's last line (#4550). */}
+          {chatWords ? (
+            <ChatText
+              id={`${id}-says`}
+              className="ask-says inbox-primary inbox-chat-text ui-text-body"
+              text={shape.message ? shape.line : textOfLine(shape.line)}
+              foldStop={(button) => <Stop id={`${key}:fold`}>{button}</Stop>}
+            />
+          ) : (
+            <Tooltip tip={shape.line}>
+              {shape.lines !== undefined && shape.lines.drawn.length > 0 ? (
+                // **A command over several lines is drawn on them** (#3502): each as the line has
+                // it, the first few, and how many more. Never clamped: the cap is its own.
+                <span
+                  id={`${id}-says`}
+                  className="ask-says ask-lines inbox-primary ui-text-body ui-text-strong"
+                >
+                  {shape.lines.drawn.map((one, at) => (
+                    // A space between lines, which a column does not draw, so the row's name
+                    // reads them apart.
+                    <Fragment key={at}>
+                      {at > 0 && " "}
+                      <span className="ask-line">{markedLine(one)}</span>
+                    </Fragment>
+                  ))}
+                  {shape.lines.more > 0 && (
+                    <>
+                      {" "}
+                      <span className="ask-line ask-more-lines ui-text-secondary">
+                        {moreLines(shape.lines.more)}
+                      </span>
+                    </>
+                  )}
+                </span>
+              ) : (
+                <span
+                  id={`${id}-says`}
+                  className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
+                >
+                  {markedLine(shape.line)}
+                </span>
+              )}
+            </Tooltip>
+          )}
           <Tooltip tip={SOURCE_SAID[ask.source]}>
             <span className="inbox-meta ui-text-meta">
               <span id={`${id}-whose`} className="inbox-source">
@@ -1095,11 +1110,14 @@ function Ask({
               <RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" lead />
             </span>
           </Tooltip>
-        </p>
+        </div>
         {shape.said !== undefined && (
-          <p id={`${id}-said`} className="inbox-said ui-text-body">
-            {shape.said}
-          </p>
+          <ChatText
+            id={`${id}-said`}
+            className="inbox-said ui-text-body"
+            text={shape.said}
+            foldStop={(button) => <Stop id={`${key}:said-fold`}>{button}</Stop>}
+          />
         )}
         {/* Why its Allow is missing: the lines it runs over, which its line put on one
             (#3502), and a character it holds that reads otherwise (SK-51). */}
@@ -1130,10 +1148,20 @@ function Ask({
           </p>
         )}
         {ask.answer.via === "task-question" && (
-          <p className="inbox-secondary ui-text-secondary">
-            {REACHED_SAID[ask.answer.why](ask.answer.from)}
-            {ask.answer.note === null ? "" : `. Its note: ${ask.answer.note}`}
-          </p>
+          <>
+            <p className="inbox-secondary ui-text-secondary">
+              {REACHED_SAID[ask.answer.why](ask.answer.from)}
+              {ask.answer.note === null ? "" : ". Its note:"}
+            </p>
+            {/* The asking chat's note is its own words, drawn as a chat's text is (#5214). */}
+            {ask.answer.note !== null && (
+              <ChatText
+                className="inbox-note ui-text-secondary"
+                text={textOfLine(ask.answer.note)}
+                foldStop={(button) => <Stop id={`${key}:note-fold`}>{button}</Stop>}
+              />
+            )}
+          </>
         )}
         {/* Its ways on, side by side at its foot: one line, never one each. */}
         <ButtonRow size="sm" className="inbox-acts">
@@ -1155,8 +1183,16 @@ function Ask({
             <Stop id={`${key}:go`}>
               <Button
                 size="sm"
-                // R132: the way on is the card's primary press; no answer is drawn this way.
-                variant={shape.answers || shape.answerable ? "ghost" : "primary"}
+                // R132: the way on is the card's primary press; no answer is drawn this way. On
+                // a card with a reply box, Send is its one button, and the ways on are quiet
+                // links under the box (#5214).
+                variant={
+                  shape.reply
+                    ? "quiet-link"
+                    : shape.answers || shape.answerable
+                      ? "ghost"
+                      : "primary"
+                }
                 aria-label={`Go to chat ${who}`}
                 onPress={onGo}
                 className="inbox-go"
@@ -1169,7 +1205,7 @@ function Ask({
             <Stop id={`${key}:ignore`}>
               <Button
                 size="sm"
-                variant="ghost"
+                variant={shape.reply ? "quiet-link" : "ghost"}
                 aria-label={`Ignore ${who} until it asks again`}
                 tooltip={`Ignore ${who} until it asks again`}
                 onPress={() => onIgnore(ask.session)}
@@ -1255,8 +1291,14 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
         />
       </Stop>
       <Stop id={`${stop}:send`} focusable={!busy && replyBytes(text) !== undefined}>
-        <Button type="submit" isDisabled={busy || replyBytes(text) === undefined}>
-          Send reply
+        {/* The card's one button (#5214): Go to chat and Ignore are quiet links under it. */}
+        <Button
+          type="submit"
+          variant="primary"
+          aria-label={`Send reply to ${who}`}
+          isDisabled={busy || replyBytes(text) === undefined}
+        >
+          Send
         </Button>
       </Stop>
       {said !== undefined && (

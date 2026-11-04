@@ -194,6 +194,26 @@
   text-decoration: underline;
 }
 
+/* **A quiet link** (#5214): a card's ways on beside its one answer, Go to chat and Ignore under
+   an Inbox card's reply box. The quiet words and no box at rest; under the pointer and the
+   keyboard, the primary words, underlined, and still no ground. */
+[data-scope="button"][data-part="root"][data-variant="quiet-link"] {
+  border-color: transparent;
+  color: var(--text-quiet);
+  background-color: transparent;
+  padding-inline: 0;
+}
+
+[data-scope="button"][data-part="root"][data-variant="quiet-link"]:is(
+    [data-hovered],
+    [data-focus-visible],
+    [data-open]
+  ) {
+  color: var(--text-primary);
+  background-color: transparent;
+  text-decoration: underline;
+}
+
 /* **Pressed, as a toggle** (`ToggleButton`, DS-12): it stands on the accent's ground behind the
    accent's edge, as a chosen segment does, so it is told by its edge and not by colour alone.
    Under the pointer it stays pressed. */

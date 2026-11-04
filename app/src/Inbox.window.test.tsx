@@ -236,7 +236,32 @@ describe("the asks, grouped by chat", () => {
     draw([question]);
 
     expect(screen.getByText("Which host?")).toBeTruthy();
-    expect(screen.getByText("steward 6 passed this on. Its note: Your call.")).toBeTruthy();
+    expect(screen.getByText("steward 6 passed this on. Its note:")).toBeTruthy();
+    expect(screen.getByText("Your call.")).toBeTruthy();
+  });
+
+  it("draws a task's question and its asking chat's note as a chat's text, its line breaks back (#5214)", () => {
+    const question: Shown = {
+      session: 9,
+      ask: "task-question:9:4",
+      says: "Which **host**?⟦U+000A⟧- prod⟦U+000A⟧- staging",
+      options: [],
+      source: "task-question",
+      chain: ["steward 6", "check prod"],
+      answer: { via: "task-question", why: "passed-on", from: "steward 6", note: "Ask *ops*." },
+    };
+    core();
+    draw([question]);
+
+    const card = screen.getByRole("listitem", { name: /Which host/ });
+    expect(within(card).getByText("host").tagName).toBe("STRONG");
+    expect(
+      within(card)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["prod", "staging"]);
+    expect(card.textContent).not.toContain("⟦U+000A⟧");
+    expect(within(card).getByText("ops").tagName).toBe("EM");
   });
 
   it("opens the Answer form on a task's question, for the task that asked (ADR 0107)", async () => {
@@ -820,7 +845,7 @@ describe("answering in place", () => {
       screen.getByRole("textbox", { name: "Reply to steward 6" }),
       "Yes, ship it",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Send reply" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Send reply to / }));
     await waitFor(() =>
       expect(calls).toContainEqual({
         cmd: "send_input",
@@ -843,12 +868,72 @@ describe("answering in place", () => {
     const said = "I checked both branches.\nWhich should I use, main or dev?";
     draw([{ ...QUESTION, last_message: said }]);
 
-    const card = screen.getByRole("listitem", { name: "Waiting on your reply", description: said });
+    const card = screen.getByRole("listitem", {
+      name: "Waiting on your reply",
+      description: /I checked both branches\.\s*Which should I use, main or dev\?/,
+    });
+    // Its line break is kept, as a chat's text is drawn (#5214).
     const words = within(card).getByText(/I checked both branches/);
-    expect(words.textContent).toBe(said);
+    expect(words.querySelector("br")).not.toBeNull();
+    expect(words.textContent).toContain("Which should I use, main or dev?");
     expect(words.className).not.toContain("inbox-clamped");
     expect(within(card).getAllByText("Waiting on your reply")).toHaveLength(1);
     expect(within(card).getByRole("textbox", { name: "Reply to steward 6" })).toBeTruthy();
+  });
+
+  it("draws what a chat said as its markdown, and never loads a picture it names (#5214)", () => {
+    core();
+    draw([
+      {
+        ...QUESTION,
+        last_message:
+          "Done:\n\n- **tests** pass\n- see [the run](https://ci.example/1)\n\n![graph](https://x.example/g.png)",
+      },
+    ]);
+
+    const card = screen.getByRole("listitem", { name: "Waiting on your reply" });
+    expect(within(card).getByText("tests").tagName).toBe("STRONG");
+    expect(within(card).getByRole("link", { name: "the run" })).toBeTruthy();
+    expect(within(card).getByText("(ci.example)")).toBeTruthy();
+    expect(card.querySelector("img, [src]")).toBeNull();
+    expect(within(card).getByText("graph")).toBeTruthy();
+  });
+
+  it("folds a long message behind Show all, reached by ↓ before the reply box (#5214)", async () => {
+    core();
+    const long = Array.from({ length: 9 }, (_, at) => `Line ${at + 1}`).join("\n");
+    draw([{ ...QUESTION, last_message: long }]);
+
+    const show = screen.getByRole("button", { name: "Show all · 9 lines" });
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(show);
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Reply to steward 6" }),
+    );
+  });
+
+  it("makes Send the card's one button, with Go to chat and Ignore quiet links under the box (#5214)", () => {
+    core();
+    draw([{ ...QUESTION, last_message: "Which branch?" }], { onIgnore: vi.fn() });
+
+    const card = screen.getByRole("listitem", { name: "Waiting on your reply" });
+    const box = within(card).getByRole("textbox", { name: "Reply to steward 6" });
+    const send = within(card).getByRole("button", { name: /^Send reply to / });
+    expect(send).toHaveAttribute("data-variant", "primary");
+    for (const name of ["Go to chat steward 6", "Ignore steward 6 until it asks again"]) {
+      const link = within(card).getByRole("button", { name });
+      expect(link).toHaveAttribute("data-variant", "quiet-link");
+      expect(box.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(card.querySelectorAll('[data-variant="primary"]')).toHaveLength(1);
   });
 
   it("says once that a chat waiting on a reply has no message to show", () => {
@@ -912,7 +997,10 @@ describe("answering in place", () => {
   it("sends nothing for an empty reply", () => {
     core();
     draw([QUESTION]);
-    expect(screen.getByRole("button", { name: "Send reply" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: /^Send reply to / })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 
   it("names a prompt waiting in a harness's terminal, with only the way to it", () => {
@@ -930,7 +1018,7 @@ describe("the train 43 review (#1700)", () => {
     const calls = core({ asks_waiting: { asks: [] } });
     draw([QUESTION]);
     await userEvent.type(screen.getByRole("textbox", { name: "Reply to steward 6" }), "Yes");
-    await userEvent.click(screen.getByRole("button", { name: "Send reply" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Send reply to / }));
 
     expect(await screen.findByText(MOVED_ON)).toBeTruthy();
     expect(calls.map((one) => one.cmd)).not.toContain("send_input");
@@ -1005,7 +1093,7 @@ describe("the keyboard after an answer (#1700)", () => {
     draw([QUESTION]);
     const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
     await userEvent.type(box, "Yes");
-    await userEvent.click(screen.getByRole("button", { name: "Send reply" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Send reply to / }));
 
     await waitFor(() => expect(calls.map((one) => one.cmd)).toContain("send_input"));
     expect(box).toHaveFocus();
@@ -1015,7 +1103,7 @@ describe("the keyboard after an answer (#1700)", () => {
     const calls = core({ asks_waiting: new Error("the project is not open") });
     draw([QUESTION]);
     await userEvent.type(screen.getByRole("textbox", { name: "Reply to steward 6" }), "Yes");
-    await userEvent.click(screen.getByRole("button", { name: "Send reply" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Send reply to / }));
 
     expect(await screen.findByText(NOT_CHECKED)).toBeTruthy();
     expect(calls.map((one) => one.cmd)).not.toContain("send_input");
