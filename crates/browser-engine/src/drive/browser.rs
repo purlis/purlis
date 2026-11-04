@@ -542,6 +542,13 @@ impl DocumentOrigins {
             .retain(|(on, _), (context, _)| on != session || *context != id);
     }
 
+    /// `frame` starts another document, or moves to another process: whatever origin was kept
+    /// for it, on any session, is of a document it no longer shows. Its origin is read again
+    /// from the new document's own context.
+    fn started(&mut self, frame: &str) {
+        self.kept.retain(|(_, of), _| of != frame);
+    }
+
     /// Every context on `session` is gone: they were cleared, or the session ended.
     fn cleared(&mut self, session: &str) {
         self.kept.retain(|(on, _), _| on != session);
@@ -1261,6 +1268,7 @@ impl State {
         }
         entry.session = session.to_owned();
         entry.sandboxed = None;
+        self.document_origins.started(frame);
         self.generations += 1;
         let generation = self.generations;
         if let Some(page) = self.page_mut(target)
@@ -4745,6 +4753,23 @@ impl Inner {
                             }
                         }
                         state.frame_seen(session, &params["frame"], Seen::Navigated);
+                    }
+                }
+                // A frame that starts another document has its origin read again from that
+                // document's own context. A move within the same document keeps it.
+                "Page.frameStartedLoading" => {
+                    if let Some(frame) = text("/frameId") {
+                        state.document_origins.started(&frame);
+                    }
+                }
+                "Page.frameStartedNavigating"
+                    if !matches!(
+                        text("/navigationType").as_deref(),
+                        Some("sameDocument" | "historySameDocument")
+                    ) =>
+                {
+                    if let Some(frame) = text("/frameId") {
+                        state.document_origins.started(&frame);
                     }
                 }
                 // purlis's own worlds, as the engine tells of them (#2138).
