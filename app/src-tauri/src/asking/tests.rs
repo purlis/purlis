@@ -2096,6 +2096,7 @@ fn a_replace_or_broken_link_secret_ask_says_why_and_names_the_entry() {
         tool: None,
         reason: Some(reason),
         chats: vec![6],
+        starts: 0,
         since: 1_700_000_000,
     };
     let stripe = Target {
@@ -2211,6 +2212,7 @@ fn a_credential_a_start_misses_is_a_secret_ask_of_no_chat_saying_a_start_waits()
         purpose: None,
         declared: Some(String::new()),
         names_no_vault: false,
+        reason: None,
         chats: Vec::new(),
         starts: 1,
         since: 1_700_000_000,
