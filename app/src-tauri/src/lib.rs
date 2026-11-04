@@ -1542,12 +1542,7 @@ async fn start_options_first(
     let kept = std::sync::Arc::clone(&held);
     let mut options = tauri::async_runtime::spawn_blocking(move || {
         kept.kept_start_first(|| {
-            let root = kept.root();
-            purlis_core::profiles::git_asked_once(|| {
-                let (set, check) = purlis_core::profiles::for_launch(root);
-                let stamp = purlis_core::pickerstamp::Stamp::of(root, set.profiles());
-                Ok((start_first_of(root, &set, &check)?, stamp))
-            })
+            start_first_stamped(kept.root(), purlis_core::profiles::for_launch)
         })
     })
     .await
@@ -1569,23 +1564,57 @@ async fn start_details(
     let held = planes.held(&plane)?;
     tauri::async_runtime::spawn_blocking(move || {
         held.kept_start_details(|| {
-            let root = held.root();
-            Ok(purlis_core::profiles::git_asked_once(|| {
-                let (set, _check) = purlis_core::profiles::for_launch(root);
-                // Stamped before the read, so a change made while it reads breaks the stamp.
-                let stamp = purlis_core::pickerstamp::Stamp::of(root, set.profiles());
-                let details = start_details_of(
-                    root,
-                    &set,
-                    &purlis_core::sandbox::Machine::this(),
-                    &purlis_core::sandbox::backend::installed,
-                );
-                (details, stamp)
-            }))
+            Ok(start_details_stamped(
+                held.root(),
+                purlis_core::profiles::for_launch,
+                &purlis_core::sandbox::Machine::this(),
+                &purlis_core::sandbox::backend::installed,
+            ))
         })
     })
     .await
     .map_err(|err| format!("purlis could not read the profiles: {err}"))?
+}
+
+/// The profiles a launch surface reads, and the check of the local file they were read with:
+/// what [`purlis_core::profiles::for_launch`] answers.
+type LaunchProfiles = (
+    purlis_core::profiles::ProfileSet,
+    purlis_core::profiles::IgnoreCheck,
+);
+
+/// [`start_options_first`]'s read of the project at `root`, with the stamp it is kept under:
+/// `profiles` reads its profiles, as [`purlis_core::profiles::for_launch`] does. The stamp of
+/// what is read before the profiles are known is taken first, and what they name is added
+/// once they are read and before it is (#4885).
+fn start_first_stamped(
+    root: &std::path::Path,
+    profiles: impl FnOnce(&std::path::Path) -> LaunchProfiles,
+) -> Result<(StartOptions, purlis_core::pickerstamp::Stamp), String> {
+    purlis_core::profiles::git_asked_once(|| {
+        // Stamped before the reads it covers, so a change made while they read breaks it.
+        let before = purlis_core::pickerstamp::Stamp::before_reading(root);
+        let (set, check) = profiles(root);
+        let stamp = before.and_named_by(&set);
+        Ok((start_first_of(root, &set, &check)?, stamp))
+    })
+}
+
+/// [`start_details`]'s read of the project at `root`, with the stamp it is kept under, as
+/// [`start_first_stamped`] reads the first answer, on `machine` with `has` saying what is
+/// installed.
+fn start_details_stamped(
+    root: &std::path::Path,
+    profiles: impl FnOnce(&std::path::Path) -> LaunchProfiles,
+    machine: &purlis_core::sandbox::Machine,
+    has: &dyn Fn(&str) -> bool,
+) -> (Vec<RowDetails>, purlis_core::pickerstamp::Stamp) {
+    purlis_core::profiles::git_asked_once(|| {
+        let before = purlis_core::pickerstamp::Stamp::before_reading(root);
+        let (set, _check) = profiles(root);
+        let stamp = before.and_named_by(&set);
+        (start_details_of(root, &set, machine, has), stamp)
+    })
 }
 
 /// Every harness the project has, its card at a glance (HP-19): the palette's *What <product>

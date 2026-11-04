@@ -268,6 +268,20 @@ pub fn drop_if_merged(plane: &Path, ws: &str, repo: &str, branch: &str) -> bool 
     git::run(&clone, &["branch", "-d", "--", branch], git::READ).is_ok_and(|seen| seen.ok())
 }
 
+/// Deletes `branch`, **read [`Landed::Carried`] before its folder went**, in `repo`'s clone
+/// with `git branch -D` (ADR 0110): git's `-d` never finds a squash-landed branch merged, yet
+/// every file it changed reads in its base as it has it. The local branch only; a remote branch
+/// is the forge's. Whether it went.
+pub fn drop_carried(plane: &Path, ws: &str, repo: &str, branch: &str) -> bool {
+    if name::branch_name_ok(branch).is_err() {
+        return false;
+    }
+    let Ok(clone) = clone_dir(plane, ws, repo) else {
+        return false;
+    };
+    git::run(&clone, &["branch", "-D", "--", branch], git::READ).is_ok_and(|seen| seen.ok())
+}
+
 /// Whether a piece's branch has landed in the branch it was cut from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Landed {

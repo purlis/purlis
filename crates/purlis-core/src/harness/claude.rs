@@ -1294,12 +1294,14 @@ pub const READ_ALLOW: [&str; 14] = [
 /// - `worktree remove` (#3879, ruled 2026-10-29): the app removes a branch folder of the
 ///   chat's own workspace only where nothing would be lost, and `--force`, which the rule
 ///   matches too, is refused by the command in every chat, naming the window.
+/// - `worktree prune` (ADR 0110): the app removes the chat's workspace's finished branch
+///   folders by the same route, never forced; a folder that is not finished is kept and said.
 ///
 /// **Each by name, and no bare wildcard**, for [`DISPATCH_ALLOW`]'s reason. A grade's chat is
 /// handed none of these (SK-16: it keeps its prompts). An operator's own `ask` or `deny` still
 /// wins, and `forget`, `archive`, `move-memory`, `edit-memory`, `edit`, `reinit`, `save`,
 /// `clone` and `secret exec` are still asked about, as every word with no rule is.
-pub const OWN_SCOPE_ALLOW: [&str; 13] = [
+pub const OWN_SCOPE_ALLOW: [&str; 15] = [
     "Bash(purlis ws todo)",
     "Bash(purlis ws todo --done)",
     "Bash(purlis workspace todo)",
@@ -1313,6 +1315,8 @@ pub const OWN_SCOPE_ALLOW: [&str; 13] = [
     "Bash(purlis worktree list)",
     "Bash(purlis worktree list *)",
     "Bash(purlis worktree remove *)",
+    "Bash(purlis worktree prune)",
+    "Bash(purlis worktree prune *)",
 ];
 
 /// The permission rules for **what a chat writes in its own persona's and its own workspace's

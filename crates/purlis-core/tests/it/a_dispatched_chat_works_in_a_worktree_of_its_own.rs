@@ -1559,3 +1559,24 @@ fn a_task_cut_from_a_chat_s_branch_that_writes_a_later_code_file_is_refused_nami
     assert!(why.contains(".vscode/tasks.json"), "{why}");
     assert!(why.contains("nothing was cut"), "{why}");
 }
+
+#[test]
+fn a_discarded_folder_whose_branch_is_carried_takes_its_branch_with_it() {
+    purlis_core::unsteered!();
+    // ADR 0110: git's `-d` never finds a squashed branch merged; its change is on its base all
+    // the same, so Discard deletes it with `-D`.
+    let f = support::plane_with_clone("api");
+    let squashed = cut(&f, "squashed work");
+    f.commit(&squashed.path, "one");
+    f.commit(&squashed.path, "two");
+    f.commit(&f.clone, "theirs");
+    support::git(&f.clone, &["merge", "-q", "--squash", &squashed.branch]);
+    support::git(&f.clone, &["commit", "-q", "-m", "squashed work"]);
+
+    assert_eq!(
+        dispatchplace::discard(&f.plane, &tree(&squashed), &Isolated::default()),
+        Ok(Discarded::BranchGone)
+    );
+    assert!(squashed.path.symlink_metadata().is_err());
+    assert!(!has_branch(&f, &squashed.branch), "the carried branch went");
+}

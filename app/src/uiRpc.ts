@@ -14349,6 +14349,11 @@ export type WindowApart = {
 	 *  answered, so it costs the accent no colour.
 	 */
 	words: boolean,
+	/**
+	 *  Whether the rule is one of the accent's marks' (#4921): measured once every other rule is
+	 *  answered, each mark on its own, so it costs the accent and its kin no colour.
+	 */
+	signal: boolean,
 };
 
 /**  One theme draft, as the strip and the close of its chat name it. */
