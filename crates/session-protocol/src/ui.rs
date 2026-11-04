@@ -361,6 +361,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A browser login a chat suggested (#4595): the person's answer alone. No chat confirms the
     // site it suggested.
     "answer_browser_login",
+    // A secret fill a chat asked for (#5115): the person's answer alone.
+    "answer_secret_fill",
     // Whether this desktop sends a persona's tool its vault values on a pool's runner (#2047):
     // the person's answer alone. No chat allows its own tool.
     "answer_pool_tool",

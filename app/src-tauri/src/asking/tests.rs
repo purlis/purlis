@@ -190,6 +190,7 @@ impl World {
             pool_tools: self.pool_tools.clone(),
             browser_logins: Vec::new(),
             secrets: self.secrets.clone(),
+            secret_fills: Vec::new(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,

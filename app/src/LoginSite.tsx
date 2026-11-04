@@ -83,16 +83,46 @@ export function LoginSite({
       {login.no_always != null ? (
         <p className="ui-text-meta">{login.no_always}.</p>
       ) : (
-        <p className="ui-text-meta">
-          {login.replaces != null
-            ? "Always replace swaps its line in "
-            : "Always allow adds this to "}
-          <code>{login.under}</code>
-          {login.vault_too ? ", and lets this persona use the vault" : ""}
-          {login.replaces != null ? " for" : ""}:{" "}
-          <code className="login-site-line">{login.line}</code>
-        </p>
+        <AlwaysLine
+          lead={
+            login.replaces != null
+              ? "Always replace swaps its line in "
+              : "Always allow adds this to "
+          }
+          under={login.under}
+          vaultToo={login.vault_too}
+          after={login.replaces != null ? " for" : ""}
+          line={login.line}
+        />
       )}
     </div>
+  );
+}
+
+/**
+ * **The line Always writes, shown before it's pressed** (#4595, #5116): where it goes, whether
+ * the persona's vault is allowed with it, and the line itself, whole. One piece for every notice
+ * whose Always writes a line in a persona's tools.
+ */
+export function AlwaysLine({
+  lead,
+  under,
+  vaultToo,
+  after = "",
+  line,
+}: {
+  lead: string;
+  under: string | null | undefined;
+  vaultToo: boolean;
+  after?: string;
+  line: string;
+}) {
+  return (
+    <p className="ui-text-meta">
+      {lead}
+      <code>{under}</code>
+      {vaultToo ? ", and lets this persona use the vault" : ""}
+      {after}: <code className="login-site-line">{line}</code>
+    </p>
   );
 }

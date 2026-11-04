@@ -499,7 +499,8 @@ fn allowed_tool(
     let (declared, allowed) = (gate.tools)(gate.root, persona);
     let armed: Vec<tools::Ready> = allowed
         .into_iter()
-        .filter(|tool| tool.login.is_none())
+        // A login or a secret-fill line runs no program (#5116).
+        .filter(|tool| !tool.runs_no_program())
         .map(|tool| tools::Ready {
             tool,
             program: PathBuf::new(),

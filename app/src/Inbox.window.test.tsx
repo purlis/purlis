@@ -1784,3 +1784,37 @@ describe("a folder's ask in the Inbox (#1986)", () => {
     expect(calls.map((one) => one.cmd)).not.toContain("what_a_restart_ends");
   });
 });
+
+describe("a secret fill (#5115)", () => {
+  it("draws the key, its vault, the site large and the field's label before its Allow", () => {
+    core();
+    const fill: Shown = {
+      session: 7,
+      ask: "secret-fill:1",
+      says: "Wants to put dash-api-key from vault qa into a field on dash.example.test",
+      options: [
+        { id: "once", label: "Allow once", allows: true, preselected: null },
+        { id: "keep", label: "Keep blocked", allows: false, preselected: null },
+      ],
+      source: "secret-fill",
+      chain: ["steward 7"],
+      answer: { via: "secret-fill", id: 1, shown: "digest" },
+      fill: {
+        key: "dash-api-key",
+        vault: "qa",
+        site: "dash.example.test",
+        page: "https://dash.example.test/settings",
+        label: "API key",
+        browser: "b1",
+        warnings: [],
+        card: false,
+        multi_line: false,
+        vault_too: false,
+      },
+    };
+    draw([fill]);
+    expect(screen.getByTestId("fill-site-site")).toHaveTextContent("dash.example.test");
+    expect(screen.getByTestId("fill-site")).toHaveTextContent("labels API key");
+    expect(screen.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
+  });
+});

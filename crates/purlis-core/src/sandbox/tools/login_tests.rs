@@ -52,6 +52,7 @@ fn shop_login_with(user: Option<&str>, key: &str) -> Tool {
         args: None,
         mint: None,
         host: None,
+        fill: None,
     }
 }
 

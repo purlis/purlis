@@ -35,6 +35,13 @@
 //!   refreshes to its sign-in provider go (the person's ruling of 2026-11-04, #5152). The agent
 //!   acts on that site's documents only during a sign-in ([`Bound::kept_off`]); the browser's
 //!   driver refuses the rest.
+//! - **A browser holding a secret purlis filled reaches that site alone while the page holding
+//!   it lives** (#5117; the person's ruling SF-3 and decision SF-9 on #5096): from just before the
+//!   value goes in ([`ReachProxy::hold_for_fill`]) every connection to any other site is ended
+//!   and a new one refused, until the browser tells that the page loaded another document in its
+//!   main frame or was closed ([`ReachProxy::fill_released`]). It narrows a login's hold, its
+//!   form's site among it, never widens it, and it holds the browser to one site at a time: a
+//!   fill on another site while one holds is refused.
 //! - **It fails closed.** The engine resolves no name and sends every request to this proxy
 //!   (`purlis_browser_engine::launch`). When the proxy is dropped it stops listening and ends
 //!   every connection it carries, tunnels included, so every load fails; where this machine's
@@ -379,10 +386,29 @@ impl LoginSites {
 /// long as the browser lives, and to its form's site where that is another (#4995, #5152). A
 /// login whose form is on another site opens a sign-in, until it is over
 /// ([`Self::sign_in_over`]): the agent acts on the form's site's documents only while one is
-/// open ([`Self::kept_off`]). Shared by the browser's reach proxy, which refuses every other
-/// site, its judge, and its driver.
+/// open ([`Self::kept_off`]). And while a page holding a secret purlis filled lives,
+/// the browser reaches that secret's site alone (#5117, [`Self::hold_for_fill`]). Shared by the
+/// browser's reach proxy, which refuses every other site, its judge, and its driver.
 #[derive(Clone, Default)]
-pub struct Bound(Arc<Mutex<Option<Holding>>>);
+pub struct Bound(Arc<Mutex<Binding>>);
+
+/// What a browser is bound to: a login, held for its life, and the fills held while their pages
+/// live.
+#[derive(Debug, Default)]
+struct Binding {
+    login: Option<Holding>,
+    fills: Vec<FillHeld>,
+    /// Fill holds made in this browser so far: each one's number.
+    fills_made: u64,
+}
+
+/// **A page holding a secret purlis filled, while it lives** (#5117): the site the secret was
+/// filled on, and its number.
+#[derive(Debug, Clone)]
+struct FillHeld {
+    site: Site,
+    number: u64,
+}
 
 /// What a bound browser holds: its login's page's site, its form's, and the sign-in open now, if
 /// any.
@@ -406,13 +432,66 @@ struct SignIn {
 
 impl std::fmt::Debug for Bound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Bound").field(&self.sites()).finish()
+        f.debug_tuple("Bound")
+            .field(&self.sites())
+            .field(&self.held_for_fill())
+            .finish()
     }
 }
 
 impl Bound {
-    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Holding>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Binding> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// **Holds the browser to `site` while a page holding a secret purlis filled there lives**
+    /// (#5117): answered is the hold's number, for [`Self::fill_released`]. Refused where a page
+    /// holding a secret filled on another site lives: the browser is held to one site at a time.
+    pub fn hold_for_fill(&self, site: &Site) -> Result<u64, String> {
+        let mut bound = self.lock();
+        if let Some(other) = bound.fills.iter().find(|held| held.site != *site) {
+            return Err(format!(
+                "this browser is held to {} while a page holding a secret purlis filled there \
+                 is open, so it takes no secret for {site}",
+                other.site
+            ));
+        }
+        bound.fills_made += 1;
+        let number = bound.fills_made;
+        bound.fills.push(FillHeld {
+            site: site.clone(),
+            number,
+        });
+        Ok(number)
+    }
+
+    /// **Fill hold `number` is over** (#5117): its page loaded another document in its main frame,
+    /// or was closed. Whether it was still held.
+    pub fn fill_released(&self, number: u64) -> bool {
+        let mut bound = self.lock();
+        let before = bound.fills.len();
+        bound.fills.retain(|held| held.number != number);
+        bound.fills.len() != before
+    }
+
+    /// The site a page holding a secret purlis filled holds the browser to, while one does.
+    pub fn held_for_fill(&self) -> Option<Site> {
+        self.lock().fills.first().map(|held| held.site.clone())
+    }
+
+    /// **Why a connection to `host` on `port` may not go**, as the browser is told, or `None`
+    /// where it may ([`Self::lets`]).
+    pub fn refuses(&self, host: &str, port: u16) -> Option<String> {
+        let site = Site::of(host, port);
+        let bound = self.lock();
+        if let Some(held) = bound.fills.iter().find(|held| held.site != site) {
+            return Some(fill_held_said(&site, &held.site));
+        }
+        let login_lets = bound
+            .login
+            .as_ref()
+            .is_none_or(|holding| holding.page == site || holding.form.as_ref() == Some(&site));
+        (!login_lets).then(|| bound_said(host, port))
     }
 
     /// **Binds the browser to `at`**, one login's sites, or why it may not be: one already bound
@@ -423,6 +502,7 @@ impl Bound {
     /// form's site: a login of its page whose form is on another is refused.
     pub fn to(&self, at: &LoginSites) -> Result<Option<u64>, String> {
         let mut bound = self.lock();
+        let bound = &mut bound.login;
         let holding = match bound.as_mut() {
             None => bound.insert(Holding {
                 page: at.page.clone(),
@@ -465,7 +545,7 @@ impl Bound {
     /// sign-in was still open; a sign-in already over, or one another replaced, changes nothing.
     pub fn sign_in_over(&self, number: u64) -> Option<Site> {
         let mut bound = self.lock();
-        let holding = bound.as_mut()?;
+        let holding = bound.login.as_mut()?;
         if holding.sign_in.as_ref()?.number != number {
             return None;
         }
@@ -475,18 +555,21 @@ impl Bound {
     /// The form's site sign-in `number` reaches, while it is open (#4995).
     pub fn signing_in(&self, number: u64) -> Option<Site> {
         let bound = self.lock();
-        let open = bound.as_ref()?.sign_in.as_ref()?;
+        let open = bound.login.as_ref()?.sign_in.as_ref()?;
         (open.number == number).then(|| open.form.clone())
     }
 
     /// The site of the login's page it is bound to, where it is.
     pub fn page(&self) -> Option<Site> {
-        self.lock().as_ref().map(|holding| holding.page.clone())
+        self.lock()
+            .login
+            .as_ref()
+            .map(|holding| holding.page.clone())
     }
 
     /// The sites it is bound to, where it is: its form's first, where it signed in on another.
     pub fn sites(&self) -> Option<Vec<Site>> {
-        self.lock().as_ref().map(|holding| {
+        self.lock().login.as_ref().map(|holding| {
             holding
                 .form
                 .iter()
@@ -498,16 +581,14 @@ impl Bound {
 
     /// The site of the form a login of its page signs in on, where that is another (#5152).
     pub fn form(&self) -> Option<Site> {
-        self.lock().as_ref()?.form.clone()
+        self.lock().login.as_ref()?.form.clone()
     }
 
-    /// Whether a connection to `host` on `port` may go: always while unbound; once bound, only
-    /// to its page's site, or the site its login signs in on (#5152).
+    /// Whether a connection to `host` on `port` may go: always while unbound; once bound to a
+    /// login, only to its page's site, or the site its login signs in on (#5152); and while a
+    /// page holding a secret purlis filled lives, only to that secret's site (#5117).
     pub fn lets(&self, host: &str, port: u16) -> bool {
-        let site = Site::of(host, port);
-        self.lock()
-            .as_ref()
-            .is_none_or(|holding| holding.page == site || holding.form.as_ref() == Some(&site))
+        self.refuses(host, port).is_none()
     }
 
     /// **The site the agent is kept off at `host` on `port`, now** (#5152, the person's ruling
@@ -520,7 +601,7 @@ impl Bound {
     pub fn kept_off(&self, host: &str, port: u16) -> Option<Site> {
         let site = Site::of(host, port);
         let bound = self.lock();
-        let holding = bound.as_ref()?;
+        let holding = bound.login.as_ref()?;
         let form = holding.form.as_ref()?;
         let web = |port: u16| matches!(port, 80 | 443);
         let same = *form == site || (form.host == site.host && web(form.port) && web(site.port));
@@ -608,6 +689,9 @@ struct Connections {
     closed: bool,
     next: u64,
     open: HashMap<u64, Vec<TcpStream>>,
+    /// The site each connection asked for, once it was read: a fill hold ends those to any
+    /// other (#5117).
+    to: HashMap<u64, Site>,
 }
 
 /// One connection's place in [`Live`], given up when the connection ends.
@@ -635,6 +719,19 @@ impl Live {
         };
         entry.hold(client);
         entry
+    }
+
+    /// Ends every connection open now but those to `site` (#5117), and those whose site is not
+    /// read yet, which are judged once it is; one that starts later goes on.
+    fn end_open_but(&self, site: &Site) {
+        let connections = self.lock();
+        for (id, sockets) in &connections.open {
+            if connections.to.get(id).is_some_and(|to| to != site) {
+                for socket in sockets {
+                    let _ = socket.shutdown(Shutdown::Both);
+                }
+            }
+        }
     }
 
     /// Ends every connection open now; one that starts later goes on.
@@ -673,10 +770,18 @@ impl Entry {
     }
 }
 
+impl Entry {
+    /// This connection goes to `site`: a fill hold on another ends it (#5117).
+    fn to(&self, site: Site) {
+        self.live.lock().to.insert(self.id, site);
+    }
+}
+
 impl Drop for Entry {
     fn drop(&mut self) {
         let mut connections = self.live.lock();
         connections.open.remove(&self.id);
+        connections.to.remove(&self.id);
     }
 }
 
@@ -735,6 +840,27 @@ impl ReachProxy {
     /// ended. Whether that sign-in was still open.
     pub fn sign_in_over(&self, number: u64) -> bool {
         self.bound.sign_in_over(number).is_some()
+    }
+
+    /// **Holds the browser to `site` while a page holding a secret purlis filled there lives**
+    /// (#5117, [`Bound::hold_for_fill`]), and ends every connection it carries now to any other
+    /// site: from this moment it carries `site` alone, until [`Self::fill_released`]. Answered is
+    /// the hold's number.
+    pub fn hold_for_fill(&self, site: &Site) -> Result<u64, String> {
+        let number = self.bound.hold_for_fill(site)?;
+        self.live.end_open_but(site);
+        Ok(number)
+    }
+
+    /// What it carries once bound, shared with the browser's judge.
+    pub fn bound(&self) -> &Bound {
+        &self.bound
+    }
+
+    /// **Fill hold `number` is over** (#5117, [`Bound::fill_released`]): its page is gone, and the
+    /// browser reaches as it did before, unless another such page holds it. Whether it was held.
+    pub fn fill_released(&self, number: u64) -> bool {
+        self.bound.fill_released(number)
     }
 
     fn serving(lane: Lane, new_sites: NewSites, bound: Bound, limits: Limits) -> io::Result<Self> {
@@ -873,8 +999,11 @@ fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
         );
         return;
     }
-    if !served.bound.lets(host, port) {
-        answer(&mut client, "403 Forbidden", &bound_said(host, port));
+    // Told before it is judged: a fill hold from here ends it, and the check after the connect
+    // below refuses it where one held before (#5117).
+    entry.to(Site::of(host, port));
+    if let Some(said) = served.bound.refuses(host, port) {
+        answer(&mut client, "403 Forbidden", &said);
         return;
     }
     let own = super::hosts::own_addresses_read();
@@ -966,6 +1095,16 @@ fn bound_said(host: &str, port: u16) -> String {
     format!(
         "purlis's reach proxy does not carry this browser to {host}:{port}: the browser holds a \
          login, and reaches only the site it was logged in to"
+    )
+}
+
+/// Why a site was refused to a browser held while a page holding a secret purlis filled lives
+/// (#5117), as the browser is told.
+fn fill_held_said(site: &Site, held: &Site) -> String {
+    format!(
+        "purlis's reach proxy does not carry this browser to {site}: a page in it holds a secret \
+         purlis filled on {held}, and until that page loads another document or is closed the \
+         browser reaches only {held}"
     )
 }
 

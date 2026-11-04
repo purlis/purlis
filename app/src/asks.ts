@@ -404,6 +404,24 @@ export async function answerTaken(
           return { status: "error", error: pressed.data.said };
         return { status: "ok" };
       }
+      case "secret-fill": {
+        // A secret a chat asks purlis to fill (#5115): the press names what the notice drew.
+        const press = PRESS_OF[option];
+        if (press === undefined) break;
+        const pressed = await commands.answerSecretFill(
+          plane,
+          ask.session,
+          path.id,
+          press,
+          path.shown,
+          reason?.trim() || null,
+        );
+        if (pressed.status === "error") return pressed;
+        // Drawn again as the project reads now (#5116): read and choose again.
+        if (pressed.data.kind === "drawn-again")
+          return { status: "error", error: pressed.data.said };
+        return { status: "ok" };
+      }
       case "pool-tool":
         // One run of a runner chat's declared tool (#2047): Allow this run has this desktop send
         // the tool its vault values on the pool's runner for that run alone; Keep off refuses it.

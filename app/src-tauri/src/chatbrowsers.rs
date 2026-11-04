@@ -73,7 +73,7 @@ use std::time::{Duration, Instant};
 use purlis_core::eventlog::browsing::{Called, Closer, Outcome, Said};
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_core::sandbox::browser_reach::Site;
-use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, KeptLogin, LogIn};
+use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, FillSecret, KeptLogin, LogIn};
 use purlis_session_protocol::session::{Layer, Listed};
 
 /// Why the session host did not carry an act out.
@@ -124,6 +124,15 @@ pub trait Driver: Send + Sync + 'static {
     /// purlis performs `login` in browser `program` (#2016): the page it left once it handed
     /// the browser back, or why it did not go through, in words that carry no value.
     fn log_in(&self, program: &str, login: LogIn) -> Result<Browsed, Refused>;
+    /// **purlis puts `fill`'s value into its field in browser `program`** (#5115): the page as
+    /// it is now, or why nothing was filled, in words that carry no value. A host that can't is
+    /// refused, filling nothing.
+    fn fill_secret(&self, program: &str, fill: FillSecret) -> Result<Browsed, Refused> {
+        let _ = (program, fill);
+        Err(Refused::Said(
+            "this browser fills no secret, so nothing was filled".to_owned(),
+        ))
+    }
     /// The runner browser `program` runs on, by its name in its pool, where its link names one.
     fn runner_of(&self, program: &str) -> Option<String> {
         let _ = program;
@@ -743,8 +752,10 @@ fn called(asked: &Browsing) -> Called {
         Browsing::Close => Called::Close,
         Browsing::NeedsYou { .. } => Called::NeedsYou,
         Browsing::LogIn { .. } => Called::LogIn,
+        Browsing::FillSecret { .. } => Called::FillSecret,
         Browsing::Act(act) => match act {
             Act::Open { .. } | Act::FindLoginForm { .. } => Called::Open,
+            Act::DescribeField { .. } => Called::FillSecret,
             Act::Navigate { .. } => Called::Navigate,
             Act::Snapshot { .. } => Called::Snapshot,
             Act::Find { .. } => Called::Find,
@@ -2358,6 +2369,7 @@ impl ChatBrowsers {
         unsandboxed: bool,
         as_persona: &dyn Fn() -> AsPersona,
         logins: &dyn Fn(&str) -> ReadLogin,
+        fills: Fills<'_>,
         folder: &dyn Fn() -> Result<crate::browserfiles::ChatFolder, String>,
         now: u64,
     ) -> (Answer, bool) {
@@ -2383,7 +2395,7 @@ impl ChatBrowsers {
                 program,
             });
         let (mut answer, raised) = self.answer_now(
-            driver, root, pool, browse, reach, persona, read, folder, now,
+            driver, root, pool, browse, reach, persona, read, fills, folder, now,
         );
         self.say_called(browse, before, &answer);
         // What the browser held back for the person says so first (#2018).
@@ -2511,6 +2523,7 @@ impl ChatBrowsers {
         reach: &dyn Fn() -> BrowserReach,
         as_persona: AsPersona,
         read: Option<ReadLogin>,
+        fills: Fills<'_>,
         folder: &dyn Fn() -> Result<crate::browserfiles::ChatFolder, String>,
         now: u64,
     ) -> (Answer, bool) {
@@ -2684,7 +2697,23 @@ impl ChatBrowsers {
                     false,
                 );
             }
+            // What the person is asked about a fill is read by the window alone (#5115).
+            Browsing::Act(Act::DescribeField { .. }) => {
+                return (no("purlis has no browser tool that does that"), false);
+            }
             Browsing::Act(act) => Doing::Act(act.clone()),
+            // A secret goes only into a browser the chat uses already (#5115), on this machine or
+            // on its pool's runner, through that runner's link (#5122).
+            Browsing::FillSecret { target, vault, key } => {
+                if named.is_none() {
+                    return (no(FILL_NEEDS_A_PAGE), false);
+                }
+                Doing::Fill {
+                    target: target.clone(),
+                    vault: vault.clone(),
+                    key: key.clone(),
+                }
+            }
             Browsing::LogIn { login, .. } => match read {
                 Some(Ok(read)) => Doing::LogIn(login.clone(), Box::new(read)),
                 Some(Err(why)) => return (no(&why), false),
@@ -2765,6 +2794,32 @@ impl ChatBrowsers {
                     .insert(program.clone(), reach_now.clone());
                 driver.act(&program, &browse.call_id, act, reach_now)
             }
+            // Bound to the runner the chat's link reached, as a login is (#4248): during a
+            // drain, a secret goes to no other runner.
+            Doing::Fill { key, .. } if runner_replaced(driver.as_ref(), &program) => {
+                return (
+                    no(&format!(
+                        "this chat's runner is being replaced and its browser runs on the new \
+                         one, so {key} was not filled: open the browser from a chat on the new \
+                         runner"
+                    )),
+                    false,
+                );
+            }
+            Doing::Fill { target, vault, key } => self.fill(
+                driver.as_ref(),
+                &program,
+                &browse.call_id,
+                FillAsked {
+                    browser: name.clone(),
+                    target,
+                    vault,
+                    key,
+                    pool: pool.map(str::to_owned),
+                },
+                reach_now,
+                fills,
+            ),
             // The login was read before the lock, for the browser it goes into, and is handed on
             // whole.
             Doing::LogIn(declared, read) => {
@@ -2774,14 +2829,7 @@ impl ChatBrowsers {
                 // Bound to the runner the chat's link reached, so it goes into a browser on no
                 // other: a project's chats and browsers may be on two runners during a drain
                 // (#4248).
-                if let (Some(asked), Some(on)) = (
-                    crate::hooks::reached_over_the_link(),
-                    driver.runner_of(&program),
-                ) && asked
-                    .split_once('/')
-                    .map(|(_, runner)| runner.split_once('@').map_or(runner, |(runner, _)| runner))
-                    != Some(on.as_str())
-                {
+                if runner_replaced(driver.as_ref(), &program) {
                     return (
                         no(&format!(
                             "this chat's runner is being replaced and its browser runs on the \
@@ -2839,6 +2887,69 @@ impl ChatBrowsers {
             }
         }
     }
+
+    /// **Chat's fill `asked` in browser `program`** (#5115): the browser reads the field, the
+    /// person is asked about exactly that key on exactly that field's origin ([`Fills`]), and
+    /// only then is the value handed to the browser, which judges the field's frame again as it
+    /// fills. The chat is told the page, or why nothing was filled; never a value.
+    fn fill(
+        &self,
+        driver: &dyn Driver,
+        program: &str,
+        call_id: &str,
+        asked: FillAsked,
+        reach: BrowserReach,
+        fills: Fills<'_>,
+    ) -> Result<Browsed, Refused> {
+        let FillAsked {
+            browser,
+            target,
+            vault,
+            key,
+            pool,
+        } = asked;
+        let read = driver.act(
+            program,
+            &format!("{call_id}:field"),
+            Act::DescribeField {
+                target: target.clone(),
+            },
+            reach,
+        )?;
+        let Some(field) = read.field else {
+            return Err(Refused::Said(format!(
+                "purlis could not read {target}, so nothing was filled: take a new snapshot"
+            )));
+        };
+        let asked = crate::secretfills::FillAsked {
+            browser,
+            target: target.clone(),
+            vault,
+            key: key.clone(),
+            field,
+            page: read.page.map(|page| page.address),
+            pool,
+        };
+        let allowed = fills(&asked).map_err(Refused::Said)?;
+        // Asked of the person only with an origin, so one is here.
+        let Some(origin) = asked.field.origin else {
+            return Err(Refused::Said(format!(
+                "{target} is in a document with no web origin, so nothing was filled"
+            )));
+        };
+        driver.fill_secret(
+            program,
+            FillSecret {
+                target,
+                origin,
+                key,
+                value: allowed.value,
+                // Only where the person answered a notice naming a multi-line field (#5120): the
+                // engine reads the field again as it fills, and refuses one otherwise.
+                multi_line: allowed.multi_line,
+            },
+        )
+    }
 }
 
 /// A browser login as read for a chat (#2016): the login with the kept login it keeps, and
@@ -2892,7 +3003,47 @@ enum Doing {
     Act(Act),
     /// A login by its name, as read: boxed, as it is far larger than an act.
     LogIn(String, Box<LoginRead>),
+    /// A secret into a field (#5115), by names alone.
+    Fill {
+        target: String,
+        vault: String,
+        key: String,
+    },
 }
+
+/// **Whether browser `program` runs on another runner than the one the chat's link reached**
+/// (#4248): a project's chats and browsers may be on two runners during a drain.
+fn runner_replaced(driver: &dyn Driver, program: &str) -> bool {
+    let (Some(asked), Some(on)) = (
+        crate::hooks::reached_over_the_link(),
+        driver.runner_of(program),
+    ) else {
+        return false;
+    };
+    asked
+        .split_once('/')
+        .map(|(_, runner)| runner.split_once('@').map_or(runner, |(runner, _)| runner))
+        != Some(on.as_str())
+}
+
+/// **What asks the person about a secret fill, and reads its value once they allow it** (#5115):
+/// [`crate::secretfills::asked`] in the window, a stand-in in tests.
+pub type Fills<'a> =
+    &'a dyn Fn(&crate::secretfills::FillAsked) -> Result<crate::secretfills::Allowed, String>;
+
+/// A fill as the chat asked it, before its browser read the field.
+struct FillAsked {
+    browser: String,
+    target: String,
+    vault: String,
+    key: String,
+    /// The pool whose runner the chat, and so its browser, runs on (#5122).
+    pool: Option<String>,
+}
+
+/// What a chat is told of a secret fill with no browser open to fill it in (#5115).
+const FILL_NEEDS_A_PAGE: &str = "this chat has no browser open, so nothing was filled: open the \
+                                 page, take a snapshot, and name the field from it";
 
 /// What the chat is told once purlis performed its browser login `name` (#2016): that its
 /// password field went, where, and what the browser reaches from now (`reaches`,
@@ -3059,6 +3210,10 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     held.browsers()
         .identify(browse.chat, held.chats().id_of(browse.chat));
     let folder = || crate::browserfiles::chat_folder(held, browse.chat);
+    // A secret fill asks the person, and reads its value once they allow it (#5115).
+    let fills = |asked: &crate::secretfills::FillAsked| {
+        crate::secretfills::asked(held, browse.chat, asked, now)
+    };
     let (answer, raised) = held.browsers().answer(
         held.browser_driver(),
         held.root(),
@@ -3068,6 +3223,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         unsandboxed,
         &as_persona,
         &logins,
+        &fills,
         &folder,
         now,
     );
@@ -3090,6 +3246,15 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         held.chats().asks_may_have_moved();
     }
     if let Some(happened) = timeline_of(held.browsers(), browse, &answer, now) {
+        keep_in_timeline(held, browse.chat, happened);
+    }
+    // A secret fill refused says why in the person's view of the browser too (#5115).
+    if let (Browsing::FillSecret { key, .. }, Answer::No { why }) = (&browse.asked, &answer)
+        && let Some((name, _)) = held
+            .browsers()
+            .which(browse.chat, browse.browser.as_deref())
+    {
+        let happened = purlis_core::browsertimeline::fill_refused(&name, key, why, now);
         keep_in_timeline(held, browse.chat, happened);
     }
     answer
@@ -3130,6 +3295,9 @@ pub fn timeline_of(
             timeline::acted(browser, act, browsed, at, seen)
         }
         Browsing::LogIn { login, .. } => Some(timeline::signed_in(browser, login, at)),
+        Browsing::FillSecret { key, target, .. } => {
+            Some(timeline::filled_secret(browser, key, target, at))
+        }
         Browsing::New | Browsing::Close | Browsing::NeedsYou { .. } => None,
     }
 }

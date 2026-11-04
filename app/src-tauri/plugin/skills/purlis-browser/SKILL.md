@@ -66,6 +66,23 @@ them the browser with `ask_operator` pointed at it.
 
 Running the login's name as a command does nothing: it says to use `browser_login`.
 
+**Any other secret goes in with `browser_fill_secret`**: an API key into a dashboard's settings,
+a token into a deploy form. Take a snapshot, then call it with `target` (the field's reference,
+`e12`), `vault` and `key` (the value's name, never the value). The person is asked on a notice
+that names the key and the exact site the field is on; your call waits for their answer. Once
+they allowed it for the chat or always, a one-line field (password, text, email, number, tel,
+url) on that site takes it without asking; a multi-line text box or an editable area asks them
+each time. purlis fills only where the field's own frame is still on that site when it fills, so
+a field in a frame from another site is refused. A key the vault doesn't hold is asked of them
+too, and your call waits for it. The value never reaches you: every snapshot, find, wait and screenshot of that
+browser leaves it out, and from then on that browser copies, cuts and drags nothing for you. If they
+keep it blocked, tell them what needs it and don't ask again. While the page you filled stays
+open, the browser reaches only that site: an address for another is refused, saying so. Nor do
+you press any key in that page, or type or choose anything in it, so type the other fields (a user name) before you fill, and send the form by clicking its button,
+not with Enter. Once that page loads another of its pages, or you close it, the browser reaches
+and takes keys as before. It works the
+same on a pool's runner.
+
 **In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
 temp file and points `PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by
 name**. Playwright substitutes the value and scrubs it from the output it captures.

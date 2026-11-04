@@ -2668,3 +2668,44 @@ fn a_frames_session_that_no_longer_holds_it_does_not_move_it_back() {
     everything_before_is_taken_in(&engine, &browser);
     assert_eq!(frame_address(&browser, "PAYMENT-FRAME"), "about:blank");
 }
+
+/// What a secret purlis fills (#5115) is judged by in frame `frame` of the page.
+fn fill_origin(browser: &crate::drive::Browser, frame: &str) -> Option<String> {
+    super::super::lock(&browser.inner.state)
+        .document_now("PAGE-1", frame)
+        .and_then(|(_, origin)| origin)
+}
+
+#[test]
+fn a_secret_is_filled_into_no_frame_whose_new_document_the_engine_has_not_placed_yet() {
+    let (browser, engine) = a_web_frame_that_starts_another_document();
+    assert_eq!(
+        fill_origin(&browser, "WEB"),
+        None,
+        "though it is judged by the old document until it is replaced, nothing is filled there"
+    );
+    the_pages_frame_has(&engine, &browser, "WEB", 93, "http://fixture.test");
+    assert_eq!(
+        fill_origin(&browser, "WEB"),
+        None,
+        "its address still says the old origin, but its document may be on another"
+    );
+    the_page_shows_a_frame(
+        &engine,
+        &browser,
+        "WEB",
+        "PAGE-1",
+        "http://fixture.test/b.html",
+    );
+    assert_eq!(
+        fill_origin(&browser, "WEB").as_deref(),
+        Some("http://fixture.test")
+    );
+}
+
+#[test]
+fn a_secret_is_filled_into_no_frame_whose_document_ended() {
+    let (browser, engine) = a_web_frame_that_starts_another_document();
+    the_pages_context_ends(&engine, &browser, 92);
+    assert_eq!(fill_origin(&browser, "WEB"), None);
+}

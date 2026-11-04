@@ -1679,6 +1679,16 @@ pub enum Browsing {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         suggested: Option<crate::loginask::Suggested>,
     },
+    /// **Put the value of `key` in `vault` into field `target` of the browser named** (#5115,
+    /// spec #5100): the field from the chat's last snapshot, and names alone. The app asks the
+    /// person on a notice naming the key and the exact site the field is on, reads the value
+    /// itself, and has the session host's browser fill it only where the field's own frame is
+    /// still on that site. The chat is answered with the page, never the value.
+    FillSecret {
+        target: String,
+        vault: String,
+        key: String,
+    },
 }
 
 /// **A proposed change** a chat hands the app ([`Ask::Propose`], #1975): the file, by its path

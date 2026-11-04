@@ -681,6 +681,9 @@ pub struct Shown {
     pub size: (u16, u16),
     /// The address of each login purlis performed in it, in order (#2016): never its values.
     pub logins: Vec<String>,
+    /// Each secret purlis filled into it (#5122), as `<key> into <field> on <origin>`, in order:
+    /// never a value.
+    pub fills: Vec<String>,
     /// The kept login it was opened from, where it was (#2021).
     pub kept: Option<purlis_session_protocol::browsing::KeptLogin>,
     /// What it answers its next acts with, in order; once none is left, a settled page.
@@ -951,6 +954,38 @@ impl crate::browsers::Screen for StandInScreen {
         }
         shown.size = (width, height);
         Ok(())
+    }
+
+    /// Fills as an engine would, under the agent's lease of `epoch` (#5122): it answers its next
+    /// act's answer, or refuses where the person drives it or the lease moved on.
+    fn fill_secret(
+        &self,
+        epoch: u64,
+        fill: &purlis_session_protocol::browsing::FillSecret,
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
+        let mut shown = self.shown();
+        if shown.stopped {
+            return Err(crate::browsers::NotActed::Ended);
+        }
+        if shown.taken_over || epoch != shown.epoch {
+            return Err(crate::browsers::NotActed::Refused(
+                crate::browsers::A_BROWSER_THE_PERSON_DRIVES.into(),
+            ));
+        }
+        shown.fills.push(format!(
+            "{} into {} on {}",
+            fill.key, fill.target, fill.origin
+        ));
+        shown
+            .answers
+            .pop_front()
+            .unwrap_or_else(|| {
+                Ok(purlis_session_protocol::browsing::Browsed {
+                    settled: true,
+                    ..Default::default()
+                })
+            })
+            .map_err(crate::browsers::NotActed::Refused)
     }
 
     /// Logs in as an engine would: it takes the lease and hands it back two epochs on, and
