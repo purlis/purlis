@@ -111,3 +111,49 @@ fn only_an_otpauth_address_is_known_for_a_seed_by_its_look() {
     assert!(!an_address("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"));
     assert!(!an_address("https://example.test/otpauth://"));
 }
+
+#[test]
+fn a_bare_secret_is_a_seed_only_at_the_lengths_apps_are_given() {
+    for bytes in [10, 16, 20, 32, 64] {
+        assert!(
+            Seed::parse(&BASE32_NOPAD.encode(&vec![7u8; bytes])).is_ok(),
+            "{bytes}"
+        );
+    }
+    // A password that happens to be base32 at another length is no seed.
+    for bytes in [11, 15, 24, 40] {
+        assert!(
+            Seed::parse(&BASE32_NOPAD.encode(&vec![7u8; bytes])).is_err(),
+            "{bytes}"
+        );
+    }
+    // In an address, a seed is a seed at any length from the fewest.
+    let named = format!(
+        "otpauth://totp/x?secret={}",
+        BASE32_NOPAD.encode(&[7u8; 15])
+    );
+    assert!(Seed::parse(&named).is_ok());
+}
+
+#[test]
+fn a_value_that_would_be_taken_as_a_seed_is_known_for_one() {
+    assert!(looks_like_a_seed("gezd gnbv gy3t qojq gezd gnbv gy3t qojq"));
+    assert!(looks_like_a_seed("otpauth://totp/x?secret=GEZDGNBV"));
+    assert!(!looks_like_a_seed("fixture-key-5118"));
+    assert!(!looks_like_a_seed("fixture-token-0189"));
+}
+
+#[test]
+fn a_percent_encoded_secret_reads_as_its_plain_one() {
+    let plain = Seed::parse(&format!(
+        "otpauth://totp/x?secret={}",
+        BASE32_NOPAD.encode(SHA1_SEED)
+    ))
+    .unwrap();
+    let encoded = Seed::parse(&format!(
+        "otpauth://totp/Dash%3Aalice?issuer=Dash&secret={}%3D%3D",
+        BASE32_NOPAD.encode(SHA1_SEED)
+    ))
+    .unwrap();
+    assert_eq!(plain.code_at(59), encoded.code_at(59));
+}

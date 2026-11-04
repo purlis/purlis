@@ -7,7 +7,9 @@
 //!
 //! - **A seed is what an authenticator app is given**: an `otpauth://totp/…` address, with its
 //!   own algorithm (SHA-1, SHA-256 or SHA-512), digits (6 to 10) and period, or the bare base32
-//!   secret, read as six digits of SHA-1 every 30 seconds, the defaults every app takes.
+//!   secret, read as six digits of SHA-1 every 30 seconds, the defaults every app takes. A bare
+//!   secret is taken only at the lengths apps are given (10, 16, 20, 32 or 64 bytes), and a value
+//!   of either shape never goes into a page as itself ([`looks_like_a_seed`]).
 //! - **A counter's seed (`otpauth://hotp/…`) is refused**: its code needs a count purlis doesn't
 //!   keep, and a code used out of turn locks the account.
 //! - **Words, never the seed**: a seed that can't be read is refused in fixed words, which name
@@ -71,6 +73,12 @@ pub fn an_address(text: &str) -> bool {
         .is_some_and(|scheme| scheme.eq_ignore_ascii_case("otpauth://"))
 }
 
+/// Whether `text` would be taken as a seed (#5118): an `otpauth://` address, or a bare secret of
+/// the shape an authenticator app is given. Such a value never goes into a page as itself.
+pub fn looks_like_a_seed(text: &str) -> bool {
+    an_address(text) || secret(text, Shape::Bare).is_ok()
+}
+
 impl Seed {
     /// **Reads a seed from a vault's value**: an `otpauth://totp/` address or a bare base32
     /// secret. Refused, in words that hold nothing of `text`, for anything else.
@@ -79,7 +87,7 @@ impl Seed {
             Self::of_address(text.trim())
         } else {
             Ok(Seed {
-                key: secret(text)?,
+                key: secret(text, Shape::Bare)?,
                 algorithm: Algorithm::Sha1,
                 digits: 6,
                 period: 30,
@@ -87,17 +95,22 @@ impl Seed {
         }
     }
 
+    /// An `otpauth://<kind>/<label>?<parameters>` address, read by hand inside wiped buffers:
+    /// no copy of the secret outlives the read unwiped.
     fn of_address(text: &str) -> Result<Seed, &'static str> {
-        let address = url::Url::parse(text).map_err(|_| NOT_A_SEED)?;
-        if !address
-            .host_str()
-            .is_some_and(|kind| kind.eq_ignore_ascii_case("totp"))
-        {
+        let rest = text.get("otpauth://".len()..).ok_or(NOT_A_SEED)?;
+        let (kind, rest) = rest.split_once('/').ok_or(NOT_A_SEED)?;
+        if kind.eq_ignore_ascii_case("hotp") {
             return Err(
-                "is a 2FA seed for counted codes (hotp), which purlis doesn't make: only \
-                        a time-based one (totp) is filled",
+                "is a 2FA seed for counted codes (hotp), which purlis doesn't make: only a \
+                 time-based one (totp) is filled",
             );
         }
+        if !kind.eq_ignore_ascii_case("totp") {
+            return Err(NOT_A_SEED);
+        }
+        let query = rest.split_once('?').map_or("", |(_, query)| query);
+        let query = query.split('#').next().unwrap_or_default();
         let mut seed = Seed {
             key: Zeroizing::new(Vec::new()),
             algorithm: Algorithm::Sha1,
@@ -105,21 +118,26 @@ impl Seed {
             period: 30,
         };
         let mut has_secret = false;
-        for (name, value) in address.query_pairs() {
-            match name.as_ref() {
+        for pair in query.split('&') {
+            let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
+            let value: Zeroizing<Vec<u8>> =
+                Zeroizing::new(percent_encoding::percent_decode_str(value).collect());
+            let value = std::str::from_utf8(&value).map_err(|_| NOT_A_SEED)?;
+            match name {
                 "secret" => {
-                    seed.key = secret(&value)?;
+                    seed.key = secret(value, Shape::Named)?;
                     has_secret = true;
                 }
                 "algorithm" => {
-                    seed.algorithm = match value.to_ascii_uppercase().as_str() {
-                        "SHA1" => Algorithm::Sha1,
-                        "SHA256" => Algorithm::Sha256,
-                        "SHA512" => Algorithm::Sha512,
-                        _ => {
-                            return Err("is a 2FA seed with an algorithm purlis doesn't know: \
-                                        only SHA1, SHA256 and SHA512 are");
-                        }
+                    seed.algorithm = if value.eq_ignore_ascii_case("SHA1") {
+                        Algorithm::Sha1
+                    } else if value.eq_ignore_ascii_case("SHA256") {
+                        Algorithm::Sha256
+                    } else if value.eq_ignore_ascii_case("SHA512") {
+                        Algorithm::Sha512
+                    } else {
+                        return Err("is a 2FA seed with an algorithm purlis doesn't know: only \
+                                    SHA1, SHA256 and SHA512 are");
                     };
                 }
                 "digits" => {
@@ -174,20 +192,41 @@ impl Seed {
     }
 }
 
-/// A base32 secret as people copy one: in any case, in groups, padded or not.
-fn secret(text: &str) -> Result<Zeroizing<Vec<u8>>, &'static str> {
-    let plain: Zeroizing<String> = Zeroizing::new(
-        text.chars()
-            .filter(|c| !c.is_whitespace() && *c != '-' && *c != '=')
-            .map(|c| c.to_ascii_uppercase())
-            .collect(),
-    );
+/// How a base32 secret was given.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Shape {
+    /// As an address's `secret`: a seed by where it stands, of any length from the fewest bytes.
+    Named,
+    /// As a value alone: a seed only by its shape, the lengths authenticator apps are given
+    /// (80, 128, 160, 256 or 512 bits), so a password is seldom taken for one.
+    Bare,
+}
+
+/// The lengths in bytes a bare secret is taken at.
+const BARE_BYTES: [usize; 5] = [10, 16, 20, 32, 64];
+
+/// A base32 secret as people copy one: in any case, in groups of spaces, padded or not, and
+/// nothing else. Every copy is wiped.
+fn secret(text: &str, shape: Shape) -> Result<Zeroizing<Vec<u8>>, &'static str> {
+    let mut plain = Zeroizing::new(String::with_capacity(text.len()));
+    for c in text.chars() {
+        match c {
+            'a'..='z' | 'A'..='Z' | '2'..='7' => plain.push(c.to_ascii_uppercase()),
+            '=' => {}
+            c if c.is_whitespace() => {}
+            _ => return Err(NOT_A_SEED),
+        }
+    }
     let key = Zeroizing::new(
         BASE32_NOPAD
             .decode(plain.as_bytes())
             .map_err(|_| NOT_A_SEED)?,
     );
-    if key.len() < FEWEST_BYTES {
+    let fits = match shape {
+        Shape::Named => key.len() >= FEWEST_BYTES,
+        Shape::Bare => BARE_BYTES.contains(&key.len()),
+    };
+    if !fits {
         return Err(NOT_A_SEED);
     }
     Ok(key)

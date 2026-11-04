@@ -1379,8 +1379,9 @@ fn granted_ready(
 /// **The value of `key` in `vault`, for a secret fill the person allowed** (#5115): read for
 /// chat `asker` as a login the person allowed from its notice is ([`granted_login`]), since that
 /// press confirmed this vault and this key for one exact site. Refused, with a sentence and no
-/// value, for a private key, whoever asked: no private key is filled on a page; and for a 2FA
-/// seed's address, which goes into no page: its code does ([`fill_code`]).
+/// value, for a private key, whoever asked: no private key is filled on a page; and for a value
+/// taken as a 2FA seed, an address or a bare secret, which goes into no page: its code does
+/// ([`fill_code`]).
 pub fn fill_value(
     asker: &Asker,
     vault: &str,
@@ -1392,7 +1393,7 @@ pub fn fill_value(
             "{key} in vault '{vault}' is a private key, so purlis filled nothing"
         ));
     }
-    if super::totp::an_address(value.expose()) {
+    if super::totp::looks_like_a_seed(value.expose()) {
         return Err(format!(
             "{key} in vault '{vault}' is a 2FA seed, so purlis filled nothing: a seed never goes \
              into a page. Call browser_fill_secret again with `code` to fill the code it makes"

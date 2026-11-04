@@ -78,11 +78,15 @@ fn a_value_that_is_no_seed_fills_no_code_and_the_refusal_holds_none_of_it() {
 }
 
 #[test]
-fn a_seeds_address_never_goes_into_a_page_as_a_value() {
+fn a_seed_never_goes_into_a_page_as_a_value() {
     let project = project();
     let refused = fill_value(&asker(project.path()), "team", "APP_2FA").unwrap_err();
     assert!(refused.contains("2FA seed"), "{refused}");
     assert!(refused.contains("`code`"), "{refused}");
+    assert!(!refused.contains(SEED), "{refused}");
+    // Nor a bare seed, which is a seed by its shape alone.
+    let refused = fill_value(&asker(project.path()), "team", "BARE_2FA").unwrap_err();
+    assert!(refused.contains("2FA seed"), "{refused}");
     assert!(!refused.contains(SEED), "{refused}");
     // A value is filled as it was.
     let value = fill_value(&asker(project.path()), "team", "API_KEY").expect("a value");
