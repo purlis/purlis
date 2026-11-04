@@ -413,7 +413,9 @@ pub const KIN: [(&str, &str); 10] = [
 /// So a teal over Purlis says its words on a teal wash, as light as Purlis's lavender one, and
 /// every contrast on it stays where Purlis put it; a grey accent draws grey grounds. A ground
 /// that turning would bring nearer the waiting or danger wash, as drawn, than the parent's is the
-/// parent's ([`super::tint::NO_NEARER`]).
+/// parent's ([`super::tint::NO_NEARER`]). **So does what is drawn in the accent** (#4918,
+/// [`DRAWN_IN_THE_ACCENT`]): the primary's fill, the focus ring and the selected row's edge, each
+/// kept as far from waiting and danger as [`super::tint::APART`] asks, or the parent's.
 ///
 /// What follows, each beside what it follows, so a colour left out takes them with it.
 pub fn follow_kin(
@@ -457,12 +459,75 @@ pub fn follow_kin(
                 followed.push((ground, ACCENT));
             }
         }
+        for token in DRAWN_IN_THE_ACCENT {
+            // A token `below` draws as the one that drew it before follows that one, as it always
+            // did (Classic's primary fill is its surface), not the accent.
+            let drawn_as_kin = KIN
+                .iter()
+                .any(|(kin, drew)| *kin == token && below.get(kin) == below.get(drew));
+            if given.contains_key(token) || drawn_as_kin {
+                continue;
+            }
+            let Some(under) = below.get(token) else {
+                continue;
+            };
+            let turned = super::tint::toward(under, &accent);
+            let drawn = |token: &str| given.get(token).or_else(|| below.get(token)).cloned();
+            if holds_as_apart(token, &turned, under, drawn) {
+                given.insert(token, turned);
+                followed.push((token, ACCENT));
+            }
+        }
     }
     followed
 }
 
+/// **Whether `turned`, what `token` would be drawn as, holds every rule of [`super::tint::APART`] it is the
+/// token of** (#4918), each at least its distance from its other side as `value` gives it, or
+/// no nearer than `written`, the value it was turned from, already was. A rule of the accent's
+/// words or marks is measured by its own answer, and a value that is not a colour has nothing
+/// to be near.
+pub fn holds_as_apart(
+    token: &str,
+    turned: &str,
+    written: &str,
+    value: impl Fn(&str) -> Option<String>,
+) -> bool {
+    super::tint::APART
+        .iter()
+        .filter(|rule| rule.token == token && !rule.words && !rule.signal)
+        .all(|rule| {
+            let Some(from) = value(rule.from).as_deref().and_then(super::tint::oklab_of) else {
+                return true;
+            };
+            let near =
+                |one: &str| super::tint::oklab_of(one).map(|one| super::tint::distance(one, from));
+            match (near(turned), near(written)) {
+                (Some(now), Some(was)) => now >= rule.distance.min(was),
+                _ => true,
+            }
+        })
+}
+
 /// The accent.
 const ACCENT: &str = "accent.base";
+
+/// **What the window draws in the accent, past its words and their grounds** (#4918): the
+/// primary's fill, at rest and under the pointer, the focus ring and the selected row's edge. An
+/// accent given over a parent turns the parent's to its hue as it turns the grounds
+/// ([`follow_kin`]): luminance and alpha kept, so the focus ring keeps its 3:1 and the primary's
+/// words their 4.5:1, and chroma no more than the accent's. One that turning would bring nearer
+/// the waiting or danger colour than the rules of [`super::tint::APART`] allow, and nearer than
+/// the parent's, stays the parent's. One the parent draws alike the token of [`KIN`] that drew
+/// it before follows that token as it always did, not the accent: Purlis Classic's primary is
+/// filled with its surface. The active tab is not here: Purlis draws it as a grey ground, with
+/// nothing of the accent to turn.
+pub const DRAWN_IN_THE_ACCENT: [&str; 4] = [
+    "accent.fill",
+    "accent.fill-hover",
+    "focus.ring",
+    "list.selected-edge",
+];
 
 /// The accent's words on a chosen item (#3100), and what they follow ([`follow_kin`]).
 pub const ACCENT_WORDS: &str = "accent.text";

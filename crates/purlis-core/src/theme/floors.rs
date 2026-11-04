@@ -132,6 +132,12 @@ pub const ALLOW_APART: f64 = 0.1;
 /// signal told from a chosen or primary mark at a glance.
 pub const WAITING_APART: f64 = 0.1;
 
+/// **How far a mark of the accent stays from each state colour, at least**: the distance between
+/// `markdown.link` or `chart.1` and the waiting, success, failed and unreadable colours in OKLab,
+/// under every tint, held as [`DANGER_APART`] is (#4921): a link or a chart line is never read as
+/// a state at a glance.
+pub const SIGNAL_APART: f64 = 0.1;
+
 /// **How far apart the hot count's fill and the plain count's are, at least**: the distance
 /// between `needs-you.count` and `surface.hover` in OKLab, held as [`DANGER_APART`] is (#3098):
 /// what waits on the person told from any other count at a glance.
@@ -402,7 +408,9 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
         found.extend(pairs().filter_map(|one| failing(&drawn, tinted, one)));
         // Every rule the tint holds apart, as written and under each of the theme's own tints:
         // the tint holds them itself (`tint::apart_chroma`), and the floors measure them too.
-        for rule in &tint::APART {
+        // The accent's marks held from the state colours (#4921) are the tint's own care, not a
+        // consent floor: the tint gives them way itself (`tint::signal_chroma_of`).
+        for rule in tint::APART.iter().filter(|rule| !rule.signal) {
             if apart_of(drawn.value(rule.token), drawn.value(rule.from)) < rule.distance {
                 found.push(Failure {
                     floor: apart_floor(rule),
