@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793817678555,
+  "lastUpdate": 1793821073192,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39144,6 +39144,48 @@ window.BENCHMARK_DATA = {
             "value": 101.11341350000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.426, 100.479, 101.113, 101.162, 102.310 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "74094c180419a1920c9965bb235808d28f00e018",
+          "message": "Secret ask: fill with an entry you keep, replace, and broken links (#5073, #5075) (#5172)\n\n* Secret ask (#5073): fill with an entry you keep, stored as a Linked entry\n\nA Secret ask offers Use an entry I have beside New value: a picker over\nthe person's vaults, grouped by vault with a filter on top (the\noperator's ruling on #5070). A pick makes the asked key a Linked entry\nreading it (links::link), never a copy; the held command reads the\nentry's value through the link, and the chat hears filled and the key's\nname, never the entry. The trace records 'linked' by the asked names.\n\n- core: Answer::Link, links::pickable (keys that hold a value, no links,\n  no GitHub App key, not the asked key; a vault that can't be listed says\n  why)\n- app: window-only link_secret_ask and secret_ask_entries\n- window: Select options may stand in groups (popover group/header parts);\n  VaultEntryPicker, built for #3186 to reuse; SecretFill's two ways\n- changelog fragment for Linked entries, carried from #5083\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5073): the entry picker, its test and the Linked entries changelog fragment\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5075): replace a value that doesn't work, and asks for broken links\n\nA Secret ask may carry a Reason: the chat says the value doesn't work\n(its own words, one line, masked), or the key is a Linked entry whose\nentry is gone. Both are shown to the person alone; a chat is never told\nthe entry a link reads.\n\n- Replace on a value: a new value overwrites it; an entry the person picks\n  is linked over it (links::link_over writes the link, then deletes the\n  stored value from the provider). Only a replace ask may link over a\n  value, as #5083's D2 required.\n- Replace on a link: the ask names the entry it reads; a new value goes\n  there (a rotation reaching every key linked to it), and a pick re-points\n  the link.\n- A brokered run whose link's entry is gone (Kind::BrokenLink) raises an\n  ask naming the gone entry instead of failing; a fill gives the key a\n  value, a pick re-points it.\n- Window: SecretShown carries replace, reads and gone; SecretFill draws\n  them, the chat's words quoted as the chat's.\n\nThe chat-side replace (the secret_ask line, tool and CLI flag) needs\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5075): a browser login or profile's broken link asks too\n\nthe same ask for a Linked entry whose entry is gone, naming it to the\nperson alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5075): the app's tests name an ask's reason and starts, after #5074\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5073, #5075): review fixes for the vault-write paths\n\nFrom the two-axis and adversarial reviews:\n- A replace never overwrites or links over a GitHub App's key, by its\n  reserved name or a persona's mint line, at either end of a link.\n- A replace writes only where the person was shown it goes: a link\n  re-pointed or made since the ask was raised is refused.\n- link_over deletes the old value only while its link still stands, and\n  takes the link away again if the delete fails, so the key keeps its\n  value as before.\n- A chat joining an open ask never changes why it was asked.\n- The window says a replace by link deletes the value the key holds;\n  Fill with nothing picked says to pick one; the entries of an ask no\n  longer open are refused.\n- bindings carry the new commands' docs; answerTaken's doc is back on it;\n  the entries error says what purlis couldn't do; a changelog fragment for\n  the broken-link ask.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5075): changelog fragment for the broken-link ask\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5073): the fill's story walks the way chosen first; the Notice guard lists its live line\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5073): the fill's test fixture says whether the key is declared, after #5127\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5075): a chat asks for a replacement, with its reason\n\nThe secret_ask line takes replace, the chat's one-line reason the value\nit has doesn't work; the secret_ask tool takes it as an argument and\npurlis secret ask as --replace <REASON>. The app asks the person even\nfor a key the vault holds (never filled at once), carrying the reason as\nthe chat's words and, for a Linked entry, the entry it reads. A replace\nis asked only in a vault the persona may use, and one with no reason is\nrefused. A reason the chat wraps is folded to one line. Older lines with\nno replace read as before.\n\nThe skill and the tool's description say when to use it.\n\nAlso: #5127's test of a start's ask waits for the raise to be told\nbefore answering, so the record's order it checks isn't a race.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5075): the changelog says a chat can ask for a replacement\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5075): the app's tests build an open ask with #5127's fields and a reason\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5075): an open ask keeps why it was asked across a restart\n\nAfter #5123, open asks are kept in app/secret-asks.json. A replace or\nbroken-link ask now keeps its reason there too, by the names the links\nindex already holds, so a restart doesn't turn it into a plain ask (whose\nfill would refuse to go over the value). docs/plane-format.md records the\nfield.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Stories: Secret ask fill and Select Grouped baselines from #5172's stories run; the app builds an ask with #5123's fields\n\nThe baselines are this PR's stories run (41815304900), pulled with\ntools/story-baselines-pull.mjs and reviewed. SkillPage's two are main's\nand left out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Stories: the new Secret ask fill and Select Grouped baselines from #5172's stories run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Stories: the no-entry fill story is walked by the keyboard, so its picture doesn't depend on a pointer\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Stories: the no-entry fill's baselines, walked by the keyboard, from #5172's stories run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n* Secret ask (#5075): a secret fill's ask, from #5142, carries no reason\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JD92VB4F5ZV5C8WZ7W4R6C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T18:28:47Z",
+          "tree_id": "40b4c53dc5d6c529e1ca6bd943c4f17956dfffed",
+          "url": "https://github.com/purlis/purlis/commit/74094c180419a1920c9965bb235808d28f00e018"
+        },
+        "date": 1793821068230,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.542728,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.524, 0.533, 0.543, 0.544, 0.578 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.452337,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.909, 15.967, 16.452, 16.491, 16.531 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.89984199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.650, 100.692, 101.900, 102.027, 102.269 ms"
           }
         ]
       }
