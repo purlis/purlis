@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793760678757,
+  "lastUpdate": 1793763126764,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38346,6 +38346,48 @@ window.BENCHMARK_DATA = {
             "value": 101.41273849999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.323, 101.234, 101.413, 101.692, 102.386 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "266d91fee1b0e2d30cd4c5476b2dda21d76d781b",
+          "message": "CI flakes: Scorecard out of sight in WebKit (#4672), gauge turn (#5126), DevicesView midnight (#5133)\n\n* Stories: an out-of-sight focus says where it is, the window and every frame scrolling it (#4672)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HW876ZKHSHZNBX8Q3J4A53\nPurlis-Persona: steward\n\n* Gauge spec: the turn is fired from inside the chat, after the record (#5126)\n\nThe spec's own `charter hook userpromptsubmit` carried no chat token and ran\noutside the chat's program, so the hook channel always dropped it (the failing\nrun's log: \"a line on the hook channel for chat 10 did not carry that chat's\ntoken, so it was dropped\"). The chat never moved, and the pane drew the record\nonly when its read 2 s after the chat's last move (AFTER_A_MOVE_MS) landed after\nthe record: a slow runner missed it.\n\nThe scenario shell now answers `/scenario-turn` by playing again and firing\nUserPromptSubmit from inside the chat, gated on a per-chat file so no other\nchat fires one. The spec writes the record, then starts the turn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HW876ZKHSHZNBX8Q3J4A53\nPurlis-Persona: steward\n\n* [DEBUG-4672] Temporary: twelve fresh mounts of the Grades play, to sample the WebKit failure\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HW876ZKHSHZNBX8Q3J4A53\nPurlis-Persona: steward\n\n* [DEBUG-4672] Temporary: the Scorecard focused before and after the grid landing's frame\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HW876ZKHSHZNBX8Q3J4A53\nPurlis-Persona: steward\n\n* DevicesView test: the fixture's contact and the view are said against one now\n\nThe fixture's `contacted` was Date.now() at beforeEach, and the view took its\nown `new Date()` at render. Across midnight `contactSaid` put them on two days\nand said \"Last answered Nov 3 at 11:59 PM\" where the test wants \"Last answered\nat\", which dropped #5036 from the merge queue (merge-group run 41742891743, web\npart 4, 23:55-00:04 UTC). The test now renders with the same `now` its fixture\nwas built from.\n\nProof: with the clock at 23:59:59.9 for beforeEach and 00:00:01 at render, the\ntest failed with that message before this change and passes after.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HW876ZKHSHZNBX8Q3J4A53\nPurlis-Persona: steward\n\n* [DEBUG-4672] Temporary: the Grades play logs who focuses and scrolls the frame; twelve fresh mounts\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HW876ZKHSHZNBX8Q3J4A53\nPurlis-Persona: steward\n\n* Table: a cell's control that takes the keyboard is brought into its frame (#4672)\n\nLogged in WebKit (the SkillGrades keyboard story): Tab lands on the grid's row\n(preventScroll), React Aria's Tab handler focuses the last row's button\n(preventScroll), then the Scorecard button past the frame's right edge takes\nfocus and the frame never scrolls: no scroll event for 3 s, scrollLeft 0, the\nbutton out of sight. React Aria only scrolls the focused row into view, which\nnever moves the frame sideways, and WebKit's own reveal of the focused element\ndid not happen. WKWebView is the app's engine on macOS, so this is the\nproduct's, not only the story's.\n\nThe frame now brings a focused control that is still outside it sideways, two\nframes later (after React Aria's own scroll), to its nearest edge.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HW876ZKHSHZNBX8Q3J4A53\nPurlis-Persona: steward\n\n* [DEBUG-4672] Temporary: 48 fresh mounts of the logged Grades play\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HW876ZKHSHZNBX8Q3J4A53\nPurlis-Persona: steward\n\n* [DEBUG-4672] Remove the temporary probes\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HW876ZKHSHZNBX8Q3J4A53\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Start the checks on the drawn baselines (#4672)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-04T02:31:00Z",
+          "tree_id": "25a2a447f6a8bab6031e4be3b4a771737d14aece",
+          "url": "https://github.com/purlis/purlis/commit/266d91fee1b0e2d30cd4c5476b2dda21d76d781b"
+        },
+        "date": 1793763122889,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.673421,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.669, 0.669, 0.673, 0.674, 0.684 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.450257,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.371, 16.375, 16.450, 16.666, 17.105 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.958479,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.250, 101.919, 101.958, 102.312, 103.902 ms"
           }
         ]
       }
