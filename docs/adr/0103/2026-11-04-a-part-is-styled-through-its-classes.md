@@ -32,6 +32,8 @@ the attributes, and the manifest, the theme files and every query of a part are 
   - `PartClasses.window.test.tsx` holds the window to the same.
 - **What it costs:**
   - A part drawn outside React, such as a scenario spec drawing one by hand, must add its
-    classes itself (`e2e/specs/pane-crumbs.e2e.ts`).
+    classes itself, as `pane-crumbs`, `pane-notices`, `pane-warnings` and `forced-colors` do.
+    So must a part an element is cloned into (`cloneElement`), as `Tooltip` does through
+    `parted()`.
   - A React Aria component given a part's attributes no longer carries its default
     `react-aria-*` class. Nothing styles those classes.

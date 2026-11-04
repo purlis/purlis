@@ -93,10 +93,12 @@ function joined(given: unknown, drawn: string): string {
  */
 export function parted<P>(props: P): P {
   if (typeof props !== "object" || props === null) return props;
+  // Every element the window draws passes here: most carry no part, and cost one look.
+  if (!("data-scope" in props) && !("data-part" in props)) return props;
   const named = props as Record<string, unknown>;
   const drawn = classesOf(named);
   if (drawn === "") return props;
-  const given = named.className;
+  const given = named.className ?? undefined;
   if (given !== undefined && typeof given !== "string" && typeof given !== "function") return props;
   const className =
     typeof given === "function"

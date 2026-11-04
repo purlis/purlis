@@ -47,6 +47,7 @@ describe("a part's props carry its classes", () => {
 
   it("keeps the class it was given, and leaves props with no part alone", () => {
     expect(parted({ "data-part": "body", className: "mt-2" }).className).toBe("mt-2 dp-body");
+    expect(parted({ "data-part": "body", className: null }).className).toBe("dp-body");
     const plain = { id: "x" };
     expect(parted(plain)).toBe(plain);
   });
