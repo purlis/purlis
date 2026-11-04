@@ -828,6 +828,15 @@ describe("a block's Notice, and why this chat runs at its level (#5207)", () => 
     expect(await screen.findByText(new RegExp(WHY.replace(/[.?]/g, "\\$&")))).toBeInTheDocument();
   });
 
+  it("still says it when the question before it failed", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "chats_on_older_sandbox") throw new Error("no answer");
+      return cmd === "chats_level_why" ? [{ session: 4, why: WHY }] : null;
+    });
+    render(<Asked block={UNNAMED} />);
+    expect(await screen.findByText(/The As steward row sets/)).toBeInTheDocument();
+  });
+
   it("says nothing of another chat's reason", async () => {
     answering([{ session: 5, why: WHY }]);
     render(<Asked block={UNNAMED} />);

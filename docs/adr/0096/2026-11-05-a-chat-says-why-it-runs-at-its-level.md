@@ -9,7 +9,7 @@ says, or none chosen. It decides
 nothing: the level stays `sandbox::your_level`'s, and each reason is read by comparing what that
 seam answers with what its inputs say, so the rule is written once.
 
-- **Where it is said.** The window asks with `chats_level_why` whenever it asks
+- **Where it is said.** The window asks with `chats_level_why` after each answer to
   `chats_on_older_sandbox`, and says the answer on the chat's sandbox mark (the title bar, the pane
   head and the row) and on a block's Notice, with where to change it. A block of purlis's own says
   nothing of it: that is a purlis bug, and no level's.

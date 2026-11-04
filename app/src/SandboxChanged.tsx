@@ -72,7 +72,7 @@ function keepWhys(plane: PlaneId, said: unknown) {
 
 /**
  * **Why each open chat of `plane` runs at its level** (#5207), in the core's words, from the
- * project's last answer: asked beside `useOlderSandbox`'s, since the same things move both. What
+ * project's last answer: asked after `useOlderSandbox`'s, since the same things move both. What
  * a chat's sandbox mark and a block's Notice say, with no second question to the core.
  */
 export function useLevelWhys(plane: PlaneId): ReadonlyMap<number, string> {
