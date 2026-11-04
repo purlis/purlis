@@ -325,8 +325,9 @@ pub enum Reader {
 ///
 /// **Where the mark is gone, where the process runs decides** ([`super::setup::sandboxed_chat`]):
 /// below a chat's program whose record does not say it ran without the sandbox, it is a
-/// sandboxed chat all the same, and where purlis cannot tell, it is refused with why. The
-/// person's terminal, an unsandboxed chat or shell tab, and the app read as before.
+/// sandboxed chat all the same, and where this project's record or its ancestry cannot be read,
+/// it is refused with why. The person's terminal, an unsandboxed chat or shell tab, and the app
+/// read as before.
 ///
 /// **A courtesy, not the boundary.** The mark and the records are what purlis can see, and a
 /// chat's process can leave its chat's ancestry; what holds the item is the store's own rule
