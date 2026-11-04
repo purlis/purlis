@@ -29,6 +29,8 @@
  * gave travels to the operator as the core's own sentence rather than as whatever a `catch`
  * decided to say about it.
  */
+import { splitRefused } from "./paneFold";
+import type { Size } from "./paneDrop";
 import type {
   ChatWorktree,
   Curations,
@@ -1022,6 +1024,9 @@ export type Now = {
   away?: readonly Toggled[];
   /** Focus mode is on (#2921, N32): its row says it brings the rail, bars and panels back. */
   focusMode?: boolean;
+  /** The focused pane's size as drawn (`paneFold.ts`, #4766): Split right and Split down grey
+   *  out, with their reason, where a half would be under the minimum. Not known, they split. */
+  paneRoom?: Size;
   /** The extensions' panels the right side shows as views (#1678), each a row by its name. */
   sidePanels?: readonly { view: PanelViewId; name: string }[];
   /**
@@ -2086,10 +2091,13 @@ export function catalogue(now: Now): Offer[] {
     ["pane.split.right", "Split right", "row"],
     ["pane.split.down", "Split down", "column"],
   ] as const) {
+    const refused = splitRefused(now.paneRoom, direction);
     offers.push(
-      front
-        ? can(id, title, { verb: "split", direction })
-        : cannot(id, title, "No chat is in front, so there is no pane to split."),
+      !front
+        ? cannot(id, title, "No chat is in front, so there is no pane to split.")
+        : refused !== undefined
+          ? cannot(id, title, refused)
+          : can(id, title, { verb: "split", direction }),
     );
   }
 
