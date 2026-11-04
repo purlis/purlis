@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793782146427,
+  "lastUpdate": 1793783601074,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38682,6 +38682,48 @@ window.BENCHMARK_DATA = {
             "value": 101.97878800000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.736, 101.425, 101.979, 102.050, 102.176 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "089d52560428ff63052d56b0f618dc15a9a30fd1",
+          "message": "End… leaves the chat's pane on the ended band (#5019) (#5104)\n\n* End… leaves the chat's pane on the ended band (#5019)\n\nEnd…, and a Smart close once its record is written, leave the chat's\npane showing its last screen, read-only, under the ended band, with\nResume and Clear pane, and the keyboard where it was (spec #4750 story\n62). Resume after End… starts the chat again on its conversation\n(resume_ended_chat, Chats::resume_ended, window-only); after a Smart\nclose, from its record. Clear pane closes the pane, and the strip's\nlast tab keeps one empty pane (closePaneOf).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCCW57Q5NXD88TAB2V6GH0\nPurlis-Persona: steward\n\n* Changelog fragment for #5019\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCCW57Q5NXD88TAB2V6GH0\nPurlis-Persona: steward\n\n* A resume test's chat with no conversation has none recorded (#5019)\n\nThe core gives a Claude Code chat its conversation's id as it starts, so\nthe test clears it, as the restart test of a chat with no conversation\ndoes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCCW57Q5NXD88TAB2V6GH0\nPurlis-Persona: steward\n\n* A chat ended on purpose has no End… left, only its reading rows (#5019)\n\nIts pane still shows it under the ended band, so the catalogue kept\nbuilding its rows: End… stayed in the palette, and e2e's endEveryChat\npressed it until its 200 presses ran out. Now only Activity and Network\nare offered for it, so its pane's menu button stays for the keyboard to\ncome back to, and its Stop and branch rows go too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCCW57Q5NXD88TAB2V6GH0\nPurlis-Persona: steward\n\n* A smart close among several tabs leaves its tab on the ended band (#5019)\n\n#4937's test of a Smart close among several tabs had it go when its\nrecord landed. It ends like End… now: its tab stays, its pane on the\nended band, and the notice still offers the record.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCCW57Q5NXD88TAB2V6GH0\nPurlis-Persona: steward\n\n* e2e: a strip's kept empty tab is not one a spec left behind (#5019)\n\nClear pane on the band End… leaves closes the pane, and on the strip's\nlast tab keeps one empty \"New chat\" tab, as Close tab does. The specs\nthat end their chats and then check the strip is as they found it now\npass over that tab (reach.ts keptEmpty): activity, footer, gauge,\nlifecycle, palette, pane-crumbs, pane-fill, pane-notices, pane-warnings,\ntab-chip and task-own-tab. panes.e2e's count of open tabs leaves out a\nkept empty tab on another workspace's strip, which its strip never draws.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCCW57Q5NXD88TAB2V6GH0\nPurlis-Persona: steward\n\n* e2e: the specs use #5125's openedSince for what they left behind (#5019)\n\nreach.ts's keptEmpty is gone in favour of #5125's openedSince and\nKEPT_EMPTY, the rule its leftBehind guard uses. footer, gauge and\nlifecycle read the strip's names through reach.ts's tabNames, which\nreads each tab's name alone, so the kept empty tab matches.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCCW57Q5NXD88TAB2V6GH0\nPurlis-Persona: steward\n\n* Review of #5019: a shell's End… clears its pane, Smart close's band links its record\n\n- A shell's End… clears its pane rather than keeping a band (spec #4750\n  story 64): it has no conversation to resume.\n- Smart close's band links to the record it wrote (story 62's \"a link\n  to the record\"), as Open record.\n- A chat ended on purpose that no tab shows any more is forgotten, so a\n  pane closed some other way leaves nothing behind.\n- The core keeps the closed Chat itself in let_go, not a LetGo struct\n  that copied four of its fields next to the whole of it.\n- nothing_to_resume_on sits above no_conversation's doc comment, not\n  inside it; the new test and command docs are wrapped and complete.\n- e2e asks for Clear pane by its accessible name, not by its tag, and\n  the band's selector is one constant (ENDED_BAND).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCCW57Q5NXD88TAB2V6GH0\nPurlis-Persona: steward\n\n* Bindings: resume_ended_chat's doc, wrapped (#5019)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCCW57Q5NXD88TAB2V6GH0\nPurlis-Persona: steward\n\n* End… ended band on main: one closePane, #4768's name, for Clear pane (#5019)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T08:33:47Z",
+          "tree_id": "91a338ce8646f6a3e7d73ca1f76a6b2da9bad849",
+          "url": "https://github.com/purlis/purlis/commit/089d52560428ff63052d56b0f618dc15a9a30fd1"
+        },
+        "date": 1793783596317,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5320914999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.518, 0.521, 0.532, 0.538, 0.554 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3784025,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.852, 16.331, 16.378, 16.392, 16.476 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.76453599999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.221, 100.955, 101.765, 101.991, 102.138 ms"
           }
         ]
       }
