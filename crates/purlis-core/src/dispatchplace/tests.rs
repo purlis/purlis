@@ -1003,7 +1003,9 @@ fn the_command_s_remove_is_kept_off_a_task_s_folder_as_the_explorer_s_is() {
     let (_dir, root) = project();
     let piece = "check-b5rc0def";
     let refused = |delete_branch: bool, no_discard: bool| {
-        kept_from_removal(&root, "alpha", "api", piece, delete_branch, || no_discard)
+        kept_from_removal(&root, "alpha", "api", piece, false, delete_branch, || {
+            no_discard
+        })
     };
     // No record names it: the person's own folder, removed as ever.
     a_folder(&root, piece);
@@ -1018,10 +1020,10 @@ fn the_command_s_remove_is_kept_off_a_task_s_folder_as_the_explorer_s_is() {
     let said = refused(false, true).expect("a running task's folder is kept");
     assert_eq!(
         said,
-        "'check-b5rc0def' is the branch purlis cut for the task 'check the queue'. Discard it \
-         from that task's Changes tab in the purlis window, which shows what would go with it \
-         and waits until the task has ended: Review changes, on its row in the chats list or \
-         on the Dispatches tab. Nothing was removed."
+        "'check-b5rc0def' is the branch purlis cut for the task 'check the queue', and it is \
+         not finished: its task has not ended. Discard it from that task's Changes tab in the \
+         purlis window, which shows what would go with it: Review changes, on its row in the \
+         chats list or on the Dispatches tab. Nothing was removed."
     );
     assert_eq!(refused(true, true), Some(said));
 
@@ -1047,7 +1049,7 @@ fn the_command_s_remove_is_kept_off_a_task_s_folder_as_the_explorer_s_is() {
         ("Alpha", "API", "check-b5rc0def"),
     ] {
         assert!(
-            kept_from_removal(&root, ws, repo, typed, true, || true).is_some(),
+            kept_from_removal(&root, ws, repo, typed, false, true, || true).is_some(),
             "{ws} {repo} {typed}"
         );
     }
@@ -1072,7 +1074,7 @@ fn a_record_that_does_not_read_keeps_the_command_off_the_folder_its_text_names()
          \"piece\": \"check-b5rc0def\"",
     )
     .unwrap();
-    let said = kept_from_removal(&root, "alpha", "api", piece, false, || true)
+    let said = kept_from_removal(&root, "alpha", "api", piece, false, false, || true)
         .expect("an unread record that names the folder keeps it");
     assert!(
         said.starts_with("'check-b5rc0def' is named by a dispatch record purlis cannot read ("),
@@ -1082,16 +1084,32 @@ fn a_record_that_does_not_read_keeps_the_command_off_the_folder_its_text_names()
     assert!(said.ends_with("Nothing was removed."), "{said}");
     // Typed in another case, it is the same folder where the file system folds case, and its
     // branch is kept whatever the file system.
-    assert!(kept_from_removal(&root, "ALPHA", "Api", "Check-B5RC0DEF", true, || true).is_some());
+    assert!(
+        kept_from_removal(&root, "ALPHA", "Api", "Check-B5RC0DEF", false, true, || {
+            true
+        })
+        .is_some()
+    );
     #[cfg(target_os = "macos")]
-    assert!(kept_from_removal(&root, "ALPHA", "Api", "Check-B5RC0DEF", false, || true).is_some());
+    assert!(
+        kept_from_removal(
+            &root,
+            "ALPHA",
+            "Api",
+            "Check-B5RC0DEF",
+            false,
+            false,
+            || true
+        )
+        .is_some()
+    );
     // Gone already, it goes, without its branch.
     std::fs::remove_dir_all(root.join("workspaces/alpha/.worktrees/api").join(piece)).unwrap();
     assert_eq!(
-        kept_from_removal(&root, "alpha", "api", piece, false, || true),
+        kept_from_removal(&root, "alpha", "api", piece, false, false, || true),
         None
     );
-    assert!(kept_from_removal(&root, "alpha", "api", piece, true, || true).is_some());
+    assert!(kept_from_removal(&root, "alpha", "api", piece, false, true, || true).is_some());
 }
 
 /// Writes `text` as record [`ID`]'s file in the store of the project at `root`.
@@ -1168,7 +1186,7 @@ fn the_explorer_s_merge_and_remove_read_the_store_as_the_command_does() {
     let piece = "check-b5rc0def";
     a_folder(&root, piece);
     let kept = |ws: &str, repo: &str, typed: &str, merging: bool| {
-        kept_from_the_explorer(&root, ws, repo, typed, merging, || true)
+        kept_from_the_explorer(&root, ws, repo, typed, merging, false, || true)
     };
     assert_eq!(
         kept("alpha", "api", piece, true),
@@ -1185,11 +1203,18 @@ fn the_explorer_s_merge_and_remove_read_the_store_as_the_command_does() {
     let mut running = a_record(Some(a_tree(piece, None)), Some("alpha"));
     running.ended = None;
     stored(&root, &running);
+    // A Remove says why it is not finished (ADR 0110).
     for merging in [true, false] {
-        assert_eq!(
-            kept("alpha", "api", piece, merging),
-            Some(left_to_its_task("check the queue", piece, merging))
-        );
+        let said = kept("alpha", "api", piece, merging).expect("a running task's folder");
+        if merging {
+            assert_eq!(said, left_to_its_task("check the queue", piece, merging));
+        } else {
+            assert!(
+                said.contains("not finished: its task has not ended"),
+                "{said}"
+            );
+            assert!(said.contains("Changes tab"), "{said}");
+        }
         // Typed in another case: a Merge is held wherever; a Remove where the file system
         // folds case, as macOS's does, so the folder is there to lose.
         if merging || cfg!(target_os = "macos") {
@@ -1202,7 +1227,7 @@ fn the_explorer_s_merge_and_remove_read_the_store_as_the_command_does() {
     stored(&root, &a_record(Some(a_tree(piece, None)), Some("alpha")));
     assert_eq!(kept("alpha", "api", piece, false), None);
     assert!(
-        kept_from_the_explorer(&root, "alpha", "api", piece, false, || false).is_some(),
+        kept_from_the_explorer(&root, "alpha", "api", piece, false, false, || false).is_some(),
         "where Discard works, the folder is left to it"
     );
     assert!(kept("alpha", "api", piece, true).is_some());
