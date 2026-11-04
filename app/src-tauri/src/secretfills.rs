@@ -642,7 +642,18 @@ fn read(
         .secret_asks()
         .hold(need, within, &mut |_: &str| moved())
     {
-        purlis_core::secrets::ask::Held::Filled => {
+        // Only the very vault and key the person allowed for this site go in: a value added
+        // under other names is that key's, and a fill of it is a fill of its own.
+        purlis_core::secrets::ask::Held::Filled { vault, key }
+            if vault != asked.vault || key != asked.key =>
+        {
+            Err(format!(
+                "the person added {vault}/{key} rather than {}/{}, so nothing was filled: call \
+                 browser_fill_secret again naming {key} of vault {vault}",
+                asked.vault, asked.key
+            ))
+        }
+        purlis_core::secrets::ask::Held::Filled { .. } => {
             // Judged again as the project reads now: it may have changed while the key was added.
             judged(held, session, asked)?;
             read()?.ok_or_else(|| {
@@ -653,7 +664,8 @@ fn read(
             })
         }
         purlis_core::secrets::ask::Held::Declined { line }
-        | purlis_core::secrets::ask::Held::StillOpen { line } => {
+        | purlis_core::secrets::ask::Held::StillOpen { line }
+        | purlis_core::secrets::ask::Held::Refused { line } => {
             Err(format!("{line}: nothing was filled"))
         }
     }
