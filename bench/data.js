@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793794261172,
+  "lastUpdate": 1793795725039,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38850,6 +38850,48 @@ window.BENCHMARK_DATA = {
             "value": 102.03745099999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.876, 101.491, 102.037, 102.807, 103.159 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3cac82fc3faa675abcbade2dc564d7c66988effc",
+          "message": "A frame sent back into its page's process is usable again once its new document is known (#5162) (#5180)\n\nWhen a frame from another site, held by a session of its own, is navigated\nback into its page's process, the page's session's word of the navigation\nmoves the frame back to that session; a session of the frame's own that no\nlonger holds it says nothing more of it; and when the session that held a\nframe ends, the frame falls back to the session around it and is not judged\nuntil the engine says what it shows. Unit tests cover both orders of the\npage's word and the old session's end, and the new document's context told\nbefore the page's word.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K4FVBMHKE93EGXAB9SDTM4\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T11:58:07Z",
+          "tree_id": "44cc7f44d1027867f8b02bde2e536f3e7f4a5d50",
+          "url": "https://github.com/purlis/purlis/commit/3cac82fc3faa675abcbade2dc564d7c66988effc"
+        },
+        "date": 1793795718499,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.547956,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.530, 0.547, 0.548, 0.549, 0.553 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.392875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.289, 16.290, 16.393, 16.451, 16.468 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9473725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.832, 101.942, 101.947, 102.283, 102.589 ms"
           }
         ]
       }
