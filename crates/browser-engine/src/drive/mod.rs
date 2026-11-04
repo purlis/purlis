@@ -703,6 +703,12 @@ pub type Judge = std::sync::Arc<dyn Fn(&Outbound) -> Gate + Send + Sync>;
 /// the agent's calls leave them alone.
 pub type KeptOff = std::sync::Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
+/// **Why the caller refused a load, now** (#5150): told the address a page failed to load, the
+/// words the agent is told, where the caller's own reach refused it
+/// ([`Browser::say_why_refused`]). What a page sent may be in that address, so the words are never
+/// to repeat it.
+pub type RefusedLoad = std::sync::Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
 /// A call refused, or one whose effect is not known, in words that say what to do.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Refusal {

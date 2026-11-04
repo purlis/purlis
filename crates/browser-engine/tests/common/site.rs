@@ -11,7 +11,9 @@
 //! `/redirect-to-file` and `/redirect-to-app` redirect to a `file:` address and to an app's own
 //! scheme; and the download page's (#3747): `/export`, the report as an attachment under a name
 //! of the header's, and `/big-export` and `/big-stream`, [`BIG`] bytes sent slowly, with their
-//! size stated up front and not.
+//! size stated up front and not. `/verify-code` is a site's 2FA verifier (#5118): it holds
+//! [`TWO_FACTOR_SEED`] on its server, as a site does, and accepts the code it makes now, a step
+//! either side.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -23,6 +25,31 @@ use purlis_browser_engine::drive::{Browser, Judge, Limits};
 use purlis_browser_engine::launch::{Launch, ReachProxy};
 use purlis_browser_engine::machine::machine_chrome;
 use purlis_browser_engine::process::{Engine, Keeper};
+
+/// The seed `/verify-code` checks codes against: RFC 6238's SHA-1 test seed. The site's alone;
+/// no page of it holds the seed.
+pub const TWO_FACTOR_SEED: &[u8] = b"12345678901234567890";
+
+/// The six-digit TOTP code [`TWO_FACTOR_SEED`] makes at `unix` (RFC 6238: SHA-1, 30 seconds),
+/// worked out here as a site's verifier does, apart from purlis's own.
+pub fn two_factor_code_at(unix: u64) -> String {
+    use hmac::{KeyInit, Mac};
+    let mut mac = hmac::Hmac::<sha1::Sha1>::new_from_slice(TWO_FACTOR_SEED).unwrap();
+    mac.update(&(unix / 30).to_be_bytes());
+    let hash = mac.finalize().into_bytes();
+    let at = usize::from(hash[19] & 0x0f);
+    let bits =
+        u32::from_be_bytes([hash[at], hash[at + 1], hash[at + 2], hash[at + 3]]) & 0x7fff_ffff;
+    format!("{:06}", bits % 1_000_000)
+}
+
+/// Seconds since 1970, by this machine's clock.
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
 
 /// How long `/slow-data` takes to answer.
 pub const SLOW: Duration = Duration::from_millis(1500);
@@ -188,8 +215,26 @@ fn answer(
         return;
     };
     let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let query = path.split_once('?').map_or("", |(_, query)| query);
     let path = path.split(['?', '#']).next().unwrap_or("");
     match path {
+        // A site's 2FA verifier (#5118): the code the seed makes now, a step either side.
+        "verify-code" => {
+            let code = query
+                .split('&')
+                .find_map(|pair| pair.strip_prefix("code="))
+                .unwrap_or_default();
+            let now = unix_now();
+            let accepted = [now.saturating_sub(30), now, now + 30]
+                .iter()
+                .any(|at| two_factor_code_at(*at) == code);
+            let said: &[u8] = if accepted {
+                b"<!doctype html><title>Verified</title><h1>Code accepted</h1>"
+            } else {
+                b"<!doctype html><title>Not verified</title><h1>Code refused</h1>"
+            };
+            let _ = respond(&mut out, "200 OK", "text/html; charset=utf-8", &[], said);
+        }
         "slow-data" => {
             thread::sleep(SLOW);
             let _ = respond(

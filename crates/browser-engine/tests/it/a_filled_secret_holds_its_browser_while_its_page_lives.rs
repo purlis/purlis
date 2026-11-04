@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 
 use common::drive::{call, find, open, ref_on, sees, snapshot};
 use common::site::started;
+use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::drive::{Browser, Call, FillHold, Ref, SecretFill};
 
 const VALUE: &str = "fixture-key-5117";
@@ -128,6 +129,80 @@ fn a_route_change_keeps_the_hold_and_a_new_document_ends_it_once() {
     call(&browser, Call::Back { page: None });
     std::thread::sleep(Duration::from_millis(500));
     assert_eq!(told.said(), ["held", "released"], "released once");
+}
+
+/// What the browser's caller is told of a load that failed, and says back (#5150): as the reach
+/// proxy's owner does for a load a fill's hold refused. The fixture's stand-in proxy refuses a
+/// tunnel as the real one does, so the engine shows its own page.
+fn says_why_refused(browser: &Browser) -> Arc<Mutex<Vec<String>>> {
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let told = Arc::clone(&asked);
+    browser.say_why_refused(Arc::new(move |address: &str| {
+        told.lock().unwrap().push(address.to_owned());
+        Some("the fill's hold refused it".to_owned())
+    }));
+    asked
+}
+
+#[test]
+fn a_click_elsewhere_the_hold_refused_answers_why_and_the_hold_lives_on() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "hold.html");
+    let asked = says_why_refused(&browser);
+    let told = Arc::new(Told::default());
+    filled(&browser, &told);
+
+    let target = ref_of(&browser, "link \"Another site\"");
+    let answer = call(&browser, Call::Click { target });
+
+    assert_eq!(
+        answer.note.as_deref(),
+        Some("the fill's hold refused it"),
+        "{answer:?}"
+    );
+    assert_eq!(
+        asked.lock().unwrap().first().map(String::as_str),
+        Some("https://elsewhere.test/away?from=dash")
+    );
+    assert_eq!(told.said(), ["held"], "the request is still in its history");
+}
+
+#[test]
+fn going_back_to_a_site_the_hold_refuses_answers_why() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    let address = |at: &str| WebAddress::parse(at).unwrap();
+    call(
+        &browser,
+        Call::Open {
+            address: address("https://elsewhere.test/before"),
+        },
+    );
+    call(
+        &browser,
+        Call::Navigate {
+            page: None,
+            address: address("http://fixture.test/hold.html"),
+        },
+    );
+    let asked = says_why_refused(&browser);
+    let told = Arc::new(Told::default());
+    filled(&browser, &told);
+
+    let answer = call(&browser, Call::Back { page: None });
+
+    assert_eq!(
+        answer.note.as_deref(),
+        Some("the fill's hold refused it"),
+        "{answer:?}"
+    );
+    assert_eq!(
+        asked.lock().unwrap().first().map(String::as_str),
+        Some("https://elsewhere.test/before")
+    );
 }
 
 #[test]
