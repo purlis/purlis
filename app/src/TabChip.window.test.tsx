@@ -1039,9 +1039,10 @@ describe("the keys for the chats inside a tab", () => {
 
   it("opens the tab's menu from the keyboard, on the chat it shows, and every row is reached", async () => {
     await drawn(withTasks());
-    pane(1).focus();
+    tab("steward 1").focus();
 
-    chord("J");
+    // Down on the tab: ⌘⇧J is the focused chat's own tasks now (#5058).
+    await userEvent.keyboard("{ArrowDown}");
 
     await waitFor(() => expect(menu()).not.toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
@@ -1059,8 +1060,8 @@ describe("the keys for the chats inside a tab", () => {
 
   it("finds a row by the letters of its name", async () => {
     await drawn(withTasks());
-    pane(1).focus();
-    chord("J");
+    tab("steward 1").focus();
+    await userEvent.keyboard("{ArrowDown}");
     await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
 
     await userEvent.keyboard("sw");
@@ -1068,16 +1069,16 @@ describe("the keys for the chats inside a tab", () => {
     expect(document.activeElement).toBe(line("sweep"));
   });
 
-  it("gives the keyboard back to the chat when the menu it opened is left with Escape", async () => {
+  it("gives the keyboard back to the tab when the menu it opened is left with Escape", async () => {
     await drawn(withTasks());
-    pane(1).focus();
-    chord("J");
+    tab("steward 1").focus();
+    await userEvent.keyboard("{ArrowDown}");
     await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
 
     await userEvent.keyboard("{Escape}");
 
     expect(menu()).toBeNull();
-    await waitFor(() => expect(document.activeElement).toBe(pane(1)));
+    await waitFor(() => expect(document.activeElement).toBe(tab("steward 1")));
   });
 
   it("opens a tab's menu with Down on the tab", async () => {
@@ -1137,11 +1138,14 @@ describe("the keys for the chats inside a tab", () => {
       await waitFor(() => expect(menus()).toEqual(["Tasks of steward 1"]));
     });
 
-    it("opens the menu of the tab in front each time its key is pressed on another tab", async () => {
+    /** The name of the menu ⌘⇧J opened (#5058), which names itself. */
+    const asked = () => menu()?.getAttribute("aria-label");
+
+    it("opens the focused chat's tasks each time its key is pressed, on another tab too", async () => {
       await drawn(twoWithTasks());
       pane(1).focus();
       chord("J");
-      await waitFor(() => expect(menus()).toEqual(["Tasks of steward 1"]));
+      await waitFor(() => expect(asked()).toBe("Tasks of steward 1"));
       await userEvent.keyboard("{Escape}");
       await waitFor(() => expect(menus()).toEqual([]));
 
@@ -1150,14 +1154,15 @@ describe("the keys for the chats inside a tab", () => {
       pane(2).focus();
       chord("J");
 
-      await waitFor(() => expect(menus()).toEqual(["Tasks of steward 2"]));
+      await waitFor(() => expect(asked()).toBe("Tasks of steward 2"));
+      expect(menus()).toHaveLength(1);
     });
 
     it("closes it when asked again while it is open, and the keyboard is back where it was", async () => {
       await drawn(twoWithTasks());
       pane(1).focus();
       chord("J");
-      await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
+      await waitFor(() => expect(document.activeElement).toBe(line("talk")));
 
       chord("J");
 
@@ -1165,7 +1170,7 @@ describe("the keys for the chats inside a tab", () => {
       await waitFor(() => expect(document.activeElement).toBe(pane(1)));
       // And a third ask opens it again, with Escape still knowing the way back.
       chord("J");
-      await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
+      await waitFor(() => expect(document.activeElement).toBe(line("talk")));
       await userEvent.keyboard("{Escape}");
       await waitFor(() => expect(document.activeElement).toBe(pane(1)));
     });
@@ -1266,6 +1271,105 @@ describe("the keys for the chats inside a tab", () => {
   });
 });
 
+describe("the focused chat's own tasks, on its key (#5058, ruled on #4699)", () => {
+  /** The rows of the menu that is open, by name. */
+  const named = () =>
+    within(menu() as HTMLElement)
+      .getAllByRole("menuitem")
+      .map((item) => item.querySelector(".name")?.textContent);
+  /** The tab in front, by name. */
+  const inFront = () =>
+    within(strip())
+      .getAllByRole("tab")
+      .find((one) => one.getAttribute("aria-selected") === "true")
+      ?.querySelector(".tab-name")?.textContent;
+
+  it("lists the tasks the focused chat dispatched, and nothing else's", async () => {
+    await drawn([
+      ...withTasks(),
+      chat(8, "alpha", { persona: "devops", label: "notes", from: taskOf(2) }),
+    ]);
+    pane(1).focus();
+
+    chord("J");
+
+    await waitFor(() => expect(menu()?.getAttribute("aria-label")).toBe("Tasks of steward 1"));
+    // Its own three: not itself, not talk's deep, and not steward 2's notes.
+    expect(named()).toEqual(["talk", "sweep", "probe"]);
+    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
+  });
+
+  it("shows the task picked in the focused pane, whichever workspace it is filed in", async () => {
+    await drawn(withTasks());
+    pane(1).focus();
+    chord("J");
+    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
+
+    // probe is filed in beta: a press from the sidebar would take it to beta's strip.
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+
+    await waitFor(() => expect(onScreen()).toEqual([6]));
+    expect(menu()).toBeNull();
+    // The same tab, on alpha's strip, and no tab was added.
+    expect(within(strip()).getAllByRole("tab")).toHaveLength(2);
+    expect(tab("steward 2")).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(pane(6)));
+  });
+
+  it("jumps to a task already on screen, and replaces nothing", async () => {
+    await drawn([
+      chat(1, "alpha"),
+      chat(2, "alpha"),
+      chat(4, "alpha", { persona: "devops", label: "talk", from: taskOf(1, { tab: true }) }),
+    ]);
+    await waitFor(() => expect(within(strip()).getAllByRole("tab")).toHaveLength(3));
+    pane(1).focus();
+    chord("J");
+    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
+
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(onScreen()).toEqual([4]));
+    expect(inFront()).toBe("talk");
+    expect(within(strip()).getAllByRole("tab")).toHaveLength(3);
+    // steward 1's own tab still shows it.
+    await userEvent.click(tab("steward 1"));
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+  });
+
+  it("lists a task that has finished by how it ended, and a pick of it shows nothing", async () => {
+    await drawn(
+      [chat(1, "alpha"), chat(4, "alpha", { persona: "devops", label: "talk", from: taskOf(1) })],
+      [finishedTask(1, "probe")],
+    );
+    pane(1).focus();
+    chord("J");
+    await waitFor(() => expect(named()).toEqual(["talk", "probe"]));
+    expect(line("probe").getAttribute("aria-disabled")).toBe("true");
+    expect(line("probe").textContent).toContain("done");
+
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(line("probe"));
+    await userEvent.keyboard("{Enter}");
+
+    expect(menu()).not.toBeNull();
+    expect(onScreen()).toEqual([1]);
+  });
+
+  it("gives the keyboard back to the chat when it is left with Escape", async () => {
+    await drawn(withTasks());
+    pane(1).focus();
+    chord("J");
+    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(menu()).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(pane(1)));
+    expect(onScreen()).toEqual([1]);
+  });
+});
+
 describe("tasks that have finished", () => {
   /** steward 1 with one open task, talk (4), and steward 2 with none. */
   const some = () => [
@@ -1326,8 +1430,8 @@ describe("tasks that have finished", () => {
       finishedTask(1, "probe", { ...failed, report: "The deploy is red: the image is missing." }),
     ]);
     await waitFor(() => expect(chip("steward 1")?.getAttribute("aria-label")).toContain("failed"));
-    pane(1).focus();
-    chord("J");
+    tab("steward 1").focus();
+    await userEvent.keyboard("{ArrowDown}");
     await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
 
     await userEvent.keyboard("{ArrowDown}{ArrowDown}");
