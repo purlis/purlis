@@ -1869,6 +1869,13 @@ jobs:
         run: xvfb-run -a npm run e2e:state
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # GitHub's macOS image spends much of a job on its own, and the same code measured a p95 of
+      # about 300 ms on one run and 500 on the next (#4351). So its Spotlight indexing goes off and
+      # its disk-image service settles before the bars measure. The bars stay as they are.
+      - name: Quiet the runner for the outcome bars
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        continue-on-error: true
+        run: node tools/quiet-runner.mjs
       # The Skill studio's outcome bars, one run per harness on its stand-in (#4343). `outcome-bars`
       # alone runs these. Each runs whatever the one before it did, so a red run names every miss.
       - name: The Skill studio's outcome bars on claude's stand-in
@@ -1907,6 +1914,10 @@ jobs:
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
+      - name: What is still busy on the runner after the outcome bars
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        continue-on-error: true
+        run: node tools/quiet-runner.mjs --log-only
       # The app started the way an operator starts it — from Finder, with the `PATH` Finder
       # gives — on purlis's own built-in profile. Its own run, because it is the app's
       # ENVIRONMENT that is under test and one run is one environment (charter-app#134).
