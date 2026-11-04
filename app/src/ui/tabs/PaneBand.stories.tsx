@@ -514,10 +514,11 @@ const overlaps = (a: Box, b: Box) =>
   a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 
 /**
- * **The bell beside its neighbours** (#5189): the size of Split right, its count a pill inside
- * that size, on its corner; its hint opens below the head, as the head's other hints do, over no
- * head button; and the head's buttons stand a small gap apart, so a hovered or focused one's
- * ground never touches the next (the person's ruling on the M70 prototype, spec #5191).
+ * **The bell beside its neighbours** (#5189): the size of Split right, its count the family's
+ * small pill on its top corner, which leaves the bell to be seen; its hint opens below the
+ * head, as the head's other hints do, over no head button; and the head's buttons stand a small
+ * gap apart, so a hovered or focused one's ground never touches the next (the person's ruling
+ * on the M70 prototype, spec #5191).
  */
 export const BellBesideItsNeighbours: Story = {
   args: {
@@ -531,11 +532,22 @@ export const BellBesideItsNeighbours: Story = {
     const split = canvas.getByRole("button", { name: "Split right" });
     expect(boxOf(bell).width).toBeCloseTo(boxOf(split).width, 0);
     expect(boxOf(bell).height).toBeCloseTo(boxOf(split).height, 0);
+    // The pill is the family's small count, on the bell's top corner: it rises a little above
+    // the bell, never past its end towards Split right, and leaves the bell's mark to be seen,
+    // covering no more than a quarter of it.
     const count = boxOf(countOf(bell));
-    expect(count.left).toBeGreaterThanOrEqual(boxOf(bell).left - 0.5);
+    expect(countOf(bell)).toHaveAttribute("data-size", "sm");
     expect(count.right).toBeLessThanOrEqual(boxOf(bell).right + 0.5);
-    expect(count.top).toBeGreaterThanOrEqual(boxOf(bell).top - 0.5);
-    expect(count.bottom).toBeLessThanOrEqual(boxOf(bell).bottom + 0.5);
+    expect(count.top).toBeGreaterThanOrEqual(boxOf(bell).top - 3);
+    expect(count.bottom).toBeLessThanOrEqual(boxOf(bell).top + boxOf(bell).height / 2);
+    expect(overlaps(count, boxOf(split))).toBe(false);
+    const mark = boxOf(bell.querySelector("svg"));
+    const covered =
+      Math.max(0, Math.min(count.right, mark.right) - Math.max(count.left, mark.left)) *
+      Math.max(0, Math.min(count.bottom, mark.bottom) - Math.max(count.top, mark.top));
+    expect(covered, "the bell's mark the pill covers").toBeLessThanOrEqual(
+      (mark.width * mark.height) / 4,
+    );
 
     const { head } = rowsOf(canvasElement);
     const buttons = [...(head?.querySelectorAll(".pane-actions button") ?? [])];

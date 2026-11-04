@@ -291,12 +291,12 @@ describe("the pane's rules", () => {
     expect(css).toMatch(/:is\(\.pane-notices,[^)]*\)\s*\{[^}]*overflow-y:\s*auto/);
   });
 
-  it("keeps the bell's count on its corner, inside its box, taking no pointer (#5189)", () => {
+  it("keeps the bell's count on its top corner, off Split right, taking no pointer (#5189)", () => {
     const slot = rule("\\.pane-actions > \\.pane-bell-slot");
     expect(slot).toMatch(/position:\s*relative/);
     const pill = rule("\\.pane-bell-slot > \\.pane-bell-count");
     expect(pill).toMatch(/position:\s*absolute/);
-    expect(pill).toMatch(/inset-block-start:\s*0/);
+    expect(pill).toMatch(/inset-block-start:\s*calc\(var\(--space-1\) \* -1\)/);
     expect(pill).toMatch(/inset-inline-end:\s*0/);
     expect(pill).toMatch(/pointer-events:\s*none/);
   });

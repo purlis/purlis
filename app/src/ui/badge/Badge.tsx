@@ -13,7 +13,8 @@
  * - **A badge's variants**: `neutral`, `accent` (where a value comes from), `waiting` ("Waiting
  *   for you", "deprecated": the amber wash, R66, R62) and `ok` ("Confirmed": the ok words, R66).
  *   **A count's**: `neutral`, `accent`, `waiting` (what waits: the amber wash, R46,
- *   R101) and `hot` (what needs the person now: the needs-you colours, R120).
+ *   R101) and `hot` (what needs the person now: the needs-you colours, R120). A count is drawn
+ *   at one size, or `sm` on a mark's corner (#5189).
  * - **Words, not controls.** Neither presses anything. A badge with a hint is the tooltip's target
  *   (`<Tooltip tip>` around it), which makes it a Tab stop so the hint is read without a pointer;
  *   its ref and props reach the element for that.
@@ -63,11 +64,15 @@ export function HostStatus({ waiting }: { waiting: boolean }) {
 /** **A count**: a number on a pill. */
 export function Count({
   variant = "neutral",
+  size,
   said,
   children,
   ...rest
 }: Span & {
   variant?: CountVariant;
+  /** `sm`: the small pill that stands on a mark's corner (a pane's bell, #5189), a size of its
+   *  own that a theme's room for a count never reaches. */
+  size?: "sm";
   /** What a screen reader hears in place of the number, where the number alone says too
    *  little: drawn after it, visually hidden. */
   said?: string;
@@ -75,7 +80,7 @@ export function Count({
   children: ReactNode;
 }) {
   return (
-    <span {...rest} data-scope="count" data-part="root" data-variant={variant}>
+    <span {...rest} data-scope="count" data-part="root" data-variant={variant} data-size={size}>
       {said === undefined ? (
         children
       ) : (

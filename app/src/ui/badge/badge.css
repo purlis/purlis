@@ -74,6 +74,16 @@
   gap: var(--space-1);
 }
 
+/* **A small count** (`size="sm"`, #5189): the pill that stands on a mark's corner (a pane's
+   bell), tight to its number, so the mark under it is still seen. A theme's room for a count
+   never reaches it (the manifest's `keeps_size`). */
+[data-scope="count"][data-part="root"][data-size="sm"] {
+  min-inline-size: calc(12rem / 14);
+  min-block-size: calc(12rem / 14);
+  padding-inline: var(--space-1);
+  line-height: 1;
+}
+
 /* A mark before the number (a browser's globe): the words' size. */
 [data-scope="count"][data-part="root"] > svg {
   flex: none;

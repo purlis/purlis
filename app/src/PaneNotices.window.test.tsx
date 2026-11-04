@@ -185,6 +185,7 @@ describe("a pane's notices, minimised (the default)", () => {
     // The pill is hot while a note is trouble, and unheard: the bell's name says it.
     const pill = bell().parentElement?.querySelector('[data-scope="count"]');
     expect(pill).toHaveAttribute("data-variant", "hot");
+    expect(pill).toHaveAttribute("data-size", "sm");
     expect(pill).toHaveAttribute("aria-hidden", "true");
     // The ask keeps its words and its answers, and has no Dismiss.
     expect(seen()).toEqual(["Remove workspace"]);

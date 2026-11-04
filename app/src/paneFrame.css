@@ -359,9 +359,11 @@
 }
 
 /* **The bell** (`PaneBell`, #4754, #5189): an icon button the size of its neighbours, so nothing
-   beside it moves when a notice arrives, with its count a pill on its corner, inside its box.
-   The count is neutral, and hot while one note is trouble; told by the bell's name too, never
-   the colour alone. The pill takes no pointer: a press on it is the bell's. */
+   beside it moves when a notice arrives, with its count the family's small pill on its top
+   corner: risen the smallest step above the bell, as the M70 prototype draws it, and never past
+   its end, so it stays off Split right. The count is neutral, and hot while one note is trouble;
+   told by the bell's name too, never the colour alone. The pill takes no pointer: a press on it
+   is the bell's. */
 .pane-actions > .pane-bell-slot {
   position: relative;
   display: inline-flex;
@@ -370,7 +372,7 @@
 
 .pane-bell-slot > .pane-bell-count {
   position: absolute;
-  inset-block-start: 0;
+  inset-block-start: calc(var(--space-1) * -1);
   inset-inline-end: 0;
   pointer-events: none;
 }

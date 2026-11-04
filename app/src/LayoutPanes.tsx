@@ -1607,7 +1607,8 @@ export const PaneBellAt = createContext<RefObject<HTMLButtonElement | null> | nu
  * moves. An icon button the size of its neighbours (#5189), its hint below the head.
  *
  * - **Its count is the pane's notes**, never its asks, the same number minimised and expanded:
- *   a pill on the bell's corner, inside its box, neutral, and hot while one note is trouble.
+ *   the family's small pill on the bell's top corner, neutral, and hot while one note is
+ *   trouble.
  * - **A press minimises or expands the notices of every pane** (`paneNotices.ts`); pressed, it
  *   is drawn as pressed.
  * - **A new notice never opens the band or takes the focus**: its count is said politely, once,
@@ -1624,8 +1625,8 @@ export function PaneBell() {
   const count = bellCount(holds);
   return (
     <>
-      {/* An icon button the size of its neighbours, its count a pill on its corner inside that
-          size (#5189): its name says the count, so the pill is not read twice. */}
+      {/* An icon button the size of its neighbours, its count the family's small pill on its
+          top corner (#5189): its name says the count, so the pill is not read twice. */}
       <span className="pane-bell-slot">
         <IconButton
           ref={at ?? undefined}
@@ -1646,6 +1647,7 @@ export function PaneBell() {
         {count !== "" && (
           <Count
             aria-hidden="true"
+            size="sm"
             className="pane-bell-count"
             variant={holds.trouble > 0 ? "hot" : "neutral"}
           >
