@@ -36,6 +36,8 @@ RUN set -eu; \
       "for word in \"\$@\"; do [ \"\$word\" = --version ] && { echo '${VERSION}'; exit 0; }; done" \
       'id=' \
       'while [ $# -gt 0 ]; do [ "$1" = --session-id ] && id=$2; shift; done' \
+      'printf '"'"'{"session_id":"%s","hook_event_name":"SessionStart","source":"startup"}'"'"' "$id" \' \
+      '  | CLAUDE_PID=$$ PURLIS_HARNESS=claude /usr/local/bin/purlis hook sessionstart >/dev/null' \
       'exec sleep 3600' > "$at/claude"; \
     chmod 0755 "$at/claude"; \
     chown -R 10001:10001 /home/purlis/.local
