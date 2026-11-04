@@ -639,6 +639,12 @@ pub enum Refusal {
          own, so where this would go cannot be told"
     )]
     FrameOpaque,
+    /// The tab is a fresh blank one, with no page in it to type into (#4889).
+    #[error(
+        "nothing was sent: this is a blank tab, with no page to type into: open a page in it \
+         first"
+    )]
+    BlankTab,
     #[error("nothing on the page has the focus")]
     NothingFocused,
     #[error("the page cannot tell which field has the focus")]

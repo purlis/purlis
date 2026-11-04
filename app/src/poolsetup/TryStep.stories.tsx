@@ -13,7 +13,9 @@ import type { PoolSetupCheck, PoolSetupStep } from "../bindings";
 import { expectFocusInSight, untilFocused } from "../stories.testkit";
 import { TryStep } from "./TryStep";
 
+/** A line of Try it, said of what its title names, as the core tags it. */
 const check = (verdict: string, title: string, more: string | null = null): PoolSetupCheck => ({
+  about: /identity|\bgh\b/.test(title) ? "identity" : /signed in/.test(title) ? "signins" : "chat",
   verdict,
   title,
   more,
@@ -91,6 +93,11 @@ export const Trying: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Start a test chat" }));
     await canvas.findByRole("heading", { name: "Trying it for real" });
     await expect(canvas.getByRole("status")).toHaveTextContent("Starting a chat on dev-box");
+    // Cancel stands beside the busy button while the chat starts (#4976).
+    const cancel = canvas.getByRole("button", { name: "Cancel" });
+    cancel.focus();
+    await untilFocused(() => cancel, "Cancel");
+    await expectFocusInSight();
   },
 };
 

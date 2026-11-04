@@ -525,6 +525,18 @@ pub(crate) fn fetch_whole(
     workspace: &str,
     runner: &str,
 ) -> Vec<String> {
+    // Each sentence holds what a runner said, so each is marked by purlis's one rule (#5103).
+    codelink::held::marked(fetch_whole_said(link, project, root, workspace, runner))
+}
+
+/// [`fetch_whole`]'s sentences, as they are made.
+fn fetch_whole_said(
+    link: &HostLink,
+    project: &str,
+    root: &Path,
+    workspace: &str,
+    runner: &str,
+) -> Vec<String> {
     // **What still runs there may yet commit** (#4569): a close is answered before its program
     // ends, so nothing is fetched until every program of the project there has ended.
     if let Err(why) = programs_ended(link, project, PROGRAMS_END_WITHIN) {
@@ -596,8 +608,11 @@ pub(crate) fn not_home(link: &HostLink, project: &str, root: &Path, runner: &str
                 "runner {runner} is too old to list what it holds, so purlis can't tell its work is here"
             )];
         }
+        // What a runner said is marked as the proof's sentences are (#5103).
         Err(why) => {
-            return vec![format!("the runner did not list what it holds: {why}")];
+            return codelink::held::marked(vec![format!(
+                "the runner did not list what it holds: {why}"
+            )]);
         }
     };
     let held: Vec<codelink::held::Held> = repos

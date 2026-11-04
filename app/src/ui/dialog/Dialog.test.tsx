@@ -633,7 +633,7 @@ describe("an alert dialog", () => {
 });
 
 describe("a dialog's surface", () => {
-  it("is a modal named by its label, with no header or footer of the family's", async () => {
+  it("is a dialog named by its label, with no header or footer of the family's", async () => {
     const closed = vi.fn();
     render(
       <DialogSurface onClose={closed} aria-label="Command palette" className="palette">
@@ -645,6 +645,69 @@ describe("a dialog's surface", () => {
     expect(surface.querySelector('[data-part="footer"]')).toBeNull();
     await waitFor(() => expect(screen.getByRole("textbox")).toHaveFocus());
     await userEvent.keyboard("{Escape}");
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  // **Not modal, as VS Code's palette is** (the operator's ruling of 2026-11-04, #4351): the
+  // window behind it is never made inert, so taking that away as it closes restyles nothing.
+  it("leaves the window behind it reachable: not inert, not hidden", async () => {
+    render(
+      <>
+        <main data-testid="window">
+          <button type="button">Behind</button>
+        </main>
+        <DialogSurface onClose={() => {}} aria-label="Command palette" className="palette">
+          <input aria-label="Run an action" />
+        </DialogSurface>
+      </>,
+    );
+    await waitFor(() => expect(screen.getByRole("textbox")).toHaveFocus());
+    const behind = screen.getByTestId("window");
+    expect(behind.closest("[inert]")).toBeNull();
+    expect(behind.closest('[aria-hidden="true"]')).toBeNull();
+    expect(screen.getByRole("dialog")).not.toHaveAttribute("aria-modal", "true");
+  });
+
+  it("keeps the keyboard in itself on Tab", async () => {
+    render(
+      <>
+        <button type="button">Behind</button>
+        <DialogSurface onClose={() => {}} aria-label="Command palette" className="palette">
+          <input aria-label="Run an action" />
+          <button type="button">Inside</button>
+        </DialogSurface>
+      </>,
+    );
+    await waitFor(() => expect(screen.getByRole("textbox")).toHaveFocus());
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "Inside" })).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByRole("textbox")).toHaveFocus();
+  });
+
+  it("fades in as it opens, as the family's modals do", async () => {
+    render(
+      <DialogSurface onClose={() => {}} aria-label="Command palette" className="palette">
+        <input aria-label="Run an action" />
+      </DialogSurface>,
+    );
+    const surface = await screen.findByRole("dialog", { name: "Command palette" });
+    expect(surface.closest('[data-part="scrim"]')).toHaveAttribute("data-entering");
+  });
+
+  it("closes on a press outside it", async () => {
+    const closed = vi.fn();
+    render(
+      <>
+        <button type="button">Behind</button>
+        <DialogSurface onClose={closed} aria-label="Command palette" className="palette">
+          <input aria-label="Run an action" />
+        </DialogSurface>
+      </>,
+    );
+    await waitFor(() => expect(screen.getByRole("textbox")).toHaveFocus());
+    const scrim = screen.getByRole("dialog").closest('[data-part="scrim"]');
+    await userEvent.click(scrim as Element);
     expect(closed).toHaveBeenCalledTimes(1);
   });
 });

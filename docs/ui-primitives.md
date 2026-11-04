@@ -1262,7 +1262,12 @@ tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classe
 #2910, ADR 0104), on React Aria's `ModalOverlay`, `Modal` and `Dialog`. No screen writes
 `role="dialog"` or `role="alertdialog"` itself: `eslint.config.js` refuses it
 (`purlis/dialog-family`, an error). A surface with an anatomy of its own, the palette, is
-`DialogSurface`: the family's modal, fixed top, width and height, and its own rows inside.
+`DialogSurface`: the family's scrim, fixed top, width and height, and its own rows inside.
+**`DialogSurface` is not modal**, as VS Code's palette is not (the operator's ruling of
+2026-11-04, [ADR 0104's amendment](adr/0104/2026-11-04-the-palette-is-not-modal.md)): it holds
+the keyboard in itself (`FocusScope contain`) and closes on Esc and on a press outside it, but the
+window behind it is never made inert or hidden. Every other dialog stays modal, and a click
+outside one answers nothing.
 
 **The dialog rules** (#2798, #2789, the operator's ruling in #2910), each held by the family:
 
