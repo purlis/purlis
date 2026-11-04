@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793768319417,
+  "lastUpdate": 1793770195508,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38430,6 +38430,48 @@ window.BENCHMARK_DATA = {
             "value": 101.42421949999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.023, 101.412, 101.424, 103.121, 103.442 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1f20578ab90d157a6c7002aab541f2a264b7a1a6",
+          "message": "Pool setup: the Agent identity step, Try it proves the identity, and Try it's Cancel (#4490, #4976) (#5109)\n\n* Pool setup: Try it can be cancelled, and its chat isn't put back by a relaunch (#4976)\n\nTry it holds a Cancel of its own per pool, never the picker's project-wide one. Its start runs\nunder it as the picker's does (hostedsessions::cancelled_by), and its wait for the chat's\nSessionStart looks at it each turn, so Cancel ends the try at once, closes its chat and keeps\nnothing. The step shows Cancel beside the busy button, and leaving the step or closing the tab\ncancels a try still under way. New window-only command pool_setup_try_cancel.\n\nIts chat is marked unrecorded, a field of the in-memory Chat that is never written: the record\nleaves such a chat out whole, so a launch after a quit mid-try finds nothing of it, and a\nsession host still running it closes it as nothing reattached. No reopen.json key.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: the changelog fragment for Try it's Cancel (#4976)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: the Trying story walks to Try it's Cancel (#4976)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: the Agent identity step, other forge hosts, and no repo (#4490)\n\nThe Agent identity step draws AgentIdentityFlow, the Agent identity tab's own flow, with Skip for\nnow beside its button (Q34), so an identity is set up without leaving Pool setup. An identity\nalready there shows as done: Already set up, acting as <App> on N repos, as GitHub says, with\nContinue to Try it and Open Agent identity, where it is inspected and removed. A skipped step\nsays what that means in a chat and offers Set it up now.\n\nRepos on another forge host (Q49): the core reads the forges the project's clones are on\n(agentidentity::forges_of_the_project, sharing owners_on_github's walk of the clones' own\nconfig). Where none is github.com and one is a forge purlis knows, the step says plainly that\npurlis can't set that host up by itself yet, shows the token command and the tool line to add\nby hand (gh with GH_ENTERPRISE_TOKEN and host, or glab with GITLAB_TOKEN), checks again on a\npress, and can be skipped. Same words in purlis pool setup, from the core.\n\nNo repo (C on #4469): with no clone on a forge, Try it's identity line is a check not made,\n'gh and git push weren't checked: this project has no repo yet', so the end reads 'works,\nexcept for this'.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: the Agent identity step's screen, tests and stories (#4490)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: review fixes, and Try it proves the identity with a read-only token (#4490, #4976)\n\nTry it's identity line (#4490, the dispatcher's ruling): where the identity step reads as set\nand the project has a repo, Try it proves the App as Finish does (agentidentity::prove: a\ntoken narrowed to reading metadata, one repo read, revoked) and the window shows that in the\nidentity's line, tagged by the core (Check.about). A refusal reads 'GitHub didn't confirm the\nagent's identity', so the end reads 'works, except for this'. It doesn't run gh or git push in\nthe chat itself: that waits for #4487 and #4488.\n\nReview fixes:\n- No repo (C) wins over a step that reads as done, so a set identity with no repo is a check\n  not made, never one passed. The test that caught it now passes for the right reason.\n- The hand-written line keeps the agent's token in a vault of its own, made new in the keyring\n  (purlis vault add agent-forge --provider keyring), never a vault the person's own forge\n  credential may be in; the note says never to use your own token.\n- Hosts are read once a read (hosts_of_the_project), a host purlis knows no forge at is kept,\n  and repos only there say what to declare in Settings › Forges instead of offering GitHub's\n  flow or reading as no repo.\n- A tool still to allow (after Finish, or a line by hand) opens Settings with Check again\n  beside it, instead of a step with no way on.\n- Try it's start, cancellable now, keeps a ten-minute backstop (#4976): a page reloaded mid-try\n  has no Cancel, and a runner that never answers would hold the pool's try for good.\n- References say story 34 and story 36 of #4469; the unrecorded doc says what closes a leftover\n  chat (the pool's record of what it kept) and that it is only for a chat that does no work.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: the identity step reads what's set up without setting state in its effect (#4490)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: the no-project identity test reads with no hosts (#4490)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: re-review fixes to the identity proof and its words (#4490)\n\n- Try it proves only the App behind the persona and tool the identity step reads as set\n  (poolsetup::identity_set_in), so a proof never stands in for another identity than the line\n  it replaces; a hand-written line is still never signed with.\n- A refusal from GitHub ends in a full stop before 'Open Agent identity to see how it stands.'\n- Allow it in Settings says it opens the project's Settings, with the tool allowed under\n  Sandbox there, which is what the button does.\n- A later try clears an earlier proof in the view.\n- The fixtures and story of another host show the agent's own vault, and the code block is\n  labelled for the commands it holds.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: the Allow button names the Settings page it opens, as the copy guide spells a path (#4490)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: uiRpc.ts carries Try it's Cancel and its answer, and the To allow story can open Settings (#4490, #4976)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: baselines for the Agent identity step and Try it's Cancel, drawn by #5109's stories run (#4490, #4976)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n* Pool setup: Try it's Cancel is on the list of commands answered on the window's thread, as it only sets a flag (#4976)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HES22271QKSRG463W4TB70\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T04:58:49Z",
+          "tree_id": "9f71efad1dceab3fb5ac5f3acc0a1e79d309121c",
+          "url": "https://github.com/purlis/purlis/commit/1f20578ab90d157a6c7002aab541f2a264b7a1a6"
+        },
+        "date": 1793770190089,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7074179999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.676, 0.681, 0.707, 0.709, 0.715 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5377835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.449, 16.486, 16.538, 16.603, 16.687 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9142995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.185, 101.652, 101.914, 102.278, 102.703 ms"
           }
         ]
       }
