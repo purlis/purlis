@@ -101,13 +101,13 @@ fn in_a_docker_pool() {
     // one, as its Sign-ins step does, and the runner's `claude auth status` says it is signed in
     // (`tests/parity/runner.Dockerfile`).
     let quiet = stand_in::program(bin.path(), "codex", "#!/bin/sh\nread line\n");
-    let declared =
-        std::fs::read_to_string(root.join(purlis_core::profiles::LOCAL_FILE)).expect("its profile");
+    // Written whole, as `a_profile` writes `work`, with the default and the Codex one beside it.
     std::fs::write(
         root.join(purlis_core::profiles::LOCAL_FILE),
         format!(
-            "[harness]\ndefault = \"{QUIET}\"\n\n{declared}\n[harness.{QUIET}]\nkind = \"codex\"\n\
-             command = [{:?}]\n",
+            "[harness]\ndefault = \"{QUIET}\"\n\n[harness.{PROFILE}]\nkind = \"claude\"\n\
+             command = [{:?}]\n\n[harness.{QUIET}]\nkind = \"codex\"\ncommand = [{:?}]\n",
+            harness.display().to_string(),
             quiet.display().to_string()
         ),
     )
