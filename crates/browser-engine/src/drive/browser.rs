@@ -24,8 +24,8 @@ use super::settle::{Activity, Settle, activity};
 use super::site::site;
 use super::tree::{FrameAx, NodeKey, Query, Scrub, Snapshot, View, build_kept};
 use super::{
-    Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, Gate, Hold, Judge, Limits, Outbound,
-    PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
+    Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, FillHold, Gate, Hold, Judge, Limits,
+    Outbound, PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
 };
 use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Closed, Connection, Event, Tap, TapSink};
@@ -1422,6 +1422,15 @@ pub(crate) struct Inner {
     held_in: Mutex<Option<std::path::PathBuf>>,
     /// The login whose holder is told once its page is back on its page's origin (#4995).
     back: Mutex<Option<Back>>,
+    /// **The pages holding a secret purlis filled** (#5117), each with what holds the browser to
+    /// its site while it lives.
+    fill_holds: Mutex<Vec<PageHeld>>,
+}
+
+/// **A page holding a secret purlis filled** (#5117): the page, and who is told once it is gone.
+struct PageHeld {
+    target: String,
+    hold: Arc<dyn FillHold>,
 }
 
 /// **A login whose page is to leave its form's origin** (#4995): the page purlis opened for it,
@@ -1555,6 +1564,7 @@ impl Browser {
             worlds: Worlds::default(),
             held_in: Mutex::new(None),
             back: Mutex::new(None),
+            fill_holds: Mutex::new(Vec::new()),
         });
         Screencast::start(&inner);
         if inner.judge.is_some() {
@@ -4341,6 +4351,51 @@ impl Inner {
         });
     }
 
+    /// **`hold` holds the browser while page `target` keeps the document its main frame showed
+    /// as `document`** (#5117), told [`FillHold::released`] once it shows another or is closed.
+    /// Where it does neither by the time it is held, it is released at once, and why is answered.
+    pub(crate) fn hold_while_it_lives(
+        &self,
+        target: &str,
+        document: u64,
+        hold: Arc<dyn FillHold>,
+    ) -> Result<(), String> {
+        hold.hold()?;
+        // Read and listed under the lock its events change it under: a document that came after
+        // the read is seen here, or releases what was listed.
+        let state = lock(&self.state);
+        let lives = state
+            .page(target)
+            .and_then(|page| page.frames.get(target))
+            .is_some_and(|main| main.generation == document);
+        if lives {
+            lock(&self.fill_holds).push(PageHeld {
+                target: target.to_owned(),
+                hold,
+            });
+            return Ok(());
+        }
+        drop(state);
+        hold.released();
+        Err("the page loaded another document".to_owned())
+    }
+
+    /// **Page `target` is closed, or shows another document in its main frame** (#5117): every
+    /// hold of a secret filled into it is released, once.
+    fn page_left(&self, target: &str) {
+        let released: Vec<PageHeld> = {
+            let mut holds = lock(&self.fill_holds);
+            let (gone, kept) = std::mem::take(&mut *holds)
+                .into_iter()
+                .partition(|held| held.target == target);
+            *holds = kept;
+            gone
+        };
+        for held in released {
+            held.hold.released();
+        }
+    }
+
     /// Page `target`'s own document is now at `address`: a login waiting for that page to leave
     /// its form's origin has its holder told, once (#4995).
     fn came_back(&self, target: &str, address: &str) {
@@ -4539,6 +4594,8 @@ impl Inner {
         let mut follow = Vec::new();
         // The page whose own document changed, and its address (#4995).
         let mut navigated: Option<(String, String)> = None;
+        // The pages gone, or showing another document in their main frame (#5117).
+        let mut left: Vec<String> = Vec::new();
         {
             let mut state = lock(&self.state);
             let params = &event.params;
@@ -4679,6 +4736,7 @@ impl Inner {
                 }
                 "Target.targetDestroyed" => {
                     if let Some(target) = text("/targetId") {
+                        left.push(target.clone());
                         state.pages.retain(|p| p.target != target);
                         // A frame's target can go with no detach to follow, and a session left
                         // listed would go on speaking for the frame over its parent (#4472).
@@ -4770,6 +4828,7 @@ impl Inner {
                             lock(&self.devtools_unread).remove(&target);
                             // A page's own document, where a login waits for it (#4995).
                             if text("/frame/id").as_deref() == Some(target.as_str()) {
+                                left.push(target.clone());
                                 navigated = Some((target, text("/frame/url").unwrap_or_default()));
                             }
                         }
@@ -4905,6 +4964,9 @@ impl Inner {
             {
                 page.settle.observe(session, seen, now);
             }
+        }
+        for target in &left {
+            self.page_left(target);
         }
         if let Some((target, address)) = navigated {
             self.came_back(&target, &address);

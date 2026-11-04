@@ -16,12 +16,13 @@
 
 use crate::common;
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::drive::{call, find, open, red_pixels, ref_on, screenshot, snapshot};
 use common::site::started;
 use purlis_browser_engine::drive::{
-    Answer, Browser, Call, Content, FieldInfo, FieldKind, Ref, Refusal, SecretFill,
+    Answer, Browser, Call, Content, FieldInfo, FieldKind, FillHold, Ref, Refusal, SecretFill,
 };
 
 const VALUE: &str = "fixture-key-5115";
@@ -35,8 +36,19 @@ fn fill_of(target: Ref, origin: &str) -> SecretFill {
     }
 }
 
+/// What holds the browser to the field's site while its page lives (#5117): here, nothing.
+struct Holds;
+
+impl FillHold for Holds {
+    fn hold(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn released(&self) {}
+}
+
 fn filled(browser: &Browser, target: Ref, origin: &str) -> Result<Answer, Refusal> {
-    browser.fill_secret(browser.epoch(), &fill_of(target, origin))
+    browser.fill_secret(browser.epoch(), &fill_of(target, origin), Arc::new(Holds))
 }
 
 /// How a fill ended, in words fixed in this file: a refusal may carry what its page showed, so

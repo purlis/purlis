@@ -27,6 +27,16 @@
 //!
 //! **Once a value may be in a page, the agent copies, cuts and drags nothing in that browser**,
 //! for its life: what a copy or a drag would take could be the value, or part of it.
+//!
+//! **While the page holding it lives, the browser is held to its site** (#5117; the person's
+//! ruling SF-3 and decision SF-9 on #5096): the caller's [`FillHold`] holds it just before the
+//! value goes in, and where it cannot, nothing goes in. It is released once the page loads
+//! another document in its main frame or is closed; a route change that loads no document keeps
+//! it. And the field itself gives nothing to a copy, a cut or a drag, whoever makes it: the
+//! function that writes the value stops each of them on the field first, from purlis's own
+//! world, where the page's scripts can't take the stop away.
+
+use std::sync::Arc;
 
 use serde_json::{Value, json};
 
@@ -36,7 +46,8 @@ use super::Browser;
 use super::login::origin_of;
 use super::takeover::Carrying;
 use crate::drive::{
-    Answer, Content, Driver, FieldInfo, FieldKind, MOST_LABEL_CHARS, Ref, Refusal, SecretFill, lock,
+    Answer, Content, Driver, FieldInfo, FieldKind, FillHold, MOST_LABEL_CHARS, Ref, Refusal,
+    SecretFill, lock,
 };
 
 /// The function that says what kind of field it runs on, and what the page labels it: a
@@ -66,10 +77,22 @@ pub(crate) const FIELD_KIND: &str = r"function () {
 /// the field's frame: a constant. In the same step it checks that the field is still in its
 /// document and that the document is on `origin`, answering `moved` where not and writing
 /// nothing, so no focus and no moment between a check and a write decides where the value goes.
-/// The value goes in through the field's own setter, with the events a page hears for typing,
-/// and the answer is how much the field then holds. A field that holds less is emptied again.
+/// Before the value goes in, a copy, a cut and a drag started on the field are stopped for as
+/// long as the field lives (#5117): nothing is put on the clipboard or dragged, and nothing of the
+/// page hears of them after. And the field is marked as one the browser keeps nothing of, so a
+/// page left and gone back to doesn't come back with the value in it. The value goes in through the field's own setter, with the events a
+/// page hears for typing, and the answer is how much the field then holds. A field that holds
+/// less is emptied again.
 pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin) {
   if (!field.isConnected || field.ownerDocument.location.origin !== origin) return 'moved';
+  const stop = (event) => {
+    if (event.clipboardData) event.clipboardData.clearData();
+    if (event.dataTransfer) event.dataTransfer.clearData();
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  for (const kind of ['copy', 'cut', 'dragstart']) field.addEventListener(kind, stop, true);
+  field.setAttribute('autocomplete', 'off');
   const own = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
   own.set.call(field, value);
   field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
@@ -110,14 +133,19 @@ impl Browser {
     /// **purlis puts `fill`'s value into its field** (module docs), as the agent's call under the
     /// lease of `epoch`: refused unless the agent holds that lease now, and cut if the person
     /// takes the browser over before it answers. No answer or refusal carries the value.
-    pub fn fill_secret(&self, epoch: u64, fill: &SecretFill) -> Result<Answer, Refusal> {
+    pub fn fill_secret(
+        &self,
+        epoch: u64,
+        fill: &SecretFill,
+        hold: Arc<dyn FillHold>,
+    ) -> Result<Answer, Refusal> {
         self.agent_holds(epoch)?;
         let _one = lock(&self.acting);
         // No read the agent's calls left running is kept past an act.
         lock(&self.reading).forget();
         let answer = {
             let _carrying = Carrying::under(Driver::Agent, epoch);
-            let filled = self.filling(fill);
+            let filled = self.filling(fill, hold);
             if self.cut() {
                 Err(Refusal::Interrupted)
             } else {
@@ -127,7 +155,7 @@ impl Browser {
         answer.map(|answer| self.with_asked(answer))
     }
 
-    fn filling(&self, fill: &SecretFill) -> Result<Answer, Refusal> {
+    fn filling(&self, fill: &SecretFill, hold: Arc<dyn FillHold>) -> Result<Answer, Refusal> {
         // What it fills is kept out before anything else, for the browser's life.
         let mut held = Kept::default();
         held.run(&[fill.value.as_str()]);
@@ -136,6 +164,10 @@ impl Browser {
         let origin = fill.origin.as_str();
         let at = self.resolved(target)?;
         let Some((document, here)) = self.frame_now(&at) else {
+            return Err(stale(target));
+        };
+        // The document the page shows in its main frame: the hold lives as long as it does.
+        let Some(page_document) = self.main_document(&at.page) else {
             return Err(stale(target));
         };
         // SF-13: the field's own frame, at the moment of filling.
@@ -158,6 +190,16 @@ impl Browser {
         if self.frame_now(&at) != Some((document, Some(origin.to_owned()))) {
             return Err(changed(target, origin));
         }
+        // The browser reaches only this site while the page lives, from before the value goes in
+        // (#5117): where it can't be held, nothing goes in.
+        self.inner
+            .hold_while_it_lives(&at.page, page_document, hold)
+            .map_err(|why| {
+                not_filled(format!(
+                    "purlis could not hold this browser to {origin} while the page is open \
+                     ({why}), so nothing was filled: take a new snapshot"
+                ))
+            })?;
         // From the moment a value may be in a page, the agent copies and cuts nothing in this
         // browser: what it would copy could be the value.
         self.inner
@@ -169,7 +211,8 @@ impl Browser {
         let mut answer = self.answer_now(&at.page, Content::Nothing);
         answer.note = Some(format!(
             "purlis filled {} into {target} on {origin}; the value is kept out of everything you \
-             read",
+             read. While this page is open, the browser reaches only {origin}; once the page \
+             loads another document or is closed, it reaches as before",
             fill.key
         ));
         Ok(answer)
@@ -257,6 +300,12 @@ impl Browser {
         let state = lock(&self.inner.state);
         let frame = state.page(&at.page)?.frames.get(&at.frame)?;
         Some((frame.generation, origin_of(&frame.url)))
+    }
+
+    /// The document page `page` shows in its main frame, by its number.
+    fn main_document(&self, page: &str) -> Option<u64> {
+        let state = lock(&self.inner.state);
+        Some(state.page(page)?.frames.get(page)?.generation)
     }
 
     /// `at`'s element in purlis's own world in its frame: an object of that world.

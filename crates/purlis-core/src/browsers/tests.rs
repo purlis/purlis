@@ -573,6 +573,118 @@ fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
     assert!(!ran.get(), "a second login at another site runs nothing");
 }
 
+/// #5117: while a page holding a secret purlis filled holds the browser, an address the agent
+/// writes for another site is refused before the driver hears of it, saying where the browser is
+/// held and what ends it; one on the held site, and every other act, go.
+#[test]
+fn an_address_for_another_site_is_refused_with_why_while_a_filled_page_holds_the_browser() {
+    use crate::sandbox::browser_reach::Bound;
+    let navigate = |address: &str| Act::Navigate {
+        page: None,
+        address: address.into(),
+    };
+    let bound = Bound::default();
+    assert_eq!(
+        super::held_to_said(&bound, &navigate("https://elsewhere.example.test/")),
+        None,
+        "nothing holds it yet"
+    );
+    bound
+        .hold_for_fill(&Site::of("dash.example.test", 443))
+        .expect("held");
+
+    let said =
+        super::held_to_said(&bound, &navigate("https://elsewhere.example.test/")).expect("refused");
+    assert!(
+        said.contains("reaches only dash.example.test:443"),
+        "{said}"
+    );
+    assert!(said.contains("elsewhere.example.test:443"), "{said}");
+    assert!(said.contains("browser_close"), "{said}");
+    for went in [
+        navigate("https://dash.example.test/settings"),
+        Act::Changes { page: None },
+    ] {
+        assert_eq!(super::held_to_said(&bound, &went), None, "{went:?}");
+    }
+    for refused in [
+        Act::Open {
+            address: "http://dash.example.test/".into(),
+        },
+        Act::FindLoginForm {
+            address: "https://elsewhere.example.test/login".into(),
+        },
+    ] {
+        assert!(
+            super::held_to_said(&bound, &refused).is_some(),
+            "{refused:?}"
+        );
+    }
+}
+
+/// #5117: a fill's holder holds a real reach proxy to the field's site from its hold until the
+/// engine says the page is gone; another site the chat lists is refused meanwhile. These bind
+/// sockets, so they first run on CI.
+#[cfg(unix)]
+#[test]
+fn a_fill_holds_the_real_reach_proxy_to_its_site_until_its_page_is_gone() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{TcpListener, TcpStream};
+
+    use purlis_browser_engine::drive::FillHold;
+
+    use crate::sandbox::browser_reach::{Lane, ReachProxy};
+
+    let server = || {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a listener");
+        let port = listener.local_addr().expect("an address").port();
+        (listener, port)
+    };
+    let (_held_site, held_port) = server();
+    let (_other_site, other_port) = server();
+    let reach = BrowserReach {
+        listed: [held_port, other_port]
+            .iter()
+            .flat_map(|port| crate::sandbox::localport::reach_entries(*port))
+            .map(|host| Listed {
+                host,
+                layer: Layer::Chat,
+            })
+            .collect(),
+        ..BrowserReach::default()
+    };
+    let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
+    let (listed, _) = reach_of(Some(&reach)).unwrap();
+    let proxy = std::sync::Arc::new(
+        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap(),
+    );
+    let status = |port: u16| -> String {
+        let mut stream = TcpStream::connect(proxy.address()).expect("the proxy");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(15)))
+            .unwrap();
+        stream
+            .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(stream).read_line(&mut line).unwrap();
+        line.trim_end().to_owned()
+    };
+    let carried = "HTTP/1.1 200 Connection established";
+    let holder =
+        super::FillHolder::of(&proxy, &format!("http://127.0.0.1:{held_port}")).expect("a site");
+    assert_eq!(status(other_port), carried);
+
+    holder.hold().expect("held");
+
+    assert_eq!(status(other_port), "HTTP/1.1 403 Forbidden");
+    assert_eq!(status(held_port), carried);
+    holder.released();
+    assert_eq!(status(other_port), carried, "the browser reaches as before");
+    holder.released();
+    assert_eq!(status(other_port), carried);
+}
+
 /// #4995, the person's ruling of 2026-11-03: a login whose form is on another site, performed
 /// through a real reach proxy and judge, reaches the form's site from its bind until its page is
 /// back on the page's origin; from then on the page's site alone. One whose page never comes

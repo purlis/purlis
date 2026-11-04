@@ -4,15 +4,16 @@
 //! A secret purlis fills (#5115), against the stand-in engine: its frames page is on
 //! `http://fixture.test` with its "Secret word" field, and its "payment" frame on
 //! `http://other.test`. The engine judges the field's own frame and its kind at the moment of
-//! filling, and the value is kept out of every later answer.
+//! filling, and the value is kept out of every later answer. While the page holding it lives,
+//! the browser is held to its site (#5117).
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
 use super::super::fill::{FIELD_KIND, WRITE_FIELD};
-use super::{Engine, browser, id, ref_of, snapshot};
-use crate::drive::{Call, Content, Ref, Refusal, SecretFill};
+use super::{Engine, browser, id, ref_of, snapshot, wait_for};
+use crate::drive::{Call, Content, FillHold, Ref, Refusal, SecretFill};
 
 const VALUE: &str = "open sesame";
 
@@ -57,6 +58,58 @@ fn fill_of(target: Ref, origin: &str) -> SecretFill {
     }
 }
 
+/// **What holds the browser in a test** (#5117): what it was told, in order, each hold with how
+/// many values had been written into fields by then; and whether it refuses.
+#[derive(Default)]
+struct Holding {
+    told: Mutex<Vec<String>>,
+    engine: Mutex<Option<Arc<Engine>>>,
+    refuses: bool,
+    /// What happens as it holds, in a test that says so.
+    as_held: Mutex<Option<Box<dyn Fn() + Send>>>,
+}
+
+impl FillHold for Holding {
+    fn hold(&self) -> Result<(), String> {
+        let written = super::super::super::lock(&self.engine)
+            .as_ref()
+            .map_or(0, |engine| inserted(engine));
+        super::super::super::lock(&self.told).push(format!("held, {written} written"));
+        if let Some(happens) = super::super::super::lock(&self.as_held).as_ref() {
+            happens();
+        }
+        if self.refuses {
+            return Err("the stand-in holds nothing".to_owned());
+        }
+        Ok(())
+    }
+
+    fn released(&self) {
+        super::super::super::lock(&self.told).push("released".to_owned());
+    }
+}
+
+impl Holding {
+    fn of(engine: &Arc<Engine>) -> Arc<Self> {
+        Arc::new(Self {
+            engine: Mutex::new(Some(Arc::clone(engine))),
+            ..Self::default()
+        })
+    }
+
+    fn told(&self) -> Vec<String> {
+        super::super::super::lock(&self.told).clone()
+    }
+}
+
+/// `fill` made in `browser`, held by a stand-in that holds.
+fn filling(
+    browser: &crate::drive::Browser,
+    fill: &SecretFill,
+) -> Result<crate::drive::Answer, Refusal> {
+    browser.fill_secret(browser.epoch(), fill, Arc::new(Holding::default()))
+}
+
 /// The values purlis wrote into fields, in order, and whether it pressed any key or typed.
 fn written(engine: &Engine) -> Vec<String> {
     assert!(
@@ -96,8 +149,7 @@ fn a_one_line_field_on_the_approved_origin_is_filled_and_its_value_kept_out() {
     as_fields(&engine, "one_line", Twist::None);
     let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
 
-    let answer = browser
-        .fill_secret(browser.epoch(), &fill_of(secret, "http://fixture.test"))
+    let answer = filling(&browser, &fill_of(secret, "http://fixture.test"))
         .unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
 
     assert!(answer.note.unwrap_or_default().contains("dash-api-key"));
@@ -138,7 +190,7 @@ fn a_field_in_a_frame_on_another_origin_is_refused_before_anything_is_typed() {
     as_fields(&engine, "one_line", Twist::None);
     let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
 
-    let filled = browser.fill_secret(browser.epoch(), &fill_of(pay, "http://fixture.test"));
+    let filled = filling(&browser, &fill_of(pay, "http://fixture.test"));
 
     match filled {
         Err(Refusal::NotFilled(why)) => {
@@ -157,7 +209,7 @@ fn a_field_that_is_not_one_line_is_refused_before_anything_is_typed() {
         as_fields(&engine, kind, Twist::None);
         let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
 
-        let filled = browser.fill_secret(browser.epoch(), &fill_of(secret, "http://fixture.test"));
+        let filled = filling(&browser, &fill_of(secret, "http://fixture.test"));
 
         match filled {
             Err(Refusal::NotFilled(why)) => assert!(why.contains("one-line"), "{kind}: {why}"),
@@ -173,7 +225,7 @@ fn a_field_whose_document_moved_when_the_value_is_written_takes_nothing() {
     as_fields(&engine, "one_line", Twist::Moves);
     let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
 
-    let filled = browser.fill_secret(browser.epoch(), &fill_of(secret, "http://fixture.test"));
+    let filled = filling(&browser, &fill_of(secret, "http://fixture.test"));
 
     match filled {
         Err(Refusal::NotFilled(why)) => assert!(why.contains("nothing was filled"), "{why}"),
@@ -187,7 +239,7 @@ fn a_field_that_does_not_keep_the_value_whole_is_refused_in_words_that_say_why()
     as_fields(&engine, "one_line", Twist::Shortens);
     let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
 
-    let filled = browser.fill_secret(browser.epoch(), &fill_of(secret, "http://fixture.test"));
+    let filled = filling(&browser, &fill_of(secret, "http://fixture.test"));
 
     match filled {
         Err(Refusal::NotFilled(why)) => {
@@ -214,8 +266,7 @@ fn once_a_secret_is_filled_the_agent_copies_and_cuts_nothing_in_that_browser() {
     };
     // Before a fill, a copy is the agent's to make.
     assert!(press(2, &["Control+c"]).is_ok());
-    browser
-        .fill_secret(browser.epoch(), &fill_of(secret, "http://fixture.test"))
+    filling(&browser, &fill_of(secret, "http://fixture.test"))
         .unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
     let keys_before = engine.sent("Input.dispatchKeyEvent").len();
 
@@ -258,7 +309,11 @@ fn a_fill_under_a_lease_the_agent_no_longer_holds_types_nothing() {
     let before = browser.epoch();
     browser.take_over();
 
-    let filled = browser.fill_secret(before, &fill_of(secret, "http://fixture.test"));
+    let filled = browser.fill_secret(
+        before,
+        &fill_of(secret, "http://fixture.test"),
+        Arc::new(Holding::default()),
+    );
 
     assert!(filled.is_err(), "{}", ended_as(&filled));
     assert_eq!(inserted(&engine), 0);
@@ -277,9 +332,7 @@ fn a_value_the_page_echoes_away_from_its_field_is_kept_out() {
         ..fill_of(secret, "http://fixture.test")
     };
 
-    browser
-        .fill_secret(browser.epoch(), &fill)
-        .unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
+    filling(&browser, &fill).unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
     // The page writes it into its text; its field still reads as it did.
     {
         let mut model = super::super::super::lock(&engine.model);
@@ -291,4 +344,139 @@ fn a_value_the_page_echoes_away_from_its_field_is_kept_out() {
     let text = snapshot(&browser, 2);
     assert!(!text.contains(ECHOED), "{text}");
     assert!(text.contains("You typed"), "{text}");
+}
+
+/// The page's main frame shows another document, as the engine tells it.
+fn main_frame_loads(engine: &Engine, url: &str) {
+    engine.emit(
+        "Page.frameNavigated",
+        json!({ "frame": { "id": "PAGE-1", "loaderId": "LOADER-NEXT", "url": url, "name": "" } }),
+        Some("S-PAGE-1"),
+    );
+}
+
+/// The stand-in's page, filled under `holding`, which holds.
+fn filled_under(holding: &Arc<Holding>) -> (crate::drive::Browser, Arc<Engine>) {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    *super::super::super::lock(&holding.engine) = Some(Arc::clone(&engine));
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    browser
+        .fill_secret(
+            browser.epoch(),
+            &fill_of(secret, "http://fixture.test"),
+            Arc::clone(holding) as Arc<dyn FillHold>,
+        )
+        .unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
+    (browser, engine)
+}
+
+#[test]
+fn the_browser_is_held_to_the_site_before_the_value_goes_in() {
+    let holding = Arc::new(Holding::default());
+
+    let (_browser, engine) = filled_under(&holding);
+
+    assert_eq!(holding.told(), ["held, 0 written"]);
+    assert_eq!(written(&engine), [VALUE]);
+}
+
+#[test]
+fn a_browser_that_cannot_be_held_takes_no_value_and_says_why() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    let holding = Arc::new(Holding {
+        refuses: true,
+        ..Holding::default()
+    });
+
+    let filled = browser.fill_secret(
+        browser.epoch(),
+        &fill_of(secret, "http://fixture.test"),
+        Arc::clone(&holding) as Arc<dyn FillHold>,
+    );
+
+    match filled {
+        Err(Refusal::NotFilled(why)) => {
+            assert!(why.contains("could not hold this browser"), "{why}");
+            assert!(why.contains("nothing was filled"), "{why}");
+        }
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    assert_eq!(inserted(&engine), 0);
+}
+
+#[test]
+fn a_route_change_or_a_frames_document_keeps_the_hold_and_a_new_page_document_ends_it_once() {
+    let holding = Arc::new(Holding::default());
+    let (browser, engine) = filled_under(&holding);
+
+    // A single-page app's route change loads no document; nor does the page, when a frame in it
+    // loads one.
+    engine.emit(
+        "Page.navigatedWithinDocument",
+        json!({ "frameId": "PAGE-1", "url": "http://fixture.test/frames.html#/settings" }),
+        Some("S-PAGE-1"),
+    );
+    engine.emit(
+        "Page.frameNavigated",
+        json!({ "frame": { "id": "PAYMENT-FRAME", "parentId": "PAGE-1", "name": "payment", "url": "http://fixture.test/after.html" } }),
+        Some("S-PAGE-1"),
+    );
+    // Read once the engine's words are in: a snapshot answers after them.
+    let _ = snapshot(&browser, 2);
+    assert_eq!(holding.told(), ["held, 0 written"], "still held");
+
+    main_frame_loads(&engine, "http://fixture.test/next.html");
+    wait_for("the hold is released", || holding.told().len() == 2);
+    main_frame_loads(&engine, "http://fixture.test/later.html");
+    let _ = snapshot(&browser, 3);
+
+    assert_eq!(holding.told(), ["held, 0 written", "released"]);
+}
+
+#[test]
+fn a_closed_page_ends_the_hold() {
+    let holding = Arc::new(Holding::default());
+    let (_browser, engine) = filled_under(&holding);
+
+    engine.emit(
+        "Target.targetDestroyed",
+        json!({ "targetId": "PAGE-1" }),
+        None,
+    );
+
+    wait_for("the hold is released", || {
+        holding.told() == ["held, 0 written", "released"]
+    });
+}
+
+#[test]
+fn a_page_that_loads_another_document_as_it_is_held_is_released_and_takes_no_value() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    let loads = Arc::clone(&engine);
+    let holding = Arc::new(Holding {
+        as_held: Mutex::new(Some(Box::new(move || {
+            main_frame_loads(&loads, "http://fixture.test/next.html");
+            // The engine's word is read before the hold is listed.
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }))),
+        ..Holding::default()
+    });
+
+    let filled = browser.fill_secret(
+        browser.epoch(),
+        &fill_of(secret, "http://fixture.test"),
+        Arc::clone(&holding) as Arc<dyn FillHold>,
+    );
+
+    match filled {
+        Err(Refusal::NotFilled(why)) => assert!(why.contains("nothing was filled"), "{why}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    assert_eq!(inserted(&engine), 0);
+    assert_eq!(holding.told(), ["held, 0 written", "released"]);
 }

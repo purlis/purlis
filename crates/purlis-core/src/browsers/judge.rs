@@ -26,7 +26,8 @@
 //!   as the agent's would be.
 //! - **A browser holding a login asks nothing** (#2016): its proxy carries the login's site
 //!   alone ([`Bound`]), so a request anywhere else is refused there, in words, and no Allow
-//!   would carry it.
+//!   would carry it. Nor does one held while a page holding a secret purlis filled lives
+//!   (#5117): its proxy carries that secret's site alone meanwhile.
 //! - **What is never a site** (this machine, a private or reserved address, an address of no
 //!   web scheme) asks nothing: the proxy refuses or carries it by its own rules.
 //!

@@ -198,6 +198,22 @@ pub trait Hold: Send + Sync {
     fn back(&self);
 }
 
+/// **What holds a browser to the site a secret was filled on, while the page holding it lives**
+/// (#5117; the person's ruling SF-3 and decision SF-9 on #5096): the caller's.
+/// [`FillHold::hold`] is told once every check of the fill has passed and just before the value
+/// goes in; where it cannot hold, nothing goes in. [`FillHold::released`] is told once, when the
+/// page the field is on loads another document in its main frame or is closed. A route change
+/// that loads no document keeps the hold, and so does any change in a frame inside the page.
+pub trait FillHold: Send + Sync {
+    /// Holds the browser to the fill's site from now, or why it cannot.
+    fn hold(&self) -> Result<(), String>;
+
+    /// **The page holding the value is gone**: a new document in its main frame, or its tab
+    /// closed. Told at most once, after [`Self::hold`] answered, and on the thread that reads the
+    /// engine's events, so it must not wait on the browser.
+    fn released(&self);
+}
+
 /// A login that only binds, told nothing of its page coming back: what a caller with one site
 /// passes.
 impl<F: Fn() -> Result<(), String> + Send + Sync> Hold for F {

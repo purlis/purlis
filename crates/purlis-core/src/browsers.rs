@@ -47,6 +47,11 @@
 //!   goes, and just before the first value goes in the proxy is bound to that site alone, for
 //!   the browser's life ([`crate::sandbox::browser_reach::Bound`]). A browser started with no
 //!   reach, or holding a login at another site already, is logged in nowhere.
+//! - **Its secret fills** (#5115, #5117): the driver fills a vault value into one field
+//!   ([`drive::Browser::fill_secret`]), and just before the value goes in the browser's reach
+//!   proxy is held to the field's site ([`FillHolder`]) until the page holding it loads another
+//!   document in its main frame or is closed. Meanwhile an address the agent writes for another
+//!   site is refused before the driver hears of it, in words that say why ([`held_to_said`]).
 //! - **Its driver** (#2014): the host's lease is the driver's own ([`drive::Browser::take_over`]),
 //!   each act made under the epoch the host checked; the person's input becomes the driver's own
 //!   event ([`input_of`]), and each frame names what it shows ([`aim_of`]).
@@ -1208,6 +1213,76 @@ impl drive::Hold for Holder {
     }
 }
 
+/// **What holds a browser to the site a secret was filled on, while the page holding it lives**
+/// (#5117; the person's ruling SF-3 and decision SF-9 on #5096), handed to its engine: it holds
+/// the browser's reach proxy to that site just before the value goes in, and lets it go once the
+/// engine says the page is gone.
+pub struct FillHolder {
+    proxy: std::sync::Weak<ReachProxy>,
+    site: Site,
+    /// The hold it made, once it made one.
+    number: Mutex<Option<u64>>,
+}
+
+impl FillHolder {
+    /// What holds the browser `proxy` serves to `origin`'s site (`scheme://host[:port]`), or why
+    /// that names none.
+    pub fn of(proxy: &Arc<ReachProxy>, origin: &str) -> Result<Self, String> {
+        let (host, port) = judge::site_of(origin)
+            .ok_or_else(|| format!("{origin} is not a site purlis can hold a browser to"))?;
+        Ok(Self {
+            proxy: Arc::downgrade(proxy),
+            site: Site::of(&host, port),
+            number: Mutex::new(None),
+        })
+    }
+}
+
+impl drive::FillHold for FillHolder {
+    fn hold(&self) -> Result<(), String> {
+        let proxy = self
+            .proxy
+            .upgrade()
+            .ok_or_else(|| "the browser's reach proxy has stopped".to_owned())?;
+        let number = proxy.hold_for_fill(&self.site)?;
+        *self.number.lock().unwrap_or_else(PoisonError::into_inner) = Some(number);
+        Ok(())
+    }
+
+    fn released(&self) {
+        let number = self
+            .number
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let (Some(number), Some(proxy)) = (number, self.proxy.upgrade()) {
+            proxy.fill_released(number);
+        }
+    }
+}
+
+/// **Why the agent's `act` may not go where it would** (#5117): an address it wrote for another
+/// site than the one a page holding a secret purlis filled holds the browser to, in words that
+/// say why and what ends it. `None` for any other act, and while nothing holds the browser.
+pub fn held_to_said(bound: &Bound, act: &Act) -> Option<String> {
+    let address = match act {
+        Act::Open { address } | Act::FindLoginForm { address } | Act::Navigate { address, .. } => {
+            address
+        }
+        _ => return None,
+    };
+    let held = bound.held_for_fill()?;
+    let (host, port) = judge::site_of(address)?;
+    if Site::of(&host, port) == held {
+        return None;
+    }
+    Some(format!(
+        "this browser reaches only {held} while a page in it holds a secret purlis filled there, \
+         so it did not go to {host}:{port}. Once that page loads another of its own pages, or is \
+         closed with browser_close or by the person, the browser reaches as before"
+    ))
+}
+
 /// **`<data>/browsers/`, made this user's alone and left out of this device's backups** (#2021):
 /// a running browser's folder holds its cookies and storage as plainly as the engine writes them.
 fn made_private_and_unbacked(folders: &Path) -> Result<(), String> {
@@ -1685,7 +1760,20 @@ impl Screen for EngineScreen {
             Act::SaveDownload { download, to, into } => {
                 return self.save_download(epoch, &download, &to, into.as_deref(), project);
             }
-            act => call_of(act).map_err(NotActed::Refused)?,
+            act => {
+                // A page holding a secret holds the browser to its site (#5117): an address the
+                // agent wrote for another is refused here, saying why.
+                let held = self
+                    .held
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .as_ref()
+                    .and_then(|held| held_to_said(held.proxy.bound(), &act));
+                if let Some(why) = held {
+                    return Err(NotActed::Refused(why));
+                }
+                call_of(act).map_err(NotActed::Refused)?
+            }
         };
         // The call waits on the engine: it is made outside the lock, so frames and a stop are
         // never held up behind it.
@@ -1783,11 +1871,18 @@ impl Screen for EngineScreen {
             value: zeroize::Zeroizing::new(fill.value.expose().to_owned()),
         };
         // It waits on the engine: made outside the lock, as an act is.
-        let browser = self.with(Arc::clone);
+        let held = {
+            let held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
+            held.as_ref()
+                .map(|held| (Arc::clone(&held.browser), Arc::clone(&held.proxy)))
+        };
+        let Some((browser, proxy)) = held else {
+            return Err(NotActed::Ended);
+        };
+        // Held to the field's site while its page lives, from before the value goes in (#5117).
+        let hold = FillHolder::of(&proxy, &fill.origin).map_err(NotActed::Refused)?;
         browser
-            .map_or(Err(drive::Refusal::Ended), |browser| {
-                browser.fill_secret(epoch, &fill)
-            })
+            .fill_secret(epoch, &fill, Arc::new(hold))
             .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
             .map_err(not_acted)
     }
