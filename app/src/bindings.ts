@@ -3351,7 +3351,8 @@ export const commands = {
 	poolSetupSignInsByHand: (pool: string, adding: string[], signingIn: string[]) => typedError<PoolSetupSee | null, string>(__TAURI_INVOKE("pool_setup_sign_ins_by_hand", { pool, adding, signingIn })),
 	/**
 	 *  **This machine's profiles against pool `pool`'s limits**, the ones in use in `plane` marked:
-	 *  measured as a send measures them, with no file read. It changes nothing.
+	 *  measured as a send measures them, with no file read, and held to what its runner takes where
+	 *  one link can tell (#4719). It changes nothing.
 	 */
 	poolSetupSizes: (plane: PlaneId, pool: string) => typedError<PoolSetupSizes, string>(__TAURI_INVOKE("pool_setup_sizes", { plane, pool })),
 	/**

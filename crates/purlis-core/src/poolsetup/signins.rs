@@ -49,7 +49,7 @@ pub fn sized(
     name: &str,
     measured: Result<(u64, u64), String>,
     limits: &Chosen,
-    _highest: &Chosen,
+    highest: &Chosen,
     in_use: bool,
 ) -> Sized {
     match measured {
@@ -58,12 +58,7 @@ pub fn sized(
             mib: Some(bytes.div_ceil(MIB)),
             files: Some(files),
             unread: None,
-            hits: crate::profilestore::onrunner::hits_against(
-                limits,
-                &Chosen::default(),
-                bytes,
-                files,
-            ),
+            hits: crate::profilestore::onrunner::hits_against(limits, highest, bytes, files),
             in_use,
         },
         Err(why) => Sized {
@@ -96,7 +91,7 @@ pub fn sizes(
     config: &Path,
     plane: Option<&Path>,
     pool: &str,
-    _highest: &Chosen,
+    highest: &Chosen,
 ) -> Result<Sizes, Refused> {
     let limits = runners::chosen_limits_of(config, pool)?;
     let records = crate::profilestore::list(config).map_err(Refused::Other)?;
@@ -109,14 +104,14 @@ pub fn sizes(
                 &record.name,
                 measured,
                 &limits,
-                &Chosen::default(),
+                highest,
                 used.contains(&record.name),
             )
         })
         .collect();
     Ok(Sizes {
-        most_mib: limits.in_force(LimitId::ProfileSize),
-        most_files: limits.in_force(LimitId::ProfileFiles),
+        most_mib: most(&limits, highest, LimitId::ProfileSize),
+        most_files: most(&limits, highest, LimitId::ProfileFiles),
         profiles,
     })
 }
@@ -204,6 +199,13 @@ pub fn by_hand(pool: &str, adding: &[String], signing_in: &[String]) -> Option<s
             .to_owned(),
         text: lines.join("\n"),
     })
+}
+
+/// The most limit `id` lets a profile send: the pool's, held to what its runner takes, as a send
+/// is held ([`crate::profilestore::onrunner::hits_against`]).
+fn most(limits: &Chosen, highest: &Chosen, id: LimitId) -> u64 {
+    let chosen = limits.in_force(id);
+    highest.get(id).map_or(chosen, |top| top.min(chosen))
 }
 
 /// What a send of `record` to a runner carries: its bytes and its files.

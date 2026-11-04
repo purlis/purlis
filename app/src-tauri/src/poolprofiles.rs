@@ -1377,6 +1377,19 @@ pub async fn pool_profile_add(
     .map_err(|why| format!("the profile was not added: {why}"))?
 }
 
+/// **The session protocol version pool `pool`'s runner speaks**, where it can be told now
+/// (#4719): over one link, without waking it, and only to a runner shown to be the person's own
+/// ([`yours`]). None where it can't, and the Sign-ins step then measures against the pool's
+/// limits alone.
+pub fn runner_speaks(
+    config: &Path,
+    pool: &str,
+) -> Option<purlis_session_protocol::version::Version> {
+    let yours = yours(config, pool).ok()?;
+    let to = to_a_runner(config, pool, Waking::No, &yours).ok()?;
+    crate::runnerlinks::version_over_a_link(&to).ok()
+}
+
 /// **Takes profile `name` off pool `pool`** (#4047): its runner forgets it first, its folder
 /// and its sign-in there with it, then the pool's record leaves it out, starting from the
 /// open project `plane`'s default where it named none. A runner that could not forget it leaves
