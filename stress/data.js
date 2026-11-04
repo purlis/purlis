@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793797483650,
+  "lastUpdate": 1793802032382,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8510,6 +8510,42 @@ window.BENCHMARK_DATA = {
             "value": 595.1,
             "unit": "MB",
             "extra": "median of 6 samples: 577.8, 588, 593.9, 596.2, 596.9, 599.8 MB; window 369.3 MB, session host 224.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bd8de72aad6c3ec436fd7618d5df26e932be4676",
+          "message": "Felt speed: a burst of chat events is one commit, and the guards hold it (#4882) (#5187)\n\n* Felt speed: a burst of chat events is one commit, and the guards hold it (#4882)\n\nThe burst test of #4818 and the batch test of #4829 now assert exactly one\nReact commit. On main they were three. Two came from the test's window not\nknowing its chats at rest: the burst was each chat's first state, which\ncounts as a chat start and mounted the status bar's running item. The test's\ncore now answers chat_states as a window open a while would. The third was\nreal: the context gauge set a new object for every chat_usage answer, so the\nread each move sets off was a commit of its own. An unchanged reading is no\nlonger set.\n\nThe no-loss-or-reorder guard now covers doing and skill-run events, sent\ninterleaved across two chats and as one batch. heard() lives once, in\nframe.testkit.ts, instead of in nine test files.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K52BSDK84V6FBYF7BW5ZHF\nPurlis-Persona: steward\n\n* Changelog fragment for #4882\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K52BSDK84V6FBYF7BW5ZHF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T12:28:58Z",
+          "tree_id": "598eae18c9b3ab32e52abc438fcab86a7a0e78aa",
+          "url": "https://github.com/purlis/purlis/commit/bd8de72aad6c3ec436fd7618d5df26e932be4676"
+        },
+        "date": 1793802027714,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1366,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1052, 1366, 1632 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 587.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 573.6, 584.2, 587.2, 587.5, 588.2, 657.3 MB; window 365.1 MB, session host 221.3 MB"
           }
         ]
       }
