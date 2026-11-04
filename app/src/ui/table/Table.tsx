@@ -235,14 +235,16 @@ function forgetSettled(event: React.SyntheticEvent<HTMLDivElement>): void {
 }
 
 /**
- * **How far a focus ring is drawn outside its control's edge**: the outline's width and offset,
- * where it has one drawn outside (an inset ring takes none).
+ * **How far a focus ring may be drawn outside its control's edge**: the theme's ring width and
+ * offset (`--focus-ring-width`, `--focus-ring-offset`), read from the theme rather than from the
+ * control's outline, which React Aria draws a render after the focus comes (`data-focus-visible`)
+ * and a slow frame in WebKit measured before it was there. Room is kept for the ring whether or
+ * not this control draws it outside its edge, so the frame ends in the same place either way.
  */
 function ringOutside(element: Element): number {
   const style = getComputedStyle(element);
-  if (style.outlineStyle === "none") return 0;
-  const width = Number.parseFloat(style.outlineWidth) || 0;
-  const offset = Number.parseFloat(style.outlineOffset) || 0;
+  const width = Number.parseFloat(style.getPropertyValue("--focus-ring-width")) || 0;
+  const offset = Number.parseFloat(style.getPropertyValue("--focus-ring-offset")) || 0;
   return Math.max(0, width + offset);
 }
 
