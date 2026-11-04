@@ -202,6 +202,8 @@ include!(concat!(env!("OUT_DIR"), "/theme_parts_tests.rs"));
 #[cfg(test)]
 mod accent_grounds_tests;
 #[cfg(test)]
+mod accent_marks_tests;
+#[cfg(test)]
 mod parts_tests;
 #[cfg(test)]
 mod person_tests;

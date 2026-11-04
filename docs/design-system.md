@@ -472,7 +472,14 @@ asked for), whatever the system's appearance. Where its values come from:
   turned ground would come nearer than the theme's own does, the theme's is drawn, whether the
   turn comes from an accent given over it or from a workspace's colour; a workspace's colour
   keeps every token drawn in that ground's value with it, so what a theme draws alike stays
-  alike. Section labels are tracked at
+  alike. **What is drawn in the accent follows it too** (#4918,
+  `vocabulary::DRAWN_IN_THE_ACCENT`): the primary's fill at rest and under the pointer
+  (`accent.fill`, `accent.fill-hover`), the focus ring and the selected row's edge turn the same
+  way, so the white words keep their 4.5:1 on the fill and the ring its 3:1; one that would come
+  nearer the waiting or danger colour than 0.1, and nearer than Purlis's own, stays Purlis's
+  (`vocabulary::holds_as_apart`). A fill the parent draws as its surface (Purlis Classic) keeps
+  following the surface. `tab.active` stays Purlis's: it is a grey ground there, with nothing
+  of the accent to turn. Section labels are tracked at
   .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
   that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its
   update pill's primary words.
