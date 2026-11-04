@@ -972,14 +972,21 @@ mod tests {
             purlis_core::dispatchplace::left_to_its_task("check the queue", "check", true)
         );
         in_the_windows_words(&merged);
-        for force in [false, true] {
-            let removed = remove_piece(&root, "alpha", "thing", "check", force).unwrap_err();
-            assert_eq!(
-                removed,
-                purlis_core::dispatchplace::left_to_its_task("check the queue", "check", false)
-            );
-            in_the_windows_words(&removed);
-        }
+        // A Remove not forced says why the folder is not finished (ADR 0110); a forced one is
+        // left to the task's Changes tab, finished or not.
+        let removed = remove_piece(&root, "alpha", "thing", "check", false).unwrap_err();
+        assert!(
+            removed.contains("not finished: its task has not ended"),
+            "{removed}"
+        );
+        assert!(removed.contains("Changes tab"), "{removed}");
+        in_the_windows_words(&removed);
+        let removed = remove_piece(&root, "alpha", "thing", "check", true).unwrap_err();
+        assert_eq!(
+            removed,
+            purlis_core::dispatchplace::left_to_its_task("check the queue", "check", false)
+        );
+        in_the_windows_words(&removed);
         assert!(added.path.is_dir(), "nothing was removed");
         assert!(!clone.join("work.txt").exists(), "nothing was merged");
 

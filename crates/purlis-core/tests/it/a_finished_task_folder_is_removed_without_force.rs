@@ -296,3 +296,31 @@ fn force_is_still_refused_for_a_task_folder_finished_or_not() {
     assert!(said.contains("Changes tab"), "{said}");
     assert!(cut.path.is_dir());
 }
+
+#[test]
+fn the_explorer_s_remove_reads_a_finished_task_folder_as_the_command_does() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let cut = task_folder(&f, "check the queue", true);
+    let kept = |merging: bool, force: bool| {
+        dispatchplace::kept_from_the_explorer(
+            &f.plane,
+            &f.ws,
+            &f.repo,
+            &cut.piece,
+            merging,
+            force,
+            || false,
+        )
+    };
+
+    assert_eq!(kept(false, false), None, "a finished task folder goes");
+    assert!(kept(false, true).is_some(), "never forced");
+    assert!(
+        kept(true, false).is_some(),
+        "never merged from the explorer"
+    );
+    std::fs::write(cut.path.join("README.md"), "changed\n").unwrap();
+    let said = kept(false, false).expect("not finished");
+    assert!(said.contains("uncommitted changes"), "{said}");
+}
