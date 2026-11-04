@@ -533,7 +533,11 @@ pub fn ignored_would_go(plane: &Path, ws: &str, repo: &str, piece: &str) -> Opti
     let hidden = crate::guest::hidden_by_purlis(&folder);
     let kept: Vec<String> = ignored
         .into_iter()
-        .filter(|path| !crate::guest::is_purlis_own(&hidden, path) && !regenerated(&folder, path))
+        .filter(|path| {
+            !crate::guest::is_purlis_own(&hidden, path)
+                && !regenerated(&folder, path)
+                && !a_link(&folder, path)
+        })
         .collect();
     if kept.is_empty() {
         return None;
@@ -592,6 +596,19 @@ fn regenerated(folder: &Path, path: &str) -> bool {
         }),
     };
     named && !may_hold_a_repository(&folder.join(dir))
+}
+
+/// **Whether `path`, an ignored path of the branch folder `folder`, is a symbolic link**
+/// (#4245), wherever it points and whatever it is named: lanes share an install by linking
+/// `app/node_modules` into another folder. Removing the folder deletes the link and never what
+/// it points to, so nothing of the task's goes with it. git lists a link as a file, with no
+/// closing slash.
+fn a_link(folder: &Path, path: &str) -> bool {
+    !path.ends_with('/')
+        && folder
+            .join(path)
+            .symlink_metadata()
+            .is_ok_and(|meta| meta.file_type().is_symlink())
 }
 
 /// The most entries [`may_hold_a_repository`] reads, more than a large `node_modules/` holds.

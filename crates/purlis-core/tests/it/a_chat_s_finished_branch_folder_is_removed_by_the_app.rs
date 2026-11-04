@@ -673,3 +673,39 @@ fn a_change_differing_only_past_a_nul_byte_is_not_found_in_history() {
     assert!(matches!(answer, Answer::Said { code: 1, .. }), "{said}");
     assert!(lane.is_dir());
 }
+
+#[test]
+fn an_ignored_link_does_not_keep_a_folder_and_its_target_outlives_it() {
+    purlis_core::unsteered!();
+    // #4245: lanes share an install by linking `app/node_modules` into another folder, and git
+    // lists a link with no closing slash, wherever it points and whatever it is named.
+    let (world, lane) = holding("node_modules\nshared\n", &["app/package.json"], &[]);
+    let elsewhere = world.workspace().join("elsewhere");
+    std::fs::create_dir_all(elsewhere.join("left-pad")).unwrap();
+    std::fs::write(elsewhere.join("left-pad/index.js"), "x\n").unwrap();
+    std::os::unix::fs::symlink(&elsewhere, lane.join("app/node_modules")).unwrap();
+    std::os::unix::fs::symlink(world.workspace().join("nowhere"), lane.join("shared")).unwrap();
+
+    let (answer, said) = world.removed(&world.workspace(), "lane", false);
+
+    assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
+    assert!(!lane.exists(), "{said}");
+    assert!(
+        elsewhere.join("left-pad/index.js").is_file(),
+        "the link's target is kept"
+    );
+}
+
+#[test]
+fn an_ignored_file_that_is_no_link_still_keeps_a_folder() {
+    purlis_core::unsteered!();
+    let (world, lane) = holding(
+        "node_modules\n",
+        &["app/package.json"],
+        &["app/node_modules"],
+    );
+    let (answer, said) = world.removed(&world.workspace(), "lane", false);
+    assert!(matches!(answer, Answer::Said { code: 1, .. }), "{said}");
+    assert!(said.contains("`app/node_modules`"), "{said}");
+    assert!(lane.join("app/node_modules").is_file());
+}
