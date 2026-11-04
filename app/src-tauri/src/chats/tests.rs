@@ -8200,11 +8200,12 @@ fn a_person_lifted_it() -> purlis_core::sandbox::Lifted {
 
 #[test]
 fn a_run_with_no_sandbox_and_no_opt_out_says_so_in_the_record_and_an_opt_out_does_not() {
-    let chats = Chats::new();
+    let on_a_host = || Chats::on_host(Box::new(|_| {}), Box::new(Pretend::default()), no_project());
     let chat = Chat {
         persona: Some("steward".to_owned()),
         ..chat("/bin/sh", "c", None)
     };
+    let chats = on_a_host();
     let session = chats
         .start_ready(&chat, &a_shell_ready(), SIZE)
         .expect("starts");
@@ -8212,7 +8213,8 @@ fn a_run_with_no_sandbox_and_no_opt_out_says_so_in_the_record_and_an_opt_out_doe
     assert!(!chats.record().chats[0].unsandboxed, "it is no opt-out");
     let _ = chats.close(session);
 
-    let chats = Chats::new();
+    let mut chats = on_a_host();
+    let _said = saying(&mut chats);
     let ready = purlis_core::start::Ready {
         harness: Some(Harness::ClaudeCode),
         unsandboxed: Some(a_person_lifted_it()),
@@ -8221,6 +8223,20 @@ fn a_run_with_no_sandbox_and_no_opt_out_says_so_in_the_record_and_an_opt_out_doe
     let session = chats.start_ready(&chat, &ready, SIZE).expect("starts");
     assert!(!chats.record().chats[0].no_sandbox);
     assert!(chats.record().chats[0].unsandboxed);
+    let _ = chats.close(session);
+}
+
+/// A runner's chat runs in the sandbox the runner compiles for it, though this window has none.
+#[test]
+fn a_harness_chat_on_a_runner_is_not_recorded_as_a_run_with_no_sandbox() {
+    let host = Pretend::default();
+    host.on_a_runner();
+    let chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+    let session = chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    assert!(!chats.record().chats[0].no_sandbox);
+    assert!(!chats.record().chats[0].unsandboxed);
     let _ = chats.close(session);
 }
 
