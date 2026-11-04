@@ -7,6 +7,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { partsWithoutTheirClass } from "./ui/partClasses";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **Every part the window draws carries its classes** (#4351; ADR 0103, amended 2026-11-04): the
@@ -54,6 +55,7 @@ function core(entries: unknown[] = []) {
       asked.push(cmd);
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
+      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,
