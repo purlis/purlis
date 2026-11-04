@@ -278,6 +278,7 @@ fn a_fill_on_a_runners_browser_asks_here_naming_its_pool_and_goes_to_that_browse
         [Some("builds".to_owned())],
         "the browser it went into runs on the runner"
     );
+    drop(allow);
     let asked = asked.into_inner();
     assert_eq!(asked.len(), 1);
     assert_eq!(asked[0].pool.as_deref(), Some("builds"));
