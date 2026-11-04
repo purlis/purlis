@@ -102,8 +102,9 @@ pub async fn move_to_window(
     })
 }
 
-/// The event a window is sent to show a chat it has in a pane: a press in another window of
-/// the project landed on it ([`press_elsewhere`]).
+/// The event a window is sent to show a chat: a press in another window of the project landed
+/// on it ([`press_elsewhere`]), on a chat it has in a pane, or on a chat in no pane where its
+/// pane was used last (#5108), which it shows in its focused pane.
 pub const PRESS_HERE: &str = "press-here";
 
 /// What [`PRESS_HERE`] carries.

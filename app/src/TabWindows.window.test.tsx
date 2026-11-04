@@ -220,7 +220,7 @@ describe("the most recently used pane across the project's windows (#5108)", () 
     await waitFor(() => expect(sent("pane_used").at(-1)?.args).toEqual({ plane: ONE }));
   });
 
-  it("a pane focused in a tab window is said to the core", async () => {
+  it("a key typed in a pane of a tab window is said to the core", async () => {
     mockWindows("window-1");
     const { sent } = core({
       tabWindow: 1,
@@ -229,9 +229,45 @@ describe("the most recently used pane across the project's windows (#5108)", () 
     });
     render(<App />);
 
-    fireEvent.focus(await screen.findByText("session 2"));
+    fireEvent.keyDown(await screen.findByText("session 2"), { key: "a" });
 
     await waitFor(() => expect(sent("pane_used").at(-1)?.args).toEqual({ plane: ONE }));
+  });
+
+  it("a pane given focus back as its window comes forward is not a use of it", async () => {
+    // The window coming forward hands focus back to the pane that last had it: a press on a
+    // sidebar row would otherwise always be this window's.
+    const { sent } = core({
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2)] },
+      chats: [1, 2],
+    });
+    render(<App />);
+    await waitFor(() => expect(sent("tab_windows_back")).toHaveLength(1));
+
+    fireEvent.focus(await screen.findByText("session 1"));
+    await act(() => new Promise((done) => setTimeout(done, 0)));
+
+    expect(sent("pane_used")).toEqual([]);
+  });
+
+  it("a window says its pane's use once until it has been away", async () => {
+    const { sent } = core({
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2)] },
+      chats: [1, 2],
+    });
+    render(<App />);
+    await waitFor(() => expect(sent("tab_windows_back")).toHaveLength(1));
+    const pane = await screen.findByText("session 1");
+
+    fireEvent.pointerDown(pane);
+    fireEvent.keyDown(pane, { key: "a" });
+    fireEvent.keyDown(pane, { key: "b" });
+    await waitFor(() => expect(sent("pane_used")).toHaveLength(1));
+    // Another window was used meanwhile, so this one says it again.
+    act(() => void window.dispatchEvent(new Event("blur")));
+    fireEvent.keyDown(pane, { key: "c" });
+
+    await waitFor(() => expect(sent("pane_used")).toHaveLength(2));
   });
 
   it("a project of one window says nothing of its panes, and a press asks nothing", async () => {
@@ -268,6 +304,8 @@ describe("the most recently used pane across the project's windows (#5108)", () 
     await waitFor(() =>
       expect(sent("press_elsewhere").at(-1)?.args).toEqual({ plane: ONE, chat: 3 }),
     );
+    // The core's answer is read once it arrives: let it.
+    await act(() => new Promise((done) => setTimeout(done, 0)));
     expect(screen.queryByText("session 3")).toBeNull();
     expect(screen.getByText("session 1")).toBeInTheDocument();
     expect(

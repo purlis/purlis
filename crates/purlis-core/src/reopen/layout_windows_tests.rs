@@ -421,7 +421,7 @@ fn a_press_on_a_chat_in_a_tab_window_goes_to_that_window_in_front_or_behind() {
     assert_eq!(
         layout.window_naming(9),
         None,
-        "in no pane: the press is this window's"
+        "in no pane: no window names it"
     );
 }
 
@@ -507,4 +507,18 @@ fn a_window_used_again_is_the_latest_and_a_forgotten_one_is_never_pressed_into()
 
     used.forget(2);
     assert_eq!(used.latest(), Some(0));
+}
+
+#[test]
+fn a_window_the_layout_no_longer_names_is_forgotten() {
+    let mut used = Used::default();
+    used.touch(3);
+    used.touch(0);
+    used.touch(2);
+
+    used.keep(&[3]);
+
+    assert_eq!(used.latest(), Some(0));
+    used.forget(0);
+    assert_eq!(used.latest(), Some(3));
 }

@@ -72,6 +72,12 @@ impl Used {
         self.0.retain(|one| *one != window);
     }
 
+    /// Only the project window and `tab_windows` are still there: every other is forgotten, so
+    /// a tab window made later with the number of one that went starts unused.
+    pub fn keep(&mut self, tab_windows: &[u32]) {
+        self.0.retain(|one| *one == 0 || tab_windows.contains(one));
+    }
+
     /// The window whose pane was used last, where any was.
     pub fn latest(&self) -> Option<u32> {
         self.0.last().copied()
@@ -149,9 +155,9 @@ impl Layout {
             .map(|tab| tab.window)
     }
 
-    /// **The window a press on chat `number` goes to** (#4768): the one with a tab that has it
-    /// in a pane, in front or not, or none where no tab does. A chat is in one pane at most, so
-    /// there is one.
+    /// **The window with a tab that has chat `number` in a pane** (#4768), in front or not, or
+    /// none where no tab does: where a press on it goes ([`Self::window_pressed`]). A chat is
+    /// in one pane at most, so there is one.
     pub fn window_naming(&self, number: u32) -> Option<u32> {
         self.tabs
             .iter()

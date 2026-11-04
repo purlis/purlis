@@ -232,3 +232,22 @@ fn a_press_on_a_chat_in_no_pane_goes_to_the_window_whose_pane_was_used_last() {
     assert_eq!(chats.window_pressed(three), Some(0));
     chats.end_all();
 }
+
+#[test]
+fn a_tab_window_emptied_by_a_move_is_forgotten_so_a_new_one_of_its_number_is_unused() {
+    let (_host, chats, numbers) = with_chats(3);
+    let [one, two, three] = numbers[..] else {
+        unreachable!()
+    };
+    chats.lay_out_window(0, report(&[one])).unwrap();
+    chats.lay_out_window(1, report(&[two])).unwrap();
+    chats.pane_used(0);
+    chats.pane_used(1);
+
+    // Its last tab moved back: tab window 1 goes, never closed by the person.
+    assert_eq!(chats.move_tab(1, 0, Some(0)), Ok(0));
+    assert_eq!(chats.move_tab(0, 1, None), Ok(1), "a new tab window 1");
+
+    assert_eq!(chats.window_pressed(three), Some(0));
+    chats.end_all();
+}

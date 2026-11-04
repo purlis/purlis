@@ -5514,9 +5514,20 @@ impl Chats {
         let held = Some(layout.without(|number| one_job.contains(&number)).held());
         let changed = std::mem::replace(&mut *lock(&self.layout), held.clone()) != held;
         if changed {
+            self.forget_windows_gone();
             self.write_it_down();
         }
         Ok(())
+    }
+
+    /// Forgets the use of every tab window the held layout no longer names (#5108): a tab
+    /// window goes with its last tab, however that tab left.
+    fn forget_windows_gone(&self) {
+        let windows = lock(&self.layout)
+            .as_ref()
+            .map(Layout::tab_windows)
+            .unwrap_or_default();
+        lock(&self.used).keep(&windows);
     }
 
     /// **Window `window`'s own report of its tabs** (#4768): the project window's (`0`) or one
@@ -5602,6 +5613,7 @@ impl Chats {
         let to = change(&mut next).map_err(|why| format!("purlis did not move that: {why}."))?;
         *layout = next.held();
         drop(held);
+        self.forget_windows_gone();
         self.write_it_down();
         Ok(to)
     }
