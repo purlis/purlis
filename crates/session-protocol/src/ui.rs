@@ -380,6 +380,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // And the change whole, for its own tab (PC-7): what the configuration file holds is the
     // person's to read, never a chat's through the UI's link.
     "proposed_change",
+    // The Secret need offers the person dismissed, and offering one again (#5159): the
+    // person's own answers, read and undone in the vault view. No chat lifts its own dismissal.
+    "dismissed_secret_needs",
+    "offer_secret_need_again",
     // Remove and Dismiss on the Notice of the old `[harness_plugins]` keys (#3467): Remove holds
     // purlis's own proposed change for the person to apply, and the answer is the person's.
     "remove_old_harness_plugins",

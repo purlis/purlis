@@ -463,6 +463,8 @@ export const commands = {
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
+	dismissedSecretNeeds: __WINDOW_ONLY_RESULT,
+	offerSecretNeedAgain: __WINDOW_ONLY_RESULT,
 	removeOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	dismissOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
@@ -4348,6 +4350,12 @@ export type DiskHeld =
 { state: "not_read"; why: string } | 
 /**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
 { state: "unanswered" };
+
+/**  One Secret need offer the person dismissed (#5159): the persona and the key, names only. */
+export type DismissedNeed = {
+	persona: string,
+	key: string,
+};
 
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 

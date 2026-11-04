@@ -1,11 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Eye, EyeOff, KeyRound, LoaderCircle, Plus, Search } from "lucide-react";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import {
   commands,
+  type DismissedNeed,
   type PlaneId,
   type UnreadFor,
   type VaultContents,
@@ -13,7 +14,7 @@ import {
   type VaultLink,
   type VaultSecret,
 } from "./bindings";
-import { SAID } from "./menuWords";
+import { SAID, SUBMENU } from "./menuWords";
 import { Field, SettingRow } from "./settings/components";
 import { counted } from "./Vaults";
 import { saidOfTheOldExport, saidOfTheOthers, VaultSignIn } from "./VaultSignIn";
@@ -21,7 +22,8 @@ import { providerName } from "./vaultProviders";
 import { Button, ButtonRow, ToggleButton } from "./ui/button/Button";
 import { AlertDialog, Dialog } from "./ui/dialog/Dialog";
 import { TextField } from "./ui/field/Field";
-import { Menu, MenuItem, MenuSeparator, MenuWords } from "./ui/menu/Menu";
+import { Menu, MenuItem, MenuSeparator, MenuWords, Submenu } from "./ui/menu/Menu";
+import { MenuTip, useRested } from "./ui/menu/MenuTip";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 
 /**
@@ -121,6 +123,9 @@ export function VaultTab({
   const [asking, setAsking] = useState<Asking>();
   const [shown, setShown] = useState<Shown>();
   const [note, setNote] = useState<{ said: string; trouble?: boolean }>();
+  /** The Secret need offers the person dismissed on this machine (#5159): a row whose key is
+   *  one offers it again. Names only. */
+  const [dismissedNeeds, setDismissedNeeds] = useState<DismissedNeed[]>([]);
   const [moving, setMoving] = useState(false);
   /** Whether *Change how this vault signs in* is open, and whether the core is at work for it. */
   const [changing, setChanging] = useState(false);
@@ -292,6 +297,37 @@ export function VaultTab({
       gone = true;
     };
   }, [plane, vault, again, mayRead]);
+
+  useEffect(() => {
+    if (!mayRead) return;
+    let gone = false;
+    void commands
+      .dismissedSecretNeeds(plane)
+      .then((answer) => {
+        // A list, or nothing to offer: a mock or an older core that answers none draws no row.
+        if (!gone && answer.status === "ok" && Array.isArray(answer.data))
+          setDismissedNeeds(answer.data);
+      })
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, [plane, again, mayRead]);
+
+  /** **Offer a dismissed Secret need again** (#5159): the core lifts the dismissal and holds the
+   *  change for the person, where proposed changes wait. */
+  const offerAgain = async (persona: string, key: string) => {
+    setNote(undefined);
+    const answer = await settled(commands.offerSecretNeedAgain(plane, persona, key));
+    if (answer.status === "error") {
+      setNote({ said: answer.error, trouble: true });
+      return;
+    }
+    setDismissedNeeds((was) => was.filter((one) => one.persona !== persona || one.key !== key));
+    setNote({
+      said: `A change adding ${key} to ${persona}'s Secret needs waits in the Inbox for you to apply.`,
+    });
+  };
 
   useEffect(() => {
     declares.current = (said?.contents?.identity.length ?? 0) > 0;
@@ -521,6 +557,10 @@ export function VaultTab({
                       onAsk={setAsking}
                       onReveal={() => void reveal(one.key)}
                       onCopy={() => void copy(one.key)}
+                      offerTo={dismissedNeeds
+                        .filter((need) => need.key === one.key)
+                        .map((need) => need.persona)}
+                      onOfferAgain={(persona) => void offerAgain(persona, one.key)}
                     />
                   ))}
                 </TableBody>
@@ -871,6 +911,8 @@ function SecretRow({
   onAsk,
   onReveal,
   onCopy,
+  offerTo,
+  onOfferAgain,
 }: {
   secret: VaultSecret;
   /** The value, while it is revealed. */
@@ -878,6 +920,9 @@ function SecretRow({
   onAsk: (asking: Asking) => void;
   onReveal: () => void;
   onCopy: () => void;
+  /** The personas whose Secret need offer of this key was dismissed (#5159). */
+  offerTo: string[];
+  onOfferAgain: (persona: string) => void;
 }) {
   const key = secret.key;
   const ask = (doing: Asking["doing"]) => () => onAsk({ doing, secret: key } as Asking);
@@ -898,6 +943,7 @@ function SecretRow({
           <MenuItem id="copy" textValue={SAID.copy} onAction={onCopy}>
             <MenuWords said={SAID.copy} />
           </MenuItem>
+          {offerTo.length > 0 && <OfferAgain personas={offerTo} onOffer={onOfferAgain} />}
           <MenuSeparator />
           <MenuItem
             id="delete"
@@ -941,6 +987,59 @@ function SecretRow({
         </ToggleButton>
       </TableCell>
     </TableRow>
+  );
+}
+
+/**
+ * **Offer as a Secret need ▸** (#5159): one row, as the menus' rule 3 has rows of one kind, that
+ * opens a row per persona whose offer of this key was dismissed, named by the persona alone. What
+ * each does is said once, as this row's tooltip and description.
+ */
+function OfferAgain({
+  personas,
+  onOffer,
+}: {
+  personas: string[];
+  onOffer: (persona: string) => void;
+}) {
+  const noted = useId();
+  const { rested, rest, wake, hold } = useRested(true);
+  return (
+    <Submenu
+      aria-label={SUBMENU.offerNeed.said}
+      className="more-menu"
+      row={
+        <MenuItem
+          id="offer-need"
+          textValue={SUBMENU.offerNeed.said}
+          aria-label={SUBMENU.offerNeed.said}
+          aria-describedby={noted}
+          onFocus={rest.onFocus}
+          onBlur={rest.onBlur}
+        >
+          <MenuWords said={SUBMENU.offerNeed.said} />
+          <span id={noted} hidden>
+            {SUBMENU.offerNeed.tip}
+          </span>
+          {rested && (
+            <MenuTip side="left" onClose={wake} hold={hold}>
+              {SUBMENU.offerNeed.tip}
+            </MenuTip>
+          )}
+        </MenuItem>
+      }
+    >
+      {personas.map((persona) => (
+        <MenuItem
+          key={persona}
+          id={`offer-need:${persona}`}
+          textValue={persona}
+          onAction={() => onOffer(persona)}
+        >
+          <MenuWords said={persona} />
+        </MenuItem>
+      ))}
+    </Submenu>
   );
 }
 

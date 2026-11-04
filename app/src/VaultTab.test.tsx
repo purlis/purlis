@@ -58,7 +58,10 @@ type Asked = { cmd: string; args: Record<string, unknown> };
 function core(opened: VaultContents | Error, writes: Record<string, unknown> = {}): Asked[] {
   const asked: Asked[] = [];
   mockIPC((cmd, args) => {
-    asked.push({ cmd, args: args as Record<string, unknown> });
+    // Which Secret need offers were dismissed (#5159) is names only, read from no vault: it is
+    // not one of the vault's reads these tests count.
+    if (cmd !== "dismissed_secret_needs")
+      asked.push({ cmd, args: args as Record<string, unknown> });
     const answer = cmd === "vault_open" ? opened : writes[cmd];
     if (answer === undefined) return null;
     if (answer instanceof Error) throw answer.message;
@@ -255,6 +258,33 @@ describe("a vault's tab", () => {
     });
     expect(box).toHaveValue("");
     noValueAnywhere(EDITED);
+  });
+
+  it("offers a dismissed Secret need again from its key's row, and nothing on another (#5159)", async () => {
+    const asked = core(contents([secret("STRIPE_KEY"), secret("OTHER")]), {
+      dismissed_secret_needs: [{ persona: "devops", key: "STRIPE_KEY" }],
+    });
+    draw();
+    await userEvent.click(await screen.findByRole("button", { name: "More for OTHER" }));
+    await screen.findByRole("menuitem", { name: "Copy" });
+    expect(screen.queryByRole("menuitem", { name: /Secret need/ })).toBeNull();
+    await userEvent.keyboard("{Escape}");
+
+    await fromTheMenuOf("STRIPE_KEY", "Offer as a Secret need");
+    await userEvent.click(await screen.findByRole("menuitem", { name: "devops" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "A change adding STRIPE_KEY to devops's Secret needs waits in the Inbox",
+      ),
+    );
+    expect(asked.find((one) => one.cmd === "offer_secret_need_again")?.args).toEqual({
+      plane: PLANE,
+      persona: "devops",
+      key: "STRIPE_KEY",
+    });
+    await userEvent.click(await screen.findByRole("button", { name: "More for STRIPE_KEY" }));
+    await screen.findByRole("menuitem", { name: "Copy" });
+    expect(screen.queryByRole("menuitem", { name: /Secret need/ })).toBeNull();
   });
 
   it("renames a secret from the row's menu", async () => {
@@ -617,6 +647,8 @@ describe("the note that a vault's items were moved", () => {
   function noting(opens: number): Asked[] {
     const asked: Asked[] = [];
     mockIPC((cmd, args) => {
+      // Names only, from no vault (#5159): not a read these tests count.
+      if (cmd === "dismissed_secret_needs") return [];
       asked.push({ cmd, args: args as Record<string, unknown> });
       if (cmd === "vault_secret_reveal") return REVEALED;
       if (cmd === "vault_secret_copy") return 1;
@@ -659,6 +691,8 @@ describe("the note that a vault's items were moved", () => {
   it("does not read a vault of another kind again after a reveal", async () => {
     const asked: Asked[] = [];
     mockIPC((cmd, args) => {
+      // Names only, from no vault (#5159): not a read these tests count.
+      if (cmd === "dismissed_secret_needs") return [];
       asked.push({ cmd, args: args as Record<string, unknown> });
       if (cmd === "vault_secret_reveal") return REVEALED;
       return cmd === "vault_open" ? contents([secret("DB_URL")], { provider: "plain-file" }) : null;

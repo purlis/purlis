@@ -858,8 +858,7 @@ pub async fn dismiss_proposed_change(
 
 /// [`dismiss_proposed_change`]'s work, for project `held`.
 pub fn dismissed(held: &Held, id: u32) -> Result<(), String> {
-    let one = held.proposals().take(id).ok_or(WAITS_NO_MORE)?;
-    crate::oldplugins::purlis_change_dismissed(held.root(), &one);
+    let one = dismissed_in(held.root(), held.proposals(), id)?;
     // A stale one was told stale already; one put away fresh is the person's no.
     if !one.stale {
         tell(
@@ -870,6 +869,16 @@ pub fn dismissed(held: &Held, id: u32) -> Result<(), String> {
     }
     held.chats().asks_may_have_moved();
     Ok(())
+}
+
+/// [`dismissed`]'s work in the project at `root`: proposal `id` put away, and where it was one
+/// of purlis's own, what the person answered kept on this machine ([`need_dismissed`] and
+/// [`crate::oldplugins::purlis_change_dismissed`]). The proposal, for its chat to be told.
+pub fn dismissed_in(root: &Path, proposals: &Proposals, id: u32) -> Result<Proposal, String> {
+    let one = proposals.take(id).ok_or(WAITS_NO_MORE)?;
+    crate::oldplugins::purlis_change_dismissed(root, &one);
+    need_dismissed(root, &one);
+    Ok(one)
 }
 
 #[cfg(test)]
@@ -907,6 +916,17 @@ pub fn need_offered_in(
     if !answered.filled || persona.is_empty() {
         return Ok(None);
     }
+    // The person dismissed this offer before (#5159): no part of it is offered for this key
+    // again, its vault line included, until the persona's Secret needs change or they ask for
+    // it from the vault view.
+    if purlis_core::secrets::dismissed_needs::is_dismissed(
+        root,
+        persona,
+        &answered.key,
+        &declared_keys(root, persona),
+    ) {
+        return Ok(None);
+    }
     // The key it is stored under, unless the persona declares that one already.
     let need = (!answered.declared && needs::declared(root, persona, &answered.key).is_none())
         .then(|| {
@@ -916,14 +936,31 @@ pub fn need_offered_in(
             )
         });
     let vault = answered.names_no_vault.then_some(answered.vault.as_str());
+    offered(root, proposals, persona, need, vault, now)
+}
+
+/// A change to `persona`'s definition adding `need` and `vault`, held as purlis's in
+/// `proposals` at `now`, on top of an offer for the file still waiting: its number, or none
+/// where it would change nothing.
+fn offered(
+    root: &Path,
+    proposals: &Proposals,
+    persona: &str,
+    need: Option<(&str, &str)>,
+    vault: Option<&str>,
+    now: u64,
+) -> Result<Option<u32>, String> {
+    use purlis_core::secrets::needs;
     if need.is_none() && vault.is_none() {
         return Ok(None);
     }
     let rel = Path::new("personas").join(persona).join("persona.md");
     let rel = proposed::proposable_by_purlis(root, &root.join(rel))?;
-    let now_text = std::fs::read(root.join(&rel)).map_err(|why| why.to_string())?;
-    let base = proposed::base_of(Some(&now_text));
     let path = rel.display().to_string();
+    let now_text = std::fs::read(root.join(&rel)).map_err(|why| {
+        format!("{path} did not read ({why}), so nothing was offered. Check the file is there, then try again.")
+    })?;
+    let base = proposed::base_of(Some(&now_text));
     let text = String::from_utf8(now_text).map_err(|_| "the definition is not text".to_owned())?;
     // On top of an offer for this file still waiting, so a second need does not take the
     // first's place.
@@ -941,4 +978,133 @@ pub fn need_offered_in(
         return Ok(None);
     }
     Ok(proposals.note(BY_PURLIS, &path, base, Change::Whole { content }, now))
+}
+
+/// The persona whose definition `path` is, `personas/<name>/persona.md`.
+fn persona_of(path: &str) -> Option<&str> {
+    path.strip_prefix("personas/")?
+        .strip_suffix("/persona.md")
+        .filter(|name| purlis_core::personas::valid_name(name))
+}
+
+/// **Dismiss on purlis's offer of a Secret need, kept** (#5159): the needs proposal `one` adds
+/// to a persona's definition are not offered again for that persona on this machine. A change
+/// that no longer applies to its file was no answer to it (PC-8), and keeps nothing.
+pub fn need_dismissed(root: &Path, one: &Proposal) {
+    let Some(persona) = persona_of(&one.path).filter(|_| one.session == BY_PURLIS) else {
+        return;
+    };
+    let Now::Made { before, after } = now_of(root, one) else {
+        return;
+    };
+    let keys = purlis_core::secrets::needs::added(&before, &after);
+    let declared = declared_keys(root, persona);
+    if let Err(why) =
+        purlis_core::secrets::dismissed_needs::dismiss(root, persona, &keys, &declared)
+    {
+        tracing::warn!("purlis: a dismissed Secret need offer was not kept: {why}");
+    }
+}
+
+/// The keys of the Secret needs `persona` declares as committed: what a dismissal holds while
+/// they stay the same (#5159).
+fn declared_keys(root: &Path, persona: &str) -> Vec<String> {
+    purlis_core::secrets::needs::of(root, persona)
+        .into_iter()
+        .map(|need| need.key)
+        .collect()
+}
+
+/// One Secret need offer the person dismissed (#5159): the persona and the key, names only.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct DismissedNeed {
+    pub persona: String,
+    pub key: String,
+}
+
+/// **The Secret need offers dismissed on this machine that still hold** (#5159), for the vault
+/// view to offer each again.
+#[tauri::command]
+#[specta::specta]
+pub async fn dismissed_secret_needs(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<DismissedNeed>, String> {
+    let held = planes.held(&plane)?;
+    // Off the window: each persona's needs are read from git (`needs::of`).
+    crate::off_the_window("reading the dismissed Secret needs", move || {
+        let root = held.root();
+        Ok(purlis_core::secrets::dismissed_needs::read(root)
+            .into_iter()
+            .filter(|one| {
+                purlis_core::secrets::dismissed_needs::is_dismissed(
+                    root,
+                    &one.persona,
+                    &one.key,
+                    &declared_keys(root, &one.persona),
+                )
+            })
+            .map(|one| DismissedNeed {
+                persona: one.persona,
+                key: one.key,
+            })
+            .collect())
+    })
+    .await
+}
+
+/// **Offer a dismissed Secret need again** (#5159), on the person's press in the vault view:
+/// the dismissal is lifted, and the change adding `key` to `persona`'s needs is held for them
+/// to apply or dismiss. Window-only.
+#[tauri::command]
+#[specta::specta]
+pub async fn offer_secret_need_again(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    persona: String,
+    key: String,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("offering a Secret need again", move || {
+        let id = need_offered_again_in(
+            held.root(),
+            held.proposals(),
+            &persona,
+            &key,
+            crate::sandboxing::now_secs(),
+        )?;
+        if id.is_some() {
+            held.chats().asks_may_have_moved();
+        }
+        Ok(())
+    })
+    .await
+}
+
+/// [`offer_secret_need_again`]'s work in the project at `root`: the proposal's number, or none
+/// where the persona declares `key` already. The purpose is left for the person to say
+/// ([`purlis_core::secrets::needs::NO_PURPOSE_SAID`]): the chat's words were never kept.
+pub fn need_offered_again_in(
+    root: &Path,
+    proposals: &Proposals,
+    persona: &str,
+    key: &str,
+    now: u64,
+) -> Result<Option<u32>, String> {
+    use purlis_core::secrets::{dismissed_needs, needs};
+    if !purlis_core::personas::valid_name(persona) {
+        return Err(format!(
+            "{persona} is not a persona's name, so nothing was offered. Read the vault again and choose from the list."
+        ));
+    }
+    if !needs::is_key(key) {
+        return Err(format!(
+            "{key} can't be a Secret need's key, so nothing was offered. Rename the secret to letters, digits, _, - and ., starting with a letter or _."
+        ));
+    }
+    dismissed_needs::lift(root, persona, key).map_err(|why| why.to_string())?;
+    if needs::declared(root, persona, key).is_some() {
+        return Ok(None);
+    }
+    offered(root, proposals, persona, Some((key, "")), None, now)
 }

@@ -846,3 +846,191 @@ fn a_first_undeclared_fill_is_offered_as_a_need_and_written_only_when_applied() 
          secret-need.GITHUB_TOKEN: charge test cards\n---\n\nThe charter.\n"
     );
 }
+
+/// What `persona`'s fill of `key` came to, into the vault its definition names.
+fn filled_by(persona: &str, key: &str) -> purlis_core::secrets::ask::Answered {
+    purlis_core::secrets::ask::Answered {
+        persona: persona.to_owned(),
+        ..filled(key, persona, false, false)
+    }
+}
+
+/// A project with personas `devops` and `shop`, each naming its vault.
+fn two_personas() -> (tempfile::TempDir, PathBuf) {
+    let (dir, root) = project();
+    for name in ["devops", "shop"] {
+        std::fs::create_dir_all(root.join("personas").join(name)).unwrap();
+        std::fs::write(
+            root.join("personas").join(name).join("persona.md"),
+            format!("---\nrole: Ops\nvault: {name}\n---\n\nThe charter.\n"),
+        )
+        .unwrap();
+    }
+    (dir, root)
+}
+
+/// #5159: a dismissed offer of a Secret need is not offered again for that persona and key on
+/// this machine; another key, or another persona, still is. What is kept is the two names.
+#[test]
+fn a_dismissed_need_offer_is_not_offered_again_for_that_persona_and_key() {
+    let (_dir, root) = two_personas();
+    let held = Proposals::default();
+    let offered = need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 1)
+        .expect("offered")
+        .expect("one proposal");
+    dismissed_in(&root, &held, offered).expect("dismissed");
+    assert!(held.every().is_empty());
+
+    assert_eq!(
+        need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 2),
+        Ok(None),
+        "the same persona and key is not offered again"
+    );
+    assert!(
+        need_offered_in(&root, &held, &filled_by("devops", "GITHUB_TOKEN"), 3)
+            .expect("offered")
+            .is_some(),
+        "another key is"
+    );
+    held.every().iter().for_each(|one| {
+        held.take(one.id);
+    });
+    assert!(
+        need_offered_in(&root, &held, &filled_by("shop", "STRIPE_KEY"), 4)
+            .expect("offered")
+            .is_some(),
+        "another persona is"
+    );
+
+    let kept = std::fs::read_to_string(purlis_core::secrets::dismissed_needs::path(&root))
+        .expect("kept on this machine");
+    assert!(
+        kept.contains("devops") && kept.contains("STRIPE_KEY"),
+        "{kept}"
+    );
+    assert!(
+        !kept.contains("charge test cards") && !kept.contains("GITHUB_TOKEN"),
+        "names of what was dismissed only: {kept}"
+    );
+}
+
+/// #5159: an offer dismissed once its file changed under it was no answer to it (PC-8), so the
+/// key is offered again on the next fill.
+#[test]
+fn a_stale_need_offer_dismissed_is_offered_again() {
+    let (_dir, root) = two_personas();
+    let held = Proposals::default();
+    let offered = need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 1)
+        .expect("offered")
+        .expect("one proposal");
+    std::fs::write(
+        root.join("personas/devops/persona.md"),
+        "---\nrole: Ops, changed\nvault: devops\n---\n",
+    )
+    .unwrap();
+    dismissed_in(&root, &held, offered).expect("dismissed");
+    assert!(
+        need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 2)
+            .expect("offered")
+            .is_some()
+    );
+}
+
+/// #5159: the vault view offers a dismissed need again on the person's press: the dismissal is
+/// lifted and the change is held, with the purpose left for the person to say, since none was
+/// kept.
+#[test]
+fn a_dismissed_need_is_offered_again_on_request() {
+    let (_dir, root) = two_personas();
+    let held = Proposals::default();
+    let offered = need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 1)
+        .expect("offered")
+        .expect("one proposal");
+    dismissed_in(&root, &held, offered).expect("dismissed");
+    let kept = purlis_core::secrets::dismissed_needs::read(&root);
+    assert_eq!(
+        kept.iter()
+            .map(|one| (one.persona.as_str(), one.key.as_str()))
+            .collect::<Vec<_>>(),
+        [("devops", "STRIPE_KEY")]
+    );
+
+    let again = need_offered_again_in(&root, &held, "devops", "STRIPE_KEY", 2)
+        .expect("offered again")
+        .expect("one proposal");
+    assert!(purlis_core::secrets::dismissed_needs::read(&root).is_empty());
+    let one = held.get(again).expect("held");
+    assert_eq!(
+        (one.session, one.path.as_str()),
+        (BY_PURLIS, "personas/devops/persona.md")
+    );
+    let Change::Whole { content } = &one.change else {
+        panic!("a whole content: {one:?}");
+    };
+    assert!(
+        content.contains(&format!(
+            "secret-need.STRIPE_KEY: {}",
+            purlis_core::secrets::needs::NO_PURPOSE_SAID
+        )),
+        "{content}"
+    );
+    assert!(
+        need_offered_again_in(&root, &held, "devops", "1BAD", 3).is_err(),
+        "a key no need takes"
+    );
+}
+
+/// Runs git in `root`, for a definition read as committed: nothing of the developer's git
+/// config, and no signer asked (as `autosave.rs`'s tests run it).
+fn git(root: &Path, args: &[&str]) {
+    let mut command = std::process::Command::new("git");
+    command
+        .arg("-C")
+        .arg(root)
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.invalid")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.invalid");
+    let out = purlis_core::forklock::output(&mut command).expect("git runs");
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// #5159: a dismissal holds until the persona's Secret needs change: once its committed
+/// definition declares another need, the dismissed key is offered again on its next fill.
+#[test]
+fn a_dismissed_need_is_offered_again_once_the_personas_needs_change() {
+    let (_dir, root) = two_personas();
+    git(&root, &["init", "-q", "-b", "main", "."]);
+    git(&root, &["add", "-A"]);
+    git(&root, &["commit", "-q", "-m", "a project"]);
+    let held = Proposals::default();
+    let offered = need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 1)
+        .expect("offered")
+        .expect("one proposal");
+    dismissed_in(&root, &held, offered).expect("dismissed");
+    assert_eq!(
+        need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 2),
+        Ok(None)
+    );
+
+    std::fs::write(
+        root.join("personas/devops/persona.md"),
+        "---\nrole: Ops\nvault: devops\nsecret-need.GITHUB_TOKEN: open pull requests\n---\n",
+    )
+    .unwrap();
+    git(&root, &["commit", "-q", "-am", "a need"]);
+    assert!(
+        need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 3)
+            .expect("offered")
+            .is_some(),
+        "the persona's needs changed since"
+    );
+}
