@@ -62,83 +62,123 @@ async function drawn() {
   });
 }
 
-describe("a terminal's menu", () => {
-  // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
-  // #3077); the project rail hides itself there beside both sidebars.
-  before(() => windowAt(WINDOW_1280));
-  after(() => theWindowHoldsTheRail());
+// DIAGNOSTIC (#5193, dropped before merge): every round's first test is right after a chat starts.
+const ROUNDS = 30;
+for (let round = 1; round <= ROUNDS; round++)
+  describe(`a terminal's menu (round ${round})`, () => {
+    // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
+    // #3077); the project rail hides itself there beside both sidebars.
+    before(() => windowAt(WINDOW_1280));
+    after(() => theWindowHoldsTheRail());
 
-  let mine: Started | undefined;
-  const terminal = () => `[data-testid="pane"][data-session="${mine?.session}"] .xterm-screen`;
+    let mine: Started | undefined;
+    const terminal = () => `[data-testid="pane"][data-session="${mine?.session}"] .xterm-screen`;
 
-  before(async () => {
-    mine = await startAChat();
-    await $(terminal()).waitForExist({ timeout: 20_000 });
-  });
-
-  afterEach(async () => {
-    await closeMenus();
-  });
-
-  after(async () => {
-    await endChatsStartedHere([mine]);
-  });
-
-  it("offers the terminal's rows first, then the pane's under a line", async () => {
-    await openMenuOn(terminal());
-    const menu = await drawn();
-    if (menu === null) throw new Error("no menu is open");
-
-    expect(menu.rows.slice(0, 3).map((row) => row.name)).toEqual(["Copy", "Paste", "Select all"]);
-    // The pane's own rows are still here: a right-click on a pane strands none of them.
-    expect(menu.rows.length).toBeGreaterThan(3);
-    expect(menu.lines).toBeGreaterThanOrEqual(1);
-
-    // Paste and Select all can always run.
-    expect(menu.rows[1].off).toBe(false);
-    expect(menu.rows[2].off).toBe(false);
-  });
-
-  it("is drawn inside the window, with a key at a row's end and not over its words", async () => {
-    await openMenuOn(terminal());
-    const menu = await drawn();
-    if (menu === null) throw new Error("no menu is open");
-
-    expect(menu.left).toBeGreaterThanOrEqual(0);
-    expect(menu.top).toBeGreaterThanOrEqual(0);
-    expect(menu.right).toBeLessThanOrEqual(menu.wide);
-    expect(menu.bottom).toBeLessThanOrEqual(menu.tall);
-
-    // A key is drawn only where the window has one (a Mac's Edit menu), so there may be none.
-    const keyed = menu.rows.filter((row) => row.keyLeft !== null);
-    expect(
-      keyed
-        .filter(
-          (row) =>
-            !((row.keyLeft ?? 0) >= (row.titleRight ?? 0) && (row.keyRight ?? 0) <= row.right + 1),
-        )
-        .map((row) => row.name),
-    ).toEqual([]);
-  });
-
-  it("turns Copy on once Select all has selected, and Copy closes the menu", async () => {
-    await openMenuOn(terminal());
-    await pressMenuRow("Select all");
-    await browser.waitUntil(async () => (await drawn()) === null, {
-      timeout: 10_000,
-      timeoutMsg: "the menu stayed open after Select all",
+    before(async () => {
+      await browser.execute(() => {
+        const w = window as unknown as { __focusLog?: string[]; __focusHeard?: boolean };
+        w.__focusLog = [];
+        if (w.__focusHeard) return;
+        w.__focusHeard = true;
+        const t0 = performance.now();
+        for (const kind of ["focusin", "focusout"])
+          document.addEventListener(
+            kind,
+            (event) => {
+              const el = event.target as Element;
+              const said = `${Math.round(performance.now() - t0)}ms ${kind} ${el.tagName?.toLowerCase()}.${String(el.className).slice(0, 40)} role=${el.getAttribute?.("role")} :: ${(new Error().stack ?? "").split("\n").slice(1, 9).join(" <- ")}`;
+              w.__focusLog?.push(said);
+              if ((w.__focusLog?.length ?? 0) > 60) w.__focusLog?.shift();
+            },
+            true,
+          );
+      });
+      mine = await startAChat();
+      await $(terminal()).waitForExist({ timeout: 20_000 });
     });
 
-    await openMenuOn(terminal());
-    const menu = await drawn();
-    if (menu === null) throw new Error("no menu is open");
-    expect(menu.rows[0].name).toBe("Copy");
-    expect(menu.rows[0].off).toBe(false);
+    afterEach(async () => {
+      try {
+        await closeMenus();
+      } catch (error) {
+        const seen = await browser.execute(() => {
+          const name = (el: Element | null) =>
+            el === null
+              ? "null"
+              : `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ""}.${String(el.className).slice(0, 60)} role=${el.getAttribute("role")} aria-label=${el.getAttribute("aria-label")}`;
+          const w = window as unknown as { __focusLog?: string[] };
+          return {
+            active: name(document.activeElement),
+            menus: document.querySelectorAll('[role="menu"]').length,
+            inMenu: !!document.activeElement?.closest('[role="menu"]'),
+            log: (w.__focusLog ?? []).slice(-12),
+          };
+        });
+        throw new Error(`${String(error)}\n#5193 diagnosis: ${JSON.stringify(seen, null, 1)}`);
+      }
+    });
 
-    await pressMenuRow("Copy");
-    await browser.waitUntil(async () => (await drawn()) === null, {
-      timeout: 10_000,
-      timeoutMsg: "the menu stayed open after Copy",
+    after(async () => {
+      await endChatsStartedHere([mine]);
+    });
+
+    it("offers the terminal's rows first, then the pane's under a line", async () => {
+      await openMenuOn(terminal());
+      const menu = await drawn();
+      if (menu === null) throw new Error("no menu is open");
+
+      expect(menu.rows.slice(0, 3).map((row) => row.name)).toEqual(["Copy", "Paste", "Select all"]);
+      // The pane's own rows are still here: a right-click on a pane strands none of them.
+      expect(menu.rows.length).toBeGreaterThan(3);
+      expect(menu.lines).toBeGreaterThanOrEqual(1);
+
+      // Paste and Select all can always run.
+      expect(menu.rows[1].off).toBe(false);
+      expect(menu.rows[2].off).toBe(false);
+    });
+
+    it("is drawn inside the window, with a key at a row's end and not over its words", async () => {
+      await openMenuOn(terminal());
+      const menu = await drawn();
+      if (menu === null) throw new Error("no menu is open");
+
+      expect(menu.left).toBeGreaterThanOrEqual(0);
+      expect(menu.top).toBeGreaterThanOrEqual(0);
+      expect(menu.right).toBeLessThanOrEqual(menu.wide);
+      expect(menu.bottom).toBeLessThanOrEqual(menu.tall);
+
+      // A key is drawn only where the window has one (a Mac's Edit menu), so there may be none.
+      const keyed = menu.rows.filter((row) => row.keyLeft !== null);
+      expect(
+        keyed
+          .filter(
+            (row) =>
+              !(
+                (row.keyLeft ?? 0) >= (row.titleRight ?? 0) && (row.keyRight ?? 0) <= row.right + 1
+              ),
+          )
+          .map((row) => row.name),
+      ).toEqual([]);
+    });
+
+    it("turns Copy on once Select all has selected, and Copy closes the menu", async () => {
+      await openMenuOn(terminal());
+      await pressMenuRow("Select all");
+      await browser.waitUntil(async () => (await drawn()) === null, {
+        timeout: 10_000,
+        timeoutMsg: "the menu stayed open after Select all",
+      });
+
+      await openMenuOn(terminal());
+      const menu = await drawn();
+      if (menu === null) throw new Error("no menu is open");
+      expect(menu.rows[0].name).toBe("Copy");
+      expect(menu.rows[0].off).toBe(false);
+
+      await pressMenuRow("Copy");
+      await browser.waitUntil(async () => (await drawn()) === null, {
+        timeout: 10_000,
+        timeoutMsg: "the menu stayed open after Copy",
+      });
     });
   });
-});
