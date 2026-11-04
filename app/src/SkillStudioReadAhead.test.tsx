@@ -19,9 +19,10 @@ import { forgetStudioReadAhead, readStudioAhead } from "./studioReadAhead";
 
 afterEach(() => {
   cleanup();
+  // Before the mocks go: it stops listening through them.
+  forgetStudioReadAhead();
   clearMocks();
   forgetStudio();
-  forgetStudioReadAhead();
 });
 
 /** A core whose each read of the studio answers one skill named for the read it was. */

@@ -25,8 +25,9 @@ const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMo
 
 afterEach(() => {
   cleanup();
-  clearMocks();
+  // Before the mocks go: it stops listening through them.
   forgetStudioReadAhead();
+  clearMocks();
 });
 
 const PLANE = "/home/dev/plane";
