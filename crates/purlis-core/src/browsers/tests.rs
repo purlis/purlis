@@ -726,16 +726,40 @@ fn a_login_of_another_site_is_refused_while_a_page_holding_a_secret_holds_the_br
     assert!(done.is_ok() && ran, "that very site goes ahead");
 }
 
-/// #5121: trying a login again in a browser that tried it says so, by its identity alone.
+/// #5121: a login counts as signed in, for a later call, only where it answered with the browser
+/// held to its page.
 #[test]
-fn a_browser_knows_a_login_it_tried_before_by_its_identity() {
+fn a_login_counts_as_signed_in_only_where_it_answered_and_holds_the_browser_to_its_page() {
+    use crate::sandbox::browser_reach::Site;
+    let page = Site::of("shop.example.test", 443);
+    let other = Site::of("other.example.test", 443);
+    assert!(super::counts_as_signed_in(true, Some(&page), &page));
+    assert!(
+        !super::counts_as_signed_in(false, Some(&page), &page),
+        "it failed"
+    );
+    assert!(
+        !super::counts_as_signed_in(true, None, &page),
+        "nothing bound"
+    );
+    assert!(
+        !super::counts_as_signed_in(true, Some(&other), &page),
+        "another's"
+    );
+}
+
+/// #5121: only a login that went through counts: one merely tried may have bound nothing.
+#[test]
+fn a_browser_knows_only_the_logins_that_went_through_in_it_by_their_identities() {
     let home = tempfile::tempdir().unwrap();
     let mut keeping = super::Keeping::new(home.path(), home.path());
-    assert!(!keeping.tried_again(None), "no identity: nothing to know");
-    assert!(!keeping.tried_again(None));
-    assert!(!keeping.tried_again(Some("one")));
-    assert!(keeping.tried_again(Some("one")));
-    assert!(!keeping.tried_again(Some("two")), "another login");
+    keeping.tried(None);
+    assert!(!keeping.went_through(Some("one")), "tried, no more");
+    keeping.goes_through(None);
+    assert!(!keeping.went_through(None), "no identity: nothing to know");
+    keeping.goes_through(Some("one"));
+    assert!(keeping.went_through(Some("one")));
+    assert!(!keeping.went_through(Some("two")), "another login");
 }
 
 /// #5152, the person's ruling of 2026-11-04 (amending #4995's of 2026-11-03): a login whose form

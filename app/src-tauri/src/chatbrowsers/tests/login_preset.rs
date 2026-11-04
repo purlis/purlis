@@ -16,13 +16,14 @@ fn called_with(
     still_it: &dyn Fn(&crate::chatbrowsers::LoggedIn) -> bool,
 ) -> Answer {
     let driver: Arc<dyn Driver> = hosted.clone();
-    if let Some(answer) = browsers.already_logged_in(
+    if let Some(answer) = browsers.before_a_login(
         Some(&driver),
         Path::new("/p"),
         browse,
         None,
         &|| reach(),
         still_it,
+        1000,
     ) {
         return answer;
     }
@@ -360,36 +361,241 @@ fn a_chat_cannot_ask_for_the_read_of_whether_a_page_asks_to_sign_in() {
 }
 
 #[test]
-fn a_browser_the_person_has_taken_over_takes_no_login_and_says_so_before_any_read() {
+fn a_browser_the_person_has_taken_over_takes_no_login_and_nothing_is_asked_of_it() {
     // SF-10: said before a vault is read, so an Allow once isn't spent on it.
-    let (browsers, _hosted) = with_a_used_browser();
-    let (name, program) = browsers.which(3, None).expect("b1");
-    assert_eq!(browsers.person_has_it(&ask(3, log_in("shop-login"))), None);
-
+    let (browsers, hosted) = with_a_used_browser();
+    let (_, program) = browsers.which(3, None).expect("b1");
     browsers.driven(&program, true, 1000);
+    let before = hosted.acts.lock().unwrap().len();
+    let driver: Arc<dyn Driver> = hosted.clone();
 
-    let why = browsers
-        .person_has_it(&ask(3, log_in("shop-login")))
-        .expect("refused");
-    assert!(why.contains(&format!("taken browser {name} over")), "{why}");
+    let answer = browsers.before_a_login(
+        Some(&driver),
+        Path::new("/p"),
+        &ask(3, log_in("shop-login")),
+        None,
+        &|| reach(),
+        &|_| panic!("nothing is compared for a browser the person has"),
+        1000,
+    );
+
+    let Some(Answer::No { why }) = answer else {
+        panic!("{answer:?}");
+    };
+    assert!(why.contains("taken browser b1 over"), "{why}");
     assert!(why.contains("nothing was filled"), "{why}");
+    assert_eq!(hosted.acts.lock().unwrap().len(), before, "nothing read");
 }
 
 #[test]
-fn a_chat_kept_off_is_not_told_it_is_logged_in() {
+fn a_login_is_refused_where_the_person_has_the_browser_holding_it_though_the_chat_uses_another() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.driven("program-1", true, 1000);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let Answer::No { why } = answer else {
+        panic!("{answer:?}");
+    };
+    assert!(why.contains("taken browser b1 over"), "{why}");
+    assert_eq!(logged_into(&hosted).len(), 1, "nothing more was tried");
+}
+
+#[test]
+fn a_browser_the_person_has_is_no_reason_to_refuse_a_login_going_elsewhere() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.driven("program-2", true, 1000);
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert!(browser_and_note(&answer).1.contains("already logged in"));
+}
+
+#[test]
+fn a_kept_login_that_fails_in_its_new_browser_still_says_it_moved() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.login_fails.lock().unwrap() = 1;
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("kept-login")));
+
+    let Answer::No { why } = answer else {
+        panic!("{answer:?}");
+    };
+    assert!(why.contains("purlis opened browser b2"), "{why}");
+    assert!(why.contains("Browser b1 is still open"), "{why}");
+    assert!(why.contains("password field did not go"), "{why}");
+}
+
+#[test]
+fn a_kept_login_goes_to_the_browser_holding_it_though_the_chat_just_opened_another() {
+    // A second copy of a store keeps nothing, so a kept login isn't taken apart from it.
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("kept-login")));
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("kept-login")));
+
+    assert_eq!(browser_and_note(&answer).0, "b2");
+    assert_eq!(started_browsers(&hosted), 3, "no copy of its store");
+    assert_eq!(logged_into(&hosted), ["program-2", "program-2"]);
+}
+
+#[test]
+fn what_the_read_of_the_page_brought_is_told_with_the_answer() {
     let (browsers, hosted) = with_a_used_browser();
     called(&browsers, &hosted, &ask(3, log_in("shop-login")));
     *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
-    browsers.keep_off(3);
+    *hosted.asks.lock().unwrap() = vec!["new.example.test:443".to_owned()];
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let Answer::Browsed { browsed, .. } = answer else {
+        panic!("{answer:?}");
+    };
+    assert_eq!(browsed.asked, ["new.example.test:443"]);
+    assert_eq!(browsed.asks_to_sign_in, None, "the read is purlis's alone");
+    let note = browsed.note.unwrap_or_default();
+    assert!(note.contains("already logged in"), "{note}");
+    assert!(note.contains("new to this project"), "{note}");
+}
+
+mod the_same_login {
+    use crate::chatbrowsers::{LoggedIn, is_the_same_login};
+
+    fn session(granted: bool) -> LoggedIn {
+        LoggedIn {
+            persona: Some("steward".into()),
+            login: "shop".into(),
+            identity: "same".into(),
+            address: "https://shop.example.test/login".into(),
+            form: None,
+            granted,
+        }
+    }
+
+    fn now(identity: &str) -> Result<String, String> {
+        Ok(identity.to_owned())
+    }
+
+    fn not_now() -> Result<String, String> {
+        Err("not allowed now".to_owned())
+    }
+
+    #[test]
+    fn is_the_same_identity_allowed_now() {
+        assert!(is_the_same_login(
+            &session(false),
+            true,
+            true,
+            false,
+            now("same")
+        ));
+    }
+
+    #[test]
+    fn is_not_one_whose_declaration_changed_since() {
+        assert!(!is_the_same_login(
+            &session(false),
+            true,
+            true,
+            false,
+            now("other")
+        ));
+        assert!(!is_the_same_login(
+            &session(true),
+            true,
+            true,
+            true,
+            now("other")
+        ));
+    }
+
+    #[test]
+    fn is_not_a_declared_login_no_longer_allowed() {
+        assert!(!is_the_same_login(
+            &session(false),
+            true,
+            true,
+            false,
+            not_now()
+        ));
+    }
+
+    #[test]
+    fn is_an_allow_once_that_went_with_its_read() {
+        assert!(is_the_same_login(
+            &session(true),
+            true,
+            true,
+            false,
+            not_now()
+        ));
+    }
+
+    #[test]
+    fn is_not_a_grant_that_can_no_longer_be_read() {
+        assert!(!is_the_same_login(
+            &session(true),
+            true,
+            true,
+            true,
+            not_now()
+        ));
+    }
+
+    #[test]
+    fn is_not_a_call_naming_another_site() {
+        assert!(!is_the_same_login(
+            &session(false),
+            false,
+            true,
+            false,
+            now("same")
+        ));
+    }
+
+    #[test]
+    fn is_not_one_policy_or_a_runners_opt_in_forbids_since() {
+        assert!(!is_the_same_login(
+            &session(false),
+            true,
+            false,
+            false,
+            now("same")
+        ));
+        assert!(!is_the_same_login(
+            &session(true),
+            true,
+            false,
+            false,
+            not_now()
+        ));
+    }
+}
+
+#[test]
+fn a_chat_no_longer_allowed_a_browser_is_not_told_it_is_logged_in() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+    browsers.lock().get_mut(&3).expect("chat 3").posture = crate::chatbrowsers::Posture::Off;
     let driver: Arc<dyn Driver> = hosted.clone();
 
-    let answer = browsers.already_logged_in(
+    let answer = browsers.before_a_login(
         Some(&driver),
         Path::new("/p"),
         &ask(3, log_in("shop-login")),
         None,
         &|| reach(),
         &|_| true,
+        1000,
     );
 
     assert!(answer.is_none(), "{answer:?}");

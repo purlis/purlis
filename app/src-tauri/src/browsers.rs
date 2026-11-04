@@ -308,6 +308,15 @@ mod hosted {
         Ok(())
     }
 
+    /// **Whether a host of `version` says whether a page asks to sign in** (#5121).
+    fn says_asks_to_sign_in(version: purlis_session_protocol::version::Version) -> bool {
+        version >= session::KNOWS_ASKS_TO_SIGN_IN
+    }
+
+    /// Why a host before 1.73 isn't asked (#5121): never told to a chat, whose login goes on.
+    const TOO_OLD_TO_SAY: &str = "the purlis that runs this browser is too old to say whether a \
+                                  page asks to sign in";
+
     /// What a chat is told where the purlis that runs its browser fills no secret (#5115).
     const TOO_OLD_TO_FILL: &str = "the purlis that runs this browser is too old to fill a \
                                    secret, so nothing was filled. Update purlis where the \
@@ -358,12 +367,8 @@ mod hosted {
                 fills_secrets(link.version()).map_err(Refused::Said)?;
             }
             // A host before 1.73 can't say whether a page asks to sign in (#5121).
-            if matches!(act, Act::AsksToSignIn) && link.version() < session::KNOWS_ASKS_TO_SIGN_IN {
-                return Err(Refused::Said(
-                    "the purlis that runs this browser is too old to say whether a page asks to \
-                     sign in"
-                        .to_owned(),
-                ));
+            if matches!(act, Act::AsksToSignIn) && !says_asks_to_sign_in(link.version()) {
+                return Err(Refused::Said(TOO_OLD_TO_SAY.to_owned()));
             }
             let command = Command::Browse {
                 program: program.to_owned(),

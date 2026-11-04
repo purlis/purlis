@@ -181,7 +181,29 @@ fn a_login_on_a_page_that_redefines_finding_and_focusing_a_field_goes_through() 
     assert!(!holds_a_value(&shown), "the account page shows no value");
 }
 
-/// A holder that binds, and is told nothing.
+/// #5121, SF-7: a value is kept out as a form spells it in the address it sends, as any fill's is.
+#[test]
+fn a_login_value_is_kept_out_as_a_form_sends_it() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    let login = Login {
+        password: "fixture+word/7".to_owned().into(),
+        ..login_at("http://fixture.test")
+    };
+    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    let answer = ended.outcome.expect("the login goes through");
+    let page = answer.page.expect("the page it left");
+    assert!(
+        !page.address.contains("fixture%2Bword"),
+        "the address shows the value as a form spelled it"
+    );
+    assert!(
+        !snapshot(&browser).contains("fixture%2Bword"),
+        "the page shows the value as a form spelled it"
+    );
+}
+
 /// #5121, SF-7: a login's field gives nothing to a copy, a cut or a drag, whoever makes it. Here a
 /// page of one document keeps its user-name field once the password field has gone.
 #[test]
@@ -189,6 +211,16 @@ fn a_filled_login_field_gives_nothing_to_a_copy_a_cut_or_a_drag() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
+    // Before a fill, the page's own copy goes: so a stop below is the guard's.
+    open(&browser, "login-one-page.html");
+    let take = ref_on(
+        &find(&browser, "Try to take the name"),
+        "Try to take the name",
+    );
+    call(&browser, Call::Click { target: take });
+    let went = "Tried: copy went, cut went, dragstart went, trusted copy went";
+    assert!(sees(&browser, went), "{}", snapshot(&browser));
+
     let ended = browser
         .log_in(
             &login_on("login-one-page.html", "http://fixture.test"),
@@ -239,6 +271,7 @@ fn a_page_is_read_for_whether_it_asks_to_sign_in() {
     assert!(sees(&browser, "Sign in"), "the page stays where it was");
 }
 
+/// A holder that binds, and is told nothing.
 fn binds() -> std::sync::Arc<dyn purlis_browser_engine::drive::Hold> {
     std::sync::Arc::new(|| -> Result<(), String> { Ok(()) })
 }

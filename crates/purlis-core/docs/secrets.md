@@ -286,7 +286,7 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   them to the session host, whose
   browser goes to the declared page, fills them only while the page's document is on that
   page's origin, submits, waits for the password field to go, and hands the browser back. A
-  browser that holds the login already answers "already logged in", and nothing is read or filled. A
+  browser that holds the login already answers "already logged in", and nothing is filled. A
   login that does not go through has what it filled cleared, and the chat is told why. The chat
   never gets the values: they are kept out of every snapshot, find, wait and screenshot of every
   page of that browser for as long as it runs, and each field purlis filled is blanked, so a

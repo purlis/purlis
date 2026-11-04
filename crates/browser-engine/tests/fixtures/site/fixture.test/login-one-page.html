@@ -9,7 +9,7 @@
     <label id="password-label">Password <input type="password" name="password" id="password"></label>
     <button type="submit">Sign in</button>
   </form>
-  <button id="try" type="button" hidden>Try to take the name</button>
+  <button id="try" type="button">Try to take the name</button>
   <p id="tried"></p>
   <script>
     // A page of one document: signed in, its password field goes, its user-name field stays,
@@ -19,7 +19,6 @@
       event.preventDefault();
       document.getElementById('password-label').remove();
       document.getElementById('said').textContent = 'Signed in as ' + user.value.length + ' characters';
-      document.getElementById('try').hidden = false;
     });
     document.getElementById('try').addEventListener('click', () => {
       const said = [];

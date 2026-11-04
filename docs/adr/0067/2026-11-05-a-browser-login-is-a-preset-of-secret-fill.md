@@ -24,14 +24,16 @@ amended by #5152) stay as they are.
   the browser shows asking for no sign-in, read by purlis with no vault opened, at session protocol
   1.73, which a host before refuses, and then the login goes as it always did. A page that asks is
   logged in again, so a provider that wants a new sign-in (#5152) still gets one.
-- A browser that tried a login before is treated as one opened from its kept store: where the login's
-  page asks for nothing, nothing is filled.
+- A browser in which that login went through, and which is held to its page, is treated as one opened
+  from its kept store: where the login's page asks for nothing, nothing is filled.
+- Only the page purlis made for the login is filled, by what the engine said it made.
 - "To keep a login" is the login whose kept store is there to open. A login with no store yet goes
   into the named or current browser, and where that browser did something first the answer says its
   session isn't kept and how to keep it (`browser_new`, then `browser_login`). The chat, not purlis,
   moves to a new browser for that.
 - A browser `browser_new` just opened is what the chat asked for: a login goes there, not back to one
-  holding it.
+  holding it. A kept login is the exception: it goes to the one holding it, or opens from its store,
+  since a second copy of a store keeps nothing.
 - A login's value still goes in by typing where the field has the focus, with its checks either side,
   since a login's page listens for typing. A page that changes as it goes in ends the browser, which is
   stricter than a fill's refusal. Its hold stays the browser's life (#5099), stricter than a fill's.

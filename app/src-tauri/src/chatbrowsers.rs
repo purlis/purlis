@@ -33,7 +33,7 @@
 //!   declares and this machine allowed, read at the call (#2560,
 //!   `purlis_core::secrets::brokered::login_for`), and hands them to the
 //!   session host ([`Driver::log_in`]), whose browser fills them on the login's own origin and
-//!   hands the browser back reaching that origin alone. The chat is told the page the login
+//!   hands the browser back reaching that login's sites alone. The chat is told the page the login
 //!   left, never a value; it chooses which declared login, and nothing else.
 //! - **A login is a preset of secret fill** (#5121, the person's ruling SF-7 on #5096). It goes
 //!   into the browser the chat names, or its current one. A browser that holds a session of the
@@ -1135,8 +1135,14 @@ impl ChatBrowsers {
 
     /// **Which of `chat`'s browsers a login goes to where `holds` says of it** (#5121): the one
     /// the chat uses, else another of its own holding it, unless the chat just asked for a
-    /// browser apart (`browser_new`) and has done nothing in it: that one's what it asked for.
-    fn holding(&self, chat: &Chat, holds: &dyn Fn(&str) -> bool) -> Option<String> {
+    /// browser apart (`browser_new`) and has done nothing in it and `apart_wins`: that one's what
+    /// it asked for. A kept login isn't taken apart from its store, as a copy of it keeps nothing.
+    fn holding(
+        &self,
+        chat: &Chat,
+        apart_wins: bool,
+        holds: &dyn Fn(&str) -> bool,
+    ) -> Option<String> {
         let current = chat
             .current
             .as_deref()
@@ -1145,7 +1151,7 @@ impl ChatBrowsers {
             if holds(program) {
                 return Some((*name).to_owned());
             }
-            if chat.apart.contains(program) {
+            if apart_wins && chat.apart.contains(program) {
                 return None;
             }
         }
@@ -1197,7 +1203,7 @@ impl ChatBrowsers {
         };
         let name = match named {
             Some(name) => name.to_owned(),
-            None => self.holding(chat, &|program| of(program).is_some())?,
+            None => self.holding(chat, true, &|program| of(program).is_some())?,
         };
         let program = chat.program(&name)?;
         if chat.ended.contains(&program) {
@@ -1212,7 +1218,8 @@ impl ChatBrowsers {
     /// browser of the chat's holds a session of that login that `still_it` says is the same login
     /// now, and the page it shows asks to sign in no more. `None` otherwise, for the normal path:
     /// a page that asks is logged in again (#5152), and one that can't be read is taken to ask.
-    pub fn already_logged_in(
+    #[allow(clippy::too_many_arguments)]
+    fn already_logged_in(
         &self,
         driver: Option<&Arc<dyn Driver>>,
         root: &Path,
@@ -1220,6 +1227,7 @@ impl ChatBrowsers {
         persona: Option<&str>,
         reach: &dyn Fn() -> BrowserReach,
         still_it: &dyn Fn(&LoggedIn) -> bool,
+        now: u64,
     ) -> Option<Answer> {
         let Browsing::LogIn { login, .. } = &browse.asked else {
             return None;
@@ -1260,13 +1268,26 @@ impl ChatBrowsers {
         if let Some(chat) = self.lock().get_mut(&browse.chat) {
             chat.current = Some(name.clone());
             chat.apart.retain(|one| *one != program);
+            chat.used.insert(program.clone(), now);
         }
         let reaches = reaches_said(&session.address, session.form.as_deref());
+        let said = already_logged_in_said(&name, login, &reaches);
+        // What the read brought is told as any act's is: downloads, sites held back, and what the
+        // page it's on says (#5152).
+        self.files.heard(&program, &read.downloads);
+        let mut note = match read.note {
+            Some(note) => format!("{said}; {note}"),
+            None => said,
+        };
+        if !read.asked.is_empty() {
+            let sites = sites_of(&read.asked);
+            self.asked_about(browse.chat, &sites, now);
+            note = format!("{}. {note}", asked_about(&sites));
+        }
         let browsed = Browsed {
-            page: read.page,
-            settled: read.settled,
-            note: Some(already_logged_in_said(&name, login, &reaches)),
-            ..Browsed::default()
+            note: Some(note),
+            asks_to_sign_in: None,
+            ..read
         };
         let answer = Answer::Browsed {
             browser: name,
@@ -1276,17 +1297,79 @@ impl ChatBrowsers {
         Some(answer)
     }
 
+    /// **What a `browser_login` hears before any notice or vault read** (#5121): that the browser
+    /// it would go into is the person's now (SF-10), so an Allow once isn't spent on a login that
+    /// can't go in, or that a browser holds it already ([`Self::already_logged_in`]). `None` for
+    /// any other call, and for the normal path.
+    #[allow(clippy::too_many_arguments)]
+    pub fn before_a_login(
+        &self,
+        driver: Option<&Arc<dyn Driver>>,
+        root: &Path,
+        browse: &BrowseAsk,
+        persona: Option<&str>,
+        reach: &dyn Fn() -> BrowserReach,
+        still_it: &dyn Fn(&LoggedIn) -> bool,
+        now: u64,
+    ) -> Option<Answer> {
+        let Browsing::LogIn { login, .. } = &browse.asked else {
+            return None;
+        };
+        if let Some(why) = self.person_has_it(browse, persona, login) {
+            return Some(Answer::No { why });
+        }
+        self.already_logged_in(driver, root, browse, persona, reach, still_it, now)
+    }
+
     /// **Why a login is not filled, where the browser it would go into is the person's now**
-    /// (#5121, SF-10): said before any vault is read, so an Allow once isn't spent on a login that
-    /// can't go in. `None` where the agent or purlis drives it, or the chat has none to name.
-    pub fn person_has_it(&self, browse: &BrowseAsk) -> Option<String> {
-        let (name, program) = self.which(browse.chat, browse.browser.as_deref())?;
+    /// (#5121, SF-10): the one the chat names, one of its holding that login, or the one it uses.
+    fn person_has_it(
+        &self,
+        browse: &BrowseAsk,
+        persona: Option<&str>,
+        login: &str,
+    ) -> Option<String> {
+        let (name, program) = {
+            let chats = self.lock();
+            let chat = chats.get(&browse.chat)?;
+            let name = match &browse.browser {
+                Some(name) => name.clone(),
+                None => self
+                    .holding(chat, true, &|program| {
+                        self.logins_held
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .get(program)
+                            .is_some_and(|logins| {
+                                logins.iter().any(|one| {
+                                    one.login == login && one.persona.as_deref() == persona
+                                })
+                            })
+                    })
+                    .or_else(|| chat.current.clone())?,
+            };
+            let program = chat.program(&name)?;
+            (name, program)
+        };
         matches!(self.driver_of(&program), Some(BrowserDriver::Person)).then(|| {
             format!(
                 "the person has taken browser {name} over, so nothing was filled: wait until they \
                  hand it back, or name another of your browsers with `browser`"
             )
         })
+    }
+
+    /// Whether the person opted `identity`, `persona`'s login, in for its pool as it is now (#2050).
+    fn pool_login_stands(
+        &self,
+        persona: &str,
+        identity: &str,
+        bound: &purlis_core::poollogins::Bound,
+    ) -> bool {
+        matches!(
+            self.pool_logins.standing(persona, identity, bound),
+            purlis_core::poollogins::Standing::Allowed
+        )
     }
 
     /// **The moment of chat `session`'s timeline that says a browser was left behind** (#5121), once.
@@ -2952,7 +3035,7 @@ impl ChatBrowsers {
         let mut left_behind = None;
         let named = match &act {
             Doing::LogIn(declared, read) if browse.browser.is_none() => {
-                let holding = self.holding(chat, &|program| {
+                let holding = self.holding(chat, !read.opens, &|program| {
                     self.logins_held
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
@@ -3106,16 +3189,22 @@ impl ChatBrowsers {
                     form: login.form.clone(),
                     granted,
                 };
-                let logged_in = driver.log_in(&program, login).map(|mut browsed| {
-                    let said = logged_in_said(&declared, &reaches, browsed.note.as_deref());
-                    browsed.note = Some(match &left_behind {
-                        Some((opened, left)) => {
-                            format!("{}. {said}", kept_apart_said(opened, &declared, left))
-                        }
-                        None => said,
-                    });
-                    browsed
-                });
+                let moved = |said: String| match &left_behind {
+                    Some((opened, left)) => {
+                        format!("{}. {said}", kept_apart_said(opened, &declared, left))
+                    }
+                    None => said,
+                };
+                let logged_in = match driver.log_in(&program, login) {
+                    Ok(mut browsed) => {
+                        let said = logged_in_said(&declared, &reaches, browsed.note.as_deref());
+                        browsed.note = Some(moved(said));
+                        Ok(browsed)
+                    }
+                    // It moved all the same, and is told so.
+                    Err(Refused::Said(why)) => Err(Refused::Said(moved(why))),
+                    Err(gone) => Err(gone),
+                };
                 self.session_after(&program, session, logged_in.is_ok());
                 self.purlis_drives(&program, false);
                 logged_in
@@ -3307,7 +3396,7 @@ const FILL_NEEDS_A_PAGE: &str = "this chat has no browser open, so nothing was f
 
 /// What the chat is told once purlis performed its browser login `name` (#2016): that its
 /// password field went, where, and what the browser reaches from now (`reaches`,
-/// [`reaches_said`]). Never that the person is signed in, which only the page can show (it may
+/// [`reaches_said`]). Never that the person is signed in by what it typed, which only the page can show (it may
 /// ask for a second step), and never a value.
 fn logged_in_said(name: &str, reaches: &str, note: Option<&str>) -> String {
     let gone = note.unwrap_or("the password field is gone since purlis submitted the login");
@@ -3470,21 +3559,21 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         return answer;
     }
     let pool = held.chats().pool_of(browse.chat);
-    // Before any notice or vault read (#5121): no login goes into a browser the person has taken
-    // over (SF-10), and a browser that holds this one already answers so.
+    // Before any notice or vault read (#5121).
     if matches!(browse.asked, Browsing::LogIn { .. }) {
-        if let Some(why) = held.browsers().person_has_it(browse) {
-            return Answer::No { why };
-        }
         let persona = as_persona_of(held, browse.chat).persona;
-        if let Some(answer) = held.browsers().already_logged_in(
+        if let Some(answer) = held.browsers().before_a_login(
             held.browser_driver(),
             held.root(),
             browse,
             persona.as_deref(),
             &|| reach_of(held, browse.chat),
             &|session| still_the_login(held, browse, pool.as_deref(), session),
+            now,
         ) {
+            if matches!(&answer, Answer::Browsed { browsed, .. } if !browsed.asked.is_empty()) {
+                held.chats().asks_may_have_moved();
+            }
             return answer;
         }
     }
@@ -3835,10 +3924,7 @@ fn waits_on_its_secret(
 }
 
 /// **Whether `session`, a login a browser of chat `browse.chat` holds, is the login its call asks
-/// for now** (#5121): the same site where the call names one (another asks to replace it, #4996),
-/// nothing policy forbids since, and as declared or allowed now, its identity compared whole. One
-/// the person allowed once has gone with its read, and nothing has replaced it: the chat still
-/// holds what it was given. Nothing here reads a vault.
+/// for now** (#5121), read with no vault opened: [`is_the_same_login`] of what the project says now.
 fn still_the_login(
     held: &crate::planes::Held,
     browse: &BrowseAsk,
@@ -3848,32 +3934,45 @@ fn still_the_login(
     let Browsing::LogIn { login, suggested } = &browse.asked else {
         return false;
     };
-    if let Some(suggested) = suggested {
+    let same_site = suggested.as_ref().is_none_or(|suggested| {
         let site = purlis_core::loginask::site_of(&suggested.site).map(|(origin, _)| origin);
         let page = purlis_core::sandbox::tools::login::origin_of(&session.address);
-        if !matches!((site, page), (Ok(site), Ok(page)) if site == page) {
-            return false;
-        }
-    }
+        matches!((site, page), (Ok(site), Ok(page)) if site == page)
+    });
     let Ok((mut asker, unconfined)) = login_asker_of(held, browse.chat, login) else {
         return false;
     };
     let Some(persona) = asker.persona.clone().filter(|persona| !persona.is_empty()) else {
         return false;
     };
-    if purlis_core::sandbox::policy::Locks::of(held.root())
-        .refuses_tool(&persona, login)
-        .is_some()
-    {
-        return false;
-    }
-    // On a runner, its tools are the runner's, as its login is read (#2050).
-    if pool.is_some() {
-        asker.confines = None;
-    }
+    // On a runner, its tools are the runner's, as its login is read, and its opt-in must stand
+    // for the pool as it is now (#2050).
+    let opted_in = match pool {
+        None => true,
+        Some(pool) => {
+            asker.confines = None;
+            let reached = crate::hooks::reached_over_the_link();
+            held.chats()
+                .pools_in()
+                .and_then(|config| {
+                    purlis_core::poollogins::Bound::over_the_link(&config, pool, reached.as_deref())
+                        .ok()
+                })
+                .is_some_and(|bound| {
+                    held.browsers()
+                        .pool_login_stands(&persona, &session.identity, &bound)
+                })
+        }
+    };
     let granted = held
         .login_grants()
         .granted(browse.chat, Some(&persona), login);
+    let refused = purlis_core::sandbox::policy::Locks::of(held.root())
+        .refuses_tool(&persona, login)
+        .is_some()
+        || granted.as_ref().is_some_and(|tool| {
+            crate::loginasks::refused_now(held.root(), &persona, tool).is_some()
+        });
     let now = match &granted {
         Some(tool) => purlis_core::secrets::brokered::granted_login_identity(&asker, tool),
         None => purlis_core::secrets::brokered::login_allowed(
@@ -3882,9 +3981,33 @@ fn still_the_login(
             unconfined || pool.is_some(),
         ),
     };
+    is_the_same_login(
+        session,
+        same_site,
+        !refused && opted_in,
+        granted.is_some(),
+        now,
+    )
+}
+
+/// **Whether a browser's `session` is the login a call asks for now** (#5121): the same site where
+/// the call names one (another asks to replace it, #4996), with nothing since that forbids it
+/// (`may`: policy, a runner's opt-in), and its identity whole as declared or allowed `now`. One the
+/// person allowed once has gone with its read and nothing has replaced it, so it has no identity
+/// now (`now` is why not): the chat still holds what it was given.
+pub(crate) fn is_the_same_login(
+    session: &LoggedIn,
+    same_site: bool,
+    may: bool,
+    granted_now: bool,
+    now: Result<String, String>,
+) -> bool {
+    if !same_site || !may {
+        return false;
+    }
     match now {
         Ok(identity) => identity == session.identity,
-        Err(_) => granted.is_none() && session.granted,
+        Err(_) => !granted_now && session.granted,
     }
 }
 

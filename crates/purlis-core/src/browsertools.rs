@@ -971,8 +971,8 @@ pub const TOOLS: [Tool; 24] = [
                       fills it from the vault and submits it: the login never reaches you. A \
                       browser that holds this login already answers \"already logged in\" and \
                       nothing is filled. A login kept for later reuse opens in a browser of its \
-                      own, and the answer says why and which one it left. Once logged in, the \
-                      browser reaches the login's site alone; use browser_new for any other site. For a \
+                      own, and the answer says why and which one it left. The answer also says \
+                      which sites the browser then reaches; use browser_new for any other site. For a \
                       login your persona doesn't declare, also give site, vault and key (and \
                       user_key if the page asks for a user name): the person is asked, and the \
                       call waits for their answer. Call this before asking for the vault.",

@@ -90,6 +90,8 @@ enum Twist {
     GoesBack,
     /// The field can't be given the stops that keep its value from a copy or a drag (#5121).
     Unguarded,
+    /// Another page opens a page of its own as purlis's opens (#5121).
+    PopupAsItOpens,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -124,6 +126,14 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
         let on = sent.session.as_deref().unwrap_or_default();
         match sent.method.as_str() {
             "Page.navigate" => {
+                if twist == Twist::PopupAsItOpens {
+                    engine.emit(
+                        "Target.targetCreated",
+                        json!({"targetInfo":{"targetId":"PAGE-7","type":"page","title":"A popup","url":ADDRESS,"attached":false,"openerId":"PAGE-1"}}),
+                        None,
+                    );
+                    std::thread::sleep(Duration::from_millis(100));
+                }
                 navigated(engine, on, "LOADER-LOGIN", p["url"].as_str().unwrap_or_default());
                 Some(Ok(json!({ "frameId": on.trim_start_matches("S-"), "loaderId": "LOADER-LOGIN" })))
             }
@@ -1091,4 +1101,20 @@ fn a_login_of_a_page_that_asks_nothing_withholds_no_copy() {
         },
     );
     assert_ne!(copied.err(), Some(Refusal::CopyWithheld));
+}
+
+/// #5121: the page a login fills is the one purlis made, by what the engine said it made, though
+/// another tab opens one as it opens, which would have become the browser's current page.
+#[test]
+fn a_page_another_tab_opens_as_the_login_opens_is_not_the_one_filled() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::PopupAsItOpens);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let typed_on: Vec<_> = engine
+        .sent("Input.insertText")
+        .iter()
+        .map(|sent| sent.session.clone().unwrap_or_default())
+        .collect();
+    assert_eq!(typed_on, ["S-PAGE-2"]);
 }

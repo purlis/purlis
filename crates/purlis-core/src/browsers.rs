@@ -1050,7 +1050,7 @@ pub const SIGN_IN_WITHIN: Duration = Duration::from_secs(120);
 /// connection it carried before ended. The agent acts on the form's site's pages during the
 /// login's sign-in alone: until the login's page is back on its page's origin, the login fails,
 /// or `within` has passed ([`Holder`]). Refused, running nothing, for a browser that holds
-/// another page's login already.
+/// another page's login already, or that a page holding a filled secret holds to another site.
 pub fn performed<T>(
     sites: &Arc<judge::SiteJudge>,
     proxy: &Arc<ReachProxy>,
@@ -1092,6 +1092,13 @@ pub fn performed<T>(
     let done = run(&holder);
     sites.done_logging_in();
     Ok(done)
+}
+
+/// **Whether a login that answered counts as signed in, for a later call of it** (#5121): only
+/// where the browser is held to the login's page. A login that answered with the browser held to
+/// nothing bound nothing, so its page's asking for nothing says nothing of a session.
+fn counts_as_signed_in(answered: bool, held_to: Option<&Site>, page: &Site) -> bool {
+    answered && held_to == Some(page)
 }
 
 /// **What holds a browser to a login purlis performs in it** (#2016, #4995), handed to its
@@ -1362,9 +1369,9 @@ struct Keeping {
     /// The kept login of each login tried in it, `None` for one that keeps none (#2693): it
     /// keeps a login only where every one tried was that one.
     tried: Vec<Option<wire::KeptLogin>>,
-    /// The identity of each login tried in it (#5121): trying one again fills nothing where its
-    /// page asks for nothing.
-    tried_as: Vec<String>,
+    /// The identity of each login that went through in it, with the browser held to its page
+    /// (#5121): one of these again fills nothing where its page asks for nothing.
+    went_through: Vec<String>,
 }
 
 /// The store `kept` names.
@@ -1385,7 +1392,7 @@ impl Keeping {
             began: std::time::SystemTime::now(),
             fresh: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             tried: Vec::new(),
-            tried_as: Vec::new(),
+            went_through: Vec::new(),
         }
     }
 
@@ -1415,17 +1422,18 @@ impl Keeping {
         }
     }
 
-    /// A login of `identity` is tried in it (#5121): whether one was before, so the browser may
-    /// be signed in with it already.
-    fn tried_again(&mut self, identity: Option<&str>) -> bool {
-        let Some(identity) = identity else {
-            return false;
-        };
-        if self.tried_as.iter().any(|tried| tried == identity) {
-            return true;
+    /// Whether a login of `identity` went through in this browser (#5121).
+    fn went_through(&self, identity: Option<&str>) -> bool {
+        identity.is_some_and(|identity| self.went_through.iter().any(|one| one == identity))
+    }
+
+    /// A login of `identity` went through, and left the browser held to its page (#5121).
+    fn goes_through(&mut self, identity: Option<&str>) {
+        if let Some(identity) = identity
+            && !self.went_through(Some(identity))
+        {
+            self.went_through.push(identity.to_owned());
         }
-        self.tried_as.push(identity.to_owned());
-        false
     }
 
     /// This device's key for kept logins.
@@ -1922,10 +1930,10 @@ impl Screen for EngineScreen {
         let (opened_from, again) = {
             let mut keeping = self.keeping.lock().unwrap_or_else(PoisonError::into_inner);
             keeping.tried(asked.keep.as_ref());
-            let again = keeping.tried_again(asked.identity.as_deref());
+            let again = keeping.went_through(asked.identity.as_deref());
             (keeping.opened_from.clone(), again)
         };
-        // And tried in it before, it may be signed in with it already (#5121).
+        // And having gone through in it before, it may be signed in with it already (#5121).
         login.only_if_asked = again || (asked.keep.is_some() && opened_from == asked.keep);
         let Some(sites) = &self.sites else {
             return Err(NotActed::Refused(
@@ -1954,6 +1962,17 @@ impl Screen for EngineScreen {
         )
         .map_err(NotActed::Refused)?;
         let ended = ended.map_err(not_acted)?;
+        // Only where the browser is held to its page: nothing else counts as signed in (#5121).
+        if counts_as_signed_in(
+            ended.outcome.is_ok(),
+            sites.bound().page().as_ref(),
+            &at.page,
+        ) {
+            self.keeping
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .goes_through(asked.identity.as_deref());
+        }
         let (fills_on, page) = (login.origin.clone(), login.back_to.clone());
         drop(login);
         let mut outcome = ended

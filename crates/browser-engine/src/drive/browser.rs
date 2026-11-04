@@ -3074,6 +3074,12 @@ impl Browser {
     }
 
     fn open(&self, address: &WebAddress) -> Result<Answer, Refusal> {
+        self.open_own(address).map(|(_, answer)| answer)
+    }
+
+    /// [`Self::open`], answering too the target of the page it made: the page itself, as what
+    /// [`State::current`] names by then is the last page opened, by whichever page opened it.
+    fn open_own(&self, address: &WebAddress) -> Result<(String, Answer), Refusal> {
         // The page starts empty and is sent to `address` once it is set up, so every event of
         // its load is seen.
         let created = self
@@ -3110,7 +3116,8 @@ impl Browser {
         let session = self.page_session(&target)?;
         lock(&self.inner.state).current = Some(target.clone());
         let _addressing = self.addressing(&target, Why::Addressed);
-        self.acting_on(&target, || self.navigate(&session, address))
+        let answer = self.acting_on(&target, || self.navigate(&session, address))?;
+        Ok((target, answer))
     }
 
     /// Sends the page on `session` to `address`; a load that failed is said in the note.

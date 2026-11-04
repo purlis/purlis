@@ -40,7 +40,8 @@
 //! and fails; one the person cut by taking the browser over has them cleared as they hand it
 //! back. Either way the browser is handed back to the agent with a new lease, so every
 //! reference dealt before is void. A password field that went is all purlis can tell: it says
-//! so, and never that the person is signed in, since a page may ask for a second step. No
+//! so, and never that the person is signed in, since a page may ask for a second step. Only a page
+//! that asks for nothing, in a browser already held to this login, is said to be logged in already. No
 //! sentence it answers carries a value.
 //!
 //! **A login is a preset of secret fill** (#5121, the person's ruling SF-7 on #5096): a fill of the
@@ -48,7 +49,8 @@
 //! value is kept out as an address or a form would spell it too. Only a one-line field that takes
 //! typing is ever chosen. From the moment a value may be in a page, the agent copies, cuts and drags
 //! nothing in this browser, for its life, and each filled field gives nothing to a copy, a cut or a
-//! drag, whoever makes it ([`GUARD_FIELD`]). The value still goes in by typing where the field has
+//! drag, whoever makes it ([`GUARD_FIELD`]). Only the page purlis made for the login is filled, never
+//! one another tab opens meanwhile. The value still goes in by typing where the field has
 //! the focus, with the checks above, since a login's page listens for typing: a page that changes
 //! as it goes in ends the browser, which is stricter than a fill's refusal, and a login's hold is
 //! stricter too: the browser stays held to its sites for its life, not while the page lives.
@@ -73,10 +75,9 @@ pub const LOGIN_WAIT: Duration = Duration::from_secs(30);
 /// How often a login looks at its page again while it waits.
 const LOOK_AGAIN: Duration = Duration::from_millis(250);
 
-/// The script that finds the page's first shown password field that takes typing: a constant.
+/// The script that finds the page's first shown password field: a constant.
 pub(crate) const PASSWORD_FIELD: &str = r#"(() => {
-  const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
-    && !e.disabled && !e.readOnly;
+  const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
   for (const e of document.querySelectorAll('input[type="password"]')) if (shown(e)) return e;
   return null;
 })()"#;
@@ -90,12 +91,14 @@ pub(crate) const SAYS_IT_IS_A_NAME: &str = r#"(() => {
   return null;
 })()"#;
 
-/// The script that finds the page's first shown user-name field: a constant. Only a one-line
-/// field that takes typing counts (SF-5, #5121): a box named for the user is not one.
+/// The script that finds the page's first shown user-name field: a constant. Only a one-line field
+/// counts (SF-5, #5121): a box named for the user is not one. One that's read-only for now counts,
+/// as a page may keep it so until it has the focus, and a field that doesn't take what's typed
+/// ends the browser ([`Browser::holds_as_typed`]).
 pub(crate) const NAME_FIELD: &str = r#"(() => {
   const oneLine = ['text', 'email', 'tel', 'url', 'number'];
   const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
-    && oneLine.includes(e.type) && !e.disabled && !e.readOnly;
+    && oneLine.includes(e.type);
   const named = ['input[autocomplete~="username"]', 'input[autocomplete~="email"]',
     'input[type="email"]', 'input[name*="user" i]', 'input[name*="login" i]',
     'input[name*="email" i]', 'input[id*="user" i]', 'input[id*="email" i]', 'input[type="text"]'];
@@ -256,7 +259,7 @@ impl Browser {
                 "purlis could not let this browser reach {origin} ({why}), so nothing was filled"
             ))
         })?;
-        let target = self.go_to(login)?;
+        let target = self.own_page_at(&login.address)?;
         let within = self.inner.limits.login_within;
         let deadline = Instant::now() + within;
         // Whether the page shows its form: unknown (`None`) while it cannot be read.
@@ -273,7 +276,8 @@ impl Browser {
                 name => password.and(name),
             })
         };
-        // Opened from kept logins, a page that asks for nothing is signed in already: twice
+        // Opened from kept logins, or holding this login already (#5121), a page that asks for
+        // nothing is signed in already: twice
         // read, so a page between documents is not taken for one (#2021), and never a page
         // that cannot be read. One whose form is on another origin (#5014) must stay on its own
         // page's origin for a fifth of the wait, as a page may send the browser to its form by
@@ -473,11 +477,7 @@ impl Browser {
     /// or sent: this is how purlis learns where a login's password would go, before anyone is
     /// asked about it. No form within [`crate::drive::Limits::login_within`] is a refusal.
     pub(crate) fn find_login_form(&self, address: &crate::WebAddress) -> Result<Answer, Refusal> {
-        self.open(address)?;
-        let target = lock(&self.inner.state)
-            .current
-            .clone()
-            .ok_or(Refusal::NoPage)?;
+        let target = self.own_page_at(address)?;
         let within = self.inner.limits.login_within;
         let began = Instant::now();
         let deadline = began + within;
@@ -514,14 +514,14 @@ impl Browser {
         }
     }
 
-    /// Opens a page of purlis's own at the login's address, which no other page opened, and
-    /// answers its target: it becomes the browser's current page.
-    fn go_to(&self, login: &Login) -> Result<String, Refusal> {
-        self.open(&login.address)?;
-        lock(&self.inner.state)
-            .current
-            .clone()
-            .ok_or(Refusal::NoPage)
+    /// Opens a page of purlis's own at `address`, which no other page opened, and answers its
+    /// target: it becomes the browser's current page. The page it made, by what the engine said
+    /// it made, never the last page to appear: another tab may open one as this one opens, and
+    /// that one's opener is a page nobody asked about (#5121).
+    fn own_page_at(&self, address: &crate::WebAddress) -> Result<String, Refusal> {
+        let (target, _) = self.open_own(address)?;
+        lock(&self.inner.state).current = Some(target.clone());
+        Ok(target)
     }
 
     /// **Whether the page the browser shows asks to sign in now** (#5121): its own document shows
@@ -657,9 +657,6 @@ impl Browser {
             )
         })?
         .map_err(|_| could_not())?;
-        if !self.still_filling(target, origin, document, field, on) {
-            return Err(self.ended_for_a_changed_page(origin));
-        }
         // The field gives nothing to a copy, a cut or a drag from before the value is in it: where
         // that can't be made so, the value doesn't go in.
         let guarded = self
@@ -677,6 +674,9 @@ impl Browser {
             .map_err(|_| could_not())?;
         if guarded.get("exceptionDetails").is_some() {
             return Err(could_not());
+        }
+        if !self.still_filling(target, origin, document, field, on) {
+            return Err(self.ended_for_a_changed_page(origin));
         }
         self.gated(|| {
             self.devtools()
