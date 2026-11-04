@@ -93,6 +93,9 @@ shows who exists.
   `this_machine: true` (`--this-machine`). A place other than the workspace's own waits for the
   person's Approve in the window, and so does every dispatch from a chat on a pool's runner.
 
+  **A reply noting that the task's harness can't report asks** means nothing the task asks
+  reaches the operator, and it is in no pane. Tell the operator to look at it themselves.
+
   **Before you dispatch, check what is already open**: the roster purlis adds to each turn
   while this chat has open tasks, or `dispatch_list`. A task still at work is waited on
   (`dispatch_wait`), told more (`dispatch_tell`) or cancelled (`dispatch_cancel`), never

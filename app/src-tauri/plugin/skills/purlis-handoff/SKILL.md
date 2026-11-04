@@ -25,7 +25,8 @@ person's work moves to a chat they will read themselves.
 
 **2. Will the operator read the new chat themselves?** Then it is a **handoff**: a bug to
 fix, a chore, a question for another workspace to own. It starts in that workspace's sidebar
-without taking a pane, and this chat hears nothing back.
+without taking a pane, and the operator is told it arrived: a card on that workspace's chip,
+an Update in the Inbox, and a "new" mark on its row. This chat hears nothing back.
 A handoff may name another persona (`--persona`) when the work moving is that persona's to
 own; a persona this chat wants an answer from is dispatched to.
 
