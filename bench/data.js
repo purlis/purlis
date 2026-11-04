@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793774953873,
+  "lastUpdate": 1793777373749,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38556,6 +38556,48 @@ window.BENCHMARK_DATA = {
             "value": 102.271441,
             "unit": "ms",
             "extra": "median of 5 runs: 102.240, 102.270, 102.271, 102.308, 102.833 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "22f1305a2a2ed14e405d8c12a74e3642f3562843",
+          "message": "Browser engine: a frame's origin is read again when it starts a new document (#5151)\n\nA frame's document origin was kept per frame until the engine said its\ncontext ended. It is now also dropped when the frame starts loading or\nnavigating to another document (Page.frameStartedLoading, or\nPage.frameStartedNavigating other than within the same document), and\nwhen the frame moves to another process. Until the new document's own\ncontext says its origin, a frame that needs it stays not known.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6JJAVMSH5X5AAWWQ8TBZFJR\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T06:58:29Z",
+          "tree_id": "a59cc4fbc23ee4e97cfc6b7e64d6cd716807ca4a",
+          "url": "https://github.com/purlis/purlis/commit/22f1305a2a2ed14e405d8c12a74e3642f3562843"
+        },
+        "date": 1793777369823,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.668878,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.633, 0.647, 0.669, 0.669, 0.669 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.506310999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.496, 16.505, 16.506, 16.563, 16.600 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.13324750000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.839, 102.106, 102.133, 102.451, 102.723 ms"
           }
         ]
       }
