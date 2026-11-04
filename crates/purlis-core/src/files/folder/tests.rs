@@ -129,3 +129,35 @@ fn a_file_that_went_missing_says_so() {
         "'gone.md' is not in the skill's folder any more"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_folder_that_cannot_be_read_is_one_refused_row_and_the_rest_is_listed() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (_dir, folder) = skill();
+    let shut = folder.join("scripts");
+    std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let walked = walk(&folder);
+    std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // Root reads any folder: nothing to show there.
+    if walked
+        .as_ref()
+        .is_ok_and(|w| w.entries.iter().any(|e| e.path == "scripts/run.sh"))
+    {
+        return;
+    }
+    let walked = walked.unwrap();
+    let scripts = walked
+        .entries
+        .iter()
+        .find(|one| one.path == "scripts")
+        .unwrap();
+    assert!(
+        scripts
+            .refused
+            .as_deref()
+            .unwrap()
+            .starts_with("purlis could not read 'scripts'")
+    );
+    assert!(walked.entries.iter().any(|one| one.path == "SKILL.md"));
+}

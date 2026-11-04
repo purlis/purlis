@@ -14,14 +14,14 @@
  * tab. A built-in or third-party skill's files offer neither, and the preview says why they are
  * only read.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
 import { FileText } from "lucide-react";
 import { commands, type SkillFolder, type StudioSkill } from "../bindings";
 import { FileIcon } from "../FileIcon";
 import { pieceFileTitle, pieceFileView } from "../pieceViews";
 import { useFileIcons } from "../projectTheme";
-import { skillFileOf } from "../SkillPage";
+import { skillFileOf } from "../skillFile";
 import type { ViewRef } from "../tabs";
 import { iconFor } from "../theme/icons";
 import { Button } from "../ui/button/Button";
@@ -30,7 +30,7 @@ import { RowLabel, RowLead } from "../ui/list/Row";
 import { Separator } from "../ui/panel/Separator";
 import { editorToolbar, ToolbarFile } from "../ui/tabs/Tabs";
 import { Tree, TreeRow, type Key } from "../ui/tree/Tree";
-import { READING, Shown, SourceToggle, type FileRead } from "./PieceFiles";
+import { Shown, SourceToggle, useFileRead } from "./PieceFiles";
 
 /** One row of the tree: a file, or a folder with what it holds. */
 type Node = {
@@ -70,6 +70,7 @@ export default function SkillFilesView({
   workspace,
   persona,
   walked,
+  changed,
   editable,
   readOnly,
   onEditText,
@@ -80,6 +81,8 @@ export default function SkillFilesView({
   workspace: string | null;
   persona: string | null;
   walked: SkillFolder;
+  /** Bumped when the project's skills change: the file shown is read again. */
+  changed: number;
   editable: boolean;
   readOnly: string | undefined;
   onEditText: () => void;
@@ -91,7 +94,11 @@ export default function SkillFilesView({
   const [open, setOpen] = useState<Set<Key>>(new Set());
   const [picked, setPicked] = useState<string>();
   const [source, setSource] = useState<{ path: string; on: boolean }>();
-  const read = useSkillFile(plane, workspace, persona, folder, picked);
+  const read = useFileRead(
+    picked,
+    (path) => commands.skillFile(plane, workspace, persona, folder, path),
+    [plane, workspace, persona, folder, changed],
+  );
   // Where the project's own file tab can open it: a skill the page can change, in the project.
   const own = editable && picked !== undefined ? skillFileOf(skill, picked) : undefined;
   const showsSource = source !== undefined && source.path === picked && source.on;
@@ -125,7 +132,7 @@ export default function SkillFilesView({
   );
 
   return (
-    <Group className="piece-files skill-files" orientation="horizontal">
+    <Group className="piece-files" orientation="horizontal">
       <Panel
         id="skill-files-tree"
         defaultSize={`${SPLIT.start}%`}
@@ -146,7 +153,7 @@ export default function SkillFilesView({
           </Tree>
           {walked.more > 0 && (
             <p className="honest" data-testid="skill-files-more">
-              {`And ${walked.more} more, past the first ${walked.entries.length}.`}
+              {`At least ${walked.more} more past the first ${walked.entries.length} are not shown.`}
             </p>
           )}
         </div>
@@ -204,36 +211,4 @@ export default function SkillFilesView({
       </Panel>
     </Group>
   );
-}
-
-/** The file `path` of the skill's folder, read from the core each time it changes. */
-function useSkillFile(
-  plane: string,
-  workspace: string | null,
-  persona: string | null,
-  folder: string,
-  path: string | undefined,
-): FileRead | undefined {
-  const [read, setRead] = useState<{ path: string; read: FileRead }>();
-  useEffect(() => {
-    if (path === undefined) return;
-    let gone = false;
-    void commands
-      .skillFile(plane, workspace, persona, folder, path)
-      .then((said) => {
-        if (!gone)
-          setRead({
-            path,
-            read: said.status === "ok" ? said.data : { kind: "refused", why: said.error },
-          });
-      })
-      .catch((err: unknown) => {
-        if (!gone) setRead({ path, read: { kind: "refused", why: String(err) } });
-      });
-    return () => {
-      gone = true;
-    };
-  }, [plane, workspace, persona, folder, path]);
-  if (path === undefined) return undefined;
-  return read?.path === path ? read.read : READING;
 }

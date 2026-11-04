@@ -19,7 +19,7 @@ import { lazy, Suspense, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { commands, type SkillLevel, type StudioSkill } from "./bindings";
 import { NotRead, ReadingRows, useRead } from "./SkillPanels";
-import { skillFileOf } from "./SkillPage";
+import { skillFileOf } from "./skillFile";
 import { whoseChats, type StudioScope } from "./skillStudio";
 import type { ViewRef } from "./tabs";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -31,6 +31,7 @@ export function SkillFiles({
   skill,
   scope,
   level,
+  changed,
   readOnly,
   onEditText,
   onOpenView,
@@ -38,6 +39,8 @@ export function SkillFiles({
   plane: string;
   skill: StudioSkill;
   scope: StudioScope;
+  /** Bumped when the project's skills change: the folder and the file shown are read again. */
+  changed: number;
   /** Its level where the page can change it; `null` for a built-in or third-party skill. */
   level: SkillLevel | null;
   /** Why its files are only read here, where they are; said above the preview. */
@@ -54,7 +57,7 @@ export function SkillFiles({
       folder === ""
         ? Promise.resolve({ status: "ok" as const, data: null })
         : commands.skillFiles(plane, workspace, persona, folder),
-    [plane, workspace, persona, folder, again],
+    [plane, workspace, persona, folder, changed, again],
   );
   if (folder === "") {
     const none = skillFileOf(skill);
@@ -86,6 +89,7 @@ export function SkillFiles({
         workspace={workspace}
         persona={persona}
         walked={walked.data}
+        changed={changed}
         editable={level !== null}
         readOnly={readOnly}
         onEditText={onEditText}

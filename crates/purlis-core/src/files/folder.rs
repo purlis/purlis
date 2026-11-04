@@ -38,8 +38,9 @@ pub struct Walk {
 
 /// `folder`, walked: see [`Walk`]. Git's own `.git` is left out, a link is listed with why it
 /// does not open and never followed, and something that is not a regular file (a FIFO, a
-/// socket) is listed as a file that does not open. Past [`MOST`] entries no further folder is
-/// listed, and what the folders listed hold past them is counted in `more`.
+/// socket) is listed as a file that does not open, and a folder that cannot be listed as a row
+/// that says why. Past [`MOST`] entries no further folder is listed, and what the folders listed
+/// hold past them is counted in `more`: at least that many are not shown.
 pub fn walk(folder: &Path) -> Result<Walk, String> {
     let mut walk = Walk::default();
     // Depth first, each folder's entries straight after it: what is waiting is a stack of the
@@ -74,20 +75,25 @@ pub fn walk(folder: &Path) -> Result<Walk, String> {
         }
         let relative = parent.join(&one.name);
         let path = super::slashed(&relative);
+        // A folder that cannot be listed is one row that says why, never the whole walk.
+        let inside = if one.kind == Kind::Folder {
+            list(&relative).map(Some)
+        } else {
+            Ok(None)
+        };
         let refused = match one.kind {
             Kind::Link => Some(format!(
                 "'{path}' is a link, and purlis opens no link in a skill's folder"
             )),
             Kind::File if !one.file => Some(format!("'{path}' is not a file")),
-            _ => None,
+            _ => inside.as_ref().err().cloned(),
         };
         walk.entries.push(Walked {
             path,
             kind: one.kind,
             refused,
         });
-        if one.kind == Kind::Folder {
-            let inside = list(&relative)?;
+        if let Ok(Some(inside)) = inside {
             stack.extend(inside.into_iter().rev().map(|one| (relative.clone(), one)));
         }
     }

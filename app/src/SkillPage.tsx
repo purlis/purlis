@@ -97,7 +97,8 @@ import {
 } from "./skillStudio";
 import { PINNABLE, turnOf } from "./skillsListing";
 import { useOpenUseSkill } from "./UseSkill";
-import { PLANE_ROOT, pieceFileTitle, pieceFileView, type Place } from "./pieceViews";
+import { pieceFileTitle, pieceFileView } from "./pieceViews";
+import { skillFileOf } from "./skillFile";
 import type { ViewRef } from "./tabs";
 import { FILE_MANAGER, type Offer } from "./actions";
 import { SkillFiles } from "./SkillFiles";
@@ -277,31 +278,7 @@ export function whoGetsIt(skill: StudioSkill, scope: StudioScope): string {
   return `On: ${chat} gets it.`;
 }
 
-/** **The file a skill's text is in**, as a tab opens it, or why there is none to open; or, with
- *  `inner`, another file in its folder (`evals/triggers.json`). */
-export function skillFileOf(
-  skill: StudioSkill,
-  inner = "SKILL.md",
-): { place: Place; path: string } | { reason: string } {
-  const { folder } = skill;
-  if (skill.level === "built-in")
-    return {
-      reason: "It ships with purlis, inside the app, and is not one of the project's files.",
-    };
-  if (folder === "")
-    return {
-      reason: "It was installed from a source: its files are kept with the project's pins.",
-    };
-  if (folder.startsWith("/")) return { reason: "Its file is outside the project." };
-  if (skill.level === "repo") {
-    // `workspaces/<workspace>/<clone>/…`, as the core says a clone's folder.
-    const [top, workspace, repo, ...rest] = folder.split("/");
-    if (top !== "workspaces" || workspace === undefined || repo === undefined || rest.length === 0)
-      return { reason: "Its file is outside the project." };
-    return { place: { workspace, repo, piece: null }, path: `${rest.join("/")}/${inner}` };
-  }
-  return { place: PLANE_ROOT, path: `${folder}/${inner}` };
-}
+export { skillFileOf };
 
 /**
  * **The row of each name that carries its Pin switch** (SK-15d): of its rows at one of the
@@ -783,6 +760,7 @@ export function SkillPage({
             skill={skill}
             scope={scope}
             level={level}
+            changed={given}
             readOnly={level === null ? `Read only: ${lowerFirst(cannotChange)}` : undefined}
             onEditText={() => {
               if (level === null) return;

@@ -56,8 +56,7 @@ fn listed(
 }
 
 /// Every file and folder in the folder of a skill the studio lists, nested.
-// It lists the studio again to find the folder, so on a blocking thread. Not a doc comment,
-// because the generated bindings carry those.
+// Each command here lists the studio again to find the folder, so on a blocking thread.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_files(
@@ -142,5 +141,10 @@ pub(crate) async fn skill_folder_open(
     .await?;
     app.opener()
         .open_path(at.to_string_lossy(), None::<&str>)
-        .map_err(|e| format!("the system did not open the skill's folder: {e}"))
+        .map_err(|e| {
+            format!(
+                "purlis could not open the skill's folder, because the system refused it ({e}). \
+                 Check that this computer has an app set to open folders, then try again"
+            )
+        })
 }

@@ -11,7 +11,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { chooseMore, forgetStudio, renderStudioAt } from "./SkillStudioTab.testkit";
+import { chooseMore, forgetStudio, PLANE, renderStudioAt } from "./SkillStudioTab.testkit";
+import { SkillStudioTab } from "./SkillStudioTab";
 import {
   AT_THE_ROOT,
   ChatToUseHere,
@@ -947,6 +948,21 @@ describe("a skill's Files", () => {
       expect(screen.queryByRole("button", { name })).toBeNull();
     expect(asked.find((one) => one.cmd === "skill_files")?.args).toMatchObject({
       folder: "/app/plugin/skills/purlis-secrets",
+    });
+  });
+
+  it("reads the folder and the file shown again when the project's skills change", async () => {
+    const asked = core([DEPLOY], folder());
+    const user = userEvent.setup();
+    const { rerender } = renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "files" }));
+    await user.click(await row("SKILL.md"));
+    await screen.findByText("The text of SKILL.md.");
+    const reads = (cmd: string) => asked.filter((one) => one.cmd === cmd).length;
+    const [walks, files] = [reads("skill_files"), reads("skill_file")];
+    rerender(<SkillStudioTab plane={PLANE} changed={1} />);
+    await vi.waitFor(() => {
+      expect(reads("skill_files")).toBeGreaterThan(walks);
+      expect(reads("skill_file")).toBeGreaterThan(files);
     });
   });
 

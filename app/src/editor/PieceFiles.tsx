@@ -91,11 +91,19 @@ export type FileRead = { kind: "reading" } | { kind: "refused"; why: string } | 
 
 export const READING: FileRead = { kind: "reading" };
 
+/** What a file read answers: the core's `PieceFile`, or why it refused. */
+type FileAnswer = { status: "ok"; data: PieceFile } | { status: "error"; error: string };
+
 /**
- * One file of the branch, read from the core each time its path changes: the one path both tabs
- * read a file through (#988). `undefined` while no file is picked.
+ * **One file, read from the core each time its path or `from` changes**: the one path every file
+ * preview reads a file through, a branch's tabs (#988) and a skill's Files tab (#5183). `ask`
+ * reads `path` from whatever `from` names. `undefined` while no file is picked.
  */
-function useFile(plane: PlaneId, cut: Place, path: string | undefined): FileRead | undefined {
+export function useFileRead(
+  path: string | undefined,
+  ask: (path: string) => Promise<FileAnswer>,
+  from: readonly unknown[],
+): FileRead | undefined {
   const [read, setRead] = useState<{ path: string; read: FileRead }>();
   useEffect(() => {
     if (path === undefined) return;
@@ -103,11 +111,7 @@ function useFile(plane: PlaneId, cut: Place, path: string | undefined): FileRead
     const told = (read: FileRead) => {
       if (!gone) setRead({ path, read });
     };
-    // The plane root's file is the window's own read (issue 1916), which names no branch.
-    const asked = isPlaneRoot({ workspace: cut.workspace, repo: cut.repo, piece: cut.piece })
-      ? commands.planeFile(plane, path)
-      : commands.pieceFile(plane, cut.workspace, cut.repo, cut.piece, path);
-    void asked
+    void ask(path)
       .then((answer) =>
         told(answer.status === "error" ? { kind: "refused", why: answer.error } : answer.data),
       )
@@ -115,9 +119,24 @@ function useFile(plane: PlaneId, cut: Place, path: string | undefined): FileRead
     return () => {
       gone = true;
     };
-  }, [plane, cut.workspace, cut.repo, cut.piece, path]);
+    // The read is the caller's, asked again on what it names.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...from, path]);
   if (path === undefined) return undefined;
   return read?.path === path ? read.read : READING;
+}
+
+/** One file of the branch: {@link useFileRead} on the branch's folder, or the plane root's. */
+function useFile(plane: PlaneId, cut: Place, path: string | undefined): FileRead | undefined {
+  return useFileRead(
+    path,
+    (path) =>
+      // The plane root's file is the window's own read (issue 1916), which names no branch.
+      isPlaneRoot({ workspace: cut.workspace, repo: cut.repo, piece: cut.piece })
+        ? commands.planeFile(plane, path)
+        : commands.pieceFile(plane, cut.workspace, cut.repo, cut.piece, path),
+    [plane, cut.workspace, cut.repo, cut.piece],
+  );
 }
 
 /**

@@ -46,6 +46,11 @@ const BROWSER = skill("purlis-browser", {
   folder: "/app/plugin/skills/purlis-browser",
 });
 const SKILLS = [DEPLOY, LINT, BROWSER];
+/** A skill installed from a source, whose folder purlis does not name: drawn only where chosen. */
+const BRAINSTORM = skill("brainstorming", {
+  folder: "",
+  description: "Turns a rough idea into a design through questions, one at a time.",
+});
 
 const RUNS = {
   group: { kind: "none" },
@@ -79,6 +84,11 @@ const DEPLOY_FOLDER = {
     { path: "references/staging.md", kind: "file", refused: null },
     { path: "scripts", kind: "folder", refused: null },
     { path: "scripts/smoke.sh", kind: "file", refused: null },
+    {
+      path: "scripts/shared",
+      kind: "link",
+      refused: "'scripts/shared' is a link, and purlis opens no link in a skill's folder",
+    },
     { path: "SKILL.md", kind: "file", refused: null },
   ],
   more: 0,
@@ -113,11 +123,14 @@ function Tab({
 const meta = {
   component: Tab,
   args: { width: 1100, chosen: DEPLOY, tab: "overview" },
-  beforeEach: ({ args }) => {
+  beforeEach: ({ args: args_ }) => {
     mockIPC((cmd, args) => {
       switch (cmd) {
         case "skill_studio":
-          return studio(SKILLS, { workspace: "smart-ide", workspaces: ["smart-ide"] });
+          return studio(args_.chosen === BRAINSTORM ? [...SKILLS, BRAINSTORM] : SKILLS, {
+            workspace: "smart-ide",
+            workspaces: ["smart-ide"],
+          });
         case "skill_details":
           return {
             copies: [
@@ -166,9 +179,15 @@ const meta = {
         case "skill_updates":
           return { offers: [], unconfirmed: [], unasked: [] };
         case "skill_files":
-          return (args as { folder?: string }).folder === BROWSER.folder
-            ? { entries: [{ path: "SKILL.md", kind: "file", refused: null }], more: 0 }
-            : DEPLOY_FOLDER;
+          switch ((args as { folder?: string }).folder) {
+            case BROWSER.folder:
+              // A walk cut short: the line under the tree says how many more there are.
+              return { entries: [{ path: "SKILL.md", kind: "file", refused: null }], more: 7 };
+            case LINT.folder:
+              throw "'skills/lint-rs' is not the folder of a skill the studio lists here: the skill may have moved or gone. Open it again from the Library";
+            default:
+              return DEPLOY_FOLDER;
+          }
         case "skill_file":
           return { kind: "text", text: FILE_TEXT[(args as { path: string }).path] ?? "" };
         case "skill_deletes_cut_short":
@@ -180,8 +199,8 @@ const meta = {
     openViewAt(HISTORY, {
       page: "library",
       scope: SCOPE,
-      skill: skillRowId(args.chosen),
-      tab: args.tab,
+      skill: skillRowId(args_.chosen),
+      tab: args_.tab,
     });
     return () => {
       clearMocks();
@@ -460,7 +479,8 @@ export const Files: Story = {
   },
 };
 
-/** **A built-in skill's Files**: shown, and said to be read only, with nothing that changes it. */
+/** **A built-in skill's Files**: shown, and said to be read only, with nothing that changes it;
+ *  the walk was cut short, and the line under the tree says so. */
 export const FilesBuiltIn: Story = {
   args: { chosen: BROWSER, tab: "files" },
   play: async ({ canvas }) => {
@@ -471,6 +491,51 @@ export const FilesBuiltIn: Story = {
       "Read only: built-in skills can't be changed.",
     );
     await expect(canvas.queryByRole("button", { name: "Edit SKILL.md" })).toBeNull();
+    await expect(canvas.getByTestId("skill-files-more")).toHaveTextContent("At least 7 more");
+    expectFocusInSight();
+  },
+};
+
+/** **Its Files before a file is picked**: the preview says how to pick one, and a link in the
+ *  folder is a row that says why it does not open, on the keyboard too. */
+export const FilesUnpicked: Story = {
+  args: { tab: "files" },
+  play: async ({ canvas }) => {
+    const tree = await canvas.findByRole("treegrid", { name: "Files of deploy" });
+    const row = (name: string) => within(tree).getByRole("row", { name });
+    await tabInto(() => tree);
+    await userEvent.keyboard("{End}");
+    await untilFocused(() => row("SKILL.md"), "Files: End moves to the last row");
+    await userEvent.keyboard("{Home}{ArrowDown}{ArrowDown}{ArrowRight}");
+    await waitFor(() => expect(row("scripts")).toHaveAttribute("aria-expanded", "true"));
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    await untilFocused(() => row("shared"), "Files: Down reaches the link");
+    await expect(row("shared")).toHaveAttribute("aria-disabled", "true");
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByText("Pick a file to read it")).toBeVisible();
+    expectFocusInSight();
+  },
+};
+
+/** **A skill with no folder purlis names** (installed from a source): its Files says why. */
+export const FilesNone: Story = {
+  args: { chosen: BRAINSTORM, tab: "files" },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("skill-files-none")).toHaveTextContent(
+      "its files are kept with the project's pins",
+    );
+  },
+};
+
+/** **A folder that could not be read**: why, in place, with Try again on the keyboard. */
+export const FilesNotRead: Story = {
+  args: { chosen: LINT, tab: "files" },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("skill-page-not-read")).toHaveTextContent(
+      "Open it again from the Library",
+    );
+    const again = canvas.getByRole("button", { name: "Try again" });
+    await tabInto(() => again);
     expectFocusInSight();
   },
 };

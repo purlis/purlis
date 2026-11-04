@@ -22,7 +22,12 @@ pub fn listed_folder(
     env: &crate::harness_plugin::Env<'_>,
     folder: &str,
 ) -> Result<PathBuf, String> {
-    let refused = || format!("'{folder}' is not the folder of a skill the studio lists here");
+    let refused = || {
+        format!(
+            "'{folder}' is not the folder of a skill the studio lists here: the skill may have \
+             moved or gone. Open it again from the Library"
+        )
+    };
     if folder.is_empty() {
         return Err(refused());
     }
@@ -46,11 +51,16 @@ pub fn listed_folder(
     }
     // A row's folder is relative to the project where it is inside it, else whole.
     let path = Path::new(folder);
-    Ok(if path.is_absolute() {
+    let named = if path.is_absolute() {
         path.to_path_buf()
     } else {
         plane.join(path)
-    })
+    };
+    // Resolved where it leads: a skill's folder that is a link (a person's
+    // `~/.claude/skills/<name>`, often a checkout) is read where the harness reads it. Only the
+    // folder itself: inside it, the walk and each open follow no link.
+    std::fs::canonicalize(&named)
+        .map_err(|e| format!("purlis could not find the folder of '{folder}': {e}"))
 }
 
 #[cfg(test)]
