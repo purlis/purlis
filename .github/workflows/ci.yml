@@ -302,6 +302,9 @@ jobs:
           cargo build --locked -p purlis-linux-sandbox --bin sandbox-probe
           PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
             -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
+          # A brokered `secret exec` child under purlis's own wrap: the network through its proxy alone.
+          PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
+            -E 'package(purlis-core) & kind(lib) & test(=secrets::brokered::tests::under_purlis_wrap_a_brokered_child_reaches_the_network_only_through_its_proxy)'
           # Again with the pod's hand-over folder really mounted, in memory as a pod's is, so the row
           # that denies it compiles and is tried (#4329). It goes as the step ends: no other test
           # expects this machine to have one.
@@ -1467,6 +1470,11 @@ jobs:
       - name: A chat's server behind its door, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
+      # A brokered `secret exec` child under its run's real profile: the network through its
+      # proxy alone, never a direct connection to this Mac or past it.
+      - name: A brokered run reaches the network only through its proxy, confined by Seatbelt
+        if: steps.scope.outputs.run == 'true'
+        run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- secrets::brokered::tests::under_seatbelt_a_brokered_child_reaches_the_network_only_through_its_proxy
       # The Keychain's own rule a held item rests on (V90a), in a keychain of the test's own:
       # read by the program that made it, and silently by no other.
       - name: A held keychain item is read silently by no other program
