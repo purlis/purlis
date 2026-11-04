@@ -98,7 +98,7 @@ pub(crate) const SAYS_IT_IS_A_NAME: &str = r#"(() => {
 pub(crate) const NAME_FIELD: &str = r#"(() => {
   const oneLine = ['text', 'email', 'tel', 'url', 'number'];
   const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
-    && (oneLine.includes(e.type) || true);
+    && oneLine.includes(e.type);
   const named = ['input[autocomplete~="username"]', 'input[autocomplete~="email"]',
     'input[type="email"]', 'input[name*="user" i]', 'input[name*="login" i]',
     'input[name*="email" i]', 'input[id*="user" i]', 'input[id*="email" i]', 'input[type="text"]'];
@@ -250,7 +250,7 @@ impl Browser {
             .iter()
             .map(|user| user.as_str())
             .chain(std::iter::once(login.password.as_str()))
-            .flat_map(|one| spellings(one).into_iter().take(1))
+            .flat_map(spellings)
             .collect();
         held.run(&values);
         lock(&self.inner.state).keep_out_everywhere(&held);
@@ -351,7 +351,7 @@ impl Browser {
         // this browser (#5121), as after any fill.
         self.inner
             .copy_withheld
-            .store(login.user.is_none() && login.password.is_empty(), std::sync::atomic::Ordering::SeqCst);
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         // Its holder is told once this page leaves the form's origin (#4995): back on the
         // login's page's, or anywhere else.
         if login.back_to.is_some() {
@@ -520,8 +520,8 @@ impl Browser {
     /// that one's opener is a page nobody asked about (#5121).
     fn own_page_at(&self, address: &crate::WebAddress) -> Result<String, Refusal> {
         let (target, _) = self.open_own(address)?;
-        let _ = target;
-        lock(&self.inner.state).current.clone().ok_or(Refusal::NoPage)
+        lock(&self.inner.state).current = Some(target.clone());
+        Ok(target)
     }
 
     /// **Whether the page the browser shows asks to sign in now** (#5121): its own document shows
@@ -659,7 +659,7 @@ impl Browser {
         .map_err(|_| could_not())?;
         // The field gives nothing to a copy, a cut or a drag from before the value is in it: where
         // that can't be made so, the value doesn't go in.
-        let guarded = if value.is_empty() { self
+        let guarded = self
             .gated(|| {
                 self.devtools().call(
                     "Runtime.callFunctionOn",
@@ -671,7 +671,7 @@ impl Browser {
                     on,
                 )
             })?
-            .map_err(|_| could_not())? } else { json!({}) };
+            .map_err(|_| could_not())?;
         if guarded.get("exceptionDetails").is_some() {
             return Err(could_not());
         }

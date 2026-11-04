@@ -181,23 +181,20 @@ fn a_login_on_a_page_that_redefines_finding_and_focusing_a_field_goes_through() 
     assert!(!holds_a_value(&shown), "the account page shows no value");
 }
 
-/// #5121, SF-7: a value is kept out as a form spells it in the address it sends, as any fill's is.
+/// #5121, SF-7: a value is kept out as a form spells it, as any fill's is, where the page it sent
+/// the form to writes what its address carries into the page.
 #[test]
-fn a_login_value_is_kept_out_as_a_form_sends_it() {
+fn a_login_value_a_page_echoes_as_a_form_sent_it_is_kept_out() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
     let login = Login {
         password: "fixture+word/7".to_owned().into(),
-        ..login_at("http://fixture.test")
+        ..login_on("login-echoes.html", "http://fixture.test")
     };
     let ended = browser.log_in(&login, binds()).expect("the login runs");
-    let answer = ended.outcome.expect("the login goes through");
-    let page = answer.page.expect("the page it left");
-    assert!(
-        !page.address.contains("fixture%2Bword"),
-        "the address shows the value as a form spelled it"
-    );
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(sees(&browser, "Sent"), "the page it sent the form to");
     assert!(
         !snapshot(&browser).contains("fixture%2Bword"),
         "the page shows the value as a form spelled it"
