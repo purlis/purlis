@@ -44,6 +44,9 @@ export const ForATool: Story = {
   args: { secret, box: null },
   play: async ({ canvas, userEvent }) => {
     const box = canvas.getByLabelText("Value of KUBECONFIG");
+    // New value is the way chosen, first in the Tab order; the box is next.
+    await userEvent.tab();
+    await untilFocused(() => canvas.getByRole("radio", { name: "New value" }), "New value");
     await userEvent.tab();
     await untilFocused(() => box, "the value's box");
     expectFocusInSight();
