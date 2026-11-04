@@ -203,6 +203,37 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
           if (holder.__openedInMs === undefined) requestAnimationFrame(rafMark);
         }; // [DEBUG-4351]
         requestAnimationFrame(rafMark); // [DEBUG-4351]
+        // [DEBUG-4351] the panel library's first offsetLeft read in this opening (registerPanel's
+        // sort, in the commit): its style and its layout, timed apart. Only that getter.
+        const w = globalThis as { __offset4351?: boolean; __first4351?: boolean }; // [DEBUG-4351]
+        w.__first4351 = true; // [DEBUG-4351]
+        if (!w.__offset4351) {
+          w.__offset4351 = true;
+          const d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetLeft");
+          const get = d?.get;
+          if (d !== undefined && get !== undefined)
+            Object.defineProperty(HTMLElement.prototype, "offsetLeft", {
+              ...d,
+              get(this: HTMLElement) {
+                const p = globalThis as {
+                  __first4351?: boolean;
+                  __tl4351?: string[];
+                  __t04351?: number;
+                };
+                if (!p.__first4351 || p.__tl4351 === undefined) return get.call(this);
+                p.__first4351 = false;
+                const t0 = performance.now();
+                void getComputedStyle(document.documentElement).color;
+                const t1 = performance.now();
+                const r = get.call(this);
+                const t2 = performance.now();
+                p.__tl4351.push(
+                  `${(t2 - (p.__t04351 ?? 0)).toFixed(0)} first offsetLeft style ${(t1 - t0).toFixed(0)} layout ${(t2 - t1).toFixed(0)} ms`,
+                );
+                return r;
+              },
+            });
+        } // [DEBUG-4351]
         const started = performance.now();
         probe.__t04351 = started; // [DEBUG-4351]
         row.click();
