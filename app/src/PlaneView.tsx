@@ -517,7 +517,6 @@ import {
   studioHistoryOf,
   studioOpening,
   studioTabsGone,
-  whoseChats,
   useSkillStudioSaid,
 } from "./skillStudio";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
@@ -4528,8 +4527,9 @@ export const PlaneView = memo(function PlaneView({
    * this workspace, a palette row pressed while looking at it. A view has no directory to be
    * filed by, so it is filed there, explicitly (`tabs.Content`).
    *
-   * **Opening one runs nothing.** An extension's view asks its program when its tab draws it,
-   * which is a separate, visible step (`Views.tsx`); the persona view reads the plane.
+   * **Opening one runs nothing**, but for the Skill studio's read, asked as it opens and taken by
+   * its tab (`studioReadAhead.ts`, #4351). An extension's view asks its program when its tab
+   * draws it, which is a separate, visible step (`Views.tsx`); the persona view reads the plane.
    *
    * `workspace` files it on that strip instead: a workspace's own settings belong on its strip
    * whichever one is in front (charter-app#280).
@@ -4559,10 +4559,8 @@ export const PlaneView = memo(function PlaneView({
         if (opening.place !== undefined) {
           // A tab drawn now asks for its skills now, read while it is drawn (#4351); one already
           // open has them.
-          if (findView(now.current, view) === undefined) {
-            const { workspace, persona } = whoseChats(opening.place.scope);
-            readStudioAhead(plane, workspace, persona);
-          }
+          if (findView(now.current, view) === undefined)
+            readStudioAhead(plane, studioHistoryOf(plane, view), opening.place.scope);
           openViewAt(studioHistoryOf(plane, view), opening.place);
         }
       }

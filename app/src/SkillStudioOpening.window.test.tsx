@@ -7,6 +7,7 @@ import { act, cleanup, render as renderBare, screen, waitFor } from "@testing-li
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { forgetStudioReadAhead } from "./studioReadAhead";
 
 /**
  * **The studio's skills are asked for as it is opened, not once it is drawn** (#4351, L10): the
@@ -25,6 +26,7 @@ const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMo
 afterEach(() => {
   cleanup();
   clearMocks();
+  forgetStudioReadAhead();
 });
 
 const PLANE = "/home/dev/plane";

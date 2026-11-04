@@ -299,6 +299,19 @@ export function followPlaneChanged(
   return followTold(planes, (said) => concerns(said.answers, interest()), told);
 }
 
+/**
+ * Calls `told` each time the core says one of `planes` changed in a way a view following
+ * `about` reads again for, until the returned stop is called: [`useViewChanged`] without the
+ * component around it. The studio's read asked as it opens is stale on it (#4351).
+ */
+export function followViewChanged(
+  planes: readonly PlaneId[],
+  about: About | undefined,
+  told: () => void,
+): () => void {
+  return followTold(planes, (said) => concernsAView(said, about), told);
+}
+
 function followTold(
   planes: readonly PlaneId[],
   wants: (told: PlaneChanged) => boolean,
