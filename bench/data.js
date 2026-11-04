@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793831415822,
+  "lastUpdate": 1793834067149,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39354,6 +39354,48 @@ window.BENCHMARK_DATA = {
             "value": 102.413488,
             "unit": "ms",
             "extra": "median of 5 runs: 102.091, 102.174, 102.413, 102.939, 102.960 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e213264cfa71e3064f73b51049667eaf51ef8969",
+          "message": "The outcome bars' macOS runner settles before they measure (#4351) (#5238)\n\n* The outcome bars' macOS runner is quieted before they measure (#4351)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6AQ7CQ2QWW7W99KZZ8DR168\nPurlis-Persona: steward\n\n* The runner settles before each harness's bars, Spotlight off before the build (#4351)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6AQ7CQ2QWW7W99KZZ8DR168\nPurlis-Persona: steward",
+          "timestamp": "2026-11-04T22:08:38Z",
+          "tree_id": "1fcc705fb7c58f1281fa7d92fbaf098c242833cb",
+          "url": "https://github.com/purlis/purlis/commit/e213264cfa71e3064f73b51049667eaf51ef8969"
+        },
+        "date": 1793834062247,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6907575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.680, 0.691, 0.691, 0.694, 0.704 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6316345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.427, 16.577, 16.632, 16.633, 16.701 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9138625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.497, 101.722, 101.914, 102.008, 102.955 ms"
           }
         ]
       }
