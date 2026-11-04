@@ -186,12 +186,18 @@ function revealInFrame(event: React.FocusEvent<HTMLDivElement>): void {
   if (target === frame) return;
   const start = settled.get(frame) ?? frame.scrollLeft;
   // Where it ends as the table is drawn now, for a focus that comes before these frames are.
-  settled.set(frame, placeFor(frame, target, start));
+  const now = placeFor(frame, target, start);
+  if (now === null) {
+    settled.delete(frame);
+    return;
+  }
+  settled.set(frame, now);
   const later = () =>
     requestAnimationFrame(() => {
       if (!frame.isConnected || document.activeElement !== target) return;
       // And as it is drawn by then: a column may have taken its width since the focus came.
       const to = placeFor(frame, target, start);
+      if (to === null) return;
       settled.set(frame, to);
       if (frame.scrollLeft !== to) frame.scrollLeft = to;
     });
@@ -199,13 +205,13 @@ function revealInFrame(event: React.FocusEvent<HTMLDivElement>): void {
 }
 
 /**
- * **Where `frame` is scrolled to show `target` and its ring, from `start`**: `start` itself for a
- * row or anything as wide as the frame, which is left to React Aria.
+ * **Where `frame` is scrolled to show `target` and its ring, from `start`**: none for a row or
+ * anything as wide as the frame, which is left to React Aria and to where a person scrolls it.
  */
-function placeFor(frame: HTMLElement, target: Element, start: number): number {
+function placeFor(frame: HTMLElement, target: Element, start: number): number | null {
   const room = frame.getBoundingClientRect();
   const box = target.getBoundingClientRect();
-  if (box.width >= frame.clientWidth) return start;
+  if (box.width >= frame.clientWidth) return null;
   // The control's edges in the frame's own content, the same whatever it is scrolled to.
   const origin = room.left + frame.clientLeft - frame.scrollLeft;
   return revealedScrollLeft({
