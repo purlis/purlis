@@ -493,8 +493,7 @@ fn asks(
     asked: &FillAsked,
     origin: &str,
 ) -> bool {
-    let _ = granted(root, fills, session, persona, asked, origin);
-    asked.field.kind == FieldKind::OneLine
+    asked.field.kind != FieldKind::OneLine || !granted(root, fills, session, persona, asked, origin)
 }
 
 /// **Whether a fill goes in without a notice** (#5116): a line Always wrote, allowed here, or the
@@ -616,9 +615,6 @@ fn read(
     let read = || brokered::fill_value(&asker, &asked.vault, &asked.key);
     if let Some(value) = read()? {
         return Ok(value);
-    }
-    if !origin.is_empty() {
-        return Err("mutated: no Secret ask".to_owned());
     }
     let need = purlis_core::secrets::ask::Need {
         chat: Some(session),
