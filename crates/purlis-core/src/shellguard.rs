@@ -62,7 +62,7 @@ pub const USER_ZDOTDIR_ENV: &str = "PURLIS_USER_ZDOTDIR";
 /// The line a harness started by hand says, on standard error, before it starts.
 pub fn warning(harness: Harness) -> String {
     format!(
-        "purlis: this {} runs outside purlis's session tracking; open it as a chat tab \
+        "purlis: this {} runs outside purlis's session tracking; open it as a chat \
          instead",
         harness.name()
     )
@@ -574,7 +574,8 @@ mod tests {
 
         assert!(said.contains("opencode"), "{said}");
         assert!(said.contains("outside purlis's session tracking"), "{said}");
-        assert!(said.contains("chat tab"), "{said}");
+        // A chat, not a chat tab (ADR 0062 as amended 2026-11-02): a chat isn't a tab.
+        assert!(said.ends_with("open it as a chat instead"), "{said}");
     }
 
     #[test]

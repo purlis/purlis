@@ -178,7 +178,8 @@ export async function pressAndStart(name: string): Promise<void> {
 
 /**
  * Ending a chat, as the operator does it since the pane controls landed: press, then answer
- * **Close** — the dialog's answer that ends it (ADR 0064 added Smart close beside it).
+ * **Close** — the dialog's answer that ends it (ADR 0064 added Smart close beside it), or
+ * **End** on a shell, whose question has only Cancel and End (#4761).
  *
  * **Nothing ends a chat without asking** — the operator's *"closing session should ask
  * confirmation"*, and it is asked in one place (`PlaneView`'s `run`), so a tab's `×`, a
@@ -193,11 +194,20 @@ export async function answerTheAsk(ending: string): Promise<void> {
   // The question is about the row that was pressed; its title says which. Looked for by that,
   // afresh at every look: `endEveryChat` asks one after another, and a node held from the last
   // question is not this one (#2126).
+  // A chat's question ends it on Close; a shell's asks only Cancel or End (#4761).
+  let word = "Close";
   await browser.waitUntil(
-    async () => browser.execute(aDialogOffers, "alertdialog", ending, "Close", false),
+    async () => {
+      for (const one of ["Close", "End"])
+        if (await browser.execute(aDialogOffers, "alertdialog", ending, one, false)) {
+          word = one;
+          return true;
+        }
+      return false;
+    },
     { timeout: 20_000, timeoutMsg: `the question about ${ending} was never asked` },
   );
-  const answer = await $('[role="alertdialog"]').$("button=Close");
+  const answer = await $('[role="alertdialog"]').$(`button=${word}`);
   await answer.waitForClickable({ timeout: 20_000 });
   await answer.click();
   await theDialogHasGone("alertdialog", ending, `the question about ${ending} never went`);

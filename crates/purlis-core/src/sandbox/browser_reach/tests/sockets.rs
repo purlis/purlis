@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use super::super::{Bound, Lane, NewSites, ReachProxy, Site};
+use super::super::{Bound, Lane, LoginSites, NewSites, ReachProxy, Site};
 use crate::sandbox::reach::{By, Reach};
 
 /// A server on this machine's loopback, and its port.
@@ -322,7 +322,7 @@ fn a_browser_holding_a_login_reaches_its_logins_site_alone_from_the_moment_it_is
     open.read_exact(&mut back).expect("echoed");
 
     proxy
-        .bind(&[Site::of("127.0.0.1", login_port)])
+        .bind(&LoginSites::page(Site::of("127.0.0.1", login_port)))
         .expect("bound");
 
     // The tunnel open before is ended at the bind.
@@ -359,4 +359,76 @@ fn a_browser_holding_a_login_reaches_its_logins_site_alone_from_the_moment_it_is
         "HTTP/1.1 200 Connection established"
     );
     drop(login_site);
+}
+
+/// A site that echoes what its one client sends until it goes.
+fn echoing(listener: TcpListener) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("the proxy's connection");
+        let mut buf = [0u8; 64];
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => return,
+                Ok(n) => {
+                    if stream.write_all(&buf[..n]).is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// Whether `open`'s tunnel still echoes.
+fn echoes(open: &mut TcpStream) -> bool {
+    open.set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("a timeout");
+    if open.write_all(b"ping").is_err() {
+        return false;
+    }
+    let mut back = [0u8; 4];
+    open.read_exact(&mut back).is_ok() && &back == b"ping"
+}
+
+/// #4995, the person's ruling of 2026-11-03: a login whose form is on another site reaches it
+/// while it signs in. Once the sign-in is over, the tunnel to the form's site is ended and a new
+/// one refused, while the page's site goes on, its tunnel open before included.
+#[test]
+fn a_sign_in_that_is_over_ends_the_form_sites_tunnels_and_keeps_the_pages() {
+    let (form_site, form_port) = a_server();
+    let (page_site, page_port) = a_server();
+    let (form_echo, page_echo) = (echoing(form_site), echoing(page_site));
+    let proxy = a_bound_proxy(&[form_port, page_port], Bound::default());
+    let sign_in = proxy
+        .bind(&LoginSites {
+            page: Site::of("127.0.0.1", page_port),
+            form: Some(Site::of("127.0.0.1", form_port)),
+        })
+        .expect("bound")
+        .expect("a sign-in opens");
+    let connect = |port: u16| format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n");
+    let mut form = to(&proxy);
+    assert_eq!(
+        status(&mut form, &connect(form_port)),
+        "HTTP/1.1 200 Connection established"
+    );
+    let mut page = to(&proxy);
+    assert_eq!(
+        status(&mut page, &connect(page_port)),
+        "HTTP/1.1 200 Connection established"
+    );
+    assert!(echoes(&mut form) && echoes(&mut page));
+
+    assert!(proxy.sign_in_over(sign_in));
+    assert!(!proxy.sign_in_over(sign_in), "over once");
+
+    assert!(!echoes(&mut form), "the form's tunnel outlived its sign-in");
+    assert!(echoes(&mut page), "the page's tunnel goes on");
+    assert_eq!(
+        status(&mut to(&proxy), &connect(form_port)),
+        "HTTP/1.1 403 Forbidden"
+    );
+    drop((form, page));
+    form_echo.join().expect("the form's site");
+    page_echo.join().expect("the page's site");
 }

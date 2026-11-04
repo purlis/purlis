@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { browser, expect, $ } from "@wdio/globals";
-import { built, READY, theRunsEnvironment } from "../harness.js";
+import { A_TURN, aTurnIsWanted, built, READY, theRunsEnvironment } from "../harness.js";
 import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
@@ -75,22 +75,22 @@ async function gauges(): Promise<string[]> {
 }
 
 /**
- * A hook, as Claude Code would fire it for this chat: in the run's own environment, as the app
- * hands its chats, so the fenced `purlis` keeps its machine store inside the run's tree and never
- * opens the runner's own (charter-app#129).
+ * **A turn starting in the chat's pane** (#5126): the harness is typed {@link A_TURN}, and fires
+ * the turn's `UserPromptSubmit` from inside the chat, where the hook channel admits it. A hook
+ * this spec ran itself carried no chat token and came from outside the chat's program, so the
+ * channel dropped it ("did not carry that chat's token") and the chat never moved: the pane drew
+ * the record only when its read 2 s after the chat's last move (`AFTER_A_MOVE_MS`) came after
+ * the record, which a slow runner missed.
  */
-function hook(event: string, plane: string, chat: string, socket: string, sid: string): void {
-  execFileSync(built("charter"), ["hook", event], {
-    input: JSON.stringify({ session_id: sid }),
-    env: {
-      ...process.env,
-      ...theRunsEnvironment(plane),
-      CHARTER_CHAT: chat,
-      CHARTER_HOOK_SOCKET: socket,
-      CLAUDE_CODE_SESSION_ID: sid,
-      CLAUDE_PID: String(process.pid),
-    },
+async function aTurnStarts(plane: string, chat: string): Promise<void> {
+  aTurnIsWanted(plane, chat);
+  // This chat's own pane: panes of tabs an earlier spec left open may still be in the page.
+  const keyboard = await $(`[data-testid="pane"][data-session="${chat}"] .xterm-helper-textarea`);
+  await keyboard.waitForExist({
+    timeout: 10_000,
+    timeoutMsg: `chat ${chat} has no pane to type in`,
   });
+  await keyboard.addValue(`${A_TURN}\n`);
 }
 
 describe("a chat's context gauge", () => {
@@ -148,7 +148,6 @@ describe("a chat's context gauge", () => {
     if (settingsFile === undefined) throw new Error("no settings were written for the new chat");
     const chat = settingsFile.slice("settings-".length);
     const sid = now[`session-${chat}`];
-    const socket = now[`socket-${chat}`];
     const settings = JSON.parse(now[settingsFile]) as {
       statusLine?: { type: string; command: string };
       enabledPlugins?: Record<string, boolean>;
@@ -205,8 +204,9 @@ describe("a chat's context gauge", () => {
       }),
       env: { ...process.env, ...theRunsEnvironment(plane) },
     });
-    // The turn starting, which is when the pane reads its record again.
-    hook("userpromptsubmit", plane, chat, socket, sid);
+    // The turn starting, which is when the pane reads its record again: after the record is
+    // written, so the read it brings finds it.
+    await aTurnStarts(plane, chat);
 
     // 2 and 3: filed under the conversation the board holds, and drawn in the pane.
     await browser.waitUntil(async () => (await gauges()).some((g) => g.includes("ctx 42%")), {
@@ -216,36 +216,39 @@ describe("a chat's context gauge", () => {
     });
     expect((await gauges()).join(" ")).toContain("cache 90%");
 
-    // 4. **Where it is drawn** (#3142): on the pane's header, a row of its own between the band
-    // and the terminal, at the line's start side. It floated over the terminal before and
-    // covered its first line; for one build (#207) it had a row of its own that only a pane with
-    // a gauge had, and the operator saw what that cost: "its changing harness container sizes".
-    // The header is in every chat's pane, so what is measured is that the gauge is inside it,
-    // the terminal starts under it, and the gauge's left edge is nearer the frame's than its
-    // right. No named helpers inside `execute`: the spec's bundler wraps them in a `__name` the
-    // page does not have.
+    // 4. **Where it is drawn** (#3142, #4760): on the pane's header, a row of its own between
+    // the band and the terminal, last of the chat at a glance. It floated over the terminal
+    // before and covered its first line; for one build (#207) it had a row of its own that only
+    // a pane with a gauge had, and the operator saw what that cost: "its changing harness
+    // container sizes". Since #4760 the head names its chat first (its name, its state,
+    // "harness · workspace"), so the gauge is no longer near the frame's left edge: what is
+    // measured is that it is inside the head, after the chat's name, before the pane's own
+    // controls, and the terminal starts under it. No named helpers inside `execute`: the
+    // spec's bundler wraps them in a `__name` the page does not have.
     const placed = await browser.execute(() => {
       const gauge = document.querySelector('[data-testid="chat-gauge"]');
       const frame = gauge?.closest(".pane-frame");
       const head = gauge?.closest(".pane-head");
       const term = frame?.querySelector(".xterm-screen");
-      if (!gauge || !frame || !head || !term) return null;
+      const name = head?.querySelector(".pane-name");
+      const actions = head?.querySelector(".pane-actions");
+      if (!gauge || !frame || !head || !term || !name || !actions) return null;
       const g = gauge.getBoundingClientRect();
       const h = head.getBoundingClientRect();
-      const f = frame.getBoundingClientRect();
       const t = term.getBoundingClientRect();
       return {
         inHead: g.top >= h.top - 1 && g.bottom <= h.bottom + 1,
         termUnderHead: t.top >= h.bottom - 1,
-        fromLeft: g.left - f.left,
-        fromRight: f.right - g.right,
+        afterTheName: g.left >= name.getBoundingClientRect().right - 1,
+        beforeTheActions: g.right <= actions.getBoundingClientRect().left + 1,
       };
     });
     expect(placed).not.toBeNull();
     if (placed) {
       expect(placed.inHead).toBe(true);
       expect(placed.termUnderHead).toBe(true);
-      expect(placed.fromLeft).toBeLessThan(placed.fromRight);
+      expect(placed.afterTheName).toBe(true);
+      expect(placed.beforeTheActions).toBe(true);
     }
 
     // **No `stop` here, deliberately.** A `stop` puts the chat in the needs-you queue, and

@@ -24,6 +24,10 @@
 
 use super::{View, ViewOnDisk};
 
+#[path = "layout_windows.rs"]
+mod windows;
+pub use windows::{Away, MOST_TAB_WINDOWS, Refused};
+
 /// The most tabs one record puts back: far more than a strip draws, so it only ever bounds a
 /// hand-written record.
 pub const MOST_TABS: usize = 256;
@@ -231,6 +235,49 @@ impl Node {
         }
     }
 
+    /// This tree with every pane of a chat `gone` names taken out, and where `focused` (a path
+    /// into it, or `None` where the focus is not in it) is now: a split that loses one child
+    /// is its other child, and a focus that was in the child taken out goes to the one kept.
+    /// `None` where nothing is left.
+    fn without(
+        self,
+        gone: &dyn Fn(u32) -> bool,
+        focused: Option<&[Side]>,
+    ) -> Option<(Self, Option<Vec<Side>>)> {
+        match self {
+            Self::Pane(Pane::Chat(number)) if gone(number) => None,
+            Self::Pane(pane) => Some((Self::Pane(pane), focused.map(|_| Vec::new()))),
+            Self::Split(split) => {
+                let Split {
+                    direction,
+                    share,
+                    a,
+                    b,
+                } = *split;
+                // A path that ends at a split goes on into its first child (`to_a_pane`).
+                let (in_a, in_b) = match focused {
+                    Some([Side::B, rest @ ..]) => (None, Some(rest)),
+                    Some([Side::A, rest @ ..]) => (Some(rest), None),
+                    Some([]) => (Some(&[][..]), None),
+                    None => (None, None),
+                };
+                let was_focused = focused.is_some();
+                match (a.without(gone, in_a), b.without(gone, in_b)) {
+                    (Some((a, at_a)), Some((b, at_b))) => {
+                        let focused = at_a
+                            .map(|path| [&[Side::A][..], &path].concat())
+                            .or_else(|| at_b.map(|path| [&[Side::B][..], &path].concat()));
+                        Some((Self::split(direction, share, a, b), focused))
+                    }
+                    (Some((kept, at)), None) | (None, Some((kept, at))) => {
+                        Some((kept, at.or_else(|| was_focused.then(Vec::new))))
+                    }
+                    (None, None) => None,
+                }
+            }
+        }
+    }
+
     /// `path` as far as it goes in this tree, then on into each split's first child until it
     /// ends at a pane.
     pub fn to_a_pane(&self, path: &[Side]) -> Vec<Side> {
@@ -265,12 +312,10 @@ impl Tab {
 
 impl Layout {
     /// **The chats on screen**: every chat in a pane of the front tab of the drawn strip in the
-    /// project window, and of the front tab of each tab window. In the order of their numbers.
+    /// project window, and of the front tab of each tab window, with no window away
+    /// ([`Self::on_screen_but`]). In the order of their numbers.
     pub fn on_screen(&self) -> Vec<u32> {
-        let mut seen: Vec<u32> = self.front_tabs().flat_map(|tab| tab.tree.chats()).collect();
-        seen.sort_unstable();
-        seen.dedup();
-        seen
+        self.on_screen_but(&Away::default())
     }
 
     /// **The chat in front**: the first chat in reading order of the project window's front
@@ -282,18 +327,32 @@ impl Layout {
             .and_then(|tab| tab.tree.chats().first().copied())
     }
 
-    fn front_tabs(&self) -> impl Iterator<Item = &Tab> {
-        self.tabs
-            .iter()
-            .filter(|tab| tab.front && (tab.window != 0 || tab.workspace == self.strip))
-    }
-
     /// This layout with each tab's focused path ending at a pane, as a record reads it back, so
     /// the focused pane the core holds is the one the next launch reads.
     #[must_use]
     pub fn held(mut self) -> Self {
         for tab in &mut self.tabs {
             tab.focused = tab.tree.to_a_pane(&tab.focused);
+        }
+        self
+    }
+
+    /// **This layout with every pane of a chat `gone` names taken out** (#4761): what a
+    /// one-job program's split leaves, since one is never recorded (spec #4750). The pane it
+    /// was beside takes its split's place, as the window draws it once the program exits, and
+    /// takes the focus where the one-job pane had it. A tab with nothing else in it keeps an
+    /// empty pane, so no tab goes because of one.
+    #[must_use]
+    pub fn without(mut self, gone: impl Fn(u32) -> bool) -> Self {
+        for tab in &mut self.tabs {
+            let tree = std::mem::replace(&mut tab.tree, Node::Pane(Pane::Empty));
+            match tree.without(&gone, Some(&tab.focused)) {
+                Some((tree, focused)) => {
+                    tab.focused = tree.to_a_pane(&focused.unwrap_or_default());
+                    tab.tree = tree;
+                }
+                None => tab.focused = Vec::new(),
+            }
         }
         self
     }
@@ -491,15 +550,18 @@ fn value_of(node: &Node) -> serde_json::Value {
 pub(super) fn held(tabs: Option<Vec<serde_json::Value>>, strip: String) -> Option<Layout> {
     let tabs = tabs?;
     let mut seen = std::collections::HashSet::new();
-    Some(Layout {
-        strip: workspace_of(strip),
-        tabs: tabs
-            .into_iter()
-            .take(MOST_TABS)
-            .filter_map(|tab| serde_json::from_value::<TabOnDisk>(tab).ok())
-            .filter_map(|tab| tab.held(&mut seen))
-            .collect(),
-    })
+    Some(
+        Layout {
+            strip: workspace_of(strip),
+            tabs: tabs
+                .into_iter()
+                .take(MOST_TABS)
+                .filter_map(|tab| serde_json::from_value::<TabOnDisk>(tab).ok())
+                .filter_map(|tab| tab.held(&mut seen))
+                .collect(),
+        }
+        .held_to_most_windows(),
+    )
 }
 
 /// `layout`'s `tabs` and `strip`, as a record writes them.

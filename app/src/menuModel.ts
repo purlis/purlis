@@ -5,6 +5,7 @@ import {
   askRows,
   curateRows,
   moveChatRows,
+  toWindowRows,
   curateSubjectOf,
   menuOn,
   menuRows,
@@ -14,6 +15,7 @@ import {
   type Catalogued,
   type MenuOn,
   type Offer,
+  windowSaid,
 } from "./actions";
 import { cardRowsFor } from "./cardLink";
 import { storeLabel } from "./memoryMoves";
@@ -115,8 +117,9 @@ type Dress = {
   /** Its words: written once, or made from the row where they change with it. */
   said: string | ((offer: Offer) => string);
   midTurn?: string;
-  /** The group it is drawn in: one, or the one the row itself says where what it does varies. */
-  slot: Slot | ((offer: Offer) => Slot);
+  /** The group it is drawn in: one, or the one the row itself says where what it does varies,
+   *  or the menu it is drawn on says, where one row is on two menus (Tile all, #4765). */
+  slot: Slot | ((offer: Offer, on: MenuOn) => Slot);
   /** The submenu it is folded into. */
   under?: SubKey;
   /** Whether it cannot be undone. */
@@ -161,6 +164,13 @@ function movedToSaid(offer: Offer): string {
   const does = offer.does;
   if (does.verb !== "moveChat") return offer.title;
   return does.to === null ? SAID.thisMachine : `Pool ${does.to}`;
+}
+
+/** A Move to window ▸ row's words (#4768): the window alone, as the submenu says the move. */
+function toWindowSaid(offer: Offer): string {
+  const does = offer.does;
+  if (does.verb !== "moveToWindow" || does.to === null) return offer.title;
+  return windowSaid(does.to);
 }
 
 /** Whether a pin row's thing is pinned now: the row would unpin it. */
@@ -222,10 +232,16 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "task.stop": { said: SAID.taskStop, slot: "end", danger: true, warns: WARNS.taskStops },
   "task.close": { said: SAID.taskClose, slot: "end", danger: true, warns: WARNS.taskCloses },
 
-  // A tab's own rows (#4753): what a tab is, and never a chat's.
+  // A tab's own rows (#4753): what a tab is, and never a chat's. Close other tabs (#4762) is
+  // drawn among what closes (#4760), and, as Close, ends nothing (#4756): never coloured.
+  "tab.closeOthers": { said: SAID.closeOtherTabs, slot: "end" },
   "tab.select": { said: SAID.switchTo, slot: "first", quiet: true },
   "tab.pin": pin,
-  "tab.tile": { said: SAID.tileAll, slot: "first" },
+  // Tile all (#4765): among a tab's own rows on its right-click, and with the splits on a pane's,
+  // where it rearranges the panes as they do (#4760, `command-table.md` "Panes").
+  "tab.tile": { said: SAID.tileAll, slot: (_offer, on) => (on.on === "pane" ? "run" : "first") },
+  // Into another window of the project (#4768); Move to window ▸ is folded by `toWindowRows`.
+  "tab.newWindow": { said: SAID.tabToNewWindow, slot: "first" },
   "tab.keep": { said: SAID.keepOpen, slot: "first" },
   "tab.close": {
     said: unnamed,
@@ -345,6 +361,7 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.new": { said: (offer) => offer.title, slot: "open" },
   "pane.split.right": { said: (offer) => offer.title, slot: "run" },
   "pane.split.down": { said: (offer) => offer.title, slot: "run" },
+  "pane.newWindow": { said: SAID.tabToNewWindow, slot: "run" },
   "pane.sendkey": { said: (offer) => offer.title, slot: "run" },
   // Close pane clears the pane and ends nothing (#4756): no danger colour, no warning.
   "pane.close": { said: (offer) => offer.title, slot: "end" },
@@ -552,7 +569,7 @@ export function menuOf(what: MenuOn, offers: Catalogued): MenuDrawn {
           ? "end"
           : "first"
         : typeof dress.slot === "function"
-          ? dress.slot(offer)
+          ? dress.slot(offer, what)
           : dress.slot;
     if (dress?.under === undefined) slots[slot].push(row);
     else folded(dress.under, slot).groups[0].entries.push(row);
@@ -585,6 +602,15 @@ export function menuOf(what: MenuOn, offers: Catalogued): MenuDrawn {
     if (moves.length > 0)
       folded("moveTo", "run").groups[0].entries.push(
         ...moves.map((offer) => plain(offer, movedToSaid(offer))),
+      );
+  }
+  // **Move to window ▸** (#4768): one row per other window of the project, named as the window
+  // is, on a tab's menu and on the panes'.
+  if (what.on === "tab" || what.on === "pane") {
+    const moves = toWindowRows(what.on === "tab" ? what.tab : undefined, offers);
+    if (moves.length > 0)
+      folded("toWindow", what.on === "tab" ? "first" : "run").groups[0].entries.push(
+        ...moves.map((offer) => plain(offer, toWindowSaid(offer), true)),
       );
   }
   const curating = curateSubjectOf(what);

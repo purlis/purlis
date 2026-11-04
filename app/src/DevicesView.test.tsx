@@ -40,8 +40,12 @@ let heldRemoved: string[];
 let broughtBack: string[];
 let bringBackSays: { error: string } | undefined;
 let devicesRead: number;
+/** The moment the fixture's contacts are said against: one for the fixture and the view, so a
+ *  run across midnight never puts them on two days ("Last answered Nov 3 at …"). */
+let now: Date;
 
 beforeEach(() => {
+  now = new Date();
   shown = {
     version: "0.9.0",
     placement: {
@@ -73,7 +77,7 @@ beforeEach(() => {
       standing: { state: "running" },
       link: { state: "linked" },
       version: "0.8.1",
-      contacted: Math.floor(Date.now() / 1000),
+      contacted: Math.floor(now.getTime() / 1000),
       holds: { open: [{ plane: PLANE, session: 2 }], browsers_open: [], chats: 1, browsers: 0 },
       ran_this_week: 9000,
       held: false,
@@ -175,7 +179,7 @@ describe("DevicesView", () => {
   });
 
   it("says each runner's version against this machine's, how it is and when it last answered", async () => {
-    render(<DevicesView />);
+    render(<DevicesView now={now} />);
     await waitFor(() =>
       expect(
         within(section("Runner builds of pool builds")).getByText("answers"),

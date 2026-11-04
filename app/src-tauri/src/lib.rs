@@ -171,6 +171,7 @@ mod savefix;
 mod saving;
 mod screenfit;
 mod searchfiles;
+mod secretasks;
 #[cfg(unix)]
 mod sessionhost;
 mod sessions;
@@ -185,6 +186,7 @@ mod stopping;
 #[cfg(test)]
 mod storythemes;
 mod syscontrast;
+mod tabwindows;
 mod taskblocks;
 mod taskbrief;
 mod taskchanges;
@@ -562,6 +564,9 @@ struct Watching {
     /// (`Chats::newline`: a built-in's or a declared harness's), or none for a shell, which
     /// keeps the terminal's own Enter.
     newline: Option<String>,
+    /// How many lines of history the session keeps above those the view was drawn with
+    /// (#4742): what the pane asks for, with a larger `history`, as the person scrolls up.
+    older: u32,
 }
 
 /// When this process started, as close to it as the app can see.
@@ -827,6 +832,11 @@ struct OpenChat {
     /// `chat-restored` says when it has. `null` for a chat that is open.
     #[specta(optional)]
     restoring: Option<RestoringChat>,
+    /// `true` for a one-job program (#4761): a terminal editor opened from a file or a forge
+    /// login, drawn as a split beside a pane and gone when it exits. It has no sidebar row and
+    /// is never recorded. `null` for every other chat.
+    #[specta(optional)]
+    one_job: Option<bool>,
 }
 
 /// What the window is told of a chat a launch has still to start, beyond its tab.
@@ -1951,6 +1961,29 @@ async fn open_session(
 /// reads the project's profile and sandbox, and starts a program.
 const STARTING_A_CHAT: &str = "starting the chat";
 
+/// **The operator's own shell in `cwd`, as a one-job program** (#4761, ADR 0062 as amended
+/// 2026-11-02): what a forge login is typed into. The window draws it as a split beside the
+/// focused pane, and the split goes when the shell exits. Never recorded
+/// (`Chats::start_one_job`), and let through the kill switch as any operator's shell is.
+#[tauri::command]
+#[specta::specta]
+async fn open_one_job_shell(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    cwd: Option<String>,
+    name: String,
+    columns: u16,
+    rows: u16,
+) -> Result<u32, String> {
+    let chat = unprofiled(None, Vec::new(), cwd.map(PathBuf::from), name);
+    let held = planes.held(&plane)?;
+    let size = Size { columns, rows };
+    off_the_window(STARTING_A_CHAT, move || {
+        held.chats().start_one_job(&chat, size)
+    })
+    .await
+}
+
 /// A shell tab in one folder of a branch (FM-10): the operator's own shell, as `open_session`
 /// with no program starts it, in a folder the core resolved. `""` is the branch's own folder.
 /// Refused, in the core's sentence, for a folder outside the branch, a link or git's own.
@@ -2801,6 +2834,7 @@ impl From<chats::Open> for OpenChat {
             guessed: None,
             untaken: open.untaken,
             restoring: None,
+            one_job: open.one_job.then_some(true),
             resumed: match &open.how {
                 Reopened::Resumed(id) => Some(id.to_string()),
                 Reopened::Fresh(_) => None,
@@ -2950,7 +2984,9 @@ impl specta::Type for OutputBytes {
 /// Answers with the id that closes the view.
 ///
 /// Off the window's thread, in its turn in the chat's lane (#4734, ADR 0108): after every
-/// resize the pane sent before it (#891), and answered once the host has.
+/// resize the pane sent before it (#891), and answered once the host has. `history` is the most
+/// lines of history the screen is drawn with, the newest (#4742), or all of them; the answer
+/// says how many are older.
 #[tauri::command]
 #[specta::specta]
 async fn watch_session(
@@ -2958,6 +2994,7 @@ async fn watch_session(
     plane: PlaneId,
     session: u32,
     output: Channel<OutputBytes>,
+    history: Option<u32>,
 ) -> Result<Watching, String> {
     let held = planes.held(&plane)?;
     off_the_window("opening a view of a chat", move || {
@@ -2971,6 +3008,7 @@ async fn watch_session(
             Box::new(move |bytes| {
                 let _ = output.send(OutputBytes(bytes));
             }),
+            history,
         )?;
         Ok(Watching {
             view: watching.view,
@@ -2978,6 +3016,7 @@ async fn watch_session(
             rows: watching.size.rows,
             scrollback: sessions::SCROLLBACK,
             newline,
+            older: watching.older,
         })
     })
     .await
@@ -3666,6 +3705,15 @@ pub fn run() {
                 // once for what macOS's file events are late with (#756).
                 tauri::WindowEvent::Focused(focused) => {
                     planewatch::window_focused(window.app_handle(), *focused);
+                    // Shown or restored, or gone behind: a minimised window counts as nothing
+                    // on screen (#4768).
+                    tabwindows::looked_at_again(window);
+                }
+                // Minimised, restored or moved: where a tab window is kept, and whether each
+                // window is on screen looked at again (#4768).
+                tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
+                    tabwindows::looked_at_again(window);
+                    tabwindows::moved(window);
                 }
                 _ => {}
             }
@@ -4010,6 +4058,7 @@ pub fn run() {
             // until a window says, and an empty answer means "not looking", so a notification
             // is sent rather than suppressed.
             app.manage(Showing::default());
+            app.manage(tabwindows::Places::default());
             // The clipboard a vault's Copy writes to, and what it wrote, for the clear a minute
             // later and the one at exit.
             app.manage(vaults::SystemClipboard::default());
@@ -4506,6 +4555,8 @@ pub fn run() {
                                 plane: plane.clone(),
                             },
                         );
+                        // And its tab windows close with it, their tabs kept (#4768).
+                        tabwindows::project_closed(&window, plane);
                     })
                 })
                 // Auto-save saved a plane: the extensions that hear it are told, as after the
@@ -4594,6 +4645,11 @@ pub fn run() {
             } = event
             {
                 asknotify::reopened(app, has_visible_windows);
+            }
+            // Before any window goes: a tab window closed by the quit is not closed by the
+            // person, so its tabs stay where they were for the next launch (#4768).
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                tabwindows::quitting(app);
             }
             if matches!(event, tauri::RunEvent::Exit) {
                 // First, so a restart finds the lock free (`instance.rs`).

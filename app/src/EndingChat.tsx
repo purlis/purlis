@@ -80,6 +80,7 @@ export function EndingChat({
   ownTabs = 0,
   drafts = [],
   fromALink = false,
+  shell = false,
   onEnd,
   onSmartClose,
   onCancel,
@@ -108,6 +109,9 @@ export function EndingChat({
   /** Whether a link asked for this close (#2761): the dialog says so, and closes nothing until
    *  it is answered here. */
   fromALink?: boolean;
+  /** **A shell's End…** (#4761, ADR 0062 as amended 2026-11-02): it runs no harness, so it has
+   *  no record to write and no chats it asked for, and the dialog asks only Cancel or End. */
+  shell?: boolean;
   /** `stop` is the answer about the running persona chats: stop them, or keep them running.
    *  `keepDrafts` is the answer about its theme drafts, where it has any. */
   onEnd: (stop: boolean, keepDrafts?: boolean) => void;
@@ -126,6 +130,24 @@ export function EndingChat({
   // A close a link asked for starts on Cancel: a Return the person meant for something else
   // never ends a chat they did not ask to close here.
   const first = fromALink ? "cancel" : firstAnswer(smart);
+  if (shell)
+    return (
+      <AlertDialog
+        onClose={onCancel}
+        title={`${offer.title}?`}
+        description={<p className="honest mid-turn">{ENDS_IT}</p>}
+        initialFocus="cancel"
+        cancel={{ ref: cancel }}
+        main={{
+          children: "End",
+          variant: "danger",
+          ref: close,
+          onPress: () => onEnd(false),
+        }}
+      >
+        {fromALink && <p className="honest">{FROM_A_LINK_SAYS}</p>}
+      </AlertDialog>
+    );
   return (
     <AlertDialog
       onClose={onCancel}

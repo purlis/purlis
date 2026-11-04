@@ -28,9 +28,14 @@ export const SAID = {
   end: "End…",
   keepOpen: "Keep open",
   tileAll: "Tile all",
+  closeOtherTabs: "Close other tabs",
   thisMachine: "This machine",
   brief: "Brief",
   answer: "Answer its question",
+  // A pane head's one state button (#4760, spec #4750 story 55): its row's act in a word, for a
+  // button whose name is the row's whole title.
+  answerButton: "Answer",
+  stopButton: "Stop",
   activity: "Activity",
   network: "Network",
   restart: "Restart",
@@ -47,6 +52,8 @@ export const SAID = {
   newBranch: "New branch…",
   startChatsHere: "Start new chats here",
   toNewWindow: "Move to a new window",
+  // A tab's and a pane's (#4768), in the ruling's words: into a tab window of the project.
+  tabToNewWindow: "Move to new window",
   toMainWindow: "Move to the main window",
   // A view's icon (`actions.ts`, `viewRows`): to its half of the Panel, or back to its sidebar.
   toPanel: "Move to panel",
@@ -93,6 +100,10 @@ export const SUBMENU = {
   stop: { said: "Stop", tip: "Ways to stop this chat, or the tasks it asked for." },
   curate: { said: "Curate", tip: undefined },
   moveTo: { said: "Move to", tip: undefined },
+  toWindow: {
+    said: "Move to window",
+    tip: "Each moves it into that window of this project, as a tab of its own. Nothing ends.",
+  },
   branch: { said: "Branch", tip: "Each acts on the branch folder purlis cut for this chat." },
 } as const;
 

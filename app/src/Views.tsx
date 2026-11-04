@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ComponentProps,
   type ReactNode,
 } from "react";
@@ -141,6 +142,8 @@ import {
 import { VaultTab } from "./VaultTab";
 import { listedMemoryOffers, memoryKeyRun, toKeep, type Offer } from "./actions";
 import { factsChanged } from "./extensionFacts";
+import { onExtensionsChanged } from "./extensionsOn";
+import { ViewOpenButton } from "./ViewOpen";
 import {
   memoryIn,
   personaIn,
@@ -198,12 +201,22 @@ const HARNESS_SETUP_VIEW = "harness-setup";
  */
 export function useExtensionViews(): ExtensionView[] {
   const [views, setViews] = useState<ExtensionView[]>([]);
+  // **Taken again when an extension is approved, removed or turned on or off** (#4769): a
+  // removed extension's offers are withdrawn and its open view says it is gone.
+  const [asked, setAsked] = useState(0);
+  useEffect(() => onExtensionsChanged(() => setAsked((n) => n + 1)), []);
+  const last = useRef<readonly ExtensionView[] | undefined>(undefined);
   useEffect(() => {
     let gone = false;
     void commands
       .extensionViews()
       .then((said) => {
-        if (!gone && said.status !== "error") setViews(said.data ?? []);
+        if (gone || said.status === "error") return;
+        const now = said.data ?? [];
+        // A first survey says only what is here: nothing went before it was taken.
+        viewsWent(last.current ?? [], now);
+        last.current = now;
+        setViews(now);
       })
       .catch(() => {
         // Nothing: no view is offered, and `Extensions.tsx` is where the reason is read.
@@ -211,8 +224,46 @@ export function useExtensionViews(): ExtensionView[] {
     return () => {
       gone = true;
     };
-  }, []);
+  }, [asked]);
   return views;
+}
+
+/** **The extensions' views that went while this window was open** (#4769, prototype
+ *  `view-open-beside` Q4 A), by `extension/id`: an open one keeps its pane and says it is not
+ *  here any more, with Close pane. Only a survey taken again can say one went, so a view a
+ *  launch put back for an extension since removed is the core's `gone` answer, as before. */
+const wentThisSession = new Set<string>();
+const wentListeners = new Set<() => void>();
+const wentKey = (extension: string, id: string) => `${extension}/${id}`;
+
+function viewsWent(was: readonly ExtensionView[], now: readonly ExtensionView[]) {
+  const still = new Set(now.map((one) => wentKey(one.extension, one.id)));
+  let changed = false;
+  for (const one of was) {
+    const key = wentKey(one.extension, one.id);
+    if (!still.has(key) && !wentThisSession.has(key)) {
+      wentThisSession.add(key);
+      changed = true;
+    }
+  }
+  // One that came back (approved again) is here again.
+  for (const key of still) if (wentThisSession.delete(key)) changed = true;
+  if (changed) for (const listener of [...wentListeners]) listener();
+}
+
+function subscribeWent(listener: () => void) {
+  wentListeners.add(listener);
+  return () => {
+    wentListeners.delete(listener);
+  };
+}
+
+/** Whether `view` is an extension's view that went while this window was open. */
+function useViewWent(view: ViewRef): boolean {
+  return useSyncExternalStore(
+    subscribeWent,
+    () => view.from !== null && wentThisSession.has(wentKey(view.from, view.view)),
+  );
 }
 
 /**
@@ -402,6 +453,9 @@ export function ViewPane({
   split,
   onSplit,
   onShowInstead,
+  pane,
+  onOpenViewBeside,
+  onClosePane,
 }: {
   plane: PlaneId;
   view: ViewRef;
@@ -446,6 +500,12 @@ export function ViewPane({
   /** The pane now shows `to` rather than `from`, under `title`: a memory list's archive, or
    *  Settings at another level. */
   onShowInstead?: (from: ViewRef, to: ViewRef, title: string) => void;
+  /** The pane this view is in: what its buttons' Open beside goes beside (#4769). */
+  pane?: number;
+  /** Opens a view beside pane `pane` (#4769), or says why not. */
+  onOpenViewBeside?: (view: ViewRef, title: string, pane?: number) => void;
+  /** Closes this view's pane: the way out of a view whose extension went (#4769). */
+  onClosePane?: () => void;
 }) {
   // **The view follows the disk itself** (FD-10): the lists and memories charter's own views
   // read are any of the plane's stores. Here and not in the window, so a memory an agent saves
@@ -465,6 +525,7 @@ export function ViewPane({
   // A record's Resume is the place in front's own row where it lists the record, which says
   // more than the catalogue's (`sessionOffers.tsx`, #1160).
   const sessions = useSessionOffers();
+  const went = useViewWent(view);
   const ownOffer = (id: string) => sessions.get(id) ?? offerFor?.(id);
   const own = (view.from === null ? (OWN_ROWS[view.view]?.(view.key) ?? []) : []).map((id) =>
     id.startsWith("memory.new:") ? (
@@ -476,6 +537,25 @@ export function ViewPane({
       <OfferButton key={id} offer={ownOffer(id)} onPress={onPress} />
     ),
   );
+  // **Its extension went while it was open** (#4769, Q4 A): the pane stays, and says so, with
+  // Close pane. Nothing moves on its own.
+  if (went) {
+    return (
+      <section className="view-pane view-alone" aria-label={title}>
+        <EmptyState
+          mark={Puzzle}
+          headline={`${title} is not here any more`}
+          body={`${view.from} no longer offers this view: it was turned off or removed.`}
+          action={
+            onClosePane === undefined ? undefined : (
+              <Button onPress={onClosePane}>Close pane</Button>
+            )
+          }
+          testid="view-gone"
+        />
+      </section>
+    );
+  }
   // **A vault is charter's own view, and the one a panel answer cannot draw**: a table the
   // operator writes to (charter-app#235). Same tab, same path, same record — its own drawing.
   // Keyed by the vault, so a pane that comes to show another vault starts from "opening".
@@ -564,16 +644,25 @@ export function ViewPane({
             // steward's statistics, and from the whole plane's view, the whole plane's.
             const key = view.key;
             const called = key === "" ? one.title : `${one.title} · ${key}`;
+            const opens: ViewRef = { from: one.extension, view: one.id, key };
+            // A tab of its own, or Open beside this view's pane (#4769): the beside icon after
+            // the button, ⌥ held on the press, or the press's own menu.
             return (
-              <Button
-                size="sm"
+              <ViewOpenButton
                 key={`${one.extension}/${one.id}`}
+                view={opens}
+                name={called}
+                pane={pane}
                 tooltip={`Asks ${one.extension}, in a tab of its own`}
-                onPress={() => onOpenView({ from: one.extension, view: one.id, key }, called)}
                 icon={<ChartColumn className="node-icon" aria-hidden="true" />}
+                onOpen={(how) =>
+                  how === "beside" && onOpenViewBeside !== undefined
+                    ? onOpenViewBeside(opens, called, pane)
+                    : onOpenView(opens, called)
+                }
               >
                 {one.title}
-              </Button>
+              </ViewOpenButton>
             );
           })}
         </div>

@@ -272,7 +272,19 @@ export type Content =
    * was told it — separate from the tab's `name`, because a split starts a second chat under
    * the first one's name and the core must be told that name, not the sentence the tab draws.
    */
-  | { kind: "session"; session: number; chat: string }
+  | {
+      kind: "session";
+      session: number;
+      chat: string;
+      /**
+       * **A one-job program** (#4761; ADR 0062 and 0081 as amended 2026-11-02): a terminal
+       * editor opened from a file, or a forge login, opened beside the pane `returnTo` with the
+       * keyboard ({@link openOneJob}). Its split goes when its program exits and the keyboard
+       * goes back to `returnTo` ({@link oneJobEnded}). It has no grip, close or swap, nothing a
+       * press replaces, and the core never records it. Absent on every other chat's pane.
+       */
+      oneJob?: { returnTo?: number };
+    }
   /**
    * A view. **It carries its workspace, because it has nothing else to be filed by**: a chat is
    * on the strip of the workspace it works in (the plane's answer, `FiledIn`), and a view works
@@ -989,13 +1001,12 @@ export function closeTab(
   id: number,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
 ): Tabs {
   if (!(id in tabs.byId)) return tabs;
   const order = tabs.order.filter((tab) => tab !== id);
   const byId = Object.fromEntries(order.map((tab) => [tab, tabs.byId[tab]]));
   if (tabs.inFront !== id) return { ...tabs, byId, order };
-  return { ...tabs, byId, order, inFront: frontWithout(tabs, id, filedIn, pinned, background) };
+  return { ...tabs, byId, order, inFront: frontWithout(tabs, id, filedIn, pinned) };
 }
 
 /** What a tab whose first pane is empty is called (#4755), as the empty pane's own button
@@ -1024,14 +1035,13 @@ export function closeLayout(
   id: number,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
 ): Tabs {
   const tab = tabs.byId[id];
   if (tab === undefined) return tabs;
   const workspace = workspaceOf(tabs, id, filedIn);
-  const strip = tabsIn(tabs, workspace, filedIn, pinned, background);
+  const strip = tabsIn(tabs, workspace, filedIn, pinned);
   if (workspace === undefined || strip.some((other) => other !== id))
-    return closeTab(tabs, id, filedIn, pinned, background);
+    return closeTab(tabs, id, filedIn, pinned);
   if (isEmptyTab(tab, workspace)) return tabs;
   const pane = tabs.named.panes + 1;
   const emptied: Tab = {
@@ -1049,44 +1059,19 @@ export function closeLayout(
 }
 
 /**
- * **Where the front goes when tab `id` leaves it** — closed, or put into the background by
- * Smart close (SI-8f). One answer for both, because the operator's ruling is that a smart close
- * sends the front exactly where a close would.
- *
- * The tab before it on its strip as the strip draws it without the background, or the first
- * one after it when it was first, or nothing when it was the only one. A tab in the background
- * is never where the front goes: it is leaving too.
+ * **Where the front goes when tab `id` leaves it**: the tab before it on its strip as the strip
+ * draws it, or the first one after it when it was first, or nothing when it was the only one.
  */
 function frontWithout(
   tabs: Tabs,
   id: number,
   filedIn: FiledIn,
   pinned: Pinned,
-  background: Backgrounded,
 ): number | undefined {
-  const strip = tabsIn(tabs, workspaceOf(tabs, id, filedIn), filedIn, pinned).filter(
-    (tab) => tab === id || !background(tab),
-  );
+  const strip = tabsIn(tabs, workspaceOf(tabs, id, filedIn), filedIn, pinned);
   const at = strip.indexOf(id);
   const beside = strip.filter((tab) => tab !== id);
   return at > 0 ? strip[at - 1] : beside[0];
-}
-
-/**
- * **Tab `id` put into the background**: its chat is wrapping up (Smart close, SI-8f), so the
- * front goes where closing it would have sent it ({@link frontWithout}) and the tab stays, drawn
- * as a chip at the strip's left edge ({@link tabsIn}). Nothing else changes — not `tabs.order`,
- * which is where it goes back to if the smart close does not end in a record.
- */
-export function sendToBackground(
-  tabs: Tabs,
-  id: number,
-  filedIn: FiledIn,
-  pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
-): Tabs {
-  if (!(id in tabs.byId) || tabs.inFront !== id) return tabs;
-  return { ...tabs, inFront: frontWithout(tabs, id, filedIn, pinned, background) };
 }
 
 /**
@@ -1100,6 +1085,25 @@ export function workspaceOf(tabs: Tabs, id: number, filedIn: FiledIn): string | 
   const first = contentsOf(tabs, id)[0]?.content;
   if (first === undefined) return undefined;
   return first.kind === "session" ? filedIn(first.session) : first.workspace;
+}
+
+/**
+ * **The workspace a chat in tab `id` is filed in, where it is not the tab's** (#4982; #4583
+ * rule 2): what its pane head names with that workspace's badge. A drag may put another
+ * workspace's chat in a pane, and a press may leave one there ({@link Tab.workspace}); the chat
+ * stays filed in its own workspace, and the head says which. `undefined` for a chat of the
+ * tab's own workspace, and for a tab with no workspace to differ from.
+ */
+export function filedElsewhere(
+  tabs: Tabs,
+  id: number,
+  session: number,
+  filedIn: FiledIn,
+): string | undefined {
+  const own = workspaceOf(tabs, id, filedIn);
+  if (own === undefined) return undefined;
+  const filed = filedIn(session);
+  return filed === own ? undefined : filed;
 }
 
 /**
@@ -1129,16 +1133,6 @@ export function setPinned(tabs: Tabs, id: number, pinned: boolean): Tabs {
 export const nothingPinned: Pinned = () => false;
 
 /**
- * Whether a tab is in the background: every pane of it is a chat that is wrapping up (Smart
- * close, SI-8f). The core's answer, as `Pinned` is somebody else's — the window is told which
- * chats are being smart-closed (`smartClose.ts`), and a copy on the tab would be a second one.
- */
-export type Backgrounded = (id: number) => boolean;
-
-/** Nothing in the background. */
-export const nothingBackgrounded: Backgrounded = () => false;
-
-/**
  * The tabs on one workspace's strip, left to right — **pinned ones first** (ADR 0039).
  *
  * **This is not the strip re-ordering itself.** The rule ADR 0039 fixed is that a tab does not
@@ -1157,26 +1151,18 @@ export const nothingBackgrounded: Backgrounded = () => false;
  * mechanism deciding what is on screen, and the one thing the strip owes is that nothing in
  * it is unreachable.
  *
- * **A tab in the background goes before the pinned ones** (SI-8f; ADR 0039, amended
- * 2026-09-28). Its chat is wrapping up after the operator's own Smart close click, and that
- * click is what moved it — the rule that nothing moves the operator did not move still holds.
- * It is drawn here and nowhere else: `tabs.order` keeps its place, which is where it is drawn
- * again when the smart close ends without a record.
+ * **No tab goes into the background any more** (#4760, spec #4750): a chat wrapping up keeps its
+ * pane, where its head breathes, so the Smart close chip that went before the pinned tabs
+ * (SI-8f) is gone.
  */
 export function tabsIn(
   tabs: Tabs,
   workspace: string | undefined,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
 ): number[] {
   const here = tabs.order.filter((id) => workspaceOf(tabs, id, filedIn) === workspace);
-  const front = here.filter((id) => !background(id));
-  return [
-    ...here.filter(background),
-    ...front.filter(pinned),
-    ...front.filter((id) => !pinned(id)),
-  ];
+  return [...here.filter(pinned), ...here.filter((id) => !pinned(id))];
 }
 
 /**
@@ -1374,6 +1360,116 @@ function shownElsewhere(tabs: Tabs, session: number, tab?: number, pane?: number
   );
 }
 
+/** Why a one-job program's pane has no close, and cannot be picked up (#4761). */
+export const ONE_JOB_STAYS = "This pane goes when its program exits. Quit the program to close it.";
+
+/** Why a tab holding a one-job program has no close (#4761): it would leave the program running
+ *  with no pane to draw it. */
+export const ONE_JOB_IN_TAB =
+  "A program in this tab goes when it exits. Quit it first, then close the tab.";
+
+/**
+ * **A one-job program opens beside the focused pane** (#4761; spec #4750 story 66): a terminal
+ * editor opened from a file, or a forge login, as a split to the right of the pane with the
+ * keyboard, in the same tab and with the keyboard, so what the person was reading stays on
+ * screen. That pane is where the keyboard goes back to when it exits ({@link oneJobEnded}).
+ * With no tab in front it opens in a tab of its own, which goes with it.
+ */
+export function openOneJob(tabs: Tabs, session: number, chat: string): Tabs {
+  const tab = frontTab(tabs);
+  if (tab === undefined) {
+    const opened = openTab(tabs, session, chat);
+    const id = opened.inFront;
+    if (id === undefined) return opened;
+    const own = opened.byId[id];
+    const layout = replace(own.layout, own.focused, (found) =>
+      found.content.kind === "session"
+        ? { ...found, content: { ...found.content, oneJob: {} } }
+        : found,
+    );
+    return { ...opened, byId: { ...opened.byId, [id]: { ...own, layout } } };
+  }
+  return insertPane(tabs, {
+    tab: tab.id,
+    pane: tab.focused,
+    direction: "row",
+    side: "after",
+    content: { kind: "session", session, chat, oneJob: { returnTo: tab.focused } },
+  });
+}
+
+/**
+ * **A one-job program exited: its split goes** (#4761; spec #4750 story 66). The pane it was
+ * beside takes the split's place, and the keyboard goes back to the pane it opened from, or,
+ * where that has gone, to the first pane left. A tab it was alone in closes. Answers `tabs`
+ * itself where no pane shows it.
+ */
+export function oneJobEnded(
+  tabs: Tabs,
+  session: number,
+  filedIn: FiledIn,
+  pinned: Pinned = nothingPinned,
+): Tabs {
+  const found = oneJobAt(tabs, session);
+  if (found === undefined) return tabs;
+  const tab = tabs.byId[found.tab];
+  const left = without(tab.layout, found.pane);
+  if (!left) return closeTab(tabs, tab.id, filedIn, pinned);
+  const kept = panes(left);
+  const focused =
+    tab.focused !== found.pane
+      ? tab.focused
+      : kept.some((one) => one.pane === found.returnTo)
+        ? (found.returnTo as number)
+        : kept[0].pane;
+  return {
+    ...tabs,
+    byId: { ...tabs.byId, [tab.id]: showing({ ...tab, layout: left, focused }, tab.shows) },
+  };
+}
+
+/** Where one-job program `session` is drawn, and the pane it opened from. */
+function oneJobAt(
+  tabs: Tabs,
+  session: number,
+): { tab: number; pane: number; returnTo?: number } | undefined {
+  for (const id of tabs.order) {
+    for (const { pane, content } of contents(tabs.byId[id].layout))
+      if (content.kind === "session" && content.session === session && content.oneJob)
+        return { tab: id, pane, returnTo: content.oneJob.returnTo };
+  }
+  return undefined;
+}
+
+/** Whether `content` is a one-job program ({@link openOneJob}): the one test of it (#4761). */
+export function isOneJob(content: Content | undefined): boolean {
+  return content?.kind === "session" && content.oneJob !== undefined;
+}
+
+/** Whether pane `pane`, in any tab, shows a one-job program ({@link openOneJob}). */
+export function isOneJobPane(tabs: Tabs, pane: number): boolean {
+  return tabs.order.some((id) =>
+    contents(tabs.byId[id].layout).some((one) => one.pane === pane && isOneJob(one.content)),
+  );
+}
+
+/**
+ * **A shell whose program exited leaves its pane empty** (#4761; spec #4750 story 64, ADR 0062
+ * as amended 2026-11-02): the pane stays in its place, showing nothing, and the keyboard stays
+ * where it was. The core closes the shell, so its row goes. Answers `tabs` itself where no pane
+ * shows it.
+ */
+export function shellExited(tabs: Tabs, session: number, filedIn: FiledIn): Tabs {
+  for (const id of tabs.order) {
+    const at = contents(tabs.byId[id].layout).find(
+      (one) => one.content.kind === "session" && one.content.session === session,
+    );
+    if (at !== undefined)
+      return showIn(tabs, id, at.pane, { kind: "empty", workspace: filedIn(session) });
+  }
+  return tabs;
+}
+
 /** A chat a press shows: its number, its own name, and what a tab named after it says. */
 export type PressedChat = {
   session: number;
@@ -1517,12 +1613,14 @@ function pressTarget(tabs: Tabs, workspace: string, at: Pressing): PaneAt | unde
         ? remembered
         : here[0];
   const tab = tabs.byId[front];
-  if (contents(tab.layout).find((one) => one.pane === tab.focused)?.content.kind !== "view")
-    return { tab: front, pane: tab.focused };
+  // A view is never replaced, nor a one-job program (#4761): it goes when it exits.
+  const takes = (content: Content) => content.kind !== "view" && !isOneJob(content);
+  const focused = contents(tab.layout).find((one) => one.pane === tab.focused)?.content;
+  if (focused === undefined || takes(focused)) return { tab: front, pane: tab.focused };
   const used = tabs.used ?? {};
   const candidates = here.flatMap((id) =>
     contents(tabs.byId[id].layout)
-      .filter((one) => one.content.kind !== "view")
+      .filter((one) => takes(one.content))
       .map((one) => ({ tab: id, pane: one.pane })),
   );
   // Stable, so panes never used keep the strip's order.
@@ -1579,17 +1677,34 @@ export function closeFocusedPane(
   tabs: Tabs,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
 ): Tabs {
   const tab = frontTab(tabs);
   if (!tab) return tabs;
-  const left = without(tab.layout, tab.focused);
-  if (!left) return closeLayout(tabs, tab.id, filedIn, pinned, background);
+  return closePane(tabs, tab.id, tab.focused, filedIn, pinned);
+}
+
+/**
+ * {@link closeFocusedPane} of pane `pane` of tab `id`, focused or not: a pane the core moved to
+ * another window (#4768) goes as a close would take it. The keyboard stays where it was, unless
+ * it was on that pane.
+ */
+export function closePane(
+  tabs: Tabs,
+  id: number,
+  pane: number,
+  filedIn: FiledIn,
+  pinned: Pinned = nothingPinned,
+): Tabs {
+  const tab = tabs.byId[id];
+  if (!tab) return tabs;
+  const left = without(tab.layout, pane);
+  if (!left) return closeLayout(tabs, id, filedIn, pinned);
   // **The keyboard goes to the pane that takes the space** (spec #4750): the nearest pane of
   // the sibling that takes the closed pane's place.
-  const focused = takesTheSpace(tab.layout, tab.focused) ?? panes(left)[0].pane;
+  const focused =
+    tab.focused === pane ? (takesTheSpace(tab.layout, pane) ?? panes(left)[0].pane) : tab.focused;
   const kept = showing({ ...tab, layout: left, focused }, tab.shows);
-  return { ...tabs, byId: { ...tabs.byId, [tab.id]: kept } };
+  return { ...tabs, byId: { ...tabs.byId, [id]: kept } };
 }
 
 /**
@@ -1603,7 +1718,6 @@ export function closeChat(
   session: number,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
   keeps: (session: number) => boolean = () => false,
 ): Tabs {
   const found = tabs.order
@@ -1619,7 +1733,7 @@ export function closeChat(
   const { id, pane } = found;
   const tab = tabs.byId[id];
   const left = without(tab.layout, pane);
-  if (!left) return closeTab(tabs, id, filedIn, pinned, background);
+  if (!left) return closeTab(tabs, id, filedIn, pinned);
   const focused = tab.focused === pane ? panes(left)[0].pane : tab.focused;
   const kept = showing({ ...tab, layout: left, focused }, tab.shows);
   return { ...tabs, byId: { ...tabs.byId, [id]: kept } };
@@ -2077,9 +2191,8 @@ export function sendBack(
   task: number,
   filedIn: FiledIn,
   pinned: Pinned = nothingPinned,
-  background: Backgrounded = nothingBackgrounded,
 ): Tabs {
-  return closeChat(tabs, task, filedIn, pinned, background);
+  return closeChat(tabs, task, filedIn, pinned);
 }
 
 /**
@@ -2190,17 +2303,39 @@ export function openViewBesideView(
   if (findView(tabs, view)) return openView(tabs, view, name, workspace);
   const at = findView(tabs, beside);
   if (at === undefined) return openView(tabs, view, name, workspace);
-  const tab = tabs.byId[at.tab];
-  const pane = tabs.named.panes + 1;
-  const layout = replace(tab.layout, at.pane, (found) => ({
+  return openViewBesidePane(tabs, at.pane, view, name, workspace, "row");
+}
+
+/**
+ * **Opens `view` beside pane `pane`, in that pane's tab** (#4769, Open beside): the pane is split
+ * in `direction` (the pane's shape, `viewBeside.ts`), the view second, and the tab comes forward
+ * with the keyboard in the new pane: the person pressed for it there. **A view some pane shows
+ * already is brought forward instead, never opened twice** ({@link openView}), and where no tab
+ * has `pane` any more the view opens in a tab of its own named `name`. Whether the split leaves
+ * each side room is the caller's to judge before the press (`besideOf`).
+ */
+export function openViewBesidePane(
+  tabs: Tabs,
+  pane: number,
+  view: ViewRef,
+  name: string,
+  workspace: string,
+  direction: Direction,
+): Tabs {
+  if (findView(tabs, view)) return openView(tabs, view, name, workspace);
+  const id = tabs.order.find((one) => panes(tabs.byId[one].layout).some((it) => it.pane === pane));
+  if (id === undefined) return openView(tabs, view, name, workspace);
+  const tab = tabs.byId[id];
+  const made = tabs.named.panes + 1;
+  const layout = replace(tab.layout, pane, (found) => ({
     kind: "split",
-    direction: "row",
-    children: [found, { kind: "pane", pane, content: { kind: "view", view, workspace } }],
+    direction,
+    children: [found, { kind: "pane", pane: made, content: { kind: "view", view, workspace } }],
   }));
   return {
     ...tabs,
-    byId: { ...tabs.byId, [tab.id]: { ...tab, layout, focused: pane } },
-    named: { ...tabs.named, panes: pane },
+    byId: { ...tabs.byId, [tab.id]: { ...tab, layout, focused: made } },
+    named: { ...tabs.named, panes: made },
     inFront: tab.id,
   };
 }

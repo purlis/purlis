@@ -51,6 +51,10 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
     grounds: ["surface.base"],
     where: "ClashChoice: a new name in an install's review, a page of the Skills view",
   },
+  "TaskQuiz.tsx": {
+    grounds: ["surface.overlay"],
+    where: "TaskQuiz: a task question's answer, in its quiz's card at the top of a pane (#4565)",
+  },
 };
 
 /** The ground the whole copy of a refusal cut short is drawn on, wherever its field stands. */

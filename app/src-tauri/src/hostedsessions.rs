@@ -4392,15 +4392,23 @@ struct Begun {
 
 /// Each call is documented once, on [`SessionHost`].
 impl HostedSessions {
-    /// Opens a terminal view of session `id` into `sink`, `paced` by what the pane reports it
-    /// drew (#4733) or acknowledged as it is handed over.
-    fn watch_paced(&self, id: u32, sink: Sink, paced: bool) -> Result<Watching, String> {
+    /// Opens a terminal view of session `id` into `sink`, with at most `history` lines of
+    /// history (#4742), `paced` by what the pane reports it drew (#4733) or acknowledged as it
+    /// is handed over.
+    fn watch_paced(
+        &self,
+        id: u32,
+        sink: Sink,
+        history: u32,
+        paced: bool,
+    ) -> Result<Watching, String> {
         let (link, program) = self.program(id)?;
         let attached = match link.call(Command::AttachView {
             program,
             kind: ViewKind::Terminal,
             role: None,
             rate: None,
+            history: Some(history),
         })? {
             Answer::Attached(attached) => attached,
             other => return Err(format!("the session host answered a view with {other:?}")),
@@ -4416,6 +4424,7 @@ impl HostedSessions {
                 columns: attached.cols,
                 rows: attached.rows,
             },
+            older: attached.older.unwrap_or(0),
         })
     }
 }
@@ -4592,12 +4601,18 @@ impl SessionHost for HostedSessions {
         .map(|_| ())
     }
 
+    /// All of its history: no host keeps more lines than this.
     fn watch(&self, id: u32, sink: Sink) -> Result<Watching, String> {
-        self.watch_paced(id, sink, false)
+        self.watch_within(id, sink, u32::MAX)
     }
 
-    fn watch_drawn(&self, id: u32, sink: Sink) -> Result<Watching, String> {
-        self.watch_paced(id, sink, true)
+    /// A host before 1.71 draws all of its history, and says nothing is older (#4742).
+    fn watch_within(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
+        self.watch_paced(id, sink, history, false)
+    }
+
+    fn watch_drawn(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
+        self.watch_paced(id, sink, history, true)
     }
 
     fn drawn(&self, id: u32, view: u32, pieces: u32) -> Result<(), String> {

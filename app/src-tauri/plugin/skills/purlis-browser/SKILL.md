@@ -54,8 +54,10 @@ your browsers). purlis goes to the declared page in your browser, fills the logi
 only while the page is on the login's origin, submits, waits for the password field to go, and
 hands the browser back logged in. You never see the login: it is kept out of every snapshot and
 screenshot, and the fields purlis filled are blanked. From then on that browser reaches the
-login's site alone (and the host its form is on, where it signs in elsewhere); call `browser_new`
-for any other site. A login the person allowed from its
+login's site alone; call `browser_new` for any other site. Where it signs in on another host,
+that host is reached only while it signs in: until the browser is back on the login's page, for
+two minutes at most. A step that host asks for after the password is yours or the user's to take
+in that time. A login the person allowed from its
 notice opens in a browser of its own, so log in before you work in the site. If the login is refused, tell the user the sentence: it names what to declare or
 allow. A page with a captcha or a second factor does not log in this way; ask the user, or hand
 them the browser with `ask_operator` pointed at it.

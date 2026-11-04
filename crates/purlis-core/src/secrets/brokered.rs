@@ -1169,10 +1169,25 @@ pub fn serve(
     serve_in(asker, wanted, reader, writer, Wrap::here(), told);
 }
 
+/// The status a brokered command ends with when it stopped waiting on a Secret ask that is
+/// still open (#5071): `EX_TEMPFAIL`, a failure to try again.
+pub const WAITING_ON_THE_PERSON: i32 = 75;
+
+/// **What a run that misses a key asks** (#5068, ADR 0109): the project's Secret asks, and how
+/// long its command waits on one ([`super::ask::holds_for`]).
+#[derive(Clone, Copy)]
+pub struct Missing<'a> {
+    pub asks: &'a super::ask::Asks,
+    pub within: Duration,
+    /// Told once an ask is raised or joined, so the window lists it.
+    pub moved: &'a (dyn Fn() + Sync),
+}
+
 /// [`serve`], telling `reached` each connection the run made (#1667): through its proxy, and
 /// through a tunnel to a database host its values point at ([`crate::sandbox::tunnel`]). The
 /// network record keeps them under the asking chat. A host that carries one of the run's values
-/// is counted and never named.
+/// is counted and never named. A key its vault holds no value under is asked of the person
+/// through `missing` ([`Missing`]), and the run waits on the answer.
 pub fn serve_recording(
     asker: &Asker,
     wanted: Wanted,
@@ -1180,6 +1195,7 @@ pub fn serve_recording(
     writer: Box<dyn Write + Send>,
     told: Told,
     reached: crate::sandbox::egress::Reached,
+    missing: Missing<'_>,
 ) {
     serve_recorded(
         asker,
@@ -1190,6 +1206,30 @@ pub fn serve_recording(
         Wrap::here(),
         told,
         Some(reached),
+        Some(&missing),
+    );
+}
+
+/// [`serve`] in `wrap`, asking `missing` for a key its vault holds no value under (#5068).
+#[cfg(test)]
+pub(crate) fn serve_asking(
+    asker: &Asker,
+    wanted: Wanted,
+    reader: Box<dyn BufRead + Send>,
+    writer: Box<dyn Write + Send>,
+    wrap: Wrap,
+    missing: Missing<'_>,
+) {
+    serve_recorded(
+        asker,
+        wanted,
+        None,
+        reader,
+        writer,
+        wrap,
+        Arc::new(|_| {}),
+        None,
+        Some(&missing),
     );
 }
 
@@ -1656,7 +1696,7 @@ pub(crate) fn serve_in(
     wrap: Wrap,
     told: Told,
 ) {
-    serve_recorded(asker, wanted, None, reader, writer, wrap, told, None);
+    serve_recorded(asker, wanted, None, reader, writer, wrap, told, None, None);
 }
 
 /// **A runner chat's declared tool, run by the runner's own host on the values its desktop
@@ -1681,6 +1721,7 @@ pub fn serve_handed(
         writer,
         Wrap::here(),
         told,
+        None,
         None,
     );
 }
@@ -1721,6 +1762,7 @@ pub(crate) fn serve_handed_wrapped(
         writer,
         wrap,
         Arc::new(|_| {}),
+        None,
         None,
     );
 }
@@ -2062,6 +2104,7 @@ pub(crate) fn serve_recorded(
     wrap: Wrap,
     told: Told,
     reached: Option<crate::sandbox::egress::Reached>,
+    missing: Option<&Missing<'_>>,
 ) {
     // Counted as soon as the run is served: a chat that ends from here on keeps no GitHub App
     // token minted for it (#3808).
@@ -2399,7 +2442,55 @@ pub(crate) fn serve_recorded(
                 &|| None,
             )
         }
-        (Some(v), _, None) => exec::prepare(&ctx, v, &req, base, Some(&within), &|| None),
+        // A key the vault holds no value under is asked of the person, where the app asks
+        // (#5068, ADR 0109): the run waits, and reads the vault again once it is filled. Told
+        // by the provider's kind of failure, never by its sentence. Each key is asked once a
+        // run: one still missing after its fill is refused as it was before.
+        (Some(v), _, None) => {
+            let mut filled: Vec<String> = Vec::new();
+            loop {
+                let missed: std::sync::Mutex<Option<String>> = std::sync::Mutex::default();
+                let read = |key: &str| {
+                    let got = cmd::get_value(&ctx, v, key).map(zeroize::Zeroizing::new);
+                    if matches!(&got, Err(e) if e.kind == super::Kind::NotFound) {
+                        *missed
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                            Some(key.to_owned());
+                    }
+                    got
+                };
+                let got = exec::prepare_from(&read, &req, base.clone(), Some(&within), &|| None);
+                let missed = missed
+                    .into_inner()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let (Err(Stopped::Said(..)), Some(key), Some(missing)) = (&got, missed, missing)
+                else {
+                    break got;
+                };
+                if filled.contains(&key) {
+                    break got;
+                }
+                let need = super::ask::Need {
+                    chat: asker.chat,
+                    persona: persona.to_owned(),
+                    vault: wanted.vault.clone(),
+                    key: key.clone(),
+                    tool: its_repository.as_ref().map(|ready| ready.tool.name.clone()),
+                };
+                let held = missing.asks.hold(need, missing.within, &mut |line: &str| {
+                    (missing.moved)();
+                    let _ = send(&mut *writer, &Frame::Note(line.to_owned()));
+                });
+                match held {
+                    super::ask::Held::Filled => filled.push(key),
+                    super::ask::Held::Declined { line } => return refuse(&mut *writer, 1, line),
+                    super::ask::Held::StillOpen { line } => {
+                        return refuse(&mut *writer, WAITING_ON_THE_PERSON, line);
+                    }
+                }
+            }
+        }
         (None, Some(handed), _) => {
             exec::prepare_from(&|key| handed.value(key), &req, base, Some(&within), &|| {
                 None

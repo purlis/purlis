@@ -90,3 +90,21 @@ fn letting_go_of_the_live_bytes_closes_the_view() {
 
     assert_eq!(session.views(), 0);
 }
+
+#[test]
+fn a_view_followed_within_a_page_of_history_opens_on_the_screen_and_the_newest_lines_alone() {
+    // Thirty lines on a screen of ten, the cursor on the row below the last: lines 1 to 21
+    // scroll into the history.
+    let session = shell("for n in $(seq 1 30); do echo \"line $n\"; done; exec cat");
+    until_on_screen(&session, "line 30");
+    assert_eq!(session.history(), 21);
+
+    let following = session.follow_within(5);
+
+    let snapshot = String::from_utf8_lossy(&following.snapshot).into_owned();
+    assert!(snapshot.contains("line 17"), "{snapshot:?}");
+    assert!(
+        !snapshot.contains("line 16"),
+        "the older history is left out: {snapshot:?}"
+    );
+}

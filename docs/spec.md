@@ -426,7 +426,8 @@ how it is cited and nothing here is renumbered.
     the harness does not ask beside it; for `browser_login` (#2016), so is this machine's Allow
     of the persona's tools, without which the login is not armed and nothing is filled, or, for a
     login the persona doesn't declare, the person's answer to its one notice (#4595), which
-    confirms the exact site and the host its form is on (#4995); a call naming another site
+    confirms the exact site and the host its form is on (#4995), which the browser reaches only
+    while it signs in (the person's ruling of 2026-11-03); a call naming another site
     for a login already declared asks the same way to replace it (#4996). Codex's approval and
     sandbox are whole-session switches, so it carries none (ADR 0064's measurements). A record's tab resumes that record whichever place is
     in front. **Smart close puts the chat into the background** (SI-8f): its tab shrinks to a
@@ -486,8 +487,9 @@ how it is cited and nothing here is renumbered.
     `$EDITOR`, is started as a program with `+line` and the file as arguments, never through a
     shell; the path is handed on as the system spells it, so a name that is not UTF-8 is not
     rewritten. A terminal editor purlis knows (vi, vim, nvim, nano, `emacs -nw`, hx, micro,
-    kak and others, a fixed list) opens in a shell tab of its own in the file's branch folder,
-    in front, run there as the same program and arguments, never through a shell (#1042). An editor that exits at once with
+    kak and others, a fixed list) opens as a one-job pane in the file's branch folder: a split
+    beside the focused pane, with the keyboard, gone when the editor exits and never recorded
+    (#4761), run there as the same program and arguments, never through a shell (#1042). An editor that exits at once with
     an error, as an unknown terminal editor with no terminal does, is said in a sentence rather
     than dropped. The core checks the path exactly
     as it checks a read, so a file the light editor would refuse is never handed on. With no

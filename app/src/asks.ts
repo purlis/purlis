@@ -409,6 +409,13 @@ export async function answerTaken(
         if (option === "allow") return commands.answerPoolTool(plane, ask.session, path.run, true);
         if (option === "keep") return commands.answerPoolTool(plane, ask.session, path.run, false);
         break;
+      case "secret":
+        // A key a chat's brokered run missed (#5068, ADR 0109): Fill stores the value typed in
+        // the ask's masked box in the vault, and every command that waits on it runs; Not now
+        // tells them it was declined. The chat never hears the value.
+        if (option === "fill") return commands.answerSecretAsk(plane, path.id, typed ?? "");
+        if (option === "keep") return commands.answerSecretAsk(plane, path.id, null);
+        break;
       case "take-over": {
         // A browser whose page needs the person (#2015): Take over takes the session host's
         // lease first, so their first click or key reaches the page, then opens its view. The

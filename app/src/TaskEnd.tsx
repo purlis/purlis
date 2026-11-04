@@ -1,10 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef } from "react";
-import type { Offer, TaskEndWay } from "./actions";
+import { createContext, useContext, useEffect, useId, useRef } from "react";
+import type { TaskEndWay } from "./actions";
 import type { TaskEnding } from "./bindings";
-import { fitWaysOn } from "./wholeWays";
 import { Choice, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -305,85 +304,39 @@ export type TaskEndHand = {
 /** The window's hand to every breadcrumb's controls, so no pane is threaded it by hand. */
 export const TaskEndContext = createContext<TaskEndHand | undefined>(undefined);
 
-/** What the breadcrumb's two buttons say: the first words of each row's title. */
-const WORDS: Record<TaskEndWay, string> = { report: "Stop", now: "Close now" };
-
 /**
- * **The two ways to end the task a pane shows**, on its breadcrumb's line (#1488): the only
- * place a pane showing a task has an ending control. Two words and no mark, so neither can be
- * taken for the tab's close, which is a cross on the strip. Each is a row of the catalogue
- * (`taskEndRows`), named by its title, which begins with the words drawn, so the palette, a
- * row's menu, a voice command and these say one thing. A row that cannot run is drawn disabled
- * and says why, as a description and as its tooltip.
- *
- * **A press ends nothing.** It is answered here, in the buttons' place, by the second step
- * (`TaskEndConfirm`); a task mid-turn is asked in the one modal question instead.
+ * **The second step, on the line of the pane that shows the task** (#1488): asked where the
+ * person is looking, in place, with Keep focused. Since #4760 the pane head draws no buttons
+ * to end a task (they are rows of its ⋯, `command-table.md`, rule 4), and a press of one of
+ * those rows, its Restart's too, is asked here, on the head's line, as before. Nothing is drawn
+ * while nothing is asked.
  */
-export function TaskEnds({
+export function TaskEndAsked({
   session,
-  stop,
-  close,
   focusBack,
 }: {
   /** The task the pane shows. */
   session: number;
-  stop: Offer | undefined;
-  close: Offer | undefined;
   /** Puts the keyboard back in the pane once the second step is answered with Keep. */
   focusBack?: () => void;
 }) {
   const hand = useContext(TaskEndContext);
-  // **Each way whole or not at all**, decided by measuring the line (`wholeWays.ts`).
-  const group = useRef<HTMLSpanElement>(null);
-  const asking =
-    hand?.confirming !== undefined &&
-    hand.confirming.where === "crumb" &&
-    hand.confirming.session === session;
-  useLayoutEffect(() => {
-    if (group.current === null) return;
-    return fitWaysOn(group.current);
-  }, [asking, stop, close]);
-  if (hand === undefined || (stop === undefined && close === undefined)) return null;
-  const asked = hand.confirming;
-  if (asked !== undefined && asked.where === "crumb" && asked.session === session)
-    return (
-      <span className="pane-task-ends asking">
-        <TaskEndConfirm
-          says={asked.says}
-          answer={asked.answer}
-          busy={asked.busy}
-          trouble={asked.trouble}
-          onAnswer={() => hand.onConfirm(true)}
-          onKeep={() => {
-            hand.onConfirm(false);
-            focusBack?.();
-          }}
-        />
-      </span>
-    );
-  const drawn: [Offer | undefined, TaskEndWay][] = [
-    [stop, "report"],
-    [close, "now"],
-  ];
+  const asked = hand?.confirming;
+  if (hand === undefined || asked === undefined) return null;
+  if (asked.where !== "crumb" || asked.session !== session) return null;
   return (
-    <span className="pane-task-ends" role="group" aria-label="End this task" ref={group}>
-      {drawn.map(([offer, way]) =>
-        offer === undefined ? null : (
-          // A small button of the family (#3129). One that cannot run keeps the focus and says
-          // why, as its tooltip and, for whoever cannot see one, as its description.
-          <Button
-            key={offer.id}
-            size="sm"
-            className="task-end"
-            isDisabled={!offer.available}
-            tooltip={offer.reason || (offer.note ? `${offer.title}. ${offer.note}` : offer.title)}
-            aria-label={offer.title}
-            onPress={() => hand.onEnd(session, way)}
-          >
-            {WORDS[way]}
-          </Button>
-        ),
-      )}
+    <span className="pane-task-ends asking">
+      <TaskEndConfirm
+        says={asked.says}
+        answer={asked.answer}
+        busy={asked.busy}
+        trouble={asked.trouble}
+        onAnswer={() => hand.onConfirm(true)}
+        onKeep={() => {
+          hand.onConfirm(false);
+          focusBack?.();
+        }}
+      />
     </span>
   );
 }

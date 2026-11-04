@@ -143,6 +143,16 @@ export default defineConfig(async () => ({
     projects: [
       {
         extends: true,
+        // xterm.js's key-to-bytes mapping, read by `keys/harnessBytes.test.ts` from the sources
+        // the package ships, names its modules by the paths its own build resolves (`common/…`).
+        resolve: {
+          alias: [
+            {
+              find: /^common\/(.*)$/,
+              replacement: `${fileURLToPath(new URL("./node_modules/@xterm/xterm/src/common/", import.meta.url))}$1`,
+            },
+          ],
+        },
         test: {
           name: "unit",
           environment: "jsdom",

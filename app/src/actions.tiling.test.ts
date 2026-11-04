@@ -70,11 +70,38 @@ describe("Tile all as a row (#4765)", () => {
     expect(calls).toEqual(["tileAll:1"]);
   });
 
-  it("is on the tab's menu, after Pin tab and before Keep open, and on no other surface's", () => {
+  // **Where it is drawn** (`prototype/pane-chat-actions/command-table.md`, rows 88 and 98):
+  // the tab's right-click, the pane head's right-click and the palette. On the tab's menu among
+  // its own rows, right after Pin tab (#4760); on the pane's, with the splits.
+  it("is on the tab's menu, right after Pin tab", () => {
     const rows = menuRows({ on: "tab", tab: 1 }, catalogued(catalogue(now(two()))));
+    const above = rows.above.map((row) => row.id);
 
-    expect(rows.above.map((row) => row.id)).toEqual(["tab.select:1", "tab.pin:1", "tab.tile:1"]);
+    expect(above).toContain("tab.tile:1");
+    expect(above.indexOf("tab.tile:1")).toBe(above.indexOf("tab.pin:1") + 1);
+    // Move to new window is among the tab's own rows too (#4768).
+    expect(above).toContain("tab.newWindow:1");
     expect(rows.below.map((row) => row.id)).not.toContain("tab.tile:1");
+  });
+
+  it("is on the pane head's menu, as the tab's own row, after the splits", () => {
+    const rows = menuRows({ on: "pane", tab: 1 }, catalogued(catalogue(now(two()))));
+    const above = rows.above.map((row) => row.id);
+
+    expect(above).toContain("tab.tile:1");
+    expect(above.indexOf("tab.tile:1")).toBeGreaterThan(above.indexOf("pane.split.down"));
+    expect(rows.below.map((row) => row.id)).not.toContain("tab.tile:1");
+  });
+
+  it("is on no other surface's menu", () => {
+    const offers = catalogued(catalogue(now(two())));
+    const ids = (on: Parameters<typeof menuRows>[0]) => {
+      const rows = menuRows(on, offers);
+      return [...rows.above, ...rows.below].map((row) => row.id);
+    };
+
+    expect(ids({ on: "chat", session: 1 })).not.toContain("tab.tile:1");
+    expect(ids({ on: "root" })).not.toContain("tab.tile:1");
   });
 });
 

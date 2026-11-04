@@ -29,6 +29,8 @@
  * gave travels to the operator as the core's own sentence rather than as whatever a `catch`
  * decided to say about it.
  */
+import { splitRefused } from "./paneFold";
+import type { Size } from "./paneDrop";
 import type {
   ChatWorktree,
   Curations,
@@ -88,9 +90,8 @@ import { SESSION_VIEW, sessionTitle, sessionTitleOf, sessionView } from "./sessi
 import { shellKeySaid } from "./shellKey";
 import { switcherKeySaid } from "./switcherKey";
 import { focusKeySaid, shortcutsKeySaid } from "./keys/ownKeys";
-import { askedByOf, chatsOfTab } from "./tabChats";
-import { neighbour } from "./tabTasks";
-import { taskKeyNote, taskKeySaid } from "./taskKeys";
+import { askedByOf } from "./tabChats";
+import { taskKeySaid } from "./taskKeys";
 import { todoDeleteId, todoOpenId, todoReopenId, todoView } from "./todos";
 import { onAMac } from "./tabKeys";
 import type { RegionId, Toggled } from "./regions";
@@ -116,6 +117,7 @@ import {
   changesView,
   chatOf,
   contentsOf,
+  ONE_JOB_STAYS,
   focusedChat,
   focusedContent,
   harnessCardView,
@@ -130,6 +132,8 @@ import {
   DEVICES_VIEW,
   type AskedBy,
   type Direction,
+  isOneJob,
+  ONE_JOB_IN_TAB,
   type Tabs,
   type ViewRef,
   type Tab,
@@ -395,6 +399,12 @@ export type Does =
   | { verb: "pinTab"; tab: number; pinned: boolean }
   /** Tile all (#4765): evens `tab`'s own panes into a grid, with Undo. */
   | { verb: "tileAll"; tab: number }
+  /**
+   * **Move to new window** (`to` null) or **Move to window ▸** (`to` a window of the project,
+   * `0` its project window) (#4768): tab `tab`, or its focused pane where `pane`, goes to that
+   * window as its front tab. The core moves it, and each window draws its share.
+   */
+  | { verb: "moveToWindow"; tab: number; pane: boolean; to: number | null }
   /** Focus this pane in a split (#4765): zooms the focused pane, or brings the split back. */
   | { verb: "zoomPane" }
   /** Undo (#4763, #4765): the window's last layout change put back, once. */
@@ -464,6 +474,10 @@ export type Does =
    *  here rather than only a click on the panel because a menu is a third reader of this list
    *  (`Menus.tsx`) and the persona rows had nothing in it to read (charter-app#174). */
   | { verb: "openView"; view: ViewRef; title: string }
+  /** **Open beside** (#4769): an extension's view in a split beside the focused pane, or the
+   *  pane showing it brought forward. Refused before anything moves where a side would fall
+   *  under the minimum pane size, with Open in a tab offered instead. */
+  | { verb: "openViewBeside"; view: ViewRef; title: string }
   /** Resumes a session from its record (SI-8d): a NEW chat in the record's place, on its
    *  harness, given its conversation where it can be, and told the record in its briefing. It
    *  starts a chat, so it answers a `Ran` — the core can refuse. */
@@ -750,6 +764,11 @@ export type Offer = {
    * pieces `remove` must still find this chat's folder before fifty others (charter-app#174).
    */
   inFront?: true;
+  /**
+   * **What ⌥Enter on the row does instead** (#4769): a row that opens an extension's view opens
+   * it beside the focused pane. Only such a row has one; ⌥Enter on any other row runs it.
+   */
+  beside?: Does;
 };
 
 /** The window as it now stands: everything an offer's availability is decided from. */
@@ -930,6 +949,11 @@ export type Now = {
   /** The tabs Close other tabs on tab `tab` would close (#4762): every other tab on its strip
    *  but the pinned ones (`tabs.otherTabsToClose`). None where the window does not say. */
   otherTabs?: (tab: number) => readonly number[];
+  /**
+   * **The project's other windows** (#4768): its project window (`0`) and its tab windows,
+   * less this one, which Move to window ▸ lists. None for a project of one window.
+   */
+  otherWindows?: readonly number[];
   /** The work item each chat works on, by session, as `chat_work_item` answered (ADR 0088). */
   workItems?: Readonly<Record<number, string>>;
   /** Whether a chat can have a work link: it is filed in a workspace. A chat at the project
@@ -1000,6 +1024,9 @@ export type Now = {
   away?: readonly Toggled[];
   /** Focus mode is on (#2921, N32): its row says it brings the rail, bars and panels back. */
   focusMode?: boolean;
+  /** The focused pane's size as drawn (`paneFold.ts`, #4766): Split right and Split down grey
+   *  out, with their reason, where a half would be under the minimum. Not known, they split. */
+  paneRoom?: Size;
   /** The extensions' panels the right side shows as views (#1678), each a row by its name. */
   sidePanels?: readonly { view: PanelViewId; name: string }[];
   /**
@@ -1052,6 +1079,9 @@ export type Doing = {
   pinTab: (tab: number, pinned: boolean) => Promise<Ran>;
   /** Tiles `tab`'s own panes into an even grid (#4765). */
   tileAll: (tab: number) => void;
+  /** Moves `tab`, or its focused pane, to another window of the project, or a new one when
+   *  `to` is null (#4768). Answers the core's refusal, where it refused. */
+  moveToWindow: (tab: number, pane: boolean, to: number | null) => Promise<Ran>;
   /** Zooms the focused pane of the tab in front, or brings its split back (#4765). */
   zoomPane: () => void;
   /** Puts the last layout change back (#4763, #4765): a drop, a split or Tile all. */
@@ -1099,6 +1129,8 @@ export type Doing = {
   /** Opens a view's tab, or brings forward the one showing it. It reads and changes nothing
    *  by itself, so it answers no `Ran`. */
   openView: (view: ViewRef, title: string) => void;
+  /** Opens a view beside the focused pane (#4769), or says why not. */
+  openViewBeside: (view: ViewRef, title: string) => void;
   /** Resumes a session from its record at `path`, in a tab of its own. */
   resumeSession: (path: string) => Promise<Ran>;
   /** Opens a memory's tab: previewed, or kept when `keep` (SI-9b). */
@@ -2059,10 +2091,13 @@ export function catalogue(now: Now): Offer[] {
     ["pane.split.right", "Split right", "row"],
     ["pane.split.down", "Split down", "column"],
   ] as const) {
+    const refused = splitRefused(now.paneRoom, direction);
     offers.push(
-      front
-        ? can(id, title, { verb: "split", direction })
-        : cannot(id, title, "No chat is in front, so there is no pane to split."),
+      !front
+        ? cannot(id, title, "No chat is in front, so there is no pane to split.")
+        : refused !== undefined
+          ? cannot(id, title, refused)
+          : can(id, title, { verb: "split", direction }),
     );
   }
 
@@ -2155,6 +2190,43 @@ export function catalogue(now: Now): Offer[] {
           }
         : cannot(id, title, ONE_PANE_TO_TILE, name),
     );
+  }
+
+  // **Move to new window and Move to window ▸** (#4768, ruled on #4701): a tab, or the focused
+  // pane, into another window of the project as a tab of its own there. One set per tab, as Pin
+  // tab's, so a tab's menu has its own; the palette lists the tab in front's. Nothing ends.
+  const windows = now.otherWindows ?? [];
+  for (const tab of now.tabs.order) {
+    const name = now.tabs.byId[tab].name;
+    const behind = tab !== now.tabs.inFront ? { menuOnly: true as const } : {};
+    const holds = contentsOf(now.tabs, tab).some(
+      (one) => one.content.kind === "session" || one.content.kind === "view",
+    );
+    const move = (id: string, title: string, to: number | null): Offer =>
+      holds
+        ? can(id, title, { verb: "moveToWindow", tab, pane: false, to }, name)
+        : cannot(id, title, EMPTY_TAB_STAYS, name);
+    offers.push({
+      ...move(toNewWindowId(tab), `Move tab ${name} to new window`, null),
+      note: TO_WINDOW_NOTE,
+      ...behind,
+    });
+    for (const to of windows)
+      offers.push({
+        ...move(toWindowId(tab, to), `Move tab ${name} to ${windowNamed(to)}`, to),
+        ...behind,
+      });
+  }
+  if (front !== undefined) {
+    const content = contentsOf(now.tabs, front.id).find((one) => one.pane === front.focused);
+    const movable = content?.content.kind === "session" || content?.content.kind === "view";
+    const move = (id: string, title: string, to: number | null): Offer =>
+      movable
+        ? { ...can(id, title, { verb: "moveToWindow", tab: front.id, pane: true, to }) }
+        : cannot(id, title, EMPTY_PANE_STAYS);
+    offers.push({ ...move(PANE_TO_NEW_WINDOW, "Move this pane to new window", null) });
+    for (const to of windows)
+      offers.push(move(paneToWindowId(to), `Move this pane to ${windowNamed(to)}`, to));
   }
 
   // **Undo** (#4763, #4765): the window's last layout change, while nothing has changed since.
@@ -2882,18 +2954,17 @@ export function catalogue(now: Now): Offer[] {
   // after approval and not only at it (ADR 0041 item 5). The whole plane's view, never
   // one persona's — a persona's is opened from that persona's own tab.
   for (const view of now.views ?? []) {
-    offers.push(
-      can(
+    const ref: ViewRef = { from: view.extension, view: view.id, key: "" };
+    offers.push({
+      ...can(
         `view.open:${view.extension}/${view.id}`,
         `Open ${view.title} from ${view.extension}`,
-        {
-          verb: "openView",
-          view: { from: view.extension, view: view.id, key: "" },
-          title: view.title,
-        },
+        { verb: "openView", view: ref, title: view.title },
         view.title,
       ),
-    );
+      // ⌥Enter opens it beside the focused pane (#4769).
+      beside: { verb: "openViewBeside", view: ref, title: view.title },
+    });
   }
 
   // **And every command an approved extension adds**, named with its name so where it came
@@ -2904,16 +2975,23 @@ export function catalogue(now: Now): Offer[] {
     const id = `ext.command:${command.extension}/${command.id}`;
     offers.push(
       command.does.kind === "open"
-        ? can(
-            id,
-            title,
-            {
-              verb: "openView",
+        ? {
+            ...can(
+              id,
+              title,
+              {
+                verb: "openView",
+                view: { from: command.extension, view: command.does.view, key: "" },
+                title: command.does.title,
+              },
+              command.title,
+            ),
+            beside: {
+              verb: "openViewBeside",
               view: { from: command.extension, view: command.does.view, key: "" },
               title: command.does.title,
             },
-            command.title,
-          )
+          }
         : can(
             id,
             title,
@@ -3029,6 +3107,12 @@ export function catalogue(now: Now): Offer[] {
       offers.push(cannot(`tab.close:${tab}`, title, RESTORING_HAS_NO_CLOSE, name));
       continue;
     }
+    // **Nor does a tab a one-job program is in** (#4761): it would leave the program running
+    // with no pane, no row and no End….
+    if (holdsOneJob(now.tabs, tab)) {
+      offers.push(cannot(`tab.close:${tab}`, title, ONE_JOB_IN_TAB, name));
+      continue;
+    }
     offers.push({
       ...can(`tab.close:${tab}`, title, { verb: "closeTab", tab }, name),
       ...(chats === 0 ? {} : { note: chats === 1 ? ONE_CHAT_GOES_ON : CHATS_GO_ON }),
@@ -3036,20 +3120,24 @@ export function catalogue(now: Now): Offer[] {
   }
 
   // **Close other tabs skips the pinned ones** (#4762): a pin is the operator saying a tab
-  // stays. One row, the tab in front's, however many tabs there are: a row per tab would be
-  // fifty more at fifty chats, all saying the same verb. It closes each tab as that tab's own
-  // close would: their chats go on in the sidebar, and the tasks in them go back to the Chats
-  // list.
-  if (now.tabs.inFront !== undefined && now.tabs.byId[now.tabs.inFront] !== undefined) {
-    const tab = now.tabs.inFront;
+  // stays. It closes each tab as that tab's own close would: their chats go on in the sidebar
+  // (#4756), and the tasks in them go back to the Chats list. **On every tab's right-click**
+  // (#4760, spec #4750 story 59), closing the tabs beside that one; **one row in the palette**,
+  // the tab in front's (#4762): a row per tab there would be fifty more at fifty chats, all
+  // saying the same verb, so the others are their menus' only.
+  for (const tab of now.tabs.order) {
     const id = `tab.closeOthers:${tab}`;
     const title = "Close other tabs";
+    const only = tab === now.tabs.inFront ? {} : { menuOnly: true as const };
     const closes = now.otherTabs?.(tab) ?? [];
     const restoring = (one: number) =>
       panesOf(now.tabs, one).some((pane) => (now.restoring ?? []).includes(pane.session));
-    if (closes.length === 0) offers.push(cannot(id, title, NO_OTHER_TAB));
-    else if (closes.some(restoring)) offers.push(cannot(id, title, RESTORING_HAS_NO_CLOSE));
-    else offers.push(can(id, title, { verb: "closeOtherTabs", tab, closes }));
+    if (closes.length === 0) offers.push({ ...cannot(id, title, NO_OTHER_TAB), ...only });
+    else if (closes.some(restoring))
+      offers.push({ ...cannot(id, title, RESTORING_HAS_NO_CLOSE), ...only });
+    else if (closes.some((one) => holdsOneJob(now.tabs, one)))
+      offers.push({ ...cannot(id, title, ONE_JOB_IN_TAB), ...only });
+    else offers.push({ ...can(id, title, { verb: "closeOtherTabs", tab, closes }), ...only });
   }
 
   offers.push(...stopRows(now.listed ?? [], now.stopping ?? []));
@@ -3359,6 +3447,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "tileAll":
       doing.tileAll(does.tab);
       return DID;
+    case "moveToWindow":
+      return doing.moveToWindow(does.tab, does.pane, does.to);
     case "zoomPane":
       doing.zoomPane();
       return DID;
@@ -3420,6 +3510,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "openView":
       doing.openView(does.view, does.title);
+      return DID;
+    case "openViewBeside":
+      doing.openViewBeside(does.view, does.title);
       return DID;
     case "openMemory":
       doing.openMemory(does.ref, does.title, does.keep);
@@ -3944,21 +4037,32 @@ export function stopRows(listed: readonly ListedChat[], stopping: readonly numbe
               ...can(stopBelowId(session), below, { verb: "stopChat", session, below: true }, name),
               note: BELOW_TOO,
             }
-          : cannot(
-              stopBelowId(session),
-              below,
-              `${name} started no chat that is still running.`,
-              name,
-            ),
+          : // **A shell asks for no task** (#4761; spec #4750 story 65): kind hides, so it has
+            // neither of these greyed.
+            chat.shell
+            ? []
+            : cannot(
+                stopBelowId(session),
+                below,
+                `${name} started no chat that is still running.`,
+                name,
+              ),
         // **Stop all tasks** (#1498, V100-53): beside it, and the session keeps running.
         tasksOfIt.has(session)
           ? {
               ...can(stopAllId(session), all, { verb: "stopAllTasks", session }, name),
               note: STOPS_ALL,
             }
-          : cannot(stopAllId(session), all, `${name} has no task open.`, name),
-      ];
+          : chat.shell
+            ? []
+            : cannot(stopAllId(session), all, `${name} has no task open.`, name),
+      ].flat();
     });
+}
+
+/** Whether tab `tab` shows a one-job program (#4761). */
+function holdsOneJob(tabs: Tabs, tab: number): boolean {
+  return contentsOf(tabs, tab).some((one) => isOneJob(one.content));
 }
 
 /** Which of the two ways a person ends a task (the core's `Way`). */
@@ -4676,6 +4780,47 @@ export const BELOW_TOO =
 export const STOPS_IT =
   "A chat another chat started gets one short turn to write what it did, then it ends. The chat that asked is told you stopped it.";
 
+/** **Move to new window** on tab `tab` (#4768). */
+export function toNewWindowId(tab: number): string {
+  return `tab.newWindow:${tab}`;
+}
+
+/** **Move to window ▸ <window>** on tab `tab` (#4768). */
+export function toWindowId(tab: number, to: number): string {
+  return `tab.toWindow:${tab}:${to}`;
+}
+
+/** **Move to new window** on the focused pane (#4768). */
+export const PANE_TO_NEW_WINDOW = "pane.newWindow";
+
+/** **Move to window ▸ <window>** on the focused pane (#4768). */
+export function paneToWindowId(to: number): string {
+  return `pane.toWindow:${to}`;
+}
+
+/** **A window of the project, as Move to window names it** (#4768): its project window, or a
+ *  tab window by its number. The one place it is written; a submenu's row says it as a sentence
+ *  starts ({@link windowSaid}). */
+export function windowNamed(window: number): string {
+  return window === 0 ? "the project window" : `tab window ${window}`;
+}
+
+/** {@link windowNamed} as a row of the Move to window submenu says it: "Project window". */
+export function windowSaid(window: number): string {
+  const named = windowNamed(window).replace(/^the /, "");
+  return named.charAt(0).toUpperCase() + named.slice(1);
+}
+
+/** What Move to new window does, which its title cannot fit. */
+const TO_WINDOW_NOTE =
+  "Its panes, in a tab window of this project. Closing that window brings it back, and nothing ends.";
+
+/** Why an empty pane has no Move to window row (#4768). */
+const EMPTY_PANE_STAYS = "An empty pane has nothing to move.";
+
+/** Why a tab of only empty panes has no Move to window row (#4768). */
+const EMPTY_TAB_STAYS = "An empty tab has nothing to move.";
+
 /** A chat's Merge its branch row (#4851). */
 export function branchMergeId(session: number): string {
   return `chat.branch.merge:${session}`;
@@ -4901,6 +5046,9 @@ export function paneCloseOf(
       ? undefined
       : contentsOf(tabs, front.id).find((one) => one.pane === pane)?.content;
   if (content?.kind === "view") return can("pane.close", "Close this view", { verb: "closePane" });
+  // **A one-job program's pane has no close** (#4761; spec #4750 story 78): it goes when its
+  // program exits, and a close would leave the program running with no pane to draw it.
+  if (isOneJob(content)) return cannot("pane.close", PANE_CLOSE, ONE_JOB_STAYS);
   // An empty pane holds nothing (#4755): closing it only takes it away.
   if (content?.kind === "empty") return can("pane.close", PANE_CLOSE, { verb: "closePane" });
   if (front === undefined || content === undefined || pane === undefined)
@@ -4928,33 +5076,28 @@ export function paneCloseOf(
 /** Close pane's words (#4756), on the pane head's `×`, its menu and the palette. */
 export const PANE_CLOSE = "Close this pane";
 
-/** The four rows' ids, which their keys press (`taskKeys.TASK_KEY_ROW`). */
+/** The two rows' ids, which their keys press (`taskKeys.TASK_KEY_ROW`). */
 export const TAB_TASKS_ID = "tasks.menu";
-export const NEXT_CHAT_ID = "tasks.next";
-export const PREVIOUS_CHAT_ID = "tasks.previous";
-export const OWN_CHAT_ID = "tasks.own";
+export const PANE_BACK_ID = "pane.back";
 
 /**
- * **The chats inside the tab in front** (#1487, V100-33, V100-36): its menu, the next and the
- * previous chat in it, and back to its session's own chat. Rows, so the palette lists them and
- * says their keys, and the keys press these rows and nothing of their own (`taskKeys.ts`).
+ * **The focused chat's tasks, and its pane's previous chat** (#4767, ruled on #4699; before it
+ * #1487 and #4757): rows, so the palette lists them and says their keys, and ⌘⇧J and ⌘⇧H press
+ * these rows and nothing of their own (`taskKeys.ts`). A tab's next and previous chat went with
+ * the tab a chat no longer has.
  *
- * Next and previous are neighbours in the menu's order (`tabChats.chatsOfTab`), from the chat
- * the focused pane shows. Each is an ordinary `showChat`: the tab is switched and the chat's
- * terminal takes the keyboard, as a press on its row does. A tab with no tasks has all four,
- * unable to run and saying why.
+ * The tasks are those of the chat the focused pane shows, whichever chat that is: its tasks
+ * running or finished. They open the tab's task menu, which lists them under that chat.
  */
 function tabChatRows(now: Now): Offer[] {
   const mac = onAMac();
   const titles = {
-    tasks: "Show this tab's tasks",
-    next: "Next chat in this tab",
-    previous: "Previous chat in this tab",
-    own: "Back to this pane's previous chat",
+    tasks: "Show the focused chat's tasks",
+    back: "Back to the chat this pane showed before",
   };
   const front = now.tabs.inFront === undefined ? undefined : now.tabs.byId[now.tabs.inFront];
-  const pane = front && panesOf(now.tabs, front.id).find((one) => one.pane === front.focused);
-  if (front === undefined || pane === undefined) {
+  const shown = front === undefined ? undefined : focusedChat(now.tabs);
+  if (front === undefined || shown === undefined) {
     const focused =
       front === undefined
         ? undefined
@@ -4967,43 +5110,23 @@ function tabChatRows(now: Now): Offer[] {
           : "The pane in focus shows a view, not a chat, so it has no tasks.";
     return [
       cannot(TAB_TASKS_ID, titles.tasks, why),
-      cannot(NEXT_CHAT_ID, titles.next, why),
-      cannot(PREVIOUS_CHAT_ID, titles.previous, why),
       // ⌘⇧H still goes back from a pane a chat left empty (#4757): it remembers that chat.
       front !== undefined && focused?.kind === "empty"
-        ? backRow(now, front, titles.own, mac)
-        : cannot(OWN_CHAT_ID, titles.own, why),
+        ? backRow(now, front, titles.back, mac)
+        : cannot(PANE_BACK_ID, titles.back, why),
     ];
   }
-  // A task in a tab of its own is listed by this tab's menu and is not a chat IN this tab:
-  // next and previous stay inside the tab (#1489).
-  const rows = chatsOfTab(now.tabs, front.id, now.listed ?? []).filter(
-    (row) => row.placed !== "tab",
-  );
-  const shown = focusedChat(now.tabs);
-  const hasTasks =
-    rows.some((row) => row.level > 1 || (now.finished?.get(row.session)?.length ?? 0) > 0) ||
-    front.shows !== undefined;
-  const none = `${front.name} has no tasks.`;
-  const step = (id: string, title: string, by: 1 | -1, key: "next" | "previous"): Offer => {
-    const to = hasTasks ? neighbour(rows, shown, by) : undefined;
-    return to === undefined || to === shown
-      ? cannot(id, title, hasTasks ? `${front.name} is the only chat in this tab.` : none)
-      : {
-          ...can(id, title, { verb: "showChat", session: to }),
-          note: `${taskKeySaid(key, mac)}.${taskKeyNote(key, mac)}`,
-        };
-  };
+  const asked = (now.listed ?? []).some((chat) => chat.mode === "task" && chat.parent === shown);
+  const hasTasks = asked || (now.finished?.get(shown)?.length ?? 0) > 0;
+  const name = now.nameOf(shown);
   return [
     hasTasks
       ? {
           ...can(TAB_TASKS_ID, titles.tasks, { verb: "showTabTasks", tab: front.id }),
-          note: `${front.name} and the tasks it asked for, to switch between. ${taskKeySaid("menu", mac)}.`,
+          note: `${name} and the tasks it asked for, to switch between. ${taskKeySaid("menu", mac)}.`,
         }
-      : cannot(TAB_TASKS_ID, titles.tasks, none),
-    step(NEXT_CHAT_ID, titles.next, 1, "next"),
-    step(PREVIOUS_CHAT_ID, titles.previous, -1, "previous"),
-    backRow(now, front, titles.own, mac),
+      : cannot(TAB_TASKS_ID, titles.tasks, `${name} has no tasks.`),
+    backRow(now, front, titles.back, mac),
   ];
 }
 
@@ -5016,17 +5139,17 @@ function tabChatRows(now: Now): Offer[] {
 function backRow(now: Now, front: Tab, title: string, mac: boolean): Offer {
   const before = front.previous?.[front.focused];
   if (before === undefined)
-    return cannot(OWN_CHAT_ID, title, "This pane has shown no other chat yet.");
+    return cannot(PANE_BACK_ID, title, "This pane has shown no other chat yet.");
   const listed = now.listed?.some((chat) => chat.session === before) ?? false;
   if (!listed)
     return cannot(
-      OWN_CHAT_ID,
+      PANE_BACK_ID,
       title,
       `${now.nameOf(before)} has ended, so there is nothing to go back to.`,
     );
   return {
-    ...can(OWN_CHAT_ID, title, { verb: "paneBack" }),
-    note: `Shows ${now.nameOf(before)} again. The chat on screen goes on. ${taskKeySaid("own", mac)}.`,
+    ...can(PANE_BACK_ID, title, { verb: "paneBack" }),
+    note: `Shows ${now.nameOf(before)} again. The chat on screen goes on. ${taskKeySaid("back", mac)}.`,
   };
 }
 
@@ -5219,8 +5342,10 @@ export type MenuOn =
    *  what it is as the tree drew it, and why it does not open when the tree said. */
   | FileOn
   /** The panes — the centre of the window, where a chat is. Not about any one pane: a split
-   *  acts on the pane that has the keyboard, which is what the bar's buttons act on too. */
-  | { on: "pane" }
+   *  acts on the pane that has the keyboard, which is what the bar's buttons act on too. `tab`
+   *  is the tab the panes are of, whose Tile all the menu lists (#4760, #4765): none where the
+   *  window has no tab in front, and then no Tile all. */
+  | { on: "pane"; tab?: number }
   /** A refused read of the focused workspace, on the Changes view's line that says it
    *  (#1244; the bottom region's until #1676). */
   | { on: "refusal" }
@@ -5295,14 +5420,18 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
       };
     }
     case "tab":
+      // **A tab's own rows and nothing else** (#4760, `command-table.md` "Tabs"): no chat's, and
+      // no Switch to, which the tab's press does. Close other tabs is on every tab's own menu;
+      // the palette lists the tab in front's alone (#4762).
       return {
         above: [
-          `tab.select:${what.tab}`,
           `tab.pin:${what.tab}`,
           tileAllId(what.tab),
           `tab.keep:${what.tab}`,
+          // Move to window ▸ follows it, one row per window (`menuModel`, `toWindowRows`).
+          toNewWindowId(what.tab),
         ],
-        below: [`tab.close:${what.tab}`],
+        below: [`tab.closeOthers:${what.tab}`, `tab.close:${what.tab}`],
       };
     case "workspace":
       return {
@@ -5432,8 +5561,19 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
         below: [dropMembershipId(what.repo), forgetFailedCloneId(what.repo)],
       };
     case "pane":
+      // **The pane's rows** (#4760, `command-table.md` "Panes"): New tab and New shell are the
+      // window's, on the strip's `+` and the palette, and no pane's.
       return {
-        above: ["chat.new", "shell.new", "pane.split.right", "pane.split.down", PASS_THROUGH_ID],
+        above: [
+          "pane.split.right",
+          "pane.split.down",
+          // **Tile all** (spec #4750, decision 6): the tab's own row, the one its right-click
+          // and the palette list (#4765).
+          ...(what.tab === undefined ? [] : [tileAllId(what.tab)]),
+          // Move to window ▸ follows it, one row per window (`menuModel`, `toWindowRows`).
+          PANE_TO_NEW_WINDOW,
+          PASS_THROUGH_ID,
+        ],
         below: ["pane.close"],
       };
   }
@@ -5519,6 +5659,15 @@ export function askRows(session: number, offers: Catalogued): Offer[] {
  */
 export function moveChatRows(session: number, offers: Catalogued): Offer[] {
   return scanned(chatMovePrefix(session), offers);
+}
+
+/**
+ * The **Move to window ▸** rows of tab `tab`'s menu, or of the panes' where `tab` is none
+ * (#4768): one per other window of the project, by the same scan, since which windows a project
+ * has is not known ahead of time.
+ */
+export function toWindowRows(tab: number | undefined, offers: Catalogued): Offer[] {
+  return scanned(tab === undefined ? "pane.toWindow:" : `tab.toWindow:${tab}:`, offers);
 }
 
 /** The ids of chat `session`'s Go to rows, the chats its work was handed to, newest first. */

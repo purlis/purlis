@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  type Backgrounded,
   type Content,
   closeTab,
   type FiledIn,
   type Layout,
-  nothingBackgrounded,
   nothingPinned,
+  isOneJob,
+  ONE_JOB_STAYS,
   type Pane,
   panes,
   type Pinned,
@@ -68,7 +68,6 @@ export type DropContext = {
   /** What a pane's content is called in a sentence. */
   name: (content: Content) => string;
   pinned?: Pinned;
-  background?: Backgrounded;
 };
 
 /** What a drop would do, said, or why it is refused. */
@@ -118,6 +117,8 @@ export function judgeDrop(
     if (pane === undefined) return refused("That pane has closed.");
     if (pane.content.kind === "empty")
       return refused("An empty pane has nothing to move. Close it instead.");
+    // A one-job program stays beside the pane it opened from (#4761; spec #4750 story 78).
+    if (isOneJob(pane.content)) return refused(ONE_JOB_STAYS);
   }
   if (source.kind === "tab" && tabs.byId[source.tab] === undefined)
     return refused("That tab has closed.");
@@ -150,6 +151,9 @@ export function judgeDrop(
   if (to.place === "middle") {
     if (source.kind === "tab")
       return refused("A tab of several panes goes beside a pane, not into one.");
+    // Its edges still take a split, but nothing swaps with it or takes its place (#4761).
+    if (isOneJob(target.content))
+      return refused(`${there} goes when its program exits. Drop beside it instead.`);
     if (target.content.kind === "empty")
       verdict = {
         says: `Put ${name} in this empty pane.`,
@@ -368,13 +372,7 @@ function lift(tabs: Tabs, source: Source, ctx: DropContext): Lifted {
     (id) => id !== tab.id && workspaceOf(tabs, id, ctx.filedIn) === strip,
   );
   if (another || strip === undefined) {
-    const closed = closeTab(
-      tabs,
-      tab.id,
-      ctx.filedIn,
-      ctx.pinned ?? nothingPinned,
-      ctx.background ?? nothingBackgrounded,
-    );
+    const closed = closeTab(tabs, tab.id, ctx.filedIn, ctx.pinned ?? nothingPinned);
     return { tabs: closed, moved, shows };
   }
   const pane = tabs.named.panes + 1;
