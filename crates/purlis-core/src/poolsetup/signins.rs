@@ -49,6 +49,7 @@ pub fn sized(
     name: &str,
     measured: Result<(u64, u64), String>,
     limits: &Chosen,
+    _highest: &Chosen,
     in_use: bool,
 ) -> Sized {
     match measured {
@@ -91,7 +92,12 @@ pub fn in_use(plane: &Path) -> BTreeSet<String> {
 }
 
 /// **This machine's profiles against pool `pool`'s limits**, with those in use in `plane` marked.
-pub fn sizes(config: &Path, plane: Option<&Path>, pool: &str) -> Result<Sizes, Refused> {
+pub fn sizes(
+    config: &Path,
+    plane: Option<&Path>,
+    pool: &str,
+    _highest: &Chosen,
+) -> Result<Sizes, Refused> {
     let limits = runners::chosen_limits_of(config, pool)?;
     let records = crate::profilestore::list(config).map_err(Refused::Other)?;
     let used = plane.map(in_use).unwrap_or_default();
@@ -99,7 +105,13 @@ pub fn sizes(config: &Path, plane: Option<&Path>, pool: &str) -> Result<Sizes, R
         .iter()
         .map(|record| {
             let measured = measured(record);
-            sized(&record.name, measured, &limits, used.contains(&record.name))
+            sized(
+                &record.name,
+                measured,
+                &limits,
+                &Chosen::default(),
+                used.contains(&record.name),
+            )
         })
         .collect();
     Ok(Sizes {

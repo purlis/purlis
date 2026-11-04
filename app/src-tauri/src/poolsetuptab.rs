@@ -327,8 +327,13 @@ pub async fn pool_setup_sizes(
     #[cfg(unix)]
     {
         crate::off_the_window("measuring your profiles", move || {
-            let sizes = purlis_core::poolsetup::signins::sizes(&config_root()?, Some(&root), &pool)
-                .map_err(|why| why.to_string())?;
+            let sizes = purlis_core::poolsetup::signins::sizes(
+                &config_root()?,
+                Some(&root),
+                &pool,
+                &purlis_core::poollimits::Chosen::default(),
+            )
+            .map_err(|why| why.to_string())?;
             Ok(PoolSetupSizes {
                 most_mib: small(sizes.most_mib),
                 most_files: small(sizes.most_files),

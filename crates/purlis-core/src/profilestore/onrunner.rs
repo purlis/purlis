@@ -257,6 +257,14 @@ pub fn highest_on_an_older_runner() -> Chosen {
         )
 }
 
+/// **What a runner speaking `version` stages, as the highest of a pool's limits there** (#4719):
+/// one before 1.64 no more than it did ([`highest_on_an_older_runner`]), and one from 1.64 its
+/// pool's limits alone. What a send to it is held to, and what the Sign-ins step measures against.
+#[must_use]
+pub fn highest_on_a_runner_of(_version: purlis_session_protocol::version::Version) -> Chosen {
+    Chosen::default()
+}
+
 /// **Why a profile's settings were not sent** (spec #4275): its sentence, and the limits of its
 /// pool they are over, as Start a chat and a pool's page draw their offer from, typed from here to
 /// the refusal the window is sent. No limit, for any other reason.

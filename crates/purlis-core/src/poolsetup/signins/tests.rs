@@ -5,7 +5,13 @@ use super::*;
 
 #[test]
 fn a_profile_within_the_limit_is_over_nothing() {
-    let one = sized("work", Ok((42 * MIB, 900)), &Chosen::default(), true);
+    let one = sized(
+        "work",
+        Ok((42 * MIB, 900)),
+        &Chosen::default(),
+        &Chosen::default(),
+        true,
+    );
     assert_eq!(one.mib, Some(42));
     assert_eq!(one.files, Some(900));
     assert!(one.hits.is_empty(), "{:?}", one.hits);
@@ -15,7 +21,13 @@ fn a_profile_within_the_limit_is_over_nothing() {
 #[test]
 fn a_profile_over_the_size_says_what_to_raise_it_to() {
     let limits = Chosen::default().with(LimitId::ProfileSize, Some(128));
-    let one = sized("work", Ok((212 * MIB, 900)), &limits, false);
+    let one = sized(
+        "work",
+        Ok((212 * MIB, 900)),
+        &limits,
+        &Chosen::default(),
+        false,
+    );
     let [hit] = one.hits.as_slice() else {
         panic!("{:?}", one.hits);
     };
@@ -27,7 +39,13 @@ fn a_profile_over_the_size_says_what_to_raise_it_to() {
 #[test]
 fn a_part_of_a_mib_counts_as_a_whole_one_as_a_send_does() {
     let limits = Chosen::default().with(LimitId::ProfileSize, Some(2));
-    let one = sized("work", Ok((2 * MIB + 1, 1)), &limits, false);
+    let one = sized(
+        "work",
+        Ok((2 * MIB + 1, 1)),
+        &limits,
+        &Chosen::default(),
+        false,
+    );
     assert_eq!(one.mib, Some(3));
     assert_eq!(one.hits.len(), 1);
 }
@@ -35,13 +53,19 @@ fn a_part_of_a_mib_counts_as_a_whole_one_as_a_send_does() {
 #[test]
 fn too_many_files_is_its_own_limit() {
     let limits = Chosen::default().with(LimitId::ProfileFiles, Some(100));
-    let one = sized("work", Ok((MIB, 101)), &limits, false);
+    let one = sized("work", Ok((MIB, 101)), &limits, &Chosen::default(), false);
     assert_eq!(one.hits[0].limit, LimitId::ProfileFiles);
 }
 
 #[test]
 fn a_profile_that_couldnt_be_measured_says_why_and_is_over_nothing() {
-    let one = sized("work", Err("no folder".into()), &Chosen::default(), false);
+    let one = sized(
+        "work",
+        Err("no folder".into()),
+        &Chosen::default(),
+        &Chosen::default(),
+        false,
+    );
     assert_eq!(one.mib, None);
     assert_eq!(one.unread.as_deref(), Some("no folder"));
     assert!(one.hits.is_empty());
@@ -149,4 +173,45 @@ fn by_hand_spells_no_word_that_isnt_a_name() {
         see.text,
         "purlis pool add-profile POOL PROFILE\npurlis profile sign-in PROFILE --pool POOL"
     );
+}
+
+// ---- #4719: measured against the runner's highest too, where it's known ----
+
+#[test]
+fn a_profile_within_the_pools_limit_is_over_what_an_older_runner_takes() {
+    let older = crate::profilestore::onrunner::highest_on_an_older_runner();
+    let one = sized(
+        "work",
+        Ok((124 * MIB, 900)),
+        &Chosen::default(),
+        &older,
+        false,
+    );
+    let [hit] = one.hits.as_slice() else {
+        panic!("{:?}", one.hits);
+    };
+    assert_eq!(hit.limit, LimitId::ProfileSize);
+    assert_eq!((hit.in_force, hit.needed), (120, 124));
+    assert_eq!(
+        hit.suggested, None,
+        "raising the pool's limit wouldn't help: {hit:?}"
+    );
+    let fits = sized(
+        "work",
+        Ok((124 * MIB, 900)),
+        &Chosen::default(),
+        &Chosen::default(),
+        false,
+    );
+    assert!(fits.hits.is_empty(), "{:?}", fits.hits);
+}
+
+#[test]
+fn the_most_a_profile_may_send_is_what_the_runner_takes_where_that_is_lower() {
+    let machine = a_machine(&[]);
+    let older = crate::profilestore::onrunner::highest_on_an_older_runner();
+    let held = sizes(machine.path(), None, "builds", &older).unwrap();
+    assert_eq!((held.most_mib, held.most_files), (120, 8192));
+    let unknown = sizes(machine.path(), None, "builds", &Chosen::default()).unwrap();
+    assert_eq!((unknown.most_mib, unknown.most_files), (128, 8192));
 }
