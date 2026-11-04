@@ -10232,6 +10232,12 @@ fn why_a_chat_runs_at_its_level_says_a_restart_applies_a_level_changed_since_it_
         ),
         "{now}"
     );
+    // A chat held by a sandbox this window has no compile of: no reason here describes its run.
+    let held = chats.confines_of(session);
+    chats.runs_as_recorded(session, None, None);
+    assert_eq!(chats.level_whys_on(&a_machine()), Vec::new());
+    chats.runs_as_recorded(session, held, None);
+    assert!(said(&chats).starts_with("This chat started with"));
     // On a system with no backend, no level holds a chat, so no reason is said.
     let windows = purlis_core::sandbox::Machine {
         os: purlis_core::sandbox::Os::Windows,

@@ -63,6 +63,9 @@ function keepWhys(plane: PlaneId, said: unknown) {
     if (typeof one?.session === "number" && typeof one.why === "string")
       shown.set(one.session, one.why);
   }
+  // The same answer again leaves what was kept, so nothing draws again on every focus.
+  const kept = lastWhys.get(plane);
+  if (kept?.size === shown.size && [...shown].every(([at, why]) => kept.get(at) === why)) return;
   lastWhys.set(plane, shown);
   for (const told of answerWatchers) told();
 }

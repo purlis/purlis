@@ -1737,7 +1737,9 @@ fn a_sandboxed_chat_is_told_its_level_is_the_person_s_and_to_ask_for_the_reason_
     for said in [
         "Settings › Project › Sandbox › Your level",
         "the person's alone",
-        "you cannot change it, so never suggest you can",
+        "you cannot lower it, so never suggest you can",
+        "write it in a file for them to confirm",
+        "never ask them to lower it",
         "do not guess why",
         "read the reason on this chat's sandbox mark",
         "a restart applies the level",

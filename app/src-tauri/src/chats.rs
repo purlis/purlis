@@ -3808,9 +3808,17 @@ impl Chats {
 
     /// **Why each open chat runs at its level** (#5207): each harness chat, by session, with
     /// what its next start would be, read as [`Self::on_older_sandbox`] reads it: its own
-    /// [`level_as_of`], and [`made_of`] for a start of this chat again. It only reads. A chat whose mark already says why it runs with no sandbox
-    /// ([`Open::floorless`]) has no answer here, and on a system with no backend none does:
-    /// no level holds a chat there.
+    /// [`level_as_of`], and [`made_of`] for a start of this chat again. It only reads.
+    ///
+    /// These have no answer, since anything said of them would be false: a chat whose mark
+    /// already says why it runs with no sandbox ([`Open::floorless`]); any chat on a system with
+    /// no backend, where no level holds it; a chat held by a sandbox this window has no compile
+    /// of (one its host composed, or reattached under a sandbox that changed), whose run no
+    /// reason here describes; and any chat where the project's manifest cannot be read, where a
+    /// start is refused.
+    ///
+    /// Each distinct start is read once per ask, as in [`Self::on_older_sandbox`] (#2157): the
+    /// window asks whenever a chat opens or closes, and on every focus.
     pub fn level_whys(&self) -> Vec<LevelWhy> {
         purlis_core::profiles::git_asked_once(|| {
             self.level_whys_on(&purlis_core::sandbox::Machine::this())
@@ -3820,7 +3828,7 @@ impl Chats {
     /// [`Self::level_whys`], on `machine`.
     fn level_whys_on(&self, machine: &purlis_core::sandbox::Machine) -> Vec<LevelWhy> {
         use purlis_core::sandbox::personal::Choice;
-        use purlis_core::sandbox::{Level, level_why};
+        use purlis_core::sandbox::{Level, Made, level_why};
         if !machine.os.has_backend() {
             return Vec::new();
         }
@@ -3829,34 +3837,42 @@ impl Chats {
         let running: Vec<_> = lock(&self.open)
             .iter()
             .filter(|(session, one)| one.harness.is_some() && !floorless.contains_key(session))
-            .map(|(session, one)| {
+            .filter_map(|(session, one)| {
                 let level = match one.confines.as_ref().map(|confines| confines.level) {
-                    Some(Level::Full) => Some(Choice::On),
-                    Some(Level::Floor) => Some(Choice::Floor),
-                    None if one.chat.unsandboxed => Some(Choice::Off),
-                    // Held by a sandbox this window has no compile of (a chat its host composed,
-                    // or reattached under a sandbox that changed): nothing to compare.
-                    None => None,
+                    Some(Level::Full) => Choice::On,
+                    Some(Level::Floor) => Choice::Floor,
+                    None if one.chat.unsandboxed => Choice::Off,
+                    None => return None,
                 };
-                (*session, one.chat.clone(), level)
+                Some((*session, one.chat.clone(), level))
             })
             .collect();
         let locks = purlis_core::sandbox::policy::Locks::of(&self.project);
-        let mut whys: Vec<LevelWhy> = running
-            .into_iter()
-            .map(|(session, chat, level)| {
-                let next = level_why::next_start(
-                    &self.project,
-                    level_as_of(&chat),
-                    &locks,
-                    &made_of(&chat, Why::Relaunch),
-                );
-                LevelWhy {
+        type Start = (Option<String>, Made);
+        let mut read: Vec<(Start, Option<level_why::NextStart>)> = Vec::new();
+        let mut whys = Vec::new();
+        for (session, chat, level) in running {
+            let start = (
+                level_as_of(&chat).map(str::to_owned),
+                made_of(&chat, Why::Relaunch),
+            );
+            let known = read
+                .iter()
+                .find(|(one, _)| *one == start)
+                .map(|(_, next)| next.clone());
+            let next = known.unwrap_or_else(|| {
+                let next =
+                    level_why::next_start(&self.project, start.0.as_deref(), &locks, &start.1);
+                read.push((start, next.clone()));
+                next
+            });
+            if let Some(next) = next {
+                whys.push(LevelWhy {
                     session,
-                    why: next.said(level.unwrap_or(next.level)),
-                }
-            })
-            .collect();
+                    why: next.said(level),
+                });
+            }
+        }
         whys.sort_unstable_by_key(|one| one.session);
         whys
     }

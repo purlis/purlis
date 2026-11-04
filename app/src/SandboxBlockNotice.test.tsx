@@ -818,7 +818,7 @@ describe("a block's Notice, and why this chat runs at its level (#5207)", () => 
     );
   };
   const WHY =
-    "Your As steward row sets this chat's level, over the project's. Change it in Settings › Project › Sandbox › Your level.";
+    "The As steward row sets this chat's level, over the project's. Change it in Settings › Project › Sandbox › Your level.";
   const answering = (whys: readonly { session: number; why: string }[]) =>
     mockIPC((cmd) => (cmd === "chats_level_why" ? whys : null));
 

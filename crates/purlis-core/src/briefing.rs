@@ -255,11 +255,12 @@ pub const SANDBOXED_NOTE: &str = "⬢ **This chat runs in purlis's sandbox.** Wh
      retry, so say what was blocked and wait for them. Where purlis grants nothing, the person \
      alone may choose **Start without the sandbox** for this chat; never suggest it as something \
      you can do. **This chat's level is the person's alone**: they set it in **Settings › \
-     Project › Sandbox › Your level**, and you cannot change it, so never suggest you can. If \
+     Project › Sandbox › Your level**, and you cannot lower it, so never suggest you can, never \
+     write it in a file for them to confirm, and never ask them to lower it. If \
      they say they lowered it and this chat is still sandboxed, do not guess why: ask them to \
      read the reason on this chat's sandbox mark or on its Notice. It may say that a restart \
-     applies the level, that a persona's row or a policy holds it, that it waits for their \
-     Confirm, or that a chat that asked for this one is stricter. A blocked local socket (Docker's, a database's, an SSH agent's) or system \
+     applies the level, that a persona's row or a policy holds it, that a level waits for \
+     their Confirm, or that a chat that asked for this one is stricter. A blocked local socket (Docker's, a database's, an SSH agent's) or system \
      service (macOS's certificate check, which Go tools such as `gh` and `glab` use) may get a \
      Notice the person can answer: say which one was blocked, by its path or name, and that \
      the person decides. Claude Code's `/sandbox`, `/sandbox exclude` and `excludedCommands` do not \

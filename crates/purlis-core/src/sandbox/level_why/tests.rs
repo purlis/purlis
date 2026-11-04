@@ -9,6 +9,8 @@ const FULL_PROJECT: &str = "[sandbox]\nmode = \"on\"\n";
 const FULL_NO_CACHES: &str =
     "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\n";
 
+const TEAM_OFF: &str = "[sandbox]\nmode = \"off\"\n";
+
 /// A project with `manifest`, and `local` as this machine's own file.
 fn project(manifest: &str, local: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a project");
@@ -21,8 +23,29 @@ fn project(manifest: &str, local: &str) -> tempfile::TempDir {
     dir
 }
 
+/// [`TEAM_OFF`] as a commit brought it, which is the only off a person is asked to accept.
+fn commit_the_team_s_off(root: &Path) {
+    let made = crate::testgit::run(root, &["init", "-q"]);
+    assert!(made.ok(), "{made:?}");
+    crate::testgit::run(root, &["add", "charter.toml"]);
+    let ran = crate::testgit::run(
+        root,
+        &[
+            "-c",
+            "user.name=A teammate",
+            "-c",
+            "user.email=someone@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "the team's off",
+        ],
+    );
+    assert!(ran.ok(), "{ran:?}");
+}
+
 fn next(root: &Path, persona: Option<&str>, made: &Made) -> NextStart {
-    next_start(root, persona, &policy::Locks::of(root), made)
+    next_start(root, persona, &policy::Locks::of(root), made).expect("a manifest it reads")
 }
 
 /// The level, and why, of a chat the person starts in the window.
@@ -75,6 +98,53 @@ fn with_no_level_set_a_chat_takes_the_project_s_own() {
         NextStart {
             level: Choice::Floor,
             why: Why::NoneChosen
+        }
+    );
+}
+
+#[test]
+fn a_stricter_level_the_file_alone_says_is_never_called_the_one_you_chose() {
+    // A sandboxed chat can write the file, so what it wrote is not credited to the person.
+    let dir = project("", "[sandbox]\nlevel = \"on\"\n");
+    assert_eq!(
+        in_the_window(dir.path(), None),
+        NextStart {
+            level: Choice::On,
+            why: Why::FileStricter
+        }
+    );
+    assert!(!Why::FileStricter.said().contains("you chose"));
+}
+
+#[test]
+fn a_level_waiting_for_confirm_is_never_called_yours_and_says_a_chat_can_write_it() {
+    let said = Why::WaitsForConfirm(Choice::Off).said();
+    assert!(!said.contains("Your level of"), "{said}");
+    assert!(said.contains("A chat can write that file"), "{said}");
+    assert!(said.contains("If you wrote it, press Confirm"), "{said}");
+}
+
+#[test]
+fn a_manifest_a_start_is_refused_over_has_no_answer() {
+    let dir = project("", "");
+    std::fs::write(dir.path().join("charter.toml"), "[sandbox\n").expect("a typo");
+    let locks = policy::Locks::of(dir.path());
+    assert_eq!(next_start(dir.path(), None, &locks, &Made::Window), None);
+    std::fs::remove_file(dir.path().join("charter.toml")).expect("gone");
+    assert_eq!(next_start(dir.path(), None, &locks, &Made::Window), None);
+}
+
+#[test]
+fn a_chain_the_record_cannot_read_after_a_team_s_off_you_accepted_keeps_the_sandbox() {
+    let dir = project(TEAM_OFF, "");
+    commit_the_team_s_off(dir.path());
+    team::answer(dir.path(), true).expect("accepted");
+    assert_eq!(in_the_window(dir.path(), None).level, Choice::Off);
+    assert_eq!(
+        next(dir.path(), None, &asked_by(&[])),
+        NextStart {
+            level: Choice::On,
+            why: Why::ChainUnread
         }
     );
 }
@@ -156,7 +226,7 @@ fn an_administrator_s_lock_holds_it_and_names_who() {
         Path::new("/etc/purlis/policy.json"),
     );
     assert!(locks.forbids_opt_out());
-    let got = next_start(dir.path(), None, &locks, &Made::Window);
+    let got = next_start(dir.path(), None, &locks, &Made::Window).expect("an answer");
     assert_eq!(got.level, Choice::On);
     let Why::Policy(said) = &got.why else {
         panic!("not the policy's: {got:?}");
@@ -240,6 +310,7 @@ fn the_answer_is_the_level_decide_starts_the_chat_at() {
     };
     let made_ways = [
         Made::Window,
+        Made::Relaunch,
         Made::Unnamed,
         asked_by(&[Some("steward")]),
         asked_by(&[]),
@@ -253,12 +324,19 @@ fn the_answer_is_the_level_decide_starts_the_chat_at() {
         ("", "[sandbox]\nlevel = \"off\"\n", true),
         (FULL_NO_CACHES, "[sandbox]\nlevel = \"off\"\n", true),
         (FULL_NO_CACHES, "[sandbox]\nlevel = \"off\"\n", false),
+        // A team's off, accepted and not.
+        (TEAM_OFF, "", true),
+        (TEAM_OFF, "", false),
     ];
     for (manifest, local, confirm) in cases {
         let dir = project(manifest, local);
         let root = dir.path();
         if confirm && let Some(level) = personal::of(root).level {
             personal::set_by_you(root, None, Some(level)).expect("confirmed");
+        }
+        if manifest == TEAM_OFF {
+            commit_the_team_s_off(root);
+            team::answer(root, confirm).expect("answered");
         }
         for made in &made_ways {
             let person = Person {
@@ -301,6 +379,7 @@ fn each_reason_says_where_to_change_it_or_whose_it_is() {
     );
     for why in [
         Why::Chosen,
+        Why::FileStricter,
         Why::NoneChosen,
         Why::Persona("steward".to_owned()),
         Why::WaitsForConfirm(Choice::Off),

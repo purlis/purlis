@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SettingsTab } from "./SettingsTab";
 import { forgetThisLaunch } from "../regions";
+import { useSandboxCommands } from "../sandboxAsked";
 import { GLOBAL } from "../windowprefs";
 import { forgetGroups } from "./links";
 import type {
@@ -248,6 +249,8 @@ describe("Settings › Sandbox › Your level", () => {
     expect(
       await screen.findByText(/As qa, the file says no sandbox, which you did not set here/),
     ).toBeInTheDocument();
+    const returned = renderHook(useSandboxCommands);
+    const before = returned.result.current;
     await userEvent.click(screen.getByRole("button", { name: "Confirm no sandbox as qa" }));
 
     expect(await screen.findByText("Confirmed for qa.")).toBeInTheDocument();
@@ -256,6 +259,8 @@ describe("Settings › Sandbox › Your level", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: /^Confirm/ })).not.toBeInTheDocument(),
     );
+    // What the window says of a chat's level asks again: no watcher reports the record (#5207).
+    await waitFor(() => expect(returned.result.current).toBeGreaterThan(before));
   });
 });
 

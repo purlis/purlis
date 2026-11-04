@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use super::personal::{self, Choice};
-use super::{Made, policy, team, your_level};
+use super::{Made, local, policy, team, your_level};
 
 /// Where a person changes their level, as its labels read.
 pub const WHERE: &str = "Settings › Project › Sandbox › Your level";
@@ -17,13 +17,17 @@ pub const WHERE: &str = "Settings › Project › Sandbox › Your level";
 /// Why a start runs at the level it does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Why {
-    /// The person's own level for the project.
+    /// The project's level, as the person set or confirmed it.
     Chosen,
+    /// The project's level as the local file says it, stricter than the person confirmed: it
+    /// counts with no Confirm, and a chat may have written it, so it is never called theirs.
+    FileStricter,
     /// The person set no level, so the project's own stands.
     NoneChosen,
-    /// The person's row for this persona, which wins over the project's level.
+    /// The row for this persona, which wins over the project's level.
     Persona(String),
-    /// The file says this lower level, and it does not count until the person confirms it.
+    /// The file says this lower level, and it does not count until the person confirms it. A
+    /// chat can write that file (ADR 0096 §7), so it is never called the person's.
     WaitsForConfirm(Choice),
     /// A team's or an administrator's policy holds the full sandbox: its sentence, naming whose.
     Policy(String),
@@ -43,17 +47,22 @@ impl Why {
             Self::Chosen => {
                 format!("This is the level you chose for this project. Change it in {WHERE}.")
             }
+            Self::FileStricter => format!(
+                "This project's local file sets this level, stricter than you confirmed, so it \
+                 counts as it is. Change it in {WHERE}."
+            ),
             Self::NoneChosen => format!(
-                "You have not chosen a level here, so this chat takes the project's own. Choose \
-                 one in {WHERE}."
+                "You have not chosen a level here, so this chat takes the project's own. Your \
+                 level is in {WHERE}."
             ),
             Self::Persona(name) => format!(
-                "Your As {name} row sets this chat's level, over the project's. Change it in \
+                "The As {name} row sets this chat's level, over the project's. Change it in \
                  {WHERE}."
             ),
             Self::WaitsForConfirm(level) => format!(
-                "Your level of {} waits for your Confirm, so it does not count yet. Confirm it \
-                 in {WHERE}.",
+                "This project's local file says {}, which you did not set in Settings, so it \
+                 does not count. A chat can write that file. If you wrote it, press Confirm in \
+                 {WHERE}.",
                 level.said()
             ),
             Self::Policy(said) => said.clone(),
@@ -109,23 +118,35 @@ fn with(level: Choice) -> &'static str {
 /// **The level a start of a chat on `persona`, made `made`, would run at now, and why** (#5207).
 /// In order: a policy that holds the level, how the start was made where that moved it from
 /// what a start in the window takes, a lower level still to confirm, the persona's row, then
-/// the project's level or none.
+/// the project's level or none. `None` where the project's manifest has gone or cannot be read:
+/// a start is refused there, so there is no level to say.
 pub fn next_start(
     root: &Path,
     persona: Option<&str>,
     locks: &policy::Locks,
     made: &Made,
-) -> NextStart {
-    let base = personal::base(root);
-    let read = |made: &Made| your_level(root, persona, locks, made).unwrap_or(base);
+) -> Option<NextStart> {
+    let plane = super::Plane::read(root);
+    if plane.unreadable() || plane.missing() {
+        return None;
+    }
+    // A start that takes no level of the person's, as `for_start_at` takes it: the sandbox the
+    // project has in force, or the floor. Not `personal::base`, which is no sandbox where the
+    // person accepted a team's off: that never lifts a start with no level.
+    let own = if plane.in_force(locks).is_some() {
+        Choice::On
+    } else {
+        Choice::Floor
+    };
+    let read = |made: &Made| your_level(root, persona, locks, made).unwrap_or(own);
     // A start that names no way it was made takes the project's own, as `decide` takes it.
     let level = if made.via().is_some() {
         read(made)
     } else {
-        base
+        own
     };
     let why = why_of(root, persona, locks, made, level, read(&Made::Window));
-    NextStart { level, why }
+    Some(NextStart { level, why })
 }
 
 fn why_of(
@@ -157,8 +178,9 @@ fn why_of(
     }
     match persona.filter(|_| honoured.at(persona).is_some()) {
         Some(name) => Why::Persona(name.to_owned()),
-        None if honoured.level.is_some() => Why::Chosen,
-        None => Why::NoneChosen,
+        None if honoured.level.is_none() => Why::NoneChosen,
+        None if honoured.level == local::confirmed_levels(root).level => Why::Chosen,
+        None => Why::FileStricter,
     }
 }
 
