@@ -12,6 +12,16 @@ import { Card, CardTitle } from "./Card";
 afterEach(cleanup);
 
 describe("Card", () => {
+  it("draws its root and its title with their parts' classes (#4351)", () => {
+    render(
+      <Card aria-label="An ask" className="inbox-ask">
+        <CardTitle>steward 4 asks</CardTitle>
+      </Card>,
+    );
+    expect(screen.getByLabelText("An ask").getAttribute("class")).toBe("inbox-ask ds-card dp-root");
+    expect(screen.getByText("steward 4 asks").getAttribute("class")).toBe("ds-card dp-title");
+  });
+
   it("is the family's root, drawn as the element it is asked for, with its ref", () => {
     const ref = createRef<HTMLElement>();
     render(

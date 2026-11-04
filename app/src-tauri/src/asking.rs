@@ -155,6 +155,17 @@ pub struct SecretShown {
     /// The declared tool whose run missed it, where it is one.
     #[specta(optional)]
     pub tool: Option<String>,
+    /// **What the chat says it is for** (#5072), in its own words: drawn as the chat's, never
+    /// as purlis's. Absent for a broker miss.
+    #[specta(optional)]
+    pub purpose: Option<String>,
+    /// Whether the persona declares the key as a Secret need: one it does not is drawn with a
+    /// quiet "not declared by this persona" tag (#5072).
+    pub declared: bool,
+    /// **What the persona's committed definition says the key is for** (#5076), where it
+    /// declares it: the maintainers' words, quoted as theirs.
+    #[specta(optional)]
+    pub declared_purpose: Option<String>,
     /// How many chats wait on it.
     pub waiting: u32,
 }
@@ -1654,17 +1665,37 @@ pub const SECRET_FILL: &str = "fill";
 /// it was declined. Every word is purlis's but the names, which are the registry's and are data.
 pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
     let (key, vault, persona) = (&open.key, &open.vault, &open.persona);
-    let used_by = open
-        .tool
-        .as_deref()
-        .map_or_else(String::new, |tool| format!(" for {tool}"));
+    // A profile's credential a start misses names no tool, and no chat has started (#5074).
+    let used_by = match open.tool.as_deref() {
+        Some(tool) => format!(" for {tool}"),
+        None if open.chats.is_empty() && open.starts > 0 => " to start a chat".to_owned(),
+        None => String::new(),
+    };
     let others = match open.waiting() {
         0 | 1 => String::new(),
         n => format!(". {n} chats wait on it"),
     };
+    let undeclared = if open.declared.is_some() {
+        ""
+    } else {
+        " (not declared by this persona)"
+    };
+    // What the persona's definition says it is for, quoted as the definition's (#5076).
+    let declared_for = open
+        .declared
+        .as_deref()
+        .filter(|purpose| !purpose.is_empty())
+        .map_or_else(String::new, |purpose| {
+            format!(". {persona} declares it for: “{purpose}”")
+        });
+    // The chat's own words, quoted as its and last: a long one is what the row clips, never
+    // purlis's sentence. Whole in `SecretShown::purpose`.
+    let what_for = open.purpose.as_deref().map_or_else(String::new, |purpose| {
+        format!(". The chat says it is for: “{purpose}”")
+    });
     let says = format!(
-        "Needs {key} from {persona}'s vault {vault}{used_by}. Fill stores it in that vault on \
-         this machine; the chat never sees it{others}"
+        "Needs {key}{undeclared} from {persona}'s vault {vault}{used_by}. Fill stores it in \
+         that vault on this machine; the chat never sees it{others}{declared_for}{what_for}"
     );
     Shown {
         session: open.chats.first().copied().unwrap_or_default(),
@@ -1694,6 +1725,9 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
             vault: vault.clone(),
             key: key.clone(),
             tool: open.tool.clone(),
+            purpose: open.purpose.clone(),
+            declared: open.declared.is_some(),
+            declared_purpose: open.declared.clone(),
             waiting: u32::try_from(open.waiting()).unwrap_or(u32::MAX),
         }),
     }

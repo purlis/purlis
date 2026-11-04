@@ -3,7 +3,16 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render as renderBare, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import App, { TAB_WINDOW } from "./App";
 import type { LaidOut, LaidTab, OpenChat } from "./bindings";
@@ -70,7 +79,15 @@ function tab(window: number, front: boolean, session: number): LaidTab {
   };
 }
 
-function core(over: { tabWindow?: number; layout: LaidOut; chats: number[] }) {
+function core(over: {
+  tabWindow?: number;
+  layout: LaidOut;
+  chats: number[];
+  /** Chats the sidebar lists as well, in no tab: a tab of theirs was closed. */
+  inNoTab?: number[];
+  /** What `press_elsewhere` answers: the label of the window the press landed in. */
+  pressed?: string;
+}) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const listeners = new Map<string, number[]>();
   mockIPC((cmd, args) => {
@@ -93,7 +110,7 @@ function core(over: { tabWindow?: number; layout: LaidOut; chats: number[] }) {
         workspaces: [],
         personas: [],
         persona: null,
-        unfiled: over.chats.map(chat),
+        unfiled: [...over.chats, ...(over.inNoTab ?? [])].map(chat),
       };
     if (cmd === "opened_chats") return over.chats.map(chat);
     if (cmd === "reopened_layout") return over.layout;
@@ -102,6 +119,7 @@ function core(over: { tabWindow?: number; layout: LaidOut; chats: number[] }) {
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
     if (cmd === "extensions_on") return [];
     if (cmd === "tab_windows_back") return 0;
+    if (cmd === "press_elsewhere") return over.pressed ?? null;
     return null;
   });
   const fire = (event: string, payload: unknown) => {
@@ -176,5 +194,140 @@ describe("the project window of a project with a tab window (#4768)", () => {
 
     await waitFor(() => expect(shape(said().at(-1))).toEqual([[0, [1]]]));
     expect(sent("close_session")).toEqual([]);
+  });
+});
+
+/** The sidebar's row of chat `session`. */
+const row = (session: number) => {
+  const found = within(screen.getByRole("tree", { name: "Chats of this project" }))
+    .getAllByRole("treeitem")
+    .find((one) => one.querySelector(".session")?.textContent === String(session));
+  if (found === undefined) throw new Error(`no row is chat ${session}`);
+  return found;
+};
+
+describe("the most recently used pane across the project's windows (#5108)", () => {
+  it("a pane used in the project window of a project with a tab window is said to the core", async () => {
+    const { sent } = core({
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2)] },
+      chats: [1, 2],
+    });
+    render(<App />);
+    await waitFor(() => expect(sent("tab_windows_back")).toHaveLength(1));
+
+    fireEvent.pointerDown(await screen.findByText("session 1"));
+
+    await waitFor(() => expect(sent("pane_used").at(-1)?.args).toEqual({ plane: ONE }));
+  });
+
+  it("a key typed in a pane of a tab window is said to the core", async () => {
+    mockWindows("window-1");
+    const { sent } = core({
+      tabWindow: 1,
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2)] },
+      chats: [1, 2],
+    });
+    render(<App />);
+
+    fireEvent.keyDown(await screen.findByText("session 2"), { key: "a" });
+
+    await waitFor(() => expect(sent("pane_used").at(-1)?.args).toEqual({ plane: ONE }));
+  });
+
+  it("a pane given focus back as its window comes forward is not a use of it", async () => {
+    // The window coming forward hands focus back to the pane that last had it: a press on a
+    // sidebar row would otherwise always be this window's.
+    const { sent } = core({
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2)] },
+      chats: [1, 2],
+    });
+    render(<App />);
+    await waitFor(() => expect(sent("tab_windows_back")).toHaveLength(1));
+
+    fireEvent.focus(await screen.findByText("session 1"));
+    await act(() => new Promise((done) => setTimeout(done, 0)));
+
+    expect(sent("pane_used")).toEqual([]);
+  });
+
+  it("a window says its pane's use once until it has been away", async () => {
+    const { sent } = core({
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2)] },
+      chats: [1, 2],
+    });
+    render(<App />);
+    await waitFor(() => expect(sent("tab_windows_back")).toHaveLength(1));
+    const pane = await screen.findByText("session 1");
+
+    fireEvent.pointerDown(pane);
+    fireEvent.keyDown(pane, { key: "a" });
+    fireEvent.keyDown(pane, { key: "b" });
+    await waitFor(() => expect(sent("pane_used")).toHaveLength(1));
+    // Another window was used meanwhile, so this one says it again.
+    act(() => void window.dispatchEvent(new Event("blur")));
+    fireEvent.keyDown(pane, { key: "c" });
+
+    await waitFor(() => expect(sent("pane_used")).toHaveLength(2));
+  });
+
+  it("a project of one window says nothing of its panes, and a press asks nothing", async () => {
+    const { said, sent } = core({
+      layout: { strip: null, tabs: [tab(0, true, 1)] },
+      chats: [1],
+      inNoTab: [2],
+    });
+    render(<App />);
+    fireEvent.pointerDown(await screen.findByText("session 1"));
+
+    await userEvent.click(row(2));
+
+    await screen.findByText("session 2");
+    await waitFor(() => expect(shape(said().at(-1))).toEqual([[0, [2]]]));
+    expect(sent("pane_used")).toEqual([]);
+    expect(sent("press_elsewhere")).toEqual([]);
+  });
+
+  it("a press on a chat in no pane that the core lands in a tab window's pane changes nothing here", async () => {
+    const { said, sent } = core({
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2)] },
+      chats: [1, 2],
+      inNoTab: [3],
+      pressed: "window-1",
+    });
+    render(<App />);
+    await screen.findByText("session 1");
+    await waitFor(() => expect(shape(said().at(-1))).toEqual([[0, [1]]]));
+    const saidBefore = said().length;
+
+    await userEvent.click(row(3));
+
+    await waitFor(() =>
+      expect(sent("press_elsewhere").at(-1)?.args).toEqual({ plane: ONE, chat: 3 }),
+    );
+    // The core's answer is read once it arrives: let it.
+    await act(() => new Promise((done) => setTimeout(done, 0)));
+    expect(screen.queryByText("session 3")).toBeNull();
+    expect(screen.getByText("session 1")).toBeInTheDocument();
+    expect(
+      said()
+        .slice(saidBefore)
+        .flatMap((one) => one.tabs.map((t) => chatsOf(t.tree))),
+    ).not.toContainEqual([3]);
+  });
+
+  it("a press on a chat in no pane that the core leaves to this window lands in its focused pane", async () => {
+    const { said, sent } = core({
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2)] },
+      chats: [1, 2],
+      inNoTab: [3],
+    });
+    render(<App />);
+    await screen.findByText("session 1");
+
+    await userEvent.click(row(3));
+
+    await screen.findByText("session 3");
+    expect(sent("press_elsewhere").at(-1)?.args).toEqual({ plane: ONE, chat: 3 });
+    await waitFor(() => expect(shape(said().at(-1))).toEqual([[0, [3]]]));
   });
 });

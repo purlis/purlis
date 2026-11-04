@@ -657,6 +657,7 @@ export type Does =
    *  focused, so they stay one palette row away while a project is in front (V89c). */
   | { verb: "openYourSettings" }
   | { verb: "addDockerPool" }
+  | { verb: "addClusterPool" }
   /** Opens Settings at one group (#1201): a row per group, by the group's address. A You group
    *  carries the project in front when there is one, and none when the window has no project;
    *  a Project group carries its project, and a Workspace group its project and workspace. */
@@ -968,6 +969,9 @@ export type Now = {
   /** Where a chat can move (#2048): each pool it may move to, or `null` for this machine, for a
    *  chat on a pool's runner. Nothing for a chat that does not move. */
   movesTo?: (session: number) => readonly (string | null)[];
+  /** Whether a chat could move to a pool if this machine kept one (#4484): a harness chat that
+   *  runs here, with no pool to move to. It is offered Pool setup instead. */
+  movesOnceAPoolIsSetUp?: (session: number) => boolean;
   /** The other chats of a chat's workspace running where it runs (#3453), by name: they share
    *  its clones, so they move with it, and its Move rows name them. */
   movesWith?: (session: number) => readonly string[];
@@ -1566,6 +1570,11 @@ export const chatMovePrefix = (session: number) => `chat.move:${session}:`;
 /** The id of Move to for chat `session` (#2048): one per place, `""` for this machine. */
 export const moveId = (session: number, to: string | null) =>
   `${chatMovePrefix(session)}${to ?? ""}`;
+/** The id of Move to a pool… for chat `session` while no pool is kept (#4484): Pool setup. */
+export const poolSetupMoveId = (session: number) => `chat.pool-setup:${session}`;
+/** What Move to a pool… says it does while no pool is kept (#4484). */
+export const MOVE_ONCE_SET_UP_NOTE =
+  "No pool is set up yet. Pool setup makes one on your Docker, and then this chat can move there.";
 /** The id of End… for chat `session` (#4753). */
 export const endId = (session: number) => `chat.end:${session}`;
 
@@ -2434,10 +2443,15 @@ export function catalogue(now: Now): Offer[] {
     note: "Your text sizes and your editor, on this machine.",
   });
   // **Add a pool…** (#2679): the way to this machine's first pool, there with or without a
-  // project, as Your settings… is. Its dialog adds a Docker or a cluster pool (#3292).
+  // project, as Your settings… is. A Docker pool is added in Pool setup where a project is in
+  // front (#4484), else in its dialog; a cluster pool in its own dialog (#3292).
   offers.push({
     ...can("pool.add", "Add a pool…", { verb: "addDockerPool" }),
-    note: "A runner on your Docker, or one claimed in your team's cluster.",
+    note: "A runner on your Docker, set up step by step in Pool setup.",
+  });
+  offers.push({
+    ...can("pool.add-cluster", "Add a cluster pool…", { verb: "addClusterPool" }),
+    note: "A runner claimed in your team's cluster.",
   });
   // **Agent identity** (#4485): what a chat acts as on a forge, always one row away.
   offers.push({
@@ -3671,6 +3685,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "addDockerPool":
       startAddingAPool();
       return DID;
+    case "addClusterPool":
+      startAddingAPool("cluster");
+      return DID;
     case "readAgain":
       doing.readAgain();
       return DID;
@@ -4438,6 +4455,17 @@ function chatRows(now: Now): Offer[] {
         note: others.length === 0 ? note : `${note} ${MOVE_TOGETHER_NOTE}`,
       });
     }
+    // **No pool to move to yet** (#4484, spec #4469 story 8): Pool setup, which ends with one.
+    if (now.plane !== undefined && (now.movesOnceAPoolIsSetUp?.(session) ?? false))
+      offers.push({
+        ...can(
+          poolSetupMoveId(session),
+          `Move chat ${name} to a pool…`,
+          { verb: "openPoolSetup", plane: now.plane },
+          name,
+        ),
+        note: MOVE_ONCE_SET_UP_NOTE,
+      });
 
     // **Merge its branch** (#4851, `command-table.md` row 24): for a chat working in a branch
     // folder purlis cut, whatever its kind. Merging is fast-forward only and never pushes, so it

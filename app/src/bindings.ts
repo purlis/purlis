@@ -326,10 +326,20 @@ export const commands = {
 	 */
 	moveToWindow: (plane: PlaneId, tab: number, pane: string | null, to: number | null) => typedError<MovedTo, string>(__TAURI_INVOKE("move_to_window", { plane, tab, pane, to })),
 	/**
-	 *  **A press on chat `chat` in a project with tab windows** (#4768, ruled on #4701): where
-	 *  another of the project's windows has it in a pane, that window comes forward and shows it
-	 *  there, and its label is answered; a chat is never shown in two windows. Null where no other
-	 *  window has it, and the press is the asking window's.
+	 *  **A pane of this window was used** (#5108): the person focused one of its panes, or pressed
+	 *  into one. The window says it while its project has another window, so a press on a chat in
+	 *  no pane goes to the most recently used pane across them ([`press_elsewhere`]). A window
+	 *  that does not show `plane` says nothing.
+	 */
+	paneUsed: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("pane_used", { plane })),
+	/**
+	 *  **A press on chat `chat` in a project with tab windows** (#4768, #5108; spec #4750 story
+	 *  97): where another of the project's windows has it in a pane, that window comes forward and
+	 *  shows it there; a chat is never shown in two windows. Where no window has it, it goes to the
+	 *  most recently used pane across the project's windows: where that is another window's, that
+	 *  window comes forward and shows it in its focused pane (`Chats::window_pressed`). Either way
+	 *  that window's label is answered, and its pane counts as used. Null where the press is the
+	 *  asking window's: the chat is in its pane, its pane was used last, or none has been.
 	 */
 	pressElsewhere: (plane: PlaneId, chat: number) => typedError<string | null, string>(__TAURI_INVOKE("press_elsewhere", { plane, chat })),
 	/**
@@ -753,9 +763,11 @@ export const commands = {
 	/**
 	 *  **The person fills Secret ask `id`, or with no `value` says Not now** (#5068): a fill is
 	 *  stored in the vault and every command that waits on it runs; Not now tells them it was
-	 *  declined. Each chat that stopped waiting is nudged.
+	 *  declined. Each chat that stopped waiting is nudged. A fill goes into `vault` under `key`
+	 *  where the person chose either in place of the asked one (#5072), and the chats hear that
+	 *  name.
 	 */
-	answerSecretAsk: (plane: PlaneId, id: number, value: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value })),
+	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key })),
 	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
 	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone
@@ -3349,6 +3361,18 @@ export const commands = {
 	 *  mends it where one does.
 	 */
 	poolSetupTry: (plane: PlaneId, pool: string, workspace: string | null) => typedError<PoolSetupTried, string>(__TAURI_INVOKE("pool_setup_try", { plane, pool, workspace })),
+	/**
+	 *  **Cancels the Try it under way on pool `pool`** (#4976), on the person's press, as Cancel on
+	 *  the picker stops a start: its start stops waiting for the runner, its wait for the chat's start
+	 *  ends, and its chat is closed. Nothing is kept. Silent where no Try it is under way there.
+	 */
+	poolSetupTryCancel: (pool: string) => __TAURI_INVOKE<void>("pool_setup_try_cancel", { pool }),
+	/**
+	 *  **How each pool this machine keeps stands in the chat picker of `plane`** (#4484): read from
+	 *  what this machine keeps and the plane's personas, with nothing asked of Docker or a runner.
+	 *  It changes nothing.
+	 */
+	poolSetupInThePicker: (plane: PlaneId) => typedError<PoolInPicker[], string>(__TAURI_INVOKE("pool_setup_in_the_picker", { plane })),
 	/**
 	 *  **Opens the Docker app**, on the person's press, where this system has one to open. Refused
 	 *  elsewhere, with what to do instead.
@@ -11246,6 +11270,15 @@ export type PoolDisk = {
 	not_listed: number,
 };
 
+/**  One pool as the chat picker offers it (#4484, D on #4469). */
+export type PoolInPicker = {
+	pool: string,
+	/**  False where a chat can't start there: the picker doesn't offer it. */
+	offered: boolean,
+	/**  "Setup not finished", and why: where setup isn't finished, and where a chat can't start. */
+	said: string | null,
+};
+
 /**  **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced. */
 export type PoolLimitGroup = {
 	label: string,
@@ -11466,6 +11499,8 @@ export type PoolSetupAction = {
 
 /**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
 export type PoolSetupCheck = {
+	/**  What it checks: `chat`, `signins` or `identity`. */
+	about: string,
 	verdict: string,
 	title: string,
 	more: string | null,
@@ -11553,8 +11588,19 @@ export type PoolSetupStep = {
 
 /**  What Try it found. */
 export type PoolSetupTried = {
-	/**  Why it didn't pass; null where a real chat started and the proof is kept. */
+	/**
+	 *  Why it didn't pass; null where a real chat started and the proof is kept, or where the
+	 *  person cancelled it.
+	 */
 	failed: PoolSetupFailed | null,
+	/**  The person cancelled it (#4976): nothing was kept, and its chat is closed. */
+	cancelled: boolean,
+	/**
+	 *  What Try it proved of the agent's identity itself (#4490), for the identity's line: a
+	 *  read-only token GitHub made for the App, read with and revoked. None where the identity
+	 *  step's own line stands: no App of Agent identity's, no repo, or a step not done.
+	 */
+	identity: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
 };
@@ -13373,6 +13419,11 @@ export type SandboxPolicy = {
 	required: string | null,
 	/**  Whether every folder a grant would let a chat write is forbidden. */
 	write_grants: boolean,
+	/**
+	 *  Whether a chat's ask for a secret its persona does not declare is refused (#5078): the
+	 *  chat hears `declined: policy` and the person is never asked.
+	 */
+	undeclared_secret_asks: boolean,
 };
 
 /**  One Internet access preset (`sandbox::Preset`), as Settings shows it. */
@@ -13763,6 +13814,21 @@ export type SecretShown = {
 	key: string,
 	/**  The declared tool whose run missed it, where it is one. */
 	tool?: string | null,
+	/**
+	 *  **What the chat says it is for** (#5072), in its own words: drawn as the chat's, never
+	 *  as purlis's. Absent for a broker miss.
+	 */
+	purpose?: string | null,
+	/**
+	 *  Whether the persona declares the key as a Secret need: one it does not is drawn with a
+	 *  quiet "not declared by this persona" tag (#5072).
+	 */
+	declared: boolean,
+	/**
+	 *  **What the persona's committed definition says the key is for** (#5076), where it
+	 *  declares it: the maintainers' words, quoted as theirs.
+	 */
+	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
 };

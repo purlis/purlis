@@ -9,6 +9,7 @@ fn facts(engine: Engine) -> Facts {
         engine,
         pool: None,
         identity: Identity::None,
+        repos: true,
     }
 }
 
@@ -216,6 +217,14 @@ fn every_step_a_person_is_on_says_what_to_do_next() {
             ..on_a_pool(Runner::Running, signed_in())
         },
         facts(Engine::Elsewhere),
+        Facts {
+            identity: Identity::Elsewhere {
+                host: "git.acme.internal".into(),
+                program: Some("gh".into()),
+                persona: None,
+            },
+            ..on_a_pool(Runner::Running, signed_in())
+        },
         on_a_pool(Runner::CannotTell("x".into()), SignIns::NotAsked),
         on_a_pool(Runner::Asleep, SignIns::NotAsked),
         on_a_pool(Runner::Running, SignIns::Read(Vec::new())),
@@ -244,6 +253,78 @@ fn an_identity_read_from_the_plane_finishes_its_step_as_what_it_acts_through() {
         Some("gh through steward")
     );
     assert_eq!(next(&setup, StepId::Try), ActionId::StartTestChat);
+}
+
+#[test]
+fn repos_on_another_forge_host_are_said_plainly_with_the_tool_line_to_add_by_hand() {
+    let mut set = on_a_pool(Runner::Running, signed_in());
+    set.identity = Identity::Elsewhere {
+        host: "git.acme.internal".into(),
+        program: Some("gh".into()),
+        persona: Some("steward".into()),
+    };
+    let setup = answer(&set);
+    let step = setup.step(StepId::Identity).unwrap();
+    assert_eq!(step.state, Current);
+    assert_eq!(next(&setup, StepId::Identity), ActionId::CheckAgain);
+    assert!(
+        step.findings[0].contains("can't set up git.acme.internal by itself"),
+        "{:?}",
+        step.findings
+    );
+    let see = step.see.as_ref().expect("the line to add by hand");
+    assert_eq!(
+        see.text,
+        "purlis vault add agent-forge --provider keyring\n\
+         purlis secret set agent-forge token --stdin\n\n\
+         [sandbox.personas.steward.tools]\n\
+         gh = { vault = \"agent-forge\", as = \"GH_ENTERPRISE_TOKEN env\", key = \"token\", host = \"git.acme.internal\" }"
+    );
+    assert!(
+        see.note.contains("Never use your own token"),
+        "a vault of the agent's own, never the person's: {}",
+        see.note
+    );
+    assert!(step.skippable, "it never dead-ends: it can be skipped");
+}
+
+#[test]
+fn repos_only_on_a_host_purlis_knows_no_forge_at_say_what_to_declare_and_give_no_line() {
+    let mut set = on_a_pool(Runner::Running, signed_in());
+    set.identity = Identity::Elsewhere {
+        host: "bitbucket.org".into(),
+        program: None,
+        persona: Some("steward".into()),
+    };
+    let setup = answer(&set);
+    let step = setup.step(StepId::Identity).unwrap();
+    assert!(
+        step.findings[0].contains("Settings › Forges"),
+        "{:?}",
+        step.findings
+    );
+    assert_eq!(step.see, None, "no line for a forge purlis doesn't know");
+    assert_eq!(next(&setup, StepId::Identity), ActionId::CheckAgain);
+}
+
+#[test]
+fn a_gitlab_host_is_given_glab_s_line() {
+    let mut set = on_a_pool(Runner::Running, signed_in());
+    set.identity = Identity::Elsewhere {
+        host: "gitlab.com".into(),
+        program: Some("glab".into()),
+        persona: None,
+    };
+    let setup = answer(&set);
+    let see = setup.step(StepId::Identity).unwrap().see.clone().unwrap();
+    assert!(
+        see.text.ends_with(
+            "[sandbox.personas.<persona>.tools]\n\
+             glab = { vault = \"agent-forge\", as = \"GITLAB_TOKEN env\", key = \"token\" }"
+        ),
+        "{}",
+        see.text
+    );
 }
 
 #[test]
@@ -439,7 +520,7 @@ fn read_picks_up_a_choice_made_since_the_last_read() {
 
 #[test]
 fn with_no_project_open_identity_says_to_open_one() {
-    assert_eq!(identity_in(None), Identity::NoProject);
+    assert_eq!(identity_in(None, &[]), Identity::NoProject);
 }
 
 #[test]
@@ -744,6 +825,25 @@ fn an_identity_set_up_is_a_check_that_passed_and_one_not_set_up_is_not() {
 }
 
 #[test]
+fn with_no_repo_gh_and_git_push_are_skipped_and_the_end_reads_works_except_for_this() {
+    // C on #4469: nothing to check them against, so a check not made, never one passed.
+    let mut set = on_a_pool(Runner::Running, signed_in());
+    set.identity = Identity::Set {
+        persona: "steward".into(),
+        tool: "gh".into(),
+    };
+    set.repos = false;
+    let lines = try_lines(&of(Kind::Docker, &set, &tried_on("dev-box")));
+    assert_eq!(
+        lines[2],
+        (
+            Verdict::Skip,
+            "gh and git push weren't checked: this project has no repo yet".into()
+        )
+    );
+}
+
+#[test]
 fn the_profiles_signed_in_are_said_by_name() {
     let facts = on_a_pool(Runner::Running, signed_in());
     let lines = try_lines(&of(Kind::Docker, &facts, &tried_on("dev-box")));
@@ -770,4 +870,44 @@ fn only_a_runner_asleep_is_offered_to_be_woken() {
     assert_eq!(next(&asleep, StepId::Signins), ActionId::WakeRunner);
     let unread = answer(&on_a_pool(Runner::Running, SignIns::NotAsked));
     assert_eq!(next(&unread, StepId::Signins), ActionId::CheckAgain);
+}
+
+#[test]
+fn a_pool_whose_chats_have_no_identity_is_offered_as_setup_not_finished() {
+    assert_eq!(
+        in_the_picker_by(&Identity::None),
+        InThePicker::NotFinished(NO_IDENTITY_IN_THE_PICKER.into())
+    );
+    assert_eq!(
+        in_the_picker_by(&Identity::NotAllowed {
+            persona: "steward".into(),
+            tool: "gh".into()
+        }),
+        InThePicker::NotFinished(NO_IDENTITY_IN_THE_PICKER.into())
+    );
+    assert_eq!(
+        in_the_picker_by(&Identity::Set {
+            persona: "steward".into(),
+            tool: "gh".into()
+        }),
+        InThePicker::Offered
+    );
+}
+
+#[test]
+fn a_docker_pool_with_no_runner_that_starts_chats_is_not_offered_and_one_not_kept_is() {
+    let config = tempfile::tempdir().unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    let names = ["team".to_owned(), "dev-box".to_owned()];
+    assert_eq!(
+        in_the_picker(config.path(), None, &names),
+        vec![
+            ("team".to_owned(), InThePicker::Offered),
+            (
+                "dev-box".to_owned(),
+                InThePicker::NotOffered(CANNOT_START_IN_THE_PICKER.into())
+            ),
+        ],
+        "a pool not kept here is offered; a Docker pool kept with no runner is not"
+    );
 }

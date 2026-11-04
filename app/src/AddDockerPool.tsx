@@ -53,9 +53,27 @@ import { Dialog } from "./ui/dialog/Dialog";
  *
  * Drawn wherever the window is, while the palette's row or the Pools group asked for it
  * ({@link AddDockerPoolHost}).
+ *
+ * **A Docker pool is added in Pool setup** (#4484, spec #4469): with a project in front, asking
+ * for a Docker pool opens its Pool setup tab instead of this form, which then stays for a cluster
+ * pool until Pool setup's cluster path (#4492) and for a window with no project to hold the tab.
  */
-export function AddDockerPoolHost({ plane }: { plane?: string }) {
+export function AddDockerPoolHost({
+  plane,
+  onPoolSetup,
+}: {
+  plane?: string;
+  /** Opens Pool setup in project `plane`: where a Docker pool is added. */
+  onPoolSetup?: (plane: string) => void;
+}) {
   const pools = usePools();
+  const toPoolSetup =
+    pools.adding && pools.kind === "docker" && plane !== undefined && onPoolSetup !== undefined;
+  useEffect(() => {
+    if (!toPoolSetup) return;
+    stopAddingAPool();
+    onPoolSetup(plane);
+  }, [toPoolSetup, onPoolSetup, plane]);
   // What was typed is kept while the dialog is open, across a change of Kind, and no longer.
   useEffect(() => {
     if (!pools.adding) drafts.clear();
@@ -76,8 +94,10 @@ export function AddDockerPoolHost({ plane }: { plane?: string }) {
   if (pools.added !== undefined && !pools.adding) {
     return <SignInOnTheAddedPool pool={pools.added} plane={plane} />;
   }
-  if (!pools.adding) return null;
-  if (pools.kind === "cluster") return <AddClusterPool />;
+  if (!pools.adding || toPoolSetup) return null;
+  // Docker is Pool setup's where a project is in front, so the cluster dialog offers no Kind.
+  if (pools.kind === "cluster")
+    return <AddClusterPool kinds={plane === undefined || onPoolSetup === undefined} />;
   const defaults = pools.read.state === "read" ? pools.read.shown.defaults : undefined;
   const suspendAfter = pools.read.state === "read" ? pools.read.shown.suspend_after : undefined;
   const linkFrames = pools.read.state === "read" ? pools.read.shown : undefined;
@@ -387,7 +407,7 @@ function AddDockerPool({
  * **Add a pool, of Kind Cluster** (#3292): Kind, Name, Kubeconfig, Context and Pool, then Check
  * its key, which shows the cluster operator key the Pool names, then Add pool, which pins it.
  */
-function AddClusterPool() {
+function AddClusterPool({ kinds }: { kinds: boolean }) {
   const [name, setName] = useDrafted("cluster", "name");
   const [kubeconfig, setKubeconfig] = useDrafted("cluster", "kubeconfig");
   // The kubeconfig whose contexts are offered: the one typed, a moment after it stops changing.
@@ -502,7 +522,7 @@ function AddClusterPool() {
         onPress: () => void (checked === undefined ? check() : add()),
       }}
     >
-      <KindRow kind="cluster" disabled={busy !== undefined} />
+      {kinds && <KindRow kind="cluster" disabled={busy !== undefined} />}
       <SettingRow
         label="Name"
         help="Lower-case letters, digits and dashes. Its runner is called by it too."

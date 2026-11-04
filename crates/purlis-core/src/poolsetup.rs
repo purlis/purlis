@@ -30,6 +30,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::dockerpool::{Docker, Missing};
+use crate::forge::agentidentity::HostFound;
 use crate::profilestore::sign_in::Standing;
 use crate::runners::{self, Refused};
 
@@ -178,9 +179,20 @@ pub enum Verdict {
 /// **One line of what Try it checks** (#4483): what, how it came out, and why where it didn't.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Check {
+    /// What it checks: the window puts what Try it found itself in the identity's place.
+    pub about: CheckOf,
     pub verdict: Verdict,
     pub title: String,
     pub more: Option<String>,
+}
+
+/// What a line of Try it checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckOf {
+    Chat,
+    Signins,
+    Identity,
 }
 
 /// One step as it stands.
@@ -287,6 +299,15 @@ pub enum Identity {
     KeptOff { persona: String, tool: String },
     /// A persona has `tool`, allowed here.
     Set { persona: String, tool: String },
+    /// No persona declares a forge tool, and the project's repos are on `host`, which purlis
+    /// can't set up by itself yet (story 36 of #4469): only github.com has one-click setup.
+    /// `program` is the forge's CLI there, none where purlis knows no forge at `host`, and
+    /// `persona` the project's first, for the line to name.
+    Elsewhere {
+        host: String,
+        program: Option<String>,
+        persona: Option<String>,
+    },
 }
 
 /// A pool's facts.
@@ -303,6 +324,9 @@ pub struct Facts {
     pub engine: Engine,
     pub pool: Option<PoolFacts>,
     pub identity: Identity,
+    /// Whether the project's clones have a remote on a forge: with none, gh and git push have
+    /// nothing to be checked against (C on #4469).
+    pub repos: bool,
 }
 
 /// **A person's choices, the only thing stored** (tier: Machine, device-bound).
@@ -642,8 +666,9 @@ fn identity_reading(facts: &Facts) -> Reading {
     let allow = || {
         action(
             ActionId::AllowTool,
-            "Allow it",
-            "Allows the persona's tool on this machine. It never holds your own sign-in.",
+            "Allow it in Settings › Project",
+            "Opens Settings › Project: allow the persona's tool there, under Sandbox, on \
+             this machine. It never holds your own sign-in. This step is done once it's allowed.",
         )
     };
     match &facts.identity {
@@ -669,7 +694,73 @@ fn identity_reading(facts: &Facts) -> Reading {
             set_up(),
         ),
         Identity::Set { persona, tool } => Reading::done(format!("{tool} through {persona}")),
+        Identity::Elsewhere {
+            host,
+            program: Some(_),
+            ..
+        } => Reading::to_do(
+            format!(
+                "purlis can't set up {host} by itself yet: one-click setup works for github.com. \
+                 You can still do this by hand, and it works just as well. Make a token on {host} \
+                 for the agent, never your own, keep it in a vault of its own and add the tool \
+                 line below. Once this machine allows it, this step is done."
+            ),
+            check_again(),
+        ),
+        Identity::Elsewhere {
+            host,
+            program: None,
+            ..
+        } => Reading::to_do(
+            format!(
+                "Your repos are on {host}, and purlis knows no forge there, so it can't give the \
+                 agent an identity on it. If {host} is a GitHub Enterprise Server or a GitLab, add \
+                 it in Settings › Forges, then check again. Or skip this for now."
+            ),
+            check_again(),
+        ),
     }
+}
+
+fn check_again() -> Option<Action> {
+    action(
+        ActionId::CheckAgain,
+        "Check again",
+        "Reads the project's settings again. It changes nothing.",
+    )
+}
+
+/// The vault a token kept by hand for the agent goes in: one of its own, never a vault the
+/// person's own forge credential may be in.
+const BY_HAND_VAULT: &str = "agent-forge";
+
+/// **The tool line a person adds by hand for a forge purlis can't set up by itself** (story 36 of
+/// #4469), after the commands that make its vault, in the system keyring, and keep its token
+/// there: what the agent identity step's See what this does shows. The vault is made new, so a
+/// vault of that name already there refuses the command rather than mix the agent's token with
+/// what it holds. gitlab.com needs no `host`; `host` is a host's name ([`crate::forge::host_ok`]),
+/// and the persona's name is written as a TOML key.
+fn by_hand(host: &str, program: &str, persona: Option<&str>) -> String {
+    let var = if program == "glab" {
+        "GITLAB_TOKEN"
+    } else {
+        "GH_ENTERPRISE_TOKEN"
+    };
+    let host = if host == "gitlab.com" {
+        String::new()
+    } else {
+        format!(", host = \"{host}\"")
+    };
+    let persona = persona.map_or_else(
+        || "<persona>".to_owned(),
+        |name| toml_edit::Key::new(name).display_repr().into_owned(),
+    );
+    format!(
+        "purlis vault add {BY_HAND_VAULT} --provider keyring\n\
+         purlis secret set {BY_HAND_VAULT} token --stdin\n\n\
+         [sandbox.personas.{persona}.tools]\n\
+         {program} = {{ vault = \"{BY_HAND_VAULT}\", as = \"{var} env\", key = \"token\"{host} }}"
+    )
 }
 
 fn try_reading(facts: &Facts, choices: &Choices) -> Reading {
@@ -746,7 +837,7 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
         pool.as_deref(),
         steps.iter().position(|step| step.id == StepId::Try),
     ) {
-        let checks = try_checks(&steps, name, choices.tried.contains_key(name));
+        let checks = try_checks(&steps, name, choices.tried.contains_key(name), facts.repos);
         steps[at].checks = checks;
     }
     Setup {
@@ -761,20 +852,32 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
 /// **What Try it checks on pool `pool`, by what the steps before it say** (#4483, Q32, C on
 /// #4469): a step that was skipped is a check that wasn't made, said as such, so the end reads
 /// "works, except for this" and never as done.
-fn try_checks(steps: &[Step], pool: &str, tried: bool) -> Vec<Check> {
+fn try_checks(steps: &[Step], pool: &str, tried: bool, repos: bool) -> Vec<Check> {
     let state = |id| steps.iter().find(|step| step.id == id);
-    let check = |verdict, title: String, more: Option<&str>| Check {
+    let check = |about, verdict, title: String, more: Option<&str>| Check {
+        about,
         verdict,
         title,
         more: more.map(str::to_owned),
     };
     let mut checks = vec![if tried {
-        check(Verdict::Ok, format!("A chat started on {pool}"), None)
+        check(
+            CheckOf::Chat,
+            Verdict::Ok,
+            format!("A chat started on {pool}"),
+            None,
+        )
     } else {
-        check(Verdict::Todo, format!("A chat starts on {pool}"), None)
+        check(
+            CheckOf::Chat,
+            Verdict::Todo,
+            format!("A chat starts on {pool}"),
+            None,
+        )
     }];
     checks.push(match state(StepId::Signins) {
         Some(step) if step.state == StepState::Done => check(
+            CheckOf::Signins,
             Verdict::Ok,
             format!(
                 "{} signed in",
@@ -783,20 +886,38 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool) -> Vec<Check> {
             None,
         ),
         Some(step) if step.state == StepState::Skipped => check(
+            CheckOf::Signins,
             Verdict::Skip,
             "Sign-ins were skipped".to_owned(),
             Some("Chats on the pool start on the profiles its runner has of its own."),
         ),
         _ => check(
+            CheckOf::Signins,
             Verdict::Todo,
             "Your profiles are signed in".to_owned(),
             None,
         ),
     });
-    // Checking gh and git push through a chat's own route is the agent identity step's (#4490):
-    // Try it says how that step stands, and a step not done is never said as passed.
+    // How the agent identity step stands, and a step not done is never said as passed. What Try
+    // it proves of the identity itself, the window says in this line's place as it ends.
     checks.push(match state(StepId::Identity) {
+        Some(step) if step.state == StepState::Skipped => check(
+            CheckOf::Identity,
+            Verdict::Skip,
+            "gh and git push weren't checked: agent identity was skipped".to_owned(),
+            Some("In these chats, gh and git push say they have no identity."),
+        ),
+        // C on #4469: with no repo there is nothing to check them against, set up or not.
+        _ if !repos => check(
+            CheckOf::Identity,
+            Verdict::Skip,
+            "gh and git push weren't checked: this project has no repo yet".to_owned(),
+            Some(
+                "Once a clone in a workspace has a remote on a forge, try it again to check them.",
+            ),
+        ),
         Some(step) if step.state == StepState::Done => check(
+            CheckOf::Identity,
             Verdict::Ok,
             format!(
                 "The agent's identity is set: {}",
@@ -804,12 +925,8 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool) -> Vec<Check> {
             ),
             None,
         ),
-        Some(step) if step.state == StepState::Skipped => check(
-            Verdict::Skip,
-            "gh and git push weren't checked: agent identity was skipped".to_owned(),
-            Some("In these chats, gh and git push say they have no identity."),
-        ),
         _ => check(
+            CheckOf::Identity,
             Verdict::Todo,
             "The agent's identity is set".to_owned(),
             Some("The agent identity step sets it, for gh and git push in these chats."),
@@ -822,6 +939,23 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool) -> Vec<Check> {
 /// a pool, depend on what the person chose, so they are [`asked::Asked::command`]'s.
 fn see_of(id: StepId, facts: &Facts) -> Option<See> {
     let pool = facts.pool.as_ref();
+    if let (
+        StepId::Identity,
+        Identity::Elsewhere {
+            host,
+            program: Some(program),
+            persona,
+        },
+    ) = (id, &facts.identity)
+    {
+        return Some(See {
+            note: "These make a vault of the agent's own and keep its token there, then the \
+                   line goes in your project's settings. Never use your own token: a chat would \
+                   act as you."
+                .to_owned(),
+            text: by_hand(host, program, persona.as_deref()),
+        });
+    }
     match (id, pool) {
         (StepId::Where, _) => Some(See {
             note: "This is how purlis asks after Docker. It only reads.".to_owned(),
@@ -880,10 +1014,16 @@ pub fn read(here: &Here<'_>, pool: Option<&str>) -> Result<Setup, Refused> {
     let pool = pool
         .map(|name| pool_facts(here, name, engine))
         .transpose()?;
+    // Each clone's remotes, read once: a git process a clone.
+    let hosts = here
+        .plane
+        .map(crate::forge::agentidentity::hosts_of_the_project)
+        .unwrap_or_default();
     let facts = Facts {
         engine,
         pool,
-        identity: identity_in(here.plane),
+        identity: identity_in(here.plane, &hosts),
+        repos: !hosts.is_empty(),
     };
     Ok(of(Kind::Docker, &facts, &choices))
 }
@@ -996,7 +1136,17 @@ fn sign_ins_of(here: &Here<'_>, docker: &Docker, name: &str) -> SignIns {
     SignIns::Read(read)
 }
 
-fn identity_in(plane: Option<&Path>) -> Identity {
+/// **The persona and forge tool the agent identity step reads as set**, where it does, in the
+/// project at `root`: what Try it may prove, and only that (#4490). Reads no clone.
+#[must_use]
+pub fn identity_set_in(root: &Path) -> Option<(String, String)> {
+    match identity_in(Some(root), &[]) {
+        Identity::Set { persona, tool } => Some((persona, tool)),
+        _ => None,
+    }
+}
+
+fn identity_in(plane: Option<&Path>, hosts: &[HostFound]) -> Identity {
     use crate::sandbox::persona::{Standing as Allow, looked_at};
     let Some(root) = plane else {
         return Identity::NoProject;
@@ -1025,7 +1175,104 @@ fn identity_in(plane: Option<&Path>) -> Identity {
             });
         }
     }
-    short_of_it.unwrap_or(Identity::None)
+    short_of_it.unwrap_or_else(|| elsewhere(root, hosts))
+}
+
+/// **No persona has a forge tool**: one-click setup where the project's repos are on github.com
+/// or on no host at all, and plain words where they are only elsewhere (story 36 of #4469): the
+/// line by hand on a forge purlis knows, first, else what to declare.
+fn elsewhere(root: &Path, hosts: &[HostFound]) -> Identity {
+    use crate::forge::{Kind as Forge, agentidentity};
+    if hosts.iter().any(|found| found.host == agentidentity::HOST) {
+        return Identity::None;
+    }
+    let Some(found) = hosts
+        .iter()
+        .find(|found| found.kind.is_some())
+        .or_else(|| hosts.first())
+    else {
+        return Identity::None;
+    };
+    Identity::Elsewhere {
+        host: found.host.clone(),
+        program: found.kind.map(|kind| {
+            match kind {
+                Forge::GitHub => "gh",
+                Forge::GitLab => "glab",
+            }
+            .to_owned()
+        }),
+        persona: crate::workspaces::Plane::open(root.to_path_buf())
+            .personas()
+            .ok()
+            .and_then(|names| names.into_iter().next()),
+    }
+}
+
+/// **How a pool stands in the chat picker** (#4484, D on #4469, refining Q47): offered, offered
+/// marked "Setup not finished" with why, or not offered, with why, because a chat can't start
+/// there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InThePicker {
+    Offered,
+    /// A chat starts there, and setup isn't finished: why, in the picker's words.
+    NotFinished(String),
+    /// A chat can't start there: why, in the picker's words.
+    NotOffered(String),
+}
+
+/// What the picker says of a pool whose chats have no forge identity.
+pub const NO_IDENTITY_IN_THE_PICKER: &str =
+    "Setup not finished: chats start there, but gh and git push have no account to act as.";
+
+/// What the picker says of a pool where a chat can't start.
+pub const CANNOT_START_IN_THE_PICKER: &str =
+    "Setup not finished: a chat can't start there yet, as it has no runner ready.";
+
+/// **How each of `pools` stands in the chat picker of the project at `plane`**: read from what
+/// this machine keeps, its Pool setup choices and the plane's personas (read once), and nothing
+/// asked of Docker or a runner, since the picker opens often. A Docker pool with no runner that
+/// starts chats isn't offered. One whose agent identity step was skipped there is offered as the
+/// person left it. A pool that isn't a Docker pool kept here is offered as it is: Pool setup
+/// reads only Docker pools so far.
+pub fn in_the_picker(
+    config: &Path,
+    plane: Option<&Path>,
+    pools: &[String],
+) -> Vec<(String, InThePicker)> {
+    let kept = runners::pools(config).unwrap_or_default();
+    let skipped = read_choices(config)
+        .map(|choices| choices.skipped)
+        .unwrap_or_default();
+    let mut identity = None;
+    pools
+        .iter()
+        .map(|pool| {
+            let standing = if !kept.iter().any(|one| one.name() == pool) {
+                InThePicker::Offered
+            } else if runners::runner_for(config, pool).is_err() {
+                InThePicker::NotOffered(CANNOT_START_IN_THE_PICKER.to_owned())
+            } else if skipped
+                .get(pool)
+                .is_some_and(|steps| steps.contains(&StepId::Identity))
+            {
+                InThePicker::Offered
+            } else {
+                // No clone's remotes are read: only whether the identity reads as set counts here.
+                in_the_picker_by(identity.get_or_insert_with(|| identity_in(plane, &[])))
+            };
+            (pool.clone(), standing)
+        })
+        .collect()
+}
+
+/// [`in_the_picker`] for a pool whose runner starts chats, by the plane's forge identity.
+fn in_the_picker_by(identity: &Identity) -> InThePicker {
+    match identity {
+        // No project open says nothing of its personas.
+        Identity::Set { .. } | Identity::NoProject => InThePicker::Offered,
+        _ => InThePicker::NotFinished(NO_IDENTITY_IN_THE_PICKER.to_owned()),
+    }
 }
 
 /// **The choices kept on this machine.** None where nothing was chosen; refused where the file

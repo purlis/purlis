@@ -225,6 +225,12 @@ async function raise(
       const theApps = [...stack.children].find(
         (one) => (one as HTMLElement).dataset.raised !== "pane-notices.e2e",
       );
+      // Each hand-drawn part takes the classes the built stylesheet keys it on (#4351).
+      for (const one of [box, ...box.querySelectorAll("[data-scope], [data-part]")]) {
+        const { scope, part } = (one as HTMLElement).dataset;
+        if (scope) one.classList.add(`ds-${scope}`);
+        if (part) one.classList.add(`dp-${part}`);
+      }
       stack.insertBefore(box, theApps ?? null);
       return true;
     },
@@ -1293,6 +1299,12 @@ describe("the Ask persona dialog", () => {
       dialog.append(header, form);
       modal.append(dialog);
       scrim.append(modal);
+      // Each hand-drawn part takes the classes the built stylesheet keys it on (#4351).
+      for (const one of [scrim, ...scrim.querySelectorAll("[data-scope], [data-part]")]) {
+        const { scope, part } = (one as HTMLElement).dataset;
+        if (scope) one.classList.add(`ds-${scope}`);
+        if (part) one.classList.add(`dp-${part}`);
+      }
       document.body.append(scrim);
 
       const box = [

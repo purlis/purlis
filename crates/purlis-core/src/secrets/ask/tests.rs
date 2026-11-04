@@ -36,11 +36,22 @@ fn ctx(root: &Path) -> Ctx {
 
 fn need(chat: u32, key: &str) -> Need {
     Need {
-        chat,
+        chat: Some(chat),
         persona: "devops".into(),
         vault: "team".into(),
         key: key.into(),
         tool: Some("kubectl".into()),
+        purpose: None,
+        declared: None,
+        names_no_vault: false,
+    }
+}
+
+/// Filled as asked: vault `team`, under `key`.
+fn filled(key: &str) -> Held {
+    Held::Filled {
+        vault: "team".into(),
+        key: key.into(),
     }
 }
 
@@ -139,7 +150,7 @@ fn a_quick_fill_resumes_the_waiting_command_and_is_written_through_the_vaults_pr
             answered.nudge.is_empty(),
             "nobody stopped waiting: {answered:?}"
         );
-        assert_eq!(waiting.join().unwrap(), Held::Filled);
+        assert_eq!(waiting.join().unwrap(), filled("MISSING"));
         id
     });
     assert_eq!(stored(project.path(), "MISSING").as_deref(), Some(VALUE));
@@ -255,7 +266,7 @@ fn a_chat_that_tries_again_while_its_ask_is_open_is_not_nudged_once_its_retry_he
             )
             .unwrap();
         assert!(answered.nudge.is_empty(), "{answered:?}");
-        assert_eq!(retry.join().unwrap(), Held::Filled);
+        assert_eq!(retry.join().unwrap(), filled("MISSING"));
     });
 }
 
@@ -292,7 +303,7 @@ fn three_chats_missing_one_key_join_one_ask_and_one_fill_resumes_them_all() {
         )
         .unwrap();
         for one in waiting {
-            assert_eq!(one.join().unwrap(), Held::Filled);
+            assert_eq!(one.join().unwrap(), filled("MISSING"));
         }
     });
 }
@@ -437,4 +448,834 @@ fn a_harness_is_held_for_three_quarters_of_its_command_timeout() {
         Duration::from_millis(7_500)
     );
     assert_eq!(holds_for(None), holds_for(Some(Harness::Codex)));
+}
+
+// ----------------------------------------------------------------------------------------
+// every brokered read asks alike: a browser login, a profile's credential (#5074)
+
+/// The first ask open, once one is.
+fn first_open(asks: &Asks) -> Open {
+    loop {
+        if let Some(one) = asks.open().into_iter().next() {
+            break one;
+        }
+        std::thread::yield_now();
+    }
+}
+
+/// `key` of vault `team`, read as a brokered read reads it.
+fn read_team(root: &Path, key: &str) -> Result<String, crate::secrets::VaultError> {
+    let ctx = ctx(root);
+    let v = crate::secrets::cmd::provider(&ctx, "team")?;
+    crate::secrets::cmd::get_value(&ctx, &v, key)
+}
+
+#[test]
+fn a_read_of_a_key_the_vault_holds_asks_nothing() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let got = asks.read_asking(need(7, "TOKEN"), Duration::ZERO, &mut |_| {}, &mut || {
+        read_team(project.path(), "TOKEN")
+    });
+    assert_eq!(got.ok().as_deref(), Some("t0ken"));
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn a_read_of_a_missing_key_waits_on_its_secret_ask_and_reads_the_value_filled() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let got = std::thread::scope(|scope| {
+        let read = scope.spawn(|| {
+            asks.read_asking(
+                need(7, "MISSING"),
+                Duration::from_secs(60),
+                &mut |_| {},
+                &mut || read_team(project.path(), "MISSING"),
+            )
+        });
+        let id = first_open(&asks).id;
+        asks.answer(
+            &ctx(project.path()),
+            id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+        read.join().unwrap()
+    });
+    assert_eq!(got.ok().as_deref(), Some(VALUE));
+}
+
+#[test]
+fn a_read_of_a_missing_key_that_is_declined_or_unanswered_says_so_and_reads_nothing() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let unanswered = asks
+        .read_asking(need(7, "MISSING"), Duration::ZERO, &mut |_| {}, &mut || {
+            read_team(project.path(), "MISSING")
+        })
+        .unwrap_err();
+    assert_eq!(
+        unanswered.to_string(),
+        "waiting on you for team/MISSING; retry once answered"
+    );
+    let id = asks.open()[0].id;
+    asks.answer(&ctx(project.path()), id, Answer::Decline, window())
+        .unwrap();
+    let declined = asks
+        .read_asking(need(7, "MISSING"), Duration::ZERO, &mut |_| {}, &mut || {
+            read_team(project.path(), "MISSING")
+        })
+        .unwrap_err();
+    assert_eq!(declined.to_string(), "declined team/MISSING");
+}
+
+#[test]
+fn a_read_the_vault_refuses_for_anything_but_a_missing_key_asks_nothing() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let why = asks
+        .read_asking(need(7, "MISSING"), Duration::ZERO, &mut |_| {}, &mut || {
+            Err::<String, _>(crate::secrets::VaultError::unavailable(
+                "the vault is locked",
+            ))
+        })
+        .unwrap_err();
+    assert_eq!(why.to_string(), "the vault is locked");
+    assert!(asks.open().is_empty(), "nothing asked");
+}
+
+/// A chat's start has no number yet: it waits on the ask as a chat would, and is counted.
+fn a_start(key: &str) -> Need {
+    Need {
+        chat: None,
+        tool: None,
+        ..need(0, key)
+    }
+}
+
+#[test]
+fn a_start_waits_on_the_same_ask_as_a_chat_and_is_counted_but_never_named() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    std::thread::scope(|scope| {
+        let start =
+            scope.spawn(|| asks.hold(a_start("MISSING"), Duration::from_secs(60), &mut |_| {}));
+        first_open(&asks);
+        let (held, _) = held_for_nothing(&asks, need(7, "MISSING"));
+        assert!(matches!(held, Held::StillOpen { .. }), "{held:?}");
+        let open = asks.open();
+        assert_eq!(open.len(), 1, "one ask per vault and key: {open:?}");
+        assert_eq!(open[0].chats, [7]);
+        assert_eq!(open[0].waiting(), 2, "the start and chat 7");
+        let answered = asks
+            .answer(&ctx(project.path()), open[0].id, Answer::Decline, window())
+            .unwrap();
+        assert_eq!(answered.nudge, [7], "a start is never nudged");
+        assert!(matches!(start.join().unwrap(), Held::Declined { .. }));
+    });
+    // A decline is a chat's to keep: the next start is asked afresh.
+    let (held, _) = held_for_nothing(&asks, a_start("MISSING"));
+    assert!(matches!(held, Held::StillOpen { .. }), "{held:?}");
+    let open = asks.open();
+    assert_eq!(open.len(), 1);
+    assert_eq!(
+        open[0].waiting(),
+        1,
+        "a start that stopped waiting is still what the ask is for: {open:?}"
+    );
+    // One that asks again takes its place.
+    held_for_nothing(&asks, a_start("MISSING"));
+    assert_eq!(asks.open()[0].waiting(), 1);
+}
+
+#[test]
+fn a_starts_ask_is_traced_under_no_session() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, a_start("MISSING"));
+    let file = crate::trace::file(project.path(), crate::trace::NO_SESSION);
+    let trace = std::fs::read_to_string(&file).unwrap_or_default();
+    assert!(
+        trace.contains("\"secret.ask\"") && trace.contains("raised"),
+        "{file:?}: {trace}"
+    );
+}
+
+/// #5078 with #5074: an ask only a chat's start waits on is still recorded, under no chat,
+/// and its decline too, counting the start as one waiting.
+#[test]
+fn a_starts_ask_is_recorded_under_no_chat() {
+    use crate::eventlog::secretasks::Step;
+    let project = project();
+    let asks = Asks::new(project.path());
+    let told = steps_told(&asks);
+    std::thread::scope(|scope| {
+        let start =
+            scope.spawn(|| asks.hold(a_start("MISSING"), Duration::from_secs(60), &mut |_| {}));
+        let id = first_open(&asks).id;
+        asks.answer(&ctx(project.path()), id, Answer::Decline, window())
+            .expect("declined");
+        assert!(matches!(start.join().unwrap(), Held::Declined { .. }));
+        assert_eq!(
+            told.lock().unwrap().as_slice(),
+            [
+                (
+                    None,
+                    Step::Raised {
+                        ask: id,
+                        declared: false
+                    }
+                ),
+                (
+                    None,
+                    Step::Declined {
+                        ask: id,
+                        waiting: 1
+                    }
+                ),
+            ]
+        );
+    });
+}
+
+// ----------------------------------------------------------------------------------------
+// A chat asks: the `secret_ask` line (#5072)
+
+/// [`project`], committed, with persona `devops` declaring `DECLARED` as a Secret need, a
+/// second vault `mine` tagged for it, a third `others` tagged for nobody, and `charter.toml`.
+fn project_with_needs() -> tempfile::TempDir {
+    let tmp = project();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "").unwrap();
+    std::fs::create_dir_all(root.join("personas/devops")).unwrap();
+    std::fs::write(
+        root.join("personas/devops/persona.md"),
+        "---\nrole: Ops\nvault: team\nsecret-need.DECLARED: deploy to staging\n---\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+            "mine": {"provider": "plain-file", "config": {"file": "mine.json"}, "persona": "devops"},
+            "others": {"provider": "plain-file", "config": {"file": "others.json"}},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(root.join("mine.json"), "{}").unwrap();
+    std::fs::write(root.join("others.json"), "{}").unwrap();
+    crate::secrets::needs::tests::committed(root);
+    tmp
+}
+
+fn devops(chat: u32) -> Chat<'static> {
+    Chat {
+        chat,
+        persona: Some("devops"),
+        harness: None,
+    }
+}
+
+fn line(chat: u32, key: &str, vault: Option<&str>) -> SecretAsk {
+    SecretAsk {
+        chat,
+        key: key.into(),
+        purpose: "  charge test cards\nin the checkout e2e ".into(),
+        vault: vault.map(str::to_owned),
+    }
+}
+
+/// [`raised_within`] for nothing at all.
+fn raised_now(root: &Path, asks: &Asks, line: &SecretAsk) -> Result<Said, String> {
+    raised_within(
+        &ctx(root),
+        asks,
+        devops(line.chat),
+        line,
+        Duration::ZERO,
+        &|| {},
+    )
+}
+
+/// [`raised_within`] for a minute, telling `waits` once the ask is listed.
+fn raised_telling(
+    root: &Path,
+    asks: &Asks,
+    line: &SecretAsk,
+    waits: &std::sync::mpsc::Sender<()>,
+) -> Result<Said, String> {
+    raised_within(
+        &ctx(root),
+        asks,
+        devops(line.chat),
+        line,
+        Duration::from_secs(60),
+        &|| {
+            let _ = waits.send(());
+        },
+    )
+}
+
+#[test]
+fn a_chats_ask_goes_to_its_personas_vault_with_its_purpose_as_one_line_and_waits_on_the_person() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    let said = raised_now(project.path(), &asks, &line(7, "STRIPE_KEY", None));
+    assert_eq!(
+        said,
+        Ok(Said::Pending {
+            vault: "team".into(),
+            key: "STRIPE_KEY".into()
+        }),
+        "the vault defaults to the persona's"
+    );
+    let open = asks.open();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!(
+        (
+            open[0].vault.as_str(),
+            open[0].key.as_str(),
+            open[0].chats.as_slice()
+        ),
+        ("team", "STRIPE_KEY", &[7][..])
+    );
+    assert_eq!(
+        open[0].purpose.as_deref(),
+        Some("charge test cards⟦U+000A⟧in the checkout e2e"),
+        "the chat's words, on one line"
+    );
+    assert_eq!(open[0].tool, None);
+    let (told, code) = said.unwrap().line();
+    assert_eq!(code, super::super::brokered::WAITING_ON_THE_PERSON);
+    assert_eq!(
+        told,
+        "waiting on you for team/STRIPE_KEY; retry once answered"
+    );
+}
+
+#[test]
+fn a_key_the_vault_holds_already_answers_filled_at_once_and_asks_nothing() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    assert_eq!(
+        raised_now(project.path(), &asks, &line(7, "TOKEN", None)),
+        Ok(Said::Filled {
+            vault: "team".into(),
+            key: "TOKEN".into()
+        })
+    );
+    assert!(asks.open().is_empty(), "nothing was asked");
+    assert!(
+        !traced(project.path()).contains("raised"),
+        "and nothing raised in the trace"
+    );
+}
+
+#[test]
+fn a_key_the_persona_does_not_declare_is_tagged_and_a_declared_one_is_not() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    raised_now(project.path(), &asks, &line(7, "UNDECLARED", None)).unwrap();
+    raised_now(project.path(), &asks, &line(7, "DECLARED", None)).unwrap();
+    let declared: Vec<(String, bool)> = asks
+        .open()
+        .into_iter()
+        .map(|one| (one.key, one.declared.is_some()))
+        .collect();
+    assert_eq!(
+        declared,
+        [("UNDECLARED".into(), false), ("DECLARED".into(), true)]
+    );
+}
+
+#[test]
+fn a_fill_the_person_renamed_or_put_in_another_vault_is_heard_under_its_final_name() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let (waits, waiting) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let asked = &asks;
+        let chat =
+            scope.spawn(move || raised_telling(root, asked, &line(7, "STRIPE", None), &waits));
+        waiting.recv().unwrap();
+        let id = asks.open()[0].id;
+        asks.answer_as(
+            &ctx(root),
+            id,
+            Answer::Fill(VALUE.to_owned().into()),
+            Named {
+                vault: Some("mine".into()),
+                key: Some("STRIPE_TEST_KEY".into()),
+            },
+            window(),
+        )
+        .unwrap();
+        assert_eq!(
+            chat.join().unwrap(),
+            Ok(Said::Filled {
+                vault: "mine".into(),
+                key: "STRIPE_TEST_KEY".into()
+            })
+        );
+    });
+    let ctx = ctx(root);
+    let mine = crate::secrets::cmd::provider(&ctx, "mine").unwrap();
+    assert_eq!(
+        crate::secrets::cmd::get_value(&ctx, &mine, "STRIPE_TEST_KEY").ok(),
+        Some(VALUE.to_owned())
+    );
+    assert_eq!(stored(root, "STRIPE"), None, "nothing under the asked name");
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn a_rename_no_key_takes_is_refused_and_leaves_the_ask_open() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    raised_now(project.path(), &asks, &line(7, "STRIPE", None)).unwrap();
+    let id = asks.open()[0].id;
+    let refused = asks
+        .answer_as(
+            &ctx(project.path()),
+            id,
+            Answer::Fill(VALUE.to_owned().into()),
+            Named {
+                vault: None,
+                key: Some("not a key".into()),
+            },
+            window(),
+        )
+        .expect_err("no such key name");
+    assert!(refused.contains("is not a key name"), "{refused}");
+    assert_eq!(asks.open().len(), 1, "still open");
+}
+
+#[test]
+fn a_declined_ask_is_said_as_declined_and_the_chat_is_not_asked_again() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let (waits, waiting) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let asked = &asks;
+        let chat =
+            scope.spawn(move || raised_telling(root, asked, &line(7, "STRIPE", None), &waits));
+        waiting.recv().unwrap();
+        let id = asks.open()[0].id;
+        asks.answer(&ctx(root), id, Answer::Decline, window())
+            .unwrap();
+        let said = chat.join().unwrap().unwrap();
+        assert_eq!(
+            said,
+            Said::Declined {
+                vault: "team".into(),
+                key: "STRIPE".into(),
+                reason: DECLINED_BY_THE_PERSON.into()
+            }
+        );
+        assert_eq!(said.line().1, 1);
+    });
+    assert!(matches!(
+        raised_now(root, &asks, &line(7, "STRIPE", None)),
+        Ok(Said::Declined { .. })
+    ));
+    assert!(asks.open().is_empty(), "the same chat is not asked again");
+    assert!(matches!(
+        raised_now(root, &asks, &line(8, "STRIPE", None)),
+        Ok(Said::Pending { .. })
+    ));
+}
+
+#[test]
+fn a_line_that_is_not_one_is_refused_before_anything_is_asked() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let no_key = raised_now(root, &asks, &line(7, "A B", None)).unwrap_err();
+    assert!(no_key.contains("is not a key name"), "{no_key}");
+    let mut blank = line(7, "KEY", None);
+    blank.purpose = " \n ".into();
+    assert!(raised_now(root, &asks, &blank).is_err());
+    let nobody = raised_within(
+        &ctx(root),
+        &asks,
+        Chat {
+            chat: 7,
+            persona: None,
+            harness: None,
+        },
+        &line(7, "KEY", None),
+        Duration::ZERO,
+        &|| {},
+    )
+    .unwrap_err();
+    assert!(nobody.contains("no persona"), "{nobody}");
+    // A line naming another chat than the app's record of the asking one.
+    assert!(
+        raised_within(
+            &ctx(root),
+            &asks,
+            devops(8),
+            &line(7, "KEY", None),
+            Duration::ZERO,
+            &|| {}
+        )
+        .is_err()
+    );
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn a_vault_the_persona_may_not_use_is_still_asked_and_never_answered_filled_at_once() {
+    // `others` holds the key, and the persona may not use it: a chat learns nothing of what a
+    // vault it could not list holds.
+    let project = project_with_needs();
+    let root = project.path();
+    std::fs::write(root.join("others.json"), r#"{"HELD": "x"}"#).unwrap();
+    let asks = Asks::new(root);
+    assert_eq!(
+        raised_now(root, &asks, &line(7, "HELD", Some("others"))),
+        Ok(Said::Pending {
+            vault: "others".into(),
+            key: "HELD".into()
+        })
+    );
+    // And the person cannot fill into it for this persona, nor over the value it holds.
+    let refused = asks
+        .answer(
+            &ctx(root),
+            asks.open()[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .expect_err("not the persona's to use");
+    assert!(refused.contains("Allow it for devops first"), "{refused}");
+    assert_eq!(asks.open().len(), 1, "still open");
+}
+
+#[test]
+fn a_fill_never_replaces_a_value_a_vault_holds_already() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    raised_now(root, &asks, &line(7, "STRIPE", None)).unwrap();
+    let refused = asks
+        .answer_as(
+            &ctx(root),
+            asks.open()[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            Named {
+                vault: None,
+                key: Some("TOKEN".into()),
+            },
+            window(),
+        )
+        .expect_err("TOKEN is held");
+    assert!(refused.contains("holds a value already"), "{refused}");
+    assert_eq!(stored(root, "TOKEN"), Some("t0ken".into()));
+    assert_eq!(asks.open().len(), 1, "still open");
+}
+
+#[test]
+fn a_need_a_chat_wrote_into_its_persona_file_and_never_committed_declares_nothing() {
+    // #5078 review: the definition on disk is the chat's to write; only what is committed
+    // declares a need, so an edit lifts no lock and puts no words in the persona's mouth.
+    let project = project_with_needs();
+    let root = project.path();
+    std::fs::write(
+        root.join("personas/devops/persona.md"),
+        "---\nrole: Ops\nvault: team\nsecret-need.DECLARED: deploy to staging\nsecret-need.SNEAKY: trust me\n---\n",
+    )
+    .unwrap();
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"undeclared-secret-asks": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let asks = Asks::new(root);
+    let said = raised_now(root, &asks, &line(7, "SNEAKY", None));
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    assert!(
+        matches!(&said, Ok(Said::Declined { reason, .. }) if reason == DECLINED_BY_POLICY),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn no_value_is_in_what_a_chat_hears_or_the_trace() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let (waits, waiting) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let asked = &asks;
+        let chat =
+            scope.spawn(move || raised_telling(root, asked, &line(7, "STRIPE", None), &waits));
+        waiting.recv().unwrap();
+        let id = asks.open()[0].id;
+        asks.answer(
+            &ctx(root),
+            id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+        let said = chat.join().unwrap().unwrap();
+        let wire = serde_json::to_string(&crate::hookwire::Answer::Secret(said.clone())).unwrap();
+        assert!(
+            !wire.contains(VALUE) && !said.line().0.contains(VALUE),
+            "{wire}"
+        );
+    });
+    assert!(!traced(root).contains(VALUE));
+}
+
+// ----------------------------------------------------------------------------------------
+// A persona's Secret needs, and a vault made at the first fill (#5076)
+
+#[test]
+fn a_declared_keys_ask_carries_the_purpose_its_persona_declares() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    raised_now(project.path(), &asks, &line(7, "DECLARED", None)).unwrap();
+    assert_eq!(
+        asks.open()[0].declared.as_deref(),
+        Some("deploy to staging")
+    );
+}
+
+#[test]
+fn a_persona_that_names_no_vault_is_asked_into_one_named_after_it_made_at_the_first_fill() {
+    let project = project_with_needs();
+    let root = project.path();
+    std::fs::create_dir_all(root.join("personas/shop")).unwrap();
+    std::fs::write(
+        root.join("personas/shop/persona.md"),
+        "---\nrole: Shop\nvault: none\n---\n",
+    )
+    .unwrap();
+    let asks = Asks::new(root);
+    let shop = |chat| Chat {
+        chat,
+        persona: Some("shop"),
+        harness: None,
+    };
+    let (waits, waiting) = std::sync::mpsc::channel();
+    let answered = std::thread::scope(|scope| {
+        let asked = &asks;
+        let chat = scope.spawn(move || {
+            raised_within(
+                &ctx(root),
+                asked,
+                shop(7),
+                &line(7, "STRIPE_KEY", None),
+                Duration::from_secs(60),
+                &|| {
+                    let _ = waits.send(());
+                },
+            )
+        });
+        waiting.recv().unwrap();
+        let open = asks.open();
+        assert_eq!(
+            (open[0].vault.as_str(), open[0].names_no_vault),
+            ("shop", true)
+        );
+        let answered = asks
+            .answer(
+                &ctx(root),
+                open[0].id,
+                Answer::Fill(VALUE.to_owned().into()),
+                window(),
+            )
+            .expect("filled, the vault made");
+        assert_eq!(
+            chat.join().unwrap(),
+            Ok(Said::Filled {
+                vault: "shop".into(),
+                key: "STRIPE_KEY".into()
+            })
+        );
+        answered
+    });
+    assert!(answered.made_vault && answered.names_no_vault && !answered.declared);
+    assert_eq!(answered.persona, "shop");
+    let ctx = ctx(root);
+    let made = crate::secrets::cmd::provider(&ctx, "shop").expect("registered");
+    assert_eq!(made.provider, MADE_ON);
+    assert_eq!(
+        crate::secrets::cmd::get_value(&ctx, &made, "STRIPE_KEY").ok(),
+        Some(VALUE.to_owned())
+    );
+    // Tagged for the persona, so its chats may use it.
+    assert!(crate::secrets::brokered::authorise(&ctx, Some("shop"), "shop").is_ok());
+    // Nothing about the secret in the definition: that is the person's proposed change.
+    assert_eq!(
+        std::fs::read_to_string(root.join("personas/shop/persona.md")).unwrap(),
+        "---\nrole: Shop\nvault: none\n---\n"
+    );
+}
+
+// ----------------------------------------------------------------------------------------
+// Policy's lock on undeclared keys, and a metadata-only audit (#5078)
+
+/// A token-shaped value, built where it is used so no source file holds one.
+fn token_shaped() -> String {
+    ["ghp", "_0123456789abcdefABCDEFghij0123456789"].concat()
+}
+
+/// Each step told, with the chat it is of (none for a start's).
+type Told = std::sync::Arc<Mutex<Vec<(Option<u32>, crate::eventlog::secretasks::Step)>>>;
+
+/// The steps `asks` tells, by chat, as the app writes them to the event log.
+fn steps_told(asks: &Asks) -> Told {
+    let told = std::sync::Arc::new(Mutex::new(Vec::new()));
+    let kept = std::sync::Arc::clone(&told);
+    asks.telling(std::sync::Arc::new(move |chat, step| {
+        kept.lock().unwrap().push((chat, step));
+    }));
+    told
+}
+
+#[test]
+fn policy_refuses_an_undeclared_key_as_declined_policy_and_never_asks_the_person() {
+    let project = project_with_needs();
+    let root = project.path();
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"undeclared-secret-asks": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let asks = Asks::new(root);
+    let told = steps_told(&asks);
+    let said = raised_now(root, &asks, &line(7, "UNDECLARED", None)).unwrap();
+    assert_eq!(
+        said,
+        Said::Declined {
+            vault: "team".into(),
+            key: "UNDECLARED".into(),
+            reason: DECLINED_BY_POLICY.into()
+        }
+    );
+    assert!(asks.open().is_empty(), "the person is never asked");
+    assert_eq!(
+        told.lock().unwrap().as_slice(),
+        [(
+            Some(7),
+            crate::eventlog::secretasks::Step::Refused {
+                by: crate::eventlog::secretasks::By::Policy,
+                declared: false
+            }
+        )]
+    );
+    // A declared key is asked as before, and a key the vault holds still answers filled.
+    assert!(matches!(
+        raised_now(root, &asks, &line(7, "DECLARED", None)),
+        Ok(Said::Pending { .. })
+    ));
+    assert!(matches!(
+        raised_now(root, &asks, &line(7, "TOKEN", None)),
+        Ok(Said::Filled { .. })
+    ));
+    // And a broker miss of an undeclared key is refused the same way.
+    let (held, _) = held_for_nothing(&asks, need(8, "MISSING"));
+    assert!(
+        matches!(&held, Held::Refused { line } if line.contains("policy")),
+        "{held:?}"
+    );
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+}
+
+#[test]
+fn each_step_of_an_ask_is_one_record_with_no_value_name_or_purpose() {
+    use crate::eventlog::secretasks::{How, Step};
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let told = steps_told(&asks);
+    let (waits, waiting) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let asked = &asks;
+        let first = scope.spawn({
+            let waits = waits.clone();
+            move || raised_telling(root, asked, &line(7, "STRIPE", None), &waits)
+        });
+        waiting.recv().unwrap();
+        let second =
+            scope.spawn(move || raised_telling(root, asked, &line(8, "STRIPE", None), &waits));
+        waiting.recv().unwrap();
+        let id = asks.open()[0].id;
+        asks.answer_as(
+            &ctx(root),
+            id,
+            Answer::Fill(VALUE.to_owned().into()),
+            Named {
+                vault: None,
+                key: Some("STRIPE_KEY".into()),
+            },
+            window(),
+        )
+        .unwrap();
+        first.join().unwrap().unwrap();
+        second.join().unwrap().unwrap();
+    });
+    let steps = told.lock().unwrap().clone();
+    let id = match steps[0].1 {
+        Step::Raised { ask, .. } => ask,
+        other => panic!("raised first: {other:?}"),
+    };
+    assert_eq!(
+        steps,
+        [
+            (
+                Some(7),
+                Step::Raised {
+                    ask: id,
+                    declared: false
+                }
+            ),
+            (
+                Some(8),
+                Step::Joined {
+                    ask: id,
+                    waiting: 2
+                }
+            ),
+            (
+                Some(7),
+                Step::Filled {
+                    ask: id,
+                    how: How::Value,
+                    waiting: 2,
+                    renamed: true,
+                    made_vault: false
+                }
+            ),
+        ],
+        "one record a step, the answer's once for every chat"
+    );
+    for (_, step) in steps {
+        let body = step.body().to_string();
+        for never in [VALUE, "STRIPE", "team", "charge test cards"] {
+            assert!(
+                !body.contains(never),
+                "{} holds {never}: {body}",
+                step.kind()
+            );
+        }
+    }
+}
+
+#[test]
+fn a_purpose_that_carries_a_secret_is_masked_before_anyone_reads_it() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    let mut asked = line(7, "STRIPE", None);
+    asked.purpose = format!("the old one was {} and stopped working", token_shaped());
+    raised_now(project.path(), &asks, &asked).unwrap();
+    let purpose = asks.open()[0].purpose.clone().unwrap_or_default();
+    assert!(!purpose.contains(&token_shaped()), "{purpose}");
+    assert!(!traced(project.path()).contains(&token_shaped()));
 }

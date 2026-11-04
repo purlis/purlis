@@ -11,6 +11,11 @@ family in `app/src/ui/<family>`, wrapping its React Aria primitive once, drawn b
 screen composes families; the look is the family's and the theme's. This skill applies only in a
 checkout of the purlis repository: every path below is from its root.
 
+Write CSS against a part's attributes. The build keys each rule on the classes `ds-<scope>` and
+`dp-<part>`, which the window's JSX adds beside the attributes. Never write those classes by
+hand. A part made with `createElement` takes them from `parted()`, and a library panel from
+`resizablePanelRoot()` (`app/src/ui/partClasses.ts`; ADR 0103, amended 2026-11-04).
+
 The docs are the source of truth, and this skill points into them. Read the section a step names
 before you write the code it covers:
 

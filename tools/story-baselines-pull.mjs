@@ -76,28 +76,27 @@ export function notOf(drawn, head) {
   return undefined;
 }
 
-/** Runs `command` and answers its standard output, or exits saying what failed. */
-function run(command, args, options = {}) {
-  const done = spawnSync(command, args, { encoding: "utf8", ...options });
-  if (done.status !== 0) {
-    console.error(
-      `${command} ${args.join(" ")} failed: ${(done.stderr || done.error?.message || "").trim()}`,
-    );
-    process.exit(1);
-  }
-  return done.stdout.trim();
-}
+/** Why a pull took nothing: said to the person, and the tool exits 1. */
+export class Refused extends Error {}
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const given = process.argv.slice(2);
-  const [pr] = given;
-  const at = given.indexOf("--repo");
-  const repo = at === -1 ? REPO : given[at + 1];
-  if (!/^\d+$/.test(pr ?? "") || !/^[\w.-]+\/[\w.-]+$/.test(repo ?? "")) {
-    console.error("usage: story-baselines-pull.mjs <pull request number> [--repo <owner>/<repo>]");
-    process.exit(2);
-  }
-  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+/**
+ * Takes pull request `pr`'s baselines from its newest failed `stories` run in `repo` and writes
+ * them into `root`'s `app/`, answering the lines that say what it did; throws `Refused` saying
+ * why it took nothing. `exec` runs a command as `spawnSync` does (`gh` and `git` here).
+ *
+ * Everything it downloads, `gh`'s own `gh-artifact.*.zip` among it, goes into one
+ * `story-baselines-*` folder under `tmp`, which it removes when it finishes, taken or refused:
+ * the only thing it keeps is the pictures it writes into `app/`.
+ */
+export function pull({ pr, repo = REPO, root, tmp = tmpdir(), exec = spawnSync }) {
+  const run = (command, args, options = {}) => {
+    const done = exec(command, args, { encoding: "utf8", ...options });
+    if (done.status !== 0)
+      throw new Refused(
+        `${command} ${args.join(" ")} failed: ${(done.stderr || done.error?.message || "").trim()}`,
+      );
+    return done.stdout.trim();
+  };
   const [head, from] = run("gh", [
     "pr",
     "view",
@@ -110,12 +109,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     '.headRefOid + " " + .headRepositoryOwner.login + "/" + .headRepository.name',
   ]).split(" ");
   const here = run("git", ["rev-parse", "HEAD"], { cwd: root });
-  if (here !== head) {
-    console.error(
+  if (here !== head)
+    throw new Refused(
       `this checkout is at ${here}, and pull request #${pr}'s head is ${head}: check out its head first, so the pictures are of the code they go in with`,
     );
-    process.exit(1);
-  }
   const runs = JSON.parse(
     run("gh", [
       "api",
@@ -131,29 +128,25 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     ]),
   );
   const chosen = runToTake(runs, head, from);
-  if (!chosen.run) {
-    console.error(chosen.why);
-    process.exit(1);
-  }
-  const into = mkdtempSync(join(tmpdir(), "story-baselines-"));
+  if (!chosen.run) throw new Refused(chosen.why);
+  const work = mkdtempSync(join(tmp, "story-baselines-"));
   try {
-    const got = spawnSync(
+    const into = join(work, "artifact");
+    // `gh run download` keeps the zip it fetches in the temp folder: this one, so it goes too.
+    const scratch = join(work, "gh");
+    mkdirSync(scratch);
+    const got = exec(
       "gh",
       ["run", "download", String(chosen.run.id), "-R", repo, "-n", ARTIFACT, "-D", into],
-      { encoding: "utf8" },
+      { encoding: "utf8", env: { ...process.env, TMPDIR: scratch, TMP: scratch, TEMP: scratch } },
     );
-    if (got.status !== 0 || !existsSync(join(into, DRAWN))) {
-      console.error(
+    if (got.status !== 0 || !existsSync(join(into, DRAWN)))
+      throw new Refused(
         `the stories run ${chosen.run.html_url} kept no baselines: a story failed on more than its picture there, and its annotations say which`,
       );
-      process.exit(1);
-    }
     const drawn = JSON.parse(readFileSync(join(into, DRAWN), "utf8"));
     const wrong = notOf(drawn, head);
-    if (wrong) {
-      console.error(wrong);
-      process.exit(1);
-    }
+    if (wrong) throw new Refused(wrong);
     // The run tested the head merged with `base`: the same tree as the head only when the head
     // has every commit of it.
     const behind = run("gh", [
@@ -162,21 +155,40 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       "--jq",
       ".behind_by",
     ]);
-    if (behind !== "0") {
-      console.error(
+    if (behind !== "0")
+      throw new Refused(
         `the head is ${behind} commits behind the base its stories run merged it with, so the pictures are of another tree: update the branch, push, and take the next run's`,
       );
-      process.exit(1);
-    }
     // An artifact keeps no empty directory: with no baseline drawn, every one is deleted.
     mkdirSync(join(into, "app"), { recursive: true });
-    const { taken, removed, unchanged } = take(join(into, "app"), join(root, "app"));
-    for (const path of removed) console.log(`deleted: ${path}`);
-    console.log(
-      `${taken.length} baselines written and ${removed.length} deleted (${unchanged.length} already matched), from ${chosen.run.html_url}: ` +
+    const app = join(root, "app");
+    const { taken, removed, unchanged } = take(join(into, "app"), app);
+    return [
+      ...removed.map((path) => `deleted: ${path}`),
+      `${taken.length} baselines written and ${removed.length} deleted (${unchanged.length} already matched) into ${app}, from ${chosen.run.html_url}: ` +
         "review the pictures that changed (git status), then commit and push them",
-    );
+    ];
   } finally {
-    rmSync(into, { recursive: true, force: true });
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const given = process.argv.slice(2);
+  const [pr] = given;
+  const at = given.indexOf("--repo");
+  const repo = at === -1 ? REPO : given[at + 1];
+  if (!/^\d+$/.test(pr ?? "") || !/^[\w.-]+\/[\w.-]+$/.test(repo ?? "")) {
+    console.error("usage: story-baselines-pull.mjs <pull request number> [--repo <owner>/<repo>]");
+    process.exit(2);
+  }
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  try {
+    for (const line of pull({ pr, repo, root })) console.log(line);
+  } catch (error) {
+    // Set, not `process.exit`: an exit would skip the `finally` that removes the download.
+    if (!(error instanceof Refused)) throw error;
+    console.error(error.message);
+    process.exitCode = 1;
   }
 }

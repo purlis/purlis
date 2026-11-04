@@ -639,6 +639,7 @@ describe("Settings › Sandbox › Persona hosts", () => {
         opt_out: false,
         required: null,
         write_grants: false,
+        undeclared_secret_asks: false,
       },
     });
     await at("Persona hosts");
@@ -647,5 +648,28 @@ describe("Settings › Sandbox › Persona hosts", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add host" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Remove devops/ })).not.toBeInTheDocument();
+  });
+
+  it("says where policy turns off asks for an undeclared secret, and who set it", async () => {
+    // #5078: the lock is shown as policy's, with nothing to change.
+    personaCore({
+      policy: {
+        locked_by: "Locked by policy, set by IT in policy.json.",
+        presets: null,
+        hosts: null,
+        personal_hosts: false,
+        persona_hosts: false,
+        opt_out: false,
+        required: null,
+        write_grants: false,
+        undeclared_secret_asks: true,
+      },
+    });
+    await at("Secret asks");
+    expect(
+      await screen.findByText(
+        /Policy turns off asks for a secret a persona doesn't declare: a chat that asks for one is told it was declined by policy, and you aren't asked\. Locked by policy, set by IT in policy\.json\./,
+      ),
+    ).toBeInTheDocument();
   });
 });

@@ -33,6 +33,7 @@ fn in_a_docker_pool() {
         "the pool",
         Duration::from_secs(120),
         || true,
+        || false,
     );
     watching.unwatch(id);
     assert_eq!(started, Ok(()), "Try it heard the chat's start hook");

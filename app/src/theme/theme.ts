@@ -65,6 +65,7 @@ import {
   type Apart,
   type NoNearer,
 } from "./tint";
+import { classKeyed } from "../ui/partClasses";
 
 /**
  * Every token, in the order a theme file is easiest to read in.
@@ -1059,10 +1060,11 @@ export const PARTS_STYLE = "purlis-parts";
  * **Draws a theme's component parts** (#2903): the engine's stylesheet, in the one `<style>` the
  * window keeps for it, in the `parts` layer `styles.css` declares above the controls. Nothing is
  * written for a theme that names none, and a theme that names some and then none takes its rules
- * away. The text is the engine's, written from parsed values (ADR 0041, property 4).
+ * away. The text is the engine's, written from parsed values (ADR 0041, property 4), keyed on the
+ * parts' classes as the window's own CSS is (#4351, `ui/partClasses.ts`).
  */
 function drawParts(theme: Theme, document: Document): void {
-  const sheet = theme.parts ?? "";
+  const sheet = classKeyed(theme.parts ?? "");
   const drawn = document.getElementById(PARTS_STYLE);
   if (sheet === "") {
     drawn?.remove();

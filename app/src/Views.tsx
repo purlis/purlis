@@ -130,6 +130,7 @@ import {
   LICENCES_VIEW,
   SHORTCUTS_VIEW,
   AGENT_IDENTITY_VIEW,
+  AGENT_IDENTITY_TITLE,
   DEVICES_VIEW,
   SETTINGS_TAB_TITLE,
   settingsLevelOf,
@@ -748,7 +749,14 @@ export function ViewPane({
           />
         ) : viewKey(view) === viewKey(POOL_SETUP_VIEW) ? (
           /* Pool setup (spec #4469), keyed by the plane, whose personas it reads. */
-          <PoolSetupTab key={plane} plane={plane} workspace={workspace} onOpenChat={onNewChatOn} />
+          <PoolSetupTab
+            key={plane}
+            plane={plane}
+            workspace={workspace}
+            onOpenChat={onNewChatOn}
+            onOpenIdentity={() => onOpenView(AGENT_IDENTITY_VIEW, AGENT_IDENTITY_TITLE)}
+            onOpenSettings={() => onOpenView(settingsView("project"), SETTINGS_TAB_TITLE)}
+          />
         ) : isSaving(view) ? (
           /* The plane's save standing and its save button (charter-app#294). Keyed by the
              plane, so a pane that comes to show another project's starts from its own read. */

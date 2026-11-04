@@ -375,3 +375,12 @@ export function moveOffers(
   if (on !== null) return [null];
   return [...pools];
 }
+
+/** **Whether chat `chat` could move to a pool once one is set up** (#4484): a harness chat on
+ *  this machine, while this machine keeps no pool at all (`anyKept` false, clusters too). */
+export function movesOnceAPoolIsSetUp(
+  chat: Pick<OpenChat, "harness" | "pool"> | undefined,
+  anyKept: boolean,
+): boolean {
+  return chat !== undefined && chat.harness !== null && (chat.pool ?? null) === null && !anyKept;
+}

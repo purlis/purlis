@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { useState } from "react";
 import { userEvent } from "@testing-library/user-event";
 import type { StartOptions, StartRunsOn } from "./bindings";
-import { StartChat } from "./StartChat";
+import { StartChat, type RunsOnInPicker } from "./StartChat";
 import { profileCommand, profilePage } from "./settings/profileAddress";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ChatsHere, fixedChats } from "./chatState";
@@ -2092,7 +2092,7 @@ describe("Runs on: where this chat runs, and why (#4536)", () => {
   });
 
   function showRunsOn(
-    on: StartRunsOn,
+    on: RunsOnInPicker,
     more: { poolUnavailable?: string; trouble?: string; onPoolSetup?: () => void } = {},
   ) {
     const onStart = vi.fn();
@@ -2198,6 +2198,63 @@ describe("Runs on: where this chat runs, and why (#4536)", () => {
     );
     await user.click(screen.getByRole("button", { name: "Start chat" }));
 
+    expect(onStart).toHaveBeenCalledWith("claude", "steward", false, null, false, null, {
+      pool: "gpu",
+    });
+  });
+
+  it("marks a pool whose setup isn't finished, says why, and offers the way back (#4484)", async () => {
+    const onPoolSetup = vi.fn();
+    const { user } = showRunsOn(
+      { ...runsOn(), notFinished: { gpu: "Setup not finished: no account." } },
+      { onPoolSetup },
+    );
+
+    await choose(user, "Pool gpu · Setup not finished");
+    expect(why()).toContain("Setup not finished: no account.");
+    await user.click(screen.getByRole("button", { name: "Finish Pool setup…" }));
+    expect(onPoolSetup).toHaveBeenCalled();
+  });
+
+  it("says why the pool the levels name can't start, and offers to finish its setup (#4484)", async () => {
+    const onPoolSetup = vi.fn();
+    const { user } = showRunsOn(
+      { ...runsOn({ pools: ["gpu"] }), notOffered: { builds: "Setup not finished: no runner." } },
+      { onPoolSetup },
+    );
+
+    expect(why()).toContain("Setup not finished: no runner.");
+    await user.click(screen.getByRole("button", { name: "Finish Pool setup…" }));
+    expect(onPoolSetup).toHaveBeenCalledWith("builds");
+  });
+
+  it("never says no pool is set up where one is kept and can't start yet (#4484)", async () => {
+    const onPoolSetup = vi.fn();
+    const { user } = showRunsOn(
+      { ...runsOn({ pool: null, level: "this_machine", pools: [] }), notOffered: { gpu: "x" } },
+      { onPoolSetup },
+    );
+
+    expect(why()).not.toContain("No pool is set up");
+    expect(why()).toContain("Pool setup isn't finished for pool gpu");
+    await user.click(screen.getByRole("button", { name: "Finish Pool setup…" }));
+    expect(onPoolSetup).toHaveBeenCalledWith("gpu");
+  });
+
+  it("opens on the pool it was asked to, for this start only (#4483)", async () => {
+    const onStart = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        runsOn={runsOn()}
+        pool="gpu"
+        onStart={onStart}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(selectNamed("Runs on")).toHaveTextContent("Pool gpu");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Start chat" }));
     expect(onStart).toHaveBeenCalledWith("claude", "steward", false, null, false, null, {
       pool: "gpu",
     });

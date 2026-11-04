@@ -886,8 +886,18 @@ fn what_holds_no_tasks_work_outside_the_home_keeps_no_runner() {
 #[cfg(unix)]
 #[test]
 fn a_file_outside_the_home_another_user_owns_keeps_no_runner() {
+    use std::os::unix::fs::PermissionsExt;
+    if the_runners_user() == 0 {
+        return; // Every file is open to root.
+    }
     let (_dir, root, home, started) = a_runners_root();
     std::fs::write(root.join("var/lib/purlis/findings.md"), "made\n").unwrap();
+    // Another's, and shut to the runner's user, as the walk sees it.
+    std::fs::set_permissions(
+        root.join("var/lib/purlis/findings.md"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
 
     assert_eq!(
         outside_the_projects_and_beyond(
@@ -901,6 +911,31 @@ fn a_file_outside_the_home_another_user_owns_keeps_no_runner() {
         ),
         Vec::<String>::new()
     );
+}
+
+/// **A file another user owns that the runner's user may write counts as its own** (#5103):
+/// a task may change it as well as one it owns, so a change keeps the runner.
+#[cfg(unix)]
+#[test]
+fn a_file_outside_the_home_its_user_may_write_but_does_not_own_keeps_the_runner() {
+    if the_runners_user() == 0 {
+        return; // Every file is open to root.
+    }
+    let (_dir, root, home, started) = a_runners_root();
+    // Another's, as the walk sees it, but one the runner's user may write.
+    std::fs::write(root.join("var/lib/purlis/findings.md"), "made\n").unwrap();
+
+    let said = outside_the_projects_and_beyond(
+        &home,
+        &[],
+        Some(started),
+        Some(Beyond {
+            root: &root,
+            owner: the_runners_user().wrapping_add(1),
+        }),
+    );
+
+    assert!(says(&said, "/var/lib/purlis/findings.md"), "{said:?}");
 }
 
 /// **An unreadable folder outside the home is said unless it is another's, unchanged, that the
@@ -990,42 +1025,43 @@ fn the_first_programs_start_is_marked_once_and_kept() {
 }
 
 /// **A mark that is not the file purlis made says so, which keeps the runner** (#4933), and a
-/// link in its place is never followed: the program is refused instead.
+/// link in its place is never followed, nor a pipe waited on: the program starts, since the
+/// runner is kept for it (#5103).
 #[cfg(unix)]
 #[test]
-fn a_mark_that_is_not_the_file_purlis_made_keeps_the_runner_and_refuses_a_start() {
+fn a_mark_that_is_not_the_file_purlis_made_keeps_the_runner_and_is_never_followed() {
     let dir = tempfile::tempdir().unwrap();
     let projects = dir.path().join("projects");
     std::fs::create_dir_all(projects.join(FIRST_PROGRAM)).unwrap();
 
+    assert_eq!(first_program_starting(&projects), Ok(()));
     let unknown = first_program_at(&projects).unwrap_err();
     assert!(unknown.contains("could not be looked for"), "{unknown}");
 
     std::fs::remove_dir(projects.join(FIRST_PROGRAM)).unwrap();
     let elsewhere = dir.path().join("elsewhere");
     std::os::unix::fs::symlink(&elsewhere, projects.join(FIRST_PROGRAM)).unwrap();
-    let refused = first_program_starting(&projects).unwrap_err();
-    assert!(refused.contains("could not note"), "{refused}");
+    assert_eq!(first_program_starting(&projects), Ok(()));
     assert!(!elsewhere.exists(), "never through the link");
+    assert!(first_program_at(&projects).is_err());
 
-    // A pipe in its place is refused at once, never waited on, and refused too while a task
-    // holds it open to read.
+    // A pipe in its place is never waited on, nor while a task holds it open to read.
     std::fs::remove_file(projects.join(FIRST_PROGRAM)).unwrap();
     let made = crate::forklock::status(
         std::process::Command::new("mkfifo").arg(projects.join(FIRST_PROGRAM)),
     )
     .unwrap();
     assert!(made.success(), "a pipe is made");
-    let refused = first_program_starting(&projects).unwrap_err();
-    assert!(refused.contains("could not note"), "{refused}");
+    assert_eq!(first_program_starting(&projects), Ok(()));
     let _reading = rustix::fs::open(
         projects.join(FIRST_PROGRAM),
         rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NONBLOCK | rustix::fs::OFlags::CLOEXEC,
         rustix::fs::Mode::empty(),
     )
     .unwrap();
-    let refused = first_program_starting(&projects).unwrap_err();
-    assert!(refused.contains("not a file purlis made"), "{refused}");
+    assert_eq!(first_program_starting(&projects), Ok(()));
+    let unknown = first_program_at(&projects).unwrap_err();
+    assert!(unknown.contains("not a file purlis made"), "{unknown}");
 }
 
 /// A runner's home with purlis's data home in it, as purlis's own image has it
@@ -1178,8 +1214,9 @@ fn a_home_inside_the_data_home_is_looked_through_as_a_home() {
     assert!(!says(&said, "/var/lib/purlis/home"), "named once: {said:?}");
 }
 
-/// **Every store the plane format names in the data home is one the walk of it leaves out**
-/// (#5029): a store added there without it would keep every fresh runner.
+/// **The stores the walk of the data home leaves out are those the plane format names there**
+/// (#5029, #5052): a store added there without it would keep every fresh runner, and a name left
+/// out that the plane format does not name would hide a task's work there.
 #[test]
 fn every_store_the_plane_format_names_in_the_data_home_is_left_out_of_its_walk() {
     let format = std::fs::read_to_string(
@@ -1207,6 +1244,14 @@ fn every_store_the_plane_format_names_in_the_data_home_is_left_out_of_its_walk()
         .collect();
 
     assert!(missing.is_empty(), "add to PURLIS_KEEPS: {missing:?}");
+    let unnamed: Vec<&&str> = PURLIS_KEEPS
+        .iter()
+        .filter(|kept| !named.contains(kept))
+        .collect();
+    assert!(
+        unnamed.is_empty(),
+        "name in docs/plane-format.md, with its tier: {unnamed:?}"
+    );
 }
 
 /// **Each folder purlis keeps for itself is left out wherever the environment puts it** (#5028):
@@ -1500,4 +1545,146 @@ fn too_many_files_of_its_users_own_where_it_may_not_write_are_said() {
     assert!(says(&said, "more than 2 files"), "{said:?}");
     let whole = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 10, false);
     assert!(whole.whole(), "{whole:?}");
+}
+
+/// **A file another user owns that the runner's user may write, where it may not write in the
+/// folder, is looked at again at each check** (#5103): a task may change it in place, and a
+/// change keeps the runner. One it may not write is not.
+#[cfg(unix)]
+#[test]
+fn a_file_its_user_may_write_where_it_may_not_write_the_folder_keeps_the_runner_once_changed() {
+    use std::os::unix::fs::PermissionsExt;
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    std::fs::create_dir_all(root.join("etc/tool")).unwrap();
+    std::fs::write(root.join("etc/tool/shared.conf"), "as the image had it\n").unwrap();
+    std::fs::write(root.join("etc/tool/shut.conf"), "as the image had it\n").unwrap();
+    std::fs::set_permissions(
+        root.join("etc/tool/shut.conf"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
+    let _shut = Shut::folders(
+        &root,
+        &[
+            "",
+            "etc",
+            "etc/tool",
+            "usr",
+            "usr/share",
+            "usr/share/doc",
+            "var",
+            "var/lib",
+        ],
+    );
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let since = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    // As another user's image: the test's own files are another's to the walk.
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+    let found = writable(beyond, std::slice::from_ref(&home), since);
+    assert_eq!(found.places(), ["var/lib/purlis"], "{found:?}");
+    let look = || outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+
+    assert_eq!(look(), Vec::<String>::new());
+
+    std::fs::write(root.join("etc/tool/shared.conf"), "as the task left it\n").unwrap();
+    std::fs::set_permissions(
+        root.join("etc/tool/shut.conf"),
+        std::fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        root.join("etc/tool/shut.conf"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
+    let said = look();
+    assert!(says(&said, "/etc/tool/shared.conf"), "{said:?}");
+    assert!(!says(&said, "/etc/tool/shut.conf"), "{said:?}");
+}
+
+/// **A name the runner reports is shown with each character a reader would not see marked**
+/// (#5103): a control, a line end or a bidirectional override in a file's name is written as
+/// `⟦U+XXXX⟧` in the sentences the window shows.
+#[cfg(unix)]
+#[test]
+fn a_name_holding_a_character_a_reader_would_not_see_is_shown_marked() {
+    let (_dir, home, started) = a_home();
+    std::fs::write(home.join("a\u{202e}b.txt"), "a task's\n").unwrap();
+    std::fs::create_dir_all(home.join("two\nlines\u{1b}[31m")).unwrap();
+    std::fs::write(home.join("two\nlines\u{1b}[31m/x"), "a task's\n").unwrap();
+
+    let said = outside_the_projects(&home, &[], Some(started));
+
+    assert!(says(&said, "~/a⟦U+202E⟧b.txt"), "{said:?}");
+    assert!(says(&said, "~/two⟦U+000A⟧lines⟦U+001B⟧[31m/x"), "{said:?}");
+    for sentence in &said {
+        assert!(
+            !purlis_unicode::hides(sentence, purlis_unicode::Breaks::Marked),
+            "{sentence:?}"
+        );
+    }
+}
+
+/// **What the desktop says a runner holds is shown marked too** (#5103): a path, a ref's name
+/// or a sentence a runner sent holding a character a reader would not see.
+#[test]
+fn what_a_runner_reports_is_shown_marked_on_the_desktop() {
+    let world = World::new();
+    let held = vec![
+        Held {
+            project: PROJECT.to_owned(),
+            path: String::new(),
+            refs: Vec::new(),
+            changed: Vec::new(),
+        },
+        Held {
+            project: PROJECT.to_owned(),
+            path: "web\u{202e}b".to_owned(),
+            refs: vec![Ref {
+                name: "refs/heads/a\u{1b}b".to_owned(),
+                oid: "0".repeat(40),
+            }],
+            changed: Vec::new(),
+        },
+    ];
+    let unread = vec!["a sentence the runner sent\nwith a second line\u{2066}".to_owned()];
+
+    let missing = not_home(&world.desktop, PROJECT, &held, &unread);
+
+    assert!(says(&missing, "web⟦U+202E⟧b"), "{missing:?}");
+    assert!(says(&missing, "sent⟦U+000A⟧with"), "{missing:?}");
+    for sentence in &missing {
+        assert!(
+            !purlis_unicode::hides(sentence, purlis_unicode::Breaks::Marked),
+            "{sentence:?}"
+        );
+    }
+}
+
+/// **A start is refused where no mark could be made and nothing stands in its place** (#4933):
+/// a host started again would then know of no program, and look for nothing.
+#[cfg(unix)]
+#[test]
+fn a_start_is_refused_where_no_mark_can_be_made() {
+    use std::os::unix::fs::PermissionsExt;
+    if the_runners_user() == 0 {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let projects = dir.path().join("projects");
+    std::fs::create_dir_all(&projects).unwrap();
+    std::fs::set_permissions(&projects, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let refused = first_program_starting(&projects);
+    std::fs::set_permissions(&projects, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert!(refused.unwrap_err().contains("could not note"));
+    assert_eq!(first_program_at(&projects), Ok(None));
 }

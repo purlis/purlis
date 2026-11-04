@@ -12,8 +12,9 @@
  *   from the theme's `panel.corner-radius`; the gap between panels is the theme's
  *   `window.gutter`, which the window's frame draws (`App.css`, the regions). Purlis Classic's
  *   corners and gutter are 0, so its panels sit flush with the hairline between them as before.
- * - **A resizable region is a library panel**, whose own props reach its outer box: such a
- *   region takes {@link panelRoot}'s attributes, and its inner box follows the root's corners.
+ * - **A resizable region is a library panel**, whose own props reach its outer box and whose
+ *   `className` its inner one: such a region takes {@link resizablePanelRoot}, which draws the
+ *   root's attributes and classes on the outer box, and its inner box follows the root's corners.
  *   Any other panel is a {@link Panel}.
  * - **A section** is its root, its heading line (`head`) and its title (`title`), each a part.
  *   The line between two sections is a separator, never a section's border.
@@ -36,14 +37,39 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { classesOf } from "../partClasses";
 
 /** The panel's variants, in the order the manifest names them. */
 export const PANEL_VARIANTS = ["side", "content", "bottom"] as const;
 export type PanelVariant = (typeof PANEL_VARIANTS)[number];
 
-/** The attributes a panel's root carries, for a region drawn by a library's panel. */
+/** The attributes a panel's root carries, for a box that is the root. */
 export function panelRoot(variant: PanelVariant) {
   return { "data-scope": "panel", "data-part": "root", "data-variant": variant } as const;
+}
+
+/** The outer box of a library panel, drawn as each variant's root: one callback per variant, so
+ *  a draw of the region never hands the library a new one. */
+const ROOTED = Object.fromEntries(
+  PANEL_VARIANTS.map((variant) => [
+    variant,
+    (element: HTMLDivElement | null) => {
+      if (element === null) return;
+      for (const [name, value] of Object.entries(panelRoot(variant)))
+        element.setAttribute(name, value);
+      element.classList.add(...classesOf(panelRoot(variant)).split(" "));
+    },
+  ]),
+) as Record<PanelVariant, (element: HTMLDivElement | null) => void>;
+
+/**
+ * **A panel's root drawn on a library panel's outer box** (#4351), for a resizable region: the
+ * library hands its own props to that box but its `className` to the box inside it, so the
+ * root's attributes and the classes they draw (`ui/partClasses.ts`) are put on the outer box
+ * through the library's `elementRef`.
+ */
+export function resizablePanelRoot(variant: PanelVariant) {
+  return { elementRef: ROOTED[variant] } as const;
 }
 
 /** **A panel**: a region of the window that is not a library's resizable panel. */

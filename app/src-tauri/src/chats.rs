@@ -851,6 +851,10 @@ pub struct Chats {
     /// window says it. Never recorded. A chat in one of them is not looked at
     /// ([`Self::looked_at`]): a minimised window counts as nothing.
     away: Mutex<purlis_core::reopen::layout::Away>,
+    /// **The order the project's windows had a pane used in** (#5108): as each window says it
+    /// (`pane_used`). Never recorded. A press on a chat in no pane goes to the latest
+    /// ([`Self::window_pressed`]).
+    used: Mutex<purlis_core::reopen::layout::Used>,
     /// The order the window's strip draws the chats in, by session, as it last said — or, at
     /// a launch, the order the record listed them in (ADR 0039, as amended by SI-6).
     ///
@@ -896,6 +900,9 @@ pub struct Chats {
     /// a live ask held for its chat whose Notice the throttle held back. Empty until the
     /// project's hooks listen.
     asks_moved: Arc<Mutex<Option<AsksMoved>>>,
+    /// The project's Secret asks, which a start whose profile's credential its vault holds none
+    /// of waits on (#5074, ADR 0109). Empty until the project is held.
+    secret_asks: Mutex<Option<Arc<purlis_core::secrets::ask::Asks>>>,
     /// What hears each host purlis's own proxy refused a chat it wraps (Codex, opencode,
     /// #1663), as that chat's block: the road a hook's block takes into the app
     /// ([`crate::hooks::Hooks::block_hearer`]). Empty until the project's hooks listen.
@@ -1469,6 +1476,7 @@ impl Chats {
             focus: Mutex::new(None),
             layout: Mutex::new(None),
             away: Mutex::default(),
+            used: Mutex::default(),
             order: Mutex::new(Vec::new()),
             skills_now: Arc::default(),
             record_it,
@@ -1480,6 +1488,7 @@ impl Chats {
             kubeconfigs: Mutex::new(HashMap::new()),
             blocks: Arc::default(),
             asks_moved: Arc::new(Mutex::new(None)),
+            secret_asks: Mutex::new(None),
             refused: Arc::new(Mutex::new(None)),
             refused_more: Arc::new(Mutex::new(None)),
             reached: Arc::new(Mutex::new(None)),
@@ -3334,6 +3343,12 @@ impl Chats {
         *lock(&self.asks_moved) = Some(moved);
     }
 
+    /// The project's Secret asks, which a start asks for a missing profile credential through
+    /// from now on (#5074).
+    pub fn ask_secrets_in(&self, asks: Arc<purlis_core::secrets::ask::Asks>) {
+        *lock(&self.secret_asks) = Some(asks);
+    }
+
     /// The pool chat `session` runs on, where it runs on a pool's runner (#2046).
     pub fn pool_of(&self, session: u32) -> Option<String> {
         self.sessions.pool_of(session)
@@ -4400,6 +4415,21 @@ impl Chats {
         // that does not open to it starts nothing, and leaves no event and no hook behind
         // (#2036). Set on the harness's program as it starts; the commands, hooks and tools it
         // starts inherit them.
+        // One its vault holds none of is a Secret ask (#5074, ADR 0109), raised and waited on
+        // by nothing: the start is refused, saying so, and the ask stays in the Inbox, where the
+        // person fills it and starts the chat again, which reads the value filled. No start
+        // waits, as none waits on a sign-in (ADR 0095 §3): the Start dialog is modal, so the
+        // person could not reach the ask while it waited, and any other start (a relaunch, a
+        // dispatch's) may run under a lock the window's commands wait on.
+        let secret_asks = lock(&self.secret_asks).clone();
+        let moved = || self.asks_may_have_moved();
+        let missing = secret_asks
+            .as_deref()
+            .map(|asks| purlis_core::secrets::brokered::Missing {
+                asks,
+                within: std::time::Duration::ZERO,
+                moved: &moved,
+            });
         let handed =
             match sign_in.filter(|s| !reattaching && !on_the_runner && !s.credentials.is_empty()) {
                 Some(sign_in) => purlis_core::profilesignin::read(
@@ -4409,6 +4439,7 @@ impl Chats {
                     ),
                     runs_as.as_deref(),
                     &sign_in.credentials,
+                    missing.as_ref(),
                 )?,
                 None => purlis_core::profilesignin::Handed::default(),
             };
@@ -5509,9 +5540,20 @@ impl Chats {
         let held = Some(layout.without(|number| one_job.contains(&number)).held());
         let changed = std::mem::replace(&mut *lock(&self.layout), held.clone()) != held;
         if changed {
+            self.forget_windows_gone();
             self.write_it_down();
         }
         Ok(())
+    }
+
+    /// Forgets the use of every tab window the held layout no longer names (#5108): a tab
+    /// window goes with its last tab, however that tab left.
+    fn forget_windows_gone(&self) {
+        let windows = lock(&self.layout)
+            .as_ref()
+            .map(Layout::tab_windows)
+            .unwrap_or_default();
+        lock(&self.used).keep(&windows);
     }
 
     /// **Window `window`'s own report of its tabs** (#4768): the project window's (`0`) or one
@@ -5538,10 +5580,23 @@ impl Chats {
         lock(&self.layout).as_ref()?.window_showing(session)
     }
 
-    /// The window with a tab that has chat `session` in a pane (`Layout::window_naming`): where
-    /// a press on it goes. None where no tab does, or no layout is held.
-    pub fn window_naming(&self, session: u32) -> Option<u32> {
-        lock(&self.layout).as_ref()?.window_naming(session)
+    /// **A pane of window `window` was used** (#5108): the person focused one, or pressed into
+    /// one. It is the latest window a press on a chat in no pane goes to. Answers whether that
+    /// changed anything.
+    pub fn pane_used(&self, window: u32) -> bool {
+        lock(&self.used).touch(window)
+    }
+
+    /// **The window a press on chat `session` lands in** (`Layout::window_pressed`; spec #4750
+    /// story 97): the one with a tab that has it in a pane, else the one whose pane was used
+    /// last and is on screen. None where neither is, or no layout is held: the press is the
+    /// pressing window's.
+    pub fn window_pressed(&self, session: u32) -> Option<u32> {
+        let used = lock(&self.used).clone();
+        let away = lock(&self.away).clone();
+        lock(&self.layout)
+            .as_ref()?
+            .window_pressed(session, &used, &away)
     }
 
     /// **Move to new window** (`to` none) or **Move to window ▸**: the `nth` tab of window
@@ -5584,6 +5639,7 @@ impl Chats {
         let to = change(&mut next).map_err(|why| format!("purlis did not move that: {why}."))?;
         *layout = next.held();
         drop(held);
+        self.forget_windows_gone();
         self.write_it_down();
         Ok(to)
     }
@@ -5596,6 +5652,7 @@ impl Chats {
             .as_mut()
             .is_some_and(|layout| layout.send_back(window));
         lock(&self.away).set(window, false);
+        lock(&self.used).forget(window);
         if moved {
             self.write_it_down();
         }
@@ -6866,6 +6923,8 @@ impl Chats {
                 ..chat.clone()
             }))
         }));
+        // A chat no relaunch puts back is never written at all (#4976, [`Chat::unrecorded`]).
+        chats.retain(|chat| !chat.unrecorded);
         Record {
             chats,
             // Kept beside the tree (#4751): what each view tab was, where it was, whether it was in

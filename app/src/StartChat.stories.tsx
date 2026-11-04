@@ -11,15 +11,17 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
-import type { ProfileRow, StartOptions, StartRunsOn } from "./bindings";
-import { StartChat } from "./StartChat";
+import type { ProfileRow, StartOptions } from "./bindings";
+import { StartChat, type RunsOnInPicker } from "./StartChat";
 import {
   SHORT_WINDOW,
   expectAnchored,
   expectFocusInSight,
   inAWindow,
   pictureNow,
+  scrollIntoItsPane,
   untilFocused,
+  untilInSight,
 } from "./stories.testkit";
 
 const PERSONAS = [
@@ -106,8 +108,9 @@ function Window({
   poolUnavailable,
 }: {
   options?: StartOptions;
-  /** Where a new chat would run, and why: the Runs on row (#4536). */
-  runsOn?: StartRunsOn;
+  /** Where a new chat would run, and why: the Runs on row (#4536), with how each pool stands
+   *  (#4484). */
+  runsOn?: RunsOnInPicker;
   trouble?: string;
   poolUnavailable?: string;
 }) {
@@ -125,8 +128,8 @@ function Window({
           runsOn={runsOn}
           trouble={trouble}
           poolUnavailable={poolUnavailable}
-          onPoolSetup={() => {
-            setSaid("Pool setup");
+          onPoolSetup={(pool) => {
+            setSaid(pool === undefined ? "Pool setup" : `Pool setup on ${pool}`);
             setOpen(false);
           }}
           onStart={(profile, persona, footer, label, _branch, _sandbox, where) => {
@@ -336,6 +339,26 @@ async function opened() {
 }
 
 /**
+ * **The Runs on row in the picture** (#5016): the row sits below the harness cards, under the
+ * details pane's fold as the dialog opens, so it is scrolled to the middle of the pane, and only
+ * the pane, before `pictureNow`. What a person reads there is held wholly in sight: its heading,
+ * the row's control (the select, or Pool setup…) and the line under it that says why.
+ */
+async function runsOnInSight(page: ReturnType<typeof within>) {
+  const section = page.getByRole("region", { name: "Runs on" });
+  scrollIntoItsPane(section);
+  const inside = within(section);
+  await untilInSight(
+    [
+      inside.getByRole("heading", { name: "Runs on" }),
+      ...inside.queryAllByRole("button"),
+      ...section.querySelectorAll("p"),
+    ],
+    "Runs on: the row in the picture",
+  );
+}
+
+/**
  * **A workspace's first chat on its project's pool** (#4591): before anything is sent there, the
  * row says plainly that the workspace's code is copied to that pool's runner and the chat's work
  * comes back here.
@@ -350,6 +373,7 @@ export const RunsOnFirstOnThePool: Story = {
         "pool builds. Its code is copied to that pool's runner. The chat's work comes back " +
         "here when it ends.",
     );
+    await runsOnInSight(page);
     await pictureNow();
   },
 };
@@ -368,6 +392,7 @@ export const RunsOnFollowsTheProject: Story = {
     const runsOn = page.getByRole("button", { name: /Runs on$/ });
     await expect(runsOn).toHaveTextContent("As set (pool builds)");
     await expect(runsOn).toHaveAccessibleDescription("Pool builds, as this project's chats run.");
+    await runsOnInSight(page);
     await pictureNow();
 
     runsOn.focus();
@@ -400,6 +425,41 @@ export const RunsOnFollowsTheProject: Story = {
   },
 };
 
+/** **A pool whose setup isn't finished** (#4484): marked in the list, said under the row, with
+ *  Finish Pool setup… on that pool, reached by the keyboard. */
+export const RunsOnSetupNotFinished: Story = {
+  args: {
+    runsOn: {
+      pool: "builds",
+      level: "project",
+      at_root: false,
+      pools: POOLS,
+      ran_on: POOLS,
+      notFinished: {
+        builds:
+          "Setup not finished: chats start there, but gh and git push have no account to act as.",
+      },
+    },
+  },
+  play: async ({ userEvent }) => {
+    const page = await opened();
+    const runsOn = page.getByRole("button", { name: /Runs on$/ });
+    await expect(runsOn).toHaveAccessibleDescription(
+      "Pool builds, as this project's chats run. Setup not finished: chats start there, but gh and git push have no account to act as.",
+    );
+    const finish = page.getByRole("button", { name: "Finish Pool setup…" });
+    runsOn.focus();
+    await userEvent.tab();
+    await untilFocused(() => finish, "Finish Pool setup…: the next stop after Runs on");
+    expectFocusInSight();
+    await pictureNow();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(page.getByRole("status", { hidden: true })).toHaveTextContent("Pool setup on builds"),
+    );
+  },
+};
+
 /** **Runs on, where the workspace runs its chats on this machine** (#4536). */
 export const RunsOnThisMachineForTheWorkspace: Story = {
   args: { runsOn: { pool: null, level: "workspace", at_root: false, pools: POOLS, ran_on: POOLS } },
@@ -410,6 +470,7 @@ export const RunsOnThisMachineForTheWorkspace: Story = {
     await expect(runsOn).toHaveAccessibleDescription(
       "This machine, as this workspace's chats run.",
     );
+    await runsOnInSight(page);
     await pictureNow();
   },
 };
@@ -425,6 +486,7 @@ export const RunsOnAtTheRoot: Story = {
       page.getByText("This machine. A chat at the project's root always runs here."),
     ).toBeVisible();
     await expect(page.queryByRole("button", { name: /Runs on$/ })).toBeNull();
+    await runsOnInSight(page);
     await pictureNow();
   },
 };
@@ -438,6 +500,7 @@ export const RunsOnWithNoPool: Story = {
     await expect(
       page.getByText("This machine. No pool is set up on this machine yet."),
     ).toBeVisible();
+    await runsOnInSight(page);
     await pictureNow();
     const setup = page.getByRole("button", { name: "Pool setup…" });
     setup.focus();

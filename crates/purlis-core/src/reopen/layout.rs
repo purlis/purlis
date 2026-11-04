@@ -26,7 +26,7 @@ use super::{View, ViewOnDisk};
 
 #[path = "layout_windows.rs"]
 mod windows;
-pub use windows::{Away, MOST_TAB_WINDOWS, Refused};
+pub use windows::{Away, MOST_TAB_WINDOWS, Refused, Used};
 
 /// The most tabs one record puts back: far more than a strip draws, so it only ever bounds a
 /// hand-written record.
