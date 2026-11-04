@@ -4630,6 +4630,11 @@ body {
   border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
+/* Run chats on another machine (#4484): below the ways in, quiet, as a first day needs no pool. */
+.welcome-elsewhere {
+  padding-block-start: var(--space-3);
+}
+
 /* A quiet act inside the page's prose: Back above a door's page, and New project… at the foot of
    Create a project. Drawn as a link, because neither is the page's own act, and still a button,
    because each does something rather than goes somewhere. */

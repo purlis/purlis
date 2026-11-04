@@ -255,15 +255,16 @@ export function StartChat({
   onOpenSettings?: (group: string, setting?: string) => void;
   /** Where a new chat here would run and which level says so (#4536): the Runs on row. Absent,
    *  no row is drawn. */
-  runsOn?: StartRunsOn;
+  runsOn?: RunsOnInPicker;
   /** A pool chosen on the Runs on row as the picker opens, where the row offers it: Pool setup's
    *  Open a chat (#4483). The person can still choose otherwise, and presses Start. */
   pool?: string;
   /** The pool the last attempt was to run on, where it is gone, stopped or not reached: beside
    *  `trouble`, the picker offers Try again, Pool setup and Run on this machine this once. */
   poolUnavailable?: string;
-  /** Opens Pool setup, where a pool is added or mended. Absent, it is not offered. */
-  onPoolSetup?: () => void;
+  /** Opens Pool setup, where a pool is added or mended: on `pool`, where one is named (#4484).
+   *  Absent, it is not offered. */
+  onPoolSetup?: (pool?: string) => void;
   onCancel: () => void;
 }) {
   // Only a persona there is a row for. The core already filters `[persona] default`
@@ -749,7 +750,7 @@ export function StartChat({
                 <Button isDisabled={starting || savingLimit || unavailable} onPress={() => start()}>
                   Try again
                 </Button>
-                {onPoolSetup && <Button onPress={onPoolSetup}>Pool setup…</Button>}
+                {onPoolSetup && <Button onPress={() => onPoolSetup()}>Pool setup…</Button>}
                 <Button
                   isDisabled={starting || savingLimit || unavailable}
                   onPress={() => start({ pool: null })}
@@ -984,6 +985,18 @@ export function StartChat({
   );
 }
 
+/**
+ * **Where a new chat would run, with how each pool stands** (#4484, D on #4469): the core's
+ * `StartRunsOn`, its pools already without one where a chat can't start, and the ones whose setup
+ * isn't finished with why, by name.
+ */
+export type RunsOnInPicker = StartRunsOn & {
+  /** Pools offered whose setup isn't finished, with why. */
+  notFinished?: Readonly<Record<string, string>>;
+  /** Pools kept out of `pools`, as a chat can't start there, with why. */
+  notOffered?: Readonly<Record<string, string>>;
+};
+
 /** A pool, as the Runs on row names it inside a sentence and on its own. */
 const poolSaid = (pool: string | null) => (pool === null ? "this machine" : `pool ${pool}`);
 const capital = (said: string) => said.charAt(0).toUpperCase() + said.slice(1);
@@ -1032,30 +1045,49 @@ function RunsOnRow({
   whyId,
   onPoolSetup,
 }: {
-  runsOn: StartRunsOn;
+  runsOn: RunsOnInPicker;
   choice: string;
   onChoose: (to: string) => void;
   labelId: string;
   whyId: string;
-  onPoolSetup?: () => void;
+  onPoolSetup?: (pool?: string) => void;
 }) {
   if (runsOn.at_root) return <p className="start-chat-help">{runsOnReason(runsOn)}</p>;
-  // Nothing to choose between: no pool is kept, and no level names one that is gone.
-  if (runsOn.pools.length === 0 && runsOn.pool === null)
-    return (
+  // Nothing to choose between: no pool a chat can start on, and no level names one that is gone.
+  if (runsOn.pools.length === 0 && runsOn.pool === null) {
+    const hidden = Object.keys(runsOn.notOffered ?? {});
+    return hidden.length > 0 ? (
+      <>
+        <p className="start-chat-help">
+          {`This machine. Pool setup isn't finished for pool ${hidden[0]}, so a chat can't start there yet.`}
+        </p>
+        {onPoolSetup && (
+          <Button className="start-chat-runs-on" onPress={() => onPoolSetup(hidden[0])}>
+            Finish Pool setup…
+          </Button>
+        )}
+      </>
+    ) : (
       <>
         <p className="start-chat-help">This machine. No pool is set up on this machine yet.</p>
         {onPoolSetup && (
-          <Button className="start-chat-runs-on" onPress={onPoolSetup}>
+          <Button className="start-chat-runs-on" onPress={() => onPoolSetup()}>
             Pool setup…
           </Button>
         )}
       </>
     );
+  }
   const options = [
     { value: AS_SET, label: `As set (${poolSaid(runsOn.pool)})` },
     { value: HERE, label: "This machine" },
-    ...runsOn.pools.map((pool) => ({ value: pool, label: `Pool ${pool}` })),
+    ...runsOn.pools.map((pool) => ({
+      value: pool,
+      label:
+        runsOn.notFinished?.[pool] === undefined
+          ? `Pool ${pool}`
+          : `Pool ${pool} · Setup not finished`,
+    })),
   ];
   const chosen = choice === AS_SET ? runsOn.pool : choice === HERE ? null : choice;
   const said =
@@ -1064,6 +1096,11 @@ function RunsOnRow({
       : `${capital(poolSaid(chosen))} for this start only. No setting changes.`;
   const first = firstOnPoolSaid(runsOn, chosen);
   const why = first === undefined ? said : `${said} ${first}`;
+  // The pool this start would run on, where its setup isn't finished: said, with the way back
+  // (#4484).
+  const onPool = chosen;
+  const unfinished =
+    onPool === null ? undefined : (runsOn.notOffered?.[onPool] ?? runsOn.notFinished?.[onPool]);
   return (
     <>
       <Select
@@ -1076,7 +1113,13 @@ function RunsOnRow({
       />
       <p className="start-chat-help" id={whyId}>
         {why}
+        {unfinished !== undefined && ` ${unfinished}`}
       </p>
+      {unfinished !== undefined && onPool !== null && onPoolSetup && (
+        <Button className="start-chat-runs-on" onPress={() => onPoolSetup(onPool)}>
+          Finish Pool setup…
+        </Button>
+      )}
     </>
   );
 }

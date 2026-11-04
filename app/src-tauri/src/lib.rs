@@ -1271,6 +1271,31 @@ async fn reopen_finished_task(
     .await
 }
 
+/// **Resume** on the ended band of a chat the person ended (#5019, spec #4750 story 62): the
+/// same chat on its conversation, in a new run ([`crate::chats::Chats::resume_ended`]). The
+/// answer is the chat as the window draws it, which takes the pane the ended one was left in.
+#[tauri::command]
+#[specta::specta]
+async fn resume_ended_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    columns: u16,
+    rows: u16,
+) -> Result<OpenChat, String> {
+    let held = planes.held(&plane)?;
+    off_the_window(STARTING_A_CHAT, move || {
+        let started = held.chats().resume_ended(session, Size { columns, rows })?;
+        held.chats()
+            .open_now()
+            .into_iter()
+            .find(|open| open.session == started)
+            .map(|open| drawn_of(&held, open))
+            .ok_or_else(|| format!("chat {started} ended as it started"))
+    })
+    .await
+}
+
 /// What git says about each of the focused workspace's clones, and what the forge cache
 /// last recorded for the branch each is on.
 ///

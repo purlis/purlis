@@ -227,10 +227,20 @@ export const commands = {
 	 */
 	moveToWindow: (plane: PlaneId, tab: number, pane: string | null, to: number | null) => typedError<MovedTo, string>(__TAURI_INVOKE("move_to_window", { plane, tab, pane, to })),
 	/**
-	 *  **A press on chat `chat` in a project with tab windows** (#4768, ruled on #4701): where
-	 *  another of the project's windows has it in a pane, that window comes forward and shows it
-	 *  there, and its label is answered; a chat is never shown in two windows. Null where no other
-	 *  window has it, and the press is the asking window's.
+	 *  **A pane of this window was used** (#5108): the person focused one of its panes, or pressed
+	 *  into one. The window says it while its project has another window, so a press on a chat in
+	 *  no pane goes to the most recently used pane across them ([`press_elsewhere`]). A window
+	 *  that does not show `plane` says nothing.
+	 */
+	paneUsed: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("pane_used", { plane })),
+	/**
+	 *  **A press on chat `chat` in a project with tab windows** (#4768, #5108; spec #4750 story
+	 *  97): where another of the project's windows has it in a pane, that window comes forward and
+	 *  shows it there; a chat is never shown in two windows. Where no window has it, it goes to the
+	 *  most recently used pane across the project's windows: where that is another window's, that
+	 *  window comes forward and shows it in its focused pane (`Chats::window_pressed`). Either way
+	 *  that window's label is answered, and its pane counts as used. Null where the press is the
+	 *  asking window's: the chat is in its pane, its pane was used last, or none has been.
 	 */
 	pressElsewhere: (plane: PlaneId, chat: number) => typedError<string | null, string>(__TAURI_INVOKE("press_elsewhere", { plane, chat })),
 	/**
@@ -1359,6 +1369,7 @@ export const commands = {
 	finishedTasks: (plane: PlaneId) => typedError<FinishedTask[], string>(__TAURI_INVOKE("finished_tasks", { plane })),
 	clearFinishedTasks: __WINDOW_ONLY_RESULT,
 	reopenFinishedTask: __WINDOW_ONLY_RESULT,
+	resumeEndedChat: __WINDOW_ONLY_RESULT,
 	taskBrief: __WINDOW_ONLY_RESULT,
 	activity: __WINDOW_ONLY_RESULT,
 	/**
@@ -1687,6 +1698,7 @@ export const commands = {
 	poolSetupWake: __WINDOW_ONLY_RESULT,
 	poolSetupTry: __WINDOW_ONLY_RESULT,
 	poolSetupTryCancel: __WINDOW_ONLY,
+	poolSetupInThePicker: __WINDOW_ONLY_RESULT,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -8800,6 +8812,15 @@ export type PoolDisk = {
 	 *  said apart rather than counted as nothing.
 	 */
 	not_listed: number,
+};
+
+/**  One pool as the chat picker offers it (#4484, D on #4469). */
+export type PoolInPicker = {
+	pool: string,
+	/**  False where a chat can't start there: the picker doesn't offer it. */
+	offered: boolean,
+	/**  "Setup not finished", and why: where setup isn't finished, and where a chat can't start. */
+	said: string | null,
 };
 
 /**  **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced. */

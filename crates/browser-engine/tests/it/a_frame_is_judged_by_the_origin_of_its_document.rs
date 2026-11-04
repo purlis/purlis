@@ -6,7 +6,8 @@
 //! frame the origin of the document that made it, and a sandboxed or data frame none, so
 //! nothing is typed into it. A page's own document is judged by its origin the same way: a
 //! blank page another page wrote has the writer's origin. A blob page another page opens does
-//! not stay open. Keys on a fresh blank tab are refused as on a blank tab.
+//! not stay open. Keys on a fresh blank tab are refused as on a blank tab. A frame its page
+//! sends to a blank document is judged by the page's origin once that document is known.
 //!
 //! These need a real Chrome and a loopback port for the fixture site, which a sandboxed agent
 //! does not have: they run where `PURLIS_TEST_ENGINE` names a Chrome executable, and on CI.
@@ -108,6 +109,34 @@ fn each_frame_is_judged_by_its_documents_origin() {
         typed_into(&browser, "Data field").err(),
         Some(Refusal::FrameOpaque),
         "no web origin"
+    );
+}
+
+#[test]
+fn a_frame_its_page_sends_to_a_blank_document_is_judged_by_the_pages_origin() {
+    let (judge, told) = judge();
+    let Some((browser, _data, _site)) = started_judged(judge) else {
+        return;
+    };
+    open(&browser, "frame-sent-to-blank.html");
+    let target = ref_on(&snapshot(&browser), "Send the frame away");
+    call(&browser, Call::Click { target });
+    // Until the frame's new document is known, what would reach it is refused.
+    let start = Instant::now();
+    let typed = loop {
+        let typed = typed_into(&browser, "Blank document field");
+        if !matches!(typed, Err(Refusal::FrameUnread)) || start.elapsed() > Duration::from_secs(10)
+        {
+            break typed;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let typed = typed.expect("the blank document is judged once it is known");
+    assert!(
+        typed.asked.is_empty(),
+        "the page's own origin, not the one of the document the frame showed before: {typed:?}; \
+         the judge was told {:?}",
+        told.lock().unwrap()
     );
 }
 

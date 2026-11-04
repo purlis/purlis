@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A frame the page sends to a blank document</title></head>
+<body>
+  <h1>A frame the page sends to a blank document</h1>
+  <iframe title="Sent away" src="http://other.test/red-field.html" width="300" height="120"></iframe>
+  <button onclick="sendAway()">Send the frame away</button>
+  <script>
+    // The page sends its other site's frame to a blank document, which takes the page's
+    // origin, and writes a field into it.
+    function sendAway() {
+      const frame = document.querySelector('iframe');
+      frame.addEventListener('load', () => {
+        frame.contentDocument.body.innerHTML = "<input aria-label='Blank document field'>";
+      }, { once: true });
+      frame.contentWindow.location = 'about:blank';
+    }
+  </script>
+</body></html>

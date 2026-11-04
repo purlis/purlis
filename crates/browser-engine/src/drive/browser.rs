@@ -313,10 +313,14 @@ fn at_web_address(address: &str) -> bool {
 /// the process, and so the session, of the document around it; one held by another session, or
 /// whose own context's word may not have been kept, is [`Unjudged::Unread`] until that word is
 /// read, and so is one whose frame element's sandbox has not been read ([`Frame::sandboxed`]):
-/// sandboxed, it has no origin of its own.
+/// sandboxed, it has no origin of its own. So is one that has started another document whose
+/// own context has not said its origin yet ([`DocumentOrigins::awaits`]).
 fn judged_at(page: &Page, frame: &str, origins: &DocumentOrigins) -> Result<Judged, Unjudged> {
     let Some(mut at) = page.frames.get(frame) else {
         return if frame == page.target {
+            if origins.replaced(&page.target, frame) {
+                return Err(Unjudged::Unread);
+            }
             page_address(page)
         } else {
             Ok(Judged::Lost)
@@ -324,7 +328,8 @@ fn judged_at(page: &Page, frame: &str, origins: &DocumentOrigins) -> Result<Judg
     };
     let mut id = frame;
     for _ in 0..=page.frames.len() {
-        if at.unknown() {
+        // A frame whose address may be of a document it no longer shows is not judged by it.
+        if at.unknown() || origins.replaced(&page.target, id) {
             return Err(Unjudged::Unread);
         }
         let top = id == page.target;
@@ -334,6 +339,9 @@ fn judged_at(page: &Page, frame: &str, origins: &DocumentOrigins) -> Result<Judg
             Origin::Engine if top => return Ok(Judged::Nowhere),
             Origin::Engine => {}
             Origin::Inherited if top => return Err(Unjudged::Unread),
+            // A frame that started another document takes nobody's origin until that
+            // document's own context says its own.
+            Origin::Inherited if origins.awaits(&page.target, id) => return Err(Unjudged::Unread),
             Origin::Inherited => {
                 let around = match at.parent.as_deref() {
                     Some(parent) => page
@@ -361,7 +369,13 @@ fn judged_at(page: &Page, frame: &str, origins: &DocumentOrigins) -> Result<Judg
                 at = up;
                 id = parent;
             }
-            None if parent == page.target => return page_address(page),
+            None if parent == page.target => {
+                return if origins.replaced(&page.target, parent) {
+                    Err(Unjudged::Unread)
+                } else {
+                    page_address(page)
+                };
+            }
             None => return Ok(Judged::Lost),
         }
     }
@@ -508,15 +522,63 @@ struct DocumentOrigins {
     /// The sessions on which a context's word came while [`FRAME_ORIGINS_KEPT`] were kept, and
     /// was not kept: there a frame with no entry may have a context all the same.
     unkept: HashSet<String>,
+    /// The frames that started another document, or whose document's context ended, and whose
+    /// new document's own context has not been told by the session that holds the frame: none
+    /// of them has an origin known.
+    awaiting: HashSet<String>,
+    /// The frames that started another document and whose new address the engine has not
+    /// said yet.
+    unaddressed: HashSet<String>,
+    /// The frames whose address is no longer of the document they show: its context ended, or
+    /// the context of a document they started said an origin the address does not have, and
+    /// the engine has not said their new address yet.
+    replaced: HashSet<String>,
+    /// The pages on which a frame was to be awaited, or marked, while [`FRAME_ORIGINS_KEPT`]
+    /// were: none of their frames is judged until the page replaces its top document or goes.
+    overflowed: HashSet<String>,
+    /// The origins of documents a frame started away from, by session and frame, whose
+    /// contexts have not ended: where the load stops with such a context alive, the frame
+    /// still shows that document.
+    left: HashMap<(String, String), (i64, String)>,
 }
 
 /// The most documents' origins kept. Past it a new one is not kept, and its session is
 /// [`DocumentOrigins::all_kept`] no longer until its contexts are cleared.
 const FRAME_ORIGINS_KEPT: usize = 1024;
 
+/// Where a frame is, as the driver knows it: its page, the session that holds it, and its
+/// address.
+#[derive(Clone, Copy)]
+struct FrameAt<'a> {
+    page: &'a str,
+    session: &'a str,
+    address: &'a str,
+}
+
+/// Where frame `frame` is held among `pages` ([`FrameAt`]): its own entry, or for a page's own
+/// document not read yet, the page's session and address.
+fn frame_at<'a>(pages: &'a [Page], frame: &str) -> Option<FrameAt<'a>> {
+    pages.iter().find_map(|page| match page.frames.get(frame) {
+        Some(at) => Some(FrameAt {
+            page: &page.target,
+            session: &at.session,
+            address: &at.url,
+        }),
+        None if page.target == frame => Some(FrameAt {
+            page: &page.target,
+            session: page.session.as_deref()?,
+            address: &page.url,
+        }),
+        None => None,
+    })
+}
+
 impl DocumentOrigins {
-    /// The engine made `context` on `session`: kept when it is a frame's own.
-    fn told(&mut self, session: &str, context: &Value) {
+    /// The engine made `context` on `session`, for a frame `held` where the driver knows it:
+    /// kept when it is a frame's own. Only the session that holds the frame says its new
+    /// document is known; a context whose origin the frame's web address does not have, while
+    /// the engine has not said its new address, leaves the frame unjudged until it does.
+    fn told(&mut self, session: &str, context: &Value, held: Option<FrameAt>) {
         let aux = &context["auxData"];
         let (Some(id), Some(frame), Some(origin)) = (
             context["id"].as_i64(),
@@ -528,31 +590,197 @@ impl DocumentOrigins {
         if aux["isDefault"] != true {
             return;
         }
+        if let Some(held) = held {
+            let elsewhere = at_web_address(held.address)
+                && login::origin_of(held.address) != login::origin_of(origin);
+            if elsewhere && self.unaddressed.contains(frame) {
+                self.mark(held.page, frame);
+            } else if held.session == session {
+                self.replaced.remove(frame);
+            }
+        }
         let key = (session.to_owned(), frame.to_owned());
         if self.kept.len() >= FRAME_ORIGINS_KEPT && !self.kept.contains_key(&key) {
             self.unkept.insert(session.to_owned());
             return;
         }
         self.kept.insert(key, (id, origin.to_owned()));
+        if held.is_some_and(|held| held.session == session) {
+            self.awaiting.remove(frame);
+            self.left.retain(|(_, of), _| of != frame);
+        }
     }
 
-    /// The engine ended context `id` on `session`.
-    fn ended(&mut self, session: &str, id: i64) {
-        self.kept
-            .retain(|(on, _), (context, _)| on != session || *context != id);
+    /// The engine ended context `id` on `session`: the frame whose document it was awaits the
+    /// next one's, and where `session` holds it, is not judged by its address until the engine
+    /// says the next one's.
+    fn ended<'a>(&mut self, session: &str, id: i64, held: impl Fn(&str) -> Option<FrameAt<'a>>) {
+        let mut frames = Vec::new();
+        for map in [&mut self.kept, &mut self.left] {
+            map.retain(|(on, of), (context, _)| {
+                let ends = on == session && *context == id;
+                if ends {
+                    frames.push(of.clone());
+                }
+                !ends
+            });
+        }
+        for frame in frames {
+            self.document_ended(session, &frame, held(&frame));
+        }
     }
 
-    /// `frame` starts another document, or moves to another process: whatever origin was kept
-    /// for it, on any session, is of a document it no longer shows. Its origin is read again
-    /// from the new document's own context.
-    fn started(&mut self, frame: &str) {
-        self.kept.retain(|(_, of), _| of != frame);
+    /// The document of `frame` on `session` ended.
+    fn document_ended(&mut self, session: &str, frame: &str, held: Option<FrameAt>) {
+        let page = held.map(|held| held.page);
+        self.await_(page, frame);
+        if let Some(held) = held
+            && held.session == session
+        {
+            self.mark(held.page, frame);
+        }
     }
 
-    /// Every context on `session` is gone: they were cleared, or the session ended.
-    fn cleared(&mut self, session: &str) {
+    /// `frame` of `page` starts another document, or moves to another process: whatever origin
+    /// was kept for it, on any session, is of a document it no longer shows. Its origin is read
+    /// again from the new document's own context, and until then it is awaited.
+    fn started(&mut self, page: &str, frame: &str) {
+        let leaving: Vec<_> = self
+            .kept
+            .keys()
+            .filter(|(_, of)| of == frame)
+            .cloned()
+            .collect();
+        for key in leaving {
+            if let Some(entry) = self.kept.remove(&key)
+                && self.left.len() < FRAME_ORIGINS_KEPT
+            {
+                self.left.insert(key, entry);
+            }
+        }
+        self.await_(Some(page), frame);
+        if self.unaddressed.len() >= FRAME_ORIGINS_KEPT && !self.unaddressed.contains(frame) {
+            self.overflowed.insert(page.to_owned());
+        } else {
+            self.unaddressed.insert(frame.to_owned());
+        }
+    }
+
+    /// The engine said the address of `frame`'s document: its address is of the document it
+    /// shows.
+    fn addressed(&mut self, frame: &str) {
+        self.unaddressed.remove(frame);
+        self.replaced.remove(frame);
+    }
+
+    /// `frame` stopped loading: where a document it started away from still has its context,
+    /// that load did not replace it (it was stopped, or answered with nothing to show), and the
+    /// frame is known by that document again. Whether it is.
+    fn stopped(&mut self, frame: &str) -> bool {
+        if !self.awaiting.contains(frame) {
+            return false;
+        }
+        let back: Vec<_> = self
+            .left
+            .keys()
+            .filter(|(_, of)| of == frame)
+            .cloned()
+            .collect();
+        if back.is_empty() {
+            return false;
+        }
+        for key in back {
+            if let Some(entry) = self.left.remove(&key) {
+                if self.kept.len() >= FRAME_ORIGINS_KEPT && !self.kept.contains_key(&key) {
+                    self.unkept.insert(key.0.clone());
+                } else {
+                    self.kept.insert(key, entry);
+                }
+            }
+        }
+        self.awaiting.remove(frame);
+        self.unaddressed.remove(frame);
+        true
+    }
+
+    /// `frame` shows a document whose origin is the one around it whatever started it (an
+    /// `about:srcdoc` one): it is awaited no longer.
+    fn known_by_the_document_around(&mut self, frame: &str) {
+        self.awaiting.remove(frame);
+        self.left.retain(|(_, of), _| of != frame);
+    }
+
+    /// `frame` is gone from its page.
+    fn gone(&mut self, frame: &str) {
+        self.awaiting.remove(frame);
+        self.unaddressed.remove(frame);
+        self.replaced.remove(frame);
+        self.left.retain(|(_, of), _| of != frame);
+    }
+
+    /// Page `page` replaced its top document: `before`, the frames of the one before, are gone
+    /// with it, though the engine may not have said so yet, and what was not kept of them with
+    /// them.
+    fn top_navigated(&mut self, page: &str, before: &[String]) {
+        self.overflowed.remove(page);
+        for frame in before {
+            self.replaced.remove(frame);
+            self.unaddressed.remove(frame);
+        }
+    }
+
+    /// Page `page` is gone, its frames ([`DocumentOrigins::gone`]) with it.
+    fn page_gone(&mut self, page: &str) {
+        self.overflowed.remove(page);
+    }
+
+    /// `frame` awaits its new document's origin. Past the most awaited, its page is not judged
+    /// at all where it is known.
+    fn await_(&mut self, page: Option<&str>, frame: &str) {
+        if self.awaiting.len() >= FRAME_ORIGINS_KEPT && !self.awaiting.contains(frame) {
+            if let Some(page) = page {
+                self.overflowed.insert(page.to_owned());
+            }
+        } else {
+            self.awaiting.insert(frame.to_owned());
+        }
+    }
+
+    /// `frame` of `page` is not judged by its address until the engine says its next one.
+    fn mark(&mut self, page: &str, frame: &str) {
+        if self.replaced.len() >= FRAME_ORIGINS_KEPT && !self.replaced.contains(frame) {
+            self.overflowed.insert(page.to_owned());
+        } else {
+            self.replaced.insert(frame.to_owned());
+        }
+    }
+
+    /// Whether `frame` of `page` may have started a document whose own context has not said
+    /// its origin.
+    fn awaits(&self, page: &str, frame: &str) -> bool {
+        self.overflowed.contains(page) || self.awaiting.contains(frame)
+    }
+
+    /// Whether the address of `frame` of `page` may not be of the document it shows.
+    fn replaced(&self, page: &str, frame: &str) -> bool {
+        self.overflowed.contains(page) || self.replaced.contains(frame)
+    }
+
+    /// Every context on `session` is gone: they were cleared, or the session ended. A frame
+    /// whose document's origin was kept there awaits the next one's.
+    fn cleared<'a>(&mut self, session: &str, held: impl Fn(&str) -> Option<FrameAt<'a>>) {
+        let frames: Vec<_> = self
+            .kept
+            .keys()
+            .filter(|(on, _)| on == session)
+            .map(|(_, of)| of.clone())
+            .collect();
         self.kept.retain(|(on, _), _| on != session);
+        self.left.retain(|(on, _), _| on != session);
         self.unkept.remove(session);
+        for frame in frames {
+            self.document_ended(session, &frame, held(&frame));
+        }
     }
 
     /// The origin of the document `frame` shows on `session`, where the engine gave it.
@@ -1191,11 +1419,23 @@ impl State {
                 page.shows = generation;
                 entry.generation = generation;
                 entry.loaded = generation;
-                if id == target {
+                let before: Vec<String> = if id == target {
                     page.url = text("url");
-                }
+                    page.frames
+                        .keys()
+                        .filter(|f| **f != target)
+                        .cloned()
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 self.refs.forget_frame(id);
                 self.excluded.retain(|key| key.frame != id);
+                // Its address is of the document it shows from now on.
+                self.document_origins.addressed(id);
+                if id == target {
+                    self.document_origins.top_navigated(&target, &before);
+                }
             }
         }
     }
@@ -1231,6 +1471,8 @@ impl State {
         entry.sandboxed = None;
         entry.told = told;
         entry.unread = true;
+        // The target's address is of the document it shows from now on.
+        self.document_origins.addressed(frame);
     }
 
     /// The engine says the target of `frame` is at `url` (#4472). The frame's own session may
@@ -1268,7 +1510,7 @@ impl State {
         }
         entry.session = session.to_owned();
         entry.sandboxed = None;
-        self.document_origins.started(frame);
+        self.document_origins.started(target, frame);
         self.generations += 1;
         let generation = self.generations;
         if let Some(page) = self.page_mut(target)
@@ -1330,8 +1572,66 @@ impl State {
         for id in &gone {
             self.refs.forget_frame(id);
             self.excluded.retain(|key| &key.frame != id);
+            self.document_origins.gone(id);
         }
         gone
+    }
+
+    /// `frame` stopped loading: it is known by the document it still shows, where its load did
+    /// not replace it, or by the document around it, where it shows `about:srcdoc`, whose origin
+    /// is that one's whatever started it.
+    fn frame_stopped(&mut self, frame: &str) {
+        if self.document_origins.stopped(frame) {
+            return;
+        }
+        let srcdoc = self.pages.iter().any(|page| {
+            page.frames.get(frame).is_some_and(|at| {
+                at.url
+                    .split(['?', '#'])
+                    .next()
+                    .is_some_and(|bare| bare.eq_ignore_ascii_case("about:srcdoc"))
+            })
+        });
+        if srcdoc {
+            self.document_origins.known_by_the_document_around(frame);
+        }
+    }
+
+    /// `session` says `frame` starts another document.
+    fn frame_started(&mut self, session: &str, frame: &str) {
+        let page = frame_at(&self.pages, frame)
+            .map(|held| held.page.to_owned())
+            .or_else(|| self.page_of_session(session));
+        if let Some(page) = page {
+            self.document_origins.started(&page, frame);
+        }
+    }
+
+    /// The engine made `context` on `session` ([`DocumentOrigins::told`]).
+    fn context_told(&mut self, session: &str, context: &Value) {
+        let frame = context["auxData"]["frameId"].as_str().unwrap_or_default();
+        let at = frame_at(&self.pages, frame);
+        self.document_origins.told(session, context, at);
+    }
+
+    /// Every context on `session` is gone ([`DocumentOrigins::cleared`]).
+    fn contexts_cleared(&mut self, session: &str) {
+        let pages = &self.pages;
+        self.document_origins
+            .cleared(session, |frame| frame_at(pages, frame));
+    }
+
+    /// Page `target` is gone, and every frame of it with it.
+    fn page_gone(&mut self, target: &str) {
+        if let Some(page) = self.page(target) {
+            let frames: Vec<String> = page.frames.keys().cloned().collect();
+            for frame in frames {
+                self.document_origins.gone(&frame);
+            }
+        }
+        self.document_origins.gone(target);
+        self.document_origins.page_gone(target);
+        self.pages.retain(|p| p.target != target);
     }
 }
 
@@ -4470,7 +4770,7 @@ impl Inner {
     /// `session` is gone, and what it had open went with it.
     fn session_ended(&self, state: &mut State, session: &str, now: Instant) {
         self.worlds.cleared(session);
-        state.document_origins.cleared(session);
+        state.contexts_cleared(session);
         if let Some(target) = state.page_of_session(session)
             && let Some(page) = state.page_mut(&target)
         {
@@ -4658,7 +4958,7 @@ impl Inner {
                 }
                 "Target.targetDestroyed" => {
                     if let Some(target) = text("/targetId") {
-                        state.pages.retain(|p| p.target != target);
+                        state.page_gone(&target);
                         // A frame's target can go with no detach to follow, and a session left
                         // listed would go on speaking for the frame over its parent (#4472).
                         let frames: Vec<String> = state
@@ -4758,8 +5058,8 @@ impl Inner {
                 // A frame that starts another document has its origin read again from that
                 // document's own context. A move within the same document keeps it.
                 "Page.frameStartedLoading" => {
-                    if let Some(frame) = text("/frameId") {
-                        state.document_origins.started(&frame);
+                    if let (Some(session), Some(frame)) = (&event.session_id, text("/frameId")) {
+                        state.frame_started(session, &frame);
                     }
                 }
                 "Page.frameStartedNavigating"
@@ -4768,29 +5068,39 @@ impl Inner {
                         Some("sameDocument" | "historySameDocument")
                     ) =>
                 {
+                    if let (Some(session), Some(frame)) = (&event.session_id, text("/frameId")) {
+                        state.frame_started(session, &frame);
+                    }
+                }
+                "Page.frameStoppedLoading" => {
                     if let Some(frame) = text("/frameId") {
-                        state.document_origins.started(&frame);
+                        state.frame_stopped(&frame);
                     }
                 }
                 // purlis's own worlds, as the engine tells of them (#2138).
                 "Runtime.executionContextCreated" => {
                     if let Some(session) = &event.session_id {
                         self.worlds.told(session, &params["context"]);
-                        state.document_origins.told(session, &params["context"]);
+                        state.context_told(session, &params["context"]);
                     }
                 }
                 "Runtime.executionContextDestroyed" => {
                     if let Some(session) = &event.session_id {
                         self.worlds.ended(session, params);
                         if let Some(id) = params["executionContextId"].as_i64() {
-                            state.document_origins.ended(session, id);
+                            let State {
+                                pages,
+                                document_origins,
+                                ..
+                            } = &mut *state;
+                            document_origins.ended(session, id, |frame| frame_at(pages, frame));
                         }
                     }
                 }
                 "Runtime.executionContextsCleared" => {
                     if let Some(session) = &event.session_id {
                         self.worlds.cleared(session);
-                        state.document_origins.cleared(session);
+                        state.contexts_cleared(session);
                     }
                 }
                 // A form submitted (#2018): its request, when it comes, sends what was typed.

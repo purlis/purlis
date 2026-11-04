@@ -108,7 +108,8 @@ pub struct Server {
 ///   chat with a curation's prompt typed), and `relaunch` (the launch's answer, which starts
 ///   every chat the project held);
 /// - **it starts a chat again**: `restart_chat_without_sandbox`, `restart_chat`,
-///   `start_chat_fresh`, `ask_chat_restart`.
+///   `start_chat_fresh`, `ask_chat_restart`, `resume_ended_chat` (Resume on the ended band of a
+///   chat the person ended, #5019).
 ///
 /// - **it lets a persona's committed hosts reach past this machine's sandbox** (#1362):
 ///   `allow_persona_hosts`, which the person at this machine's window allows as it was shown
@@ -312,6 +313,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Starts again.
     "restart_chat_without_sandbox",
     "restart_chat",
+    "resume_ended_chat",
     // A chat moved to or from a pool's runner (#2048): a new run where it moves.
     "move_chat",
     "move_chat_now",
@@ -794,6 +796,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_try",
     // And only that press's own Cancel stops it (#4976).
     "pool_setup_try_cancel",
+    // How each pool stands in the picker: read from this machine's own records.
+    "pool_setup_in_the_picker",
     "pool_setup_open_docker",
     "add_docker_pool",
     "remove_docker_pool",
@@ -1207,6 +1211,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "open_view",
     "opened_chats",
     "owed_restarts",
+    "pane_used",
     "pending_asks",
     "put_away_chat_move",
     "persona_chats_of",

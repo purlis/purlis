@@ -253,6 +253,19 @@ describe("a chat's one list (#4753)", () => {
     expect(listOf(3, restoring.offers)).toContain("chat.end:3");
   });
 
+  it("has only its reading rows for a chat ended on purpose that its pane still shows (#5019)", () => {
+    // Its pane keeps it under the ended band, whose Resume and Clear pane are its ways out: no
+    // End… to press a second time, nothing to rename, restart or stop. What it said and what it
+    // reached can still be read.
+    const { palette } = world({ endedHere: [1] });
+    expect(
+      palette
+        .filter((offer) => offer.id.startsWith("chat.") && offer.id.endsWith(":1"))
+        .map((offer) => offer.id),
+    ).toEqual(["chat.activity:1", "chat.network:1"]);
+    expect(palette.some((offer) => offer.id === "chat.end:2")).toBe(true);
+  });
+
   it("lists every chat's rows in the palette, not only the chat in front's", () => {
     const { palette } = world();
     const rename = palette.filter((offer) => offer.id.startsWith("chat.rename:"));

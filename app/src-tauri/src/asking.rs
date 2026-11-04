@@ -1693,12 +1693,32 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
     let what_for = open.purpose.as_deref().map_or_else(String::new, |purpose| {
         format!(". The chat says it is for: “{purpose}”")
     });
-    let says = format!(
-        "Needs {key}{undeclared} from {persona}'s vault {vault}{used_by}. Fill stores it in \
-         that vault on this machine; the chat never sees it{others}{declared_for}{what_for}"
-    );
+    // A chat on a runner that cannot receive a value was told it was declined (#5077).
+    let says = if open.chats.is_empty() && open.starts == 0 && !open.cannot_receive.is_empty() {
+        format!(
+            "Needs {key}{undeclared} from {persona}'s vault {vault}{used_by}. This chat's runner \
+             can't receive secrets: Fill stores it in that vault for chats on this \
+             machine{declared_for}{what_for}"
+        )
+    } else {
+        let unreached = if open.cannot_receive.is_empty() {
+            ""
+        } else {
+            ". A runner chat that asked can't receive it"
+        };
+        format!(
+            "Needs {key}{undeclared} from {persona}'s vault {vault}{used_by}. Fill stores it in \
+             that vault on this machine; the chat never sees \
+             it{others}{unreached}{declared_for}{what_for}"
+        )
+    };
     Shown {
-        session: open.chats.first().copied().unwrap_or_default(),
+        session: open
+            .chats
+            .first()
+            .or(open.cannot_receive.first())
+            .copied()
+            .unwrap_or_default(),
         ask: secret_key(open.id),
         says: said_inertly(&says),
         options: vec![

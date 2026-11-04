@@ -65,7 +65,6 @@ import {
   type RunsOnPick,
   type Sidebar as SidebarModel,
   type StartOptions,
-  type StartRunsOn,
   type ViewTab,
   type WindowDraft,
 } from "./bindings";
@@ -141,7 +140,7 @@ import {
   stopRepoClones,
   useRepoClones,
 } from "./repoClones";
-import { StartChat } from "./StartChat";
+import { StartChat, type RunsOnInPicker } from "./StartChat";
 import {
   handedSaid,
   handReference,
@@ -273,6 +272,7 @@ import { StatusLine, projectName, runningIn, todoCount, type Alerts } from "./St
 import {
   closeChat,
   closeFocusedPane,
+  closePane as closePaneOfTab,
   closeLayout,
   closeTab,
   openTabFilling,
@@ -350,7 +350,6 @@ import {
   oneJobEnded,
   shellExited,
   shownBeside,
-  showIn,
   type PaneAt,
   type Press,
   type PressedChat,
@@ -396,6 +395,10 @@ import {
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
  *  you, or a browser (#2012). */
 type TroubleFrom = "start-options" | "shell" | "needs-you" | "browser";
+
+/** **A chat ended on purpose in its pane** (#5019), as the window held it when it ended: its
+ *  name, and the record a Smart close wrote, which is its way back. */
+type EndedHere = EndedChat & { workspace: string };
 import {
   askedByOf,
   chatsOfPane,
@@ -568,13 +571,14 @@ import {
   heardMove,
   movedAfterSignIn,
   moveOffers,
+  movesOnceAPoolIsSetUp,
   movesDue,
   movesWith,
   poolsToMoveTo,
   useChatMoves,
   useChatMovesHeard,
 } from "./chatMoves";
-import { readRunnerStage, refusedWith, saveLimits, usePools } from "./pools";
+import { anyPoolKept, readRunnerStage, refusedWith, saveLimits, usePools } from "./pools";
 import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { LEAST, LEAST_CHIP, leastAt, NARROW_TAB, narrowTabs, pinnedFirst, useRoom } from "./fits";
 import type { Naming } from "./tabFace";
@@ -629,7 +633,7 @@ import {
   type StartNotes,
   withNote,
 } from "./ChatNotices";
-import { LayoutPanes, type PaneFace } from "./LayoutPanes";
+import { type EndedChat, LayoutPanes, type PaneFace } from "./LayoutPanes";
 import { drawnOf } from "./paneFold";
 import { usePaneRoom } from "./usePaneRoom";
 import { ChatPersonaState } from "./ChatPersonaState";
@@ -1077,7 +1081,7 @@ export const PlaneView = memo(function PlaneView({
     options: StartOptions;
     where: Where;
     /** Where a chat started here would run, and why (#4536): the picker's Runs on row. */
-    runsOn?: StartRunsOn;
+    runsOn?: RunsOnInPicker;
   }>();
   /** Why the last start did not happen, shown in the picker rather than behind it. */
   const [pickerTrouble, setPickerTrouble] = useState<string>();
@@ -1101,9 +1105,26 @@ export const PlaneView = memo(function PlaneView({
   /** **Where a new chat in `workspace` would run** (#4536), read as the picker opens so its Runs
    *  on row is drawn with it: `undefined` where the core could not say, and no row is drawn. */
   const readRunsOn = useCallback(
-    async (workspace: string | null): Promise<StartRunsOn | undefined> => {
-      const said = await commands.startRunsOn(plane, workspace).catch(() => undefined);
-      return said?.status === "ok" && Array.isArray(said.data?.pools) ? said.data : undefined;
+    async (workspace: string | null): Promise<RunsOnInPicker | undefined> => {
+      const [said, standing] = await Promise.all([
+        commands.startRunsOn(plane, workspace).catch(() => undefined),
+        commands.poolSetupInThePicker(plane).catch(() => undefined),
+      ]);
+      if (said?.status !== "ok" || !Array.isArray(said.data?.pools)) return undefined;
+      // How each pool stands (#4484): one where a chat can't start isn't offered, and one whose
+      // setup isn't finished says so. Unread, every pool is offered as the levels list it.
+      const pools = standing?.status === "ok" && Array.isArray(standing.data) ? standing.data : [];
+      const notOffered = new Set(pools.filter((one) => !one.offered).map((one) => one.pool));
+      const notFinished: Record<string, string> = {};
+      const notOfferedSaid: Record<string, string> = {};
+      for (const one of pools)
+        if (one.said !== null) (one.offered ? notFinished : notOfferedSaid)[one.pool] = one.said;
+      return {
+        ...said.data,
+        pools: said.data.pools.filter((pool) => !notOffered.has(pool)),
+        notFinished,
+        notOffered: notOfferedSaid,
+      };
     },
     [plane],
   );
@@ -1659,6 +1680,12 @@ export const PlaneView = memo(function PlaneView({
   /** **Every window of the project** (#4768): its project window (`0`) and each tab window, as
    *  the record and the core's last move said. What Move to window ▸ lists, less this one. */
   const [windowsHere, setWindowsHere] = useState<readonly number[]>([0]);
+  /** **Whether the project has this one window** (#4768, #5108): neither a tab window nor a
+   *  project window with tab windows. Its press goes to its focused pane, asking nothing. */
+  const oneWindow = useCallback(
+    () => tabWindow === undefined && !otherWindows.current,
+    [tabWindow],
+  );
   const windowsOf = useCallback((laid: LaidOut) => {
     const each = [...new Set([0, ...laid.tabs.map((one) => one.window)])].sort((a, b) => a - b);
     otherWindows.current = each.length > 1;
@@ -2104,7 +2131,22 @@ export const PlaneView = memo(function PlaneView({
   // (SC-2), so two reads can answer in either order, and one asked before a workspace was
   // renamed must not put it back after the read that saw the rename. `gone` is set when a
   // newer read is asked, which is when this effect runs again.
-  const openHere = useMemo(() => openChatsKey(tabs), [tabs]);
+  /**
+   * **The chats ended on purpose in a pane, kept there as ended** (#5019, spec #4750 story 62):
+   * End…, a Smart close once its record is written, and a task's End… leave the pane on the
+   * ended band, as a program that exits does (#4756). The core no longer lists such a chat, so
+   * what its band says is held here as it ends: its name, and the record a Smart close wrote,
+   * which is its Resume. A ref beside the state, since the close that reads it is made in the
+   * same handler as the end.
+   */
+  const [endedHere, setEndedHere] = useState<ReadonlyMap<number, EndedHere>>(() => new Map());
+  const endedHereNow = useRef<Map<number, EndedHere>>(new Map());
+  // **A chat ended on purpose counts as gone** (#5019): its pane keeps it, and the core no longer
+  // lists it, so its ending is a change to what is open here.
+  const openHere = useMemo(
+    () => `${openChatsKey(tabs)}|${[...endedHere.keys()].sort((a, b) => a - b).join(",")}`,
+    [endedHere, tabs],
+  );
   useEffect(() => {
     let gone = false;
     void commands
@@ -2303,14 +2345,16 @@ export const PlaneView = memo(function PlaneView({
         );
         if (workspace) return workspace.name;
         if (sidebar?.unfiled.some((one) => one.session === chat)) return OUTSIDE;
-        return startedIn[chat];
+        // A chat ended on purpose in its pane is listed no more, and stays where it was filed
+        // as it ended (#5019), its tab on that workspace's strip.
+        return startedIn[chat] ?? endedHere.get(chat)?.workspace;
       };
       // A task a scenario spec pretends (`e2eTasks.ts`, none in a shipped build) is in no
       // list of the core's: it is filed where the chat that asked for it is.
       const asker = pretended.find((one) => one.chat.session === session)?.chat.from?.chat;
       return at(session) ?? (asker === undefined ? undefined : at(asker)) ?? OUTSIDE;
     },
-    [pretended, sidebar, startedIn],
+    [endedHere, pretended, sidebar, startedIn],
   );
 
   /** Whether a tab is pinned: the tab's own pin (#4935), whatever its panes hold. */
@@ -2344,10 +2388,50 @@ export const PlaneView = memo(function PlaneView({
    * the pane is empty (`sayLayout`'s `told`), since it has no such chat open to hold.
    */
   const endedInPanes = useRef<Set<number>>(new Set());
-  /** Whether chat `session`, as it ends, stays in its pane: a task does. */
+  /** Chat `session` is being ended on purpose: where a pane shows it, that pane keeps it. */
+  const leavesItsBand = useCallback(
+    (session: number, record?: SavedRecord) => {
+      const held = tabHolding(now.current, session);
+      if (held === undefined) return;
+      const listed = listedNow.current.get(session);
+      // **A shell clears its pane** (spec #4750 story 64): it has no conversation to resume and
+      // nothing to read back, so its pane goes as a shell's exit takes it.
+      if (listed !== undefined && isShell(listed)) return;
+      // Named as its row named it (`shownName`), and as its tab does where it was not listed.
+      const name =
+        listed !== undefined ? shownName(now.current, listed) : now.current.byId[held].name;
+      // A Smart close's record brings it back; else its conversation.
+      const resumes = record !== undefined || listed !== undefined;
+      const one: EndedHere = { name, record, resumes, workspace: filedIn(session) };
+      endedHereNow.current.set(session, one);
+      setEndedHere((was) => new Map(was).set(session, one));
+    },
+    [filedIn],
+  );
+  /** Chat `session`'s pane no longer shows it as ended: cleared, or resumed. */
+  const forgetEndedHere = useCallback((session: number) => {
+    endedInPanes.current.delete(session);
+    if (!endedHereNow.current.delete(session)) return;
+    setEndedHere((was) => {
+      const left = new Map(was);
+      left.delete(session);
+      return left;
+    });
+  }, []);
+  /**
+   * **A chat ended on purpose that no tab shows any more is forgotten** (#5019): its pane went
+   * another way than Clear pane or Resume (Close pane, its tab's close, Close other tabs). Kept,
+   * it would still count as gone from what is open here, and its number held as ended.
+   */
+  useEffect(() => {
+    for (const session of [...endedHereNow.current.keys()])
+      if (tabHolding(tabs, session) === undefined) forgetEndedHere(session);
+  }, [forgetEndedHere, tabs]);
+  /** Whether chat `session`, as it ends, stays in its pane: a task does, and so does a chat
+   *  ended on purpose where a pane shows it (#5019). */
   const keepsItsPane = useCallback(
     (session: number) => {
-      const keep = askedByNow(session) !== undefined;
+      const keep = askedByNow(session) !== undefined || endedHereNow.current.has(session);
       if (keep) endedInPanes.current.add(session);
       return keep;
     },
@@ -2366,8 +2450,9 @@ export const PlaneView = memo(function PlaneView({
 
   /**
    * **A smart close that has ended** (ADR 0064). The core closed the chat when its record
-   * landed, so the window takes its pane away — `closeChat`, and never `close_session`, which
-   * would end it a second time — and says so quietly, with the record a click away (SI-8f).
+   * landed, so the window never says `close_session`, which would end it a second time. It
+   * ends like End… (#5019): the pane that showed it keeps it under the ended band, whose Resume
+   * is the record, and the window says so quietly, with the record a click away (SI-8f).
    * Given up, ended on its own, or its queued prompt could not be sent: the tab comes back where
    * it was and the window says why, in one sentence and in the needs-you list. Cancelled: the tab coming back says it all.
    */
@@ -2375,8 +2460,13 @@ export const PlaneView = memo(function PlaneView({
     (step: SmartClosing) => {
       settle(step.session);
       if (step.phase === "closed") {
+        // **It ends like End…** (#5019, spec #4750 story 62): its pane keeps it, under the
+        // ended band, and its record is its Resume.
+        leavesItsBand(step.session, step.record ?? undefined);
         change((tabs) => closeChat(tabs, step.session, filedIn, isPinned, keepsItsPane));
         stoppedFor(step.session, undefined);
+        // A kept-open Notice of it has nothing left to end: the chat has ended.
+        setKeptOpen((was) => was.filter((one) => one.session !== step.session));
         setSavedNotice({ record: step.record });
         return;
       }
@@ -2396,7 +2486,7 @@ export const PlaneView = memo(function PlaneView({
         setReport({ from: `smartclose:${step.session}`, refused: true, words: said });
       stoppedFor(step.session, stoppedWhy(step.phase));
     },
-    [keepsItsPane, change, filedIn, isPinned, settle, stoppedFor],
+    [keepsItsPane, change, filedIn, isPinned, leavesItsBand, settle, stoppedFor],
   );
   /** The chats wrapping up, as the core tells it. */
   const told = useSmartClosing(plane, smartCloseEnded);
@@ -2632,22 +2722,25 @@ export const PlaneView = memo(function PlaneView({
   const closeKeptOpen = useCallback(
     (session: number) => {
       forgetKeptOpen(session);
+      leavesItsBand(session);
       change((tabs) => closeChat(tabs, session, filedIn, isPinned, keepsItsPane));
       void commands.closeSession(plane, session);
     },
-    [keepsItsPane, change, filedIn, forgetKeptOpen, isPinned, plane],
+    [keepsItsPane, change, filedIn, forgetKeptOpen, isPinned, leavesItsBand, plane],
   );
   /**
-   * **End…, a chat's own row, once it is answered** (#4753): the chat's pane goes, wherever it
-   * is drawn or if it is drawn nowhere, its tasks with a pane of their own go back to the list,
-   * and the core ends its program. Asked first (`EndingChat`), as every row that ends a chat is.
+   * **End…, a chat's own row, once it is answered** (#4753): the core ends its program, and the
+   * pane that showed it keeps it, as ended, under the ended band with Clear pane (#5019); its
+   * tasks stay wherever they are shown (#4757). Asked first (`EndingChat`), as every row that ends a chat is.
    */
   const endChat = useCallback(
     (session: number) => {
+      // **Its pane keeps it, under the ended band** (#5019), with Clear pane to take it away.
+      leavesItsBand(session);
       change((tabs) => closeChat(tabs, session, filedIn, isPinned, keepsItsPane));
       void commands.closeSession(plane, session);
     },
-    [keepsItsPane, change, filedIn, isPinned, plane],
+    [keepsItsPane, change, filedIn, isPinned, leavesItsBand, plane],
   );
   /** …and the ones just pressed: their tabs, their explorer rows and their menus say so. */
   const wrapping = useMemo<ReadonlySet<number>>(
@@ -4032,9 +4125,10 @@ export const PlaneView = memo(function PlaneView({
   }, [askedByNow, change, filedIn, isPinned, keyboardInto]);
 
   /**
-   * **Clear pane, on an ended chat's band** (#4756): pane `pane` of the tab in front shows
-   * nothing in its place, filed where its chat was. The chat is still in the sidebar, and ends
-   * nothing more: End… takes it away.
+   * **Clear pane, on an ended chat's band** (#4756, #5019): pane `pane` of the tab in front
+   * closes, as Close pane closes one: what shared its split takes its place, and the strip's
+   * last tab keeps one empty pane (`closePane`). It ends nothing more: a chat whose program
+   * exited is still in the sidebar, where End… takes it away.
    */
   const clearPane = useCallback(
     (pane: number) => {
@@ -4042,11 +4136,10 @@ export const PlaneView = memo(function PlaneView({
       if (id === undefined) return;
       const going = panesOf(now.current, id).find((one) => one.pane === pane);
       if (going === undefined) return;
-      change((tabs) =>
-        showIn(tabs, id, pane, { kind: "empty", workspace: filedIn(going.session) }),
-      );
+      forgetEndedHere(going.session);
+      change((tabs) => closePaneOfTab(tabs, id, pane, filedIn, isPinned));
     },
-    [change, filedIn],
+    [change, filedIn, forgetEndedHere, isPinned],
   );
 
   /**
@@ -4243,10 +4336,11 @@ export const PlaneView = memo(function PlaneView({
     (session: number, into?: PaneAt) => {
       stoppedFor(session, undefined);
       const here = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
-      // **A chat in a pane of another of the project's windows** (#4768): that window comes
-      // forward and shows it, and this window changes nothing. Asked only while the project
-      // has another window, so a project of one window presses at once.
-      if (into !== undefined || (tabWindow === undefined && !otherWindows.current)) {
+      // **A chat in a pane of another of the project's windows** (#4768), **or a chat in no
+      // pane where another window's pane was used last** (#5108): that window comes forward
+      // and shows it, and this window changes nothing. Asked only while the project has another
+      // window, so a project of one window presses at once.
+      if (into !== undefined || oneWindow()) {
         here();
         return;
       }
@@ -4257,8 +4351,30 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch(here);
     },
-    [landOn, plane, pressedOf, pressing, stoppedFor, tabWindow],
+    [landOn, oneWindow, plane, pressedOf, pressing, stoppedFor],
   );
+  /** **A pane of this window was used** (#5108): pressed in, or typed in. Said to the core while
+   *  the project has another window, so a press on a chat in no pane, in whichever window, goes
+   *  to the most recently used pane across them (`press_elsewhere`). A project of one window
+   *  says nothing: its press goes to its focused pane, as it always has. A pane's focus is no
+   *  use of it: the window coming forward hands focus back to the pane that last had it, so a
+   *  press on a sidebar row would always be this window's. **Said once until the window has been
+   *  away**: no other window's pane can be used while this one keeps the focus. */
+  const paneSaidUsed = useRef(false);
+  useEffect(() => {
+    const away = () => {
+      paneSaidUsed.current = false;
+    };
+    window.addEventListener("blur", away);
+    return () => window.removeEventListener("blur", away);
+  }, []);
+  const paneUsed = useCallback(() => {
+    if (oneWindow() || paneSaidUsed.current) return;
+    paneSaidUsed.current = true;
+    void commands.paneUsed(plane).catch(() => {
+      paneSaidUsed.current = false;
+    });
+  }, [oneWindow, plane]);
   useEffect(() => {
     showChatHere.current = (session) =>
       landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
@@ -6401,7 +6517,7 @@ export const PlaneView = memo(function PlaneView({
    * back ({@link lostOnResume}): the same record, started fresh, as the same chat (ADR 0066).
    */
   const resumeSession = useCallback(
-    async (path: string, insteadOf?: number): Promise<Ran> => {
+    async (path: string, insteadOf?: number, into?: number): Promise<Ran> => {
       const name = String(now.current.named.tabs + 1);
       const afterFailure = insteadOf !== undefined;
       const said = await commands
@@ -6424,12 +6540,17 @@ export const PlaneView = memo(function PlaneView({
       resuming.current.set(chat.session, { path, afterFailure, heard: false });
       setStartedIn((was) => ({ ...was, [chat.session]: filedFor(chat.cwd, focused) }));
       setReopened((was) => [...was.filter((one) => one.session !== chat.session), chat]);
+      // **Resume on an ended chat's band** (#5019) starts it in the pane that showed it, and
+      // that pane no longer shows it as ended.
+      if (into !== undefined) forgetEndedHere(into);
       change((tabs) =>
-        openTab(tabs, chat.session, name, whoOf(chat.persona, chat.harness), chat.label),
+        into !== undefined && tabHolding(tabs, into) !== undefined
+          ? replaceSession(tabs, into, chat.session)
+          : openTab(tabs, chat.session, name, whoOf(chat.persona, chat.harness), chat.label),
       );
       return { ok: true };
     },
-    [change, focused, plane, showAgain],
+    [change, focused, forgetEndedHere, plane, showAgain],
   );
 
   /**
@@ -6966,6 +7087,17 @@ export const PlaneView = memo(function PlaneView({
       );
     },
     [chatMoves, poolNames, reopened],
+  );
+  /** Whether a chat here would be offered Pool setup to move it, with no pool kept (#4484). Only
+   *  once the pools are read, so a slow read never offers setup to a machine that has pools. */
+  const noPoolKept = poolsHeld.read.state === "read" && !anyPoolKept();
+  const movesOnceSetUp = useCallback(
+    (session: number) =>
+      movesOnceAPoolIsSetUp(
+        reopened.find((one) => one.session === session),
+        !noPoolKept,
+      ),
+    [noPoolKept, reopened],
   );
   /** The other chats of a chat's workspace running where it runs, which move with it (#3453). */
   const movesWithChat = useCallback((session: number) => movesWith(session, reopened), [reopened]);
@@ -8152,6 +8284,35 @@ export const PlaneView = memo(function PlaneView({
     return rows;
   }, [finishedTasks, frontEndedPanes]);
   /**
+   * **Resume, on the band of a chat ended on purpose** (#5019, spec #4750 story 62), in the pane
+   * that showed it: from its record where a Smart close wrote one (SI-8d), and else on its
+   * conversation, the same chat in a new run (`resume_ended_chat`). A refusal is said where
+   * every refused press is, and the band stays.
+   */
+  const resumeEndedIn = useCallback(
+    async (session: number) => {
+      const was = endedHereNow.current.get(session);
+      if (was === undefined) return;
+      if (was.record !== undefined) {
+        const ran = await resumeSession(was.record.path, undefined, session);
+        if (!ran.ok) setReport({ from: `resume:${session}`, refused: true, words: ran.refused });
+        return;
+      }
+      const said = await commands
+        .resumeEndedChat(plane, session, STARTING_SIZE.columns, STARTING_SIZE.rows)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      if (said.status === "error") {
+        setReport({ from: `resume:${session}`, refused: true, words: said.error });
+        return;
+      }
+      const chat = said.data;
+      noteStarted(chat);
+      forgetEndedHere(session);
+      change((tabs) => replaceSession(tabs, session, chat.session));
+    },
+    [change, forgetEndedHere, noteStarted, plane, resumeSession],
+  );
+  /**
    * **The breadcrumb of each pane of the tab in front that shows its own chat and has a path
    * to say** (#1489): a task in a pane of its own, and the session it is beside.
    */
@@ -8680,6 +8841,7 @@ export const PlaneView = memo(function PlaneView({
             curations,
             wrappingUp: [...wrapping],
             restoring: [...restoringChats],
+            endedHere: [...endedHere.keys()],
             // Close other tabs skips the pinned ones (#4762).
             otherTabs: (tab) => otherTabsToClose(tabs, tab, filedIn, isPinned),
             // Move to window ▸ lists every other window of the project (#4768).
@@ -8691,6 +8853,7 @@ export const PlaneView = memo(function PlaneView({
             planeUpdated: planeUpdates,
             restartable,
             movesTo,
+            movesOnceAPoolIsSetUp: movesOnceSetUp,
             movesWith: movesWithChat,
             clonesComeBack,
             ask: askOffer,
@@ -8754,6 +8917,7 @@ export const PlaneView = memo(function PlaneView({
       liveNames,
       wrapping,
       restoringChats,
+      endedHere,
       isPinned,
       windowsHere,
       tabWindow,
@@ -8762,6 +8926,7 @@ export const PlaneView = memo(function PlaneView({
       planeUpdates,
       restartable,
       movesTo,
+      movesOnceSetUp,
       movesWithChat,
       clonesComeBack,
       askOffer,
@@ -9040,6 +9205,9 @@ export const PlaneView = memo(function PlaneView({
         return false;
       }
       const gone = Array.isArray(stopped.data) ? stopped.data : [];
+      // The chat End… was answered for keeps its pane, as ended (#5019). What the core stopped
+      // below it goes as before.
+      if (then === "close") leavesItsBand(session);
       if (gone.length > 0) {
         change((tabs) =>
           gone.reduce((left, one) => closeChat(left, one, filedIn, isPinned, keepsItsPane), tabs),
@@ -9048,7 +9216,7 @@ export const PlaneView = memo(function PlaneView({
       }
       return true;
     },
-    [keepsItsPane, change, filedIn, isPinned, plane],
+    [keepsItsPane, change, filedIn, isPinned, leavesItsBand, plane],
   );
 
   const press = useCallback(
@@ -10741,6 +10909,8 @@ export const PlaneView = memo(function PlaneView({
                       className="panes"
                       {...panelRoot("content")}
                       {...tabPanelOf(panelNamedBy)}
+                      onPointerDownCapture={paneUsed}
+                      onKeyDownCapture={paneUsed}
                     >
                       {frontTab ? (
                         <TaskEndContext.Provider value={taskEndHand}>
@@ -10762,6 +10932,7 @@ export const PlaneView = memo(function PlaneView({
                                 crumbs={frontCrumbs}
                                 placed={frontPlaced}
                                 endedTasks={frontEndedPanes}
+                                endedChats={endedHere}
                                 unread={frontUnread}
                                 finished={frontFinished}
                                 explaining={chipToExplain}
@@ -10829,6 +11000,7 @@ export const PlaneView = memo(function PlaneView({
                                 chatName={nameOf}
                                 onClearPane={clearPane}
                                 onResumeTask={(pane, task) => void resumeTaskIn(pane, task)}
+                                onResumeEnded={(session) => void resumeEndedIn(session)}
                               />
                             </QuizPlaces.Provider>
                           </OfferOpeningContext.Provider>
@@ -11457,11 +11629,14 @@ export const PlaneView = memo(function PlaneView({
                   }
                   // Pool setup, where the pool is added or mended: the picker closes, as it does
                   // for Settings, since the chat it was for starts after the mend.
-                  onPoolSetup={() => {
+                  onPoolSetup={(pool) => {
                     setPicking(undefined);
                     setPickerTrouble(undefined);
                     setPickerPoolGone(undefined);
-                    showView(POOL_SETUP_VIEW, POOL_SETUP_TITLE);
+                    // On the pool the picker named (#4484): setup carries on with it.
+                    void (pool === undefined ? Promise.resolve() : commands.poolSetupPool(pool))
+                      .catch(() => undefined)
+                      .then(() => showView(POOL_SETUP_VIEW, POOL_SETUP_TITLE));
                   }}
                   // SD-30's install action: a shell tab at the project root with the command typed and
                   // not run. The picker closes, since the chat it was for starts after the install.
