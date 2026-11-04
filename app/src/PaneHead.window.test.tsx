@@ -185,7 +185,7 @@ describe("a chat's pane head", () => {
     expect(rest).toEqual([]);
     // The thin divider parts the chat's actions from the pane's controls, unheard and untabbed.
     const actions = [
-      ...head().querySelectorAll(".pane-actions button, .pane-actions [data-scope]"),
+      ...head().querySelectorAll('.pane-actions button, .pane-actions [data-scope="separator"]'),
     ];
     const line = actions.findIndex((one) => one.getAttribute("data-scope") === "separator");
     expect(actions[line - 1]).toHaveAccessibleName(`More for ${NAME}`);
