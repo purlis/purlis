@@ -399,6 +399,8 @@ describe("a harness's capability card", function () {
         await browser.waitUntil(
           () =>
             browser.execute(() => {
+              // Not while the rows' details are read (#4736): the button does not know yet.
+              if (document.querySelector('[role="dialog"] [aria-busy="true"]')) return false;
               const start = [
                 ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
               ]

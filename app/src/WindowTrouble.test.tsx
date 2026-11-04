@@ -70,7 +70,8 @@ function core(refusals: number) {
     if (cmd === "running_sessions") return [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "start_options") {
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") {
       if (asked++ < refusals) throw REFUSED;
       return START_OPTIONS;
     }

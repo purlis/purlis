@@ -174,7 +174,8 @@ function core(
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "open_session") return ++opened;
-    if (cmd === "start_options") return options;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return options;
     if (cmd === "start_chat") return { session: ++opened };
     if (cmd === "harness_setup_found") return found();
     return null;
@@ -830,7 +831,8 @@ describe("App", () => {
       if (cmd === "opened_chats") return [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       if (cmd !== "start_chat") return null;
       if (++opened === 1) return { session: 1 };
       await new Promise<void>((starts) => (letTheSecondSessionStart = starts));
@@ -868,7 +870,8 @@ describe("App", () => {
       if (cmd === "opened_chats") return [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       // The panels ask the core too, and this test is about the picker: a refusal from them
       // is a second alert, which is not the one being asserted on.
       if (cmd === "workspace_panels" || cmd === "workspace_repos") return null;

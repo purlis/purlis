@@ -1531,15 +1531,35 @@ export const commands = {
 	 *  What the picker draws: every profile this machine has, every one charter will not use,
 	 *  and the plane's personas.
 	 * 
-	 *  Read fresh every time it is opened, like the sidebar: `charter.local.toml` is a file the
-	 *  operator edits by hand and a chat can write, so a cache here would be a second answer to
-	 *  "what is on disk" that nothing invalidates.
+	 *  Read fresh on every ask: what a fix in the picker reads to draw what is true after it, and
+	 *  what every other caller reads. The dialog's own two answers ([`start_options_first`],
+	 *  [`start_details`]) are kept per project instead, and the plane watch is what drops them
+	 *  (#4737): `charter.local.toml` is a file the operator edits by hand and a chat can write.
 	 * 
 	 *  **Off the main thread**: a sandboxed project's picker asks each approved Claude Code
 	 *  profile's program its `--version` (ruling V87g), which can take seconds, and the window
 	 *  must not freeze for it.
 	 */
 	startOptions: (plane: PlaneId) => typedError<StartOptions, string>(__TAURI_INVOKE("start_options", { plane })),
+	/**
+	 *  **The picker's first answer** (#4736): what [`start_options`] answers, without what takes a
+	 *  moment to read: every row's approval, sandbox and billing are none here, and
+	 *  [`start_details`] answers them. The dialog opens on this, at once, and fills its rows in as
+	 *  the details arrive. A start pressed before then goes through every gate it does today: the
+	 *  window waits for the details, and the core's start asks them again.
+	 * 
+	 *  **Kept per project** (#4737), with [`start_details`]: an open with nothing changed is
+	 *  served from what the last one read ([`planes::Held::kept_start_first`]), and a change to
+	 *  the profiles, the personas, the sandbox or the installed harnesses drops it first.
+	 */
+	startOptionsFirst: (plane: PlaneId) => typedError<StartOptions, string>(__TAURI_INVOKE("start_options_first", { plane })),
+	/**
+	 *  **The picker's second answer** (#4736): each row's approval, sandbox and billing, by its
+	 *  name, the slow part of [`start_options`]: a sandbox compile per harness and a check of
+	 *  each approved profile's program. Kept as [`start_options_first`] is (#4737), so a second open with
+	 *  nothing changed compiles nothing and runs no program.
+	 */
+	startDetails: (plane: PlaneId) => typedError<RowDetails[], string>(__TAURI_INVOKE("start_details", { plane })),
 	/**
 	 *  Every harness the project has, its card at a glance (HP-19): the palette's *What <product>
 	 *  can do here* rows, one per harness, reached with no chat open (#1134).
@@ -10583,6 +10603,24 @@ export type RowAction = {
 	asks_first: boolean,
 	/**  Whether it says it deletes, so the question the window asks can say so. */
 	deletes: boolean,
+};
+
+/**
+ *  The facts of one picker row that take a moment to read (#4736): whether its command waits
+ *  for an approval, what the sandbox does for a chat on it (a compile per harness and its
+ *  program's check), and what it is billed to. [`start_details`] answers them after
+ *  [`start_options_first`], by the row's name, and the picker draws the row as pending until
+ *  then.
+ */
+export type RowDetails = {
+	/**  The profile's name: the row these are of. */
+	name: string,
+	/**  As [`ProfileRow::approval`]. */
+	approval: string | null,
+	/**  As [`ProfileRow::sandbox`]. */
+	sandbox: SandboxAhead | null,
+	/**  As [`ProfileRow::billed_to`]. */
+	billed_to: string | null,
 };
 
 /**  A dispatch's worktree, as its row lists it (#1453). */

@@ -194,7 +194,8 @@ function core(
       madeHere.push(name);
       return { piece: name, path: `${CUT}/${name}`, branch: name, warnings: [] };
     }
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "chat_states")
       return waiting.map((session) => ({ session, state: "waiting", queue: waiting, sequence: 1 }));
     if (cmd === "chats_that_would_not_start") return [];
