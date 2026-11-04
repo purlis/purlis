@@ -1481,6 +1481,17 @@ fn holds_already(ctx: &Ctx, persona: &str, vault: &str, key: &str) -> bool {
 /// pending at its margin, and the line comes back after it.
 const ASKER_WAITS_PAST_THE_HOLD: Duration = Duration::from_secs(15);
 
+/// **How long the chat whose environment is `env` waits for the app's answer to its Secret
+/// ask**: its harness's command timeout, and [`ASKER_WAITS_PAST_THE_HOLD`] more, so the app's
+/// pending, sent at [`holds_for`] that harness, always arrives first.
+fn asker_waits(env: &dyn Fn(&str) -> Option<String>) -> Duration {
+    // A start names the harness by the registry's name (`claude-code`), read as the app reads
+    // it: by the kind's word alone it was no harness, and held to the shortest wait (#5192).
+    let harness =
+        crate::hookwire::chat_harness(env).and_then(|name| Harness::of_registry_or_kind(&name));
+    command_timeout(harness) + ASKER_WAITS_PAST_THE_HOLD
+}
+
 /// **What `purlis secret ask` and the `secret_ask` tool both send** (#5072): the
 /// `secret_ask` line to the app that started this chat, and its answer. Refused, with a
 /// sentence, in a chat purlis did not start: only its window asks the person.
@@ -1506,7 +1517,6 @@ pub fn ask_the_window(
         .filter_map(env)
         .find_map(|n| n.trim().parse::<u32>().ok().filter(|n| *n > 0))
         .ok_or_else(not_here)?;
-    let harness = env(crate::hookwire::HARNESS_ENV).and_then(|word| Harness::of_kind(&word));
     let mut asking =
         Asking::on(Path::new(&socket), ChatToken::read(&env)).map_err(|_| not_here())?;
     let line = Ask::Secret(Box::new(SecretAsk {
@@ -1515,7 +1525,7 @@ pub fn ask_the_window(
         purpose: purpose.to_owned(),
         vault: vault.map(str::to_owned),
     }));
-    match asking.ask(&line, command_timeout(harness) + ASKER_WAITS_PAST_THE_HOLD) {
+    match asking.ask(&line, asker_waits(&env)) {
         Ok(Answer::Secret(said)) => Ok(said),
         Ok(Answer::No { why }) if why == NOTHING_ANSWERS || why == UNKNOWN_LINE => {
             Err(super::brokered::OLDER_APP.to_owned())

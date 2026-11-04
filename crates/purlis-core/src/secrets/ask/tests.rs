@@ -1627,3 +1627,23 @@ fn an_asks_purpose_and_what_its_persona_declares_it_for_are_kept_across_a_restar
     assert_eq!(before[0].purpose.as_deref(), Some("charge test cards"));
     assert_eq!(Asks::kept(project.path()).open(), before);
 }
+
+/// **A chat purlis started waits past the app's hold** (#5192): its start names the harness by
+/// the registry's name (`claude-code`), and the asker read only the kind's word (`claude`), so
+/// it took the chat for an unknown harness, waited 25 seconds, and gave up on a hold of 90.
+#[test]
+fn a_started_chat_waits_longer_than_the_app_holds_its_ask() {
+    for (named, harness) in [
+        ("claude-code", Harness::ClaudeCode),
+        ("opencode", Harness::Opencode),
+        ("codex", Harness::Codex),
+    ] {
+        let env = |name: &str| (name == crate::hookwire::HARNESS_ENV).then(|| named.to_owned());
+        assert!(
+            asker_waits(&env) > holds_for(Some(harness)),
+            "a chat started as {named} waits {:?}, the app holds {:?}",
+            asker_waits(&env),
+            holds_for(Some(harness)),
+        );
+    }
+}
