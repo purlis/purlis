@@ -1132,11 +1132,14 @@ impl State {
     /// document's origin**, for a secret purlis fills (#5115): the origin only where the frame's
     /// own address and where its document is judged ([`judged_at`]) agree on it, so the stricter
     /// of the two decides. A frame that has started a document whose address the engine has not
-    /// said yet, or whose address may be of a document it no longer shows, has none.
+    /// said yet, or whose address may be of a document it no longer shows, has none; nor has one
+    /// that has started another document whose own context has not said its origin, though
+    /// until it is replaced it is judged by the one it shows.
     fn document_now(&self, target: &str, frame: &str) -> Option<(u64, Option<String>)> {
         let page = self.page(target)?;
         let at = page.frames.get(frame)?;
         let judged = match judged_at(page, frame, &self.document_origins) {
+            Ok(Judged::At(_)) if self.document_origins.awaits(target, frame) => None,
             Ok(Judged::At(address)) => login::origin_of(&address),
             _ => None,
         };

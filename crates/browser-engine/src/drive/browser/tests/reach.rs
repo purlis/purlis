@@ -2523,9 +2523,9 @@ fn fill_origin(browser: &crate::drive::Browser, frame: &str) -> Option<String> {
 fn a_secret_is_filled_into_no_frame_whose_new_document_the_engine_has_not_placed_yet() {
     let (browser, engine) = a_web_frame_that_starts_another_document();
     assert_eq!(
-        fill_origin(&browser, "WEB").as_deref(),
-        Some("http://other.test"),
-        "until it is replaced, its origin is the old document's"
+        fill_origin(&browser, "WEB"),
+        None,
+        "though it is judged by the old document until it is replaced, nothing is filled there"
     );
     the_pages_frame_has(&engine, &browser, "WEB", 93, "http://fixture.test");
     assert_eq!(
