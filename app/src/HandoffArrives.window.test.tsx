@@ -8,6 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * **A chat another chat started is announced, never put on screen** (#4759, spec #4750 stories
@@ -205,30 +206,28 @@ function core() {
           id: 1,
           payload: { plane: PLANE, asks },
         });
-      // And the board says it waits on the person, as its hook does.
-      for (const handler of listeners.get("chat-moved") ?? [])
+      // And the board says it waits on the person, as its hook does, in the core's batch of
+      // chat events (#4746).
+      const [event, payload] = onTheWire("chat-moved", {
+        plane: PLANE,
+        session,
+        state: "waiting",
+        needs_you: true,
+        queue: [session],
+        moved_at: 7,
+        sequence: 7,
+        reports: [],
+        refusals: [],
+        children: [],
+        needs: null,
+        stopped: null,
+      });
+      for (const handler of listeners.get(event) ?? [])
         (
           window as unknown as {
             __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
           }
-        ).__TAURI_INTERNALS__.runCallback(handler, {
-          event: "chat-moved",
-          id: 1,
-          payload: {
-            plane: PLANE,
-            session,
-            state: "waiting",
-            needs_you: true,
-            queue: [session],
-            moved_at: 7,
-            sequence: 7,
-            reports: [],
-            refusals: [],
-            children: [],
-            needs: null,
-            stopped: null,
-          },
-        });
+        ).__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload });
     });
   };
   return { arrive, kept, waitsInItsTerminal };
