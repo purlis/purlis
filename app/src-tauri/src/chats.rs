@@ -496,11 +496,11 @@ struct Running {
     /// change to them: what [`Chats::skills_changed`] compares with the skills now. `None` for a
     /// chat that runs no harness.
     skills: Option<purlis_core::skills::Stamp>,
-    /// **Whether the plane's skills reached it at its start** (#3445): the Skill studio's flag
-    /// as this window read it once as the chat started (`purlis_core::skills::reach_chats_here`),
+    /// **Whether the plane's skills reached it at its start** (#3445): as this
+    /// window read it once as the chat started (`purlis_core::skills::reach_chats_here`),
     /// which its arming, its Notice, its stamp and Use skill… all take. A chat reattached from
-    /// the session host (#2006) takes its first start's, from its record (#3466), or the flag
-    /// as read at its reattach where a record written before that has none. A runner's chat is
+    /// the session host (#2006) takes its first start's, from its record (#3466), or reads it
+    /// again at its reattach where a record written before that has none. A runner's chat is
     /// armed by its runner (#2446), so this is this machine's word for it.
     plane_skills: bool,
     /// **Where its plane skills came from, read once at its start** (#3234): what its restart's
@@ -535,8 +535,8 @@ struct Running {
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
-/// `reattaching` from the session host keeps the flag its first start read, `recorded`, where its
-/// record has one; any other start reads the Skill studio's flag now (`read`).
+/// `reattaching` from the session host keeps the word its first start read, `recorded`, where its
+/// record has one; any other start reads it now (`read`).
 fn plane_skills_at_start(
     reattaching: bool,
     recorded: Option<bool>,
@@ -555,8 +555,8 @@ fn plane_skills_at_start(
 /// MCP instructions either. Its tab is the one place left to say it. Said at the chat's first
 /// start alone (`why` is [`Why::New`]): a relaunch or a start again is the same chat, told
 /// already, and Use skill… and the studio keep saying it. And only where the plane's skills
-/// would reach a chat here (`plane_skills`): with the Skill studio off no chat gets them, and
-/// there is nothing to miss. Read from the declaration the start already holds: nothing new is
+/// would reach a chat here (`plane_skills`): where they reach none, there is nothing to
+/// miss. Read from the declaration the start already holds: nothing new is
 /// read on a chat's open.
 fn not_supported_at_start(
     why: Why,
@@ -574,8 +574,8 @@ fn not_supported_at_start(
 
 /// **The routing a chat starting now keeps from its first start** (SK-15f, #3578): a chat
 /// `reattaching` from the session host routes its set as its record says its start did, where
-/// the record says, and its router is not asked again. Only beside the Skill studio flag that
-/// start took (`flag_recorded`, #3466): a routing kept without it would be judged by a flag read
+/// the record says, and its router is not asked again. Only beside the plane skills' word that
+/// start took (`flag_recorded`, #3466): a routing kept without it would be judged by a word read
 /// now, which may not be the one it was routed under. Any other start keeps nothing: it is
 /// routed now.
 fn routing_kept_at_start(
@@ -4484,7 +4484,7 @@ impl Chats {
         Arc::clone(&self.skills_now)
     }
 
-    /// [`Self::skills_changed`] while the `skill-studio` flag is on.
+    /// [`Self::skills_changed`] where the project's skills reach its chats.
     fn skills_changed_while_on(&self) -> Vec<(u32, purlis_core::skills::SkillsChanged)> {
         // Read out first: no lock is held while the plane's skill folders are read.
         type Started = (
@@ -5202,7 +5202,7 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
-        // **Whether the plane's skills reach it** (#3445): the Skill studio's flag, read once
+        // **Whether the plane's skills reach it** (#3445), read once
         // here, so its arming, its Notice, its stamp and Use skill… take the same word; a chat
         // reattached keeps its start's, where its record has it (#3466).
         let plane_skills = plane_skills_at_start(reattaching, chat.plane_skills, || {
@@ -5915,8 +5915,8 @@ impl Chats {
                                 )
                             },
                         ),
-                        // The Skill studio's flag this start read (#3445): a runner arms it by
-                        // this, not by its own machine's (SK-20b, #3084).
+                        // Whether the plane's skills reach it, as this start read it (#3445): a
+                        // runner arms it by this, not by its own machine's (SK-20b, #3084).
                         plane_skills,
                         alone,
                         size,
@@ -6041,7 +6041,7 @@ impl Chats {
             no_sandbox: matches!(ran, Some(purlis_session_protocol::session::RunSandbox::Off))
                 && !opted_out,
             identity,
-            // The Skill studio's flag this start took (#3466): what its record keeps, and what
+            // The plane skills' word this start took (#3466): what its record keeps, and what
             // a later reattach of it takes.
             plane_skills: Some(plane_skills),
             // How this start routed its skills (#3578): what its record keeps, and what a later
@@ -8266,9 +8266,9 @@ impl Chats {
             .map(|chat| Chat {
                 pid: None,
                 model: None,
-                // Not started this launch: the flag and the routing its record had are its last
-                // start's, which a program the host still runs was started with (#3466, #3578),
-                // and a start that is not a reattach reads neither.
+                // Not started this launch: the plane skills' word and the routing its record had
+                // are its last start's, which a program the host still runs was started with
+                // (#3466, #3578), and a start that is not a reattach reads neither.
                 ..chat.clone()
             })
             .map(retired)
@@ -8304,8 +8304,9 @@ impl Chats {
                     active: front == Some(session),
                     pid: None,
                     model: None,
-                    // Its start is under way, and the flag it takes is not known yet (#3466):
-                    // a later reattach reads it again rather than take an earlier run's. So is
+                    // Its start is under way, and the plane skills' word it takes is not known
+                    // yet (#3466): a later reattach reads it again rather than take an earlier
+                    // run's. So is
                     // how it routes its skills (#3578).
                     plane_skills: None,
                     routing: None,

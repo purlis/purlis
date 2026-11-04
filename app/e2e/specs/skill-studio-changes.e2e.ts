@@ -10,7 +10,7 @@ import { studioPage, studioMore, studioSkill, studioTab } from "../studio.js";
 
 /**
  * **Making, renaming, deleting and restoring a skill in the Skill studio** (SK-7, #2770), in the
- * built app against the real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * built app against the real core.
  *
  * The spec makes a skill with New skill at the project's root, where the studio was opened, and
  * finds it as a project skill with its folder on disk. It renames it and finds the folder under

@@ -83,9 +83,6 @@ const environment = theRunsEnvironment(plane, {
   // `regions.e2e.ts` drew the view (train 76's `no-blank-view`). What a refresh
   // writes is `glrefresh`'s tests'.
   PURLIS_NO_BACKGROUND_CHECKS: "1",
-  // The Skill studio's slices are built behind its flag (#2786), and a run checks them
-  // as the dev channel's people see them: on (`specs/skill-studio.e2e.ts`).
-  PURLIS_SKILL_STUDIO: "1",
   // A session host whose one thread is held two seconds and more says, in its log, what the
   // thread is doing, sampled by macOS's `sample` (#6437; `crates/host/src/lateness.rs`).
   PURLIS_HOST_SAMPLES_A_HELD_THREAD: "1",

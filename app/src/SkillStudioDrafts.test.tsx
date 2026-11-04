@@ -49,7 +49,6 @@ function core(drafts: unknown[]) {
     asked.push({ cmd, args: given });
     if (cmd === "skill_studio")
       return {
-        on: true,
         workspace: (given.workspace as string | null) ?? null,
         persona: null,
         first: { starts: false, unmoved: null },
@@ -61,7 +60,6 @@ function core(drafts: unknown[]) {
         skills: [],
       };
     if (cmd === "skill_drafts") return drafts;
-    if (cmd === "skill_studio_on") return true;
     if (cmd === "skills_deleted") return [];
     if (cmd === "start_options") return { profiles: [{ name: "claude" }] };
     if (cmd === "skill_draft_reject") return null;
@@ -224,11 +222,9 @@ describe("the Drafts page", () => {
   it("holds its rows while the drafts are read, never saying there are none", async () => {
     mockIPC((cmd) => {
       if (cmd === "skill_drafts") return new Promise(() => undefined);
-      if (cmd === "skill_studio_on") return true;
       if (cmd === "skills_deleted") return [];
       if (cmd === "skill_studio")
         return {
-          on: true,
           workspace: null,
           persona: null,
           first: { starts: false, unmoved: null },

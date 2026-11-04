@@ -162,9 +162,9 @@ pub fn chat_settings_in(data: &Path) -> PathBuf {
 /// **The folder of links a chat in `root` is handed its set's folder by**, laid out by the host
 /// before the chat is armed where `kit` says where folders go
 /// ([`crate::skills::lay_out_for_chat`]), each skill as `harness` reads it: the plane's skills
-/// where the Skill studio's flag is `on`, and on a route that names the built-in skills their own
-/// (opencode's, `purlis-<name>`) the built-in ones, flag or none. `None` otherwise, and for a set
-/// with none of them.
+/// where they reach the chat (`on`), and on a route that names the built-in skills their own
+/// (opencode's, `purlis-<name>`) the built-in ones, whether they do or not. `None` otherwise, and
+/// for a set with none of them.
 pub fn plane_skills_laid_out(
     on: bool,
     root: &Path,
@@ -204,8 +204,8 @@ fn laid_out_on(
 /// are both worked out from this one value, so the two never disagree.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ChatSkills {
-    /// Whether the plane's skills reach the chat: the Skill studio's flag, once the project
-    /// requires them (`skills::reach_chats`, #2784).
+    /// Whether the plane's skills reach the chat: its start's word, or the project requires
+    /// them (`skills::reach_chats`, #2784).
     pub on: bool,
     /// The project the plane's skills are read from: the chat's, or a Try it's own scope (SK-9).
     pub root: PathBuf,
@@ -802,34 +802,37 @@ fn what_its_desktop_allowed(starting: &Starting<'_>) -> Option<String> {
         .flatten()
 }
 
-/// **Whether the plane's skills reach a chat this host composes** (SK-20b, #3084): the Skill
-/// studio's flag as the desktop that starts it on this runner read it, where its start says
-/// (1.62); a runner has no person to turn the preview on. A start that does not say, and one of
-/// this machine's, takes this machine's own reading ([`crate::skills::reach_chats_here`]). A
+/// **Whether the plane's skills reach a chat this host composes** (SK-20b, #3084): as the
+/// desktop that starts it on this runner read it, where its start says (1.62). A start that
+/// does not say, and one of this machine's, takes this machine's own reading
+/// ([`crate::skills::reach_chats_here`]), which since the Skill studio's flag went (#2786) is
+/// that they reach it. A
 /// project that requires them is reached whatever its desktop said (#4344): its clones hold no
 /// copy, so a desktop that has not pulled the move, or is older, would leave the chat without
 /// them.
 fn plane_skills_of(starting: &Starting<'_>) -> bool {
-    let flag = its_desktop_said(starting).unwrap_or_else(crate::skills::studio_on_here);
-    crate::skills::reach_chats(starting.root, flag)
+    let said = its_desktop_said(starting)
+        .unwrap_or_else(|| crate::skills::started_with(&|name| std::env::var(name).ok()));
+    crate::skills::reach_chats(starting.root, said)
 }
 
-/// The desktop's word on the Skill studio's flag, where a link's start says it (1.62, #3084).
+/// The desktop's word on whether the plane's skills reach the chat, where a link's start says it
+/// (1.62, #3084).
 fn its_desktop_said(starting: &Starting<'_>) -> Option<bool> {
     (starting.started_by == purlis_session_protocol::auth::Scope::RemoteLink.word())
         .then_some(starting.start.plane_skills)
         .flatten()
 }
 
-/// **The Skill studio's flag a chat this host composes is started with** (#3084): its desktop's
-/// word, or on where the project requires its skills whatever that word was (#4344), as the
-/// variable that decides the flag over this machine's store
-/// ([`crate::skills::STUDIO_ENV`]), so what the chat runs here (purlis's MCP server, its hooks)
-/// reads the word its arming took. Nothing where its desktop did not say.
-fn studio_env_of(starting: &Starting<'_>) -> Option<(String, String)> {
+/// **The plane skills' word a chat this host composes is started with** (#3084): its desktop's
+/// word, or yes where the project requires its skills whatever that word was (#4344), as the
+/// variable that carries it ([`crate::skills::PLANE_SKILLS_ENV`]), so what the chat runs here
+/// (purlis's MCP server, its hooks) reads the word its arming took. Nothing where its desktop did
+/// not say.
+fn plane_skills_env_of(starting: &Starting<'_>) -> Option<(String, String)> {
     its_desktop_said(starting).map(|_| {
         (
-            crate::skills::STUDIO_ENV.to_owned(),
+            crate::skills::PLANE_SKILLS_ENV.to_owned(),
             if plane_skills_of(starting) { "1" } else { "0" }.to_owned(),
         )
     })
@@ -913,7 +916,7 @@ pub fn compose_ready(
     let (root, start) = (starting.root, starting.start);
     let cwd = ready.cwd.clone().unwrap_or_else(|| root.to_path_buf());
     let mut ready = told_first(ready, start.first_message.as_deref())?;
-    ready.env.extend(studio_env_of(starting));
+    ready.env.extend(plane_skills_env_of(starting));
     // What it is armed with, never where it writes, and never written by it.
     if let Some(applied) = ready.sandbox.as_mut() {
         applied
@@ -1592,8 +1595,8 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         skills.tried || skills.persona.as_deref() == persona,
         "a chat is armed with the skills read for it"
     );
-    // The plane's skills, where they reach the project's chats: while the Skill studio's flag is
-    // on, and once the project requires them (`skills::reach_chats`, #2784): their
+    // The plane's skills, where they reach the project's chats (`skills::reach_chats`, #2784,
+    // #2786): their
     // folder of links laid out here, by the host, as the git hooks are, so the adapter only
     // turns the set into words (ADR 0063 as amended 2026-10-20). Its scope, workspace and repo
     // skills were read once at its start (`ChatSkills::read`).

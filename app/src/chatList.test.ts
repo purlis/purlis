@@ -100,7 +100,6 @@ function world(over: Partial<Now> = {}): { now: Now; offers: Catalogued; palette
       locked: null,
       locked_for: [{ session: 2, persona: "qa", why: "Policy forbids it." }],
     },
-    skillStudio: true,
     askable: (session) => session !== 6,
     restartable: (session) => session !== 6,
     linkable: () => true,

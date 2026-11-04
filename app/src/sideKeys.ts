@@ -56,8 +56,7 @@ import { opensSearch, searchKeySaid } from "./searchKey";
  * **⌘⇧X is Skills'** (#3266), VS Code's key for its Extensions view, the side's other list of
  * what a chat can be given. Ctrl+Shift+X is no terminal byte (Ctrl with a letter is encoded only
  * without Shift; Ctrl+X alone is readline's prefix), so it is the window's while a chat has the
- * keyboard, as Ctrl+Shift+E is. It is read here whatever the Skill studio's preview says: the
- * window claims it only while the Skills view is there (`PlaneView`), and leaves it alone else.
+ * keyboard, as Ctrl+Shift+E is.
  *
  * ⌘⇧C is Chats' because it is free: VS Code gives it to an external terminal, which this window
  * has no use for, and ⌘⇧H, ⌘⇧J and ⌘⇧T are taken (`taskKeys.ts`, `shellKey.ts`).

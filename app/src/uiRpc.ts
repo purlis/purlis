@@ -1147,14 +1147,13 @@ export const commands = {
 	 */
 	skillPersonaSkills: (plane: PlaneId, workspace: string | null) => typedError<PersonaSkills[], string>(__TAURI_INVOKE("skill_persona_skills", { plane, workspace })),
 	/**
-	 *  The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
-	 *  flag is off. On a blocking thread, as it reads the project's skill log.
+	 *  The runs of skill `skill` in the project, newest first, for its Runs panel. On a
+	 *  blocking thread, as it reads the project's skill log.
 	 */
 	skillRuns: (plane: PlaneId, skill: string) => typedError<StudioRun[], string>(__TAURI_INVOKE("skill_runs", { plane, skill })),
 	/**
 	 *  The totals of skill `skill`'s runs in the project, by what they ran on, by persona and by
-	 *  workspace: none while the flag is off. On a blocking thread, as it reads the project's skill
-	 *  log.
+	 *  workspace. On a blocking thread, as it reads the project's skill log.
 	 */
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**
@@ -1166,19 +1165,16 @@ export const commands = {
 	/**
 	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
 	 *  run of the skill, newest first, then each extension's. A skill's grades are no panel: its
-	 *  Grades tab reads them whole ([`crate::skillgrade::skill_grades`]). None while the flag is off.
+	 *  Grades tab reads them whole ([`crate::skillgrade::skill_grades`]).
 	 *  On a blocking thread, as it reads the project's skill log and asks each extension.
 	 */
 	skillPanels: (plane: PlaneId, skill: string) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill })),
-	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
-	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
-	setSkillStudioOn: __WINDOW_ONLY_RESULT,
 	skillShare: __WINDOW_ONLY_RESULT,
 	personaSkill: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The repo skills of the branch folder chat `session` works in** (#4326): what the Skills view
 	 *  lists for it, whose rows from the studio say only what the clone's own branch holds. None for
-	 *  any other chat, and none while the Skill studio is off. Only the view asks, never a chat's open;
+	 *  any other chat. Only the view asks, never a chat's open;
 	 *  on a blocking thread, as it reads the folder.
 	 */
 	chatBranchFolderSkills: (plane: PlaneId, session: number) => typedError<StudioSkill[], string>(__TAURI_INVOKE("chat_branch_folder_skills", { plane, session })),
@@ -1292,7 +1288,7 @@ export const commands = {
 	skillBudgetPreview: (plane: PlaneId, workspace: string | null, persona: string | null, program: string, skills: number | null, chars: number | null) => typedError<SkillBudgetPreview, string>(__TAURI_INVOKE("skill_budget_preview", { plane, workspace, persona, program, skills, chars })),
 	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
-	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
+	 *  owners, and the skills it names and that name it.
 	 */
 	skillDetails: (plane: PlaneId, name: string) => typedError<SkillDetails, string>(__TAURI_INVOKE("skill_details", { plane, name })),
 	/**
@@ -1539,8 +1535,8 @@ export const commands = {
 	skillExtensionUpdate: __WINDOW_ONLY_RESULT,
 	skillStudioSwitch: __WINDOW_ONLY_RESULT,
 	/**
-	 *  **The skills chat `session` has, as Use skill… offers them, and its skill budget**: nothing
-	 *  while the Skill studio is off. On a blocking thread, as it reads the project's skill folders.
+	 *  **The skills chat `session` has, as Use skill… offers them, and its skill budget**. On a
+	 *  blocking thread, as it reads the project's skill folders.
 	 */
 	chatSkills: (plane: PlaneId, session: number) => typedError<ChatSkills, string>(__TAURI_INVOKE("chat_skills", { plane, session })),
 	useSkill: __WINDOW_ONLY_RESULT,
@@ -3149,11 +3145,6 @@ export type AnswerPath =
  */
 { via: "sandbox-only"; harness: string } | 
 /**
- *  `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
- *  file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
- */
-{ via: "old-harness-plugins" } | 
-/**
  *  Set up signing opens the setup dialog in the window, whose last step is Sign and retry
  *  all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss
  *  sends `signing_forget` for them all (#5633).
@@ -3664,11 +3655,6 @@ export type AskSource =
  *  sign-in in it.
  */
 "sandbox-only" | 
-/**
- *  A project that still holds the old `[harness_plugins]` keys purlis no longer reads
- *  (#3467): said once, answered by Remove, which proposes the edit, or Dismiss.
- */
-"old-harness-plugins" | 
 /**  A chat's first browser call, asking what its browser may reach (#2013). */
 "browser" | 
 /**
@@ -5003,8 +4989,6 @@ export type ChatSkillRun = {
 
 /**  What Use skill… offers a chat, and its budget. */
 export type ChatSkills = {
-	/**  Whether the Skill studio is on: nothing is offered while it is off. */
-	on: boolean,
 	/**
 	 *  Whether the chat runs a tool purlis knows the skills of: one that does not is offered
 	 *  nothing.
@@ -16401,9 +16385,8 @@ export type StopPhase =
 /**  It has ended, and its tab goes. */
 "stopped";
 
-/**  What the studio shows: whether it is on, whose chat it shows, and its skills by name. */
+/**  What the studio shows: whose chat it shows, and its skills by name. */
 export type Studio = {
-	on: boolean,
 	/**  The workspace whose chats it shows, or `None` for a chat at the project's root. */
 	workspace: string | null,
 	/**
@@ -16439,7 +16422,7 @@ export type Studio = {
 	not_supported: StudioNotSupported[],
 	/**
 	 *  The router its chats are routed by, and how it did at each one's start (SK-15b). Null
-	 *  while the studio is off.
+	 *  for a read of Needs you alone.
 	 */
 	router: StudioRouter | null,
 	/**
@@ -16456,7 +16439,7 @@ export type Studio = {
 	levels_to_confirm: StudioLevelsToConfirm | null,
 	/**
 	 *  **What in these skills needs the person** (#3689): the Needs you page's items, by kind,
-	 *  each with why and one fix ([`needs`]). Empty while the studio is off.
+	 *  each with why and one fix ([`needs`]).
 	 */
 	needs: NeedsYou[],
 };

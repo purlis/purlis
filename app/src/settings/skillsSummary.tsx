@@ -18,7 +18,7 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  * studio on them. Every skill choice is the studio's, so this row only counts: how many skills
  * its chats get, how many are left out, and how many things need the person, which opens the
  * studio's Needs you. Its link runs the catalogue's `skills.studio:<ws>`, which lands on the
- * Library, the row the workspace's menu offers too. Behind the studio's flag.
+ * Library, the row the workspace's menu offers too.
  */
 export function workspaceSkillsGroup(plane: PlaneId, workspace: string): SettingsGroup {
   return {
@@ -35,8 +35,7 @@ export function workspaceSkillsGroup(plane: PlaneId, workspace: string): Setting
 
 /**
  * **Settings › Skills at the project** (#4610): the skill budget of every chat in the project,
- * which a workspace's own can override, and what it comes to on each program. Behind the studio's
- * flag.
+ * which a workspace's own can override, and what it comes to on each program.
  */
 export function projectSkillsGroup(plane: PlaneId): SettingsGroup {
   return {

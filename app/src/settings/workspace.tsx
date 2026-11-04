@@ -141,11 +141,7 @@ function absentSetting(read: WorkspaceRead): LiveSetting {
  * `workspace.json` that is not a JSON object has no file settings to show until it is mended:
  * its standing refusals say why, above the groups.
  */
-export function workspaceGroups(
-  read: WorkspaceRead,
-  switched: () => void,
-  skillStudio = false,
-): SettingsGroup[] {
+export function workspaceGroups(read: WorkspaceRead, switched: () => void): SettingsGroup[] {
   const file: Shown = read.settings;
   const fromFile = (group: string, controls: Control[]): FileSetting[] =>
     file.parsed
@@ -209,8 +205,8 @@ export function workspaceGroups(
         ),
       ],
     },
-    // Its chats' skills (#2767): a summary and the way into the Skill studio, behind its flag.
-    ...(skillStudio ? [workspaceSkillsGroup(read.plane, read.workspace)] : []),
+    // Its chats' skills (#2767): a summary and the way into the Skill studio.
+    workspaceSkillsGroup(read.plane, read.workspace),
   ];
 }
 

@@ -57,8 +57,7 @@ export function stateOf(project: string): string {
 /**
  * **The project's workspace and persona folders, accepted once** (#3718): a project the run copied
  * in carries a state folder, so purlis holds every such folder until the person accepts them, as
- * at a first open after an upgrade. Each spec starts from the person having done so. Where the
- * Skill studio is off, nothing is asked.
+ * at a first open after an upgrade. Each spec starts from the person having done so.
  */
 export async function theProjectsFoldersAreAccepted(): Promise<void> {
   const plane = await projectRoot();

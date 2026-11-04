@@ -18,9 +18,9 @@
 //!
 //! **Its own runner**: on Linux the executor applies the sandbox with the program it runs in
 //! (`<program> _sandbox …`, as `purlis _sandbox` is), which here is this test binary, so it serves
-//! the wrap before anything else. The studio's words are known only with the `skill-studio` flag
-//! on, so a run without it runs itself again with it. These need a sandbox, so they run where CI
-//! runs them (macOS and Linux), never inside another sandbox.
+//! the wrap before anything else. A run without [`MARK`] in its environment runs itself again with
+//! it, so the probe has a known variable of this process's to fail to read. These need a sandbox,
+//! so they run where CI runs them (macOS and Linux), never inside another sandbox.
 
 #![cfg(unix)]
 
@@ -838,15 +838,14 @@ fn it_reads_no_other_process_s_arguments_or_environment() {
     let pid = std::process::id().to_string();
     let said = probe.tried(&["environ", &pid]);
     assert!(
-        !said.contains(purlis_core::skills::STUDIO_ENV),
+        !said.contains(MARK),
         "it read this process's environment: {said}"
     );
     // The same ask, made outside the sandbox, prints this test's own line and environment: so
     // the probe asks as it should, and the confined answer lacks them because it was refused.
     let unconfined = studio_probe::tried(&["environ".to_owned(), pid]);
     assert!(
-        unconfined.contains("a_studio_extension_is_confined")
-            && unconfined.contains(purlis_core::skills::STUDIO_ENV),
+        unconfined.contains("a_studio_extension_is_confined") && unconfined.contains(MARK),
         "the ask did not print this test's own line: {unconfined}"
     );
 }
@@ -1349,19 +1348,23 @@ const TESTS: &[(&str, fn())] = &[
     ),
 ];
 
+/// A variable this test's own process holds, which a confined probe must not read (#2786: the
+/// Skill studio's flag variable was this mark until the flag went).
+const MARK: &str = "PURLIS_STUDIO_PROBE_MARK";
+
 fn main() {
     // The wrap first: on Linux this binary is what applies the sandbox to the probe.
     if let Some(code) = purlis_linux_sandbox::serve_if_asked() {
         std::process::exit(code);
     }
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if std::env::var(purlis_core::skills::STUDIO_ENV).as_deref() != Ok("1") {
+    if std::env::var(MARK).as_deref() != Ok("1") {
         let me = std::env::current_exe().expect("this test");
         let status = std::process::Command::new(me)
             .args(&args)
-            .env(purlis_core::skills::STUDIO_ENV, "1")
+            .env(MARK, "1")
             .status()
-            .expect("this test runs again with the flag on");
+            .expect("this test runs again with its mark");
         std::process::exit(status.code().unwrap_or(101));
     }
     let mut filters: Vec<&str> = Vec::new();

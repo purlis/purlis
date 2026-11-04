@@ -3077,11 +3077,7 @@ view_), with the key said on the row.
 
 **The Skills view's key is `⌘⇧X`** (#3266), VS Code's for its Extensions view, and
 `Ctrl+Shift+X` off a Mac: `Ctrl` with `Shift` and a letter is no byte, so it is the window's while
-a chat has the keyboard, as `Ctrl+Shift+E` is. The view sits under Search on the left and is
-there only while the Skill studio's preview is on; while it is off the key is left alone, no
-palette row names the view, and a side left on it opens on Chats until the preview is back
-(`sideViews.PREVIEWED_VIEWS`, which `regions.openView` reads as it reads an extension's panel
-that is not contributed now). Its list is the list family's: one Tab stop, ↑ and ↓ past the
+a chat has the keyboard, as `Ctrl+Shift+E` is. The view sits under Search on the left. Its list is the list family's: one Tab stop, ↑ and ↓ past the
 groups' names, typing finds a skill, Enter opens its tab, and Shift+F10 or the menu key opens a
 row's menu.
 
@@ -3090,8 +3086,8 @@ skill… on the chat in front (in a split tab, the pane with the keyboard), as i
 and is said on that row and on each chat
 tab's menu row (`chat.useSkill`, `tab.useskill:<tab>`). `Ctrl` with `Shift` and a letter is no
 byte, so it is the window's while a chat has the keyboard, as `Ctrl+Shift+T` is; an editor keeps
-it, and it is never taken under a modal dialog. With no chat in front, a shell in front or the
-Skill studio off there is no Use skill… to open, and the key goes on to whatever has the keyboard. The row says no budget: a chat's budget is the
+it, and it is never taken under a modal dialog. With no chat in front or a shell in front there is
+no Use skill… to open, and the key goes on to whatever has the keyboard. The row says no budget: a chat's budget is the
 Skills view's to say (S8).
 
 **The Panel's key is `⌘J`** (#1737, P-6), VS Code's, and `Ctrl+J` off a Mac: it hides the whole

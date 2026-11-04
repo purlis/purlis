@@ -9,7 +9,7 @@ import { closesTheTabsItOpens, tabNames } from "../reach.js";
 
 /**
  * **A chat uses a skill, and its pane head shows the run** (SK-3, #2766; off its tab since #5524), in the built app against the
- * real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * real core.
  *
  * Nothing is faked past the harness: the reporting harness, a Codex, reads a skill it was
  * briefed on and runs Codex's hook for that shell command through the real binary

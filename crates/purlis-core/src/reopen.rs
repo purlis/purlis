@@ -289,12 +289,12 @@ pub struct Chat {
     /// not reported yet, which leaves `Assisted-by: <harness>`, and every record written before
     /// this field — not a format change, for [`Self::pinned`]'s reason.
     pub model: Option<String>,
-    /// **Whether the plane's skills reached the chat at its start** (#3466): the Skill studio's
-    /// flag as the window that started it read it (`purlis_core::skills::reach_chats_here`). A
-    /// chat reattached from the session host (#2006) takes this, not the flag as read at its
-    /// reattach, so its arming, its Notice, its stamp and Use skill… keep its start's word.
-    /// `None` is a chat whose start in this launch has not returned, and every
-    /// record written before this field: a reattach then reads the flag again, as before. Not a format change, for [`Self::pinned`]'s reason.
+    /// **Whether the plane's skills reached the chat at its start** (#3466), as the window that
+    /// started it read it (`purlis_core::skills::reach_chats_here`). A chat reattached from the
+    /// session host (#2006) takes this, not the word as read at its reattach, so its arming, its
+    /// Notice, its stamp and Use skill… keep its start's word. `None` is a chat whose start in this
+    /// launch has not returned, and every record written before this field: a reattach then reads
+    /// it again, as before. Not a format change, for [`Self::pinned`]'s reason.
     pub plane_skills: Option<bool>,
     /// **How the chat's start routed its skills** (SK-15f, #3578): the built-in router, or what
     /// came of asking the router extension its persona or workspace chose (SK-15b). A chat
@@ -1802,8 +1802,8 @@ struct ChatOnDisk {
     /// reads as absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     model: String,
-    /// The Skill studio's flag the chat started with, or absent — see [`Chat::plane_skills`].
-    /// A value that is not a flag reads as absent.
+    /// Whether the plane's skills reached the chat at its start, or absent — see
+    /// [`Chat::plane_skills`]. A value that is not a boolean reads as absent.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

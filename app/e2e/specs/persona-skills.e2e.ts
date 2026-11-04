@@ -10,8 +10,7 @@ import { closesTheTabsItOpens, tabNames } from "../reach.js";
 import { studioSkill, writeSkill } from "../studio.js";
 
 /**
- * **A persona's Skills section** (SK-5, #2768), in the built app against the real core, with the
- * `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * **A persona's Skills section** (SK-5, #2768), in the built app against the real core.
  *
  * The spec gives `steward` a skill of its own and names a project skill granted to no workspace
  * in its `skills:` line, as a person would. `steward`'s tab counts both in one row, which opens

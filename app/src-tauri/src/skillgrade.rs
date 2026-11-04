@@ -19,7 +19,6 @@
 //! - **The grade goes to the eval record** when it ends, whole or stopped, tied to the copy's
 //!   version, and the skill's Grades panel and history show it.
 //!
-//! Behind the `skill-studio` flag until its finish line (#2786).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -42,7 +41,7 @@ use purlis_core::skills::verbs::Level;
 
 use crate::curation::ChatTyped;
 use crate::planes::{Held, PlaneId, Planes};
-use crate::skillchange::{SkillLevel, flag_on};
+use crate::skillchange::SkillLevel;
 use crate::skillrun::Watched;
 
 /// The event the window is told each step of a grade by.
@@ -843,7 +842,6 @@ pub(crate) async fn skill_grade_plan(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reading what a grade runs", move || {
-        flag_on()?;
         let on = chats_on(held.root(), profile, model);
         let planned = grades::planned_with(
             held.root(),
@@ -886,7 +884,6 @@ pub(crate) async fn skill_grade_start(
     let held = planes.held(&plane)?;
     let executor = app.state::<crate::views::Views>().executor();
     crate::off_the_window("starting a grade", move || {
-        flag_on()?;
         let level: Level = (&level).into();
         let on = chats_on(held.root(), profile.clone(), model.clone());
         // The estimate is the plan's to show: a start needs none of it.
@@ -1043,7 +1040,6 @@ fn answering_a_terminal(
     ask: session::GradeAsk,
     follower: Follower,
 ) -> Result<session::GradeAnswer, String> {
-    flag_on()?;
     let app = APP.get().ok_or("The purlis window is still starting.")?;
     let planes = app.state::<Planes>();
     let plane = planes
@@ -1624,7 +1620,6 @@ pub(crate) async fn skill_grade_set_cap(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("setting a grade's cap", move || {
-        flag_on()?;
         set_cap(held.root(), tokens)?;
         let on = chats_on(held.root(), profile, model);
         let planned = grades::planned_with(
@@ -2117,7 +2112,6 @@ pub(crate) async fn skill_grades(
 ) -> Result<SkillGrades, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading a skill's grades", move || {
-        flag_on()?;
         let level = Level::from(&level);
         // With the grades from before a rename or a move (#3918).
         let read = grades::read_followed(held.root(), &level, &skill);
@@ -2240,7 +2234,6 @@ pub(crate) async fn skill_grade_scorecard(
 ) -> Result<GradeScorecard, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading a grade's scorecard", move || {
-        flag_on()?;
         let root = held.root();
         let graded = grades::grade_of(root, &skill, &grade)
             .ok_or_else(|| format!("That grade of {skill} is not in the record any more."))?;
@@ -2275,7 +2268,6 @@ pub(crate) async fn skill_grade_chat(
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading a grade's chat", move || {
-        flag_on()?;
         grades::kept::kept(held.root(), &skill, &grade, &chat)
             .ok_or_else(|| not_kept("the skill's"))
     })

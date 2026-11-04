@@ -28,7 +28,6 @@ function core(updated: PlaneUpdated[] | (() => PlaneUpdated[])) {
   let asked = 0;
   mockIPC(
     (cmd) => {
-      if (cmd === "skill_studio_on") return true;
       if (cmd === "chats_plane_updated") {
         asked += 1;
         return typeof updated === "function" ? updated() : updated;

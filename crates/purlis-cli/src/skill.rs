@@ -10,8 +10,7 @@
 //! reaches and what a workspace turned off; Share; every run of a skill with its signals; a
 //! skill's history, its lifecycle state, its owners and the skills it names and is named by; and
 //! the pins of a workspace or a persona. The same verbs the studio calls
-//! (`purlis_core::skills::verbs`, `history`, `lifecycle`, `graph`). Behind the `skill-studio` flag
-//! until its finish line (#2786).
+//! (`purlis_core::skills::verbs`, `history`, `lifecycle`, `graph`).
 
 use crate::clierror::CliError;
 use std::path::Path;
@@ -1098,15 +1097,7 @@ const NO_PLACE_BUT_AT_THE_TERMINAL: &str = "An export of several skills goes onl
                                     --to to propose it to the person, who picks where in the \
                                     window.";
 
-/// What a person is told when the flag is off.
-const NOT_ON: &str = "The Skill studio is not turned on on this machine yet. Turn it on in \
-                      Settings › You › Previews, or set PURLIS_SKILL_STUDIO=1 to try it here.";
-
 pub fn run(root: &Path, command: SkillCommand) -> Result<Code, CliError> {
-    if !purlis_core::skills::studio_on_here() {
-        voice::err(NOT_ON);
-        return Ok(1);
-    }
     let built_in = purlis_core::skills::built_in_here();
     let reads_owners =
         matches!(&command, SkillCommand::Owners { owners, none: false, .. } if owners.is_empty());

@@ -142,7 +142,6 @@ fn the_command(place: &Place, args: &[&str]) -> std::process::Command {
         .args(args)
         .current_dir(&place.root)
         .env("CHARTER_ROOT", &place.root)
-        .env("PURLIS_SKILL_STUDIO", "1")
         .env("NO_COLOR", "1")
         .env_remove(purlis_core::hookwire::CHAT_ENV)
         .env_remove(purlis_core::hookwire::SOCKET_ENV)

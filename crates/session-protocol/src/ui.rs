@@ -815,8 +815,6 @@ pub const WINDOW_ONLY: &[&str] = &[
     // This machine's browser limits (#2023): the person's to read and set, in their window.
     "browser_limits",
     "set_browser_limit",
-    // This machine's Skill studio preview (#2765): the person's to turn on, in their window.
-    "set_skill_studio_on",
     // Share in the Skill studio (#2767): moves a local skill into the shared folder, so the next
     // save commits it to the team. The person's own press in their window.
     "skill_share",
@@ -1698,7 +1696,6 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_runs",
     "skill_stats",
     "skill_studio",
-    "skill_studio_on",
     "skill_templates",
     "skill_text",
     "skill_users",

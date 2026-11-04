@@ -5,7 +5,7 @@
 //! browse it, review an install summary first, install it pinned, confirm a source the committed
 //! lockfile names before it is contacted, and review each newer commit as a diff before it is
 //! applied. Each verb is `purlis_core::skills::source`'s own, which `purlis skill install |
-//! update` calls too. Behind the `skill-studio` flag until its finish line (#2786).
+//! update` calls too.
 //!
 //! The window is handed what it shows, the core's own words and marks included (what is risky,
 //! what is empty, each commit's short name, what accepting says), every field from a source
@@ -23,7 +23,7 @@ use purlis_core::skills::source::{
 use purlis_core::skills::studio::lint_reviews;
 use purlis_core::skills::tree;
 
-use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, flag_on, heard, heard_audited};
+use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, heard, heard_audited};
 
 /// A source's text as the window shows it: every invisible character escaped.
 fn esc(text: &str) -> String {
@@ -888,7 +888,6 @@ pub(crate) async fn skill_sources(
 ) -> Result<Vec<SkillSource>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the skill sources", move || {
-        flag_on()?;
         Ok(source::sources(held.root())?
             .into_iter()
             .map(|one| SkillSource::of(one.source, one.which))
@@ -922,7 +921,6 @@ pub(crate) async fn skill_sources_checked(
 ) -> Result<Vec<SourceChecked>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading when the skill sources were checked", move || {
-        flag_on()?;
         checked_shown(held.root())
     })
     .await
@@ -997,7 +995,6 @@ pub(crate) async fn skill_sources_offered(
 ) -> Result<Vec<OfferedSource>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the offered skill sources", move || {
-        flag_on()?;
         Ok(offered_shown(held.root()))
     })
     .await
@@ -1027,7 +1024,6 @@ pub(crate) async fn skill_source_add(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("adding the skill source", move || {
-        flag_on()?;
         heard(held.root(), |cx| {
             source::add(cx, &source.core(), source.kept.into())
         })
@@ -1045,7 +1041,6 @@ pub(crate) async fn skill_source_remove(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("taking the skill source out", move || {
-        flag_on()?;
         heard(held.root(), |cx| source::remove(cx, &remote.core()))
     })
     .await
@@ -1062,7 +1057,6 @@ pub(crate) async fn skill_source_confirm(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("confirming the skill source", move || {
-        flag_on()?;
         heard(held.root(), |cx| source::confirm(cx, &remote.core()))
     })
     .await
@@ -1078,7 +1072,6 @@ pub(crate) async fn skill_source_browse(
 ) -> Result<SourceBrowse, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("browsing the skill source", move || {
-        flag_on()?;
         let browse = source::browse(held.root(), &source.core())?;
         Ok(SourceBrowse {
             commit: (&browse.commit).into(),
@@ -1125,7 +1118,6 @@ pub(crate) async fn skill_install_review(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reviewing the install", move || {
-        flag_on()?;
         let at = (&level).into();
         let mut review =
             source::review_without(held.root(), &source.core(), &names, &at, &without)?;
@@ -1152,7 +1144,6 @@ pub(crate) async fn skill_install_set_review(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reviewing the install", move || {
-        flag_on()?;
         let at = (&level).into();
         Ok(
             match source::review_set_without(held.root(), &source.core(), &names, &at, &without)? {
@@ -1190,7 +1181,6 @@ pub(crate) async fn skill_install_widenings(
 ) -> Result<Vec<SkillWidening>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading where the install reaches", move || {
-        flag_on()?;
         Ok(widenings_shown(held.root(), &level, grant, &already))
     })
     .await
@@ -1229,7 +1219,6 @@ pub(crate) async fn skill_install(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("installing the skill", move || {
-        flag_on()?;
         let accepted = Accepted::try_from(&reviewed)?;
         let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
         heard_audited(&held, |cx| {
@@ -1261,7 +1250,6 @@ pub(crate) async fn skill_updates(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("asking the skill sources", move || {
-        flag_on()?;
         // An extension's source is asked its newest revision through the executor's gate, as
         // every studio question is (ADR 0101).
         let found = purlis_core::skills::studio::with_studio(&executor, held.root(), |studio| {
@@ -1318,7 +1306,6 @@ pub(crate) async fn skill_update_review(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reviewing the update", move || {
-        flag_on()?;
         let at = (&level).into();
         let mut update = source::update_review(held.root(), &at, &name)?;
         lint_reviews(&executor, held.root(), &at, update.skills_mut());
@@ -1362,7 +1349,6 @@ pub(crate) async fn skill_update(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("updating the skill", move || {
-        flag_on()?;
         let accepted = Accepted::try_from(&reviewed)?;
         let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
         heard_audited(&held, |cx| {

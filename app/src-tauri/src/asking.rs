@@ -694,9 +694,6 @@ pub enum AskSource {
     /// sandbox-only profile (#2037): answered by making one and running the harness's own
     /// sign-in in it.
     SandboxOnly,
-    /// A project that still holds the old `[harness_plugins]` keys purlis no longer reads
-    /// (#3467): said once, answered by Remove, which proposes the edit, or Dismiss.
-    OldHarnessPlugins,
     /// A chat's first browser call, asking what its browser may reach (#2013).
     Browser,
     /// **The lanes a forge refused for unsigned commits** (#5633, ADR 0116 §3): one Ask for all
@@ -808,9 +805,6 @@ pub enum AnswerPath {
     /// `claude`), then opens a shell tab where the core types the harness's own sign-in for the
     /// profile it made (`type_profile_sign_in`). Dismiss sends `dismiss_sandbox_only`.
     SandboxOnly { harness: String },
-    /// `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
-    /// file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
-    OldHarnessPlugins,
     /// Set up signing opens the setup dialog in the window, whose last step is Sign and retry
     /// all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss
     /// sends `signing_forget` for them all (#5633).
@@ -4097,45 +4091,6 @@ pub fn sandbox_only(wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sho
     }
 }
 
-/// The option id of Remove on the Ask about the old `[harness_plugins]` keys (#3467).
-pub const REMOVE_OLD_PLUGINS: &str = "remove";
-
-/// **The old harness plugin keys' adapter** (#3467): a project that still holds
-/// `[harness_plugins]`, which nothing reads now, as one Ask about no chat, said once. It offers
-/// Remove where a file holding the keys can be made without them (the project's own two, or a
-/// workspace's manifest, #3486), which proposes the edit for the person to apply, and Dismiss.
-pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown {
-    let mut options = Vec::new();
-    if old.removable {
-        options.push(refuses(REMOVE_OLD_PLUGINS, "Remove"));
-    }
-    options.push(refuses(DISMISS, "Dismiss"));
-    Shown {
-        session: 0,
-        ask: "old-harness-plugins".to_owned(),
-        says: said_inertly(&old.said),
-        options,
-        source: AskSource::OldHarnessPlugins,
-        chain: vec![said_inertly("purlis")],
-        answer: AnswerPath::OldHarnessPlugins,
-        since: None,
-        held_until: None,
-        expires: None,
-        blocks: None,
-        timed_out: None,
-        risk: None,
-        writes: None,
-        lines: None,
-        last_message: None,
-        login: None,
-        fill: None,
-        earlier_messages: None,
-        rule: None,
-        secret: None,
-        run: None,
-    }
-}
-
 /// The option ids of the Ask about lanes waiting on signing (#5633). Where lanes wait on more
 /// than one forge, setup is `set-up:<kind>:<host>`, one for each (#5790).
 pub const SET_UP_SIGNING: &str = "set-up";
@@ -5068,19 +5023,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             .into_iter()
             .chain(task_questions)
             .filter(|ask| !chats.kept_from_the_window(ask.session))
-            // The old `[harness_plugins]` keys: Needs you holds their Ask while the Skill studio
-            // is on (#3689), so it is in the Inbox only while the studio is off.
-            .chain(
-                (!purlis_core::skills::studio_on_here())
-                    .then(|| {
-                        crate::oldplugins::notice_of(
-                            root,
-                            &held.proposals().paths_of(crate::proposals::BY_PURLIS),
-                        )
-                    })
-                    .flatten()
-                    .map(|old| old_harness_plugins(&old)),
-            )
+            // The old `[harness_plugins]` keys' Ask is Needs you's in the Skill studio (#3689).
             // The lanes a forge refused for unsigned commits (#5633): one Ask for them all.
             .chain(signing_waiting(root, signing_on))
             // Pool setup's cluster, ready once the admin the person asked has given it (#4496).

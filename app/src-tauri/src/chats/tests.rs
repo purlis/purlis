@@ -10050,8 +10050,8 @@ fn allowing_a_host_once_from_a_notice_is_refused_and_reaches_no_chat() {
 /// #2770: **a running chat whose skills changed is told so**, where its harness does not take the
 /// change in by itself: a Claude Code chat for an edit to a skill's text, which a Codex chat reads
 /// from where it lies, and both for a skill added. A chat on no harness is never told. One whose
-/// start the plane's skills did not reach (the Skill studio's flag off, #3445) was stamped
-/// empty, so with the flag on now it is offered the restart that hands it them.
+/// start the plane's skills did not reach (#3445) was stamped empty, so where they reach it now
+/// it is offered the restart that hands it them.
 #[test]
 fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     let plane = tempfile::tempdir().expect("a plane");
@@ -10539,7 +10539,7 @@ fn a_chat_on_a_harness_that_takes_no_skills_is_told_so_once_at_its_first_start_3
         purlis_core::skills::not_supported_on(&without).map(|one| one.said),
         "the studio's and the badge's own line"
     );
-    // The plane's skills reach no chat here (the studio is off): there is nothing to miss.
+    // The plane's skills reach no chat here (its start said so): there is nothing to miss.
     assert_eq!(
         not_supported_at_start(Why::New, false, None, Some(&without)),
         None
