@@ -180,16 +180,84 @@ describe("whether a line is cut, measured only when its row could say so (#4351)
   });
 });
 
-/** One row whose line says `words`. */
-function OneLine({ words }: { words: string }) {
+/** One row whose line says `words`: `drawn` names the line's element, a new one for a new name. */
+function OneLine({ words, drawn, tip }: { words: string; drawn?: string; tip?: string }) {
   return (
     <List aria-label="Skills">
-      <ListRow id="long" textValue="long">
+      <ListRow id="long" textValue="long" tip={tip}>
         <RowLabel>long</RowLabel>
-        <RowBelow clamp={1} tipWhenCut>
+        <RowBelow key={drawn} clamp={1} tipWhenCut>
           {words}
         </RowBelow>
       </ListRow>
     </List>
   );
 }
+
+describe("a row watching its line only while someone attends it (#4351)", () => {
+  /** The lines being watched for their size now. */
+  let watched: Set<Element>;
+
+  beforeEach(() => {
+    watched = new Set();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        private seen: Element[] = [];
+        observe(target: Element) {
+          this.seen.push(target);
+          watched.add(target);
+        }
+        disconnect() {
+          for (const one of this.seen) watched.delete(one);
+        }
+        unobserve() {}
+      },
+    );
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** The rows' lines among what is watched: a tooltip shown watches its own size too. */
+  const lines = () => [...watched].filter((one) => one.matches('[data-part="below"]'));
+
+  it("watches nothing while nobody attends", () => {
+    render(<Skills />);
+    expect(lines()).toEqual([]);
+  });
+
+  it("watches the line drawn now, when it is drawn again while the keyboard is on the row", async () => {
+    const { rerender } = render(<OneLine words={SHORT} drawn="first" />);
+    await userEvent.tab();
+    rerender(<OneLine words={SHORT} drawn="second" />);
+
+    const line = row("long").querySelector('[data-part="below"]');
+    expect(lines()).toEqual([line]);
+  });
+
+  it("stops watching once the keyboard has gone, even past a stretch with a tip of its own", async () => {
+    const { rerender } = render(
+      <>
+        <OneLine words={SHORT} />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+    await userEvent.tab();
+    rerender(
+      <>
+        <OneLine words={SHORT} tip="Its own." />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+    await userEvent.tab();
+    rerender(
+      <>
+        <OneLine words={SHORT} />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+
+    expect(screen.getByRole("button", { name: "elsewhere" })).toHaveFocus();
+    expect(lines()).toEqual([]);
+  });
+});

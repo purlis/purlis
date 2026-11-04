@@ -120,10 +120,22 @@ export function RowBelow({
   useLayoutEffect(() => {
     const element = line.current;
     if (asks === null || element === null) return;
-    // Handed again as its words change: a row measuring it now measures them.
     asks(element);
     return () => asks(null);
-  }, [asks, children]);
+  }, [asks]);
+  // Handed again when its words change, as drawn (words drawn as marks are new on every draw):
+  // a row measuring it now measures them.
+  const wordsHanded = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const element = line.current;
+    if (asks === null || element === null) return;
+    const words = element.textContent;
+    if (wordsHanded.current === null) wordsHanded.current = words;
+    else if (words !== wordsHanded.current) {
+      wordsHanded.current = words;
+      asks(element);
+    }
+  });
   return (
     <span {...rest} ref={line} data-scope={scope} data-part="below" data-clamp={clamp}>
       {children}

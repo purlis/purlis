@@ -70,6 +70,11 @@ export function useRowTip(
   const soon = useRef(0);
   const pointer = useRef(0);
   useEffect(() => () => window.clearTimeout(soon.current), []);
+  // The last row told of attention, told when the pointer goes even once it no longer asks.
+  const attended = useRef(attend);
+  useLayoutEffect(() => {
+    if (attend !== undefined) attended.current = attend;
+  });
   const onPointerEnter = useCallback(
     (event: React.PointerEvent) => {
       if (event.pointerType === "touch") return;
@@ -88,10 +93,10 @@ export function useRowTip(
   }, []);
   const onPointerLeave = useCallback(() => {
     window.clearTimeout(soon.current);
-    attend?.("pointer", false);
+    attended.current?.("pointer", false);
     setPointed(null);
     setDismissed(false);
-  }, [attend]);
+  }, []);
   const has = tip !== undefined && tip !== null && tip !== "";
   const listens = has || attend !== undefined;
   // Gone from the window, which an engine may not say on the row (#3095).
@@ -124,6 +129,7 @@ type Attend = (by: "pointer" | "keyboard", on: boolean) => void;
 function KeyboardAttends({ on, attend }: { on: boolean; attend: Attend }) {
   useLayoutEffect(() => {
     attend("keyboard", on);
+    return () => attend("keyboard", false);
   }, [on, attend]);
   return null;
 }
@@ -145,44 +151,65 @@ export function useListRowTip(tip: Tip | undefined): {
 } {
   const own = tip !== undefined && says(tip);
   const [cut, setCut] = useState<string>();
-  const [attention, setAttention] = useState({ pointer: false, keyboard: false });
-  const attended = !own && (attention.pointer || attention.keyboard);
-  const attend = useCallback<Attend>(
-    (by, on) => setAttention((was) => (was[by] === on ? was : { ...was, [by]: on })),
-    [],
-  );
-  // The line its `RowBelow` hands it, and whether it is measured now.
+  // Whether a `RowBelow` asks: only then does the row listen for attention at all.
+  const [lined, setLined] = useState(false);
+  const [attention, setAttention] = useState(NOBODY);
+  const attentionNow = useRef(NOBODY);
+  const attended = !own && lined && (attention.pointer || attention.keyboard);
+  const attend = useCallback<Attend>((by, on) => {
+    const was = attentionNow.current;
+    if (was[by] === on) return;
+    const now = { ...was, [by]: on };
+    attentionNow.current = now;
+    setAttention(now);
+    // Nobody left: what was measured is forgotten, so attention coming back measures afresh.
+    if (!now.pointer && !now.keyboard) setCut(undefined);
+  }, []);
+  // The line its `RowBelow` hands it; while it is attended, measured and watched as it changes.
   const line = useRef<HTMLElement | null>(null);
-  const measuring = useRef(false);
+  const watching = useRef<{ stop: () => void } | null>(null);
   const measure = useCallback(() => {
     const element = line.current;
     setCut(element !== null && drawnCut(element) ? element.textContent || undefined : undefined);
   }, []);
+  const watch = useCallback(() => {
+    watching.current?.stop();
+    measure();
+    const element = line.current;
+    if (element === null || typeof ResizeObserver !== "function") {
+      watching.current = { stop: () => {} };
+      return;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    watching.current = { stop: () => observer.disconnect() };
+  }, [measure]);
   const told = useCallback(
     (element: HTMLElement | null) => {
       line.current = element;
-      if (measuring.current) measure();
+      setLined(element !== null);
+      // A line handed, or handed again with new words, while it is attended is measured now.
+      if (watching.current !== null) watch();
     },
-    [measure],
+    [watch],
   );
   useLayoutEffect(() => {
-    measuring.current = attended;
     if (!attended) return;
-    measure();
-    const element = line.current;
-    if (element === null || typeof ResizeObserver !== "function") return;
-    const watch = new ResizeObserver(measure);
-    watch.observe(element);
-    return () => watch.disconnect();
-  }, [attended, measure]);
-  // What was measured counts only while someone attends: measured again, before the frame,
-  // as attention comes back.
-  const tipped = useRowTip(own ? tip : attended ? cut : undefined, false, own ? undefined : attend);
+    watch();
+    return () => {
+      watching.current?.stop();
+      watching.current = null;
+    };
+  }, [attended, watch]);
+  const tipped = useRowTip(own ? tip : cut, false, own || !lined ? undefined : attend);
   return {
     tipped,
     hold: (content) => <RowCutWords.Provider value={told}>{content}</RowCutWords.Provider>,
   };
 }
+
+/** Nobody's attention on a row. */
+const NOBODY = { pointer: false, keyboard: false } as const;
 
 /** Where a row's tooltip is anchored: across the row from `left`, `width` wide, in px. */
 interface Place {
