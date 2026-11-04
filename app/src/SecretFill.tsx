@@ -44,6 +44,25 @@ export function SecretFill({
         {secret.tool != null && <> for {secret.tool}</>}, on this machine. The chat hears filled or
         declined, never the value.
       </p>
+      {secret.replace != null && (
+        // The chat's words, said as the chat's (#5075).
+        <p className="ui-text-meta" data-testid="secret-replace">
+          The chat says the current value doesn't work: <q>{secret.replace}</q>
+        </p>
+      )}
+      {secret.reads != null && (
+        <p className="ui-text-meta">
+          <code>{secret.key}</code> reads <code>{secret.reads.key}</code> in vault{" "}
+          <code>{secret.reads.vault}</code>. A new value goes there and reaches every key linked to
+          it; an entry you pick re-points the link.
+        </p>
+      )}
+      {secret.gone != null && (
+        <p className="ui-text-meta" data-testid="secret-gone">
+          <code>{secret.key}</code> was linked to <code>{secret.gone.key}</code> in vault{" "}
+          <code>{secret.gone.vault}</code>, which is gone. Give it a value, or pick another entry.
+        </p>
+      )}
       <SegmentedControl
         size="sm"
         aria-label={`How to fill ${secret.key}`}

@@ -11459,6 +11459,12 @@ export type SecretAt = {
 	shown: string | null,
 };
 
+/**  An entry of a vault named in a Secret ask (#5075): the person's to read, never a chat's. */
+export type SecretEntryShown = {
+	vault: string,
+	key: string,
+};
+
 /**
  *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
  *  its chats miss, and how many wait on it. Names only: no value is ever here.
@@ -11486,6 +11492,18 @@ export type SecretShown = {
 	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
+	/**
+	 *  **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
+	 *  chat's. Absent on an ask for a key the vault doesn't hold.
+	 */
+	replace?: string | null,
+	/**
+	 *  The entry the key reads, where it is a Linked entry asked to be replaced (#5075): a new
+	 *  value goes there.
+	 */
+	reads?: SecretEntryShown | null,
+	/**  The entry a broken link read, which is gone (#5075). */
+	gone?: SecretEntryShown | null,
 };
 
 /**

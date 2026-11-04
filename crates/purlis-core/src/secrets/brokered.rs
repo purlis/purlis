@@ -2524,8 +2524,8 @@ pub(crate) fn serve_recorded(
                 &|| None,
             )
         }
-        // A key the vault holds no value under is asked of the person, where the app asks
-        // (#5068, ADR 0109): the run waits, and reads the vault again once it is filled. Told
+        // A key the vault holds no value under, or a link whose entry is gone (#5075), is
+        // asked of the person, where the app asks (#5068, ADR 0109): the run waits, and reads the vault again once it is filled. Told
         // by the provider's kind of failure, never by its sentence. Each key is asked once a
         // run: one still missing after its fill is refused as it was before.
         (Some(v), _, None) => {
@@ -2534,7 +2534,10 @@ pub(crate) fn serve_recorded(
                 let missed: std::sync::Mutex<Option<String>> = std::sync::Mutex::default();
                 let read = |key: &str| {
                     let got = cmd::get_value(&ctx, v, key).map(zeroize::Zeroizing::new);
-                    if matches!(&got, Err(e) if e.kind == super::Kind::NotFound) {
+                    // A Linked entry whose entry is gone is asked for too (#5075), naming
+                    // the gone entry to the person alone.
+                    if matches!(&got, Err(e) if matches!(e.kind, super::Kind::NotFound | super::Kind::BrokenLink))
+                    {
                         *missed
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner) =
@@ -2563,6 +2566,7 @@ pub(crate) fn serve_recorded(
                     declared: super::needs::declared(&ctx.root, persona, &key)
                         .map(|need| need.purpose),
                     names_no_vault: false,
+                    reason: super::ask::Reason::broken(&ctx, &wanted.vault, &key),
                 };
                 let held = missing.asks.hold(need, missing.within, &mut |line: &str| {
                     (missing.moved)();
