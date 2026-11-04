@@ -13,6 +13,7 @@ import {
   type ReactNode,
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
+import { Send, X } from "lucide-react";
 import { useTabStop } from "./roving";
 import { RestartEndsLine } from "./RestartEnds";
 import {
@@ -70,7 +71,7 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
 import { useWayPlaces } from "./wayPlaces";
 import { useProjectShown } from "./projectShown";
-import { ChatText, textOfLine } from "./ChatText";
+import { ChatText } from "./ChatText";
 import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
@@ -79,9 +80,9 @@ import { SecretFill, type FillWith } from "./SecretFill";
 import { SecretFillSite } from "./SecretFillNotice";
 import type { VaultEntry } from "./VaultEntryPicker";
 import { ScopeSwitch } from "./ScopeSwitch";
-import { Button, ButtonRow } from "./ui/button/Button";
+import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
-import { Form, TextField } from "./ui/field/Field";
+import { Form, TextArea, TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { RESULTS } from "./ActionResultNotice";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -1033,7 +1034,7 @@ function Ask({
         as="li"
         variant="ask"
         ref={drawn}
-        className="inbox-ask"
+        className="inbox-ask inbox-card"
         data-source={ask.source}
         aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}
         aria-describedby={
@@ -1042,18 +1043,62 @@ function Ask({
             : `${id}-whose${shape.said === undefined ? "" : ` ${id}-said`}`
         }
       >
-        {/* **The card's top row** (R132): the chat's name in bold, the workspace quiet at its
-            right. */}
-        <p className="inbox-ask-top">
-          <span className="inbox-who ui-text-body ui-text-strong">{who}</span>
-          {where !== "" && (
-            <Tooltip tip={where}>
-              <span className="inbox-where inbox-secondary ui-text-meta">{where}</span>
-            </Tooltip>
-          )}
-        </p>
-        <div className="inbox-says">
+        {/* **The card's head, one row in the pane band's style** (#5214): its kind's mark; the
+            chat's name, with what it waits on, how long and where quiet under it; and at its
+            end Go to chat, a quiet link, and the queue's Ignore, a ×. */}
+        <div className="inbox-ask-head">
           <KindMark kind={kindOfAsk(ask.source)} />
+          <span className="inbox-ask-title">
+            <span className="inbox-who ui-text-body ui-text-strong">{who}</span>
+            <span className="inbox-ask-sub">
+              <Tooltip tip={SOURCE_SAID[ask.source]}>
+                <span className="inbox-meta ui-text-meta">
+                  <span id={`${id}-whose`} className="inbox-source">
+                    {SOURCE_SAID[ask.source]}
+                  </span>
+                  <RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" lead />
+                </span>
+              </Tooltip>
+              {where !== "" && (
+                <>
+                  <span className="inbox-meta-dot ui-text-meta">{" · "}</span>
+                  <Tooltip tip={where}>
+                    <span className="inbox-where inbox-secondary ui-text-meta">{where}</span>
+                  </Tooltip>
+                </>
+              )}
+            </span>
+          </span>
+          {(shape.go || (shape.ignore && onIgnore !== undefined)) && (
+            <span className="inbox-ask-end">
+              {shape.go && (
+                <Stop id={`${key}:go`}>
+                  <Button
+                    size="sm"
+                    variant="quiet-link"
+                    aria-label={`Go to chat ${who}`}
+                    onPress={onGo}
+                    className="inbox-go"
+                  >
+                    Go to chat
+                  </Button>
+                </Stop>
+              )}
+              {shape.ignore && onIgnore !== undefined && (
+                <Stop id={`${key}:ignore`}>
+                  <IconButton
+                    icon={<X />}
+                    size="sm"
+                    variant="quiet"
+                    aria-label={`Ignore ${who} until it asks again`}
+                    onPress={() => onIgnore(ask.session)}
+                  />
+                </Stop>
+              )}
+            </span>
+          )}
+        </div>
+        <div className="inbox-says">
           {/* The ask's words are the source's, drawn as text and never as a control. What an
               Allow here would let run is never cut (#1146): it is read whole first. **A chat's
               own words** (its message, a task's question) are markdown under the safe subset
@@ -1062,8 +1107,8 @@ function Ask({
           {chatWords ? (
             <ChatText
               id={`${id}-says`}
-              className="ask-says inbox-primary inbox-chat-text ui-text-body"
-              text={shape.message ? shape.line : textOfLine(shape.line)}
+              className="ask-says inbox-primary inbox-chat-text"
+              text={shape.line}
               foldStop={(button) => <Stop id={`${key}:fold`}>{button}</Stop>}
             />
           ) : (
@@ -1102,19 +1147,11 @@ function Ask({
               )}
             </Tooltip>
           )}
-          <Tooltip tip={SOURCE_SAID[ask.source]}>
-            <span className="inbox-meta ui-text-meta">
-              <span id={`${id}-whose`} className="inbox-source">
-                {SOURCE_SAID[ask.source]}
-              </span>
-              <RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" lead />
-            </span>
-          </Tooltip>
         </div>
         {shape.said !== undefined && (
           <ChatText
             id={`${id}-said`}
-            className="inbox-said ui-text-body"
+            className="inbox-said"
             text={shape.said}
             foldStop={(button) => <Stop id={`${key}:said-fold`}>{button}</Stop>}
           />
@@ -1156,66 +1193,32 @@ function Ask({
             {/* The asking chat's note is its own words, drawn as a chat's text is (#5214). */}
             {ask.answer.note !== null && (
               <ChatText
-                className="inbox-note ui-text-secondary"
-                text={textOfLine(ask.answer.note)}
+                className="inbox-note"
+                text={ask.answer.note}
                 foldStop={(button) => <Stop id={`${key}:note-fold`}>{button}</Stop>}
               />
             )}
           </>
         )}
-        {/* Its ways on, side by side at its foot: one line, never one each. */}
-        <ButtonRow size="sm" className="inbox-acts">
-          {shape.answerable && openAnswer !== undefined && (
-            <Stop id={`${key}:answer`}>
-              <Button
-                size="sm"
-                variant="primary"
-                aria-label={`Answer ${who}`}
-                onPress={() =>
-                  openAnswer({ chat: ask.session, name: ask.chain[ask.chain.length - 1] ?? who })
-                }
-              >
-                Answer
-              </Button>
-            </Stop>
-          )}
-          {shape.go && (
-            <Stop id={`${key}:go`}>
-              <Button
-                size="sm"
-                // R132: the way on is the card's primary press; no answer is drawn this way. On
-                // a card with a reply box, Send is its one button, and the ways on are quiet
-                // links under the box (#5214).
-                variant={
-                  shape.reply
-                    ? "quiet-link"
-                    : shape.answers || shape.answerable
-                      ? "ghost"
-                      : "primary"
-                }
-                aria-label={`Go to chat ${who}`}
-                onPress={onGo}
-                className="inbox-go"
-              >
-                Go to chat
-              </Button>
-            </Stop>
-          )}
-          {shape.ignore && onIgnore !== undefined && (
-            <Stop id={`${key}:ignore`}>
-              <Button
-                size="sm"
-                variant={shape.reply ? "quiet-link" : "ghost"}
-                aria-label={`Ignore ${who} until it asks again`}
-                tooltip={`Ignore ${who} until it asks again`}
-                onPress={() => onIgnore(ask.session)}
-                className="inbox-go"
-              >
-                Ignore
-              </Button>
-            </Stop>
-          )}
-        </ButtonRow>
+        {/* A task's question is answered in the Answer form (ADR 0107). */}
+        {shape.answerable && openAnswer !== undefined && (
+          <ButtonRow size="sm" className="inbox-acts">
+            {
+              <Stop id={`${key}:answer`}>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  aria-label={`Answer ${who}`}
+                  onPress={() =>
+                    openAnswer({ chat: ask.session, name: ask.chain[ask.chain.length - 1] ?? who })
+                  }
+                >
+                  Answer
+                </Button>
+              </Stop>
+            }
+          </ButtonRow>
+        )}
       </Card>
     </Stop>
   );
@@ -1230,7 +1233,7 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
   const [text, setText] = useState("");
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const box = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
   const who = chainSaid(ask.chain);
   const send = () => {
     const bytes = replyBytes(text);
@@ -1269,6 +1272,7 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
       .catch((err: unknown) => setSaid(`purlis could not send it: ${String(err)}`))
       .finally(() => setBusy(false));
   };
+  const empty = busy || replyBytes(text) === undefined;
   return (
     <Form
       className="inbox-reply"
@@ -1277,29 +1281,51 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
         send();
       }}
     >
-      {/* A stop of the list too, so ↑ and ↓ reach it; Home and End there are the box's own. */}
+      {/* **The reply strip** (#5214): always at the card's foot, edge to edge, one line at rest
+          and two once it holds the caret, growing to four with its lines. Enter sends,
+          Shift+Enter starts a new line, Esc leaves it for the card. A stop of the list too, so
+          ↑ and ↓ reach it; inside its lines they move the caret. */}
       <Stop id={`${stop}:reply`}>
-        <TextField
+        <TextArea
+          strip
           inputRef={box}
           className="inbox-reply-box"
           aria-label={`Reply to ${who}`}
           value={text}
-          placeholder="Your reply"
+          placeholder={`Reply to ${who}…`}
+          hint={REPLY_HINT}
           spellCheck
           onChange={setText}
-          onKeyDown={keepHomeAndEnd}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              send();
+              return;
+            }
+            if (event.key === "Escape") {
+              // It leaves the box for its card, not the Inbox for the chat in front.
+              event.preventDefault();
+              event.stopPropagation();
+              box.current?.closest<HTMLElement>("li.inbox-ask")?.focus();
+              return;
+            }
+            keepCaretKeys(event);
+          }}
+          end={
+            // Dim and inert while there is nothing to send, the accent's once there is. Never
+            // `disabled`: a disabled button drops the keyboard to the page (#1700).
+            <Stop id={`${stop}:send`} focusable={!empty}>
+              <IconButton
+                icon={<Send />}
+                type="submit"
+                size="sm"
+                variant={empty ? "quiet" : "primary"}
+                aria-label={`Send reply to ${who}`}
+                aria-disabled={empty || undefined}
+              />
+            </Stop>
+          }
         />
-      </Stop>
-      <Stop id={`${stop}:send`} focusable={!busy && replyBytes(text) !== undefined}>
-        {/* The card's one button (#5214): Go to chat and Ignore are quiet links under it. */}
-        <Button
-          type="submit"
-          variant="primary"
-          aria-label={`Send reply to ${who}`}
-          isDisabled={busy || replyBytes(text) === undefined}
-        >
-          Send
-        </Button>
       </Stop>
       {said !== undefined && (
         <p className="inbox-refused" role="status">
@@ -1307,6 +1333,48 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
         </p>
       )}
     </Form>
+  );
+}
+
+/** What the reply strip says at its foot while it holds the caret (#5214). */
+export const REPLY_HINT = "Enter sends · Shift+Enter new line";
+
+/**
+ * **The caret's keys inside a reply's lines** (#5214): ↑ and ↓ move the caret a line where there
+ * is one above or below it, and Home and End go to its line's start and end, rather than moving
+ * the list's focus. On its first line ↑, and on its last ↓, still leave it for the list's next
+ * stop, as from any field of the list.
+ */
+function keepCaretKeys(event: KeyboardEvent<HTMLTextAreaElement>) {
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  const box = event.currentTarget;
+  const { value } = box;
+  const at = box.selectionDirection === "backward" ? box.selectionStart : box.selectionEnd;
+  const start = value.lastIndexOf("\n", at - 1) + 1;
+  const endAt = value.indexOf("\n", at);
+  const end = endAt === -1 ? value.length : endAt;
+  let to: number | undefined;
+  if (event.key === "Home") to = start;
+  else if (event.key === "End") to = end;
+  else if (event.key === "ArrowUp" && start > 0) {
+    const above = value.lastIndexOf("\n", start - 2) + 1;
+    to = Math.min(above + (at - start), start - 1);
+  } else if (event.key === "ArrowDown" && end < value.length) {
+    const belowEnd = value.indexOf("\n", end + 1);
+    to = Math.min(end + 1 + (at - start), belowEnd === -1 ? value.length : belowEnd);
+  }
+  if (to === undefined) return;
+  event.preventDefault();
+  if (!event.shiftKey) {
+    box.setSelectionRange(to, to);
+    return;
+  }
+  // Extending: the end the selection is anchored at stays where it is.
+  const anchor = box.selectionDirection === "backward" ? box.selectionEnd : box.selectionStart;
+  box.setSelectionRange(
+    Math.min(anchor, to),
+    Math.max(anchor, to),
+    to < anchor ? "backward" : "forward",
   );
 }
 

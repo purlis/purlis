@@ -1539,14 +1539,13 @@ body {
   white-space: nowrap;
 }
 
-/* **A task's report on the band of a pane left on it as it ended** (#4757, `EndedBand.tsx`):
-   text, every character, wrapped and never cut, in a box of its own that scrolls. */
+/* **A task's report on the band of a pane left on it as it ended** (#4757, `EndedBand.tsx`): a
+   chat's text (`ChatText`, #5214), folded past six lines; opened, in a box that scrolls. */
 .ended-report {
   max-width: 100%;
   max-height: 30vh;
   margin: var(--space-2) 0 0;
   overflow: auto;
-  white-space: pre-wrap;
 }
 
 /* **A runner chat's change, whole, in its own tab** (#2046): every line as it would be written,
@@ -2590,7 +2589,8 @@ body {
 .inbox-ask + .inbox-ask {
   margin-top: var(--space-2);
 }
-/* **An ask card's top row** (R132): the chat's name, then the workspace at the row's end. */
+/* **An ask card's top row** (R132): the chat's name, then the workspace at the row's end. The
+   task question card's (`TaskQuiz.tsx`). */
 .inbox-ask-top {
   display: flex;
   gap: var(--space-4);
@@ -2622,6 +2622,92 @@ body {
 .inbox-ask > .inbox-says > .inbox-kind,
 .inbox-ask > .inbox-says > .inbox-primary {
   grid-row: 2;
+}
+/* **An ask card's head, one row in the pane band's style** (#5214): its kind's mark, the chat's
+   name over its status line (what it waits on in the waiting amber, then how long and where,
+   quiet), and at its end Go to chat and the ×. The card's edge is the waiting amber, softened. */
+.inbox-card {
+  border-color: color-mix(in oklab, var(--state-waiting) 55%, transparent);
+}
+.inbox-ask-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  min-width: 0;
+}
+.inbox-ask-head > .inbox-kind {
+  grid-area: auto;
+}
+.inbox-ask-title {
+  display: grid;
+  min-width: 0;
+}
+.inbox-ask-title > .inbox-who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-ask-sub {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+}
+.inbox-ask-sub > .inbox-meta {
+  flex: none;
+  justify-content: flex-start;
+}
+.inbox-ask-sub > .inbox-meta > .inbox-source {
+  color: var(--state-waiting);
+}
+.inbox-ask-sub > .inbox-meta-dot {
+  flex: none;
+  white-space: pre;
+}
+.inbox-ask-sub > .inbox-where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inbox-ask-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* Its words, under the name, past the mark. */
+.inbox-card > .inbox-says {
+  display: block;
+  padding-inline-start: calc(1em + var(--space-3));
+}
+/* **A chat's own words on a card** (#5214): the card's smaller size in the secondary tier, its
+   bold in the primary words. They wear no text role, so these rules are the words' own. */
+.inbox-card .inbox-chat-text,
+.inbox-card .inbox-said,
+.inbox-card .inbox-note {
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+}
+.inbox-card .inbox-said,
+.inbox-card .inbox-note,
+.inbox-card > .inbox-secondary {
+  padding-inline-start: calc(1em + var(--space-3));
+}
+.inbox-card :is(.inbox-chat-text, .inbox-said, .inbox-note) strong {
+  color: var(--text-primary);
+}
+/* The reply strip runs to the card's edges and sits at its foot (#5214). */
+.inbox-card:has(> .inbox-reply) {
+  padding-block-end: 0;
+  overflow: hidden;
+}
+.inbox-card > .inbox-reply {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-inline: calc(var(--space-5) * -1);
 }
 
 /* **A row's words, in three ranks** (qw359, `InboxRow.tsx`): its kind's mark and what needs you
@@ -2721,14 +2807,10 @@ body {
 /* The answers are the shared row whose buttons wrap their words (`ButtonRow`, #1855): an
    answer's label is the source's, and in a narrow sidebar a long one must wrap, not widen the
    Inbox (inbox-long-ask.state.e2e). */
-.inbox-answers,
-.inbox-reply {
+.inbox-answers {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-}
-.inbox-reply > .inbox-reply-box {
-  flex: 1 1 8rem;
 }
 /* An edit's change (#1146): each in the light editor's merge view, one under another, its box
    scrolling within a share of the window so the answers under it stay near. */

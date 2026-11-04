@@ -21,6 +21,7 @@ import {
   MOST_LINES,
   type UpdateRow,
   type Updates,
+  REPLY_HINT,
 } from "./Inbox";
 import { AnswerOpener } from "./AnswerPanel";
 import { Notice } from "./Notice";
@@ -240,11 +241,11 @@ describe("the asks, grouped by chat", () => {
     expect(screen.getByText("Your call.")).toBeTruthy();
   });
 
-  it("draws a task's question and its asking chat's note as a chat's text, its line breaks back (#5214)", () => {
+  it("draws a task's question and its asking chat's note as a chat's text (#5214)", () => {
     const question: Shown = {
       session: 9,
       ask: "task-question:9:4",
-      says: "Which **host**?⟦U+000A⟧- prod⟦U+000A⟧- staging",
+      says: "Which **host**?\n- prod\n- staging",
       options: [],
       source: "task-question",
       chain: ["steward 6", "check prod"],
@@ -260,7 +261,6 @@ describe("the asks, grouped by chat", () => {
         .getAllByRole("listitem")
         .map((one) => one.textContent),
     ).toEqual(["prod", "staging"]);
-    expect(card.textContent).not.toContain("⟦U+000A⟧");
     expect(within(card).getByText("ops").tagName).toBe("EM");
   });
 
@@ -307,9 +307,9 @@ describe("the asks, grouped by chat", () => {
     expect(screen.getByRole("heading", { name: "<b>steward</b> 3" })).toBeTruthy();
     // The only buttons are the answers it offers, and Go to chat.
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Go to chat",
       "Allow",
       "Deny",
-      "Go to chat",
     ]);
   });
 
@@ -345,8 +345,8 @@ describe("the asks, grouped by chat", () => {
     // What is drawn is not what would run, so nothing that lets it run is offered here
     // (`hooked::shown_in_full`'s rule): Deny, and the chat's own pane, which shows it whole.
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Deny",
       "Go to chat",
+      "Deny",
     ]);
   });
 
@@ -361,8 +361,8 @@ describe("the asks, grouped by chat", () => {
     expect(mark).toHaveClass("invisible-char");
     expect(screen.getByText(hiddenSaid("⟦U+00A0⟧"))).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Deny",
       "Go to chat",
+      "Deny",
     ]);
   });
 
@@ -427,8 +427,8 @@ describe("the asks, grouped by chat", () => {
     expect(document.querySelector(".ask-lines")).not.toHaveClass("inbox-clamped");
     expect(screen.getByText("Allow is not offered. It runs over 2 lines.")).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Deny",
       "Go to chat",
+      "Deny",
     ]);
   });
 
@@ -509,9 +509,9 @@ describe("the asks, grouped by chat", () => {
     draw([permission(3, "lb", ["steward 3"], "Run a command: echo ⟦U+27E6⟧U+00A0⟧")]);
     expect(screen.queryByText(/Allow is not offered/)).toBeNull();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Go to chat",
       "Allow",
       "Deny",
-      "Go to chat",
     ]);
   });
 
@@ -521,9 +521,9 @@ describe("the asks, grouped by chat", () => {
     draw([permission(3, "n", ["steward 3"], nfd)]);
     expect(screen.getByText(nfd)).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Go to chat",
       "Allow",
       "Deny",
-      "Go to chat",
     ]);
   });
 
@@ -899,7 +899,7 @@ describe("answering in place", () => {
     expect(within(card).getByText("graph")).toBeTruthy();
   });
 
-  it("folds a long message behind Show all, reached by ↓ before the reply box (#5214)", async () => {
+  it("folds a long message behind Show all, reached by ↓ past the head and before the reply (#5214)", async () => {
     core();
     const long = Array.from({ length: 9 }, (_, at) => `Line ${at + 1}`).join("\n");
     draw([{ ...QUESTION, last_message: long }]);
@@ -907,6 +907,10 @@ describe("answering in place", () => {
     const show = screen.getByRole("button", { name: "Show all · 9 lines" });
     expect(show).toHaveAttribute("aria-expanded", "false");
     await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Go to chat steward 6" }),
+    );
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(show);
     await userEvent.keyboard("{Enter}");
@@ -920,20 +924,39 @@ describe("answering in place", () => {
     );
   });
 
-  it("makes Send the card's one button, with Go to chat and Ignore quiet links under the box (#5214)", () => {
+  it("draws the card's head in the pane band's style, Send its one button (#5214)", () => {
     core();
-    draw([{ ...QUESTION, last_message: "Which branch?" }], { onIgnore: vi.fn() });
+    const ignored = vi.fn();
+    draw([{ ...QUESTION, last_message: "Which branch?" }], { onIgnore: ignored });
 
     const card = screen.getByRole("listitem", { name: "Waiting on your reply" });
-    const box = within(card).getByRole("textbox", { name: "Reply to steward 6" });
-    const send = within(card).getByRole("button", { name: /^Send reply to / });
-    expect(send).toHaveAttribute("data-variant", "primary");
-    for (const name of ["Go to chat steward 6", "Ignore steward 6 until it asks again"]) {
-      const link = within(card).getByRole("button", { name });
-      expect(link).toHaveAttribute("data-variant", "quiet-link");
-      expect(box.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    }
-    expect(card.querySelectorAll('[data-variant="primary"]')).toHaveLength(1);
+    const head = card.querySelector(".inbox-ask-head") as HTMLElement;
+    expect(within(head).getByText("steward 6")).toBeTruthy();
+    expect(within(head).getByText("Waiting on your reply")).toBeTruthy();
+    // Go to chat, a quiet link, and the queue's Ignore, a ×, in the head.
+    expect(within(head).getByRole("button", { name: "Go to chat steward 6" })).toHaveAttribute(
+      "data-variant",
+      "quiet-link",
+    );
+    expect(
+      within(head).getByRole("button", { name: "Ignore steward 6 until it asks again" }),
+    ).toBeTruthy();
+    expect(within(card).queryByRole("button", { name: "Ignore" })).toBeNull();
+    // The send is the card's one button, inside the reply strip at its foot.
+    const strip = card.querySelector('[data-scope="textarea"][data-strip]') as HTMLElement;
+    expect(within(strip).getByRole("button", { name: /^Send reply to / })).toBeTruthy();
+    expect(strip).toBe(card.querySelector(".inbox-reply")?.querySelector("[data-strip]"));
+    expect(card.querySelectorAll('[data-scope="button"][data-variant="primary"]')).toHaveLength(0);
+  });
+
+  it("presses Ignore from the head's ×", async () => {
+    core();
+    const ignored = vi.fn();
+    draw([{ ...QUESTION, last_message: "Which branch?" }], { onIgnore: ignored });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ignore steward 6 until it asks again" }),
+    );
+    expect(ignored).toHaveBeenCalledWith(6);
   });
 
   it("says once that a chat waiting on a reply has no message to show", () => {
@@ -960,16 +983,16 @@ describe("answering in place", () => {
     ).toBeTruthy();
   });
 
-  it("reaches a reply box from its card with one Tab and ↓, past the message", async () => {
+  it("reaches a reply box from its card with one Tab and ↓, past its head and the message", async () => {
     core();
     draw([{ ...QUESTION, last_message: "Which branch?" }]);
     await userEvent.tab();
     expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
-    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
     expect(document.activeElement).toBe(
       screen.getByRole("textbox", { name: "Reply to steward 6" }),
     );
-    await userEvent.keyboard("{ArrowUp}");
+    await userEvent.keyboard("{ArrowUp}{ArrowUp}");
     expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
     await userEvent.tab({ shift: true });
     expect(document.querySelector("li.inbox-ask")?.contains(document.activeElement)).toBe(false);
@@ -994,13 +1017,90 @@ describe("answering in place", () => {
     expect(screen.queryByText(NO_MESSAGE)).toBeNull();
   });
 
-  it("sends nothing for an empty reply", () => {
+  it("sends nothing for an empty reply: its send is inert, and Enter in it sends nothing", async () => {
+    const calls = core({ asks_waiting: { asks: [QUESTION] } });
+    draw([QUESTION]);
+    const send = screen.getByRole("button", { name: /^Send reply to / });
+    expect(send).toHaveAttribute("aria-disabled", "true");
+    expect(send).toHaveAttribute("data-variant", "quiet");
+    await userEvent.click(send);
+    await userEvent.type(screen.getByRole("textbox", { name: "Reply to steward 6" }), "   {Enter}");
+    expect(calls.map((one) => one.cmd)).not.toContain("asks_waiting");
+    expect(calls.map((one) => one.cmd)).not.toContain("send_input");
+  });
+
+  it("keeps the reply strip at the card's foot, one line at rest, two holding the caret, its hint only then (#5214)", async () => {
+    core();
+    draw([{ ...QUESTION, last_message: "Which branch?" }]);
+    const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
+    const strip = box.closest("[data-strip]") as HTMLElement;
+    expect(box).toHaveAttribute("placeholder", "Reply to steward 6…");
+    expect(strip).toHaveAttribute("data-rows", "1");
+    const hint = within(strip).getByText(REPLY_HINT);
+    expect(hint).not.toHaveAttribute("data-shown");
+    // Heard as the box's description, whether or not it is seen.
+    expect(box).toHaveAccessibleDescription(REPLY_HINT);
+
+    act(() => box.focus());
+    expect(strip).toHaveAttribute("data-rows", "2");
+    expect(hint).toHaveAttribute("data-shown");
+
+    act(() => box.blur());
+    expect(strip).toHaveAttribute("data-rows", "1");
+    expect(hint).not.toHaveAttribute("data-shown");
+  });
+
+  it("sends on Enter, and starts a new line on Shift+Enter, growing to four lines (#5214)", async () => {
+    const calls = core({ asks_waiting: { asks: [QUESTION] } });
+    draw([QUESTION]);
+    const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
+    const strip = box.closest("[data-strip]") as HTMLElement;
+    await userEvent.type(box, "one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three");
+    expect((box as HTMLTextAreaElement).value).toBe("one\ntwo\nthree");
+    expect(strip).toHaveAttribute("data-rows", "3");
+    expect(calls.map((one) => one.cmd)).not.toContain("send_input");
+    expect(screen.getByRole("button", { name: /^Send reply to / })).toHaveAttribute(
+      "data-variant",
+      "primary",
+    );
+    await userEvent.type(box, "{Shift>}{Enter}{/Shift}four{Shift>}{Enter}{/Shift}five");
+    expect(strip).toHaveAttribute("data-rows", "4");
+
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "send_input",
+        args: { plane: PLANE, session: 6, text: replyBytes("one\ntwo\nthree\nfour\nfive") },
+      }),
+    );
+    await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(""));
+  });
+
+  it("leaves the reply for its card on Esc, keeping what was typed (#5214)", async () => {
+    core();
+    const { props } = draw([QUESTION]);
+    const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
+    await userEvent.type(box, "half a thought");
+    await userEvent.keyboard("{Escape}");
+    expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
+    expect((box as HTMLTextAreaElement).value).toBe("half a thought");
+    expect(props.onLeave).not.toHaveBeenCalled();
+  });
+
+  it("moves the caret between a reply's lines on ↑ and ↓, and leaves it from its first line (#5214)", async () => {
     core();
     draw([QUESTION]);
-    expect(screen.getByRole("button", { name: /^Send reply to / })).toHaveProperty(
-      "disabled",
-      true,
-    );
+    const box = screen.getByRole("textbox", { name: "Reply to steward 6" }) as HTMLTextAreaElement;
+    await userEvent.type(box, "abc{Shift>}{Enter}{/Shift}de");
+    await userEvent.keyboard("{ArrowUp}");
+    expect(document.activeElement).toBe(box);
+    expect(box.selectionStart).toBe(2);
+    await userEvent.keyboard("{ArrowDown}");
+    expect(box.selectionStart).toBe(6);
+    await userEvent.keyboard("{Home}");
+    expect(box.selectionStart).toBe(4);
+    await userEvent.keyboard("{ArrowUp}{ArrowUp}");
+    expect(document.activeElement).not.toBe(box);
   });
 
   it("names a prompt waiting in a harness's terminal, with only the way to it", () => {
@@ -1524,12 +1624,14 @@ describe("the keyboard (I-11)", () => {
     const [first, second] = screen.getAllByRole("listitem");
     act(() => first.focus());
     await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement?.textContent).toBe("Go to chat");
+    await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement?.textContent).toBe("Allow");
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
     expect(document.activeElement).toBe(second);
     await userEvent.keyboard("{ArrowUp}");
-    expect(document.activeElement?.textContent).toBe("Go to chat");
-    await userEvent.keyboard("{ArrowUp}{ArrowUp}{Enter}");
+    expect(document.activeElement?.textContent).toBe("Deny");
+    await userEvent.keyboard("{ArrowUp}{Enter}");
     await waitFor(() =>
       expect(calls.find((one) => one.cmd === "answer_ask")?.args).toMatchObject({
         ask: "k1",
@@ -1546,7 +1648,8 @@ describe("the keyboard (I-11)", () => {
     expect(stops).toEqual([screen.getAllByRole("listitem")[0]]);
     act(() => (stops[0] as HTMLElement).focus());
     await userEvent.keyboard("{End}");
-    expect(document.activeElement).toHaveAccessibleName("Go to chat steward 5");
+    expect(document.activeElement?.textContent).toBe("Deny");
+    expect(screen.getAllByRole("listitem")[1].contains(document.activeElement)).toBe(true);
     await userEvent.keyboard("{Home}");
     expect(document.activeElement).toBe(screen.getAllByRole("listitem")[0]);
   });
@@ -1587,7 +1690,7 @@ describe("where a notification lands (#1694)", () => {
     expect(document.activeElement).toBe(within(group).getAllByRole("listitem")[0]);
     // From there the keys go on as from any ask.
     await userEvent.keyboard("{ArrowDown}");
-    expect(document.activeElement?.textContent).toBe("Allow");
+    expect(document.activeElement?.textContent).toBe("Go to chat");
   });
 
   it("is nowhere for a chat with nothing left in the Inbox", () => {

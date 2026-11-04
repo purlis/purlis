@@ -204,13 +204,16 @@
   padding-inline: 0;
 }
 
-[data-scope="button"][data-part="root"][data-variant="quiet-link"]:is(
-    [data-hovered],
-    [data-focus-visible],
-    [data-open]
-  ) {
+/* prettier-ignore */
+[data-scope="button"][data-part="root"][data-variant="quiet-link"][data-open]:not([data-disabled]),
+[data-scope="button"][data-part="root"][data-variant="quiet-link"][data-hovered]:not([data-disabled]) {
   color: var(--text-primary);
   background-color: transparent;
+  text-decoration: underline;
+}
+
+[data-scope="button"][data-part="root"][data-variant="quiet-link"][data-focus-visible] {
+  color: var(--text-primary);
   text-decoration: underline;
 }
 

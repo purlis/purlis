@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { ChatText } from "./ChatText";
 import type { ReactNode } from "react";
 import type { Offer } from "./actions";
 import { Notice } from "./Notice";
@@ -53,7 +54,7 @@ export function resumeOf(
  *
  * **A task a pane was left on says how it ended** (#4757, folded here from its own ended view):
  * in its finished row's words where it has one (`how`, and the core's word beside it, `more`),
- * and its report, as text, where the window holds it.
+ * and its report, where the window holds it, as a chat's text (`ChatText`, #5214).
  *
  * A `Notice` at the pane, so it is the one way a standing line is drawn and a polite `status`:
  * a reader hears it once as it comes, and **focus stays where it was**. Nothing here moves it.
@@ -75,7 +76,8 @@ export function EndedBand({
   how?: ReactNode;
   /** The core's own word beside it, where the finished row draws one. */
   more?: string;
-  /** A task's report, where the window holds it. Text, never markup. */
+  /** A task's report, where the window holds it: a chat's words, drawn as a chat's text is
+   *  (`ChatText`, #5214), markdown under the safe subset, folded past six lines. */
   report?: string;
   /** Resume, where the chat has a way back ({@link resumeOf}, or a task's Reopen). */
   resume: (() => void) | undefined;
@@ -106,7 +108,7 @@ export function EndedBand({
       </span>
       {report !== undefined && (
         <section aria-label={`Report from ${name}`}>
-          <pre className="block-report-draft ended-report">{report}</pre>
+          <ChatText className="ended-report" text={report} />
         </section>
       )}
     </Notice>

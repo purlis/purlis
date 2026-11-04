@@ -99,17 +99,6 @@ export function ChatText({
   );
 }
 
-/**
- * **A chat's words that the core put on one line, with their line breaks back** (#5214): a line
- * (`purlis_core::shown::one_line`) writes each line end as its mark, `⟦U+000A⟧`, so a question
- * read as a line shows `⟦U+000A⟧` where the chat broke it. The mark is exact: a `⟦` the chat
- * wrote itself is marked too (`⟦U+27E6⟧`), so only purlis's own marks are turned back. Every
- * other mark stays, so a hidden character still shows.
- */
-export function textOfLine(line: string): string {
-  return line.replace(/(?:⟦U\+000D⟧)?⟦U\+000A⟧/gu, "\n");
-}
-
 /** The most lines a message shows before it folds (#5214). */
 export const FOLD_LINES = 6;
 

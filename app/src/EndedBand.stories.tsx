@@ -63,7 +63,7 @@ export const ClearPaneOnly: Story = {
 };
 
 /** **A task a pane was left on, ended** (#4757): how it ended, as its finished row says it, the
- *  core's word beside it, and its report, as text. */
+ *  core's word beside it, and its report, as a chat's text (#5214): its bold drawn bold. */
 export const TaskWithReport: Story = {
   args: {
     name: "sweep",
@@ -73,10 +73,11 @@ export const TaskWithReport: Story = {
       />
     ),
     more: "blocked",
-    report: "The queue is locked.\nNothing was changed.",
+    report: "The queue is **locked**.\nNothing was changed.",
   },
   play: async ({ canvas }) => {
     await expect(canvas.getByText(/sweep ended:/)).toBeVisible();
     await expect(canvas.getByRole("region", { name: "Report from sweep" })).toBeVisible();
+    await expect(canvas.getByText("locked").tagName).toBe("STRONG");
   },
 };
