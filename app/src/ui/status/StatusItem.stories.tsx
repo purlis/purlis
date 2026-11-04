@@ -117,6 +117,9 @@ const DRAWN_IN_THE_ACCENT: Record<string, Token | undefined> = {
   "accent.fill-hover": "tab.active",
   "focus.ring": undefined,
   "list.selected-edge": undefined,
+  // The accent's marks (#5157, `tint::SIGNAL_MARKS`), each kept 0.1 from the state colours.
+  "markdown.link": undefined,
+  "chart.1": undefined,
 };
 
 /** An accent set over the cell's theme, its words and grounds as the engine resolves them. */
@@ -141,10 +144,9 @@ function OverPurlis() {
     if (kin !== undefined && value(kin) === value(token))
       return (ACCENT_GROUNDS as readonly Token[]).includes(kin) ? followed(kin) : value(kin);
     // What the theme draws as its accent is the accent given (#5157).
-    const turned =
-      value(token) === value("accent.base") ? accent : toward(value(token), accent);
+    const turned = value(token) === value("accent.base") ? accent : toward(value(token), accent);
     const holds = inForce()
-      .tint.apart.filter((rule) => rule.token === token && !rule.words && !rule.signal)
+      .tint.apart.filter((rule) => rule.token === token && !rule.words)
       .every((rule) => {
         const from = value(rule.from as Token);
         const was = oklabDistance(value(token), from);
@@ -180,6 +182,7 @@ function OverPurlis() {
         />
       </ActivityGroup>
       <Button variant="primary">Update</Button>
+      <Button variant="link">Release notes</Button>
       <div style={{ inlineSize: "10rem" }}>
         <List aria-label="Versions" selectionMode="single" defaultSelectedKeys={["dev"]}>
           <ListRow id="dev" textValue="Dev">
@@ -201,6 +204,8 @@ function OverPurlis() {
  * not on Purlis's lavender. Each ground is the theme's turned to the accent's hue at the
  * luminance and alpha it had (`tint::toward`), so every contrast on it is where the theme put it,
  * and stays the theme's where turning would bring it nearer the waiting or danger wash.
+ * The link follows the accent too where it can stay 0.1 from every state colour (#5157); this
+ * accent is the success green, so the link stays the theme's and never reads as success.
  * The tokens are set here as the engine resolves them, from a green the theme already holds
  * (`state.success`) and the cell's own grounds, by the window's own arithmetic (`tint.ts`'
  * `toward`, held to the engine's by the shared fixture), so no colour is written outside a theme

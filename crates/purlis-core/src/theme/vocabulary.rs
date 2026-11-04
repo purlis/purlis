@@ -459,7 +459,11 @@ pub fn follow_kin(
                 followed.push((ground, ACCENT));
             }
         }
-        for token in DRAWN_IN_THE_ACCENT {
+        // And the accent's marks, a link and the first chart colour (#5157).
+        for token in DRAWN_IN_THE_ACCENT
+            .into_iter()
+            .chain(super::tint::SIGNAL_MARKS)
+        {
             if given.contains_key(token) {
                 continue;
             }
@@ -498,8 +502,9 @@ pub fn follow_kin(
 
 /// **Whether `turned`, what `token` would be drawn as, holds every rule of [`super::tint::APART`] it is the
 /// token of** (#4918), each at least its distance from its other side as `value` gives it, or
-/// no nearer than `written`, the value it was turned from, already was. A rule of the accent's
-/// words or marks is measured by its own answer, and a value that is not a colour has nothing
+/// no nearer than `written`, the value it was turned from, already was: a mark of the accent
+/// ([`super::tint::SIGNAL_MARKS`]) so from each state colour too (#5157). A rule of the
+/// accent's words is measured by its own answer, and a value that is not a colour has nothing
 /// to be near.
 pub fn holds_as_apart(
     token: &str,
@@ -509,7 +514,7 @@ pub fn holds_as_apart(
 ) -> bool {
     super::tint::APART
         .iter()
-        .filter(|rule| rule.token == token && !rule.words && !rule.signal)
+        .filter(|rule| rule.token == token && !rule.words)
         .all(|rule| {
             let Some(from) = value(rule.from).as_deref().and_then(super::tint::oklab_of) else {
                 return true;

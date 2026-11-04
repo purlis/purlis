@@ -95,10 +95,10 @@ fn what_follows_the_accent_keeps_its_contrasts_and_its_distance_from_waiting_and
             let given = tint::tint_hex(theme.value("accent.base"), f64::from(degree));
             let drawn = with_accent(theme, &given);
             let id = format!("{} {} at {degree} ({given})", theme.name, theme.id);
-            for pair in PAIRS
-                .iter()
-                .filter(|pair| DRAWN_IN_THE_ACCENT.contains(&pair.front))
-            {
+            let follows = |token: &str| {
+                DRAWN_IN_THE_ACCENT.contains(&token) || tint::SIGNAL_MARKS.contains(&token)
+            };
+            for pair in PAIRS.iter().filter(|pair| follows(pair.front)) {
                 let (Some(was), Some(is)) = (ratio(theme, pair), ratio(&drawn, pair)) else {
                     continue;
                 };
@@ -119,10 +119,7 @@ fn what_follows_the_accent_keeps_its_contrasts_and_its_distance_from_waiting_and
                     "{id}: the primary's words on {fill} are {is}"
                 );
             }
-            for rule in APART
-                .iter()
-                .filter(|rule| DRAWN_IN_THE_ACCENT.contains(&rule.token))
-            {
+            for rule in APART.iter().filter(|rule| follows(rule.token)) {
                 let (was, is) = (
                     apart(theme.value(rule.token), theme.value(rule.from)),
                     apart(drawn.value(rule.token), drawn.value(rule.from)),
@@ -212,6 +209,62 @@ fn a_fill_the_parent_draws_as_its_surface_follows_the_surface_as_turned_not_as_w
             );
             for edge in ["focus.ring", "list.selected-edge"] {
                 assert_eq!(theme.value(edge), accent, "{id} {edge}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_given_blue_turns_the_link_and_the_first_chart_colour_and_keeps_them_from_the_states() {
+    // Purlis draws its first chart colour as its accent and its link in its accent's family
+    // (#5157): a blue given over it, at Purlis's own lightness, draws both blue, never within 0.1
+    // of a state colour.
+    for theme in &purlis().appearances {
+        let given = tint::tint_hex(theme.value("accent.base"), 235.0);
+        let drawn = with_accent(theme, &given);
+        for mark in tint::SIGNAL_MARKS {
+            let (was, now) = (theme.value(mark), drawn.value(mark));
+            let id = format!("{} {mark}: {was} → {now}", theme.id);
+            if was == theme.value("accent.base") {
+                assert_eq!(now, given, "{id}");
+            }
+            assert!(degrees_apart(hue(now), hue(&given)) < 6.0, "{id}");
+            for state in tint::SIGNALS {
+                assert!(
+                    apart(now, drawn.value(state)) >= 0.1,
+                    "{id} is {} from {state}",
+                    apart(now, drawn.value(state))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_given_teal_keeps_purlis_s_link_where_teal_would_read_as_success() {
+    // At the lightness Purlis draws its link, every teal is within 0.1 of Purlis's success green
+    // (#5157): a link is never read as a state (#4921), so it stays Purlis's lavender. Each mark
+    // is answered alone: a first chart colour the teal itself clears may be teal.
+    for theme in &purlis().appearances {
+        let given = if light(theme) { DARK_TEAL } else { TEAL };
+        let drawn = with_accent(theme, given);
+        // High contrast draws its link as its accent, so its link is the teal itself, which
+        // clears success; dark and light draw another of its family, which cannot.
+        let link = theme.value("markdown.link");
+        let expected = if link == theme.value("accent.base") {
+            given
+        } else {
+            link
+        };
+        assert_eq!(drawn.value("markdown.link"), expected, "{}", theme.id);
+        for mark in tint::SIGNAL_MARKS {
+            for state in tint::SIGNALS {
+                assert!(
+                    apart(drawn.value(mark), drawn.value(state)) >= 0.1,
+                    "{} {mark} {} from {state}",
+                    theme.id,
+                    drawn.value(mark)
+                );
             }
         }
     }

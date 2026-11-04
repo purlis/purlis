@@ -480,7 +480,11 @@ asked for), whatever the system's appearance. Where its values come from:
   (`vocabulary::holds_as_apart`). One the parent draws as its accent (the ring and the edge, in
   Purlis and Purlis Classic) is the accent given, so what the parent draws alike stays alike: a
   base16 import's edge is its ring (#5157). A fill the parent draws as its surface (Purlis
-  Classic) follows the surface as it is drawn, turned or not (#5157). `tab.active` stays Purlis's: it is a grey ground there, with nothing
+  Classic) follows the surface as it is drawn, turned or not (#5157). **So do the accent's marks**
+  (#5157, `tint::SIGNAL_MARKS`): the link and `chart.1` turn the same way, each only where it
+  stays 0.1 from every state colour, or no nearer than the theme's own. At the lightness Purlis
+  draws its link, every teal is within 0.1 of its success green, so a teal accent keeps Purlis's
+  link; a blue one turns it. `tab.active` stays Purlis's: it is a grey ground there, with nothing
   of the accent to turn. Section labels are tracked at
   .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
   that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its
