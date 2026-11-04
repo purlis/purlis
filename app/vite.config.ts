@@ -152,7 +152,6 @@ export default defineConfig(async () => ({
   },
   // Two pages: the window, and the theme specimen a hidden window photographs (#2330).
   build: {
-    minify: false, // [DEBUG-4351] names survive in the probe's stacks
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL("index.html", import.meta.url)),
