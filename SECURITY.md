@@ -169,8 +169,8 @@ so its word alone never turns a sandbox down: a level counts as far as you confi
 record in your config home that no sandboxed chat writes, and a lower level the file alone says
 waits for **Confirm** while chats start at what you confirmed, or the floor. A confirmed `off`
 starts the chat as "Start without the sandbox" does: every class lifted, audited as the
-person's (`trust.sandbox.off`, `by: your-level`) and counted as an opt-out. Its tab says *no
-sandbox — your setting*. The audit names how the start was made (`made`: local-ui, resume,
+person's (`trust.sandbox.off`, `by: your-level`) and counted as an opt-out. Its pane head and
+its row say *no sandbox — your setting*. The audit names how the start was made (`made`: local-ui, resume,
 relaunch, dispatch or handoff) and its actor. A start another chat asks for (a dispatch or a
 handoff) runs at the stricter of its own level and the strictest level across the chain of
 chats that asked, and one whose chain cannot be named whole never takes `off`. An
@@ -191,7 +191,7 @@ means.
   chat that races purlis's own file access may get purlis to do what the chat cannot. So the
   sandbox is a boundary between a chat and the machine, not between a chat and purlis.
 - **Windows.** purlis has no sandbox backend on Windows yet (#565), so every chat there
-  starts without the sandbox. Its tab says so, and the start is recorded with purlis, not the
+  starts without the sandbox. Its pane head and its row say so, and the start is recorded with purlis, not the
   person, as the one who started it unsandboxed.
 - **opencode and Codex on Linux.** purlis cannot wrap opencode or Codex on Linux yet (#1040),
   so a plane with the sandbox on does not start their chats there.
@@ -253,8 +253,9 @@ means.
   sandboxed chat may ask it, on every harness, with nothing for anyone to allow (the operator's
   ruling of 2026-10-13, amending ADR 0093). The known residual, kept by that decision: the
   service makes its own requests, for revocation and for the certificates a certificate names,
-  and those do not pass the egress proxy, so a chat that can choose a certificate can have
-  `trustd` fetch an address the proxy would refuse. A project closes it with
+  and those do not pass the egress proxy. A chat cannot choose what they carry or read their
+  answers, but it can cause them, to an address named in a certificate that a host it reaches
+  presents. A project closes it with
   `certificate-checks = false` under `[sandbox]`, and an administrator's
   `sandbox.socket-grants: false` closes it on that machine whatever the project says; `gh` and
   other Go tools in a sandboxed chat then fail to verify TLS, and the chat's Notice says who
