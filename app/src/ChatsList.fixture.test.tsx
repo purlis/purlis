@@ -276,7 +276,7 @@ describe("the Chats list the e2e measures", () => {
       "rolled-up",
       "Stopping…",
       "finished-task",
-      'class="task-count" data-testid="task-count-7" data-scope="count"',
+      'class="task-count ds-count dp-root" data-testid="task-count-7" data-scope="count"',
       'class="chat-time ui-text-meta" aria-hidden="true">now<',
       'class="chat-time ui-text-meta" aria-hidden="true">10:42<',
       'class="chat-time ui-text-meta" aria-hidden="true">10-25<',

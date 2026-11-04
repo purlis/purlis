@@ -372,7 +372,7 @@ pub fn charter_body(text: &str) -> String {
 }
 
 /// The last value a definition gives `key` — `dict(pairs)`, where a later line wins.
-fn meta<'a>(pairs: &'a [(String, String)], key: &str) -> Option<&'a str> {
+pub(crate) fn meta<'a>(pairs: &'a [(String, String)], key: &str) -> Option<&'a str> {
     pairs
         .iter()
         .rev()

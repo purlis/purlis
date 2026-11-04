@@ -874,3 +874,71 @@ pub fn dismissed(held: &Held, id: u32) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests;
+
+/// **purlis offers a persona what a first fill showed it needs** (#5076, ADR 0109): after the
+/// person fills a key the persona does not declare, a proposed change adding it as a Secret
+/// need (`secret-need.<key>: <purpose>`), and where the persona names no vault, setting its
+/// `vault` to the one the fill made. Held as purlis's own ([`BY_PURLIS`]) for the person to
+/// apply or dismiss; **nothing is written until they apply it**. Never a value, a link or which
+/// vault entry was picked: only the key and what the chat said it is for.
+pub fn offer_need(held: &Held, answered: &purlis_core::secrets::ask::Answered) {
+    match need_offered_in(
+        held.root(),
+        held.proposals(),
+        answered,
+        crate::sandboxing::now_secs(),
+    ) {
+        Ok(Some(_)) => held.chats().asks_may_have_moved(),
+        Ok(None) => {}
+        Err(why) => tracing::info!("purlis: no Secret need was offered: {why}"),
+    }
+}
+
+/// [`offer_need`]'s work in the project at `root`, held in `proposals` at `now`: the
+/// proposal's number, or none where there is nothing to offer.
+pub fn need_offered_in(
+    root: &Path,
+    proposals: &Proposals,
+    answered: &purlis_core::secrets::ask::Answered,
+    now: u64,
+) -> Result<Option<u32>, String> {
+    use purlis_core::secrets::needs;
+    let persona = answered.persona.as_str();
+    if !answered.filled || persona.is_empty() {
+        return Ok(None);
+    }
+    // The key it is stored under, unless the persona declares that one already.
+    let need = (!answered.declared && needs::declared(root, persona, &answered.key).is_none())
+        .then(|| {
+            (
+                answered.key.as_str(),
+                answered.purpose.as_deref().unwrap_or_default(),
+            )
+        });
+    let vault = answered.names_no_vault.then_some(answered.vault.as_str());
+    if need.is_none() && vault.is_none() {
+        return Ok(None);
+    }
+    let rel = Path::new("personas").join(persona).join("persona.md");
+    let rel = proposed::proposable_by_purlis(root, &root.join(rel))?;
+    let now_text = std::fs::read(root.join(&rel)).map_err(|why| why.to_string())?;
+    let base = proposed::base_of(Some(&now_text));
+    let path = rel.display().to_string();
+    let text = String::from_utf8(now_text).map_err(|_| "the definition is not text".to_owned())?;
+    // On top of an offer for this file still waiting, so a second need does not take the
+    // first's place.
+    let starting = proposals
+        .every()
+        .into_iter()
+        .find(|one| one.session == BY_PURLIS && one.path == path && one.base == base)
+        .and_then(|one| match one.change {
+            Change::Whole { content } => Some(content),
+            Change::Edits { .. } => None,
+        })
+        .unwrap_or_else(|| text.clone());
+    let content = needs::with_need(&starting, need, vault)?;
+    if content == text {
+        return Ok(None);
+    }
+    Ok(proposals.note(BY_PURLIS, &path, base, Change::Whole { content }, now))
+}

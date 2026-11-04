@@ -50,6 +50,7 @@
 //!     "live-asks": false,
 //!     "socket-grants": false,
 //!     "proposed-changes": "off",
+//!     "undeclared-secret-asks": false,
 //!     "allow-scopes": ["you", "machine"],
 //!     "never-hosts": ["*.paste.example"],
 //!     "relayed-internal": ["10.96.0.1:443", "*.svc.cluster.local"]
@@ -98,6 +99,10 @@
 //! - `proposed-changes`: `"off"` turns proposed changes off (#1975, PC-14): a chat's change to
 //!   purlis's own configuration is refused as before, with the way that works, and never shown
 //!   to the person to apply. `"on"` is the same as absent.
+//! - `undeclared-secret-asks`: `false` refuses a Secret ask for a key the asking chat's persona
+//!   does not declare as a Secret need (#5078, ADR 0109): the chat hears `declined: policy` and
+//!   the person is never asked. A declared key is asked as before, and a key the vault holds
+//!   already still answers filled.
 //! - `allow-scopes`: the scopes an Allow may keep anything at, of `once` (this chat's next run
 //!   alone: a local socket or a system service only), `chat` (only this chat), `you` (this
 //!   project on this machine), `machine` (this machine, for every project: a local socket or a
@@ -196,6 +201,8 @@ pub struct Locks {
     /// Whether proposed changes are turned off (#1975, PC-14): a chat's edit of purlis's own
     /// configuration is then refused as before, never shown to the person to apply.
     no_proposed_changes: bool,
+    /// Whether a Secret ask for a key the persona does not declare is refused (#5078).
+    no_undeclared_secret_asks: bool,
     /// The scopes an Allow may keep anything at, where the policy fixes them (#1666): `machine`
     /// among them only where the policy names it (ruling C3).
     allow_scopes: Option<Vec<grant::Level>>,
@@ -302,6 +309,7 @@ impl Locks {
             no_live_asks: true,
             no_socket_grants: true,
             no_proposed_changes: true,
+            no_undeclared_secret_asks: true,
             allow_scopes: Some(Vec::new()),
             never_hosts: Vec::new(),
             relayed_internal: Vec::new(),
@@ -683,6 +691,11 @@ impl Locks {
         })
     }
 
+    /// Whether policy refuses Secret asks for undeclared keys (#5078).
+    pub fn forbids_undeclared_secret_asks(&self) -> bool {
+        self.no_undeclared_secret_asks
+    }
+
     /// Whether policy forbids letting a persona's chats use a vault it is not tagged for.
     pub fn forbids_vault_grants(&self) -> bool {
         self.no_vault_grants
@@ -738,7 +751,7 @@ impl Locks {
 }
 
 /// The keys `sandbox` may hold, each a lock.
-const KEYS: [&str; 14] = [
+const KEYS: [&str; 15] = [
     "presets",
     "hosts",
     "personal-hosts",
@@ -750,6 +763,7 @@ const KEYS: [&str; 14] = [
     "live-asks",
     "socket-grants",
     "proposed-changes",
+    "undeclared-secret-asks",
     "allow-scopes",
     "never-hosts",
     "relayed-internal",
@@ -890,6 +904,7 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         no_live_asks: forbids("live-asks")?,
         no_socket_grants: forbids("socket-grants")?,
         no_proposed_changes,
+        no_undeclared_secret_asks: forbids("undeclared-secret-asks")?,
         allow_scopes,
         never_hosts,
         relayed_internal,

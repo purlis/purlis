@@ -193,6 +193,7 @@ fn a_harness_lists_charter_s_tools() {
             "dispatch_cancel",
             "dispatch_close",
             "dispatch_report",
+            "secret_ask",
             "dispatch_note",
             "dispatch_ask",
             "ask_operator",

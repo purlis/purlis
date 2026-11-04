@@ -1463,6 +1463,14 @@ fn read_login(
             vault: vault.clone(),
             key: key.to_owned(),
             tool: Some(name.to_owned()),
+            purpose: None,
+            declared: super::needs::declared(
+                &ctx.root,
+                asker.persona.as_deref().unwrap_or_default(),
+                key,
+            )
+            .map(|need| need.purpose),
+            names_no_vault: false,
         };
         missing
             .read_asking(need, &mut once)
@@ -2551,14 +2559,33 @@ pub(crate) fn serve_recorded(
                     vault: wanted.vault.clone(),
                     key: key.clone(),
                     tool: its_repository.as_ref().map(|ready| ready.tool.name.clone()),
+                    purpose: None,
+                    declared: super::needs::declared(&ctx.root, persona, &key)
+                        .map(|need| need.purpose),
+                    names_no_vault: false,
                 };
                 let held = missing.asks.hold(need, missing.within, &mut |line: &str| {
                     (missing.moved)();
                     let _ = send(&mut *writer, &Frame::Note(line.to_owned()));
                 });
                 match held {
-                    super::ask::Held::Filled => filled.push(key),
-                    super::ask::Held::Declined { line } => return refuse(&mut *writer, 1, line),
+                    super::ask::Held::Filled { vault, key: stored }
+                        if vault == wanted.vault && stored == key =>
+                    {
+                        filled.push(key);
+                    }
+                    // Stored where this run does not read it: said, so the chat runs it again
+                    // naming the key it is stored under (#5072).
+                    super::ask::Held::Filled { vault, key: stored } => {
+                        return refuse(
+                            &mut *writer,
+                            1,
+                            super::ask::filled_elsewhere(&vault, &stored),
+                        );
+                    }
+                    super::ask::Held::Declined { line } | super::ask::Held::Refused { line } => {
+                        return refuse(&mut *writer, 1, line);
+                    }
                     super::ask::Held::StillOpen { line } => {
                         return refuse(&mut *writer, WAITING_ON_THE_PERSON, line);
                     }

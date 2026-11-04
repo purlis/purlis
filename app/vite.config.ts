@@ -11,8 +11,15 @@ import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { generate, NOTICES_FILE, render } from "../tools/third-party-notices.mjs";
 import { withTheFamilies } from "./src/ui/stylesheets.ts";
+import { keyedOnClasses } from "./src/ui/partClasses.ts";
 
 const host = process.env.TAURI_DEV_HOST;
+
+/** The source the window's JSX is compiled against: `src/ui/jsx-runtime.ts`, by its alias. */
+const PARTS_JSX = "@purlis/parts";
+
+/** A path in this folder, as Vite resolves it. */
+const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 /**
  * **purlis's own LICENSE and NOTICE, as `virtual:purlis-licence`**: the two files at the
@@ -117,7 +124,23 @@ function familyStylesheets(): Plugin {
 
 // https://v2.tauri.app/start/frontend/vite/
 export default defineConfig(async () => ({
-  plugins: [react(), familyStylesheets(), tailwind(), ownLicence(), thirdPartyNotices()],
+  plugins: [
+    react({ jsxImportSource: PARTS_JSX }),
+    familyStylesheets(),
+    tailwind(),
+    ownLicence(),
+    thirdPartyNotices(),
+  ],
+  // Each part's classes beside its attributes, and every rule keyed on them (#4351,
+  // `src/ui/partClasses.ts`): the window's JSX runs through React's runtime by way of ours, and
+  // its CSS is keyed on the classes once it is built.
+  resolve: {
+    alias: [
+      { find: `${PARTS_JSX}/jsx-runtime`, replacement: here("src/ui/jsx-runtime.ts") },
+      { find: `${PARTS_JSX}/jsx-dev-runtime`, replacement: here("src/ui/jsx-dev-runtime.ts") },
+    ],
+  },
+  css: { postcss: { plugins: [keyedOnClasses()] } },
   // Keep Rust errors visible, and give Tauri the fixed port it expects.
   clearScreen: false,
   server: {

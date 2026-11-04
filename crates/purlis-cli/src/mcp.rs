@@ -231,6 +231,10 @@ impl ServerHandler for Server {
                 .await,
             ));
         }
+        // A Secret ask (#5072): the line `purlis secret ask` sends, by the same function.
+        if name == chattools::SECRET_ASK {
+            return Ok(done(blocking(move || crate::secret::ask_tool(&args)).await));
+        }
         if name == chattools::DISPATCH_LIST {
             return Ok(done(
                 blocking(|| crate::dispatch::list().map_err(|why| in_the_chat(&why))).await,

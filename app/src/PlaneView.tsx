@@ -65,7 +65,6 @@ import {
   type RunsOnPick,
   type Sidebar as SidebarModel,
   type StartOptions,
-  type StartRunsOn,
   type ViewTab,
   type WindowDraft,
 } from "./bindings";
@@ -141,7 +140,7 @@ import {
   stopRepoClones,
   useRepoClones,
 } from "./repoClones";
-import { StartChat } from "./StartChat";
+import { StartChat, type RunsOnInPicker } from "./StartChat";
 import {
   handedSaid,
   handReference,
@@ -568,13 +567,14 @@ import {
   heardMove,
   movedAfterSignIn,
   moveOffers,
+  movesOnceAPoolIsSetUp,
   movesDue,
   movesWith,
   poolsToMoveTo,
   useChatMoves,
   useChatMovesHeard,
 } from "./chatMoves";
-import { readRunnerStage, refusedWith, saveLimits, usePools } from "./pools";
+import { anyPoolKept, readRunnerStage, refusedWith, saveLimits, usePools } from "./pools";
 import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { LEAST, LEAST_CHIP, leastAt, NARROW_TAB, narrowTabs, pinnedFirst, useRoom } from "./fits";
 import type { Naming } from "./tabFace";
@@ -1077,7 +1077,7 @@ export const PlaneView = memo(function PlaneView({
     options: StartOptions;
     where: Where;
     /** Where a chat started here would run, and why (#4536): the picker's Runs on row. */
-    runsOn?: StartRunsOn;
+    runsOn?: RunsOnInPicker;
   }>();
   /** Why the last start did not happen, shown in the picker rather than behind it. */
   const [pickerTrouble, setPickerTrouble] = useState<string>();
@@ -1101,9 +1101,26 @@ export const PlaneView = memo(function PlaneView({
   /** **Where a new chat in `workspace` would run** (#4536), read as the picker opens so its Runs
    *  on row is drawn with it: `undefined` where the core could not say, and no row is drawn. */
   const readRunsOn = useCallback(
-    async (workspace: string | null): Promise<StartRunsOn | undefined> => {
-      const said = await commands.startRunsOn(plane, workspace).catch(() => undefined);
-      return said?.status === "ok" && Array.isArray(said.data?.pools) ? said.data : undefined;
+    async (workspace: string | null): Promise<RunsOnInPicker | undefined> => {
+      const [said, standing] = await Promise.all([
+        commands.startRunsOn(plane, workspace).catch(() => undefined),
+        commands.poolSetupInThePicker(plane).catch(() => undefined),
+      ]);
+      if (said?.status !== "ok" || !Array.isArray(said.data?.pools)) return undefined;
+      // How each pool stands (#4484): one where a chat can't start isn't offered, and one whose
+      // setup isn't finished says so. Unread, every pool is offered as the levels list it.
+      const pools = standing?.status === "ok" && Array.isArray(standing.data) ? standing.data : [];
+      const notOffered = new Set(pools.filter((one) => !one.offered).map((one) => one.pool));
+      const notFinished: Record<string, string> = {};
+      const notOfferedSaid: Record<string, string> = {};
+      for (const one of pools)
+        if (one.said !== null) (one.offered ? notFinished : notOfferedSaid)[one.pool] = one.said;
+      return {
+        ...said.data,
+        pools: said.data.pools.filter((pool) => !notOffered.has(pool)),
+        notFinished,
+        notOffered: notOfferedSaid,
+      };
     },
     [plane],
   );
@@ -1659,6 +1676,12 @@ export const PlaneView = memo(function PlaneView({
   /** **Every window of the project** (#4768): its project window (`0`) and each tab window, as
    *  the record and the core's last move said. What Move to window ▸ lists, less this one. */
   const [windowsHere, setWindowsHere] = useState<readonly number[]>([0]);
+  /** **Whether the project has this one window** (#4768, #5108): neither a tab window nor a
+   *  project window with tab windows. Its press goes to its focused pane, asking nothing. */
+  const oneWindow = useCallback(
+    () => tabWindow === undefined && !otherWindows.current,
+    [tabWindow],
+  );
   const windowsOf = useCallback((laid: LaidOut) => {
     const each = [...new Set([0, ...laid.tabs.map((one) => one.window)])].sort((a, b) => a - b);
     otherWindows.current = each.length > 1;
@@ -4243,10 +4266,11 @@ export const PlaneView = memo(function PlaneView({
     (session: number, into?: PaneAt) => {
       stoppedFor(session, undefined);
       const here = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
-      // **A chat in a pane of another of the project's windows** (#4768): that window comes
-      // forward and shows it, and this window changes nothing. Asked only while the project
-      // has another window, so a project of one window presses at once.
-      if (into !== undefined || (tabWindow === undefined && !otherWindows.current)) {
+      // **A chat in a pane of another of the project's windows** (#4768), **or a chat in no
+      // pane where another window's pane was used last** (#5108): that window comes forward
+      // and shows it, and this window changes nothing. Asked only while the project has another
+      // window, so a project of one window presses at once.
+      if (into !== undefined || oneWindow()) {
         here();
         return;
       }
@@ -4257,8 +4281,30 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch(here);
     },
-    [landOn, plane, pressedOf, pressing, stoppedFor, tabWindow],
+    [landOn, oneWindow, plane, pressedOf, pressing, stoppedFor],
   );
+  /** **A pane of this window was used** (#5108): pressed in, or typed in. Said to the core while
+   *  the project has another window, so a press on a chat in no pane, in whichever window, goes
+   *  to the most recently used pane across them (`press_elsewhere`). A project of one window
+   *  says nothing: its press goes to its focused pane, as it always has. A pane's focus is no
+   *  use of it: the window coming forward hands focus back to the pane that last had it, so a
+   *  press on a sidebar row would always be this window's. **Said once until the window has been
+   *  away**: no other window's pane can be used while this one keeps the focus. */
+  const paneSaidUsed = useRef(false);
+  useEffect(() => {
+    const away = () => {
+      paneSaidUsed.current = false;
+    };
+    window.addEventListener("blur", away);
+    return () => window.removeEventListener("blur", away);
+  }, []);
+  const paneUsed = useCallback(() => {
+    if (oneWindow() || paneSaidUsed.current) return;
+    paneSaidUsed.current = true;
+    void commands.paneUsed(plane).catch(() => {
+      paneSaidUsed.current = false;
+    });
+  }, [oneWindow, plane]);
   useEffect(() => {
     showChatHere.current = (session) =>
       landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
@@ -6967,6 +7013,17 @@ export const PlaneView = memo(function PlaneView({
     },
     [chatMoves, poolNames, reopened],
   );
+  /** Whether a chat here would be offered Pool setup to move it, with no pool kept (#4484). Only
+   *  once the pools are read, so a slow read never offers setup to a machine that has pools. */
+  const noPoolKept = poolsHeld.read.state === "read" && !anyPoolKept();
+  const movesOnceSetUp = useCallback(
+    (session: number) =>
+      movesOnceAPoolIsSetUp(
+        reopened.find((one) => one.session === session),
+        !noPoolKept,
+      ),
+    [noPoolKept, reopened],
+  );
   /** The other chats of a chat's workspace running where it runs, which move with it (#3453). */
   const movesWithChat = useCallback((session: number) => movesWith(session, reopened), [reopened]);
   /** Whether Move here brings back what the chat cloned on its runner (#3811). */
@@ -8691,6 +8748,7 @@ export const PlaneView = memo(function PlaneView({
             planeUpdated: planeUpdates,
             restartable,
             movesTo,
+            movesOnceAPoolIsSetUp: movesOnceSetUp,
             movesWith: movesWithChat,
             clonesComeBack,
             ask: askOffer,
@@ -8762,6 +8820,7 @@ export const PlaneView = memo(function PlaneView({
       planeUpdates,
       restartable,
       movesTo,
+      movesOnceSetUp,
       movesWithChat,
       clonesComeBack,
       askOffer,
@@ -10741,6 +10800,8 @@ export const PlaneView = memo(function PlaneView({
                       className="panes"
                       {...panelRoot("content")}
                       {...tabPanelOf(panelNamedBy)}
+                      onPointerDownCapture={paneUsed}
+                      onKeyDownCapture={paneUsed}
                     >
                       {frontTab ? (
                         <TaskEndContext.Provider value={taskEndHand}>
@@ -11457,11 +11518,14 @@ export const PlaneView = memo(function PlaneView({
                   }
                   // Pool setup, where the pool is added or mended: the picker closes, as it does
                   // for Settings, since the chat it was for starts after the mend.
-                  onPoolSetup={() => {
+                  onPoolSetup={(pool) => {
                     setPicking(undefined);
                     setPickerTrouble(undefined);
                     setPickerPoolGone(undefined);
-                    showView(POOL_SETUP_VIEW, POOL_SETUP_TITLE);
+                    // On the pool the picker named (#4484): setup carries on with it.
+                    void (pool === undefined ? Promise.resolve() : commands.poolSetupPool(pool))
+                      .catch(() => undefined)
+                      .then(() => showView(POOL_SETUP_VIEW, POOL_SETUP_TITLE));
                   }}
                   // SD-30's install action: a shell tab at the project root with the command typed and
                   // not run. The picker closes, since the chat it was for starts after the install.

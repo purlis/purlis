@@ -66,6 +66,7 @@ import {
 import { unavailable } from "../unavailable";
 import { useProjectShown } from "../../projectShown";
 import { sideWithRoom, type TooltipSide } from "./side";
+import { parted } from "../partClasses";
 
 /** **Where a tooltip stands**: beside its target, at the target's end (R166). */
 export const TOOLTIP_PLACEMENT = "end" satisfies AriaTooltipProps["placement"];
@@ -373,12 +374,18 @@ function Target({
               .filter(Boolean)
               .join(" ") || undefined
           : (drawn as { "aria-describedby"?: string })["aria-describedby"];
-  return cloneElement(children, {
-    ...drawn,
-    "aria-describedby": describedBy,
-    "data-tooltip-target": has ? "" : undefined,
-    ref,
-  } as object);
+  // `cloneElement` passes JSX's runtime by: the element's part classes are drawn here from the
+  // attributes it ends with, its own over its parent's (#4351, `ui/partClasses.ts`).
+  return cloneElement(
+    children,
+    parted({
+      ...(children.props as object),
+      ...drawn,
+      "aria-describedby": describedBy,
+      "data-tooltip-target": has ? "" : undefined,
+      ref,
+    }) as object,
+  );
 }
 
 /**

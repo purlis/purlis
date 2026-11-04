@@ -796,6 +796,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_try",
     // And only that press's own Cancel stops it (#4976).
     "pool_setup_try_cancel",
+    // How each pool stands in the picker: read from this machine's own records.
+    "pool_setup_in_the_picker",
     "pool_setup_open_docker",
     "add_docker_pool",
     "remove_docker_pool",
@@ -1209,6 +1211,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "open_view",
     "opened_chats",
     "owed_restarts",
+    "pane_used",
     "pending_asks",
     "put_away_chat_move",
     "persona_chats_of",

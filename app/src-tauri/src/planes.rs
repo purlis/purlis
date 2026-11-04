@@ -3116,6 +3116,22 @@ impl Planes {
                 }
             })
         });
+        // Each step of a Secret ask, to the event log: the audit's and telemetry's record, best
+        // effort as a question's steps are (#5078). A `Weak`, for the browsers' reason.
+        held.secret_asks.telling({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat, step| {
+                let Some(held) = held.upgrade() else {
+                    return;
+                };
+                if let Err(why) = held.hooks().record_secret_ask(held.root(), chat, step) {
+                    tracing::info!(
+                        "purlis: a secret ask's {} was not recorded ({why})",
+                        step.kind()
+                    );
+                }
+            })
+        });
         // A handoff from one of this plane's chats is answered by this plane, which is the
         // only one holding the asking chat's record. A `Weak`, because the plane holds the
         // socket that holds this answer: a strong handle would keep a closed plane alive.

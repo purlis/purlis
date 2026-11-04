@@ -180,3 +180,40 @@ fn the_persona_skill_teaches_the_dispatch_tools_before_the_command() {
         assert!(text.contains(&format!("`{name}`")), "{name} is not taught");
     }
 }
+
+/// **A credential a chat lacks is a Secret ask, said in the same words wherever a chat learns
+/// it** (#5072, ADR 0109): the purlis-secrets skill, the `secret_ask` tool's description and
+/// the session-start line on every harness.
+#[test]
+fn the_secrets_skill_the_tool_and_the_briefing_say_the_secret_ask_in_the_same_words() {
+    purlis_core::unsteered!();
+    let said = words(purlis_core::chattools::SECRET_ASK_SAID);
+    let tool = purlis_core::chattools::TOOLS
+        .iter()
+        .find(|tool| tool.name == purlis_core::chattools::SECRET_ASK)
+        .expect("the secret_ask tool");
+    let mut taught = vec![
+        (
+            "the purlis-secrets skill".to_owned(),
+            skill("purlis-secrets"),
+        ),
+        (
+            "the secret_ask tool".to_owned(),
+            tool.description.to_owned(),
+        ),
+    ];
+    for harness in ["claude", "codex", "opencode"] {
+        let env = |name: &str| match name {
+            purlis_core::hookwire::SOCKET_ENV => Some("/run/purlis/hooks.sock".to_owned()),
+            purlis_core::hookwire::HARNESS_ENV => Some(harness.to_owned()),
+            _ => None,
+        };
+        let line = purlis_core::briefing::secret_ask_note(&env).expect("a chat purlis started");
+        taught.push((format!("the session-start line on {harness}"), line));
+    }
+    for (what, text) in taught {
+        assert!(words(&text).contains(&said), "{what} does not say: {said}");
+    }
+    // A harness in a terminal has no window to ask: it is not told to.
+    assert_eq!(purlis_core::briefing::secret_ask_note(&|_| None), None);
+}

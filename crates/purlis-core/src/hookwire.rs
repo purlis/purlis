@@ -1510,6 +1510,13 @@ pub enum Ask {
     /// your grant), then answers [`Answer::Keys`] with the names alone, or [`Answer::No`] with
     /// the refusal. **Never a value.** No ticket, for [`Self::Vaults`]'s reason.
     Keys { chat: u32, vault: String },
+    /// **A chat asks the person for a credential it lacks** (#5072, ADR 0109): `purlis secret
+    /// ask` and the `secret_ask` tool. The app answers [`Answer::Secret`] once the person
+    /// answers, at once where the vault holds the key already, or pending at the chat's
+    /// harness's timeout margin; or [`Answer::No`] with the refusal. **Never a value.** No
+    /// ticket: it can only ask, and only the person, in the window, fills anything. Boxed: it
+    /// carries the chat's purpose.
+    Secret(Box<crate::secrets::ask::SecretAsk>),
     /// Where this chat is working: who asked for it, its sibling tasks and the other chats
     /// running as its persona (#1450). The app answers [`Answer::Working`] from its own record
     /// of its open chats, or [`Answer::No`] with the refusal.
@@ -2282,6 +2289,9 @@ pub enum Answer {
     },
     /// The key names of the vault a chat asked to list (qw385), sorted. No value.
     Keys { keys: Vec<String> },
+    /// What became of a chat's Secret ask (#5072): filled, declined or pending, with the vault
+    /// and key it is under. No value.
+    Secret(crate::secrets::ask::Said),
     /// Where the chat is working (#1450): names, tasks and states from the app's own record,
     /// and what changed since the chat was last told. Boxed: it is the largest answer.
     Working(Box<crate::awareness::Working>),
@@ -2530,6 +2540,7 @@ impl Ask {
             Self::Git(git) => git.chat,
             Self::Commit(commit) => commit.chat,
             Self::Vaults { chat } | Self::Keys { chat, .. } => *chat,
+            Self::Secret(asked) => asked.chat,
             Self::WhereWorking(asks) => asks.chat,
             Self::Dispatch(dispatch) => dispatch.chat,
             Self::Task(asked) => asked.chat,

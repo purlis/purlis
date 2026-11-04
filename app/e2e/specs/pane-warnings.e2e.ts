@@ -111,6 +111,12 @@ async function raise(pane: number, sentence: string, ways: string[]): Promise<vo
         line.append(button);
       }
       box.append(line);
+      // Each hand-drawn part takes the classes the built stylesheet keys it on (#4351).
+      for (const one of [box, ...box.querySelectorAll("[data-scope], [data-part]")]) {
+        const { scope, part } = (one as HTMLElement).dataset;
+        if (scope) one.classList.add(`ds-${scope}`);
+        if (part) one.classList.add(`dp-${part}`);
+      }
       stack.prepend(box);
       return true;
     },
