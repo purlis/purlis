@@ -17,7 +17,12 @@ import { Menu } from "./ui/menu/Menu";
 
 /** The pane's own rows, for the terminal's menu to list under its own: the catalogue's offers
  *  a menu on the panes draws (`actions.menuOn`, `pane`), and what carries one out. */
-export type PaneMenu = { offers: Catalogued; onPress: (offer: Offer) => void };
+export type PaneMenu = {
+  offers: Catalogued;
+  /** The tab the pane is in, whose Tile all is among the pane's rows (#4765). */
+  tab?: number;
+  onPress: (offer: Offer) => void;
+};
 
 /**
  * **The menu a right-click on a terminal opens**: the terminal's own rows (`terminalRows.ts`),
@@ -80,7 +85,7 @@ export function TerminalMenu({
 }) {
   const groups: GroupDrawn[] = [
     terminalGroup(rows),
-    ...(pane ? menuOf({ on: "pane" }, pane.offers).groups : []),
+    ...(pane ? menuOf({ on: "pane", tab: pane.tab }, pane.offers).groups : []),
   ];
   /** Whether this close gives the keyboard to the terminal, and whether it owes the key. */
   const closing = useRef({ giveBack: false, passKey: false });

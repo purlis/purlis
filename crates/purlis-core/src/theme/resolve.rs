@@ -31,8 +31,9 @@
 //! **More contrast picks an appearance tagged high contrast** (#2328): when the operating system
 //! asks for more contrast ([`Inputs::contrast`]), each answer that draws an appearance of a tag
 //! draws the theme's appearance of that tag tagged high contrast instead, when it has one. A
-//! pick of `purlis-dark` draws Purlis's high-contrast dark then, as nothing chosen does; Purlis
-//! Classic has no appearance tagged high contrast.
+//! pick of `purlis-dark` draws Purlis's high-contrast dark then, as nothing chosen does, and
+//! `purlis-light` its high-contrast light (#4677); Purlis Classic has no appearance tagged high
+//! contrast.
 //!
 //! **The consent floors hold for every source** (ADR 0097 §6): whatever is drawn is drawn by
 //! [`draw`], so a pick, the person's own theme, an extension's and a built-in all clear them.
@@ -278,9 +279,14 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
         }
         Some(Pick::BuiltIn(id)) => {
             // In the appearance its id implies (`purlis-light`, #3034), else its first: Purlis's
-            // high-contrast dark when more contrast is asked for.
+            // high-contrast dark or light when more contrast is asked for (#4677).
             let (theme, implied) = shipped_pick(id).unwrap_or((purlis(), None));
-            return super::levels::appear(theme, implied, inputs.system, inputs.contrast);
+            return match implied {
+                Some(tag) => {
+                    super::levels::appear_tagged(theme, tag, inputs.system, inputs.contrast)
+                }
+                None => super::levels::appear(theme, None, inputs.system, inputs.contrast),
+            };
         }
         Some(Pick::Extension { .. }) => {}
         // A theme folder is a level's: [`super::resolve_levels`] reads the levels' folders, and

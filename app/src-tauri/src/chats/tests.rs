@@ -5313,6 +5313,102 @@ fn split_of(one: u32, other: u32) -> Layout {
     ))])
 }
 
+/// **A one-job pane is never written to the record** (#4761, spec #4750): a terminal editor or
+/// a forge login is held out of every record from its start, and its split out of the layout
+/// held, so the pane it opened beside is what a relaunch draws, and what is on screen still
+/// counts that pane's chat (a task is not ended under the person, nor a notice sent about it).
+#[test]
+fn a_one_job_pane_is_never_written_to_the_record() {
+    let (chats, wrote) = recorded();
+    let shell = chats
+        .start(&chat("/bin/sh", "shell 1", None), SIZE)
+        .unwrap();
+    let job = chats
+        .start_one_job(&chat("/bin/sh", "vim notes.md", None), SIZE)
+        .unwrap();
+
+    chats.lay_out(split_of(shell, job)).expect("both are open");
+
+    assert!(chats.is_one_job(job));
+    assert!(!chats.is_one_job(shell));
+    let listed = chats.open_now();
+    assert!(listed.iter().any(|one| one.session == job && one.one_job));
+    assert!(
+        listed
+            .iter()
+            .any(|one| one.session == shell && !one.one_job)
+    );
+    let records = lock(&wrote).clone();
+    assert!(
+        !records.is_empty(),
+        "the starts and the layout were written"
+    );
+    for record in &records {
+        assert!(
+            record.chats.iter().all(|one| one.name != "vim notes.md"),
+            "no record names the one-job program: {:?}",
+            record.chats
+        );
+        if let Some(layout) = &record.layout {
+            assert!(!layout.chats().contains(&job), "{layout:?}");
+        }
+    }
+    let last = records.last().expect("written");
+    assert_eq!(
+        last.layout,
+        Some(on_ops(vec![front_tab(Node::chat(shell))])),
+        "the pane it opened beside takes its split's place"
+    );
+    assert_eq!(chats.looked_at(), vec![shell]);
+    let _ = chats.close(job);
+    assert!(!chats.is_one_job(job));
+    let _ = chats.close(shell);
+}
+
+/// **A shell keeps running when its pane closes, or another chat replaces it** (#4761, ADR 0062
+/// as amended 2026-11-02): a layout without its pane ends nothing, and the record still holds
+/// it, so a dev server in it survives a closed pane and a relaunch.
+#[test]
+fn a_shell_keeps_running_when_its_pane_closes() {
+    let (chats, wrote) = recorded();
+    let shell = chats
+        .start(&chat("/bin/sh", "shell 1", None), SIZE)
+        .unwrap();
+    let other = chats
+        .start(&chat("/bin/sh", "shell 2", None), SIZE)
+        .unwrap();
+    let third = chats
+        .start(&chat("/bin/sh", "shell 3", None), SIZE)
+        .unwrap();
+    chats.lay_out(split_of(shell, other)).unwrap();
+
+    // Its pane closed: the split goes, the other pane takes its place.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(other))]))
+        .unwrap();
+    let running = |session: u32| chats.open_now().iter().any(|one| one.session == session);
+    assert!(running(shell), "closing its pane ended nothing");
+    assert!(
+        lock(&wrote)
+            .last()
+            .is_some_and(|record| record.chats.iter().any(|one| one.name == "shell 1")),
+        "the record still holds it"
+    );
+
+    // Shown again, then replaced in its pane by another chat.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(shell))]))
+        .unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(third))]))
+        .unwrap();
+    assert!(running(shell), "replacing it ended nothing");
+    assert!(!chats.looks_at(shell));
+    for session in [shell, other, third] {
+        let _ = chats.close(session);
+    }
+}
+
 #[test]
 fn two_chats_split_together_with_their_sizes_come_back_the_same_after_a_relaunch() {
     let dir = tempfile::tempdir().unwrap();
@@ -5761,6 +5857,26 @@ fn a_task_chat_sent_back_out_of_its_tab_has_none_in_the_record_and_is_still_open
     assert!(!chats.record().chats[0].has_tab());
     assert_eq!(chats.open_now().len(), 1, "sending it back ends nothing");
     assert!(!chats.open_now()[0].tab);
+    let _ = chats.close(session);
+}
+
+#[test]
+fn closing_the_tab_of_a_chat_that_is_not_a_task_ends_nothing_and_is_not_refused() {
+    // #4756: a close never ends a chat. The core used to refuse this one, saying closing its
+    // tab ends it; now it is open after, and its record is as it was.
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "steward", None), SIZE)
+        .unwrap();
+    let before = chats.record();
+
+    chats
+        .close_tab(session)
+        .expect("a tab close is never refused");
+
+    assert_eq!(chats.open_now().len(), 1, "closing its tab ends nothing");
+    assert_eq!(chats.record(), before);
     let _ = chats.close(session);
 }
 

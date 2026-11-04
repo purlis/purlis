@@ -22,13 +22,15 @@
 //! object on disk), `reference` (`op://` and `vault://` URIs resolved through the vendor's CLI at
 //! read time) and `1password` (one item per vault, whose fields are the secrets, read and
 //! written through `op`). The registry that names them is two files, merged per field
-//! ([`registry`]).
+//! ([`registry`]). A key in any of them may instead be a linked entry, which reads another
+//! entry's value ([`links`]).
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use crate::tui::Markup;
 
+pub mod ask;
 pub mod brokered;
 pub mod cmd;
 pub mod dotenv;
@@ -37,6 +39,7 @@ pub mod fingerprint;
 pub mod identity;
 pub mod keyhold;
 pub mod keyring;
+pub mod links;
 pub mod mcpstart;
 pub mod onepassword;
 pub mod persons_own;
@@ -65,6 +68,9 @@ pub enum Kind {
     NotConfigured,
     /// The vault has no secret under that key — `SecretNotFound`.
     NotFound,
+    /// The key is a linked entry whose entry is gone ([`links`], #5069): not
+    /// [`Kind::NotFound`], since the key is there and what it reads is not.
+    BrokenLink,
     /// The provider is not implemented, or its backend is missing — `ProviderUnavailable`.
     Unavailable,
     /// A terminating signal arrived while a resolver ran, and it was stopped.

@@ -6,6 +6,7 @@ import type { LaidNode, LaidOut, LaidTab, ViewTab } from "./bindings";
 import { DRAFT, isMemory, memoryRefOf } from "./memories";
 import {
   type Content,
+  EMPTY_TAB,
   type Layout,
   type Tab,
   type Tabs,
@@ -29,10 +30,6 @@ export const EVEN = 500;
 /** The whole of a split, in tenths of a percent. */
 export const WHOLE = 1000;
 
-/** What a tab whose first pane is empty is called (#4755), as the empty pane's own button
- *  says (spec #4750 story 44). */
-export const EMPTY_TAB = "New chat";
-
 /** What a split holds as its first child's share: its own, or even. */
 export function shareOf(layout: Extract<Layout, { kind: "split" }>): number {
   return layout.share ?? EVEN;
@@ -52,14 +49,19 @@ const stripName = (workspace: string | undefined): string | null =>
   workspace === undefined || workspace === OUTSIDE ? null : workspace;
 
 /**
- * **Every tab, as the core holds them**: each in the strip order, with its strip, its pin,
- * whether it is its strip's front tab, its focused pane's path and its tree. The strip drawn is
- * the one the tab in front is on. Each pane holds the chat it SHOWS (#1486): what is on screen
- * is derived from it. Every tab is the project window's until a tab can have one of its own.
+ * **Every tab of window `window`, as the core holds them**: each in the strip order, with its
+ * strip, its pin, whether it is its strip's front tab, its focused pane's path and its tree.
+ * The strip drawn is the one the tab in front is on. Each pane holds the chat it SHOWS (#1486):
+ * what is on screen is derived from it.
+ *
+ * **Each window says its own tabs** (#4768): `0` the project window, any other number one of
+ * its tab windows, which has one strip whatever workspaces its tabs are on, so its one front
+ * tab is the tab in front.
  */
-export function layoutOf(tabs: Tabs, say: Saying): LaidOut {
+export function layoutOf(tabs: Tabs, say: Saying, window = 0): LaidOut {
   const strip = tabs.inFront === undefined ? null : stripName(say.workspaceOf(tabs.inFront));
   const front = (id: number, on: string | null): boolean => {
+    if (window !== 0) return id === tabs.inFront;
     if (tabs.inFront !== undefined && on === strip) return id === tabs.inFront;
     const last = say.frontOf(on ?? OUTSIDE);
     return last === id;
@@ -74,7 +76,7 @@ export function layoutOf(tabs: Tabs, say: Saying): LaidOut {
         {
           workspace: on,
           pinned: tab.pinned === true,
-          window: 0,
+          window,
           front: front(id, on),
           focused: pathTo(tab.layout, tab.focused) ?? "",
           tree: nodeOf(tabs, tab, tab.layout, say),
@@ -177,19 +179,23 @@ export type PutBack = {
 };
 
 /**
- * **The record's tabs, as the window draws them** (#4751), added to `tabs`. A pane whose chat
+ * **The record's tabs of window `window`, as that window draws them** (#4751, #4768), added
+ * to `tabs`. A chat another window shows is placed there, and gets no tab here. A pane whose chat
  * did not come back and a chat already in an earlier pane are left out, and the split that held
  * one gives its place to the other side; an empty pane comes back empty (#4755). A tab left with
  * nothing is not put
  * back. Each view waits for a press, as a view tab put back always has. The tab in front is
  * left as `tabs` had it: {@link PutBack.inFront} says which to bring forward.
  */
-export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack {
+export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening, window = 0): PutBack {
   let next = tabs;
-  const placed = new Set<number>();
+  // **Another window's chats are placed there** (#4768): they get no tab of their own here.
+  const placed = new Set<number>(
+    laid.tabs.filter((one) => one.window !== window).flatMap((one) => chatsOf(one.tree)),
+  );
   const fronts: Record<string, number> = {};
   let inFront: number | undefined;
-  for (const one of laid.tabs) {
+  for (const one of laid.tabs.filter((each) => each.window === window)) {
     let panes = next.named.panes;
     const workspace = one.workspace ?? OUTSIDE;
     const byPath = new Map<string, number>();
@@ -266,7 +272,9 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening): PutBack
     };
     for (const [view, split] of splits) next = setSplit(next, view, split);
     if (one.front) fronts[workspace] = id;
-    if (one.front && one.window === 0 && one.workspace === laid.strip) inFront = id;
+    if (one.front && window === 0 && one.workspace === laid.strip) inFront = id;
+    // A tab window shows its first front tab, whatever strip it is on.
+    if (one.front && window !== 0 && inFront === undefined) inFront = id;
   }
   return { tabs: next, placed, fronts, inFront };
 }

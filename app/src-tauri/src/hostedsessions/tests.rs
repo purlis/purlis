@@ -687,7 +687,10 @@ fn a_pane_is_handed_the_bytes_its_program_wrote_and_acknowledges_every_one_it_dr
         .unwrap();
     let program = hosted.runs.last();
     let (sink, pieces) = a_pane_of_bytes();
-    let watching = hosted.sessions.watch_drawn(id, sink).expect("a view opens");
+    let watching = hosted
+        .sessions
+        .watch_drawn(id, sink, u32::MAX)
+        .expect("a view opens");
     // A character cut between two writes, and a byte that is no character at all: the pane's
     // terminal decodes them, not the core (#4745).
     let wrote: [&[u8]; 2] = [b"caf\xc3", b"\xa9 \xff\x1b[0m done\r\n"];
@@ -761,7 +764,10 @@ fn a_pane_that_stops_reporting_what_it_drew_is_dropped_and_opened_again_from_a_f
     let program = hosted.runs.last();
     program.writes(line(0).as_bytes());
     let (sink, pieces) = a_pane_of_pieces();
-    let watching = hosted.sessions.watch_drawn(id, sink).expect("a view opens");
+    let watching = hosted
+        .sessions
+        .watch_drawn(id, sink, u32::MAX)
+        .expect("a view opens");
     until("the screen is drawn", || {
         pieces.lock().unwrap().concat().contains(&line(0))
     });
@@ -802,7 +808,10 @@ fn a_pane_that_reports_what_it_drew_is_sent_the_whole_burst_and_never_started_ov
         .unwrap();
     let program = hosted.runs.last();
     let (sink, pieces) = a_pane_of_pieces();
-    let watching = hosted.sessions.watch_drawn(id, sink).expect("a view opens");
+    let watching = hosted
+        .sessions
+        .watch_drawn(id, sink, u32::MAX)
+        .expect("a view opens");
     let last = line(200 * 8 - 1);
     let writing = std::thread::spawn(move || {
         for piece in (0..200 * 8).collect::<Vec<_>>().chunks(200) {
@@ -836,6 +845,30 @@ fn a_pane_that_reports_what_it_drew_is_sent_the_whole_burst_and_never_started_ov
         "a pane that keeps up is never started over"
     );
     assert!(seen.starts_with(&line(0)));
+}
+
+#[test]
+fn a_pane_opened_on_a_page_of_history_draws_the_newest_lines_and_is_told_how_many_are_older() {
+    let hosted = hosted();
+    let id = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .unwrap();
+    hosted.runs.last().writes(b"1\n2\n3\n4\n");
+    let (sink, seen) = a_pane();
+
+    let watching = hosted
+        .sessions
+        .watch_within(id, sink, 1)
+        .expect("a view opens");
+
+    assert_eq!(watching.older, 3);
+    until("the page is drawn", || seen.lock().unwrap().contains("4\n"));
+    assert!(
+        !seen.lock().unwrap().contains('3'),
+        "the older lines are left to be asked for: {:?}",
+        seen.lock().unwrap()
+    );
 }
 
 #[test]

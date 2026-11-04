@@ -10,7 +10,6 @@ import {
   closeFocusedPane,
   closeTab,
   focusPane,
-  sendToBackground,
   noTabs,
   openTab,
   openTabBehind,
@@ -297,12 +296,22 @@ describe("tabs and their panes", () => {
     expect(visibleSessions(tabs)).toEqual([11]);
   });
 
-  it("closes the tab when its last pane closes", () => {
-    const tabs = closeFocusedPane(openTab(noTabs(), 11), oneWorkspace);
+  it("focuses the pane that grows into a closed pane's space, not the tab's first (#4756, #4767)", () => {
+    // 11 on the left; 12 over 13 on the right. Closing 13 grows 12, which takes the keyboard.
+    const right = splitFocusedPane(openTab(noTabs(), 11), "row", 12);
+    const three = splitFocusedPane(right, "column", 13);
+    const tabs = closeFocusedPane(three, oneWorkspace);
+    const tab = tabs.byId[front(tabs)];
 
-    expect(tabs.order).toEqual([]);
-    expect(tabs.inFront).toBeUndefined();
-    expect(visibleSessions(tabs)).toEqual([]);
+    expect(panesOf(tabs, tab.id).find((one) => one.pane === tab.focused)?.session).toBe(12);
+  });
+
+  it("closes the tab when its last pane closes, and the strip has another (#4756)", () => {
+    const opened = twoTabs();
+    const tabs = closeFocusedPane(opened, oneWorkspace);
+
+    expect(tabs.order).toEqual([opened.order[0]]);
+    expect(visibleSessions(tabs)).toEqual([11]);
   });
 
   it("brings the tab beside it to the front when a tab closes", () => {
@@ -1033,73 +1042,15 @@ describe("a chat the core has closed (a smart close's record landed, ADR 0064)",
   });
 });
 
-describe("a chat put into the background by Smart close (SI-8f, ADR 0039 as amended 2026-09-28)", () => {
-  /** Four tabs, opened 1, 2, 3, 4, with the third in front. */
-  function fourTabs(): Tabs {
-    return selectTab(
-      [11, 22, 33, 44].reduce((tabs, s) => openTab(tabs, s), noTabs()),
+describe("a strip with a chat wrapping up (#4760)", () => {
+  it("draws every tab in its own place: pinned first, and no tab goes into the background", () => {
+    const tabs = selectTab(
+      [11, 22, 33, 44].reduce((all, s) => openTab(all, s), noTabs()),
       3,
     );
-  }
+    const pinned = (id: number) => id === 1;
 
-  const holding =
-    (...ids: number[]) =>
-    (id: number) =>
-      ids.includes(id);
-
-  it("is drawn at the strip's left edge, before the pinned tabs", () => {
-    const tabs = fourTabs();
-
-    expect(tabsIn(tabs, "alpha", oneWorkspace, holding(1), holding(3))).toEqual([3, 1, 2, 4]);
-  });
-
-  it("keeps its place in tabs.order, so it goes back there when it comes back", () => {
-    const tabs = fourTabs();
-
-    tabsIn(tabs, "alpha", oneWorkspace, holding(1), holding(3));
-
-    expect(tabs.order).toEqual([1, 2, 3, 4]);
-    expect(tabsIn(tabs, "alpha", oneWorkspace, holding(1))).toEqual([1, 2, 3, 4]);
-  });
-
-  it("sends the front where closing it would have: the tab before it on the strip", () => {
-    const tabs = fourTabs();
-
-    expect(sendToBackground(tabs, 3, oneWorkspace).inFront).toBe(
-      closeTab(tabs, 3, oneWorkspace).inFront,
-    );
-    expect(sendToBackground(tabs, 3, oneWorkspace).inFront).toBe(2);
-  });
-
-  it("sends the front to the next tab from the first, and to nothing from the only one", () => {
-    const first = selectTab(fourTabs(), 1);
-    expect(sendToBackground(first, 1, oneWorkspace).inFront).toBe(2);
-
-    const alone = openTab(noTabs(), 11);
-    expect(sendToBackground(alone, front(alone), oneWorkspace).inFront).toBeUndefined();
-  });
-
-  it("is never where the front goes when another tab closes or goes to the background", () => {
-    // Tab 2 is wrapping up; closing tab 3, the tab before it on the strip is 2 — but 2 is in
-    // the background, so the front goes to the one before that.
-    const tabs = fourTabs();
-
-    expect(closeTab(tabs, 3, oneWorkspace, undefined, holding(2)).inFront).toBe(1);
-    expect(sendToBackground(tabs, 3, oneWorkspace, undefined, holding(2)).inFront).toBe(1);
-  });
-
-  it("leaves the front alone when the tab put in the background is not the one in front", () => {
-    const tabs = fourTabs();
-
-    expect(sendToBackground(tabs, 1, oneWorkspace)).toEqual(tabs);
-  });
-
-  it("keeps the tab and everything in it", () => {
-    const tabs = fourTabs();
-
-    const after = sendToBackground(tabs, 3, oneWorkspace);
-
-    expect(after.order).toEqual(tabs.order);
-    expect(after.byId).toEqual(tabs.byId);
+    // The Smart close chip that went first on the strip (SI-8f) is gone with the chat's tab.
+    expect(tabsIn(tabs, "alpha", oneWorkspace, pinned)).toEqual([1, 2, 3, 4]);
   });
 });

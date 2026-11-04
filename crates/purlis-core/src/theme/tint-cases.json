@@ -3384,6 +3384,52 @@
     "layer.chat": "#221a2a",
     "layer.selected": "#292132"
    }
+  },
+  {
+   "appearance": "light-high-contrast",
+   "colour": "yellow",
+   "tokens": {
+    "accent.base": "#403667",
+    "accent.surface": "#dedcef",
+    "accent.wash": "#7507ff24",
+    "accent.wash-hover": "#7507ff3a",
+    "accent.text": "#403667",
+    "accent.fill": "#6d58bb",
+    "accent.fill-hover": "#745fc3",
+    "accent.fill-edge": "#00000000",
+    "focus.ring": "#403667",
+    "tab.active": "#e9e9f2",
+    "list.selected": "#e0ddcb",
+    "list.selected-edge": "#403667",
+    "markdown.link": "#403667",
+    "chart.1": "#403667",
+    "layer.workspace": "#fdf8e1",
+    "layer.chat": "#f4efd8",
+    "layer.selected": "#ebe5ce"
+   }
+  },
+  {
+   "appearance": "light-high-contrast",
+   "colour": "green",
+   "tokens": {
+    "accent.base": "#403667",
+    "accent.surface": "#d4e2d2",
+    "accent.wash": "#7507ff24",
+    "accent.wash-hover": "#7507ff3a",
+    "accent.text": "#403667",
+    "accent.fill": "#137824",
+    "accent.fill-hover": "#1e7f2c",
+    "accent.fill-edge": "#00000000",
+    "focus.ring": "#403667",
+    "tab.active": "#dcefdc",
+    "list.selected": "#d3e0d2",
+    "list.selected-edge": "#403667",
+    "markdown.link": "#1b461e",
+    "chart.1": "#1b461e",
+    "layer.workspace": "#eafdea",
+    "layer.chat": "#e1f4e1",
+    "layer.selected": "#d7ead7"
+   }
   }
  ],
  "toward": [

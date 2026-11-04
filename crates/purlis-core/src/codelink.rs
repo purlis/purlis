@@ -1389,29 +1389,58 @@ fn holds_ref(repo: &Path, name: &str) -> bool {
 /// ([`repo_in`]). What `purlis serve` gives its host.
 #[cfg(unix)]
 pub struct Moves {
-    /// When its host first started a program: what a task wrote outside its project since is
-    /// its work ([`held::outside_the_projects`], #4781). None before any has.
-    since: std::sync::OnceLock<std::time::SystemTime>,
     /// The runner's home, where a task may keep work outside its project, as `HOME` named it:
     /// only an absolute path but `/` is one.
     home: Option<std::path::PathBuf>,
+    /// The root of the rest of the runner's file system, looked through too for its user's files
+    /// (#4933): `/` for `purlis serve` on Linux, where a runner's pod is; none elsewhere.
+    beyond: Option<std::path::PathBuf>,
+    /// When this host itself first started a program. The mark beside its projects keeps that
+    /// time for a host started again; this keeps it from a mark a task touched or removed
+    /// since, the earlier of the two being the one taken (#4933).
+    first: std::sync::OnceLock<std::time::SystemTime>,
+    /// Every folder purlis keeps for itself on the runner, wherever its environment puts it,
+    /// left out of every walk outside the projects (#5028).
+    own: Vec<std::path::PathBuf>,
+    /// Where outside its home the runner's user may write, found once for each cutoff and kept,
+    /// since that can't grow (#5030).
+    writable: std::sync::Mutex<Option<held::Writable>>,
 }
 
 #[cfg(unix)]
 impl Moves {
-    /// For a host starting now, in the home `HOME` names.
-    pub fn from_now() -> Moves {
+    /// For `purlis serve` on a runner: its home as `HOME` names it, and on Linux the rest of
+    /// its file system from `/` too.
+    pub fn on_this_runner() -> Moves {
+        let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
         Moves {
-            since: std::sync::OnceLock::new(),
-            home: std::env::var_os("HOME").map(std::path::PathBuf::from),
+            own: home
+                .as_deref()
+                .map(|home| held::purlis_keeps_for_itself(&crate::envvar::var, home))
+                .unwrap_or_default(),
+            home,
+            beyond: cfg!(target_os = "linux").then(|| std::path::PathBuf::from("/")),
+            first: std::sync::OnceLock::new(),
+            writable: std::sync::Mutex::new(None),
         }
     }
 
-    /// [`Self::from_now`], in the home `home`.
+    /// For a host in the home `home`, looking through nothing outside it.
     pub fn in_home(home: std::path::PathBuf) -> Moves {
         Moves {
             home: Some(home),
-            ..Moves::from_now()
+            beyond: None,
+            first: std::sync::OnceLock::new(),
+            own: Vec::new(),
+            writable: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// This, looking through `root` too as the rest of its file system.
+    pub fn and_beyond(self, root: std::path::PathBuf) -> Moves {
+        Moves {
+            beyond: Some(root),
+            ..self
         }
     }
 }
@@ -1562,8 +1591,18 @@ impl purlis_host::Code for Moves {
         origins_in(project, workspace, repos)
     }
 
-    fn program_starting(&self) {
-        let _ = self.since.set(std::time::SystemTime::now());
+    fn program_starting(
+        &self,
+        projects: &Path,
+    ) -> Result<(), purlis_host::protocol::session::Refusal> {
+        held::first_program_starting(projects).map_err(|why| {
+            purlis_host::protocol::session::Refusal {
+                code: purlis_host::protocol::session::NOT_STARTED.into(),
+                why,
+            }
+        })?;
+        let _ = self.first.set(std::time::SystemTime::now());
+        Ok(())
     }
 
     fn repos_held(
@@ -1574,27 +1613,101 @@ impl purlis_host::Code for Moves {
         purlis_host::protocol::session::Refusal,
     > {
         let (repos, mut unread) = held::repos_held(projects);
-        // **And what a task kept outside them** (#4781), in the runner's home: the projects and
-        // purlis's data home they are in are left out by name, wherever they are.
-        if let Some(since) = self.since.get() {
-            match self
+        // **And what a task kept outside them** (#4781), in the runner's home, purlis's data home
+        // (#5029) and, where it is looked through, the rest of its file system (#4933): every
+        // folder purlis keeps for itself is left out by name, wherever it is (#5028). Since the
+        // first program, as marked beside them, so a host started again keeps that time.
+        let marked = held::first_program_at(projects).unwrap_or_else(|why| {
+            unread.push(why);
+            None
+        });
+        let since = match (marked, self.first.get().copied()) {
+            (Some(marked), Some(here)) => Some(marked.min(here)),
+            (marked, here) => marked.or(here),
+        };
+        match since {
+            None => {}
+            Some(since) => match self
                 .home
                 .as_deref()
                 .filter(|home| home.is_absolute() && home.parent().is_some())
             {
                 Some(home) => {
+                    // The home as the walk beyond it meets it, wherever a link puts it.
+                    let home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
                     let kept: Vec<std::path::PathBuf> = std::iter::once(projects.to_path_buf())
                         .chain(projects.parent().map(Path::to_path_buf))
+                        .chain(self.own.iter().cloned())
+                        .flat_map(|one| {
+                            let real = std::fs::canonicalize(&one).ok();
+                            std::iter::once(one).chain(real)
+                        })
                         .collect();
-                    let since = since.checked_sub(held::CHANGED_WITHIN).unwrap_or(*since);
-                    unread.extend(held::outside_the_projects(home, &kept, Some(since)));
+                    // The data home the projects are in, as the walks meet it: only where they
+                    // are its `projects`, as a runner keeps them (#5029).
+                    let projects_real =
+                        std::fs::canonicalize(projects).unwrap_or_else(|_| projects.into());
+                    let data = projects_real
+                        .parent()
+                        .filter(|_| {
+                            projects_real.file_name()
+                                == Some(std::ffi::OsStr::new(crate::datahome::PROJECTS))
+                        })
+                        .map(Path::to_path_buf);
+                    let listed: Vec<std::path::PathBuf> = repos
+                        .iter()
+                        .map(|one| {
+                            let mut at = projects_real.join(&one.project);
+                            if !one.path.is_empty() {
+                                at.push(&one.path);
+                            }
+                            at
+                        })
+                        .collect();
+                    let since = since.checked_sub(held::CHANGED_WITHIN).unwrap_or(since);
+                    let beyond = self.beyond.as_deref().map(|root| held::Beyond {
+                        root,
+                        owner: rustix::process::geteuid().as_raw(),
+                    });
+                    let mut skip = kept.clone();
+                    skip.push(home.clone());
+                    skip.extend(data.clone());
+                    // Found once for the cutoff and what is left out, and kept while whole: what
+                    // the user may write can't grow (#5030).
+                    let found = beyond.map(|beyond| {
+                        let mut cached = self
+                            .writable
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        match cached.as_ref() {
+                            Some(found) if found.since == Some(since) && found.skip == skip => {
+                                found.clone()
+                            }
+                            _ => {
+                                let found = held::writable(beyond, &skip, since);
+                                *cached = found.whole().then(|| found.clone());
+                                found
+                            }
+                        }
+                    });
+                    unread.extend(held::outside_with(
+                        &home,
+                        data.as_deref().map(|data| held::DataHome {
+                            data,
+                            projects: &projects_real,
+                            listed: &listed,
+                        }),
+                        &kept,
+                        Some(since),
+                        beyond.zip(found.as_ref()),
+                    ));
                 }
                 None => unread.push(
                     "the runner names no home folder purlis can look through, so what a task \
                      kept outside its project could not be looked for"
                         .to_owned(),
                 ),
-            }
+            },
         }
         let repos = repos
             .into_iter()

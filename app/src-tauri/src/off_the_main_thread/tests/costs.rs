@@ -451,6 +451,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "session_bus",
             "vaults_to_move",
             "projects_handed",
+            // What a tab window was made to draw (#4768): `Showing`'s, in memory.
+            "tab_window_handed",
             "charter_windows",
             "title_bar_room",
             "first_frame",
@@ -557,6 +559,9 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "draw_native_window",
             "native_window_drawn",
             "show_window_holding",
+            // A press on a chat in another window of the project (#4768): the core's layout
+            // read in memory, that window brought forward and told, as `show_window_holding`.
+            "press_elsewhere",
             "restart_on_the_session_bus",
             "restart_to_update",
             "restart_to_update_choosing",

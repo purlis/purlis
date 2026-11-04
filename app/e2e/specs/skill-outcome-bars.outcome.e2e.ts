@@ -188,9 +188,13 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
 
   let root = "";
   let wereRunning: Running = {};
+  /** The tabs on alpha's strip before this spec, so its `after` closes only what it opened. */
+  let wereOpen: string[] | null = null;
 
   after(async () => {
     await endTheChatsStartedSince(wereRunning);
+    // The studio's last opening, and any tab a failed step left, by its own × (#5111).
+    if (wereOpen !== null) await closeTheViewTabsOpenedSince(wereOpen);
   });
 
   before(async () => {
@@ -199,6 +203,7 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     await browser.setWindowSize(1440, 900);
     await focusWorkspace("alpha");
     wereRunning = await chatsRunning();
+    wereOpen = await tabNames();
   });
 
   it("goes from wanting a skill to using it in a running chat in under 2 minutes", async () => {

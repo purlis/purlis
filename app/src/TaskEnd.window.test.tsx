@@ -552,7 +552,7 @@ describe("a task that has a tab of its own", () => {
     expect(closeOf("sweep").getAttribute("aria-label")).toBe(
       "Send sweep back into steward 1's tab",
     );
-    expect(closeOf("sweep").className).toContain("keeps");
+    expect(closeOf("sweep").className).not.toContain("ends-a-chat");
 
     await userEvent.click(closeOf("sweep"));
 
@@ -569,7 +569,7 @@ describe("a task that has a tab of its own", () => {
     await waitFor(() => expect(onScreen()).toEqual([5]));
   });
 
-  it("is sent back by the close shortcut too, and a session's own close is as it was", async () => {
+  it("is sent back by the close shortcut too, and a session's own close ends nothing either", async () => {
     const { tree, asked } = await drawn({}, true);
 
     act(() => tabOf("sweep")?.focus());
@@ -578,9 +578,11 @@ describe("a task that has a tab of its own", () => {
     await waitFor(() => expect(tabOf("sweep")).toBeUndefined());
     expect(asked.filter((one) => ending.includes(one.cmd))).toEqual([]);
     expect(row(tree, "sweep")).toBeTruthy();
-    // A session is not a task: its close still asks the close question.
+    // A session's close closes its tab and ends nothing (#4756): nothing is asked.
     await userEvent.click(closeOf("steward 1"));
-    expect(await screen.findByRole("alertdialog", { name: "End chat steward 1?" })).toBeTruthy();
+    await waitFor(() => expect(tabOf("steward 1")).toBeUndefined());
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(asked.filter((one) => ending.includes(one.cmd))).toEqual([]);
   });
 });
 
@@ -739,61 +741,32 @@ describe("Delete on a task's row", () => {
   });
 });
 
-describe("the breadcrumb's line, while a tab shows a task", () => {
-  it("has the only ending control of a pane showing a task: two words, and neither is a close mark", async () => {
+describe("a task's two ways to end, while a pane shows it (#4760)", () => {
+  /** Opens the ⋯ of the pane that shows `talk`, its one list. */
+  async function itsMore() {
+    await userEvent.click(screen.getByRole("button", { name: /^More for talk/ }));
+    return screen.findByRole("menu");
+  }
+
+  it("are rows of its ⋯, and no button on its head ends it; a press ends nothing", async () => {
     const { tree, asked } = await drawn();
-    // The session's own pane has no such control.
-    expect(screen.queryByRole("group", { name: "End this task" })).toBeNull();
 
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
 
-    const group = screen.getByRole("group", { name: "End this task" });
-    const buttons = within(group).getAllByRole("button");
-    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([STOP, CLOSE]);
-    // Words, not a cross: nothing here is drawn as the tab's close is. And each name begins
-    // with the words drawn, so a voice command for what is on screen presses it.
-    expect(buttons.map((button) => button.textContent)).toEqual(["Stop", "Close now"]);
-    for (const button of buttons) {
-      expect(button.getAttribute("aria-label")?.startsWith(button.textContent ?? "?")).toBe(true);
-      expect(button.querySelector("svg")).toBeNull();
-      expect(button.className).not.toMatch(/closer|ends-a-chat/);
-    }
-    // Beside the path, in the pane's top line, and not among the pane's own controls.
-    expect(group.closest(".pane-chips")).not.toBeNull();
-    expect(group.closest(".pane-doing")).toBeNull();
+    // The head's Stop and Close now became rows of the list (`command-table.md`, rule 4).
+    expect(screen.queryByRole("group", { name: "End this task" })).toBeNull();
+    expect(screen.queryByRole("button", { name: STOP })).toBeNull();
+    expect(screen.queryByRole("button", { name: CLOSE })).toBeNull();
     expect(screen.queryByRole("button", { name: "End this pane's chat" })).toBeNull();
 
-    // A press ends nothing: it is asked there, in the buttons' place, with Keep focused.
-    await userEvent.click(within(group).getByRole("button", { name: CLOSE }));
+    const list = await itsMore();
+    expect(within(list).getByRole("menuitem", { name: new RegExp(`^${STOP_IT}`) })).toBeTruthy();
+    await userEvent.click(within(list).getByRole("menuitem", { name: new RegExp(`^${CLOSE_IT}`) }));
 
-    const step = await second("Close talk now, with no report?");
-    expect(step.closest(".pane-chips")).not.toBeNull();
-    expect(within(step).getByRole("button", { name: "Keep" })).toHaveFocus();
+    // Asked first, as from its row: nothing ended on the press.
+    await second("Close talk now, with no report?");
     expect(ends(asked)).toEqual([]);
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-    // Not on the task's row as well: one question, where the press was made.
-    expect(row(tree, "talk").closest("li")?.querySelector(".task-end-confirm")).toBeNull();
-
-    await userEvent.click(within(step).getByRole("button", { name: "Keep" }));
-
-    // Kept: the two buttons are back, and nothing ended.
-    await waitFor(() => expect(screen.getByRole("group", { name: "End this task" })).toBeTruthy());
-    expect(ends(asked)).toEqual([]);
-
-    await userEvent.click(
-      within(screen.getByRole("group", { name: "End this task" })).getByRole("button", {
-        name: CLOSE,
-      }),
-    );
-    await userEvent.click(
-      within(await second("Close talk now, with no report?")).getByRole("button", {
-        name: "Close it",
-      }),
-    );
-    await waitFor(() =>
-      expect(ends(asked)).toEqual([{ plane: PLANE, session: 4, way: "now", below: false }]),
-    );
   });
 
   it("asks in the one question from there when the task is mid-turn", async () => {
@@ -802,9 +775,7 @@ describe("the breadcrumb's line, while a tab shows a task", () => {
     await waitFor(() => expect(onScreen()).toEqual([4]));
 
     await userEvent.click(
-      within(screen.getByRole("group", { name: "End this task" })).getByRole("button", {
-        name: STOP,
-      }),
+      within(await itsMore()).getByRole("menuitem", { name: new RegExp(`^${STOP_IT}`) }),
     );
 
     const question = await screen.findByRole("alertdialog", { name: "Stop task 'talk'?" });
@@ -817,7 +788,7 @@ describe("the breadcrumb's line, while a tab shows a task", () => {
     );
   });
 
-  it("says a task is being stopped, stops it no second time, and says why to whoever cannot see a tooltip", async () => {
+  it("says a task is being stopped, and its list's Stop cannot be pressed again", async () => {
     const { tree, asked, stopping } = await drawn();
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
@@ -825,14 +796,11 @@ describe("the breadcrumb's line, while a tab shows a task", () => {
     await stopping(4);
 
     await waitFor(() => expect(row(tree, "talk")).toHaveTextContent("Stopping…"));
-    const group = screen.getByRole("group", { name: "End this task" });
-    const stop = within(group).getByRole("button", { name: STOP });
+    const list = await itsMore();
+    const stop = within(list).getByRole("menuitem", { name: new RegExp(`^${STOP_IT}`) });
     expect(stop).toHaveAttribute("aria-disabled", "true");
-    expect(stop).toHaveAccessibleDescription(/is being stopped already/);
-    await userEvent.click(stop);
-    expect(screen.queryByRole("group", { name: /^Stop talk/ })).toBeNull();
     expect(ends(asked)).toEqual([]);
-    expect(within(group).getByRole("button", { name: CLOSE })).not.toHaveAttribute("aria-disabled");
+    await userEvent.keyboard("{Escape}");
   });
 
   it("marks the tab that shows a stopping chat, as its row says it, and takes the mark off when the stop ends (#1459)", async () => {
@@ -1010,8 +978,8 @@ describe("what its row says afterwards", () => {
       finished.push({ ...ended(how, word), chat: 4 });
       await coreEnds(4);
 
-      // The pane stays on the task, as ended, and says how in the row's word.
-      const away = await screen.findByTestId("task-away");
+      // The pane stays on the task, as ended, and its band says how in the row's word (#4756).
+      const away = await screen.findByRole("status", { name: /^Ended/ });
       await waitFor(() => expect(away.querySelector(".shown-state .word")?.textContent).toBe(word));
       expect(away.querySelector(".shown-state .shape")?.getAttribute("data-shape")).toBe(shape);
       // Said once: no second word beside it, and never "cancelled".

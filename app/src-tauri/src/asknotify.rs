@@ -295,6 +295,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::PoolLogin => "Asks to log its browser in on a pool's runner",
         AskSource::PoolTool => "Asks to send a tool its vault values for a run on a pool's runner",
         AskSource::BrowserLogin => "Asks to log its browser in to a site with vault credentials",
+        AskSource::Secret => "Asks you for a secret its vault doesn't hold",
     }
 }
 
@@ -756,7 +757,8 @@ fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId) {
     }
 }
 
-/// What the window holding `plane` answers about chat `session` ([`Looking`]).
+/// What the window showing chat `session` answers about it ([`Looking`]): the tab window whose
+/// front tab shows it (#4768), else the window holding `plane`.
 ///
 /// **The window asked is the one holding the chat's project** (charter#126): with a project
 /// split into a window of its own, asking the main window would hold a notification back
@@ -772,9 +774,11 @@ fn looking(
     held: &crate::planes::Held,
 ) -> Looking {
     let showing = app.try_state::<Showing>();
+    // **Asked of the window that shows the chat** (#4768): a tab window, where the chat is on
+    // screen there, and the window holding the project otherwise.
     let window = showing
         .as_ref()
-        .and_then(|showing| showing.holder(plane))
+        .and_then(|showing| showing.asked_of(plane, held.chats().window_showing(session)))
         .and_then(|label| app.get_webview_window(&label));
     let Some(window) = window else {
         return Looking {
@@ -783,9 +787,13 @@ fn looking(
             chat_on_screen: false,
         };
     };
+    // A tab window draws its one project, so it has it in front whenever it is drawn.
     let window_in_front = window.is_visible().unwrap_or(false)
         && window.is_focused().unwrap_or(false)
-        && showing.is_some_and(|showing| showing.is_showing(window.label(), plane));
+        && showing.is_some_and(|showing| {
+            showing.tab_window(window.label()).is_some()
+                || showing.is_showing(window.label(), plane)
+        });
     Looking {
         window_in_front,
         inbox_open: app

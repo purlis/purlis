@@ -370,8 +370,6 @@ describe("every menu", () => {
         // Ends the program a chat runs, or every chat of a project.
         "chat.end",
         "chat.fresh",
-        "tab.close",
-        "pane.close",
         "project.close",
         "chat.stop",
         "chat.stop.below",
@@ -388,8 +386,14 @@ describe("every menu", () => {
       ].sort(),
     );
     // Restart keeps the conversation; a branch's folder goes and its branch stays; a repo
-    // taken out of a workspace is deleted nowhere.
-    for (const stem of ["chat.restart", "worktree.remove", "absent.drop"])
+    // taken out of a workspace is deleted nowhere; a close ends nothing (#4756).
+    for (const stem of [
+      "chat.restart",
+      "worktree.remove",
+      "absent.drop",
+      "tab.close",
+      "pane.close",
+    ])
       expect(plain, stem).toContain(stem);
   });
 
@@ -553,9 +557,12 @@ describe("a tab's menu (#4753)", () => {
   const [behind, front] = tabs.order;
 
   it("holds the tab's own rows and no chat's", () => {
+    // The tab's press switches to it, so Switch to is no row; and a tab behind has its own
+    // Close other tabs (#4760), and its own Tile all (#4765).
     expect(said(menuOf({ on: "tab", tab: behind }, offers))).toEqual([
-      ["Switch to", "Pinned", "Tile all"],
-      ["End"],
+      // Move to new window (#4768): a tab into a tab window of its project.
+      ["Pinned", "Tile all", "Move to new window"],
+      ["Close other tabs", "Close"],
     ]);
     const inFront = rowsOf(menuOf({ on: "tab", tab: front }, offers));
     expect(inFront.map((row) => row.said)).not.toContain(SAID.switchTo);
@@ -577,10 +584,10 @@ describe("a tab's menu (#4753)", () => {
     const keys = Object.fromEntries(
       rows.filter((row) => row.keys !== undefined).map((row) => [row.said, row.keys]),
     );
-    expect(keys).toEqual({ End: expect.stringMatching(/^(⌫|Delete)$/) });
+    expect(keys).toEqual({ Close: expect.stringMatching(/^(⌫|Delete)$/) });
   });
 
-  it("on a view's tab is Pinned, Tile all and Close, and Close is not coloured", () => {
+  it("on a view's tab is Pinned, Tile all, Move to new window, Close other tabs and Close, and its Close is not coloured", () => {
     const withView = openView(tabs, { from: null, view: "vault", key: "forge" }, "forge", "beta");
     const view = withView.order[withView.order.length - 1];
     const menu = menuOf(
@@ -589,10 +596,14 @@ describe("a tab's menu (#4753)", () => {
     );
     const rows = rowsOf(menu);
 
+    // Close other tabs (#4762), which this window, saying no other tab it would close, offers
+    // greyed and so uncoloured.
     expect(rows.map((row) => [row.said, row.danger])).toEqual([
       ["Pinned", false],
       // Greyed: a tab of one pane has nothing to tile (#4765).
       ["Tile all", false],
+      ["Move to new window", false],
+      ["Close other tabs", false],
       ["Close", false],
     ]);
   });
@@ -641,16 +652,24 @@ describe("the other tabs' menus", () => {
     ]);
   });
 
-  it("the panes keep the shell's key and the catalogue's words", () => {
-    const rows = rowsOf(menuOf({ on: "pane" }, offers));
-
+  it("the panes hold the pane's rows in the catalogue's words, and not the window's New tab or New shell (#4760)", () => {
     expect(said(menuOf({ on: "pane" }, offers))).toEqual([
-      ["New tab", "New shell"],
-      ["Split right", "Split down", "Send F2 to the chat in front"],
-      ["End this pane's chat"],
+      ["Split right", "Split down", "Move to new window", "Send F2 to the chat in front"],
+      ["Close this pane"],
     ]);
-    expect(rows.find((row) => row.said === "New shell")?.keys).toMatch(/^(⌘⇧T|Ctrl\+Shift\+T)$/);
-    // The same words on a workspace's tab open a shell in that workspace, which has no key.
+    // The panes of a tab list that tab's Tile all, greyed at one pane (#4765).
+    const [tab] = world().tabs.order;
+    expect(said(menuOf({ on: "pane", tab }, offers))).toEqual([
+      [
+        "Split right",
+        "Split down",
+        "Tile all",
+        "Move to new window",
+        "Send F2 to the chat in front",
+      ],
+      ["Close this pane"],
+    ]);
+    // A workspace's tab opens a shell in that workspace, which has no key.
     expect(
       rowsOf(menuOf({ on: "workspace", workspace: "alpha" }, offers)).find(
         (row) => row.said === "New shell",

@@ -200,6 +200,9 @@ mod tests {
         let themes = built_in_themes();
         let ids = |id: &str| themes[id].keys().cloned().collect::<Vec<_>>();
         assert_eq!(ids(theme::CLASSIC), ["dark", "light"]);
-        assert_eq!(ids(theme::PURLIS), ["dark", "dark-high-contrast", "light"]);
+        assert_eq!(
+            ids(theme::PURLIS),
+            ["dark", "dark-high-contrast", "light", "light-high-contrast"]
+        );
     }
 }

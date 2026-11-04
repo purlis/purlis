@@ -15,7 +15,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { chatList } from "./menus.testkit";
+import { askToEnd, chatList } from "./menus.testkit";
 import type {
   ChatBlocked,
   DispatchPending,
@@ -54,16 +54,28 @@ vi.mock("./SessionPane", async () => {
   return {
     /** A pane that takes the keyboard when the window gives it, as a terminal does, and sends
      *  what is typed in it to its own session, as a terminal does. */
-    SessionPane: ({ plane, session }: { plane: string; session: number }) => {
+    SessionPane: ({
+      plane,
+      session,
+      readOnly,
+    }: {
+      plane: string;
+      session: number;
+      readOnly?: boolean;
+    }) => {
       const pane = useRef<HTMLDivElement>(null);
       useEffect(() => paneDrawn(plane, session, () => pane.current?.focus()), [plane, session]);
       return (
         <div
           data-testid="pane"
           data-session={session}
+          data-read-only={readOnly ? "" : undefined}
           tabIndex={-1}
           ref={pane}
-          onKeyDown={(event) => void invoke("send_input", { plane, session, text: event.key })}
+          // A screen that is read-only takes no input, as the terminal's `disableStdin` does.
+          onKeyDown={(event) => {
+            if (!readOnly) void invoke("send_input", { plane, session, text: event.key });
+          }}
         >
           session {session}
         </div>
@@ -86,6 +98,9 @@ function heard(handler: number, message: unknown) {
 }
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
+
+/** The number a reopened finished task's new chat is given (#1485). */
+const REOPENED = 25;
 
 const PLANE = "/home/dev/plane";
 
@@ -352,6 +367,12 @@ function core(open: Listed[]) {
       one.session = (a.session as number) + 20;
       return { chat: asListed(one), notices: [], not_yet: null };
     }
+    if (cmd === "reopen_finished_task") {
+      // A new chat on the finished task's conversation, an ordinary chat from then on.
+      const one = { ...open[0], session: REOPENED, name: "sweep", from: null, shows: null };
+      open.push(one);
+      return asListed(one);
+    }
     if (cmd === "owed_restarts") return [];
     if (cmd === "finished_tasks") return [...finished];
     if (cmd === "stopping_chats") return [];
@@ -500,8 +521,10 @@ const onScreen = () =>
 /** The breadcrumb on screen, where a pane draws one. */
 const crumbs = () => screen.queryByRole("navigation", { name: "Chat path" });
 
-/** The pane that says a task it shows is not there to be drawn, where there is one. */
-const away = () => screen.queryByTestId("task-away");
+/** The ended band over a pane left on a chat that ended (#4756), where there is one. */
+const away = () => screen.queryByRole("status", { name: /^Ended/ });
+/** The ended band, once it is drawn. */
+const band = () => screen.findByRole("status", { name: /^Ended/ });
 
 /** The hand a tab wears for a chat of its own that is waiting and is not on screen: a button
  *  on the tab's chip, beside the tab's own button (#1487), which goes to that chat. */
@@ -801,32 +824,81 @@ describe("a tab remembers which chat it shows", () => {
 });
 
 describe("a shown task that ends", () => {
-  it("stays on screen as ended, with its name, how it ended and one way back, which has the keyboard", async () => {
+  it("keeps its last screen, read-only, under the ended band, and the keyboard stays where it was", async () => {
+    const { tree, ended, asked } = await drawn(withTasks());
+    await userEvent.click(row(tree, "sweep"));
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+    await waitFor(() => expect(document.activeElement?.getAttribute("data-session")).toBe("5"));
+    const before = document.activeElement;
+
+    await ended(5);
+
+    // Nothing flipped: the pane a press put sweep in keeps it as ended (#4757), its tab named
+    // for it, and the breadcrumb still says the path. The band says so (#4756).
+    const said = await band();
+    expect(tab("sweep")).toBeTruthy();
+    expect(crumbsSay()).toBe("steward 1 › sweep · ended without a report");
+    expect(said.textContent).toContain("sweep ended");
+    expect(tabNames()).toEqual(["sweep", "steward 2"]);
+    // Its last screen stays, and takes nothing typed.
+    expect(onScreen()).toEqual([5]);
+    expect(screen.getByTestId("pane")).toHaveAttribute("data-read-only");
+    expect(document.activeElement).toBe(before);
+    // No finished row says it can be reopened yet: Clear pane alone.
+    expect(within(said).queryByRole("button", { name: "Resume" })).toBeNull();
+
+    await userEvent.click(within(said).getByRole("button", { name: "Clear pane" }));
+
+    await waitFor(() => expect(onScreen()).toEqual([]));
+    expect(away()).toBeNull();
+    expect(crumbs()).toBeNull();
+    // Nothing more is ended by it.
+    expect(commandsOf(asked, "close_session")).toEqual([]);
+  });
+
+  it("is resumed in its pane from the band, where its finished row can be reopened", async () => {
+    const { tree, ended, finished, asked } = await drawn(withTasks());
+    await userEvent.click(row(tree, "sweep"));
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+
+    finished.push(finishedRow("sweep", { chat: 5, report: "Swept." }));
+    await ended(5);
+    const said = await band();
+
+    await userEvent.click(within(said).getByRole("button", { name: "Resume" }));
+
+    await waitFor(() =>
+      expect(commandsOf(asked, "reopen_finished_task").map((one) => one.id)).toEqual(["01K6sweep"]),
+    );
+    // The reopened chat takes the pane the task was left in, not a tab of its own.
+    await waitFor(() => expect(onScreen()).toEqual([REOPENED]));
+    expect(tabNames()).toHaveLength(2);
+    expect(away()).toBeNull();
+  });
+
+  it("keeps its Brief on the head, read by its finished row's record", async () => {
+    // Nothing of an ended task is listed any more, so its one state button is its Brief
+    // (#4757, #1494): the row's, not the chat's, which is gone.
+    const { tree, ended, finished } = await drawn(withTasks());
+    await userEvent.click(row(tree, "sweep"));
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+
+    finished.push(finishedRow("sweep", { chat: 5, report: "Swept." }));
+    await ended(5);
+    await band();
+
+    expect(await screen.findByRole("button", { name: /^Brief/ })).toBeTruthy();
+  });
+
+  it("has no Brief on the head once no finished row is left to read it by", async () => {
     const { tree, ended } = await drawn(withTasks());
     await userEvent.click(row(tree, "sweep"));
     await waitFor(() => expect(onScreen()).toEqual([5]));
 
     await ended(5);
+    await band();
 
-    // Nothing flipped: the pane a press put sweep in keeps it as ended (#4757), its tab named
-    // for it, and the breadcrumb still says the path.
-    const pane = await screen.findByTestId("task-away");
-    expect(tab("sweep")).toBeTruthy();
-    expect(crumbsSay()).toBe("steward 1 › sweep · ended without a report");
-    expect(pane.textContent).toContain("sweep has ended");
-    // No terminal is drawn for it, so nothing typed can go anywhere.
-    expect(onScreen()).toEqual([]);
-    const back = within(pane).getByRole("button", { name: "Back to steward 1" });
-    await waitFor(() => expect(document.activeElement).toBe(back));
-    expect(tabNames()).toEqual(["sweep", "steward 2"]);
-
-    // Its way back is the chat this pane showed before the press (#4757).
-    await userEvent.click(back);
-
-    await waitFor(() => expect(onScreen()).toEqual([1]));
-    expect(away()).toBeNull();
-    expect(crumbs()).toBeNull();
-    await waitFor(() => expect(document.activeElement?.getAttribute("data-session")).toBe("1"));
+    expect(screen.queryByRole("button", { name: /^Brief/ })).toBeNull();
   });
 
   it("says how it reported, for one that had", async () => {
@@ -838,7 +910,7 @@ describe("a shown task that ends", () => {
 
     await ended(5);
 
-    await screen.findByTestId("task-away");
+    await band();
     expect(crumbsSay()).toBe("steward 1 › sweep · done");
   });
 
@@ -882,13 +954,11 @@ describe("a shown task that ends", () => {
     );
     await ended(5);
 
-    const pane = await screen.findByTestId("task-away");
+    const pane = await band();
     const report = await within(pane).findByRole("region", { name: "Report from sweep" });
     // Text, every character: a report is a chat's words and never markup.
     expect(report.textContent).toBe("The queue is locked.\n<b>Nothing</b> was changed.");
     expect(report.querySelector("b")).toBeNull();
-    // The pane holds the report, so it no longer sends the person to the row for it.
-    expect(pane.textContent).not.toContain("is on its row");
 
     // One vocabulary: the pane, the breadcrumb and the finished row say the same state, and
     // the core's own word is beside it where the row draws it.
@@ -904,7 +974,8 @@ describe("a shown task that ends", () => {
     expect(says(onRow)).toEqual({ word: "failed", shape: "cross", more: "blocked" });
     expect(says(pane)).toEqual(says(onRow));
     expect(crumbsSay()).toBe("steward 1 › sweep · failed");
-    expect(within(pane).getByRole("button", { name: "Back to steward 1" })).toBeTruthy();
+    // Its way back is its finished row's Reopen, which that row offers.
+    expect(within(pane).getByRole("button", { name: "Resume" })).toBeTruthy();
   });
 
   it("never draws the report of another task of the same name, before its own row is read or after", async () => {
@@ -929,10 +1000,9 @@ describe("a shown task that ends", () => {
     // it is the other task's.
     await ended(5);
 
-    const pane = await screen.findByTestId("task-away");
+    const pane = await band();
     expect(pane.textContent).not.toContain("The earlier sweep failed.");
     expect(within(pane).queryByRole("region", { name: "Report from sweep" })).toBeNull();
-    expect(pane.textContent).toContain("is on its row under steward 1 in the Chats list");
     expect(crumbsSay()).toBe("steward 1 › sweep · ended without a report");
 
     // Its own row arrives: its report, and how it ended.
@@ -965,7 +1035,7 @@ describe("a shown task that ends", () => {
     finished.push(finishedRow("sweep", { chat: null, report: "Not this pane's." }));
     await ended(5);
 
-    const pane = await screen.findByTestId("task-away");
+    const pane = await band();
     await screen.findByRole("group", { name: "Finished tasks of steward 1" });
     expect(within(pane).queryByRole("region", { name: "Report from sweep" })).toBeNull();
     expect(pane.textContent).not.toContain("Not this pane's.");
@@ -982,7 +1052,7 @@ describe("a shown task that ends", () => {
     // The tab sweep was pressed into is named for it (#4757).
     await userEvent.click(tab("sweep"));
 
-    expect(await screen.findByTestId("task-away")).toBeTruthy();
+    expect(await band()).toBeTruthy();
     expect(crumbsSay()).toMatch(/^steward 1 › sweep · /);
   });
 });
@@ -1405,7 +1475,7 @@ describe("typing while a task is shown", () => {
     await userEvent.click(row(tree, "sweep"));
     await waitFor(() => expect(onScreen()).toEqual([5]));
     await ended(5);
-    await screen.findByTestId("task-away");
+    await band();
 
     await userEvent.keyboard("x");
 
@@ -1456,30 +1526,71 @@ describe("a file dropped on a tab", () => {
 });
 
 describe("closing, while a tab shows a task", () => {
-  it("says nothing of a task in the close of a tab that shows its own chat", async () => {
-    await drawn(withTasks());
-    const close = tab("steward 1").closest(".tab")?.querySelector<HTMLElement>("button.closer");
+  it("closes the tab a press gave the task, asking nothing and ending neither chat (#4756)", async () => {
+    const { tree, asked } = await drawn(withTasks());
+    await userEvent.click(row(tree, "talk"));
+    await waitFor(() => expect(onScreen()).toEqual([4]));
+
+    // The tab is talk's now: its pane was given talk (#4757), and a task's tab closes by its
+    // minimise.
+    const close = tab("talk").closest(".tab")?.querySelector<HTMLElement>("button.closer");
+    expect(close?.getAttribute("aria-label")).toBe("Send talk back to the Chats list");
     await userEvent.click(close as HTMLElement);
-    const question = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
-    expect(question.textContent).not.toContain("This tab is showing");
+
+    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(commandsOf(asked, "close_session")).toEqual([]);
+    // Both go on in the sidebar.
+    expect(row(tree, "steward 1")).toBeTruthy();
+    expect(row(tree, "talk")).toBeTruthy();
   });
 
-  it("draws no close on the pane, and the only controls that end the task are the breadcrumb's two", async () => {
+  it("ends the session, not the task, by the session's End… (#4753)", async () => {
+    const { tree, asked } = await drawn(withTasks());
+    await userEvent.click(row(tree, "talk"));
+    await waitFor(() => expect(onScreen()).toEqual([4]));
+
+    const question = await askToEnd("steward 1");
+    expect(question.textContent).not.toContain("This tab is showing");
+    expect(commandsOf(asked, "close_session")).toEqual([]);
+    await userEvent.click(within(question).getByRole("button", { name: "Close" }));
+
+    await waitFor(() =>
+      expect(commandsOf(asked, "close_session")).toEqual([{ plane: PLANE, session: 1 }]),
+    );
+  });
+
+  it("draws no close on the pane, and the task's two ways to end are rows of its ⋯ (#4760)", async () => {
     const { tree } = await drawn(withTasks());
     // The session's own pane has its close in its corner, as it always had.
-    expect(screen.getByRole("button", { name: "End this pane's chat" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close this pane" })).toBeTruthy();
 
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
 
-    expect(screen.queryByRole("button", { name: "End this pane's chat" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close this pane" })).toBeNull();
     const ending = screen
       .queryAllByRole("button")
       .map((button) => button.getAttribute("aria-label") ?? button.textContent ?? "")
       .filter((name) => /\b(end|stop|close)\b/i.test(name) && /talk/.test(name));
-    // The two ways a person ends a task (#1488), in words on the breadcrumb's line: neither
-    // is a close, and nothing else on screen ends the task.
-    expect(ending).toEqual(["Stop and get its report: task talk", "Close now: task talk"]);
+    // The two ways a person ends a task (#1488) are its list's rows, in its ⋯ (#4760): no
+    // button on screen ends the task.
+    expect(ending).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: /^More for talk/ }));
+    const list = await screen.findByRole("menu");
+    expect(within(list).getByRole("menuitem", { name: /^Stop and get its report/ })).toBeTruthy();
+    expect(within(list).getByRole("menuitem", { name: /^Close now/ })).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
+    // Its head's right-click lists the pane's rows, and no Close pane where the head draws none.
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    fireEvent.contextMenu(
+      screen.getByRole("navigation", { name: "Chat path" }).closest(".pane-chips") as HTMLElement,
+    );
+    const rows = [...(await screen.findByRole("menu")).querySelectorAll('[role^="menuitem"]')].map(
+      (one) => one.getAttribute("aria-label") ?? one.textContent,
+    );
+    expect(rows).toContain("Split right");
+    expect(rows).not.toContain("End this pane's chat");
     // The splits are the pane's still.
     expect(screen.getAllByRole("button", { name: /^Split/ })).toHaveLength(2);
   });
@@ -1522,7 +1633,7 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
 
     expect(tabNames()).toEqual(["steward 1", "drop commons"]);
     const close = tab("drop commons").closest(".tab")?.querySelector("button.closer");
-    expect(close?.getAttribute("aria-label")).toBe("End chat drop commons");
+    expect(close?.getAttribute("aria-label")).toBe("Close drop commons");
     // The task is under the chat that asked; the handoff is beside it.
     expect(levels(tree)).toEqual(["1 steward 1", "2 talk", "1 drop commons"]);
     expect(onScreen()).toEqual([1]);

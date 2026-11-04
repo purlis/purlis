@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { endChat, pressAndStart } from "../opening.js";
+import { pressAndStart, pressOnly } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
@@ -91,7 +91,7 @@ async function tabTexts(): Promise<string[]> {
  * How many tabs charter itself says are open, counted from the palette.
  *
  * **The one answer to "how many tabs are there" that does not come from the strip under
- * test.** The catalogue emits one `End chat <name>` row per tab and the palette lists them
+ * test.** The catalogue emits one close row per tab (`tab.close:<id>`) and the palette lists them
  * all, which is what makes it the right oracle for a strip that no longer draws every tab —
  * and it is the find surface ADR 0039 names, so it is not a second one invented here.
  *
@@ -106,11 +106,8 @@ async function tabsOpen(): Promise<number> {
   await palette.waitForDisplayed({ timeout: 20_000 });
   const counted = await browser.execute(
     () =>
-      // A tab's close (`End chat X`), not the chat's own End… (`End chat X…`, #4753): one per tab.
-      [...document.querySelectorAll('[role="option"] .palette-title')].filter((row) => {
-        const said = row.textContent ?? "";
-        return said.startsWith("End chat ") && !said.endsWith("…");
-      }).length,
+      // A tab's close, by its row's id (#4756): one per tab, and never a chat's End….
+      document.querySelectorAll('[id^="palette-row-tab.close:"]').length,
   );
   await browser.keys(["Escape"]);
   await expect(palette).not.toBeDisplayed();
@@ -410,9 +407,9 @@ describe("the window", function () {
       { timeout: 10_000, timeoutMsg: `the menu did not bring ${going} to the front` },
     );
 
-    // **And it arrived WITH its close button**, which is what keeps ending a chat two presses
-    // rather than one from a menu under the cursor (charter-app#130).
-    await expect($(`[data-strip="Tabs"] button[aria-label="End chat ${going}"]`)).toBeExisting();
+    // **And it arrived WITH its close button**, named for what it does: it closes the tab and
+    // ends nothing (#4756).
+    await expect($(`[data-strip="Tabs"] button[aria-label="Close ${going}"]`)).toBeExisting();
 
     // **And the strip did not re-order.** The menu sorts by activity; the strip never does.
     // What it draws now is the tab that was brought forward plus some of what it drew before,
@@ -422,16 +419,20 @@ describe("the window", function () {
     expect(kept).toEqual(drawn.filter((name) => kept.includes(name)));
   });
 
-  it("ends a session when its tab closes", async () => {
+  it("ends no session when its tab closes (#4756)", async () => {
     const running = harnessesRunning();
+    const open = await tabsOpen();
     const names = await tabTexts();
     const closing = names[names.length - 1];
 
-    await endChat(`End chat ${closing}`);
+    // Asks nothing: a close ends nothing, so there is no question to answer.
+    await pressOnly(`Close ${closing}`);
 
-    await browser.waitUntil(async () => harnessesRunning() === running - 1, {
+    await browser.waitUntil(async () => (await tabsOpen()) === open - 1, {
       timeout: 15_000,
-      timeoutMsg: `closing tab ${closing} left its session running`,
+      timeoutMsg: `closing tab ${closing} did not close it`,
     });
+    expect(await $('[role="alertdialog"]').isExisting()).toBe(false);
+    expect(harnessesRunning()).toBe(running);
   });
 });

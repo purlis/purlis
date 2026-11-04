@@ -143,6 +143,7 @@ export function Table({
           data-stacks={stacks || undefined}
           className={className}
           style={style}
+          onFocus={revealInFrame}
         >
           {caption !== undefined && <p data-part="caption">{caption}</p>}
           <AriaTable
@@ -158,6 +159,32 @@ export function Table({
       </Drawn.Provider>
     </RowScope.Provider>
   );
+}
+
+/**
+ * **A control in a cell is brought into its frame when it takes the keyboard** (#4672, WCAG 2.2
+ * SC 2.4.11). React Aria scrolls the focused row into view, which never moves the frame sideways
+ * (a row is as wide as the table), and the browser's own scroll to a focused element is not to be
+ * counted on: in WebKit, the window's engine on macOS, a Tab to a cell's button past the frame's
+ * right edge was seen leaving the frame unscrolled, the button out of sight, with no scroll at
+ * all. So a frame later than React Aria's own scroll (two frames), the control still focused and
+ * still outside the frame sideways is scrolled to its nearest edge. A row, wider than the frame,
+ * is left to React Aria.
+ */
+function revealInFrame(event: React.FocusEvent<HTMLDivElement>): void {
+  const frame = event.currentTarget;
+  const target = event.target;
+  if (target === frame) return;
+  const later = () =>
+    requestAnimationFrame(() => {
+      if (!frame.isConnected || document.activeElement !== target) return;
+      const room = frame.getBoundingClientRect();
+      const box = target.getBoundingClientRect();
+      if (box.width >= room.width) return;
+      if (box.left >= room.left && box.right <= room.left + frame.clientWidth) return;
+      target.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+  requestAnimationFrame(later);
 }
 
 /**

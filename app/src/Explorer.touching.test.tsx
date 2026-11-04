@@ -164,6 +164,10 @@ describe("the file a chat is touching", () => {
     expect(rowOf("file:svc/one:src/lib.rs").querySelector(".touch-mark")).toHaveAccessibleName(
       said,
     );
+    // And its row says it after its name, which stays what typing finds it by (#4730).
+    expect(rowOf("file:svc/one:src/lib.rs")).toHaveAccessibleDescription(said);
+    expect(rowOf("file:svc/one:src")).toHaveAccessibleDescription(said);
+    expect(rowOf("file:svc/one:src/lib.rs")).toHaveAccessibleName(/^lib\.rs/);
 
     // Still there just before the fade, gone after it.
     await act(async () => {
@@ -174,6 +178,8 @@ describe("the file a chat is touching", () => {
       vi.advanceTimersByTime(200);
     });
     expect(document.querySelector(".touch-mark")).toBeNull();
+    expect(rowOf("file:svc/one:src/lib.rs")).not.toHaveAttribute("aria-description");
+    expect(rowOf("file:svc/one:src")).not.toHaveAttribute("aria-description");
   });
 
   it("marks nothing for a chat working elsewhere, or for another project", async () => {

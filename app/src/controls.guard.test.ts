@@ -242,7 +242,6 @@ const CEILING: Record<string, number> = {
   "StripMarks.tsx": 4,
   "TabChip.tsx": 3,
   "TabRename.tsx": 1,
-  "TaskAway.tsx": 2,
   "TaskBlocksNotice.tsx": 1,
   "TaskChangesTab.tsx": 4,
   "TaskEnd.tsx": 6,
@@ -477,12 +476,21 @@ const STRIP =
 /** Named like a strip and not one: a chart's bar and the two columns down a side. */
 const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
 
-/** The chips on a pane's top line (#2484): the breadcrumb, Brief, the gauge, the harness, where
- *  a handed-off chat came from, its work item and its skills (#2775). Each is as tall as the line, the chrome
- *  height, so the line is one height with the ways to end a task beside them. */
+/** The chips on a pane's top line (#2484): the breadcrumb, the gauge, the harness, where a
+ *  handed-off chat came from, its work item and its skills (#2775); and since the pane head names
+ *  its chat (#4760), its persona icon, its name, its sandbox (`SandboxMark`'s own class, which
+ *  the tab wore first), its state, its wrapping-up mark, "harness · workspace" and a task's end
+ *  asked there. Brief is the state button's, in the pane's actions (#4760). Each is as tall as the line, the chrome height, so
+ *  the line is one height. */
 export const PANE_LINE_CHIPS = [
+  "pane-persona",
+  "pane-name",
+  "tab-sandbox",
+  "pane-state-mark",
+  "pane-wrapping",
+  "pane-where",
+  "pane-task-ends",
   "pane-crumbs",
-  "pane-brief",
   "chat-gauge",
   "pane-harness",
   "pane-from",
@@ -774,8 +782,9 @@ export function chipsNotChromeTall(css: string, controls: ReadonlySet<string>): 
 
 /** The components the pane's top line draws a chip with, and the chip each draws. */
 const LINE_CHIP_COMPONENTS: Record<string, string> = {
+  SandboxMark: "tab-sandbox",
+  TaskEndAsked: "pane-task-ends",
   PaneCrumbs: "pane-crumbs",
-  BriefButton: "pane-brief",
   ChatGauge: "chat-gauge",
   HarnessChip: "pane-harness",
   SkillsChip: "pane-skills",
@@ -1116,14 +1125,15 @@ export const plantedTall = { minBlockSize: 32 };
       </div>
       <div className="other"><Ignored /></div>
     `;
+    // Brief is no chip of the line since #4760: it is the state button's, in the pane's actions.
     expect(lineChildren(planted)).toEqual({
-      chips: ["pane-crumbs", "pane-brief", "pane-from"],
-      unlisted: ["<span pane-seventh>", "<NewChip>"],
+      chips: ["pane-crumbs", "pane-from"],
+      unlisted: ["<BriefButton>", "<span pane-seventh>", "<NewChip>"],
     });
   });
 
   it("fails a top-line chip with no chrome height, and one held off it", () => {
-    const controls = new Set(["pane-harness", "pane-brief"]);
+    const controls = new Set(["pane-harness", "pane-skills"]);
     expect(
       chipsNotChromeTall(".pane-chips > .chat-gauge { height: var(--size-chrome); }", controls),
     ).toEqual(PANE_LINE_CHIPS.filter((chip) => chip !== "chat-gauge"));
@@ -1133,12 +1143,12 @@ export const plantedTall = { minBlockSize: 32 };
     ]);
     expect(
       cssHeights(
-        ".pane-chips > .pane-harness { height: var(--size-control); } .pane-brief { min-height: var(--size-control); }",
+        ".pane-chips > .pane-harness { height: var(--size-control); } .pane-skills { min-height: var(--size-control); }",
         controls,
       ),
     ).toEqual([
       ".pane-chips > .pane-harness | height: var(--size-control) (a strip)",
-      ".pane-brief | min-height: var(--size-control) (a strip)",
+      ".pane-skills | min-height: var(--size-control) (a strip)",
     ]);
   });
 

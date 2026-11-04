@@ -444,7 +444,17 @@ fn drawn_for(
         // the choice names none (`purlis-light`, #3034).
         Some(Pick::BuiltIn(id)) => {
             let (theme, implied) = shipped_pick(id).unwrap_or((purlis(), None));
-            valued_in(theme, appearance.or(implied), Vec::new())
+            match (appearance, implied) {
+                (None, Some(tag)) => {
+                    let (theme, left_out) = theme.with(&choice.options);
+                    let drawn = appear_tagged(&theme, tag, inputs.system, inputs.contrast);
+                    Drawn {
+                        complaints: [left_out, drawn.complaints.clone()].concat(),
+                        ..drawn
+                    }
+                }
+                _ => valued_in(theme, appearance, Vec::new()),
+            }
         }
         Some(Pick::Extension { id, name }) => {
             let offered = offered();
@@ -499,6 +509,21 @@ fn cannot(why: String, contrast: Contrast) -> Drawn {
     Drawn {
         complaints: vec![Complaint::said(why)],
         ..Drawn::of(default_for(contrast))
+    }
+}
+
+/// `theme` in the appearance tagged `tag` a built-in pick implies (`purlis-light`, #3034): its
+/// first of that tag, and with more `contrast` asked for its appearance of that tag tagged high
+/// contrast, when it has one, as `purlis-dark` draws its high-contrast dark (#4677).
+pub(super) fn appear_tagged(
+    theme: &Theme,
+    tag: Appearance,
+    system: Appearance,
+    contrast: Contrast,
+) -> Drawn {
+    match theme.of_for(tag, contrast) {
+        Some(one) => Drawn::of(one),
+        None => appear(theme, None, system, contrast),
     }
 }
 

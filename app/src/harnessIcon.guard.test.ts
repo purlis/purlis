@@ -114,7 +114,7 @@ describe("a profile's icon", () => {
       "AcceptChange.tsx",
     ])
       expect(ASKING.test(asking), asking).toBe(true);
-    for (const listing of ["settings/profiles.tsx", "TaskAway.tsx", "StartChat.tsx"])
+    for (const listing of ["settings/profiles.tsx", "EndedBand.tsx", "StartChat.tsx"])
       expect(ASKING.test(listing), listing).toBe(false);
   });
 

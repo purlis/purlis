@@ -57,12 +57,6 @@ export function ChatMark({ state, word }: { state: State | undefined; word?: str
 export const WRAPPING_UP =
   "Wrapping up: writing its session record, then it closes. Typing into it, or Cancel smart close on its menu, stops this.";
 
-/** What a tab in the background says, as its tooltip and its name (SI-8f): the chip draws no
- *  name of its own. */
-export function chipSays(name: string): string {
-  return `${name} — wrapping up`;
-}
-
 /**
  * **A chat wrapping up** — being smart-closed (ADR 0064): a mark that breathes, as a queued
  * pipeline's does, because the chat is doing its last turn and will go. `charter-breathe` reads

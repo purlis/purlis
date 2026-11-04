@@ -12,7 +12,7 @@ import { harnessRowsDrawn, pressAndStart, pressOnly, showView } from "../opening
 import { textOfEach } from "../reading.js";
 import { ask } from "../switching.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
-import { focusWorkspace, tabNames } from "../reach.js";
+import { closeTheViewTabsOpenedSince, focusWorkspace, tabNames } from "../reach.js";
 import { workspacesListed } from "../titleBarWorkspaces.js";
 import { runningIn } from "../running.js";
 import { endChatById, paneInFront, startAChat } from "../started.js";
@@ -134,19 +134,33 @@ describe("the explorer", () => {
   // and are ended again through the window, each by its number, in whichever workspace it is:
   // one app process serves the whole run, and a spec file leaves no chat running (#1796,
   // `chatsLeft.ts`).
-  let wereOpen: Running = {};
+  let wereRunning: Running = {};
+  /** The tabs on alpha's strip before this spec, where its file tabs open: `after` closes the
+   *  ones it opened (#5111). `null` when the `before` never read them. */
+  let alphaHad: string[] | null = null;
   // The left side opens on Chats (#1673): these are about the Explorer view's rows.
   before(async () => {
-    wereOpen = await chatsRunning();
+    wereRunning = await chatsRunning();
+    await focus("alpha");
+    alphaHad = await tabNames();
     await showView("Explorer");
   });
   after(async () => {
     // Step by step, each on its own: a chat that would not end still leaves the view put back.
     let trouble: unknown;
     try {
-      await endTheChatsStartedSince(wereOpen);
+      await endTheChatsStartedSince(wereRunning);
     } catch (error) {
       trouble = error;
+    }
+    // The file tabs it opened on alpha's strip, each by its own ×, once its chats are ended.
+    try {
+      if (alphaHad !== null) {
+        await focus("alpha");
+        await closeTheViewTabsOpenedSince(alphaHad);
+      }
+    } catch (error) {
+      trouble ??= error;
     }
     try {
       await showView("Chats");

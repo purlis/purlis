@@ -3,16 +3,17 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, waitFor, within } from "@testing-library/react";
+import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
 
 /**
- * A terminal `$VISUAL`/`$EDITOR` opens in a shell tab of its own (#1042). The core starts it
- * and says so on `editor-tab-opened`; the window draws the tab **in front**, since the person
- * pressed Open in your editor for it.
+ * A terminal `$VISUAL`/`$EDITOR` opens in a shell of its own (#1042). The core starts it and
+ * says so on `editor-tab-opened`; the window draws it **beside the focused pane, in the same
+ * tab** (#4761, a one-job program: `OneJob.window.test.tsx`), since the person pressed Open in
+ * your editor for it.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -97,15 +98,21 @@ describe("a terminal editor's tab (#1042)", () => {
     clearMocks();
   });
 
-  it("is drawn in front, named for the editor and the file", async () => {
+  it("is drawn beside the focused pane, in the tab in front, and adds no tab", async () => {
     const { open } = core([chat(1)]);
     render(<App />);
     await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
 
     open({ plane: "/home/dev/plane", session: 2, name: "vim lib.rs", workspace: "ide" });
 
-    await waitFor(() => expect(tabNames()).toEqual(["ide.1", "vim lib.rs"]));
-    expect(selected()).toEqual(["vim lib.rs"]);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("pane").map((pane) => pane.textContent)).toEqual([
+        "session 1",
+        "session 2",
+      ]),
+    );
+    expect(tabNames()).toEqual(["ide.1"]);
+    expect(selected()).toEqual(["ide.1"]);
   });
 
   it("is not drawn for another project", async () => {

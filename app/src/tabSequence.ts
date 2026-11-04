@@ -69,12 +69,17 @@ export function sequenceIn(scope: ParentNode): HTMLElement[] {
  * will not take — hidden, or inside something closed — refuses `focus()` and the next one is
  * tried, which is how a sequence read from attributes stays honest about what is drawn.
  *
+ * @param passes A stop this move goes past, as Tab would not.
  * @returns Whether the keyboard moved. At either end of the window it stays where it was.
  */
-export function moveAlong(from: Element, backwards: boolean): boolean {
+export function moveAlong(
+  from: Element,
+  backwards: boolean,
+  passes: (el: HTMLElement) => boolean = () => false,
+): boolean {
   const side = backwards ? Node.DOCUMENT_POSITION_PRECEDING : Node.DOCUMENT_POSITION_FOLLOWING;
   const beyond = sequenceIn(from.ownerDocument).filter(
-    (el) => !from.contains(el) && from.compareDocumentPosition(el) & side,
+    (el) => !from.contains(el) && from.compareDocumentPosition(el) & side && !passes(el),
   );
   if (backwards) beyond.reverse();
   const was = from.ownerDocument.activeElement;

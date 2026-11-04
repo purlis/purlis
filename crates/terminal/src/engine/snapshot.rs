@@ -44,8 +44,10 @@ use alacritty_terminal::vte::ansi::{Color, CursorShape, NamedColor};
 use super::pane_rules::Beside;
 
 /// `beside` is what the engine keeps beside `term`: the scroll region, and where restoring the
-/// cursor puts it.
-pub(super) fn snapshot<T>(term: &Term<T>, beside: &Beside) -> Vec<u8> {
+/// cursor puts it. `history` is the most lines of history it draws above the screen, the
+/// newest, or `None` for all of it: a line wrapped onto from one left out above starts the
+/// history it draws.
+pub(super) fn snapshot<T>(term: &Term<T>, beside: &Beside, history: Option<usize>) -> Vec<u8> {
     let grid = term.grid();
     let mode = *term.mode();
     let mut out = Out::default();
@@ -64,6 +66,9 @@ pub(super) fn snapshot<T>(term: &Term<T>, beside: &Beside) -> Vec<u8> {
 
     let columns = grid.columns();
     let (top, bottom) = (grid.topmost_line().0, grid.bottommost_line().0);
+    let top = history.map_or(top, |most| {
+        top.max(-i32::try_from(most).unwrap_or(i32::MAX))
+    });
     let mut continues = false;
     for line in top..=bottom {
         let row = &grid[Line(line)];

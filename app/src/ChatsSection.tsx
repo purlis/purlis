@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { CHAT_ROW } from "./paneDrag";
 import {
   memo,
   useCallback,
@@ -92,6 +93,8 @@ import { deletes } from "./tabKeys";
 import { askSettingsLink } from "./settings/links";
 import { DISPATCH } from "./settings/dispatch";
 import { Button, IconButton } from "./ui/button/Button";
+import { SandboxMark, type SandboxSaid } from "./SandboxMark";
+import { WrappingUp } from "./NeedsYou";
 import { TextField } from "./ui/field/Field";
 import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
@@ -278,6 +281,8 @@ export function ChatsSection({
   here,
   tab,
   front,
+  wrapping,
+  sandboxOf,
   besides,
   onOpen,
   offers = NO_OFFERS,
@@ -323,6 +328,10 @@ export function ChatsSection({
   onPress?: (offer: Offer) => void;
   /** The chats being stopped, whose rows say so. */
   stopping?: ReadonlySet<number>;
+  /** The chats wrapping up, being smart-closed (ADR 0064): each row breathes (#4760). */
+  wrapping?: ReadonlySet<number>;
+  /** How much each chat's sandbox holds (#2071), which its row says (#4760). */
+  sandboxOf?: (session: number) => SandboxSaid | null;
   /** What a restart asked for from a row says, by chat: why it was refused, or why it waits
    *  (#1462). Said on the row of a chat with no tab, which has no pane to say it on. */
   restarts?: Readonly<Record<number, string>>;
@@ -1160,6 +1169,8 @@ export function ChatsSection({
                           : (byNumber.get(lead)?.name ?? null)
                       }
                       stopping={stopping?.has(row.session) ?? false}
+                      wrapping={wrapping?.has(row.session) ?? false}
+                      sandbox={sandboxOf?.(row.session) ?? null}
                       restartSaid={row.tab ? null : (restarts[row.session] ?? null)}
                       asks={second?.session === row.session ? second.says : null}
                       answer={second?.session === row.session ? second.answer : null}
@@ -1378,6 +1389,8 @@ const Row = memo(function Row({
   askingUnder,
   needsName,
   stopping,
+  wrapping,
+  sandbox,
   restartSaid,
   asks,
   answer,
@@ -1438,6 +1451,10 @@ const Row = memo(function Row({
   /** That chat's name, when it is a chat below this one. */
   needsName: string | null;
   stopping: boolean;
+  /** Being smart-closed (ADR 0064): the breathing mark, where its tab's chip was (#4760). */
+  wrapping: boolean;
+  /** Its sandbox, moved from its tab to its row and its pane head (#4760). */
+  sandbox: SandboxSaid | null;
   /** What its restart says, where it has no pane to say it on (#1462). */
   restartSaid: string | null;
   /** The second step of ending this task, while it is asked here: what is asked, and the
@@ -1595,6 +1612,8 @@ const Row = memo(function Row({
             data-tab={tab}
             // The chat's number, as a pane carries it: what a reveal finds the row by (#1490).
             data-session={session}
+            // Dragged onto a pane or the strip, it lands there (#4763); a press stays a press.
+            {...{ [CHAT_ROW]: String(session) }}
             onClick={() => {
               // A press focuses the row too: that is no rest of the keyboard.
               away();
@@ -1661,6 +1680,10 @@ const Row = memo(function Row({
                 </>
               )}
               {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
+              {/* **Wrapping up, and its sandbox** (#4760): the row says what the strip's chip
+                  and the tab said before; Cancel smart close is first in its list. */}
+              <WrappingUp held={wrapping} />
+              <SandboxMark level={sandbox?.level} why={sandbox?.why} sites={sandbox?.sites} />
               <QuestionOrTime clock={clock} session={session} />
             </span>
           </button>

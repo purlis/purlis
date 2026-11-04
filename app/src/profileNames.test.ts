@@ -7,8 +7,11 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { useProfileNames } from "./profileNames";
 
 /**
- * **The project's profiles, for the palette's rows to their pages** (#1201): read when the
- * palette opens, never on a render of its own, and named as the Settings pages name them.
+ * **The projects' profiles, for the palette's rows to their pages** (#1201): read for a project
+ * when the palette opens over it, never on a render of its own, and named as the Settings pages
+ * name them. **Held by the window, a list per project, the same list while the names are**
+ * (#4351): the palette opening or closing changes nothing a project's view is drawn from, and a
+ * project with no profiles is given no list at all.
  */
 
 afterEach(() => {
@@ -28,8 +31,8 @@ const entry = (collection: string, label: string, name?: string) => ({
 
 function core(entries: unknown[], parsed = true) {
   const asked: string[] = [];
-  mockIPC((cmd) => {
-    asked.push(cmd);
+  mockIPC((cmd, args) => {
+    asked.push(`${cmd} ${String((args as { plane?: string } | undefined)?.plane)}`);
     if (cmd === "project_settings")
       return {
         shared: { which: "shared", parsed: true, entries: [] },
@@ -40,57 +43,82 @@ function core(entries: unknown[], parsed = true) {
   return asked;
 }
 
-describe("the project's profile names", () => {
-  it("reads nothing until the palette opens, then names each profile the Local file lists", async () => {
+describe("the projects' profile names", () => {
+  it("reads nothing until asked, then names each profile the Local file lists", async () => {
     const asked = core([
       entry("profiles", "claude", "claude"),
       entry("myHosts", "api.example.com"),
       entry("profiles", "codex fast", "fast"),
     ]);
-    const { result, rerender } = renderHook(({ open }) => useProfileNames(PLANE, open), {
-      initialProps: { open: false },
-    });
-    expect(result.current).toBeUndefined();
-    expect(asked).not.toContain("project_settings");
+    const { result } = renderHook(() => useProfileNames());
+    expect(result.current.of[PLANE]).toBeUndefined();
+    expect(asked).toEqual([]);
 
-    rerender({ open: true });
+    act(() => result.current.read(PLANE));
 
-    await waitFor(() => expect(result.current).toEqual(["claude", "fast"]));
+    await waitFor(() => expect(result.current.of[PLANE]).toEqual(["claude", "fast"]));
+    expect(asked).toEqual([`project_settings ${PLANE}`]);
   });
 
-  it("reads again each time the palette opens, and not while it stays open", async () => {
+  it("keeps the very lists when a read finds the same names", async () => {
     const asked = core([entry("profiles", "claude", "claude")]);
-    const { result, rerender } = renderHook(({ open }) => useProfileNames(PLANE, open), {
-      initialProps: { open: true },
-    });
-    await waitFor(() => expect(result.current).toEqual(["claude"]));
-    rerender({ open: true });
-    rerender({ open: false });
-    rerender({ open: true });
+    const { result } = renderHook(() => useProfileNames());
+    act(() => result.current.read(PLANE));
+    await waitFor(() => expect(result.current.of[PLANE]).toEqual(["claude"]));
+    const first = result.current.of;
 
-    await waitFor(() => expect(asked.filter((one) => one === "project_settings")).toHaveLength(2));
-  });
-
-  it("keeps the very list when an opening reads the same names again", async () => {
-    const asked = core([entry("profiles", "claude", "claude")]);
-    const { result, rerender } = renderHook(({ open }) => useProfileNames(PLANE, open), {
-      initialProps: { open: true },
-    });
-    await waitFor(() => expect(result.current).toEqual(["claude"]));
-    const first = result.current;
-    rerender({ open: false });
-    rerender({ open: true });
-    await waitFor(() => expect(asked.filter((one) => one === "project_settings")).toHaveLength(2));
-    // The second read has answered once the core has been asked: let its answer land.
+    act(() => result.current.read(PLANE));
+    await waitFor(() => expect(asked).toHaveLength(2));
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
-    expect(result.current).toBe(first);
+    expect(result.current.of).toBe(first);
+  });
+
+  it("gives a project with no profiles no list, so reading it changes nothing", async () => {
+    const asked = core([entry("myHosts", "api.example.com")]);
+    const { result } = renderHook(() => useProfileNames());
+    const before = result.current.of;
+
+    act(() => result.current.read(PLANE));
+    await waitFor(() => expect(asked).toHaveLength(1));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(result.current.of).toBe(before);
+    expect(result.current.of[PLANE]).toBeUndefined();
+  });
+
+  it("keeps the newest read's names when an older read answers after it", async () => {
+    const lands: ((entries: unknown[]) => void)[] = [];
+    mockIPC((cmd) => {
+      if (cmd !== "project_settings") return null;
+      return new Promise((land) => {
+        lands.push((entries) =>
+          land({
+            shared: { which: "shared", parsed: true, entries: [] },
+            local: { which: "local", parsed: true, entries },
+          }),
+        );
+      });
+    });
+    const { result } = renderHook(() => useProfileNames());
+    act(() => result.current.read(PLANE));
+    act(() => result.current.read(PLANE));
+    await waitFor(() => expect(lands).toHaveLength(2));
+
+    await act(async () => lands[1]([entry("profiles", "fast", "fast")]));
+    await act(async () => lands[0]([entry("profiles", "claude", "claude")]));
+
+    expect(result.current.of[PLANE]).toEqual(["fast"]);
   });
 
   it("names none from a file the core could not parse", async () => {
-    core([entry("profiles", "claude", "claude")], false);
-    const { result } = renderHook(() => useProfileNames(PLANE, true));
+    const asked = core([entry("profiles", "claude", "claude")], false);
+    const { result } = renderHook(() => useProfileNames());
 
-    await waitFor(() => expect(result.current).toEqual([]));
+    act(() => result.current.read(PLANE));
+    await waitFor(() => expect(asked).toHaveLength(1));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(result.current.of[PLANE]).toBeUndefined();
   });
 });

@@ -72,29 +72,22 @@ const STOP = "stop";
  * `App.test.tsx` and not in `palette.e2e.ts`. Two findings, one true of the product and one true
  * only of the test rig; keeping them apart is the whole point of writing them down.
  */
-/** The one line a close says of the tasks among what it closes. */
-export const BACK_SAYS = (back: readonly string[]) =>
-  back.length === 1
-    ? `${back[0]} is a task: its tab goes, it is not ended, and it stays in the Chats list.`
-    : `${back.join(", ")} are tasks: their tabs go, they are not ended, and they stay in the Chats list.`;
-
 export function EndingChat({
   offer,
   smart,
   running = [],
   closing = [],
-  keeps = false,
-  shows,
-  back = [],
   ownTabs = 0,
   drafts = [],
   fromALink = false,
+  shell = false,
   onEnd,
   onSmartClose,
   onCancel,
 }: {
-  /** The catalogue row waiting on an answer — `tab.close:<id>` or `pane.close`. Its title is
-   *  what the dialog is about, so there is no second wording of what is being ended. */
+  /** The catalogue row waiting on an answer: a chat's End… (`chat.end:<n>`, #4753), the one
+   *  row that ends a chat (#4756). Its title is what the dialog is about, so there is no second
+   *  wording of what is being ended. */
   offer: Offer;
   /** Whether the chat is offered **Smart close** (ADR 0064), as the core answered — or none,
    *  when charter could not say, which offers Close only. */
@@ -107,15 +100,6 @@ export function EndingChat({
   running?: readonly string[];
   /** Its persona chats that have reported and close with it, by name. */
   closing?: readonly string[];
-  /** For a close of several chats at once, which asks nothing about them: whether any has
-   *  chats at work below it. They keep running, and the dialog says so. */
-  keeps?: boolean;
-  /** The task the tab shows in place of its session's own chat, where it shows one (#1486):
-   *  the dialog says the close is the session's, since the task is what is on screen. */
-  shows?: { task: string; session: string };
-  /** The tasks among what is being closed, by name (#1488): a close ends no task. Their tabs
-   *  go, they go back to the Chats list, and the dialog says so in one line. */
-  back?: readonly string[];
   /** How many tasks below the closing session have a tab of their own (#1489): the dialog
    *  says so, since those tabs go with the answer about the tasks. */
   ownTabs?: number;
@@ -125,6 +109,9 @@ export function EndingChat({
   /** Whether a link asked for this close (#2761): the dialog says so, and closes nothing until
    *  it is answered here. */
   fromALink?: boolean;
+  /** **A shell's End…** (#4761, ADR 0062 as amended 2026-11-02): it runs no harness, so it has
+   *  no record to write and no chats it asked for, and the dialog asks only Cancel or End. */
+  shell?: boolean;
   /** `stop` is the answer about the running persona chats: stop them, or keep them running.
    *  `keepDrafts` is the answer about its theme drafts, where it has any. */
   onEnd: (stop: boolean, keepDrafts?: boolean) => void;
@@ -143,6 +130,24 @@ export function EndingChat({
   // A close a link asked for starts on Cancel: a Return the person meant for something else
   // never ends a chat they did not ask to close here.
   const first = fromALink ? "cancel" : firstAnswer(smart);
+  if (shell)
+    return (
+      <AlertDialog
+        onClose={onCancel}
+        title={`${offer.title}?`}
+        description={<p className="honest mid-turn">{ENDS_IT}</p>}
+        initialFocus="cancel"
+        cancel={{ ref: cancel }}
+        main={{
+          children: "End",
+          variant: "danger",
+          ref: close,
+          onPress: () => onEnd(false),
+        }}
+      >
+        {fromALink && <p className="honest">{FROM_A_LINK_SAYS}</p>}
+      </AlertDialog>
+    );
   return (
     <AlertDialog
       onClose={onCancel}
@@ -186,21 +191,10 @@ export function EndingChat({
           {smart.why}
         </p>
       )}
-      {/* The tab shows a task: what ends is the session, not what is on screen. */}
-      {shows !== undefined && (
-        <p className="honest">
-          This tab is showing {shows.task}, a task of {shows.session}. Closing the tab ends{" "}
-          {shows.session}, not {shows.task}.
-        </p>
-      )}
-      {/* Tasks among them are not ended by a close: said, so the count is not a surprise. And
-          its tasks in tabs of their own: no tab of theirs outlives the session's (#1489). One
-          line for both: they are the same thing, a task whose tab goes. */}
-      {(back.length > 0 || ownTabs > 0) && <p className="honest">{TASK_TABS_SAY(back, ownTabs)}</p>}
+      {/* Its tasks in tabs of their own: no tab of theirs outlives the session's (#1489). */}
+      {ownTabs > 0 && <p className="honest">{OWN_TABS_SAYS(ownTabs)}</p>}
       {/* What else this close closes, said before it is answered. */}
       {closing.length > 0 && <p className="honest">{CLOSING_SAYS(closing)}</p>}
-      {/* Several chats at once: nothing is asked about what each started, so it is said. */}
-      {keeps && <p className="honest">{KEEPS_SAYS}</p>}
       {/* **Asked once, here, with both answers** (`RUNNING_SAYS`): the chats this one asked for
           are not ended by its close unless the person says so. */}
       {running.length > 0 && (
@@ -285,12 +279,6 @@ export const REVERT_DRAFTS_SAYS = "Each is deleted, and the theme as it was kept
 
 export const CHOOSE_DRAFTS = "Choose Keep or Revert for the theme drafts first.";
 
-export function TASK_TABS_SAY(back: readonly string[], ownTabs: number): string {
-  return [back.length > 0 ? BACK_SAYS(back) : "", ownTabs > 0 ? OWN_TABS_SAYS(ownTabs) : ""]
-    .filter((said) => said !== "")
-    .join(" ");
-}
-
 /**
  * What a close says of the closing session's tasks that have a tab of their own (#1489,
  * V100-39): how many, and that their tabs go either way. A task kept running is in the Chats
@@ -302,8 +290,8 @@ export function OWN_TABS_SAYS(count: number): string {
       ? "1 of its tasks has a tab of its own"
       : `${count} of its tasks have tabs of their own`;
   const those = count === 1 ? "That tab closes" : "Those tabs close";
-  const kept = count === 1 ? "a task that goes on working" : "tasks that go on working";
-  return `${tasks}. ${those} with this one: ${kept} stay in the Chats list.`;
+  const kept = count === 1 ? "a task that goes on working stays" : "tasks that go on working stay";
+  return `${tasks}. ${those} with this one: ${kept} in the Chats list.`;
 }
 
 /** What the dialog asks about the chats at work below a closing chat. */
@@ -326,10 +314,6 @@ export function CLOSING_SAYS(closing: readonly string[]): string {
     closing.length === 1 ? "1 reported task closes" : `${closing.length} reported tasks close`;
   return `${count} with it, each once its session record is written: ${closing.join(", ")}.`;
 }
-
-/** What a close of several chats says where any has chats at work below it. */
-export const KEEPS_SAYS =
-  "The chats these chats started keep running. Close one chat at a time to be asked about them.";
 
 /** What **Smart close** does, said beside Close's cost when it is offered. */
 export const SMART_CLOSE_SAYS =

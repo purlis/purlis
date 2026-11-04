@@ -38,6 +38,14 @@ name: stories-baselines
 # to approve them, so the rest of the pull request's checks run once approved, or on its next push
 # (or `gh pr update-branch`). `node tools/story-baselines-pull.mjs <pull request>` takes the same
 # artifact into a checkout instead, for a push of the person's own, which starts every check.
+#
+# **Main missing baselines.** Two pull requests can merge close together: one adds a story, the
+# other adds an appearance. Then main has no picture of the new story in the new appearance, and
+# every pull request's `stories` check fails on it. A push to main draws nothing. Open a pull
+# request off main that touches something in the stories' scope, label it `update-baselines`
+# and `fixes-main`, and land it (#4880 with #4969 and #5003, 2026-11-03; again with #4957's
+# EndedBand stories the same day). The same goes for two pull requests that each change what one
+# story draws, such as a key added to the shortcuts list (#5045 with #5090, 2026-11-04).
 
 on:
   pull_request:
