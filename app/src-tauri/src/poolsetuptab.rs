@@ -485,12 +485,7 @@ pub async fn pool_setup_try(
     #[cfg(unix)]
     {
         crate::off_the_window("trying the pool", move || {
-            purlis_core::runners::usable_pool_name(&pool)?;
-            let config = config_root()?;
-            let Some(trying) = Trying::on(&pool) else {
-                return Err(format!("Try it is already under way on {pool}."));
-            };
-            try_on(&held, &config, &pool, workspace.as_deref(), &trying)
+            try_it(&held, &config_root()?, &pool, workspace.as_deref())
         })
         .await
     }
@@ -499,6 +494,23 @@ pub async fn pool_setup_try(
         let _ = (held, pool, workspace);
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
+}
+
+/// [`pool_setup_try`]'s work, off the window: Try it on pool `pool` of the project `held`, with
+/// this machine's config home `config`. What the parity suite drives on a real Docker pool
+/// (`behaviour::pool_setup_try`, #4977).
+#[cfg(unix)]
+pub(crate) fn try_it(
+    held: &std::sync::Arc<crate::planes::Held>,
+    config: &std::path::Path,
+    pool: &str,
+    workspace: Option<&str>,
+) -> Result<PoolSetupTried, String> {
+    purlis_core::runners::usable_pool_name(pool)?;
+    let Some(trying) = Trying::on(pool) else {
+        return Err(format!("Try it is already under way on {pool}."));
+    };
+    try_on(held, config, pool, workspace, &trying)
 }
 
 /// **Cancels the Try it under way on pool `pool`** (#4976), on the person's press, as Cancel on
@@ -727,7 +739,7 @@ fn said_as_time(wait: std::time::Duration) -> String {
 /// that exits reports no end of its own), or `within` passed; or that the person cancelled
 /// (`cancelled`, asked each look, #4976).
 #[cfg(unix)]
-pub(crate) fn waited_for_its_start(
+fn waited_for_its_start(
     heard: &std::sync::mpsc::Receiver<crate::skillrun::Watched>,
     pool: &str,
     within: std::time::Duration,
@@ -764,7 +776,7 @@ pub(crate) fn waited_for_its_start(
     }
 }
 
-/// [`pool_setup_try`]'s work, off the window.
+/// [`try_it`]'s work, with the pool held for it.
 #[cfg(unix)]
 fn try_on(
     held: &std::sync::Arc<crate::planes::Held>,
