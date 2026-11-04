@@ -1676,6 +1676,12 @@ export const PlaneView = memo(function PlaneView({
   /** **Every window of the project** (#4768): its project window (`0`) and each tab window, as
    *  the record and the core's last move said. What Move to window ▸ lists, less this one. */
   const [windowsHere, setWindowsHere] = useState<readonly number[]>([0]);
+  /** **Whether the project has this one window** (#4768, #5108): neither a tab window nor a
+   *  project window with tab windows. Its press goes to its focused pane, asking nothing. */
+  const oneWindow = useCallback(
+    () => tabWindow === undefined && !otherWindows.current,
+    [tabWindow],
+  );
   const windowsOf = useCallback((laid: LaidOut) => {
     const each = [...new Set([0, ...laid.tabs.map((one) => one.window)])].sort((a, b) => a - b);
     otherWindows.current = each.length > 1;
@@ -4260,10 +4266,11 @@ export const PlaneView = memo(function PlaneView({
     (session: number, into?: PaneAt) => {
       stoppedFor(session, undefined);
       const here = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
-      // **A chat in a pane of another of the project's windows** (#4768): that window comes
-      // forward and shows it, and this window changes nothing. Asked only while the project
-      // has another window, so a project of one window presses at once.
-      if (into !== undefined || (tabWindow === undefined && !otherWindows.current)) {
+      // **A chat in a pane of another of the project's windows** (#4768), **or a chat in no
+      // pane where another window's pane was used last** (#5108): that window comes forward
+      // and shows it, and this window changes nothing. Asked only while the project has another
+      // window, so a project of one window presses at once.
+      if (into !== undefined || oneWindow()) {
         here();
         return;
       }
@@ -4274,8 +4281,30 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch(here);
     },
-    [landOn, plane, pressedOf, pressing, stoppedFor, tabWindow],
+    [landOn, oneWindow, plane, pressedOf, pressing, stoppedFor],
   );
+  /** **A pane of this window was used** (#5108): pressed in, or typed in. Said to the core while
+   *  the project has another window, so a press on a chat in no pane, in whichever window, goes
+   *  to the most recently used pane across them (`press_elsewhere`). A project of one window
+   *  says nothing: its press goes to its focused pane, as it always has. A pane's focus is no
+   *  use of it: the window coming forward hands focus back to the pane that last had it, so a
+   *  press on a sidebar row would always be this window's. **Said once until the window has been
+   *  away**: no other window's pane can be used while this one keeps the focus. */
+  const paneSaidUsed = useRef(false);
+  useEffect(() => {
+    const away = () => {
+      paneSaidUsed.current = false;
+    };
+    window.addEventListener("blur", away);
+    return () => window.removeEventListener("blur", away);
+  }, []);
+  const paneUsed = useCallback(() => {
+    if (oneWindow() || paneSaidUsed.current) return;
+    paneSaidUsed.current = true;
+    void commands.paneUsed(plane).catch(() => {
+      paneSaidUsed.current = false;
+    });
+  }, [oneWindow, plane]);
   useEffect(() => {
     showChatHere.current = (session) =>
       landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
@@ -10771,6 +10800,8 @@ export const PlaneView = memo(function PlaneView({
                       className="panes"
                       {...panelRoot("content")}
                       {...tabPanelOf(panelNamedBy)}
+                      onPointerDownCapture={paneUsed}
+                      onKeyDownCapture={paneUsed}
                     >
                       {frontTab ? (
                         <TaskEndContext.Provider value={taskEndHand}>

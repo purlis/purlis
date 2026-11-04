@@ -64,6 +64,7 @@ macro_rules! app_commands {
                 windows::charter_windows,
                 windows::show_window_holding,
                 tabwindows::move_to_window,
+                tabwindows::pane_used,
                 tabwindows::press_elsewhere,
                 tabwindows::tab_window_handed,
                 tabwindows::tab_windows_back,
