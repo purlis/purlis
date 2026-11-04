@@ -190,6 +190,18 @@ describe("a long message folds", () => {
     expect(screen.getByRole("button", { name: "Show less" })).toHaveFocus();
   });
 
+  it("keeps a folded message's links out of the Tab order until it is opened", async () => {
+    const withLink = `${long}\n[the run](https://ci.example/1)`;
+    render(<ChatText text={withLink} />);
+    const link = screen.getByRole("link", { name: "the run" });
+    expect(link).toHaveAttribute("tabindex", "-1");
+
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: /^Show all/ })).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    expect(link).toHaveAttribute("tabindex", "0");
+  });
+
   it("never folds where the caller says it is drawn whole", () => {
     render(<ChatText text={long} fold={false} />);
 

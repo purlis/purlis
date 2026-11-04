@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  createContext,
+  useContext,
   useId,
   useLayoutEffect,
   useRef,
@@ -78,9 +80,11 @@ export function ChatText({
         className="chat-text-body"
         data-folded={folds ? String(!open) : undefined}
       >
-        <Markdown skipHtml remarkPlugins={REMARK} components={COMPONENTS}>
-          {text}
-        </Markdown>
+        <Folded.Provider value={folds && !open}>
+          <Markdown skipHtml remarkPlugins={REMARK} components={COMPONENTS}>
+            {text}
+          </Markdown>
+        </Folded.Provider>
       </div>
       {folds &&
         foldStop(
@@ -172,6 +176,30 @@ function saysItsAddress(children: ReactNode, href: string): boolean {
   return typeof children === "string" && (children === href || href.endsWith(`//${children}`));
 }
 
+/** Whether the words are folded: a link in them is then out of the Tab order, since it may be
+ *  cut out of sight, until Show all opens them. It is still pressed, and read by a screen
+ *  reader, which has the whole text. */
+const Folded = createContext(false);
+
+/** A link: where it goes beside its words, and opened only on a press. */
+function Link({ href, children }: { href?: string; children?: ReactNode }) {
+  const folded = useContext(Folded);
+  const host = hostOf(href);
+  return (
+    <>
+      <ExternalLink href={host === undefined ? undefined : href} reachable={!folded}>
+        {children}
+      </ExternalLink>
+      {host !== undefined && href !== undefined && !saysItsAddress(children, href) && (
+        <>
+          {" "}
+          <span className="chat-text-host">({host})</span>
+        </>
+      )}
+    </>
+  );
+}
+
 const COMPONENTS: Components = {
   h1: heading,
   h2: heading,
@@ -181,18 +209,5 @@ const COMPONENTS: Components = {
   h6: heading,
   // **No picture is ever loaded** (#5214): its alt text stands in its place.
   img: ({ alt }) => <span className="chat-text-picture">{alt || "Picture not shown"}</span>,
-  a: ({ href, children }) => {
-    const host = hostOf(href);
-    return (
-      <>
-        <ExternalLink href={host === undefined ? undefined : href}>{children}</ExternalLink>
-        {host !== undefined && href !== undefined && !saysItsAddress(children, href) && (
-          <>
-            {" "}
-            <span className="chat-text-host">({host})</span>
-          </>
-        )}
-      </>
-    );
-  },
+  a: ({ href, children }) => <Link href={href}>{children}</Link>,
 };
