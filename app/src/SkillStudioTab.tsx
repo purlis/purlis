@@ -318,14 +318,6 @@ export function SkillStudioTab({
   /** Narrow or wide whatever the width: for a story or a test. Measured when left out. */
   narrow?: boolean;
 }) {
-  {
-    // [DEBUG-4351] each render of the studio on the opening's timeline.
-    const probe = globalThis as { __tl4351?: string[]; __t04351?: number }; // [DEBUG-4351]
-    probe.__tl4351?.push(
-      // eslint-disable-next-line react-hooks/purity -- [DEBUG-4351] a probe's clock, never merged
-      `${(performance.now() - (probe.__t04351 ?? 0)).toFixed(0)} render SkillStudioTab`,
-    ); // [DEBUG-4351]
-  }
   const view = { ...SKILL_STUDIO_VIEW, key: tab };
   const historyId = studioHistoryOf(plane, view);
   const walked = useViewHistory<StudioPlace>(historyId, STUDIO_START);
