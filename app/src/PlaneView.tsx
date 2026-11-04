@@ -8800,8 +8800,12 @@ export const PlaneView = memo(function PlaneView({
   }, [clones, picking, startIn]);
 
   /** The plane's personas, straight off the store — the array, not a copy of it, so the
-   *  catalogue is rebuilt when the personas move and not per render. */
-  const personas = workspaceState.panels?.personas;
+   *  catalogue is rebuilt when the personas move and not per render. **With no workspace
+   *  focused, the sidebar's**: the strip outside every workspace reads no workspace's panels,
+   *  and the Personas view still lists the plane's personas there (#1686), whose rows open
+   *  nothing without their catalogue rows (#4758, where a strip's kept empty tab puts that
+   *  strip in front far more often). */
+  const personas = workspaceState.panels?.personas ?? sidebar?.personas;
   /** The project's memory stores, for a memory's Move rows (#1190): read again when a memory is
    *  written, or a workspace or a persona comes or goes. */
   const memoryStores = useMemoryStores(

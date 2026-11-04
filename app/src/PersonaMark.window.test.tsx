@@ -71,6 +71,23 @@ const row = (name: string) => ({
   actions: [],
 });
 
+/** charter's own Personas panel, listing `devops` and `qa`. */
+const personasPanel = () => ({
+  key: "charter/personas",
+  title: "Personas",
+  order: 20,
+  mark: "persona",
+  from: null,
+  about: "personas",
+  blocks: [
+    {
+      kind: "list",
+      rows: [row("devops"), row("qa")],
+      empty: { headline: "No personas on this plane", body: null, offer: null },
+    },
+  ],
+});
+
 const mark = (name: string, more: Partial<Mark> = {}): Mark => ({
   name,
   icon: null,
@@ -84,7 +101,11 @@ type Asked = { cmd: string; args: Record<string, unknown> };
 
 /** The core. `marks` is what `persona_marks` answers now; a pick writes into it, as the
  *  definition on disk would be written. */
-function core(marks: Mark[], chats = [chat(1, "devops"), chat(2, null)]) {
+function core(
+  marks: Mark[],
+  chats = [chat(1, "devops"), chat(2, null)],
+  filedIn: (session: number) => string | null = () => "alpha",
+) {
   const asked: Asked[] = [];
   mockIPC((cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
@@ -110,11 +131,19 @@ function core(marks: Mark[], chats = [chat(1, "devops"), chat(2, null)]) {
       return {
         root: PLANE,
         workspaces: [
-          { name: "alpha", path: ALPHA, vision: "", todos: [], chats, colour: null, live: false },
+          {
+            name: "alpha",
+            path: ALPHA,
+            vision: "",
+            todos: [],
+            chats: chats.filter((one) => filedIn(one.session) === "alpha"),
+            colour: null,
+            live: false,
+          },
         ],
         personas: ["devops", "qa"],
         persona: "devops",
-        unfiled: [],
+        unfiled: chats.filter((one) => filedIn(one.session) === null),
       };
     if (cmd === "persona_marks") return marks;
     if (cmd === "persona_mark_set") {
@@ -127,7 +156,10 @@ function core(marks: Mark[], chats = [chat(1, "devops"), chat(2, null)]) {
     }
     if (cmd === "opened_chats") return chats;
     // Each chat has a tab on alpha's strip only from the stored layout (#4758).
-    if (cmd === "reopened_layout") return aTabForEachChat(chats, () => "alpha");
+    if (cmd === "reopened_layout") return aTabForEachChat(chats, filedIn);
+    // The plane root's own panels: the Personas view draws its rows from here when no workspace
+    // is focused (#1686).
+    if (cmd === "plane_root_panels") return { sessions: [], contributed: [personasPanel()] };
     if (cmd === "reopened_views") return [];
     if (cmd === "chat_states")
       return [
@@ -168,23 +200,7 @@ function core(marks: Mark[], chats = [chat(1, "devops"), chat(2, null)]) {
         personas: ["devops", "qa"],
         persona: "devops",
         sessions: [],
-        contributed: [
-          {
-            key: "charter/personas",
-            title: "Personas",
-            order: 20,
-            mark: "persona",
-            from: null,
-            about: "personas",
-            blocks: [
-              {
-                kind: "list",
-                rows: [row("devops"), row("qa")],
-                empty: { headline: "No personas on this plane", body: null, offer: null },
-              },
-            ],
-          },
-        ],
+        contributed: [personasPanel()],
       };
     if (cmd === "workspace_repos") return { workspace: "alpha", repos: [], cache_refused: null };
     if (cmd === "open_view")
@@ -388,5 +404,43 @@ describe("the persona's view lets the person pick", () => {
     expect(tab.querySelector(".persona-mark canvas")).not.toBeNull();
     const panel = await showThePanel("Personas");
     expect(marksIn(panel, "devops")[0]).toMatchObject({ mark: "image", icon: undefined });
+  });
+});
+
+describe("a persona's own view, opened from the Personas panel", () => {
+  it("opens in front from a strip that holds only its empty tab (#4758)", async () => {
+    // No chat on the plane: the strip keeps one empty tab, and nothing else (#4758).
+    core(DECLARED, []);
+    render(<App />);
+    await within(await findStripNamed("Tabs")).findByRole("tab", { name: /New chat/ });
+    const panel = await showThePanel("Personas");
+
+    // As the scenario specs press a row (`e2e/acting.ts`): the row's own click, with no pointer.
+    within(panel)
+      .getByRole("row", { name: /devops/ })
+      .click();
+
+    await screen.findByText("It remembers 0 things.");
+    const tab = within(strip()).getByRole("tab", { selected: true });
+    expect(tab.querySelector(".tab-name")).toHaveTextContent(/^devops$/);
+  });
+
+  it("opens in front from the strip outside every workspace, where the panel lists the plane's personas", async () => {
+    // The chat in front works in no workspace, so no workspace is focused and the Personas view
+    // draws the plane root's panel (#1686). Its rows still open the persona: the merge queue's
+    // macOS run 41827173118 pressed steward's row there, and nothing opened (#4758).
+    core(DECLARED, [{ ...chat(1, null), cwd: PLANE }], () => null);
+    render(<App />);
+    await within(await findStripNamed("Tabs")).findByRole("tab", { name: /claude 1/ });
+    const panel = await showThePanel("Personas");
+
+    // As the scenario specs press a row (`e2e/acting.ts`): the row's own click, with no pointer.
+    within(panel)
+      .getByRole("row", { name: /devops/ })
+      .click();
+
+    await screen.findByText("It remembers 0 things.");
+    const tab = within(strip()).getByRole("tab", { selected: true });
+    expect(tab.querySelector(".tab-name")).toHaveTextContent(/^devops$/);
   });
 });
