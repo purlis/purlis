@@ -1,34 +1,47 @@
 <!doctype html>
 <title>Sign in</title>
 <h1>Sign in</h1>
-<!-- #5230: a form on the fill's site, and everything else a page may try while it holds a value. -->
 <form method="post" action="/redirect?to=http://other.test/landed.html?code=1">
   <label>API key <input type="password" name="key"></label>
   <button>Sign in</button>
 </form>
 <form method="post" action="/redirect?to=http://third.test/landed.html">
+  <label>Key elsewhere <input type="password" name="key"></label>
   <button>Sign in elsewhere</button>
 </form>
 <form method="post" action="/redirect?to=http://other.test/landed.html?code=fixture-key-5230">
-  <button>Sign in with the value</button>
+  <label>Key named <input type="password" name="key"></label>
+  <button>Sign in named</button>
 </form>
 <form method="post" action="/redirect?to=http://other.test/landed.html%23code=fixture%252Dkey%252D5230">
-  <button>Sign in with the value encoded</button>
+  <label>Key encoded <input type="password" name="key"></label>
+  <button>Sign in encoded</button>
 </form>
 <form method="post" action="http://other.test/posted.html">
+  <label>Key posted <input type="password" name="key"></label>
   <button>Post elsewhere</button>
+</form>
+<form method="get" action="/hangs-up">
+  <label>Key failing <input type="password" name="key"></label>
+  <button>Send and fail</button>
 </form>
 <a href="http://other.test/landed.html">Leave by a link</a>
 <a href="/redirect?to=http://other.test/landed.html">Leave by a redirected link</a>
-<a href="/hangs-up">Go to a page that fails</a>
 <button id="goes" type="button">Leave by a script</button>
+<button id="scripted" type="button">Leave by a scripted form</button>
 <button id="asks" type="button">Send from a script</button>
 <script>
+  window.name = 'left-behind';
   document.getElementById('goes').addEventListener('click', () => {
     location.href = 'http://other.test/landed.html';
   });
-  // Everything a script can send to the destination, from before the form is sent until the page
-  // is gone, and as it goes.
+  document.getElementById('scripted').addEventListener('click', () => {
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = '/redirect?to=http://other.test/landed.html';
+    document.body.append(form);
+    form.submit();
+  });
   const send = () => {
     fetch('http://other.test/from-script', { mode: 'no-cors' }).catch(() => {});
     new Image().src = 'http://other.test/from-an-image';

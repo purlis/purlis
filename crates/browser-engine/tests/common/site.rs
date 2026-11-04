@@ -227,6 +227,15 @@ fn answer(
         .to_owned();
     let path = path.split(['?', '#']).next().unwrap_or("");
     match path {
+        "answers-refused" => {
+            let _ = respond(
+                &mut out,
+                "403 Forbidden",
+                "text/plain",
+                &[],
+                b"answered refused",
+            );
+        }
         // A server that hangs up, which shows the engine's own page (#5230).
         "hangs-up" => {}
         // A server's redirect to the address the query names, as a sign-in's is (#5230).

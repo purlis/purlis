@@ -224,3 +224,4 @@
 {"call":{"id":193,"command":"fill_secret","program":"01J9ZQ8000000000000000000D","fill":{"target":"e12","origin":"https://dash.example.test","key":"dash-api-key","value":"fixture-word"}}}
 {"reply":{"re":193,"ok":{"browsed":{"page":{"page":"p1","address":"https://dash.example.test/settings","title":"Settings"},"settled":true,"note":"filled dash-api-key into the field on https://dash.example.test"}}}}
 {"call":{"id":194,"command":"fill_secret","program":"01J9ZQ8000000000000000000D","fill":{"target":"e12","origin":"https://dash.example.test","key":"dash-api-key","value":"fixture-word","also":["https://sso.example.test"]}}}
+{"reply":{"re":194,"ok":{"browsed":{"page":{"page":"p1","address":"https://dash.example.test/settings","title":"Settings"},"settled":true}}}}

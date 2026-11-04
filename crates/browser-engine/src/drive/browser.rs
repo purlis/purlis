@@ -900,9 +900,12 @@ struct Page {
     frames: HashMap<String, Frame>,
     /// The page that opened this one, if one did.
     opener: Option<String>,
-    /// **It holds a secret, and is leaving for another site or being kept from it** (#5230): an
-    /// answer waits for how that ends.
+    /// **It holds a secret and is leaving, or stands on what purlis replaces** (#5230): an answer
+    /// and a read wait for how that ends.
     leaving: bool,
+    /// **The load it is on was chosen, by an address the agent wrote or by the person** (#5230):
+    /// only such a load makes a site one the browser was on.
+    chosen: bool,
 }
 
 impl Page {
@@ -1116,21 +1119,33 @@ impl State {
         let earlier = held
             .redirected_from
             .and_then(|from| self.documents.iter().find(|hop| hop.id == from))
-            .map(|hop| (hop.why, hop.form, hop.address.clone()));
+            .map(|hop| {
+                (
+                    hop.why,
+                    hop.form,
+                    hop.address.clone(),
+                    hop.head.clone(),
+                    hop.head_method.clone(),
+                )
+            });
         let reads = matches!(held.method, "GET" | "HEAD" | "OPTIONS");
         let marked = held.document && held.redirected_from.is_none() && take(&mut self.forms, bare);
         // What began as a form stays one along its redirects (#5230). A document sent with a body
         // is a form whatever was said of it, and the word of one may come late.
         let form = match &earlier {
-            Some((_, form, _)) => *form,
+            Some((_, form, ..)) => *form,
             None => held.document && held.redirected_from.is_none() && (marked || !reads),
         };
         // A site that answered a page's own document with a redirect is one it was on (#5230):
         // the app that sends the person to sign in shows nothing first.
-        if let Some((_, _, from)) = &earlier
-            && held.frame.is_some_and(|frame| self.page(frame).is_some())
+        if let Some((_, _, from, ..)) = &earlier
+            && held
+                .frame
+                .and_then(|frame| self.page(frame))
+                .is_some_and(|page| page.chosen)
         {
-            self.was_on(from);
+            let from = from.clone();
+            self.was_on(&from);
         }
         let why = if !reads {
             Why::Sends
@@ -1160,6 +1175,12 @@ impl State {
                 address: held.address.to_owned(),
                 why,
                 form,
+                head: earlier
+                    .as_ref()
+                    .map_or_else(|| held.address.to_owned(), |(.., head, _)| head.clone()),
+                head_method: earlier
+                    .as_ref()
+                    .map_or_else(|| held.method.to_owned(), |(.., method)| method.clone()),
             });
         }
         why
@@ -1230,6 +1251,14 @@ impl State {
             every.insert(0, own);
         }
         Ok(every)
+    }
+
+    /// **purlis itself goes on to `address`** (#5230): a read of it, as a page's link is.
+    fn offered_by_purlis(&mut self, address: &str) {
+        if self.offered.len() >= FORMS_KEPT {
+            self.offered.pop_front();
+        }
+        self.offered.push_back(without_fragment(address).to_owned());
     }
 
     /// Keeps `site` to be said in the next answer, once.
@@ -1830,6 +1859,8 @@ impl State {
 enum FollowUp {
     /// A page holding a secret moved, and that is judged on its own thread (#5230).
     Leave(leaving::Leave),
+    /// A document a hold refuses: its frame stays on the page it showed (#5230).
+    Stay(Paused),
     Attach(String),
     Close(String),
     SetUp(String),
@@ -1914,6 +1945,8 @@ pub(crate) struct Inner {
     departing: Mutex<HashMap<String, std::sync::mpsc::Sender<()>>>,
     /// The address each page holding a secret waits to leave for, on the person (#5230), by page.
     leaving_asked: Mutex<HashMap<String, String>>,
+    /// The sites of the holds that have gone and aren't over yet (#5230).
+    ending: Arc<Mutex<Vec<String>>>,
     /// What judges a filled page's move, on a thread of its own (#5230).
     leaves: Mutex<Option<std::sync::mpsc::Sender<leaving::Leave>>>,
     /// What says which site's documents the agent is kept off (#5152), once it was told.
@@ -2081,6 +2114,7 @@ impl Browser {
             fill_holds: Mutex::new(Vec::new()),
             departing: Mutex::new(HashMap::new()),
             leaving_asked: Mutex::new(HashMap::new()),
+            ending: Arc::new(Mutex::new(Vec::new())),
             leaves: Mutex::new(None),
             kept_off: Mutex::new(None),
             agent_calls: AtomicUsize::new(0),
@@ -2101,21 +2135,21 @@ impl Browser {
                 })
                 .map_err(|e| Refusal::Engine(e.to_string()))?;
             *lock(&inner.judging) = Some(judging);
-            let (leaves, stopped) = std::sync::mpsc::channel::<leaving::Leave>();
-            let leave_for = Arc::downgrade(&inner);
-            thread::Builder::new()
-                .name("browser-fill-leaving".to_owned())
-                .spawn(move || {
-                    for leave in stopped {
-                        let Some(inner) = leave_for.upgrade() else {
-                            break;
-                        };
-                        inner.leaving(leave);
-                    }
-                })
-                .map_err(|e| Refusal::Engine(e.to_string()))?;
-            *lock(&inner.leaves) = Some(leaves);
         }
+        let (leaves, stopped) = std::sync::mpsc::channel::<leaving::Leave>();
+        let leave_for = Arc::downgrade(&inner);
+        thread::Builder::new()
+            .name("browser-fill-leaving".to_owned())
+            .spawn(move || {
+                for leave in stopped {
+                    let Some(inner) = leave_for.upgrade() else {
+                        break;
+                    };
+                    inner.leaving(leave);
+                }
+            })
+            .map_err(|e| Refusal::Engine(e.to_string()))?;
+        *lock(&inner.leaves) = Some(leaves);
         // Calls wait on the engine, which can leave one unanswered: the thread that reads its
         // events never makes one, or what it reads behind that call comes too late (#4472).
         let (following, steps) = std::sync::mpsc::channel::<FollowUp>();
@@ -2249,6 +2283,7 @@ impl Browser {
         // A call that only reads acts on nothing, so a retry of it reads again; only what acts
         // is kept by id.
         if call.only_reads() {
+            self.reads_once_settled()?;
             let _one = lock(&self.acting);
             let every = matches!(call, Call::Downloads);
             return self.run_at(epoch, call).map(|answer| {
@@ -2363,7 +2398,7 @@ impl Browser {
         }
         drop(state);
         if let Some(leaves) = &*lock(&self.inner.leaves) {
-            let _ = leaves.send(leaving::Leave::Answered);
+            let _ = leaves.send(leaving::Leave::Answered(waiting));
         }
     }
 
@@ -5585,6 +5620,7 @@ impl Inner {
                                 settle: Settle::new(now),
                                 scrubbed: kept,
                                 leaving: false,
+                                chosen: false,
                                 shows: 0,
                                 gone: 0,
                                 frames: HashMap::new(),
@@ -5707,12 +5743,25 @@ impl Inner {
                             // A page's own document, where a login waits for it (#4995).
                             if text("/frame/id").as_deref() == Some(target.as_str()) {
                                 // The engine's own page for a load that failed holds no value
-                                // either (#5230), and a load elsewhere never ends on it while a
-                                // page holds one ([`leaving`]): the hold ends there too, so no
-                                // browser is left stuck. It is no site the browser was on.
+                                // either (#5230): the hold ends there too, so no browser is left
+                                // stuck. In a browser that held a value, purlis's own page stands
+                                // in for it, and no read comes before that. It is no site the
+                                // browser was on.
                                 left.push(target.clone());
-                                if params.pointer("/frame/unreachableUrl").is_none() {
+                                let failed = params.pointer("/frame/unreachableUrl").is_some();
+                                let chosen = state.page(&target).is_some_and(|page| page.chosen);
+                                if !failed && chosen {
                                     state.was_on(&text("/frame/url").unwrap_or_default());
+                                }
+                                let held_one = self.copy_withheld.load(Ordering::SeqCst);
+                                let departing = lock(&self.departing).contains_key(&target);
+                                if let Some(page) = state.page_mut(&target) {
+                                    page.leaving = departing || (failed && held_one);
+                                }
+                                if failed && held_one {
+                                    follow.push(FollowUp::Leave(leaving::Leave::Failed(
+                                        target.clone(),
+                                    )));
                                 }
                                 navigated = Some((target, text("/frame/url").unwrap_or_default()));
                             }
@@ -5811,15 +5860,17 @@ impl Inner {
                             frame: frame.as_deref(),
                             redirected_from: redirected_from.as_deref(),
                         });
-                        // Told apart from its address: the engine keeps a fragment beside it.
+                        // The engine keeps a fragment beside the address.
                         let whole = match text("/request/urlFragment") {
                             Some(fragment) => format!("{address}{fragment}"),
                             None => address.clone(),
                         };
                         let moved = {
                             let holds = lock(&self.fill_holds);
+                            let ending = lock(&self.ending);
                             state.move_of(
                                 &holds,
+                                &ending,
                                 &Held {
                                     request: &request,
                                     address: &address,
@@ -5837,6 +5888,14 @@ impl Inner {
                         } else {
                             Driver::Agent
                         };
+                        // The first of a page's own chain says whether it was chosen (#5230).
+                        if document
+                            && redirected_from.is_none()
+                            && let Some(page) =
+                                frame.as_deref().and_then(|frame| state.page_mut(frame))
+                        {
+                            page.chosen = by == Driver::Person || why == Why::Addressed;
+                        }
                         // While one of the agent's calls is carried out, nothing is sent to a
                         // site it is kept off by an address it wrote, however written, nor by
                         // a document of that site (#5152): a key or a click that reached such a
@@ -5864,27 +5923,59 @@ impl Inner {
                                         })
                                     })
                             });
-                        if addressed_to_kept_off || sends_from_kept_off {
-                            follow.push(FollowUp::Refuse(request));
-                        } else if let Some((target, kind)) = moved {
-                            if let Some(page) = state.page_mut(&target) {
-                                page.leaving = true;
+                        // What a hold decides comes first: it decides as the request pauses.
+                        if let Some(moved) = moved {
+                            let paused = Paused {
+                                id: request,
+                                document,
+                            };
+                            match moved {
+                                leaving::Move::Refused => {
+                                    follow.push(FollowUp::Refuse(paused.id));
+                                }
+                                leaving::Move::FrameForm { key, origin } => {
+                                    let to = login::origin_of(&address);
+                                    state.say_of_leaving(leaving::form_refused_said(
+                                        &key,
+                                        &origin,
+                                        to.as_deref(),
+                                    ));
+                                    follow.push(FollowUp::Refuse(paused.id));
+                                }
+                                leaving::Move::Elsewhere { origin } => {
+                                    state.say_of_leaving(leaving::elsewhere_said(&origin));
+                                    follow.push(FollowUp::Stay(paused));
+                                }
+                                leaving::Move::Redirect(target) | leaving::Move::Form(target)
+                                    if state.page(&target).is_none() =>
+                                {
+                                    follow.push(FollowUp::Stay(paused));
+                                }
+                                leaving::Move::Redirect(target) => {
+                                    if let Some(page) = state.page_mut(&target) {
+                                        page.leaving = true;
+                                    }
+                                    follow.push(FollowUp::Leave(leaving::Leave::Stopped {
+                                        paused,
+                                        target,
+                                        whole,
+                                        form: false,
+                                    }));
+                                }
+                                leaving::Move::Form(target) => {
+                                    if let Some(page) = state.page_mut(&target) {
+                                        page.leaving = true;
+                                    }
+                                    follow.push(FollowUp::Leave(leaving::Leave::Stopped {
+                                        paused,
+                                        target,
+                                        whole,
+                                        form: true,
+                                    }));
+                                }
                             }
-                            follow.push(FollowUp::Leave(leaving::Leave::Stopped {
-                                paused: Paused {
-                                    id: request,
-                                    document,
-                                },
-                                outbound: Outbound {
-                                    address,
-                                    method,
-                                    why,
-                                    by,
-                                },
-                                target,
-                                whole,
-                                kind,
-                            }));
+                        } else if addressed_to_kept_off || sends_from_kept_off {
+                            follow.push(FollowUp::Refuse(request));
                         } else {
                             follow.push(FollowUp::Judge {
                                 paused: Paused {
@@ -6105,6 +6196,7 @@ impl Inner {
                     self.leaving(leave);
                 }
             }
+            FollowUp::Stay(paused) => self.stays(&paused),
             FollowUp::Refuse(request) => {
                 let _ = devtools.call_within(
                     "Fetch.failRequest",
@@ -6146,16 +6238,19 @@ struct Paused {
     document: bool,
 }
 
-/// A request held for the judge, as the engine said it (#2018).
-/// **A document request held lately** (#2018, #5230): its id and address, why it was sent, and
-/// whether its chain began with a form.
+/// **A document request held lately** (#2018, #5230): its id and address, why it was sent,
+/// whether its chain began with a form, and how.
 struct Hop {
     id: String,
     address: String,
     why: Why,
     form: bool,
+    /// The first request of its chain, and its method.
+    head: String,
+    head_method: String,
 }
 
+/// A request held for the judge, as the engine said it (#2018).
 struct Held<'a> {
     request: &'a str,
     address: &'a str,

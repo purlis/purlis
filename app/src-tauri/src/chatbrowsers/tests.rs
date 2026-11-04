@@ -1359,8 +1359,6 @@ fn the_sites_a_browser_asked_about_wait_as_one_ask_and_an_allow_for_the_chat_rea
     assert_eq!(browsers.chat_sites(), [(3, site("news.example.org:443"))]);
 }
 
-/// #2242: a chat started without the sandbox gets a browser like a sandboxed one, so a site
-/// new to the project its browser held back waits on the person as any chat's does.
 /// #5230, SF-14: what the person allowed when asked reaches the browser, told apart from what its
 /// reach lists; keeping a site blocked is no such answer.
 #[test]
@@ -1387,6 +1385,8 @@ fn a_site_allowed_when_asked_reaches_the_next_act_and_one_kept_blocked_does_not(
     assert_eq!(reached.answered, ["app.example.org:443"], "{reached:?}");
 }
 
+/// #2242: a chat started without the sandbox gets a browser like a sandboxed one, so a site
+/// new to the project its browser held back waits on the person as any chat's does.
 #[test]
 fn a_chat_without_the_sandbox_is_asked_about_a_new_site_as_any_chat_is() {
     let browsers = ChatBrowsers::default();

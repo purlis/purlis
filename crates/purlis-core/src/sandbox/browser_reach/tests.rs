@@ -776,7 +776,6 @@ fn a_fill_hold_lets_its_site_alone_until_it_is_released() {
     assert_eq!(bound.held_for_fill(), None);
 }
 
-/// #5117: a fill hold narrows a login's hold and never widens it.
 /// #5230, SF-15: the sites the key is also approved for are carried, and no other.
 #[test]
 fn a_fill_hold_also_lets_the_sites_its_key_is_approved_for() {
@@ -794,6 +793,7 @@ fn a_fill_hold_also_lets_the_sites_its_key_is_approved_for() {
     assert!(bound.lets("elsewhere.example.test", 443));
 }
 
+/// #5117: a fill hold narrows a login's hold and never widens it.
 #[test]
 fn a_fill_hold_in_a_browser_holding_a_login_reaches_no_more_than_both() {
     let bound = Bound::default();

@@ -17,7 +17,7 @@ use crate::common;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use common::drive::{call, find, next_id, ref_on, sees};
+use common::drive::{call, find, next_id, ref_on, sees, snapshot};
 use common::site::{Held, Site, started_judged};
 use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::drive::{
@@ -144,16 +144,35 @@ fn the_app_sends_it_to_sign_in(browser: &Browser, app: &str) {
 
 fn ref_of(browser: &Browser, line: &str) -> Ref {
     let label = line.split('"').nth(1).unwrap_or(line);
-    let found = find(browser, label);
-    ref_on(&found, line)
+    let start = Instant::now();
+    loop {
+        let found = find(browser, label);
+        if found.lines().any(|l| l.contains(line) && l.contains('[')) {
+            return ref_on(&found, line);
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{label} never showed: {found}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// The key filled into the field `label` names, its value `VALUE`.
+fn filled_in(browser: &Browser, holder: &Arc<Holder>, label: &str) {
+    filled_with(browser, holder, label, VALUE);
 }
 
 fn filled(browser: &Browser, holder: &Arc<Holder>) {
+    filled_in(browser, holder, "API key");
+}
+
+fn filled_with(browser: &Browser, holder: &Arc<Holder>, label: &str, value: &str) {
     let fill = SecretFill {
-        target: ref_of(browser, "textbox \"API key\""),
+        target: ref_of(browser, &format!("textbox \"{label}\"")),
         origin: "http://auth.fixture.test".to_owned(),
         key: "the-api-key".to_owned(),
-        value: VALUE.to_owned().into(),
+        value: value.to_owned().into(),
         multi_line: false,
     };
     let filled = browser.fill_secret(
@@ -189,6 +208,10 @@ fn a_sign_in_redirected_to_a_site_the_browser_was_on_finishes_by_itself() {
         site.was_sent("GET other.test/landed.html"),
         "the server named it, and it went"
     );
+    assert!(
+        sees(&browser, "Named nothing"),
+        "nothing of the window went"
+    );
 }
 
 /// A site the browser hasn't been on asks once; the page stays, and goes on once allowed.
@@ -199,7 +222,7 @@ fn a_site_the_browser_has_not_been_on_asks_and_goes_on_once_allowed() {
     };
     the_app_sends_it_to_sign_in(&browser, OTHER);
     let holder = Holder::on(&site, None);
-    filled(&browser, &holder);
+    filled_in(&browser, &holder, "Key elsewhere");
 
     let answer = click(&browser, "button \"Sign in elsewhere\"");
 
@@ -224,25 +247,33 @@ fn a_site_the_browser_has_not_been_on_asks_and_goes_on_once_allowed() {
 /// it tried to send, and the hold lives on.
 #[test]
 fn links_scripts_and_the_chats_navigate_stay_refused() {
-    let moves: [(&str, fn(&Browser)); 4] = [
+    let moves: [(&str, fn(&Browser) -> Option<String>); 5] = [
         ("a link", |browser| {
-            click(browser, "link \"Leave by a link\"");
+            click(browser, "link \"Leave by a link\"").note
         }),
         ("a redirected link", |browser| {
-            click(browser, "link \"Leave by a redirected link\"");
+            click(browser, "link \"Leave by a redirected link\"").note
         }),
         ("a script", |browser| {
-            click(browser, "button \"Leave by a script\"");
+            click(browser, "button \"Leave by a script\"").note
+        }),
+        ("a form a script made", |browser| {
+            click(browser, "button \"Leave by a scripted form\"").note
         }),
         ("the chat's navigate", |browser| {
             let address = WebAddress::parse("http://other.test/landed.html").unwrap();
-            let _ = browser.call(
-                &next_id(),
-                Call::Navigate {
-                    page: None,
-                    address,
-                },
-            );
+            // The core refuses this one in words of its own before the driver hears of it: here
+            // the driver's refusal is what is left of it.
+            browser
+                .call(
+                    &next_id(),
+                    Call::Navigate {
+                        page: None,
+                        address,
+                    },
+                )
+                .ok()
+                .and_then(|answer| answer.note)
         }),
     ];
     for (name, moved) in moves {
@@ -254,9 +285,10 @@ fn links_scripts_and_the_chats_navigate_stay_refused() {
         let holder = Holder::on(&site, None);
         filled(&browser, &holder);
 
-        moved(&browser);
+        let note = moved(&browser).unwrap_or_default();
         // Whatever it was to do has been done by a moment after it answered.
         std::thread::sleep(Duration::from_millis(800));
+        assert!(note.contains("did not load"), "{name}: {note}");
 
         assert_eq!(
             site.sent_count("other.test"),
@@ -299,9 +331,9 @@ fn what_a_script_sends_the_destination_as_the_page_leaves_is_refused() {
 /// too, and the page stays.
 #[test]
 fn a_redirect_whose_address_holds_the_value_is_refused() {
-    for line in [
-        "button \"Sign in with the value\"",
-        "button \"Sign in with the value encoded\"",
+    for (label, line) in [
+        ("Key named", "button \"Sign in named\""),
+        ("Key encoded", "button \"Sign in encoded\""),
     ] {
         let Some((browser, _data, site)) = browser() else {
             return;
@@ -309,7 +341,7 @@ fn a_redirect_whose_address_holds_the_value_is_refused() {
         the_app_sends_it_to_sign_in(&browser, OTHER);
         let before = site.sent_count("other.test");
         let holder = Holder::on(&site, None);
-        filled(&browser, &holder);
+        filled_in(&browser, &holder, label);
 
         let answer = click(&browser, line);
 
@@ -331,13 +363,13 @@ fn a_form_posted_to_a_site_the_key_is_not_approved_for_is_refused_and_says_how()
     };
     the_app_sends_it_to_sign_in(&browser, "third.test");
     let holder = Holder::on(&site, None);
-    filled(&browser, &holder);
+    filled_in(&browser, &holder, "Key posted");
 
     let answer = click(&browser, "button \"Post elsewhere\"");
 
     let note = answer.note.unwrap_or_default();
     assert!(note.contains("http://other.test"), "{note}");
-    assert!(note.contains("secret-fill line"), "{note}");
+    assert!(note.contains("only over https"), "{note}");
     assert!(sees(&browser, "Form not sent"), "the person sees it");
     assert!(sees(&browser, "http://other.test"), "named on the page");
     assert!(!site.heard_from(OTHER), "nothing was sent");
@@ -352,7 +384,7 @@ fn a_form_posted_to_a_site_the_key_is_approved_for_goes() {
     };
     the_app_sends_it_to_sign_in(&browser, "third.test");
     let holder = Holder::on(&site, Some(OTHER));
-    filled(&browser, &holder);
+    filled_in(&browser, &holder, "Key posted");
 
     click(&browser, "button \"Post elsewhere\"");
 
@@ -364,20 +396,22 @@ fn a_form_posted_to_a_site_the_key_is_approved_for_goes() {
     holder.released_within_ten_seconds();
 }
 
-/// A load on the fill's own site that ends on the engine's own page holds no value, and the browser
-/// isn't stuck.
+/// A load that fails ends the hold, and the page the chat reads then is purlis's own.
 #[test]
-fn an_error_page_ends_the_hold() {
+fn a_load_that_fails_ends_the_hold_and_shows_purlis_s_own_page() {
     let Some((browser, _data, site)) = browser() else {
         return;
     };
     the_app_sends_it_to_sign_in(&browser, OTHER);
     let holder = Holder::on(&site, None);
-    filled(&browser, &holder);
+    filled_with(&browser, &holder, "Key failing", "p@ss+w/rd!");
 
-    click(&browser, "link \"Go to a page that fails\"");
+    click(&browser, "button \"Send and fail\"");
 
     holder.released_within_ten_seconds();
+    assert!(sees(&browser, "Page not loaded"), "purlis's own page");
+    let read = snapshot(&browser);
+    assert!(!read.contains("hangs-up"), "{read}");
     let start = Instant::now();
     while !site.held_to().lock().unwrap().is_empty() {
         assert!(start.elapsed() < Duration::from_secs(5), "it is still held");

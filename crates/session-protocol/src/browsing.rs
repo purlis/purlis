@@ -703,13 +703,31 @@ mod fill_tests {
         )
         .expect("a fill of 1.72 reads");
         assert!(!fill.multi_line);
-        assert!(fill.also.is_empty(), "a fill of 1.72 is approved for one site");
+        assert!(
+            fill.also.is_empty(),
+            "a fill of 1.72 is approved for one site"
+        );
         let said = serde_json::to_string(&FillSecret {
             multi_line: true,
             ..fill
         })
         .expect("written");
         assert!(said.contains(r#""multi_line":true"#), "{said}");
+    }
+
+    #[test]
+    fn a_reach_of_1_73_names_no_site_the_person_allowed_when_asked() {
+        let reach: BrowserReach = serde_json::from_str(r#"{"open_web":true}"#).expect("reads");
+        assert!(reach.answered.is_empty());
+        let said = serde_json::to_string(&BrowserReach {
+            answered: vec!["app.example.test:443".into()],
+            ..reach
+        })
+        .expect("written");
+        assert!(
+            said.contains(r#""answered":["app.example.test:443"]"#),
+            "{said}"
+        );
     }
 
     #[test]

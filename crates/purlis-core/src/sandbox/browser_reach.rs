@@ -1026,7 +1026,11 @@ fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
     // below refuses it where one held before (#5117).
     entry.to(Site::of(host, port));
     if let Some(said) = served.bound.refuses(host, port) {
-        answer(&mut client, "403 Forbidden", &said);
+        // A request a browser sends a proxy whole takes any answer for the site's own, so it is
+        // ended with none while a fill holds the browser (#5230).
+        if request.forward.is_none() || served.bound.held_for_fill().is_none() {
+            answer(&mut client, "403 Forbidden", &said);
+        }
         return;
     }
     let own = super::hosts::own_addresses_read();

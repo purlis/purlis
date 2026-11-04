@@ -4,49 +4,47 @@
 //! **How a page holding a secret purlis filled may leave for another site** (#5230; the person's
 //! rulings SF-14 and SF-15 on #5096, amending SF-3).
 //!
-//! While a fill holds the browser, its reach proxy carries the fill's site alone
-//! ([`FillHold`]). That stays so for everything the page does, whoever asks: a link, a script,
-//! the chat's navigate. Two things are told apart here, by what the engine says of each request
-//! as it pauses it, never by what the page says.
+//! While a fill holds the browser, its reach proxy carries the fill's site alone ([`FillHold`]).
+//! The driver judges each request as the engine pauses it, by what the engine says of it:
 //!
-//! - **A redirect from the approved site's own server, after a form sent there** (SF-14): a
-//!   main-frame document request the engine says was redirected, whose chain began with a form
-//!   sent to the fill's site. It is stopped where it is, its address kept, and judged:
-//!   - an address that holds the value, plainly or URL-encoded, is refused ([`carries_value`]);
-//!   - [`FillHold::may_leave_for`] says whether it goes on by itself (a site this browser was on
-//!     before the fill), asks the person once, or is refused (outside the browser's usual reach).
-//! - **A form posted straight to another site** (SF-15), or a redirect that would send its body
-//!   on: refused unless [`FillHold::approved_for`] says the key is approved for that site too.
-//!   The refusal is said in the answer and on a page of purlis's own the person sees, and the
-//!   filled page goes with it, so the browser isn't stuck.
+//! - **The redirect the ruling lets go** (SF-14): a main-frame document redirected from the fill's
+//!   site, in a chain begun by the form the field was filled in. An address that holds the value
+//!   is refused ([`carries_value`]). Otherwise [`FillHold::may_leave_for`] says whether it goes on
+//!   by itself, asks the person once, or is refused. The page stays until it may go: then the page
+//!   holding the value goes first, the hold ends, and the browser goes to the address.
+//! - **A form sent to another site** (SF-15): sent only where [`FillHold::approved_for`] says the
+//!   key is approved for that site too. Refused, it is said in the answer and on a page of purlis's
+//!   own the person sees.
+//! - **Anything else elsewhere stays refused**, the page where it was, until the hold is over.
 //!
-//! **Any other load of a page's own, elsewhere, stays where it was** ([`Move::Elsewhere`]): a link,
-//! a script, the chat's navigate. Left to the proxy it would end on the engine's own page, whose
-//! history entry holds the refused address, and what the page wrote there would go out on a reload
-//! once the hold is over. So only a load on the fill's own site can end on that page, which is why
-//! that page may end the hold.
-//!
-//! **Nothing reaches the destination while the page holding the value lives.** A proxy that goes
-//! by host and port can't tell the redirect from anything else the page sends there, and a page
-//! keeps running until the next document commits. So the page is replaced first: it loads a
-//! blank document, while the proxy still carries the fill's site alone, what it sends as it
-//! unloads goes nowhere else, the hold ends ([`FillHold::released_then`]), and only then does the
-//! browser go to the address the server named. A destination that fails shows the engine's own
-//! page, and nothing holds the browser by then.
+//! A load in a browser that has held a value doesn't rest on the engine's own page for a load that
+//! failed: purlis's own page stands in for it.
 
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use base64::Engine as _;
 use serde_json::json;
 
-use super::{Held, Inner, Outbound, Paused, State, login};
-use crate::drive::{FillHold, Leaving, Why, lock};
+use super::{Browser, Held, Inner, Paused, State, login};
+use crate::drive::{FillHold, Leaving, Refusal, lock};
 
-/// How long a page leaving for another site waits for the hold to end before it stays blank: the
-/// hold ends a moment after the page is gone, and an engine that never says so goes no further.
+/// How long a page leaving for another site waits for the hold to end before it stays where it is.
 const THE_HOLD_ENDS_WITHIN: Duration = Duration::from_secs(20);
+
+/// How long purlis's own page is waited for before what it replaced is forgotten anyway.
+const ITS_OWN_PAGE_LOADS_WITHIN: Duration = Duration::from_secs(3);
+
+/// How long a read waits for a page that is changing over.
+const A_READ_WAITS: Duration = Duration::from_secs(10);
+
+/// The most a browser says of its refused moves in one answer: a page may try without end.
+const MOST_SAID: usize = 8;
+
+/// The most sites a browser remembers having been on: past them, a new one asks.
+const MOST_SITES_BEEN_ON: usize = 4096;
 
 /// **What a page holding a secret purlis filled filled, and where** (#5230): what the hold of it
 /// is judged by.
@@ -54,68 +52,122 @@ pub(crate) struct Filled {
     pub(crate) origin: String,
     pub(crate) key: String,
     pub(crate) value: zeroize::Zeroizing<String>,
+    /// Where the form the field is in sends it, read as the value went in.
+    pub(crate) form: Option<FormSent>,
 }
 
-/// What a held page's request is, where it is one this module judges.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// **Where a form sends what it holds**, as its document says, its fragment left off.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FormSent {
+    pub(crate) method: String,
+    pub(crate) action: String,
+}
+
+impl FormSent {
+    /// Whether a chain whose first request was `method` to `head` is this form's. A form sent by
+    /// GET writes its own query.
+    fn began(&self, method: &str, head: &str) -> bool {
+        let head = head.split('#').next().unwrap_or(head);
+        if !self.method.eq_ignore_ascii_case(method) {
+            return false;
+        }
+        if method.eq_ignore_ascii_case("GET") {
+            let bare = |address: &'_ str| address.split('?').next().unwrap_or("").to_owned();
+            return bare(head) == bare(&self.action);
+        }
+        head == self.action
+    }
+}
+
+/// What a request is while a page holds a secret, where it isn't for the hold's own site.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Move {
-    /// A redirect to another site, in a chain that began with a form sent to the fill's site.
-    Redirect,
-    /// A form sent to another site, or a redirect that sends its body there.
-    Form,
-    /// Any other load in a page's main frame, on another site.
-    Elsewhere,
+    /// A redirect the ruling may let go, in page `.0`.
+    Redirect(String),
+    /// A form the page sent to another site, in page `.0`.
+    Form(String),
+    /// A form a frame in the page sent to another site: only it fails, and the answer says why.
+    FrameForm { key: String, origin: String },
+    /// Any other document of a main frame: its page stays where it is.
+    Elsewhere { origin: String },
+    /// Anything else: it fails.
+    Refused,
 }
 
-/// **A held page's request stopped to be judged**, or a redirect the person answered about.
+/// **What the leaving thread is told** (module docs).
 pub(super) enum Leave {
     Stopped {
         paused: Paused,
-        outbound: Outbound,
         target: String,
         /// Its whole address: what the engine said of it and of its fragment.
         whole: String,
-        kind: Move,
+        form: bool,
     },
-    Answered,
+    /// The person answered about a site, and these pages wait on one.
+    Answered(Vec<String>),
+    /// Page `.0` shows the engine's own page for a load that failed, in a browser that held a value.
+    Failed(String),
 }
 
 impl State {
-    /// **What `held`, a document request just judged by [`State::why`], is while a page holds a
-    /// secret**, with the page it is in; `None` where the proxy's hold alone answers it: anything
-    /// on the fill's site, and a frame's load no form began.
+    /// **What `held`, a request just judged by [`State::why`], is while a page holds a secret or
+    /// its hold is ending**; `None` where nothing holds the browser, or it is for the fill's own
+    /// site. It is decided here, as it pauses: nothing paused while a hold lives waits to go out
+    /// once it is over. An address whose origin can't be read is on no such site, and a frame the
+    /// driver doesn't know yet is taken for a page.
     pub(super) fn move_of(
         &self,
         holds: &[super::PageHeld],
+        ending: &[String],
         held: &Held<'_>,
-    ) -> Option<(String, Move)> {
+    ) -> Option<Move> {
+        let origin = holds
+            .first()
+            .map(|one| &one.filled.origin)
+            .or_else(|| ending.first())?;
+        let to = login::origin_of(held.address);
+        if to.as_ref() == Some(origin) {
+            return None;
+        }
         if !held.document {
-            return None;
+            return Some(Move::Refused);
         }
-        let frame = held.frame?;
-        let target = self.page_holding(frame)?;
-        let main = frame == target;
-        let on = holds.iter().find(|one| one.target == target);
-        // Another page's load meets the hold as well: judged by the site that holds the browser.
-        let origin = &on.or_else(|| holds.first())?.filled.origin;
-        let to = login::origin_of(held.address)?;
-        if to == *origin {
-            return None;
-        }
-        let elsewhere = main.then(|| (target.clone(), Move::Elsewhere));
+        let target = held.frame.and_then(|frame| self.page_holding(frame));
+        let main = match (&target, held.frame) {
+            (Some(target), Some(frame)) => target == frame,
+            _ => true,
+        };
+        let elsewhere = Move::Elsewhere {
+            origin: origin.clone(),
+        };
+        let on: Vec<&super::PageHeld> = holds
+            .iter()
+            .filter(|one| Some(&one.target) == target.as_ref())
+            .collect();
         let hop = self
             .documents
             .iter()
             .rev()
             .find(|hop| hop.id == held.request);
-        if on.is_none() || !hop.is_some_and(|hop| hop.form) {
-            return elsewhere;
+        let (Some(first), Some(target), Some(hop)) = (on.first(), &target, hop) else {
+            return Some(if main { elsewhere } else { Move::Refused });
+        };
+        if !hop.form {
+            return Some(if main { elsewhere } else { Move::Refused });
         }
-        if !matches!(held.method, "GET" | "HEAD") {
-            return Some((target, Move::Form));
-        }
-        let Some(from) = held.redirected_from else {
-            return Some((target, Move::Form));
+        let sends_on = !matches!(held.method, "GET" | "HEAD");
+        let Some(from) = held.redirected_from.filter(|_| !sends_on) else {
+            // Sent where every hold's key is approved, it is judged as any request is.
+            if on.iter().all(|one| one.hold.approved_for(held.address)) {
+                return None;
+            }
+            if !main {
+                return Some(Move::FrameForm {
+                    key: first.filled.key.clone(),
+                    origin: origin.clone(),
+                });
+            }
+            return Some(Move::Form(target.clone()));
         };
         let from_there = self
             .documents
@@ -125,14 +177,22 @@ impl State {
             .and_then(|from| login::origin_of(&from.address))
             .as_ref()
             == Some(origin);
-        if main && from_there {
-            return Some((target, Move::Redirect));
-        }
-        elsewhere
+        let its_form = on.iter().any(|one| {
+            one.filled
+                .form
+                .as_ref()
+                .is_some_and(|form| form.began(&hop.head_method, &hop.head))
+        });
+        Some(if main && from_there && its_form {
+            Move::Redirect(target.clone())
+        } else if main {
+            elsewhere
+        } else {
+            Move::Refused
+        })
     }
 
-    /// **`address` is a site this browser was on**: it showed a document of it in a page, or
-    /// answered a page's document with a redirect.
+    /// **`address` is a site this browser was on.**
     pub(super) fn was_on(&mut self, address: &str) {
         if self.been_on.len() < MOST_SITES_BEEN_ON
             && let Some(origin) = login::origin_of(address)
@@ -140,44 +200,92 @@ impl State {
             self.been_on.insert(origin);
         }
     }
+
+    /// Keeps `said` for the next answer of the agent's, once, and only so many.
+    pub(super) fn say_of_leaving(&mut self, said: String) {
+        if self.leaving_said.len() < MOST_SAID && !self.leaving_said.contains(&said) {
+            self.leaving_said.push(said);
+        }
+    }
 }
 
-/// The most sites a browser remembers having been on: past them, a new one asks.
-const MOST_SITES_BEEN_ON: usize = 4096;
+/// What the agent is told of a load elsewhere that stayed refused.
+pub(super) fn elsewhere_said(origin: &str) -> String {
+    format!(
+        "that did not load, and the page stays where it was: this browser reaches only {origin} \
+         while a page in it holds a secret purlis filled there. Once that page loads another \
+         document or is closed, it reaches as before"
+    )
+}
+
+impl Browser {
+    /// **A read waits for a page changing over**, so what it reads is what stands afterwards:
+    /// refused where that takes too long.
+    pub(super) fn reads_once_settled(&self) -> Result<(), Refusal> {
+        let until = Instant::now() + A_READ_WAITS;
+        let mut state = lock(&self.inner.state);
+        while state.pages.iter().any(|page| page.leaving) {
+            let left = until.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err(Refusal::Engine(
+                    "the page is changing over: read it again in a moment".to_owned(),
+                ));
+            }
+            state = self
+                .inner
+                .changed
+                .wait_timeout(state, left)
+                .map_or_else(|e| e.into_inner().0, |waited| waited.0);
+        }
+        Ok(())
+    }
+}
 
 impl Inner {
     /// **Judges what the engine stopped** ([`Leave`]), on a thread of its own: leaving takes as
-    /// long as the old page takes to go.
+    /// long as the old page takes to go. A hold that has gone by its turn lets nothing go.
     pub(super) fn leaving(&self, leave: Leave) {
         match leave {
-            Leave::Answered => self.leave_where_answered(),
+            Leave::Answered(targets) => {
+                self.leave_where_answered();
+                for target in &targets {
+                    self.done_leaving(target);
+                }
+            }
+            Leave::Failed(target) => {
+                self.say("that page did not load".to_owned());
+                self.replace(
+                    &target,
+                    &said_as_a_page("Page not loaded", "That page did not load."),
+                    None,
+                );
+                self.done_leaving(&target);
+            }
             Leave::Stopped {
                 paused,
-                outbound,
                 target,
                 whole,
-                kind,
+                form,
             } => {
-                match kind {
-                    Move::Redirect => self.redirected(&paused, &outbound, &target, &whole),
-                    Move::Form => self.form_sent(&paused, &outbound, &target, &whole),
-                    Move::Elsewhere => self.elsewhere(&paused, &outbound, &whole),
+                if form {
+                    self.form_sent(&paused, &target, &whole);
+                } else {
+                    self.redirected(&paused, &target, &whole);
                 }
                 self.done_leaving(&target);
             }
         }
     }
 
-    /// **A redirect from the fill's site's server** (module docs).
-    fn redirected(&self, paused: &Paused, outbound: &Outbound, target: &str, whole: &str) {
+    /// **A redirect from the fill's site's server** (module docs): the person is asked before the
+    /// page goes, so an answer of no keeps it.
+    fn redirected(&self, paused: &Paused, target: &str, whole: &str) {
+        self.stays(paused);
         let held = self.held_on(target);
         let Some(first) = held.first() else {
-            // The page went while this waited: nothing holds it, and it is judged as any is.
-            self.judged(paused, outbound);
             return;
         };
         if held.iter().any(|one| carries_value(whole, &one.value)) {
-            self.stays(paused);
             self.say(format!(
                 "purlis stopped this page leaving {}: its server redirected to an address that \
                  holds the secret purlis filled, and nothing was sent there. The page stays \
@@ -186,66 +294,29 @@ impl Inner {
             ));
             return;
         }
-        let been_on = first.been_on_at(whole);
-        match first.hold.may_leave_for(whole, been_on) {
-            Leaving::Go => {
-                self.stays(paused);
-                self.replace(target, "about:blank", Some(whole));
-            }
+        match first.hold.may_leave_for(whole, first.been_on_at(whole)) {
+            Leaving::Go => self.replace(target, "about:blank", Some(whole)),
             Leaving::Ask { site } => {
-                self.stays(paused);
                 lock(&self.leaving_asked).insert(target.to_owned(), whole.to_owned());
                 lock(&self.state).ask(&site);
             }
-            Leaving::No { why } => {
-                self.stays(paused);
-                self.say(why);
-            }
+            Leaving::No { why } => self.say(why),
         }
     }
 
-    /// **A form sent to another site** (SF-15): sent only where the key is approved for it too,
-    /// and the proxy's hold then carries it.
-    fn form_sent(&self, paused: &Paused, outbound: &Outbound, target: &str, whole: &str) {
+    /// **A form sent to another site, its key not approved there** (SF-15).
+    fn form_sent(&self, paused: &Paused, target: &str, whole: &str) {
+        self.stays(paused);
         let held = self.held_on(target);
         let Some(first) = held.first() else {
-            self.judged(paused, outbound);
             return;
         };
-        if held.iter().all(|one| one.hold.approved_for(whole)) {
-            self.judged(paused, outbound);
-            return;
-        }
-        self.stays(paused);
         // A value in the site's own name is not said back.
-        let origin = login::origin_of(whole)
+        let to = login::origin_of(whole)
             .filter(|to| !held.iter().any(|one| carries_value(to, &one.value)));
-        let said = form_refused_said(&first.key, &first.origin, origin.as_deref());
+        let said = form_refused_said(&first.key, &first.origin, to.as_deref());
         self.say(said.clone());
-        self.replace(target, &said_as_a_page(&said), None);
-    }
-
-    /// **Another load of a page's, on another site**: it goes only where every hold's key is
-    /// approved there, and where none holds any more it is judged as any is. Otherwise the page
-    /// stays where it was. The address is not said: what a filled page sent may be in it.
-    fn elsewhere(&self, paused: &Paused, outbound: &Outbound, whole: &str) {
-        let (approved, origin) = {
-            let holds = lock(&self.fill_holds);
-            (
-                holds.iter().all(|one| one.hold.approved_for(whole)),
-                holds.first().map(|one| one.filled.origin.clone()),
-            )
-        };
-        let Some(origin) = origin.filter(|_| !approved) else {
-            self.judged(paused, outbound);
-            return;
-        };
-        self.stays(paused);
-        self.say(format!(
-            "that page did not load, and this page stays where it was: this browser reaches only \
-             {origin} while a page in it holds a secret purlis filled there. Once that page \
-             loads another document or is closed, it reaches as before"
-        ));
+        self.replace(target, &said_as_a_page("Form not sent", &said), None);
     }
 
     /// The person answered about a site: a page that waited on it goes on, where it now may. It
@@ -261,12 +332,10 @@ impl Inner {
                 lock(&self.leaving_asked).remove(&target);
                 continue;
             };
-            let been_on = first.been_on_at(&whole);
-            if first.hold.may_leave_for(&whole, been_on) == Leaving::Go {
+            if first.hold.may_leave_for(&whole, first.been_on_at(&whole)) == Leaving::Go {
                 lock(&self.leaving_asked).remove(&target);
                 self.replace(&target, "about:blank", Some(&whole));
             }
-            self.done_leaving(&target);
         }
     }
 
@@ -286,7 +355,7 @@ impl Inner {
     }
 
     /// The request stopped goes nowhere, and its frame stays on the page it showed.
-    fn stays(&self, paused: &Paused) {
+    pub(super) fn stays(&self, paused: &Paused) {
         let _ = self.devtools.call_within(
             "Fetch.fulfillRequest",
             json!({ "requestId": paused.id, "responseCode": 204 }),
@@ -295,14 +364,13 @@ impl Inner {
         );
     }
 
-    /// Keeps `said` for the next answer of the agent's.
     fn say(&self, said: String) {
-        lock(&self.state).leaving_said.push(said);
+        lock(&self.state).say_of_leaving(said);
     }
 
-    /// **Page `target` loads `shown` in place of what holds the value, and once the hold is over
-    /// goes on to `then`, where there is one** (module docs). Where the page never goes, or the
-    /// hold never ends, it goes no further.
+    /// **Page `target` loads `shown`; once the hold is over it goes on to `then`, where there is
+    /// one, and otherwise forgets what it showed before.** Where the page never goes or the hold
+    /// never ends, it goes no further, and says so.
     fn replace(&self, target: &str, shown: &str, then: Option<&str>) {
         let session = lock(&self.state)
             .page(target)
@@ -316,23 +384,34 @@ impl Inner {
         let loaded = self
             .devtools
             .call("Page.navigate", json!({ "url": shown }), on);
-        if loaded.is_err() {
-            lock(&self.departing).remove(target);
-            return;
-        }
-        if heard.recv_timeout(THE_HOLD_ENDS_WITHIN).is_err() {
-            lock(&self.departing).remove(target);
-            return;
-        }
-        if let Some(address) = then {
-            // purlis's own move, to what the server named: a read of that address, as a page's
-            // link is, so it isn't asked about again. The usual reach was judged above.
-            lock(&self.state).addressing = Some((target.to_owned(), Why::Reads));
+        let within = if then.is_some() {
+            THE_HOLD_ENDS_WITHIN
+        } else {
+            ITS_OWN_PAGE_LOADS_WITHIN
+        };
+        let went = loaded.is_ok() && heard.recv_timeout(within).is_ok();
+        lock(&self.departing).remove(target);
+        let Some(address) = then else {
             let _ = self
                 .devtools
-                .call("Page.navigate", json!({ "url": address }), on);
-            lock(&self.state).addressing = None;
+                .call("Page.resetNavigationHistory", json!({}), on);
+            return;
+        };
+        if !went {
+            self.say("purlis could not take this page on to the site its server named".to_owned());
+            return;
         }
+        // What the page left behind in its window goes no further.
+        let _ = self.devtools.call(
+            "Runtime.evaluate",
+            json!({ "expression": "window.name = ''" }),
+            on,
+        );
+        // A read of the address the server named, as a page's link is: the reach was judged.
+        lock(&self.state).offered_by_purlis(address);
+        let _ = self
+            .devtools
+            .call("Page.navigate", json!({ "url": address }), on);
     }
 
     /// Page `target` is done leaving, or stays: an answer waits on it no more.
@@ -345,25 +424,32 @@ impl Inner {
         self.changed.notify_all();
     }
 
-    /// **The holds of page `target` that just went are told so, and whoever waits to leave it
-    /// hears once all of them are over** (module docs).
+    /// **The holds of page `target` that just went are told so**: each stands as ending until it
+    /// is over, and whoever waits to leave the page hears once all of them are.
     pub(super) fn released(&self, target: &str, gone: Vec<super::PageHeld>) {
         lock(&self.leaving_asked).remove(target);
-        let Some(over) = lock(&self.departing).remove(target) else {
-            for one in gone {
-                one.hold.released();
-            }
-            return;
-        };
+        let over = lock(&self.departing).get(target).cloned();
         if gone.is_empty() {
-            let _ = over.send(());
+            if let Some(over) = over {
+                let _ = over.send(());
+            }
             return;
         }
         let left = Arc::new(AtomicUsize::new(gone.len()));
         for one in gone {
+            let origin = one.filled.origin.clone();
+            lock(&self.ending).push(origin.clone());
+            let ending = Arc::clone(&self.ending);
             let (left, over) = (Arc::clone(&left), over.clone());
             one.hold.released_then(Box::new(move || {
-                if left.fetch_sub(1, Ordering::SeqCst) == 1 {
+                let mut ending = lock(&ending);
+                if let Some(at) = ending.iter().position(|one| *one == origin) {
+                    ending.remove(at);
+                }
+                drop(ending);
+                if left.fetch_sub(1, Ordering::SeqCst) == 1
+                    && let Some(over) = over
+                {
                     let _ = over.send(());
                 }
             }));
@@ -388,19 +474,28 @@ impl HeldNow {
 
 /// **Why a form wasn't sent to another site** (SF-15), and how the person approves the key for
 /// it. `to` is left unnamed only where its name would say the value.
-fn form_refused_said(key: &str, origin: &str, to: Option<&str>) -> String {
+pub(super) fn form_refused_said(key: &str, origin: &str, to: Option<&str>) -> String {
     let site = to.unwrap_or("another site");
-    let line = to.map_or(String::new(), |to| format!(" with fill = \"{to}\""));
+    let how = match to {
+        Some(to) if to.starts_with("https://") => format!(
+            "To approve it there, give {key} a secret-fill line with fill = \"{to}\" in the \
+             persona's tools, or allow it for this chat when a chat fills it on that site. Then \
+             open the form and fill it again"
+        ),
+        Some(_) => "purlis approves a key for another site only over https".to_owned(),
+        None => format!(
+            "To approve it there, give {key} a secret-fill line for that site in the persona's \
+             tools. Then open the form and fill it again"
+        ),
+    };
     format!(
         "purlis did not send this form to {site}: the page holds the secret {key}, which is \
-         approved for {origin} and not for {site}. To approve it there, give {key} a secret-fill \
-         line{line} in the persona's tools, or allow it when a chat fills it on that site. Then \
-         open the form and fill it again"
+         approved for {origin} and not for {site}. {how}"
     )
 }
 
-/// `said` as a page of purlis's own, on no site, which the person sees in place of the form.
-fn said_as_a_page(said: &str) -> String {
+/// A page of purlis's own saying `said`, on no site, which the person sees.
+fn said_as_a_page(title: &str, said: &str) -> String {
     let mut escaped = String::with_capacity(said.len());
     for c in said.chars() {
         match c {
@@ -412,8 +507,7 @@ fn said_as_a_page(said: &str) -> String {
         }
     }
     let page = format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>Form not sent</title>\
-         <h1>Form not sent</h1><p>{escaped}</p>"
+        "<!doctype html><meta charset=\"utf-8\"><title>{title}</title><h1>{title}</h1><p>{escaped}</p>"
     );
     let mut address = String::from("data:text/html;charset=utf-8,");
     for byte in page.bytes() {
@@ -427,32 +521,41 @@ fn said_as_a_page(said: &str) -> String {
     address
 }
 
-/// **Whether `address` holds `value`**, as written or URL-encoded, however many times, a space as
-/// `+` or `%20`, in any case: the engine writes a host in lower case. Reads what the engine sent
-/// whole, its fragment too.
+/// **Whether `address` holds `value`**, in the spellings a server or a page commonly writes it:
+/// as written, URL-encoded any number of times, a space as `+` or `%20`, in base64 or hex, and in
+/// any case, as the engine writes a host in lower case. Reads what the engine sent whole, its
+/// fragment too. An address encoded past reason counts as holding it.
 pub(super) fn carries_value(address: &str, value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
-    let value = value.to_lowercase();
+    let lowered = |text: &str| zeroize::Zeroizing::new(text.to_lowercase());
+    let spaced = |text: &str| zeroize::Zeroizing::new(text.replace('+', " "));
+    let plain = lowered(value);
+    let mut forms = vec![spaced(&plain)];
+    let standard = base64::engine::general_purpose::STANDARD_NO_PAD.encode(value);
+    let url_safe = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(value);
+    let hex: String = value.bytes().map(|byte| format!("{byte:02x}")).collect();
+    for form in [standard, url_safe, hex] {
+        let form = zeroize::Zeroizing::new(form);
+        forms.push(spaced(&lowered(&form)));
+    }
     let holds = |seen: &str| {
-        let seen = seen.to_lowercase();
-        seen.contains(&value) || seen.replace('+', " ").contains(&value)
+        let seen = spaced(&lowered(seen));
+        forms.iter().any(|form| seen.contains(form.as_str()))
     };
-    let mut seen = address.to_owned();
-    // An address is at most some thousands of characters, and each pass that changes it shortens
-    // it: this ends, and a few passes reach what any page would write.
-    for _ in 0..8 {
+    let mut seen = zeroize::Zeroizing::new(address.to_owned());
+    for _ in 0..16 {
         if holds(&seen) {
             return true;
         }
-        let decoded = decoded_once(&seen);
-        if decoded == seen {
+        let decoded = zeroize::Zeroizing::new(decoded_once(&seen));
+        if *decoded == *seen {
             return false;
         }
         seen = decoded;
     }
-    holds(&seen)
+    true
 }
 
 /// `text` with each `%XX` read as the byte it names, what doesn't read as UTF-8 replaced.
@@ -479,7 +582,7 @@ fn decoded_once(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{carries_value, form_refused_said, said_as_a_page};
+    use super::{FormSent, carries_value, form_refused_said, said_as_a_page};
 
     #[test]
     fn an_address_holds_a_value_however_it_is_encoded() {
@@ -498,10 +601,57 @@ mod tests {
     }
 
     #[test]
+    fn a_value_with_a_space_and_a_plus_is_found_as_a_form_writes_it() {
+        assert!(carries_value("https://app.example/?v=a%2Bb+c", "a+b c"));
+    }
+
+    #[test]
+    fn a_value_is_found_in_base64_and_hex() {
+        let value = "fixture-key-5230";
+        for address in [
+            "https://app.example/?v=Zml4dHVyZS1rZXktNTIzMA==",
+            "https://app.example/?v=Zml4dHVyZS1rZXktNTIzMA",
+            "https://app.example/?v=666978747572652d6b65792d35323330",
+        ] {
+            assert!(carries_value(address, value), "{address}");
+        }
+    }
+
+    #[test]
+    fn an_address_encoded_past_reason_counts_as_holding_it() {
+        let mut address = "x".to_owned();
+        for _ in 0..20 {
+            address = address.replace('%', "%25");
+            address.push_str("%41");
+        }
+        assert!(carries_value(
+            &format!("https://app.example/?v={address}"),
+            "secret"
+        ));
+    }
+
+    #[test]
     fn an_address_cut_in_an_escape_is_read_to_its_end() {
         assert!(!carries_value("https://app.example/?a=%", "secret"));
         assert!(!carries_value("https://app.example/?a=%é", "secret"));
         assert!(carries_value("https://app.example/?a=%&b=secret", "secret"));
+    }
+
+    #[test]
+    fn a_chain_is_the_forms_only_as_the_form_sends_it() {
+        let posts = FormSent {
+            method: "POST".into(),
+            action: "https://a.example/in?next=1".into(),
+        };
+        assert!(posts.began("POST", "https://a.example/in?next=1"));
+        assert!(!posts.began("POST", "https://a.example/in?next=2"));
+        assert!(!posts.began("GET", "https://a.example/in?next=1"));
+        let gets = FormSent {
+            method: "GET".into(),
+            action: "https://a.example/in".into(),
+        };
+        assert!(gets.began("GET", "https://a.example/in?key=1"));
+        assert!(!gets.began("GET", "https://a.example/other?key=1"));
     }
 
     #[test]
@@ -510,13 +660,15 @@ mod tests {
         assert!(said.contains("https://b.example"), "{said}");
         assert!(said.contains("fill = \"https://b.example\""), "{said}");
         assert!(said.contains("dash-key"), "{said}");
+        let plain = form_refused_said("dash-key", "https://a.example", Some("http://b.example"));
+        assert!(plain.contains("only over https"), "{plain}");
         let unnamed = form_refused_said("dash-key", "https://a.example", None);
         assert!(unnamed.contains("another site"), "{unnamed}");
     }
 
     #[test]
     fn a_page_of_purlis_s_own_escapes_what_it_says() {
-        let page = said_as_a_page("<script>&\"");
+        let page = said_as_a_page("Form not sent", "<script>&\"");
         assert!(page.starts_with("data:text/html;charset=utf-8,"));
         assert!(!page[29..].contains('<'));
         assert!(page.contains("%26lt%3Bscript%26gt%3B"), "{page}");

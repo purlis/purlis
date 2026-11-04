@@ -97,6 +97,20 @@ pub(crate) const FIELD_KIND: &str = r"function () {
 /// A multi-line text box or an editable area is written only where `manyLines` says the person
 /// was asked about this fill (#5120), and answers `kind` otherwise, in the same step, before
 /// anything of the field is touched.
+/// Where the form this element is in sends it. A control named `action` or `method` stands in for
+/// the form's own property, so the attributes are read.
+const FORM_SENT: &str = r"function () {
+  const form = this.form;
+  if (!form) { return null; }
+  const of = (name) => Element.prototype.getAttribute.call(form, name);
+  const action = new URL(of('action') || document.URL, document.baseURI);
+  action.hash = '';
+  return {
+    action: action.href,
+    method: (of('method') || 'get').toLowerCase() === 'post' ? 'POST' : 'GET',
+  };
+}";
+
 pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin, manyLines) {
   if (!field.isConnected || field.ownerDocument.location.origin !== origin) return 'moved';
   let own = null;
@@ -245,6 +259,7 @@ impl Browser {
                     origin: origin.to_owned(),
                     key: fill.key.clone(),
                     value: fill.value.clone(),
+                    form: self.form_of(&at),
                 },
                 hold,
             )
@@ -362,6 +377,31 @@ impl Browser {
     fn main_document(&self, page: &str) -> Option<u64> {
         let state = lock(&self.inner.state);
         Some(state.page(page)?.frames.get(page)?.generation)
+    }
+
+    /// **Where the form `at`'s element is in sends it**, read in purlis's own world (#5230): none
+    /// for a field in no form, or what can't be read.
+    fn form_of(&self, at: &Resolved) -> Option<super::leaving::FormSent> {
+        let object = self.field_object(at)?;
+        let on = Some(at.node_session.as_str());
+        let read = self.devtools().call(
+            "Runtime.callFunctionOn",
+            json!({
+                "objectId": object,
+                "functionDeclaration": FORM_SENT,
+                "returnByValue": true,
+            }),
+            on,
+        );
+        let _ = self
+            .devtools()
+            .call("Runtime.releaseObject", json!({ "objectId": object }), on);
+        let value = read.ok()?;
+        let value = value.pointer("/result/value")?;
+        Some(super::leaving::FormSent {
+            method: value.get("method")?.as_str()?.to_owned(),
+            action: value.get("action")?.as_str()?.to_owned(),
+        })
     }
 
     /// `at`'s element in purlis's own world in its frame: an object of that world.
