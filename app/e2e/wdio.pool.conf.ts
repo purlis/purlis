@@ -39,7 +39,8 @@ const plane = (process.env.PURLIS_POOL_PLANE ??= copyFixturePlane());
  * harness reports its start on the runner, none of which another run has.
  *
  * **What stands in for an account.** The profile is a Claude Code one, kept in this run's own
- * machine store. On the runner, the image's `claude` (`e2e/pool-runner.Dockerfile`) says it is
+ * machine store, pinned to the version the runner image keeps installed. There, that `claude`
+ * (`e2e/pool-runner.Dockerfile`, never on the image's `PATH`) says it is
  * signed in when asked, as Claude Code's own does, and otherwise reports its session's start
  * through the runner's `purlis hook` as Claude Code's `SessionStart` hook does, and waits. No
  * model is called. On this machine, the profile's `claude` answers its version and never reports
@@ -112,7 +113,15 @@ function declarePoolsClaudeProfile(plane: string, configHome: string, dataHome: 
     JSON.stringify({
       version: 1,
       profiles: [
-        { name: "scenario", harness: "claude", title: "scenario", folders: { config: folder } },
+        {
+          name: "scenario",
+          harness: "claude",
+          title: "scenario",
+          folders: { config: folder },
+          // Pinned to the version the runner image keeps installed (`e2e/pool-runner.Dockerfile`),
+          // so the runner runs it and fetches nothing from Claude Code's release.
+          pinned: { version: CLAUDE_CODE_VERSION.split(" ")[0], at: Math.floor(Date.now() / 1000) },
+        },
       ],
     }) + "\n",
     { mode: 0o600 },

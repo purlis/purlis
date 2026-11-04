@@ -11,24 +11,34 @@
 ARG RUNNER
 FROM ${RUNNER}
 
-# The Claude Code version purlis supports (`tests/fixtures/harness-versions/claude.txt`).
+# The Claude Code version purlis supports, as `claude --version` answers it
+# (`tests/fixtures/harness-versions/claude.txt`): `2.1.300 (Claude Code)`.
 ARG VERSION
 
-# The runner's `claude`. Asked `auth status`, it exits 0, as Claude Code's own does for a profile
-# signed in, so the profile Pool setup keeps here is signed in with no account. Asked its version,
-# it gives the one purlis supports. Started as a chat, it reports its session's start as Claude
-# Code's `SessionStart` hook does: the session id purlis started it under, through the runner's
+# The Claude Code the profile pins, where a runner keeps a pinned harness it has installed
+# (`purlis_core::profilestore::installs`, `<data>/harnesses/claude/<version>/claude`): a runner
+# image carries no harness on `PATH` (`docs/runner-image.md`, and Pool setup's check of a team's
+# image refuses one that does). The runner's home is a volume, which Docker fills from the image
+# the first time it is mounted, so the runner finds this version installed and fetches nothing.
+#
+# Asked `auth status`, it exits 0, as Claude Code's own does for a profile signed in, so the
+# profile Pool setup keeps here is signed in with no account. Asked its version, it gives the one
+# purlis supports. Started as a chat, it reports its session's start as Claude Code's
+# `SessionStart` hook does: the session id purlis started it under, through the runner's
 # `purlis hook`, from its own process. Then it waits, as a chat waits for its first prompt. No
-# model is called. A behaviour of the parity suite runs the same image with stand-ins of its own
-# (`tests/parity/runner.Dockerfile`); this one needs none, since the window never reaches inside.
+# model is called.
 USER 0
-RUN printf '%s\n' '#!/bin/sh' \
+RUN set -eu; \
+    at="/home/purlis/.local/share/purlis/harnesses/claude/${VERSION%% *}"; \
+    mkdir -p "$at"; \
+    printf '%s\n' '#!/bin/sh' \
       '[ "$1" = auth ] && [ "$2" = status ] && exit 0' \
       "for word in \"\$@\"; do [ \"\$word\" = --version ] && { echo '${VERSION}'; exit 0; }; done" \
       'id=' \
       'while [ $# -gt 0 ]; do [ "$1" = --session-id ] && id=$2; shift; done' \
       'printf '"'"'{"session_id":"%s","hook_event_name":"SessionStart","source":"startup"}'"'"' "$id" \' \
       '  | CLAUDE_PID=$$ PURLIS_HARNESS=claude /usr/local/bin/purlis hook sessionstart >/dev/null' \
-      'exec sleep 3600' > /usr/local/bin/claude \
- && chmod 0755 /usr/local/bin/claude
+      'exec sleep 3600' > "$at/claude"; \
+    chmod 0755 "$at/claude"; \
+    chown -R 10001:10001 /home/purlis/.local
 USER 10001:10001
