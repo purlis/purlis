@@ -1020,6 +1020,14 @@ impl OlderSandbox {
     }
 }
 
+/// **Why one open chat runs at its level** (#5207), in the core's words
+/// ([`purlis_core::sandbox::level_why`]): what its sandbox mark and its block's Notice say.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct LevelWhy {
+    pub session: u32,
+    pub why: String,
+}
+
 /// One chat still running under an older sandbox ([`OlderSandbox`]).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct OnOlderSandbox {
@@ -3796,6 +3804,61 @@ impl Chats {
         }
         chats.sort_unstable_by_key(|one| one.session);
         Some(OlderSandbox { chats })
+    }
+
+    /// **Why each open chat runs at its level** (#5207): each harness chat, by session, with
+    /// what its next start would be, read as [`Self::on_older_sandbox`] reads it: its own
+    /// [`level_as_of`], and [`made_of`] for a start of this chat again. It only reads. A chat whose mark already says why it runs with no sandbox
+    /// ([`Open::floorless`]) has no answer here, and on a system with no backend none does:
+    /// no level holds a chat there.
+    pub fn level_whys(&self) -> Vec<LevelWhy> {
+        purlis_core::profiles::git_asked_once(|| {
+            self.level_whys_on(&purlis_core::sandbox::Machine::this())
+        })
+    }
+
+    /// [`Self::level_whys`], on `machine`.
+    fn level_whys_on(&self, machine: &purlis_core::sandbox::Machine) -> Vec<LevelWhy> {
+        use purlis_core::sandbox::personal::Choice;
+        use purlis_core::sandbox::{Level, level_why};
+        if !machine.os.has_backend() {
+            return Vec::new();
+        }
+        // Read out first, one lock at a time: the answers read the project's files.
+        let floorless = lock(&self.floorless).clone();
+        let running: Vec<_> = lock(&self.open)
+            .iter()
+            .filter(|(session, one)| one.harness.is_some() && !floorless.contains_key(session))
+            .map(|(session, one)| {
+                let level = match one.confines.as_ref().map(|confines| confines.level) {
+                    Some(Level::Full) => Some(Choice::On),
+                    Some(Level::Floor) => Some(Choice::Floor),
+                    None if one.chat.unsandboxed => Some(Choice::Off),
+                    // Held by a sandbox this window has no compile of (a chat its host composed,
+                    // or reattached under a sandbox that changed): nothing to compare.
+                    None => None,
+                };
+                (*session, one.chat.clone(), level)
+            })
+            .collect();
+        let locks = purlis_core::sandbox::policy::Locks::of(&self.project);
+        let mut whys: Vec<LevelWhy> = running
+            .into_iter()
+            .map(|(session, chat, level)| {
+                let next = level_why::next_start(
+                    &self.project,
+                    level_as_of(&chat),
+                    &locks,
+                    &made_of(&chat, Why::Relaunch),
+                );
+                LevelWhy {
+                    session,
+                    why: next.said(level.unwrap_or(next.level)),
+                }
+            })
+            .collect();
+        whys.sort_unstable_by_key(|one| one.session);
+        whys
     }
 
     /// **The open chats whose skills changed since they started** (#2770, ADR 0099 §5), by

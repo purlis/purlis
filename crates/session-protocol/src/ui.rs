@@ -1161,6 +1161,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_work_item",
     "chat_work_link",
     "chat_work_unlink",
+    // Why each open chat runs at its level (#5207): a read.
+    "chats_level_why",
     "chats_on_older_sandbox",
     "chats_plane_updated",
     // Which chats are reconnecting to their runner (#2496): what their panes start from.

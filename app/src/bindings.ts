@@ -1578,6 +1578,11 @@ export const commands = {
 	chats: OnOlderSandbox[],
 } | null, string>(__TAURI_INVOKE("chats_on_older_sandbox", { plane })),
 	/**
+	 *  **Why each open chat of the project runs at its level** (#5207): what its sandbox mark and a
+	 *  block's Notice say. A read. On a blocking thread: it reads the project's files.
+	 */
+	chatsLevelWhy: (plane: PlaneId) => typedError<LevelWhy[], string>(__TAURI_INVOKE("chats_level_why", { plane })),
+	/**
 	 *  **Starts chat `session` again without the sandbox** (#1342): the person's choice on a block's
 	 *  Notice that purlis grants nothing for, for this one chat's next run, on its conversation.
 	 *  Audited as any opt-out is (`trust.sandbox.off`) and never inherited: a later start of the
@@ -9438,6 +9443,15 @@ export type LevelWaiting = {
 	persona: string | null,
 	/**  What the file says: `on`, `floor` or `off`. */
 	level: string,
+};
+
+/**
+ *  **Why one open chat runs at its level** (#5207), in the core's words
+ *  ([`purlis_core::sandbox::level_why`]): what its sandbox mark and its block's Notice say.
+ */
+export type LevelWhy = {
+	session: number,
+	why: string,
 };
 
 /**

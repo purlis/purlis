@@ -6,6 +6,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SandboxBlockNotice } from "./SandboxBlockNotice";
+import { useOlderSandbox } from "./SandboxChanged";
 import type { ChatBlocked, PlaneId } from "./bindings";
 import { askOfBlock } from "./test-asks";
 import { ReadOnlySaid } from "./ReadOnlyLine";
@@ -798,5 +799,46 @@ describe("an Allow that restarts the chat says beforehand what will end (#1986)"
     const asked = drawnReading({ ...UNNAMED, target: "api.example.com" }, null);
     expect(asked).not.toContain("what_a_restart_ends");
     expect(screen.queryByText(/next pause between turns/)).toBeNull();
+  });
+});
+
+describe("a block's Notice, and why this chat runs at its level (#5207)", () => {
+  /** A window whose project asked the core about its chats, as `PlaneView` does. */
+  const Asked = ({ block }: { block: ChatBlocked }) => {
+    useOlderSandbox(PLANE, "asked");
+    return (
+      <SandboxBlockNotice
+        block={block}
+        asks={askOfBlock(block)}
+        more={0}
+        onDismiss={vi.fn()}
+        onAllowed={vi.fn()}
+        onRestarted={vi.fn()}
+      />
+    );
+  };
+  const WHY =
+    "Your As steward row sets this chat's level, over the project's. Change it in Settings › Project › Sandbox › Your level.";
+  const answering = (whys: readonly { session: number; why: string }[]) =>
+    mockIPC((cmd) => (cmd === "chats_level_why" ? whys : null));
+
+  it("says the reason the core gives for this chat, and where to change it", async () => {
+    answering([{ session: 4, why: WHY }]);
+    render(<Asked block={UNNAMED} />);
+    expect(await screen.findByText(new RegExp(WHY.replace(/[.?]/g, "\\$&")))).toBeInTheDocument();
+  });
+
+  it("says nothing of another chat's reason", async () => {
+    answering([{ session: 5, why: WHY }]);
+    render(<Asked block={UNNAMED} />);
+    await waitFor(() => expect(screen.getByText(/The sandbox blocked/)).toBeInTheDocument());
+    expect(screen.queryByText(/As steward/)).not.toBeInTheDocument();
+  });
+
+  it("keeps it off a block of purlis's own, which is a purlis bug and no level's", async () => {
+    answering([{ session: 4, why: WHY }]);
+    render(<Asked block={{ ...UNNAMED, ours: true, offer: "none" }} />);
+    await waitFor(() => expect(screen.getByText(/purlis bug/)).toBeInTheDocument());
+    expect(screen.queryByText(/As steward/)).not.toBeInTheDocument();
   });
 });

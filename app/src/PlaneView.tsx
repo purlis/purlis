@@ -465,7 +465,7 @@ import { DRAFT, isMemory, memoryRefOf } from "./memories";
 import type { FirstTaskDoes } from "./FirstTaskTab";
 import { onAMac } from "./tabKeys";
 import { pressed, SIDE_KEY_IDS } from "./keys/registry";
-import { SandboxChangedNotice, useOlderSandbox } from "./SandboxChanged";
+import { SandboxChangedNotice, useLevelWhys, useOlderSandbox } from "./SandboxChanged";
 import { useSandboxCommands } from "./sandboxAsked";
 import { useAskOffer } from "./askOffer";
 import {
@@ -2362,13 +2362,16 @@ export const PlaneView = memo(function PlaneView({
     [sidebar],
   );
   /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it, or `null`. */
+  const levelWhys = useLevelWhys(plane);
   const sandboxOf = useCallback(
     (session: number | undefined): SandboxSaid | null => {
       const found = listedChatOf(session);
       if (found?.sandbox == null) return null;
-      return { level: found.sandbox, why: found.sandbox_why, sites: found.browser_sites };
+      // Why it runs at its level (#5207), where its start did not say already.
+      const why = found.sandbox_why ?? levelWhys.get(found.session);
+      return { level: found.sandbox, why, sites: found.browser_sites };
     },
-    [listedChatOf],
+    [levelWhys, listedChatOf],
   );
   /** What chat `session`'s row reads its state from beside the board (#4935), as the plane's
    *  chats say it: so its tab says its row's word. */
