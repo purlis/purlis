@@ -2101,6 +2101,7 @@ fn a_replace_or_broken_link_secret_ask_says_why_and_names_the_entry() {
         reason: Some(reason),
         chats: vec![6],
         starts: 0,
+        cannot_receive: Vec::new(),
         since: 1_700_000_000,
     };
     let stripe = Target {
@@ -2332,6 +2333,7 @@ fn a_secret_ask_from_a_runner_that_cannot_receive_says_the_runner_wont_get_it() 
         purpose: None,
         declared: Some(String::new()),
         names_no_vault: false,
+        reason: None,
         chats: Vec::new(),
         starts: 0,
         cannot_receive: vec![8],
