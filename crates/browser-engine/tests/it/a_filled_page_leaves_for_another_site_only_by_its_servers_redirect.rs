@@ -116,6 +116,9 @@ impl FillHold for Holder {
     }
 }
 
+/// Something a page or the chat does to leave, and what its answer notes.
+type Moved = fn(&Browser) -> Option<String>;
+
 /// A browser whose judge sends everything: the fixture site decides, as the proxy would.
 fn browser() -> Option<(Browser, tempfile::TempDir, Site)> {
     let judge: Judge = Arc::new(|_: &Outbound| Gate::Go);
@@ -247,7 +250,7 @@ fn a_site_the_browser_has_not_been_on_asks_and_goes_on_once_allowed() {
 /// it tried to send, and the hold lives on.
 #[test]
 fn links_scripts_and_the_chats_navigate_stay_refused() {
-    let moves: [(&str, fn(&Browser) -> Option<String>); 5] = [
+    let moves: [(&str, Moved); 5] = [
         ("a link", |browser| {
             click(browser, "link \"Leave by a link\"").note
         }),

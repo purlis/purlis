@@ -1861,6 +1861,11 @@ enum FollowUp {
     Leave(leaving::Leave),
     /// A document a hold refuses: its frame stays on the page it showed (#5230).
     Stay(Paused),
+    /// Purlis's own page is answered for (#5230).
+    Own {
+        request: String,
+        page: String,
+    },
     Attach(String),
     Close(String),
     SetUp(String),
@@ -1945,6 +1950,8 @@ pub(crate) struct Inner {
     departing: Mutex<HashMap<String, std::sync::mpsc::Sender<()>>>,
     /// The address each page holding a secret waits to leave for, on the person (#5230), by page.
     leaving_asked: Mutex<HashMap<String, String>>,
+    /// What purlis's own page says, once it has one to show (#5230).
+    own_page: Mutex<Option<String>>,
     /// The sites of the holds that have gone and aren't over yet (#5230).
     ending: Arc<Mutex<Vec<String>>>,
     /// What judges a filled page's move, on a thread of its own (#5230).
@@ -2114,6 +2121,7 @@ impl Browser {
             fill_holds: Mutex::new(Vec::new()),
             departing: Mutex::new(HashMap::new()),
             leaving_asked: Mutex::new(HashMap::new()),
+            own_page: Mutex::new(None),
             ending: Arc::new(Mutex::new(Vec::new())),
             leaves: Mutex::new(None),
             kept_off: Mutex::new(None),
@@ -5923,8 +5931,19 @@ impl Inner {
                                         })
                                     })
                             });
-                        // What a hold decides comes first: it decides as the request pauses.
-                        if let Some(moved) = moved {
+                        // Its own page is answered here, and goes nowhere (#5230).
+                        let own_page = if address == leaving::OWN_PAGE {
+                            lock(&self.own_page).clone()
+                        } else {
+                            None
+                        };
+                        // What a hold decides comes next: it decides as the request pauses.
+                        if address == leaving::OWN_PAGE {
+                            follow.push(FollowUp::Own {
+                                request,
+                                page: own_page.unwrap_or_default(),
+                            });
+                        } else if let Some(moved) = moved {
                             let paused = Paused {
                                 id: request,
                                 document,
@@ -6197,6 +6216,23 @@ impl Inner {
                 }
             }
             FollowUp::Stay(paused) => self.stays(&paused),
+            FollowUp::Own { request, page } => {
+                let _ = devtools.call_within(
+                    "Fetch.fulfillRequest",
+                    json!({
+                        "requestId": request,
+                        "responseCode": 200,
+                        "responseHeaders": [
+                            { "name": "Content-Type", "value": "text/html; charset=utf-8" },
+                            { "name": "Content-Security-Policy", "value": "default-src 'none'" },
+                            { "name": "Cache-Control", "value": "no-store" },
+                        ],
+                        "body": base64::engine::general_purpose::STANDARD.encode(page),
+                    }),
+                    None,
+                    JUDGED_WITHIN,
+                );
+            }
             FollowUp::Refuse(request) => {
                 let _ = devtools.call_within(
                     "Fetch.failRequest",

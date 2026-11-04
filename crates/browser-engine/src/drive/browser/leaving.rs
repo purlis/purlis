@@ -31,6 +31,9 @@ use serde_json::json;
 use super::{Browser, Held, Inner, Paused, State, login};
 use crate::drive::{FillHold, Leaving, Refusal, lock};
 
+/// **The address of purlis's own page**: on a name that is never a site, and answered by the driver.
+pub(super) const OWN_PAGE: &str = "http://purlis.invalid/said";
+
 /// How long a page leaving for another site waits for the hold to end before it stays where it is.
 const THE_HOLD_ENDS_WITHIN: Duration = Duration::from_secs(20);
 
@@ -316,7 +319,7 @@ impl Inner {
             .filter(|to| !held.iter().any(|one| carries_value(to, &one.value)));
         let said = form_refused_said(&first.key, &first.origin, to.as_deref());
         self.say(said.clone());
-        self.replace(target, &said_as_a_page("Form not sent", &said), None);
+        self.show_own(target, said_as_a_page("Form not sent", &said));
     }
 
     /// The person answered about a site: a page that waited on it goes on, where it now may. It
@@ -366,6 +369,17 @@ impl Inner {
 
     fn say(&self, said: String) {
         lock(&self.state).say_of_leaving(said);
+    }
+
+    /// **Page `target` shows `page`, of purlis's own.** A browser with no judge holds no request,
+    /// so nothing could answer for that address: it shows a blank page.
+    fn show_own(&self, target: &str, page: String) {
+        if self.judge.is_none() {
+            self.replace(target, "about:blank", None);
+            return;
+        }
+        *lock(&self.own_page) = Some(page);
+        self.replace(target, OWN_PAGE, None);
     }
 
     /// **Page `target` loads `shown`; once the hold is over it goes on to `then`, where there is
@@ -494,7 +508,8 @@ pub(super) fn form_refused_said(key: &str, origin: &str, to: Option<&str>) -> St
     )
 }
 
-/// A page of purlis's own saying `said`, on no site, which the person sees.
+/// **A page of purlis's own saying `said`, which the person sees**: the driver answers for its
+/// address itself, so nothing is sent anywhere.
 fn said_as_a_page(title: &str, said: &str) -> String {
     let mut escaped = String::with_capacity(said.len());
     for c in said.chars() {
@@ -506,19 +521,10 @@ fn said_as_a_page(title: &str, said: &str) -> String {
             _ => escaped.push(c),
         }
     }
-    let page = format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>{title}</title><h1>{title}</h1><p>{escaped}</p>"
-    );
-    let mut address = String::from("data:text/html;charset=utf-8,");
-    for byte in page.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                address.push(char::from(byte));
-            }
-            _ => address.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    address
+    format!(
+        "<!doctype html><meta charset=\"utf-8\"><title>{title}</title><h1>{title}</h1>\
+         <p>{escaped}</p>"
+    )
 }
 
 /// **Whether `address` holds `value`**, in the spellings a server or a page commonly writes it:
@@ -669,8 +675,7 @@ mod tests {
     #[test]
     fn a_page_of_purlis_s_own_escapes_what_it_says() {
         let page = said_as_a_page("Form not sent", "<script>&\"");
-        assert!(page.starts_with("data:text/html;charset=utf-8,"));
-        assert!(!page[29..].contains('<'));
-        assert!(page.contains("%26lt%3Bscript%26gt%3B"), "{page}");
+        assert!(page.contains("&lt;script&gt;&amp;&quot;"), "{page}");
+        assert!(!page.contains("<script"), "{page}");
     }
 }
