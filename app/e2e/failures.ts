@@ -31,6 +31,8 @@ export interface Evidence {
   coreLog?: readonly string[];
   /** What lay over an element the test could not press or see (`covers.ts`). */
   covers?: readonly string[];
+  /** What the window showed: its strip, its overflow and its panes (`windowShows.ts`). */
+  shown?: readonly string[];
 }
 
 /** How many of the core's last log lines a failure carries. */
@@ -69,5 +71,6 @@ export function recordFailure(ran: Ran, error: unknown, evidence: Evidence = {})
     late: evidence.late,
     coreLog: evidence.coreLog,
     covers: evidence.covers,
+    shown: evidence.shown,
   });
 }

@@ -36,6 +36,38 @@ export async function tabNames(): Promise<string[]> {
   );
 }
 
+/**
+ * **Every tab on the strip in front, by name**: the ones it draws, left to right, then the ones
+ * its "Show N tabs" hides (ADR 0039), read from that menu as a person reads them, and the menu
+ * closed again. A strip with more tabs than its room draws the selected one and hides others, so
+ * the drawn ones are not all there are: on the macOS runner, where a tab's words take more room,
+ * a strip whose earlier files left tabs on it hid a chat's tab (#4758's merge-queue run).
+ */
+export async function everyTabName(): Promise<string[]> {
+  const drawn = await tabNames();
+  const opened = await browser.execute(() => {
+    const more = [...document.querySelectorAll<HTMLElement>("button[aria-haspopup='menu']")].find(
+      (one) =>
+        /^Show \d+ tabs? the strip is not showing/.test(one.getAttribute("aria-label") ?? ""),
+    );
+    more?.click();
+    return more !== undefined;
+  });
+  if (!opened) return drawn;
+  const menu = '[role="menu"][aria-label$="the strip is not showing"]';
+  await $(menu).waitForExist({ timeout: 10_000 });
+  const hidden = await browser.execute(
+    (css: string) =>
+      [...(document.querySelector(css)?.querySelectorAll('[role="menuitem"]') ?? [])].map(
+        (row) => row.querySelector(".tab-name")?.textContent ?? "",
+      ),
+    menu,
+  );
+  await browser.keys(["Escape"]);
+  await $(menu).waitForExist({ timeout: 10_000, reverse: true });
+  return [...drawn, ...hidden];
+}
+
 /** Brings the tab called `name` forward, by its own click from the page. */
 export async function bringForward(name: string): Promise<void> {
   const found = await browser.execute(

@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { endEveryChat, pressAndStart } from "../opening.js";
 import { browser, expect, $ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { openedSince, tabNames as namesOnTheStrip } from "../reach.js";
+import { everyTabName, openedSince, tabNames as namesOnTheStrip } from "../reach.js";
 
 /**
  * The window over a day: closed to the tray with every session still running, and asked to
@@ -43,20 +43,19 @@ async function showing(): Promise<boolean> {
   });
 }
 
-/** What a strip's kept empty tab is called (`tabs.EMPTY_TAB`, #4755). */
-const KEPT_EMPTY = "New chat";
+/** The tabs on the strip before this spec opened any: what earlier files left, a strip's kept
+ *  empty tab (#4758) and any tab an ended chat's pane is still on (#5019). */
+let had: string[] = [];
 
-/** The names on the tab strip, left to right, of the tabs that show something: an empty tab
- *  every strip keeps (#4758) is no session's, and earlier files can leave one. Scoped to that
- *  strip: the strip above lists workspaces as a tablist too, and a query across the window
- *  would mix the two. */
+/**
+ * **The tabs this spec opened, by name**, counted against {@link had}: every tab of the strip,
+ * the ones its "Show N tabs" hides too, since a strip with more tabs than room draws the
+ * selected one and hides others (ADR 0039). Read from what the strip draws alone, a hidden chat's
+ * tab was a chat gone (#4758's merge-queue run 41813865770, on the macOS runner). Scoped to the
+ * chat strip: the strip above lists workspaces as a tablist too.
+ */
 async function tabNames(): Promise<string[]> {
-  const names = await browser.execute(() =>
-    [
-      ...(document.querySelector('[data-strip="Tabs"]')?.querySelectorAll('[role="tab"]') ?? []),
-    ].map((tab) => tab.textContent ?? ""),
-  );
-  return names.filter((name) => name !== KEPT_EMPTY);
+  return openedSince(had, await everyTabName());
 }
 
 /**
@@ -107,6 +106,7 @@ async function untilAPaneShows(text: string): Promise<void> {
 
 describe("the window over a day", () => {
   before(async () => {
+    had = await everyTabName();
     // Two sessions, so the warning has more than one thing to name.
     await pressAndStart("New tab");
     await untilAPaneShows(READY);

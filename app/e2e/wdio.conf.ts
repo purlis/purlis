@@ -26,6 +26,7 @@ import { noDialogIsLeftUp } from "./opening.js";
 import { theWindowHoldsTheRail } from "./rail.js";
 import { LOGS, PANIC_LOG, collectEvidence } from "./processes.js";
 import { type Evidence, coreLogTail, recordFailure } from "./failures.js";
+import { whatTheWindowShows } from "./windowShows.js";
 import { aSessionBegins, aSessionEnds, recordTiming } from "./timings.js";
 import { specsOfPart } from "./parts.js";
 
@@ -90,6 +91,7 @@ async function evidence(error?: unknown): Promise<Evidence> {
     late: late.map((one) => ({ command: one.command, ms: one.ms })),
     coreLog: coreLogTail(LOGS),
     covers: covered === undefined ? undefined : await whatCovers(covered),
+    shown: await whatTheWindowShows(),
   };
 }
 
