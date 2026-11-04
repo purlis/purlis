@@ -16,8 +16,11 @@ use super::*;
 /// the start's own choice of the pool puts it on the runner.
 const WORKSPACE: &str = "app";
 
-/// The profile, the project's default.
+/// The Claude Code profile Try it has to choose.
 const PROFILE: &str = "work";
+
+/// The project's default, a Codex profile, which doesn't report its chat's start.
+const QUIET: &str = "quiet";
 
 /// What the harness leaves on the runner's container once it runs there, and nowhere else.
 const RAN_ON_THE_RUNNER: &str = "/tmp/try-it-ran-in-a-container";
@@ -79,38 +82,62 @@ fn in_a_docker_pool() {
     })
     .expect("kept");
     // Claude Code's start, as its hook reports it, a while after it is spawned, and only where
-    // it runs in a container: Docker writes `/.dockerenv` in every container it runs.
+    // it runs in a container: Docker writes `/.dockerenv` in every container it runs. The wait
+    // is far past Try it's first look at the host's running list (half a second after its start
+    // returns), so a pool's host that didn't list the chat yet ends the try first.
     let bin = tempfile::tempdir().expect("a folder for the harness");
     let harness = stand_in::claude_code(
         bin.path(),
         "claude",
         &format!(
-            "#!/bin/sh\n[ -e /.dockerenv ] && : > {RAN_ON_THE_RUNNER}\nsleep 2\n\
+            "#!/bin/sh\n[ -e /.dockerenv ] && : > {RAN_ON_THE_RUNNER}\nsleep 5\n\
              PURLIS_HARNESS=claude '{}' hook sessionstart </dev/null\nread line\n",
             purlis()
         ),
     );
     a_profile(&target, PROFILE, &harness);
-    // The project's default, which the pool keeps when none was chosen for it, so its sign-in
-    // is read there (the runner's `claude auth status` says signed in, `tests/parity`).
+    // The project's default is a Codex profile, whose harness doesn't say when its chat has
+    // started, so Try it has to pass over it for the Claude Code one. The pool keeps only that
+    // one, as its Sign-ins step does, and the runner's `claude auth status` says it is signed in
+    // (`tests/parity/runner.Dockerfile`).
+    let quiet = stand_in::program(bin.path(), "codex", "#!/bin/sh\nread line\n");
     let declared =
         std::fs::read_to_string(root.join(purlis_core::profiles::LOCAL_FILE)).expect("its profile");
     std::fs::write(
         root.join(purlis_core::profiles::LOCAL_FILE),
-        format!("[harness]\ndefault = \"{PROFILE}\"\n\n{declared}"),
+        format!(
+            "[harness]\ndefault = \"{QUIET}\"\n\n{declared}\n[harness.{QUIET}]\nkind = \"codex\"\n\
+             command = [{:?}]\n",
+            quiet.display().to_string()
+        ),
     )
-    .expect("its default");
+    .expect("its profiles");
+    let declared = purlis_core::profiles::current(&root);
+    for name in [PROFILE, QUIET] {
+        purlis_core::profiletrust::record_launched(
+            &root,
+            name,
+            &purlis_core::profiletrust::fingerprint(declared.get(name).expect("declared")),
+        )
+        .expect("approved");
+    }
+    purlis_core::runners::set_pool_profiles(&machine.config, &pool, Some(vec![PROFILE.to_owned()]))
+        .expect("the pool keeps the profile");
 
     step("the project, held as the window holds it, its chats routed as the settings say");
     again.cut();
     let again = Arc::new(again);
-    let planes = crate::planes::Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None)
-        .running_sessions_on(Arc::new({
-            let again = Arc::clone(&again);
-            move |_, root: &Path| Box::new(again.routed_sessions_of(root)) as Box<dyn SessionHost>
-        }))
-        .hearing_hooks_through_the_host()
-        .keeping_pools_in(Some(machine.config.clone()));
+    let planes = crate::planes::Planes::telling(
+        Arc::new(|_| {}),
+        crate::Shipped::default(),
+        Some(machine.config.clone()),
+    )
+    .running_sessions_on(Arc::new({
+        let again = Arc::clone(&again);
+        move |_, root: &Path| Box::new(again.routed_sessions_of(root)) as Box<dyn SessionHost>
+    }))
+    .hearing_hooks_through_the_host()
+    .keeping_pools_in(Some(machine.config.clone()));
     let plane = planes.open(&root);
     let held = planes.held(&plane).expect("the project is held");
 
