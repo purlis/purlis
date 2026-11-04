@@ -415,6 +415,9 @@ export async function answerTaken(
           reason?.trim() || null,
         );
         if (pressed.status === "error") return pressed;
+        // Drawn again as the project reads now (#5116): read and choose again.
+        if (pressed.data.kind === "drawn-again")
+          return { status: "error", error: pressed.data.said };
         return { status: "ok" };
       }
       case "pool-tool":

@@ -12,8 +12,16 @@
 //! its vault, the exact site, large, the page and the field's label, never a value, and the
 //! chat's call waits for the answer ([`asked`]).
 //!
-//! - **This slice offers Allow once and Keep blocked** (#5115). Allow once reads the value and
-//!   has it filled into that one field, on that one origin, once; nothing is kept or written.
+//! - **The sandbox's four answers** (#5115, #5116, SF-6). Allow once reads the value and has it
+//!   filled into that one field, on that one origin, once; nothing is kept or written. Allow for
+//!   this chat holds that key on that origin for the chat's life, in memory. Always allow writes
+//!   one secret-fill line ([`purlis_core::sandbox::tools::fill`]) in the persona's tools, shown
+//!   on the notice before the press, and allows it here, as a login's Always does
+//!   ([`crate::loginasks::written`]); `sandbox.proposed-changes = "off"` holds it back.
+//! - **A card's key is offered Allow once alone** (SF-4): a secret-fill line of any persona's
+//!   with `card = true` marks it, on every origin, and no grant of it fills without a notice.
+//! - **A key the vault doesn't hold goes to the Secret ask** (#5054, ADR 0109) once the person
+//!   allowed the fill: the call waits on that too, and fills what they add.
 //! - **What's filled is what the person pressed on.** A press names the notice and carries its
 //!   digest ([`FillWait::digest`]); one waits for each chat, and another call is refused.
 //! - **Keep blocked fills nothing and tells the chat**, and the chat isn't asked about that key
@@ -25,6 +33,8 @@
 
 use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
 
+use purlis_core::sandbox::policy::Locks;
+use purlis_core::secrets::brokered;
 use purlis_core::secrets::{Ctx, Env};
 use purlis_session_protocol::browsing::{FieldKind, FieldSaid, Secret};
 use sha2::{Digest, Sha256};
@@ -52,6 +62,16 @@ pub struct FillWait {
     /// frame of another site than its page's.
     pub warnings: Vec<String>,
     pub since: u64,
+    /// The persona the chat was started as: whose tools Always writes in.
+    pub persona: Option<String>,
+    /// **A card's or payment value's key** (SF-4): Allow once and Keep blocked alone.
+    pub card: bool,
+    /// The line Always would write, as written: `<name> = { vault = …, key = …, fill = … }`.
+    pub line: Option<String>,
+    /// Why Always isn't offered, where it isn't.
+    pub no_always: Option<String>,
+    /// The persona needs its vault allowed too: what Always then also does.
+    pub vault_too: bool,
 }
 
 impl FillWait {
@@ -74,6 +94,16 @@ impl FillWait {
             hash.update(warning.len().to_le_bytes());
             hash.update(warning.as_bytes());
         }
+        // What the choices are and what Always writes are part of what's pressed on.
+        for part in [
+            self.persona.as_deref().unwrap_or_default(),
+            self.line.as_deref().unwrap_or_default(),
+            self.no_always.as_deref().unwrap_or_default(),
+        ] {
+            hash.update(part.len().to_le_bytes());
+            hash.update(part.as_bytes());
+        }
+        hash.update([u8::from(self.card), u8::from(self.vault_too)]);
         hash.finalize()
             .iter()
             .map(|byte| format!("{byte:02x}"))
@@ -92,14 +122,17 @@ pub enum Heard {
     Gone,
 }
 
-/// What the person kept blocked: by chat, vault, key and origin.
-type KeptOne = (u32, String, String, String);
+/// A key on an origin for one chat: by chat, vault, key and origin.
+type ForChat = (u32, String, String, String);
 
 #[derive(Debug, Default)]
 struct Inner {
     next: u32,
     waits: Vec<(FillWait, Option<mpsc::Sender<Heard>>)>,
-    kept: Vec<KeptOne>,
+    /// What the person kept blocked.
+    kept: Vec<ForChat>,
+    /// What the person allowed for the chat (#5116): in memory, for the chat's life.
+    granted: Vec<ForChat>,
 }
 
 /// How many Keep blocked one chat is given before it's asked about no more fills, so a chat can't
@@ -165,6 +198,19 @@ impl Fills {
             .map(|(one, _)| one.clone())
     }
 
+    /// Draws a fill that waits anew, as the project reads now. Only the app's own answer calls
+    /// this: no chat's call reaches it.
+    fn redraw(&self, wait: FillWait) {
+        if let Some((one, _)) = self
+            .lock()
+            .waits
+            .iter_mut()
+            .find(|(one, _)| one.id == wait.id)
+        {
+            *one = wait;
+        }
+    }
+
     /// Ends the wait numbered `id` with `heard`: answers whether it waited.
     fn end(&self, id: u32, heard: Heard) -> bool {
         let mut inner = self.lock();
@@ -187,8 +233,16 @@ impl Fills {
             || mine().any(|(_, v, k, o)| v == vault && k == key && o == origin)
     }
 
-    /// Chat `session` closed: what it waited on goes with it, so nothing reaches a later chat
-    /// dealt the same number, and its call stops waiting.
+    /// Whether the person allowed this key on this origin for this chat (#5116).
+    fn granted(&self, session: u32, vault: &str, key: &str, origin: &str) -> bool {
+        self.lock()
+            .granted
+            .iter()
+            .any(|(chat, v, k, o)| *chat == session && v == vault && k == key && o == origin)
+    }
+
+    /// Chat `session` closed: what it waited on and was allowed go with it, so nothing reaches a
+    /// later chat dealt the same number, and its call stops waiting.
     pub fn forget(&self, session: u32) {
         // Never between a press's read of what waits and its answer.
         let _no_press = self
@@ -197,6 +251,7 @@ impl Fills {
             .unwrap_or_else(PoisonError::into_inner);
         let mut inner = self.lock();
         inner.kept.retain(|(chat, ..)| *chat != session);
+        inner.granted.retain(|(chat, ..)| *chat != session);
         inner.waits.retain(|(one, tell)| {
             if one.session != session {
                 return true;
@@ -275,63 +330,188 @@ fn frame_warning(origin: &str, page: Option<&str>) -> Option<String> {
 }
 
 /// **Chat `session`'s fill `asked`, put to the person**, and the value to fill once they allowed
-/// it: or why nothing is filled, in words the chat reads. The call waits here for the answer, at
-/// most [`purlis_core::loginask::THE_PERSON_IS_WAITED_FOR`], under no lock of the browsers'.
+/// it: or why nothing is filled, in words the chat reads. A line Always wrote, or the person's
+/// Allow for this chat, fills without a notice, never a card's key (SF-4). The call waits here
+/// for the answer, at most [`purlis_core::loginask::THE_PERSON_IS_WAITED_FOR`], under no lock of
+/// the browsers', and then on a Secret ask where the vault holds no such key.
 pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<Secret, String> {
     let (origin, warnings) = judged(held, session, asked)?;
     let fills = held.secret_fills();
     if fills.kept(session, &asked.vault, &asked.key, &origin) {
         return Err(kept_said(&asked.key, &origin, None));
     }
-    let wait = FillWait {
-        id: 0,
+    let persona = held
+        .chats()
+        .persona_of(session)
+        .and_then(|persona| persona.started_as);
+    if !granted(
+        held.root(),
+        fills,
         session,
-        browser: asked.browser.clone(),
-        vault: asked.vault.clone(),
-        key: asked.key.clone(),
-        origin: origin.clone(),
-        page: asked.page.clone(),
-        label: asked.field.label.clone(),
-        warnings,
-        since: now,
+        persona.as_deref(),
+        asked,
+        &origin,
+    ) {
+        let wait = offered(
+            held.root(),
+            FillWait {
+                id: 0,
+                session,
+                browser: asked.browser.clone(),
+                vault: asked.vault.clone(),
+                key: asked.key.clone(),
+                origin: origin.clone(),
+                page: asked.page.clone(),
+                label: asked.field.label.clone(),
+                warnings,
+                since: now,
+                persona,
+                card: false,
+                line: None,
+                no_always: None,
+                vault_too: false,
+            },
+        );
+        match heard(held, fills, wait)? {
+            Heard::Allowed => {
+                // Judged again as the project reads now: policy may have changed while it
+                // waited.
+                judged(held, session, asked)?;
+            }
+            Heard::Kept(reason) => return Err(kept_said(&asked.key, &origin, reason.as_deref())),
+            Heard::Gone => return Err(NOT_ANSWERED.to_owned()),
+        }
+    }
+    read(held, session, asked)
+}
+
+/// **Whether a fill goes in without a notice** (#5116): a line Always wrote, allowed here, or the
+/// person's Allow for this chat, each while policy still lets that scope be, and never a card's
+/// key.
+fn granted(
+    root: &std::path::Path,
+    fills: &Fills,
+    session: u32,
+    persona: Option<&str>,
+    asked: &FillAsked,
+    origin: &str,
+) -> bool {
+    use purlis_core::sandbox::grant::Level;
+    let lines = purlis_core::secretfill::lines(root, persona, &asked.vault, &asked.key, origin);
+    if lines.card {
+        return false;
+    }
+    let locks = Locks::of(root);
+    (lines.always && locks.scope_removed(Level::You).is_none())
+        || (fills.granted(session, &asked.vault, &asked.key, origin)
+            && locks.scope_removed(Level::Chat).is_none())
+}
+
+/// Why Always isn't offered to a chat that runs as no persona: it has no tools to write in.
+const NO_PERSONA: &str = "Always allow isn't offered for a chat that runs as no persona";
+
+/// **What the person is offered on `wait`**: a card's key Allow once alone (SF-4); otherwise
+/// Always too, with the line it writes, where the project lets one be written for the persona.
+fn offered(root: &std::path::Path, mut wait: FillWait) -> FillWait {
+    let lines = purlis_core::secretfill::lines(
+        root,
+        wait.persona.as_deref(),
+        &wait.vault,
+        &wait.key,
+        &wait.origin,
+    );
+    wait.card = lines.card;
+    if wait.card {
+        return wait;
+    }
+    let Some(persona) = wait.persona.clone() else {
+        wait.no_always = Some(NO_PERSONA.to_owned());
+        return wait;
     };
+    let locks = Locks::of(root);
+    let text = std::fs::read_to_string(purlis_core::names::manifest(root)).unwrap_or_default();
+    wait.line =
+        purlis_core::secretfill::line(&text, &persona, &wait.vault, &wait.key, &wait.origin)
+            .map(|(name, table)| format!("{name} = {table}"));
+    wait.no_always = crate::loginasks::always_held(root, &locks, &persona).or_else(|| {
+        wait.line.is_none().then(|| {
+            format!(
+                "Always allow isn't offered for {}, which makes no line's name",
+                wait.key
+            )
+        })
+    });
+    let ctx = Ctx::new(root, Env::from_process());
+    wait.vault_too = brokered::not_tagged(&ctx, Some(&persona), &wait.vault).is_some();
+    wait
+}
+
+/// **`wait` raised, and the person's answer**: refused where the chat has a notice up already.
+fn heard(held: &Held, fills: &Fills, wait: FillWait) -> Result<Heard, String> {
+    let session = wait.session;
     let (id, heard) = fills.raise(wait)?;
     tracing::info!("purlis: chat {session}'s secret fill asks the person");
     held.chats().asks_may_have_moved();
-    let heard = match heard.recv_timeout(purlis_core::loginask::THE_PERSON_IS_WAITED_FOR) {
-        Ok(heard) => heard,
-        Err(mpsc::RecvTimeoutError::Disconnected) => Heard::Gone,
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            // Under the presses' own hold, so a press is either wholly before this or finds the
-            // wait gone: a press in that very moment has ended it, and its answer waits here.
-            let _no_press = fills
-                .answering
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            let pressed = if fills.end(id, Heard::Gone) {
-                Heard::Gone
-            } else {
-                heard.try_recv().unwrap_or(Heard::Gone)
-            };
-            held.chats().asks_may_have_moved();
-            pressed
-        }
+    Ok(
+        match heard.recv_timeout(purlis_core::loginask::THE_PERSON_IS_WAITED_FOR) {
+            Ok(heard) => heard,
+            Err(mpsc::RecvTimeoutError::Disconnected) => Heard::Gone,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Under the presses' own hold, so a press is either wholly before this or finds
+                // the wait gone: a press in that very moment has ended it, and its answer waits
+                // here.
+                let _no_press = fills
+                    .answering
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                let pressed = if fills.end(id, Heard::Gone) {
+                    Heard::Gone
+                } else {
+                    heard.try_recv().unwrap_or(Heard::Gone)
+                };
+                held.chats().asks_may_have_moved();
+                pressed
+            }
+        },
+    )
+}
+
+/// **The value to fill, read for the chat now**; where the vault holds no such key, asked of the
+/// person on a Secret ask (#5054, ADR 0109), and read again once they added it.
+fn read(held: &Held, session: u32, asked: &FillAsked) -> Result<Secret, String> {
+    let (asker, _) = held
+        .chats()
+        .login_asker(held.root(), session)
+        .ok_or_else(|| {
+            "this chat is no longer open in purlis's window, so nothing was filled".to_owned()
+        })?;
+    let read = || brokered::fill_value(&asker, &asked.vault, &asked.key);
+    if let Some(value) = read()? {
+        return Ok(value);
+    }
+    let need = purlis_core::secrets::ask::Need {
+        chat: session,
+        persona: asker.persona.clone().unwrap_or_default(),
+        vault: asked.vault.clone(),
+        key: asked.key.clone(),
+        tool: None,
     };
-    match heard {
-        Heard::Allowed => {
-            // Judged again as the project reads now: policy may have changed while it waited.
-            judged(held, session, asked)?;
-            let (asker, _) = held
-                .chats()
-                .login_asker(held.root(), session)
-                .ok_or_else(|| {
-                    "this chat is no longer open in purlis's window, so nothing was filled"
-                        .to_owned()
-                })?;
-            purlis_core::secrets::brokered::fill_value(&asker, &asked.vault, &asked.key)
+    let within = purlis_core::secrets::ask::holds_for(asker.harness);
+    let moved = || held.chats().asks_may_have_moved();
+    match held
+        .secret_asks()
+        .hold(need, within, &mut |_: &str| moved())
+    {
+        purlis_core::secrets::ask::Held::Filled => read()?.ok_or_else(|| {
+            format!(
+                "vault '{}' still holds no {}, so nothing was filled",
+                asked.vault, asked.key
+            )
+        }),
+        purlis_core::secrets::ask::Held::Declined { line }
+        | purlis_core::secrets::ask::Held::StillOpen { line } => {
+            Err(format!("{line}: nothing was filled"))
         }
-        Heard::Kept(reason) => Err(kept_said(&asked.key, &origin, reason.as_deref())),
-        Heard::Gone => Err(NOT_ANSWERED.to_owned()),
     }
 }
 
@@ -354,15 +534,19 @@ pub struct Asked<'a> {
 }
 
 /// **The person's press** on a fill's notice. Fails closed: a press on anything but what's
-/// waiting now changes nothing, and only Allow once and Keep blocked are offered in this slice.
+/// waiting now changes nothing, a card's key takes Allow once and Keep blocked alone (SF-4), and
+/// Always writes only the line the notice showed, under the rules a login's Always is held to.
 pub fn answer(
     root: &std::path::Path,
     fills: &Fills,
     asked: &Asked<'_>,
     audit: Audit<'_>,
 ) -> Result<Pressed, String> {
+    use purlis_core::sandbox::grant::Level;
     const NO_MORE: &str = "That ask has gone, and nothing was allowed.";
     const CHANGED: &str = "That ask changed, so nothing was allowed. Read it again.";
+    const ONCE_ONLY: &str =
+        "Only Allow once or Keep blocked can be pressed on this ask: it is a card's key.";
     let _one_press = fills
         .answering
         .lock()
@@ -371,7 +555,7 @@ pub fn answer(
     if wait.digest() != asked.shown {
         return Err(CHANGED.to_owned());
     }
-    match asked.press {
+    let level = match asked.press {
         Press::Keep => {
             fills.lock().kept.push((
                 wait.session,
@@ -380,40 +564,114 @@ pub fn answer(
                 wait.origin.clone(),
             ));
             fills.end(wait.id, Heard::Kept(asked.reason.map(str::to_owned)));
-            Ok(Pressed::Done {
+            return Ok(Pressed::Done {
                 said: "Kept blocked. Nothing was filled.".to_owned(),
-            })
+            });
         }
-        Press::Once => {
-            let level = purlis_core::sandbox::grant::Level::Once;
-            let locks = purlis_core::sandbox::policy::Locks::of(root);
-            if let Some(why) = locks.scope_removed(level) {
-                return Err(why);
+        Press::Once => Level::Once,
+        Press::Chat | Press::Always if wait.card => return Err(ONCE_ONLY.to_owned()),
+        Press::Chat => Level::Chat,
+        Press::Always => Level::You,
+    };
+    let locks = Locks::of(root);
+    if let Some(why) = locks.scope_removed(level) {
+        return Err(why);
+    }
+    // Judged again as the project reads now: a card's mark or a line added since is a new notice.
+    let now = offered(
+        root,
+        FillWait {
+            card: false,
+            line: None,
+            no_always: None,
+            vault_too: false,
+            ..wait.clone()
+        },
+    );
+    if now.digest() != wait.digest() {
+        let said = format!(
+            "The project's settings for {} changed. Check the ask, then choose again.",
+            wait.key
+        );
+        fills.redraw(now);
+        return Ok(Pressed::DrawnAgain { said });
+    }
+    if asked.press == Press::Always
+        && let Some(why) = wait.no_always.clone()
+    {
+        return Err(why);
+    }
+    let target = format!("{}/{} -> {}", wait.vault, wait.key, wait.origin);
+    audit(
+        Some(wait.session),
+        &purlis_core::sandbox::grant::Audited {
+            granted: true,
+            what: AUDITED,
+            target: &target,
+            level,
+        },
+    )?;
+    let said = match asked.press {
+        Press::Always => {
+            let persona = wait.persona.as_deref().ok_or(NO_MORE)?;
+            let text =
+                std::fs::read_to_string(purlis_core::names::manifest(root)).unwrap_or_default();
+            let (name, table) =
+                purlis_core::secretfill::line(&text, persona, &wait.vault, &wait.key, &wait.origin)
+                    .ok_or(CHANGED)?;
+            // Only the very line the notice showed is written.
+            if wait.line.as_deref() != Some(format!("{name} = {table}").as_str()) {
+                return Err(CHANGED.to_owned());
             }
-            let target = format!("{}/{} -> {}", wait.vault, wait.key, wait.origin);
-            audit(
-                Some(wait.session),
-                &purlis_core::sandbox::grant::Audited {
-                    granted: true,
-                    what: AUDITED,
-                    target: &target,
-                    level,
+            crate::loginasks::written(
+                root,
+                &locks,
+                &crate::loginasks::Line {
+                    persona,
+                    vault: &wait.vault,
+                    vault_too: wait.vault_too,
+                    with: &|text| {
+                        purlis_core::loginask::with_tool_line(text, persona, &name, &table)
+                    },
                 },
+                wait.session,
+                audit,
             )?;
-            if !fills.end(wait.id, Heard::Allowed) {
-                return Err(NO_MORE.to_owned());
-            }
-            Ok(Pressed::Done {
-                said: format!(
-                    "Allowed once. {} goes into that one field on {}; nothing was written.",
-                    wait.key, wait.origin
-                ),
-            })
+            format!(
+                "Allowed. {} goes into fields on {} from now on: the line is in the project's \
+                 settings, and allowed on this machine.",
+                wait.key, wait.origin
+            )
         }
-        Press::Chat | Press::Always => {
-            Err("Only Allow once or Keep blocked can be pressed on this ask.".to_owned())
+        Press::Chat => {
+            format!(
+                "Allowed for this chat. {} goes into fields on {} in this chat without asking \
+                 again; nothing was written.",
+                wait.key, wait.origin
+            )
+        }
+        Press::Once | Press::Keep => format!(
+            "Allowed once. {} goes into that one field on {}; nothing was written.",
+            wait.key, wait.origin
+        ),
+    };
+    // Held for the chat before its call hears the answer, under the presses' hold, so a chat
+    // that closed in between holds nothing ([`Fills::forget`] waits for this press).
+    if asked.press == Press::Chat {
+        let mut inner = fills.lock();
+        if inner.waits.iter().any(|(one, _)| one.id == wait.id) {
+            inner.granted.push((
+                wait.session,
+                wait.vault.clone(),
+                wait.key.clone(),
+                wait.origin.clone(),
+            ));
         }
     }
+    if !fills.end(wait.id, Heard::Allowed) {
+        return Err(NO_MORE.to_owned());
+    }
+    Ok(Pressed::Done { said })
 }
 
 /// **The person's press on a secret fill's notice** (#5115). The window's alone

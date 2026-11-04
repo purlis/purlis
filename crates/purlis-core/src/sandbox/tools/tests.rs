@@ -664,6 +664,7 @@ fn kibana() -> Tool {
         args: None,
         mint: None,
         host: None,
+        fill: None,
     }
 }
 

@@ -8,6 +8,8 @@
 use std::cell::RefCell;
 use std::path::Path;
 
+use purlis_session_protocol::browsing::FieldKind;
+
 use super::*;
 
 fn wait(origin: &str) -> FillWait {
@@ -22,6 +24,12 @@ fn wait(origin: &str) -> FillWait {
         label: "API key".into(),
         warnings: Vec::new(),
         since: 1,
+        persona: None,
+        card: false,
+        line: None,
+        // As the notice is offered to a chat that runs as no persona.
+        no_always: Some(NO_PERSONA.to_owned()),
+        vault_too: false,
     }
 }
 
@@ -126,16 +134,22 @@ fn a_press_on_a_notice_drawn_otherwise_allows_nothing() {
 }
 
 #[test]
-fn only_allow_once_and_keep_blocked_can_be_pressed() {
+fn a_cards_key_takes_allow_once_and_keep_blocked_alone() {
     let fills = Fills::default();
-    let shown = wait("https://dash.example.test");
+    let shown = FillWait {
+        card: true,
+        ..wait("https://shop.example.test")
+    };
     let (id, heard) = fills.raise(shown.clone()).expect("raised");
     let audited = Audited::default();
     for not_offered in [Press::Chat, Press::Always] {
-        assert!(answered(&fills, &audited, &press(id, not_offered, &shown.digest())).is_err());
+        let refused = answered(&fills, &audited, &press(id, not_offered, &shown.digest()))
+            .expect_err("a card's key is allowed once alone");
+        assert!(refused.contains("card"), "{refused}");
     }
     assert!(heard.try_recv().is_err(), "the call still waits");
     assert!(audited.into_inner().is_empty());
+    assert!(!fills.granted(7, "qa", "dash-api-key", "https://shop.example.test"));
 }
 
 #[test]
@@ -193,7 +207,7 @@ fn a_chat_that_closes_takes_its_notice_and_its_kept_with_it() {
 }
 
 #[test]
-fn the_notice_names_the_key_the_vault_and_the_site_and_offers_once_and_keep() {
+fn the_notice_names_the_key_the_vault_and_the_site_and_offers_once_this_chat_and_keep() {
     let dir = tempfile::tempdir().expect("a folder");
     let locks = purlis_core::sandbox::policy::Locks::of(dir.path());
     let mut one = wait("https://dash.example.test");
@@ -203,7 +217,10 @@ fn the_notice_names_the_key_the_vault_and_the_site_and_offers_once_and_keep() {
     let shown = crate::asking::secret_fill(&one, &locks);
 
     let options: Vec<&str> = shown.options.iter().map(|o| o.label.as_str()).collect();
-    assert_eq!(options, ["Allow once", "Keep blocked"]);
+    assert_eq!(
+        options,
+        ["Allow once", "Allow for this chat", "Keep blocked"]
+    );
     let fill = shown.fill.expect("drawn as a fill");
     assert_eq!(fill.site, "dash.example.test");
     assert_eq!(fill.key, "dash-api-key");
@@ -239,4 +256,318 @@ fn a_field_in_a_frame_of_another_site_than_its_page_is_warned_of() {
         None
     );
     assert_eq!(frame_warning("https://shop.example.test", None), None);
+}
+
+const VAULTS: &str = r#"{"vaults":{
+    "qa":{"provider":"plain-file","config":{"file":"q.json"},"persona":"qa"},
+    "pay":{"provider":"plain-file","config":{"file":"p.json"},"persona":"qa"}
+}}"#;
+
+/// A project whose settings are `file`, with the vaults above.
+fn project(file: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("a folder");
+    std::fs::write(dir.path().join("vaults.json"), VAULTS).expect("a registry");
+    std::fs::write(purlis_core::names::manifest(dir.path()), file).expect("a project file");
+    dir
+}
+
+fn file_of(root: &Path) -> String {
+    std::fs::read_to_string(purlis_core::names::manifest(root)).expect("the project file")
+}
+
+/// A chat of persona qa's fill of `key` of vault `vault` on `origin`, as the notice offers it in
+/// the project at `root`.
+fn offered_in(root: &Path, vault: &str, key: &str, origin: &str) -> FillWait {
+    offered(
+        root,
+        FillWait {
+            persona: Some("qa".into()),
+            vault: vault.into(),
+            key: key.into(),
+            no_always: None,
+            ..wait(origin)
+        },
+    )
+}
+
+#[test]
+fn allow_for_this_chat_holds_that_key_on_that_site_for_that_chat_alone() {
+    let fills = Fills::default();
+    let shown = wait("https://dash.example.test");
+    let (id, heard) = fills.raise(shown.clone()).expect("raised");
+    let audited = Audited::default();
+
+    let pressed = answered(&fills, &audited, &press(id, Press::Chat, &shown.digest()))
+        .expect("allowed for the chat");
+
+    assert!(matches!(pressed, Pressed::Done { .. }), "{pressed:?}");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
+    assert!(fills.granted(7, "qa", "dash-api-key", "https://dash.example.test"));
+    assert!(!fills.granted(7, "qa", "dash-api-key", "https://other.example.test"));
+    assert!(!fills.granted(7, "qa", "another-key", "https://dash.example.test"));
+    assert!(!fills.granted(8, "qa", "dash-api-key", "https://dash.example.test"));
+    assert_eq!(
+        audited.into_inner(),
+        [(
+            "secret-fill".to_owned(),
+            "qa/dash-api-key -> https://dash.example.test".to_owned(),
+            true
+        )]
+    );
+    fills.forget(7);
+    assert!(
+        !fills.granted(7, "qa", "dash-api-key", "https://dash.example.test"),
+        "it goes with the chat"
+    );
+}
+
+#[test]
+fn allow_for_this_chat_fills_the_next_ask_without_a_notice_and_never_a_cards() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let fills = Fills::default();
+    fills.lock().granted.push((
+        7,
+        "qa".into(),
+        "dash-api-key".into(),
+        "https://dash.example.test".into(),
+    ));
+    let asked = |key: &str| FillAsked {
+        browser: "b1".into(),
+        target: "e12".into(),
+        vault: "qa".into(),
+        key: key.into(),
+        field: purlis_session_protocol::browsing::FieldSaid {
+            origin: Some("https://dash.example.test".into()),
+            label: "API key".into(),
+            kind: FieldKind::OneLine,
+        },
+        page: None,
+    };
+    let origin = "https://dash.example.test";
+    assert!(granted(
+        dir.path(),
+        &fills,
+        7,
+        Some("qa"),
+        &asked("dash-api-key"),
+        origin
+    ));
+    assert!(!granted(
+        dir.path(),
+        &fills,
+        8,
+        Some("qa"),
+        &asked("dash-api-key"),
+        origin
+    ));
+    assert!(!granted(
+        dir.path(),
+        &fills,
+        7,
+        Some("qa"),
+        &asked("other"),
+        origin
+    ));
+
+    // A line of any persona's marking the key a card's asks each time, whatever was allowed.
+    std::fs::write(
+        purlis_core::names::manifest(dir.path()),
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.ops.tools.dash]\nvault = \"qa\"\nkey = \"dash-api-key\"\nfill = \"https://elsewhere.example.test\"\ncard = true\n",
+    )
+    .expect("a card's mark");
+    assert!(!granted(
+        dir.path(),
+        &fills,
+        7,
+        Some("qa"),
+        &asked("dash-api-key"),
+        origin
+    ));
+}
+
+#[test]
+fn a_cards_key_is_offered_allow_once_alone_and_shows_no_line() {
+    let dir = project(
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.qa.tools.visa]\nvault = \"pay\"\nkey = \"visa\"\nfill = \"https://shop.example.test\"\ncard = true\n",
+    );
+    let one = offered_in(dir.path(), "pay", "visa", "https://other-shop.example.test");
+    assert!(one.card, "marked on every origin");
+    let locks = purlis_core::sandbox::policy::Locks::of(dir.path());
+
+    let shown = crate::asking::secret_fill(&one, &locks);
+
+    let options: Vec<&str> = shown.options.iter().map(|o| o.label.as_str()).collect();
+    assert_eq!(options, ["Allow once", "Keep blocked"]);
+    let fill = shown.fill.expect("a fill");
+    assert!(fill.card);
+    assert_eq!(fill.line, None);
+}
+
+#[test]
+fn always_shows_the_line_it_writes_before_the_press() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let one = offered_in(
+        dir.path(),
+        "qa",
+        "dash-api-key",
+        "https://dash.example.test",
+    );
+    assert_eq!(one.no_always, None);
+    let locks = purlis_core::sandbox::policy::Locks::of(dir.path());
+
+    let shown = crate::asking::secret_fill(&one, &locks);
+
+    let options: Vec<&str> = shown.options.iter().map(|o| o.label.as_str()).collect();
+    assert_eq!(
+        options,
+        [
+            "Allow once",
+            "Allow for this chat",
+            "Always allow",
+            "Keep blocked"
+        ]
+    );
+    let fill = shown.fill.expect("a fill");
+    assert_eq!(
+        fill.line.as_deref(),
+        Some(
+            r#"dash-api-key = { vault = "qa", key = "dash-api-key", fill = "https://dash.example.test" }"#
+        )
+    );
+    assert_eq!(fill.under.as_deref(), Some("[sandbox.personas.qa] tools"));
+}
+
+#[test]
+fn always_writes_the_one_line_allows_it_here_and_the_next_fill_asks_nothing() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let fills = Fills::default();
+    let shown = offered_in(
+        dir.path(),
+        "qa",
+        "dash-api-key",
+        "https://dash.example.test",
+    );
+    let (id, heard) = fills.raise(shown.clone()).expect("raised");
+    let audited = Audited::default();
+
+    let pressed = answered_in(
+        dir.path(),
+        &fills,
+        &audited,
+        &press(id, Press::Always, &shown.digest()),
+    )
+    .expect("allowed");
+
+    assert!(matches!(pressed, Pressed::Done { .. }), "{pressed:?}");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
+    assert!(
+        file_of(dir.path()).contains(r#"fill = "https://dash.example.test""#),
+        "{}",
+        file_of(dir.path())
+    );
+    let lines = purlis_core::secretfill::lines(
+        dir.path(),
+        Some("qa"),
+        "qa",
+        "dash-api-key",
+        "https://dash.example.test",
+    );
+    assert!(lines.always, "allowed here in the same press");
+    assert!(
+        !purlis_core::secretfill::lines(
+            dir.path(),
+            Some("qa"),
+            "qa",
+            "dash-api-key",
+            "https://other.example.test"
+        )
+        .always,
+        "that origin alone"
+    );
+    assert!(
+        audited
+            .into_inner()
+            .iter()
+            .any(|(what, target, _)| what == "secret-fill"
+                && target == "qa/dash-api-key -> https://dash.example.test")
+    );
+}
+
+#[test]
+fn always_is_held_back_by_proposed_changes_off_and_once_stays() {
+    use purlis_core::sandbox::policy::{Locks, set_for_this_test};
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    set_for_this_test(Locks::parse(
+        r#"{"sandbox": {"proposed-changes": "off"}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let fills = Fills::default();
+    let shown = offered_in(
+        dir.path(),
+        "qa",
+        "dash-api-key",
+        "https://dash.example.test",
+    );
+    assert!(shown.no_always.is_some(), "{shown:?}");
+    let options: Vec<String> = crate::asking::secret_fill(&shown, &Locks::of(dir.path()))
+        .options
+        .into_iter()
+        .map(|o| o.label)
+        .collect();
+    assert!(!options.iter().any(|o| o == "Always allow"), "{options:?}");
+    let (id, _heard) = fills.raise(shown.clone()).expect("raised");
+    let audited = Audited::default();
+    let before = file_of(dir.path());
+
+    assert!(
+        answered_in(
+            dir.path(),
+            &fills,
+            &audited,
+            &press(id, Press::Always, &shown.digest())
+        )
+        .is_err()
+    );
+    assert_eq!(file_of(dir.path()), before, "nothing written");
+    assert!(audited.borrow().is_empty());
+    answered_in(
+        dir.path(),
+        &fills,
+        &audited,
+        &press(id, Press::Once, &shown.digest()),
+    )
+    .expect("once stays");
+}
+
+#[test]
+fn a_cards_mark_added_while_the_notice_is_up_draws_it_again_before_a_press_counts() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let fills = Fills::default();
+    let shown = offered_in(
+        dir.path(),
+        "qa",
+        "dash-api-key",
+        "https://dash.example.test",
+    );
+    let (id, heard) = fills.raise(shown.clone()).expect("raised");
+    std::fs::write(
+        purlis_core::names::manifest(dir.path()),
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.qa.tools.dash]\nvault = \"qa\"\nkey = \"dash-api-key\"\nfill = \"https://dash.example.test\"\ncard = true\n",
+    )
+    .expect("marked");
+    let audited = Audited::default();
+
+    let pressed = answered_in(
+        dir.path(),
+        &fills,
+        &audited,
+        &press(id, Press::Chat, &shown.digest()),
+    )
+    .expect("drawn again");
+
+    assert!(matches!(pressed, Pressed::DrawnAgain { .. }), "{pressed:?}");
+    assert!(heard.try_recv().is_err(), "the call still waits");
+    assert!(fills.waiting()[0].card);
+    assert!(audited.into_inner().is_empty());
+    assert!(!fills.granted(7, "qa", "dash-api-key", "https://dash.example.test"));
 }

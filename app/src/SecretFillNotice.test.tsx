@@ -23,17 +23,21 @@ const fill = (more: Partial<FillShown> = {}): FillShown => ({
   label: "API key",
   browser: "b1",
   warnings: [],
+  card: false,
+  vault_too: false,
   ...more,
 });
 
-const ask = (more: Partial<FillShown> = {}): Shown => ({
+const ONCE = { id: "once", label: "Allow once", allows: true, preselected: null };
+const CHAT = { id: "chat", label: "Allow for this chat", allows: true, preselected: null };
+const ALWAYS = { id: "you", label: "Always allow", allows: true, preselected: null };
+const KEEP = { id: "keep", label: "Keep blocked", allows: false, preselected: null };
+
+const ask = (more: Partial<FillShown> = {}, options = [ONCE, KEEP]): Shown => ({
   session: 7,
   ask: "secret-fill:1",
   says: "Wants to put dash-api-key from vault qa into a field on dash.example.test",
-  options: [
-    { id: "once", label: "Allow once", allows: true, preselected: null },
-    { id: "keep", label: "Keep blocked", allows: false, preselected: null },
-  ],
+  options,
   source: "secret-fill",
   chain: [],
   answer: { via: "secret-fill", id: 1, shown: "digest" },
@@ -58,7 +62,7 @@ describe("SecretFillNotice", () => {
     expect(site).toHaveTextContent("the chat never sees the value");
   });
 
-  it("offers Allow once and Keep blocked, and nothing more", () => {
+  it("offers what the ask offers, and nothing more", () => {
     render(<SecretFillNotice plane="p" session={7} asks={[ask()]} />);
     expect(screen.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Keep blocked" })).toBeInTheDocument();
@@ -76,6 +80,82 @@ describe("SecretFillNotice", () => {
     );
     expect(screen.getByTestId("fill-site")).toHaveTextContent("into a field on");
     expect(screen.getByTestId("fill-site")).toHaveTextContent("Vault prod is ops's, not qa's.");
+  });
+
+  it("shows the line Always allow writes before it is pressed, and sends Always", async () => {
+    const line =
+      'dash-api-key = { vault = "qa", key = "dash-api-key", fill = "https://dash.example.test" }';
+    const sent = vi.fn();
+    mockIPC((command, args) => {
+      if (command === "answer_secret_fill") {
+        sent(args);
+        return { kind: "done", said: "Allowed." };
+      }
+      return null;
+    });
+    const user = userEvent.setup();
+    render(
+      <SecretFillNotice
+        plane="p"
+        session={7}
+        asks={[ask({ line, under: "[sandbox.personas.qa] tools" }, [ONCE, CHAT, ALWAYS, KEEP])]}
+      />,
+    );
+    const site = screen.getByTestId("fill-site");
+    expect(site).toHaveTextContent("Always allow adds this to [sandbox.personas.qa] tools");
+    expect(site).toHaveTextContent(line);
+    expect(screen.getByRole("button", { name: "Allow for this chat" })).toBeInTheDocument();
+    await waitFor(
+      async () => {
+        await user.click(screen.getByRole("button", { name: "Always allow" }));
+        expect(sent).toHaveBeenCalled();
+      },
+      { timeout: 4000 },
+    );
+    expect(sent.mock.calls[0]?.[0]).toMatchObject({ press: "always" });
+  });
+
+  it("says a card's key is allowed once each time, and shows no line", () => {
+    render(
+      <SecretFillNotice
+        plane="p"
+        session={7}
+        asks={[ask({ card: true, line: "visa = {}", under: "[sandbox.personas.qa] tools" })]}
+      />,
+    );
+    const site = screen.getByTestId("fill-site");
+    expect(site).toHaveTextContent("card or payment value, so it is allowed once each time");
+    expect(site).not.toHaveTextContent("Always allow adds");
+  });
+
+  it("says why Always allow isn't offered, where it isn't", () => {
+    render(
+      <SecretFillNotice
+        plane="p"
+        session={7}
+        asks={[ask({ no_always: "Always allow isn't offered for a chat that runs as no persona" })]}
+      />,
+    );
+    expect(screen.getByTestId("fill-site")).toHaveTextContent(
+      "Always allow isn't offered for a chat that runs as no persona.",
+    );
+  });
+
+  it("says what changed where the notice was drawn again", async () => {
+    mockIPC((command) => {
+      if (command === "answer_secret_fill")
+        return {
+          kind: "drawn-again",
+          said: "The project's settings for dash-api-key changed. Check the ask, then choose again.",
+        };
+      return null;
+    });
+    const user = userEvent.setup();
+    render(<SecretFillNotice plane="p" session={7} asks={[ask()]} />);
+    await user.click(screen.getByRole("button", { name: "Allow once" }));
+    await waitFor(() =>
+      expect(screen.getByText(/settings for dash-api-key changed/)).toBeInTheDocument(),
+    );
   });
 
   it("draws nothing for another chat", () => {
