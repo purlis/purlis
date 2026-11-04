@@ -146,6 +146,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
         since: 1,
         stale: false,
         limit: None,
+        behind: None,
     };
     let refused = |_: &proposed::Applied<'_>| Err("the event log is not open".to_owned());
     assert_eq!(
@@ -203,6 +204,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
     let marked = Proposal {
         stale: true,
         limit: None,
+        behind: None,
         base: base_of(Some(b"[plane]\nmode = \"pr\"\n")),
         ..one
     };
@@ -225,6 +227,7 @@ fn apply_is_offered_only_beside_a_change_shown_whole() {
         since: 1,
         stale: false,
         limit: None,
+        behind: None,
     };
     let ids = |shown: &crate::asking::Shown| -> Vec<String> {
         shown.options.iter().map(|one| one.id.clone()).collect()
@@ -235,6 +238,7 @@ fn apply_is_offered_only_beside_a_change_shown_whole() {
             before: "[plane]\n".to_owned(),
             after: "[plane]\nmode = \"pr\"\n".to_owned(),
         },
+        &|_| None,
     );
     assert_eq!(ids(&made), ["apply", "dismiss"]);
     assert_eq!(made.source, crate::asking::AskSource::ProposedChange);
@@ -257,6 +261,7 @@ fn apply_is_offered_only_beside_a_change_shown_whole() {
             before: long.clone(),
             after: format!("{long}more\n"),
         },
+        &|_| None,
     );
     // PC-7: too long for a row, it opens its own tab, where Apply is pressed.
     assert_eq!(ids(&too_long), ["open", "dismiss"]);
@@ -266,7 +271,7 @@ fn apply_is_offered_only_beside_a_change_shown_whole() {
     ));
     for now in [Now::Stale, Now::Unprepared] {
         assert_eq!(
-            ids(&crate::asking::proposed_change(&one, &now)),
+            ids(&crate::asking::proposed_change(&one, &now, &|_| None)),
             ["dismiss"]
         );
     }
@@ -288,6 +293,7 @@ fn apply_never_writes_a_change_not_shown_whole() {
         since: 1,
         stale: false,
         limit: None,
+        behind: None,
     };
     let audit = |_: &proposed::Applied<'_>| -> Result<(), String> {
         panic!("nothing is recorded for a change never written")
@@ -320,6 +326,7 @@ fn two_applies_against_the_same_file_as_it_was_never_both_write() {
         since: 1,
         stale: false,
         limit: None,
+        behind: None,
     };
     let handles: Vec<_> = [
         proposal(1, "mode = \"pr\""),
@@ -362,6 +369,7 @@ fn a_write_that_fails_is_recorded_as_failed() {
         since: 1,
         stale: false,
         limit: None,
+        behind: None,
     };
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o555)).expect("read-only");
     let audited = std::cell::RefCell::new(Vec::new());
@@ -395,6 +403,7 @@ fn a_change_too_long_for_a_row_is_shown_whole_on_its_tab() {
         since: 1,
         stale: false,
         limit: None,
+        behind: None,
     };
     let long = "line\n".repeat(purlis_core::harness::asked::edit::MOST_LINES + 1);
     let whole = whole_of(
@@ -437,6 +446,7 @@ fn a_long_change_on_its_tab_marks_only_the_lines_that_changed() {
         since: 1,
         stale: false,
         limit: None,
+        behind: None,
     };
     let lines = |changed: &str| {
         (1..=2000)
@@ -480,6 +490,7 @@ fn tab_hunks(before: &str, after: &str) -> Vec<(u32, u32, u32, u32)> {
         since: 1,
         stale: false,
         limit: None,
+        behind: None,
     };
     let now = Now::Made {
         before: before.to_owned(),
@@ -524,6 +535,7 @@ fn a_change_too_long_for_a_row_is_applied_only_from_its_tab() {
         since: 1,
         stale: false,
         limit: None,
+        behind: None,
     };
     // Too long a whole content to travel: made here, as the app would hold it.
     let ok = |_: &proposed::Applied<'_>| Ok(());
@@ -779,9 +791,9 @@ fn filled(
         filled: true,
         persona: "devops".to_owned(),
         declared,
-        purpose: Some("charge test cards".to_owned()),
         names_no_vault,
         made_vault: names_no_vault,
+        asker: Some(7),
         nudge: Vec::new(),
         told: purlis_core::askoutcome::Outcome {
             about: purlis_core::askoutcome::About::Secret {
@@ -797,191 +809,310 @@ fn definition(root: &Path) -> String {
     std::fs::read_to_string(root.join("personas/devops/persona.md")).expect("the definition")
 }
 
-/// #5076: a first fill of a key the persona does not declare is offered as a proposed change
-/// adding it as a Secret need, purlis's own, and nothing is written until the person applies
-/// it. A second fill's need joins the first's offer; a declared key offers nothing.
+const NAMES_A_VAULT: &str = "---\nrole: Ops\nvault: team\n---\n\nThe charter.\n";
+const NAMES_NO_VAULT: &str = "---\nrole: Ops\n---\n\nThe charter.\n";
+
+/// What a Fill's Remember came to, with an audit that takes everything.
+fn remember(
+    root: &Path,
+    held: &Proposals,
+    answered: &purlis_core::secrets::ask::Answered,
+    purpose: Option<&str>,
+) -> Result<Remembered, String> {
+    fill_remembered_in(root, held, answered, purpose, &|_| Ok(()), 1)
+}
+
+/// ADR 0110, #5240: Remember unticked, a Fill writes nothing and holds nothing, for any key: a
+/// first fill, and one into a vault the persona does not name.
 #[test]
-fn a_first_undeclared_fill_is_offered_as_a_need_and_written_only_when_applied() {
+fn a_fill_with_remember_unticked_writes_and_offers_nothing() {
     let (_dir, root) = project();
-    let before = "---\nrole: Ops\nvault: none\n---\n\nThe charter.\n";
-    std::fs::write(root.join("personas/devops/persona.md"), before).unwrap();
+    std::fs::write(root.join("personas/devops/persona.md"), NAMES_NO_VAULT).unwrap();
     let held = Proposals::default();
 
-    assert_eq!(
-        need_offered_in(&root, &held, &filled("DECLARED", "team", true, false), 1),
-        Ok(None),
-        "a declared key into a vault the persona names offers nothing"
-    );
-    let first = need_offered_in(
+    let said = remember(
         &root,
         &held,
-        &filled("STRIPE_KEY", "devops", false, true),
-        2,
-    )
-    .expect("offered")
-    .expect("one proposal");
-    let again = need_offered_in(
-        &root,
-        &held,
-        &filled("GITHUB_TOKEN", "devops", false, true),
-        3,
-    )
-    .expect("offered")
-    .expect("one proposal");
-    assert_eq!(definition(&root), before, "nothing written by an offer");
-    let every = held.every();
-    assert_eq!(every.len(), 1, "one offer for the file: {every:?}");
-    assert!(held.get(first).is_none() && held.get(again).is_some());
-    let one = &every[0];
-    assert_eq!(
-        (one.session, one.path.as_str()),
-        (BY_PURLIS, "personas/devops/persona.md")
+        &filled("STRIPE_KEY", "team", false, true),
+        None,
     );
 
-    let audit = |_: &proposed::Applied<'_>| Ok(());
-    apply_in(&root, one, None, &audit, &Mutex::new(()), From::Row).expect("applied");
+    assert_eq!(said, Ok(Remembered::Nothing));
+    assert_eq!(definition(&root), NAMES_NO_VAULT);
+    assert!(held.every().is_empty(), "no proposal after a Fill");
+}
+
+/// ADR 0110, #5240: ticked, Fill writes the line the person read, in their words, there and
+/// then: no proposal waits, and the chat's own words are not what goes in.
+#[test]
+fn a_fill_with_remember_ticked_writes_the_line_as_edited_and_holds_no_proposal() {
+    let (_dir, root) = project();
+    std::fs::write(root.join("personas/devops/persona.md"), NAMES_A_VAULT).unwrap();
+    let held = Proposals::default();
+
+    let said = remember(
+        &root,
+        &held,
+        &filled("STRIPE_KEY", "team", false, false),
+        Some("  charge test cards: checkout  "),
+    );
+
+    assert_eq!(said, Ok(Remembered::Written));
     assert_eq!(
         definition(&root),
-        "---\nrole: Ops\nvault: devops\nsecret-need.STRIPE_KEY: charge test cards\n\
-         secret-need.GITHUB_TOKEN: charge test cards\n---\n\nThe charter.\n"
+        "---\nrole: Ops\nvault: team\nsecret-need.STRIPE_KEY: charge test cards: checkout\n---\n\nThe charter.\n"
+    );
+    assert!(held.every().is_empty(), "no proposal after a Fill");
+}
+
+/// ADR 0110, #5240: a persona that names no vault gets a `vault:` line with its need.
+#[test]
+fn remember_adds_a_vault_line_where_the_persona_names_none() {
+    let (_dir, root) = project();
+    std::fs::write(root.join("personas/devops/persona.md"), NAMES_NO_VAULT).unwrap();
+
+    remember(
+        &root,
+        &Proposals::default(),
+        &filled("STRIPE_KEY", "team", false, true),
+        Some("charge test cards"),
+    )
+    .expect("written");
+
+    assert_eq!(
+        definition(&root),
+        "---\nrole: Ops\nsecret-need.STRIPE_KEY: charge test cards\nvault: team\n---\n\nThe charter.\n"
     );
 }
 
-/// What `persona`'s fill of `key` came to, into the vault its definition names.
-fn filled_by(persona: &str, key: &str) -> purlis_core::secrets::ask::Answered {
-    purlis_core::secrets::ask::Answered {
-        persona: persona.to_owned(),
-        ..filled(key, persona, false, false)
-    }
+/// A declined ask stored nothing, so nothing is remembered of it, ticked or not.
+#[test]
+fn a_decline_remembers_nothing_even_ticked() {
+    let (_dir, root) = project();
+    std::fs::write(root.join("personas/devops/persona.md"), NAMES_A_VAULT).unwrap();
+    let declined = purlis_core::secrets::ask::Answered {
+        filled: false,
+        ..filled("STRIPE_KEY", "team", false, false)
+    };
+
+    let said = remember(&root, &Proposals::default(), &declined, Some("words"));
+
+    assert_eq!(said, Ok(Remembered::Nothing));
+    assert_eq!(definition(&root), NAMES_A_VAULT);
 }
 
-/// A project with personas `devops` and `shop`, each naming its vault.
-fn two_personas() -> (tempfile::TempDir, PathBuf) {
+/// #5240: where the file can't be written, what the person confirmed is not lost: purlis holds
+/// it, naming the chat and the ask behind it, in place of a row that went with the Fill.
+#[cfg(unix)]
+#[test]
+fn a_remembered_line_that_cannot_be_written_is_held_naming_the_chat_and_ask_behind_it() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_dir, root) = project();
+    let folder = root.join("personas/devops");
+    std::fs::write(folder.join("persona.md"), NAMES_A_VAULT).unwrap();
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let held = Proposals::default();
+
+    let said = remember(
+        &root,
+        &held,
+        &filled("STRIPE_KEY", "team", false, false),
+        Some("charge test cards"),
+    );
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let every = held.every();
+    assert_eq!(every.len(), 1, "{every:?}");
+    assert_eq!(said, Ok(Remembered::Held(every[0].id)));
+    assert_eq!(definition(&root), NAMES_A_VAULT, "not written");
+    assert_eq!(every[0].session, BY_PURLIS);
+    assert_eq!(
+        every[0].behind,
+        Some(Behind {
+            chat: Some(7),
+            key: "STRIPE_KEY".to_owned(),
+        })
+    );
+    let Change::Whole { content } = &every[0].change else {
+        panic!("a whole change: {:?}", every[0].change);
+    };
+    assert!(content.contains("secret-need.STRIPE_KEY: charge test cards\n"));
+}
+
+/// #5240, #5227's problem 2: a change purlis holds is drawn as purlis's, with the chat and the
+/// ask behind it, and never as "chat 0".
+#[test]
+fn a_change_purlis_holds_names_purlis_and_the_chat_and_ask_behind_it() {
+    let one = Proposal {
+        id: 3,
+        session: BY_PURLIS,
+        path: "personas/devops/persona.md".to_owned(),
+        base: None,
+        change: Change::Whole {
+            content: String::new(),
+        },
+        since: 1,
+        stale: false,
+        limit: None,
+        behind: Some(Behind {
+            chat: Some(7),
+            key: "STRIPE_KEY".to_owned(),
+        }),
+    };
+    let now = Now::Made {
+        before: NAMES_A_VAULT.to_owned(),
+        after: format!("{NAMES_A_VAULT}more\n"),
+    };
+    let name_of = |chat: u32| (chat == 7).then(|| "billing work".to_owned());
+
+    let shown = crate::asking::proposed_change(&one, &now, &name_of);
+
+    assert_eq!(shown.chain, ["purlis", "billing work"]);
+    assert!(shown.says.contains("STRIPE_KEY"), "{}", shown.says);
+    assert!(!shown.says.contains("chat 0"), "{}", shown.says);
+
+    // One with nothing behind it, such as removing an old table, is purlis's alone.
+    let alone = crate::asking::proposed_change(
+        &Proposal {
+            behind: None,
+            ..one
+        },
+        &now,
+        &name_of,
+    );
+    assert_eq!(alone.chain, ["purlis"]);
+}
+
+/// A project with personas `devops`, naming vault `team`, and `shop`, naming none, and `quiet`,
+/// which holds no credentials.
+fn three_personas() -> (tempfile::TempDir, PathBuf) {
     let (dir, root) = project();
-    for name in ["devops", "shop"] {
+    for (name, vault) in [
+        ("devops", "vault: team\nsecret-need.DECLARED: words\n"),
+        ("shop", ""),
+        ("quiet", "vault: none\n"),
+        ("other", "vault: elsewhere\n"),
+    ] {
         std::fs::create_dir_all(root.join("personas").join(name)).unwrap();
         std::fs::write(
             root.join("personas").join(name).join("persona.md"),
-            format!("---\nrole: Ops\nvault: {name}\n---\n\nThe charter.\n"),
+            format!("---\nrole: Ops\n{vault}---\n\nThe charter.\n"),
         )
         .unwrap();
     }
+    git(&root, &["init", "-q", "-b", "main", "."]);
+    git(&root, &["add", "-A"]);
+    git(&root, &["commit", "-q", "-m", "a project"]);
     (dir, root)
 }
 
-/// #5159: a dismissed offer of a Secret need is not offered again for that persona and key on
-/// this machine; another key, or another persona, still is. What is kept is the two names.
+/// #5240: the vault row offers the personas that use this vault, and those that name none, who
+/// would come to name it. Another's vault, or `vault: none`, is not one.
 #[test]
-fn a_dismissed_need_offer_is_not_offered_again_for_that_persona_and_key() {
-    let (_dir, root) = two_personas();
-    let held = Proposals::default();
-    let offered = need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 1)
-        .expect("offered")
-        .expect("one proposal");
-    dismissed_in(&root, &held, offered).expect("dismissed");
-    assert!(held.every().is_empty());
+fn a_vault_row_offers_its_personas_and_those_that_name_no_vault() {
+    let (_dir, root) = three_personas();
+
+    let listed = need_personas_in(&root, "team");
 
     assert_eq!(
-        need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 2),
-        Ok(None),
-        "the same persona and key is not offered again"
-    );
-    assert!(
-        need_offered_in(&root, &held, &filled_by("devops", "GITHUB_TOKEN"), 3)
-            .expect("offered")
-            .is_some(),
-        "another key is"
-    );
-    held.every().iter().for_each(|one| {
-        held.take(one.id);
-    });
-    assert!(
-        need_offered_in(&root, &held, &filled_by("shop", "STRIPE_KEY"), 4)
-            .expect("offered")
-            .is_some(),
-        "another persona is"
-    );
-
-    let kept = std::fs::read_to_string(purlis_core::secrets::dismissed_needs::path(&root))
-        .expect("kept on this machine");
-    assert!(
-        kept.contains("devops") && kept.contains("STRIPE_KEY"),
-        "{kept}"
-    );
-    assert!(
-        !kept.contains("charge test cards") && !kept.contains("GITHUB_TOKEN"),
-        "names of what was dismissed only: {kept}"
+        listed,
+        [
+            NeedPersona {
+                persona: "devops".to_owned(),
+                file: "personas/devops/persona.md".to_owned(),
+                declares: vec!["DECLARED".to_owned()],
+                names_no_vault: false,
+            },
+            NeedPersona {
+                persona: "shop".to_owned(),
+                file: "personas/shop/persona.md".to_owned(),
+                declares: Vec::new(),
+                names_no_vault: true,
+            },
+        ]
     );
 }
 
-/// #5159: an offer dismissed once its file changed under it was no answer to it (PC-8), so the
-/// key is offered again on the next fill.
+/// #5240: the vault row's action writes the line the person read, directly, with a `vault:`
+/// line where the persona names none. Nothing waits in the Inbox.
 #[test]
-fn a_stale_need_offer_dismissed_is_offered_again() {
-    let (_dir, root) = two_personas();
+fn the_vault_rows_action_writes_the_line_directly_and_holds_no_proposal() {
+    let (_dir, root) = three_personas();
     let held = Proposals::default();
-    let offered = need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 1)
-        .expect("offered")
-        .expect("one proposal");
-    std::fs::write(
-        root.join("personas/devops/persona.md"),
-        "---\nrole: Ops, changed\nvault: devops\n---\n",
+    let audit = |_: &proposed::Applied<'_>| Ok(());
+
+    need_remembered_in(
+        &root,
+        &held,
+        "team",
+        "shop",
+        "STRIPE_KEY",
+        "take payments",
+        &audit,
     )
-    .unwrap();
-    dismissed_in(&root, &held, offered).expect("dismissed");
-    assert!(
-        need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 2)
-            .expect("offered")
-            .is_some()
+    .expect("written");
+
+    assert_eq!(
+        std::fs::read_to_string(root.join("personas/shop/persona.md")).unwrap(),
+        "---\nrole: Ops\nsecret-need.STRIPE_KEY: take payments\nvault: team\n---\n\nThe charter.\n"
     );
+    assert!(held.every().is_empty());
 }
 
-/// #5159: the vault view offers a dismissed need again on the person's press: the dismissal is
-/// lifted and the change is held, with the purpose left for the person to say, since none was
-/// kept.
+/// #5240: no persona takes a need by being named wrongly, and a line with no purpose is not
+/// what the person read.
 #[test]
-fn a_dismissed_need_is_offered_again_on_request() {
-    let (_dir, root) = two_personas();
+fn the_vault_rows_action_refuses_what_was_never_offered() {
+    let (_dir, root) = three_personas();
     let held = Proposals::default();
-    let offered = need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 1)
-        .expect("offered")
-        .expect("one proposal");
-    dismissed_in(&root, &held, offered).expect("dismissed");
-    let kept = purlis_core::secrets::dismissed_needs::read(&root);
-    assert_eq!(
-        kept.iter()
-            .map(|one| (one.persona.as_str(), one.key.as_str()))
-            .collect::<Vec<_>>(),
-        [("devops", "STRIPE_KEY")]
-    );
-
-    let again = need_offered_again_in(&root, &held, "devops", "STRIPE_KEY", 2)
-        .expect("offered again")
-        .expect("one proposal");
-    assert!(purlis_core::secrets::dismissed_needs::read(&root).is_empty());
-    let one = held.get(again).expect("held");
-    assert_eq!(
-        (one.session, one.path.as_str()),
-        (BY_PURLIS, "personas/devops/persona.md")
-    );
-    let Change::Whole { content } = &one.change else {
-        panic!("a whole content: {one:?}");
+    let audit = |_: &proposed::Applied<'_>| Ok(());
+    let before = std::fs::read_to_string(root.join("personas/other/persona.md")).unwrap();
+    let said = |persona: &str, key: &str, purpose: &str| {
+        need_remembered_in(&root, &held, "team", persona, key, purpose, &audit)
     };
+
     assert!(
-        content.contains(&format!(
-            "secret-need.STRIPE_KEY: {}",
-            purlis_core::secrets::needs::NO_PURPOSE_SAID
-        )),
-        "{content}"
+        said("other", "STRIPE_KEY", "words").is_err(),
+        "another vault's persona"
     );
     assert!(
-        need_offered_again_in(&root, &held, "devops", "1BAD", 3).is_err(),
-        "a key no need takes"
+        said("../devops", "STRIPE_KEY", "words").is_err(),
+        "no persona's name"
     );
+    assert!(said("devops", "9 bad", "words").is_err(), "no key");
+    assert!(said("devops", "STRIPE_KEY", "   ").is_err(), "no purpose");
+
+    assert_eq!(
+        std::fs::read_to_string(root.join("personas/other/persona.md")).unwrap(),
+        before
+    );
+    assert!(!definition(&root).contains("STRIPE_KEY"));
 }
 
-/// Runs git in `root`, for a definition read as committed: nothing of the developer's git
-/// config, and no signer asked (as `autosave.rs`'s tests run it).
+/// #5240: a file left by an earlier version does no harm: nothing reads it, and the need it
+/// once quieted is remembered like any other.
+#[test]
+fn a_leftover_dismissal_file_does_no_harm() {
+    let (_dir, root) = project();
+    std::fs::write(root.join("personas/devops/persona.md"), NAMES_A_VAULT).unwrap();
+    let state = purlis_core::plane::state_dir(&root).join("app");
+    std::fs::create_dir_all(&state).unwrap();
+    let leftover = state.join("secret-needs-dismissed.json");
+    let kept = "{\"dismissed\": [{\"persona\": \"devops\", \"key\": \"STRIPE_KEY\"}]}\n";
+    std::fs::write(&leftover, kept).unwrap();
+
+    remember(
+        &root,
+        &Proposals::default(),
+        &filled("STRIPE_KEY", "team", false, false),
+        Some("charge test cards"),
+    )
+    .expect("written");
+
+    assert!(definition(&root).contains("secret-need.STRIPE_KEY"));
+    assert_eq!(std::fs::read_to_string(&leftover).unwrap(), kept);
+}
+
 fn git(root: &Path, args: &[&str]) {
     let mut command = std::process::Command::new("git");
     command
@@ -1000,37 +1131,5 @@ fn git(root: &Path, args: &[&str]) {
         out.status.success(),
         "git {args:?}: {}",
         String::from_utf8_lossy(&out.stderr)
-    );
-}
-
-/// #5159: a dismissal holds until the persona's Secret needs change: once its committed
-/// definition declares another need, the dismissed key is offered again on its next fill.
-#[test]
-fn a_dismissed_need_is_offered_again_once_the_personas_needs_change() {
-    let (_dir, root) = two_personas();
-    git(&root, &["init", "-q", "-b", "main", "."]);
-    git(&root, &["add", "-A"]);
-    git(&root, &["commit", "-q", "-m", "a project"]);
-    let held = Proposals::default();
-    let offered = need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 1)
-        .expect("offered")
-        .expect("one proposal");
-    dismissed_in(&root, &held, offered).expect("dismissed");
-    assert_eq!(
-        need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 2),
-        Ok(None)
-    );
-
-    std::fs::write(
-        root.join("personas/devops/persona.md"),
-        "---\nrole: Ops\nvault: devops\nsecret-need.GITHUB_TOKEN: open pull requests\n---\n",
-    )
-    .unwrap();
-    git(&root, &["commit", "-q", "-am", "a need"]);
-    assert!(
-        need_offered_in(&root, &held, &filled_by("devops", "STRIPE_KEY"), 3)
-            .expect("offered")
-            .is_some(),
-        "the persona's needs changed since"
     );
 }

@@ -16,9 +16,20 @@ const KEPT: VaultEntries[] = [
 ];
 
 /** The fill, holding the entry the person picks as the Inbox row does. */
-function Held(props: Omit<Parameters<typeof SecretFill>[0], "picked" | "onPicked">) {
+function Held(
+  props: Omit<Parameters<typeof SecretFill>[0], "picked" | "onPicked" | "remember" | "onRemember">,
+) {
   const [picked, setPicked] = useState<VaultEntry>();
-  return <SecretFill {...props} picked={picked} onPicked={setPicked} />;
+  const [remember, setRemember] = useState<string>();
+  return (
+    <SecretFill
+      {...props}
+      picked={picked}
+      onPicked={setPicked}
+      remember={remember}
+      onRemember={setRemember}
+    />
+  );
 }
 
 const meta = {
@@ -132,5 +143,47 @@ export const BrokenLink: Story = {
   args: {
     secret: { ...secret, key: "STRIPE_KEY", tool: null, gone: { vault: "own", key: "STRIPE" } },
     box: null,
+  },
+};
+
+/**
+ * #5240, ADR 0110: Remember is unticked; ticking it by keyboard shows the exact line with the
+ * chat's words to edit, and a `vault:` line where the persona names none.
+ */
+export const RememberTheNeed: Story = {
+  args: {
+    secret: {
+      ...secret,
+      key: "STRIPE_KEY",
+      tool: null,
+      declared: false,
+      remember: {
+        file: "personas/devops/persona.md",
+        need: true,
+        purpose: "charge test cards in checkout",
+        vault: "team",
+      },
+    },
+    box: null,
+  },
+  parameters: { screenshot: "page" },
+  play: async ({ canvas, userEvent }) => {
+    const remember = canvas.getByRole("checkbox", { name: "Remember this need for the persona" });
+    await expect(remember).not.toBeChecked();
+    await expect(canvas.queryByText("secret-need.STRIPE_KEY:")).toBeNull();
+    await userEvent.tab();
+    await userEvent.tab();
+    await userEvent.tab();
+    await untilFocused(() => remember, "Remember");
+    expectFocusInSight();
+    await userEvent.keyboard(" ");
+    await expect(remember).toBeChecked();
+    await expect(canvas.getByText("secret-need.STRIPE_KEY:")).toBeVisible();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("textbox", { name: "What STRIPE_KEY is for" }),
+      "the purpose's box",
+    );
+    expectFocusInSight();
   },
 };

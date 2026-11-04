@@ -121,8 +121,8 @@ pub fn declared(root: &Path, persona: &str, key: &str) -> Option<Need> {
     of(root, persona).into_iter().find(|need| need.key == key)
 }
 
-/// **What a persona's definition reads with a need added**, as purlis proposes it after a
-/// first fill of a key the persona does not declare (#5076): `text` with a
+/// **What a persona's definition reads with a need added**, as the person remembers it on a
+/// Fill or from a vault's row (#5240, ADR 0110): `text` with a
 /// `secret-need.<key>: <purpose>` line, and a `vault: <vault>` line where the persona named
 /// none. Every other line is left as written ([`purlis_skills::fence::with_keys`]). Refused
 /// for a key no need takes, or a definition with no frontmatter to hold the lines.
@@ -154,31 +154,13 @@ pub fn with_need(
     purlis_skills::fence::with_keys(text, &keys).map_err(|why| format!("the definition {why}"))
 }
 
-/// **The keys of the Secret needs `after` adds to `before`**, each a definition's text: what a
-/// dismissed offer of purlis's turned down (#5159). A key `before` names already is not one.
-pub fn added(before: &str, after: &str) -> Vec<String> {
-    let keys = |text: &str| -> Vec<String> {
-        crate::personas::frontmatter(text)
-            .iter()
-            .filter_map(|(name, _)| key_of(name))
-            .map(str::to_owned)
-            .collect()
-    };
-    let was = keys(before);
-    keys(after)
-        .into_iter()
-        .filter(|key| !was.contains(key))
-        .collect()
-}
-
 /// The key a frontmatter line named `name` declares a need for, where it is a need's line and
 /// a key a Secret ask takes.
 fn key_of(name: &str) -> Option<&str> {
     name.strip_prefix(PREFIX).filter(|key| is_key(key))
 }
 
-/// The purpose a need is proposed with where the chat said none: the person edits it before
-/// applying, or after.
+/// The purpose a need is written with where none was said: the person edits it after.
 pub const NO_PURPOSE_SAID: &str = "asked for by a chat; say what for";
 
 #[cfg(test)]

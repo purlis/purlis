@@ -148,7 +148,7 @@ pub fn proposable_by_purlis(root: &Path, path: &Path) -> Result<PathBuf, String>
     .into_iter()
     .any(|which| rel == Path::new(which.file_at(root)));
     let manifest = manifest_of(root, &rel).is_some();
-    // A persona's definition, for the Secret need a first fill offers (#5076, ADR 0109).
+    // A persona's definition, for the Secret need the person remembers (#5240, ADR 0110).
     let persona = definition_of(&rel);
     if !settings && !manifest && !persona {
         return Err(not_proposable(path));

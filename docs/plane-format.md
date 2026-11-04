@@ -3314,7 +3314,7 @@ is a string; "type" below is how purlis interprets it.
 | `color` | a palette name (`red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`) or `#rrggbb` | absent = a colour of the palette picked by the persona's name | **The persona's colour**, which its mark is drawn on wherever the persona appears in the app (#1449): a workspace's vocabulary (`settings.theme.colour`), and a hue of the theme drawn. Inherited along `extends`, child wins. A value that is neither is not drawn, and the persona's view and `persona lint` say so. No longer copied anywhere: the generated agent is retired (#1451). The `persona-agents` fix rewrites the two names Claude Code used that this palette spells otherwise (`cyan` to `teal`, `magenta` to `pink`) | stable | `crates/purlis-core/src/personamark.rs` (`mark`); `charter/persona.py:305` |
 | `icon` | one of purlis's persona icons, by name | absent = the persona's initials | **The persona's icon** (#1449): `anchor`, `book`, `bot`, `briefcase`, `bug`, `chart`, `clipboard`, `cloud`, `code`, `compass`, `cpu`, `database`, `eye`, `flask`, `git-branch`, `globe`, `graduation-cap`, `hammer`, `heart`, `key`, `leaf`, `lightbulb`, `lock`, `mail`, `map`, `megaphone`, `package`, `palette`, `pen`, `rocket`, `scale`, `search`, `server`, `shield`, `star`, `terminal`, `user`, `users`, `wrench`, `zap`. A name, never a path. Inherited along `extends`, child wins. Another value is not drawn, and the persona's view says so. A custom image in the folder is drawn instead (`icon.png` below) | stable | `crates/purlis-core/src/personamark.rs` (`ICONS`, `mark`) |
 | `memory` | string (truthy) | absent | **Retired in purlis (#1451): read by nothing.** It chose the harness's own memory store for the generated sub-agent and added a note to its body. A persona chat has the persona's memory in `personas/<name>/memory/`. `persona lint` and the `persona-agents` fix say so and leave the line. Choosing a harness store for a persona chat: #1460 | retired | `charter/commands_persona.py:962` |
-| `secret-need.<KEY>` | one line, the purpose | absent = the persona declares no Secret need | **purlis only** (ADR 0109, #5072, #5076). **A Secret need**: a credential the persona's work needs, by the key it is handed under, and what for, one line a key (the line format holds no list of pairs). `<KEY>` is ASCII letters, digits, `_`, `-` and `.`, starting with a letter or `_`, at most 128 bytes; a line whose key is not one is no need. A Secret ask for a declared key shows its purpose and no "not declared by this persona" tag. Inherited along `extends`, a child's line for a key answering instead of its parent's. **Read as committed** (the project's `HEAD`, the `extends` chain too), never from the file on disk, which a chat can write: an uncommitted line declares nothing, lifts no policy lock and shows no purpose. **Never a value, a vault entry or whether anyone filled it**: the need is shared and the fill stays on each person's machine. Written only by a proposed change the person applies, which purlis offers after a first fill of an undeclared key, or by hand | stable | `crates/purlis-core/src/secrets/needs.rs` |
+| `secret-need.<KEY>` | one line, the purpose | absent = the persona declares no Secret need | **purlis only** (ADR 0109, #5072, #5076). **A Secret need**: a credential the persona's work needs, by the key it is handed under, and what for, one line a key (the line format holds no list of pairs). `<KEY>` is ASCII letters, digits, `_`, `-` and `.`, starting with a letter or `_`, at most 128 bytes; a line whose key is not one is no need. A Secret ask for a declared key shows its purpose and no "not declared by this persona" tag. Inherited along `extends`, a child's line for a key answering instead of its parent's. **Read as committed** (the project's `HEAD`, the `extends` chain too), never from the file on disk, which a chat can write: an uncommitted line declares nothing, lifts no policy lock and shows no purpose. **Never a value, a vault entry or whether anyone filled it**: the need is shared and the fill stays on each person's machine. Written only on the person's word: by Fill with *Remember this need for the persona* ticked, by a vault row's *Offer as a Secret need*, each showing the exact line with its purpose editable (ADR 0110, #5240), or by hand | stable | `crates/purlis-core/src/secrets/needs.rs` |
 
 Inheritance merge (`charter/persona.py:872`-`:909`): iterate the chain root→child; every
 truthy scalar key overwrites (child wins, `:892`); `tools`, `agent-tools`, `uses` are
@@ -6242,32 +6242,6 @@ down rather than read off the code.
 - **Tier:** Clone state — deleting it brings the Ask back once more, while a file holds the keys.
 - **Code:** `app/src-tauri/src/oldplugins.rs` (`answered_at`, `notice_of`,
   `purlis_change_applied`, `purlis_change_dismissed`).
-
-### `app/secret-needs-dismissed.json`
-- **What:** the Secret need offers the person dismissed on this machine (#5159, ADR 0109). After
-  a first fill of a key a persona does not declare, purlis offers a proposed change adding it as
-  a Secret need (`secret-need.<KEY>` in `personas/<name>/persona.md`). Dismissing that offer
-  while it still applies keeps the persona's name and each key it would have added here, and a
-  later fill of the same key for the same persona offers nothing, its `vault` line included,
-  **until the persona's Secret needs change**: each entry keeps the keys the persona declared
-  as committed when it was dismissed, and holds only while they are the same. Another key, or
-  another persona, is still offered. A change that went stale or can no longer be made is no
-  answer, and keeps nothing. In the vault view, the key's row's **Offer as a Secret need ▸**
-  `<persona>` takes the pair out and holds the offer again, with the purpose left for the
-  person to say.
-- **Format:** JSON, pretty-printed, trailing `\n`, read and replaced whole under purlis's lock on
-  the directory (`rewrite::update`):
-  `{"dismissed": [{"persona": "devops", "key": "STRIPE_KEY", "needs": ["GITHUB_TOKEN"]}]}`, where
-  `needs` is the persona's declared keys then, sorted (an entry without it holds whatever the
-  persona declares). **Names only**: no value, no purpose, no vault and nothing about the fill. A file that does not
-  read as this shape dismisses nothing (the safe direction: an offer writes nothing until
-  applied), and a write never replaces it; fix it or delete it.
-- **Status:** **internal**: written and read by purlis alone; no chat can write it (the sandbox
-  denies every chat a write under `<state>/app`).
-- **Tier:** Clone state — deleting it offers every dismissed need again on its next fill.
-- **Code:** `crates/purlis-core/src/secrets/dismissed_needs.rs`; `app/src-tauri/src/proposals.rs`
-  (`need_dismissed`, `need_offered_in`, `need_offered_again_in`).
-- **Git:** gitignored (under `/.purlis/`).
 
 ### `app/secret-asks.json`
 - **What:** the Secret asks open as the app last changed them (#5079, ADR 0109, #5054's story

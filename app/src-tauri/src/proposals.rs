@@ -65,6 +65,17 @@ pub struct Proposal {
     /// **A value for a pool's limit, in place of a change to a file** (#4284): [`Self::path`] is
     /// then its name in words, and [`Self::change`] is not read.
     pub limit: Option<LimitChange>,
+    /// **What a change purlis holds came from** (#5240), where something did: what the window
+    /// says of it, so it is never read as a chat's.
+    pub behind: Option<Behind>,
+}
+
+/// The chat and the Secret ask behind a change purlis holds (#5240): the chat that asked for
+/// `key`, where one did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Behind {
+    pub chat: Option<u32>,
+    pub key: String,
 }
 
 /// **A value proposed for a pool's limit** (#4284, the person's ruling of 2026-11-01 on PC-1).
@@ -109,7 +120,20 @@ impl Proposals {
         change: Change,
         now: u64,
     ) -> Option<u32> {
-        self.hold(session, path, base, change, None, now)
+        self.hold(session, path, base, change, None, None, now)
+    }
+
+    /// Holds purlis's own change to `path`, with what it came from (#5240), under the rules of
+    /// [`Self::note`].
+    pub fn note_behind(
+        &self,
+        path: &str,
+        base: Option<String>,
+        change: Change,
+        behind: Behind,
+        now: u64,
+    ) -> Option<u32> {
+        self.hold(BY_PURLIS, path, base, change, None, Some(behind), now)
     }
 
     /// Holds chat `session`'s value for a pool's limit, under the rules of [`Self::note`].
@@ -123,7 +147,7 @@ impl Proposals {
         let nothing = Change::Whole {
             content: String::new(),
         };
-        self.hold(session, path, None, nothing, Some(limit), now)
+        self.hold(session, path, None, nothing, Some(limit), None, now)
     }
 
     fn hold(
@@ -133,6 +157,7 @@ impl Proposals {
         base: Option<String>,
         change: Change,
         limit: Option<LimitChange>,
+        behind: Option<Behind>,
         now: u64,
     ) -> Option<u32> {
         let mut held = self.lock();
@@ -152,6 +177,7 @@ impl Proposals {
             since: now,
             stale: false,
             limit,
+            behind,
         });
         Some(id)
     }
@@ -872,98 +898,150 @@ pub fn dismissed(held: &Held, id: u32) -> Result<(), String> {
 }
 
 /// [`dismissed`]'s work in the project at `root`: proposal `id` put away, and where it was one
-/// of purlis's own, what the person answered kept on this machine ([`need_dismissed`] and
-/// [`crate::oldplugins::purlis_change_dismissed`]). The proposal, for its chat to be told.
+/// of purlis's own, what the person answered kept on this machine
+/// ([`crate::oldplugins::purlis_change_dismissed`]). The proposal, for its chat to be told.
 pub fn dismissed_in(root: &Path, proposals: &Proposals, id: u32) -> Result<Proposal, String> {
     let one = proposals.take(id).ok_or(WAITS_NO_MORE)?;
     crate::oldplugins::purlis_change_dismissed(root, &one);
-    need_dismissed(root, &one);
     Ok(one)
 }
 
 #[cfg(test)]
 mod tests;
 
-/// **purlis offers a persona what a first fill showed it needs** (#5076, ADR 0109): after the
-/// person fills a key the persona does not declare, a proposed change adding it as a Secret
-/// need (`secret-need.<key>: <purpose>`), and where the persona names no vault, setting its
-/// `vault` to the one the fill made. Held as purlis's own ([`BY_PURLIS`]) for the person to
-/// apply or dismiss; **nothing is written until they apply it**. Never a value, a link or which
-/// vault entry was picked: only the key and what the chat said it is for.
-pub fn offer_need(held: &Held, answered: &purlis_core::secrets::ask::Answered) {
-    match need_offered_in(
-        held.root(),
-        held.proposals(),
-        answered,
-        crate::sandboxing::now_secs(),
-    ) {
-        Ok(Some(_)) => held.chats().asks_may_have_moved(),
-        Ok(None) => {}
-        Err(why) => tracing::info!("purlis: no Secret need was offered: {why}"),
-    }
+/// **What Fill's Remember came to** (#5240, ADR 0110).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Remembered {
+    /// Unticked, a decline, or the definition holds the line already.
+    Nothing,
+    Written,
+    /// The file could not be written, so what the person confirmed waits for them: its number.
+    Held(u32),
 }
 
-/// [`offer_need`]'s work in the project at `root`, held in `proposals` at `now`: the
-/// proposal's number, or none where there is nothing to offer.
-pub fn need_offered_in(
+/// **Remember this need for the persona, on Fill** (#5240, ADR 0110): the person read the line,
+/// with `purpose` as they edited it, and ticked it, so it is written there and then. Unticked
+/// (`None`), or on a decline, nothing is written or offered. The key, the vault and the persona
+/// are the answered ask's, never the window's. Where the file can't be written the row that
+/// showed the line went with the Fill, so what the person confirmed is held for them, naming the
+/// chat and the ask behind it.
+pub fn fill_remembered_in(
     root: &Path,
     proposals: &Proposals,
     answered: &purlis_core::secrets::ask::Answered,
+    purpose: Option<&str>,
+    audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
     now: u64,
-) -> Result<Option<u32>, String> {
-    use purlis_core::secrets::needs;
+) -> Result<Remembered, String> {
+    let Some(purpose) = purpose else {
+        return Ok(Remembered::Nothing);
+    };
     let persona = answered.persona.as_str();
     if !answered.filled || persona.is_empty() {
-        return Ok(None);
+        return Ok(Remembered::Nothing);
     }
-    // The person dismissed this offer before (#5159): no part of it is offered for this key
-    // again, its vault line included, until the persona's Secret needs change or they ask for
-    // it from the vault view.
-    if purlis_core::secrets::dismissed_needs::is_dismissed(
-        root,
-        persona,
-        &answered.key,
-        &declared_keys(root, persona),
-    ) {
-        return Ok(None);
-    }
-    // The key it is stored under, unless the persona declares that one already.
-    let need = (!answered.declared && needs::declared(root, persona, &answered.key).is_none())
-        .then(|| {
-            (
-                answered.key.as_str(),
-                answered.purpose.as_deref().unwrap_or_default(),
-            )
-        });
+    let undeclared = !answered.declared
+        && purlis_core::secrets::needs::declared(root, persona, &answered.key).is_none();
+    let need = undeclared.then_some((answered.key.as_str(), purpose));
     let vault = answered.names_no_vault.then_some(answered.vault.as_str());
-    offered(root, proposals, persona, need, vault, now)
+    match written_need(root, proposals, persona, need, vault, audit, now) {
+        Ok(false) => Ok(Remembered::Nothing),
+        Ok(true) => Ok(Remembered::Written),
+        Err(refusal) => {
+            if let Some(why) =
+                purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused()
+            {
+                return Err(why);
+            }
+            tracing::info!("purlis: a remembered Secret need was not written: {refusal:?}");
+            let behind = Behind {
+                chat: answered.asker,
+                key: answered.key.clone(),
+            };
+            held_need(root, proposals, persona, need, vault, behind, now)?
+                .map_or(Ok(Remembered::Nothing), |id| Ok(Remembered::Held(id)))
+        }
+    }
 }
 
-/// A change to `persona`'s definition adding `need` and `vault`, held as purlis's in
-/// `proposals` at `now`, on top of an offer for the file still waiting: its number, or none
-/// where it would change nothing.
-fn offered(
+/// `persona`'s definition, relative to the project, as purlis may write it.
+fn definition_path(root: &Path, persona: &str) -> Result<PathBuf, String> {
+    let rel = Path::new("personas").join(persona).join("persona.md");
+    proposed::proposable_by_purlis(root, &root.join(rel))
+}
+
+/// Whether purlis may write a need into `persona`'s definition: what a Secret ask's Remember is
+/// offered on (#5240).
+pub fn may_write_need(root: &Path, persona: &str) -> bool {
+    purlis_core::personas::valid_name(persona) && definition_path(root, persona).is_ok()
+}
+
+/// **Writes `need` and `vault` into `persona`'s definition**, as Apply writes a change of
+/// purlis's: judged, audited and under the project's lock. Whether it changed the file: not
+/// where the file holds them already.
+fn written_need(
     root: &Path,
     proposals: &Proposals,
     persona: &str,
     need: Option<(&str, &str)>,
     vault: Option<&str>,
+    audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
+    now: u64,
+) -> Result<bool, Refusal> {
+    let rel = definition_path(root, persona).map_err(Refusal::Not)?;
+    let path = rel.display().to_string();
+    let bytes = std::fs::read(root.join(&rel)).map_err(|why| {
+        Refusal::Not(format!(
+            "{path} did not read ({why}), so nothing was written. Check the file is there, then try again."
+        ))
+    })?;
+    let base = proposed::base_of(Some(&bytes));
+    let text = String::from_utf8(bytes).map_err(|_| {
+        Refusal::Not(format!(
+            "{path} is not text, so nothing was written. Fix the file, then try again."
+        ))
+    })?;
+    let content =
+        purlis_core::secrets::needs::with_need(&text, need, vault).map_err(Refusal::Not)?;
+    if content == text {
+        return Ok(false);
+    }
+    let one = Proposal {
+        id: 0,
+        session: BY_PURLIS,
+        path,
+        base,
+        change: Change::Whole { content },
+        since: now,
+        stale: false,
+        limit: None,
+        behind: None,
+    };
+    // Shown whole by what asked for it: the person read the line, however long the file is.
+    apply_in(root, &one, None, audit, proposals.applying(), From::Tab)?;
+    Ok(true)
+}
+
+/// A change to `persona`'s definition adding `need` and `vault`, held as purlis's on top of one
+/// for the file still waiting, so a second need does not take the first's place: its number, or
+/// none where it would change nothing.
+fn held_need(
+    root: &Path,
+    proposals: &Proposals,
+    persona: &str,
+    need: Option<(&str, &str)>,
+    vault: Option<&str>,
+    behind: Behind,
     now: u64,
 ) -> Result<Option<u32>, String> {
     use purlis_core::secrets::needs;
-    if need.is_none() && vault.is_none() {
-        return Ok(None);
-    }
-    let rel = Path::new("personas").join(persona).join("persona.md");
-    let rel = proposed::proposable_by_purlis(root, &root.join(rel))?;
+    let rel = definition_path(root, persona)?;
     let path = rel.display().to_string();
     let now_text = std::fs::read(root.join(&rel)).map_err(|why| {
-        format!("{path} did not read ({why}), so nothing was offered. Check the file is there, then try again.")
+        format!("{path} did not read ({why}), so nothing was kept. Check the file is there, then add the line by hand.")
     })?;
     let base = proposed::base_of(Some(&now_text));
     let text = String::from_utf8(now_text).map_err(|_| "the definition is not text".to_owned())?;
-    // On top of an offer for this file still waiting, so a second need does not take the
-    // first's place.
     let starting = proposals
         .every()
         .into_iter()
@@ -977,134 +1055,185 @@ fn offered(
     if content == text {
         return Ok(None);
     }
-    Ok(proposals.note(BY_PURLIS, &path, base, Change::Whole { content }, now))
+    Ok(proposals.note_behind(&path, base, Change::Whole { content }, behind, now))
 }
 
-/// The persona whose definition `path` is, `personas/<name>/persona.md`.
-fn persona_of(path: &str) -> Option<&str> {
-    path.strip_prefix("personas/")?
-        .strip_suffix("/persona.md")
-        .filter(|name| purlis_core::personas::valid_name(name))
-}
-
-/// **Dismiss on purlis's offer of a Secret need, kept** (#5159): the needs proposal `one` adds
-/// to a persona's definition are not offered again for that persona on this machine. A change
-/// that no longer applies to its file was no answer to it (PC-8), and keeps nothing.
-pub fn need_dismissed(root: &Path, one: &Proposal) {
-    let Some(persona) = persona_of(&one.path).filter(|_| one.session == BY_PURLIS) else {
-        return;
-    };
-    let Now::Made { before, after } = now_of(root, one) else {
-        return;
-    };
-    let keys = purlis_core::secrets::needs::added(&before, &after);
-    let declared = declared_keys(root, persona);
-    if let Err(why) =
-        purlis_core::secrets::dismissed_needs::dismiss(root, persona, &keys, &declared)
-    {
-        tracing::warn!("purlis: a dismissed Secret need offer was not kept: {why}");
+/// [`fill_remembered_in`] for project `held`: the chats whose proposals on the file went stale
+/// are told, and the Inbox reads again where something changed there.
+pub fn fill_remembered(
+    held: &Held,
+    answered: &purlis_core::secrets::ask::Answered,
+    purpose: Option<&str>,
+) -> Result<(), String> {
+    let root = held.root();
+    let audit =
+        |applied: &proposed::Applied<'_>| held.hooks().record_proposed(root, BY_PURLIS, applied);
+    let now = crate::sandboxing::now_secs();
+    match fill_remembered_in(root, held.proposals(), answered, purpose, &audit, now)? {
+        Remembered::Nothing => {}
+        Remembered::Written => told_written(held, &answered.persona),
+        Remembered::Held(_) => held.chats().asks_may_have_moved(),
     }
+    Ok(())
 }
 
-/// The keys of the Secret needs `persona` declares as committed: what a dismissal holds while
-/// they stay the same (#5159).
-fn declared_keys(root: &Path, persona: &str) -> Vec<String> {
-    purlis_core::secrets::needs::of(root, persona)
+/// Each chat whose proposal on `persona`'s definition a written need made stale is told so.
+fn told_written(held: &Held, persona: &str) {
+    let path = format!("personas/{persona}/persona.md");
+    for session in held.proposals().others_stale(&path) {
+        tell(held, session, ProposalWord::Stale { path: path.clone() });
+    }
+    held.chats().asks_may_have_moved();
+}
+
+/// **One persona the vault view may remember a need for** (#5240): names only, read from no
+/// vault.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct NeedPersona {
+    pub persona: String,
+    /// The file the line goes in, relative to the project.
+    pub file: String,
+    /// The keys it declares already: a row of one of them offers it nothing.
+    pub declares: Vec<String>,
+    /// It names no vault, so a `vault:` line goes with the need.
+    pub names_no_vault: bool,
+}
+
+/// **The personas a key in `vault` may be remembered for** (#5240): those that use it, and those
+/// that name no vault, who come to name it. None under a policy that turns proposed changes
+/// off, or for a definition purlis may not write.
+pub fn need_personas_in(root: &Path, vault: &str) -> Vec<NeedPersona> {
+    use purlis_core::personas::Vault;
+    if purlis_core::sandbox::policy::Locks::of(root)
+        .proposed_changes_refused()
+        .is_some()
+    {
+        return Vec::new();
+    }
+    let state = purlis_core::plane::state_dir(root);
+    purlis_core::personaverbs::names(root)
         .into_iter()
-        .map(|need| need.key)
+        .filter_map(|persona| {
+            let names_no_vault = match purlis_core::personaverbs::vault(root, &state, &persona) {
+                Vault::Named(named) | Vault::Registered(named) if named == vault => false,
+                Vault::Unnamed => true,
+                _ => return None,
+            };
+            let file = definition_path(root, &persona).ok()?.display().to_string();
+            let declares = purlis_core::secrets::needs::of(root, &persona)
+                .into_iter()
+                .map(|need| need.key)
+                .collect();
+            Some(NeedPersona {
+                persona,
+                file,
+                declares,
+                names_no_vault,
+            })
+        })
         .collect()
 }
 
-/// One Secret need offer the person dismissed (#5159): the persona and the key, names only.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
-pub struct DismissedNeed {
-    pub persona: String,
-    pub key: String,
-}
-
-/// **The Secret need offers dismissed on this machine that still hold** (#5159), for the vault
-/// view to offer each again.
+/// **The personas a key in `vault` may be remembered for**, for its row's menu (#5240).
 #[tauri::command]
 #[specta::specta]
-pub async fn dismissed_secret_needs(
+pub async fn secret_need_personas(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
-) -> Result<Vec<DismissedNeed>, String> {
+    vault: String,
+) -> Result<Vec<NeedPersona>, String> {
     let held = planes.held(&plane)?;
     // Off the window: each persona's needs are read from git (`needs::of`).
-    crate::off_the_window("reading the dismissed Secret needs", move || {
-        let root = held.root();
-        Ok(purlis_core::secrets::dismissed_needs::read(root)
-            .into_iter()
-            .filter(|one| {
-                purlis_core::secrets::dismissed_needs::is_dismissed(
-                    root,
-                    &one.persona,
-                    &one.key,
-                    &declared_keys(root, &one.persona),
-                )
-            })
-            .map(|one| DismissedNeed {
-                persona: one.persona,
-                key: one.key,
-            })
-            .collect())
+    crate::off_the_window("reading which personas may keep a Secret need", move || {
+        Ok(need_personas_in(held.root(), &vault))
     })
     .await
 }
 
-/// **Offer a dismissed Secret need again** (#5159), on the person's press in the vault view:
-/// the dismissal is lifted, and the change adding `key` to `persona`'s needs is held for them
-/// to apply or dismiss. Window-only.
-#[tauri::command]
-#[specta::specta]
-pub async fn offer_secret_need_again(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-    persona: String,
-    key: String,
-) -> Result<(), String> {
-    let held = planes.held(&plane)?;
-    crate::off_the_window("offering a Secret need again", move || {
-        let id = need_offered_again_in(
-            held.root(),
-            held.proposals(),
-            &persona,
-            &key,
-            crate::sandboxing::now_secs(),
-        )?;
-        if id.is_some() {
-            held.chats().asks_may_have_moved();
-        }
-        Ok(())
-    })
-    .await
-}
-
-/// [`offer_secret_need_again`]'s work in the project at `root`: the proposal's number, or none
-/// where the persona declares `key` already. The purpose is left for the person to say
-/// ([`purlis_core::secrets::needs::NO_PURPOSE_SAID`]): the chat's words were never kept.
-pub fn need_offered_again_in(
+/// [`remember_secret_need`]'s work in the project at `root`: the line the person read written,
+/// or why not. Only for a persona [`need_personas_in`] lists and a key a need takes.
+pub fn need_remembered_in(
     root: &Path,
     proposals: &Proposals,
+    vault: &str,
     persona: &str,
     key: &str,
-    now: u64,
-) -> Result<Option<u32>, String> {
-    use purlis_core::secrets::{dismissed_needs, needs};
-    if !purlis_core::personas::valid_name(persona) {
+    purpose: &str,
+    audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
+) -> Result<String, String> {
+    if !purlis_core::secrets::needs::is_key(key) {
         return Err(format!(
-            "{persona} is not a persona's name, so nothing was offered. Read the vault again and choose from the list."
+            "{key} can't be a Secret need's key, so nothing was written. Rename the secret to letters, digits, _, - and ., starting with a letter or _."
         ));
     }
-    if !needs::is_key(key) {
+    if purpose.trim().is_empty() {
         return Err(format!(
-            "{key} can't be a Secret need's key, so nothing was offered. Rename the secret to letters, digits, _, - and ., starting with a letter or _."
+            "Nothing was written. Say what {key} is for, then try again."
         ));
     }
-    dismissed_needs::lift(root, persona, key).map_err(|why| why.to_string())?;
-    if needs::declared(root, persona, key).is_some() {
-        return Ok(None);
+    if let Some(why) = purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused() {
+        return Err(why);
     }
-    offered(root, proposals, persona, Some((key, "")), None, now)
+    let Some(one) = need_personas_in(root, vault)
+        .into_iter()
+        .find(|one| one.persona == persona)
+    else {
+        return Err(format!(
+            "{persona} doesn't use vault {vault}, so nothing was written. Read the vault again and choose from the list."
+        ));
+    };
+    let line = one.names_no_vault.then_some(vault);
+    let now = crate::sandboxing::now_secs();
+    match written_need(
+        root,
+        proposals,
+        persona,
+        Some((key, purpose)),
+        line,
+        audit,
+        now,
+    ) {
+        Ok(_) => Ok(format!(
+            "Added {key} to {persona}'s Secret needs. It rides your next save."
+        )),
+        Err(Refusal::Stale) => Err(format!(
+            "{} changed just now, so nothing was written. Try again.",
+            one.file
+        )),
+        Err(Refusal::Not(why)) => Err(why),
+    }
+}
+
+/// **Remember a key as a persona's Secret need** (#5240, ADR 0110), on the person's press in the
+/// vault view: they read the line, with `purpose` as they edited it, so it is written there and
+/// then, with no proposal to apply. Window-only.
+#[tauri::command]
+#[specta::specta]
+pub async fn remember_secret_need(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    vault: String,
+    persona: String,
+    key: String,
+    purpose: String,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("remembering a Secret need", move || {
+        let root = held.root();
+        let audit = |applied: &proposed::Applied<'_>| {
+            held.hooks().record_proposed(root, BY_PURLIS, applied)
+        };
+        let said = need_remembered_in(
+            root,
+            held.proposals(),
+            &vault,
+            &persona,
+            &key,
+            &purpose,
+            &audit,
+        )?;
+        told_written(&held, &persona);
+        Ok(said)
+    })
+    .await
 }

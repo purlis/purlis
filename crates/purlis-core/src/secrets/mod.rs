@@ -33,7 +33,6 @@ use crate::tui::Markup;
 pub mod ask;
 pub mod brokered;
 pub mod cmd;
-pub mod dismissed_needs;
 pub mod dotenv;
 pub mod exec;
 pub mod fingerprint;

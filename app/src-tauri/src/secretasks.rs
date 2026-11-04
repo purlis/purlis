@@ -42,6 +42,7 @@ pub async fn answer_secret_ask(
     value: Option<crate::vaults::SecretValue>,
     vault: Option<String>,
     key: Option<String>,
+    remember: Option<String>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("answering a secret ask", move || {
@@ -50,6 +51,7 @@ pub async fn answer_secret_ask(
             id,
             value.map(crate::vaults::SecretValue::into_value),
             Named { vault, key },
+            remember.as_deref(),
         )
     })
     .await
@@ -66,6 +68,7 @@ pub async fn link_secret_ask(
     id: u32,
     vault: String,
     key: String,
+    remember: Option<String>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("linking a secret ask to an entry", move || {
@@ -74,6 +77,7 @@ pub async fn link_secret_ask(
             id,
             Answer::Link(Target { vault, key }),
             Named::as_asked(),
+            remember.as_deref(),
         )
     })
     .await
@@ -143,17 +147,26 @@ pub fn secret_answered(
     id: u32,
     value: Option<Zeroizing<String>>,
     named: Named,
+    remember: Option<&str>,
 ) -> Result<(), String> {
-    answered_with(held, id, value.map_or(Answer::Decline, Answer::Fill), named)
+    answered_with(
+        held,
+        id,
+        value.map_or(Answer::Decline, Answer::Fill),
+        named,
+        remember,
+    )
 }
 
 /// The person's `answer` to Secret ask `id`, stored as `named`, given to the core as the
-/// window's, and each chat that stopped waiting nudged.
+/// window's, and each chat that stopped waiting nudged. `remember` is the purpose of the line
+/// the person ticked Remember for and read, written once the value is stored (#5240).
 fn answered_with(
     held: &crate::planes::Held,
     id: u32,
     answer: Answer,
     named: Named,
+    remember: Option<&str>,
 ) -> Result<(), String> {
     let ctx = Ctx::new(held.root(), Env::from_process());
     let answered =
@@ -172,10 +185,7 @@ fn answered_with(
         answered.key,
     );
     nudge(held, &answered);
-    // A first fill of a key the persona does not declare, or into a vault it did not name, is
-    // offered to the person as a change to the persona (#5076).
-    crate::proposals::offer_need(held, &answered);
-    Ok(())
+    crate::proposals::fill_remembered(held, &answered, remember)
 }
 
 /// Tells each chat [`Answered::nudge`] names [`Answered::told`]'s one line, as its board

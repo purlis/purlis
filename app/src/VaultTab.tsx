@@ -6,7 +6,7 @@ import { Eye, EyeOff, KeyRound, LoaderCircle, Plus, Search } from "lucide-react"
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import {
   commands,
-  type DismissedNeed,
+  type NeedPersona,
   type PlaneId,
   type UnreadFor,
   type VaultContents,
@@ -15,6 +15,7 @@ import {
   type VaultSecret,
 } from "./bindings";
 import { SAID, SUBMENU } from "./menuWords";
+import { SecretNeedLine } from "./SecretNeedLine";
 import { Field, SettingRow } from "./settings/components";
 import { counted } from "./Vaults";
 import { saidOfTheOldExport, saidOfTheOthers, VaultSignIn } from "./VaultSignIn";
@@ -123,9 +124,11 @@ export function VaultTab({
   const [asking, setAsking] = useState<Asking>();
   const [shown, setShown] = useState<Shown>();
   const [note, setNote] = useState<{ said: string; trouble?: boolean }>();
-  /** The Secret need offers the person dismissed on this machine (#5159): a row whose key is
-   *  one offers it again. Names only. */
-  const [dismissedNeeds, setDismissedNeeds] = useState<DismissedNeed[]>([]);
+  /** The personas a key here may be remembered for (#5240): a row offers those that do not
+   *  declare its key. Names only. */
+  const [needPersonas, setNeedPersonas] = useState<NeedPersona[]>([]);
+  /** The line being read and edited, from a row's *Offer as a Secret need*. */
+  const [remembering, setRemembering] = useState<{ persona: NeedPersona; key: string }>();
   const [moving, setMoving] = useState(false);
   /** Whether *Change how this vault signs in* is open, and whether the core is at work for it. */
   const [changing, setChanging] = useState(false);
@@ -302,32 +305,17 @@ export function VaultTab({
     if (!mayRead) return;
     let gone = false;
     void commands
-      .dismissedSecretNeeds(plane)
+      .secretNeedPersonas(plane, vault)
       .then((answer) => {
         // A list, or nothing to offer: a mock or an older core that answers none draws no row.
         if (!gone && answer.status === "ok" && Array.isArray(answer.data))
-          setDismissedNeeds(answer.data);
+          setNeedPersonas(answer.data);
       })
       .catch(() => {});
     return () => {
       gone = true;
     };
-  }, [plane, again, mayRead]);
-
-  /** **Offer a dismissed Secret need again** (#5159): the core lifts the dismissal and holds the
-   *  change for the person, where proposed changes wait. */
-  const offerAgain = async (persona: string, key: string) => {
-    setNote(undefined);
-    const answer = await settled(commands.offerSecretNeedAgain(plane, persona, key));
-    if (answer.status === "error") {
-      setNote({ said: answer.error, trouble: true });
-      return;
-    }
-    setDismissedNeeds((was) => was.filter((one) => one.persona !== persona || one.key !== key));
-    setNote({
-      said: `A change adding ${key} to ${persona}'s Secret needs waits in the Inbox for you to apply.`,
-    });
-  };
+  }, [plane, vault, again, mayRead]);
 
   useEffect(() => {
     declares.current = (said?.contents?.identity.length ?? 0) > 0;
@@ -557,10 +545,8 @@ export function VaultTab({
                       onAsk={setAsking}
                       onReveal={() => void reveal(one.key)}
                       onCopy={() => void copy(one.key)}
-                      offerTo={dismissedNeeds
-                        .filter((need) => need.key === one.key)
-                        .map((need) => need.persona)}
-                      onOfferAgain={(persona) => void offerAgain(persona, one.key)}
+                      offerTo={needPersonas.filter((need) => !need.declares.includes(one.key))}
+                      onOffer={(persona) => setRemembering({ persona, key: one.key })}
                     />
                   ))}
                 </TableBody>
@@ -570,6 +556,25 @@ export function VaultTab({
         )}
       </div>
 
+      {remembering !== undefined && (
+        <RememberDialog
+          secret={remembering.key}
+          persona={remembering.persona}
+          vault={vault}
+          onAdd={async (purpose) => {
+            const { persona, key } = remembering;
+            const answer = await settled(
+              commands.rememberSecretNeed(plane, vault, persona.persona, key, purpose),
+            );
+            if (answer.status === "error") return answer.error;
+            setRemembering(undefined);
+            setNote({ said: answer.data });
+            setAgain((was) => was + 1);
+            return undefined;
+          }}
+          onCancel={() => setRemembering(undefined)}
+        />
+      )}
       {changing && (
         <Dialog
           onClose={() => {
@@ -912,7 +917,7 @@ function SecretRow({
   onReveal,
   onCopy,
   offerTo,
-  onOfferAgain,
+  onOffer,
 }: {
   secret: VaultSecret;
   /** The value, while it is revealed. */
@@ -920,9 +925,9 @@ function SecretRow({
   onAsk: (asking: Asking) => void;
   onReveal: () => void;
   onCopy: () => void;
-  /** The personas whose Secret need offer of this key was dismissed (#5159). */
-  offerTo: string[];
-  onOfferAgain: (persona: string) => void;
+  /** The personas that may come to declare this key (#5240). */
+  offerTo: NeedPersona[];
+  onOffer: (persona: NeedPersona) => void;
 }) {
   const key = secret.key;
   const ask = (doing: Asking["doing"]) => () => onAsk({ doing, secret: key } as Asking);
@@ -943,7 +948,7 @@ function SecretRow({
           <MenuItem id="copy" textValue={SAID.copy} onAction={onCopy}>
             <MenuWords said={SAID.copy} />
           </MenuItem>
-          {offerTo.length > 0 && <OfferAgain personas={offerTo} onOffer={onOfferAgain} />}
+          {offerTo.length > 0 && <OfferAsNeed personas={offerTo} onOffer={onOffer} />}
           <MenuSeparator />
           <MenuItem
             id="delete"
@@ -991,16 +996,16 @@ function SecretRow({
 }
 
 /**
- * **Offer as a Secret need ▸** (#5159): one row, as the menus' rule 3 has rows of one kind, that
- * opens a row per persona whose offer of this key was dismissed, named by the persona alone. What
+ * **Offer as a Secret need ▸** (#5240): one row, as the menus' rule 3 has rows of one kind, that
+ * opens a row per persona that may come to declare this key, named by the persona alone. What
  * each does is said once, as this row's tooltip and description.
  */
-function OfferAgain({
+function OfferAsNeed({
   personas,
   onOffer,
 }: {
-  personas: string[];
-  onOffer: (persona: string) => void;
+  personas: NeedPersona[];
+  onOffer: (persona: NeedPersona) => void;
 }) {
   const noted = useId();
   const { rested, rest, wake, hold } = useRested(true);
@@ -1031,12 +1036,12 @@ function OfferAgain({
     >
       {personas.map((persona) => (
         <MenuItem
-          key={persona}
-          id={`offer-need:${persona}`}
-          textValue={persona}
+          key={persona.persona}
+          id={`offer-need:${persona.persona}`}
+          textValue={persona.persona}
           onAction={() => onOffer(persona)}
         >
-          <MenuWords said={persona} />
+          <MenuWords said={persona.persona} />
         </MenuItem>
       ))}
     </Submenu>
@@ -1127,6 +1132,67 @@ function ValueDialog({
             onChange={setFilled}
           />
         )}
+      />
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </Dialog>
+  );
+}
+
+/** **The line a row's *Offer as a Secret need* adds** (#5240): read and edited here, the same line
+ *  a Secret ask's Remember shows, and written on the person's press with nothing left to apply. */
+function RememberDialog({
+  secret,
+  persona,
+  vault,
+  onAdd,
+  onCancel,
+}: {
+  secret: string;
+  persona: NeedPersona;
+  vault: string;
+  onAdd: (purpose: string) => Promise<string | undefined>;
+  onCancel: () => void;
+}) {
+  const [purpose, setPurpose] = useState("");
+  const [trouble, setTrouble] = useState<string>();
+  const [writing, setWriting] = useState(false);
+  const ready = purpose.trim() !== "" && !writing;
+
+  const submit = async () => {
+    if (!ready) return;
+    setWriting(true);
+    const refused = await onAdd(purpose);
+    if (refused === undefined) return;
+    setTrouble(refused);
+    setWriting(false);
+  };
+
+  return (
+    <Dialog
+      onClose={() => {
+        // Not while the core is writing: the answer would land on a dialog nobody is looking at.
+        if (!writing) onCancel();
+      }}
+      title={`Remember ${secret} for ${persona.persona}`}
+      cancel={{ isDisabled: writing, onPress: onCancel }}
+      main={{
+        children: writing ? "Adding…" : "Add the line",
+        reserve: ["Add the line", "Adding…"],
+        isDisabled: !ready,
+        onPress: () => void submit(),
+      }}
+    >
+      <SecretNeedLine
+        secretKey={secret}
+        file={persona.file}
+        need
+        vault={persona.names_no_vault ? vault : null}
+        purpose={purpose}
+        onPurpose={setPurpose}
       />
       {trouble && (
         <p className="trouble" role="alert">
