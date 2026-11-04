@@ -527,7 +527,7 @@ function ArrivedInItsPanel() {
         {...panelRoot("side")}
         aria-label="Navigation"
         role="region"
-        style={{ display: "flex", flexDirection: "column", inlineSize: 260, blockSize: 200 }}
+        style={{ display: "flex", flexDirection: "column", inlineSize: 260, blockSize: 320 }}
       >
         <ChatsSection rows={ARRIVED} front={1} noted={new Set([4])} onOpen={() => {}} />
       </div>
