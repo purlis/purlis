@@ -484,15 +484,23 @@ pub fn follow_kin(
                 continue;
             };
             // One `below` draws as its accent is the accent given (#5157), so a ring and an edge
-            // drawn alike stay alike; one drawn in the accent's family turns to its hue.
+            // drawn alike stay alike; one drawn in the accent's family turns to its hue. A mark
+            // that would read as a state there takes the accent's own colour, since a link reads
+            // as the accent (#3049), as a tinted one does ([`super::tint::signal_chroma_of`]).
             let turned = if below.get(ACCENT) == Some(under) {
                 accent.clone()
             } else {
                 super::tint::toward(under, &accent)
             };
+            let own = super::tint::SIGNAL_MARKS
+                .contains(&token)
+                .then(|| accent.clone());
             let drawn = |token: &str| given.get(token).or_else(|| below.get(token)).cloned();
-            if holds_as_apart(token, &turned, under, drawn) {
-                given.insert(token, turned);
+            let holding = std::iter::once(turned)
+                .chain(own)
+                .find(|one| holds_as_apart(token, one, under, drawn));
+            if let Some(holding) = holding {
+                given.insert(token, holding);
                 followed.push((token, ACCENT));
             }
         }

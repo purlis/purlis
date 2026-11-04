@@ -6,7 +6,9 @@
 //! edge to its hue, as it turns the washes (#4666): luminance and alpha kept, chroma no more than
 //! the accent's. Each keeps every contrast Purlis gave it, and stays as apart from waiting and
 //! danger as the rules ask; where turning would bring it nearer, it stays Purlis's. The active tab
-//! is a grey ground in Purlis, not drawn in the accent, and stays Purlis's.
+//! is a grey ground in Purlis, not drawn in the accent, and stays Purlis's. What the parent draws
+//! as its accent is the accent given, and the link and the first chart colour follow it too, each
+//! kept from the state colours (#5157).
 
 use serde_json::json;
 
@@ -241,31 +243,54 @@ fn a_given_blue_turns_the_link_and_the_first_chart_colour_and_keeps_them_from_th
 }
 
 #[test]
-fn a_given_teal_keeps_purlis_s_link_where_teal_would_read_as_success() {
-    // At the lightness Purlis draws its link, every teal is within 0.1 of Purlis's success green
-    // (#5157): a link is never read as a state (#4921), so it stays Purlis's lavender. Each mark
-    // is answered alone: a first chart colour the teal itself clears may be teal.
+fn a_given_teal_draws_a_teal_link_and_first_chart_colour_clear_of_the_states() {
+    // Purlis's link turned to teal at Purlis's lightness would read as success, so the link takes
+    // the teal itself, which clears it (#5157, as a tinted link takes the accent's own, #4921).
     for theme in &purlis().appearances {
-        let given = if light(theme) { DARK_TEAL } else { TEAL };
-        let drawn = with_accent(theme, given);
-        // High contrast draws its link as its accent, so its link is the teal itself, which
-        // clears success; dark and light draw another of its family, which cannot.
-        let link = theme.value("markdown.link");
-        let expected = if link == theme.value("accent.base") {
-            given
-        } else {
-            link
+        // A teal the person's contrast keeps as the accent in each appearance, clear of success.
+        let given = match theme.id.as_str() {
+            "light" => "#026d6d",
+            "light-high-contrast" => DARK_TEAL,
+            _ => TEAL,
         };
-        assert_eq!(drawn.value("markdown.link"), expected, "{}", theme.id);
+        let drawn = with_accent(theme, given);
+        assert_eq!(drawn.value("accent.base"), given, "{}", theme.id);
         for mark in tint::SIGNAL_MARKS {
+            let now = drawn.value(mark);
+            let id = format!("{} {mark}: {now}", theme.id);
+            assert_eq!(now, given, "{id}");
             for state in tint::SIGNALS {
-                assert!(
-                    apart(drawn.value(mark), drawn.value(state)) >= 0.1,
-                    "{} {mark} {} from {state}",
-                    theme.id,
-                    drawn.value(mark)
-                );
+                assert!(apart(now, drawn.value(state)) >= 0.1, "{id} from {state}");
             }
+        }
+    }
+}
+
+#[test]
+fn a_teal_itself_too_near_success_keeps_the_link_and_first_chart_colour_as_they_were() {
+    // In Purlis light this teal is the accent, but within 0.1 of success as a link: both marks
+    // stay Purlis's, so a link is never read as a state (#4921), and the accent is still the teal.
+    let theme = purlis()
+        .appearances
+        .iter()
+        .find(|one| one.id == "light")
+        .expect("Purlis light");
+    assert!(apart(DARK_TEAL, theme.value("state.success")) < 0.1);
+    let drawn = with_accent(theme, DARK_TEAL);
+    assert_eq!(drawn.value("accent.base"), DARK_TEAL);
+    for mark in tint::SIGNAL_MARKS {
+        assert_eq!(drawn.value(mark), theme.value(mark), "{mark}");
+    }
+}
+
+#[test]
+fn an_accent_the_colour_of_success_leaves_the_link_and_first_chart_colour_as_they_were() {
+    // Neither the link turned nor the accent itself can stand apart from success: both marks stay
+    // the theme's, so a link is never read as a state (#4921).
+    for theme in &purlis().appearances {
+        let drawn = with_accent(theme, theme.value("state.success"));
+        for mark in tint::SIGNAL_MARKS {
+            assert_eq!(drawn.value(mark), theme.value(mark), "{} {mark}", theme.id);
         }
     }
 }

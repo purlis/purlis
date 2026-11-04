@@ -117,10 +117,14 @@ const DRAWN_IN_THE_ACCENT: Record<string, Token | undefined> = {
   "accent.fill-hover": "tab.active",
   "focus.ring": undefined,
   "list.selected-edge": undefined,
-  // The accent's marks (#5157, `tint::SIGNAL_MARKS`), each kept 0.1 from the state colours.
+  // The accent's marks (#5157), each kept 0.1 from the state colours.
   "markdown.link": undefined,
   "chart.1": undefined,
 };
+
+/** What a person reads as the accent but the window draws as a mark of its own (#4921,
+ *  `tint::SIGNAL_MARKS`). */
+const SIGNAL_MARKS: readonly Token[] = ["markdown.link", "chart.1"];
 
 /** An accent set over the cell's theme, its words and grounds as the engine resolves them. */
 function OverPurlis() {
@@ -145,14 +149,17 @@ function OverPurlis() {
       return (ACCENT_GROUNDS as readonly Token[]).includes(kin) ? followed(kin) : value(kin);
     // What the theme draws as its accent is the accent given (#5157).
     const turned = value(token) === value("accent.base") ? accent : toward(value(token), accent);
-    const holds = inForce()
-      .tint.apart.filter((rule) => rule.token === token && !rule.words)
-      .every((rule) => {
-        const from = value(rule.from as Token);
-        const was = oklabDistance(value(token), from);
-        return oklabDistance(turned, from) >= Math.min(rule.distance, was);
-      });
-    return holds ? turned : value(token);
+    const holds = (colour: string) =>
+      inForce()
+        .tint.apart.filter((rule) => rule.token === token && !rule.words)
+        .every((rule) => {
+          const from = value(rule.from as Token);
+          const was = oklabDistance(value(token), from);
+          return oklabDistance(colour, from) >= Math.min(rule.distance, was);
+        });
+    if (holds(turned)) return turned;
+    // A mark that would read as a state there takes the accent's own colour (#5157).
+    return SIGNAL_MARKS.includes(token) && holds(accent) ? accent : value(token);
   };
   const drawn = {
     [property("accent.base")]: accent,
