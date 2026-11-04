@@ -1246,16 +1246,7 @@ fn of_this_machine(
 /// Refused, in words, where pool `pool` names no profiles and no project is open: what it keeps
 /// is the open project's default, so a change has nothing to start from (#4047).
 fn changeable(config: &Path, pool: &str, root: Option<&Path>) -> Result<(), String> {
-    let names_none = purlis_core::runners::profiles_of(config, pool)
-        .map_err(|why| why.to_string())?
-        .is_none();
-    if names_none && root.is_none() {
-        return Err(format!(
-            "pool {pool} keeps the profile a new chat in the open project gets, and no project \
-             is open; open one to change its profiles"
-        ));
-    }
-    Ok(())
+    purlis_core::poolsetup::signins::changeable(config, pool, root.is_some())
 }
 
 /// The profiles pool `pool`, kept under `config`, keeps on its runner, with `default` the
@@ -1379,18 +1370,8 @@ pub async fn pool_profile_add(
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         yours(&config, &pool)?;
-        changeable(&config, &pool, root.as_deref())?;
-        let records = profilestore::list(&config)?;
-        let record = records.iter().find(|p| p.name == name).ok_or_else(|| {
-            format!(
-                "this machine has no profile named '{}', so none was added to pool {pool}",
-                purlis_core::shown::short(&name)
-            )
-        })?;
-        onrunner::Kept::of(record)?;
-        let default = default_in(root.as_deref(), &records);
-        purlis_core::runners::add_pool_profile(&config, &pool, &name, default.as_deref())
-            .map_err(|why| why.to_string())
+        // The same checks and words as `purlis pool add-profile` (#4718).
+        purlis_core::poolsetup::signins::record(&config, root.as_deref(), &pool, &[name])
     })
     .await
     .map_err(|why| format!("the profile was not added: {why}"))?

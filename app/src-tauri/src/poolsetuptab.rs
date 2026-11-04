@@ -373,8 +373,14 @@ pub async fn pool_setup_sign_ins_by_hand(
     adding: Vec<String>,
     signing_in: Vec<String>,
 ) -> Result<Option<PoolSetupSee>, String> {
-    let _ = (pool, adding, signing_in);
-    Ok(None)
+    Ok(
+        purlis_core::poolsetup::signins::by_hand(&pool, &adding, &signing_in).map(|see| {
+            PoolSetupSee {
+                note: see.note,
+                text: see.text,
+            }
+        }),
+    )
 }
 
 /// **Keeps that the person skipped step `step` on pool `pool`, or takes the skip back.** Refused

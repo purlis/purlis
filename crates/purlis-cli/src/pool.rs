@@ -123,6 +123,12 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
              purlis pool setup in your own terminal."
                 .to_owned(),
         ),
+        // A chat never chooses which of the person's accounts a pool's runner holds.
+        PoolCommand::AddProfile { .. } if in_a_chat => Err(
+            "Recording a profile on a pool is the person's choice, which a chat doesn't make. \
+             Run it in your own terminal, or use Pool setup in the window."
+                .to_owned(),
+        ),
         PoolCommand::Add { .. } if in_a_chat => Err(
             "Adding a pool uses this machine's Docker, which a chat doesn't reach. Run it in your \
              own terminal, or use Pool setup in the window."
@@ -152,7 +158,18 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             };
             added(&config()?, &asked)
         }
-        PoolCommand::AddProfile { .. } => Ok(0),
+        PoolCommand::AddProfile { pool, profiles } => {
+            let project = std::env::current_dir()
+                .ok()
+                .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok());
+            poolsetup::signins::record(&config()?, project.as_deref(), pool, profiles)?;
+            crate::voice::info(format!(
+                "Pool {pool} keeps {} now. Its runner keeps them the next time their sign-ins are \
+                 asked, and Pool setup's Sign-ins step picks this up.",
+                profiles.join(", ")
+            ));
+            Ok(0)
+        }
         PoolCommand::Setup { name, json } => {
             crate::poolsetup::answered(name.as_deref(), *json)?;
             Ok(0)

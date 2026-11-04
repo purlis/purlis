@@ -1,8 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useState } from "react";
-import { commands, type PlaneId, type PoolSetupSizes, type PoolSetupStep } from "../bindings";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  commands,
+  type PlaneId,
+  type PoolSetupSee,
+  type PoolSetupSizes,
+  type PoolSetupStep,
+} from "../bindings";
 import {
   addProfileToPool,
   askProfiles,
@@ -111,6 +117,37 @@ export function SignInsStep({
         ]
       : undefined;
   const rows = read ?? (recording ? heldRows : undefined);
+
+  // Ticked until the person changes it: what the pool keeps, and what is in use (story 28).
+  const used = new Set(sizes?.profiles.filter((one) => one.in_use).map((one) => one.name));
+  const ticked =
+    chose ??
+    new Set((rows ?? []).filter((row) => row.kept || used.has(row.name)).map((row) => row.name));
+  // What the button would run, by hand, as the core spells it for what is ticked (#4718, Q30).
+  const adding = (rows ?? []).filter((row) => ticked.has(row.name) && !row.kept);
+  const signing = (rows ?? []).filter((row) => ticked.has(row.name) && !row.signedIn);
+  const handKey = JSON.stringify([adding.map((row) => row.name), signing.map((row) => row.name)]);
+  const [byHand, setByHand] = useState<PoolSetupSee | null>(null);
+  useEffect(() => {
+    const [add, sign] = JSON.parse(handKey) as [string[], string[]];
+    let current = true;
+    void commands.poolSetupSignInsByHand(pool, add, sign).then((said) => {
+      if (current) setByHand(said.status === "ok" ? said.data : null);
+    });
+    return () => {
+      current = false;
+    };
+  }, [pool, handKey]);
+
+  // Work done by hand is picked up as the core reads the step anew (#4718): a profile recorded
+  // with `purlis pool add-profile` shows ticked once the runner is asked again.
+  const stepRead = JSON.stringify([step.state, step.line, step.findings, step.next?.id]);
+  const lastRead = useRef(stepRead);
+  useEffect(() => {
+    if (lastRead.current === stepRead) return;
+    lastRead.current = stepRead;
+    if (!recording) void askProfiles(pool, plane, { quietly: true });
+  }, [stepRead, recording, pool, plane]);
   const skip = (skipped: boolean) => {
     setSaid(undefined);
     setLines(false);
@@ -244,10 +281,6 @@ export function SignInsStep({
       </>
     );
 
-  // Ticked until the person changes it: what the pool keeps, and what is in use (story 28).
-  const used = new Set(sizes.profiles.filter((one) => one.in_use).map((one) => one.name));
-  const ticked =
-    chose ?? new Set(rows.filter((row) => row.kept || used.has(row.name)).map((row) => row.name));
   const sizeOf = (name: string) => sizes.profiles.find((one) => one.name === name);
   const overOf = (name: string) => (ticked.has(name) ? (sizeOf(name)?.over ?? []) : []);
   const anyOver = rows.some((row) => overOf(row.name).length > 0);
@@ -405,7 +438,11 @@ export function SignInsStep({
       <Options>
         <PoolLimits pool={pool} plane={plane} />
       </Options>
-      {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
+      {byHand ? (
+        <SeeWhat text={byHand.text} note={byHand.note} />
+      ) : (
+        step.see && <SeeWhat text={step.see.text} note={step.see.note} />
+      )}
       <Action
         does={
           anyOver || none

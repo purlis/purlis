@@ -116,19 +116,82 @@ pub fn sizes(config: &Path, plane: Option<&Path>, pool: &str) -> Result<Sizes, R
 /// beside them, so with no project open it is refused. Each name must be one of this machine's
 /// profiles that goes to a runner, checked before anything is written.
 pub fn record(
-    _config: &Path,
-    _project: Option<&Path>,
-    _pool: &str,
-    _names: &[String],
+    config: &Path,
+    project: Option<&Path>,
+    pool: &str,
+    names: &[String],
 ) -> Result<(), String> {
+    changeable(config, pool, project.is_some())?;
+    let records = crate::profilestore::list(config)?;
+    for name in names {
+        let record = records.iter().find(|p| &p.name == name).ok_or_else(|| {
+            format!(
+                "this machine has no profile named '{}', so none was added to pool {pool}",
+                crate::shown::short(name)
+            )
+        })?;
+        crate::profilestore::onrunner::Kept::of(record)?;
+    }
+    let default = project
+        .and_then(|root| crate::profiles::for_launch(root).0.for_a_new_chat())
+        .filter(|default| records.iter().any(|r| &r.name == default));
+    for name in names {
+        runners::add_pool_profile(config, pool, name, default.as_deref())
+            .map_err(|why| why.to_string())?;
+    }
+    Ok(())
+}
+
+/// **Refused, in words, where pool `pool` names no profiles and no project is open**
+/// (#4047): what it keeps is the open project's default, so a change has nothing to start from.
+pub fn changeable(config: &Path, pool: &str, project_open: bool) -> Result<(), String> {
+    let names_none = runners::profiles_of(config, pool)
+        .map_err(|why| why.to_string())?
+        .is_none();
+    if names_none && !project_open {
+        return Err(format!(
+            "pool {pool} keeps the profile a new chat in the open project gets, and no project \
+             is open; open one to change its profiles"
+        ));
+    }
     Ok(())
 }
 
 /// **What Sign-ins' button runs, by hand** (#4718, Q30): `adding` recorded on pool `pool`, then
 /// each of `signing_in` signed in there. None where it would run nothing.
 #[must_use]
-pub fn by_hand(_pool: &str, _adding: &[String], _signing_in: &[String]) -> Option<super::See> {
-    None
+pub fn by_hand(pool: &str, adding: &[String], signing_in: &[String]) -> Option<super::See> {
+    let pool = if runners::usable_pool_name(pool).is_ok() {
+        crate::shellseg::shell_quote(pool)
+    } else {
+        "POOL".to_owned()
+    };
+    let profile = |name: &String| {
+        if crate::profiles::name_ok(name) {
+            crate::shellseg::shell_quote(name)
+        } else {
+            "PROFILE".to_owned()
+        }
+    };
+    let mut lines = Vec::new();
+    if !adding.is_empty() {
+        let names: Vec<String> = adding.iter().map(profile).collect();
+        lines.push(format!(
+            "purlis pool add-profile {pool} {}",
+            names.join(" ")
+        ));
+    }
+    lines.extend(
+        signing_in
+            .iter()
+            .map(|name| format!("purlis profile sign-in {} --pool {pool}", profile(name))),
+    );
+    (!lines.is_empty()).then(|| super::See {
+        note: "These record the ticked profiles on the pool, then sign in each one that needs \
+               it. Run them yourself if you prefer, and purlis picks them up."
+            .to_owned(),
+        text: lines.join("\n"),
+    })
 }
 
 /// What a send of `record` to a runner carries: its bytes and its files.
