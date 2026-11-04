@@ -6307,6 +6307,28 @@ fn an_unsandboxed_run_reattached_after_the_sandbox_was_turned_on_is_judged_uncon
     );
 }
 
+/// A chat reattached says what its host says of its run, whatever its record said before.
+#[test]
+fn a_reattached_run_records_its_hosts_word_on_whether_it_has_a_sandbox() {
+    use purlis_session_protocol::session::RunSandbox;
+    for (recorded, ran, says) in [
+        (false, RunSandbox::Off, true),
+        (true, RunSandbox::By("seatbelt".to_owned()), false),
+    ] {
+        let plane = a_sandboxed_plane();
+        let host = Pretend::default();
+        host.leaves_running_in(3, None, Some(ran.clone()));
+        let chats = restartable_chats_of(plane.path(), host.clone());
+        let chat = Chat {
+            no_sandbox: recorded,
+            ..a_resumable_chat_in(plane.path())
+        };
+        chats.put_back(&left_running_in(plane.path(), chat), SIZE);
+        assert_eq!(host.reattached(), [3]);
+        assert_eq!(chats.record().chats[0].no_sandbox, says, "{ran:?}");
+    }
+}
+
 /// #2636: a chat whose host keeps no record of how its run started (a host before it kept
 /// one) is judged sandboxed, and offered a restart.
 #[test]
