@@ -299,7 +299,7 @@ describe("a chat wrapping up", () => {
     expect(screen.queryByRole("menuitem", { name: /Cancel smart close/ })).toBeNull();
   });
 
-  it("closes its tab when the core says the record landed, and never ends the chat a second time", async () => {
+  it("leaves its pane on the ended band when the core says the record landed, and never ends the chat a second time (#5019)", async () => {
     const { asked: log } = core();
     render(<App />);
     await openAChat();
@@ -307,7 +307,10 @@ describe("a chat wrapping up", () => {
 
     await step(1, "closed");
 
-    await waitFor(() => expect(tabOf("steward 1")).toBeUndefined());
+    // It ends like End… (spec #4750 story 62): its tab is back from the background, in front,
+    // its pane on the ended band.
+    expect(await screen.findByRole("status", { name: /ended/i })).toBeInTheDocument();
+    expect(tabOf("steward 1")?.getAttribute("aria-selected")).toBe("true");
     expect(asked(log, "close_session")).toEqual([]);
   });
 
@@ -380,7 +383,8 @@ describe("a chat wrapping up", () => {
 
     await userEvent.click(within(notice).getByRole("button", { name: "End chat" }));
 
-    await waitFor(() => expect(tabOf("steward 1")).toBeUndefined());
+    // Ended as End… ends it: its pane stays, on the ended band (#5019).
+    expect(await screen.findByRole("status", { name: /ended/i })).toBeInTheDocument();
     expect(asked(log, "close_session")).toEqual([{ plane: PLANE, session: 1 }]);
     expect(keptOpenNotice(1)).toBeNull();
   });
@@ -410,9 +414,12 @@ describe("a chat wrapping up", () => {
     await step(1, "kept_open", PLANE, { path: "sessions/a.md", title: "A" });
     await waitFor(() => expect(keptOpenNotice(1)).not.toBeNull());
 
-    // Closed by a Smart close that went through after all: not the Notice's own buttons.
+    // Closed by a Smart close that went through after all: not the Notice's own buttons. Its
+    // pane is left on the ended band (#5019), whose Clear pane takes the tab's chat away.
     await step(1, "closed");
-    await waitFor(() => expect(tabOf("steward 1")).toBeUndefined());
+    const band = await screen.findByRole("status", { name: /ended/i });
+    await userEvent.click(within(band).getByRole("button", { name: "Clear pane" }));
+    await screen.findByText("Nothing in this pane");
     await openAChat();
     // The core numbers it 1 again; the window names it afresh.
     await waitFor(() => expect(tabOf("steward 2")).toBeDefined());
@@ -529,7 +536,7 @@ describe("a chat wrapping up among several (#4760: no tab goes into the backgrou
     expect(strip()).toEqual(["only"]);
   });
 
-  it("goes when its record lands, and a quiet notice offers to open the record", async () => {
+  it("ends like End… when its record lands: its tab stays on the ended band, and a quiet notice offers to open the record (#5019)", async () => {
     coreWith();
     render(<App />);
     await waitFor(() => expect(strip()).toEqual(["one", "two", "three"]));
@@ -541,7 +548,8 @@ describe("a chat wrapping up among several (#4760: no tab goes into the backgrou
 
     await step(2, "closed", PLANE, record);
 
-    await waitFor(() => expect(tabOf("two")).toBeUndefined());
+    // Its pane is left on the ended band (spec #4750 story 62), its tab where it was.
+    expect(strip()).toEqual(["one", "two", "three"]);
     const notice = (await screen.findByText(/^Session saved — Ship it/)).closest<HTMLElement>(
       '[role="status"]',
     );

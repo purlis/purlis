@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { browser } from "@wdio/globals";
-import { pressAndStart, showView } from "./opening.js";
+import { clearEndedPanes, pressAndStart, showView } from "./opening.js";
 import { runFromThePalette } from "./reach.js";
 import { projectInFront, runningIn } from "./running.js";
 
@@ -155,7 +155,8 @@ export async function bringChatForward(session: number): Promise<void> {
  * **Ends chat `session` in `plane`** (the project in front where none is named), as a person
  * does: its End… (#4753), the one row that ends a chat, since a close ends nothing (#4756). It
  * is run from the palette by the row's id, which names the chat by its number, answered Close,
- * and waited for until the core no longer runs it. A chat already gone is left alone.
+ * and waited for until the core no longer runs it; then the ended band it left its pane on is
+ * cleared (#5019). A chat already gone is left alone.
  */
 export async function endChatById(session: number, plane?: string): Promise<void> {
   const where = plane ?? (await projectInFront());
@@ -166,6 +167,9 @@ export async function endChatById(session: number, plane?: string): Promise<void
     interval: 200,
     timeoutMsg: `chat ${session} was still running after ${asked} was answered Close`,
   });
+  // Its pane was left on the ended band (#5019): taken away, as a person does, so a spec leaves
+  // no tab behind.
+  await clearEndedPanes(session);
 }
 
 /**

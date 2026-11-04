@@ -496,6 +496,44 @@ fn a_page_that_loads_another_document_as_it_is_held_is_released_and_takes_no_val
     assert_eq!(holding.told(), ["held, 0 written", "released"]);
 }
 
+#[test]
+fn a_page_that_starts_another_document_as_it_is_held_is_released_and_takes_no_value() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    let starts = Arc::clone(&engine);
+    let inner = Arc::clone(&browser.inner);
+    let holding = Arc::new(Holding {
+        as_held: Mutex::new(Some(Box::new(move || {
+            // The engine has said the page starts another document, not yet where it is.
+            starts.emit(
+                "Page.frameStartedLoading",
+                json!({ "frameId": "PAGE-1" }),
+                Some("S-PAGE-1"),
+            );
+            wait_for("the page's start is read", || {
+                super::super::super::lock(&inner.state)
+                    .document_origins
+                    .awaits("PAGE-1", "PAGE-1")
+            });
+        }))),
+        ..Holding::default()
+    });
+
+    let filled = browser.fill_secret(
+        browser.epoch(),
+        &fill_of(secret, "http://fixture.test"),
+        Arc::clone(&holding) as Arc<dyn FillHold>,
+    );
+
+    match filled {
+        Err(Refusal::NotFilled(why)) => assert!(why.contains("nothing was filled"), "{why}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    assert_eq!(inserted(&engine), 0);
+    assert_eq!(holding.told(), ["held, 0 written", "released"]);
+}
+
 /// A request a filled page sent elsewhere was refused, and the engine showed its own page for it:
 /// no page was left, and the request is still in the page's history, so the hold lives on.
 #[test]

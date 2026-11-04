@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { $$, browser, expect } from "@wdio/globals";
 import { focusWorkspace, projectRoot, stateOf } from "../acting.js";
+import { clearEndedPanes } from "../opening.js";
 import { runFromThePalette } from "../reach.js";
 import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 import { ask } from "../switching.js";
@@ -287,6 +288,8 @@ describe("a chat's theme draft", () => {
       interval: 100,
       timeoutMsg: "Revert on close left the draft",
     });
+    // Its pane was left on the ended band (#5019): cleared, so the spec leaves no tab behind.
+    await clearEndedPanes(chat?.session);
     chat = undefined;
   });
 });

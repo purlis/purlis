@@ -1279,3 +1279,351 @@ fn a_purpose_that_carries_a_secret_is_masked_before_anyone_reads_it() {
     assert!(!purpose.contains(&token_shaped()), "{purpose}");
     assert!(!traced(project.path()).contains(&token_shaped()));
 }
+
+// An open ask across a restart of the app (#5079, #5054's story 59).
+
+/// Where the project at `root` keeps its open Secret asks.
+fn kept_file(root: &Path) -> PathBuf {
+    crate::names::state(root).join("app").join(KEPT_IN)
+}
+
+/// Chat 7's ask for `MISSING`, which chat 9 joined, both commands having stopped waiting: what
+/// the app holds as it quits.
+fn two_chats_wait_on_one_ask(asks: &Asks) -> Vec<Open> {
+    held_for_nothing(asks, need(7, "MISSING"));
+    held_for_nothing(asks, need(9, "MISSING"));
+    asks.open()
+}
+
+#[test]
+fn an_open_ask_is_restored_after_a_restart_with_the_same_payload() {
+    let project = project();
+    let before = two_chats_wait_on_one_ask(&Asks::kept(project.path()));
+    assert_eq!(before[0].chats, vec![7, 9]);
+    let restarted = Asks::kept(project.path());
+    assert_eq!(restarted.open(), before);
+}
+
+#[test]
+fn answering_an_ask_after_a_restart_nudges_every_chat_that_waited() {
+    let project = project();
+    let before = two_chats_wait_on_one_ask(&Asks::kept(project.path()));
+    let restarted = Asks::kept(project.path());
+    let answered = restarted
+        .answer(
+            &ctx(project.path()),
+            before[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+    assert_eq!(answered.nudge, vec![7, 9]);
+    assert_eq!(stored(project.path(), "MISSING").as_deref(), Some(VALUE));
+    // Answered, it is kept no more.
+    assert!(Asks::kept(project.path()).open().is_empty());
+}
+
+#[test]
+fn a_decline_after_a_restart_nudges_the_chats_and_none_is_asked_again() {
+    let project = project();
+    let before = two_chats_wait_on_one_ask(&Asks::kept(project.path()));
+    let restarted = Asks::kept(project.path());
+    let answered = restarted
+        .answer(
+            &ctx(project.path()),
+            before[0].id,
+            Answer::Decline,
+            window(),
+        )
+        .unwrap();
+    assert_eq!(answered.nudge, vec![7, 9]);
+    let (held, _) = held_for_nothing(&restarted, need(7, "MISSING"));
+    assert!(matches!(held, Held::Declined { .. }), "{held:?}");
+}
+
+#[test]
+fn a_chat_that_retries_after_a_restart_joins_its_kept_ask_and_hears_the_fill() {
+    let project = project();
+    let before = two_chats_wait_on_one_ask(&Asks::kept(project.path()));
+    let restarted = Asks::kept(project.path());
+    let (waits, waiting) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let asked = &restarted;
+        let retry = scope.spawn(move || asks_hold_telling(asked, need(7, "MISSING"), &waits));
+        waiting.recv().unwrap();
+        assert_eq!(restarted.open().len(), 1, "joined, not raised again");
+        let answered = restarted
+            .answer(
+                &ctx(project.path()),
+                before[0].id,
+                Answer::Fill(VALUE.to_owned().into()),
+                window(),
+            )
+            .unwrap();
+        assert_eq!(answered.nudge, vec![9], "chat 7 heard it on its retry");
+        assert!(matches!(retry.join().unwrap(), Held::Filled { .. }));
+    });
+}
+
+#[test]
+fn only_the_chats_a_restart_brought_back_still_wait() {
+    let project = project();
+    two_chats_wait_on_one_ask(&Asks::kept(project.path()));
+    let restarted = Asks::kept(project.path());
+    restarted.only_these_came_back(&[9]);
+    assert_eq!(restarted.open()[0].chats, vec![9]);
+    restarted.only_these_came_back(&[]);
+    assert!(restarted.open().is_empty(), "nobody waits on it any more");
+    assert!(Asks::kept(project.path()).open().is_empty());
+}
+
+#[test]
+fn an_ask_raised_after_a_restart_never_takes_a_kept_asks_number() {
+    let project = project();
+    let before = two_chats_wait_on_one_ask(&Asks::kept(project.path()));
+    let restarted = Asks::kept(project.path());
+    held_for_nothing(&restarted, need(7, "OTHER"));
+    let ids: Vec<u32> = restarted.open().iter().map(|one| one.id).collect();
+    assert_eq!(ids.len(), 2);
+    assert!(ids[1] > before[0].id, "{ids:?}");
+}
+
+#[test]
+fn what_is_kept_is_masked_as_every_open_ask_is_and_never_holds_a_value() {
+    let project = project();
+    let asks = Asks::kept(project.path());
+    held_for_nothing(&asks, need(7, "MISSING"));
+    // A key whose name reads as a credential is masked out of what is kept, so the ask is not
+    // kept at all: kept masked, its answer would be written under another key.
+    // Built here, so the source holds nothing a secret scan reads as a token.
+    let shaped = &format!("{}_{}", "ghp", "0123456789abcdefghijklmnopqrstuvwxyz");
+    held_for_nothing(&asks, need(8, shaped));
+    let id = asks.open()[0].id;
+    asks.answer(
+        &ctx(project.path()),
+        id,
+        Answer::Fill(VALUE.to_owned().into()),
+        window(),
+    )
+    .unwrap();
+    let kept = std::fs::read_to_string(kept_file(project.path())).unwrap();
+    assert!(!kept.contains(VALUE), "{kept}");
+    assert!(!kept.contains(shaped), "{kept}");
+    assert!(
+        !kept.contains("MISSING"),
+        "answered, so no longer kept: {kept}"
+    );
+    let restarted = Asks::kept(project.path());
+    assert!(restarted.open().is_empty(), "{:?}", restarted.open());
+}
+
+#[test]
+fn a_kept_file_that_does_not_read_starts_with_no_open_ask() {
+    let project = project();
+    let file = kept_file(project.path());
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "not json").unwrap();
+    assert!(Asks::kept(project.path()).open().is_empty());
+    // An entry whose names are not one line is left out, the rest read.
+    std::fs::write(
+        &file,
+        serde_json::json!({"v": 1, "asked": 4, "asks": [
+            {"id": 3, "persona": "devops", "vault": "team", "key": "A\nB", "since": 1, "chats": [7]},
+            {"id": 4, "persona": "devops", "vault": "team", "key": "GOOD", "since": 2, "chats": [8]},
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let open = Asks::kept(project.path()).open();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!(
+        (open[0].key.as_str(), open[0].chats.as_slice()),
+        ("GOOD", &[8][..])
+    );
+}
+
+// A runner chat that cannot receive a value (#5077).
+
+#[test]
+fn a_chat_whose_runner_cannot_receive_is_declined_at_once_and_the_ask_stays_for_the_person() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let line = asks.cannot_receive(need(8, "MISSING"));
+    assert_eq!(line, "declined team/MISSING: runner can't receive secrets");
+    let open = asks.open();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert!(open[0].chats.is_empty(), "nothing waits on it: {open:?}");
+    assert_eq!(open[0].cannot_receive, vec![8]);
+    let answered = asks
+        .answer(
+            &ctx(project.path()),
+            open[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+    assert!(answered.nudge.is_empty(), "{answered:?}");
+    assert_eq!(stored(project.path(), "MISSING").as_deref(), Some(VALUE));
+}
+
+#[test]
+fn a_runner_chat_that_cannot_receive_joins_a_local_chats_ask_and_only_the_local_one_is_nudged() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, need(7, "MISSING"));
+    asks.cannot_receive(need(8, "MISSING"));
+    let open = asks.open();
+    assert_eq!(open.len(), 1, "one ask: {open:?}");
+    assert_eq!(
+        (open[0].chats.clone(), open[0].cannot_receive.clone()),
+        (vec![7], vec![8])
+    );
+    let answered = asks
+        .answer(
+            &ctx(project.path()),
+            open[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+    assert_eq!(answered.nudge, vec![7]);
+}
+
+#[test]
+fn an_ask_only_a_closed_runner_chat_raised_goes_with_it() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    asks.cannot_receive(need(8, "MISSING"));
+    asks.forget(8);
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn an_ask_a_runner_that_cannot_receive_raised_is_kept_across_a_restart() {
+    let project = project();
+    let before = {
+        let asks = Asks::kept(project.path());
+        asks.cannot_receive(need(8, "MISSING"));
+        asks.open()
+    };
+    assert_eq!(Asks::kept(project.path()).open(), before);
+}
+
+#[test]
+fn a_chat_whose_runner_was_unreachable_waits_on_the_ask_is_nudged_on_its_fill_and_nothing_is_declined()
+ {
+    let project = project();
+    let asks = Asks::new(project.path());
+    assert_eq!(
+        asks.unconfirmed(need(8, "MISSING")).as_deref(),
+        Ok(
+            "waiting on you for team/MISSING, and the runner was unreachable just now; retry once \
+            answered"
+        )
+    );
+    let open = asks.open();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!(open[0].chats, vec![8], "it waits: {open:?}");
+    assert!(
+        open[0].cannot_receive.is_empty(),
+        "never declined: {open:?}"
+    );
+    let answered = asks
+        .answer(
+            &ctx(project.path()),
+            open[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+    assert_eq!(answered.nudge, vec![8]);
+}
+
+#[test]
+fn an_ask_only_a_chats_start_raised_is_kept_across_a_restart_and_no_launch_drops_it() {
+    let project = project();
+    let before = {
+        let asks = Asks::kept(project.path());
+        held_for_nothing(&asks, a_start("MISSING"));
+        asks.open()
+    };
+    assert_eq!(before[0].starts, 1, "{before:?}");
+    let restarted = Asks::kept(project.path());
+    assert_eq!(restarted.open(), before);
+    restarted.only_these_came_back(&[]);
+    assert_eq!(
+        restarted.open(),
+        before,
+        "a start is no chat a launch brings back"
+    );
+}
+
+#[test]
+fn a_kept_file_with_two_asks_of_one_number_opens_only_the_first_so_no_fill_goes_to_the_other_key() {
+    let project = project();
+    let file = kept_file(project.path());
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(
+        &file,
+        serde_json::json!({"v": 1, "asked": 3, "asks": [
+            {"id": 3, "persona": "devops", "vault": "team", "key": "FIRST", "since": 1, "chats": [7]},
+            {"id": 3, "persona": "devops", "vault": "team", "key": "SECOND", "since": 2, "chats": [8]},
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let open = Asks::kept(project.path()).open();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!(open[0].key, "FIRST");
+}
+
+#[test]
+fn with_no_record_of_chats_read_no_kept_chat_number_waits_but_a_start_does() {
+    let project = project();
+    {
+        let asks = Asks::kept(project.path());
+        held_for_nothing(&asks, need(7, "MISSING"));
+        asks.cannot_receive(need(8, "RUNNER"));
+        held_for_nothing(&asks, a_start("STARTED"));
+    }
+    let restarted = Asks::kept(project.path());
+    restarted.only_these_came_back(&[]);
+    let open = restarted.open();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!((open[0].key.as_str(), open[0].starts), ("STARTED", 1));
+}
+
+#[test]
+fn policy_refuses_a_runner_chats_undeclared_key_as_any_chats_and_asks_nobody() {
+    let project = project();
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"undeclared-secret-asks": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let asks = Asks::new(project.path());
+    let cannot = asks.cannot_receive(need(8, "UNDECLARED"));
+    let waits = asks.unconfirmed(need(9, "UNDECLARED"));
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    assert!(cannot.contains("policy"), "{cannot}");
+    assert!(waits.is_err_and(|line| line.contains("policy")));
+    assert!(asks.open().is_empty(), "the person is never asked");
+}
+
+#[test]
+fn an_asks_purpose_and_what_its_persona_declares_it_for_are_kept_across_a_restart() {
+    let project = project();
+    let before = {
+        let asks = Asks::kept(project.path());
+        held_for_nothing(
+            &asks,
+            Need {
+                purpose: Some("charge test cards".into()),
+                declared: Some("the shop's payments".into()),
+                ..need(7, "STRIPE_KEY")
+            },
+        );
+        asks.open()
+    };
+    assert_eq!(before[0].purpose.as_deref(), Some("charge test cards"));
+    assert_eq!(Asks::kept(project.path()).open(), before);
+}

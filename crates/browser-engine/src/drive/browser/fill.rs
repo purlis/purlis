@@ -52,7 +52,6 @@ use serde_json::{Value, json};
 use super::super::kept::Kept;
 use super::super::tree::NodeKey;
 use super::Browser;
-use super::login::origin_of;
 use super::takeover::Carrying;
 use crate::drive::{
     Answer, Content, Driver, FieldInfo, FieldKind, FillHold, MOST_LABEL_CHARS, Ref, Refusal,
@@ -330,11 +329,9 @@ impl Browser {
     }
 
     /// The document `at`'s frame shows now, by its number, and that document's origin, as the
-    /// engine recorded it.
+    /// engine recorded it ([`super::State::document_now`]).
     fn frame_now(&self, at: &Resolved) -> Option<(u64, Option<String>)> {
-        let state = lock(&self.inner.state);
-        let frame = state.page(&at.page)?.frames.get(&at.frame)?;
-        Some((frame.generation, origin_of(&frame.url)))
+        lock(&self.inner.state).document_now(&at.page, &at.frame)
     }
 
     /// The document page `page` shows in its main frame, by its number.

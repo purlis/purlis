@@ -4,12 +4,15 @@
 import { browser, expect, $, $$ } from "@wdio/globals";
 import {
   answerTheAsk,
+  clearEndedPanes,
+  ENDED_BAND,
   pickAndStart,
   pressAndStart,
   pressOnly,
   whereTheKeyboardIs,
 } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { KEPT_EMPTY, openedSince } from "../reach.js";
 
 /**
  * The command palette against the real app, driven by the keyboard and nothing else.
@@ -165,7 +168,7 @@ describe("the command palette", () => {
     // one an older chat has too.
     await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
-      async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
+      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
       { timeout: 20_000, timeoutMsg: "the palette spec left a chat open behind it" },
     );
   });
@@ -298,9 +301,10 @@ describe("the command palette", () => {
   });
 
   it("ends the chat once the question is answered yes", async () => {
-    // The pane the test above opened is that tab's only one, so ending its chat closes the tab
-    // with it — which is what makes this checkable without counting panes across tabs. Its
-    // End…, the one row that ends a chat: Close pane ends nothing (#4756).
+    // The pane the test above opened is that tab's only one, so ending its chat and clearing the
+    // ended band it leaves (#5019) closes the tab with it — which is what makes this checkable
+    // without counting panes across tabs. Its End…, the one row that ends a chat: Close pane
+    // ends nothing (#4756).
     //
     // **The yes is a click here, and only because a scenario cannot press a button by
     // keyboard at all** — see the spec above for the trace that measured it. What this proves
@@ -315,8 +319,18 @@ describe("the command palette", () => {
     await browser.keys(["Enter"]);
 
     await answerTheAsk(ending);
+    // Its pane is left on the ended band (#5019), and its Clear pane takes the tab away.
+    await browser.waitUntil(
+      async () =>
+        browser.execute((band: string) => document.querySelector(band) !== null, ENDED_BAND),
+      { timeout: 15_000, timeoutMsg: "the ended chat's pane never drew the ended band" },
+    );
+    await clearEndedPanes();
 
-    await browser.waitUntil(async () => (await tabNames()).length === before.length - 1, {
+    // Counted without the strip's kept empty tab, which Clear pane leaves where the chat's tab
+    // was the strip's last (#5019).
+    const chats = (names: string[]) => names.filter((tab) => tab !== KEPT_EMPTY).length;
+    await browser.waitUntil(async () => chats(await tabNames()) === chats(before) - 1, {
       timeout: 15_000,
       timeoutMsg: `the chat the palette was asked to close is still open: ${before.join(", ")}`,
     });

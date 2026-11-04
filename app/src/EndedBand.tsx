@@ -44,8 +44,12 @@ export function resumeOf(
  *   a new run on its conversation), drawn only where the catalogue offers it, since a shell has
  *   no conversation; for a task, its finished row's Reopen (#1485), where that row says it can be
  *   reopened.
- * - **Clear pane** shows nothing in the pane in its place, and ends nothing: the chat is still
- *   in the sidebar, where End… takes it away.
+ * - **Clear pane** closes the pane, as Close pane does (the strip's last tab keeps one empty
+ *   pane), and ends nothing: a chat whose program exited is still in the sidebar, where End…
+ *   takes it away.
+ *
+ * **A chat ended on purpose keeps its pane the same way** (#5019, spec #4750 story 62): End…,
+ * and a Smart close once its record is written, whose Resume starts it again from that record.
  *
  * **A task a pane was left on says how it ended** (#4757, folded here from its own ended view):
  * in its finished row's words where it has one (`how`, and the core's word beside it, `more`),
@@ -61,6 +65,7 @@ export function EndedBand({
   more,
   report,
   resume,
+  onOpenRecord,
   onClear,
 }: {
   session: number;
@@ -74,6 +79,9 @@ export function EndedBand({
   report?: string;
   /** Resume, where the chat has a way back ({@link resumeOf}, or a task's Reopen). */
   resume: (() => void) | undefined;
+  /** **The record a Smart close wrote**, opened in a tab of its own (spec #4750 story 62), where
+   *  it wrote one. */
+  onOpenRecord?: () => void;
   onClear: () => void;
 }) {
   const clear = { label: "Clear pane", onPress: onClear };
@@ -83,6 +91,9 @@ export function EndedBand({
       at="pane"
       label="Ended"
       fixes={resume !== undefined ? [{ label: "Resume", onPress: resume }, clear] : [clear]}
+      link={
+        onOpenRecord === undefined ? undefined : { label: "Open record", onPress: onOpenRecord }
+      }
     >
       {name} ended
       {how === undefined ? "." : <>: {how}</>}

@@ -4812,8 +4812,9 @@ impl Planes {
         let tasks: Arc<crate::dispatched::Tasks> = Arc::default();
         let masked_kept =
             crate::dispatched::masked_kept_when_remembered(&tasks, hooks.shared_board());
-        // Shared with its chats, whose starts ask through it too (#5074).
-        let secret_asks = Arc::new(purlis_core::secrets::ask::Asks::new(&root));
+        // Shared with its chats, whose starts ask through it too (#5074), and kept across a
+        // restart, as a task's open question is (#5079).
+        let secret_asks = Arc::new(purlis_core::secrets::ask::Asks::kept(&root));
         chats.ask_secrets_in(Arc::clone(&secret_asks));
         Held {
             id,
