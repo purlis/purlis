@@ -226,9 +226,12 @@ export const AQuestionOverSeveralLines: Story = {
       selector: "span",
     });
     await expect(quiz).not.toHaveTextContent(/⟦U\+/);
-    // An inline run of text has one box for each line it is drawn over, and these three lines
-    // fit on one where their line ends are lost.
-    await expect(asked.getClientRects().length).toBeGreaterThanOrEqual(3);
+    // As tall as three of its lines at least: the four lines fit on one where their line ends
+    // are lost. (It is a flex item, so it is one box however many lines it is drawn over.)
+    const style = getComputedStyle(asked);
+    const line = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2;
+    await expect(style.whiteSpace).toBe("pre-wrap");
+    await expect(asked.getBoundingClientRect().height).toBeGreaterThanOrEqual(line * 3 - 1);
     await waitFor(() => expect(box(canvasElement)).toBeEnabled());
   },
 };

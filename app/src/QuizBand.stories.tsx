@@ -204,7 +204,8 @@ export const PausesBeforeTheNext: Story = {
     box(canvasElement).focus();
     await untilFocused(() => box(canvasElement), "in the answer box");
     await userEvent.keyboard("Per project{Enter}");
-    await expect(await canvas.findByText("Sent to developer 7.")).toBeVisible();
+    const sent = await canvas.findByText("Sent to developer 7.");
+    await waitFor(() => expect(sent).toBeVisible());
     await expect(canvas.getByText("The next question comes in a moment.")).toBeVisible();
     await expect(canvas.queryByRole("button", { name: "Send" })).toBeNull();
     // Nothing of the next quiz is drawn under the pointer while the pause holds.
@@ -227,7 +228,8 @@ export const AnAgentAnsweredFirst: Story = {
     const line = await canvas.findByText(
       'steward 4 told developer 7: "Per project. The code is what customers are billed by."',
     );
-    await expect(line).toBeVisible();
+    // The band shows what it holds once it has read its stack again (`NoticePaneRow`).
+    await waitFor(() => expect(line).toBeVisible());
     await expect(canvas.queryByRole("group", { name: "developer 7 asks" })).toBeNull();
     const go = canvas.getByRole("button", { name: "Go to task" });
     go.focus();
@@ -282,11 +284,10 @@ export const WhatYouTypedIsKept: Story = {
     await userEvent.keyboard("Say when it closed, and keep it to one line");
     box(canvasElement).blur();
     theAgentAnswers();
-    await expect(
-      await canvas.findByText(
-        'steward 4 answered first: "Per project. The code is what customers are billed by." What you typed is still in the box.',
-      ),
-    ).toBeVisible();
+    const first = await canvas.findByText(
+      'steward 4 answered first: "Per project. The code is what customers are billed by." What you typed is still in the box.',
+    );
+    await waitFor(() => expect(first).toBeVisible());
     await expect(canvas.getByRole("textbox", { name: "What you want instead" })).toHaveValue(
       "Say when it closed, and keep it to one line",
     );
@@ -314,9 +315,10 @@ export const YourWordReplacesTheChats: Story = {
       "Per runner",
     );
     await userEvent.click(canvas.getByRole("button", { name: "Send" }));
-    await expect(
-      await canvas.findByText("developer 7 was told your word replaces steward 4's answer."),
-    ).toBeVisible();
+    const told = await canvas.findByText(
+      "developer 7 was told your word replaces steward 4's answer.",
+    );
+    await waitFor(() => expect(told).toBeVisible());
     const dismiss = canvas.getByRole("button", { name: "Dismiss" });
     dismiss.focus();
     await untilFocused(() => dismiss, "on Dismiss");
