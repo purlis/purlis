@@ -43,7 +43,9 @@ fn apart(one: &str, other: &str) -> Option<f64> {
 
 /// **What falls in `drawn`**: every rule of [`APART`] and Allow from the primary.
 fn falls(drawn: &ResolvedTheme) -> Vec<String> {
-    let rules = APART.iter().filter_map(|rule| {
+    // The accent's marks are held no nearer a state colour than the theme writes them (#4921),
+    // which `signal_apart_tests` measures against the theme as written.
+    let rules = APART.iter().filter(|rule| !rule.signal).filter_map(|rule| {
         let near = apart(drawn.value(rule.token), drawn.value(rule.from))?;
         (near < rule.distance).then(|| format!("{} {} {near}", rule.token, rule.from))
     });
@@ -62,14 +64,17 @@ fn at_one_chroma(theme: &ResolvedTheme, hue: f64) -> Most {
         shared: tint::apart_chroma(theme, hue),
         alone,
         words: None,
+        signal: [None; 2],
         kept: 0,
     };
     // The accent's words take their own answer since #3100: where they would land on waiting or
     // danger they keep the theme's colour, and the accent keeps its tint. That move is meant, and
     // tint_tests measures it, so the record here asks the same of the words.
-    // And the grounds kept as written since #4666 are meant too, so the record keeps the same.
+    // And the grounds kept as written since #4666 are meant too, so the record keeps the same,
+    // and the accent's marks held apart from the state colours since #4921.
     Most {
         words: tint::words_chroma_of(&tint::words_rules(theme), hue, one),
+        signal: tint::most_at(theme, hue).signal,
         kept: tint::most_at(theme, hue).kept,
         ..one
     }
@@ -273,6 +278,7 @@ fn the_sweep_reads_what_it_says_it_holds() {
         shared: Some(f64::INFINITY),
         alone: Some(f64::INFINITY),
         words: Some(f64::INFINITY),
+        signal: [Some(f64::INFINITY); 2],
         kept: 0,
     };
     let close = themed(

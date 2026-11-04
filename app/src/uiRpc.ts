@@ -3775,6 +3775,11 @@ export type ChatBrowser = {
 	 *  what its row and thumbnail name as its device.
 	 */
 	pool: string | null,
+	/**
+	 *  **The vault secrets purlis filled into it** (#5119, SF-8): by key and site, never a value,
+	 *  oldest first. Its view marks each while its page is on that site.
+	 */
+	secrets: SecretFilled[],
 };
 
 /**
@@ -5509,6 +5514,11 @@ export type FillShown = {
 	no_always?: string | null,
 	/**  Always also allows the vault for the persona. */
 	vault_too: boolean,
+	/**
+	 *  **A 2FA code the seed under `key` makes, not the value itself** (#5118): the notice says
+	 *  so, and that the seed reaches no page.
+	 */
+	code: boolean,
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */
@@ -11489,6 +11499,26 @@ export type SecretNeedShown = {
 };
 
 /**
+ *  **A vault secret purlis filled into a browser** (#5119, SF-8), as its view marks it: the
+ *  key's name, the site it went to and the field the page labels, never a value.
+ */
+export type SecretFilled = {
+	/**  The key's name in its vault (`dash-api-key`). */
+	key: string,
+	/**  The origin of the field's own frame it went into (`https://dash.example.test`). */
+	origin: string,
+	/**
+	 *  The origin of the page that frame was in, where it was known: the field may be in a
+	 *  part of the page from another site.
+	 */
+	page: string | null,
+	/**  What the page labels the field: the page's words, never purlis's. */
+	label: string,
+	/**  A 2FA code the seed under `key` made (#5118), not the value itself. */
+	code: boolean,
+};
+
+/**
  *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
  *  its chats miss, and how many wait on it. Names only: no value is ever here.
  */
@@ -14353,6 +14383,11 @@ export type WindowApart = {
 	 *  answered, so it costs the accent no colour.
 	 */
 	words: boolean,
+	/**
+	 *  Whether the rule is one of the accent's marks' (#4921): measured once every other rule is
+	 *  answered, each mark on its own, so it costs the accent and its kin no colour.
+	 */
+	signal: boolean,
 };
 
 /**  One theme draft, as the strip and the close of its chat name it. */

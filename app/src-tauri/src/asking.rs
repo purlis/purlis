@@ -244,6 +244,9 @@ pub struct FillShown {
     pub no_always: Option<String>,
     /// Always also allows the vault for the persona.
     pub vault_too: bool,
+    /// **A 2FA code the seed under `key` makes, not the value itself** (#5118): the notice says
+    /// so, and that the seed reaches no page.
+    pub code: bool,
 }
 
 /// **A suggested login, as its notice draws it** (#4595). The vault and key names, and never a
@@ -1545,10 +1548,17 @@ pub fn secret_fill(
     Shown {
         session: wait.session,
         ask: secret_fill_key(wait.id),
-        says: said_inertly(&format!(
-            "Wants to put {} from vault {} into a field on {site}",
-            wait.key, wait.vault
-        )),
+        says: said_inertly(&if wait.code {
+            format!(
+                "Wants to put a 2FA code from {} in vault {} into a field on {site}",
+                wait.key, wait.vault
+            )
+        } else {
+            format!(
+                "Wants to put {} from vault {} into a field on {site}",
+                wait.key, wait.vault
+            )
+        }),
         options,
         source: AskSource::SecretFill,
         chain: Vec::new(),
@@ -1583,6 +1593,7 @@ pub fn secret_fill(
                 .then(|| wait.no_always.clone())
                 .flatten(),
             vault_too: wait.vault_too,
+            code: wait.code,
         }),
     }
 }

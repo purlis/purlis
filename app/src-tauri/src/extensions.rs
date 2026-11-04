@@ -974,6 +974,9 @@ pub struct WindowApart {
     /// Whether the rule is the accent's words' (#3100): measured only once the accent is
     /// answered, so it costs the accent no colour.
     pub words: bool,
+    /// Whether the rule is one of the accent's marks' (#4921): measured once every other rule is
+    /// answered, each mark on its own, so it costs the accent and its kin no colour.
+    pub signal: bool,
 }
 
 /// One workspace colour's hue in a theme, in degrees.
@@ -1166,6 +1169,7 @@ impl WindowTheme {
                         distance: rule.distance,
                         alone: rule.alone,
                         words: rule.words,
+                        signal: rule.signal,
                     })
                     .collect(),
                 with_words: owned_names(&purlis_core::theme::ACCENT_WASHES),

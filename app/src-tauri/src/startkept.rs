@@ -11,9 +11,11 @@
 //! - **the plane watch**, on a change to the profiles, the personas, the project's sandbox or
 //!   the harness settings ([`purlis_core::planechange::moves_a_new_chat`]), on a change it
 //!   cannot place, and on a watch that lapsed and is whole again;
-//! - **the stamp they were kept with**, for what they were read from on this machine and not in
-//!   the plane's watched folders: the sandbox policy, the profile store, the approvals, the
-//!   installed harnesses ([`purlis_core::pickerstamp`]).
+//! - **the stamp they were kept with**, taken before they were read, for what they were read
+//!   from on this machine and not in the plane's watched folders: the sandbox policy, the
+//!   profile store, the approvals, the installed harnesses, the profiles' own icons; and for
+//!   the plane's files the watch may tell late, the personas among them
+//!   ([`purlis_core::pickerstamp`]).
 //!
 //! A project whose plane is not watched, or not wholly, keeps nothing: each ask reads both
 //! answers fresh, as the picker did before.

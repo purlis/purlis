@@ -52,6 +52,7 @@ pub mod run;
 pub mod seen;
 pub mod setup;
 pub mod tokeyring;
+pub mod totp;
 pub mod tty;
 pub mod vaultcmd;
 
