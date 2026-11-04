@@ -292,9 +292,9 @@ row above the pane, between the chosen tab and its pane, until the operator's sc
 2026-10-24 showed it breaking the tab's join. **A pane is three rows** (`paneFrame.css`, the
 operator's variant A, and #4754): the header (`PaneHead`), with a runway at its top so the chosen
 tab joins the terminal's fill, the chat at a glance at its start and the pane's actions at its
-end (`PaneActions`, the one cluster of the bell, split side by side, split stacked and close,
-which a view's pane draws too, without the bell, #3147); then the band, under the header so a
-Notice arriving never moves it; then the terminal, pinned to its bottom so a warning
+end (`PaneActions`: the chat's state button, bell and ⋯, a thin divider, then split side by side,
+split stacked and close, which are all a view's pane draws, #3147, #5203); then the band, under
+the header so a Notice arriving never moves it; then the terminal, pinned to its bottom so a warning
 coming or going moves its top and never its last line. **A view's pane carries no title of its
 own** (#3147, the operator's ruling of 2026-10-24): its tab is its name and the content panel is
 that tab's panel, so the view starts on the fill its chosen tab joins, with no band; the same

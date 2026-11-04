@@ -972,7 +972,7 @@ export const NarrowScrolled: Story = {
 
 /**
  * **The pane's actions** (`PaneActions`, shared with a view's pane, #3147): split side by side,
- * split stacked and close, one cluster at the pane's top right, drawn by the catalogue's own
+ * split stacked and close, after a divider from the chat's actions, at the pane's top right, drawn by the catalogue's own
  * rows. Hidden at rest in the pane with the keyboard, drawn once the keyboard is on them.
  */
 export const Actions: Story = {

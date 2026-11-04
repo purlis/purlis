@@ -489,7 +489,7 @@ export function PaneActions({
   state?: ReactNode;
 }) {
   // The bell is a chat's, drawn where the pane holds a chat's notices: a view's pane has none.
-  const bell = useContext(PaneBellOf) !== null;
+  const hasBell = useContext(PaneBellOf) !== null;
   return (
     <div className="pane-actions">
       {/* **The state button, then the bell, then ⋯** (#4760, #5203), each always drawn: the
@@ -506,7 +506,7 @@ export function PaneActions({
           onPress={(offer) => props.onPaneDoes(props.pane, offer)}
         />
       )}
-      <PaneDoing {...props} parted={state != null || bell || chat !== undefined} />
+      <PaneDoing {...props} parted={state != null || hasBell || chat !== undefined} />
     </div>
   );
 }
@@ -1622,7 +1622,7 @@ export const PaneBellAt = createContext<RefObject<HTMLButtonElement | null> | nu
 
 /**
  * **A pane's bell** (#4754, spec #4750 stories 33, 37 to 39): in the pane's header, in a fixed
- * slot before split and close, there with no count when there is nothing, so nothing beside it
+ * slot before ⋯, there with no count when there is nothing, so nothing beside it
  * moves. An icon button the size of its neighbours (#5189), its hint below the head.
  *
  * - **Its count is the pane's notes**, never its asks, the same number minimised and expanded:

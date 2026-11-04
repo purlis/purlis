@@ -182,8 +182,8 @@ export const ATasksLine: Story = {
     const box = (one: Element) => one.getBoundingClientRect();
     const line = canvasElement.querySelector('.pane-actions [data-scope="separator"]') as Element;
     await expect(line).not.toBeNull();
-    await expect(box(brief).right).toBeLessThanOrEqual(box(bell).left);
-    await expect(box(bell).right).toBeLessThanOrEqual(box(more).left);
+    await expect(box(brief).right).toBeLessThan(box(bell).left);
+    await expect(box(bell).right).toBeLessThan(box(more).left);
     await expect(box(more).right).toBeLessThan(box(line).left);
     await expect(box(line).right).toBeLessThan(box(right).left);
     await expect(box(line).width).toBeGreaterThan(0);
