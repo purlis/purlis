@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793795725039,
+  "lastUpdate": 1793797594144,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38892,6 +38892,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9473725,
             "unit": "ms",
             "extra": "median of 5 runs: 101.832, 101.942, 101.947, 102.283, 102.589 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bd8de72aad6c3ec436fd7618d5df26e932be4676",
+          "message": "Felt speed: a burst of chat events is one commit, and the guards hold it (#4882) (#5187)\n\n* Felt speed: a burst of chat events is one commit, and the guards hold it (#4882)\n\nThe burst test of #4818 and the batch test of #4829 now assert exactly one\nReact commit. On main they were three. Two came from the test's window not\nknowing its chats at rest: the burst was each chat's first state, which\ncounts as a chat start and mounted the status bar's running item. The test's\ncore now answers chat_states as a window open a while would. The third was\nreal: the context gauge set a new object for every chat_usage answer, so the\nread each move sets off was a commit of its own. An unchanged reading is no\nlonger set.\n\nThe no-loss-or-reorder guard now covers doing and skill-run events, sent\ninterleaved across two chats and as one batch. heard() lives once, in\nframe.testkit.ts, instead of in nine test files.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K52BSDK84V6FBYF7BW5ZHF\nPurlis-Persona: steward\n\n* Changelog fragment for #4882\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K52BSDK84V6FBYF7BW5ZHF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T12:28:58Z",
+          "tree_id": "598eae18c9b3ab32e52abc438fcab86a7a0e78aa",
+          "url": "https://github.com/purlis/purlis/commit/bd8de72aad6c3ec436fd7618d5df26e932be4676"
+        },
+        "date": 1793797590346,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5373265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.531, 0.535, 0.537, 0.541, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.300304500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.287, 16.294, 16.300, 16.312, 16.428 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.299913,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.191, 101.120, 101.300, 101.809, 101.979 ms"
           }
         ]
       }
