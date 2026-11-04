@@ -1,5 +1,7 @@
 # Amended (2026-11-03; the person's ruling of 2026-11-03): a sign-in site is reached only while signing in
 
+*Amended on 2026-11-04 by the person's ruling in #5152: both hosts stay reachable, and the chat acts on the form's host only while signing in (`2026-11-04-a-sign-in-site-stays-reached-and-the-chat-acts-there-only-while-signing-in.md`).*
+
 Ruled by the person, narrowing the amendment of the same day that records a login's form host
 (`2026-11-03-a-browser-login-records-the-host-of-its-form.md`). A browser logged in through a
 login whose form is on another host reaches that host only during the sign-in.

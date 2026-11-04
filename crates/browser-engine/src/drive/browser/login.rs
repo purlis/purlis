@@ -504,6 +504,12 @@ impl Browser {
             .ok_or(Refusal::NoPage)
     }
 
+    /// Whether `target`'s own document shows a password field now (#5152): a page of the site
+    /// the browser signs in on that asks to sign in again. Not where it cannot be read.
+    pub(super) fn shows_password_field(&self, target: &str) -> bool {
+        matches!(self.shows(target, PASSWORD_FIELD), Ok(Some(true)))
+    }
+
     /// Whether `target`'s page shows a document on `origin` now, as the engine recorded it.
     fn on_origin(&self, target: &str, origin: &str) -> bool {
         self.document_origin(target)
