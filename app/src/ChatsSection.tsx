@@ -17,7 +17,7 @@ import {
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { AnchoredPopover } from "./ui/popover/Popover";
-import { ChevronRight, Ellipsis, Hand, LayoutGrid, Plus, Search } from "lucide-react";
+import { Bell, ChevronRight, Ellipsis, Hand, LayoutGrid, Plus, Search } from "lucide-react";
 import {
   BROWSERS_SHOW,
   besideId,
@@ -121,12 +121,16 @@ const HAND: CSSProperties = {
   color: `var(${property("needs-you.base")})`,
 };
 
-/** The faint hand of a task that can't report asks (#4759): the hand at the words' size, in the
- *  row's quiet text colour (`ui-text-secondary`), never the needs-you colour. */
-const FAINT_HAND: CSSProperties = { width: "1em", height: "1em" };
+/** A row's quiet mark (#4759), the faint hand of a task that can't report asks or the bell of a
+ *  note in the Notices centre: at the words' size, in the row's quiet text colour
+ *  (`ui-text-secondary`), never the needs-you colour. */
+const QUIET_MARK: CSSProperties = { width: "1em", height: "1em" };
 
 /** What a row says of a chat it announced and the person has not looked at (#4759). */
 export const NEW_SAID = "new";
+
+/** What a row's mark for a note in the Notices centre says (#4759). */
+export const NOTED_SAID = "A notice about it is in the Notices centre";
 
 /** What the faint hand on a row says (#4759). */
 export const CANT_REPORT_SAID = "Can't report asks: look at it from time to time";
@@ -281,6 +285,7 @@ export function ChatsSection({
   wrapping,
   sandboxOf,
   besides,
+  noted,
   onOpen,
   offers = NO_OFFERS,
   onPress,
@@ -313,6 +318,8 @@ export function ChatsSection({
   /** The chats in the other panes of the tab in front (#4757): their rows are marked faintly,
    *  so a press that would jump to one is told before it is pressed. */
   besides?: ReadonlySet<number>;
+  /** The chats in no pane with a note in the Notices centre (#4759): their rows are marked. */
+  noted?: ReadonlySet<number>;
   /** A row was pressed: go to that chat. A task is shown inside its session's tab (#1486).
    *  The one way a row opens. */
   onOpen: (session: number) => void;
@@ -1110,6 +1117,7 @@ export function ChatsSection({
                       tab={row.tab}
                       current={row.session === front}
                       beside={besides?.has(row.session) ?? false}
+                      noted={noted?.has(row.session) ?? false}
                       open={open ?? null}
                       needs={lead === undefined ? null : lead}
                       askingUnder={askingUnder.get(row.session) ?? 0}
@@ -1333,6 +1341,7 @@ const Row = memo(function Row({
   askerWaiting,
   unseen,
   cantReport,
+  noted,
   tab,
   current,
   beside,
@@ -1394,6 +1403,8 @@ const Row = memo(function Row({
   unseen: boolean;
   /** A task whose harness can't report asks (#4759): the faint hand stays on it. */
   cantReport: boolean;
+  /** In no pane, with a note in the Notices centre (#4759): its row is marked. */
+  noted: boolean;
   tab: boolean;
   current: boolean;
   /** On screen in another pane of the tab in front (#4757): a press on it jumps there. */
@@ -1656,7 +1667,21 @@ const Row = memo(function Row({
                     role="img"
                     aria-label={CANT_REPORT_SAID}
                   >
-                    <Hand aria-hidden="true" style={FAINT_HAND} />
+                    <Hand aria-hidden="true" style={QUIET_MARK} />
+                  </span>
+                </Tooltip>
+              )}
+              {/* **A note in the Notices centre** (#4759): a chat in no pane has no band, so what
+                  it says is listed there, and its row says it has something to read. */}
+              {noted && (
+                <Tooltip tip={NOTED_SAID}>
+                  <span
+                    className="chat-noted ui-text-secondary"
+                    data-mark="noted"
+                    role="img"
+                    aria-label={NOTED_SAID}
+                  >
+                    <Bell aria-hidden="true" style={QUIET_MARK} />
                   </span>
                 </Tooltip>
               )}

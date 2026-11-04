@@ -5412,12 +5412,16 @@ fn an_announced_chat_stays_new_until_a_layout_puts_it_on_screen_and_then_the_rec
     chats.put_back(&record, SIZE);
 
     // On no screen: it stays new, and nothing is said.
-    chats.lay_out(on_ops(vec![front_tab(Node::chat(3))])).unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(3))]))
+        .unwrap();
     assert!(!chats.mark_seen(), "nothing new is on screen");
     assert!(chats.record().chats[1].unseen, "still new");
 
     // The person picks it: on screen, so looked at, once.
-    chats.lay_out(on_ops(vec![front_tab(Node::chat(4))])).unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(4))]))
+        .unwrap();
     assert!(chats.mark_seen(), "its mark went");
     assert!(!chats.record().chats[1].unseen, "and the record keeps that");
     assert!(!chats.mark_seen(), "said once");

@@ -1976,8 +1976,14 @@ fn a_handoff_is_announced_and_a_task_only_where_its_harness_cannot_report_asks()
     };
     assert!(Chat::announced(&handoff, false, false), "a handoff, always");
     assert!(Chat::announced(&handoff, false, true));
-    assert!(!Chat::announced(&task, false, false), "its asking chat reads it");
-    assert!(Chat::announced(&task, false, true), "it can't say when it needs the person");
+    assert!(
+        !Chat::announced(&task, false, false),
+        "its asking chat reads it"
+    );
+    assert!(
+        Chat::announced(&task, false, true),
+        "it can't say when it needs the person"
+    );
     assert!(
         !Chat::announced(&task, true, true),
         "the person asked for it themselves"

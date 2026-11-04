@@ -51,10 +51,10 @@ const started = (
   ...more,
 });
 
-function draw(chats: ListedChat[]) {
+function draw(chats: ListedChat[], noted: ReadonlySet<number> = new Set()) {
   render(
     <ChatsHere.Provider value={fixedChats(nothingKnown)}>
-      <ChatsSection rows={chatsTree(chats)} front={1} onOpen={() => {}} />
+      <ChatsSection rows={chatsTree(chats)} front={1} noted={noted} onOpen={() => {}} />
     </ChatsHere.Provider>,
   );
 }
@@ -94,5 +94,16 @@ describe("a task that can't report asks, on its row (#4759)", () => {
     draw([ASKER, started(2, "count the rows", "task")]);
 
     expect(rowOf("count the rows").querySelector('[data-mark="cant-report"]')).toBeNull();
+  });
+});
+
+describe("a chat in no pane with a note in the Notices centre, on its row (#4759)", () => {
+  it("is marked, named for where the note is, and no other row is", () => {
+    draw([ASKER, started(2, "fix the login", "handoff")], new Set([2]));
+
+    expect(rowOf("fix the login").querySelector('[data-mark="noted"]')).toHaveAccessibleName(
+      "A notice about it is in the Notices centre",
+    );
+    expect(rowOf("steward 1").querySelector('[data-mark="noted"]')).toBeNull();
   });
 });

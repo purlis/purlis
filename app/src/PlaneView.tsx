@@ -205,7 +205,7 @@ import { BROWSER_ASK_ENDED, useOpenBrowserAsked } from "./browserNeedsYou";
 import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
-import { Notice } from "./Notice";
+import { Notice, NoticeInCentre, NoticeOf } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
@@ -634,6 +634,7 @@ import {
   type ByHandNote,
   type StartNotes,
   withNote,
+  ChatNotices,
 } from "./ChatNotices";
 import { type EndedChat, LayoutPanes, type PaneFace } from "./LayoutPanes";
 import { drawnOf } from "./paneFold";
@@ -2062,7 +2063,9 @@ export const PlaneView = memo(function PlaneView({
             },
             {
               cantReport: arrived.from?.task === true,
-              onGo: () => showArrived.current(arrived.session),
+              // Said to the window as an event of its own, which the press below hears: the
+              // result is state, and holds no function of the window's beyond this one.
+              onGo: () => goToArrived(arrived.session),
             },
           ),
         );
@@ -3476,8 +3479,6 @@ export const PlaneView = memo(function PlaneView({
   /** **A press in another of the project's windows landed on a chat this one has in a pane**
    *  (#4768): it is shown here, in its pane, and this window has come forward. */
   const showChatHere = useRef<(session: number) => void>(() => undefined);
-  /** {@link showChat} as it stands, for a press on a card said before it was drawn (#4759). */
-  const showArrived = useRef<(session: number) => void>(() => undefined);
   useEffect(() => {
     const listening = listen<{ plane: string; chat: number }>(PRESS_HERE, (event) => {
       if (event.payload.plane === plane) showChatHere.current(event.payload.chat);
@@ -4486,8 +4487,12 @@ export const PlaneView = memo(function PlaneView({
     showChatHere.current = (session) =>
       landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
   }, [landOn, pressedOf, pressing]);
+  // **Go to it, on a chat's arrival card** (#4759): a press on a card said before it was drawn,
+  // heard here, where the press as it stands now is.
   useEffect(() => {
-    showArrived.current = showChat;
+    const go = (event: Event) => showChat((event as CustomEvent<number>).detail);
+    window.addEventListener(GO_TO_ARRIVED, go);
+    return () => window.removeEventListener(GO_TO_ARRIVED, go);
   }, [showChat]);
   /**
    * **Move to new window, or Move to window ▸** (#4768): tab `tab`, or its focused pane, goes to
@@ -10083,6 +10088,35 @@ export const PlaneView = memo(function PlaneView({
     refusals,
   ]);
   const { updates: keptUpdates, settle: settleUpdates } = useInboxUpdates(plane, derivedUpdates);
+
+  /**
+   * **The chats in no pane** (#4759, spec #4750): listed, and in no tab of this window. What
+   * each has to say is said in the Notices centre (`NoticeInCentre`), and its row is marked
+   * while it has something there.
+   */
+  const paneless = useMemo(
+    () => [...chatNames.keys()].filter((session) => tabHolding(tabs, session) === undefined),
+    [chatNames, tabs],
+  );
+  /** The causes of the Notices each chat in no pane has standing in the Notices centre. */
+  const [centred, setCentred] = useState<ReadonlyMap<number, ReadonlySet<string>>>(() => new Map());
+  /** Chat `session`'s Notice `cause` came to the Notices centre, or went (`NoticeInCentre`). */
+  const centredHeld = useCallback(
+    (session: number, cause: string, held: boolean) =>
+      setCentred((was) => {
+        const now = new Set(was.get(session) ?? []);
+        if (held === now.has(cause)) return was;
+        if (held) now.add(cause);
+        else now.delete(cause);
+        const next = new Map(was);
+        if (now.size === 0) next.delete(session);
+        else next.set(session, now);
+        return next;
+      }),
+    [],
+  );
+  /** The rows marked for a note in the Notices centre (#4759): a chat in no pane with one. */
+  const noted = useMemo(() => new Set(centred.keys()), [centred]);
   /** Whether the registry lists an ask of chat `chat` now (#1694): its question or the prompt
    *  in its terminal is in the same needs-you item as what the app found for it. */
   const asksOfChat = useCallback(
@@ -10486,6 +10520,33 @@ export const PlaneView = memo(function PlaneView({
       <OfferOpeningContext.Provider value={offerOpening}>
         <OfferNotices />
       </OfferOpeningContext.Provider>
+      {/* **What a chat in no pane has to say** (#4759, spec #4750): its notes, here in the
+          Notices centre, each saying whose it is with Go to it, and a mark on its row while
+          any stands. Its asks are the Inbox's own, from the registry, so none is drawn here. */}
+      {paneless.map((session) => (
+        <CentredFor key={session} session={session} onHeld={centredHeld}>
+          <NoticeOf.Provider value={{ whose: nameOf(session), onGo: () => showChat(session) }}>
+            <ChatNotices
+              plane={plane}
+              session={session}
+              byHand={byHand[session]}
+              onByHand={(open) => answerByHand(session, open)}
+              startNotes={startNotes[session]}
+              onDismissStartNote={() => dismissStartNote(session)}
+              onRestart={() => askRestart(session)}
+              blocks={sandboxBlocks[session]}
+              onDismissBlock={(block) => dismissBlock(session, block)}
+              onRestarted={(chat) => chatRestarted(session, chat)}
+              onAllowed={() => oweRestart(session)}
+              restartSaid={restartsSaid[session]}
+              onRestartAnswer={(act) => answerRestart(session, act)}
+              asks={NO_ASKS_HERE}
+              waiting={NO_ASKS_HERE}
+              onShowInbox={showInbox}
+            />
+          </NoticeOf.Provider>
+        </CentredFor>
+      ))}
       {forgottenPins.map(({ name, after }) => (
         <Notice
           key={name}
@@ -10656,6 +10717,7 @@ export const PlaneView = memo(function PlaneView({
                       // The chat that has the keyboard: a task, while its pane shows it (#1486).
                       front={focusedChat(tabs)}
                       besides={besides}
+                      noted={noted}
                       onOpen={showChat}
                       offers={found}
                       onPress={press}
@@ -11996,6 +12058,35 @@ interface Placed {
 function whoOf(persona: string | null, harness: string | null | undefined): string | null {
   return persona ?? harness ?? null;
 }
+
+/** **Go to it on a chat's arrival card** (#4759), told to the window that drew it. */
+const GO_TO_ARRIVED = "purlis:go-to-arrived";
+const goToArrived = (session: number) =>
+  window.dispatchEvent(new CustomEvent(GO_TO_ARRIVED, { detail: session }));
+
+/**
+ * **Chat `session`'s Notices, said in the Notices centre** (#4759): its pane's Notices drawn
+ * there (`NoticeInCentre`), each telling `onHeld` as it comes and goes, by one function per chat,
+ * so they are not drawn again for a new one each render.
+ */
+function CentredFor({
+  session,
+  onHeld,
+  children,
+}: {
+  session: number;
+  onHeld: (session: number, cause: string, held: boolean) => void;
+  children: ReactNode;
+}) {
+  const told = useCallback(
+    (cause: string, held: boolean) => onHeld(session, cause, held),
+    [onHeld, session],
+  );
+  return <NoticeInCentre.Provider value={told}>{children}</NoticeInCentre.Provider>;
+}
+
+/** No asks: a chat in no pane has its asks in the Inbox's own list (#4759), not drawn twice. */
+const NO_ASKS_HERE: readonly Shown[] = [];
 
 /** Where a chat in no workspace works, in the words its handoff note uses (`plane root`). */
 const ROOT_WORD = "plane root";

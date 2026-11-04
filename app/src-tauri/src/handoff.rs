@@ -1917,7 +1917,10 @@ fn start_on(
         unseen: Chat::announced(
             &opening.from,
             opening.by_person,
-            ready.harness.and_then(|harness| harness.unreported()).is_some(),
+            ready
+                .harness
+                .and_then(|harness| harness.unreported())
+                .is_some(),
         ),
         ..Default::default()
     };
