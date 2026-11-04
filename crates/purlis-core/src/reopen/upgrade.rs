@@ -38,6 +38,8 @@ struct OldTab {
     panes: Vec<Pane>,
     /// Whether it held a view, which keeps it.
     view: bool,
+    /// The tab's own chat, whatever its pane was switched to; none for a view's tab.
+    own: Option<u32>,
 }
 
 impl OldTab {
@@ -94,6 +96,7 @@ pub fn upgraded(record: &Record, workspace_of: &dyn Fn(&Chat) -> Option<String>)
             front: chat.active,
             panes,
             view: false,
+            own: Some(number),
         });
     }
     // The view tabs, each at its place among its strip's tabs.
@@ -115,6 +118,7 @@ pub fn upgraded(record: &Record, workspace_of: &dyn Fn(&Chat) -> Option<String>)
                 front: view.active,
                 panes: vec![Pane::View(PaneView::of(view.clone()))],
                 view: true,
+                own: None,
             },
         );
     }
@@ -142,12 +146,14 @@ pub fn upgraded(record: &Record, workspace_of: &dyn Fn(&Chat) -> Option<String>)
             .map(|(index, tab)| (Some(index) == front_at_quit, tab_of(tab)))
             .collect();
         if kept.is_empty() {
-            // A strip left with no tab shows its first chat, or nothing.
+            // A strip left with no tab shows its first chat itself, never the task its tab was
+            // switched to, or nothing.
             let first = old
                 .iter()
-                .filter(|tab| tab.workspace == on && !tab.view)
-                .min_by_key(|tab| !tab.pinned)
-                .map_or(Pane::Empty, |tab| tab.panes[0].clone());
+                .filter(|tab| tab.workspace == on)
+                .filter_map(|tab| tab.own.map(|own| (tab.pinned, own)))
+                .min_by_key(|(pinned, _)| !pinned)
+                .map_or(Pane::Empty, |(_, own)| Pane::Chat(own));
             kept.push((
                 true,
                 Tab {
@@ -158,6 +164,7 @@ pub fn upgraded(record: &Record, workspace_of: &dyn Fn(&Chat) -> Option<String>)
                         front: false,
                         panes: Vec::new(),
                         view: false,
+                        own: None,
                     })
                 },
             ));

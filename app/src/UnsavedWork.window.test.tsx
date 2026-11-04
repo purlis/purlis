@@ -9,7 +9,14 @@
  */
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render as renderBare, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -242,7 +249,7 @@ describe("a view tab's close, with its unsaved work", () => {
         .queryAllByRole("tab")
         .map((tab) => (tab.textContent ?? "").includes("Settings"));
     // Beside the empty tab every strip keeps (#4758).
-    await vi.waitFor(() => expect(tabs()).toEqual([false, true]));
+    await waitFor(() => expect(tabs()).toEqual([false, true]));
     const deploy = work(ONE);
 
     await userEvent.keyboard("{F2}");

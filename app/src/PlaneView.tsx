@@ -2399,9 +2399,9 @@ export const PlaneView = memo(function PlaneView({
             filedIn: (session) =>
               session === chat.session ? workspace : pressing.filedIn(session),
           },
-          // The focused pane, whichever strip the chat is filed on (#4758), unless the start
-          // named its workspace: "New shell in beta" goes to beta's strip.
-          // The pane New chat was pressed for, while it is there.
+          // A start that named its workspace goes to that strip ("New shell in beta"); else the
+          // pane New chat was pressed for, while it is there; else the focused pane of the tab
+          // in front, whichever strip the chat is filed on (#4758).
           named
             ? undefined
             : asked !== undefined &&
@@ -2412,6 +2412,28 @@ export const PlaneView = memo(function PlaneView({
       );
     },
     [landOn, pressing],
+  );
+  /**
+   * **A chat the core started and placed** (#4758): a curation, a Fix, a theme, a skill, a
+   * file's chat, a first task. Filed where the core put it, and shown on that place's strip,
+   * since the start named its place.
+   */
+  const showPlaced = useCallback(
+    (chat: Placed) => {
+      const workspace = chat.workspace ?? OUTSIDE;
+      setStartedIn((was) => ({ ...was, [chat.session]: workspace }));
+      showStarted(
+        {
+          session: chat.session,
+          chat: chat.name,
+          who: whoOf(chat.persona, chat.harness),
+          label: chat.label,
+        },
+        workspace,
+        true,
+      );
+    },
+    [showStarted],
   );
 
   /** Whether a tab is pinned: the tab's own pin (#4935), whatever its panes hold. */
@@ -3563,7 +3585,7 @@ export const PlaneView = memo(function PlaneView({
     [change, focused],
   );
   /** A new tab whose chat starts in that directory — this one, and not the next. */
-  const newTabIn = useCallback((path: string) => void ask({ tab: true, in: path }), [ask]);
+  const newChatIn = useCallback((path: string) => void ask({ tab: true, in: path }), [ask]);
 
   /**
    * **A shell** (SI-5): the operator's own `$SHELL` in `cwd`, filed on `filed`'s strip. `open_session`
@@ -3844,14 +3866,14 @@ export const PlaneView = memo(function PlaneView({
       const asked = (event as CustomEvent<WayOut>).detail;
       if (asked.plane !== plane || sidebar === undefined) return;
       if (asked.way === "chat") {
-        newTabIn(sidebar.root);
+        newChatIn(sidebar.root);
         return;
       }
       openShell(sidebar.root, OUTSIDE);
     };
     window.addEventListener(WAY_OUT, out);
     return () => window.removeEventListener(WAY_OUT, out);
-  }, [newTabIn, openShell, plane, sidebar]);
+  }, [newChatIn, openShell, plane, sidebar]);
 
   /**
    * **The harness setup tab's two asks** (FR-29): a harness's installer, typed by the core
@@ -4854,22 +4876,11 @@ export const PlaneView = memo(function PlaneView({
         showChat(chat.session);
         return;
       }
-      setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-      showStarted(
-        {
-          session: chat.session,
-          chat: chat.name,
-          who: whoOf(chat.persona, chat.harness),
-          label: chat.label,
-        },
-        chat.workspace ?? OUTSIDE,
-        // Where the core put it: the start names its place (#4758).
-        true,
-      );
+      showPlaced(chat);
     };
     window.addEventListener(FIX_STARTED, started);
     return () => window.removeEventListener(FIX_STARTED, started);
-  }, [change, plane, showChat, showStarted]);
+  }, [change, plane, showChat, showPlaced]);
 
   /** Settings at a workspace's level (SE-20; charter-app#280), on that workspace's strip: what
    *  its menu's and the palette's Workspace settings… open. */
@@ -6353,23 +6364,12 @@ export const PlaneView = memo(function PlaneView({
             setStartApproving,
           );
         const chat = started.data;
-        setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-        showStarted(
-          {
-            session: chat.session,
-            chat: chat.name,
-            who: whoOf(chat.persona, chat.harness),
-            label: chat.label,
-          },
-          chat.workspace ?? OUTSIDE,
-          // Where the core put it: the start names its place (#4758).
-          true,
-        );
+        showPlaced(chat);
         return { ok: true };
       };
       return start();
     },
-    [plane, sayAgain, showStarted],
+    [plane, sayAgain, showPlaced],
   );
 
   /**
@@ -6406,23 +6406,12 @@ export const PlaneView = memo(function PlaneView({
             return;
           }
           const chat = started.data;
-          setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-          showStarted(
-            {
-              session: chat.session,
-              chat: chat.name,
-              who: whoOf(chat.persona, chat.harness),
-              label: chat.label,
-            },
-            chat.workspace ?? OUTSIDE,
-            // Where the core put it: the start names its place (#4758).
-            true,
-          );
+          showPlaced(chat);
         });
     };
     window.addEventListener(THEME_CHAT, asked);
     return () => window.removeEventListener(THEME_CHAT, asked);
-  }, [change, plane, showStarted]);
+  }, [change, plane, showPlaced]);
 
   /**
    * **The Skill studio's "Ask a chat to draft a skill", Try it, a draft's redo and "Ask a chat to
@@ -6508,23 +6497,12 @@ export const PlaneView = memo(function PlaneView({
             return;
           }
           const chat = started.data;
-          setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-          showStarted(
-            {
-              session: chat.session,
-              chat: chat.name,
-              who: whoOf(chat.persona, chat.harness),
-              label: chat.label,
-            },
-            chat.workspace ?? OUTSIDE,
-            // Where the core put it: the start names its place (#4758).
-            true,
-          );
+          showPlaced(chat);
         });
     };
     window.addEventListener(SKILL_CHAT, asked);
     return () => window.removeEventListener(SKILL_CHAT, asked);
-  }, [bringToFront, change, plane, showStarted]);
+  }, [bringToFront, change, plane, showPlaced]);
 
   /**
    * **"Start a chat here"** on a file or folder row (FM-9): a chat the core starts on the
@@ -6562,25 +6540,14 @@ export const PlaneView = memo(function PlaneView({
             setStartApproving,
           );
         const chat = started.data;
-        setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-        showStarted(
-          {
-            session: chat.session,
-            chat: chat.name,
-            who: whoOf(null, chat.harness),
-            label: chat.label,
-          },
-          chat.workspace ?? OUTSIDE,
-          // Where the core put it: the start names its place (#4758).
-          true,
-        );
+        showPlaced({ ...chat, persona: null });
         if (chat.copied === null) return { ok: true };
         const why = chat.copied.charAt(0).toUpperCase() + chat.copied.slice(1);
         return { ok: true, said: `${why}: ${chat.text}` };
       };
       return start();
     },
-    [plane, sayAgain, showStarted],
+    [plane, sayAgain, showPlaced],
   );
 
   /**
@@ -6608,23 +6575,12 @@ export const PlaneView = memo(function PlaneView({
         if (started.status === "error") return started.error;
         const chat = started.data;
         setFirstTaskRuns((was) => ({ ...was, [clone]: { ...was[clone], [run]: chat } }));
-        setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-        showStarted(
-          {
-            session: chat.session,
-            chat: chat.name,
-            who: whoOf(chat.persona, chat.harness),
-            label: chat.label,
-          },
-          chat.workspace ?? OUTSIDE,
-          // Where the core put it: the start names its place (#4758).
-          true,
-        );
+        showPlaced(chat);
         return chat;
       },
       showDiff: (run) => openShell(run.folder, run.workspace ?? OUTSIDE, { line: run.diff }),
     }),
-    [firstTaskRuns, openShell, plane, showStarted],
+    [firstTaskRuns, openShell, plane, showPlaced],
   );
 
   /**
@@ -8036,7 +7992,7 @@ export const PlaneView = memo(function PlaneView({
       askDropMembership: (workspace: string, repo: string) => setMembershipAsk({ workspace, repo }),
       forgetFailedClone: (workspace: string, repo: string) =>
         forgetFailedClone(plane, workspace, repo),
-      newChatIn: newTabIn,
+      newChatIn,
       sendKey,
       openProject: windowDoes.openProject,
       createProject: windowDoes.createProject,
@@ -8123,7 +8079,7 @@ export const PlaneView = memo(function PlaneView({
       newShell,
       newBrowser,
       pickVault,
-      newTabIn,
+      newChatIn,
       openAnswer,
       openBrief,
       openWorkspaceSettings,
@@ -11981,6 +11937,16 @@ function nothingCanStart(options: StartOptions, found: HarnessSetupFound | null)
  * would name the account, not the program). A chat on neither is a shell, and says its own
  * name alone, as it always has. Every path a tab opens by goes through here.
  */
+/** What `showPlaced` needs of a chat the core started and placed. */
+interface Placed {
+  session: number;
+  name: string;
+  persona: string | null;
+  harness: string | null | undefined;
+  label: string | null;
+  workspace?: string | null;
+}
+
 function whoOf(persona: string | null, harness: string | null | undefined): string | null {
   return persona ?? harness ?? null;
 }

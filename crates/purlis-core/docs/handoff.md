@@ -926,7 +926,7 @@ A task is never lost for want of the chat that was doing it, or of the chat that
 - **A task you started yourself is yours.** If the chat you asked from has closed,
   its report is not handed to the next chat in that workspace: it stays with the persona
   chat, which is marked as needing you.
-- **A persona chat that is waiting on you** (a permission prompt, a question, in its own tab)
+- **A persona chat that is waiting on you** (a permission prompt, a question, in that chat itself)
   reads `waiting on the person` to the chat that asked. That chat cannot answer for you,
   and is told the wait is not its own to end.
 
@@ -1130,7 +1130,7 @@ chat:
 
 **Nobody approves the brief.** A brief is a request from another chat, never your word: the
 new chat is told who asked, applies its own charter and its own guards, and every command of
-its that asks you still asks you, in its own tab. The brief is the first message in that tab,
+its that asks you still asks you, in that chat. The brief is the first message in that chat,
 it is kept in the dispatch's record, and the Notice for a first grant shows it in full. Nothing
 in a brief approves anything.
 
