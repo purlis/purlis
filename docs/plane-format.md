@@ -4684,6 +4684,44 @@ purlis only (#5069; ADR 0109, #5055); the Python charter has no linked entries a
 }
 ```
 
+### `.charter/vaults/-no-seed.json` — keys the person marked as no 2FA seed
+
+purlis only (#5237, ADR 0067 as amended); the Python charter has no secret fill and never reads it.
+
+- **Format:** JSON object: `marks`, an object `vault → {key → <seal>}`. A seal is 64 hex characters,
+  `HMAC-SHA256` of the key's value under a key derived from `fingerprint.key` for this purpose
+  alone (`fingerprint::seal`, purpose `no-2fa-seed`). **Never a value**, and no use without the
+  plane's key.
+- **What it says:** the person said the value under this key is no 2FA seed, so a plain secret fill
+  fills it though it looks like one. A row counts only where its seal is the seal of the value the
+  fill read: a value that changed, or a row written by anything but purlis, is no mark. An
+  `otpauth://` or `otpauth-migration://` address is refused as a plain fill whatever this file says.
+- **Who writes it:** the person alone, from the vault's tab in the window. No command of the
+  `purlis` binary, no session protocol method and no settings key makes a mark, and the window's
+  commands are served on no link. It sits under `vaults/` because every chat's sandbox denies that
+  folder both ways, at every level, and the seal needs a key those sandboxes deny too.
+- **Status:** **experimental** — its one reader is the secret fill.
+- **Tier:** Clone state — under the project's state folder, never committed; one person's word about
+  their own values, and nothing rebuilds it.
+- **Written by:** `crates/purlis-core/src/secrets/no_seed.rs` (`mark`, `unmark`, `forget`, `renamed`,
+  `forget_vault`), under the vaults' folder lock, 0600 and replaced whole, never through a link.
+  `mark` and `unmark` are called from the window's commands. A write of the key's value and a delete
+  of the key take its row away, a rename moves it, and deleting a vault takes its rows away, from
+  whichever process does them.
+- **Read by:** the same module: `secrets::brokered::fill_value` for each plain fill of a value that
+  looks like a seed, and the vault's tab, which shows which keys hold a row by name and checks no seal.
+- **Name:** no vault can be called `-no-seed` (`registry::name_ok` wants a letter or digit first), so
+  it is no vault's file.
+- **Git / encoding:** under `.charter/`, so gitignored; indent 2, trailing newline, keys sorted.
+
+```json
+{
+  "marks": {
+    "ops": { "APP_PASSWORD": "<64 hex characters>" }
+  }
+}
+```
+
 ### `.charter/keyring-stub.json` — a test build's keyring
 
 **Tier:** Clone state, transient — test builds only; it stands in for the Keyring tier.
