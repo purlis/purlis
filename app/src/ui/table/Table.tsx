@@ -69,6 +69,7 @@ import { askForAMenu } from "../menu/ContextMenu";
 import { useCollectionElement, useRowMenu } from "../list/List";
 import { RowScope } from "../list/Row";
 import { CellWords, choicesOf, columnAttributes, type ColumnChoices } from "./CellWords";
+import { revealedScrollLeft } from "./reveal";
 
 export type { Key, Selection, SortDescriptor };
 export type { ColumnChoices, ColumnLength, ColumnSize } from "./CellWords";
@@ -144,6 +145,8 @@ export function Table({
           className={className}
           style={style}
           onFocus={revealInFrame}
+          onWheel={forgetSettled}
+          onPointerDown={forgetSettled}
         >
           {caption !== undefined && <p data-part="caption">{caption}</p>}
           <AriaTable
@@ -162,29 +165,87 @@ export function Table({
 }
 
 /**
- * **A control in a cell is brought into its frame when it takes the keyboard** (#4672, WCAG 2.2
- * SC 2.4.11). React Aria scrolls the focused row into view, which never moves the frame sideways
- * (a row is as wide as the table), and the browser's own scroll to a focused element is not to be
- * counted on: in WebKit, the window's engine on macOS, a Tab to a cell's button past the frame's
- * right edge was seen leaving the frame unscrolled, the button out of sight, with no scroll at
- * all. So a frame later than React Aria's own scroll (two frames), the control still focused and
- * still outside the frame sideways is scrolled to its nearest edge. A row, wider than the frame,
- * is left to React Aria.
+ * **A control in a cell is brought into its frame when it takes the keyboard**, its focus ring
+ * and all (#4672, WCAG 2.2 SC 2.4.11). React Aria scrolls the focused row into view, which never
+ * moves the frame sideways (a row is as wide as the table), and the browser's own scroll to a
+ * focused element is not to be counted on: in WebKit, the window's engine on macOS, a Tab to a
+ * cell's button past the frame's right edge was seen leaving the frame unscrolled, and at other
+ * times scrolled to the button's own edge, its ring cut off.
+ *
+ * So the focus starts from where the frame was left for the focus before it (its {@link settled}
+ * place), else from where it stands when the focus comes; and a frame later than React Aria's
+ * own scroll (two frames), the control still focused, the frame is set exactly where
+ * {@link revealedScrollLeft} says from that start, as the table is drawn by then. Whichever
+ * scroll ran in between, and however fast the keys came (a Tab before the last one's frames were
+ * drawn), the same keys end in the same place.
+ * A row, wider than the frame, is left to React Aria.
  */
 function revealInFrame(event: React.FocusEvent<HTMLDivElement>): void {
   const frame = event.currentTarget;
   const target = event.target;
   if (target === frame) return;
+  const start = settled.get(frame) ?? frame.scrollLeft;
+  // Where it ends as the table is drawn now, for a focus that comes before these frames are.
+  const now = placeFor(frame, target, start);
+  if (now === null) {
+    settled.delete(frame);
+    return;
+  }
+  settled.set(frame, now);
   const later = () =>
     requestAnimationFrame(() => {
       if (!frame.isConnected || document.activeElement !== target) return;
-      const room = frame.getBoundingClientRect();
-      const box = target.getBoundingClientRect();
-      if (box.width >= room.width) return;
-      if (box.left >= room.left && box.right <= room.left + frame.clientWidth) return;
-      target.scrollIntoView({ block: "nearest", inline: "nearest" });
+      // And as it is drawn by then: a column may have taken its width since the focus came.
+      const to = placeFor(frame, target, start);
+      if (to === null) return;
+      settled.set(frame, to);
+      if (frame.scrollLeft !== to) frame.scrollLeft = to;
     });
   requestAnimationFrame(later);
+}
+
+/**
+ * **Where `frame` is scrolled to show `target` and its ring, from `start`**: none for a row or
+ * anything as wide as the frame, which is left to React Aria and to where a person scrolls it.
+ */
+function placeFor(frame: HTMLElement, target: Element, start: number): number | null {
+  const room = frame.getBoundingClientRect();
+  const box = target.getBoundingClientRect();
+  if (box.width >= frame.clientWidth) return null;
+  // The control's edges in the frame's own content, the same whatever it is scrolled to.
+  const origin = room.left + frame.clientLeft - frame.scrollLeft;
+  return revealedScrollLeft({
+    start,
+    left: box.left - origin,
+    right: box.right - origin,
+    room: frame.clientWidth,
+    most: frame.scrollWidth - frame.clientWidth,
+    ring: ringOutside(target),
+  });
+}
+
+/**
+ * **Where each frame was last left for the keyboard**, until a person scrolls it or points in it
+ * ({@link forgetSettled}): then the next focus starts from where they left it.
+ */
+const settled = new WeakMap<HTMLElement, number>();
+
+function forgetSettled(event: React.SyntheticEvent<HTMLDivElement>): void {
+  settled.delete(event.currentTarget);
+}
+
+/**
+ * **How far a focus ring may be drawn outside its control's edge**: the theme's ring width and
+ * offset (`--focus-ring-width`, `--focus-ring-offset`), read from the theme rather than from the
+ * control's outline, which React Aria draws a render after the focus comes (`data-focus-visible`)
+ * and a slow frame in WebKit measured before it was there. Room is kept for the ring whether or
+ * not this control draws it outside its edge, so the frame ends in the same place either way.
+ */
+function ringOutside(element: Element): number {
+  const style = getComputedStyle(element);
+  const width = Number.parseFloat(style.getPropertyValue("--focus-ring-width")) || 0;
+  const offset = Number.parseFloat(style.getPropertyValue("--focus-ring-offset")) || 0;
+  return Math.max(0, width + offset);
 }
 
 /**
