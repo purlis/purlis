@@ -11,6 +11,7 @@
 //! is not a defect in the helper.
 #![allow(dead_code)]
 
+pub mod folders;
 pub mod forge_cli;
 
 use std::path::{Path, PathBuf};

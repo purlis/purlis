@@ -568,119 +568,200 @@
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "border.control",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.surface",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "tab.active",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-hover",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "markdown.link",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "chart.1",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
           }
         ],
         "with_words": [
@@ -737,7 +818,7 @@
         "accent.wash-hover": "#a99cf03a",
         "attention.surface": "#2c2924",
         "attention.text": "#ffe8c2",
-        "border.control": "#00000000",
+        "border.control": "#91909d",
         "border.strong": "#91909d",
         "border.subtle": "#55535f",
         "caret": "#c3baf5",
@@ -1290,119 +1371,200 @@
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "border.control",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.surface",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "tab.active",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-hover",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "markdown.link",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "chart.1",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
           }
         ],
         "with_words": [
@@ -2012,119 +2174,200 @@
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "border.control",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.surface",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "tab.active",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-hover",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "markdown.link",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "chart.1",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
           }
         ],
         "with_words": [
@@ -2181,7 +2424,7 @@
         "accent.wash-hover": "#7507ff3a",
         "attention.surface": "#e2ded7",
         "attention.text": "#2c1d01",
-        "border.control": "#00000000",
+        "border.control": "#6a6975",
         "border.strong": "#6a6975",
         "border.subtle": "#a9a7b5",
         "caret": "#403667",
@@ -2242,7 +2485,7 @@
         "selection.text": "#121212",
         "state.failed": "#682f2a",
         "state.running": "#25426e",
-        "state.success": "#174e27",
+        "state.success": "#04401a",
         "state.unreadable": "#653410",
         "state.waiting": "#523601",
         "state.waiting-glow": "#fdb00559",
@@ -2734,119 +2977,200 @@
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "border.control",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.surface",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "tab.active",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-hover",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "markdown.link",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "chart.1",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
           }
         ],
         "with_words": [
@@ -3290,119 +3614,200 @@
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "border.control",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.surface",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "tab.active",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-hover",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "markdown.link",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "chart.1",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
           }
         ],
         "with_words": [
@@ -3862,119 +4267,200 @@
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "border.control",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.surface",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "tab.active",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-hover",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "markdown.link",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "chart.1",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.base",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "focus.ring",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "list.selected-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.fill-edge",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": true,
-            "words": false
+            "words": false,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "state.waiting",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
           },
           {
             "token": "accent.text",
             "from": "danger.base",
             "distance": 0.1,
             "alone": false,
-            "words": true
+            "words": true,
+            "signal": false
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "markdown.link",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.success",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.failed",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
+          },
+          {
+            "token": "chart.1",
+            "from": "state.unreadable",
+            "distance": 0.1,
+            "alone": false,
+            "words": false,
+            "signal": true
           }
         ],
         "with_words": [

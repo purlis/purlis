@@ -15,9 +15,11 @@ import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { drawWindowText, LEAST_TEXT } from "../../textSize";
 import { reordered } from "../../statusBarPrefs";
 import { StatusBar, type StatusContribution } from "./StatusBar";
-import { property, type Token } from "../../theme/theme";
-import { noNearer, toward, type NoNearer } from "../../theme/tint";
+import { inForce, property, type Token } from "../../theme/theme";
+import { noNearer, oklabDistance, toward, type NoNearer } from "../../theme/tint";
 import { ActivityGroup, ActivityItem } from "../activity/ActivityItem";
+import { Button } from "../button/Button";
+import { List, ListRow } from "../list/List";
 import { StatusCell, StatusItem } from "./StatusItem";
 
 /**
@@ -106,6 +108,17 @@ const NO_NEARER: NoNearer = {
   over: ["surface.base", "surface.deep"],
 };
 
+/** What is drawn in the accent past its words and grounds, which follows the accent too (#4918,
+ *  `vocabulary::DRAWN_IN_THE_ACCENT`), each beside the token of `vocabulary::KIN` that drew it
+ *  before, if it has one: where the theme draws the two alike, it follows that one as it always
+ *  did (Purlis Classic fills its primary with its surface), not the accent. */
+const DRAWN_IN_THE_ACCENT: Record<string, Token | undefined> = {
+  "accent.fill": "accent.surface",
+  "accent.fill-hover": "tab.active",
+  "focus.ring": undefined,
+  "list.selected-edge": undefined,
+};
+
 /** An accent set over the cell's theme, its words and grounds as the engine resolves them. */
 function OverPurlis() {
   const root = getComputedStyle(document.documentElement);
@@ -119,10 +132,29 @@ function OverPurlis() {
       ? turned
       : value(ground);
   };
+  // Each turned the same way, or the theme's own where the theme draws it as its kin
+  // (`vocabulary::follow_kin`), or where turning would bring it nearer a colour than the rules
+  // the engine hands this theme allow and than the theme's own is (`vocabulary::holds_as_apart`).
+  const held = (token: Token) => {
+    const kin = DRAWN_IN_THE_ACCENT[token];
+    if (kin !== undefined && value(kin) === value(token)) return value(token);
+    const turned = toward(value(token), accent);
+    const holds = inForce()
+      .tint.apart.filter((rule) => rule.token === token && !rule.words && !rule.signal)
+      .every((rule) => {
+        const from = value(rule.from as Token);
+        const was = oklabDistance(value(token), from);
+        return oklabDistance(turned, from) >= Math.min(rule.distance, was);
+      });
+    return holds ? turned : value(token);
+  };
   const drawn = {
     [property("accent.base")]: accent,
     [property("accent.text")]: accent,
     ...Object.fromEntries(ACCENT_GROUNDS.map((ground) => [property(ground), followed(ground)])),
+    ...Object.fromEntries(
+      (Object.keys(DRAWN_IN_THE_ACCENT) as Token[]).map((token) => [property(token), held(token)]),
+    ),
     display: "flex",
     alignItems: "center",
     gap: "var(--space-3)",
@@ -143,12 +175,23 @@ function OverPurlis() {
           icon={<MessagesSquare />}
         />
       </ActivityGroup>
+      <Button variant="primary">Update</Button>
+      <div style={{ inlineSize: "10rem" }}>
+        <List aria-label="Versions" selectionMode="single" defaultSelectedKeys={["dev"]}>
+          <ListRow id="dev" textValue="Dev">
+            Dev
+          </ListRow>
+          <ListRow id="stable" textValue="Stable">
+            Stable
+          </ListRow>
+        </List>
+      </div>
     </div>
   );
 }
 
 /**
- * **An accent set over Purlis, on its own grounds** (#3100, #4666): `accent.text` follows the
+ * **An accent set over Purlis, on its own grounds** (#3100, #4666, #4918): `accent.text` follows the
  * accent the engine is given, and so do the grounds those words stand on, so the update pill's
  * words stand on the accent's `accent.surface` and a chosen activity item's on its `accent.wash`,
  * not on Purlis's lavender. Each ground is the theme's turned to the accent's hue at the
@@ -161,6 +204,15 @@ function OverPurlis() {
  */
 export const AnAccentOverPurlis: Story = {
   render: () => <OverPurlis />,
+  // The primary's fill, the selected row's edge and, with the keyboard on the button, the focus
+  // ring follow the accent too (#4918).
+  play: async ({ canvas, userEvent }) => {
+    const update = canvas.getByRole("button", { name: "Update" });
+    // The pill and the activity item come first, one Tab stop each.
+    for (let stop = 0; stop < 3; stop++) await userEvent.tab();
+    await untilFocused(() => update, "the primary, by the keyboard");
+    expectFocusInSight();
+  },
 };
 
 /**

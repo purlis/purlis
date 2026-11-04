@@ -112,7 +112,18 @@ describe("the core's copy of the tint", () => {
     for (const { token, held } of (cases as unknown as { held: { token: string; held: boolean }[] })
       .held)
       expect(
-        chromaFor(token, 0.01, CLASSIC_THEME.tint.apart, 0.01, 0.01, CLASSIC_THEME.tint.with_words),
+        chromaFor(
+          token,
+          0.01,
+          CLASSIC_THEME.tint.apart,
+          0.01,
+          0.01,
+          CLASSIC_THEME.tint.with_words,
+          {
+            "markdown.link": 0.01,
+            "chart.1": 0.01,
+          },
+        ),
         token,
       ).toBe(held ? 0.01 : Number.POSITIVE_INFINITY);
     for (const { colour, hue } of cases.hues) {
@@ -227,11 +238,23 @@ describe("the core's copy of the tint", () => {
     // Past `mostOf`: what each token is given from those answers, and the colour that makes. The
     // engine's `every_tinted_token_is_drawn_as_the_window_draws_it` reads the same cases.
     const { drawn: cases } = sharedCases() as {
-      drawn: { appearance: string; colour: string; tokens: Record<string, string> }[];
+      drawn: {
+        theme?: "purlis-classic";
+        appearance: string;
+        colour: string;
+        tokens: Record<string, string>;
+      }[];
     };
     expect(cases.length).toBeGreaterThanOrEqual(6);
-    for (const { appearance, colour, tokens } of cases) {
-      const theme = purlisAppearance(appearance);
+    // Purlis's own, unless the case names Purlis Classic (#4921: its light link in a red, orange
+    // or yellow workspace is drawn as written, never as its accent's grey).
+    const appearanceOf = (one: (typeof cases)[number]) =>
+      one.theme === "purlis-classic"
+        ? (classicAppearances().find((it) => it.id === one.appearance)?.theme as Theme)
+        : purlisAppearance(one.appearance);
+    for (const one of cases) {
+      const { appearance, colour, tokens } = one;
+      const theme = appearanceOf(one);
       const tint = tinted(theme, colour);
       expect(Object.keys(tokens).sort(), `${appearance} in ${colour}`).toEqual(
         [...theme.tint.tabs].sort(),
@@ -241,8 +264,8 @@ describe("the core's copy of the tint", () => {
     }
     // The path where the sides held alone are drawn as written and the strip still turns.
     const asWritten = (one: (typeof cases)[number]) =>
-      one.tokens["accent.base"] === purlisAppearance(one.appearance).values["accent.base"] &&
-      one.tokens["layer.chat"] !== purlisAppearance(one.appearance).values["layer.chat"];
+      one.tokens["accent.base"] === appearanceOf(one).values["accent.base"] &&
+      one.tokens["layer.chat"] !== appearanceOf(one).values["layer.chat"];
     expect(cases.some(asWritten)).toBe(true);
   });
 });
@@ -513,6 +536,7 @@ describe("the consent floors under every tint (#2526)", () => {
         distance: 0.1,
         alone: false,
         words: false,
+        signal: false,
       });
   });
 
@@ -560,6 +584,7 @@ describe("the consent floors under every tint (#2526)", () => {
         distance: 0.1,
         alone: true,
         words: false,
+        signal: false,
       });
     const apart = CLASSIC_THEME.tint.apart;
     expect(chromaFor("accent.base", 0.05, apart, 0.01, 0.01)).toBe(0.01);
