@@ -1639,8 +1639,9 @@ pub enum Discarded {
 /// folder, and nothing else in purlis calls it.
 ///
 /// **The branch purlis cut loses no commit by it.** That branch is deleted only where git
-/// finds it merged ([`standing::drop_if_merged`]); one that holds work stays, an ordinary
-/// branch of the repo. Commits made in the folder on no branch at all are the one thing a
+/// finds it merged ([`standing::drop_if_merged`]), or where it landed by its files, as a squash
+/// merge leaves it ([`standing::drop_carried`], ADR 0110); one that holds work stays, an
+/// ordinary branch of the repo. Commits made in the folder on no branch at all are the one thing a
 /// discard does lose, and [`at_risk`] names them.
 pub fn discard(root: &Path, tree: &Tree, isolation: &git::Isolated) -> Result<Discarded, NotDone> {
     discard_as_shown(root, tree, isolation, |_, _| true)
@@ -1672,11 +1673,20 @@ pub fn discard_as_shown(
         if !as_shown(&risk, &seal) {
             return Err(NotDone::Changed);
         }
+        // Read while its folder is there, which the reading needs (ADR 0110).
+        let carried = tree.branch.as_deref().is_some_and(|branch| {
+            matches!(
+                standing::landed(root, ws, repo, piece, branch),
+                standing::Landed::Carried { .. }
+            )
+        });
         worktree::remove(root, &tree.workspace, &tree.repo, &tree.piece, true, false)
             .map_err(|refusal| NotDone::Git(refusal.in_window()))
             .map(|_| {
                 let gone = tree.branch.as_deref().is_some_and(|branch| {
                     standing::drop_if_merged(root, &tree.workspace, &tree.repo, branch)
+                        || (carried
+                            && standing::drop_carried(root, &tree.workspace, &tree.repo, branch))
                 });
                 if gone {
                     Discarded::BranchGone

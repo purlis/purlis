@@ -434,8 +434,8 @@ pub fn remove(
         return 1;
     }
     // A branch landed by its files, not its commits (a squash merge, #3879): nothing the
-    // folder holds is lost with it, so it goes without `--force`, and the branch stays, as the
-    // one place its commits are. Uncommitted work still refuses it.
+    // folder holds is lost with it, so it goes without `--force`, and the branch stays unless
+    // `--delete-branch` asks it to go (ADR 0110). Uncommitted work still refuses it.
     let how = if force {
         None
     } else {
@@ -452,7 +452,12 @@ pub fn remove(
             Some(Carried::ByItsFiles) => say(Say::Info(
                 format!(
                     "The branch of {repo} · {piece} landed by its files, as a squash merge leaves \
-                     it, so its folder goes without --force and the branch is kept."
+                     it, so its folder goes without --force{}.",
+                    if delete_branch {
+                        ""
+                    } else {
+                        " and the branch is kept"
+                    }
                 )
                 .into(),
             )),
@@ -480,7 +485,21 @@ pub fn remove(
             } else {
                 say(Say::Done(format!("Removed {repo} · {piece}").into()));
             }
-            if delete_branch && carried {
+            // A branch landed by its files holds nothing its base does not, so asked to go it
+            // goes with `-D` (ADR 0110); one only found in history may not read as the base
+            // does, and stays.
+            let dropped = delete_branch
+                && matches!(how, Some(Carried::ByItsFiles))
+                && removed.branch.as_deref().is_some_and(|branch| {
+                    worktree::standing::drop_carried(plane, ws, repo, branch)
+                });
+            if delete_branch && dropped {
+                if let Some(b) = &removed.branch {
+                    say(Say::Done(
+                        format!("Deleted branch {b}, which landed by its files").into(),
+                    ));
+                }
+            } else if delete_branch && carried {
                 say(Say::Warn(
                     "Its branch was kept: git does not find a squashed branch merged.".into(),
                 ));

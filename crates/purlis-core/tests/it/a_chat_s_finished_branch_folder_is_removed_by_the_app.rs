@@ -241,12 +241,55 @@ fn a_folder_whose_branch_landed_by_a_squash_merge_is_removed_and_its_branch_kept
     // The clone fetches and prunes; its own main is left where it was.
     git(&clone, &["fetch", "-q", "--prune", "origin"]);
 
-    let (answer, said) = world.removed(&world.workspace(), "lane", true);
+    let (answer, said) = world.removed(&world.workspace(), "lane", false);
     assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
     assert!(said.contains("landed by its files"), "{said}");
-    assert!(said.contains("Its branch was kept"), "{said}");
     assert!(!lane.exists(), "{said}");
-    // The branch stays: the one place its commits are.
+    // Not asked to go, the branch stays: the one place its commits are.
+    git(&clone, &["rev-parse", "--verify", "-q", "refs/heads/lane"]);
+}
+
+#[test]
+fn a_carried_branch_asked_to_go_is_deleted_though_git_does_not_find_it_merged() {
+    purlis_core::unsteered!();
+    // ADR 0110: `--delete-branch` takes a squash-landed branch with `git branch -D`, the local
+    // branch only.
+    let (world, theirs) = World::with_a_forge();
+    let (lane, clone) = squash_merged(&world, &theirs);
+    git(&clone, &["fetch", "-q", "--prune", "origin"]);
+
+    let (answer, said) = world.removed(&world.workspace(), "lane", true);
+
+    assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
+    assert!(!lane.exists(), "{said}");
+    assert!(said.contains("Deleted branch lane"), "{said}");
+    let mut ask = support::unsigned();
+    ask.arg("-C")
+        .arg(&clone)
+        .args(["show-ref", "--verify", "--quiet", "refs/heads/lane"]);
+    let still = purlis_core::forklock::output(&mut ask)
+        .unwrap()
+        .status
+        .success();
+    assert!(!still, "the carried branch went");
+}
+
+#[test]
+fn a_branch_only_found_in_history_is_kept_though_asked_to_go() {
+    purlis_core::unsteered!();
+    // One commit on the base makes its change, but main no longer reads as the branch: not
+    // carried, so `-D` is not taken on that reading.
+    let (world, theirs) = World::with_a_forge();
+    let (lane, clone) = squash_merged(&world, &theirs);
+    git(&theirs, &["revert", "--no-edit", "HEAD"]);
+    git(&theirs, &["push", "-q", "origin", "HEAD:main"]);
+    git(&clone, &["fetch", "-q", "--prune", "origin"]);
+
+    let (answer, said) = world.removed(&world.workspace(), "lane", true);
+
+    assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
+    assert!(!lane.exists(), "{said}");
+    assert!(said.contains("Its branch was kept"), "{said}");
     git(&clone, &["rev-parse", "--verify", "-q", "refs/heads/lane"]);
 }
 
