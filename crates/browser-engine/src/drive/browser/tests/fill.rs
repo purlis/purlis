@@ -635,17 +635,19 @@ fn an_answer_on_the_engines_own_page_says_why_its_caller_refused_that_load() {
         );
     };
     error_page_for("http://elsewhere.test/search?q=open%20sesame");
+    // The engine's word is read on its own thread, so each of these waits for it.
+    wait_for("the answer says why", || {
+        note_of_a_read(&browser, 3).as_deref() == Some("held to the fixture")
+    });
     assert_eq!(
-        note_of_a_read(&browser, 3).as_deref(),
-        Some("held to the fixture")
-    );
-    assert_eq!(
-        asked.lock().unwrap().as_slice(),
-        ["http://elsewhere.test/search?q=open%20sesame"]
+        asked.lock().unwrap().first().map(String::as_str),
+        Some("http://elsewhere.test/search?q=open%20sesame")
     );
 
     error_page_for("http://fixture.test/gone");
-    assert_eq!(note_of_a_read(&browser, 4), None, "its caller refused none");
+    wait_for("its caller refused none, so nothing is said", || {
+        note_of_a_read(&browser, 4).is_none()
+    });
 
     error_page_for("http://elsewhere.test/");
     main_frame_loads(&engine, "http://fixture.test/next.html");

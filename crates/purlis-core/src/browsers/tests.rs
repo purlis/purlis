@@ -645,7 +645,7 @@ fn a_load_a_fills_hold_refused_says_why_and_nothing_of_where_it_went() {
         said.contains("reaches only dash.example.test:443"),
         "{said}"
     );
-    assert!(said.contains("did not load"), "{said}");
+    assert!(said.contains("pages of other sites do not load"), "{said}");
     assert!(said.contains("browser_close"), "{said}");
     for never in ["elsewhere", "open-sesame"] {
         assert!(!said.contains(never), "{never}: {said}");

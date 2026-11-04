@@ -1309,15 +1309,15 @@ pub fn held_to_said(bound: &Bound, act: &Act) -> Option<String> {
 }
 
 /// **Why a page shows the engine's own page for `address`** (#5150): a load of another site than
-/// the one a page holding a secret purlis filled holds the browser to, which its reach proxy
-/// refused, in words that say why and what ends it. `None` for a load that failed on that site,
-/// and while nothing holds the browser. The address may carry what a filled page sent, and the
-/// site it names is the page's choice, so neither is said.
+/// the one a page holding a secret purlis filled holds the browser to, in words that say why and
+/// what ends it. They hold of a load that failed before the hold began too, so they name no cause
+/// of this one. `None` for a load that failed on that site, and while nothing holds the browser.
+/// The address may carry what a filled page sent, so neither it nor its site is said.
 pub fn load_held_said(bound: &Bound, address: &str) -> Option<String> {
     let held = bound.held_for_fill()?;
     let (host, port) = judge::site_of(address)?;
     (Site::of(&host, port) != held)
-        .then(|| fill_hold_said(&held, "the page it went to did not load"))
+        .then(|| fill_hold_said(&held, "pages of other sites do not load"))
 }
 
 /// What a chat is told of `what` while a filled page holds its browser to `held` (#5117).
@@ -1325,7 +1325,7 @@ fn fill_hold_said(held: &Site, what: &str) -> String {
     format!(
         "this browser reaches only {held} while a page in it holds a secret purlis filled there, \
          so {what}. Once the page holding the secret loads another of its own pages, or is closed \
-         with browser_close or by the person, the browser reaches as before"
+         with browser_close or by the person, the browser reaches as before a moment later"
     )
 }
 
