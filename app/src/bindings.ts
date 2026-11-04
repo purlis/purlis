@@ -861,6 +861,17 @@ export const commands = {
 	 */
 	dismissProposedChange: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_proposed_change", { plane, id })),
 	/**
+	 *  **The Secret need offers dismissed on this machine** (#5159), for the vault view to offer
+	 *  each again.
+	 */
+	dismissedSecretNeeds: (plane: PlaneId) => typedError<DismissedNeed[], string>(__TAURI_INVOKE("dismissed_secret_needs", { plane })),
+	/**
+	 *  **Offer a dismissed Secret need again** (#5159), on the person's press in the vault view:
+	 *  the dismissal is lifted, and the change adding `key` to `persona`'s needs is held for them
+	 *  to apply or dismiss. Window-only.
+	 */
+	offerSecretNeedAgain: (plane: PlaneId, persona: string, key: string) => typedError<null, string>(__TAURI_INVOKE("offer_secret_need_again", { plane, persona, key })),
+	/**
 	 *  **Remove** on the Ask: each file's change held for the person to apply, each with its
 	 *  file. Window-only: only the person proposes purlis's own change.
 	 */
@@ -6765,6 +6776,12 @@ export type DiskHeld =
 { state: "not_read"; why: string } | 
 /**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
 { state: "unanswered" };
+
+/**  One Secret need offer the person dismissed (#5159): the persona and the key, names only. */
+export type DismissedNeed = {
+	persona: string,
+	key: string,
+};
 
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 

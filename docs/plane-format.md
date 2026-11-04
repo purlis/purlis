@@ -6225,6 +6225,32 @@ down rather than read off the code.
 - **Code:** `app/src-tauri/src/oldplugins.rs` (`answered_at`, `notice_of`,
   `purlis_change_applied`, `purlis_change_dismissed`).
 
+### `app/secret-needs-dismissed.json`
+- **What:** the Secret need offers the person dismissed on this machine (#5159, ADR 0109). After
+  a first fill of a key a persona does not declare, purlis offers a proposed change adding it as
+  a Secret need (`secret-need.<KEY>` in `personas/<name>/persona.md`). Dismissing that offer
+  while it still applies keeps the persona's name and each key it would have added here, and a
+  later fill of the same key for the same persona offers nothing, its `vault` line included,
+  **until the persona's Secret needs change**: each entry keeps the keys the persona declared
+  as committed when it was dismissed, and holds only while they are the same. Another key, or
+  another persona, is still offered. A change that went stale or can no longer be made is no
+  answer, and keeps nothing. In the vault view, the key's row's **Offer as a Secret need ▸**
+  `<persona>` takes the pair out and holds the offer again, with the purpose left for the
+  person to say.
+- **Format:** JSON, pretty-printed, trailing `\n`, read and replaced whole under purlis's lock on
+  the directory (`rewrite::update`):
+  `{"dismissed": [{"persona": "devops", "key": "STRIPE_KEY", "needs": ["GITHUB_TOKEN"]}]}`, where
+  `needs` is the persona's declared keys then, sorted (an entry without it holds whatever the
+  persona declares). **Names only**: no value, no purpose, no vault and nothing about the fill. A file that does not
+  read as this shape dismisses nothing (the safe direction: an offer writes nothing until
+  applied), and a write never replaces it; fix it or delete it.
+- **Status:** **internal**: written and read by purlis alone; no chat can write it (the sandbox
+  denies every chat a write under `<state>/app`).
+- **Tier:** Clone state — deleting it offers every dismissed need again on its next fill.
+- **Code:** `crates/purlis-core/src/secrets/dismissed_needs.rs`; `app/src-tauri/src/proposals.rs`
+  (`need_dismissed`, `need_offered_in`, `need_offered_again_in`).
+- **Git:** gitignored (under `/.purlis/`).
+
 ### `app/reopen.json`
 - **Format:** JSON, `indent=2`, trailing `\n`. Replaced whole by `rewrite::replace`: written
   to a temp file beside it (`.charter-generated.reopen.json.<pid>.<tag>.tmp`), flushed and

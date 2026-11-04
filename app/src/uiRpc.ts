@@ -453,6 +453,17 @@ export const commands = {
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **The Secret need offers dismissed on this machine** (#5159), for the vault view to offer
+	 *  each again.
+	 */
+	dismissedSecretNeeds: (plane: PlaneId) => typedError<DismissedNeed[], string>(__TAURI_INVOKE("dismissed_secret_needs", { plane })),
+	/**
+	 *  **Offer a dismissed Secret need again** (#5159), on the person's press in the vault view:
+	 *  the dismissal is lifted, and the change adding `key` to `persona`'s needs is held for them
+	 *  to apply or dismiss. Window-only.
+	 */
+	offerSecretNeedAgain: (plane: PlaneId, persona: string, key: string) => typedError<null, string>(__TAURI_INVOKE("offer_secret_need_again", { plane, persona, key })),
 	removeOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	dismissOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
@@ -4296,6 +4307,12 @@ export type DiskHeld =
 { state: "not_read"; why: string } | 
 /**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
 { state: "unanswered" };
+
+/**  One Secret need offer the person dismissed (#5159): the persona and the key, names only. */
+export type DismissedNeed = {
+	persona: string,
+	key: string,
+};
 
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 

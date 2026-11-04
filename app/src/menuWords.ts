@@ -105,6 +105,11 @@ export const SUBMENU = {
     tip: "Each moves it into that window of this project, as a tab of its own. Nothing ends.",
   },
   branch: { said: "Branch", tip: "Each acts on the branch folder purlis cut for this chat." },
+  // A vault's secret row (#5159): a row per persona whose offer of the key was dismissed.
+  offerNeed: {
+    said: "Offer as a Secret need",
+    tip: "Each offers that persona the change you dismissed, adding this key to its Secret needs. You apply it from the Inbox.",
+  },
 } as const;
 
 /**
