@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   closeFocusedPane,
   closeLayout,
-  closePaneOf,
+  closePane,
   contentsOf,
   EMPTY_TAB,
   focusPane,
@@ -182,7 +182,7 @@ describe("closing a pane that is not focused, as Clear pane does (#5019)", () =>
     const [first, second] = contentsOf(tabs, id).map((one) => one.pane);
     const focusedFirst = focusPane(tabs, first);
 
-    const left = closePaneOf(focusedFirst, id, second, filed);
+    const left = closePane(focusedFirst, id, second, filed);
 
     expect(visibleSessions(left)).toEqual([11]);
     expect(left.byId[id].focused).toBe(first);
@@ -193,11 +193,11 @@ describe("closing a pane that is not focused, as Clear pane does (#5019)", () =>
     const behind = two.order[1];
     const [pane] = contentsOf(two, behind).map((one) => one.pane);
 
-    expect(closePaneOf(two, behind, pane, filed).order).toEqual([two.order[0]]);
+    expect(closePane(two, behind, pane, filed).order).toEqual([two.order[0]]);
 
     const one = openTab(noTabs(), 11);
     const id = front(one);
-    const left = closePaneOf(one, id, contentsOf(one, id)[0].pane, filed);
+    const left = closePane(one, id, contentsOf(one, id)[0].pane, filed);
     expect(left.order).toEqual(one.order);
     expect(contentsOf(left, id).map((it) => it.content.kind)).toEqual(["empty"]);
   });
@@ -205,6 +205,6 @@ describe("closing a pane that is not focused, as Clear pane does (#5019)", () =>
   it("changes nothing for a pane the tab does not have", () => {
     const tabs = openTab(noTabs(), 11);
 
-    expect(closePaneOf(tabs, front(tabs), 999, filed)).toBe(tabs);
+    expect(closePane(tabs, front(tabs), 999, filed)).toBe(tabs);
   });
 });
