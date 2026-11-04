@@ -862,7 +862,7 @@ fn try_on(
         from: None,
         renamed_from: None,
         // On this pool, whatever the project's or its workspaces' own setting says (#4536).
-        runs_on: Some(purlis_core::machine::StartChoice::Pool(pool.to_owned())),
+        runs_on: None,
         // It lives for seconds: a relaunch after a quit mid-try never puts it back (#4976).
         unrecorded: true,
         ..Default::default()
