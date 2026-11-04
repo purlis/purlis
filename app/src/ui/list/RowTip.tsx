@@ -37,6 +37,7 @@ import {
   TOOLTIP_DELAY,
   type Tip,
 } from "../tooltip/Tooltip";
+import { drawnCut } from "../drawnCut";
 import { useWindowLeft } from "../windowLeft";
 import { RowCutWords, RowScope } from "./Row";
 
@@ -58,9 +59,10 @@ export function useRowTip(
   /** Shown to the pointer alone: a tip that only repeats the row (a file's path) would be heard
    *  on every arrow step. Nothing shows it on the keyboard, and so no Esc is spent on it. */
   pointerOnly = false,
-  /** Asks for the tip as the pointer or the keyboard comes, for a row whose tip is known only
-   *  then (`useListRowTip`): the row listens for both whether or not it has one yet. */
-  ask?: () => void,
+  /** Told as the pointer's delay runs out on the row and as the keyboard comes to it, and as
+   *  each goes, for a row whose tip is known only then (`useListRowTip`): the row listens for
+   *  both whether or not it has a tip yet. */
+  attend?: Attend,
 ): RowTipped {
   // Where the pointer rested as the delay ran out (its x in the window), while it is shown.
   const [pointed, setPointed] = useState<number | null>(null);
@@ -68,27 +70,30 @@ export function useRowTip(
   const soon = useRef(0);
   const pointer = useRef(0);
   useEffect(() => () => window.clearTimeout(soon.current), []);
-  const asking = useRef(ask);
-  useEffect(() => {
-    asking.current = ask;
-  });
-  const onPointerEnter = useCallback((event: React.PointerEvent) => {
-    if (event.pointerType === "touch") return;
-    asking.current?.();
-    pointer.current = event.clientX;
-    window.clearTimeout(soon.current);
-    soon.current = window.setTimeout(() => setPointed(pointer.current), TOOLTIP_DELAY);
-  }, []);
+  const onPointerEnter = useCallback(
+    (event: React.PointerEvent) => {
+      if (event.pointerType === "touch") return;
+      pointer.current = event.clientX;
+      window.clearTimeout(soon.current);
+      soon.current = window.setTimeout(() => {
+        // Asked only once the pointer has rested: a pointer passing over measures nothing.
+        attend?.("pointer", true);
+        setPointed(pointer.current);
+      }, TOOLTIP_DELAY);
+    },
+    [attend],
+  );
   const onPointerMove = useCallback((event: React.PointerEvent) => {
     pointer.current = event.clientX;
   }, []);
   const onPointerLeave = useCallback(() => {
     window.clearTimeout(soon.current);
+    attend?.("pointer", false);
     setPointed(null);
     setDismissed(false);
-  }, []);
+  }, [attend]);
   const has = tip !== undefined && tip !== null && tip !== "";
-  const listens = has || ask !== undefined;
+  const listens = has || attend !== undefined;
   // Gone from the window, which an engine may not say on the row (#3095).
   useWindowLeft((why) => {
     if (why === "pointer") onPointerLeave();
@@ -98,7 +103,9 @@ export function useRowTip(
     hover: { onPointerEnter, onPointerMove, onPointerLeave },
     drawn: (keyboardOn) => (
       <>
-        {ask !== undefined && keyboardOn && !pointerOnly && <AskedOnArrival ask={ask} />}
+        {attend !== undefined && (
+          <KeyboardAttends on={keyboardOn && !pointerOnly} attend={attend} />
+        )}
         {has && (pointed !== null || (keyboardOn && !pointerOnly)) && !dismissed && (
           <Shown pointer={pointed} onEscape={() => setDismissed(true)}>
             {tip}
@@ -109,13 +116,15 @@ export function useRowTip(
   };
 }
 
-/** Asks for a row's tip as the keyboard comes to it, before the frame shows the row: so the
- *  tooltip it then has stands in that frame. */
-function AskedOnArrival({ ask }: { ask: () => void }) {
-  const asking = useRef(ask);
+/** What the pointer or the keyboard says of its attention to a row. */
+type Attend = (by: "pointer" | "keyboard", on: boolean) => void;
+
+/** Tells the row whether the keyboard is on it, before the frame shows that: so the tooltip it
+ *  then has stands in that frame. */
+function KeyboardAttends({ on, attend }: { on: boolean; attend: Attend }) {
   useLayoutEffect(() => {
-    asking.current();
-  }, []);
+    attend("keyboard", on);
+  }, [on, attend]);
   return null;
 }
 
@@ -125,24 +134,50 @@ function AskedOnArrival({ ask }: { ask: () => void }) {
  * line's whole words, which are its row's description while they are shown (a row is named by its
  * `textValue` alone, so a reader hears the line only so). `hold` draws the row's content where its
  * `RowBelow` can say it is cut.
+ *
+ * **Measured only while the row has someone's attention** (#4351): once the pointer has rested
+ * on it, and while the keyboard is on it, then again as the line's size or words change, until
+ * both have gone. Drawing a list measures no line, so it forces no layout before its frame.
  */
 export function useListRowTip(tip: Tip | undefined): {
   tipped: RowTipped;
   hold: (content: ReactNode) => ReactNode;
 } {
-  const [cut, setCut] = useState<string>();
   const own = tip !== undefined && says(tip);
-  // How its `RowBelow` tells its whole words while they are cut: asked only as the pointer or
-  // the keyboard comes, so drawing the row measures nothing (#4351).
-  const words = useRef<(() => string | undefined) | null>(null);
-  const [asks, setAsks] = useState(false);
-  const told = useCallback((how: (() => string | undefined) | null) => {
-    words.current = how;
-    setAsks(how !== null);
-    if (how === null) setCut(undefined);
+  const [cut, setCut] = useState<string>();
+  const [attention, setAttention] = useState({ pointer: false, keyboard: false });
+  const attended = !own && (attention.pointer || attention.keyboard);
+  const attend = useCallback<Attend>(
+    (by, on) => setAttention((was) => (was[by] === on ? was : { ...was, [by]: on })),
+    [],
+  );
+  // The line its `RowBelow` hands it, and whether it is measured now.
+  const line = useRef<HTMLElement | null>(null);
+  const measuring = useRef(false);
+  const measure = useCallback(() => {
+    const element = line.current;
+    setCut(element !== null && drawnCut(element) ? element.textContent || undefined : undefined);
   }, []);
-  const ask = useCallback(() => setCut(words.current?.()), []);
-  const tipped = useRowTip(own ? tip : cut, false, !own && asks ? ask : undefined);
+  const told = useCallback(
+    (element: HTMLElement | null) => {
+      line.current = element;
+      if (measuring.current) measure();
+    },
+    [measure],
+  );
+  useLayoutEffect(() => {
+    measuring.current = attended;
+    if (!attended) return;
+    measure();
+    const element = line.current;
+    if (element === null || typeof ResizeObserver !== "function") return;
+    const watch = new ResizeObserver(measure);
+    watch.observe(element);
+    return () => watch.disconnect();
+  }, [attended, measure]);
+  // What was measured counts only while someone attends: measured again, before the frame,
+  // as attention comes back.
+  const tipped = useRowTip(own ? tip : attended ? cut : undefined, false, own ? undefined : attend);
   return {
     tipped,
     hold: (content) => <RowCutWords.Provider value={told}>{content}</RowCutWords.Provider>,

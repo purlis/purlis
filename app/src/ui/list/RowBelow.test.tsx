@@ -143,4 +143,53 @@ describe("whether a line is cut, measured only when its row could say so (#4351)
     expect(screen.getByRole("tooltip")).toHaveTextContent(LONG);
     expect(row("long")).toHaveAccessibleDescription(LONG);
   });
+
+  it("measures nothing for a pointer that passes over the rows", () => {
+    vi.useFakeTimers();
+    cut.add(LONG);
+    render(<Skills />);
+    fireEvent.pointerEnter(row("long"), { pointerType: "mouse" });
+    fireEvent.pointerLeave(row("long"), { pointerType: "mouse" });
+    fireEvent.pointerEnter(row("short"), { pointerType: "mouse" });
+    fireEvent.pointerLeave(row("short"), { pointerType: "mouse" });
+    act(() => void vi.advanceTimersByTime(TOOLTIP_DELAY));
+    expect(measured).toBe(0);
+  });
+
+  it("says the new whole words of a line whose words change while the keyboard is on it", async () => {
+    const { rerender } = render(<OneLine words={SHORT} />);
+    await userEvent.tab();
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    cut.add(LONG);
+    rerender(<OneLine words={LONG} />);
+
+    expect(screen.getByRole("tooltip")).toHaveTextContent(LONG);
+    expect(row("long")).toHaveAccessibleDescription(LONG);
+  });
+
+  it("takes its tooltip down once the line it was for fits, the keyboard still on the row", async () => {
+    cut.add(LONG);
+    const { rerender } = render(<OneLine words={LONG} />);
+    await userEvent.tab();
+    expect(screen.getByRole("tooltip")).toHaveTextContent(LONG);
+
+    rerender(<OneLine words={SHORT} />);
+
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
 });
+
+/** One row whose line says `words`. */
+function OneLine({ words }: { words: string }) {
+  return (
+    <List aria-label="Skills">
+      <ListRow id="long" textValue="long">
+        <RowLabel>long</RowLabel>
+        <RowBelow clamp={1} tipWhenCut>
+          {words}
+        </RowBelow>
+      </ListRow>
+    </List>
+  );
+}
