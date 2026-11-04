@@ -9,6 +9,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
 import { onTheWire } from "./chatEvents.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A chat another chat started is announced, never put on screen** (#4759, spec #4750 stories
@@ -75,7 +76,8 @@ function core() {
           path: `${PLANE}/workspaces/${name}`,
           vision: "",
           todos: [],
-          chats,
+          // A copy, as each answer over the wire is: the window compares one read with the last.
+          chats: chats.map((one) => ({ ...one })),
         })),
         personas: ["steward"],
         persona: "steward",
@@ -83,6 +85,8 @@ function core() {
       };
     // Every chat open now, as the core answers a window that reads them again.
     if (cmd === "opened_chats") return Object.values(listed).flat();
+    // The asking chat's tab, as its stored layout has it; a chat that arrives has none.
+    if (cmd === "reopened_layout") return aTabForEachChat([chat(1, "alpha.1")], () => "alpha");
     if (cmd === "plane_pins")
       return {
         project: false,
