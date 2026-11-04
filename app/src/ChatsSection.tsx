@@ -121,6 +121,16 @@ const HAND: CSSProperties = {
   color: `var(${property("needs-you.base")})`,
 };
 
+/** The faint hand of a task that can't report asks (#4759): the hand at the words' size, in the
+ *  row's quiet text colour (`ui-text-secondary`), never the needs-you colour. */
+const FAINT_HAND: CSSProperties = { width: "1em", height: "1em" };
+
+/** What a row says of a chat it announced and the person has not looked at (#4759). */
+export const NEW_SAID = "new";
+
+/** What the faint hand on a row says (#4759). */
+export const CANT_REPORT_SAID = "Can't report asks: look at it from time to time";
+
 /** No rows of the catalogue: what a section drawn on its own, in a test, offers. */
 const NO_OFFERS: Catalogued = new Map();
 
@@ -1095,6 +1105,8 @@ export function ChatsSection({
                       handedToName={handed?.[0].name ?? null}
                       handedMore={handed === undefined ? 0 : handed.length - 1}
                       askerWaiting={row.askerWaiting === true}
+                      unseen={row.unseen === true}
+                      cantReport={row.cantReport === true}
                       tab={row.tab}
                       current={row.session === front}
                       beside={besides?.has(row.session) ?? false}
@@ -1319,6 +1331,8 @@ const Row = memo(function Row({
   handedToName,
   handedMore,
   askerWaiting,
+  unseen,
+  cantReport,
   tab,
   current,
   beside,
@@ -1376,6 +1390,10 @@ const Row = memo(function Row({
   handedMore: number;
   /** That chat waits to start after a launch, and has not closed (#1513). */
   askerWaiting: boolean;
+  /** Announced and not looked at yet (#4759): it says "new" until it has been on screen. */
+  unseen: boolean;
+  /** A task whose harness can't report asks (#4759): the faint hand stays on it. */
+  cantReport: boolean;
   tab: boolean;
   current: boolean;
   /** On screen in another pane of the tab in front (#4757): a press on it jumps there. */
@@ -1620,6 +1638,28 @@ const Row = memo(function Row({
               {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
               {/* **Wrapping up, and its sandbox** (#4760): the row says what the strip's chip
                   and the tab said before; Cancel smart close is first in its list. */}
+              {/* **Not looked at yet** (#4759): a handoff, or a task that can't report asks,
+                  started in no pane and was announced; the row says so until it is on screen.
+                  Words, so the row is heard saying it. */}
+              {unseen && (
+                <span className="chat-new ui-text-meta" data-mark="new">
+                  {NEW_SAID}
+                </span>
+              )}
+              {/* **Can't report asks** (#4759, ADR 0090 as amended 2026-11-02): the title bar's
+                  faint hand, kept on the row of a task whose harness can't say when it waits. */}
+              {cantReport && (
+                <Tooltip tip={CANT_REPORT_SAID}>
+                  <span
+                    className="cant-report ui-text-secondary"
+                    data-mark="cant-report"
+                    role="img"
+                    aria-label={CANT_REPORT_SAID}
+                  >
+                    <Hand aria-hidden="true" style={FAINT_HAND} />
+                  </span>
+                </Tooltip>
+              )}
               <WrappingUp held={wrapping} />
               <SandboxMark level={sandbox?.level} why={sandbox?.why} sites={sandbox?.sites} />
               <QuestionOrTime clock={clock} session={session} />

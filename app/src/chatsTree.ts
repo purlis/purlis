@@ -82,6 +82,13 @@ export type ListedChat = {
    *  the person can answer any task's question (spec #4551, story 30). `asking` is narrower,
    *  the asking chat's name for the row's word. */
   question?: QuestionStanding["level"] | null;
+  /** **Announced, and not looked at yet** (#4759): a chat another chat started, a handoff or a
+   *  task on a harness purlis has no hooks into, which took no pane. Its row says "new" until
+   *  the chat has been on screen. */
+  unseen?: boolean;
+  /** **A task that can't report asks** (#4759): its harness can't say when it needs the
+   *  person, so its row keeps the faint hand, and nothing it asks reaches the ✋. */
+  cantReport?: boolean;
   // And what its state is derived from beside the board's word (`RowFacts`): its record as a
   // task and its harness's name.
 } & RowFacts;
@@ -171,6 +178,8 @@ export function listedChat(
     ...rowFactsOf(chat),
     asking: question?.level === "with-asker" ? question.asker : null,
     question: question?.level ?? null,
+    unseen: chat.unseen === true,
+    cantReport: chat.from?.task === true && Boolean(chat.unreported),
   };
 }
 

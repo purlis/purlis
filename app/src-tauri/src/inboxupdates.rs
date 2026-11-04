@@ -56,6 +56,9 @@ pub enum UpdateKind {
     QuestionClosed,
     /// A task's question could not be taken its route (#4557).
     QuestionFailed,
+    /// A chat another chat started arrived in no pane, and was announced (#4759): a handoff,
+    /// or a task on a harness purlis has no hooks into.
+    Arrived,
 }
 
 impl From<UpdateKind> for Kind {
@@ -74,6 +77,7 @@ impl From<UpdateKind> for Kind {
             UpdateKind::BrowserAskEnded => Kind::BrowserAskEnded,
             UpdateKind::QuestionClosed => Kind::QuestionClosed,
             UpdateKind::QuestionFailed => Kind::QuestionFailed,
+            UpdateKind::Arrived => Kind::Arrived,
         }
     }
 }
@@ -94,6 +98,7 @@ impl From<Kind> for UpdateKind {
             Kind::BrowserAskEnded => UpdateKind::BrowserAskEnded,
             Kind::QuestionClosed => UpdateKind::QuestionClosed,
             Kind::QuestionFailed => UpdateKind::QuestionFailed,
+            Kind::Arrived => UpdateKind::Arrived,
         }
     }
 }
@@ -376,6 +381,7 @@ mod tests {
             UpdateKind::BrowserAskEnded,
             UpdateKind::QuestionClosed,
             UpdateKind::QuestionFailed,
+            UpdateKind::Arrived,
         ] {
             assert_eq!(UpdateKind::from(Kind::from(kind)), kind);
         }

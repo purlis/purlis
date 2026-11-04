@@ -842,6 +842,11 @@ struct OpenChat {
     /// is never recorded. `null` for every other chat.
     #[specta(optional)]
     one_job: Option<bool>,
+    /// `true` for a chat another chat started and announced that the person has not looked at
+    /// yet (#4759): a handoff, or a task on a harness purlis has no hooks into. Its sidebar row
+    /// says "new" until it has been on screen. `null` for every other chat.
+    #[specta(optional)]
+    unseen: Option<bool>,
 }
 
 /// What the window is told of a chat a launch has still to start, beyond its tab.
@@ -2972,6 +2977,7 @@ impl From<chats::Open> for OpenChat {
             untaken: open.untaken,
             restoring: None,
             one_job: open.one_job.then_some(true),
+            unseen: open.unseen.then_some(true),
             resumed: match &open.how {
                 Reopened::Resumed(id) => Some(id.to_string()),
                 Reopened::Fresh(_) => None,

@@ -186,6 +186,10 @@ pub(crate) fn window_layout(
         None => 0,
     };
     held.chats().lay_out_window(number, layout.into())?;
+    // An announced chat now on screen has been looked at: its row's "new" mark goes (#4759).
+    if held.chats().mark_seen() {
+        held.rows_changed();
+    }
     // A tab window whose last tab the person closed goes with it.
     if number != 0 {
         crate::tabwindows::close_unnamed(&app, &plane, &held);

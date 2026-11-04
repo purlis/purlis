@@ -112,8 +112,12 @@ export type Arrived = {
   /** The task name the handoff gave it, which its tab says instead (charter-app#258). */
   label?: string | null;
   /** The chat that started it, by name, and that chat's workspace; and, where the core says
-   *  (#1447), whether it arrives with a tab. */
-  from?: (HandedFrom & { tab?: boolean }) | null;
+   *  (#1447), whether it arrives with a tab, and whether it is a task, which owes that chat a
+   *  report. */
+  from?: (HandedFrom & { tab?: boolean; task?: boolean }) | null;
+  /** **What its harness cannot tell purlis** (#4759), where it can't say when it waits: a task
+   *  on such a harness is announced like a handoff. None where it reports all. */
+  unreported?: string | null;
 };
 
 /** A harness started by hand in a shell tab, as its banner needs it (ADR 0062). */

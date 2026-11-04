@@ -220,6 +220,7 @@ import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
+  chatArrived,
   clonesRefused,
   reposCloned,
   reposCloning,
@@ -237,6 +238,7 @@ import {
   doctorUpdates,
   seenAt,
   reasonUpdates,
+  arrivedUpdates,
   resumeUpdates,
   sandboxUpdates,
   smartCloseKey,
@@ -2044,6 +2046,27 @@ export const PlaneView = memo(function PlaneView({
       setStartedIn((was) => ({ ...was, [arrived.session]: filed }));
       const note = handedFromNote(arrived.from);
       if (note) setHandedFrom((was) => ({ ...was, [arrived.session]: note }));
+      // **Announced, never put on screen** (#4759): a handoff hangs a card on its workspace's
+      // chip, or is listed in the Notices centre where there is none, and so does a task on a
+      // harness purlis has no hooks into, which can't say when it needs the person. Any other
+      // task is its asking chat's to read. The card takes no keyboard.
+      if (arrived.from?.task !== true || arrived.unreported != null) {
+        const who = whoOf(arrived.persona, arrived.harness);
+        setReport(
+          chatArrived(
+            {
+              chat: arrived.label ?? (who === null ? arrived.name : `${who} ${arrived.name}`),
+              from: arrived.from?.name ?? "the person",
+              workspace: filed,
+              session: arrived.session,
+            },
+            {
+              cantReport: arrived.from?.task === true,
+              onGo: () => showArrived.current(arrived.session),
+            },
+          ),
+        );
+      }
       // Filing it above is what reads the list again, where its row is.
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
@@ -3453,6 +3476,8 @@ export const PlaneView = memo(function PlaneView({
   /** **A press in another of the project's windows landed on a chat this one has in a pane**
    *  (#4768): it is shown here, in its pane, and this window has come forward. */
   const showChatHere = useRef<(session: number) => void>(() => undefined);
+  /** {@link showChat} as it stands, for a press on a card said before it was drawn (#4759). */
+  const showArrived = useRef<(session: number) => void>(() => undefined);
   useEffect(() => {
     const listening = listen<{ plane: string; chat: number }>(PRESS_HERE, (event) => {
       if (event.payload.plane === plane) showChatHere.current(event.payload.chat);
@@ -4461,6 +4486,9 @@ export const PlaneView = memo(function PlaneView({
     showChatHere.current = (session) =>
       landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
   }, [landOn, pressedOf, pressing]);
+  useEffect(() => {
+    showArrived.current = showChat;
+  }, [showChat]);
   /**
    * **Move to new window, or Move to window ▸** (#4768): tab `tab`, or its focused pane, goes to
    * another window of the project in one step of the core's, which tells every window what it
@@ -10032,8 +10060,17 @@ export const PlaneView = memo(function PlaneView({
       ...smartCloseUpdates(stopped, nameOf, at),
       ...reasonUpdates(foundFor, refusals, nameOf, at),
       ...browserAskUpdates(browserAsksEnded, nameOf),
+      // A chat another chat started, announced and not looked at yet (#4759).
+      ...arrivedUpdates(
+        sidebar === undefined
+          ? []
+          : [...sidebar.unfiled, ...sidebar.workspaces.flatMap((ws) => ws.chats)],
+        nameOf,
+        at,
+      ),
     ];
   }, [
+    sidebar,
     browserAsksEnded,
     finishedTasks,
     nameOf,
@@ -10077,7 +10114,11 @@ export const PlaneView = memo(function PlaneView({
       const read = () => settleUpdates([update.key], "read");
       const put = () => settleUpdates([update.key], "dismissed");
       const task = tasks.get(update.key);
-      const session = open(update.session);
+      // A chat that arrived is in no pane (#4759): Go to it shows it while it is listed.
+      const session =
+        update.kind === "arrived" && update.session !== null && chatNames.has(update.session)
+          ? update.session
+          : open(update.session);
       const go =
         task !== undefined
           ? () => (showFinished(task), read())
@@ -10144,6 +10185,7 @@ export const PlaneView = memo(function PlaneView({
     settleUpdates,
     finishedTasks,
     awayRefused,
+    chatNames,
     tabs,
     showFinished,
     showChat,

@@ -169,6 +169,13 @@ pub struct Chat {
     /// [`Self::has_tab`] is the one answer. `false` is every record written before this field
     /// — not a format change, for [`Self::pinned`]'s reason.
     pub tab_opened: bool,
+    /// **Whether the person has yet to look at this chat** (#4759): a chat another chat
+    /// started that is announced, a handoff or a task on a harness purlis has no hooks into
+    /// ([`Self::announced`]). It starts in no pane, and its sidebar row keeps a "new" mark until
+    /// the chat is on screen, across a reload and a relaunch. `false` is every other chat, and
+    /// every record written before this field — not a format change, for [`Self::pinned`]'s
+    /// reason.
+    pub unseen: bool,
     /// **Whether a grade runs this chat** (SK-16, #2779): one trigger test's chat, in a
     /// throwaway piece, which the grade watches and closes. It has no tab and is never listed,
     /// and a relaunch never starts it again: its grade ended with the run it was in. `false` is
@@ -290,6 +297,15 @@ pub struct Chat {
 }
 
 impl Chat {
+    /// **Whether a chat another chat started is announced to the person** (#4759, ADR 0090 as
+    /// amended 2026-11-02): a handoff always, since the person reads it themselves; a task only
+    /// on a harness that can't say when it needs them (`cannot_report`), since any other task is
+    /// its asking chat's to read. A task the person asked for themselves is never announced:
+    /// they started it.
+    pub fn announced(from: &HandedFrom, by_person: bool, cannot_report: bool) -> bool {
+        !by_person && (from.mode == Mode::Handoff || cannot_report)
+    }
+
     /// Whether the window draws this chat as a tab (#1447): every chat but a task chat the
     /// person has not opened, which is listed in the Chats section and nowhere on the strip,
     /// and a grade's chat, which is drawn nowhere ([`Self::graded`]).
@@ -1607,6 +1623,10 @@ struct ChatOnDisk {
     /// they do, so a project with no task chat writes the record it always wrote.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     tab_opened: bool,
+    /// [`Chat::unseen`]: an announced chat the person has not looked at yet. Absent once they
+    /// have, and for every other chat, so a project with none writes the record it always wrote.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    unseen: bool,
     /// [`Chat::graded`]: a grade's chat. Absent for every other chat, so a project that never
     /// graded a skill writes the record it always wrote.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -1885,6 +1905,7 @@ impl From<&Record> for OnDisk {
                         serde_json::Value::String(held.persona.clone().unwrap_or_default())
                     }),
                     tab_opened: chat.tab_opened,
+                    unseen: chat.unseen,
                     graded: chat.graded,
                     shows: chat.shows.unwrap_or_default(),
                     beside: chat.beside.unwrap_or_default(),
@@ -1970,6 +1991,7 @@ impl From<ChatOnDisk> for Chat {
             number: (chat.number > 0).then_some(chat.number),
             label: label(&chat.label).ok().flatten(),
             tab_opened,
+            unseen: chat.unseen,
             graded: chat.graded,
             from,
             reopened: ReopenedTask::read(&chat.reopened),
