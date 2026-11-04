@@ -410,6 +410,14 @@ export function SkillStudioTab({
     const reading =
       (drawnOnce.current ? undefined : studioOpeningRead(historyId, key)) ??
       commands.skillStudio(plane, workspace, persona);
+    {
+      // [DEBUG-4351] whether the tab took the read asked as it opened, on the opening's timeline.
+      const probe = globalThis as { __tl4351?: string[]; __t04351?: number }; // [DEBUG-4351]
+      const took = !drawnOnce.current && studioOpeningRead(historyId, key) === reading; // [DEBUG-4351]
+      probe.__tl4351?.push(
+        `${(performance.now() - (probe.__t04351 ?? 0)).toFixed(0)} tab ${took ? "takes ahead" : "reads own"}`,
+      ); // [DEBUG-4351]
+    }
     void reading.then((answer) => {
       if (!live) return;
       drawnOnce.current = true;

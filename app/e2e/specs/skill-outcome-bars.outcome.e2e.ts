@@ -4,6 +4,7 @@
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
+import { execSync } from "node:child_process"; // [DEBUG-4351]
 import { $, $$, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
@@ -146,6 +147,17 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     await box.waitForDisplayed({ timeout: 10_000 });
     await box.addValue("Open Skill studio");
     await $(`[id="${STUDIO_OF_ALPHA}"]`).waitForExist({ timeout: 20_000 });
+    // [DEBUG-4351] what the runner is busy with as this opening starts: the top of `ps` by CPU.
+    let busy: string; // [DEBUG-4351]
+    try {
+      busy = execSync("ps -Ao pcpu=,comm= -r | head -6", { encoding: "utf8" })
+        .split("\n")
+        .map((one) => one.trim().replace(/^(\S+)\s+.*\/([^/]+)$/, "$1 $2"))
+        .filter((one) => one !== "")
+        .join("; "); // [DEBUG-4351]
+    } catch (e) {
+      busy = `ps failed: ${String(e)}`; // [DEBUG-4351]
+    }
     // The clock is the window's own, started in the same task as the press, and stopped by the
     // frame after the row is drawn: so WebDriver's round trips are in neither end of it.
     const armed = await browser.execute(
@@ -154,7 +166,45 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         if (row === null) return false;
         const holder = globalThis as { __openedInMs?: number };
         holder.__openedInMs = undefined;
+        // [DEBUG-4351] a light timeline: the read (marked by the app), DOM steps, frame gaps and
+        // pauses (a task or a frame held over 30 ms), nothing that measures layout.
+        const tl: string[] = []; // [DEBUG-4351]
+        const probe = globalThis as { __tl4351?: string[]; __t04351?: number }; // [DEBUG-4351]
+        probe.__tl4351 = tl; // [DEBUG-4351]
+        let rowSeen = false; // [DEBUG-4351]
+        const watch = new MutationObserver(() => {
+          if (!rowSeen && document.querySelector(css) !== null) {
+            rowSeen = true;
+            tl.push(`${(performance.now() - started).toFixed(0)} dom row`);
+            watch.disconnect();
+          }
+        }); // [DEBUG-4351]
+        watch.observe(document.body, { childList: true, subtree: true }); // [DEBUG-4351]
+        let lastAt = performance.now(); // [DEBUG-4351]
+        let lastKind = "start"; // [DEBUG-4351]
+        const mark = (kind: string) => {
+          const now = performance.now();
+          if (now - lastAt > 30)
+            tl.push(
+              `${(now - started).toFixed(0)} pause ${(now - lastAt).toFixed(0)} ${lastKind}->${kind}`,
+            );
+          lastAt = now;
+          lastKind = kind;
+        }; // [DEBUG-4351]
+        const channel = new MessageChannel(); // [DEBUG-4351]
+        let ticks = 0; // [DEBUG-4351]
+        channel.port1.onmessage = () => {
+          mark("task");
+          if (++ticks < 4000 && holder.__openedInMs === undefined) channel.port2.postMessage(0);
+        }; // [DEBUG-4351]
+        channel.port2.postMessage(0); // [DEBUG-4351]
+        const rafMark = () => {
+          mark("frame");
+          if (holder.__openedInMs === undefined) requestAnimationFrame(rafMark);
+        }; // [DEBUG-4351]
+        requestAnimationFrame(rafMark); // [DEBUG-4351]
         const started = performance.now();
+        probe.__t04351 = started; // [DEBUG-4351]
         row.click();
         const look = () => {
           if (document.querySelector(css) === null) requestAnimationFrame(look);
@@ -181,6 +231,10 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     samples.push(took as number);
     // Probe (#4351, do not merge): each L10 opening as it is timed, so a run cut short keeps them.
     console.log(`L10 opening ${n + 1}/${OPENINGS}: ${Math.round(took as number)} ms`);
+    const tl = await browser.execute(() => (globalThis as { __tl4351?: string[] }).__tl4351 ?? []); // [DEBUG-4351]
+    console.log(
+      `[DEBUG-4351] ${harness.kind} opening ${n + 1} took ${Math.round(took as number)} ms | busy: ${busy} | ${(tl as string[]).join(" | ")}`,
+    ); // [DEBUG-4351]
   }
   return samples;
 }
