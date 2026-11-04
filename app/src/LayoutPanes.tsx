@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { QuizBand } from "./QuizBand";
 import {
   createContext,
   Fragment,
@@ -10,9 +11,14 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
+  type CSSProperties,
   type ReactNode,
   type RefObject,
 } from "react";
+import { Badge } from "./ui/badge/Badge";
+import { inForce, tintVariables, type Token } from "./theme/theme";
+import { followTheme } from "./PersonaMark";
 import { Group, Panel, useParentGroup } from "react-resizable-panels";
 import { Separator } from "./ui/panel/Separator";
 import {
@@ -266,6 +272,9 @@ export function PaneFrame({
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
         {strip}
+        {/* **A task's question, as a quiz at the top of the pane** (#4565): above the pane's
+            head, where the reviewed prototype drew it, so the terminal's input never moves for it. */}
+        <QuizBand plane={plane} session={session} />
         <PaneDropsOf.Provider value={drops}>
           <PaneHead
             grip={!oneJob}
@@ -366,7 +375,11 @@ export function PaneFrame({
                         head.chat.harness
                       )}
                       {harnessWord(head, harness) !== "" && head.chat.workspace !== "" && " · "}
-                      {head.chat.workspace}
+                      {head.elsewhere ? (
+                        <ElsewhereBadge {...head.elsewhere} />
+                      ) : (
+                        head.chat.workspace
+                      )}
                     </span>
                   )}
                   {!head && harness && (
@@ -472,6 +485,34 @@ export function PaneActions({
       <PaneBell />
       <PaneDoing {...props} />
     </div>
+  );
+}
+
+/** What a workspace's badge on a pane head is drawn in: its colour, as a persona's mark takes
+ *  its own (`PersonaMark.MARK_TOKENS`), whatever the theme's recipe tints. */
+const ELSEWHERE_TOKENS: readonly Token[] = ["accent.surface"];
+
+/**
+ * **The badge of the workspace a pane's chat is filed in, where it is not its tab's** (#4982;
+ * #4583 rule 2): drawn in "harness · workspace" in place of the workspace's plain name, so a
+ * narrow pane drops it with that part. In the workspace's colour, or plain for one with none:
+ * the window's accent is the front workspace's colour, and a badge in it would say the
+ * opposite. A screen reader hears that the chat is filed there, as the drop's sentence says.
+ */
+function ElsewhereBadge({ workspace, colour }: { workspace: string; colour: string | null }) {
+  const theme = useSyncExternalStore(followTheme, inForce);
+  // The colour is put on the badge's ground, which its tokens inherit: a badge takes a place,
+  // never a look, of its own (`ui/badge`).
+  return (
+    <span
+      data-colour={colour ?? undefined}
+      style={tintVariables(theme, colour, ELSEWHERE_TOKENS) as CSSProperties}
+    >
+      <Badge variant={colour === null ? "neutral" : "accent"}>
+        <span className="sr-only">filed in </span>
+        {workspace}
+      </Badge>
+    </span>
   );
 }
 

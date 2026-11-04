@@ -87,7 +87,8 @@ pub struct ProjectsArrived {
     pub front: Option<PlaneId>,
 }
 
-/// Sends `event` to the window holding `plane`, **and only to it**.
+/// Sends `event` to `plane`'s window set ([`Showing::window_set`]): the window holding it and
+/// each of its tab windows (#4768), **and to no other**.
 ///
 /// A project no window has said it holds yet — one being opened, whose window has not drawn it
 /// — is sent to every window, and each one's listener checks the plane as it always has. That
@@ -99,13 +100,17 @@ pub fn emit_for_plane<R: Runtime, S: Serialize + Clone>(
     event: &str,
     payload: S,
 ) {
-    let holder = app
+    let set = app
         .try_state::<Showing>()
-        .and_then(|showing| showing.holder(plane));
-    let _ = match holder {
-        Some(label) => app.emit_to(label.as_str(), event, payload),
-        None => app.emit(event, payload),
-    };
+        .map(|showing| showing.window_set(plane))
+        .unwrap_or_default();
+    if set.is_empty() {
+        let _ = app.emit(event, payload);
+        return;
+    }
+    for label in set {
+        let _ = app.emit_to(label.as_str(), event, payload.clone());
+    }
 }
 
 /// Every charter window there is, by label, the main window first — less `going`, a window
@@ -121,7 +126,7 @@ fn labels<R: Runtime>(app: &AppHandle<R>, going: Option<&str>) -> Vec<String> {
 }
 
 /// Tells every window which windows there are now.
-fn tell_windows_changed<R: Runtime>(app: &AppHandle<R>, going: Option<&str>) {
+pub(crate) fn tell_windows_changed<R: Runtime>(app: &AppHandle<R>, going: Option<&str>) {
     let _ = app.emit(WINDOWS_CHANGED, labels(app, going));
 }
 
@@ -147,11 +152,11 @@ pub fn raise<R: Runtime>(app: &AppHandle<R>, label: &str) {
 /// the operator's layout and theme from its first frame (`windowprefs.rs`), in the native
 /// appearance and colour of that theme (`nativewindow.rs`). Fitted to `near`, the screen of
 /// the window it is split from, where it opens (`screenfit.rs`).
-fn make_split<R: Runtime>(
+pub(crate) fn make_split<R: Runtime>(
     app: &AppHandle<R>,
     label: &str,
     near: Option<tauri::Monitor>,
-) -> Result<(), String> {
+) -> Result<tauri::WebviewWindow<R>, String> {
     let mut config = app
         .config()
         .app
@@ -164,11 +169,15 @@ fn make_split<R: Runtime>(
     // The default size, or the screen's usable size where that is smaller (`screenfit.rs`).
     crate::screenfit::fit_to_the_screen(app, &mut config, near);
     let config_root = purlis_core::machine::config_root();
-    // The project moved in front of it, whose theme levels its first frame draws (#2602).
+    // The project moved in front of it, whose theme levels its first frame draws (#2602): a
+    // tab window's own project (#4768).
     let front = app.try_state::<Showing>().and_then(|showing| {
-        let held = showing.holding(label)?;
+        let plane = match showing.tab_window(label) {
+            Some(tab) => tab.plane,
+            None => showing.holding(label)?.front()?.clone(),
+        };
         let planes = app.try_state::<Planes>()?;
-        let root = planes.held(held.front()?).ok()?.root().to_path_buf();
+        let root = planes.held(&plane).ok()?.root().to_path_buf();
         Some(crate::windowprefs::CreatedOn::plane(&root))
     });
     let created = crate::windowprefs::at_creation(config_root.as_deref(), front.as_ref());
@@ -181,7 +190,6 @@ fn make_split<R: Runtime>(
     .initialization_script(created.script)
     .on_new_window(crate::navguard::no_new_window)
     .build()
-    .map(|_| ())
     .map_err(|err| format!("purlis could not make a window: {err}"))
 }
 
@@ -297,6 +305,11 @@ pub fn show_window_holding(
 /// the projects moved into it, and with the last of them moved or closed it has no reason to
 /// be there. The main window stays, and draws the opener.
 pub fn said_it_holds<R: Runtime>(window: &tauri::Window<R>, showing: &Showing, holding: Holding) {
+    // A tab window holds no project of its own: it draws one project's tabs (#4768), and goes
+    // only with its last tab or its project.
+    if showing.tab_window(window.label()).is_some() {
+        return;
+    }
     let empty = holding.planes.is_empty();
     showing.in_window(window.label(), holding);
     if empty && window.label() != MAIN {
@@ -340,6 +353,10 @@ pub fn close_requested<R: Runtime>(window: &tauri::Window<R>, api: &tauri::Close
         return;
     }
     let app = window.app_handle();
+    // A tab window's tabs go back to its project window (#4768): it closes, and nothing ends.
+    if crate::tabwindows::closing(app, window.label()) {
+        return;
+    }
     if hand_back(app, window.label())
         && !app
             .get_webview_window(MAIN)
@@ -354,6 +371,7 @@ pub fn close_requested<R: Runtime>(window: &tauri::Window<R>, api: &tauri::Close
 /// take projects with it.
 pub fn destroyed<R: Runtime>(window: &tauri::Window<R>) {
     let app = window.app_handle();
+    crate::tabwindows::closing(app, window.label());
     hand_back(app, window.label());
     tell_windows_changed(app, Some(window.label()));
 }
