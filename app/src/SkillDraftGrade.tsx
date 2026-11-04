@@ -16,7 +16,9 @@ import {
   type GradeRow,
   type SkillDraftGrade,
   type SkillGradeStep,
+  type SkillLevel,
 } from "./bindings";
+import { askAChat } from "./skillChanges";
 import { counted } from "./dispatches";
 import { pointsSaid, signed } from "./GradeScorecard";
 import { useRead } from "./SkillPanels";
@@ -152,6 +154,7 @@ export function DraftGradeActions({
   onShow,
   onScorecard,
   onAskForTests,
+  level,
 }: {
   state: DraftGradeState;
   /** A new skill: it has no current version, and no folder a chat could write its tests in. */
@@ -161,6 +164,8 @@ export function DraftGradeActions({
   onShow: (grade: string) => void;
   onScorecard: (grade: string) => void;
   onAskForTests: () => void;
+  /** The draft's level: where the chat its Ask starts, which the button names (#5184). */
+  level: SkillLevel;
 }) {
   const again = (
     <Button size="sm" onPress={onGrade}>
@@ -187,7 +192,7 @@ export function DraftGradeActions({
     case "no-tests":
       return state.refused !== null || isNew ? null : (
         <Button size="sm" onPress={onAskForTests}>
-          Ask a chat to write them
+          {askAChat(level, "write them")}
         </Button>
       );
     case "graded":

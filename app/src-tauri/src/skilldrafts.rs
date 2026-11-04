@@ -292,8 +292,8 @@ pub(crate) async fn skill_draft_reject(
     .await
 }
 
-/// **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills are reached
-/// from (the project's root, or the workspace's folder), on the project's default profile, with
+/// **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills live (#5184: the
+/// project's root, the workspace's folder, or as the persona), on the project's default profile, with
 /// the core's prompt typed and never sent, ending with `what` the skill should do where New
 /// skill… asked it (S4, #3684).
 #[tauri::command]
@@ -311,13 +311,13 @@ pub(crate) async fn skill_draft_chat(
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
-        let cwd = where_level_is_reached(&root, &level)?;
+        let (cwd, persona) = where_the_skill_lives(&root, &level)?;
         let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
         open(
             &held,
             ChatTyped {
                 profile,
-                persona: None,
+                persona,
                 cwd,
                 label: "Draft a skill".to_owned(),
                 prompt: drafts::asking(&level, &what),
@@ -459,13 +459,13 @@ fn open_on_a_skill(
     size: purlis_core::engine::Size,
 ) -> Result<Curating, StartRefused> {
     let root = held.root();
-    let cwd = where_level_is_reached(root, level)?;
+    let (cwd, persona) = where_the_skill_lives(root, level)?;
     let (profile, _) = crate::curation::default_profile(root, "no chat was opened")?;
     open(
         held,
         ChatTyped {
             profile,
-            persona: None,
+            persona,
             cwd,
             label,
             prompt,
@@ -626,13 +626,13 @@ pub(crate) async fn skill_draft_redo(
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let draft = drafts::one(&root, &id)?;
-        let cwd = where_level_is_reached(&root, &draft.level)?;
+        let (cwd, persona) = where_the_skill_lives(&root, &draft.level)?;
         let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
         open(
             &held,
             ChatTyped {
                 profile,
-                persona: None,
+                persona,
                 cwd,
                 label: format!("Redo {}", draft.name),
                 prompt: drafts::redoing(&draft.level, &draft.name, &stale_of(&draft), false),
@@ -645,19 +645,29 @@ pub(crate) async fn skill_draft_redo(
     .await
 }
 
-/// Where a chat that writes `level`'s skills starts: the project's root, or its workspace's
-/// folder.
-fn where_level_is_reached(
+/// **Where a chat the studio starts for a skill of `level` starts** (#5184): where the skill
+/// lives. A project's skill at the project's root, a workspace's in its workspace's folder, and a
+/// persona's at the project's root as that persona, the only chats its skills reach. The folder,
+/// and the persona it runs as.
+fn where_the_skill_lives(
     root: &std::path::Path,
     level: &purlis_core::skills::verbs::Level,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<(std::path::PathBuf, Option<String>), String> {
+    if let Some(persona) = level.at.persona() {
+        return Ok((root.to_path_buf(), Some(persona.to_owned())));
+    }
     match level.at.workspace() {
-        None => Ok(root.to_path_buf()),
-        Some(ws) => Ok(purlis_core::workspaces::Plane::open(root)
-            .workspace(ws)
-            .map_err(|_| format!("this project has no workspace {ws:?}, so no chat was opened"))?
-            .dir()
-            .to_path_buf()),
+        None => Ok((root.to_path_buf(), None)),
+        Some(ws) => Ok((
+            purlis_core::workspaces::Plane::open(root)
+                .workspace(ws)
+                .map_err(|_| {
+                    format!("this project has no workspace {ws:?}, so no chat was opened")
+                })?
+                .dir()
+                .to_path_buf(),
+            None,
+        )),
     }
 }
 
@@ -670,6 +680,7 @@ fn open(
 ) -> Result<Curating, StartRefused> {
     let root = held.root().to_path_buf();
     let (label, cwd, profile) = (chat.label.clone(), chat.cwd.clone(), chat.profile.clone());
+    let persona = chat.persona.clone();
     let typed =
         crate::curation::start_typed(held, chat, size, crate::curation::when_typed, |why| {
             format!("{why}, so nothing was typed and no chat was opened.")
@@ -679,7 +690,7 @@ fn open(
         session: typed.session,
         name: typed.name,
         label,
-        persona: None,
+        persona,
         harness: typed.ready.declaration().map(|d| d.name.clone()),
         workspace: purlis_core::workspaces::Plane::open(&root).workspace_of(&cwd),
     })
@@ -800,6 +811,44 @@ mod tests {
         noted_long_ago(plane.path(), CHAT);
         sweep(plane.path(), &none_open, &skills_now);
         assert_eq!(skills_now.forgotten(), 1);
+    }
+
+    #[test]
+    fn a_project_skills_chat_starts_at_the_projects_root_as_no_persona() {
+        // #5184: a studio chat starts where the skill lives.
+        let plane = a_plane();
+
+        let at = where_the_skill_lives(plane.path(), &purlis_core::skills::verbs::Level::project())
+            .expect("a place");
+
+        assert_eq!(at, (plane.path().to_path_buf(), None));
+    }
+
+    #[test]
+    fn a_workspace_skills_chat_starts_in_its_workspaces_folder() {
+        let plane = a_plane();
+
+        let at = where_the_skill_lives(
+            plane.path(),
+            &purlis_core::skills::verbs::Level::workspace("ops"),
+        )
+        .expect("a place");
+
+        assert_eq!(at, (plane.path().join("workspaces/ops"), None));
+    }
+
+    #[test]
+    fn a_persona_skills_chat_starts_at_the_projects_root_as_that_persona() {
+        // #5184: a persona's skills reach only the chats that run as it, so its chat is one.
+        let plane = a_plane();
+
+        let at = where_the_skill_lives(
+            plane.path(),
+            &purlis_core::skills::verbs::Level::persona("steward"),
+        )
+        .expect("a place");
+
+        assert_eq!(at, (plane.path().to_path_buf(), Some("steward".to_owned())));
     }
 
     /// Makes the record of `id` look as if it was written long ago, past the sweep's grace.

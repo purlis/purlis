@@ -285,7 +285,11 @@ describe("a skill's Grades tab (S6)", () => {
     const asks: SkillChatAsk[] = [];
     const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
     window.addEventListener(SKILL_CHAT, heard);
-    fireEvent.click(within(none).getByRole("button", { name: "Ask a chat to write checks" }));
+    fireEvent.click(
+      within(none).getByRole("button", {
+        name: "Ask a chat at the project's root to write checks",
+      }),
+    );
     window.removeEventListener(SKILL_CHAT, heard);
     expect(asks).toEqual([{ plane: "p", kind: "checks", level: LEVEL, name: "deploy" }]);
   });
@@ -310,7 +314,10 @@ describe("a skill's Grades tab (S6)", () => {
     renderTab({ reason: "Its file is outside the project." });
     const none = await screen.findByTestId("skill-checks-none");
     // Neither would land in the skill: not the template, nor a chat's draft.
-    for (const name of ["Ask a chat to write checks", "Write them yourself"]) {
+    for (const name of [
+      "Ask a chat at the project's root to write checks",
+      "Write them yourself",
+    ]) {
       const offer = within(none).getByRole("button", { name });
       expect(offer.getAttribute("aria-disabled") === "true" || offer.hasAttribute("disabled")).toBe(
         true,
@@ -327,7 +334,9 @@ describe("a skill's Grades tab (S6)", () => {
     const asks: SkillChatAsk[] = [];
     const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
     window.addEventListener(SKILL_CHAT, heard);
-    fireEvent.click(within(job).getByRole("button", { name: "Ask a chat to write these" }));
+    fireEvent.click(
+      within(job).getByRole("button", { name: "Ask a chat at the project's root to write these" }),
+    );
     window.removeEventListener(SKILL_CHAT, heard);
     expect(asks).toEqual([{ plane: "p", kind: "evals", level: LEVEL, name: "deploy" }]);
   });
@@ -336,7 +345,9 @@ describe("a skill's Grades tab (S6)", () => {
     core();
     renderTab({ reason: "Its file is outside the project." });
     const job = await screen.findByRole("region", { name: "Does it do the job?" });
-    const offer = within(job).getByRole("button", { name: "Ask a chat to write these" });
+    const offer = within(job).getByRole("button", {
+      name: "Ask a chat at the project's root to write these",
+    });
     expect(offer.getAttribute("aria-disabled") === "true" || offer.hasAttribute("disabled")).toBe(
       true,
     );
@@ -512,7 +523,9 @@ describe("a skill's Grades tab (S6)", () => {
     core();
     renderTab({ reason: "Its file is outside the project." }, { evalsFile: { open: vi.fn() } });
     const job = await screen.findByRole("region", { name: "Does it do the job?" });
-    const offer = within(job).getByRole("button", { name: "Ask a chat to write these" });
+    const offer = within(job).getByRole("button", {
+      name: "Ask a chat at the project's root to write these",
+    });
     expect(offer.getAttribute("aria-disabled") === "true" || offer.hasAttribute("disabled")).toBe(
       false,
     );

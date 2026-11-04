@@ -169,7 +169,9 @@ describe("the Drafts page", () => {
 
     // Its chat closed: a chat is asked afresh.
     const lint = await openDraft("lint", user);
-    await user.click(within(lint).getByRole("button", { name: "Ask a chat to redo it" }));
+    await user.click(
+      within(lint).getByRole("button", { name: "Ask a chat at the project's root to redo it" }),
+    );
     stop();
     expect(asks).toEqual([
       { plane: "p", kind: "redo", id: "triage-id", name: "triage", chat: 4 },
@@ -185,7 +187,7 @@ describe("the Drafts page", () => {
 
     const page = await openDraft("triage", user);
     await user.click(within(page).getByRole("button", { name: "Try it" }));
-    await user.click(screen.getByRole("button", { name: "Ask a chat to draft a skill" }));
+    await user.click(screen.getByRole("button", { name: "Ask a chat at ops to draft a skill" }));
     stop();
     expect(asks).toEqual([
       { plane: "p", kind: "try", id: "triage-id", profile: null },
@@ -212,7 +214,9 @@ describe("the Drafts page", () => {
     const none = await screen.findByTestId("skill-drafts-none");
     expect(none).toHaveTextContent("No drafts");
     expect(
-      within(none).getByRole("button", { name: "Ask a chat to draft a skill" }),
+      within(none).getByRole("button", {
+        name: "Ask a chat at the project's root to draft a skill",
+      }),
     ).toBeInTheDocument();
   });
 

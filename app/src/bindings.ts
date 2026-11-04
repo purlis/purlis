@@ -2270,8 +2270,8 @@ export const commands = {
 	/**  **Rejects a draft**: deletes it. */
 	skillDraftReject: (plane: PlaneId, id: string) => typedError<null, string>(__TAURI_INVOKE("skill_draft_reject", { plane, id })),
 	/**
-	 *  **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills are reached
-	 *  from (the project's root, or the workspace's folder), on the project's default profile, with
+	 *  **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills live (#5184: the
+	 *  project's root, the workspace's folder, or as the persona), on the project's default profile, with
 	 *  the core's prompt typed and never sent, ending with `what` the skill should do where New
 	 *  skill… asked it (S4, #3684).
 	 */

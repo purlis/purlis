@@ -83,7 +83,7 @@ import {
   type Read,
 } from "./SkillPanels";
 import { ownerShown } from "./SkillStudioHarnesses";
-import { levelOf, sameLevel, whoseOf } from "./skillChanges";
+import { chatPlace, levelOf, sameLevel, whoseOf } from "./skillChanges";
 import {
   ChatToUseHere,
   SKILL_PAGE_TAB_NAMES,
@@ -676,7 +676,7 @@ export function SkillPage({
                 ? cannotChange
                 : "reason" in file
                   ? file.reason
-                  : "A chat reads its runs and grades and drafts an edit for you to accept."
+                  : `A chat ${chatPlace(level)} reads its runs and grades and drafts an edit for you to accept.`
             }
           />
         </MenuItem>

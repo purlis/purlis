@@ -5,6 +5,7 @@ import type { StartRefused } from "./bindings";
 import type { Said } from "./actions";
 import type { SkillChatAsk } from "./skillDraftAsks";
 import { startRefused, type StartApproving } from "./StartApproval";
+import { askAChat, chatPlace } from "./skillChanges";
 
 /**
  * **Approve and start, in place, for the Skill studio's starts** (#3942): "Ask a chat to draft a
@@ -17,19 +18,19 @@ import { startRefused, type StartApproving } from "./StartApproval";
 export function studioStartNamed(wanted: SkillChatAsk): string {
   switch (wanted.kind) {
     case "draft":
-      return "Ask a chat to draft a skill";
+      return askAChat(wanted.level, "draft a skill");
     case "try":
       return "Try it";
     case "redo":
       return `Ask a chat to redo ${wanted.name}`;
     case "triggers":
-      return `Ask a chat to write the trigger tests of ${wanted.name}`;
+      return askAChat(wanted.level, `write the trigger tests of ${wanted.name}`);
     case "checks":
-      return `Ask a chat to write the checks of ${wanted.name}`;
+      return askAChat(wanted.level, `write the checks of ${wanted.name}`);
     case "evals":
-      return `Ask a chat to write the outcome evals of ${wanted.name}`;
+      return askAChat(wanted.level, `write the outcome evals of ${wanted.name}`);
     case "improve":
-      return `Improve ${wanted.name} from runs`;
+      return `Improve ${wanted.name} from runs, with a chat ${chatPlace(wanted.level)}`;
   }
 }
 

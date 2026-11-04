@@ -110,7 +110,9 @@ export const AskAChat: Story = {
     const box = within(dialog).getByLabelText("What should it do?");
     await untilFocusWithin(() => box, "the form starts on what it should do");
     await userEvent.type(box, "Reviews a pull request against REVIEW.md");
-    await expect(within(dialog).getByRole("button", { name: "Open the chat" })).toBeEnabled();
+    await expect(
+      within(dialog).getByRole("button", { name: "Open a chat at smart-ide" }),
+    ).toBeEnabled();
     expectFocusInSight();
   },
 };

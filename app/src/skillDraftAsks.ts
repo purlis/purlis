@@ -108,12 +108,12 @@ export function askSkillChat(ask: SkillChatAsk): void {
  * project's `levels`.
  */
 export function askDraft(plane: string, scope: StudioScope, levels: readonly StudioLevel[]): void {
-  askSkillChat({
-    plane,
-    kind: "draft",
-    level: levelFrom(scope, levelsFor(levels, scope)),
-    what: "",
-  });
+  askSkillChat({ plane, kind: "draft", level: draftLevel(scope, levels), what: "" });
+}
+
+/** The level {@link askDraft}'s draft lands at, and so where its chat starts (#5184). */
+export function draftLevel(scope: StudioScope, levels: readonly StudioLevel[]): SkillLevel {
+  return levelFrom(scope, levelsFor(levels, scope));
 }
 
 /** What a chat's tab says of the drafts it wrote (decision 38): only that they are ready. */

@@ -40,7 +40,7 @@ import {
   endedSaid,
 } from "./SkillGrade";
 import { NotRead, ReadingRows, useRead } from "./SkillPanels";
-import { sameLevel } from "./skillChanges";
+import { askAChat, sameLevel } from "./skillChanges";
 import { askSkillChat } from "./skillDraftAsks";
 import type { GradingAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -313,7 +313,7 @@ function ChecksDraft({
               })
             }
           >
-            {draft.chat_open ? "Ask the chat to redo them" : "Ask a chat to redo them"}
+            {draft.chat_open ? "Ask the chat to redo them" : askAChat(draft.level, "redo them")}
           </Button>
         )}
         <Button
@@ -498,7 +498,7 @@ export function GradesTab({
                   })
                 }
               >
-                Ask a chat to write these
+                {askAChat(level, "write these")}
               </Button>
             </ButtonRow>
           </>
@@ -608,7 +608,7 @@ export function GradesTab({
                   tooltip={held}
                   onPress={() => askSkillChat({ plane, kind: "checks", level, name })}
                 >
-                  Ask a chat to write checks
+                  {askAChat(level, "write checks")}
                 </Button>
                 <Button
                   variant="link"

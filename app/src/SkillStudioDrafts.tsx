@@ -3,6 +3,7 @@
 
 import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { commands, type ProfileRow, type SkillDraft, type SkillDraftFile } from "./bindings";
+import { askAChat } from "./skillChanges";
 import { counted } from "./dispatches";
 import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
@@ -44,7 +45,7 @@ function draftedBy(draft: SkillDraft): string {
 
 /** **"Ask the chat to redo it"**, or "Ask a chat…" where the chat that drafted it is closed. */
 export function redoLabel(draft: SkillDraft): string {
-  return draft.chat_open ? "Ask the chat to redo it" : "Ask a chat to redo it";
+  return draft.chat_open ? "Ask the chat to redo it" : askAChat(draft.level, "redo it");
 }
 
 /**
@@ -204,6 +205,7 @@ export function DraftPage({
         actions={
           graded === undefined ? undefined : (
             <DraftGradeActions
+              level={draft.level}
               state={graded}
               isNew={draft.new}
               onGrade={() => onGrading({ at: "plan" }, "go")}
