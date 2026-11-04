@@ -118,6 +118,9 @@ export type Arrived = {
   /** **What its harness cannot tell purlis** (#4759), where it can't say when it waits: a task
    *  on such a harness is announced like a handoff. None where it reports all. */
   unreported?: string | null;
+  /** **Whether it is announced** (#4759): a handoff, or a task that can't report asks, that the
+   *  person did not start. The core's answer, the one its row's "new" mark starts from. */
+  announced?: boolean;
 };
 
 /** A harness started by hand in a shell tab, as its banner needs it (ADR 0062). */

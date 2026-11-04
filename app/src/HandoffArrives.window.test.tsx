@@ -112,21 +112,25 @@ function core() {
     workspace = "alpha",
     task = false,
     unreported = null,
+    byPerson = false,
   }: {
     session: number;
     label: string;
     workspace?: string;
     task?: boolean;
     unreported?: string | null;
+    /** The person asked for it themselves, from the window: it is theirs, and not announced. */
+    byPerson?: boolean;
   }) => {
+    // The core's answer (`Chat::announced`), on the event and in the record alike.
+    const announced = !byPerson && (!task || unreported !== null);
     listed[workspace].push({
       ...chat(session, String(session)),
       label,
       in_front: false,
       harness: "codex",
       unreported,
-      // The core marks it unseen where it announces it (`Chat::announced`).
-      unseen: !task || unreported !== null ? true : null,
+      unseen: announced ? true : null,
       from: {
         name: "alpha.1",
         workspace: "alpha",
@@ -157,6 +161,7 @@ function core() {
             persona: null,
             harness: "codex",
             unreported,
+            announced,
             from: { name: "alpha.1", workspace: "alpha", chat: 1, task, tab: !task },
           },
         });
@@ -345,6 +350,25 @@ describe("a task's arrival (#4759)", () => {
     expect(card).toHaveTextContent("check the queue arrived from alpha.1");
     expect(card).toHaveTextContent("It can't report asks, so look at it from time to time.");
     expect(within(card).getByRole("button", { name: "Go to it" })).toBeInTheDocument();
+  });
+
+  it("is not announced where the person asked for it themselves, though it can't report asks", async () => {
+    const { arrive, kept } = core();
+    opened();
+    await ready();
+
+    arrive({
+      session: 2,
+      label: "check the queue",
+      task: true,
+      unreported: "Codex can't tell purlis when it is waiting.",
+      byPerson: true,
+    });
+
+    await waitFor(() => expect(screen.getByTestId("pane")).toHaveTextContent("session 1"));
+    expect(queryCard("alpha")).toBeNull();
+    expect(queryDot("alpha")).toBeNull();
+    expect(kept).toEqual([]);
   });
 });
 

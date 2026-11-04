@@ -1007,12 +1007,6 @@ no chat; it is not a question and holds no dispatch. Dismissed, it stays put awa
 chat asks on.
 _Avoid_: pending dispatch, queued dispatch (nothing is waiting to start)
 
-**Headless chat**:
-A chat with no tab yet. It is listed, never hidden: its asks reach needs you, Stop and the kill
-switch reach it, like any chat's, and it gets a tab when the person opens it. Never a level-1
-chat.
-_Avoid_: background chat, unattended, hidden
-
 **Peer message** (ADR 0090, proposed: not in the first version):
 Words one chat sends another live chat, in its lineage or over a **message link**. It reaches the
 receiver as quoted data at a turn boundary, and is never consent for anything.

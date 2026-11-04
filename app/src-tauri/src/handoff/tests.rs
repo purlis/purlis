@@ -1408,6 +1408,8 @@ fn a_handoff_opens_a_chat_on_the_asking_chats_profile_with_the_brief_as_its_firs
             harness: Some("claude".to_owned()),
             // Claude's hooks say when it waits, so it is announced as a handoff and no more.
             unreported: None,
+            // A chat started it, as a handoff: the window announces it.
+            announced: true,
         }],
         "the window is told, so the tab lands on alpha's strip"
     );

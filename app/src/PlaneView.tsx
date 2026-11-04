@@ -538,7 +538,13 @@ import { tasksBelowOf, type TasksBelow } from "./sessionTasks";
 import { TasksBelowLent } from "./TasksBelow";
 import { finishedOf, qualifierOf, shownOf, useFinishedTasks, useRowsUntilRead } from "./finished";
 import { WaitingTaskWaysContext, type WaitingTaskWays } from "./waitingTasks";
-import { below as chatsBelow, chatsTree, listedChat, type ListedChat } from "./chatsTree";
+import {
+  below as chatsBelow,
+  cantReportAsks,
+  chatsTree,
+  listedChat,
+  type ListedChat,
+} from "./chatsTree";
 import {
   stopAllAnswer,
   stopAllSays,
@@ -2050,8 +2056,9 @@ export const PlaneView = memo(function PlaneView({
       // **Announced, never put on screen** (#4759): a handoff hangs a card on its workspace's
       // chip, or is listed in the Notices centre where there is none, and so does a task on a
       // harness purlis has no hooks into, which can't say when it needs the person. Any other
-      // task is its asking chat's to read. The card takes no keyboard.
-      if (arrived.from?.task !== true || arrived.unreported != null) {
+      // task is its asking chat's to read, and a chat the person started is theirs: the core
+      // says which (`announced`), as its record's "new" mark does. The card takes no keyboard.
+      if (arrived.announced === true) {
         const who = whoOf(arrived.persona, arrived.harness);
         setReport(
           chatArrived(
@@ -2062,7 +2069,7 @@ export const PlaneView = memo(function PlaneView({
               session: arrived.session,
             },
             {
-              cantReport: arrived.from?.task === true,
+              cantReport: cantReportAsks(arrived.from, arrived.unreported),
               // Said to the window as an event of its own, which the press below hears: the
               // result is state, and holds no function of the window's beyond this one.
               onGo: () => goToArrived(arrived.session),

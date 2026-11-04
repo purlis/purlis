@@ -125,6 +125,11 @@ pub struct Arrived {
     /// such a harness can't say when it needs the person, so the window announces it as it does
     /// a handoff, and the asking chat is told the person must look at it.
     pub unreported: Option<String>,
+    /// **Whether the window announces it** (#4759, [`Chat::announced`]): a handoff, or a task
+    /// on a harness purlis has no hooks into, that the person did not start themselves. The
+    /// same answer its record's `unseen` starts from, so the chip card, the Inbox Update and
+    /// the row's "new" mark come together or not at all.
+    pub announced: bool,
 }
 
 /// **What the asking chat is told of a task on a harness purlis has no hooks into** (#4759, ADR
@@ -1895,6 +1900,9 @@ fn start_on(
                 opening.message,
             )
         })?;
+    // What its harness can't tell purlis, and so whether it is announced (#4759).
+    let unreported = ready.harness.and_then(|harness| harness.unreported());
+    let announced = Chat::announced(&opening.from, opening.by_person, unreported.is_some());
     let chat = Chat {
         program: ready.program.clone(),
         args: Vec::new(),
@@ -1914,14 +1922,7 @@ fn start_on(
         task_level: opening.task_level,
         runs_on: opening.runs_on.clone(),
         // Its row says "new" until the person has looked at it (#4759).
-        unseen: Chat::announced(
-            &opening.from,
-            opening.by_person,
-            ready
-                .harness
-                .and_then(|harness| harness.unreported())
-                .is_some(),
-        ),
+        unseen: announced,
         ..Default::default()
     };
     // **A dispatch decided and reserved before a stop was recorded does not start**
@@ -1962,10 +1963,8 @@ fn start_on(
         workspace: opening.workspace.clone(),
         persona: start.persona,
         harness: ready.harness.map(|harness| harness.name().to_owned()),
-        unreported: ready
-            .harness
-            .and_then(|harness| harness.unreported())
-            .map(str::to_owned),
+        unreported: unreported.map(str::to_owned),
+        announced,
     })
 }
 

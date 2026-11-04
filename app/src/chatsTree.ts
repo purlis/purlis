@@ -142,6 +142,17 @@ export type ChatRow = ListedChat & {
   placed?: Placed;
 };
 
+/** **A task that can't report asks** (#4759, ADR 0090 as amended 2026-11-02): one another chat
+ *  started as a task, on a harness that can't tell purlis when it waits (`unreported`). Nothing
+ *  it asks reaches the person, so it is announced like a handoff and its row keeps the faint
+ *  hand. A handoff, or a task whose harness reports its asks, is not one. */
+export function cantReportAsks(
+  from: { task?: boolean } | null | undefined,
+  unreported: string | null | undefined,
+): boolean {
+  return from?.task === true && Boolean(unreported);
+}
+
 /** One of the core's open chats as the section lists it. `tab` is the window's own answer. */
 export function listedChat(
   chat: OpenChat,
@@ -179,7 +190,7 @@ export function listedChat(
     asking: question?.level === "with-asker" ? question.asker : null,
     question: question?.level ?? null,
     unseen: chat.unseen === true,
-    cantReport: chat.from?.task === true && Boolean(chat.unreported),
+    cantReport: cantReportAsks(chat.from, chat.unreported),
   };
 }
 

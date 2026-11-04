@@ -83,6 +83,12 @@ export function workspaceMade(
   };
 }
 
+/** What an announced chat says of itself (#4759): "<chat> arrived from <asking chat>". */
+export const arrivedTitle = (chat: string, from: string) => `${chat} arrived from ${from}`;
+
+/** What an announced task that can't report asks adds (#4759). */
+export const CANT_REPORT_WORDS = "It can't report asks, so look at it from time to time.";
+
 /**
  * **A chat another chat started, announced** (#4759, spec #4750 stories 24 and 28): hung from
  * the chip of `workspace` it arrived in, or listed in the Notices centre where that has none
@@ -102,8 +108,8 @@ export function chatArrived(
   return {
     from: "chat.arrived",
     refused: false,
-    title: `${chat} arrived from ${from}`,
-    words: cantReport ? "It can't report asks, so look at it from time to time." : "",
+    title: arrivedTitle(chat, from),
+    words: cantReport ? CANT_REPORT_WORDS : "",
     ways: [{ label: "Go to it", onPress: onGo, primary: true }],
     workspace,
     arrived: session,

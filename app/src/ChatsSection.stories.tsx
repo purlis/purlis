@@ -494,3 +494,74 @@ export const SaidInItsCard: Story = {
     await expect(row).toHaveAttribute("aria-describedby", card.id);
   },
 };
+
+/** A handoff and a task the chat in front started, each in no pane (#4759): the handoff not
+ *  looked at yet, the task on a harness that can't report asks, and a third with a note in the
+ *  Notices centre. */
+const ARRIVED = chatsTree([
+  listed(1),
+  listed(2, {
+    name: "fix the login",
+    parent: 1,
+    mode: "handoff",
+    from: "steward 1",
+    tab: false,
+    unseen: true,
+  }),
+  listed(3, {
+    name: "check the queue",
+    parent: 1,
+    mode: "task",
+    from: "steward 1",
+    tab: false,
+    harness: "Codex",
+    cantReport: true,
+  }),
+  listed(4, { name: "tidy the docs", tab: false }),
+]);
+
+function ArrivedInItsPanel() {
+  return (
+    <ChatsHere.Provider value={fixedChats(nothingKnown)}>
+      <div
+        {...panelRoot("side")}
+        aria-label="Navigation"
+        role="region"
+        style={{ display: "flex", flexDirection: "column", inlineSize: 260, blockSize: 200 }}
+      >
+        <ChatsSection rows={ARRIVED} front={1} noted={new Set([4])} onOpen={() => {}} />
+      </div>
+    </ChatsHere.Provider>
+  );
+}
+
+/**
+ * **Rows of chats that took no pane** (#4759, spec #4750 stories 26 to 28): the handoff's row
+ * says "new" in words until it has been on screen; the task that can't report asks keeps the
+ * faint hand, quiet and never the needs-you colour; the chat with a note in the Notices centre
+ * has a bell. Each mark is named for a screen reader. The picture is the four rows.
+ */
+export const ArrivedNewAndNoted: Story = {
+  render: () => <ArrivedInItsPanel />,
+  play: async ({ canvasElement }) => {
+    await expect(rowOf(canvasElement, 2)?.querySelector('[data-mark="new"]')).toHaveTextContent(
+      "new",
+    );
+    await expect(
+      rowOf(canvasElement, 3)?.querySelector('[data-mark="cant-report"]'),
+    ).toHaveAccessibleName("Can't report asks: look at it from time to time");
+    await expect(
+      rowOf(canvasElement, 4)?.querySelector('[data-mark="noted"]'),
+    ).toHaveAccessibleName("A notice about it is in the Notices centre");
+    // The keyboard's way: the list is one stop, and the marks take none of their own.
+    for (
+      let step = 0;
+      step < 12 && !rowOf(canvasElement, 1)?.contains(document.activeElement);
+      step += 1
+    ) {
+      await userEvent.tab();
+    }
+    await untilFocused(() => rowOf(canvasElement, 1), "the first row");
+    expectFocusInSight();
+  },
+};

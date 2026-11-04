@@ -33,6 +33,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { awaySaid } from "./AwayRefusals";
+import { arrivedTitle, CANT_REPORT_WORDS } from "./actionResult";
+import { cantReportAsks } from "./chatsTree";
 import {
   commands,
   type AskEnded,
@@ -174,16 +176,14 @@ export function arrivedUpdates(
   for (const chat of chats) {
     if (chat.unseen !== true || chat.from === null) continue;
     const name = nameOf(chat.session);
-    const cantReport = chat.from.task && Boolean(chat.unreported);
+    const title = arrivedTitle(name, chat.from.name);
     out.push({
       key: `arrived:${chat.id ?? chat.session}`,
       kind: "arrived",
       at: secondsOf(now),
       session: chat.session,
       chain: [name],
-      says: cantReport
-        ? `${name} arrived from ${chat.from.name}. It can't report asks, so look at it from time to time.`
-        : `${name} arrived from ${chat.from.name}`,
+      says: cantReportAsks(chat.from, chat.unreported) ? `${title}. ${CANT_REPORT_WORDS}` : title,
     });
   }
   return out;

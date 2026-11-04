@@ -31,6 +31,7 @@ fn arrived(task: bool, unreported: Option<&str>) -> Arrived {
         persona: None,
         harness: Some("codex".to_owned()),
         unreported: unreported.map(str::to_owned),
+        announced: !task || unreported.is_some(),
     }
 }
 

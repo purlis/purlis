@@ -1647,13 +1647,11 @@ const Row = memo(function Row({
                 </>
               )}
               {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
-              {/* **Wrapping up, and its sandbox** (#4760): the row says what the strip's chip
-                  and the tab said before; Cancel smart close is first in its list. */}
               {/* **Not looked at yet** (#4759): a handoff, or a task that can't report asks,
                   started in no pane and was announced; the row says so until it is on screen.
                   Words, so the row is heard saying it. */}
               {unseen && (
-                <span className="chat-new ui-text-meta" data-mark="new">
+                <span className="ui-text-meta" data-mark="new">
                   {NEW_SAID}
                 </span>
               )}
@@ -1662,7 +1660,7 @@ const Row = memo(function Row({
               {cantReport && (
                 <Tooltip tip={CANT_REPORT_SAID}>
                   <span
-                    className="cant-report ui-text-secondary"
+                    className="ui-text-secondary"
                     data-mark="cant-report"
                     role="img"
                     aria-label={CANT_REPORT_SAID}
@@ -1676,7 +1674,7 @@ const Row = memo(function Row({
               {noted && (
                 <Tooltip tip={NOTED_SAID}>
                   <span
-                    className="chat-noted ui-text-secondary"
+                    className="ui-text-secondary"
                     data-mark="noted"
                     role="img"
                     aria-label={NOTED_SAID}
@@ -1685,6 +1683,8 @@ const Row = memo(function Row({
                   </span>
                 </Tooltip>
               )}
+              {/* **Wrapping up, and its sandbox** (#4760): the row says what the strip's chip
+                  and the tab said before; Cancel smart close is first in its list. */}
               <WrappingUp held={wrapping} />
               <SandboxMark level={sandbox?.level} why={sandbox?.why} sites={sandbox?.sites} />
               <QuestionOrTime clock={clock} session={session} />

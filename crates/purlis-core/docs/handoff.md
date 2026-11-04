@@ -329,7 +329,8 @@ BRIEF
   Approve decides it then as any dispatch is decided, so it may still wait on a grant or a limit.
 - **Where there is no grant, you are asked once, and the task waits for your answer.** Nothing
   starts. You are asked in the Inbox, and on the asking chat's pane when it is on screen, who
-  wants to dispatch to whom, with the brief, and the command says `held for the person` and exits 0: the dispatch is accepted and
+  wants to dispatch to whom, with the brief, and the command says `held for the person` and
+  exits 0: the dispatch is accepted and
   waiting, not refused. **Allow** starts it then, on the brief you read, and it is judged
   against the limits again at that moment. **Keep blocked** starts nothing and makes no grant,
   and holds for that chat's life: the same chat dispatching across the same pair again is

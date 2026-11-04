@@ -155,6 +155,14 @@ impl From<core::Layout> for LaidOut {
     }
 }
 
+/// **What is on screen now has been looked at** (#4759): an announced chat a layout or a window
+/// back on screen shows loses its row's "new" mark, in the record and on its row.
+pub(crate) fn seen_on_screen(held: &crate::planes::Held) {
+    if held.chats().mark_seen() {
+        held.rows_changed();
+    }
+}
+
 /// **Every tab the window has, told whenever it changes** (#4751): the record keeps it, so a
 /// relaunch puts each split, its sizes, its views and each strip's front tab back, and what is
 /// on screen is derived from it (`Chats::looked_at`).
@@ -186,10 +194,7 @@ pub(crate) fn window_layout(
         None => 0,
     };
     held.chats().lay_out_window(number, layout.into())?;
-    // An announced chat now on screen has been looked at: its row's "new" mark goes (#4759).
-    if held.chats().mark_seen() {
-        held.rows_changed();
-    }
+    seen_on_screen(&held);
     // A tab window whose last tab the person closed goes with it.
     if number != 0 {
         crate::tabwindows::close_unnamed(&app, &plane, &held);
