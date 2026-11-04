@@ -666,28 +666,44 @@ export const PlanNarrow: Story = {
   },
 };
 
-// [DEBUG-4672] Temporary: the Grades play again, freshly mounted, to sample the WebKit failure.
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672a: Story = { ...Grades, parameters: { screenshot: false } };
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672b: Story = { ...Grades, parameters: { screenshot: false } };
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672c: Story = { ...Grades, parameters: { screenshot: false } };
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672d: Story = { ...Grades, parameters: { screenshot: false } };
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672e: Story = { ...Grades, parameters: { screenshot: false } };
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672f: Story = { ...Grades, parameters: { screenshot: false } };
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672g: Story = { ...Grades, parameters: { screenshot: false } };
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672h: Story = { ...Grades, parameters: { screenshot: false } };
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672i: Story = { ...Grades, parameters: { screenshot: false } };
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672j: Story = { ...Grades, parameters: { screenshot: false } };
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672k: Story = { ...Grades, parameters: { screenshot: false } };
-/** [DEBUG-4672] Grades, again. */
-export const Probe4672l: Story = { ...Grades, parameters: { screenshot: false } };
+// [DEBUG-4672] Temporary probes of the race: the Scorecard is focused as the keyboard lands in the
+// grid, before React Aria's scroll for that landing (a frame later) has run, or after it.
+const frame4672 = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+async function race4672(
+  canvas: Parameters<NonNullable<Story["play"]>>[0]["canvas"],
+  wait: boolean,
+) {
+  const list = await canvas.findByRole("grid", { name: "Grades of deploy" });
+  await waitFor(() => expect(within(list).getAllByRole("row")).toHaveLength(4));
+  await inAWindowThatFits();
+  const open = within(list).getByRole("button", {
+    name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
+  });
+  for (let step = 0; step < 60 && !list.contains(document.activeElement); step++)
+    await userEvent.tab();
+  const landed = `${document.activeElement?.getAttribute("role") ?? document.activeElement?.tagName}`;
+  if (wait) for (let one = 0; one < 3; one++) await frame4672();
+  open.focus();
+  for (let one = 0; one < 10; one++) await frame4672();
+  const frame = open.closest('[data-part="frame"]');
+  try {
+    expectFocusInSight();
+  } catch (error) {
+    // eslint-disable-next-line preserve-caught-error -- [DEBUG-4672] temporary probe
+    throw new Error(
+      `[DEBUG-4672] ${wait ? "WAITED" : "RACED"}: landed on ${landed}; frame scrollLeft ${frame?.scrollLeft}; ${String(error)}`,
+    );
+  }
+}
+/** [DEBUG-4672] The Scorecard focused before the landing's frame. */
+export const Probe4672Raced: Story = {
+  args: { grades: BOTH, evals: 2 },
+  parameters: { screenshot: false },
+  play: async ({ canvas }) => race4672(canvas, false),
+};
+/** [DEBUG-4672] The Scorecard focused after the landing's frame. */
+export const Probe4672Waited: Story = {
+  args: { grades: BOTH, evals: 2 },
+  parameters: { screenshot: false },
+  play: async ({ canvas }) => race4672(canvas, true),
+};
