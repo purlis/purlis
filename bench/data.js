@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793755940130,
+  "lastUpdate": 1793760678757,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38304,6 +38304,48 @@ window.BENCHMARK_DATA = {
             "value": 102.45948150000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.960, 102.184, 102.459, 102.856, 103.121 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bb7e6c98c1750e12388d43e42b3203652e3ccbcf",
+          "message": "Narrow windows fold panes to rails (#4766) (#5136)\n\n#5089's nine commits (74cf7b013) on today's main, as one, with main's \"Several questions at\nonce\" (#5036) met in PlaneView.tsx (LayoutPanes now inside QuizPlaces.Provider, given the\nroom, faces and onOpenFolded) and paneFrame.css (the folded side's rules and the task quiz's\nrules, both kept).\n\nAnd the fix for the merge queue's two drops (runs 41739877099 and 41746176864): on the macOS\nrunners a 1024 px window left the panes under 600 px, twice PANE_FLOOR's width, so the second\npane folded to a rail and Split right was refused. pane-warnings' narrow case never saw the\npicker, and pane-notices' narrow cases found no second pane. Linux had the room, and pull\nrequests run no macOS scenario parts. roomForTwoPanes (e2e/paneRoom.ts) widens the window by\nthe shortfall only, after the windowIs of pane-warnings, pane-notices and pane-crumbs.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6J3Z35J7EAAD29Q23DG8A8E\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T02:27:17Z",
+          "tree_id": "4cdadaf25d7773d0aad266663e8e117668267770",
+          "url": "https://github.com/purlis/purlis/commit/bb7e6c98c1750e12388d43e42b3203652e3ccbcf"
+        },
+        "date": 1793760674856,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6880649999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.656, 0.675, 0.688, 0.707, 0.718 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.566253500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.349, 16.477, 16.566, 16.592, 16.655 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.41273849999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.323, 101.234, 101.413, 101.692, 102.386 ms"
           }
         ]
       }
