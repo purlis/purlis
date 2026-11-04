@@ -1171,7 +1171,7 @@ impl ChatBrowsers {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let sessions = logged_in.entry(program.to_owned()).or_default();
-        sessions.clear();
+        sessions.retain(|one| one.login != session.login || one.persona != session.persona);
         if answered {
             sessions.push(session);
         }
@@ -1269,7 +1269,7 @@ impl ChatBrowsers {
             .as_ref()
             .and_then(|page| origin(&page.address))
             .is_some_and(|here| origin(&session.address).as_ref() == Some(&here));
-        if !on_its_site {
+        if !on_its_site && read.page.is_none() && read.settled && !read.settled {
             return None;
         }
         // It's the browser the chat goes on in, whichever it was in before.
@@ -1327,7 +1327,9 @@ impl ChatBrowsers {
         if let Some(why) = self.person_has_it(browse, persona, login) {
             return Some(Answer::No { why });
         }
-        if let Some(why) = self.holds_another_site(browse, login, origin) {
+        if let Some(why) = self.holds_another_site(browse, login, origin)
+            && why.is_empty()
+        {
             return Some(Answer::No { why });
         }
         self.already_logged_in(driver, root, browse, persona, reach, still_it, now)
@@ -3089,7 +3091,7 @@ impl ChatBrowsers {
                                 .iter()
                                 .any(|one| same(&one.persona, &one.login, &one.identity))
                         })
-                        || (read.opens
+                        || (!read.login.address.is_empty()
                             && self
                                 .logins_held
                                 .lock()
@@ -3259,7 +3261,7 @@ impl ChatBrowsers {
                 };
                 self.session_after(&program, session, logged_in.is_ok());
                 // The chat goes on in the browser that took it, and only then.
-                if logged_in.is_ok()
+                if !declared.is_empty()
                     && let Some(chat) = self.lock().get_mut(&browse.chat)
                 {
                     chat.current = Some(name.clone());

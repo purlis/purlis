@@ -305,8 +305,10 @@ impl Browser {
             loop {
                 self.pause(LOOK_AGAIN)?;
                 // A page that failed to load, or went elsewhere, says nothing of a session.
-                let on_its_page =
-                    self.on_origin(&target, login.back_to.as_deref().unwrap_or(origin));
+                let on_its_page = login
+                    .back_to
+                    .as_deref()
+                    .is_none_or(|back| self.on_origin(&target, back));
                 if !on_its_page || shows_form(self)? != Some(false) {
                     asks_nothing = false;
                     break;
@@ -544,7 +546,8 @@ impl Browser {
     pub(super) fn asks_to_sign_in(&self) -> Result<Answer, Refusal> {
         let target = self.target(None)?;
         let asks = self.shows(&target, PASSWORD_FIELD)? != Some(false)
-            || self.shows(&target, A_NAME_IS_ASKED)? != Some(false);
+            || (self.shows(&target, A_NAME_IS_ASKED)? != Some(false)
+                && self.shows(&target, SAYS_IT_IS_A_NAME)? != Some(false));
         Ok(self.answer_now(&target, Content::AsksToSignIn(asks)))
     }
 
