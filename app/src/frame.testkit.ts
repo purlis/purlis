@@ -22,3 +22,19 @@ export async function aFramePassed(): Promise<void> {
 export function theFrameNow(): void {
   tellAll();
 }
+
+/** Where `mockIPC` keeps the window's listeners, by the handler each one was given. */
+type Internals = { runCallback: (handler: number, message: unknown) => void };
+
+/**
+ * **An event from the core, and the frame the window draws it in**: `message` handed to the
+ * listener `mockIPC` gave `handler`, then {@link theFrameNow}, for a test that reads the result on
+ * the next line. Called inside `act`, as the event itself would be.
+ */
+export function heard(handler: number, message: unknown): void {
+  (window as unknown as { __TAURI_INTERNALS__: Internals }).__TAURI_INTERNALS__.runCallback(
+    handler,
+    message,
+  );
+  theFrameNow();
+}

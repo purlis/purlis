@@ -8,7 +8,7 @@ import App from "./App";
 import type { Moved, OpenChat } from "./bindings";
 import type { State } from "./chatState";
 import { chipSays, stripNamed } from "./test-strips";
-import { theFrameNow } from "./frame.testkit";
+import { heard } from "./frame.testkit";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
 
@@ -45,19 +45,6 @@ vi.mock("./SessionPane", () => ({
     return <div data-testid="pane">session {session}</div>;
   },
 }));
-
-declare global {
-  interface Window {
-    __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
-  }
-}
-
-/** An event from the core, and the frame the window draws it in: the chat stores tell their
- *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
-function heard(handler: number, message: unknown) {
-  window.__TAURI_INTERNALS__.runCallback(handler, message);
-  theFrameNow();
-}
 
 const PLANE = "/home/dev/plane";
 
