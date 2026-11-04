@@ -5896,8 +5896,10 @@ export function revealSaid(platform: string): string {
   return `Reveal in ${fileManagerOf(platform)}`;
 }
 
-/** The file manager on this platform. */
-const FILE_MANAGER = fileManagerOf(typeof navigator === "undefined" ? "" : navigator.platform);
+/** The file manager on this platform: what Reveal, and a skill's Open in, are said with. */
+export const FILE_MANAGER = fileManagerOf(
+  typeof navigator === "undefined" ? "" : navigator.platform,
+);
 
 /** Reveal's words on this platform, said on its row. */
 export const REVEAL_SAID = `Reveal in ${FILE_MANAGER}`;

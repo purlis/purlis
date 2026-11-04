@@ -75,6 +75,32 @@ pub async fn piece_file(
     .await
 }
 
+impl From<Opened> for PieceFile {
+    fn from(opened: Opened) -> Self {
+        // A size crosses as a `u32`: specta refuses a `u64` for TypeScript, which has no integer
+        // that wide. A binary or oversized file past 4 GiB is said as 4 GiB.
+        let bytes = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
+        match opened {
+            Opened::Text { text } => Self::Text { text },
+            Opened::Image { mime, data } => Self::Image {
+                mime: mime.to_string(),
+                base64: base64::engine::general_purpose::STANDARD.encode(data),
+            },
+            Opened::HugeImage {
+                mime,
+                width,
+                height,
+            } => Self::HugeImage {
+                mime: mime.to_string(),
+                width,
+                height,
+            },
+            Opened::Binary { bytes: n } => Self::Binary { bytes: bytes(n) },
+            Opened::TooLarge { bytes: n } => Self::TooLarge { bytes: bytes(n) },
+        }
+    }
+}
+
 /// What one entry of a branch's folder is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
@@ -102,15 +128,21 @@ pub struct FolderEntry {
     pub workspace: Option<String>,
 }
 
+impl From<Kind> for EntryKind {
+    fn from(kind: Kind) -> Self {
+        match kind {
+            Kind::Folder => Self::Folder,
+            Kind::File => Self::File,
+            Kind::Link => Self::Link,
+        }
+    }
+}
+
 impl From<Entry> for FolderEntry {
     fn from(entry: Entry) -> Self {
         Self {
             name: entry.name,
-            kind: match entry.kind {
-                Kind::Folder => EntryKind::Folder,
-                Kind::File => EntryKind::File,
-                Kind::Link => EntryKind::Link,
-            },
+            kind: entry.kind.into(),
             ignored: entry.ignored,
             refused: entry.refused,
             workspace: entry.workspace,
@@ -832,29 +864,9 @@ fn file_of(
     branch: Branch<'_>,
     path: &str,
 ) -> Result<PieceFile, String> {
-    // A size crosses as a `u32`: specta refuses a `u64` for TypeScript, which has no integer
-    // that wide. A binary or oversized file past 4 GiB is said as 4 GiB.
-    let bytes = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
     files::root(reader, plane, branch)
         .and_then(|root| root.open(reader, path))
-        .map(|opened| match opened {
-            Opened::Text { text } => PieceFile::Text { text },
-            Opened::Image { mime, data } => PieceFile::Image {
-                mime: mime.to_string(),
-                base64: base64::engine::general_purpose::STANDARD.encode(data),
-            },
-            Opened::HugeImage {
-                mime,
-                width,
-                height,
-            } => PieceFile::HugeImage {
-                mime: mime.to_string(),
-                width,
-                height,
-            },
-            Opened::Binary { bytes: n } => PieceFile::Binary { bytes: bytes(n) },
-            Opened::TooLarge { bytes: n } => PieceFile::TooLarge { bytes: bytes(n) },
-        })
+        .map(PieceFile::from)
         .map_err(|refused| refused.to_string())
 }
 
