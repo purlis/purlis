@@ -113,10 +113,13 @@ pub struct PressHere {
     pub chat: u32,
 }
 
-/// **A press on chat `chat` in a project with tab windows** (#4768, ruled on #4701): where
-/// another of the project's windows has it in a pane, that window comes forward and shows it
-/// there, and its label is answered; a chat is never shown in two windows. Null where no other
-/// window has it, and the press is the asking window's.
+/// **A press on chat `chat` in a project with tab windows** (#4768, #5108; spec #4750 story
+/// 97): where another of the project's windows has it in a pane, that window comes forward and
+/// shows it there; a chat is never shown in two windows. Where no window has it, it goes to the
+/// most recently used pane across the project's windows: where that is another window's, that
+/// window comes forward and shows it in its focused pane (`Chats::window_pressed`). Either way
+/// that window's label is answered, and its pane counts as used. Null where the press is the
+/// asking window's: the chat is in its pane, its pane was used last, or none has been.
 #[tauri::command]
 #[specta::specta]
 pub fn press_elsewhere(
@@ -128,7 +131,7 @@ pub fn press_elsewhere(
     chat: u32,
 ) -> Result<Option<String>, String> {
     let held = planes.held(&plane)?;
-    let Some(number) = held.chats().window_naming(chat) else {
+    let Some(number) = held.chats().window_pressed(chat) else {
         return Ok(None);
     };
     if showing.window_of(window.label(), &plane) == Some(number) {
@@ -137,6 +140,7 @@ pub fn press_elsewhere(
     let Some(label) = window_label(&showing, &plane, number) else {
         return Ok(None);
     };
+    held.chats().pane_used(number);
     crate::windows::raise(&app, &label);
     let _ = tauri::Emitter::emit_to(
         &app,
@@ -148,6 +152,25 @@ pub fn press_elsewhere(
         },
     );
     Ok(Some(label))
+}
+
+/// **A pane of this window was used** (#5108): the person focused one of its panes, or pressed
+/// into one. The window says it while its project has another window, so a press on a chat in
+/// no pane goes to the most recently used pane across them ([`press_elsewhere`]). A window
+/// that does not show `plane` says nothing.
+#[tauri::command]
+#[specta::specta]
+pub fn pane_used(
+    window: tauri::Window,
+    showing: tauri::State<'_, Showing>,
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<(), String> {
+    let Some(number) = showing.window_of(window.label(), &plane) else {
+        return Ok(());
+    };
+    planes.held(&plane)?.chats().pane_used(number);
+    Ok(())
 }
 
 /// The label of window `number` of `plane`: the window holding it for `0`, else its tab window.

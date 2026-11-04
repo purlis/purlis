@@ -1205,6 +1205,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "open_view",
     "opened_chats",
     "owed_restarts",
+    "pane_used",
     "pending_asks",
     "put_away_chat_move",
     "persona_chats_of",

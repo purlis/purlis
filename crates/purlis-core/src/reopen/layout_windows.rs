@@ -48,6 +48,41 @@ impl Away {
     }
 }
 
+/// **The order the project's windows had a pane used in** (#5108; spec #4750 story 97): each
+/// window says when the person focuses or presses into one of its panes, and the latest is
+/// where a press on a chat in no pane goes. What the windows say, as it happens; never
+/// recorded, since a launch has used nothing yet.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Used(Vec<u32>);
+
+impl Used {
+    /// A pane of window `window` was used: it is the latest. Answers whether that changed
+    /// anything.
+    pub fn touch(&mut self, window: u32) -> bool {
+        if self.latest() == Some(window) {
+            return false;
+        }
+        self.0.retain(|one| *one != window);
+        self.0.push(window);
+        true
+    }
+
+    /// Window `window` closed: never pressed into again.
+    pub fn forget(&mut self, window: u32) {
+        self.0.retain(|one| *one != window);
+    }
+
+    /// The window whose pane was used last, where any was.
+    pub fn latest(&self) -> Option<u32> {
+        self.0.last().copied()
+    }
+
+    /// Every window used, the latest first.
+    fn latest_first(&self) -> impl Iterator<Item = u32> + '_ {
+        self.0.iter().rev().copied()
+    }
+}
+
 /// Why a move between windows was refused. A refusal changes nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refused {
@@ -122,6 +157,21 @@ impl Layout {
             .iter()
             .find(|tab| tab.tree.chats().contains(&number))
             .map(|tab| tab.window)
+    }
+
+    /// **The window a press on chat `number` lands in** (#5108; spec #4750 story 97): the one
+    /// with a tab that has it in a pane ([`Self::window_naming`]); otherwise the window whose
+    /// pane was used last, of the ones the project still has and that are not away, where it
+    /// goes to that window's focused pane. None where no window's pane has been used: the
+    /// press is the pressing window's.
+    pub fn window_pressed(&self, number: u32, used: &Used, away: &Away) -> Option<u32> {
+        if let Some(window) = self.window_naming(number) {
+            return Some(window);
+        }
+        let windows = self.tab_windows();
+        used.latest_first()
+            .filter(|window| *window == 0 || windows.contains(window))
+            .find(|window| !away.holds(*window))
     }
 
     /// Where the `nth` tab of window `window` is among every tab: what a window, which knows

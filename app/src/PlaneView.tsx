@@ -4259,6 +4259,14 @@ export const PlaneView = memo(function PlaneView({
     },
     [landOn, plane, pressedOf, pressing, stoppedFor, tabWindow],
   );
+  /** **A pane of this window was used** (#5108): focused, or pressed in. Said to the core while
+   *  the project has another window, so a press on a chat in no pane, in whichever window, goes
+   *  to the most recently used pane across them (`press_elsewhere`). A project of one window
+   *  says nothing: its press goes to its focused pane, as it always has. */
+  const paneUsed = useCallback(() => {
+    if (tabWindow === undefined && !otherWindows.current) return;
+    void commands.paneUsed(plane).catch(() => undefined);
+  }, [plane, tabWindow]);
   useEffect(() => {
     showChatHere.current = (session) =>
       landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
@@ -10741,6 +10749,8 @@ export const PlaneView = memo(function PlaneView({
                       className="panes"
                       {...panelRoot("content")}
                       {...tabPanelOf(panelNamedBy)}
+                      onFocusCapture={paneUsed}
+                      onPointerDownCapture={paneUsed}
                     >
                       {frontTab ? (
                         <TaskEndContext.Provider value={taskEndHand}>

@@ -535,6 +535,9 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "rename_chat",
             "window_views",
             "window_focus",
+            // A pane of a window of a project with tab windows was used (#5108): noted in
+            // memory, in the order the window's focus moved.
+            "pane_used",
             "ignore_needs_you",
             "task_failure_seen",
             "forget_chat_that_did_not_start",

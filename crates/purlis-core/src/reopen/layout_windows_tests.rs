@@ -424,3 +424,87 @@ fn a_press_on_a_chat_in_a_tab_window_goes_to_that_window_in_front_or_behind() {
         "in no pane: the press is this window's"
     );
 }
+
+// ----- the most recently used pane across the project's windows (#5108) -----
+
+#[test]
+fn a_press_on_a_chat_in_no_pane_goes_to_the_window_whose_pane_was_used_last() {
+    let layout = ops(vec![
+        tab(Some("ops"), 0, true, 1),
+        tab(Some("ops"), 2, true, 5),
+        tab(Some("ops"), 3, true, 7),
+    ]);
+    let mut used = Used::default();
+    used.touch(3);
+    used.touch(2);
+
+    assert_eq!(layout.window_pressed(9, &used, &Away::default()), Some(2));
+    used.touch(0);
+    assert_eq!(
+        layout.window_pressed(9, &used, &Away::default()),
+        Some(0),
+        "the project window's pane used since"
+    );
+}
+
+#[test]
+fn a_press_on_a_chat_in_a_pane_goes_to_its_window_whatever_was_used_last() {
+    let layout = ops(vec![
+        tab(Some("ops"), 0, true, 1),
+        tab(Some("ops"), 2, false, 5),
+    ]);
+    let mut used = Used::default();
+    used.touch(0);
+
+    assert_eq!(layout.window_pressed(5, &used, &Away::default()), Some(2));
+}
+
+#[test]
+fn with_no_pane_used_yet_a_press_on_a_chat_in_no_pane_is_the_pressing_window_s() {
+    let layout = ops(vec![
+        tab(Some("ops"), 0, true, 1),
+        tab(Some("ops"), 2, true, 5),
+    ]);
+
+    assert_eq!(
+        layout.window_pressed(9, &Used::default(), &Away::default()),
+        None
+    );
+}
+
+#[test]
+fn a_window_away_or_gone_is_passed_over_for_the_one_used_before_it() {
+    let layout = ops(vec![
+        tab(Some("ops"), 0, true, 1),
+        tab(Some("ops"), 2, true, 5),
+    ]);
+    let mut used = Used::default();
+    used.touch(2);
+    used.touch(0);
+    used.touch(4);
+
+    assert_eq!(
+        layout.window_pressed(9, &used, &Away::default()),
+        Some(0),
+        "tab window 4 has no tab any more"
+    );
+    assert_eq!(
+        layout.window_pressed(9, &used, &Away::of([0])),
+        Some(2),
+        "a minimised window is not where the person is"
+    );
+    assert_eq!(layout.window_pressed(9, &used, &Away::of([0, 2])), None);
+}
+
+#[test]
+fn a_window_used_again_is_the_latest_and_a_forgotten_one_is_never_pressed_into() {
+    let mut used = Used::default();
+    assert!(used.touch(2));
+    assert!(used.touch(0));
+    assert!(used.touch(2), "used again: the latest now");
+    assert!(!used.touch(2), "the latest already: nothing changes");
+    assert_eq!(used.latest(), Some(2));
+
+    used.forget(2);
+    assert_eq!(used.latest(), Some(0));
+}
