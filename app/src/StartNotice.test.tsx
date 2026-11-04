@@ -104,7 +104,7 @@ const startNotice = () => screen.findByRole("status", { name: "What this chat's 
 const named = (asked: Asked[], cmd: string) => asked.filter((one) => one.cmd === cmd);
 
 async function openAChat() {
-  await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await userEvent.click(await screen.findByRole("button", { name: "New chat" }));
   const picker = await screen.findByRole("dialog", { name: "Start a chat" });
   await userEvent.click(within(picker).getByRole("button", { name: "Start chat" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

@@ -17,6 +17,7 @@ import App from "./App";
 import type { ChatSkills } from "./bindings";
 import { onAMac } from "./tabKeys";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **Use skill…'s key** (#3954): ⌘⇧S (Ctrl+Shift+S off a Mac) opens Use skill… on the chat in
@@ -92,6 +93,8 @@ function core() {
       asked.push(cmd);
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
+      // The chat's tab, as the stored layout keeps it (#4758).
+      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
       if (cmd === "skill_studio_on") return true;
       if (cmd === "chat_skills") return SKILLS;
       if (cmd === "plane_sidebar")

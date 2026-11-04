@@ -154,10 +154,13 @@ impl Kept {
         self
     }
 
-    /// This profile, going to a runner before 1.64, which stages no more than it did.
+    /// This profile, going to a runner speaking `version`: one before 1.64 stages no more than it
+    /// did ([`highest_on_a_runner_of`]). A runner from 1.64 leaves what it holds to as it was.
     #[must_use]
-    pub fn on_an_older_runner(mut self) -> Self {
-        self.highest = highest_on_an_older_runner();
+    pub fn on_a_runner_of(mut self, version: purlis_session_protocol::version::Version) -> Self {
+        if version < purlis_session_protocol::session::KNOWS_LARGER_PROFILE_SETTINGS {
+            self.highest = highest_on_a_runner_of(version);
+        }
         self
     }
 }
@@ -255,6 +258,18 @@ pub fn highest_on_an_older_runner() -> Chosen {
             LimitId::ProfileFiles,
             Some(wire::MOST_PROFILE_SETTINGS_FILES as u64),
         )
+}
+
+/// **What a runner speaking `version` stages, as the highest of a pool's limits there** (#4719):
+/// one before 1.64 no more than it did ([`highest_on_an_older_runner`]), and one from 1.64 its
+/// pool's limits alone. What a send to it is held to, and what the Sign-ins step measures against.
+#[must_use]
+pub fn highest_on_a_runner_of(version: purlis_session_protocol::version::Version) -> Chosen {
+    if version >= purlis_session_protocol::session::KNOWS_LARGER_PROFILE_SETTINGS {
+        Chosen::default()
+    } else {
+        highest_on_an_older_runner()
+    }
 }
 
 /// **Why a profile's settings were not sent** (spec #4275): its sentence, and the limits of its

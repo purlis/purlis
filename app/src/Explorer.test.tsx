@@ -579,7 +579,7 @@ describe("a clone row's menu", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Focus", "New tab", "New branch…", "Start new chats here"]);
+    ).toEqual(["Focus", "New chat", "New branch…", "Start new chats here"]);
   });
 
   it("hands the catalogue's offer back when a row is pressed", async () => {

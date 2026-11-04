@@ -384,6 +384,8 @@ fn need_of(root: &Path, ask: &brokered::Ask, persona: &str, tool: &Tool, key: St
         tool: Some(tool.name.clone()),
         purpose: None,
         names_no_vault: false,
+        // Asked for a key the vault here doesn't hold (#5075's reasons are for keys it has).
+        reason: None,
     }
 }
 

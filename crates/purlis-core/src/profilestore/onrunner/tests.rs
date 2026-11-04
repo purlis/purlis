@@ -2582,3 +2582,27 @@ fn a_server_whose_address_asks_with_a_credential_stays_behind() {
     assert!(!text.contains("of-the-desktop"), "{text}");
     assert!(text.contains("limit=5"), "{text}");
 }
+
+/// **#4719**: what a runner of a version takes, as the Sign-ins step and a send both hold it.
+#[test]
+fn a_runner_before_1_64_takes_no_more_than_it_did_and_one_from_1_64_takes_its_pools_limit() {
+    use purlis_session_protocol::version::Version;
+    assert_eq!(
+        highest_on_a_runner_of(Version {
+            major: 1,
+            minor: 63
+        }),
+        highest_on_an_older_runner()
+    );
+    assert_eq!(
+        highest_on_a_runner_of(Version {
+            major: 1,
+            minor: 64
+        }),
+        Chosen::default()
+    );
+    assert_eq!(
+        highest_on_a_runner_of(Version { major: 2, minor: 0 }),
+        Chosen::default()
+    );
+}

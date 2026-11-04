@@ -16,6 +16,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { McpFailed, Shown } from "./bindings";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 import { forgetInbox } from "./inboxRules";
 
@@ -120,6 +121,8 @@ function core(now: Core) {
     (cmd, args) => {
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
+      // A chat has a tab only from the stored layout (#4758): this one is on alpha's strip.
+      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,
@@ -159,6 +162,10 @@ async function aPane(now: Core) {
 /** The pane's frame, its header and its bell. */
 const frame = () => screen.getByTestId("pane").closest(".pane-frame") as HTMLElement;
 const bell = () => within(frame()).getByRole("button", { name: /^Pane notices:/ });
+/** The bell's count, a pill on its corner beside the button (#5189); none when there is none. */
+const pill = () => bell().parentElement?.querySelector('[data-scope="count"]') ?? null;
+/** What the pill says: none when there is no count. */
+const count = () => pill()?.textContent ?? "";
 /** The Notices a person can see in the pane, top to bottom, by their names. */
 const seen = () =>
   within(frame())
@@ -174,9 +181,13 @@ describe("a pane's notices, minimised (the default)", () => {
     await waitFor(() =>
       expect(bell()).toHaveAccessibleName("Pane notices: 1 notice, 1 in trouble, 1 asking"),
     );
-    expect(bell()).toHaveTextContent(/^1$/);
+    expect(count()).toBe("1");
     expect(bell()).toHaveAttribute("aria-expanded", "false");
     expect(bell()).toHaveAttribute("data-trouble");
+    // The pill is hot while a note is trouble, and unheard: the bell's name says it.
+    expect(pill()).toHaveAttribute("data-variant", "hot");
+    expect(pill()).toHaveAttribute("data-size", "sm");
+    expect(pill()).toHaveAttribute("aria-hidden", "true");
     // The ask keeps its words and its answers, and has no Dismiss.
     expect(seen()).toEqual(["Remove workspace"]);
     const ask = within(frame()).getByRole("status", { name: "Remove workspace" });
@@ -201,7 +212,8 @@ describe("a pane's notices, minimised (the default)", () => {
     );
     // The chat's ⋯ (#4753) is before it, a chat's part of the head (#4760).
     expect(actions[0]).toHaveAccessibleName(/^More for /);
-    expect(actions[1]).toBe(bell());
+    expect(actions[1]).toHaveClass("pane-bell-slot");
+    expect(actions[1]).toContainElement(bell());
     expect(bell().closest(".pane-doing")).toBeNull();
     expect(actions[2]).toHaveClass("pane-doing");
     const doing = [...actions[2].querySelectorAll("button")].map((one) =>
@@ -213,7 +225,7 @@ describe("a pane's notices, minimised (the default)", () => {
   it("keeps the bell's slot with no count when there is nothing, and draws no band", async () => {
     await aPane({ asks: [], failed: [] });
     await waitFor(() => expect(bell()).toHaveAccessibleName("Pane notices: No notices"));
-    expect(bell()).toHaveTextContent(/^$/);
+    expect(count()).toBe("");
     expect(bell()).not.toHaveAttribute("data-trouble");
     expect(within(frame()).queryByRole("region", { name: "Pane notices" })).toBeNull();
   });
@@ -245,13 +257,13 @@ describe("a pane's notices, expanded", () => {
   it("shows every notice under a head row, the bell's count the same, and writes the choice", async () => {
     const { layouts } = await aPane({ asks: [removal("beta", 10)], failed: [FAILED] });
     await act(() => emit("chat-mcp-failed", FAILED));
-    await waitFor(() => expect(bell()).toHaveTextContent(/^1$/));
+    await waitFor(() => expect(count()).toBe("1"));
 
     await userEvent.click(bell());
 
     await waitFor(() => expect(seen()).toEqual(["Remove workspace", "MCP server"]));
     expect(bell()).toHaveAttribute("aria-expanded", "true");
-    expect(bell()).toHaveTextContent(/^1$/);
+    expect(count()).toBe("1");
     const band = within(frame()).getByRole("region", { name: "Pane notices" });
     expect(within(band).getByText("2 notices, 1 waiting on you")).toBeTruthy();
     await waitFor(() =>
@@ -265,7 +277,7 @@ describe("a pane's notices, expanded", () => {
     await aPane({ asks: [removal("beta", 10)], failed: [FAILED] });
     await act(() => emit("chat-mcp-failed", FAILED));
     await act(() => emit("chat-sandbox-blocked", BLOCKED));
-    await waitFor(() => expect(bell()).toHaveTextContent(/^2$/));
+    await waitFor(() => expect(count()).toBe("2"));
     await userEvent.click(bell());
 
     await userEvent.click(await within(frame()).findByRole("button", { name: "Dismiss all 2" }));

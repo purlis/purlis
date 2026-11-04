@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * A terminal `$VISUAL`/`$EDITOR` opens in a shell of its own (#1042). The core starts it and
@@ -64,6 +65,8 @@ function core(chats: OpenChat[]): { open: (payload: unknown) => void } {
     if (cmd === "plane_at_launch")
       return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
     if (cmd === "opened_chats") return chats;
+    // Each chat's tab, as the stored layout keeps it (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(chats);
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     return null;

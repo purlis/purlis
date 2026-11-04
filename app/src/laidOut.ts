@@ -268,7 +268,7 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening, window =
         },
       },
       order: [...next.order, id],
-      named: { tabs: id, panes },
+      named: { tabs: id, panes, chats: id },
     };
     for (const [view, split] of splits) next = setSplit(next, view, split);
     if (one.front) fronts[workspace] = id;

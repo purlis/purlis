@@ -25,6 +25,7 @@ import type {
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
 import { findResult } from "./actionResult.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **What a task changed, against the whole window** (#1511): Changes on a finished task's row
@@ -221,6 +222,8 @@ function core({
       asked.push({ cmd, args: a });
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return chats;
+      // The layout stored gives the chat its tab on alpha (#4758), where its pane says things.
+      if (cmd === "reopened_layout") return aTabForEachChat(chats, () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,

@@ -7,7 +7,8 @@ import { cleanup, render as renderBare, screen, waitFor, within } from "@testing
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import type { ExtensionCommand, VaultContents, ViewTab } from "./bindings";
+import type { ExtensionCommand, LaidOut, VaultContents, ViewTab } from "./bindings";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { DEFAULT_THEME, drawIn, inForce } from "./theme/theme";
 import { findStripNamed, stripNamed, showThePanel } from "./test-strips";
 import { themeInForce } from "./theme/inForce.testkit";
@@ -157,6 +158,37 @@ const vaultList = () =>
     return { name, provider, count, health, reads_on_open: provider !== "keyring" };
   });
 
+/**
+ * The stored layout, the only place a launch draws tabs from (#4758): a tab for each chat and
+ * each view `reopened`, all on alpha's strip, each view at the place it had, the pinned ones
+ * first as the strip keeps them, and the view that was in front in front.
+ */
+function laidOutOf(chats: readonly (typeof OPEN_CHAT)[], views: readonly ViewTab[]): LaidOut {
+  const laid = aTabForEachChat(chats, () => "alpha");
+  const tabs = [...laid.tabs];
+  for (const view of [...views].sort((one, other) => one.at - other.at))
+    tabs.splice(Math.min(view.at, tabs.length), 0, {
+      workspace: view.workspace,
+      pinned: view.pinned,
+      window: 0,
+      front: false,
+      focused: "",
+      tree: { kind: "view", view },
+    });
+  const active = views.find((view) => view.active);
+  const fronted =
+    active === undefined
+      ? tabs
+      : tabs.map((tab) => ({
+          ...tab,
+          front: tab.tree.kind === "view" && tab.tree.view === active,
+        }));
+  return {
+    strip: "alpha",
+    tabs: [...fronted.filter((tab) => tab.pinned), ...fronted.filter((tab) => !tab.pinned)],
+  };
+}
+
 /** The core, answering every command the window sends, and recording what it was asked. */
 function core(
   on: {
@@ -178,6 +210,7 @@ function core(
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "plane_sidebar") return SIDEBAR;
     if (cmd === "opened_chats") return on.chats ?? [OPEN_CHAT];
+    if (cmd === "reopened_layout") return laidOutOf(on.chats ?? [OPEN_CHAT], on.reopened ?? []);
     if (cmd === "reopened_views") return on.reopened ?? [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];

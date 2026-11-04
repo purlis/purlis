@@ -17,8 +17,16 @@
 //! frontmatter: it is all body. A line is what Python's `str.splitlines` calls one, `\r\n` as one
 //! break, so every reader and writer here splits a text the same way.
 //!
-//! Every persona key, a `SKILL.md`'s `name:` and `description:`, a curation action, a session
-//! record and the rewrites of them read their frontmatter through [`Fence`].
+//! **A value's lines are its key's** (#5182): under a key with a value, the lines indented further
+//! than the key, and the blank lines between them, are that value run on: a block scalar's
+//! (`key: >`, `key: |`, [`is_block_marker`]), or a plain or quoted value YAML folds onto one
+//! line. They are never read, or rewritten, as keys of their own, and a rewrite of the key takes
+//! them with it. The line format reads the key's own line alone, and a block marker as no words.
+//!
+//! Every persona key, a curation action, a session record and the rewrites of them read their
+//! frontmatter through [`Fence`]. A `SKILL.md`'s keys are read as YAML ([`crate::frontmatter`]),
+//! falling back to [`Fence`] where it is not YAML; its rewrites (a rename, a copy) go through
+//! [`with_keys`].
 
 /// One line of a text, as byte offsets into it: `start..end` is the line without its break,
 /// `end..next` the break (empty on a last line that has none).
@@ -106,15 +114,64 @@ impl<'a> Fence<'a> {
 
     /// Every `key: value` line, in the order written: a line holding a `:`, split at the first
     /// one, both halves stripped, kept when its key is not empty. Any other line (a blank, a
-    /// `# note`, a `- item`) says no key.
+    /// `# note`, a `- item`, a line of a block scalar) says no key.
     pub fn entries(&self) -> Vec<Entry<'a>> {
-        self.lines()
+        self.said()
             .into_iter()
-            .filter_map(|line| {
-                let (key, value) = entry_of(&self.text[line.start..line.end])?;
-                Some(Entry { key, value, line })
+            .filter_map(|(line, said)| match said {
+                Said::Key(key, value) => Some(Entry { key, value, line }),
+                Said::Block | Said::Other => None,
             })
             .collect()
+    }
+
+    /// **What each line between the fences says** (#5182): a key and its value, a line of the
+    /// value the key above runs on to (a block scalar, `key: >` or `key: |`, or a plain or quoted
+    /// value continued), or nothing. Those lines are the ones under a key with a value that are
+    /// indented further than the key, and the blank lines between them; a blank line after the
+    /// last one is not the value's. So no line of a value is ever read, or rewritten, as a key of
+    /// its own. Under a key with no value, indented lines are its list or mapping, read as before.
+    fn said(&self) -> Vec<(Line, Said<'a>)> {
+        let mut out: Vec<(Line, Said<'a>)> = Vec::new();
+        // The indent of the key whose value the lines run on from, while they do.
+        let mut block_of: Option<usize> = None;
+        for line in self.lines() {
+            let written = &self.text[line.start..line.end];
+            let blank = py_strip(written).is_empty();
+            let indent = written.len() - written.trim_start_matches([' ', '\t']).len();
+            if block_of.is_some_and(|key| blank || indent > key) {
+                out.push((line, Said::Block));
+                continue;
+            }
+            if block_of.take().is_some() {
+                self.unblock_trailing_blanks(&mut out);
+            }
+            match entry_of(written) {
+                Some((key, value)) => {
+                    if !value.is_empty() {
+                        block_of = Some(indent);
+                    }
+                    out.push((line, Said::Key(key, value)));
+                }
+                None => out.push((line, Said::Other)),
+            }
+        }
+        if block_of.is_some() {
+            self.unblock_trailing_blanks(&mut out);
+        }
+        out
+    }
+
+    /// The blank lines a block ends with, said as no block's: they part it from what follows.
+    fn unblock_trailing_blanks(&self, said: &mut [(Line, Said<'a>)]) {
+        for (line, what) in said.iter_mut().rev() {
+            if !matches!(what, Said::Block)
+                || !py_strip(&self.text[line.start..line.end]).is_empty()
+            {
+                break;
+            }
+            *what = Said::Other;
+        }
     }
 
     /// [`Self::entries`] as owned pairs.
@@ -149,6 +206,42 @@ pub fn unclosed(text: &str) -> bool {
 /// A line that is a fence: three hyphens at its start, nothing after them but spaces or tabs.
 fn is_fence(line: &str) -> bool {
     line.trim_end_matches([' ', '\t']) == "---"
+}
+
+/// What one line of a frontmatter says ([`Fence::said`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Said<'a> {
+    /// A key and its value.
+    Key(&'a str, &'a str),
+    /// A line of the value the key above it runs on to: a block scalar, or a value continued.
+    Block,
+    /// Nothing: a blank, a note, a `- item`.
+    Other,
+}
+
+/// **Whether `value` opens a YAML block scalar** (#5182): `>` or `|`, then at most a chomping
+/// sign (`+`, `-`) and an indent digit in either order, then nothing but a `# comment`. Its text
+/// is on the lines under it, so the line format reads such a value as no words of its own.
+pub fn is_block_marker(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix(['>', '|']) else {
+        return false;
+    };
+    let (indicators, comment) = match rest.find(char::is_whitespace) {
+        Some(at) => (&rest[..at], py_strip(&rest[at..])),
+        None => (rest, ""),
+    };
+    let signs = indicators
+        .chars()
+        .filter(|c| matches!(c, '+' | '-'))
+        .count();
+    let digits = indicators
+        .chars()
+        .filter(|c| matches!(c, '1'..='9'))
+        .count();
+    signs <= 1
+        && digits <= 1
+        && signs + digits == indicators.chars().count()
+        && (comment.is_empty() || comment.starts_with('#'))
 }
 
 /// The key and value a line says, or `None` where it says none.
@@ -249,22 +342,34 @@ pub fn with_keys(text: &str, keys: &[(&str, Option<&str>)]) -> Result<String, Un
     // Set while the lines are the `- item` lines under a key being rewritten: they are its
     // value, so they go with the line they are under.
     let mut items_of_ours = false;
-    for line in fence.lines() {
+    // Set while the lines are the value a key being rewritten runs on to (#5182): its value too.
+    let mut block_of_ours = false;
+    for (line, what) in fence.said() {
         let whole = &text[line.start..line.next];
         let written = &text[line.start..line.end];
+        if what == Said::Block {
+            if !block_of_ours {
+                out.push_str(whole);
+            }
+            continue;
+        }
         if items_of_ours && written.trim_start().starts_with('-') {
             continue;
         }
         items_of_ours = false;
-        let Some((at, empty)) = entry_of(written).and_then(|(key, value)| {
-            keys.iter()
+        block_of_ours = false;
+        let Some((at, empty)) = (match what {
+            Said::Key(key, value) => keys
+                .iter()
                 .position(|(k, _)| *k == key)
-                .map(|at| (at, value.is_empty()))
+                .map(|at| (at, value.is_empty())),
+            Said::Block | Said::Other => None,
         }) else {
             out.push_str(whole);
             continue;
         };
         items_of_ours = empty;
+        block_of_ours = !empty;
         if let (Some(value), false) = (keys[at].1, placed[at]) {
             out.push_str(&said(keys[at].0, value));
             out.push_str(&text[line.end..line.next]);

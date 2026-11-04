@@ -373,3 +373,100 @@ fn a_target_that_cannot_be_read_is_said_of_the_link_and_named_only_by_verify() {
         "{said}"
     );
 }
+
+// ----------------------------------------------------------------------------------------
+// the entries a Secret ask's picker offers (#5073)
+
+#[test]
+fn the_picker_offers_each_vaults_keys_that_hold_a_value_grouped_by_vault() {
+    let (plane, ops, _team) = ops_and_team();
+    cmd::set_value(&plane.ctx, &ops, "OWN", "v").unwrap();
+    link(&plane.ctx, &ops, "STRIPE_KEY", "team", "STRIPE").unwrap();
+    let offered = pickable(&plane.ctx, None).unwrap();
+    assert_eq!(
+        offered,
+        [
+            Pickable {
+                vault: "ops".into(),
+                keys: Ok(vec!["OWN".into()]),
+            },
+            Pickable {
+                vault: "team".into(),
+                keys: Ok(vec!["OTHER".into(), "STRIPE".into()]),
+            },
+        ],
+        "a linked entry is never offered: a link never reads another link"
+    );
+}
+
+#[test]
+fn the_picker_leaves_out_the_key_being_linked_and_a_github_apps_key() {
+    let plane = Plane::new();
+    plane.plain(
+        "team",
+        json!({"STRIPE": STRIPE, "MISSING": "x", "agent-identity-github-key": "k"}),
+    );
+    let at = Target {
+        vault: "team".into(),
+        key: "MISSING".into(),
+    };
+    let offered = pickable(&plane.ctx, Some(&at)).unwrap();
+    assert_eq!(offered.len(), 1);
+    let keys = offered[0].keys.as_ref().unwrap();
+    assert!(keys.contains(&"STRIPE".to_owned()), "{keys:?}");
+    assert!(!keys.contains(&"MISSING".to_owned()), "{keys:?}");
+    assert_eq!(keys, &["STRIPE"], "a GitHub App's key is never offered");
+}
+
+#[test]
+fn a_vault_whose_keys_cannot_be_listed_is_offered_with_why() {
+    let plane = Plane::new();
+    plane.plain("team", json!({"STRIPE": STRIPE}));
+    let corrupt = plane.ctx.vaults_dir().join("broken.json");
+    std::fs::write(&corrupt, "{ not json").unwrap();
+    plane.register(
+        "broken",
+        "plain-file",
+        json!({"file": corrupt.to_string_lossy()}),
+    );
+    let offered = pickable(&plane.ctx, None).unwrap();
+    let broken = offered.iter().find(|one| one.vault == "broken").unwrap();
+    assert!(broken.keys.is_err(), "{broken:?}");
+    let team = offered.iter().find(|one| one.vault == "team").unwrap();
+    assert_eq!(team.keys, Ok(vec!["STRIPE".to_owned()]));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_over_a_value_whose_delete_fails_takes_the_link_away_again() {
+    let plane = Plane::new();
+    let team = plane.plain("team", json!({"STRIPE": STRIPE}));
+    let ops = plane.plain("ops", json!({"OWN": "v"}));
+    // The file made read-only: the link is written to the index, the delete is refused.
+    let file = plane.ctx.vaults_dir().join("ops.json");
+    let mut perms = std::fs::metadata(&file).unwrap().permissions();
+    perms.set_readonly(true);
+    std::fs::set_permissions(&file, perms).unwrap();
+    let dir = file.parent().unwrap();
+    let was = std::fs::metadata(dir).unwrap().permissions();
+    let mut held = was.clone();
+    held.set_readonly(true);
+    std::fs::set_permissions(dir, held).unwrap();
+    let refused = link_over(&plane.ctx, &ops, "OWN", &team.name, "STRIPE");
+    std::fs::set_permissions(dir, was).unwrap();
+    let refused = refused.unwrap_err();
+    assert!(
+        refused
+            .message
+            .to_string()
+            .contains("keeps the value it held"),
+        "refused at the delete, not before: {}",
+        refused.message
+    );
+    assert_eq!(
+        of(&plane.ctx, "ops", "OWN").unwrap(),
+        None,
+        "no link over it"
+    );
+    assert_eq!(cmd::get_value(&plane.ctx, &ops, "OWN").unwrap(), "v");
+}

@@ -14,6 +14,7 @@ import { chipName, queryStripNamed, stripNamed, workspaceChips } from "./test-st
 import { forgetRailMode, RAIL_MODE } from "./railMode";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **The title bar's own rules**, on the component, and **what the bar holds in the window**
@@ -544,6 +545,8 @@ describe("the title bar in the window, and the project rail below it (#2915)", (
           unfiled: [],
         };
       if (cmd === "opened_chats") return chatsOf(plane);
+      // Each chat's tab on alpha's strip, as the stored layout keeps it (#4758).
+      if (cmd === "reopened_layout") return aTabForEachChat(chatsOf(plane), () => "alpha");
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions") return [];

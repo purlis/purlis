@@ -71,6 +71,10 @@ pub enum SecretCommand {
         /// The vault, where not your persona's.
         #[arg(long)]
         vault: Option<String>,
+        /// Why the value you have doesn't work, in one line: the person is asked to replace it
+        /// even though the vault holds it.
+        #[arg(long, value_name = "REASON")]
+        replace: Option<String>,
     },
 }
 
@@ -382,7 +386,8 @@ pub fn secret(here: &crate::Here, command: SecretCommand, graft: Option<Vec<Stri
             key,
             purpose,
             vault,
-        } => match ask(&ctx, &key, &purpose, vault.as_deref()) {
+            replace,
+        } => match ask(&ctx, &key, &purpose, vault.as_deref(), replace.as_deref()) {
             Ok((line, code)) => {
                 println!("{line}");
                 code
@@ -404,17 +409,19 @@ pub fn ask(
     key: &str,
     purpose: &str,
     vault: Option<&str>,
+    replace: Option<&str>,
 ) -> Result<(String, i32), String> {
-    purlis_core::secrets::ask::ask_the_window(ctx, key, purpose, vault).map(|said| said.line())
+    purlis_core::secrets::ask::ask_the_window(ctx, key, purpose, vault, replace)
+        .map(|said| said.line())
 }
 
-/// [`ask`] for the `secret_ask` tool: its arguments `key`, `purpose` and `vault`.
+/// [`ask`] for the `secret_ask` tool: its arguments `key`, `purpose`, `vault` and `replace`.
 pub fn ask_tool(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
     let text = |name: &str| args.get(name).and_then(serde_json::Value::as_str);
     let key = text("key").ok_or("secret_ask needs the key")?;
     let purpose = text("purpose").ok_or("secret_ask needs what the key is for, as purpose")?;
     let here = crate::Here::read()?;
-    ask(&ctx(&here), key, purpose, text("vault")).map(|(line, _)| line)
+    ask(&ctx(&here), key, purpose, text("vault"), text("replace")).map(|(line, _)| line)
 }
 
 /// `purlis persona secret <verb> …`: the persona's vault, then the same verb.

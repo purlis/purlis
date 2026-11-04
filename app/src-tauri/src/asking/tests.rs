@@ -2083,6 +2083,65 @@ fn each_run_of_a_runner_chats_tool_asks_whether_its_values_may_be_sent_for_that_
     );
 }
 
+/// #5075: a replace ask says the chat's reason as the chat's, and for a link names the entry it
+/// reads; a broken link's names the entry that is gone.
+#[test]
+fn a_replace_or_broken_link_secret_ask_says_why_and_names_the_entry() {
+    use purlis_core::secrets::ask::Reason;
+    use purlis_core::secrets::links::Target;
+    let open = |reason| purlis_core::secrets::ask::Open {
+        id: 4,
+        persona: "devops".into(),
+        vault: "team".into(),
+        key: "KEY".into(),
+        tool: None,
+        purpose: None,
+        declared: Some(String::new()),
+        names_no_vault: false,
+        reason: Some(reason),
+        chats: vec![6],
+        starts: 0,
+        cannot_receive: Vec::new(),
+        since: 1_700_000_000,
+    };
+    let stripe = Target {
+        vault: "own".into(),
+        key: "STRIPE".into(),
+    };
+    let replace = super::secret_ask(&open(Reason::Replace {
+        said: "401 from the API".into(),
+        reads: Some(stripe.clone()),
+    }));
+    assert_eq!(
+        replace.says,
+        "Replace KEY in devops's vault team: the chat says the current value doesn't work: 401 \
+         from the API. KEY reads STRIPE in vault own: a new value goes there, or pick another \
+         entry; the chat never sees it"
+    );
+    let shown = replace.secret.unwrap();
+    assert_eq!(shown.replace.as_deref(), Some("401 from the API"));
+    assert_eq!(
+        shown.reads,
+        Some(super::SecretEntryShown {
+            vault: "own".into(),
+            key: "STRIPE".into()
+        })
+    );
+    let broken = super::secret_ask(&open(Reason::BrokenLink { was: stripe }));
+    assert_eq!(
+        broken.says,
+        "Mend KEY in devops's vault team: KEY was linked to STRIPE in vault own, which is gone. \
+         Fill gives it a value, or pick another entry; the chat never sees it"
+    );
+    assert_eq!(
+        broken.secret.unwrap().gone,
+        Some(super::SecretEntryShown {
+            vault: "own".into(),
+            key: "STRIPE".into()
+        })
+    );
+}
+
 /// #5068, #5071: a key chats' brokered runs miss is one Ask, under the first chat to ask, with
 /// a masked field to fill and Not now, saying how many wait on it, and never a value.
 #[test]
@@ -2098,6 +2157,7 @@ fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
         purpose: None,
         declared: Some(String::new()),
         names_no_vault: false,
+        reason: None,
         chats: vec![6, 9, 11],
         starts: 0,
         cannot_receive: Vec::new(),
@@ -2127,6 +2187,9 @@ fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
             declared: true,
             declared_purpose: Some(String::new()),
             waiting: 3,
+            replace: None,
+            reads: None,
+            gone: None,
         })
     );
     assert_eq!(
@@ -2155,6 +2218,7 @@ fn a_credential_a_start_misses_is_a_secret_ask_of_no_chat_saying_a_start_waits()
         purpose: None,
         declared: Some(String::new()),
         names_no_vault: false,
+        reason: None,
         chats: Vec::new(),
         starts: 1,
         cannot_receive: Vec::new(),
@@ -2192,6 +2256,7 @@ fn a_chats_secret_ask_quotes_its_purpose_and_tags_an_undeclared_key() {
         purpose: Some("charge test cards".into()),
         declared: None,
         names_no_vault: false,
+        reason: None,
         chats: vec![6],
         starts: 0,
         cannot_receive: Vec::new(),
@@ -2230,6 +2295,7 @@ fn a_declared_keys_ask_shows_the_purpose_its_persona_declares() {
         purpose: None,
         declared: Some("charge test cards".into()),
         names_no_vault: false,
+        reason: None,
         chats: vec![6],
         starts: 0,
         cannot_receive: Vec::new(),
@@ -2267,6 +2333,7 @@ fn a_secret_ask_from_a_runner_that_cannot_receive_says_the_runner_wont_get_it() 
         purpose: None,
         declared: Some(String::new()),
         names_no_vault: false,
+        reason: None,
         chats: Vec::new(),
         starts: 0,
         cannot_receive: vec![8],

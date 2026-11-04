@@ -16,7 +16,8 @@ import { chatList, pressMenuPath } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
-import type { Activity, ActivityLine, OpenChat, QuestionStep, ViewTab } from "./bindings";
+import type { Activity, ActivityLine, LaidOut, OpenChat, QuestionStep, ViewTab } from "./bindings";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { stripNamed } from "./test-strips";
 import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
@@ -126,6 +127,36 @@ const LINES: ActivityLine[] = [
   line({ n: 5, kind: "report", text: "Both are healthy.", outcome: "done" }),
 ];
 
+/**
+ * The stored layout, the only place a launch draws tabs from (#4758): a tab for each chat and
+ * each view `reopened`, on alpha's strip, each view at the place it had and in front where it
+ * was left in front.
+ */
+function laidOutOf(chats: readonly OpenChat[], views: readonly ViewTab[]): LaidOut {
+  const laid = aTabForEachChat(chats, () => "alpha");
+  const tabs = [...laid.tabs];
+  for (const view of [...views].sort((one, other) => one.at - other.at))
+    tabs.splice(Math.min(view.at, tabs.length), 0, {
+      workspace: view.workspace,
+      pinned: view.pinned,
+      window: 0,
+      front: false,
+      focused: "",
+      tree: { kind: "view", view },
+    });
+  const active = views.find((view) => view.active);
+  return {
+    strip: "alpha",
+    tabs:
+      active === undefined
+        ? tabs
+        : tabs.map((tab) => ({
+            ...tab,
+            front: tab.tree.kind === "view" && tab.tree.view === active,
+          })),
+  };
+}
+
 function core(
   on: {
     lines?: ActivityLine[];
@@ -170,6 +201,8 @@ function core(
           unfiled: [],
         };
       if (cmd === "opened_chats") return on.open?.() ?? [STEWARD, TALK];
+      if (cmd === "reopened_layout")
+        return laidOutOf(on.open?.() ?? [STEWARD, TALK], on.reopened ?? []);
       if (cmd === "reopened_views") return on.reopened ?? [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];

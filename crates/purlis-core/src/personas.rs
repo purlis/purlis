@@ -324,10 +324,14 @@ pub fn def_path(root: &Path, name: &str) -> PathBuf {
 /// text), each line holding a `:` split at the first one, both halves stripped, and a pair
 /// kept only when its key is not empty.
 ///
-/// The one rule a `SKILL.md`'s frontmatter is read by too, so it is
-/// [`purlis_skills::frontmatter`]'s.
+/// **Not YAML** (`docs/plane-format.md`), unlike a `SKILL.md`'s frontmatter since #5182
+/// ([`purlis_skills::frontmatter`]): a persona's keys are one line each, read as the Python
+/// charter read them and as `persona lint` checks them, quotes kept. The fence's one rule for a
+/// block scalar holds here too: its lines are never read as keys of their own.
 pub fn frontmatter(text: &str) -> Vec<(String, String)> {
-    purlis_skills::frontmatter(text)
+    purlis_skills::fence::Fence::find(text)
+        .map(|fence| fence.pairs())
+        .unwrap_or_default()
 }
 
 /// A persona's own definition, loaded — its frontmatter pairs — or `None` when it does

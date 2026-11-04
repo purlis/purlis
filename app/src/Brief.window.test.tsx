@@ -16,6 +16,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { FinishedTask, OpenChat, TaskBrief } from "./bindings";
 import { forgetThisLaunch } from "./regions";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **The brief a task was sent can be read, against the whole window** (#1494, V100-45).
@@ -139,6 +140,9 @@ function core(answer: TaskBrief | string = brief()) {
       asked.push({ cmd, args: a });
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return chats;
+      // The steward chat's tab in front, as the stored layout keeps it (#4758): the task has
+      // none, and a chat gets one from nowhere else.
+      if (cmd === "reopened_layout") return aTabForEachChat([STEWARD], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,
@@ -398,7 +402,7 @@ describe("the Brief panel", () => {
     await waitFor(() => expect(box(dialog).textContent).toBe(BRIEF));
 
     const facts = dialog.querySelector(".brief-facts")?.textContent ?? "";
-    expect(facts).toContain("Sent by you, from the tab of steward 4, to devops, ");
+    expect(facts).toContain("Sent by you, from steward 4, to devops, ");
     expect(facts).toContain("on its own branch task/read-01.");
     expect(within(dialog).getByText("The brief, as you wrote it.")).toBeInTheDocument();
   });

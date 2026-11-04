@@ -28,6 +28,7 @@ import { theCard } from "./chatCard.testkit";
 import { stripNamed } from "./test-strips";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 import { onTheWire } from "./chatEvents.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /** The core says the chat moved, and the window draws it: the chat stores tell their readers
  *  once a frame (`heldStore.ts`), and this test reads the result on the next line. */
@@ -139,6 +140,8 @@ function core(now: Core) {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
+      // Its tab, as the stored layout keeps it (#4758): a chat gets one from nowhere else.
+      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,

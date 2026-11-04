@@ -1602,19 +1602,42 @@ fn a_plain_frontmatter_names_its_skill_and_anything_ambiguous_is_refused() {
         super::fetch::identity("---\nname: deploy\ndescription: a---b\n---\n"),
         Ok(("deploy".into(), "a---b".into()))
     );
+    // A value YAML reads otherwise than a line does is read as YAML by purlis too (#5182): the
+    // name and description the review shows are the ones a harness loads.
+    for (text, name, description) in [
+        (
+            "---\nname: deploy\ndescription: |\n  Ships it.\n---\n",
+            "deploy",
+            "Ships it.",
+        ),
+        (
+            "---\nname: deploy\ndescription: >\n  Ships\n  it.\n---\n",
+            "deploy",
+            "Ships it.",
+        ),
+        (
+            "---\nname: deploy # a note\ndescription: x\n---\n",
+            "deploy",
+            "x",
+        ),
+    ] {
+        assert_eq!(
+            super::fetch::identity(text),
+            Ok((name.into(), description.into())),
+            "{text:?}"
+        );
+    }
     for bad in [
         // No fence, or no closing one.
         "name: deploy\n",
         "---\nname: deploy\ndescription: x\n",
         // A second name: YAML and the line reader would each pick one.
         "---\nname: deploy\nname: evil\ndescription: x\n---\n",
-        // Quoted keys, anchors, aliases and flow maps.
+        // Quoted keys, anchors and aliases, and a flow map, whose name has no line a rename
+        // could change.
         "---\n\"name\": evil\nname: deploy\ndescription: x\n---\n",
         "---\nname: &a deploy\ndescription: *a\n---\n",
         "---\n{name: evil, description: x}\n---\n",
-        // A value YAML reads otherwise than a line does.
-        "---\nname: deploy\ndescription: |\n  evil\n---\n",
-        "---\nname: deploy # evil\ndescription: x\n---\n",
     ] {
         assert!(super::fetch::identity(bad).is_err(), "{bad:?}");
     }

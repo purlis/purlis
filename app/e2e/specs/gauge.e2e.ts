@@ -6,7 +6,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { browser, expect, $ } from "@wdio/globals";
 import { A_TURN, aTurnIsWanted, built, READY, theRunsEnvironment } from "../harness.js";
-import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
+import { harnessRowsDrawn, pickAndStart, openThePicker } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { openedSince, tabNames } from "../reach.js";
 
@@ -120,7 +120,7 @@ describe("a chat's context gauge", () => {
     const plane = await planeRoot();
     const before = seen(plane);
 
-    await pressOnly("New tab");
+    await openThePicker();
     await harnessRowsDrawn();
     await pickAndStart();
     await browser.waitUntil(

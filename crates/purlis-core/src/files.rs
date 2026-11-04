@@ -37,6 +37,8 @@ mod find;
 mod kept;
 pub use find::{Finder, Found, Hit, Named, Place, branches, find};
 use kept::Kept;
+// One folder outside any branch, read whole: a skill's (#5183).
+pub mod folder;
 // What a branch changed (FM-4): its own file, so the calls other tickets add here stay apart.
 mod status;
 pub use status::{AheadBehind, Change, MARKED, Mark, RefusedChange, RefusedFor, Rolled, Status};
@@ -1278,7 +1280,7 @@ fn open_in(via: Via<'_>, base: &Path, branch: Branch<'_>, path: &str) -> Result<
     let kept = Kept::of(via.plane(), base, branch);
     let resolved = locate(via, &kept, base, branch, path)?;
     // The resolved path has no link on it, so the open refuses one planted since.
-    let mut file = crate::contain::open_no_link(base, &resolved).map_err(|e| {
+    let file = crate::contain::open_no_link(base, &resolved).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             Refused::NotThere(path.to_string())
         } else {
@@ -1301,7 +1303,16 @@ fn open_in(via: Via<'_>, base: &Path, branch: Branch<'_>, path: &str) -> Result<
     if kept.holds_a_name_of(&file) {
         return Err(Refused::KeptPrivate(path.to_string()));
     }
-    let bytes = meta.len();
+    read_opened(file, meta.len(), path)
+}
+
+/// What the opened regular `file`, of `bytes` when it was looked at, is: by its bytes, read no
+/// further than [`LARGEST`]. What [`open`] and [`folder::open`] both answer.
+fn read_opened(mut file: std::fs::File, bytes: u64, path: &str) -> Result<Opened, Refused> {
+    let unreadable = |e: std::io::Error| Refused::Unreadable {
+        what: path.to_string(),
+        why: e.to_string(),
+    };
     if bytes > LARGEST {
         return Ok(Opened::TooLarge { bytes });
     }

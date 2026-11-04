@@ -8,7 +8,7 @@ import process from "node:process";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { menuNames, pressMenuPath, ROW } from "../menus.js";
 import { answeringAsClaudeCode, built, READY, singleQuoted } from "../harness.js";
-import { harnessRowsDrawn, pressAndStart, pressOnly, showView } from "../opening.js";
+import { harnessRowsDrawn, pressAndStart, openThePicker, showView } from "../opening.js";
 import { textOfEach } from "../reading.js";
 import { ask } from "../switching.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
@@ -1268,7 +1268,7 @@ describe("the explorer", () => {
     let started: number | undefined;
     const runningBefore = new Set(await runningIn(plane));
     try {
-      await pressOnly("New tab");
+      await openThePicker();
       await harnessRowsDrawn();
       // The harness's option card (#2907): its radio, clicked as the driver's pointerless click
       // reaches it (React Aria takes a virtual press on the input, not on its label).
@@ -1775,7 +1775,7 @@ function declareTheRawPrompt(plane: string): void {
 async function startARawPromptChat(plane: string): Promise<void> {
   declareTheRawPrompt(plane);
   const before = (await rawPromptChats(plane)).length;
-  await pressOnly("New tab");
+  await openThePicker();
   await harnessRowsDrawn();
   // The row's own option card (#2907): its radio, clicked as the driver's pointerless click
   // reaches it (React Aria takes a virtual press on the input, not on its label).

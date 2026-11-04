@@ -9,14 +9,16 @@
  *
  * - **The header**: the skill's name, its skill level and its state, what it does, and its
  *   actions: Use in this chat, Edit and Grade, then a "…" menu of Rename, Move to another level,
- *   Deprecate, Archive, Improve from runs, Publish to a source, Export, Open the file and Delete. A built-in skill's page says it can't be
+ *   Deprecate, Archive, Improve from runs, Publish to a source, Export, Open the file, Open in
+ *   Finder (the skill's folder, #5183) and Delete. A built-in skill's page says it can't be
  *   edited, moved or turned off, and offers only what it can do.
  * - **The banner**: where the skill isn't plainly on (off, left out, a change to review, an update
  *   waiting, hidden by the router, a clash, deprecated or archived), why in one sentence, and the
  *   one fix.
  * - **Its tabs**, each with its count where it has one: Overview (who gets it, where it lives,
  *   who looks after it, its grade, its runs, and how each chat program takes it), Text (its
- *   `SKILL.md` as it is now), History (each version with its diff and a revert, and a change
+ *   `SKILL.md` as it is now), Files (its whole folder as a file tree beside the light editor's
+ *   preview, #5183: `SkillFiles.tsx`), History (each version with its diff and a revert, and a change
  *   waiting for review), Grades and Runs.
  *
  * What a change asks of the person (Edit, Rename, Move, Delete) is the studio's, handed in as
@@ -95,9 +97,11 @@ import {
 } from "./skillStudio";
 import { PINNABLE, turnOf } from "./skillsListing";
 import { useOpenUseSkill } from "./UseSkill";
-import { PLANE_ROOT, pieceFileTitle, pieceFileView, type Place } from "./pieceViews";
+import { pieceFileTitle, pieceFileView } from "./pieceViews";
+import { skillFileOf } from "./skillFile";
 import type { ViewRef } from "./tabs";
-import type { Offer } from "./actions";
+import { FILE_MANAGER, type Offer } from "./actions";
+import { SkillFiles } from "./SkillFiles";
 
 /** One change's answer, as the core's commands give it. */
 export type Answer = { status: "ok"; data: SkillChanged } | { status: "error"; error: string };
@@ -274,31 +278,7 @@ export function whoGetsIt(skill: StudioSkill, scope: StudioScope): string {
   return `On: ${chat} gets it.`;
 }
 
-/** **The file a skill's text is in**, as a tab opens it, or why there is none to open; or, with
- *  `inner`, another file in its folder (`evals/triggers.json`). */
-export function skillFileOf(
-  skill: StudioSkill,
-  inner = "SKILL.md",
-): { place: Place; path: string } | { reason: string } {
-  const { folder } = skill;
-  if (skill.level === "built-in")
-    return {
-      reason: "It ships with purlis, inside the app, and is not one of the project's files.",
-    };
-  if (folder === "")
-    return {
-      reason: "It was installed from a source: its files are kept with the project's pins.",
-    };
-  if (folder.startsWith("/")) return { reason: "Its file is outside the project." };
-  if (skill.level === "repo") {
-    // `workspaces/<workspace>/<clone>/…`, as the core says a clone's folder.
-    const [top, workspace, repo, ...rest] = folder.split("/");
-    if (top !== "workspaces" || workspace === undefined || repo === undefined || rest.length === 0)
-      return { reason: "Its file is outside the project." };
-    return { place: { workspace, repo, piece: null }, path: `${rest.join("/")}/${inner}` };
-  }
-  return { place: PLANE_ROOT, path: `${folder}/${inner}` };
-}
+export { skillFileOf };
 
 /**
  * **The row of each name that carries its Pin switch** (SK-15d): of its rows at one of the
@@ -608,6 +588,16 @@ export function SkillPage({
       )}
     </>
   );
+  // Open in Finder (#5183): the skill's folder, wherever it is, as the core finds it again.
+  const openFolderSaid = `Open in ${FILE_MANAGER}`;
+  // An installed skill's folder is its harness's, which purlis does not name (`folder` empty).
+  const folderNone = skill.folder === "" ? skillFileOf(skill) : undefined;
+  const openFolder = () => {
+    const { workspace, persona } = whoseChats(scope);
+    change("The skill's folder was not opened", async () =>
+      changed(await commands.skillFolderOpen(plane, workspace, persona, skill.folder)),
+    );
+  };
   const moreMenu = (
     <MenuTrigger>
       <IconButton
@@ -625,10 +615,12 @@ export function SkillPage({
             : []),
           ...(state === "archived" ? ["deprecate"] : []),
           ...("reason" in file || onOpenView === undefined ? ["file"] : []),
+          ...(skill.folder === "" ? ["folder"] : []),
           // Its draft would not land in the skill: the Grades tab holds its chat offers alike.
           ...("reason" in file ? ["improve"] : []),
         ]}
         onAction={(key) => {
+          if (key === "folder") openFolder();
           if (key === "file" && "place" in file)
             onOpenView?.(
               pieceFileView(file.place, file.path),
@@ -702,6 +694,14 @@ export function SkillPage({
         <MenuItem id="file" textValue="Open the file">
           <MenuWords said="Open the file" under={"reason" in file ? file.reason : undefined} />
         </MenuItem>
+        <MenuItem id="folder" textValue={openFolderSaid}>
+          <MenuWords
+            said={openFolderSaid}
+            under={
+              folderNone !== undefined && "reason" in folderNone ? folderNone.reason : undefined
+            }
+          />
+        </MenuItem>
         <MenuItem id="delete" textValue="Delete…" variant="danger">
           <MenuWords said="Delete…" under={level === null ? cannotChange : undefined} />
         </MenuItem>
@@ -712,6 +712,7 @@ export function SkillPage({
   const tabs: PageTab[] = [
     { id: "overview", label: SKILL_PAGE_TAB_NAMES.overview },
     { id: "text", label: SKILL_PAGE_TAB_NAMES.text },
+    { id: "files", label: SKILL_PAGE_TAB_NAMES.files },
     {
       id: "history",
       label: SKILL_PAGE_TAB_NAMES.history,
@@ -752,6 +753,23 @@ export function SkillPage({
         );
       case "text":
         return editing ? doing.drawn : <SkillText plane={plane} skill={skill} level={level} />;
+      case "files":
+        return (
+          <SkillFiles
+            plane={plane}
+            skill={skill}
+            scope={scope}
+            level={level}
+            changed={given}
+            readOnly={level === null ? `Read only: ${lowerFirst(cannotChange)}` : undefined}
+            onEditText={() => {
+              if (level === null) return;
+              onTab("text");
+              onEdit(level);
+            }}
+            onOpenView={onOpenView}
+          />
+        );
       case "history":
         if (details.refused !== undefined)
           return (

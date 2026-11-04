@@ -633,6 +633,8 @@ fn read(
         .map(|need| need.purpose),
         // A fill names its vault.
         names_no_vault: false,
+        // Asked for a key the vault doesn't hold (#5075's reasons are for keys it has).
+        reason: None,
     };
     let within = purlis_core::loginask::THE_PERSON_IS_WAITED_FOR
         .saturating_sub(started.elapsed())

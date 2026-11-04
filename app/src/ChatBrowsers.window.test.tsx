@@ -10,6 +10,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { BrowserFrame, ChatBrowser, OpenChat, TimelineMoment } from "./bindings";
 import { setChatsListPrefs } from "./chatsListPrefs";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
 import { wears } from "./textRoles.testkit";
@@ -107,6 +108,10 @@ function core(
       return { windows: [{ planes: [PLANE, OTHER], active: 0 }], dropped: [] };
     if (cmd === "open_plane") return { plane: a.path, ask: null };
     if (cmd === "opened_chats") return there ? [chat(5)] : open;
+    // Each project's chats have their tabs on its alpha's strip from its stored layout (#4758),
+    // alpha drawn: chat 5 is the other project's only chat, so its tab is in front there.
+    if (cmd === "reopened_layout")
+      return aTabForEachChat(there ? [{ ...chat(5), in_front: true }] : open, () => "alpha");
     if (cmd === "reopened_views" && there && otherViews !== undefined)
       return otherViews.then(() => []);
     if (cmd === "chat_browsers") return there ? other : browsers;

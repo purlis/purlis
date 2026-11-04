@@ -12,6 +12,7 @@ import { stripNamed } from "./test-strips";
 import { aFramePassed } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A burst of chat events is one commit per frame** (#4731, part of #4724).
@@ -97,6 +98,9 @@ function core(): (event: string, payload: unknown) => void {
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return open;
+    // Each chat has a tab on ide's strip from the stored layout, the only place a tab comes
+    // from at launch (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(open, () => "ide");
     if (cmd === "plane_sidebar")
       return {
         root: PLANE,

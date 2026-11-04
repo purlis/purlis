@@ -924,7 +924,7 @@ describe("a menu from the keyboard (charter-app#174)", () => {
         within(menu)
           .getAllByRole("menuitem")
           .map((item) => item.textContent),
-      ).toEqual(["Focus", "New tab", "New branch…", "Start new chats here"]);
+      ).toEqual(["Focus", "New chat", "New branch…", "Start new chats here"]);
       await userEvent.keyboard("{Enter}");
       expect(pressed).toEqual(["clone.focus:svc"]);
     });

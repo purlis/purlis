@@ -895,16 +895,23 @@ fn as_its_runner_holds(
     version: purlis_session_protocol::version::Version,
     kept: &purlis_core::profilestore::onrunner::Kept,
 ) -> purlis_core::profilestore::onrunner::Kept {
-    let kept = if version >= purlis_session_protocol::session::KNOWS_LARGER_PROFILE_SETTINGS {
-        kept.clone()
-    } else {
-        kept.clone().on_an_older_runner()
-    };
+    let kept = kept.clone().on_a_runner_of(version);
     if version >= purlis_session_protocol::session::KNOWS_PROFILE_MCP_SERVERS {
         kept
     } else {
         kept.with_no_mcp_servers()
     }
+}
+
+/// **The session protocol version the runner `to` reaches speaks**, over one link of its own
+/// (#4719): what a send to it is held to. It sends nothing.
+pub fn version_over_a_link(
+    to: &ToARunner,
+) -> Result<purlis_session_protocol::version::Version, String> {
+    on_one_link(to, async |linked| match linked {
+        Ok(client) => Ok(client.version()),
+        Err(down) => Err(down.why),
+    })
 }
 
 /// Whether a runner speaking `version` keeps a desktop's profiles (`keep_profile`, 1.43).

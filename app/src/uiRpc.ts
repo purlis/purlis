@@ -447,6 +447,8 @@ export const commands = {
 	answerSecretFill: __WINDOW_ONLY_RESULT,
 	answerPoolTool: __WINDOW_ONLY_RESULT,
 	answerSecretAsk: __WINDOW_ONLY_RESULT,
+	linkSecretAsk: __WINDOW_ONLY_RESULT,
+	secretAskEntries: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
@@ -1095,6 +1097,9 @@ export const commands = {
 	skillNew: __WINDOW_ONLY_RESULT,
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
+	skillFiles: __WINDOW_ONLY_RESULT,
+	skillFile: __WINDOW_ONLY_RESULT,
+	skillFolderOpen: __WINDOW_ONLY_RESULT,
 	skillSave: __WINDOW_ONLY_RESULT,
 	skillTriggerTestsStart: __WINDOW_ONLY_RESULT,
 	skillRename: __WINDOW_ONLY_RESULT,
@@ -1705,6 +1710,7 @@ export const commands = {
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupCommand: __WINDOW_ONLY_RESULT,
 	poolSetupCreate: __WINDOW_ONLY_RESULT,
+	poolSetupSignInsByHand: __WINDOW_ONLY_RESULT,
 	poolSetupSizes: __WINDOW_ONLY_RESULT,
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,
@@ -5066,6 +5072,17 @@ export type EngineSandboxShown = {
 	chrome: string | null,
 	/**  The machine whose engine it is (#2990). */
 	machine: EngineMachine,
+};
+
+/**
+ *  **One vault's entries a Secret ask's picker offers** (#5073): the vault, the keys a link may
+ *  read in it, and why none could be listed, where that is so. Names only, never a value.
+ */
+export type EntriesOf = {
+	vault: string,
+	keys: string[],
+	/**  Why its keys could not be listed: the provider's own first line. */
+	unlisted?: string | null,
 };
 
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */
@@ -11445,6 +11462,12 @@ export type SecretAt = {
 	shown: string | null,
 };
 
+/**  An entry of a vault named in a Secret ask (#5075): the person's to read, never a chat's. */
+export type SecretEntryShown = {
+	vault: string,
+	key: string,
+};
+
 /**
  *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
  *  its chats miss, and how many wait on it. Names only: no value is ever here.
@@ -11472,6 +11495,18 @@ export type SecretShown = {
 	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
+	/**
+	 *  **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
+	 *  chat's. Absent on an ask for a key the vault doesn't hold.
+	 */
+	replace?: string | null,
+	/**
+	 *  The entry the key reads, where it is a Linked entry asked to be replaced (#5075): a new
+	 *  value goes there.
+	 */
+	reads?: SecretEntryShown | null,
+	/**  The entry a broken link read, which is gone (#5075). */
+	gone?: SecretEntryShown | null,
 };
 
 /**
@@ -12111,6 +12146,23 @@ export type SkillFit =
 "widens" | 
 /**  A skill purlis hands to no chat. */
 "refused";
+
+/**  A skill's folder, walked whole: each folder's entries straight after it, folders first. */
+export type SkillFolder = {
+	/**  The first 2,000. */
+	entries: SkillFolderEntry[],
+	/**  How many more were listed past them. */
+	more: number,
+};
+
+/**  One entry of a skill's folder. */
+export type SkillFolderEntry = {
+	/**  Its path in the folder, `/` between its parts. */
+	path: string,
+	kind: EntryKind,
+	/**  Why it does not open, in the core's sentence; `null` for a file that opens and a folder. */
+	refused: string | null,
+};
 
 /**  A version's grade, once grading lands (SK-16): always null for now. */
 export type SkillGrade = {
@@ -14276,6 +14328,11 @@ export type WindowApart = {
 	 *  answered, so it costs the accent no colour.
 	 */
 	words: boolean,
+	/**
+	 *  Whether the rule is one of the accent's marks' (#4921): measured once every other rule is
+	 *  answered, each mark on its own, so it costs the accent and its kin no colour.
+	 */
+	signal: boolean,
 };
 
 /**  One theme draft, as the strip and the close of its chat name it. */

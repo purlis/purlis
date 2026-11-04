@@ -18,6 +18,7 @@ import type { ClosingChat, PersonaChat } from "./bindings";
 import { forgetDismissals } from "./dismissals";
 import { askToEnd } from "./menus.testkit";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **Closing a chat that asked persona chats for something**, against the whole window: the one
@@ -98,6 +99,8 @@ function core(theirs: ClosingChat) {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [STEWARD, TASK];
+      // The layout stored gives each a tab on alpha (#4758): the task was opened in its own.
+      if (cmd === "reopened_layout") return aTabForEachChat([STEWARD, TASK], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,

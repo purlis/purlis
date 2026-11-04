@@ -4,14 +4,15 @@
 /**
  * **A skill's page inside the Skill studio** (#3682, spec #3679, the amendment's S3): its header
  * and "…" menu, the banner that says why it isn't plainly on with its one fix, and its tabs
- * (Overview, Text, History, Grades, Runs), each with its count. Drawn at the window seam, the core
+ * (Overview, Text, Files, History, Grades, Runs), each with its count. Drawn at the window seam, the core
  * faked at its command boundary.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { chooseMore, forgetStudio, renderStudioAt } from "./SkillStudioTab.testkit";
+import { chooseMore, forgetStudio, PLANE, renderStudioAt } from "./SkillStudioTab.testkit";
+import { SkillStudioTab } from "./SkillStudioTab";
 import {
   AT_THE_ROOT,
   ChatToUseHere,
@@ -197,7 +198,7 @@ describe("a skill's page", () => {
       within(screen.getByRole("tablist", { name: "deploy's sections" }))
         .getAllByRole("tab")
         .map((one) => one.querySelector('[data-part="label"]')?.textContent),
-    ).toEqual(["Overview", "Text", "History", "Grades", "Runs"]);
+    ).toEqual(["Overview", "Text", "Files", "History", "Grades", "Runs"]);
     expect(tab(/Overview/)).toHaveAttribute("aria-selected", "true");
     // The Library's list is still beside it, with the skill chosen.
     expect(screen.getByTestId("skill-deploy")).toHaveAttribute("aria-selected", "true");
@@ -843,6 +844,190 @@ describe('a skill\'s "…" menu', () => {
   });
 });
 
+/** deploy's folder as the core walks it: its text, a reference and an eval file. */
+const DEPLOY_FOLDER = {
+  entries: [
+    { path: "evals", kind: "folder", refused: null },
+    { path: "evals/triggers.json", kind: "file", refused: null },
+    { path: "references", kind: "folder", refused: null },
+    { path: "references/steps.md", kind: "file", refused: null },
+    { path: "SKILL.md", kind: "file", refused: null },
+  ],
+  more: 0,
+};
+
+describe("a skill's Files", () => {
+  /** The core answering deploy's folder, each file's text its path. */
+  const folder = () => ({
+    skill_files: () => DEPLOY_FOLDER,
+    skill_file: (args: Record<string, unknown>) => ({
+      kind: "text",
+      text: `The text of ${args.path as string}.`,
+    }),
+  });
+  const tree = () => screen.findByRole("treegrid", { name: "Files of deploy" });
+  const row = async (name: string) => within(await tree()).findByRole("row", { name });
+
+  it("lists every file in the skill's folder, nested, and shows the one picked", async () => {
+    const asked = core([DEPLOY], folder());
+    const user = userEvent.setup();
+    renderStudioAt(at(DEPLOY, inWorkspace("ops")), { onOpenView: vi.fn() });
+
+    await page();
+    await user.click(tab(/Files/));
+    expect(
+      within(await tree())
+        .getAllByRole("row")
+        .map((one) => one.getAttribute("aria-level") + " " + (one.textContent ?? "").trim()),
+    ).toEqual(["1 evals", "1 references", "1 SKILL.md"]);
+    await user.click(await row("references"));
+    await user.keyboard("{ArrowRight}");
+    await user.click(await row("steps.md"));
+    expect(await screen.findByText("The text of references/steps.md.")).toBeInTheDocument();
+    expect(asked).toContainEqual({
+      cmd: "skill_file",
+      args: {
+        plane: expect.anything(),
+        workspace: "ops",
+        persona: null,
+        folder: "skills/deploy",
+        path: "references/steps.md",
+      },
+    });
+    // The project's own skill: each file opens in the project's file tab too.
+    expect(screen.getByRole("button", { name: "Open in a tab of its own" })).toBeInTheDocument();
+    expect(screen.queryByTestId("skill-files-read-only")).toBeNull();
+  });
+
+  it("edits the project's own skill's SKILL.md in the Text tab's editor", async () => {
+    core([DEPLOY], folder());
+    const onOpenView = vi.fn();
+    const user = userEvent.setup();
+    renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "files" }), { onOpenView });
+
+    await user.click(await row("SKILL.md"));
+    await user.click(await screen.findByRole("button", { name: "Open in a tab of its own" }));
+    expect(onOpenView).toHaveBeenCalledWith(
+      { from: null, view: "plane-file", key: "skills/deploy/SKILL.md" },
+      "SKILL.md · Plane root",
+    );
+    await user.click(screen.getByRole("button", { name: "Edit SKILL.md" }));
+    await waitFor(() => expect(tab(/Text/)).toHaveAttribute("aria-selected", "true"));
+    expect(screen.getByRole("button", { name: "Stop editing deploy" })).toBeInTheDocument();
+  });
+
+  it("opens a built-in skill's files read-only", async () => {
+    const SECRETS = skill("secrets", {
+      level: "built-in",
+      label: "built-in",
+      grant: null,
+      granted: null,
+      folder: "/app/plugin/skills/purlis-secrets",
+    });
+    const asked = core([SECRETS], {
+      skill_files: () => ({
+        entries: [{ path: "SKILL.md", kind: "file", refused: null }],
+        more: 0,
+      }),
+      skill_file: () => ({ kind: "text", text: "Reads the secrets." }),
+    });
+    const user = userEvent.setup();
+    renderStudioAt(at(SECRETS, AT_THE_ROOT, { tab: "files" }));
+
+    await user.click(
+      await within(await screen.findByRole("treegrid", { name: "Files of secrets" })).findByRole(
+        "row",
+        { name: "SKILL.md" },
+      ),
+    );
+    expect(await screen.findByText("Reads the secrets.")).toBeInTheDocument();
+    expect(screen.getByTestId("skill-files-read-only")).toHaveTextContent(
+      "Read only: built-in skills can't be changed.",
+    );
+    for (const name of ["Edit SKILL.md", "Open in a tab of its own"])
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(asked.find((one) => one.cmd === "skill_files")?.args).toMatchObject({
+      folder: "/app/plugin/skills/purlis-secrets",
+    });
+  });
+
+  it("reads the folder and the file shown again when the project's skills change", async () => {
+    const asked = core([DEPLOY], folder());
+    const user = userEvent.setup();
+    const { rerender } = renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "files" }));
+    await user.click(await row("SKILL.md"));
+    await screen.findByText("The text of SKILL.md.");
+    const reads = (cmd: string) => asked.filter((one) => one.cmd === cmd).length;
+    const [walks, files] = [reads("skill_files"), reads("skill_file")];
+    rerender(<SkillStudioTab plane={PLANE} changed={1} />);
+    await vi.waitFor(() => {
+      expect(reads("skill_files")).toBeGreaterThan(walks);
+      expect(reads("skill_file")).toBeGreaterThan(files);
+    });
+  });
+
+  it("says why an installed skill has no folder to list", async () => {
+    const INSTALLED = skill("brainstorming", { folder: "" });
+    const asked = core([INSTALLED]);
+    renderStudioAt(at(INSTALLED, AT_THE_ROOT, { tab: "files" }));
+    expect(await screen.findByTestId("skill-files-none")).toHaveTextContent(
+      "its files are kept with the project's pins",
+    );
+    expect(asked.some((one) => one.cmd === "skill_files")).toBe(false);
+  });
+
+  it("says where the folder could not be read, with Try again", async () => {
+    let refuse = true;
+    core([DEPLOY], {
+      skill_files: () => {
+        if (refuse) throw "'skills/deploy' is not the folder of a skill the studio lists here";
+        return DEPLOY_FOLDER;
+      },
+    });
+    const user = userEvent.setup();
+    renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "files" }));
+    expect(await screen.findByTestId("skill-page-not-read")).toHaveTextContent(
+      "is not the folder of a skill the studio lists here",
+    );
+    refuse = false;
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await row("SKILL.md")).toBeInTheDocument();
+  });
+
+  it("opens the skill's folder in the file manager from the … menu", async () => {
+    const asked = core([DEPLOY], { skill_folder_open: () => null });
+    const user = userEvent.setup();
+    renderStudioAt(at(DEPLOY, inWorkspace("ops")));
+
+    await page();
+    await chooseMore("deploy", /^Open in (Finder|Files|File Explorer)$/, user);
+    await vi.waitFor(() =>
+      expect(asked).toContainEqual({
+        cmd: "skill_folder_open",
+        args: {
+          plane: expect.anything(),
+          workspace: "ops",
+          persona: null,
+          folder: "skills/deploy",
+        },
+      }),
+    );
+  });
+
+  it("holds Open in the file manager for an installed skill, which has no folder here", async () => {
+    const INSTALLED = skill("brainstorming", { folder: "" });
+    core([INSTALLED]);
+    const user = userEvent.setup();
+    renderStudioAt(at(INSTALLED));
+    await page();
+    await user.click(screen.getByRole("button", { name: "More for brainstorming" }));
+    const menu = await screen.findByRole("menu", { name: "More for brainstorming" });
+    expect(
+      within(menu).getByRole("menuitem", { name: /^Open in (Finder|Files|File Explorer)/ }),
+    ).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
 describe("a built-in skill's page", () => {
   const SECRETS = skill("secrets", {
     level: "built-in",
@@ -865,8 +1050,10 @@ describe("a built-in skill's page", () => {
     expect(within(shown).queryByRole("button", { name: "Grade secrets" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "More for secrets" }));
     const menu = await screen.findByRole("menu", { name: "More for secrets" });
+    // Only its folder opens, in the file manager (#5183): nothing that changes it.
     for (const row of within(menu).getAllByRole("menuitem"))
-      expect(row).toHaveAttribute("aria-disabled", "true");
+      if (!/^Open in /.test(row.textContent ?? ""))
+        expect(row).toHaveAttribute("aria-disabled", "true");
     expect(menu).toHaveTextContent("Built-in skills can't be changed.");
   });
 

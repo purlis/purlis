@@ -16,7 +16,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Badge } from "./ui/badge/Badge";
+import { Badge, Count } from "./ui/badge/Badge";
 import { inForce, tintVariables, type Token } from "./theme/theme";
 import { followTheme } from "./PersonaMark";
 import { Group, Panel, useParentGroup } from "react-resizable-panels";
@@ -81,6 +81,7 @@ import {
   ChatNotices,
 } from "./ChatNotices";
 import { Button, IconButton } from "./ui/button/Button";
+import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
 import { Bell, Plus, Puzzle, Reply, ScrollText, Square, SquareTerminal, Undo2 } from "lucide-react";
 import { droppedAt, stateButtonOf, type ChatHead, type HeadPart } from "./paneHead";
 import { PaneTerminalAt, type PaneTerminal } from "./paneTerminal";
@@ -434,7 +435,8 @@ export function PaneFrame({
  * glance at its start (its `children`, the `.pane-chips` line: the breadcrumb, the skills, the
  * harness, the gauge; written where it is drawn, so the line's guard reads it) and the pane's
  * actions at its end (`PaneActions`). A row of its own, so neither covers what the terminal
- * draws; the same row in every pane with a chat, so panes side by side line up. With no
+ * draws; the same row in every pane with a chat, so panes side by side line up. Its tooltips
+ * open below it, as a strip's do (`TIPS_BELOW`, #5189). With no
  * `children` it is the actions alone at the top right of a pane, as a view's pane draws them
  * (#3147).
  */
@@ -452,7 +454,9 @@ export function PaneHead({
   grip?: boolean;
 }) {
   const drawn = (
-    <div className="pane-head" {...(grip ? { [GRIP]: "" } : {})}>
+    // Its hints open below it (#5189): one at a control's end would stand on the row, over the
+    // next control, as the bell's did over Split right.
+    <div className="pane-head" {...TIPS_BELOW} {...(grip ? { [GRIP]: "" } : {})}>
       {children}
       {doing}
     </div>
@@ -847,6 +851,7 @@ export function LayoutPanes({
   onNewChatOn,
   split,
   runningIn,
+  noWorkspace = false,
   tab,
   chatName,
   onClearPane,
@@ -979,6 +984,8 @@ export function LayoutPanes({
   };
   /** How many chats run in `workspace`: what an empty pane says (#4755). */
   runningIn: (workspace: string) => number;
+  /** The plane has no workspace yet: an empty pane offers Create a workspace (#4758). */
+  noWorkspace?: boolean;
   /** The tab this is the layout of. Its splits are its own: another tab's never carry over
    *  (#4755). */
   tab: number;
@@ -1054,6 +1061,7 @@ export function LayoutPanes({
               newChat={offerFor("chat.new")}
               onPress={(offer) => onPaneDoes(layout.pane, offer)}
               inSplit={inSplit}
+              createWorkspace={noWorkspace ? offerFor("workspace.create") : undefined}
             />
           </div>
         </div>
@@ -1391,6 +1399,7 @@ export function LayoutPanes({
       onNewChatOn={onNewChatOn}
       split={split}
       runningIn={runningIn}
+      noWorkspace={noWorkspace}
       tab={tab}
       faceOf={faceOf}
       onOpenFolded={onOpenFolded}
@@ -1595,10 +1604,11 @@ export const PaneBellAt = createContext<RefObject<HTMLButtonElement | null> | nu
 /**
  * **A pane's bell** (#4754, spec #4750 stories 33, 37 to 39): in the pane's header, in a fixed
  * slot before split and close, there with no count when there is nothing, so nothing beside it
- * moves.
+ * moves. An icon button the size of its neighbours (#5189), its hint below the head.
  *
- * - **Its count is the pane's notes**, never its asks, the same number minimised and expanded;
- *   neutral, and in the trouble colour while one note is trouble.
+ * - **Its count is the pane's notes**, never its asks, the same number minimised and expanded:
+ *   the family's small pill on the bell's top corner, neutral, and hot while one note is
+ *   trouble.
  * - **A press minimises or expands the notices of every pane** (`paneNotices.ts`); pressed, it
  *   is drawn as pressed.
  * - **A new notice never opens the band or takes the focus**: its count is said politely, once,
@@ -1612,25 +1622,38 @@ export function PaneBell() {
   // change is new words, so a notice arriving is always heard (`ui/said.ts`).
   const spoken = useSaidAtMost(holds === null ? "" : bellSays(holds));
   if (holds === null) return null;
+  const count = bellCount(holds);
   return (
     <>
-      <Button
-        ref={at ?? undefined}
-        size="sm"
-        variant="quiet"
-        className="pane-bell"
-        icon={<Bell aria-hidden="true" />}
-        aria-label={`Pane notices: ${bellSays(holds)}`}
-        aria-expanded={!minimised}
-        // The band's head row says Minimise too: the same act, the same word (`docs/ui-copy.md`).
-        tooltip={minimised ? "Show all" : "Minimise"}
-        data-trouble={holds.trouble > 0 ? "" : undefined}
-        data-empty={holds.notes === 0 ? "" : undefined}
-        data-way="bell"
-        onPress={() => showNotices(minimised ? "expanded" : "minimised")}
-      >
-        {bellCount(holds)}
-      </Button>
+      {/* The pill is unheard: the bell's name says the count (#5189). */}
+      <span className="pane-bell-slot">
+        <IconButton
+          ref={at ?? undefined}
+          size="sm"
+          variant="quiet"
+          className="pane-bell"
+          icon={<Bell aria-hidden="true" />}
+          aria-label={`Pane notices: ${bellSays(holds)}`}
+          aria-expanded={!minimised}
+          // The band's head row says Minimise too: the same act, the same word
+          // (`docs/ui-copy.md`).
+          tooltip={minimised ? "Show all" : "Minimise"}
+          data-trouble={holds.trouble > 0 ? "" : undefined}
+          data-empty={holds.notes === 0 ? "" : undefined}
+          data-way="bell"
+          onPress={() => showNotices(minimised ? "expanded" : "minimised")}
+        />
+        {count !== "" && (
+          <Count
+            aria-hidden="true"
+            size="sm"
+            className="pane-bell-count"
+            variant={holds.trouble > 0 ? "hot" : "neutral"}
+          >
+            {count}
+          </Count>
+        )}
+      </span>
       {/* Polite and on its own, never a Notice's status line. */}
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {spoken}

@@ -4858,13 +4858,17 @@ fn a_record_holding_one_id_twice_puts_back_two_chats_with_their_own_ids_and_keep
     // id. The record writes one chat per id (the newest open), which is right only for a
     // retry or a fresh start under way — so the put-back gives the repeat an id of its own,
     // as it does a chat that had none, and neither drops out at the next write.
+    // A chat's id as a record holds one: a ULID (ADR 0066; `reopen` reads any other as none).
+    // A Claude Code chat's settings on macOS go through a file named by it (SK-9), which takes
+    // nothing else.
+    const SHARED: &str = "01J9CHAT000000000000000000";
     let dir = tempfile::tempdir().unwrap();
     let claude = a_claude(dir.path());
     let shared = |name: &str| {
         let one = chat(&claude, name, None);
         Chat {
             identity: purlis_core::reopen::Identity {
-                id: Some(ID.to_owned()),
+                id: Some(SHARED.to_owned()),
                 ..one.identity.clone()
             },
             ..one
@@ -4885,11 +4889,20 @@ fn a_record_holding_one_id_twice_puts_back_two_chats_with_their_own_ids_and_keep
         SIZE,
     );
 
-    assert_eq!(open.len(), 2, "both start");
+    assert_eq!(
+        open.len(),
+        2,
+        "both start: {:?}",
+        chats
+            .would_not_start()
+            .iter()
+            .map(|one| (one.name.clone(), one.why.clone()))
+            .collect::<Vec<_>>()
+    );
     let last = lock(&wrote).last().cloned().expect("a record was written");
     let ids: Vec<Option<String>> = last.chats.iter().map(|c| c.identity.id.clone()).collect();
     assert_eq!(ids.len(), 2, "both are recorded: {ids:?}");
-    assert_eq!(ids[0].as_deref(), Some(ID), "the first keeps the id");
+    assert_eq!(ids[0].as_deref(), Some(SHARED), "the first keeps the id");
     assert!(
         ids[1].is_some() && ids[1] != ids[0],
         "the repeat has its own: {ids:?}"
@@ -5332,8 +5345,8 @@ fn a_chat_put_back_is_one_the_next_quit_records_again() {
 
 #[test]
 fn a_chat_pin_is_read_once_from_a_record_with_no_tabs_and_then_the_tab_holds_it() {
-    // The upgrade: a record written before tabs were recorded keeps each chat's pin until the
-    // window reports its layout, which carries it on the tab. From then on the chat's own
+    // The upgrade: a record written before tabs were recorded is read into a layout as it is
+    // put back (#4758), and a chat's pin becomes its tab's there. From then on the chat's own
     // field is never written again.
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
@@ -5353,7 +5366,14 @@ fn a_chat_pin_is_read_once_from_a_record_with_no_tabs_and_then_the_tab_holds_it(
         ..Record::default()
     };
     chats.put_back(&old, SIZE);
-    assert!(chats.record().chats[1].pinned, "carried until a layout");
+    let upgraded = chats.record().layout.expect("the upgrade's layout");
+    assert!(
+        upgraded
+            .tabs
+            .iter()
+            .any(|tab| tab.pinned && tab.tree == Node::chat(4)),
+        "the pin is on chat 4's tab from the upgrade: {upgraded:?}"
+    );
 
     let mut pinned = front_tab(Node::chat(4));
     pinned.pinned = true;
@@ -5812,9 +5832,10 @@ fn laying_out_what_is_already_laid_out_writes_nothing() {
 }
 
 #[test]
-fn a_record_with_no_tabs_list_is_read_the_old_way_until_the_window_reports_and_then_its_old_fields_retire()
- {
-    // Today's records keep working: a chat beside the one in front is on screen, as before.
+fn a_record_with_no_tabs_list_is_upgraded_to_a_layout_at_launch_and_its_old_fields_retire() {
+    // A record written before tabs were recorded (#4758): the upgrade keeps the tab in front,
+    // with the chat beside it as the other half of a split, and the old fields that said so
+    // retire at once, since the layout now says it.
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
     let old = Record {
@@ -5833,19 +5854,19 @@ fn a_record_with_no_tabs_list_is_read_the_old_way_until_the_window_reports_and_t
         ..Record::default()
     };
     chats.put_back(&old, SIZE);
-    assert_eq!(chats.layout(), None);
-    assert_eq!(chats.looked_at(), vec![3, 4]);
+    let layout = chats.layout().expect("the upgrade lays it out");
+    assert_eq!(layout.tabs.len(), 1);
+    assert!(layout.tabs[0].front);
     assert_eq!(
-        chats.record().chats[1].beside,
-        Some(3),
-        "carried until a layout"
+        layout.tabs[0].tree,
+        Node::Split(Box::new(purlis_core::reopen::layout::Split {
+            direction: purlis_core::reopen::layout::Direction::Row,
+            share: 500,
+            a: Node::chat(3),
+            b: Node::chat(4),
+        }))
     );
-
-    chats
-        .lay_out(on_ops(vec![front_tab(Node::chat(4))]))
-        .unwrap();
-
-    assert_eq!(chats.looked_at(), vec![4]);
+    assert_eq!(chats.looked_at(), vec![3, 4]);
     let record = chats.record();
     assert!(
         record
@@ -5854,6 +5875,12 @@ fn a_record_with_no_tabs_list_is_read_the_old_way_until_the_window_reports_and_t
             .all(|one| one.beside.is_none() && one.shows.is_none())
     );
     assert!(record.layout.is_some());
+
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(4))]))
+        .unwrap();
+
+    assert_eq!(chats.looked_at(), vec![4]);
     chats.end_all();
 }
 
@@ -7570,7 +7597,14 @@ fn a_claude_code_chat_runs_with_purlis_s_pins_alone_whatever_the_old_keys_say() 
         .iter()
         .position(|word| word == "--settings")
         .expect("--settings");
-    let settings: serde_json::Value = serde_json::from_str(&argv[at + 1]).expect("JSON");
+    // On the line where it fits one word, else in the file the line names (SK-9): a Claude Code
+    // chat's on macOS passes that length.
+    let settings: serde_json::Value = if argv[at + 1].starts_with('{') {
+        serde_json::from_str(&argv[at + 1]).expect("JSON")
+    } else {
+        purlis_core::hoststart::settings_from_its_file(std::path::Path::new(&argv[at + 1]))
+            .expect("the settings file purlis wrote")
+    };
     assert_eq!(
         settings["enabledPlugins"],
         serde_json::json!({

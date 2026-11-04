@@ -19,6 +19,7 @@ import type { FinishedTask, OpenChat, TaskEnding } from "./bindings";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **The person ends a task with Stop and get its report or Close now** (#1488, V100-5,
@@ -154,6 +155,13 @@ function core(
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return open.map(asListed);
+    // A tab for each chat the record kept one for, as the stored layout keeps it (#4758): the
+    // sessions, and sweep where it has one.
+    if (cmd === "reopened_layout")
+      return aTabForEachChat(
+        open.filter((one) => one.from == null || one.from.tab),
+        () => "alpha",
+      );
     if (cmd === "task_ending") {
       const session = a.session as number;
       const one = open.find((chat) => chat.session === session);

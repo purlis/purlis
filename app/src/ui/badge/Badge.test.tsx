@@ -71,6 +71,27 @@ describe("Count", () => {
     expect(drawnWith(count, "color")).toBe("var(--needs-you-text)");
   });
 
+  it("draws a small count, to stand on a mark's corner, at its own least size (#5189)", () => {
+    render(
+      <>
+        <Count data-testid="small" size="sm" aria-hidden="true">
+          3
+        </Count>
+        <Count data-testid="plain" aria-hidden="true">
+          3
+        </Count>
+      </>,
+    );
+    const small = screen.getByTestId("small");
+    expect(small).toHaveAttribute("data-size", "sm");
+    expect(screen.getByTestId("plain")).not.toHaveAttribute("data-size");
+    expect(drawnWith(small, "min-block-size")).toBe("calc(12rem / 14)");
+    expect(drawnWith(small, "min-inline-size")).toBe("calc(12rem / 14)");
+    expect(drawnWith(small, "padding-inline")).toBe("var(--space-1)");
+    expect(drawnWith(small, "line-height")).toBe("1");
+    expect(drawnWith(screen.getByTestId("plain"), "min-block-size")).toBe("calc(16rem / 14)");
+  });
+
   it("draws counts as one pill in a group, square between them", () => {
     render(
       <CountGroup role="img" aria-label="3 chats, 1 needs you">

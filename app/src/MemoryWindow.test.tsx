@@ -21,6 +21,7 @@ import { forgetDrafts } from "./memories";
 import { stripNamed, showThePanel } from "./test-strips";
 import { findSelectNamed, pickIn } from "./ui/select/select.testkit";
 import { findResult } from "./actionResult.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A memory's tab, against the whole window** (SI-9b, ADR 0065): a persona's memory rows open
@@ -178,6 +179,8 @@ function core({
           };
     if (cmd === "opened_chats")
       return [{ ...CHAT, unreported: null, guessed: null, pinned: false }];
+    // The chat's tab, as the stored layout keeps it (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
     if (cmd === "reopened_views") return [];
     if (["chat_states", "chats_that_would_not_start", "running_sessions"].includes(cmd)) return [];
     if (["extension_views", "extension_commands", "extension_panels"].includes(cmd)) return [];

@@ -22,6 +22,7 @@ import { cascadeOf, drawnWith, type Drawn } from "./cascade.testkit";
 import { card, cardOf as cardOfRow, facts, theCard } from "./chatCard.testkit";
 import { CARD_DELAY_MS, CARD_LEAVE_MS, CARD_SKIP_MS } from "./ChatsSection";
 import { forgetThisLaunch } from "./regions";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { GLOBAL } from "./windowprefs";
 import type { Shown } from "./shownState";
 import { goToWorkspace, rowSays, stripNamed } from "./test-strips";
@@ -152,8 +153,13 @@ function usedFor(a: Record<string, unknown>) {
  */
 function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask[] = []) {
   const asked: Asked[] = [];
-  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it. */
-  let laidOut: unknown = null;
+  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it.
+   *  At the launch, a tab for each chat the record kept a tab for, on its workspace's strip, as
+   *  the stored layout keeps them (#4758): every session, and a task or handoff that has one. */
+  let laidOut: unknown = aTabForEachChat(
+    open.filter((one) => one.from == null || one.from.tab),
+    (session) => open.find((one) => one.session === session)?.workspace ?? null,
+  );
   const listeners = new Map<string, number>();
   /** Every listener of an event: `plane-changed` has one per answer the window reads. */
   const everyListener = new Map<string, number[]>();
@@ -689,7 +695,7 @@ describe("a task chat", () => {
     expect(tabNames()).toEqual(["devops 3"]);
   });
 
-  it("is still listed, and still what its pane shows, after the window is loaded again", async () => {
+  it("is still listed, and still what its pane shows, after the window is loaded again, where its session gets no tab back (#4758)", async () => {
     // The same core across both windows: a reload, and a relaunch that put the chats back,
     // both ask it what is open and which chat was in front.
     const open = sixTasks();
@@ -723,9 +729,9 @@ describe("a task chat", () => {
         "2 devops 7",
       ]),
     );
-    // Chat 4 comes back in its pane. Steward 1, in no pane, still gets a tab of its own at a
-    // launch until chats stop getting tabs (#4758).
-    expect(tabNames()).toEqual(["devops 4", "steward 1"]);
+    // Chat 4 comes back in its pane. Steward 1, in no pane since chat 4 took its place, gets
+    // no tab: a launch draws the tabs the layout kept and no others (#4758).
+    expect(tabNames()).toEqual(["devops 4"]);
     await waitFor(() => expect(screen.getByTestId("pane").textContent).toBe("session 4"));
     expect(row(again, "devops 2").getAttribute("data-tab")).toBe("false");
   });
@@ -747,7 +753,7 @@ describe("a task chat", () => {
     expect(tabNames()).toEqual(["steward 1", "devops 4"]);
   });
 
-  it("arrives as a row and no tab, where a handoff arrives as a tab", async () => {
+  it("arrives as a row and no tab, and so does a handoff, as a row of its own (#4758)", async () => {
     const open = [chat(1, "alpha")];
     const { arrive } = core(open);
     render(<App />);
@@ -761,11 +767,10 @@ describe("a task chat", () => {
 
     open.push(chat(3, "alpha", { persona: "devops", from: by(1, "handoff") }));
     arrive(open[2]);
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "devops 3"]));
-    // And as a row of its own at the top: it is not a task of the chat it came from (#1492).
-    // Waited on, not read once (#2158): the arrival opens its tab in the event's own handler,
-    // but its row is drawn from the sidebar the window reads again after, which answers later.
+    // A handoff takes no pane and no tab either (#4758): it is a row of its own at the top, not
+    // a task of the chat it came from (#1492).
     await waitFor(() => expect(shape(tree)).toEqual(["1 steward 1", "2 devops 2", "1 devops 3"]));
+    expect(tabNames()).toEqual(["steward 1"]);
     expect((await cardOf(tree, "devops 3")).text).toContain("from steward 1");
   });
 });
@@ -1794,12 +1799,11 @@ const scopeOn = () =>
     .getAllByRole("radio")
     .filter((one) => (one as HTMLInputElement).checked)
     .map((one) => one.closest("label")?.textContent);
-const pickScope = (name: "This tab" | "Workspace" | "All") =>
+const pickScope = (name: "Workspace" | "All") =>
   userEvent.click(within(scopeSwitch()).getByRole("radio", { name }));
 
-describe("the Chats view's scope: this tab, the workspace, or all (#1679)", () => {
-  /** Chat 1's tab in front, with its task working in beta; chat 3 in a tab of its own in
-   *  alpha; chat 4 in beta. */
+describe("the Chats view's scope: the workspace, or all (#1679, #4758)", () => {
+  /** Chat 1 in front, with its task working in beta; chat 3 in alpha; chat 4 in beta. */
   const three = () => [
     chat(1, "alpha"),
     chat(2, "beta", { persona: "devops", from: by(1, "task") }),
@@ -1814,21 +1818,6 @@ describe("the Chats view's scope: this tab, the workspace, or all (#1679)", () =
 
     expect(scopeOn()).toEqual(["Workspace"]);
     await waitFor(() => expect(shape(tree)).toEqual(["1 steward 1", "2 devops 2", "1 steward 3"]));
-  });
-
-  it("lists the chats of the tab in front, and follows the tab", async () => {
-    core(three());
-    render(<App />);
-    const tree = await section();
-    await waitFor(() => expect(shape(tree)).toHaveLength(3));
-
-    await pickScope("This tab");
-    expect(scopeOn()).toEqual(["This tab"]);
-    // The session and the task it asked for, wherever that task works.
-    await waitFor(() => expect(shape(tree)).toEqual(["1 steward 1", "2 devops 2"]));
-
-    await userEvent.click(within(strip()).getByRole("tab", { name: /steward 3/ }));
-    await waitFor(() => expect(shape(tree)).toEqual(["1 steward 3"]));
   });
 
   it("lists every workspace's chats on All", async () => {
@@ -1877,53 +1866,11 @@ describe("the Chats view's scope: this tab, the workspace, or all (#1679)", () =
     await waitFor(() => expect(shape(tree)).toHaveLength(3));
     const radios = within(scopeSwitch()).getAllByRole("radio");
 
-    act(() => radios[1].focus());
-    await userEvent.keyboard("{ArrowLeft}");
+    act(() => radios[0].focus());
+    await userEvent.keyboard("{ArrowRight}");
 
-    await waitFor(() => expect(scopeOn()).toEqual(["This tab"]));
-    await waitFor(() => expect(shape(tree)).toEqual(["1 steward 1", "2 devops 2"]));
-  });
-
-  it("names a chat outside this tab that needs you at the top, with a way to it", async () => {
-    const { move } = core(three());
-    render(<App />);
-    const tree = await section();
-    await waitFor(() => expect(shape(tree)).toHaveLength(3));
-    await pickScope("This tab");
-    await waitFor(() => expect(shape(tree)).toEqual(["1 steward 1", "2 devops 2"]));
-
-    move(3, "waiting", 10, [3]);
-
-    await screen.findByText("steward 3 needs you, outside this tab.");
-    await userEvent.click(
-      screen.getByRole("button", { name: "Go to steward 3, which needs you outside this tab" }),
-    );
-    // Its tab came forward: the list is that tab's, and nothing is hidden that needs you.
-    await waitFor(() => expect(shape(tree)).toEqual(["1 steward 3"]));
-    expect(screen.queryByText(/needs you, outside this tab/)).toBeNull();
-  });
-
-  it("stays on This tab when going to a task shows it in the focused pane, the tab read once it is in front (#1696)", async () => {
-    const { move } = core([
-      ...three(),
-      chat(5, "alpha", { persona: "devops", from: by(3, "task") }),
-    ]);
-    render(<App />);
-    const tree = await section();
+    await waitFor(() => expect(scopeOn()).toEqual(["All"]));
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
-    await pickScope("This tab");
-    await waitFor(() => expect(shape(tree)).toEqual(["1 steward 1", "2 devops 2"]));
-
-    move(5, "waiting", 10, [5]);
-    await screen.findByText("devops 5 needs you, outside this tab.");
-    await userEvent.click(
-      screen.getByRole("button", { name: "Go to devops 5, which needs you outside this tab" }),
-    );
-
-    // It is in the focused pane now (#4757): This tab lists it, and is not widened. (This tab
-    // itself goes with #4758.)
-    await waitFor(() => expect(shape(tree)).toContain("1 devops 5"));
-    expect(scopeOn()).toEqual(["This tab"]);
   });
 
   it("names a chat in another workspace that needs you, by its name", async () => {

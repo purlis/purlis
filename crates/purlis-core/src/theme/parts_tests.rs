@@ -345,6 +345,27 @@ fn a_size_never_reaches_another_size_or_a_wrapping_row() {
     assert!(!coloured.contains(":not([data-size"), "{coloured}");
 }
 
+#[test]
+fn a_counts_room_never_reaches_the_small_count_on_a_marks_corner() {
+    let sheet = sheet_of(json!({
+        "count.root.padding": 6,
+        "count.root.fill": "control.hover",
+    }));
+    let sized = sheet
+        .lines()
+        .find(|line| line.contains("padding-inline"))
+        .expect("the room's rule");
+    assert!(
+        sized.contains("[data-scope=\"count\"][data-part=\"root\"]:not([data-size=\"sm\"])"),
+        "{sized}"
+    );
+    let coloured = sheet
+        .lines()
+        .find(|line| line.contains("background-color: var(--control-hover)"))
+        .expect("the fill's rule");
+    assert!(!coloured.contains(":not([data-size"), "{coloured}");
+}
+
 // ---------------------------------------------------------------------------------------
 // Corners, heights and the room for words
 // ---------------------------------------------------------------------------------------

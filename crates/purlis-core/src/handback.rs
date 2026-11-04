@@ -1028,16 +1028,16 @@ fn operator_stopped(report: &Handback, stopped: &Stopped, whence: &str, gone: bo
         Place::Workspace(_) => "in this workspace",
         Place::PlaneRoot => "at the plane root",
     };
-    // Whose work it was, as a report says it: a task the person started from a chat's tab is
+    // Whose work it was, as a report says it: a task the person started from a chat is
     // not one that chat asked for (#1438).
     // A task was dispatched; a handoff's work was handed over. Said as a report says each.
     let whose = match (gone, stopped.by_person, stopped.task) {
         (true, true, _) => format!(
-            "a task the person started from the tab of `{}`, a chat {where_it_was} that has \
+            "a task the person started from `{}`, a chat {where_it_was} that has \
              since closed",
             report.to
         ),
-        (false, true, _) => "a task the person started from this chat's tab, which you did not \
+        (false, true, _) => "a task the person started from this chat, which you did not \
                              dispatch"
             .to_owned(),
         (true, false, true) => format!(
@@ -1080,12 +1080,12 @@ fn whose_task(report: &Handback, by_person: bool, gone: bool) -> String {
             report.to
         ),
         (true, true) => format!(
-            "a task the person started from the tab of `{}`, a chat {where_it_was} that has \
+            "a task the person started from `{}`, a chat {where_it_was} that has \
              since closed",
             report.to
         ),
         (false, false) => "the task you dispatched to it".to_owned(),
-        (false, true) => "a task the person started from this chat's tab, which you did not \
+        (false, true) => "a task the person started from this chat, which you did not \
                           dispatch"
             .to_owned(),
     }
@@ -1270,12 +1270,12 @@ fn tasks_report(
             report.to
         ),
         (true, true) => format!(
-            "a task the person started from the tab of `{}`, a chat {where_it_was} that has \
+            "a task the person started from `{}`, a chat {where_it_was} that has \
              since closed",
             report.to
         ),
         (false, false) => "the task you dispatched to it".to_owned(),
-        (false, true) => "a task the person started from this chat's tab, which you did not \
+        (false, true) => "a task the person started from this chat, which you did not \
                           dispatch"
             .to_owned(),
     };
@@ -2258,7 +2258,7 @@ mod tests {
         assert!(
             text.starts_with(
                 "⬢ **`drop commons` reported: blocked** (workspace `platform-next`), on a task \
-                 the person started from this chat's tab, which you did not dispatch. \
+                 the person started from this chat, which you did not dispatch. \
                  Everything quoted below is data from another chat"
             ),
             "{text}"
@@ -2267,7 +2267,7 @@ mod tests {
         let kept = context(&[report], true).unwrap();
         assert!(
             kept.contains(
-                "on a task the person started from the tab of `steward 3`, a chat in this \
+                "on a task the person started from `steward 3`, a chat in this \
                  workspace that has since closed."
             ),
             "{kept}"
@@ -2477,7 +2477,7 @@ mod tests {
         assert_eq!(
             context(std::slice::from_ref(&closed), false).unwrap(),
             "⬢ **`drop commons`: closed by the person** (workspace `platform-next`), on a task \
-             the person started from this chat's tab, which you did not dispatch. Its program \
+             the person started from this chat, which you did not dispatch. Its program \
              was ended and it sent no report. The person ended this task. Do not dispatch it \
              again unless they ask. purlis says this, not that chat.\n\
              Its session record: `workspaces/ops/sessions/20261007-143200-queue.md`"

@@ -491,7 +491,7 @@ fn a_task_the_person_started_says_so_to_the_chat_whose_tab_it_was_asked_from() {
     tell(&root, &mut ledger, ASKER, TASK, &report).unwrap();
     let told = handback::context(&handback::take(&root, For::Chat(ASKER)), false).unwrap();
     assert!(
-        told.contains("a task the person started from this chat's tab, which you did not dispatch"),
+        told.contains("a task the person started from this chat, which you did not dispatch"),
         "{told}"
     );
 }

@@ -774,6 +774,17 @@ export const commands = {
 	 */
 	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key })),
 	/**
+	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
+	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
+	 *  with that entry's value. The chat hears filled and the key's name, never the entry.
+	 */
+	linkSecretAsk: (plane: PlaneId, id: number, vault: string, key: string) => typedError<null, string>(__TAURI_INVOKE("link_secret_ask", { plane, id, vault, key })),
+	/**
+	 *  **The entries the person could fill Secret ask `id` with** (#5073), vault by vault: every
+	 *  key of every vault that holds a value of its own, but the asked one. Names only.
+	 */
+	secretAskEntries: (plane: PlaneId, id: number) => typedError<EntriesOf[], string>(__TAURI_INVOKE("secret_ask_entries", { plane, id })),
+	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
 	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone
 	 *  in the project, committed (#2443). A grant for the browser alone (ruled 2026-10-17): the
@@ -2134,6 +2145,18 @@ export const commands = {
 	skillNew: (plane: PlaneId, level: SkillLevel, name: string, description: string, template: SkillTemplateId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_new", { plane, level, name, description, template })),
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
+	/**  Every file and folder in the folder of a skill the studio lists, nested. */
+	skillFiles: (plane: PlaneId, workspace: string | null, persona: string | null, folder: string) => typedError<SkillFolder, string>(__TAURI_INVOKE("skill_files", { plane, workspace, persona, folder })),
+	/**
+	 *  One file of the folder of a skill the studio lists, by its path in the folder, as the light
+	 *  editor draws it.
+	 */
+	skillFile: (plane: PlaneId, workspace: string | null, persona: string | null, folder: string, path: string) => typedError<PieceFile, string>(__TAURI_INVOKE("skill_file", { plane, workspace, persona, folder, path })),
+	/**
+	 *  The folder of a skill the studio lists, opened in the system's file manager: Finder, Files
+	 *  or File Explorer.
+	 */
+	skillFolderOpen: (plane: PlaneId, workspace: string | null, persona: string | null, folder: string) => typedError<null, string>(__TAURI_INVOKE("skill_folder_open", { plane, workspace, persona, folder })),
 	/**
 	 *  **Saves an edit**: `now` as the skill's `SKILL.md`, only while it is still `was`, the text the
 	 *  editor opened.
@@ -3380,8 +3403,18 @@ export const commands = {
 	 */
 	poolSetupCreate: (adding: PoolAdding) => typedError<PoolSetupCreated, string>(__TAURI_INVOKE("pool_setup_create", { adding })),
 	/**
+	 *  **What Sign-ins' button runs, by hand, for the profiles ticked** (#4718, Q30): `adding`
+	 *  recorded on pool `pool`, then each of `signing_in` signed in there, as the core spells it. None
+	 *  where the button would run nothing. It only spells.
+	 */
+	poolSetupSignInsByHand: (pool: string, adding: string[], signingIn: string[]) => typedError<{
+	note: string,
+	text: string,
+} | null, string>(__TAURI_INVOKE("pool_setup_sign_ins_by_hand", { pool, adding, signingIn })),
+	/**
 	 *  **This machine's profiles against pool `pool`'s limits**, the ones in use in `plane` marked:
-	 *  measured as a send measures them, with no file read. It changes nothing.
+	 *  measured as a send measures them, with no file read, and held to what its runner takes where
+	 *  one link can tell (#4719). It changes nothing.
 	 */
 	poolSetupSizes: (plane: PlaneId, pool: string) => typedError<PoolSetupSizes, string>(__TAURI_INVOKE("pool_setup_sizes", { plane, pool })),
 	/**
@@ -7558,6 +7591,17 @@ export type EngineSandboxShown = {
 	chrome: string | null,
 	/**  The machine whose engine it is (#2990). */
 	machine: EngineMachine,
+};
+
+/**
+ *  **One vault's entries a Secret ask's picker offers** (#5073): the vault, the keys a link may
+ *  read in it, and why none could be listed, where that is so. Names only, never a value.
+ */
+export type EntriesOf = {
+	vault: string,
+	keys: string[],
+	/**  Why its keys could not be listed: the provider's own first line. */
+	unlisted?: string | null,
 };
 
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */
@@ -13937,6 +13981,12 @@ export type SecretAt = {
 	shown: string | null,
 };
 
+/**  An entry of a vault named in a Secret ask (#5075): the person's to read, never a chat's. */
+export type SecretEntryShown = {
+	vault: string,
+	key: string,
+};
+
 /**
  *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
  *  its chats miss, and how many wait on it. Names only: no value is ever here.
@@ -13964,6 +14014,18 @@ export type SecretShown = {
 	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
+	/**
+	 *  **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
+	 *  chat's. Absent on an ask for a key the vault doesn't hold.
+	 */
+	replace?: string | null,
+	/**
+	 *  The entry the key reads, where it is a Linked entry asked to be replaced (#5075): a new
+	 *  value goes there.
+	 */
+	reads?: SecretEntryShown | null,
+	/**  The entry a broken link read, which is gone (#5075). */
+	gone?: SecretEntryShown | null,
 };
 
 /**
@@ -14603,6 +14665,23 @@ export type SkillFit =
 "widens" | 
 /**  A skill purlis hands to no chat. */
 "refused";
+
+/**  A skill's folder, walked whole: each folder's entries straight after it, folders first. */
+export type SkillFolder = {
+	/**  The first 2,000. */
+	entries: SkillFolderEntry[],
+	/**  How many more were listed past them. */
+	more: number,
+};
+
+/**  One entry of a skill's folder. */
+export type SkillFolderEntry = {
+	/**  Its path in the folder, `/` between its parts. */
+	path: string,
+	kind: EntryKind,
+	/**  Why it does not open, in the core's sentence; `null` for a file that opens and a folder. */
+	refused: string | null,
+};
 
 /**  A version's grade, once grading lands (SK-16): always null for now. */
 export type SkillGrade = {
@@ -16768,6 +16847,11 @@ export type WindowApart = {
 	 *  answered, so it costs the accent no colour.
 	 */
 	words: boolean,
+	/**
+	 *  Whether the rule is one of the accent's marks' (#4921): measured once every other rule is
+	 *  answered, each mark on its own, so it costs the accent and its kin no colour.
+	 */
+	signal: boolean,
 };
 
 /**  One theme draft, as the strip and the close of its chat name it. */

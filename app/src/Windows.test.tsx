@@ -28,6 +28,7 @@ import {
 } from "./unsavedWork";
 import { forgetHandOver } from "./unsavedWindows";
 import { onTheWire } from "./chatEvents.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * A project tab split into an OS window of its own, and moved back (charter#126; ADR 0033,
@@ -128,6 +129,8 @@ function core(
         unfiled: over.unfiled?.[plane] ?? [],
       };
     if (cmd === "opened_chats") return over.chats?.[plane] ?? [];
+    // Each chat's tab, outside every workspace, as the stored layout keeps it (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(over.chats?.[plane] ?? []);
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };

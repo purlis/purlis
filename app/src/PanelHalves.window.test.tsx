@@ -16,6 +16,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetTextSizes, setTextSize } from "./textSize";
 import { sequenceIn } from "./tabSequence";
 
@@ -85,6 +86,8 @@ function core() {
     if (cmd === "branch_tree") return { entries: [], more: 0 };
     if (cmd === "branch_status") return { changes: [], folders: [], more: 0, base: "main" };
     if (cmd === "opened_chats") return chats;
+    // The chat has its tab on alpha's strip from the stored layout (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(chats, () => "alpha");
     if (cmd === "plane_pins") return { project: false, workspaces: ["alpha"], missing: [] };
     if (cmd === "plane_sidebar")
       return {

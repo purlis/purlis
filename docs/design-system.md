@@ -299,7 +299,11 @@ tokens drawn beside danger (`focus.ring`, `list.selected-edge`, `accent.surface`
 the primary's `accent.fill` and `accent.fill-hover` and its edge `accent.fill-edge`, and what a
 person reads as the accent, `markdown.link` and `chart.1`, `tint::ACCENT_KIN`) stay apart from the danger colour, and Allow and Keep blocked stay apart
 (`accent.base` from `border.control`, as the tint draws it); every rule holds whichever side a theme
-tints. At a hue that would bring a pair nearer, the tint keeps the hue and gives less colour, in
+tints. A link and the first chart colour also stay 0.1 from the waiting, success, failed and
+unreadable colours (`tint::SIGNALS`, #4921), so a green workspace's link is never read as success;
+those are measured last and each is answered on its own (`tint::signal_chroma_of`): the colour
+the accent's kin take where it holds, else the accent's own, else the theme's own colour, never a
+grey, so they cost the accent and its kin no colour. At a hue that would bring a pair nearer, the tint keeps the hue and gives less colour, in
 steps of 0.005 chroma, so a red workspace stays red, and a grey accent keeps as much of its small
 tint as holds it apart; a colour no amount holds apart is drawn untinted. Purlis Classic's light
 appearance gives less colour at `red`, `orange` and `pink`. The consent floors are also measured
@@ -443,7 +447,8 @@ asked for), whatever the system's appearance. Where its values come from:
   the scale, and `app/src/ui/corners.test.ts` holds that.
 - **The Figma pass** (#3177, the operator's ruling of 2026-10-24) took the audit's fifteen
   deviations out at once. **No hairlines**: a plain control's edge (`border.control`) is
-  transparent, and the dialog, the popover and the tooltip draw none (their parts); Allow keeps
+  transparent in dark and light (high contrast draws it as its strong rule, 3:1 or more on every
+  ground an input or a button stands on, WCAG 1.4.11, #4921), and the dialog, the popover and the tooltip draw none (their parts); Allow keeps
   its accent edge and its lock. **The primary is filled**: `accent.fill` `#6d58bb` with white
   words (`accent.fill-text`), 5.6:1, and `#745fc3` under the pointer, 5.0:1, in dark, light and
   high contrast alike, with no edge (`accent.fill-edge`, transparent: a token, since a part on
@@ -467,7 +472,14 @@ asked for), whatever the system's appearance. Where its values come from:
   turned ground would come nearer than the theme's own does, the theme's is drawn, whether the
   turn comes from an accent given over it or from a workspace's colour; a workspace's colour
   keeps every token drawn in that ground's value with it, so what a theme draws alike stays
-  alike. Section labels are tracked at
+  alike. **What is drawn in the accent follows it too** (#4918,
+  `vocabulary::DRAWN_IN_THE_ACCENT`): the primary's fill at rest and under the pointer
+  (`accent.fill`, `accent.fill-hover`), the focus ring and the selected row's edge turn the same
+  way, so the white words keep their 4.5:1 on the fill and the ring its 3:1; one that would come
+  nearer the waiting or danger colour than 0.1, and nearer than Purlis's own, stays Purlis's
+  (`vocabulary::holds_as_apart`). A fill the parent draws as its surface (Purlis Classic) keeps
+  following the surface. `tab.active` stays Purlis's: it is a grey ground there, with nothing
+  of the accent to turn. Section labels are tracked at
   .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
   that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its
   update pill's primary words.
@@ -720,7 +732,7 @@ appearance and option values, and no option value can bring a consent surface be
   (an answer's button, Allow's and Keep blocked's alike, at rest and under the pointer) and on
   `danger.wash` over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
 - **Allow is distinguishable from Keep blocked**: on every ask of the two they carry equal
-  weight. Keep blocked is the plain `Button`, edged in `border.control` (none in Purlis); each
+  weight. Keep blocked is the plain `Button`, edged in `border.control` (none in Purlis's dark and light); each
   Allow is `variant="grants"`, on the same `control.base` ground, edged in `accent.base` and led
   by an open lock, a cue that is not colour. The two edges are at least 0.1 apart in OKLab as the theme
   writes them, and `accent.base` clears 3:1 on `control.base` and on `control.hover`, so the edge
@@ -1115,8 +1127,9 @@ has it; nothing reads the key after that.
     not meant to be written by hand; a key that names nothing on screen opens or folds
     nothing. The whole of `explorer` is held to 2 KiB, letting go of the folders opened
     longest ago first.
-  - **`chats`**: **`scope`**, the Chats view's scope, `tab` (This tab) or `all`. Leave it out
-    for the workspace's, the default. A pick an older purlis kept in the window's web storage
+  - **`chats`**: **`scope`**, the Chats view's scope: `all`, or leave it out for the
+    workspace's, the default. A `tab` an older purlis kept (This tab, gone since #4758) reads
+    as the workspace's. A pick an older purlis kept in the window's web storage
     is moved here the first time the Chats view is drawn. **`folds`**, the rows folded or
     opened by hand, by each chat's id (`true` is folded), so a relaunch draws the list as it
     was left (#1687). At most 48 are kept: past that, the folds of chats that are not open go

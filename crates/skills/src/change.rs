@@ -75,6 +75,18 @@ pub fn description_problem(description: &str) -> Option<String> {
     None
 }
 
+/// What is wrong with a description written as YAML other than one plain line (a folded,
+/// literal or quoted value, #5182), read as its text: only what the text says, since how it is
+/// written is YAML's to read. Empty, or longer than [`MOST_DESCRIPTION`].
+fn written_problem(description: &str) -> Option<String> {
+    let trimmed = description.trim();
+    if trimmed.is_empty() {
+        return description_problem(trimmed);
+    }
+    (trimmed.chars().count() > MOST_DESCRIPTION)
+        .then(|| format!("it is longer than {MOST_DESCRIPTION} characters"))
+}
+
 /// **Which template a new skill starts from**: one of purlis's own, or one an extension offers,
 /// by the extension's id and the template's.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -189,6 +201,10 @@ pub enum Problem {
     NoDescription,
     /// The description breaks a rule, said as [`description_problem`] says it.
     Description(String),
+    /// The `description:` line says something, but no harness could read it as words (#5182):
+    /// most often a block scalar (`>`, `|`) in a frontmatter that is not YAML. What the YAML
+    /// reader said.|`) in a frontmatter that is not YAML. What the reader said.
+    DescriptionUnread(String),
 }
 
 impl std::fmt::Display for Problem {
@@ -208,6 +224,11 @@ impl std::fmt::Display for Problem {
                 "its frontmatter names no description:, so no chat would know when to use it",
             ),
             Self::Description(why) => write!(f, "its description: {why}"),
+            Self::DescriptionUnread(why) => write!(
+                f,
+                "its description: cannot be read, so a chat would list nothing for it. The reader \
+                 said: {why}. Fix the frontmatter, or write the description on one line"
+            ),
         }
     }
 }
@@ -237,9 +258,25 @@ pub fn check(text: &str, name: &str) -> Vec<Problem> {
         Some(_) => {}
     }
     match value("description") {
-        None => problems.push(Problem::NoDescription),
+        None => problems.push(match crate::read::description_unread(text) {
+            Some(why) => Problem::DescriptionUnread(why),
+            None => Problem::NoDescription,
+        }),
         Some(description) => {
-            if let Some(why) = description_problem(description) {
+            // A rule of how a value is written on one plain line is a rule of that line alone: a
+            // folded, literal or quoted description is read as YAML reads it (#5182).
+            let plain = crate::fence::Fence::find(text).is_some_and(|fence| {
+                fence
+                    .entries()
+                    .iter()
+                    .any(|entry| entry.key == "description" && entry.value == description)
+            });
+            let why = if plain {
+                description_problem(description)
+            } else {
+                written_problem(description)
+            };
+            if let Some(why) = why {
                 problems.push(Problem::Description(why));
             }
         }

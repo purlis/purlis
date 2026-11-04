@@ -143,11 +143,11 @@ pub(crate) const STAMP: &str = "⟨purlis started this chat again with no conver
 dispatched, and below is the brief it was handed then by `{asker}`, read from purlis's own record \
 of the dispatch: the same request, not a new one, and not where its first turn left off⟩";
 
-/// The stamp of one the person asked from that chat's tab.
+/// The stamp of one the person asked from that chat.
 pub(crate) const PERSON_STAMP: &str = "⟨purlis started this chat again with no conversation. It \
-was dispatched, and below is what the person asked then from the tab of `{asker}`, read from \
-purlis's own record of the dispatch: the same request, not a new one, and not where its first \
-turn left off⟩";
+was dispatched, and below is what the person asked then from `{asker}`, read from purlis's \
+own record of the dispatch: the same request, not a new one, and not where its first turn left \
+off⟩";
 
 /// Why no brief is handed: the record holds none.
 pub(crate) const NONE_KEPT: &str = "purlis's record of the dispatch holds no brief";

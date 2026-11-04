@@ -123,6 +123,24 @@ impl Frontmatter {
         })
     }
 
+    /// **Every key it sets, in the order written, with the text YAML reads its value as** where
+    /// that is one scalar (#5182): a folded, literal, quoted or multi-line value as its text, a
+    /// plain null as empty. `None` for a list or a mapping.
+    pub(crate) fn texts(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
+        self.entries.iter().map(|(key, node)| {
+            let text = match node {
+                Node::Scalar { text, plain: true }
+                    if matches!(text.as_str(), "~" | "null" | "Null" | "NULL") =>
+                {
+                    Some("")
+                }
+                Node::Scalar { text, .. } => Some(text.as_str()),
+                Node::Seq(_) | Node::Map(_) => None,
+            };
+            (key.as_str(), text)
+        })
+    }
+
     /// The keys it sets that purlis knows of no harness to read, as written.
     pub fn unknown(&self) -> Vec<String> {
         self.entries

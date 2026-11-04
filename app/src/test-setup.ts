@@ -10,7 +10,7 @@ import "./theme/handed.testkit";
 import "@testing-library/jest-dom/vitest";
 import { toHaveValue } from "@testing-library/jest-dom/matchers";
 import { configure } from "@testing-library/react";
-import { afterEach, beforeEach, expect } from "vitest";
+import { afterEach, beforeEach, expect, vi } from "vitest";
 import { forgetKeptScopes } from "./chatsScope";
 import { forgetExtensionThemes } from "./Extensions";
 import { forgetEntering } from "./settings/entering";
@@ -21,6 +21,26 @@ import { forgetUnappliedRepos } from "./unappliedRepos";
 import { forgetPaneBands } from "./noticeSettle";
 import { letGoOfKeptTerminals } from "./keptTerminals";
 import { PANE_NOTICES } from "./paneNoticesPref";
+import { forgetStandIn, whyNoPane } from "./storedLayoutGuard.testkit";
+
+// **Every stand-in core is watched** (#4758, `storedLayoutGuard.testkit.ts`): a test that fails
+// after its stand-in reopened chats and laid none of them out is told why no pane came, and the
+// fix. What a stand-in answers is unchanged.
+vi.mock("@tauri-apps/api/mocks", async (original) => {
+  const mocks = await original<typeof import("@tauri-apps/api/mocks")>();
+  const { watched } = await import("./storedLayoutGuard.testkit");
+  return {
+    ...mocks,
+    mockIPC: ((handler, options) =>
+      mocks.mockIPC(watched(handler), options)) as typeof mocks.mockIPC,
+  };
+});
+beforeEach(() => forgetStandIn());
+afterEach((context) => {
+  if (context.task.result?.state !== "fail") return;
+  const why = whyNoPane();
+  if (why !== undefined) throw new Error(`Why no pane may have come: ${why}`);
+});
 
 // What each project has on is kept per plane for the window's life (`extensionsOn.ts`); every
 // test's window is a new one, and most of them share a plane path.
