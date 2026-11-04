@@ -760,6 +760,14 @@ fn a_browser_knows_only_the_logins_that_went_through_in_it_by_their_identities()
     keeping.goes_through(Some("one"));
     assert!(keeping.went_through(Some("one")));
     assert!(!keeping.went_through(Some("two")), "another login");
+    keeping.only_goes_through(Some("two"));
+    assert!(
+        !keeping.went_through(Some("one")),
+        "another login ran since"
+    );
+    keeping.goes_through(Some("two"));
+    keeping.did_not_hold(Some("two"));
+    assert!(!keeping.went_through(Some("two")), "it failed since");
 }
 
 /// #5152, the person's ruling of 2026-11-04 (amending #4995's of 2026-11-03): a login whose form

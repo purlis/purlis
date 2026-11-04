@@ -152,8 +152,8 @@ pub struct Login {
     /// The user name, where the page asks for one.
     pub user: Option<zeroize::Zeroizing<String>>,
     pub password: zeroize::Zeroizing<String>,
-    /// Whether the browser may be signed in already, opened from kept logins (#2021) or having
-    /// tried this login before (#5121): then nothing is filled where the page asks for no
+    /// Whether the browser may be signed in already, opened from kept logins (#2021) or this
+    /// login having gone through in it, held to its page (#5121): then nothing is filled where the page asks for no
     /// password.
     pub only_if_asked: bool,
     /// A chat chose this page and these keys (#4595): the user name goes only into a field that

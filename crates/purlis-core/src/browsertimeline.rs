@@ -229,8 +229,8 @@ pub fn opened_to_keep(browser: &str, login: &str, left: &str, at: u64) -> Happen
         browser,
         By::Purlis,
         &format!(
-            "purlis opened {browser} for {}, which is kept for later and goes only into a browser \
-             of its own. {left} is still open: close it if you no longer need it",
+            "purlis opened {browser} for {}, which is kept for later and opens in a browser of its \
+             own. {left} is still open: close it if you no longer need it",
             cut_to(login, MOST_TARGET_CHARS)
         ),
         at,

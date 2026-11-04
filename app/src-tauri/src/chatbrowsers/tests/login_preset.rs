@@ -21,6 +21,7 @@ fn called_with(
         Path::new("/p"),
         browse,
         None,
+        None,
         &|| reach(),
         still_it,
         1000,
@@ -41,6 +42,8 @@ fn with_a_used_browser() -> (ChatBrowsers, Arc<Hosted>) {
     answered(&browsers, &hosted, &ask(3, click()));
     browsers.allow(3, false);
     answered(&browsers, &hosted, &ask(3, click()));
+    // Its page is on the test logins' site.
+    *hosted.at.lock().unwrap() = Some("https://shop.example.test/account".to_owned());
     (browsers, hosted)
 }
 
@@ -374,6 +377,7 @@ fn a_browser_the_person_has_taken_over_takes_no_login_and_nothing_is_asked_of_it
         Path::new("/p"),
         &ask(3, log_in("shop-login")),
         None,
+        None,
         &|| reach(),
         &|_| panic!("nothing is compared for a browser the person has"),
         1000,
@@ -464,6 +468,125 @@ fn what_the_read_of_the_page_brought_is_told_with_the_answer() {
     let note = browsed.note.unwrap_or_default();
     assert!(note.contains("already logged in"), "{note}");
     assert!(note.contains("new to this project"), "{note}");
+}
+
+#[test]
+fn a_login_switched_back_to_is_not_told_it_is_logged_in_as_the_site_is_signed_in_as_another() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    called(&browsers, &hosted, &ask(3, log_in("other-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert!(
+        !browser_and_note(&answer)
+            .1
+            .contains("already logged in with")
+    );
+    assert_eq!(logged_into(&hosted).len(), 3, "it runs again");
+}
+
+#[test]
+fn a_page_off_the_logins_site_says_nothing_of_its_session() {
+    // A sign-in host's account picker, another tab, a blank page.
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+    *hosted.at.lock().unwrap() = Some("https://auth.example.test/pick".to_owned());
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert!(
+        !browser_and_note(&answer)
+            .1
+            .contains("already logged in with")
+    );
+    assert_eq!(logged_into(&hosted).len(), 2, "it looks on its own page");
+}
+
+#[test]
+fn a_page_that_answers_with_no_address_says_nothing_of_a_session() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+    *hosted.at.lock().unwrap() = None;
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert!(
+        !browser_and_note(&answer)
+            .1
+            .contains("already logged in with")
+    );
+}
+
+#[test]
+fn a_login_only_tried_in_a_browser_does_not_bring_the_chat_back_to_it() {
+    // "The browser the chat names, or its current one": a refusal there isn't a session.
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.login_fails.lock().unwrap() = 1;
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    answered(&browsers, &hosted, &ask(3, click()));
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert_eq!(browser_and_note(&answer).0, "b2");
+    assert_eq!(logged_into(&hosted), ["program-2"]);
+}
+
+#[test]
+fn a_login_refused_in_a_browser_it_holds_leaves_the_chat_in_the_one_it_uses() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    answered(&browsers, &hosted, &ask(3, click()));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(true);
+    *hosted.login_fails.lock().unwrap() = 1;
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert!(matches!(answer, Answer::No { .. }), "{answer:?}");
+    assert_eq!(
+        browsers.which(3, None).map(|(name, _)| name).as_deref(),
+        Some("b2"),
+        "its later calls go where they went"
+    );
+}
+
+#[test]
+fn a_browser_holding_another_sites_login_says_so_before_anyone_is_asked() {
+    // Before a notice, so an Allow once isn't spent on a login that can't go in.
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    let driver: Arc<dyn Driver> = hosted.clone();
+    let asked = |login: &str, origin: &str| {
+        browsers.before_a_login(
+            Some(&driver),
+            Path::new("/p"),
+            &ask(3, log_in(login)),
+            None,
+            Some(origin),
+            &|| reach(),
+            &|_| false,
+            1000,
+        )
+    };
+
+    let Some(Answer::No { why }) = asked("other-login", "https://other.example.test") else {
+        panic!("refused");
+    };
+    assert!(why.contains("browser b1 holds login shop-login"), "{why}");
+    assert!(why.contains("browser_new"), "{why}");
+    assert!(
+        asked("other-login", "https://shop.example.test").is_none(),
+        "the same site goes on"
+    );
+    assert!(
+        asked("shop-login", "https://other.example.test").is_none(),
+        "its own login naming another site asks to replace it"
+    );
 }
 
 mod the_same_login {
@@ -592,6 +715,7 @@ fn a_chat_no_longer_allowed_a_browser_is_not_told_it_is_logged_in() {
         Some(&driver),
         Path::new("/p"),
         &ask(3, log_in("shop-login")),
+        None,
         None,
         &|| reach(),
         &|_| true,

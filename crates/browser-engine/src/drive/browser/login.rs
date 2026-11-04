@@ -46,8 +46,8 @@
 //!
 //! **A login is a preset of secret fill** (#5121, the person's ruling SF-7 on #5096): a fill of the
 //! user name, a fill of the password and a press of submit, under the same rules as any fill. Each
-//! value is kept out as an address or a form would spell it too. Only a one-line field that takes
-//! typing is ever chosen. From the moment a value may be in a page, the agent copies, cuts and drags
+//! value is kept out as an address or a form would spell it too. A user name goes only into a
+//! one-line field, and one that doesn't take what's typed ends the browser. From the moment a value may be in a page, the agent copies, cuts and drags
 //! nothing in this browser, for its life, and each filled field gives nothing to a copy, a cut or a
 //! drag, whoever makes it ([`GUARD_FIELD`]). Only the page purlis made for the login is filled, never
 //! one another tab opens meanwhile. The value still goes in by typing where the field has
@@ -88,6 +88,19 @@ pub(crate) const SAYS_IT_IS_A_NAME: &str = r#"(() => {
   const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
   for (const e of document.querySelectorAll('input[autocomplete~="username"], input[autocomplete~="email"]'))
     if (shown(e)) return e;
+  return null;
+})()"#;
+
+/// The script that finds a shown field a page asks for a user name in, for whether it asks to sign
+/// in (#5121): [`NAME_FIELD`]'s, without any text field at all, which a search box would be.
+pub(crate) const A_NAME_IS_ASKED: &str = r#"(() => {
+  const oneLine = ['text', 'email', 'tel', 'url', 'number'];
+  const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
+    && oneLine.includes(e.type);
+  const named = ['input[autocomplete~="username"]', 'input[autocomplete~="email"]',
+    'input[type="email"]', 'input[name*="user" i]', 'input[name*="login" i]',
+    'input[name*="email" i]', 'input[id*="user" i]', 'input[id*="email" i]'];
+  for (const one of named) for (const e of document.querySelectorAll(one)) if (shown(e)) return e;
   return null;
 })()"#;
 
@@ -291,10 +304,9 @@ impl Browser {
             let mut asks_nothing = true;
             loop {
                 self.pause(LOOK_AGAIN)?;
-                let on_its_page = login
-                    .back_to
-                    .as_deref()
-                    .is_none_or(|back| self.on_origin(&target, back));
+                // A page that failed to load, or went elsewhere, says nothing of a session.
+                let on_its_page =
+                    self.on_origin(&target, login.back_to.as_deref().unwrap_or(origin));
                 if !on_its_page || shows_form(self)? != Some(false) {
                     asks_nothing = false;
                     break;
@@ -525,14 +537,14 @@ impl Browser {
     }
 
     /// **Whether the page the browser shows asks to sign in now** (#5121): its own document shows
-    /// a password field, or a field that says it's for a user name. A page that can't be read is
-    /// taken to ask, so nobody is told they're logged in on the strength of a page nobody read.
-    /// Purlis's own read, so it's made on a page of the site the agent is kept off too (#5152):
-    /// what it answers is one word, and the refusal there says as much.
+    /// a password field, or a field for a user name. A page that can't be read is taken to ask, so
+    /// nobody is told they're logged in on the strength of a page nobody read. Purlis's own read,
+    /// so it's made on a page of the site the agent is kept off too (#5152): the host cuts that
+    /// page's address and title from the answer, as for any act.
     pub(super) fn asks_to_sign_in(&self) -> Result<Answer, Refusal> {
         let target = self.target(None)?;
         let asks = self.shows(&target, PASSWORD_FIELD)? != Some(false)
-            || self.shows(&target, SAYS_IT_IS_A_NAME)? != Some(false);
+            || self.shows(&target, A_NAME_IS_ASKED)? != Some(false);
         Ok(self.answer_now(&target, Content::AsksToSignIn(asks)))
     }
 

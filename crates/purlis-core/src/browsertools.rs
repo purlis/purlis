@@ -969,8 +969,8 @@ pub const TOOLS: [Tool; 24] = [
         description: "Log the browser you name, or the one you're using, in with one of your \
                       persona's browser logins, by its name. purlis goes to the login's page, \
                       fills it from the vault and submits it: the login never reaches you. A \
-                      browser that holds this login already answers \"already logged in\" and \
-                      nothing is filled. A login kept for later reuse opens in a browser of its \
+                      browser that holds this login, on a page of its site that asks for no \
+                      sign-in, answers \"already logged in\" and nothing is filled. A login kept for later reuse opens in a browser of its \
                       own, and the answer says why and which one it left. The answer also says \
                       which sites the browser then reaches; use browser_new for any other site. For a \
                       login your persona doesn't declare, also give site, vault and key (and \

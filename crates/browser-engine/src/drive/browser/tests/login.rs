@@ -92,6 +92,8 @@ enum Twist {
     Unguarded,
     /// Another page opens a page of its own as purlis's opens (#5121).
     PopupAsItOpens,
+    /// The login's page lands on another origin, asking for nothing there (#5121).
+    LandsElsewhere,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -134,7 +136,12 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                     );
                     std::thread::sleep(Duration::from_millis(100));
                 }
-                navigated(engine, on, "LOADER-LOGIN", p["url"].as_str().unwrap_or_default());
+                let lands = if twist == Twist::LandsElsewhere {
+                    "http://elsewhere.test/"
+                } else {
+                    p["url"].as_str().unwrap_or_default()
+                };
+                navigated(engine, on, "LOADER-LOGIN", lands);
                 Some(Ok(json!({ "frameId": on.trim_start_matches("S-"), "loaderId": "LOADER-LOGIN" })))
             }
             "Input.insertText" => {
@@ -209,7 +216,7 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                 ))
             }
             "Runtime.evaluate" if p["expression"] == PASSWORD_FIELD => {
-                Some(Ok(if matches!(twist, Twist::AsksNothing | Twist::PlainField)
+                Some(Ok(if matches!(twist, Twist::AsksNothing | Twist::PlainField | Twist::LandsElsewhere)
                     || (goes && seen.load(Ordering::SeqCst))
                 {
                     json!({ "result": { "type": "object", "subtype": "null", "value": null } })
@@ -1117,4 +1124,22 @@ fn a_page_another_tab_opens_as_the_login_opens_is_not_the_one_filled() {
         .map(|sent| sent.session.clone().unwrap_or_default())
         .collect();
     assert_eq!(typed_on, ["S-PAGE-2"]);
+}
+
+/// #5121: a page that went elsewhere asks for nothing, and says nothing of a session.
+#[test]
+fn a_login_page_that_went_elsewhere_is_not_taken_for_one_signed_in() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::LandsElsewhere);
+    let login = Login {
+        only_if_asked: true,
+        ..login_at(ORIGIN)
+    };
+    let ended = browser.log_in(&login, holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
 }

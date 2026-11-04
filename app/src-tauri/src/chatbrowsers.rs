@@ -1162,15 +1162,16 @@ impl ChatBrowsers {
             .map(|(name, _)| name.clone())
     }
 
-    /// **Records what login `session` left in `program`** (#5121): a session where it `answered`,
-    /// and none where it didn't, as what it left can't be told then.
+    /// **Records what login `session` left in `program`** (#5121): its session where it `answered`,
+    /// and none where it didn't, as what it left can't be told then. Any login that ran ends the
+    /// sessions of every other in that browser, as the site is signed in as whoever went last.
     fn session_after(&self, program: &str, session: LoggedIn, answered: bool) {
         let mut logged_in = self
             .logged_in
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let sessions = logged_in.entry(program.to_owned()).or_default();
-        sessions.retain(|one| one.login != session.login || one.persona != session.persona);
+        sessions.clear();
         if answered {
             sessions.push(session);
         }
@@ -1260,6 +1261,17 @@ impl ChatBrowsers {
         if read.asks_to_sign_in != Some(false) {
             return None;
         }
+        // Read on the login's own site, or it says nothing of the login: a page on its sign-in
+        // host, another tab or a blank one goes the normal way, which looks on a page of its own.
+        let origin = purlis_session_protocol::browsing::origin_of;
+        let on_its_site = read
+            .page
+            .as_ref()
+            .and_then(|page| origin(&page.address))
+            .is_some_and(|here| origin(&session.address).as_ref() == Some(&here));
+        if !on_its_site {
+            return None;
+        }
         // It's the browser the chat goes on in, whichever it was in before.
         if let Some(chat) = self.lock().get_mut(&browse.chat) {
             chat.current = Some(name.clone());
@@ -1304,6 +1316,7 @@ impl ChatBrowsers {
         root: &Path,
         browse: &BrowseAsk,
         persona: Option<&str>,
+        origin: Option<&str>,
         reach: &dyn Fn() -> BrowserReach,
         still_it: &dyn Fn(&LoggedIn) -> bool,
         now: u64,
@@ -1312,6 +1325,9 @@ impl ChatBrowsers {
             return None;
         };
         if let Some(why) = self.person_has_it(browse, persona, login) {
+            return Some(Answer::No { why });
+        }
+        if let Some(why) = self.holds_another_site(browse, login, origin) {
             return Some(Answer::No { why });
         }
         self.already_logged_in(driver, root, browse, persona, reach, still_it, now)
@@ -1353,6 +1369,33 @@ impl ChatBrowsers {
                  hand it back, or name another of your browsers with `browser`"
             )
         })
+    }
+
+    /// **Why a login on `origin` can't go into the browser it would go into** (#5121): that browser
+    /// holds another login at another site and reaches nothing else, which is said before anyone
+    /// is asked or an Allow once is spent. Its own login naming another site asks to replace it
+    /// first (#4996). `None` where the call's site can't be told before its login is read.
+    fn holds_another_site(
+        &self,
+        browse: &BrowseAsk,
+        login: &str,
+        origin: Option<&str>,
+    ) -> Option<String> {
+        use purlis_core::browsers::judge::site_of;
+        let asked = site_of(origin?)?;
+        let (name, program) = self.which(browse.chat, browse.browser.as_deref())?;
+        let sessions = self
+            .logged_in
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let other = sessions.get(&program)?.iter().find(|one| {
+            one.login != login && site_of(&one.address).is_some_and(|site| site != asked)
+        })?;
+        Some(format!(
+            "browser {name} holds login {} and reaches nothing but its site, so nothing was \
+             filled: open a new browser with browser_new, and call browser_login there",
+            other.login
+        ))
     }
 
     /// Whether the person opted `identity`, `persona`'s login, in for its pool as it is now (#2050).
@@ -3031,22 +3074,35 @@ impl ChatBrowsers {
         let mut left_behind = None;
         let named = match &act {
             Doing::LogIn(declared, read) if browse.browser.is_none() => {
+                // A login that went through there, or a store opened there: never one merely
+                // tried, or a refusal would keep bringing the chat back to it.
                 let holding = self.holding(chat, !read.opens, &|program| {
-                    self.logins_held
+                    let same = |persona: &Option<String>, login: &str, identity: &str| {
+                        *persona == persona_now && login == declared && identity == read.identity
+                    };
+                    self.logged_in
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
                         .get(program)
-                        .is_some_and(|logins| {
-                            logins.iter().any(|one| {
-                                one.persona == persona_now && one.identity == read.identity
-                            })
+                        .is_some_and(|sessions| {
+                            sessions
+                                .iter()
+                                .any(|one| same(&one.persona, &one.login, &one.identity))
                         })
+                        || (read.opens
+                            && self
+                                .logins_held
+                                .lock()
+                                .unwrap_or_else(PoisonError::into_inner)
+                                .get(program)
+                                .is_some_and(|logins| {
+                                    logins
+                                        .iter()
+                                        .any(|one| same(&one.persona, &one.login, &one.identity))
+                                }))
                 });
                 match holding {
-                    Some(name) => {
-                        chat.current = Some(name.clone());
-                        Some(name)
-                    }
+                    Some(name) => Some(name),
                     None if read.opens => {
                         let left = chat.current.clone();
                         match start(chat, read.login.keep.clone()) {
@@ -3202,6 +3258,12 @@ impl ChatBrowsers {
                     Err(gone) => Err(gone),
                 };
                 self.session_after(&program, session, logged_in.is_ok());
+                // The chat goes on in the browser that took it, and only then.
+                if logged_in.is_ok()
+                    && let Some(chat) = self.lock().get_mut(&browse.chat)
+                {
+                    chat.current = Some(name.clone());
+                }
                 self.purlis_drives(&program, false);
                 logged_in
             }
@@ -3405,8 +3467,8 @@ fn logged_in_said(name: &str, reaches: &str, note: Option<&str>) -> String {
 /// **Why a login went into a new browser** (#5121, SF-7), and the offer to close the one left.
 fn kept_apart_said(opened: &str, login: &str, left: &str) -> String {
     format!(
-        "purlis opened browser {opened} for {login}, since it is kept for later reuse and goes \
-         only into a browser of its own, and uses it from now. Browser {left} is still open: \
+        "purlis opened browser {opened} for {login}, since it is kept for later reuse and opens \
+         from what is kept in a browser of its own, and uses it from now. Browser {left} is still open: \
          close it with browser_close if you no longer need it"
     )
 }
@@ -3558,11 +3620,13 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     // Before any notice or vault read (#5121).
     if matches!(browse.asked, Browsing::LogIn { .. }) {
         let persona = as_persona_of(held, browse.chat).persona;
+        let origin = origin_asked(held, browse, persona.as_deref());
         if let Some(answer) = held.browsers().before_a_login(
             held.browser_driver(),
             held.root(),
             browse,
             persona.as_deref(),
+            origin.as_deref(),
             &|| reach_of(held, browse.chat),
             &|session| still_the_login(held, browse, pool.as_deref(), session),
             now,
@@ -3917,6 +3981,27 @@ fn waits_on_its_secret(
             && open.vault == tool.vault
             && (user_key == Some(open.key.as_str()) || open.key == pass_key)
     })
+}
+
+/// **The origin a `browser_login` call is for, where that's known with no vault read** (#5121): the
+/// site it names, or that of the login the person allowed from its notice.
+fn origin_asked(
+    held: &crate::planes::Held,
+    browse: &BrowseAsk,
+    persona: Option<&str>,
+) -> Option<String> {
+    let Browsing::LogIn { login, suggested } = &browse.asked else {
+        return None;
+    };
+    match suggested {
+        Some(suggested) => purlis_core::loginask::site_of(&suggested.site)
+            .ok()
+            .map(|(origin, _)| origin),
+        None => {
+            let tool = held.login_grants().granted(browse.chat, persona, login)?;
+            purlis_core::sandbox::tools::login::origin_of(&tool.login?.url).ok()
+        }
+    }
 }
 
 /// **Whether `session`, a login a browser of chat `browse.chat` holds, is the login its call asks

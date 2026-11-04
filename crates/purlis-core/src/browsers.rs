@@ -1427,6 +1427,18 @@ impl Keeping {
         identity.is_some_and(|identity| self.went_through.iter().any(|one| one == identity))
     }
 
+    /// A login of `identity` runs now: no other counts as having gone through from here (#5121).
+    fn only_goes_through(&mut self, identity: Option<&str>) {
+        self.went_through
+            .retain(|one| Some(one.as_str()) == identity);
+    }
+
+    /// A login that went through in it failed since: it counts no more (#5121).
+    fn did_not_hold(&mut self, identity: Option<&str>) {
+        self.went_through
+            .retain(|one| Some(one.as_str()) != identity);
+    }
+
     /// A login of `identity` went through, and left the browser held to its page (#5121).
     fn goes_through(&mut self, identity: Option<&str>) {
         if let Some(identity) = identity
@@ -1945,6 +1957,8 @@ impl Screen for EngineScreen {
                 let (opened_from, again) = {
                     let mut keeping = self.keeping.lock().unwrap_or_else(PoisonError::into_inner);
                     keeping.tried(asked.keep.as_ref());
+                    // The site is signed in as whichever login went last.
+                    keeping.only_goes_through(asked.identity.as_deref());
                     let again = keeping.went_through(asked.identity.as_deref());
                     (keeping.opened_from.clone(), again)
                 };
@@ -1968,6 +1982,11 @@ impl Screen for EngineScreen {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .goes_through(asked.identity.as_deref());
+        } else if ended.outcome.is_err() {
+            self.keeping
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .did_not_hold(asked.identity.as_deref());
         }
         let (fills_on, page) = (login.origin.clone(), login.back_to.clone());
         drop(login);

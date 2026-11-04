@@ -266,6 +266,14 @@ fn a_page_is_read_for_whether_it_asks_to_sign_in() {
     let asked = call(&browser, Call::AsksToSignIn);
     assert_eq!(asked.content, Content::AsksToSignIn(true));
     assert!(sees(&browser, "Sign in"), "the page stays where it was");
+    // A form that asks for the name first, with nothing saying so but its field's name.
+    open(&browser, "login-name-first.html");
+    let asked = call(&browser, Call::AsksToSignIn);
+    assert_eq!(asked.content, Content::AsksToSignIn(true));
+    // And a page with a search box doesn't ask.
+    open(&browser, "search-box.html");
+    let asked = call(&browser, Call::AsksToSignIn);
+    assert_eq!(asked.content, Content::AsksToSignIn(false));
 }
 
 /// A holder that binds, and is told nothing.

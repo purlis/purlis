@@ -17,13 +17,15 @@ all the chat reads, in any browser.
 The form-host rules (#4995), the replace-site ask (#4996) and the sign-in reach rules (#5099, as
 amended by #5152) stay as they are.
 
-*Decided in implementation (D-5121-1 to D-5121-9 in the pull request):*
+*Decided in implementation (D-5121-1 to D-5121-15 in the pull request):*
 
 - "Holds a session" is judged by two things: a login that answered in that browser, as the same login
   now (identity whole; the site where the call names one; nothing policy forbids since), and the page
-  the browser shows asking for no sign-in, read by purlis with no vault opened, at session protocol
+  the browser shows, on the login's own site, asking for no sign-in, read by purlis with no vault opened, at session protocol
   1.73, which a host before refuses, and then the login goes as it always did. A page that asks is
-  logged in again, so a provider that wants a new sign-in (#5152) still gets one.
+  logged in again, and a page anywhere else (a provider's, another tab, a blank one) goes the normal
+  way, so a provider that wants a new sign-in (#5152) still gets one. A login that runs ends every
+  other login's session in that browser, as the site is signed in as whichever went last.
 - A browser in which that login went through, and which is held to its page, is treated as one opened
   from its kept store: where the login's page asks for nothing, nothing is filled.
 - Only the page purlis made for the login is filled, by what the engine said it made.
