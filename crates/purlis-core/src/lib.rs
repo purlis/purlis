@@ -168,6 +168,7 @@ pub mod personamark;
 pub mod personaprofile;
 pub mod personas;
 pub mod personaverbs;
+pub mod pickerstamp;
 pub mod piececlaim;
 pub mod piececmd;
 pub mod pieces;

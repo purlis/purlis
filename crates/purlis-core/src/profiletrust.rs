@@ -85,6 +85,16 @@ fn path(root: &Path) -> PathBuf {
     path_of(root, RECORD)
 }
 
+/// The files this project's approvals are recorded in (#4737): of its profiles' commands, and of
+/// its harness declarations. In the project's state folder, which the plane watch does not
+/// follow, so the picker's kept answer looks at them itself ([`crate::pickerstamp`]).
+pub fn records(root: &Path) -> [PathBuf; 2] {
+    [
+        path_of(root, RECORD),
+        path_of(root, crate::harness_declaration::APPROVED),
+    ]
+}
+
 fn path_of(root: &Path, record: &str) -> PathBuf {
     crate::names::state(root).join(record)
 }

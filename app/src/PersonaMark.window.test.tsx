@@ -191,7 +191,8 @@ function core(marks: Mark[], chats = [chat(1, "devops"), chat(2, null)]) {
         took_ms: 1,
         overreach: null,
       };
-    if (cmd === "start_options")
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first")
       return {
         profiles: [
           {

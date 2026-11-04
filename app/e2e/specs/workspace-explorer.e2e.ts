@@ -1789,6 +1789,8 @@ async function startARawPromptChat(plane: string): Promise<void> {
   await browser.waitUntil(
     () =>
       browser.execute(() => {
+        // Not while the rows' details are read (#4736): the button does not know yet.
+        if (document.querySelector('[role="dialog"] [aria-busy="true"]')) return false;
         const start = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
           .filter((button) => !button.disabled && button.getAttribute("aria-disabled") !== "true")
           .find((button) => ["Approve and start", "Start chat"].includes(button.textContent ?? ""));

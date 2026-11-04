@@ -101,7 +101,8 @@ function core(plane: string | null) {
       if (cmd === "workspace_settings") return WORKSPACE((args as { workspace: string }).workspace);
       if (cmd === "plane_doctor") return { rows: [ROW], full: true, app_rows: [], path: null };
       if (cmd === "alerts_everywhere") return [];
-      if (cmd === "start_options")
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first")
         return {
           profiles: [
             {

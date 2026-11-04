@@ -5,7 +5,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { browser, expect, $ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { harnessRowsDrawn, pressOnly } from "../opening.js";
+import { harnessRowsDrawn, pressOnly, thePickerIsChecking } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { openedSince, tabNames } from "../reach.js";
 
@@ -89,7 +89,15 @@ async function startAChat(plane: string, showTheFooter: boolean): Promise<void> 
   }
 
   // Whichever button is there: the approval is recorded per profile and these specs share
-  // one app process, so this must not depend on running before or after the picker's.
+  // one app process, so this must not depend on running before or after the picker's. Asked
+  // once the rows' details are in (#4736), which is when the button knows which it is.
+  await browser.waitUntil(
+    async () => !(await browser.execute(thePickerIsChecking, "Start a chat")),
+    {
+      timeout: 20_000,
+      timeoutMsg: "the picker never finished reading its rows' details",
+    },
+  );
   const approve = await $("button=Approve and start");
   const start = (await approve.isExisting()) ? approve : await $("button=Start chat");
   await start.waitForClickable({ timeout: 20_000 });
