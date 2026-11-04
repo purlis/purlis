@@ -4,7 +4,7 @@
 import { $, browser, expect } from "@wdio/globals";
 import process from "node:process";
 import { openThroughTheTrustQuestion } from "../opening.js";
-import { closeTheViewTabsOpenedSince, runFromThePalette, tabNames } from "../reach.js";
+import { TABS, closeTheViewTabsOpenedSince, runFromThePalette, tabNames } from "../reach.js";
 
 /**
  * **Pool setup's Docker path, walked in the real window** (#4985, #4484's first acceptance
@@ -83,31 +83,31 @@ async function pressTheOneOf(names: readonly string[], timeout = 30_000): Promis
   });
 }
 
-/** Every tab the strip has shown since `watch` began, by name. */
-async function tabsSeen(): Promise<string[]> {
+/** The name of every tab the strip has added since `watchTheTabs` began, in order. */
+async function tabsAdded(): Promise<string[]> {
   return browser.execute(
-    () => (window as unknown as { poolSetupTabsSeen?: string[] }).poolSetupTabsSeen ?? [],
+    () => (window as unknown as { poolSetupTabsAdded?: string[] }).poolSetupTabsAdded ?? [],
   );
 }
 
-/** Notes every tab the strip shows from now on, however briefly. */
+/**
+ * Notes every tab the strip adds from now on, however briefly, each once: a second tab of a name
+ * already there counts, as a tab of its own.
+ */
 async function watchTheTabs(): Promise<void> {
-  await browser.execute(() => {
-    const seen: string[] = [];
-    (window as unknown as { poolSetupTabsSeen: string[] }).poolSetupTabsSeen = seen;
-    const look = () => {
-      for (const tab of document.querySelectorAll('[data-strip="Tabs"] [role="tab"]')) {
-        const name = tab.querySelector(".tab-name")?.textContent ?? "";
-        if (!seen.includes(name)) seen.push(name);
+  await browser.execute((strip: string) => {
+    const tabs = () => document.querySelectorAll(`${strip} [role="tab"]`);
+    const known = new WeakSet<Element>(tabs());
+    const added: string[] = [];
+    (window as unknown as { poolSetupTabsAdded: string[] }).poolSetupTabsAdded = added;
+    new MutationObserver(() => {
+      for (const tab of tabs()) {
+        if (known.has(tab)) continue;
+        known.add(tab);
+        added.push(tab.querySelector(".tab-name")?.textContent ?? "");
       }
-    };
-    look();
-    new MutationObserver(look).observe(document.body, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-    });
-  });
+    }).observe(document.body, { subtree: true, childList: true });
+  }, TABS);
 }
 
 describe("Pool setup on Docker", () => {
@@ -157,31 +157,18 @@ describe("Pool setup on Docker", () => {
     // Try it: a real chat on the pool, seen to start by its harness's start hook, then closed.
     await on("Try it");
     await press("Start a test chat");
-    await browser
-      .waitUntil(
-        async () =>
-          browser.execute(
-            (pool: string) =>
-              [...document.querySelectorAll(".pool-setup-page h1")].some((heading) =>
-                [`${pool} works, except for this`, `${pool} is ready`].includes(
-                  heading.textContent ?? "",
-                ),
-              ),
-            POOL,
-          ),
-        { timeout: TRYING, interval: 1_000 },
-      )
+    // Identity was skipped, so it reads "works, except for this", never "is ready".
+    await $(`aria/${POOL} works, except for this`)
+      .waitForDisplayed({ timeout: TRYING, interval: 1_000 })
       .catch(async () => {
         throw new Error(`Try it never passed: ${await theStepSays()}`);
       });
-    // Identity was skipped, so it doesn't read as everything passed.
-    await expect($("aria/" + `${POOL} works, except for this`)).toBeDisplayed();
     await expect($("aria/" + `Open a chat on ${POOL}`)).toBeClickable();
 
     // No step opened a shell, or any tab but its own and Try it's chat.
-    const opened = (await tabsSeen()).filter(
-      (tab) => !wereOpen?.includes(tab) && tab !== "Pool setup" && !tab.startsWith("Try it on"),
-    );
-    expect(opened).toEqual([]);
+    // The watch saw the walk: Pool setup's own tab is among what it saw added.
+    const added = await tabsAdded();
+    expect(added).toContain("Pool setup");
+    expect(added.filter((tab) => tab !== "Pool setup" && !tab.startsWith("Try it on"))).toEqual([]);
   });
 });

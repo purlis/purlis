@@ -26,7 +26,8 @@ if (!image)
   );
 
 // Through the environment, and made only if it is not already there: WebdriverIO's worker
-// imports this file again, and the spec has to read the SAME plane the launcher wrote.
+// imports this file again, and the app it starts has to open the SAME plane the launcher made a
+// repository of.
 const fresh = process.env.PURLIS_POOL_PLANE === undefined;
 const plane = (process.env.PURLIS_POOL_PLANE ??= copyFixturePlane());
 

@@ -143,6 +143,7 @@ jobs:
       parity: ${{ steps.scope.outputs.parity }}
       bench: ${{ steps.scope.outputs.bench }}
       outcome-bars: ${{ steps.scope.outputs.outcome-bars }}
+      pool-setup: ${{ steps.scope.outputs.pool-setup }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -2054,11 +2055,8 @@ jobs:
   # alone. Two parts too, since its specs alone took 7.8 minutes of 12.7 (2026-10-12); Linux
   # runners are not the ones in short supply. Part 2 runs the seven single-app runs (on macOS
   # they are a leg of their own).
-  #
-  # A third leg walks Pool setup's Docker path in the window (#4985): the one run with Docker and
-  # the runner image this build makes, so none of the specs above waits on a runner being made.
   scenario-linux:
-    name: scenario tests (${{ matrix.os }}, ${{ matrix.pool && 'Pool setup on Docker' || format('part {0} of {1}', matrix.shard, matrix.shards) }})
+    name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' }}
     strategy:
@@ -2077,14 +2075,6 @@ jobs:
             extras: true
             specs: true
             sandbox: false
-          - os: ubuntu-24.04
-            shard: pool
-            shards: 1
-            outcome: false
-            extras: false
-            specs: false
-            sandbox: false
-            pool: true
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 
@@ -2127,6 +2117,33 @@ jobs:
         specs: [false]
         sandbox: [false]
         outcome: [true]
+    runs-on: ${{ matrix.os }}
+    steps: *scenario-steps
+
+  # **Pool setup's Docker path, walked in the window** (#4985, #4484's first acceptance
+  # criterion): the scenario legs' steps with every leg's own flag off and `pool` on, on Linux,
+  # which has Docker. It builds the runner image this build makes, as `parity` does, and its run
+  # (`wdio.pool.conf.ts`) makes a pool of it and presses each step's main button to Try it's last
+  # screen. On main's push, and on a pull request that touches Pool setup, its pools or the runner
+  # image (`GATES`), as the outcome bars are: the image's build fetches from the network, and a
+  # second build of the core without its test fence costs about as much again. Not required yet,
+  # so a fetch that fails doesn't block an unrelated merge (#5176 makes it required once it has
+  # run steadily).
+  pool-setup-scenario:
+    name: scenario tests (ubuntu-24.04, Pool setup on Docker)
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.pool-setup != 'false')) }}
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        os: [ubuntu-24.04]
+        shard: [pool]
+        shards: [1]
+        extras: [false]
+        specs: [false]
+        sandbox: [false]
+        outcome: [false]
+        pool: [true]
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 
