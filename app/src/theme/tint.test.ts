@@ -112,7 +112,18 @@ describe("the core's copy of the tint", () => {
     for (const { token, held } of (cases as unknown as { held: { token: string; held: boolean }[] })
       .held)
       expect(
-        chromaFor(token, 0.01, CLASSIC_THEME.tint.apart, 0.01, 0.01, CLASSIC_THEME.tint.with_words),
+        chromaFor(
+          token,
+          0.01,
+          CLASSIC_THEME.tint.apart,
+          0.01,
+          0.01,
+          CLASSIC_THEME.tint.with_words,
+          {
+            "markdown.link": 0.01,
+            "chart.1": 0.01,
+          },
+        ),
         token,
       ).toBe(held ? 0.01 : Number.POSITIVE_INFINITY);
     for (const { colour, hue } of cases.hues) {
@@ -513,6 +524,7 @@ describe("the consent floors under every tint (#2526)", () => {
         distance: 0.1,
         alone: false,
         words: false,
+        signal: false,
       });
   });
 
@@ -560,6 +572,7 @@ describe("the consent floors under every tint (#2526)", () => {
         distance: 0.1,
         alone: true,
         words: false,
+        signal: false,
       });
     const apart = CLASSIC_THEME.tint.apart;
     expect(chromaFor("accent.base", 0.05, apart, 0.01, 0.01)).toBe(0.01);

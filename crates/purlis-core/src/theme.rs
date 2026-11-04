@@ -214,6 +214,8 @@ mod purlis_tests;
 #[cfg(test)]
 mod reload_tests;
 #[cfg(test)]
+mod signal_apart_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tint_tests;
