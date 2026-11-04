@@ -185,6 +185,11 @@ export const OnRunsOnceDone: Story = {
 /** **Its draft, waiting for review** (moment 4): Open chat beside its name. */
 export const ItsDraft: Story = {
   args: { page: "drafts", drafts: [DRAFT] },
+  parameters: {
+    // The light editor's merge view fails colour contrast in every cell (#3796), as on the
+    // Drafts stories: it is kept out of axe until that ticket fixes it, and the rest is held.
+    a11y: { context: { exclude: [".cm-editor"] } },
+  },
   play: async ({ canvas, args }) => {
     const open = await canvas.findByTestId("draft-open-chat");
     await tabTo(() => open);
