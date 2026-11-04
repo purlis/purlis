@@ -36,6 +36,8 @@ field that changed between the read and the fill is caught.
 - **A grant holds only an `https` site open.** A site on this machine (`http://localhost` and the
   like) is served by whatever listens on its port, which may be a program the chat started. Each
   fill there is offered Allow once and Keep blocked alone.
+- **A browser on a pool's runner is asked about each time**, even under a grant: a grant here
+  holds this machine's browsers, and the notice warns that the value goes to that runner (#5122).
 - **A press is judged again as the project reads at that moment.** Allow once and Allow for this
   chat are drawn again where a card's mark changed. Always is drawn again where anything it would
   write changed, and is refused where policy took vault grants away since.
