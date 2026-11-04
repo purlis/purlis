@@ -441,7 +441,7 @@ const VAULT: VaultContents = {
   provider: "keyring",
   count: 1,
   health: { ok: true, detail: "reachable" },
-  secrets: [{ key: "DB_URL", size: "24 B", updated: "2026-09-20", link: null, linked_by: 0 }],
+  secrets: [{ key: "DB_URL", size: "24 B", updated: "2026-09-20", link: null, linked_by: 0, no_seed: false }],
   refused: null,
   identity_unset_elsewhere: [],
   identity: [],

@@ -1,0 +1,310 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! The person's mark that a key's value is no 2FA seed (#5237), through the fill that reads it: a
+//! marked value fills, and nothing but the person's mark on that very value makes it fill.
+
+use std::path::Path;
+
+use super::*;
+use crate::secrets::Env;
+use crate::secrets::brokered::{Asker, fill_value};
+
+/// A value that looks like a seed and isn't: a 16-letter app password.
+const APP_PASSWORD: &str = "abcdefghijklmnop";
+const ADDRESS: &str = "otpauth://totp/Dash:alice?secret=GEZDGNBVGY3TQOJQ&issuer=Dash";
+
+/// A project whose plain-file vault `team` holds `values`.
+fn project(values: serde_json::Value) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    holding(tmp.path(), &values);
+    tmp
+}
+
+/// The vault's file now holds `values`, as a change outside purlis leaves it.
+fn holding(root: &Path, values: &serde_json::Value) {
+    std::fs::write(root.join("team.json"), values.to_string()).unwrap();
+}
+
+fn ctx(root: &Path) -> Ctx {
+    Ctx::new(root, Env::of(&[("PATH", "/usr/bin:/bin")]))
+}
+
+fn team(root: &Path) -> Vault {
+    cmd::provider(&ctx(root), "team").unwrap()
+}
+
+/// What a fill of `key` answers: the value, or the refusal.
+fn filled(root: &Path, key: &str) -> Result<String, String> {
+    let asker = Asker {
+        root: root.to_path_buf(),
+        env: Env::of(&[("PATH", "/usr/bin:/bin")]),
+        chat: 7,
+        persona: None,
+        folder: None,
+        confines: None,
+        harness: None,
+    };
+    fill_value(&asker, "team", key).map(|value| value.unwrap().expose().to_owned())
+}
+
+/// `seal` written as `key`'s row, however it was come by, as no window press writes one.
+fn row(root: &Path, key: &str, seal: &str) {
+    let c = ctx(root);
+    std::fs::create_dir_all(c.vaults_dir()).unwrap();
+    std::fs::write(
+        path(&c),
+        serde_json::json!({"marks": {"team": {key: seal}}}).to_string(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_value_that_looks_like_a_seed_is_refused_in_words_that_say_where_to_mark_it() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let refused = filled(tmp.path(), "APP").unwrap_err();
+    assert!(refused.contains("looks like a 2FA seed"), "{refused}");
+    assert!(refused.contains("vault's tab"), "{refused}");
+    assert!(refused.contains(MARK_WORDS), "{refused}");
+    assert!(refused.contains("A chat can't make that mark"), "{refused}");
+    assert!(!refused.contains(APP_PASSWORD), "{refused}");
+}
+
+#[test]
+fn a_key_the_person_marked_fills_as_a_value() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    mark(&ctx(tmp.path()), &team(tmp.path()), "APP").unwrap();
+    assert_eq!(filled(tmp.path(), "APP").unwrap(), APP_PASSWORD);
+}
+
+#[test]
+fn the_file_holds_a_seal_and_never_the_value() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    mark(&c, &team(tmp.path()), "APP").unwrap();
+    let text = std::fs::read_to_string(path(&c)).unwrap();
+    assert!(!text.contains(APP_PASSWORD), "{text}");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(path(&c)).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0, "{mode:o}");
+    }
+}
+
+#[test]
+fn a_mark_taken_off_refuses_again() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    mark(&c, &team(tmp.path()), "APP").unwrap();
+    unmark(&c, "team", "APP").unwrap();
+    assert!(filled(tmp.path(), "APP").is_err());
+    assert!(marked_in(&c, "team").is_empty());
+}
+
+#[test]
+fn a_new_value_under_a_marked_key_is_refused_and_says_the_value_changed() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    mark(&ctx(tmp.path()), &team(tmp.path()), "APP").unwrap();
+    holding(
+        tmp.path(),
+        &serde_json::json!({"APP": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"}),
+    );
+    let refused = filled(tmp.path(), "APP").unwrap_err();
+    assert!(refused.contains("has changed since"), "{refused}");
+    assert!(refused.contains(UNMARK_WORDS), "{refused}");
+    assert!(refused.contains(MARK_WORDS), "{refused}");
+}
+
+#[test]
+fn a_row_with_a_seal_purlis_did_not_make_is_no_mark() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    let forged = [
+        "0".repeat(64),
+        // A real seal, for another purpose.
+        fingerprint::seal(&c, "another-purpose", &[APP_PASSWORD]).unwrap(),
+        // The seal of the key's name, of another value, and the value itself.
+        fingerprint::seal(&c, PURPOSE, &["APP"]).unwrap(),
+        fingerprint::seal(&c, PURPOSE, &["another value"]).unwrap(),
+        APP_PASSWORD.to_owned(),
+    ];
+    for seal in forged {
+        row(tmp.path(), "APP", &seal);
+        assert_eq!(of(&c, "team", "APP", APP_PASSWORD), Mark::ValueChanged);
+        assert!(filled(tmp.path(), "APP").is_err(), "{seal}");
+    }
+}
+
+#[test]
+fn a_row_is_no_mark_with_no_plane_key_to_check_it_and_the_check_makes_no_key() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    row(tmp.path(), "APP", &"0".repeat(64));
+    assert!(filled(tmp.path(), "APP").is_err());
+    assert!(!fingerprint::key_path(&c).exists());
+}
+
+#[test]
+fn marks_that_cannot_be_read_are_no_mark() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    mark(&c, &team(tmp.path()), "APP").unwrap();
+    std::fs::write(path(&c), "not json").unwrap();
+    assert!(filled(tmp.path(), "APP").is_err());
+    // A write refuses too, and leaves what it could not read for the person to see.
+    assert!(mark(&c, &team(tmp.path()), "APP").is_err());
+    assert_eq!(std::fs::read_to_string(path(&c)).unwrap(), "not json");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_marks_file_that_is_a_link_is_no_mark() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    mark(&c, &team(tmp.path()), "APP").unwrap();
+    let elsewhere = tmp.path().join("marks.json");
+    std::fs::rename(path(&c), &elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, path(&c)).unwrap();
+    assert!(filled(tmp.path(), "APP").is_err());
+}
+
+#[test]
+fn an_otpauth_address_is_refused_whatever_the_mark_says() {
+    for address in [
+        ADDRESS.to_owned(),
+        "OTPAUTH://totp/x?secret=GEZDGNBVGY3TQOJQ".to_owned(),
+        "otpauth-migration://offline?data=AAAA".to_owned(),
+        format!("my login\n{ADDRESS}"),
+    ] {
+        let tmp = project(serde_json::json!({"APP": address}));
+        let c = ctx(tmp.path());
+        // A true seal of this very value, as no window press would ever write one.
+        row(
+            tmp.path(),
+            "APP",
+            &fingerprint::seal(&c, PURPOSE, &[address.as_str()]).unwrap(),
+        );
+        assert_eq!(of(&c, "team", "APP", &address), Mark::Holds);
+        let refused = filled(tmp.path(), "APP").unwrap_err();
+        assert!(refused.contains("no mark changes that"), "{refused}");
+        assert!(!refused.contains("GEZDGNBV"), "{refused}");
+    }
+}
+
+#[test]
+fn an_otpauth_address_is_refused_with_no_mark_at_all_wherever_it_stands() {
+    let tmp = project(serde_json::json!({"APP": format!("my login: {ADDRESS}")}));
+    let refused = filled(tmp.path(), "APP").unwrap_err();
+    assert!(refused.contains("otpauth address"), "{refused}");
+}
+
+#[test]
+fn an_otpauth_address_cannot_be_marked() {
+    let tmp = project(serde_json::json!({"APP": ADDRESS}));
+    let c = ctx(tmp.path());
+    let refused = mark(&c, &team(tmp.path()), "APP").unwrap_err();
+    assert!(refused.message.contains("otpauth address"), "{refused:?}");
+    assert!(!path(&c).exists());
+}
+
+#[test]
+fn a_sandboxed_chat_cannot_make_the_mark_and_is_told_it_is_the_persons() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let chat = Ctx::new(
+        tmp.path(),
+        Env::of(&[
+            ("PATH", "/usr/bin:/bin"),
+            (crate::hookwire::SANDBOXED_ENV, "1"),
+        ]),
+    );
+    let refused = mark(&chat, &team(tmp.path()), "APP").unwrap_err();
+    assert!(refused.message.contains("the person's"), "{refused:?}");
+    assert!(!path(&chat).exists());
+    assert!(filled(tmp.path(), "APP").is_err());
+}
+
+#[test]
+fn nothing_a_chat_can_propose_is_read_for_a_mark() {
+    // The project's own files, which a chat can write or propose: none is where a mark is read.
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    let seal = fingerprint::seal(&c, PURPOSE, &[APP_PASSWORD]).unwrap();
+    let marks = serde_json::json!({"marks": {"team": {"APP": seal}}}).to_string();
+    std::fs::write(tmp.path().join(FILE), &marks).unwrap();
+    std::fs::write(
+        tmp.path().join("charter.toml"),
+        "[no-seed]\nteam = [\"APP\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {
+                "file": "team.json", "no-seed": ["APP"], "marks": {"APP": seal},
+            }},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    assert!(filled(tmp.path(), "APP").is_err());
+}
+
+#[test]
+fn the_marks_live_in_the_vaults_folder_in_a_file_no_vault_can_name() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    assert_eq!(path(&c).parent().unwrap(), c.vaults_dir());
+    assert!(!registry::name_ok(FILE.trim_end_matches(".json")));
+    assert!(!registry::name_ok(LOCK_STEM));
+}
+
+#[test]
+fn a_write_through_purlis_takes_the_mark_away() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    let v = team(tmp.path());
+    mark(&c, &v, "APP").unwrap();
+    cmd::set_value(&c, &v, "APP", APP_PASSWORD).unwrap();
+    assert!(marked_in(&c, "team").is_empty());
+    assert!(filled(tmp.path(), "APP").is_err());
+}
+
+#[test]
+fn a_rename_moves_the_mark_and_a_delete_takes_it_away() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    let v = team(tmp.path());
+    mark(&c, &v, "APP").unwrap();
+    cmd::rename(&c, &v, "APP", "MAIL").unwrap();
+    assert_eq!(filled(tmp.path(), "MAIL").unwrap(), APP_PASSWORD);
+    assert_eq!(marked_in(&c, "team"), BTreeSet::from(["MAIL".to_owned()]));
+    cmd::delete(&c, &v, "MAIL").unwrap();
+    assert!(marked_in(&c, "team").is_empty());
+}
+
+#[test]
+fn a_mark_on_one_key_says_nothing_of_another() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD, "OTHER": APP_PASSWORD}));
+    mark(&ctx(tmp.path()), &team(tmp.path()), "APP").unwrap();
+    assert!(filled(tmp.path(), "APP").is_ok());
+    assert!(filled(tmp.path(), "OTHER").is_err());
+}
+
+#[test]
+fn a_change_with_no_mark_to_change_writes_nothing() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    forget(&c, "team", "APP");
+    renamed(&c, "team", "APP", "MAIL");
+    forget_vault(&c, "team");
+    assert!(!path(&c).exists());
+}

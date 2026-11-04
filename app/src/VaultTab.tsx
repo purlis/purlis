@@ -89,6 +89,10 @@ import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from 
  * (`reads_on_open`, as the core knows its provider): one that does not is read at once, and one
  * the listing does not name waits.
  *
+ * **A key's value can be marked as no 2FA seed from its row's menu** (#5237), the one way a mark
+ * is made: a plain fill refuses a value that looks like a seed, and its refusal sends the person
+ * here. The row says it is marked, by name: nothing is read to say so.
+ *
  * **Every write answers with the vault as it now is**, so the table is redrawn from the core's
  * answer and never patched by hand here; `onChanged` tells the window, whose Vaults panel counts
  * the secrets too.
@@ -366,6 +370,13 @@ export function VaultTab({
     }
   };
 
+  /** Taking the mark off narrows what a chat can fill, so it asks nothing first. */
+  const unmarkNoSeed = async (key: string) => {
+    setNote(undefined);
+    const refused = await write(commands.vaultSecretUnmarkNoSeed(plane, vault, key));
+    if (refused !== undefined) setNote({ said: refused, trouble: true });
+  };
+
   const contents = said?.contents;
   const secrets = useMemo(() => {
     const wanted = query.trim().toLowerCase();
@@ -557,6 +568,7 @@ export function VaultTab({
                       onAsk={setAsking}
                       onReveal={() => void reveal(one.key)}
                       onCopy={() => void copy(one.key)}
+                      onUnmarkNoSeed={() => void unmarkNoSeed(one.key)}
                       offerTo={dismissedNeeds
                         .filter((need) => need.key === one.key)
                         .map((need) => need.persona)}
@@ -629,6 +641,13 @@ export function VaultTab({
         <RenameDialog
           secret={asking.secret}
           onRename={(to) => write(commands.vaultSecretRename(plane, vault, asking.secret, to))}
+          onCancel={() => setAsking(undefined)}
+        />
+      )}
+      {asking?.doing === "no-seed" && (
+        <NoSeedDialog
+          secret={asking.secret}
+          onMark={() => write(commands.vaultSecretMarkNoSeed(plane, vault, asking.secret))}
           onCancel={() => setAsking(undefined)}
         />
       )}
@@ -884,6 +903,7 @@ type Asking =
   | { doing: "add" }
   | { doing: "edit"; secret: string }
   | { doing: "rename"; secret: string }
+  | { doing: "no-seed"; secret: string }
   | { doing: "delete"; secret: string };
 
 /**
@@ -911,6 +931,7 @@ function SecretRow({
   onAsk,
   onReveal,
   onCopy,
+  onUnmarkNoSeed,
   offerTo,
   onOfferAgain,
 }: {
@@ -920,6 +941,7 @@ function SecretRow({
   onAsk: (asking: Asking) => void;
   onReveal: () => void;
   onCopy: () => void;
+  onUnmarkNoSeed: () => void;
   /** The personas whose Secret need offer of this key was dismissed (#5159). */
   offerTo: string[];
   onOfferAgain: (persona: string) => void;
@@ -943,6 +965,15 @@ function SecretRow({
           <MenuItem id="copy" textValue={SAID.copy} onAction={onCopy}>
             <MenuWords said={SAID.copy} />
           </MenuItem>
+          {secret.no_seed ? (
+            <MenuItem id="unmark-no-seed" textValue={SAID.unmarkNoSeed} onAction={onUnmarkNoSeed}>
+              <MenuWords said={SAID.unmarkNoSeed} />
+            </MenuItem>
+          ) : (
+            <MenuItem id="mark-no-seed" textValue={SAID.markNoSeed} onAction={ask("no-seed")}>
+              <MenuWords said={SAID.markNoSeed} />
+            </MenuItem>
+          )}
           {offerTo.length > 0 && <OfferAgain personas={offerTo} onOffer={onOfferAgain} />}
           <MenuSeparator />
           <MenuItem
@@ -960,6 +991,9 @@ function SecretRow({
       <TableCell>
         <span className="vault-secret-name">{key}</span>
         {secret.link !== null && <span className="vault-secret-link">{linkedTo(secret.link)}</span>}
+        {secret.no_seed && (
+          <span className="vault-secret-link">Marked as no 2FA seed. Fills as a plain value.</span>
+        )}
         {value !== undefined && <code className="vault-value">{value}</code>}
       </TableCell>
       <TableCell>{secret.size ?? "—"}</TableCell>
@@ -1223,6 +1257,68 @@ function deleteSaid(held: VaultSecret | undefined): string {
  * Asking before a secret is deleted. **Cancel has the focus**, as it has in every dialog here
  * that ends something: an Enter pressed out of habit keeps the secret.
  */
+/**
+ * **The person's word that a key's value is no 2FA seed** (#5237): what it is for and what it
+ * lets through, asked before it is said. Marking widens what a chat can fill, so it is a grant:
+ * it starts on Cancel, as every grant does. The core reads and seals the value, and no value
+ * comes here.
+ */
+function NoSeedDialog({
+  secret,
+  onMark,
+  onCancel,
+}: {
+  secret: string;
+  onMark: () => Promise<string | undefined>;
+  onCancel: () => void;
+}) {
+  const [trouble, setTrouble] = useState<string>();
+  const [marking, setMarking] = useState(false);
+  return (
+    <AlertDialog
+      onClose={() => {
+        // Not while the core is writing: the answer would land on a dialog nobody is looking at.
+        if (!marking) onCancel();
+      }}
+      title={`Mark ${secret} as no 2FA seed?`}
+      description={
+        <>
+          <p className="came-back">
+            A 2FA seed is the secret an authenticator app makes its codes from. Anyone who gets it
+            can make those codes, so purlis won't put a value that looks like one into a page. Some
+            other values look the same, such as a 16-letter app password.
+          </p>
+          <p className="came-back">
+            Mark this key only if you know its value isn't a seed. A chat can then fill it as a
+            plain value, still only on a site you allow. If the value changes, the mark goes.
+          </p>
+        </>
+      }
+      cancel={{ isDisabled: marking }}
+      main={{
+        children: marking ? "Marking…" : "Mark as no seed",
+        reserve: ["Mark as no seed", "Marking…"],
+        variant: "grants",
+        isDisabled: marking,
+        onPress: () => {
+          setMarking(true);
+          void onMark().then((refused) => {
+            if (refused === undefined) return;
+            setTrouble(refused);
+            setMarking(false);
+          });
+        },
+      }}
+    >
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </AlertDialog>
+  );
+}
+
 function DeleteDialog({
   vault,
   secret,

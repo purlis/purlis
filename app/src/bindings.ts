@@ -4192,6 +4192,10 @@ export const commands = {
 	vaultSecretRename: (plane: PlaneId, vault: string, from: string, to: string) => typedError<VaultContents, string>(__TAURI_INVOKE("vault_secret_rename", { plane, vault, from, to })),
 	/**  Delete a secret. No value crosses. */
 	vaultSecretDelete: (plane: PlaneId, vault: string, key: string) => typedError<VaultContents, string>(__TAURI_INVOKE("vault_secret_delete", { plane, vault, key })),
+	/**  Mark a key's value as no 2FA seed ([`mark_no_seed`]). No value crosses. */
+	vaultSecretMarkNoSeed: (plane: PlaneId, vault: string, key: string) => typedError<VaultContents, string>(__TAURI_INVOKE("vault_secret_mark_no_seed", { plane, vault, key })),
+	/**  Take the mark off a key ([`unmark_no_seed`]). No value crosses. */
+	vaultSecretUnmarkNoSeed: (plane: PlaneId, vault: string, key: string) => typedError<VaultContents, string>(__TAURI_INVOKE("vault_secret_unmark_no_seed", { plane, vault, key })),
 	/**
 	 *  Move a vault's identity token from the app's OWN environment into the keyring
 	 *  ([`move_identity`]). No value crosses to the window. Kept beside the paste path for an app
@@ -16661,6 +16665,11 @@ export type VaultSecret = {
 	link: VaultLink | null,
 	/**  How many linked entries read it: what deleting it would break. */
 	linked_by: number,
+	/**
+	 *  Whether the person marked its value as no 2FA seed (#5237), by name: no value is read to
+	 *  say so, and the fill checks the mark against the value it reads.
+	 */
+	no_seed: boolean,
 };
 
 /**  One registered vault, as the Vaults panel lists it. */

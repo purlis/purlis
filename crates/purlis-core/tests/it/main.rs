@@ -32,6 +32,7 @@
 // The shared helpers, in the folders they always had; each module reaches one as
 // `crate::support` and so on.
 #[path = "../old_names/mod.rs"]
+mod a_no_seed_mark_is_made_only_in_the_window;
 mod old_names;
 #[path = "../oracle_corpus/mod.rs"]
 mod oracle_corpus;

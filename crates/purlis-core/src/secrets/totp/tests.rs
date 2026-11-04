@@ -105,6 +105,17 @@ fn a_seed_too_short_to_be_one_is_refused() {
 }
 
 #[test]
+fn an_address_is_found_anywhere_in_a_value_in_any_case() {
+    assert!(holds_an_address("otpauth://totp/x?secret=GEZDGNBV"));
+    assert!(holds_an_address("  OTPAUTH://hotp/x"));
+    assert!(holds_an_address("otpauth-migration://offline?data=AAAA"));
+    assert!(holds_an_address("my login\nOtpAuth://totp/x"));
+    assert!(holds_an_address("é otpauth://totp/x"));
+    assert!(!holds_an_address("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"));
+    assert!(!holds_an_address("otpauth"));
+}
+
+#[test]
 fn only_an_otpauth_address_is_known_for_a_seed_by_its_look() {
     assert!(an_address("otpauth://totp/x?secret=GEZDGNBV"));
     assert!(an_address("  OTPAUTH://hotp/x"));

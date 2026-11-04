@@ -7,6 +7,7 @@ use purlis_core::secrets::cmd::{self, Io, Say};
 use purlis_core::secrets::identity::{self, Held};
 use purlis_core::secrets::keyring;
 use purlis_core::secrets::links;
+use purlis_core::secrets::no_seed;
 use purlis_core::secrets::onepassword;
 use purlis_core::secrets::registry::{self, Vault};
 use purlis_core::secrets::setup;
@@ -501,6 +502,9 @@ pub(crate) struct VaultSecret {
     pub link: Option<VaultLink>,
     /// How many linked entries read it: what deleting it would break.
     pub linked_by: u32,
+    /// Whether the person marked its value as no 2FA seed (#5237), by name: no value is read to
+    /// say so, and the fill checks the mark against the value it reads.
+    pub no_seed: bool,
 }
 
 /// The entry a linked entry reads, as its row names it.
@@ -638,6 +642,7 @@ fn secrets_of(ctx: &Ctx, v: &Vault) -> Result<Vec<VaultSecret>, VaultError> {
                 updated: Some(l.updated).filter(|s| !s.is_empty()),
                 link: None,
                 linked_by: 0,
+                no_seed: false,
             })
             .collect()
     } else {
@@ -649,6 +654,7 @@ fn secrets_of(ctx: &Ctx, v: &Vault) -> Result<Vec<VaultSecret>, VaultError> {
                 updated: None,
                 link: None,
                 linked_by: 0,
+                no_seed: false,
             })
             .collect()
     };
@@ -664,12 +670,15 @@ fn secrets_of(ctx: &Ctx, v: &Vault) -> Result<Vec<VaultSecret>, VaultError> {
                 key: to.key,
             }),
             linked_by: 0,
+            no_seed: false,
         }));
         secrets.sort_by(|a, b| a.key.cmp(&b.key));
     }
     let read = links::readers_in(ctx, &v.name)?;
+    let marked = no_seed::marked_in(ctx, &v.name);
     for secret in &mut secrets {
         secret.linked_by = counted(read.get(&secret.key).copied().unwrap_or(0));
+        secret.no_seed = marked.contains(&secret.key);
     }
     Ok(secrets)
 }
@@ -882,6 +891,20 @@ pub(crate) fn rename(
 pub(crate) fn delete(ctx: &Ctx, vault: &str, key: &str) -> Result<VaultContents, String> {
     let v = cmd::provider(ctx, vault).map_err(message_of)?;
     cmd::delete(ctx, &v, key).map_err(message_of)?;
+    open(ctx, vault)
+}
+
+/// **The person's mark that `key`'s value is no 2FA seed** (#5237): the one way a mark is made.
+/// The value is read and sealed in the core, and no value crosses.
+pub(crate) fn mark_no_seed(ctx: &Ctx, vault: &str, key: &str) -> Result<VaultContents, String> {
+    let v = cmd::provider(ctx, vault).map_err(message_of)?;
+    no_seed::mark(ctx, &v, key).map_err(message_of)?;
+    open(ctx, vault)
+}
+
+/// The person takes their mark off `key`.
+pub(crate) fn unmark_no_seed(ctx: &Ctx, vault: &str, key: &str) -> Result<VaultContents, String> {
+    no_seed::unmark(ctx, vault, key).map_err(message_of)?;
     open(ctx, vault)
 }
 
@@ -1796,6 +1819,36 @@ pub(crate) async fn vault_secret_delete(
 ) -> Result<VaultContents, String> {
     blocking(ctx_of(&planes, &plane)?, move |ctx| {
         delete(ctx, &vault, &key)
+    })
+    .await
+}
+
+/// Mark a key's value as no 2FA seed ([`mark_no_seed`]). No value crosses.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn vault_secret_mark_no_seed(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    vault: String,
+    key: String,
+) -> Result<VaultContents, String> {
+    blocking(ctx_of(&planes, &plane)?, move |ctx| {
+        mark_no_seed(ctx, &vault, &key)
+    })
+    .await
+}
+
+/// Take the mark off a key ([`unmark_no_seed`]). No value crosses.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn vault_secret_unmark_no_seed(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    vault: String,
+    key: String,
+) -> Result<VaultContents, String> {
+    blocking(ctx_of(&planes, &plane)?, move |ctx| {
+        unmark_no_seed(ctx, &vault, &key)
     })
     .await
 }

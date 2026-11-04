@@ -88,6 +88,9 @@ export const SAID = {
   // A secret's row in a vault's tab (`VaultTab.tsx`).
   editValue: "Edit value…",
   copy: "Copy",
+  // Named by the core's refusal of a fill (`secrets/no_seed.rs`, MARK_WORDS and UNMARK_WORDS).
+  markNoSeed: "Mark as no 2FA seed…",
+  unmarkNoSeed: "Remove the no-seed mark",
 } as const;
 
 /** The rows that open a submenu, and what the submenu's own tooltip says. */

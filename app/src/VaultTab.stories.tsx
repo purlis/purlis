@@ -20,6 +20,7 @@ function secret(key: string, over: Partial<VaultSecret> = {}): VaultSecret {
     updated: "2026-09-24T11:32:17Z",
     link: null,
     linked_by: 0,
+    no_seed: false,
     ...over,
   };
 }
@@ -96,5 +97,58 @@ export const DeleteALink: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{Escape}");
     await expect(body.queryByRole("alertdialog")).toBeNull();
+  },
+};
+
+const HELD: VaultContents = {
+  ...LINKED,
+  secrets: [secret("APP_PASSWORD"), secret("MAIL_PASSWORD", { no_seed: true })],
+  count: 2,
+};
+
+function holding() {
+  mockIPC((cmd) => (cmd === "vault_open" ? HELD : new Promise(() => {})));
+}
+
+/** A key the person marked says so on its row, and its menu takes the mark off. */
+export const MarkedAsNoSeed: Story = {
+  beforeEach: holding,
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await page.findByText("Marked as no 2FA seed. Fills as a plain value.");
+    const row = await page.findByRole("row", { name: /^MAIL_PASSWORD/ });
+    row.focus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    const menu = await within(document.body).findByRole("menu", { name: "MAIL_PASSWORD" });
+    expectFocusInSight();
+    await within(menu).findByRole("menuitem", { name: "Remove the no-seed mark" });
+    await userEvent.keyboard("{Escape}");
+  },
+};
+
+/**
+ * The rows from the keyboard to Mark as no 2FA seed…, which says what it is for and starts on
+ * Cancel, since the mark widens what a chat can fill. Escape marks nothing.
+ */
+export const MarkAsNoSeedAsksFirst: Story = {
+  beforeEach: holding,
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const row = await page.findByRole("row", { name: /^APP_PASSWORD/ });
+    row.focus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    const body = within(document.body);
+    const menu = await body.findByRole("menu", { name: "APP_PASSWORD" });
+    expectFocusInSight();
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Mark as no 2FA seed…" }));
+    const asking = await body.findByRole("alertdialog", {
+      name: "Mark APP_PASSWORD as no 2FA seed?",
+    });
+    await expect(asking).toHaveTextContent("a 16-letter app password");
+    await expect(within(asking).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expectFocusInSight();
+    await within(asking).findByRole("button", { name: "Mark as no seed" });
   },
 };

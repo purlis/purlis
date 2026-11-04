@@ -143,6 +143,7 @@ const vaultOf = (name: string): VaultContents => ({
           updated: "2026-09-24T11:32:17Z",
           link: null,
           linked_by: 0,
+          no_seed: false,
         }))
       : [],
   refused: null,

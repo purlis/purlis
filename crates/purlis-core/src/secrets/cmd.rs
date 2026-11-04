@@ -182,6 +182,7 @@ fn store_value(ctx: &Ctx, v: &Vault, key: &str, value: &str) -> Result<(), Vault
         "reference" => reference::set(ctx, v, key, value),
         _ => onepassword::set(ctx, v, key, value),
     }?;
+    super::no_seed::forget(ctx, &v.name, key);
     super::links::unlink(ctx, &v.name, key).map(drop)
 }
 
@@ -201,6 +202,7 @@ pub(crate) fn delete_reserved(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), Vau
 
 /// A linked entry is deleted by taking its link away: the entry it reads is left as it is.
 fn delete_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
+    super::no_seed::forget(ctx, &v.name, key);
     if super::links::unlink(ctx, &v.name, key)? {
         return Ok(());
     }
@@ -266,6 +268,7 @@ pub fn rename(ctx: &Ctx, v: &Vault, from: &str, to: &str) -> Result<(), VaultErr
     }
     // A linked entry moves as its link, and the links that read `from` follow it.
     if super::links::of(ctx, &v.name, from)?.is_some() {
+        super::no_seed::renamed(ctx, &v.name, from, to);
         return super::links::renamed(ctx, &v.name, from, to);
     }
     let stored = match v.provider.as_str() {
@@ -273,6 +276,7 @@ pub fn rename(ctx: &Ctx, v: &Vault, from: &str, to: &str) -> Result<(), VaultErr
         _ => stored_read(ctx, v, from)?,
     };
     set_value(ctx, v, to, &stored)?;
+    super::no_seed::renamed(ctx, &v.name, from, to);
     super::links::renamed(ctx, &v.name, from, to)?;
     delete(ctx, v, from).map_err(|e| {
         VaultError::new(

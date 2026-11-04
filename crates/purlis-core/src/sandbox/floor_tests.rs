@@ -116,6 +116,15 @@ fn the_floor_still_denies_the_vaults_and_what_a_later_program_runs() {
             "{name} in {deny_write:?}"
         );
     }
+    // The person's no-seed marks live in the vaults' folder so that no chat writes them (#5237),
+    // at this level as at every other.
+    for state in crate::names::STATE_DIR.spellings() {
+        let name = format!("{state}/vaults/**");
+        assert!(
+            deny_write.iter().any(|rule| rule.ends_with(&name)),
+            "{name} in {deny_write:?}"
+        );
+    }
     assert!(
         settings.deny.iter().any(|rule| rule.starts_with("Read(")),
         "its tools are held to the vaults too"

@@ -1013,6 +1013,10 @@ pub const WINDOW_ONLY_CREDENTIALS: &[&str] = &[
     "vault_secret_add",
     "vault_secret_set",
     "vault_secret_rename",
+    // The person's word that a key's value is no 2FA seed (#5237): theirs alone, so no chat lets
+    // a seed into a page through a link.
+    "vault_secret_mark_no_seed",
+    "vault_secret_unmark_no_seed",
     "vault_identity_put",
     "vault_identity_move",
     "finish_moving_vaults",
