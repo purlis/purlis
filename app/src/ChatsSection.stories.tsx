@@ -563,5 +563,8 @@ export const ArrivedNewAndNoted: Story = {
     }
     await untilFocused(() => rowOf(canvasElement, 1), "the first row");
     expectFocusInSight();
+    // A focused row opens its tip after a delay, so a picture taken now catches it open or not.
+    // The picture is the four rows: let the keyboard go before it is taken.
+    (document.activeElement as HTMLElement | null)?.blur();
   },
 };
