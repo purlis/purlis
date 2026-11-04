@@ -376,9 +376,13 @@ export const TextareaStripRefused: Story = {
       />
     </div>
   ),
-  play: async ({ canvas, canvasElement }) => {
-    await expect(canvas.getByRole("alert")).toHaveTextContent("This reply is too long.");
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const box = canvas.getByRole("textbox", { name: "Reply to steward 6" });
+    await expect(box).toHaveAccessibleDescription("This reply is too long.");
     await expect(canvasElement.querySelector("[data-foot-strip]")).toHaveAttribute("data-invalid");
+    await userEvent.tab();
+    await expect(box).toHaveFocus();
+    expectFocusInSight();
   },
 };
 
