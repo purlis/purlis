@@ -102,3 +102,25 @@ export const NoEntryToUse: Story = {
     );
   },
 };
+
+/** #5075: the chat says the value doesn't work; the key is a link, so the entry it reads is named. */
+export const ReplaceALink: Story = {
+  args: {
+    secret: {
+      ...secret,
+      key: "STRIPE_KEY",
+      tool: null,
+      replace: "the API answers 401 Unauthorized",
+      reads: { vault: "own", key: "STRIPE" },
+    },
+    box: null,
+  },
+};
+
+/** #5075: a link whose entry is gone, named so the person can mend it. */
+export const BrokenLink: Story = {
+  args: {
+    secret: { ...secret, key: "STRIPE_KEY", tool: null, gone: { vault: "own", key: "STRIPE" } },
+    box: null,
+  },
+};

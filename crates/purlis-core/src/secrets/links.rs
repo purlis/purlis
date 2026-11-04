@@ -212,6 +212,45 @@ pub fn link(
     to_vault: &str,
     to_key: &str,
 ) -> Result<(), VaultError> {
+    linked(ctx, v, key, to_vault, to_key, false)
+}
+
+/// **[`link`], over a value the key holds** (#5075): the replace path, for a Secret ask the chat
+/// raised saying the value doesn't work and the person answered with an entry they keep. The
+/// link is written first, so every read from then follows it, and then the value it replaces
+/// is deleted from the vault's provider. Every other refusal of [`link`] holds. Should the
+/// delete fail, the link stands and reads the entry; the refusal says the old value is still
+/// stored under it.
+pub fn link_over(
+    ctx: &Ctx,
+    v: &Vault,
+    key: &str,
+    to_vault: &str,
+    to_key: &str,
+) -> Result<(), VaultError> {
+    let held = cmd::stored_keys(ctx, v)?.iter().any(|k| k == key);
+    linked(ctx, v, key, to_vault, to_key, true)?;
+    if held {
+        cmd::delete_stored(ctx, v, key).map_err(|e| {
+            VaultError::new(format!(
+                "'{key}' in vault '{}' now reads the entry you picked, but the value it held \
+                 could not be deleted, and is still stored under it: {}",
+                v.name,
+                e.message.lines().next().unwrap_or_default()
+            ))
+        })?;
+    }
+    Ok(())
+}
+
+fn linked(
+    ctx: &Ctx,
+    v: &Vault,
+    key: &str,
+    to_vault: &str,
+    to_key: &str,
+    over: bool,
+) -> Result<(), VaultError> {
     use crate::sandbox::tools::mint;
     for reserved in [key, to_key] {
         if mint::reserved(reserved) {
@@ -254,7 +293,7 @@ pub fn link(
                 counted(readers)
             )));
         }
-        if holds_a_value && !is_link(index, &v.name, key) {
+        if holds_a_value && !over && !is_link(index, &v.name, key) {
             return Err(VaultError::new(format!(
                 "'{key}' in vault '{}' already holds a value. purlis will not replace it with a \
                  link nobody asked to replace it with: delete it first",

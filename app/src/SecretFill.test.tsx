@@ -65,3 +65,43 @@ describe("a secret ask's fill", () => {
     expect(screen.getByLabelText("Value of KUBECONFIG")).toHaveAttribute("type", "password");
   });
 });
+
+describe("a secret ask that replaces or mends (#5075)", () => {
+  const entries = () => Promise.resolve(KEPT);
+  it("says the chat's reason as the chat's, and names the entry a link reads", () => {
+    render(
+      <SecretFill
+        secret={{
+          ...secret,
+          replace: "401 from the API",
+          reads: { vault: "own", key: "STRIPE" },
+        }}
+        box={null}
+        entries={entries}
+        picked={undefined}
+        onPicked={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("secret-replace")).toHaveTextContent(
+      "The chat says the current value doesn't work: 401 from the API",
+    );
+    expect(screen.getByText(/A new value goes there/)).toHaveTextContent(
+      "KUBECONFIG reads STRIPE in vault own",
+    );
+  });
+
+  it("names the entry a broken link read, which is gone", () => {
+    render(
+      <SecretFill
+        secret={{ ...secret, gone: { vault: "own", key: "STRIPE" } }}
+        box={null}
+        entries={entries}
+        picked={undefined}
+        onPicked={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("secret-gone")).toHaveTextContent(
+      "KUBECONFIG was linked to STRIPE in vault own, which is gone",
+    );
+  });
+});

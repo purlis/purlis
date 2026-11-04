@@ -168,6 +168,24 @@ pub struct SecretShown {
     pub declared_purpose: Option<String>,
     /// How many chats wait on it.
     pub waiting: u32,
+    /// **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
+    /// chat's. Absent on an ask for a key the vault doesn't hold.
+    #[specta(optional)]
+    pub replace: Option<String>,
+    /// The entry the key reads, where it is a Linked entry asked to be replaced (#5075): a new
+    /// value goes there.
+    #[specta(optional)]
+    pub reads: Option<SecretEntryShown>,
+    /// The entry a broken link read, which is gone (#5075).
+    #[specta(optional)]
+    pub gone: Option<SecretEntryShown>,
+}
+
+/// An entry of a vault named in a Secret ask (#5075): the person's to read, never a chat's.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SecretEntryShown {
+    pub vault: String,
+    pub key: String,
 }
 
 /// **A suggested login, as its notice draws it** (#4595). The vault and key names, and never a
@@ -1693,10 +1711,47 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
     let what_for = open.purpose.as_deref().map_or_else(String::new, |purpose| {
         format!(". The chat says it is for: “{purpose}”")
     });
-    let says = format!(
-        "Needs {key}{undeclared} from {persona}'s vault {vault}{used_by}. Fill stores it in \
-         that vault on this machine; the chat never sees it{others}{declared_for}{what_for}"
-    );
+    use purlis_core::secrets::ask::Reason;
+    let says = match &open.reason {
+        None => format!(
+            "Needs {key}{undeclared} from {persona}'s vault {vault}{used_by}. Fill stores it in \
+             that vault on this machine; the chat never sees it{others}{declared_for}{what_for}"
+        ),
+        // The chat's words are data: the line says whose they are (#5075).
+        Some(reason @ Reason::Replace { reads, .. }) => {
+            let goes = reads.as_ref().map_or_else(
+                || "Fill replaces it in that vault on this machine".to_owned(),
+                |to| {
+                    format!(
+                        "{key} reads {} in vault {}: a new value goes there, or pick another \
+                         entry",
+                        to.key, to.vault
+                    )
+                },
+            );
+            format!(
+                "Replace {key} in {persona}'s vault {vault}{used_by}: {}. {goes}; the chat \
+                 never sees it{others}{declared_for}{what_for}",
+                reason.said(key)
+            )
+        }
+        Some(reason @ Reason::BrokenLink { .. }) => format!(
+            "Mend {key} in {persona}'s vault {vault}{used_by}: {}. Fill gives it a value, or \
+             pick another entry; the chat never sees it{others}{declared_for}{what_for}",
+            reason.said(key)
+        ),
+    };
+    let entry = |to: &purlis_core::secrets::links::Target| SecretEntryShown {
+        vault: to.vault.clone(),
+        key: to.key.clone(),
+    };
+    let (replace, reads, gone) = match &open.reason {
+        None => (None, None, None),
+        Some(Reason::Replace { said, reads }) => {
+            (Some(said.clone()), reads.as_ref().map(entry), None)
+        }
+        Some(Reason::BrokenLink { was }) => (None, None, Some(entry(was))),
+    };
     Shown {
         session: open.chats.first().copied().unwrap_or_default(),
         ask: secret_key(open.id),
@@ -1729,6 +1784,9 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
             declared: open.declared.is_some(),
             declared_purpose: open.declared.clone(),
             waiting: u32::try_from(open.waiting()).unwrap_or(u32::MAX),
+            replace,
+            reads,
+            gone,
         }),
     }
 }

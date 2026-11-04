@@ -78,6 +78,9 @@ pub struct Need {
     /// a vault named after it, made at the first fill, and the fill offers a proposed change
     /// setting the persona's `vault`.
     pub names_no_vault: bool,
+    /// Why the key is asked for though the vault has it (#5075): the chat says its value doesn't
+    /// work, or it is a link whose entry is gone. None for a key the vault doesn't hold.
+    pub reason: Option<Reason>,
 }
 
 /// The longest purpose a Secret ask carries, in characters: about a line of the ask.
@@ -91,6 +94,62 @@ pub const MOST_PURPOSE_CHARS: usize = 200;
 pub fn purpose_said(purpose: &str) -> String {
     crate::dispatchrecord::masked(&crate::shown::one_line(purpose.trim(), MOST_PURPOSE_CHARS))
 }
+
+/// **Why a Secret ask is raised for a key the vault has** (#5075). Shown to the person alone:
+/// the entry a link reads is never told to a chat.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reason {
+    /// **The chat says the value doesn't work**, in its own words (`said`, one line, masked).
+    /// `reads` is the entry the key reads where it is a Linked entry: a new value goes there, and
+    /// reaches every key linked to it.
+    Replace {
+        said: String,
+        reads: Option<super::links::Target>,
+    },
+    /// **The key is a Linked entry whose entry is gone** (`was`): a value or another entry
+    /// mends it.
+    BrokenLink { was: super::links::Target },
+}
+
+impl Reason {
+    /// A replace of `key` in `vault`, with the chat's words `said`: one line and masked, as a
+    /// report's text is, and naming the entry the key reads where it is a link.
+    pub fn replace(ctx: &Ctx, vault: &str, key: &str, said: &str) -> Self {
+        Self::Replace {
+            said: crate::dispatchrecord::masked(&crate::shown::one_line(
+                said.trim(),
+                MOST_REASON_CHARS,
+            )),
+            reads: super::links::of(ctx, vault, key).ok().flatten(),
+        }
+    }
+
+    /// The broken link `key` in `vault` is, naming the entry that is gone; none where it is no
+    /// link.
+    pub fn broken(ctx: &Ctx, vault: &str, key: &str) -> Option<Self> {
+        super::links::of(ctx, vault, key)
+            .ok()
+            .flatten()
+            .map(|was| Self::BrokenLink { was })
+    }
+
+    /// What the person reads of it, for key `key`: the chat's words marked as the chat's, or the
+    /// entry that is gone.
+    pub fn said(&self, key: &str) -> String {
+        match self {
+            Self::Replace { said, .. } => {
+                format!("the chat says the current value doesn't work: {said}")
+            }
+            Self::BrokenLink { was } => format!(
+                "{key} was linked to {} in vault {}, which is gone",
+                was.key, was.vault
+            ),
+        }
+    }
+}
+
+/// The longest reason a chat gives for a replace, in characters: about a line of the ask.
+pub const MOST_REASON_CHARS: usize = 200;
 
 /// **An open Secret ask, as the window shows it**: names only, never a value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +167,8 @@ pub struct Open {
     pub declared: Option<String>,
     /// The persona names no vault ([`Need::names_no_vault`]).
     pub names_no_vault: bool,
+    /// Why it is asked for though the vault has it (#5075).
+    pub reason: Option<Reason>,
     /// Each chat that needs it, the first to ask first: those holding a command, and those
     /// whose command stopped waiting and will be nudged.
     pub chats: Vec<u32>,
@@ -258,6 +319,7 @@ struct Asked {
     purpose: Option<String>,
     declared: Option<String>,
     names_no_vault: bool,
+    reason: Option<Reason>,
     since: u64,
     waiters: Vec<Waiter>,
     /// An answer is being written: a second is refused, as any ask's second answer is.
@@ -329,11 +391,16 @@ fn still_open_said(vault: &str, key: &str) -> String {
     )
 }
 
-/// What a command is told as it starts to wait.
-fn asked_said(vault: &str, key: &str, within: Duration) -> String {
+/// What a command is told as it starts to wait. Never the entry a link reads.
+fn asked_said(vault: &str, key: &str, reason: Option<&Reason>, within: Duration) -> String {
+    let why = match reason {
+        None => "which the vault doesn't hold",
+        Some(Reason::Replace { .. }) => "whose value you said doesn't work",
+        Some(Reason::BrokenLink { .. }) => "a linked entry whose entry is gone",
+    };
     format!(
-        "purlis asked the person in its window for {}, which the vault doesn't hold: this \
-         command waits for their answer for up to {} seconds",
+        "purlis asked the person in its window for {}, {why}: this command waits for their \
+         answer for up to {} seconds",
         vault_and_key(vault, key),
         within.as_secs()
     )
@@ -411,7 +478,9 @@ impl Asks {
             purpose,
             declared,
             names_no_vault,
+            reason,
         } = need;
+        let said_why = reason.clone();
         let (answered, n) = {
             let mut inner = self.inner();
             if let Some(chat) = chat
@@ -460,6 +529,9 @@ impl Asks {
                 if asked.purpose.is_none() {
                     asked.purpose = purpose;
                 }
+                // The reason is the raiser's: a chat joining never turns an ask the person may be
+                // reading into another kind (a replace may delete a value).
+                drop(reason);
                 Some((asked.id, waiting_on(asked)))
             } else {
                 inner.next += 1;
@@ -474,6 +546,7 @@ impl Asks {
                         purpose,
                         declared,
                         names_no_vault,
+                        reason,
                         since: now_secs(),
                         waiters: vec![waiter],
                         answering: false,
@@ -507,7 +580,7 @@ impl Asks {
             }
             (answered, n)
         };
-        say(&asked_said(&vault, &key, within));
+        say(&asked_said(&vault, &key, said_why.as_ref(), within));
         let settled_as = |settled: Settled| match settled {
             Settled::Filled { vault, key } => Held::Filled { vault, key },
             Settled::Declined => Held::Declined {
@@ -554,7 +627,8 @@ impl Asks {
         read: &mut dyn FnMut() -> Result<T, super::VaultError>,
     ) -> Result<T, Unread> {
         match read() {
-            Err(e) if e.kind == super::Kind::NotFound => {}
+            // A key the vault doesn't hold, or a link whose entry is gone (#5075).
+            Err(e) if matches!(e.kind, super::Kind::NotFound | super::Kind::BrokenLink) => {}
             got => return got.map_err(Unread::Vault),
         }
         match self.hold(need, within, say) {
@@ -580,6 +654,7 @@ impl Asks {
                 purpose: asked.purpose.clone(),
                 declared: asked.declared.clone(),
                 names_no_vault: asked.names_no_vault,
+                reason: asked.reason.clone(),
                 chats: chats_of(asked),
                 starts: starts_of(asked),
                 since: asked.since,
@@ -626,7 +701,7 @@ impl Asks {
                     .to_owned(),
             );
         }
-        let (vault, key) = {
+        let (vault, key, reason) = {
             let mut inner = self.inner();
             let Some(((vault, key), asked)) = inner
                 .open
@@ -636,7 +711,7 @@ impl Asks {
                 return Err(format!("secret ask {id} is no longer open"));
             };
             asked.answering = true;
-            (vault.clone(), key.clone())
+            (vault.clone(), key.clone(), asked.reason.clone())
         };
         let still_open = || {
             if let Some(asked) = self.inner().open.get_mut(&(vault.clone(), key.clone())) {
@@ -647,6 +722,24 @@ impl Asks {
         let mut made_vault = false;
         let into_key = named.key.clone().unwrap_or_else(|| key.clone());
         let filled = match &answer {
+            // A replace or a broken link is filled where it is asked (#5075): the key the person
+            // was shown, never another name or vault, and past the "never over a value" rule,
+            // which is what a replace is for.
+            Answer::Fill(value) if reason.is_some() => {
+                if into_vault != vault || into_key != key {
+                    still_open();
+                    return Err(format!(
+                        "{} is asked to be replaced or mended where it is: fill it under that \
+                         name, in that vault",
+                        vault_and_key(&vault, &key)
+                    ));
+                }
+                if let Err(e) = filled_with(ctx, &vault, &key, reason.as_ref(), value) {
+                    still_open();
+                    return Err(e.message.to_string());
+                }
+                true
+            }
             Answer::Fill(value) => {
                 if !super::needs::is_key(&into_key) {
                     still_open();
@@ -680,12 +773,16 @@ impl Asks {
                 true
             }
             Answer::Link(to) => {
-                let linked = cmd::provider(ctx, &vault)
-                    .and_then(|v| super::links::link(ctx, &v, &key, &to.vault, &to.key));
-                if let Err(e) = linked {
-                    if let Some(asked) = self.inner().open.get_mut(&(vault.clone(), key.clone())) {
-                        asked.answering = false;
-                    }
+                // A link is made at the asked key: the window offers no other name for one.
+                if into_vault != vault || into_key != key {
+                    still_open();
+                    return Err(format!(
+                        "an entry is linked under the asked name, {}",
+                        vault_and_key(&vault, &key)
+                    ));
+                }
+                if let Err(e) = linked_to(ctx, &vault, &key, reason.as_ref(), to) {
+                    still_open();
                     return Err(e.message.to_string());
                 }
                 true
@@ -959,6 +1056,7 @@ pub fn raised_within(
         purpose: Some(purpose),
         declared: super::needs::declared(&ctx.root, persona, &line.key).map(|need| need.purpose),
         names_no_vault,
+        reason: None,
     };
     Ok(match asks.hold(need, within, &mut |_: &str| moved()) {
         Held::Filled { vault, key } => Said::Filled { vault, key },
@@ -1148,6 +1246,44 @@ pub fn ask_the_window(
          socket to reach: ask the person to add the key to the vault themselves"
             .to_owned(),
     )
+}
+
+/// **A value written for an ask** (#5075): into the vault under the key; or, for a replace of a
+/// Linked entry, into the entry it reads, so the rotation reaches every key linked to it. A
+/// broken link is given the value in its place (a write to a link replaces it).
+fn filled_with(
+    ctx: &Ctx,
+    vault: &str,
+    key: &str,
+    reason: Option<&Reason>,
+    value: &str,
+) -> Result<(), super::VaultError> {
+    if let Some(Reason::Replace { .. }) = reason
+        && let Some(to) = super::links::of(ctx, vault, key)?
+    {
+        let target = cmd::provider(ctx, &to.vault)?;
+        return cmd::set_value(ctx, &target, &to.key, value);
+    }
+    let v = cmd::provider(ctx, vault)?;
+    cmd::set_value(ctx, &v, key, value)
+}
+
+/// **A link made for an ask** (#5073, #5075): the key comes to read `to`, re-pointing the link it
+/// is. Over a value of its own only where the ask is a replace, the person's explicit choice
+/// ([`super::links::link_over`]); otherwise refused, as every other link over a value is.
+fn linked_to(
+    ctx: &Ctx,
+    vault: &str,
+    key: &str,
+    reason: Option<&Reason>,
+    to: &super::links::Target,
+) -> Result<(), super::VaultError> {
+    let v = cmd::provider(ctx, vault)?;
+    if let Some(Reason::Replace { .. }) = reason {
+        super::links::link_over(ctx, &v, key, &to.vault, &to.key)
+    } else {
+        super::links::link(ctx, &v, key, &to.vault, &to.key)
+    }
 }
 
 /// Each chat waiting on `asked`, once, the first to ask first.

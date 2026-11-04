@@ -5301,6 +5301,55 @@ fn a_run_missing_its_key_that_the_person_fills_with_an_entry_runs_with_the_entry
 }
 
 #[test]
+fn a_run_whose_linked_entry_is_gone_asks_naming_the_gone_entry_and_runs_once_filled() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    let team = crate::secrets::cmd::provider(&ctx, "team").unwrap();
+    crate::secrets::links::link(&ctx, &team, "MISSING", "other", "TOKEN").unwrap();
+    std::fs::write(project.path().join("other.json"), "{}").unwrap();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            served_asking(
+                &asker(project.path(), Some("devops")),
+                a_missing_key(project.path()),
+                &asks,
+                Duration::from_secs(60),
+            )
+        });
+        let open = loop {
+            if let Some(one) = asks.open().into_iter().next() {
+                break one;
+            }
+            std::thread::yield_now();
+        };
+        assert_eq!(
+            open.reason,
+            Some(crate::secrets::ask::Reason::BrokenLink {
+                was: crate::secrets::links::Target {
+                    vault: "other".into(),
+                    key: "TOKEN".into()
+                }
+            }),
+            "the person is told which entry is gone"
+        );
+        asks.answer(
+            &ctx,
+            open.id,
+            crate::secrets::ask::Answer::Fill("fr3sh-v4lue".to_owned().into()),
+            crate::harness::asks::Answerer::admitted(crate::harness::asks::Admitted::LocalUi)
+                .unwrap(),
+        )
+        .unwrap();
+        run.join().unwrap()
+    });
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "ran\n");
+    let heard = format!("{frames:?}");
+    assert!(!heard.contains("other"), "never the gone entry: {heard}");
+}
+
+#[test]
 fn a_run_missing_its_key_that_the_person_declines_hears_declined() {
     let project = project();
     let asks = crate::secrets::ask::Asks::new(project.path());

@@ -51,6 +51,7 @@ fn need(chat: u32, key: &str) -> Need {
         purpose: None,
         declared: None,
         names_no_vault: false,
+        reason: None,
     }
 }
 
@@ -1438,4 +1439,201 @@ fn only_the_window_links_an_entry() {
         crate::secrets::links::of(&ctx(project.path()), "team", "MISSING").unwrap(),
         None
     );
+}
+
+// ----------------------------------------------------------------------------------------
+// replace a value that doesn't work, and a link whose entry is gone (#5075)
+
+const SAID: &str = "the API answers 401 Unauthorized";
+
+/// A replace ask for `key` of `team`, with the chat's reason, as the app raises it.
+fn replacing(project: &Path, key: &str) -> Need {
+    Need {
+        reason: Some(Reason::replace(&ctx(project), "team", key, SAID)),
+        ..need(7, key)
+    }
+}
+
+fn the_link(project: &Path, key: &str) -> Option<crate::secrets::links::Target> {
+    crate::secrets::links::of(&ctx(project), "team", key).unwrap()
+}
+
+/// `team`'s `KEY` made a link to `own`'s `STRIPE`.
+fn linked_to_stripe(project: &Path) {
+    let ctx = ctx(project);
+    let team = crate::secrets::cmd::provider(&ctx, "team").unwrap();
+    crate::secrets::links::link(&ctx, &team, "KEY", "own", "STRIPE").unwrap();
+}
+
+#[test]
+fn a_replace_ask_carries_the_chats_reason_as_its_own_words() {
+    let project = project_with_an_entry();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, replacing(project.path(), "TOKEN"));
+    let open = asks.open();
+    assert_eq!(
+        open[0].reason,
+        Some(Reason::Replace {
+            said: SAID.into(),
+            reads: None
+        })
+    );
+    assert_eq!(
+        Reason::Replace {
+            said: SAID.into(),
+            reads: None
+        }
+        .said("TOKEN"),
+        format!("the chat says the current value doesn't work: {SAID}")
+    );
+}
+
+#[test]
+fn a_replace_ask_filled_with_a_value_overwrites_the_value() {
+    let project = project_with_an_entry();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, replacing(project.path(), "TOKEN"));
+    let id = asks.open()[0].id;
+    asks.answer(
+        &ctx(project.path()),
+        id,
+        Answer::Fill(VALUE.to_owned().into()),
+        window(),
+    )
+    .unwrap();
+    assert_eq!(stored(project.path(), "TOKEN").as_deref(), Some(VALUE));
+}
+
+#[test]
+fn a_replace_ask_filled_with_an_entry_links_over_the_value_it_replaces() {
+    let project = project_with_an_entry();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, replacing(project.path(), "TOKEN"));
+    let id = asks.open()[0].id;
+    asks.answer(&ctx(project.path()), id, stripe_in_own(), window())
+        .unwrap();
+    assert_eq!(
+        the_link(project.path(), "TOKEN"),
+        Some(crate::secrets::links::Target {
+            vault: "own".into(),
+            key: "STRIPE".into()
+        })
+    );
+    assert_eq!(stored(project.path(), "TOKEN").as_deref(), Some(PICKED));
+    let team = std::fs::read_to_string(project.path().join("team.json")).unwrap();
+    assert!(
+        !team.contains("TOKEN"),
+        "the value it replaced is gone: {team}"
+    );
+}
+
+#[test]
+fn an_ask_that_is_no_replace_never_links_over_a_value() {
+    let project = project_with_an_entry();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, need(7, "TOKEN"));
+    let id = asks.open()[0].id;
+    asks.answer(&ctx(project.path()), id, stripe_in_own(), window())
+        .unwrap_err();
+    assert_eq!(the_link(project.path(), "TOKEN"), None);
+    assert_eq!(stored(project.path(), "TOKEN").as_deref(), Some("t0ken"));
+}
+
+#[test]
+fn a_replace_ask_on_a_link_names_the_entry_it_reads() {
+    let project = project_with_an_entry();
+    linked_to_stripe(project.path());
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, replacing(project.path(), "KEY"));
+    let reason = asks.open()[0].reason.clone().unwrap();
+    let reads = crate::secrets::links::Target {
+        vault: "own".into(),
+        key: "STRIPE".into(),
+    };
+    assert_eq!(
+        reason,
+        Reason::Replace {
+            said: SAID.into(),
+            reads: Some(reads)
+        }
+    );
+}
+
+#[test]
+fn a_replace_on_a_link_filled_with_a_value_writes_it_into_the_entry_it_reads() {
+    let project = project_with_an_entry();
+    linked_to_stripe(project.path());
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, replacing(project.path(), "KEY"));
+    let id = asks.open()[0].id;
+    asks.answer(
+        &ctx(project.path()),
+        id,
+        Answer::Fill(VALUE.to_owned().into()),
+        window(),
+    )
+    .unwrap();
+    assert!(the_link(project.path(), "KEY").is_some(), "still a link");
+    let own = std::fs::read_to_string(project.path().join("own.json")).unwrap();
+    assert!(own.contains(VALUE), "rotated where it lives: {own}");
+    assert_eq!(stored(project.path(), "KEY").as_deref(), Some(VALUE));
+}
+
+#[test]
+fn a_replace_on_a_link_filled_with_an_entry_re_points_the_link() {
+    let project = project_with_an_entry();
+    linked_to_stripe(project.path());
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, replacing(project.path(), "KEY"));
+    let id = asks.open()[0].id;
+    let token = Answer::Link(crate::secrets::links::Target {
+        vault: "team".into(),
+        key: "TOKEN".into(),
+    });
+    asks.answer(&ctx(project.path()), id, token, window())
+        .unwrap();
+    assert_eq!(stored(project.path(), "KEY").as_deref(), Some("t0ken"));
+    let own = std::fs::read_to_string(project.path().join("own.json")).unwrap();
+    assert!(
+        own.contains(PICKED),
+        "the old entry is left as it was: {own}"
+    );
+}
+
+#[test]
+fn a_broken_link_ask_names_the_entry_that_is_gone_and_a_fill_gives_the_key_a_value() {
+    let project = project_with_an_entry();
+    linked_to_stripe(project.path());
+    std::fs::write(project.path().join("own.json"), "{}").unwrap();
+    let ctx = ctx(project.path());
+    let reason = Reason::broken(&ctx, "team", "KEY").expect("KEY is a link");
+    assert_eq!(
+        reason,
+        Reason::BrokenLink {
+            was: crate::secrets::links::Target {
+                vault: "own".into(),
+                key: "STRIPE".into()
+            }
+        }
+    );
+    assert_eq!(
+        reason.said("KEY"),
+        "KEY was linked to STRIPE in vault own, which is gone"
+    );
+    let asks = Asks::new(project.path());
+    let (_, said) = held_for_nothing(
+        &asks,
+        Need {
+            reason: Some(reason),
+            ..need(7, "KEY")
+        },
+    );
+    for line in &said {
+        assert!(!line.contains("own") && !line.contains("STRIPE"), "{line}");
+    }
+    let id = asks.open()[0].id;
+    asks.answer(&ctx, id, Answer::Fill(VALUE.to_owned().into()), window())
+        .unwrap();
+    assert_eq!(the_link(project.path(), "KEY"), None, "no longer a link");
+    assert_eq!(stored(project.path(), "KEY").as_deref(), Some(VALUE));
 }
