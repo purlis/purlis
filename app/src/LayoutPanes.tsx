@@ -93,6 +93,7 @@ import { NEW_CHAT } from "./tabFace";
 import { bellCount, bellSays, HOLDS_NOTHING, type BandHolds } from "./paneNotices";
 import { showNotices, useNoticesMinimised } from "./paneNoticesPref";
 import { useSaidAtMost } from "./ui/said";
+import { sessionTitle, sessionView } from "./sessions";
 
 /**
  * **The panes of the tab in front** (#1035, split out of `PlaneView.tsx`): the split layout
@@ -652,8 +653,10 @@ export type EndedChat = {
   /** Its name as it ended, since the core no longer lists it. */
   name: string;
   /** **Its way back, which is Resume**, where it has one: the record a Smart close wrote, or
-   *  else its conversation (a chat on a harness; a shell has none). */
+   *  else its conversation (a chat on a harness). */
   resumes: boolean;
+  /** The record a Smart close wrote, which its band links to (spec #4750 story 62). */
+  record?: { path: string; title: string };
 };
 
 /** A chat that lives in a pane and is not the one the pane shows, with what purlis has to say
@@ -1169,6 +1172,7 @@ export function LayoutPanes({
     // **A chat ended on purpose in this pane** (#5019): the core closed it, so its band is drawn
     // from what the window held of it as it ended. A task the pane has a path for says it above.
     const endedChat = endedTask === undefined ? endedChats.get(content.session) : undefined;
+    const endedRecord = endedChat?.record;
     const doing = (
       <PaneActions
         pane={layout.pane}
@@ -1275,6 +1279,11 @@ export function LayoutPanes({
               session={content.session}
               name={endedChat.name}
               resume={endedChat.resumes ? () => onResumeEnded(content.session) : undefined}
+              onOpenRecord={
+                endedRecord === undefined
+                  ? undefined
+                  : () => onOpenView(sessionView(endedRecord.path), sessionTitle(endedRecord.title))
+              }
               onClear={() => onClearPane(layout.pane)}
             />
           ) : ended && !restoring.has(content.session) ? (

@@ -5,6 +5,7 @@ import { browser, expect, $, $$ } from "@wdio/globals";
 import {
   answerTheAsk,
   clearEndedPanes,
+  ENDED_BAND,
   pickAndStart,
   pressAndStart,
   pressOnly,
@@ -321,7 +322,7 @@ describe("the command palette", () => {
     // Its pane is left on the ended band (#5019), and its Clear pane takes the tab away.
     await browser.waitUntil(
       async () =>
-        browser.execute(() => document.querySelector('[data-cause^="chat-ended:"]') !== null),
+        browser.execute((band: string) => document.querySelector(band) !== null, ENDED_BAND),
       { timeout: 15_000, timeoutMsg: "the ended chat's pane never drew the ended band" },
     );
     await clearEndedPanes();

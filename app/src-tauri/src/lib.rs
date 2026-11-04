@@ -1272,8 +1272,8 @@ async fn reopen_finished_task(
 }
 
 /// **Resume** on the ended band of a chat the person ended (#5019, spec #4750 story 62): the
-/// same chat on its conversation, in a new run ([`crate::chats::Chats::resume_ended`]). The answer is the chat
-/// as the window draws it, which takes the pane the ended one was left in.
+/// same chat on its conversation, in a new run ([`crate::chats::Chats::resume_ended`]). The
+/// answer is the chat as the window draws it, which takes the pane the ended one was left in.
 #[tauri::command]
 #[specta::specta]
 async fn resume_ended_chat(

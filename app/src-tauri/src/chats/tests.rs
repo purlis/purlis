@@ -2594,6 +2594,9 @@ fn a_chat_the_person_ended_resumes_on_its_conversation_once() {
     assert_eq!(chats.record().chats.len(), 1, "nothing more started");
 }
 
+/// Resume on an ended band is for a chat the person ended and that has a conversation (#5019):
+/// one still open is restarted instead, one purlis never ended has nothing to resume, and one
+/// with no conversation says so. Each is refused, and nothing starts.
 #[test]
 fn a_chat_still_open_never_ended_or_with_no_conversation_is_not_resumed_and_says_why() {
     let plane = a_sandboxed_plane();

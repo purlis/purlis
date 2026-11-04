@@ -267,6 +267,9 @@ export async function endEveryChat(most = 200): Promise<void> {
   throw new Error(`${most} presses did not end every chat`);
 }
 
+/** **An ended chat's band** (#4756, #5019), whichever chat's: the pane Notice its cause names. */
+export const ENDED_BAND = '[data-cause^="chat-ended:"]';
+
 /**
  * **Clears the panes End… left on the ended band** (#5019): each ended chat's pane stays, its
  * last screen under the band, until Clear pane takes it away, as a person does. Every tab of the
@@ -275,18 +278,16 @@ export async function endEveryChat(most = 200): Promise<void> {
  * so a Clear pane that stops taking is a failure and not a hang.
  */
 export async function clearEndedPanes(session?: number, most = 200): Promise<void> {
-  const cause =
-    session === undefined ? '[data-cause^="chat-ended:"]' : `[data-cause="chat-ended:${session}"]`;
-  /** Presses Clear pane on a band drawn now; whether there was one. */
-  const clearedOne = () =>
-    browser.execute((css: string) => {
-      const band = document.querySelector(css);
-      const clear = [...(band?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
-        (button) => button.textContent?.trim() === "Clear pane",
-      );
-      clear?.click();
-      return clear !== undefined;
-    }, cause);
+  const cause = session === undefined ? ENDED_BAND : `[data-cause="chat-ended:${session}"]`;
+  /** Presses Clear pane, by its name, on a band drawn now; whether there was one. */
+  const clearedOne = async () => {
+    const band = await $(cause);
+    if (!(await band.isExisting())) return false;
+    const clear = await band.$("aria/Clear pane");
+    if (!(await clear.isExisting())) return false;
+    await clear.click();
+    return true;
+  };
   let cleared = 0;
   for (let pass = 0; pass < most; pass++) {
     let found = false;

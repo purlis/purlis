@@ -399,7 +399,7 @@ type TroubleFrom = "start-options" | "shell" | "needs-you" | "browser";
 
 /** **A chat ended on purpose in its pane** (#5019), as the window held it when it ended: its
  *  name, and the record a Smart close wrote, which is its way back. */
-type EndedHere = EndedChat & { record?: SavedRecord; workspace: string };
+type EndedHere = EndedChat & { workspace: string };
 import {
   askedByOf,
   chatsOfPane,
@@ -2370,12 +2370,15 @@ export const PlaneView = memo(function PlaneView({
     (session: number, record?: SavedRecord) => {
       const held = tabHolding(now.current, session);
       if (held === undefined) return;
-      // Named as its row named it (`shownName`), and as its tab does where it was not listed.
       const listed = listedNow.current.get(session);
+      // **A shell clears its pane** (spec #4750 story 64): it has no conversation to resume and
+      // nothing to read back, so its pane goes as a shell's exit takes it.
+      if (listed !== undefined && isShell(listed)) return;
+      // Named as its row named it (`shownName`), and as its tab does where it was not listed.
       const name =
         listed !== undefined ? shownName(now.current, listed) : now.current.byId[held].name;
-      // A Smart close's record brings it back; else its conversation, which a shell has none of.
-      const resumes = record !== undefined || (listed !== undefined && !isShell(listed));
+      // A Smart close's record brings it back; else its conversation.
+      const resumes = record !== undefined || listed !== undefined;
       const one: EndedHere = { name, record, resumes, workspace: filedIn(session) };
       endedHereNow.current.set(session, one);
       setEndedHere((was) => new Map(was).set(session, one));
@@ -2392,6 +2395,15 @@ export const PlaneView = memo(function PlaneView({
       return left;
     });
   }, []);
+  /**
+   * **A chat ended on purpose that no tab shows any more is forgotten** (#5019): its pane went
+   * another way than Clear pane or Resume (Close pane, its tab's close, Close other tabs). Kept,
+   * it would still count as gone from what is open here, and its number held as ended.
+   */
+  useEffect(() => {
+    for (const session of [...endedHereNow.current.keys()])
+      if (tabHolding(tabs, session) === undefined) forgetEndedHere(session);
+  }, [forgetEndedHere, tabs]);
   /** Whether chat `session`, as it ends, stays in its pane: a task does, and so does a chat
    *  ended on purpose where a pane shows it (#5019). */
   const keepsItsPane = useCallback(

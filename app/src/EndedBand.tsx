@@ -65,6 +65,7 @@ export function EndedBand({
   more,
   report,
   resume,
+  onOpenRecord,
   onClear,
 }: {
   session: number;
@@ -78,6 +79,9 @@ export function EndedBand({
   report?: string;
   /** Resume, where the chat has a way back ({@link resumeOf}, or a task's Reopen). */
   resume: (() => void) | undefined;
+  /** **The record a Smart close wrote**, opened in a tab of its own (spec #4750 story 62), where
+   *  it wrote one. */
+  onOpenRecord?: () => void;
   onClear: () => void;
 }) {
   const clear = { label: "Clear pane", onPress: onClear };
@@ -87,6 +91,9 @@ export function EndedBand({
       at="pane"
       label="Ended"
       fixes={resume !== undefined ? [{ label: "Resume", onPress: resume }, clear] : [clear]}
+      link={
+        onOpenRecord === undefined ? undefined : { label: "Open record", onPress: onOpenRecord }
+      }
     >
       {name} ended
       {how === undefined ? "." : <>: {how}</>}

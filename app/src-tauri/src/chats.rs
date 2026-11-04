@@ -802,9 +802,10 @@ pub struct Chats {
     /// How a chat's profile is kept, and found signed in, on the pool's runner it starts on
     /// (#2049); `None` where nothing is kept there, a test's.
     profiles_on_pools: Option<Arc<dyn crate::poolprofiles::ProfilesOnPools>>,
-    /// What each chat closed this launch was, by number, for a start in one's place: its ids,
-    /// and where it stood in a lineage.
-    let_go: Mutex<HashMap<u32, LetGo>>,
+    /// What each chat closed this launch was, by number, as it ended: for a start in one's place
+    /// ([`Chats::start_ready_instead_of`]), its ids and where it stood in a lineage, and for
+    /// Resume on its ended band ([`Chats::resume_ended`]), the whole of it.
+    let_go: Mutex<HashMap<u32, Chat>>,
     /// Told when a chat that was announced turned out not to start.
     #[allow(clippy::type_complexity)]
     never_started: Mutex<Option<Box<dyn Fn(u32) + Send + Sync>>>,
@@ -1208,9 +1209,6 @@ fn told_first(
     ready
 }
 
-/// Why chat `session` was not restarted when purlis holds no conversation to resume it by, and
-/// what to do (#1428). True of a chat that has not said which conversation it is in yet, and of
-/// one whose harness never says: the first way out is for the one, the second for both.
 /// Why chat `session`, ended, cannot be resumed: it has no conversation (#5019).
 fn nothing_to_resume_on(session: u32) -> String {
     format!(
@@ -1219,6 +1217,9 @@ fn nothing_to_resume_on(session: u32) -> String {
     )
 }
 
+/// Why chat `session` was not restarted when purlis holds no conversation to resume it by, and
+/// what to do (#1428). True of a chat that has not said which conversation it is in yet, and of
+/// one whose harness never says: the first way out is for the one, the second for both.
 fn no_conversation(session: u32) -> String {
     format!(
         "purlis did not restart chat {session}: it has no conversation to resume. If it has \
@@ -1285,33 +1286,6 @@ type Decided = (
     // Where the floor could not be applied, the sentence its tab says (#2071, Q2).
     Option<String>,
 );
-
-/// What a chat that was closed was, kept for a start in its place
-/// ([`Chats::start_ready_instead_of`]).
-#[derive(Debug, Clone)]
-struct LetGo {
-    identity: purlis_core::reopen::Identity,
-    /// The chat that dispatched it, and where it stood in its lineage.
-    from: Option<purlis_core::reopen::HandedFrom>,
-    /// The task it was named for.
-    label: Option<String>,
-    /// Whether it is a finished task the person reopened (#1543).
-    reopened: Option<purlis_core::reopen::ReopenedTask>,
-    /// The whole chat as it ended, for Resume on its ended band ([`Chats::resume_ended`]).
-    whole: Chat,
-}
-
-impl LetGo {
-    fn of(chat: &Chat) -> Self {
-        Self {
-            identity: chat.identity.clone(),
-            from: chat.from.clone(),
-            label: chat.label.clone(),
-            reopened: chat.reopened,
-            whole: chat.clone(),
-        }
-    }
-}
 
 /// How a fresh runner goes (#4569).
 #[cfg(unix)]
@@ -2267,10 +2241,10 @@ impl Chats {
         // id (#856 review F3). Its program is the close's to end.
         let taken = lock(&self.open).remove(&instead_of);
         if let Some(taken) = &taken {
-            lock(&self.let_go).insert(instead_of, LetGo::of(&taken.chat));
+            lock(&self.let_go).insert(instead_of, taken.chat.clone());
         }
         let was = taken
-            .map(|one| LetGo::of(&one.chat))
+            .map(|one| one.chat)
             .or_else(|| lock(&self.let_go).get(&instead_of).cloned());
         let Some(was) = was.filter(|was| was.identity.id.is_some()) else {
             return self.start_ready(chat, ready, size);
@@ -3612,7 +3586,7 @@ impl Chats {
 
     /// **Resumes chat `session`, which the person ended** (#5019, spec #4750 story 62): Resume on
     /// its ended band. End… took it off the board ([`Self::close`]), and what it was is kept
-    /// ([`LetGo`]), so it starts again on its conversation: the same chat under its id, in a new
+    /// (`let_go`), so it starts again on its conversation: the same chat under its id, in a new
     /// run under a new number, as [`Self::restart`] starts one still open. Once: the run it
     /// starts is the chat from then on, so a second press has nothing to resume.
     pub fn resume_ended(&self, session: u32, size: Size) -> Result<u32, String> {
@@ -3622,9 +3596,7 @@ impl Chats {
             ));
         }
         self.claim(session)?;
-        let was = lock(&self.let_go)
-            .get(&session)
-            .map(|was| was.whole.clone());
+        let was = lock(&self.let_go).get(&session).cloned();
         let started = match was {
             None => Err(format!(
                 "purlis did not resume chat {session}: there is nothing to resume, as it is not \
@@ -5410,7 +5382,7 @@ impl Chats {
             if let_go.len() >= LET_GO_HELD {
                 let_go.clear();
             }
-            let_go.insert(session, LetGo::of(&gone.chat));
+            let_go.insert(session, gone.chat.clone());
         }
         // A chat still to start keeps its place in front (#3114: one whose start returned into
         // a quit is ended, and is still to start under the same number).

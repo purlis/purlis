@@ -15,7 +15,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
-import type { Moved } from "./bindings";
+import type { Moved, OpenChat } from "./bindings";
 import { forgetDismissals } from "./dismissals";
 import { askToEnd } from "./menus.testkit";
 import { stripNamed } from "./test-strips";
@@ -42,7 +42,8 @@ const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMo
 const PLANE = "/home/dev/plane";
 const ALPHA = `${PLANE}/workspaces/alpha`;
 
-const CHAT = {
+const CHAT: OpenChat = {
+  card: null,
   session: 4,
   name: "claude 4",
   cwd: `${ALPHA}/repo`,
@@ -77,7 +78,7 @@ const DONE: Moved = { ...WAITING, state: "done", moved_at: 2, sequence: 2 };
 /** Another chat in alpha, with a tab of its own. */
 const OTHER = { ...CHAT, session: 5, name: "claude 5", in_front: false };
 
-function core(open: (typeof CHAT)[] = [CHAT]) {
+function core(open: OpenChat[] = [CHAT]) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC(
     (cmd, args) => {
@@ -119,7 +120,7 @@ async function settled() {
 }
 
 /** Chat 4 on screen, then its program ends. */
-async function anEndedChat(open: (typeof CHAT)[] = [CHAT]) {
+async function anEndedChat(open: OpenChat[] = [CHAT]) {
   const said = core(open);
   render(<App />);
   await screen.findByTestId("pane");
@@ -201,7 +202,7 @@ const tabNames = () =>
     .map((tab) => tab.querySelector(".tab-name")?.textContent);
 
 /** Chat 4 on screen, ended on purpose: End…, answered with its Close. */
-async function endedWithEnd(open: (typeof CHAT)[] = [CHAT]) {
+async function endedWithEnd(open: OpenChat[] = [CHAT]) {
   const said = await anEndedChat(open);
   const asking = await askToEnd(NAMED);
   await userEvent.click(within(asking).getByRole("button", { name: "Close" }));
@@ -249,6 +250,17 @@ describe("a chat ended on purpose (#5019, spec #4750 story 62)", () => {
     expect(tabNames()).toHaveLength(1);
   });
 
+  it("clears a shell's pane on its End…, with no band (story 64)", async () => {
+    const shell = { ...CHAT, harness: null, profile: null, name: "shell 4" };
+    const { asked } = await anEndedChat([shell]);
+    const asking = await askToEnd("shell 4");
+    await userEvent.click(within(asking).getByRole("button", { name: "End" }));
+    await waitFor(() => expect(asked("close_session")).toEqual([{ plane: PLANE, session: 4 }]));
+
+    await waitFor(() => expect(screen.queryByTestId("pane")).toBeNull());
+    expect(screen.queryByRole("status", { name: /ended/i })).toBeNull();
+  });
+
   it("closes the pane on Clear pane, ending nothing more, and the strip's last tab keeps one empty pane", async () => {
     const { asked } = await endedWithEnd();
 
@@ -280,6 +292,8 @@ describe("a chat ended on purpose (#5019, spec #4750 story 62)", () => {
 
     const ended = await band();
     expect(ended).toHaveTextContent("claude 4 ended. Resume or Clear pane.");
+    // And a link to the record it wrote (story 62).
+    expect(within(ended).getByRole("button", { name: "Open record" })).toBeInTheDocument();
     expect(screen.getByText("session 4")).toHaveAttribute("data-read-only");
     // The core closed it with its record: the window ends nothing a second time.
     expect(asked("close_session")).toEqual([]);
