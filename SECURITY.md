@@ -147,9 +147,9 @@ so for a Claude Code chat the boundary is Claude Code's own sandbox, which binds
 runs and not the harness itself, and the person's approval of the profile (#1150). A plane can
 turn the sandbox on, but never off.
 
-**The opt-out is one chat's, and it is recorded.** A person can start one chat without the
-sandbox from the window's new-chat picker, and nothing else can: there is no CLI word, file or
-setting for it, and it is for a new chat only. A relaunched or resumed chat does not inherit
+**There are two opt-outs, one chat's and your level's (below), and both are recorded.** A
+person can start one chat without the sandbox from the window's new-chat picker: no CLI word or
+file does that for one chat, and it is for a new chat only. A relaunched or resumed chat does not inherit
 it: it starts sandboxed, or not at all where the sandbox cannot be applied (a Codex or
 opencode chat on Linux, a refused program). Continuing an opted-out chat's conversation without the sandbox is not
 offered yet (#1098). That chat's tab says
@@ -157,6 +157,29 @@ it runs without the sandbox. purlis records the start in its event log on this m
 (`trust.sandbox.off`), with the reason the person typed, and records the sandbox coming back
 on (`trust.sandbox.on`). purlis also counts on this machine how many new chats started without
 it, and never sends that count anywhere.
+
+**Your level can be off, for a project or a persona, and that is recorded too**
+([ADR 0096](docs/adr/0096-your-sandbox-level-is-yours-and-is-kept-on-this-machine.md)). A
+level is a person's, never a project's: each person sets their own level for their chats in a
+project, `on` (the full sandbox), `floor` or `off` (no sandbox), in Settings › Project ›
+Sandbox › Your level, and optionally per persona (`[sandbox.personas]`), over the project's.
+It is kept in this machine's `purlis.local.toml`, never in a committed file, and a
+`purlis.local.toml` git would carry turns nobody's sandbox down. A chat can write that file,
+so its word alone never turns a sandbox down: a level counts as far as you confirmed it, in a
+record in your config home that no sandboxed chat writes, and a lower level the file alone says
+waits for **Confirm** while chats start at what you confirmed, or the floor. A confirmed `off`
+starts the chat as "Start without the sandbox" does: every class lifted, audited as the
+person's (`trust.sandbox.off`, `by: your-level`) and counted as an opt-out. Its tab says *no
+sandbox — your setting*. The audit names how the start was made (`made`: local-ui, resume,
+relaunch, dispatch or handoff) and its actor. A start another chat asks for (a dispatch or a
+handoff) runs at the stricter of its own level and the strictest level across the chain of
+chats that asked, and one whose chain cannot be named whole never takes `off`. An
+administrator's policy that forbids the opt-out, or the project's `[sandbox] policy = "never"`,
+holds every level at the full sandbox. Before you turn it off, the same page moves the
+project's plain-file vaults this machine registers into the system keychain, since with no
+sandbox a chat can read any file on disk. A chat that is already unsandboxed runs as the person
+and can write the record too: nothing here holds against a chat at `off`, which is what `off`
+means.
 
 **What it does not cover.**
 
