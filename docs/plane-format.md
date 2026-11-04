@@ -1473,8 +1473,8 @@ model, and the budget that counts it (`purlis_skills::frontmatter`). A frontmatt
 YAML (a plain value holding `: `, the common case) is read line by line instead, as harnesses fall
 back to; a value that opens a block scalar there has no text that can be read, so the skill has
 no description and the studio's lint says why, never `>`. A rename or a copy rewrites a key's line
-and keeps every other key's block scalar as written, and a rewritten key's block lines go with
-it.
+and keeps every other key's value as written, block or run on over lines, and a rewritten key's
+old lines go with it.
 
 | Key | Neutral? | What purlis does with it |
 |---|---|---|
@@ -3244,10 +3244,11 @@ curation actions is offered.
       session record, a `SKILL.md` (whose keys are then read as YAML), and a workspace
       memory's frontmatter where `purlis memory` shows a line of its body under a hit (#3482).
       A memory whose frontmatter is never closed shows no line there.
-  - **A block scalar's lines are its key's** (#5182). Under a key whose value opens a YAML
-    block scalar (`>` or `|`, then at most a chomping sign and an indent digit), the lines
-    indented further than the key, and the blank lines between them, are that value: never a
-    key of their own, and a rewrite of the key takes them with it. The value reads as empty. A
+  - **A value's lines are its key's** (#5182). Under a key with a value, the lines indented
+    further than the key, and the blank lines between them, are that value run on (a YAML
+    block scalar, `>` or `|` then at most a chomping sign and an indent digit, or a plain or
+    quoted value continued): never a key of their own, and a rewrite of the key takes them
+    with it. The key reads as its own line says, and a block marker as empty. A
     `SKILL.md` is cut by the same fences, but its keys are read as YAML
     ([`skills/`](#skills--the-projects-skills)); a persona's stay this line format, quotes
     kept, as the Python charter read them.

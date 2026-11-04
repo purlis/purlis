@@ -320,8 +320,9 @@ fn bytes_under(dir: &Path) -> u64 {
 
 /// **The name and description of a fetched `SKILL.md`**, where every reader reads the same ones:
 /// its frontmatter read as the YAML it is by the one reader ([`purlis_skills::handed::parse`],
-/// failing closed), its `name` and `description` single scalars, and purlis's own line reader
-/// ([`purlis_skills::parsed`]) reading them alike. Anything else is refused in a sentence: a
+/// failing closed), its `name` and `description` single scalars, and the reader of a skill's keys
+/// purlis lists it by ([`purlis_skills::parsed`]) reading them alike: since #5182 that reader reads
+/// YAML too, so a folded or commented value is its text, stripped, to both. Anything else is refused in a sentence: a
 /// source's skill is installed only where the name a harness loads is the name the review showed.
 pub(super) fn identity(text: &str) -> Result<(String, String), String> {
     use purlis_skills::Field;
@@ -331,10 +332,21 @@ pub(super) fn identity(text: &str) -> Result<(String, String), String> {
     else {
         return Err("its frontmatter names no name or no description".to_owned());
     };
+    // A name an install under a new name rewrites is a `name:` line of its own: never one inside
+    // a flow mapping, which no line holds.
+    let own_line = purlis_skills::fence::Fence::find(text)
+        .is_some_and(|fence| fence.entries().iter().any(|entry| entry.key == "name"));
+    if !own_line {
+        return Err("its frontmatter has no name: line of its own".to_owned());
+    }
     let lines = purlis_skills::parsed(text, PathBuf::new())
         .map_err(|_| "its frontmatter is not one purlis reads".to_owned())?;
+    let (name, description) = (
+        purlis_skills::fence::py_strip(name),
+        purlis_skills::fence::py_strip(description),
+    );
     if lines.name != name || lines.description != description {
-        return Err("its frontmatter reads one way as YAML and another line by line".to_owned());
+        return Err("its frontmatter reads one way to purlis and another to a harness".to_owned());
     }
     Ok((name.to_owned(), description.to_owned()))
 }

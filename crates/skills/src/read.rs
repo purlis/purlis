@@ -190,8 +190,9 @@ pub fn description_unread(text: &str) -> Option<String> {
         return None;
     }
     Some(match crate::handed::parse(text) {
+        Err(crate::Refusal::NotYaml(why)) => why,
         Err(why) => why.to_string(),
-        Ok(_) => "its value is not words".to_owned(),
+        Ok(_) => "its value is no words".to_owned(),
     })
 }
 

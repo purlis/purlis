@@ -205,12 +205,16 @@ fn the_lint_says_a_description_that_cannot_be_read_rather_than_showing_its_marke
     let [Problem::DescriptionUnread(why)] = problems.as_slice() else {
         panic!("{problems:?}");
     };
-    assert!(why.contains("cannot be read"), "{why}");
+    // What the YAML reader said, said once.
+    assert!(!why.is_empty() && !why.contains("cannot be read"), "{why}");
     let said = problems[0].to_string();
     assert!(
-        said.contains("cannot be read") && !said.contains(": >"),
+        said.starts_with("its description: cannot be read"),
         "{said}"
     );
+    assert!(said.contains(why.as_str()), "{said}");
+    assert_eq!(said.matches("cannot be read").count(), 1, "{said}");
+    assert!(!said.contains(": >"), "{said}");
 }
 
 #[test]
@@ -238,4 +242,24 @@ fn a_copy_that_rewrites_a_folded_description_leaves_none_of_its_old_lines() {
     let renamed = crate::fence::with_keys(spaced, &[("name", Some("y"))]).unwrap();
     assert_eq!(renamed, spaced.replace("name: x", "name: y"));
     assert_eq!(description(&renamed).as_deref(), Some("One.\n\nTwo."));
+}
+
+#[test]
+fn a_copy_that_rewrites_a_plain_or_quoted_multi_line_description_leaves_none_of_its_old_lines() {
+    for header in [
+        "description: Ships it\n  and more words.\n",
+        "description: \"Ships it\n  and: more words.\"\n",
+    ] {
+        let text = format!("---\nname: x\n{header}---\nBody\n");
+        assert!(
+            description(&text).is_some_and(|d| d.contains("more words")),
+            "{header}"
+        );
+        let copied = crate::fence::with_keys(&text, &[("description", Some("A copy."))]).unwrap();
+        assert_eq!(
+            copied, "---\nname: x\ndescription: A copy.\n---\nBody\n",
+            "{header}"
+        );
+        assert_eq!(description(&copied).as_deref(), Some("A copy."), "{header}");
+    }
 }

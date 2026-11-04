@@ -17,10 +17,11 @@
 //! frontmatter: it is all body. A line is what Python's `str.splitlines` calls one, `\r\n` as one
 //! break, so every reader and writer here splits a text the same way.
 //!
-//! **A block scalar's lines are its key's** (#5182): under a key whose value opens one (`key: >`,
-//! `key: |`, [`is_block_marker`]), the lines indented further than the key, and the blank lines
-//! between them, are its value. They are never read, or rewritten, as keys of their own, and a
-//! rewrite of the key takes them with it. The line format reads such a value as no words.
+//! **A value's lines are its key's** (#5182): under a key with a value, the lines indented further
+//! than the key, and the blank lines between them, are that value run on: a block scalar's
+//! (`key: >`, `key: |`, [`is_block_marker`]), or a plain or quoted value YAML folds onto one
+//! line. They are never read, or rewritten, as keys of their own, and a rewrite of the key takes
+//! them with it. The line format reads the key's own line alone, and a block marker as no words.
 //!
 //! Every persona key, a curation action, a session record and the rewrites of them read their
 //! frontmatter through [`Fence`]. A `SKILL.md`'s keys are read as YAML ([`crate::frontmatter`]),
@@ -125,13 +126,14 @@ impl<'a> Fence<'a> {
     }
 
     /// **What each line between the fences says** (#5182): a key and its value, a line of the
-    /// block scalar the key above opened (`key: >` or `key: |`, YAML's folded and literal
-    /// values), or nothing. A block's lines are the ones under its key that are indented further
-    /// than the key, and the blank lines between them; a blank line after its last one is not
-    /// its. So no line of a block is ever read, or rewritten, as a key of its own.
+    /// value the key above runs on to (a block scalar, `key: >` or `key: |`, or a plain or quoted
+    /// value continued), or nothing. Those lines are the ones under a key with a value that are
+    /// indented further than the key, and the blank lines between them; a blank line after the
+    /// last one is not the value's. So no line of a value is ever read, or rewritten, as a key of
+    /// its own. Under a key with no value, indented lines are its list or mapping, read as before.
     fn said(&self) -> Vec<(Line, Said<'a>)> {
         let mut out: Vec<(Line, Said<'a>)> = Vec::new();
-        // The indent of the key whose block the lines are under, while they are.
+        // The indent of the key whose value the lines run on from, while they do.
         let mut block_of: Option<usize> = None;
         for line in self.lines() {
             let written = &self.text[line.start..line.end];
@@ -146,7 +148,7 @@ impl<'a> Fence<'a> {
             }
             match entry_of(written) {
                 Some((key, value)) => {
-                    if is_block_marker(value) {
+                    if !value.is_empty() {
                         block_of = Some(indent);
                     }
                     out.push((line, Said::Key(key, value)));
@@ -211,7 +213,7 @@ fn is_fence(line: &str) -> bool {
 enum Said<'a> {
     /// A key and its value.
     Key(&'a str, &'a str),
-    /// A line of the block scalar the key above it opened.
+    /// A line of the value the key above it runs on to: a block scalar, or a value continued.
     Block,
     /// Nothing: a blank, a note, a `- item`.
     Other,
@@ -340,7 +342,7 @@ pub fn with_keys(text: &str, keys: &[(&str, Option<&str>)]) -> Result<String, Un
     // Set while the lines are the `- item` lines under a key being rewritten: they are its
     // value, so they go with the line they are under.
     let mut items_of_ours = false;
-    // Set while the lines are the block scalar of a key being rewritten (#5182): its value too.
+    // Set while the lines are the value a key being rewritten runs on to (#5182): its value too.
     let mut block_of_ours = false;
     for (line, what) in fence.said() {
         let whole = &text[line.start..line.next];
@@ -356,18 +358,18 @@ pub fn with_keys(text: &str, keys: &[(&str, Option<&str>)]) -> Result<String, Un
         }
         items_of_ours = false;
         block_of_ours = false;
-        let Some((at, empty, block)) = (match what {
+        let Some((at, empty)) = (match what {
             Said::Key(key, value) => keys
                 .iter()
                 .position(|(k, _)| *k == key)
-                .map(|at| (at, value.is_empty(), is_block_marker(value))),
+                .map(|at| (at, value.is_empty())),
             Said::Block | Said::Other => None,
         }) else {
             out.push_str(whole);
             continue;
         };
         items_of_ours = empty;
-        block_of_ours = block;
+        block_of_ours = !empty;
         if let (Some(value), false) = (keys[at].1, placed[at]) {
             out.push_str(&said(keys[at].0, value));
             out.push_str(&text[line.end..line.next]);

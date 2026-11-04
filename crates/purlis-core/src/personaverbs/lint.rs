@@ -830,7 +830,8 @@ fn read_skill(file: &Path) -> Option<(String, bool)> {
     purlis_skills::fence::Fence::find(&text)?;
     let mut name: Option<String> = None;
     let mut human_only = false;
-    // Read as a harness reads it, as YAML: a quoted name is the name inside its quotes (#5182).
+    // Read as a harness reads it, as YAML (#5182); where it is not YAML, line by line, and a
+    // quoted name is still the name inside its quotes.
     for (key, value) in purlis_skills::frontmatter(&text) {
         match key.as_str() {
             "name" => name = Some(value.trim_matches(['"', '\'']).to_owned()),

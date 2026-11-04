@@ -202,7 +202,8 @@ pub enum Problem {
     /// The description breaks a rule, said as [`description_problem`] says it.
     Description(String),
     /// The `description:` line says something, but no harness could read it as words (#5182):
-    /// a block scalar (`>`, `|`) in a frontmatter that is not YAML. What the reader said.
+    /// most often a block scalar (`>`, `|`) in a frontmatter that is not YAML. What the YAML
+    /// reader said.|`) in a frontmatter that is not YAML. What the reader said.
     DescriptionUnread(String),
 }
 
@@ -225,8 +226,8 @@ impl std::fmt::Display for Problem {
             Self::Description(why) => write!(f, "its description: {why}"),
             Self::DescriptionUnread(why) => write!(
                 f,
-                "its description: cannot be read, so a chat would list nothing for it ({why}): \
-                 fix the frontmatter, or write the description on one line"
+                "its description: cannot be read, so a chat would list nothing for it. The reader \
+                 said: {why}. Fix the frontmatter, or write the description on one line"
             ),
         }
     }
