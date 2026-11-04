@@ -1118,13 +1118,26 @@ pub fn settings_in_a_file(
         "{id}.{}.json",
         settings_digest(args[at].as_bytes())
     ));
-    let was = crate::proposed::read_pinned(folder, &rel)
-        .map_err(|_| "a chat's settings file is not a plain file, so it was not started")?;
-    let base = was
-        .as_deref()
-        .and_then(|bytes| crate::proposed::base_of(Some(bytes)));
-    crate::proposed::write_pinned_making(folder, &rel, base.as_deref(), &args[at], &|_, _| true)
-        .map_err(|_| "a chat's settings could not be written to its file, so it was not started")?;
+    // Chats start side by side (a record put back at launch starts them all): another start may
+    // make the clone key's folder, or write this very file, between a read and a write. Its name
+    // carries the digest of what it holds, so a file already holding these settings is written,
+    // whoever wrote it, and one write that lost such a race is tried once more.
+    let write = || -> Result<(), String> {
+        let was = crate::proposed::read_pinned(folder, &rel)
+            .map_err(|_| "a chat's settings file is not a plain file, so it was not started")?;
+        if was.as_deref() == Some(args[at].as_bytes()) {
+            return Ok(());
+        }
+        let base = was
+            .as_deref()
+            .and_then(|bytes| crate::proposed::base_of(Some(bytes)));
+        crate::proposed::write_pinned_making(folder, &rel, base.as_deref(), &args[at], &|_, _| true)
+            .map_err(|_| {
+                "a chat's settings could not be written to its file, so it was not started"
+                    .to_owned()
+            })
+    };
+    write().or_else(|_| write())?;
     args[at] = folder.join(&rel).display().to_string();
     Ok(args)
 }

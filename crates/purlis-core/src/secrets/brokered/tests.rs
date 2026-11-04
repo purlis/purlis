@@ -770,7 +770,8 @@ fn a_chat_the_app_did_not_start_sandboxed_is_left_to_run_it_itself() {
 }
 
 /// M1: a Codex chat's own sandbox denies the operator's Codex home (D-88q), so a run for it does
-/// too: the run is held to the list the chat's harness was compiled to, not a neutral one.
+/// too: the run is held to the list the chat's harness was compiled to, not a neutral one. A
+/// Claude Code chat's is denied it as well (#4356).
 #[cfg(target_os = "macos")]
 #[test]
 fn a_codex_chats_run_is_denied_the_operators_codex_home_as_the_chat_is() {
@@ -798,10 +799,13 @@ fn a_codex_chats_run_is_denied_the_operators_codex_home_as_the_chat_is() {
         )),
         "{profile}"
     );
+    // Since #4356 every chat keeps out of other harnesses' default folders, so a Claude Code
+    // chat's own sandbox denies it too, and so does its run.
     let claude = confines_of(Harness::ClaudeCode, &root, &machine);
     assert!(
-        !claude.denied.iter().any(|d| d.path == codex_home),
-        "a Claude Code chat's own sandbox does not deny it, so neither does its run"
+        claude.denied.iter().any(|d| d.path == codex_home),
+        "{:?}",
+        claude.denied
     );
 }
 
@@ -1212,6 +1216,34 @@ fn output_with_no_value_in_it_is_shown_as_it_comes_but_for_a_values_length() {
     assert_eq!(r.finish(), b"rld");
 }
 
+/// Where `profile` denies `path` and everything below it, read and write: as spelled, or (on
+/// macOS, since #3881) under every spelling of its name, as purlis holds what is in the state
+/// folder there. The first rule of either, or none.
+fn denied_at(profile: &str, path: &Path) -> Option<usize> {
+    let real = crate::sandbox::real(path);
+    let as_spelled = format!(
+        "(deny file-read* file-write* file-link (subpath \"{}\"))",
+        real.display()
+    );
+    let in_every_case = crate::sandbox::seatbelt::denial_rules(&crate::sandbox::Denial {
+        class: crate::sandbox::Class::Integrity,
+        path: real,
+        access: crate::sandbox::Access::ReadWrite,
+        named: None,
+        reach: crate::sandbox::Reach::AndBelow,
+        any_case: true,
+    })
+    .expect("rules");
+    profile.find(&as_spelled).or_else(|| {
+        in_every_case
+            .iter()
+            .map(|rule| profile.find(rule))
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .min()
+    })
+}
+
 #[test]
 fn the_childs_profile_gives_back_a_read_of_its_credential_file_alone() {
     let project = project();
@@ -1228,12 +1260,7 @@ fn the_childs_profile_gives_back_a_read_of_its_credential_file_alone() {
         &[4242],
     )
     .expect("a profile");
-    let denied = profile
-        .find(&format!(
-            "(deny file-read* file-write* file-link (subpath \"{}\"))",
-            crate::sandbox::real(&vaults).display()
-        ))
-        .expect("the vaults directory is denied");
+    let denied = denied_at(&profile, &vaults).expect("the vaults directory is denied");
     let given = profile
         .find(&format!(
             "(allow file-read* (literal \"{}\"))",
@@ -1741,6 +1768,73 @@ fn a_chat_that_is_not_sandboxed_reads_its_vault_itself() {
     assert_eq!(exec::exec(&ctx, &req, &mut rec), 0);
     assert!(!asked.load(Ordering::SeqCst), "the app was not asked");
     assert_eq!(String::from_utf8_lossy(&rec.out), "***\n");
+}
+
+/// What a sandboxed chat's `purlis secret exec` prints when it was asked with `mode`'s flag,
+/// `--stream` or `--exec`, to run `script` with `TOKEN` as `$X`: run by the app, which masks
+/// what the child writes as it comes (#1407).
+fn printed_in_a_chat_by(mode: &str, script: &str) -> (i32, String, String) {
+    let project = project();
+    let asked = Arc::new(AtomicBool::new(false));
+    let (_dir, _reading, env) = an_app(the_app_runs_it(project.path()), Arc::clone(&asked));
+    let ctx = chat_ctx(project.path(), &env);
+    let req = Request {
+        vault: "team".into(),
+        env: vec!["X=TOKEN".into()],
+        stream: mode == "--stream",
+        exec: mode == "--exec",
+        command: sh(script),
+        ..Request::default()
+    };
+    let mut rec = Rec::default();
+    let code = exec::exec(&ctx, &req, &mut rec);
+    assert!(asked.load(Ordering::SeqCst), "{mode}: the app was asked");
+    (
+        code,
+        String::from_utf8_lossy(&rec.out).into_owned(),
+        String::from_utf8_lossy(&rec.err).into_owned(),
+    )
+}
+
+/// A value the child prints whole, on stdout, comes back masked under `--stream` and `--exec`
+/// alike.
+#[test]
+fn a_value_printed_whole_is_masked_under_stream_and_exec() {
+    for mode in ["--stream", "--exec"] {
+        let (code, out, err) = printed_in_a_chat_by(mode, r#"echo "leak: $X"; echo done"#);
+        assert_eq!(code, 0, "{mode}: {err}");
+        assert_eq!(out, "leak: ***\ndone\n", "{mode}");
+        assert!(!out.contains(TOKEN) && !err.contains(TOKEN), "{mode}");
+    }
+}
+
+/// A value the child writes in two halves, a pause between them, reaches the app in two
+/// reads of its pipe: neither half is shown, under `--stream` and `--exec` alike.
+#[test]
+fn a_value_split_across_two_reads_is_masked_under_stream_and_exec() {
+    // `s3cret-value`, as `s3cret` and then `-value`.
+    let script =
+        r#"printf 'before %s' "${X%??????}"; sleep 0.3; printf '%s after\n' "${X#??????}""#;
+    for mode in ["--stream", "--exec"] {
+        let (code, out, err) = printed_in_a_chat_by(mode, script);
+        assert_eq!(code, 0, "{mode}: {err}");
+        assert_eq!(out, "before *** after\n", "{mode}");
+        assert!(!out.contains("s3cret") && !out.contains("-value"), "{mode}");
+    }
+}
+
+/// A value on stderr is masked as one on stdout is, split or whole, and stays on stderr,
+/// under `--stream` and `--exec` alike.
+#[test]
+fn a_value_printed_on_stderr_is_masked_under_stream_and_exec() {
+    let script = r#"echo "$X" >&2; printf '%s' "${X%??????}" >&2; sleep 0.3; printf '%s\n' "${X#??????}" >&2; echo ok; exit 3"#;
+    for mode in ["--stream", "--exec"] {
+        let (code, out, err) = printed_in_a_chat_by(mode, script);
+        assert_eq!(code, 3, "{mode}: the child's own status");
+        assert_eq!(out, "ok\n", "{mode}");
+        assert_eq!(err, "***\n***\n", "{mode}");
+        assert!(!err.contains("s3cret") && !err.contains("-value"), "{mode}");
+    }
 }
 
 /// The asker's half against the app's, on a connection pair: the line the chat writes is the
@@ -3976,12 +4070,7 @@ fn a_login_s_private_folder_is_given_back_to_its_run_alone() {
         &[4242],
     )
     .expect("a profile");
-    let denied = profile
-        .find(&format!(
-            "(deny file-read* file-write* file-link (subpath \"{}\"))",
-            crate::sandbox::real(&vaults).display()
-        ))
-        .expect("the vaults directory is denied");
+    let denied = denied_at(&profile, &vaults).expect("the vaults directory is denied");
     let given = profile
         .find(&format!(
             "(allow file-read* file-write* (subpath \"{}\"))",

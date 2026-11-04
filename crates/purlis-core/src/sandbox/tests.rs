@@ -7885,12 +7885,17 @@ fn a_block_on_a_git_folder_or_a_folder_above_one_is_known_as_kept_in_place() {
     ] {
         assert!(!grant::keeps_git_folder(&path, root, true), "{path:?}");
     }
-    // A spelling in another case is the same folder only where names are folded.
-    assert!(!grant::keeps_git_folder(
-        &repositories.at("ws/app/repo/.GIT"),
-        root,
-        false
-    ));
+    // A spelling in another case is the same folder only where names are folded. Where the
+    // disk folds them itself (macOS's), `.GIT` IS the git folder, resolved to it on disk, so
+    // it is kept whatever the caller says; only a disk that does not fold them has another
+    // folder by that name.
+    let other_case = repositories.at("ws/app/repo/.GIT");
+    let disk_folds = other_case.exists();
+    assert_eq!(
+        grant::keeps_git_folder(&other_case, root, false),
+        disk_folds,
+        "{other_case:?}"
+    );
 }
 
 #[cfg(unix)]
