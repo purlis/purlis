@@ -9,6 +9,8 @@ import type { Moved, OpenChat } from "./bindings";
 import type { State } from "./chatState";
 import { chipSays, stripNamed } from "./test-strips";
 import { theFrameNow } from "./frame.testkit";
+import { aBatchOf } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * **A chat moving re-renders that chat's row and nothing else** (SC-3, research 02 §5.6).
@@ -83,10 +85,13 @@ function chat(session: number): OpenChat {
 /** The core, holding `open` chats, and the wire its `chat-moved` events come down. */
 function core(open: OpenChat[]): (moved: Moved) => void {
   const listeners = new Map<string, number>();
+  /** Every listener for the chat events: each chat store, and the asks, listen for them. */
+  const batches: number[] = [];
   mockIPC((cmd, args) => {
     if (cmd === "plugin:event|listen") {
       const { event, handler } = args as { event: string; handler: number };
       listeners.set(event, handler);
+      if (event === CHAT_EVENTS) batches.push(handler);
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
@@ -115,14 +120,10 @@ function core(open: OpenChat[]): (moved: Moved) => void {
     return null;
   });
   return (moved) => {
-    const handler = listeners.get("chat-moved");
-    if (handler === undefined) throw new Error("the window is not listening for moves");
+    if (batches.length === 0) throw new Error("the window is not listening for moves");
     act(() => {
-      heard(handler, {
-        event: "chat-moved",
-        id: 1,
-        payload: moved,
-      });
+      for (const handler of batches)
+        heard(handler, { event: CHAT_EVENTS, id: 1, payload: aBatchOf("moved", moved) });
     });
   };
 }

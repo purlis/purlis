@@ -5,7 +5,7 @@
 //!
 //! The core sorts what a tool hook says and keeps the latest per chat
 //! (`purlis_core::doing`); this holds that for one project, feeds it the two facts it asks of
-//! the board, and tells the window `chat-doing` when a chat's line changes, at most a few
+//! the board, and tells the window (`chat-events`) when a chat's line changes, at most a few
 //! times a second per chat. **In memory only**: nothing here writes it anywhere, the event
 //! log is not told, and it goes with the chat.
 
@@ -16,9 +16,6 @@ use purlis_core::doing::{Kind, Said, Tell, Told, Tracker};
 use purlis_core::state::{Board, State};
 
 use crate::planes::PlaneId;
-
-/// The event the window is sent when what a chat is doing changes.
-pub const EVENT: &str = "chat-doing";
 
 /// What one chat is doing, as the window says it in one line: a kind from the fixed list
 /// (`purlis_core::doing::Kind`) and at most one short name the core has passed.
@@ -37,8 +34,8 @@ pub struct Doing {
     pub over: bool,
 }
 
-/// What `chat-doing` carries, and what `chat_doings` answers a list of: one chat's line, or
-/// that it has none. It travels in memory only.
+/// What a `chat-events` batch carries of a chat's doing, and what `chat_doings` answers a list
+/// of: one chat's line, or that it has none. It travels in memory only.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ChatDoing {
     pub plane: PlaneId,

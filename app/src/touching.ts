@@ -16,9 +16,10 @@
  */
 import { useEffect, useState } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
-import { listen } from "./here";
+import { heldStore } from "./heldStore";
+import { listenForChats } from "./chatEvents";
 import { useProjectShown } from "./projectShown";
-import type { ChatTouching, OpenChat, PlaneId } from "./bindings";
+import type { OpenChat, PlaneId } from "./bindings";
 
 /** How long a touched file stays marked after its chat last touched it. */
 export const FADE_MS = 4000;
@@ -66,11 +67,14 @@ type Held = { readonly plane?: PlaneId; readonly touches: Touches };
  * **The files a project's chats are touching, held outside React** (#4730), as `chatDoing.ts`
  * holds what they are doing: a touch tells the rows that read it, and each draws again only when
  * what it shows changed ({@link useTouchedBy}), so an agent touching files as fast as it can
- * redraws its file's row and the folders above it, not the tree.
+ * redraws its file's row and the folders above it, not the tree. Its readers are told once a
+ * frame (`heldStore.ts`), so the touches in a batch of chat events are drawn in the commit that
+ * draws the rest of it (#4746), and not in commits of their own.
  */
 export type TouchStore = {
   subscribe: (listener: () => void) => () => void;
-  /** What is held now. Read through {@link touchesOf}, which answers for one project. */
+  /** What the readers were last told. Read through {@link touchesOf}, which answers for one
+   *  project. */
   held: () => Held;
 };
 
@@ -79,38 +83,43 @@ type OwnStore = TouchStore & {
   show: (shown: boolean) => void;
   /** Whether its project is in front, as last said. */
   shown: () => boolean;
-  /** Holds `touches` of `plane`, and sets the timer for the next of them to fade. */
-  hold: (plane: PlaneId | undefined, touches: Touches) => void;
+  /**
+   * Holds `how` of the touches held of `plane` (none, when what is held is of another project),
+   * and sets the timer for the next of them to fade. `how` is given what is held next, not what
+   * the readers were last told, so touches that come within one frame all count.
+   */
+  hold: (plane: PlaneId | undefined, how: (touches: Touches) => Touches) => void;
 };
 
 function touchStore(): OwnStore {
-  let held: Held = { touches: NONE };
+  const held = heldStore<Held>({ touches: NONE });
   let timer: ReturnType<typeof setTimeout> | undefined;
   let shown = true;
-  const listeners = new Set<() => void>();
   const store: OwnStore = {
     show: (now) => {
       shown = now;
     },
     shown: () => shown,
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => void listeners.delete(listener);
-    },
-    held: () => held,
-    hold: (plane, touches) => {
-      if (plane === held.plane && touches === held.touches) return;
-      held = { plane, touches };
+    subscribe: held.subscribe,
+    held: held.held,
+    hold: (plane, how) => {
+      let changed: Touches | undefined;
+      held.change((was) => {
+        const touches = how(touchesOf(was, plane));
+        if (plane === was.plane && touches === was.touches) return was;
+        changed = touches;
+        return { plane, touches };
+      });
+      if (changed === undefined) return;
       // One timer, for the next touch to fade; set again whenever the list changes.
       if (timer !== undefined) clearTimeout(timer);
       timer = undefined;
-      const due = nextFade(touches);
+      const due = nextFade(changed);
       if (due !== undefined)
         timer = setTimeout(
-          () => store.hold(plane, faded(store.held().touches, Date.now())),
+          () => store.hold(plane, (touches) => faded(touches, Date.now())),
           Math.max(0, due - Date.now()),
         );
-      for (const listener of [...listeners]) listener();
     },
   };
   return store;
@@ -137,7 +146,7 @@ export function useTouches(plane: PlaneId | undefined): TouchStore {
   useEffect(() => {
     store.show(shown);
     // What it held goes when the project leaves the front, and its timer: nothing marks them now.
-    if (!shown) store.hold(plane, NONE);
+    if (!shown) store.hold(plane, () => NONE);
   }, [store, plane, shown]);
   useEffect(() => {
     if (plane === undefined) return;
@@ -145,12 +154,11 @@ export function useTouches(plane: PlaneId | undefined): TouchStore {
     let stop: (() => void) | undefined;
     void (async () => {
       try {
-        const unlisten = await listen<ChatTouching>("chat-touching", (event) => {
-          if (gone || !store.shown() || event.payload.plane !== plane) return;
-          const { session, path } = event.payload;
+        const unlisten = await listenForChats("touching", (told) => {
+          if (gone || !store.shown() || told.plane !== plane) return;
+          const { session, path } = told;
           const now = Date.now();
-          const from = touchesOf(store.held(), plane);
-          store.hold(plane, touched(faded(from, now), session, path, now));
+          store.hold(plane, (from) => touched(faded(from, now), session, path, now));
         });
         if (gone) unlisten();
         else stop = unlisten;
@@ -162,7 +170,7 @@ export function useTouches(plane: PlaneId | undefined): TouchStore {
       gone = true;
       stop?.();
       // What it held goes with it, and its timer: the window moved to another project.
-      store.hold(plane, NONE);
+      store.hold(plane, () => NONE);
     };
   }, [store, plane]);
   return store;

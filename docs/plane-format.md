@@ -6937,7 +6937,7 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   spooled, never in the event log, a dispatch record or the Activity view. The app keeps the
   latest per chat in memory, replaces it at the chat's next one, and drops it when the chat's
   turn ends, when the chat asks the person something, and when the chat closes. The window is
-  told at most four times a second per chat (`chat-doing`).
+  told at most four times a second per chat, in the `chat-events` batch sent about every 100 ms.
 
   | `kind` | While the tool is in flight | Once it has come back | `name` |
   |---|---|---|---|
