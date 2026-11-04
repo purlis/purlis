@@ -16,6 +16,7 @@ import { ChatsHere, fixedChats, moved, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 import { panelRoot } from "./ui/panel/Panel";
+import { heldLog, note, recordEvents } from "./heldProbe";
 
 /** A chat as the core lists it, open in a tab. */
 function listed(session: number, more: Partial<ListedChat> = {}): ListedChat {
@@ -291,8 +292,13 @@ export const HeldAcrossTheGapToTheCard: Story = {
     await expect(row).not.toBeNull();
     const inUse = keepTheWindowInUse();
     const clock = parkTheCardsWait();
+    heldLog().length = 0;
+    const unrecord = recordEvents();
+    const said = () => "\nPROBE4098 " + JSON.stringify(heldLog());
     try {
+      note("story:hover");
       await user.hover(row as HTMLElement);
+      note("story:hovered");
       // The card is up, as the list's hold reads it, before anything arrives.
       const card = await waitFor(
         () => {
@@ -308,9 +314,9 @@ export const HeldAcrossTheGapToTheCard: Story = {
       await expect(list).not.toBeNull();
       await waitFor(
         () =>
-          expect(list, "the list is held while the pointer rests on its row").toHaveAttribute(
-            "data-holding",
-          ),
+          {
+            if (!list?.hasAttribute("data-holding")) throw new Error("PROBE not held" + said());
+          },
         { timeout: 3000 },
       );
       // A chat arrives while the pointer is on the list: held. A red run says which side broke.
@@ -350,6 +356,7 @@ export const HeldAcrossTheGapToTheCard: Story = {
       clock.release();
       await waitFor(() => expect(rowsIn(canvasElement)).toBe(3), { timeout: 2000 });
     } finally {
+      unrecord();
       clock.restore();
       inUse();
     }

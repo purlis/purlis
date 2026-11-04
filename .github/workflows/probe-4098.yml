@@ -1,0 +1,78 @@
+# Probe for #4098, never merged: repeats chromium shard 2/7 of the stories, and the
+# ChatsSection file alone, with the hold's let-go log printed when the gap story fails.
+name: probe-4098
+
+on:
+  push:
+    branches: [probe-4098-gap]
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: image
+        run: echo "image=$(node tools/story-image.mjs ref)" >> "$GITHUB_OUTPUT"
+
+  repeat:
+    name: repeat (${{ matrix.mode }} ${{ matrix.rep }})
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [shard, file]
+        rep: [1, 2, 3, 4]
+    container:
+      image: ${{ needs.image.outputs.image }}
+      options: --init --ipc=host
+    env:
+      PURLIS_STORY_PICTURES: "1"
+      HOME: /root
+    defaults:
+      run:
+        working-directory: app
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: Repeat
+        run: |
+          mkdir -p "$RUNNER_TEMP/report"
+          if [ "${{ matrix.mode }}" = shard ]; then loops=3; else loops=15; fi
+          end=$((SECONDS + 35 * 60))
+          for i in $(seq 1 $loops); do
+            [ $SECONDS -gt $end ] && break
+            if [ "${{ matrix.mode }}" = shard ]; then
+              set -- --shard=2/7
+            else
+              set -- src/ChatsSection.stories.tsx
+            fi
+            PURLIS_STORY_REPORT="$RUNNER_TEMP/report/report-$i.json" \
+              npx vitest run --project "stories * (chromium)" "$@" \
+              --reporter=dot --reporter=../tools/story-failures.mjs > "$RUNNER_TEMP/report/out-$i.txt" 2>&1 || true
+            echo "loop $i: $(grep -c 'Held Across' "$RUNNER_TEMP/report/report-$i.json" 2>/dev/null) gap failures; $(grep -E 'Tests +[0-9]' "$RUNNER_TEMP/report/out-$i.txt" | tail -1)"
+            grep -o 'PROBE not held[^"]*' "$RUNNER_TEMP/report/report-$i.json" 2>/dev/null | head -3 || true
+          done
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: probe-${{ matrix.mode }}-${{ matrix.rep }}
+          path: ${{ runner.temp }}/report/
+          retention-days: 3
