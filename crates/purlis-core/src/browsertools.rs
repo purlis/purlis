@@ -984,7 +984,9 @@ pub const TOOLS: [Tool; 24] = [
                       notice naming the key and the site, and the call waits for their answer. \
                       purlis fills it only where the field is on the site they allowed, and the \
                       value never reaches you: it is kept out of every snapshot, find and \
-                      screenshot. To log in, use browser_login.",
+                      screenshot. Type the page's other fields first: while the filled page \
+                      is open you press no key and type or choose nothing in it, so send its \
+                      form by clicking its button. To log in, use browser_login.",
         schema: s_fill_secret,
         read_only: false,
     },

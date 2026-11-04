@@ -1432,9 +1432,11 @@ pub(crate) struct Inner {
     fill_holds: Mutex<Vec<PageHeld>>,
 }
 
-/// **A page holding a secret purlis filled** (#5117): the page, and who is told once it is gone.
+/// **A page holding a secret purlis filled** (#5117): the page, the value, whose long parts the
+/// page's reads blank while it holds it (#5115), and who is told once it is gone.
 struct PageHeld {
     target: String,
+    value: zeroize::Zeroizing<String>,
     hold: Arc<dyn FillHold>,
 }
 
@@ -2301,10 +2303,6 @@ impl Browser {
             Call::Type { page, fields } => self.type_into(page.as_ref(), &fields),
             Call::Press { page, keys } => {
                 let target = self.target(page.as_ref())?;
-                if let Some(held) = self.typing_held(&target, &self.focus_addresses(&target)?) {
-                    return Ok(held);
-                }
-                let session = self.page_session(&target)?;
                 let mut events = Vec::new();
                 for chord in &keys {
                     events.extend(key_events(chord).map_err(|e| Refusal::NotAKey(e.to_string()))?);
@@ -2317,6 +2315,13 @@ impl Browser {
                 if self.inner.copy_withheld.load(Ordering::SeqCst) && events.iter().any(copies) {
                     return Err(Refusal::CopyWithheld);
                 }
+                // A key goes where the focus is, and moves it: on a page holding a filled
+                // secret, no key is pressed at all (#5115).
+                self.keys_withheld(&target)?;
+                if let Some(held) = self.typing_held(&target, &self.focus_addresses(&target)?) {
+                    return Ok(held);
+                }
+                let session = self.page_session(&target)?;
                 self.acting_on(&target, || {
                     for event in events {
                         self.input("Input.dispatchKeyEvent", event, &session)?;
@@ -2916,7 +2921,14 @@ impl Browser {
                 None => (state.excluded.clone(), Kept::default()),
             }
         };
-        let snapshot = build_kept(trees, &excluded, &scrub);
+        // The values filled into this page while it holds them (#5115).
+        let filled: Vec<zeroize::Zeroizing<String>> = lock(&self.inner.fill_holds)
+            .iter()
+            .filter(|held| held.target == target)
+            .map(|held| held.value.clone())
+            .collect();
+        let parts: Vec<&str> = filled.iter().map(|value| value.as_str()).collect();
+        let snapshot = build_kept(trees, &excluded, &scrub, &parts);
         if let Some(page) = lock(&self.inner.state).page_mut(target) {
             page.keep_out(snapshot.blanked_text());
         }
@@ -3325,6 +3337,13 @@ impl Browser {
             Some(first) if page.is_none() => self.locate(first)?.target,
             _ => self.target(page)?,
         };
+        // Nothing is typed on a page holding a filled secret (#5115): not into a field the call
+        // names, whichever page it is on, nor into the page the keys would go to.
+        self.keys_withheld(&target)?;
+        for written in fields.iter().filter_map(|field| field.into.as_ref()) {
+            let (page, _) = live_ref(&lock(&self.inner.state), written)?;
+            self.keys_withheld(&page)?;
+        }
         let mut into = Vec::new();
         for field in fields {
             match &field.into {
@@ -3375,6 +3394,20 @@ impl Browser {
         Ok(answer)
     }
 
+    /// **Whether the agent's keys are withheld from page `target`** (#5115): it holds a secret
+    /// purlis filled, and lives. Every frame of it: a key goes where the focus is, wherever that
+    /// is by then, and what is typed anywhere in the page could be read back against what the
+    /// page shows of the value.
+    fn keys_withheld(&self, target: &str) -> Result<(), Refusal> {
+        let held = lock(&self.inner.fill_holds)
+            .iter()
+            .any(|held| held.target == target);
+        if held {
+            return Err(Refusal::KeysWithheld);
+        }
+        Ok(())
+    }
+
     /// Whether any element of `target`'s page is blanked.
     fn blanks_on(&self, target: &str) -> bool {
         let state = lock(&self.inner.state);
@@ -3423,6 +3456,7 @@ impl Browser {
     fn select(&self, target: &Ref, options: &[String]) -> Result<Answer, Refusal> {
         let at = self.locate(target)?;
         let page = at.target.clone();
+        self.keys_withheld(&page)?;
         if let Some(held) = self.typing_held(&page, &self.addresses_of(target)?) {
             return Ok(held);
         }
@@ -4363,10 +4397,13 @@ impl Inner {
 
     /// **`hold` holds the browser while page `target` keeps the document its main frame showed
     /// as `document`** (#5117), told [`FillHold::released`] once it shows another or is closed.
+    /// Until then the agent's keys are withheld from the page, and what it reads of the page
+    /// blanks whole any line that shows a long part of `value` (#5115).
     /// Where it does neither by the time it is held, it is released at once, and why is answered.
     pub(crate) fn hold_while_it_lives(
         &self,
         target: &str,
+        value: zeroize::Zeroizing<String>,
         document: u64,
         hold: Arc<dyn FillHold>,
     ) -> Result<(), String> {
@@ -4381,6 +4418,7 @@ impl Inner {
         if lives {
             lock(&self.fill_holds).push(PageHeld {
                 target: target.to_owned(),
+                value,
                 hold,
             });
             return Ok(());

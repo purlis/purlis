@@ -35,6 +35,17 @@
 //! it. And the field itself gives nothing to a copy, a cut or a drag, whoever makes it: the
 //! function that writes the value stops each of them on the field first, from purlis's own
 //! world, where the page's scripts can't take the stop away.
+//!
+//! **A filled field takes no keys from the chat** (#5115): for as long as the hold lives, the
+//! agent presses no key in the page (a key goes where the focus is, and moves it), and types and
+//! chooses nothing anywhere in it, whichever page the call names. A key in the field would change
+//! the value, and a page that shows what the field holds would show what is left of it; and the
+//! field turns no wheel into a step of its value. And while the hold lives, any line of the page
+//! that shows a long part of the value, a start or an end of at least
+//! [`PART_TAKEN_FROM`](super::super::tree::PART_TAKEN_FROM) characters or of half its length, is
+//! blanked whole in what the agent reads, and painted over in a picture. Whole, never in part,
+//! and only on that page while it holds the value, where the agent can type nothing: a part taken
+//! out of text the agent wrote would tell it which part it was.
 
 use std::sync::Arc;
 
@@ -103,6 +114,8 @@ pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin) {
     field.addEventListener(kind, stop, true);
     field.ownerDocument.addEventListener(kind, guard, true);
   }
+  // A wheel over a focused number field steps its value: not this one's.
+  field.addEventListener('wheel', (event) => event.preventDefault(), { capture: true, passive: false });
   field.setAttribute('autocomplete', 'off');
   const own = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
   own.set.call(field, value);
@@ -204,7 +217,7 @@ impl Browser {
         // The browser reaches only this site while the page lives, from before the value goes in
         // (#5117): where it can't be held, nothing goes in.
         self.inner
-            .hold_while_it_lives(&at.page, page_document, hold)
+            .hold_while_it_lives(&at.page, fill.value.clone(), page_document, hold)
             .map_err(|why| {
                 not_filled(format!(
                     "purlis could not hold this browser to {origin} while the page is open \
@@ -222,8 +235,10 @@ impl Browser {
         let mut answer = self.answer_now(&at.page, Content::Nothing);
         answer.note = Some(format!(
             "purlis filled {} into {target} on {origin}; the value is kept out of everything you \
-             read. While this page is open, the browser reaches only {origin}; once the page \
-             loads another document or is closed, it reaches as before",
+             read. While this page is open, the browser reaches only {origin}, and you press no \
+             key and type or choose nothing in it: click the page's own button to send the \
+             form. Once the page loads another document or is closed, it \
+             reaches as before",
             fill.key
         ));
         Ok(answer)

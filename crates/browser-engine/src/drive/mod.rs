@@ -843,6 +843,15 @@ pub enum Refusal {
          secret into it, so this call was not carried out: read what you need with a snapshot"
     )]
     CopyWithheld,
+    /// purlis filled a secret into a field of this page (#5115): while the page holding it is
+    /// open, the agent presses no key, and types and chooses nothing, in it.
+    #[error(
+        "purlis filled a secret into a field of this page, so while the page is open no key is \
+         pressed and nothing is typed or chosen in it, and this call was not carried out: click \
+         the page's own button to send the form, and type into other fields before purlis fills \
+         the secret"
+    )]
+    KeysWithheld,
     #[error(
         "purlis is logging this browser in, so it takes no call from you until the login answers: wait for it, then take a new snapshot"
     )]
