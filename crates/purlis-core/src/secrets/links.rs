@@ -35,7 +35,7 @@ use super::{Ctx, Kind, VaultError, cmd};
 use crate::tui::Markup;
 
 /// The entry a linked entry reads: a vault and a key in it. Names, never a value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct Target {
     pub vault: String,
     pub key: String,
@@ -212,14 +212,71 @@ pub fn link(
     to_vault: &str,
     to_key: &str,
 ) -> Result<(), VaultError> {
+    linked(ctx, v, key, to_vault, to_key, false)
+}
+
+/// **[`link`], over a value the key holds** (#5075): the replace path, for a Secret ask the chat
+/// raised saying the value doesn't work and the person answered with an entry they keep. The
+/// link is written first, so every read from then follows it, and then the value it replaces
+/// is deleted from the vault's provider. Every other refusal of [`link`] holds. Should the
+/// delete fail, the link is taken away again, so the key holds its value as before.
+pub fn link_over(
+    ctx: &Ctx,
+    v: &Vault,
+    key: &str,
+    to_vault: &str,
+    to_key: &str,
+) -> Result<(), VaultError> {
+    let held = cmd::stored_keys(ctx, v)?.iter().any(|k| k == key);
+    linked(ctx, v, key, to_vault, to_key, true)?;
+    if !held {
+        return Ok(());
+    }
+    let to = Target {
+        vault: to_vault.to_owned(),
+        key: to_key.to_owned(),
+    };
+    // Only while the link still stands: a value written under the key meanwhile (which takes the
+    // link away) is the newer word, and is kept.
+    if of(ctx, &v.name, key)? != Some(to) {
+        return Err(VaultError::new(format!(
+            "'{key}' in vault '{}' changed while it was being linked, and was left as it is now",
+            v.name
+        )));
+    }
+    if let Err(e) = cmd::delete_stored(ctx, v, key) {
+        // Back as it was: the value it held, and no link over it.
+        let _ = unlink(ctx, &v.name, key);
+        return Err(VaultError::new(format!(
+            "'{key}' in vault '{}' keeps the value it held: purlis could not delete it to link \
+             the entry in its place ({})",
+            v.name,
+            e.message.lines().next().unwrap_or_default()
+        )));
+    }
+    Ok(())
+}
+
+fn linked(
+    ctx: &Ctx,
+    v: &Vault,
+    key: &str,
+    to_vault: &str,
+    to_key: &str,
+    over: bool,
+) -> Result<(), VaultError> {
     use crate::sandbox::tools::mint;
     for reserved in [key, to_key] {
         if mint::reserved(reserved) {
             return Err(VaultError::new(mint::reserved_write_said(reserved)));
         }
     }
-    if let mint::Raw::Refused(why) = mint::raw(&ctx.root, to_vault, to_key) {
-        return Err(VaultError::new(why));
+    // A GitHub App's key at either end, by a persona's `mint` line too: a link never stands in
+    // for one, nor replaces one (#5075).
+    for (vault, k) in [(to_vault, to_key), (v.name.as_str(), key)] {
+        if let mint::Raw::Refused(why) = mint::raw(&ctx.root, vault, k) {
+            return Err(VaultError::new(why));
+        }
     }
     if v.name == to_vault && key == to_key {
         return Err(VaultError::new(format!(
@@ -254,7 +311,7 @@ pub fn link(
                 counted(readers)
             )));
         }
-        if holds_a_value && !is_link(index, &v.name, key) {
+        if holds_a_value && !over && !is_link(index, &v.name, key) {
             return Err(VaultError::new(format!(
                 "'{key}' in vault '{}' already holds a value. purlis will not replace it with a \
                  link nobody asked to replace it with: delete it first",
@@ -271,6 +328,55 @@ pub fn link(
             .insert(key.to_owned(), to);
         Ok(())
     })
+}
+
+/// **One vault's entries a link may read**, as the person picks one (#5073): its name, and the
+/// keys that hold a value of their own, or why they could not be listed. Names only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pickable {
+    pub vault: String,
+    /// The keys a link may read, sorted; or the provider's own sentence for why none could be
+    /// listed, which is the person's to read.
+    pub keys: Result<Vec<String>, String>,
+}
+
+/// **Every entry the person could link a key to** (#5073), vault by vault in the order of their
+/// names: each key that holds a value of its own. Left out are what [`link`] refuses: a linked
+/// entry (a link never reads another link), a GitHub App's key, by its reserved name or by a
+/// persona's `mint` line, and, where `but` names it, the key a link is being made at. A vault
+/// whose keys cannot be listed is listed with why, so the picker can say so in its place.
+pub fn pickable(ctx: &Ctx, but: Option<&Target>) -> Result<Vec<Pickable>, VaultError> {
+    use crate::sandbox::tools::mint;
+    let index = load(ctx)?;
+    let registered = registry::vaults(&registry::load_registry(ctx)?);
+    let mut names: Vec<&String> = registered.keys().collect();
+    names.sort();
+    Ok(names
+        .into_iter()
+        .map(|name| {
+            let keys = registry::vault(ctx, name)
+                .and_then(|v| cmd::stored_keys(ctx, &v))
+                .map(|keys| {
+                    let mut keys: Vec<String> = keys
+                        .into_iter()
+                        .filter(|key| !is_link(&index, name, key))
+                        .filter(|key| but.is_none_or(|at| at.vault != *name || at.key != *key))
+                        .filter(|key| !mint::reserved(key))
+                        .filter(|key| {
+                            !matches!(mint::raw(&ctx.root, name, key), mint::Raw::Refused(_))
+                        })
+                        .collect();
+                    keys.sort();
+                    keys.dedup();
+                    keys
+                })
+                .map_err(|e| e.message.lines().next().unwrap_or_default().to_owned());
+            Pickable {
+                vault: name.clone(),
+                keys,
+            }
+        })
+        .collect())
 }
 
 /// Take the link `key` in `vault` is away. Whether there was one.

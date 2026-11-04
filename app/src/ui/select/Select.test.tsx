@@ -462,3 +462,63 @@ describe("a long select", () => {
     expect(screen.queryByRole("textbox", { name: "Filter" })).toBeNull();
   });
 });
+
+describe("a select of groups (#5073)", () => {
+  const ENTRIES: SelectOption[] = [
+    { value: "own/STRIPE", label: "STRIPE", group: "own" },
+    { value: "own/GITHUB_TOKEN", label: "GITHUB_TOKEN", group: "own" },
+    { value: "team/STRIPE", label: "STRIPE", group: "team" },
+    { value: "team/DB_PASSWORD", label: "DB_PASSWORD", group: "team" },
+  ];
+
+  it("draws each group under its name, in the order the groups first appear", async () => {
+    const user = userEvent.setup();
+    render(<Filter options={ENTRIES} placeholder="Pick an entry" />);
+    act(() => selectNamed("Filter by workspace").focus());
+    await user.keyboard("{Enter}");
+    const list = await screen.findByRole("listbox");
+    const groups = within(list).getAllByRole("group");
+    expect(groups.map((one) => one.getAttribute("aria-labelledby") !== null)).toEqual([true, true]);
+    expect(
+      groups.map(
+        (one) => document.getElementById(one.getAttribute("aria-labelledby") ?? "")?.textContent,
+      ),
+    ).toEqual(["own", "team"]);
+    expect(
+      within(groups[1])
+        .getAllByRole("option")
+        .map((one) => one.textContent),
+    ).toEqual(["STRIPE", "DB_PASSWORD"]);
+  });
+
+  it("narrows within its groups as the filter is typed, and leaves out a group nothing in matches", async () => {
+    const user = userEvent.setup();
+    const picked = vi.fn();
+    function Long() {
+      const [value, setValue] = useState("");
+      return (
+        <Select
+          aria-label="Entry"
+          value={value}
+          options={ENTRIES}
+          filtered
+          onValueChange={(to) => {
+            setValue(to);
+            picked(to);
+          }}
+        />
+      );
+    }
+    render(<Long />);
+    act(() => selectNamed("Entry").focus());
+    await user.keyboard("{Enter}");
+    const filter = await screen.findByRole("textbox", { name: "Filter" });
+    await waitFor(() => expect(filter).toHaveFocus());
+    await user.keyboard("db");
+    const list = screen.getByRole("listbox");
+    await waitFor(() => expect(within(list).getAllByRole("option")).toHaveLength(1));
+    expect(within(list).getAllByRole("group")).toHaveLength(1);
+    await user.keyboard("{Enter}");
+    expect(picked).toHaveBeenLastCalledWith("team/DB_PASSWORD");
+  });
+});

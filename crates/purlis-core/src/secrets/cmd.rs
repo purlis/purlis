@@ -204,6 +204,12 @@ fn delete_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
     if super::links::unlink(ctx, &v.name, key)? {
         return Ok(());
     }
+    delete_stored(ctx, v, key)
+}
+
+/// The value the vault's own provider stores under `key` deleted, whatever links say: what a
+/// link written over it leaves behind (#5075, [`super::links::link_over`]).
+pub(super) fn delete_stored(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
     match v.provider.as_str() {
         "keyring" => keyring::delete(ctx, v, key),
         "plain-file" => plain_file::delete(ctx, v, key),

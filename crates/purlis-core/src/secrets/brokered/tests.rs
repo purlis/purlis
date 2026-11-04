@@ -5251,6 +5251,104 @@ fn a_run_missing_its_key_waits_on_a_secret_ask_and_runs_with_the_value_filled() 
     );
 }
 
+/// A command that runs only with `other`'s TOKEN, the entry the person picks, under `MISSING`.
+fn a_missing_key_filled_by_a_pick(root: &Path) -> Wanted {
+    let mut want = wanted(root, "team", sh(r#"test "$X" = "n0t-yours" && echo ran"#));
+    want.env = vec!["X=MISSING".into()];
+    want
+}
+
+#[test]
+fn a_run_missing_its_key_that_the_person_fills_with_an_entry_runs_with_the_entrys_value() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            served_asking(
+                &asker(project.path(), Some("devops")),
+                a_missing_key_filled_by_a_pick(project.path()),
+                &asks,
+                Duration::from_secs(60),
+            )
+        });
+        let id = loop {
+            if let Some(one) = asks.open().first() {
+                break one.id;
+            }
+            std::thread::yield_now();
+        };
+        asks.answer(
+            &Ctx::new(project.path(), Env::of(&[])),
+            id,
+            crate::secrets::ask::Answer::Link(crate::secrets::links::Target {
+                vault: "other".into(),
+                key: "TOKEN".into(),
+            }),
+            crate::harness::asks::Answerer::admitted(crate::harness::asks::Admitted::LocalUi)
+                .unwrap(),
+        )
+        .unwrap();
+        run.join().unwrap()
+    });
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "ran\n");
+    let heard = format!("{frames:?}");
+    for never in ["n0t-yours", "other/TOKEN"] {
+        assert!(!heard.contains(never), "{never} in: {heard}");
+    }
+    let team = std::fs::read_to_string(project.path().join("team.json")).unwrap();
+    assert!(!team.contains("MISSING"), "a link, never a copy: {team}");
+}
+
+#[test]
+fn a_run_whose_linked_entry_is_gone_asks_naming_the_gone_entry_and_runs_once_filled() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    let team = crate::secrets::cmd::provider(&ctx, "team").unwrap();
+    crate::secrets::links::link(&ctx, &team, "MISSING", "other", "TOKEN").unwrap();
+    std::fs::write(project.path().join("other.json"), "{}").unwrap();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            served_asking(
+                &asker(project.path(), Some("devops")),
+                a_missing_key(project.path()),
+                &asks,
+                Duration::from_secs(60),
+            )
+        });
+        let open = loop {
+            if let Some(one) = asks.open().into_iter().next() {
+                break one;
+            }
+            std::thread::yield_now();
+        };
+        assert_eq!(
+            open.reason,
+            Some(crate::secrets::ask::Reason::BrokenLink {
+                was: crate::secrets::links::Target {
+                    vault: "other".into(),
+                    key: "TOKEN".into()
+                }
+            }),
+            "the person is told which entry is gone"
+        );
+        asks.answer(
+            &ctx,
+            open.id,
+            crate::secrets::ask::Answer::Fill("fr3sh-v4lue".to_owned().into()),
+            crate::harness::asks::Answerer::admitted(crate::harness::asks::Admitted::LocalUi)
+                .unwrap(),
+        )
+        .unwrap();
+        run.join().unwrap()
+    });
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "ran\n");
+    let heard = format!("{frames:?}");
+    assert!(!heard.contains("other"), "never the gone entry: {heard}");
+}
+
 #[test]
 fn a_run_missing_its_key_that_the_person_declines_hears_declined() {
     let project = project();

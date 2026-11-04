@@ -774,6 +774,17 @@ export const commands = {
 	 */
 	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key })),
 	/**
+	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
+	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
+	 *  with that entry's value. The chat hears filled and the key's name, never the entry.
+	 */
+	linkSecretAsk: (plane: PlaneId, id: number, vault: string, key: string) => typedError<null, string>(__TAURI_INVOKE("link_secret_ask", { plane, id, vault, key })),
+	/**
+	 *  **The entries the person could fill Secret ask `id` with** (#5073), vault by vault: every
+	 *  key of every vault that holds a value of its own, but the asked one. Names only.
+	 */
+	secretAskEntries: (plane: PlaneId, id: number) => typedError<EntriesOf[], string>(__TAURI_INVOKE("secret_ask_entries", { plane, id })),
+	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
 	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone
 	 *  in the project, committed (#2443). A grant for the browser alone (ruled 2026-10-17): the
@@ -7570,6 +7581,17 @@ export type EngineSandboxShown = {
 	machine: EngineMachine,
 };
 
+/**
+ *  **One vault's entries a Secret ask's picker offers** (#5073): the vault, the keys a link may
+ *  read in it, and why none could be listed, where that is so. Names only, never a value.
+ */
+export type EntriesOf = {
+	vault: string,
+	keys: string[],
+	/**  Why its keys could not be listed: the provider's own first line. */
+	unlisted?: string | null,
+};
+
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */
 export type EntryFieldRefusal = {
 	field: string,
@@ -13947,6 +13969,12 @@ export type SecretAt = {
 	shown: string | null,
 };
 
+/**  An entry of a vault named in a Secret ask (#5075): the person's to read, never a chat's. */
+export type SecretEntryShown = {
+	vault: string,
+	key: string,
+};
+
 /**
  *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
  *  its chats miss, and how many wait on it. Names only: no value is ever here.
@@ -13974,6 +14002,18 @@ export type SecretShown = {
 	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
+	/**
+	 *  **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
+	 *  chat's. Absent on an ask for a key the vault doesn't hold.
+	 */
+	replace?: string | null,
+	/**
+	 *  The entry the key reads, where it is a Linked entry asked to be replaced (#5075): a new
+	 *  value goes there.
+	 */
+	reads?: SecretEntryShown | null,
+	/**  The entry a broken link read, which is gone (#5075). */
+	gone?: SecretEntryShown | null,
 };
 
 /**

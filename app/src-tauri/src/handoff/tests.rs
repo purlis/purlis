@@ -3241,6 +3241,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             key: "stop everything".to_owned(),
             purpose: "stop this chat".to_owned(),
             vault: None,
+            replace: None,
         })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();

@@ -29,6 +29,10 @@
  *   its place, the button as wide as the field, so in a row it is given a width; its line's room kept
  *   whether or not it says anything, so a refusal is heard when it lands and moves nothing.
  *   `isInvalid` is for words drawn elsewhere (a settings row's), named by `aria-describedby`.
+ * - **Options may stand in groups** (`group`, #5073): the list draws each group under its name,
+ *   in the order the groups first appear, as the popover family's group and header (a name from
+ *   data, written as given). A filter narrows within the groups, and a group nothing in matches
+ *   is not drawn.
  * - **The button carries what it holds as `data-value`**, for the window's e2e specs to read the
  *   way they read a field's value.
  * - **Drawn only while its project is in front**: its list is the popover family's surface.
@@ -49,8 +53,10 @@ import {
   Autocomplete,
   AutocompleteStateContext,
   Button as AriaButton,
+  Header as AriaHeader,
   ListBox,
   ListBoxItem,
+  ListBoxSection,
   Select as AriaSelect,
   SelectValue,
   useFilter,
@@ -70,13 +76,31 @@ export type SelectSize = (typeof SELECT_SIZES)[number];
 export const FILTERED_FROM = 10;
 
 /** An option: what a pick writes, the words it shows, and whether it can be picked. An option
- *  out of reach says why in its `tooltip`. */
+ *  out of reach says why in its `tooltip`. One with a `group` is drawn under that group's name,
+ *  which is data (a vault's), written as given. */
 export type SelectOption = {
   value: string;
   label: string;
   isDisabled?: boolean;
   tooltip?: string;
+  group?: string;
 };
+
+/** The options by their group, in the order each group first appears; `undefined` where none
+ *  has a group. */
+function grouped(
+  options: readonly SelectOption[],
+): { name: string; options: SelectOption[] }[] | undefined {
+  if (!options.some((one) => one.group !== undefined)) return undefined;
+  const groups: { name: string; options: SelectOption[] }[] = [];
+  for (const one of options) {
+    const name = one.group ?? "";
+    const group = groups.find((g) => g.name === name);
+    if (group) group.options.push(one);
+    else groups.push({ name, options: [one] });
+  }
+  return groups;
+}
 
 export type SelectProps = {
   /** The button's id, which a row's `<label for>` points at. */
@@ -288,9 +312,21 @@ function OptionList({
         </span>
       )}
     >
-      {options.map((one) => (
-        <Option key={into(one.value)} one={one} />
-      ))}
+      {grouped(options)?.map((group) => (
+        <ListBoxSection
+          key={`group:${group.name}`}
+          id={`group:${group.name}`}
+          data-scope="popover"
+          data-part="group"
+        >
+          <AriaHeader data-scope="popover" data-part="header" data-named="">
+            {group.name}
+          </AriaHeader>
+          {group.options.map((one) => (
+            <Option key={into(one.value)} one={one} />
+          ))}
+        </ListBoxSection>
+      )) ?? options.map((one) => <Option key={into(one.value)} one={one} />)}
     </ListBox>
   );
 }
