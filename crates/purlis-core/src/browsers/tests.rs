@@ -653,11 +653,11 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_once_si
     )
     .expect("performed");
     assert_eq!(status(&proxy, form_port), carried, "while it signs in");
-    assert_eq!(kept_off(&*sites), None, "while it signs in");
+    assert_eq!(kept_off(&sites), None, "while it signs in");
     assert_eq!(holder.signing_in().map(|(form, _)| form), login.form);
     holder.back();
     assert_eq!(status(&proxy, form_port), carried, "back on its page");
-    assert_eq!(kept_off(&*sites), form_site, "back on its page");
+    assert_eq!(kept_off(&sites), form_site, "back on its page");
     assert_eq!(status(&proxy, page_port), carried);
     assert_eq!(holder.signing_in(), None);
     // A later login of the same page signs in anew.
@@ -673,15 +673,11 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_once_si
         },
     )
     .expect("performed again");
-    assert_eq!(kept_off(&*sites), None, "a later login signs in anew");
+    assert_eq!(kept_off(&sites), None, "a later login signs in anew");
     holder.back();
-    assert_eq!(
-        kept_off(&*sites),
-        None,
-        "an earlier login ends no later one"
-    );
+    assert_eq!(kept_off(&sites), None, "an earlier login ends no later one");
     again.sign_in_over();
-    assert_eq!(kept_off(&*sites), form_site);
+    assert_eq!(kept_off(&sites), form_site);
     assert_eq!(status(&proxy, form_port), carried);
 
     // Its page never comes back.
@@ -698,9 +694,9 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_once_si
         },
     )
     .expect("performed");
-    assert_eq!(kept_off(&*sites), None, "while it signs in");
+    assert_eq!(kept_off(&sites), None, "while it signs in");
     let start = std::time::Instant::now();
-    while kept_off(&*sites).is_none() {
+    while kept_off(&sites).is_none() {
         assert!(
             start.elapsed() < Duration::from_secs(10),
             "the sign-in outlived its time"
@@ -731,7 +727,7 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_once_si
     )
     .expect("performed");
     assert_eq!(status(&proxy, form_port), carried, "once the login begins");
-    assert_eq!(kept_off(&*sites), None, "once the login begins");
+    assert_eq!(kept_off(&sites), None, "once the login begins");
     holder.answered(&Ok(drive::LoginEnded {
         driver: drive::Driver::Agent,
         epoch: 1,
@@ -747,7 +743,7 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_once_si
         }),
     }));
     assert_eq!(
-        kept_off(&*sites),
+        kept_off(&sites),
         form_site,
         "signed in already, nothing was filled"
     );
@@ -777,7 +773,7 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_once_si
         )
         .expect("performed");
         holder.answered(&Ok(failed(driver)));
-        assert_eq!(kept_off(&*sites), after, "{driver:?}");
+        assert_eq!(kept_off(&sites), after, "{driver:?}");
         assert_eq!(status(&proxy, form_port), carried, "{driver:?}");
         holder.sign_in_over();
     }

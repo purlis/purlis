@@ -3356,12 +3356,25 @@ impl Browser {
         if frame.is_some_and(|frame| kept.contains_key(frame)) {
             return Err(refused());
         }
-        let backend = hit.get("backendNodeId").and_then(Value::as_i64);
-        let holds_one = self
-            .kept_off_owners(target)?
-            .iter()
-            .any(|owner| Some(owner.backend) == backend && Some(owner.frame.as_str()) == frame);
-        if holds_one { Err(refused()) } else { Ok(()) }
+        // The element holding a frame says which frame it holds.
+        let backend = hit
+            .get("backendNodeId")
+            .and_then(Value::as_i64)
+            .ok_or_else(refused)?;
+        let described = self
+            .devtools()
+            .call(
+                "DOM.describeNode",
+                json!({ "backendNodeId": backend }),
+                Some(session),
+            )
+            .map_err(|_| refused())?;
+        let holds = described.pointer("/node/frameId").and_then(Value::as_str);
+        if holds.is_some_and(|held| kept.contains_key(held)) {
+            Err(refused())
+        } else {
+            Ok(())
+        }
     }
 
     /// Whether `point`, in CSS pixels of the page on `session`, lies inside what the page's own
