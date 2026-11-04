@@ -182,6 +182,8 @@ pub struct Open {
     /// it was opened from and gone when its program exits. Never recorded
     /// ([`Chats::start_one_job`]), and no sidebar row.
     pub one_job: bool,
+    /// What the Skill studio started it for (#5185): [`purlis_core::reopen::Chat::studio`].
+    pub studio: Option<purlis_core::reopen::StudioJob>,
 }
 
 /// Who an open chat is beyond this launch, and the directory it works in.
@@ -5712,6 +5714,23 @@ impl Chats {
         Ok(label)
     }
 
+    /// **Marks the Skill studio's job of chat `session` done** (#5185): its draft came. Kept on
+    /// its record, so the chat stays done across a relaunch, and once the draft is accepted or
+    /// discarded. Nothing for a chat the studio did not start, or one already done.
+    pub fn studio_job_done(&self, session: u32) {
+        let mut open = lock(&self.open);
+        let Some(job) = open
+            .get_mut(&session)
+            .and_then(|one| one.chat.studio.as_mut())
+            .filter(|job| !job.done)
+        else {
+            return;
+        };
+        job.done = true;
+        drop(open);
+        self.write_it_down();
+    }
+
     /// The name `session` is shown under — the one it was given, or its default — or `None`
     /// for a chat charter does not have open (charter-app#258).
     pub fn shown_name(&self, session: u32) -> Option<String> {
@@ -6795,6 +6814,7 @@ impl Chats {
                     floorless: floorless.get(&session).cloned(),
                     untaken: untaken.get(&session).cloned(),
                     one_job: is_a_one_job(chat, &one_jobs),
+                    studio: chat.studio.clone(),
                 })
             })
             .collect()
@@ -7381,6 +7401,7 @@ impl Chats {
                 untaken: None,
                 // A one-job program is never recorded, so a launch puts none back.
                 one_job: false,
+                studio: one.chat.studio.clone(),
             })
             .collect()
     }

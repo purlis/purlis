@@ -417,6 +417,7 @@ pub(crate) fn open_chosen(
             prompt: chosen.prompt,
             then_a_space: false,
             starts_runs,
+            studio: None,
         },
         size,
         when_typed,
@@ -462,6 +463,9 @@ pub struct ChatTyped {
     /// What starts the skill runs the turn it is sent in opens at the top, where it is not the
     /// harness's own pick: a curation action's (SK-20). Held before the chat starts.
     pub starts_runs: Option<purlis_core::skills::runs::StartedBy>,
+    /// What the Skill studio started it for, which its record keeps (#5185): `None` for every
+    /// other chat.
+    pub studio: Option<purlis_core::reopen::StudioJob>,
 }
 
 /// A typed chat that started.
@@ -577,6 +581,7 @@ pub fn start_typed_where_it_can_be(
         label: Some(chat.label),
         from: None,
         renamed_from: None,
+        studio: chat.studio,
         ..Default::default()
     };
     let paste = if chat.then_a_space {

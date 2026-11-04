@@ -61,7 +61,12 @@ function drawn(grade: SkillDraftGrade, isNew = false) {
   render(
     <>
       <DraftGradeLine name="deploy" state={state} />
-      <DraftGradeActions state={state} isNew={isNew} {...go} />
+      <DraftGradeActions
+        state={state}
+        isNew={isNew}
+        level={{ at: "workspace", name: "ops", local: false }}
+        {...go}
+      />
     </>,
   );
   return go;
@@ -179,7 +184,7 @@ describe("a draft's grade beside Accept", () => {
   it("offers to ask for tests where a grade has none to run", () => {
     const go = drawn({ ...NOTHING, tests: 0 });
     screen.getByText("deploy has no trigger tests yet, so a grade has nothing to run.");
-    screen.getByRole("button", { name: "Ask a chat to write them" }).click();
+    screen.getByRole("button", { name: "Ask a chat at ops to write them" }).click();
     expect(go.onAskForTests).toHaveBeenCalled();
   });
 

@@ -125,6 +125,7 @@ pub fn start(
                     prompt: firsttask::prompt(runner.as_deref()),
                     then_a_space: false,
                     starts_runs: None,
+                    studio: None,
                 },
                 size,
                 cannot_type,

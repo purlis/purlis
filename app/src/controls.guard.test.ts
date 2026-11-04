@@ -496,6 +496,7 @@ export const PANE_LINE_CHIPS = [
   "pane-from",
   "pane-work-item",
   "pane-skills",
+  "pane-studio",
 ];
 
 /** What is drawn as part of a strip or a pane's top line, as tall as it is: the ways to end a
@@ -788,6 +789,7 @@ const LINE_CHIP_COMPONENTS: Record<string, string> = {
   ChatGauge: "chat-gauge",
   HarnessChip: "pane-harness",
   SkillsChip: "pane-skills",
+  StudioChatChip: "pane-studio",
 };
 
 /** A component that draws its one child as itself (`asChild`): the line reads through it. */

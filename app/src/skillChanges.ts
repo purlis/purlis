@@ -69,6 +69,27 @@ export function sameLevel(a: SkillLevel, b: SkillLevel): boolean {
   return a.name === b.name;
 }
 
+/**
+ * **Where a chat the studio starts for a skill of `level` starts** (#5184), as its button names
+ * it: where the skill lives. `at the project's root`, `at purlis-demo` for a workspace's, and
+ * `as steward` for a persona's, whose chat runs as it at the project's root.
+ */
+export function chatPlace(level: SkillLevel): string {
+  switch (level.at) {
+    case "project":
+      return "at the project's root";
+    case "workspace":
+      return `at ${level.name}`;
+    case "persona":
+      return `as ${level.name}`;
+  }
+}
+
+/** **"Ask a chat at purlis-demo to write these"** (#5184): a studio chat's button, with its place. */
+export function askAChat(level: SkillLevel, what: string): string {
+  return `Ask a chat ${chatPlace(level)} to ${what}`;
+}
+
 /** A level's key among the studio's drop targets: `project`, `ops-local`, `persona-reviewer`. */
 export function levelKey(level: SkillLevel): string {
   const local = level.local ? "-local" : "";

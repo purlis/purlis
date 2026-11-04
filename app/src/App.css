@@ -762,7 +762,8 @@ body {
     .pane-harness,
     .pane-from,
     .pane-work-item,
-    .pane-skills
+    .pane-skills,
+    .pane-studio
   ) {
   height: var(--size-chrome);
 }
@@ -960,6 +961,14 @@ body {
    the Skills view, drawn by the button family (ghost, or warning-soft while something in the set
    needs the person). Its place on the line only: it never pushes the line wider than it is. */
 .pane-chips > .pane-skills {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* **What the Skill studio started a chat for** (`StudioChatChip`, #5185): the skill and the job,
+   which opens the skill's page, drawn by the button family. Its place on the line only: it gives
+   way before the line grows wider than the pane. */
+.pane-chips > .pane-studio {
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -8190,6 +8199,20 @@ nav.piece-files-head {
 
 .skill-checks-count {
   color: var(--text-secondary);
+}
+
+/* **A studio chat at work on a skill** (#5185): its lines above the tabs, the Runs tab's section
+   of the chats the studio started, and the Grades card's running job in place of its button. */
+.skill-page-studio-chats,
+.skill-page-studio-started,
+.skill-checks-running {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skill-checks-running {
+  align-items: flex-start;
 }
 
 .skill-checks-drafted {
