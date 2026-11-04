@@ -579,3 +579,93 @@ fn a_field_that_turned_multi_line_as_the_value_is_written_takes_nothing() {
         other => panic!("refused otherwise: {}", ended_as(&other)),
     }
 }
+
+/// **A filled field takes no keys from the chat** (#5115): while the page holding the value
+/// lives, the agent presses no key in that page, and types or chooses nothing in the filled
+/// field's document, whatever it names: what it would change there could be the value, and a page
+/// that shows what the field holds would show what is left of it.
+#[test]
+fn while_the_page_holds_a_filled_value_the_agent_puts_no_key_into_its_document() {
+    let holding = Arc::new(Holding::default());
+    let (browser, engine) = filled_under(&holding);
+    let text = snapshot(&browser, 2);
+    let secret = ref_of(&text, "- textbox [");
+    let name = ref_of(&text, "- textbox \"Name\"");
+    let volume = ref_of(&text, "- slider \"Volume\"");
+    let keys_before = engine.sent("Input.dispatchKeyEvent").len();
+    let typed_before = engine.sent("Input.insertText").len();
+    let typed = |n: u32, into: Option<Ref>| {
+        browser.call(
+            &id(n),
+            Call::Type {
+                page: None,
+                fields: vec![crate::drive::Field {
+                    into,
+                    text: "x".into(),
+                    replace: false,
+                }],
+            },
+        )
+    };
+
+    for (n, keys) in [(3, ["Backspace"]), (4, ["Enter"]), (5, ["a"])] {
+        let pressed = browser.call(
+            &id(n),
+            Call::Press {
+                page: None,
+                keys: keys.iter().map(|key| (*key).to_owned()).collect(),
+            },
+        );
+        assert_eq!(pressed, Err(Refusal::KeysWithheld), "{keys:?}");
+    }
+    assert_eq!(
+        typed(6, Some(secret)),
+        Err(Refusal::KeysWithheld),
+        "the field"
+    );
+    assert_eq!(
+        typed(7, Some(name)),
+        Err(Refusal::KeysWithheld),
+        "its document"
+    );
+    assert_eq!(
+        typed(8, None),
+        Err(Refusal::KeysWithheld),
+        "where the focus is"
+    );
+    let chosen = browser.call(
+        &id(9),
+        Call::Select {
+            target: volume,
+            options: vec!["Blue".to_owned()],
+        },
+    );
+    assert_eq!(chosen, Err(Refusal::KeysWithheld), "a choice");
+
+    assert_eq!(engine.sent("Input.dispatchKeyEvent").len(), keys_before);
+    assert_eq!(engine.sent("Input.insertText").len(), typed_before);
+    assert!(
+        Refusal::KeysWithheld.to_string().contains("click"),
+        "the refusal says what to do: {}",
+        Refusal::KeysWithheld
+    );
+}
+
+/// Once the page holding the value loads another document, its keys are the agent's again.
+#[test]
+fn once_the_filled_page_loads_another_document_its_keys_go_again() {
+    let holding = Arc::new(Holding::default());
+    let (browser, engine) = filled_under(&holding);
+
+    main_frame_loads(&engine, "http://fixture.test/next.html");
+    wait_for("the hold is released", || holding.told().len() == 2);
+
+    let pressed = browser.call(
+        &id(2),
+        Call::Press {
+            page: None,
+            keys: vec!["Enter".to_owned()],
+        },
+    );
+    assert!(pressed.is_ok(), "{}", ended_as(&pressed));
+}

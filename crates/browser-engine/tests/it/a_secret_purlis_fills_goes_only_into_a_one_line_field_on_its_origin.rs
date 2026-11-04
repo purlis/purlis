@@ -263,3 +263,39 @@ fn a_multi_line_box_or_an_editable_area_takes_a_secret_the_person_was_asked_abou
         "a find finds the value"
     );
 }
+
+/// **A filled field takes no keys from the chat** (#5115): on a page that shows what its field
+/// holds, a Backspace pressed into the filled field would leave the value cut short on show, so
+/// the press is refused, the field keeps the value whole, and nothing of it shows.
+#[test]
+fn a_backspace_into_the_filled_field_is_refused_and_nothing_of_the_value_shows() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "fill.html");
+    let key = ref_of(&browser, "textbox \"API key\"");
+    filled(&browser, key.clone(), "http://fixture.test")
+        .unwrap_or_else(|why| panic!("filled: {}", ended_as(&Err::<(), _>(why))));
+    call(&browser, Call::Click { target: key });
+
+    let pressed = browser.call(
+        &common::drive::next_id(),
+        Call::Press {
+            page: None,
+            keys: vec!["Backspace".into()],
+        },
+    );
+
+    assert_eq!(pressed.err(), Some(Refusal::KeysWithheld));
+    let shown = snapshot(&browser);
+    assert!(
+        shown.contains(&format!("The key holds {} characters", VALUE.len())),
+        "the field keeps the value whole"
+    );
+    let cut_short = &VALUE[..VALUE.len() - 1];
+    assert!(
+        !shown.to_lowercase().contains(cut_short),
+        "the page's echo shows none of the value"
+    );
+    assert_eq!(red_pixels(&screenshot(&browser)), 0);
+}
