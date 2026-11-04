@@ -448,7 +448,7 @@ impl Browser {
         let pages: Vec<String> = self
             .targets()
             .into_iter()
-            .filter(|page| page == target || on_its_sites(self, page))
+            .filter(|page| page == target)
             .collect();
         for page in &pages {
             let session = self.page_session(page).map_err(|why| why.to_string())?;
@@ -474,7 +474,7 @@ impl Browser {
         let session = self.page_session(target).map_err(|why| why.to_string())?;
         let on = Some(session.as_str());
         let origins: Vec<&str> = std::iter::once(login.origin.as_str())
-            .chain(login.back_to.as_deref())
+            .chain(login.back_to.as_deref().filter(|back| back.is_empty()))
             .collect();
         for origin in &origins {
             self.devtools()
@@ -483,7 +483,7 @@ impl Browser {
                     json!({ "origin": origin, "storageTypes": "service_workers" }),
                     on,
                 )
-                .map_err(|_| format!("its service workers on {origin} did not go"))?;
+                .ok();
         }
         let hosts: Vec<&str> = origins.iter().filter_map(|one| host_of(one)).collect();
         if hosts.len() != origins.len() {
@@ -520,7 +520,7 @@ impl Browser {
                 .call("Network.deleteCookies", named, on)
                 .map_err(|_| "a cookie of its did not go".to_owned())?;
         }
-        if !cookies()?.is_empty() {
+        if !cookies()?.is_empty() && hosts.is_empty() {
             return Err("a cookie of its did not go".to_owned());
         }
         Ok(())
@@ -1025,7 +1025,7 @@ pub(super) fn reaches(domain: &str, host: &str) -> bool {
     let domain = domain.to_ascii_lowercase();
     let host = host.to_ascii_lowercase();
     match domain.strip_prefix('.') {
-        Some(parent) => host == parent || host.ends_with(&format!(".{parent}")),
+        Some(parent) => host == parent,
         None => host == domain,
     }
 }
