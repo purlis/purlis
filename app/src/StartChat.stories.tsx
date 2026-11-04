@@ -19,7 +19,9 @@ import {
   expectFocusInSight,
   inAWindow,
   pictureNow,
+  scrollIntoItsPane,
   untilFocused,
+  untilInSight,
 } from "./stories.testkit";
 
 const PERSONAS = [
@@ -337,6 +339,26 @@ async function opened() {
 }
 
 /**
+ * **The Runs on row in the picture** (#5016): the row sits below the harness cards, under the
+ * details pane's fold as the dialog opens, so it is scrolled to the middle of the pane, and only
+ * the pane, before `pictureNow`. What a person reads there is held wholly in sight: its heading,
+ * the row's control (the select, or Pool setup…) and the line under it that says why.
+ */
+async function runsOnInSight(page: ReturnType<typeof within>) {
+  const section = page.getByRole("region", { name: "Runs on" });
+  scrollIntoItsPane(section);
+  const inside = within(section);
+  await untilInSight(
+    [
+      inside.getByRole("heading", { name: "Runs on" }),
+      ...inside.queryAllByRole("button"),
+      ...section.querySelectorAll("p"),
+    ],
+    "Runs on: the row in the picture",
+  );
+}
+
+/**
  * **A workspace's first chat on its project's pool** (#4591): before anything is sent there, the
  * row says plainly that the workspace's code is copied to that pool's runner and the chat's work
  * comes back here.
@@ -351,6 +373,7 @@ export const RunsOnFirstOnThePool: Story = {
         "pool builds. Its code is copied to that pool's runner. The chat's work comes back " +
         "here when it ends.",
     );
+    await runsOnInSight(page);
     await pictureNow();
   },
 };
@@ -369,6 +392,7 @@ export const RunsOnFollowsTheProject: Story = {
     const runsOn = page.getByRole("button", { name: /Runs on$/ });
     await expect(runsOn).toHaveTextContent("As set (pool builds)");
     await expect(runsOn).toHaveAccessibleDescription("Pool builds, as this project's chats run.");
+    await runsOnInSight(page);
     await pictureNow();
 
     runsOn.focus();
@@ -446,6 +470,7 @@ export const RunsOnThisMachineForTheWorkspace: Story = {
     await expect(runsOn).toHaveAccessibleDescription(
       "This machine, as this workspace's chats run.",
     );
+    await runsOnInSight(page);
     await pictureNow();
   },
 };
@@ -461,6 +486,7 @@ export const RunsOnAtTheRoot: Story = {
       page.getByText("This machine. A chat at the project's root always runs here."),
     ).toBeVisible();
     await expect(page.queryByRole("button", { name: /Runs on$/ })).toBeNull();
+    await runsOnInSight(page);
     await pictureNow();
   },
 };
@@ -474,6 +500,7 @@ export const RunsOnWithNoPool: Story = {
     await expect(
       page.getByText("This machine. No pool is set up on this machine yet."),
     ).toBeVisible();
+    await runsOnInSight(page);
     await pictureNow();
     const setup = page.getByRole("button", { name: "Pool setup…" });
     setup.focus();
