@@ -1689,11 +1689,25 @@ fn filled_with(
     reason: Option<&Reason>,
     value: &str,
 ) -> Result<(), super::VaultError> {
-    if let Some(Reason::Replace { .. }) = reason
-        && let Some(to) = super::links::of(ctx, vault, key)?
-    {
-        let target = cmd::provider(ctx, &to.vault)?;
-        return cmd::set_value(ctx, &target, &to.key, value);
+    use crate::sandbox::tools::mint;
+    if let Some(Reason::Replace { reads, .. }) = reason {
+        // Where the person was shown it goes, or nowhere: a link re-pointed or made since the
+        // ask was raised is refused, never followed.
+        if super::links::of(ctx, vault, key)? != *reads {
+            return Err(super::VaultError::new(format!(
+                "{key} in vault {vault} changed since the chat asked: look at it again in the \
+                 vault, then fill it there"
+            )));
+        }
+        let (into_vault, into_key) = reads
+            .as_ref()
+            .map_or((vault, key), |to| (to.vault.as_str(), to.key.as_str()));
+        // A GitHub App's key is never replaced through an ask.
+        if let mint::Raw::Refused(why) = mint::raw(&ctx.root, into_vault, into_key) {
+            return Err(super::VaultError::new(why));
+        }
+        let into = cmd::provider(ctx, into_vault)?;
+        return cmd::set_value(ctx, &into, into_key, value);
     }
     let v = cmd::provider(ctx, vault)?;
     cmd::set_value(ctx, &v, key, value)
@@ -1710,7 +1724,13 @@ fn linked_to(
     to: &super::links::Target,
 ) -> Result<(), super::VaultError> {
     let v = cmd::provider(ctx, vault)?;
-    if let Some(Reason::Replace { .. }) = reason {
+    if let Some(Reason::Replace { reads, .. }) = reason {
+        if super::links::of(ctx, vault, key)? != *reads {
+            return Err(super::VaultError::new(format!(
+                "{key} in vault {vault} changed since the chat asked: look at it again in the \
+                 vault, then link it there"
+            )));
+        }
         super::links::link_over(ctx, &v, key, &to.vault, &to.key)
     } else {
         super::links::link(ctx, &v, key, &to.vault, &to.key)

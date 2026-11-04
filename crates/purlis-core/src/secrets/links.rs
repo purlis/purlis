@@ -219,8 +219,7 @@ pub fn link(
 /// raised saying the value doesn't work and the person answered with an entry they keep. The
 /// link is written first, so every read from then follows it, and then the value it replaces
 /// is deleted from the vault's provider. Every other refusal of [`link`] holds. Should the
-/// delete fail, the link stands and reads the entry; the refusal says the old value is still
-/// stored under it.
+/// delete fail, the link is taken away again, so the key holds its value as before.
 pub fn link_over(
     ctx: &Ctx,
     v: &Vault,
@@ -230,15 +229,30 @@ pub fn link_over(
 ) -> Result<(), VaultError> {
     let held = cmd::stored_keys(ctx, v)?.iter().any(|k| k == key);
     linked(ctx, v, key, to_vault, to_key, true)?;
-    if held {
-        cmd::delete_stored(ctx, v, key).map_err(|e| {
-            VaultError::new(format!(
-                "'{key}' in vault '{}' now reads the entry you picked, but the value it held \
-                 could not be deleted, and is still stored under it: {}",
-                v.name,
-                e.message.lines().next().unwrap_or_default()
-            ))
-        })?;
+    if !held {
+        return Ok(());
+    }
+    let to = Target {
+        vault: to_vault.to_owned(),
+        key: to_key.to_owned(),
+    };
+    // Only while the link still stands: a value written under the key meanwhile (which takes the
+    // link away) is the newer word, and is kept.
+    if of(ctx, &v.name, key)? != Some(to) {
+        return Err(VaultError::new(format!(
+            "'{key}' in vault '{}' changed while it was being linked, and was left as it is now",
+            v.name
+        )));
+    }
+    if let Err(e) = cmd::delete_stored(ctx, v, key) {
+        // Back as it was: the value it held, and no link over it.
+        let _ = unlink(ctx, &v.name, key);
+        return Err(VaultError::new(format!(
+            "'{key}' in vault '{}' keeps the value it held: purlis could not delete it to link \
+             the entry in its place ({})",
+            v.name,
+            e.message.lines().next().unwrap_or_default()
+        )));
     }
     Ok(())
 }
@@ -257,8 +271,12 @@ fn linked(
             return Err(VaultError::new(mint::reserved_write_said(reserved)));
         }
     }
-    if let mint::Raw::Refused(why) = mint::raw(&ctx.root, to_vault, to_key) {
-        return Err(VaultError::new(why));
+    // A GitHub App's key at either end, by a persona's `mint` line too: a link never stands in
+    // for one, nor replaces one (#5075).
+    for (vault, k) in [(to_vault, to_key), (v.name.as_str(), key)] {
+        if let mint::Raw::Refused(why) = mint::raw(&ctx.root, vault, k) {
+            return Err(VaultError::new(why));
+        }
     }
     if v.name == to_vault && key == to_key {
         return Err(VaultError::new(format!(

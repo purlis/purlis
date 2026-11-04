@@ -74,7 +74,7 @@ import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { LoginSite, useTypedSite } from "./LoginSite";
-import { SecretFill } from "./SecretFill";
+import { SecretFill, type FillWith } from "./SecretFill";
 import { SecretFillSite } from "./SecretFillNotice";
 import type { VaultEntry } from "./VaultEntryPicker";
 import { ScopeSwitch } from "./ScopeSwitch";
@@ -863,6 +863,8 @@ function Ask({
   const secretBox = useRef<HTMLInputElement>(null);
   /** The entry a Secret ask is filled with, where the person uses one they keep (#5073). */
   const [secretPick, setSecretPick] = useState<VaultEntry>();
+  /** Which way the person fills a Secret ask: Fill with nothing picked says so (#5073). */
+  const [secretFillWith, setSecretFillWith] = useState<FillWith>("value");
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
   const openAnswer = useOpenAnswer();
@@ -891,6 +893,10 @@ function Ask({
     // pane, and an ask joining above must not put another's Allow under the pointer.
     if (option.allows && tooSoon()) {
       setSaid(MOVED_JUST_NOW);
+      return;
+    }
+    if (ask.secret != null && option.allows && secretFillWith === "entry" && !secretPick) {
+      setSaid("Pick an entry first, or choose New value.");
       return;
     }
     setBusy(true);
@@ -969,6 +975,7 @@ function Ask({
               entries={() => secretAskEntries(plane, ask)}
               picked={secretPick}
               onPicked={setSecretPick}
+              onFillWith={setSecretFillWith}
             />
           </Stop>
         )}

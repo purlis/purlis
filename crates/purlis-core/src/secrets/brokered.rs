@@ -1471,7 +1471,7 @@ fn read_login(
             )
             .map(|need| need.purpose),
             names_no_vault: false,
-            reason: super::ask::Reason::broken(ctx, &vault, key),
+            reason: super::ask::Reason::broken(ctx, vault, key),
         };
         missing
             .read_asking(need, &mut once)
@@ -2526,9 +2526,10 @@ pub(crate) fn serve_recorded(
             )
         }
         // A key the vault holds no value under, or a link whose entry is gone (#5075), is
-        // asked of the person, where the app asks (#5068, ADR 0109): the run waits, and reads the vault again once it is filled. Told
-        // by the provider's kind of failure, never by its sentence. Each key is asked once a
-        // run: one still missing after its fill is refused as it was before.
+        // asked of the person, where the app asks (#5068, ADR 0109): the run waits, and reads
+        // the vault again once it is filled. Told by the provider's kind of failure, never by
+        // its sentence. Each key is asked once a run: one still missing after its fill is
+        // refused as it was before.
         (Some(v), _, None) => {
             let mut filled: Vec<String> = Vec::new();
             loop {
@@ -2537,8 +2538,10 @@ pub(crate) fn serve_recorded(
                     let got = cmd::get_value(&ctx, v, key).map(zeroize::Zeroizing::new);
                     // A Linked entry whose entry is gone is asked for too (#5075), naming
                     // the gone entry to the person alone.
-                    if matches!(&got, Err(e) if matches!(e.kind, super::Kind::NotFound | super::Kind::BrokenLink))
-                    {
+                    let asks = got.as_ref().is_err_and(|e| {
+                        matches!(e.kind, super::Kind::NotFound | super::Kind::BrokenLink)
+                    });
+                    if asks {
                         *missed
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner) =

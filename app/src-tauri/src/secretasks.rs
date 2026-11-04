@@ -12,9 +12,8 @@
 //! [`secret_ask_entries`] lists vault by vault.
 //!
 //! - **Only the window answers.** [`answer_secret_ask`] and [`link_secret_ask`] are Tauri
-//!   commands of the window's,
-//!   never served on the link to `charterd` (`purlis_session_protocol::ui::WINDOW_ONLY`), and it
-//!   answers as the window's own scope ([`crate::asking::the_window`]), the one that holds
+//!   commands of the window's, never served on the link to `charterd`
+//!   (`purlis_session_protocol::ui::WINDOW_ONLY`), and each answers as the window's own scope ([`crate::asking::the_window`]), the one that holds
 //!   `AnswerASecret`. The core refuses any other answerer.
 //! - **The value goes to the vault's provider and nowhere else.** It arrives as a
 //!   [`crate::vaults::SecretValue`], which never prints itself, is handed to the core as a value
@@ -117,9 +116,10 @@ pub fn entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<EntriesOf>
         .map(|open| Target {
             vault: open.vault,
             key: open.key,
-        });
+        })
+        .ok_or_else(|| format!("secret ask {id} is no longer open"))?;
     let ctx = Ctx::new(held.root(), Env::from_process());
-    Ok(links::pickable(&ctx, asked.as_ref())
+    Ok(links::pickable(&ctx, Some(&asked))
         .map_err(|e| e.message.to_string())?
         .into_iter()
         .map(|one| match one.keys {

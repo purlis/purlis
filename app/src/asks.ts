@@ -240,16 +240,6 @@ const PRESS_OF: Readonly<Record<string, Press | undefined>> = {
 };
 
 /**
- * {@link answerThrough}, and **whether the chat took the answer live** (#1666): a sandbox
- * host's Allow that the chat's proxy took while the command waited, so the command carries on
- * and nothing restarts. What the block Notice does after an Allow, a window that answers
- * through the registry does by this.
- *
- * `opened` says the option answered nothing: it opened a dialog of the window's where the
- * person decides (a workspace's removal, qw356), so the ask still waits and nothing is to be
- * noted as answered.
- */
-/**
  * **The entries a Secret ask may be filled with** (#5073): every vault's keys that hold a value,
  * vault by vault, but the asked one. Names only. Refused for an ask that is not a Secret ask.
  */
@@ -260,6 +250,16 @@ export async function secretAskEntries(plane: string, ask: Shown): Promise<Entri
   return listed.data;
 }
 
+/**
+ * {@link answerThrough}, and **whether the chat took the answer live** (#1666): a sandbox
+ * host's Allow that the chat's proxy took while the command waited, so the command carries on
+ * and nothing restarts. What the block Notice does after an Allow, a window that answers
+ * through the registry does by this.
+ *
+ * `opened` says the option answered nothing: it opened a dialog of the window's where the
+ * person decides (a workspace's removal, qw356), so the ask still waits and nothing is to be
+ * noted as answered.
+ */
 export async function answerTaken(
   plane: string,
   ask: Shown,
