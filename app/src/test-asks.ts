@@ -1,7 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { ChatBlocked, DispatchPending, GrantLevel, Offered, Shown } from "./bindings";
+import type {
+  ChatBlocked,
+  DispatchPending,
+  GrantLevel,
+  Offered,
+  Shown,
+  VaultRefused,
+} from "./bindings";
 import { inertly, isGrantedOffer } from "./sandboxBlocks";
 import {
   ALLOW_SAID as DISPATCH_ALLOW_SAID,
@@ -109,5 +116,28 @@ export function askOfDispatch(held: DispatchPending, chain = [held.chat]): Shown
       options.length === 0
         ? { via: "in-its-pane" }
         : { via: "dispatch", id: held.id, shown: held.shown },
+  };
+}
+
+/** The ask the registry lists for a vault chat `refused.session` was refused (#5160), as
+ *  `asking::vault_refused` writes it: Allow the persona, unless policy locks it, then Keep
+ *  blocked. */
+export function askOfVault(refused: VaultRefused, chain = [`chat ${refused.session}`]): Shown {
+  const tagged =
+    refused.tagged_for === null ? "tagged for no persona" : `tagged for ${refused.tagged_for}`;
+  const locked = refused.locked === null ? "" : `. ${refused.locked.replace(/\.+$/, "")}`;
+  return {
+    session: refused.session,
+    ask: `vault:${refused.session}:${refused.vault}`,
+    says: `Runs as ${refused.persona}, and vault ${refused.vault} is ${tagged}, so purlis did not open it${locked}`,
+    options: [
+      ...(refused.locked === null
+        ? [{ id: "allow", label: `Allow ${refused.persona} to use this vault`, allows: true }]
+        : []),
+      KEEP,
+    ],
+    source: "vault",
+    chain,
+    answer: { via: "vault", vault: refused.vault },
   };
 }

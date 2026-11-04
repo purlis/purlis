@@ -1,8 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useContext, useId, useState } from "react";
-import { commands, type PlaneId } from "./bindings";
+import { useContext, useId, useMemo, useState } from "react";
+import { commands, type PlaneId, type Shown } from "./bindings";
+import { asksMoved } from "./asks";
 import { useAskPersona } from "./AskPersona";
 import { useDispatchesHeld } from "./dispatchesHeld";
 import { Notice, NoticeOf, type NoticeAction } from "./Notice";
@@ -65,6 +66,7 @@ export function VaultRefusedNotice({
   session,
   requestHere = true,
   onShowInbox,
+  asks,
 }: {
   plane: PlaneId;
   session: number;
@@ -76,6 +78,12 @@ export function VaultRefusedNotice({
   requestHere?: boolean;
   /** Opens the project's Inbox. */
   onShowInbox?: () => void;
+  /**
+   * **This chat's vault asks the registry lists for its pane** (#5160): the Inbox's own, so the
+   * Notice draws a refusal only while the Inbox lists it too. Nothing before the first read,
+   * when it draws what the core holds.
+   */
+  asks?: readonly Shown[];
 }) {
   const id = useId();
   /** "this chat" on its own pane; "it" where its path is said first (#1538). */
@@ -84,7 +92,14 @@ export function VaultRefusedNotice({
   const Self = offScreen ? "It" : "This chat";
   const that = offScreen ? "that chat" : "this chat";
   const That = offScreen ? "That chat" : "This chat";
-  const { refused, heard, read } = useVaultRefusals(plane, session);
+  const { refused: held, heard, read } = useVaultRefusals(plane, session);
+  const refused = useMemo(() => {
+    if (asks === undefined) return held;
+    const listed = new Set(
+      asks.flatMap((ask) => (ask.answer.via === "vault" ? [ask.answer.vault] : [])),
+    );
+    return held.filter((one) => listed.has(one.vault));
+  }, [asks, held]);
   /** What the last press answered, and the persona it was for, said until it is put away. */
   const [answered, setAnswered] = useState<{ persona: string; said: string }>();
   const [said, setSaid] = useState<string>();
@@ -145,8 +160,10 @@ export function VaultRefusedNotice({
       .then((done) => {
         if (done.status === "error") setSaid(done.error);
         else if (done.data !== null) setAnswered({ persona, said: done.data.said });
-        // Whatever the press answered, the Notice draws what the core holds now (qw385).
+        // Whatever the press answered, the Notice draws what the core holds now (qw385), and
+        // so does the Inbox, which lists it too (#5160).
         read();
+        asksMoved(plane);
       })
       .catch((err: unknown) => setSaid(`purlis could not do that: ${String(err)}`))
       .finally(() => setBusy(false));

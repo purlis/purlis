@@ -121,6 +121,8 @@ struct World {
     pool_tools: Vec<crate::pooltools::PoolToolWaits>,
     secrets: Vec<purlis_core::secrets::ask::Open>,
     may_remember: bool,
+    /// The vaults chats were refused for their persona (#5160).
+    vaults: Vec<crate::vaultroute::VaultRefused>,
     /// What the project's committed file declares it expects (ADR 0093).
     declared: purlis_core::sandbox::services::Declared,
 }
@@ -154,6 +156,7 @@ impl World {
             pool_tools: Vec::new(),
             secrets: Vec::new(),
             may_remember: true,
+            vaults: Vec::new(),
             declared: purlis_core::sandbox::services::Declared::default(),
         }
     }
@@ -194,6 +197,7 @@ impl World {
             secrets: self.secrets.clone(),
             may_remember: &|_| self.may_remember,
             secret_fills: Vec::new(),
+            vaults: self.vaults.clone(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
@@ -2478,5 +2482,90 @@ fn a_task_question_keeps_its_line_breaks_and_tabs() {
     assert_eq!(
         shown.says,
         "Which branch?\n\n- **main**\n\t- or a fork⟦U+202E⟧"
+    );
+}
+
+// The vault refusal adapter (#5160).
+
+fn a_vault_refusal(
+    session: u32,
+    vault: &str,
+    locked: Option<&str>,
+) -> crate::vaultroute::VaultRefused {
+    crate::vaultroute::VaultRefused {
+        plane: PlaneId::for_tests(Path::new("/p/one")),
+        session,
+        vault: vault.to_owned(),
+        persona: "steward".to_owned(),
+        tagged_for: Some("devops".to_owned()),
+        dispatch_to: Some("devops".to_owned()),
+        locked: locked.map(str::to_owned),
+        login: None,
+    }
+}
+
+/// #5160: a vault a chat was refused for its persona is an ask in the registry, answered by its
+/// Notice's own two commands: Allow, the one grant its Notice makes (the persona, on this
+/// machine), and Keep blocked. The Inbox lists it and the ✋ counts it.
+#[test]
+fn a_refused_vault_is_an_ask_answered_by_allow_or_keep_blocked() {
+    let mut world = World::new();
+    world.vaults = vec![a_vault_refusal(3, "devops", None)];
+    world.since = vec![("vault:3:devops", 1_700_000_000)];
+
+    let asks = world.asks();
+
+    let vault: Vec<&Shown> = asks
+        .iter()
+        .filter(|one| one.source == AskSource::Vault)
+        .collect();
+    assert_eq!(vault.len(), 1, "{asks:?}");
+    let ask = vault[0];
+    assert_eq!(ask.session, 3);
+    assert_eq!(ask.ask, "vault:3:devops");
+    assert_eq!(
+        ask.answer,
+        AnswerPath::Vault {
+            vault: "devops".to_owned()
+        }
+    );
+    assert_eq!(ids(ask), [super::VAULT_ALLOW, KEEP]);
+    let labels: Vec<&str> = ask.options.iter().map(|one| one.label.as_str()).collect();
+    assert_eq!(labels, ["Allow steward to use this vault", "Keep blocked"]);
+    let allows: Vec<bool> = ask.options.iter().map(|one| one.allows).collect();
+    assert_eq!(allows, [true, false]);
+    assert_eq!(
+        ask.says,
+        "Runs as steward, and vault devops is tagged for devops, so purlis did not open it"
+    );
+    assert_eq!(ask.since, Some(1_700_000_000));
+}
+
+/// #5160: where an administrator's policy forbids a vault grant, the ask offers Keep blocked
+/// alone and says who locked it, as its Notice does.
+#[test]
+fn a_refused_vault_policy_locks_offers_keep_blocked_alone_and_says_why() {
+    let mut world = World::new();
+    let mut untagged = a_vault_refusal(4, "loose", Some("Locked by policy, set by IT."));
+    untagged.tagged_for = None;
+    world.vaults = vec![untagged];
+
+    let asks = world.asks();
+
+    let ask = asks
+        .iter()
+        .find(|one| one.source == AskSource::Vault)
+        .expect("the vault's ask");
+    assert_eq!(ids(ask), [KEEP]);
+    assert_eq!(
+        ask.answer,
+        AnswerPath::Vault {
+            vault: "loose".to_owned()
+        }
+    );
+    assert_eq!(
+        ask.says,
+        "Runs as steward, and vault loose is tagged for no persona, so purlis did not open it. \
+         Locked by policy, set by IT."
     );
 }

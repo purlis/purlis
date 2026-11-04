@@ -5344,6 +5344,11 @@ export type AnswerPath =
  *  whose digest is `shown` (#5115).
  */
 { via: "secret-fill"; id: number; shown: string } | 
+ *  The refused vault Notice's own commands, for chat [`Shown::session`]'s refusal of
+ *  `vault` (#5160): `allow_refused_vault` for Allow, the one grant its Notice makes, and
+ *  `keep_vault_blocked` for Keep blocked, with the person's reason.
+ */
+{ via: "vault"; vault: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -5535,7 +5540,11 @@ export type AskSource =
  *  A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
  *  purlis put that one key into that field, on that one origin, once.
  */
-"secret-fill";
+"secret-fill" | 
+ *  A vault a chat was refused because its persona is not tagged for it (#1430, #5160): an
+ *  Allow lets that persona use it in this project on this machine.
+ */
+"vault";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
