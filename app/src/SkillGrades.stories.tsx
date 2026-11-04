@@ -747,26 +747,98 @@ export const PlanNarrow: Story = {
 
 // [DEBUG-4672] Temporary: fresh mounts of the Grades play, which logs who focused and scrolled.
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672a: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n01: Story = { ...Grades, parameters: { screenshot: false } };
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672b: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n02: Story = { ...Grades, parameters: { screenshot: false } };
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672c: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n03: Story = { ...Grades, parameters: { screenshot: false } };
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672d: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n04: Story = { ...Grades, parameters: { screenshot: false } };
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672e: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n05: Story = { ...Grades, parameters: { screenshot: false } };
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672f: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n06: Story = { ...Grades, parameters: { screenshot: false } };
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672g: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n07: Story = { ...Grades, parameters: { screenshot: false } };
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672h: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n08: Story = { ...Grades, parameters: { screenshot: false } };
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672i: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n09: Story = { ...Grades, parameters: { screenshot: false } };
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672j: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n10: Story = { ...Grades, parameters: { screenshot: false } };
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672k: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n11: Story = { ...Grades, parameters: { screenshot: false } };
 /** [DEBUG-4672] Grades, again. */
-export const Probe4672l: Story = { ...Grades, parameters: { screenshot: false } };
+export const Probe4672n12: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n13: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n14: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n15: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n16: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n17: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n18: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n19: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n20: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n21: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n22: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n23: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n24: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n25: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n26: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n27: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n28: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n29: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n30: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n31: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n32: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n33: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n34: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n35: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n36: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n37: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n38: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n39: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n40: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n41: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n42: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n43: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n44: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n45: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n46: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n47: Story = { ...Grades, parameters: { screenshot: false } };
+/** [DEBUG-4672] Grades, again. */
+export const Probe4672n48: Story = { ...Grades, parameters: { screenshot: false } };
