@@ -152,13 +152,24 @@ fn by_hand_records_the_ticked_profiles_then_signs_in_each_that_needs_it() {
         see.text,
         "purlis pool add-profile builds home work\npurlis profile sign-in home --pool builds"
     );
-    assert!(see.note.contains("picks"), "{}", see.note);
+    assert!(
+        see.note
+            .starts_with("These record the ticked profiles on the pool, then sign in"),
+        "{}",
+        see.note
+    );
 }
 
 #[test]
 fn by_hand_with_nothing_to_record_only_signs_in() {
     let see = by_hand("builds", &[], &["work".into()]).unwrap();
     assert_eq!(see.text, "purlis profile sign-in work --pool builds");
+    assert!(
+        see.note
+            .starts_with("This is the sign-in the button runs. Run it"),
+        "{}",
+        see.note
+    );
 }
 
 #[test]

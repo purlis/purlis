@@ -1370,7 +1370,7 @@ pub async fn pool_profile_add(
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         yours(&config, &pool)?;
-        // The same checks and words as `purlis pool add-profile` (#4718).
+        // The same checks of the profiles, and words, as `purlis pool add-profile` (#4718).
         purlis_core::poolsetup::signins::record(&config, root.as_deref(), &pool, &[name])
     })
     .await

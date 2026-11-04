@@ -127,12 +127,13 @@ export function SignInsStep({
   const adding = (rows ?? []).filter((row) => ticked.has(row.name) && !row.kept);
   const signing = (rows ?? []).filter((row) => ticked.has(row.name) && !row.signedIn);
   const handKey = JSON.stringify([adding.map((row) => row.name), signing.map((row) => row.name)]);
-  const [byHand, setByHand] = useState<PoolSetupSee | null>(null);
+  /** Not asked yet, or what the core spelled: `null` where the button would run nothing. */
+  const [byHand, setByHand] = useState<PoolSetupSee | null | undefined>(undefined);
   useEffect(() => {
     const [add, sign] = JSON.parse(handKey) as [string[], string[]];
     let current = true;
     void commands.poolSetupSignInsByHand(pool, add, sign).then((said) => {
-      if (current) setByHand(said.status === "ok" ? said.data : null);
+      if (current) setByHand(said.status === "ok" ? said.data : undefined);
     });
     return () => {
       current = false;
@@ -441,7 +442,8 @@ export function SignInsStep({
       {byHand ? (
         <SeeWhat text={byHand.text} note={byHand.note} />
       ) : (
-        step.see && <SeeWhat text={step.see.text} note={step.see.note} />
+        // Only until the core has spelled what is ticked: its own read doesn't know the ticks.
+        byHand === undefined && step.see && <SeeWhat text={step.see.text} note={step.see.note} />
       )}
       <Action
         does={

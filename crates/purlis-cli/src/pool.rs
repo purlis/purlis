@@ -63,8 +63,8 @@ pub enum PoolCommand {
     /// the next time their sign-ins are asked, and `purlis profile sign-in <profile> --pool
     /// <pool>` signs one in there.
     ///
-    /// This is what Pool setup's Sign-ins button records, and Pool setup picks it up. It sends
-    /// nothing. A pool that names no profiles keeps your project's default beside them, so run
+    /// This is what Pool setup's Sign-ins button records, with the same checks of the profiles,
+    /// and Pool setup picks it up. It sends nothing. A pool that names no profiles keeps your project's default beside them, so run
     /// it in your project's folder.
     AddProfile {
         /// The pool's name.
@@ -162,11 +162,16 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             let project = std::env::current_dir()
                 .ok()
                 .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok());
-            poolsetup::signins::record(&config()?, project.as_deref(), pool, profiles)?;
+            let config = config()?;
+            poolsetup::signins::record(&config, project.as_deref(), pool, profiles)?;
+            // Every profile it keeps now, a project's default added beside them included.
+            let keeps = runners::profiles_of(&config, pool)
+                .map_err(|why| why.to_string())?
+                .unwrap_or_default();
             crate::voice::info(format!(
                 "Pool {pool} keeps {} now. Its runner keeps them the next time their sign-ins are \
                  asked, and Pool setup's Sign-ins step picks this up.",
-                profiles.join(", ")
+                keeps.join(", ")
             ));
             Ok(0)
         }

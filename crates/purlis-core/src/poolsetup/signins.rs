@@ -116,9 +116,10 @@ pub fn sizes(
     })
 }
 
-/// **Records the profiles `names` on pool `pool`** (#4718): what Sign-ins' button and Add a
-/// profile… in the window do, and what `purlis pool add-profile` does, with the same checks and
-/// words. It only records: nothing is sent, and the pool's runner keeps them the next time its
+/// **Records the profiles `names` on pool `pool`** (#4718), in one write: what Sign-ins' button
+/// and Add a profile… in the window do, and what `purlis pool add-profile` does, with the same
+/// checks of the profiles and the same words. Whether the pool is the person's own is the
+/// window's to check before it sends anything, as every send does. It only records: nothing is sent, and the pool's runner keeps them the next time its
 /// profiles are asked. A pool that names none keeps the default of the project at `project`
 /// beside them, so with no project open it is refused. Each name must be one of this machine's
 /// profiles that goes to a runner, checked before anything is written.
@@ -142,11 +143,8 @@ pub fn record(
     let default = project
         .and_then(|root| crate::profiles::for_launch(root).0.for_a_new_chat())
         .filter(|default| records.iter().any(|r| &r.name == default));
-    for name in names {
-        runners::add_pool_profile(config, pool, name, default.as_deref())
-            .map_err(|why| why.to_string())?;
-    }
-    Ok(())
+    runners::add_pool_profiles(config, pool, names, default.as_deref())
+        .map_err(|why| why.to_string())
 }
 
 /// **Refused, in words, where pool `pool` names no profiles and no project is open**
@@ -157,8 +155,8 @@ pub fn changeable(config: &Path, pool: &str, project_open: bool) -> Result<(), S
         .is_none();
     if names_none && !project_open {
         return Err(format!(
-            "pool {pool} keeps the profile a new chat in the open project gets, and no project \
-             is open; open one to change its profiles"
+            "pool {pool} keeps the profile a new chat in your project gets, and no project is \
+             open here; open one, or run this in its folder, to change the pool's profiles"
         ));
     }
     Ok(())
@@ -193,10 +191,21 @@ pub fn by_hand(pool: &str, adding: &[String], signing_in: &[String]) -> Option<s
             .iter()
             .map(|name| format!("purlis profile sign-in {} --pool {pool}", profile(name))),
     );
-    (!lines.is_empty()).then(|| super::See {
-        note: "These record the ticked profiles on the pool, then sign in each one that needs \
-               it. Run them yourself if you prefer, and purlis picks them up."
-            .to_owned(),
+    let note = match (adding.is_empty(), lines.len()) {
+        (_, 0) => return None,
+        (true, 1) => "This is the sign-in the button runs.",
+        (true, _) => "These are the sign-ins the button runs.",
+        (false, 1) => "This records the ticked profiles on the pool, as the button does.",
+        (false, _) => {
+            "These record the ticked profiles on the pool, then sign in each one that needs it, \
+             as the button does."
+        }
+    };
+    Some(super::See {
+        note: format!(
+            "{note} Run {} yourself in your project's folder if you prefer, and purlis picks it up.",
+            if lines.len() == 1 { "it" } else { "them" }
+        ),
         text: lines.join("\n"),
     })
 }

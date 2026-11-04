@@ -304,4 +304,13 @@ describe("SignInsStep", () => {
       expect(calls.filter((call) => call.cmd === "pool_profiles").length).toBeGreaterThan(before),
     );
   });
+
+  it("shows nothing by hand where its button would run nothing, not the core's older read (#4718)", async () => {
+    core({ pool_setup_sign_ins_by_hand: () => null });
+    draw({ ...STEP, see: { note: "n", text: "purlis profile sign-in oss --pool P" } });
+    await screen.findByRole("list", { name: "Your profiles" });
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "See what this does" })).toBeNull(),
+    );
+  });
 });
