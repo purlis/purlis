@@ -371,7 +371,7 @@ impl Browser {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         // A login a chat chose starts clean on its own site (#5121), held already, and before
         // anything watches this page leave, as it's loaded again.
-        if login.suggested {
+        if login.suggested && login.origin.is_empty() {
             self.clear_sites(&target, login).map_err(|why| {
                 not_logged_in(format!(
                     "purlis could not clear {origin} before the login ({why}), so nothing was \
