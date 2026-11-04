@@ -40,6 +40,7 @@ mod browserproof;
 mod browsers;
 mod changes;
 mod chatbrowsers;
+mod chatevents;
 mod chatmoves;
 mod chats;
 mod clipath;
@@ -517,8 +518,10 @@ pub(crate) const PLUGIN_DIR: &str = "plugin";
 /// that interrupts (`Moved::interrupts`) says the chat waits anew. A chat waiting on its
 /// background agents is not in the queue (#1626), so it raises none.
 fn told(app: &tauri::AppHandle, moved: Moved) {
-    windows::emit_for_plane(app, &moved.plane.clone(), "chat-moved", &moved);
     asknotify::moved(app, &moved);
+    if let Some(batches) = app.try_state::<chatevents::Batches>() {
+        batches.tell(chatevents::ChatEvent::Moved(moved));
+    }
 }
 
 /// The event a second launch sends the window: the directory it was run in, for the window to
@@ -1267,6 +1270,31 @@ async fn reopen_finished_task(
             .find(|open| open.session == session)
             .map(|open| drawn_of(&held, open))
             .ok_or_else(|| format!("chat {session} ended as it started"))
+    })
+    .await
+}
+
+/// **Resume** on the ended band of a chat the person ended (#5019, spec #4750 story 62): the
+/// same chat on its conversation, in a new run ([`crate::chats::Chats::resume_ended`]). The
+/// answer is the chat as the window draws it, which takes the pane the ended one was left in.
+#[tauri::command]
+#[specta::specta]
+async fn resume_ended_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    columns: u16,
+    rows: u16,
+) -> Result<OpenChat, String> {
+    let held = planes.held(&plane)?;
+    off_the_window(STARTING_A_CHAT, move || {
+        let started = held.chats().resume_ended(session, Size { columns, rows })?;
+        held.chats()
+            .open_now()
+            .into_iter()
+            .find(|open| open.session == started)
+            .map(|open| drawn_of(&held, open))
+            .ok_or_else(|| format!("chat {started} ended as it started"))
     })
     .await
 }
@@ -3112,12 +3140,10 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<heard::ExtensionHeard>()
         // What `harness-by-hand` carries (ADR 0062).
         .typ::<hooks::ByHand>()
-        // What `chat-touching` carries (FM-6).
-        .typ::<hooks::ChatTouching>()
-        // What `chat-doing` carries (#1493).
-        .typ::<doing::ChatDoing>()
         // What `chat-prompt-routing` carries (#4445).
         .typ::<useskill::ChatPromptRouting>()
+        // What `chat-events` carries: a chat's moves, doings, touches and skill runs (#4746).
+        .typ::<chatevents::ChatEvents>()
         // What `browser-ask-ended` carries (#2015).
         .typ::<browserneedsyou::AskEnded>()
         // What `chat-sandbox-blocked` carries (#1338).
@@ -4172,6 +4198,21 @@ pub fn run() {
             // What sends a system notification for an ask (#1694): managed before any plane is
             // opened, since the first chat to move may bring one.
             app.manage(asknotify::Notifier::start(app.handle()));
+            // What a project's chats tell its window, sent as one event about every 100 ms
+            // rather than one each (#4746): managed before any plane is opened, as the
+            // notifier is, since the first chat to move tells the window.
+            let batches = chatevents::Batches::start(chatevents::INTERVAL, {
+                let window = app.handle().clone();
+                move |batch: chatevents::ChatEvents| {
+                    windows::emit_for_plane(
+                        &window,
+                        &batch.plane.clone(),
+                        chatevents::EVENT,
+                        &batch,
+                    );
+                }
+            });
+            app.manage(batches.clone());
             // The registry is managed BEFORE a plane is opened, because opening one starts
             // programs, and a program that dies at once tells the board, which tells the
             // window, which asks this registry what the chat is called.
@@ -4241,22 +4282,17 @@ pub fn run() {
                 // A file a chat's tool touched, confined to its folder: the window marks it in
                 // the tree for a few seconds (FM-6). In memory only (D-86a).
                 .telling_touches({
-                    let window = app.handle().clone();
+                    let batches = batches.clone();
                     std::sync::Arc::new(move |told: hooks::ChatTouching| {
-                        windows::emit_for_plane(
-                            &window,
-                            &told.plane.clone(),
-                            hooks::TOUCHING,
-                            &told,
-                        );
+                        batches.tell(chatevents::ChatEvent::Touching(told));
                     })
                 })
                 // What a working chat is doing, each time its one line changes: the window
                 // says it under the chat's name (#1493). In memory only.
                 .telling_doings({
-                    let window = app.handle().clone();
+                    let batches = batches.clone();
                     std::sync::Arc::new(move |told: doing::ChatDoing| {
-                        windows::emit_for_plane(&window, &told.plane.clone(), doing::EVENT, &told);
+                        batches.tell(chatevents::ChatEvent::Doing(told));
                     })
                 })
                 // Each chat's router extension is asked with the app's one executor (SK-15b),
@@ -4265,14 +4301,9 @@ pub fn run() {
                 // The skill run open in a chat, each time it opens, counts a call or ends:
                 // the chip on the chat's tab (SK-3). In memory only.
                 .telling_skill_runs({
-                    let window = app.handle().clone();
+                    let batches = batches.clone();
                     std::sync::Arc::new(move |told: skillrun::ChatSkillRun| {
-                        windows::emit_for_plane(
-                            &window,
-                            &told.plane.clone(),
-                            skillrun::EVENT,
-                            &told,
-                        );
+                        batches.tell(chatevents::ChatEvent::SkillRun(told));
                     })
                 })
                 // A chat's latest prompt changed whether it fell back: its tab and the studio

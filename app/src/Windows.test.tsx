@@ -27,6 +27,7 @@ import {
   type UnsavedWork,
 } from "./unsavedWork";
 import { forgetHandOver } from "./unsavedWindows";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * A project tab split into an OS window of its own, and moved back (charter#126; ADR 0033,
@@ -134,6 +135,7 @@ function core(
     return null;
   });
   const fire = (event: string, payload: unknown) => {
+    [event, payload] = onTheWire(event, payload);
     const handlers = listeners.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
     act(() => {
@@ -247,7 +249,13 @@ describe("a project moved into a window of its own", () => {
 
     const listening = asked.filter((one) => one.cmd === "plugin:event|listen");
     const events = new Set(listening.map((one) => one.args.event));
-    for (const event of ["quit-asked", "projects-arrived", "open-plane", "chat-moved", "run-offer"])
+    for (const event of [
+      "quit-asked",
+      "projects-arrived",
+      "open-plane",
+      "chat-events",
+      "run-offer",
+    ])
       expect(events).toContain(event);
     for (const one of listening)
       expect({ event: one.args.event, target: one.args.target }).toEqual({

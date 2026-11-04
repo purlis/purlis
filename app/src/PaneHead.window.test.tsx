@@ -16,6 +16,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { Moved } from "./bindings";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * **A chat's pane head, against the whole window** (#4760, spec #4750 stories 54, 55, 60 and
@@ -182,13 +183,13 @@ describe("a chat's pane head", () => {
     await aPane();
     await waitFor(() => expect(controls()[0]).toMatch(/^More for /));
 
-    await act(() => emit("chat-moved", RUNNING));
+    await act(() => emit(...onTheWire("chat-moved", RUNNING)));
     const stop = await within(head()).findByRole("button", { name: `Stop chat ${NAME}` });
     expect(stop).toHaveTextContent("Stop");
     expect(controls()[0]).toBe(`Stop chat ${NAME}`);
     expect(controls()[1]).toBe(`More for ${NAME}`);
 
-    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await waitFor(() =>
       expect(within(head()).queryByRole("button", { name: `Stop chat ${NAME}` })).toBeNull(),
     );

@@ -7,6 +7,7 @@ import { browser, expect, $ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { harnessRowsDrawn, pressOnly } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { openedSince, tabNames } from "../reach.js";
 
 /**
  * Charter's footer inside a chat's pane, per chat, against the real app (ADR 0029).
@@ -47,15 +48,6 @@ async function planeRoot(): Promise<string> {
   const said = await $('[data-testid="status-project"]');
   await said.waitForDisplayed({ timeout: 30_000 });
   return ((await said.getAttribute("data-directory")) ?? "").trim();
-}
-
-/** The names on the tab strip. Scoped to that strip: the workspace strip is one too. */
-async function tabNames(): Promise<string[]> {
-  return browser.execute(() =>
-    [
-      ...(document.querySelector('[data-strip="Tabs"]')?.querySelectorAll('[role="tab"]') ?? []),
-    ].map((tab) => tab.textContent ?? ""),
-  );
 }
 
 /** Whether any pane on screen has printed `text`. A new tab shows only its OWN panes. */
@@ -133,7 +125,7 @@ describe("charter's footer inside a chat", () => {
     // one an older chat has too.
     await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
-      async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
+      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
       { timeout: 20_000, timeoutMsg: "the footer spec left a chat open behind it" },
     );
   });

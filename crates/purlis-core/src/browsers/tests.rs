@@ -573,13 +573,14 @@ fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
     assert!(!ran.get(), "a second login at another site runs nothing");
 }
 
-/// #4995, the person's ruling of 2026-11-03: a login whose form is on another site, performed
-/// through a real reach proxy and judge, reaches the form's site from its bind until its page is
-/// back on the page's origin; from then on the page's site alone. One whose page never comes
-/// back reaches it until its sign-in's time is up. These bind sockets, so they first run on CI.
+/// #5152, the person's ruling of 2026-11-04 (amending #4995's of 2026-11-03): a login whose form
+/// is on another site, performed through a real reach proxy and judge, reaches the form's site
+/// from its bind for the browser's life, and keeps the agent off it once its page is back on the
+/// page's origin. One whose page never comes back keeps the agent off it once its sign-in's time
+/// is up. These bind sockets, so they first run on CI.
 #[cfg(unix)]
 #[test]
-fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time_is_up() {
+fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_once_signed_in() {
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
 
@@ -632,6 +633,10 @@ fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time
     };
     let carried = "HTTP/1.1 200 Connection established";
     let refused = "HTTP/1.1 403 Forbidden";
+    let form_address = format!("http://127.0.0.1:{form_port}/account");
+    let kept_off =
+        |sites: &super::judge::SiteJudge| super::kept_off_at(sites.bound(), &form_address);
+    let form_site = Some(format!("127.0.0.1:{form_port}"));
 
     // Its page comes back.
     let (sites, proxy) = a_browser();
@@ -648,9 +653,11 @@ fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time
     )
     .expect("performed");
     assert_eq!(status(&proxy, form_port), carried, "while it signs in");
+    assert_eq!(kept_off(&sites), None, "while it signs in");
     assert_eq!(holder.signing_in().map(|(form, _)| form), login.form);
     holder.back();
-    assert_eq!(status(&proxy, form_port), refused, "back on its page");
+    assert_eq!(status(&proxy, form_port), carried, "back on its page");
+    assert_eq!(kept_off(&sites), form_site, "back on its page");
     assert_eq!(status(&proxy, page_port), carried);
     assert_eq!(holder.signing_in(), None);
     // A later login of the same page signs in anew.
@@ -666,19 +673,12 @@ fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time
         },
     )
     .expect("performed again");
-    assert_eq!(
-        status(&proxy, form_port),
-        carried,
-        "a later login signs in anew"
-    );
+    assert_eq!(kept_off(&sites), None, "a later login signs in anew");
     holder.back();
-    assert_eq!(
-        status(&proxy, form_port),
-        carried,
-        "an earlier login ends no later one"
-    );
+    assert_eq!(kept_off(&sites), None, "an earlier login ends no later one");
     again.sign_in_over();
-    assert_eq!(status(&proxy, form_port), refused);
+    assert_eq!(kept_off(&sites), form_site);
+    assert_eq!(status(&proxy, form_port), carried);
 
     // Its page never comes back.
     let (sites, proxy) = a_browser();
@@ -694,20 +694,21 @@ fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time
         },
     )
     .expect("performed");
-    assert_eq!(status(&proxy, form_port), carried, "while it signs in");
+    assert_eq!(kept_off(&sites), None, "while it signs in");
     let start = std::time::Instant::now();
-    while status(&proxy, form_port) == carried {
+    while kept_off(&sites).is_none() {
         assert!(
             start.elapsed() < Duration::from_secs(10),
             "the sign-in outlived its time"
         );
         std::thread::sleep(Duration::from_millis(50));
     }
+    assert_eq!(status(&proxy, form_port), carried);
     assert_eq!(status(&proxy, page_port), carried);
 
     // A browser held to the login's page already, as one opened from kept logins is, reaches
     // the form's site from the moment the login begins; a login that answers there with nothing
-    // filled ends it.
+    // filled ends its sign-in, and the browser goes on reaching it.
     let (sites, proxy) = a_browser();
     proxy
         .bind(&LoginSites::page(login.page.clone()))
@@ -726,6 +727,7 @@ fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time
     )
     .expect("performed");
     assert_eq!(status(&proxy, form_port), carried, "once the login begins");
+    assert_eq!(kept_off(&sites), None, "once the login begins");
     holder.answered(&Ok(drive::LoginEnded {
         driver: drive::Driver::Agent,
         epoch: 1,
@@ -741,10 +743,11 @@ fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time
         }),
     }));
     assert_eq!(
-        status(&proxy, form_port),
-        refused,
+        kept_off(&sites),
+        form_site,
         "signed in already, nothing was filled"
     );
+    assert_eq!(status(&proxy, form_port), carried);
     // One that binds and fails with the browser handed back to the agent ends it too; one the
     // person took over goes on.
     let failed = |driver| drive::LoginEnded {
@@ -753,8 +756,8 @@ fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time
         outcome: Err(drive::Refusal::NotLoggedIn("no form".into())),
     };
     for (driver, after) in [
-        (drive::Driver::Person, carried),
-        (drive::Driver::Agent, refused),
+        (drive::Driver::Person, None),
+        (drive::Driver::Agent, form_site.clone()),
     ] {
         let holder = super::performed(
             &sites,
@@ -770,7 +773,8 @@ fn a_login_whose_form_is_elsewhere_reaches_it_until_its_page_is_back_or_its_time
         )
         .expect("performed");
         holder.answered(&Ok(failed(driver)));
-        assert_eq!(status(&proxy, form_port), after, "{driver:?}");
+        assert_eq!(kept_off(&sites), after, "{driver:?}");
+        assert_eq!(status(&proxy, form_port), carried, "{driver:?}");
         holder.sign_in_over();
     }
 }

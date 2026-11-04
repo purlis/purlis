@@ -1487,7 +1487,10 @@ fn a_browser_login_is_performed_in_the_chats_browser_and_no_value_reaches_the_ch
         note.contains("since purlis submitted the login, with shop-login: take a snapshot"),
         "{note}"
     );
-    assert!(note.contains("reaches that site alone"), "{note}");
+    assert!(
+        note.contains("This browser now reaches ") && note.contains(" alone; open another"),
+        "{note}"
+    );
     assert!(!format!("{browsed:?}").contains(LOGIN_VALUE));
     assert_eq!(
         *hosted.logins.lock().unwrap(),
@@ -3398,6 +3401,7 @@ fn an_open_ask(chat: u32, vault: &str, key: &str) -> purlis_core::secrets::ask::
         names_no_vault: false,
         chats: vec![chat],
         starts: 0,
+        cannot_receive: Vec::new(),
         since: 0,
     }
 }
@@ -3422,4 +3426,41 @@ fn allow_once_is_kept_only_while_its_chat_waits_on_an_ask_for_that_logins_own_ke
         "another chat's ask"
     );
     assert!(!waits(&[]), "no ask open");
+}
+
+/// #5152, the person's ruling of 2026-11-04: a login whose form is on another site is answered
+/// with both sites the browser reaches, and what the chat may do on each; one whose form is on
+/// its page's own site, with that site alone.
+#[test]
+fn a_login_says_the_sites_its_browser_reaches_and_what_the_chat_may_do_on_each() {
+    let both = super::logged_in_said(
+        "sso-login",
+        &super::reaches_said(
+            "https://app.example.com/start",
+            Some("https://auth.example.com"),
+        ),
+        None,
+    );
+    assert!(
+        both.contains("This browser now reaches app.example.com:443, where you may read and act"),
+        "{both}"
+    );
+    assert!(
+        both.contains("and auth.example.com:443, the site it signs in on"),
+        "{both}"
+    );
+    assert!(
+        both.contains("only while browser_login signs in")
+            && both.contains("call browser_login again"),
+        "{both}"
+    );
+    let alone = super::logged_in_said(
+        "shop-login",
+        &super::reaches_said("https://shop.example.com/login", None),
+        None,
+    );
+    assert!(
+        alone.contains("This browser now reaches shop.example.com:443 alone; open another"),
+        "{alone}"
+    );
 }

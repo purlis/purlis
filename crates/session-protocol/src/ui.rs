@@ -108,7 +108,8 @@ pub struct Server {
 ///   chat with a curation's prompt typed), and `relaunch` (the launch's answer, which starts
 ///   every chat the project held);
 /// - **it starts a chat again**: `restart_chat_without_sandbox`, `restart_chat`,
-///   `start_chat_fresh`, `ask_chat_restart`.
+///   `start_chat_fresh`, `ask_chat_restart`, `resume_ended_chat` (Resume on the ended band of a
+///   chat the person ended, #5019).
 ///
 /// - **it lets a persona's committed hosts reach past this machine's sandbox** (#1362):
 ///   `allow_persona_hosts`, which the person at this machine's window allows as it was shown
@@ -312,6 +313,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Starts again.
     "restart_chat_without_sandbox",
     "restart_chat",
+    "resume_ended_chat",
     // A chat moved to or from a pool's runner (#2048): a new run where it moves.
     "move_chat",
     "move_chat_now",

@@ -19,7 +19,7 @@
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
-import { listen } from "./here";
+import { listenForChats } from "./chatEvents";
 import { markOf, useChatsHere, useChatsSelect } from "./chatState";
 import { commands, type ChatDoing, type Doing, type PlaneId } from "./bindings";
 import { heldStore } from "./heldStore";
@@ -214,8 +214,7 @@ export function useDoings(plane: PlaneId | undefined): DoingsOf {
     let stop: (() => void) | undefined;
     void (async () => {
       try {
-        const unlisten = await listen<ChatDoing>("chat-doing", (event) => {
-          const one = event.payload;
+        const unlisten = await listenForChats("doing", (one) => {
           if (gone || one.plane !== showing.current) return;
           store.change((was) => {
             const from = was.plane === one.plane ? was.doings : NOTHING;

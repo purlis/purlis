@@ -306,7 +306,8 @@ describe("the palette reaching what the window can do", () => {
     await runFromPalette("end chat steward 1…");
     await answerTheAsk("End chat steward 1…");
 
-    expect(screen.queryAllByTestId("pane")).toEqual([]);
+    // Its pane stays, under the ended band (#5019).
+    expect(await screen.findByRole("status", { name: /ended/i })).toBeInTheDocument();
     expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
       { plane: "/home/dev/plane", session: 1 },
     ]);

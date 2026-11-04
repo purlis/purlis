@@ -297,6 +297,8 @@ impl Browser {
     pub(super) fn run_at(&self, epoch: u64, call: Call) -> Result<super::Answer, Refusal> {
         self.acting_epoch.store(epoch, Ordering::SeqCst);
         let _carrying = Carrying::under(Driver::Agent, epoch);
+        // Counted while it is carried out, its page's settling included (#5152).
+        let _call = super::AgentCall::begins(&self.inner.agent_calls);
         // What DevTools wrote into a page not read at the hand-back is kept out first (#2028).
         self.devtools_read_again(&call)?;
         let answer = self.run(call);

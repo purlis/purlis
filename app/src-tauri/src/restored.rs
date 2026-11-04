@@ -146,6 +146,19 @@ pub(crate) fn finish(
             .filter_map(|chat| chat.identity.id.clone())
             .collect();
         crate::dispatched::only_these_came_back(held, &back);
+        // And a chat that did not come back waits on no Secret ask kept for it (#5079).
+        let numbers: Vec<u32> = launch
+            .back
+            .chats
+            .iter()
+            .filter_map(|chat| chat.number)
+            .collect();
+        held.secret_asks().only_these_came_back(&numbers);
+    } else {
+        // With no record read, this launch deals chat numbers afresh: a kept ask's numbers would
+        // name chats that are not the ones that asked, so none of them waits on it (#5079). An
+        // ask only they waited on goes, and is asked again by a chat that misses its key.
+        held.secret_asks().only_these_came_back(&[]);
     }
     crate::dispatched::askers_told_again(held);
     after_put_back(held, &launch, coming, settles);

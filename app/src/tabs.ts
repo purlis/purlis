@@ -1684,9 +1684,12 @@ export function closeFocusedPane(
 }
 
 /**
- * {@link closeFocusedPane} of pane `pane` of tab `id`, focused or not: a pane the core moved to
- * another window (#4768) goes as a close would take it. The keyboard stays where it was, unless
- * it was on that pane.
+ * **Closes pane `pane` of tab `id`**, focused or not, as Close pane closes the focused one: what
+ * shared its split takes its place, and a tab's only pane closes the tab by `closeLayout`'s rule,
+ * so the strip's last tab keeps one empty pane. A pane the core moved to another window (#4768)
+ * goes this way, and so does Clear pane on an ended chat's band (#5019). The keyboard stays
+ * where it was, unless it was on that pane. Answers `tabs` itself where tab `id` has no pane
+ * `pane`.
  */
 export function closePane(
   tabs: Tabs,
@@ -1696,11 +1699,12 @@ export function closePane(
   pinned: Pinned = nothingPinned,
 ): Tabs {
   const tab = tabs.byId[id];
-  if (!tab) return tabs;
+  if (tab === undefined || !panes(tab.layout).some((one) => one.pane === pane)) return tabs;
   const left = without(tab.layout, pane);
-  if (!left) return closeLayout(tabs, id, filedIn, pinned);
+  if (!left) return closeLayout(tabs, tab.id, filedIn, pinned);
   // **The keyboard goes to the pane that takes the space** (spec #4750): the nearest pane of
-  // the sibling that takes the closed pane's place.
+  // the sibling that takes the closed pane's place. A pane closed while another had the
+  // keyboard leaves the keyboard where it was.
   const focused =
     tab.focused === pane ? (takesTheSpace(tab.layout, pane) ?? panes(left)[0].pane) : tab.focused;
   const kept = showing({ ...tab, layout: left, focused }, tab.shows);

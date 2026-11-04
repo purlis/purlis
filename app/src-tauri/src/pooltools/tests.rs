@@ -52,7 +52,7 @@ fn every_vault_allowed(_persona: &str, _vault: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn owned_builds(_config: &Path, _pool: &str) -> Result<Bound, String> {
+fn owned_builds(_config: &Path, _pool: &str) -> Result<Bound, NotSent> {
     Ok(builds("a"))
 }
 
@@ -92,7 +92,11 @@ fn a_run_that_passes_every_check_is_the_personas_tool_on_the_pool_as_it_is_now()
 #[test]
 fn a_cluster_pool_not_marked_is_refused_saying_how_and_nobody_is_asked() {
     let ask = kubectl_asked();
-    let not_marked = |_: &Path, pool: &str| Err(purlis_core::poollogins::not_marked_said(pool));
+    let not_marked = |_: &Path, pool: &str| {
+        Err(NotSent::NotYours(purlis_core::poollogins::not_marked_said(
+            pool,
+        )))
+    };
     let gate = Gate {
         owned: &not_marked,
         ..a_gate(&ask)
@@ -223,8 +227,11 @@ fn a_vault_the_persona_may_not_use_here_is_sent_nothing() {
 #[test]
 fn a_runner_not_shown_to_be_the_persons_own_is_sent_nothing() {
     let ask = kubectl_asked();
-    let remote =
-        |_: &Path, _: &str| Err("this machine's DOCKER_HOST is tcp://build-box:2376".into());
+    let remote = |_: &Path, _: &str| {
+        Err(NotSent::NotYours(
+            "this machine's DOCKER_HOST is tcp://build-box:2376".into(),
+        ))
+    };
     let gate = Gate {
         owned: &remote,
         ..a_gate(&ask)
@@ -711,4 +718,362 @@ fn never_minted(
     _: &Tool,
 ) -> Result<Zeroizing<String>, String> {
     panic!("a runner chat with no recorded start is never minted for")
+}
+
+// A runner chat's tool whose key this desktop's vault does not hold (#5077, ADR 0109): the
+// Secret ask is raised here, the fill stored here, and the value reaches the runner only by the
+// run's own Allow, recorded as forwarded.
+
+use purlis_core::secrets::ask::{Answer as SecretAnswer, Asks as SecretAsks};
+
+const FILLED: &str = "f1lled-kubeconfig";
+
+/// A desktop project whose vault `team`, `devops`'s, is a plain file that holds no key.
+fn a_desktop_missing_the_key() -> tempfile::TempDir {
+    let desktop = tempfile::tempdir().unwrap();
+    std::fs::write(
+        desktop.path().join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(desktop.path().join("team.json"), "{}").unwrap();
+    desktop
+}
+
+fn ctx_of(root: &Path) -> Ctx {
+    Ctx::new(root, purlis_core::secrets::Env::of(&[]))
+}
+
+/// The keys `tool`'s vault holds in the project at `root`, by name.
+fn keys_in(root: &Path) -> impl Fn(&Tool) -> Result<Vec<String>, String> + '_ {
+    move |tool: &Tool| {
+        let ctx = ctx_of(root);
+        let vault = purlis_core::secrets::cmd::provider(&ctx, &tool.vault)
+            .map_err(|e| e.message.to_string())?;
+        purlis_core::secrets::cmd::keys(&ctx, &vault).map_err(|e| e.message.to_string())
+    }
+}
+
+/// Waits until `asks` holds a Secret ask, and answers what it is.
+fn the_secret_asked(asks: &SecretAsks) -> purlis_core::secrets::ask::Open {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(one) = asks.open().into_iter().next() {
+            return one;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the person was never asked for the key"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// What chat 6's run of kubectl on pool builds comes to, on this desktop at `root`, with the
+/// runner as `owned` reads it; and the value each vault read gave the run, kept in `read`.
+fn a_runner_run(
+    root: &Path,
+    asks: &SecretAsks,
+    tools: &PoolTools,
+    owned: &(dyn Fn(&Path, &str) -> Result<Bound, NotSent> + Sync),
+    read: &Mutex<Vec<String>>,
+) -> Result<Approved, Refused> {
+    let ask = kubectl_asked();
+    let gate = Gate {
+        root,
+        owned,
+        ..a_gate(&ask)
+    };
+    let ctx = ctx_of(root);
+    let reads = |tool: &Tool| {
+        let values = super::read(&ctx, tool)?;
+        read.lock()
+            .unwrap()
+            .extend(values.iter().map(|(_, value)| value.to_string()));
+        Ok(values)
+    };
+    let keys = keys_in(root);
+    let gone = AtomicBool::new(false);
+    decided(
+        &gate,
+        &Missing {
+            asks,
+            keys: &keys,
+            within: Duration::from_secs(60),
+        },
+        &waiting(tools, &gone, &reads, Duration::from_secs(60)),
+        &mut Vec::new(),
+    )
+}
+
+#[test]
+fn a_runner_chats_missing_key_is_asked_on_the_desktop_and_reaches_it_only_by_the_runs_allow() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let read = Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| a_runner_run(root, &asks, &tools, &owned_builds, &read));
+        let asked = the_secret_asked(&asks);
+        assert_eq!(asked.chats, vec![6]);
+        assert_eq!(
+            (
+                asked.vault.as_str(),
+                asked.key.as_str(),
+                asked.tool.as_deref()
+            ),
+            ("team", "kubeconfig", Some("kubectl"))
+        );
+        assert!(
+            tools.waiting().is_empty(),
+            "the run's Allow comes after the fill"
+        );
+        asks.answer(
+            &ctx_of(root),
+            asked.id,
+            SecretAnswer::Fill(FILLED.to_owned().into()),
+            crate::asking::the_window(),
+        )
+        .unwrap();
+        // Filled, the run asks its Allow as every run of a tool on a runner does, and nothing
+        // is read for it until then.
+        let allow = the_run_asked(&tools);
+        assert!(read.lock().unwrap().is_empty(), "read before the Allow");
+        tools.answer(allow.session, allow.run, true).unwrap();
+        let approved = run.join().unwrap().expect("allowed");
+        assert_eq!(*read.lock().unwrap(), vec![FILLED.to_owned()]);
+        // Sent by the one route there is, and recorded as forwarded.
+        let mut went = None;
+        sent(root, approved, |handed| {
+            went = Some(handed);
+            Ok(())
+        })
+        .unwrap();
+        assert!(went.is_some_and(|handed| handed.is_for(6, "kubectl", "r1")));
+    });
+    let forwarded: Vec<_> = traced(root)
+        .into_iter()
+        .filter(|line| line["event"] == "secret.forwarded")
+        .collect();
+    assert_eq!(forwarded.len(), 1, "{forwarded:?}");
+    assert_eq!(forwarded[0]["key_names"], serde_json::json!(["kubeconfig"]));
+    assert!(!forwarded[0].to_string().contains(FILLED));
+}
+
+#[test]
+fn a_runner_chats_fill_kept_off_at_its_allow_is_stored_here_and_sent_nowhere() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let read = Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| a_runner_run(root, &asks, &tools, &owned_builds, &read));
+        let asked = the_secret_asked(&asks);
+        asks.answer(
+            &ctx_of(root),
+            asked.id,
+            SecretAnswer::Fill(FILLED.to_owned().into()),
+            crate::asking::the_window(),
+        )
+        .unwrap();
+        let allow = the_run_asked(&tools);
+        tools.answer(allow.session, allow.run, false).unwrap();
+        let refused = run.join().unwrap().expect_err("kept off");
+        assert!(
+            refused.why.contains("kept this run of kubectl off"),
+            "{}",
+            refused.why
+        );
+    });
+    assert!(read.lock().unwrap().is_empty());
+    assert!(
+        traced(root)
+            .iter()
+            .all(|line| line["event"] != "secret.forwarded")
+    );
+    let ctx = ctx_of(root);
+    let vault = purlis_core::secrets::cmd::provider(&ctx, "team").unwrap();
+    assert_eq!(
+        purlis_core::secrets::cmd::get_value(&ctx, &vault, "kubeconfig").unwrap(),
+        FILLED
+    );
+}
+
+#[test]
+fn a_runner_chats_secret_ask_declined_ends_its_run_declined_and_asks_no_allow() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let read = Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| a_runner_run(root, &asks, &tools, &owned_builds, &read));
+        let asked = the_secret_asked(&asks);
+        asks.answer(
+            &ctx_of(root),
+            asked.id,
+            SecretAnswer::Decline,
+            crate::asking::the_window(),
+        )
+        .unwrap();
+        let refused = run.join().unwrap().expect_err("declined");
+        assert_eq!(refused.why, "declined team/kubeconfig");
+        assert_eq!(refused.code, 1);
+    });
+    assert!(tools.waiting().is_empty());
+}
+
+#[test]
+fn a_runner_that_cannot_receive_is_told_declined_and_the_person_may_still_store_the_key_here() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let read = Mutex::new(Vec::new());
+    let hosted = |_: &Path, _: &str| {
+        Err::<Bound, _>(NotSent::NotYours(
+            "its runner is not shown to be yours".into(),
+        ))
+    };
+
+    let refused = a_runner_run(root, &asks, &tools, &hosted, &read).expect_err("refused");
+
+    assert_eq!(
+        refused.why,
+        "declined team/kubeconfig: runner can't receive secrets"
+    );
+    assert_eq!(refused.code, 1);
+    assert!(tools.waiting().is_empty(), "no Allow is asked");
+    let asked = asks.open();
+    assert_eq!(asked.len(), 1, "{asked:?}");
+    assert_eq!(asked[0].cannot_receive, vec![6]);
+    let answered = asks
+        .answer(
+            &ctx_of(root),
+            asked[0].id,
+            SecretAnswer::Fill(FILLED.to_owned().into()),
+            crate::asking::the_window(),
+        )
+        .unwrap();
+    assert!(answered.nudge.is_empty(), "the runner chat gets nothing");
+    assert!(read.lock().unwrap().is_empty());
+    assert!(
+        traced(root)
+            .iter()
+            .all(|line| line["event"] != "secret.forwarded")
+    );
+}
+
+#[test]
+fn a_runner_that_cannot_receive_a_key_this_desktop_holds_is_refused_as_before_and_nothing_is_asked()
+{
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    std::fs::write(root.join("team.json"), r#"{"kubeconfig": "held"}"#).unwrap();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let hosted = |_: &Path, _: &str| {
+        Err::<Bound, _>(NotSent::NotYours(
+            "its runner is not shown to be yours".into(),
+        ))
+    };
+
+    let refused =
+        a_runner_run(root, &asks, &tools, &hosted, &Mutex::default()).expect_err("refused");
+
+    assert!(
+        refused.why.contains("was sent no value on pool builds"),
+        "{}",
+        refused.why
+    );
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn a_runner_chat_whose_key_this_desktop_holds_asks_its_allow_and_no_secret() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    std::fs::write(root.join("team.json"), r#"{"kubeconfig": "held"}"#).unwrap();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let read = Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| a_runner_run(root, &asks, &tools, &owned_builds, &read));
+        let allow = the_run_asked(&tools);
+        assert!(asks.open().is_empty());
+        tools.answer(allow.session, allow.run, true).unwrap();
+        run.join().unwrap().expect("allowed");
+    });
+    assert_eq!(*read.lock().unwrap(), vec!["held".to_owned()]);
+}
+
+/// A runner whose cluster did not confirm it as the person's own just now.
+fn unconfirmed(_: &Path, pool: &str) -> Result<Bound, NotSent> {
+    Err(NotSent::Unconfirmed(format!(
+        "purlis could not confirm pool {pool}'s runner as yours just now"
+    )))
+}
+
+#[test]
+fn a_runner_unreachable_just_now_waits_on_the_ask_is_declined_nothing_and_is_nudged_on_its_fill() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let read = Mutex::new(Vec::new());
+
+    let refused = a_runner_run(root, &asks, &tools, &unconfirmed, &read).expect_err("waits");
+
+    assert_eq!(
+        refused.why,
+        "waiting on you for team/kubeconfig, and the runner was unreachable just now; retry \
+         once answered"
+    );
+    assert_eq!(refused.code, brokered::WAITING_ON_THE_PERSON);
+    assert!(tools.waiting().is_empty(), "no Allow is asked");
+    let asked = asks.open();
+    assert_eq!(asked.len(), 1, "{asked:?}");
+    assert_eq!(asked[0].chats, vec![6], "the chat waits on it");
+    assert!(asked[0].cannot_receive.is_empty(), "declined nothing");
+    let answered = asks
+        .answer(
+            &ctx_of(root),
+            asked[0].id,
+            SecretAnswer::Fill(FILLED.to_owned().into()),
+            crate::asking::the_window(),
+        )
+        .unwrap();
+    assert_eq!(answered.nudge, vec![6], "the runner chat hears its answer");
+    assert!(read.lock().unwrap().is_empty(), "no value was read for it");
+    assert!(
+        traced(root)
+            .iter()
+            .all(|line| line["event"] != "secret.forwarded")
+    );
+}
+
+#[test]
+fn a_runner_not_shown_to_be_yours_is_declined_but_one_unreachable_just_now_is_not() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let not_yours = |_: &Path, _: &str| {
+        Err::<Bound, _>(NotSent::NotYours(
+            "its runner is not shown to be yours".into(),
+        ))
+    };
+
+    let declined =
+        a_runner_run(root, &asks, &tools, &not_yours, &Mutex::default()).expect_err("declined");
+    let waits =
+        a_runner_run(root, &asks, &tools, &unconfirmed, &Mutex::default()).expect_err("waits");
+
+    assert!(
+        declined.why.ends_with("runner can't receive secrets"),
+        "{}",
+        declined.why
+    );
+    assert!(!waits.why.contains("declined"), "{}", waits.why);
+    assert_eq!(
+        (declined.code, waits.code),
+        (1, brokered::WAITING_ON_THE_PERSON)
+    );
 }

@@ -35,6 +35,20 @@
 //! exactly the tool's keys are read here, from the vault, and sent to the runner's host for that
 //! one run (`purlis_core::hookwire::relay::hand_values`), bound to the chat, the tool and the run,
 //! which runs the tool and keeps none.
+//!
+//! **A key this desktop's vault does not hold is asked for here, first** (#5077, ADR 0109): the
+//! run waits on a Secret ask as a chat of this machine does (`purlis_core::secrets::ask`), with
+//! the vault's key names read and no value, and once it is filled, asks its Allow as above. The
+//! fill is stored on this desktop and reaches the runner by that Allow alone, recorded as
+//! `secret.forwarded`: no other route is opened. **A runner that cannot receive a value** (not
+//! shown to be the person's own, or where this machine keeps no pools) is told at once that the
+//! key was declined because it can't receive secrets, while the ask stays for the person to fill
+//! for this machine's chats; a key this desktop holds is refused as before ([`decided`]). **A
+//! runner not confirmed as the person's own just now** (its cluster did not vouch for it in
+//! time, say) is not one that can't receive: by the gate's kind
+//! (`purlis_core::poollogins::NotSent`), never its words, its chat waits on the ask, is nudged on
+//! its answer and declined nothing, and its value, once filled, goes only by the Allow of a run
+//! it starts again.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -44,8 +58,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
 use purlis_core::hookwire::relay::{A_HANDED_LINE_WAITS_AT_MOST, waits_at_most_said};
-use purlis_core::poollogins::Bound;
+use purlis_core::poollogins::{Bound, NotSent};
 use purlis_core::sandbox::tools::{self, Tool};
+use purlis_core::secrets::ask::{Held, Need};
 use purlis_core::secrets::brokered::{self, Forwarded, Frame, Handed, Sent};
 use purlis_core::secrets::{Ctx, Env, Zeroizing};
 
@@ -223,7 +238,7 @@ pub struct Gate<'a> {
     pub authorised: &'a dyn Fn(&str, &str) -> Result<(), String>,
     /// The pool as it is now, with the runner the chat's link reached, where that runner is shown
     /// to be the person's own (`Bound::over_the_link`).
-    pub owned: &'a dyn Fn(&Path, &str) -> Result<Bound, String>,
+    pub owned: &'a dyn Fn(&Path, &str) -> Result<Bound, NotSent>,
 }
 
 /// **What passed the gate**: the persona, its tool, the pool as it is now, and the run's number
@@ -236,9 +251,27 @@ pub struct Checked {
     pub run: String,
 }
 
+/// **What passed every check of the gate but the runner's**: whose tool it is, before the pool
+/// is read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unbound {
+    pub persona: String,
+    pub tool: Tool,
+    pub run: String,
+}
+
 /// **The window's gate for one run of a runner chat's tool** (module docs), before anyone is
-/// asked: what passed it, or what the asker is told.
+/// asked: what passed it, or what the asker is told. [`decided`] takes it in its two halves.
+#[cfg(test)]
 pub fn checked(gate: &Gate<'_>) -> Result<Checked, String> {
+    let unbound = unbound(gate)?;
+    let bound = bound(gate, &unbound.tool).map_err(String::from)?;
+    Ok(unbound.on(bound))
+}
+
+/// The gate's checks of the chat, its persona, its tool and its vault: everything but the
+/// runner's.
+fn unbound(gate: &Gate<'_>) -> Result<Unbound, String> {
     let (pool, ask) = (gate.pool, gate.ask);
     let session = ask.chat;
     let wanted = &ask.secret_exec;
@@ -269,21 +302,187 @@ pub fn checked(gate: &Gate<'_>) -> Result<Checked, String> {
     };
     let tool = allowed_tool(gate, &persona, &name, wanted)?;
     (gate.authorised)(&persona, &wanted.vault)?;
+    Ok(Unbound { persona, tool, run })
+}
+
+impl Unbound {
+    /// What passed the whole gate, on the pool as it is now.
+    fn on(self, bound: Bound) -> Checked {
+        Checked {
+            persona: self.persona,
+            tool: self.tool,
+            bound,
+            run: self.run,
+        }
+    }
+}
+
+/// The gate's check of the runner, for `tool`: the pool as it is now, where its runner is shown
+/// to be the person's own. Refused, by kind: a runner that cannot receive a value, or one not
+/// confirmed as the person's own just now.
+fn bound(gate: &Gate<'_>, tool: &Tool) -> Result<Bound, NotSent> {
+    let pool = gate.pool;
     let config = gate.pools_in.as_deref().ok_or_else(|| {
-        format!(
+        NotSent::NotYours(format!(
             "purlis keeps no pools on this machine, so {} was sent no value",
             tool.name
-        )
+        ))
     })?;
+    let said = |why: String| format!("{} was sent no value on pool {pool}: {why}", tool.name);
     // Only a runner shown to be yours is ever asked about (D-2050-4).
-    let bound = (gate.owned)(config, pool)
-        .map_err(|why| format!("{} was sent no value on pool {pool}: {why}", tool.name))?;
-    Ok(Checked {
-        persona,
-        tool,
-        bound,
-        run,
+    (gate.owned)(config, pool).map_err(|not| match not {
+        NotSent::NotYours(why) => NotSent::NotYours(said(why)),
+        NotSent::Unconfirmed(why) => NotSent::Unconfirmed(said(why)),
     })
+}
+
+/// **What a run does about a key its tool's vault does not hold here** (#5077): the project's
+/// Secret asks, the vault's key names, and how long its command waits on the person.
+pub struct Missing<'a> {
+    pub asks: &'a purlis_core::secrets::ask::Asks,
+    /// The keys `tool`'s vault holds here, by name: no value is read before the run's Allow.
+    pub keys: &'a dyn Fn(&Tool) -> Result<Vec<String>, String>,
+    /// How long its command waits on a Secret ask (`purlis_core::secrets::ask::holds_for`).
+    pub within: Duration,
+}
+
+/// **What a run that was sent nothing is told**, and the status its command ends with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refused {
+    pub why: String,
+    pub code: i32,
+}
+
+impl From<String> for Refused {
+    fn from(why: String) -> Self {
+        Self { why, code: 1 }
+    }
+}
+
+/// The first of `tool`'s keys its vault here does not hold: none where it holds them all, or
+/// does not list its keys, whose run is read after its Allow and refused there as before.
+fn missing_key(missing: &Missing<'_>, tool: &Tool) -> Option<String> {
+    let held = (missing.keys)(tool).ok()?;
+    tool.values
+        .iter()
+        .map(|value| &value.key)
+        .find(|key| !held.contains(key))
+        .cloned()
+}
+
+/// The Secret ask of run `ask` of `persona`'s `tool` for `key`, in the project at `root`: as a
+/// brokered run of this machine asks it, with what the persona's definition declares the key
+/// for, and no words of the chat's (#5072, #5076).
+fn need_of(root: &Path, ask: &brokered::Ask, persona: &str, tool: &Tool, key: String) -> Need {
+    Need {
+        chat: Some(ask.chat),
+        persona: persona.to_owned(),
+        vault: tool.vault.clone(),
+        declared: purlis_core::secrets::needs::declared(root, persona, &key)
+            .map(|need| need.purpose),
+        key,
+        tool: Some(tool.name.clone()),
+        purpose: None,
+        names_no_vault: false,
+    }
+}
+
+/// **Asks the person for each of the run's keys its vault here does not hold**, the run
+/// waiting on each as a chat of this machine waits
+/// ([`purlis_core::secrets::ask::Asks::hold`]): on once every one is
+/// filled; or what the asker is told. Each key is asked once a run: one still missing after its
+/// fill is read after the Allow, and refused there as before.
+fn filled_first(
+    gate: &Gate<'_>,
+    checked: &Checked,
+    missing: &Missing<'_>,
+    moved: &dyn Fn(),
+    writer: &mut dyn Write,
+) -> Result<(), Refused> {
+    let mut asked: Vec<String> = Vec::new();
+    while let Some(key) = missing_key(missing, &checked.tool) {
+        if asked.contains(&key) {
+            break;
+        }
+        let need = need_of(
+            gate.root,
+            gate.ask,
+            &checked.persona,
+            &checked.tool,
+            key.clone(),
+        );
+        let held = missing.asks.hold(need, missing.within, &mut |line: &str| {
+            moved();
+            say(writer, &Frame::Note(line.to_owned()));
+        });
+        moved();
+        match held {
+            // Filled under another name, the key is still missing: read after the Allow, and
+            // refused there as before.
+            Held::Filled { .. } => asked.push(key),
+            Held::Declined { line } | Held::Refused { line } => return Err(line.into()),
+            Held::StillOpen { line } => {
+                return Err(Refused {
+                    why: line,
+                    code: brokered::WAITING_ON_THE_PERSON,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// **The window's whole decision on one run of a runner chat's tool** (module docs): the gate;
+/// for a runner that cannot receive a value, a Secret ask for a key missing here, the chat told
+/// at once that it was declined; for one not confirmed just now, that ask, the chat waiting on
+/// it unheld and declined nothing; else a Secret ask for each key missing here, waited on, and
+/// then the person's Allow of the run, waited on. Its values on Allow, or what the asker is told.
+pub fn decided(
+    gate: &Gate<'_>,
+    missing: &Missing<'_>,
+    waiting: &Waiting<'_>,
+    writer: &mut dyn Write,
+) -> Result<Approved, Refused> {
+    let unbound = unbound(gate)?;
+    let checked = match bound(gate, &unbound.tool) {
+        Ok(bound) => unbound.on(bound),
+        Err(not) => {
+            let Some(key) = missing_key(missing, &unbound.tool) else {
+                return Err(String::from(not).into());
+            };
+            let need = need_of(gate.root, gate.ask, &unbound.persona, &unbound.tool, key);
+            // By the gate's kind, never its words: a runner not confirmed just now is not one
+            // that can't receive, and its chat is declined nothing.
+            let told = match not {
+                NotSent::NotYours(_) => Err(missing.asks.cannot_receive(need).into()),
+                NotSent::Unconfirmed(why) => {
+                    tracing::info!(
+                        "purlis: chat {}'s {} waits on a Secret ask, its runner unconfirmed: {why}",
+                        gate.ask.chat,
+                        unbound.tool.name
+                    );
+                    Err(match missing.asks.unconfirmed(need) {
+                        Ok(waits) => Refused {
+                            why: waits,
+                            code: brokered::WAITING_ON_THE_PERSON,
+                        },
+                        Err(declined) => declined.into(),
+                    })
+                }
+            };
+            (waiting.moved)();
+            return told;
+        }
+    };
+    filled_first(gate, &checked, missing, waiting.moved, writer)?;
+    tracing::info!(
+        "purlis: chat {}'s {} on pool {} asks the person whether its values may be sent for this \
+         run",
+        gate.ask.chat,
+        checked.tool.name,
+        gate.pool
+    );
+    Ok(answered(gate, checked, waiting, writer)?)
 }
 
 /// **Tool `name` of `persona`, as this machine allows it**, where `wanted` asks for exactly its
@@ -520,7 +719,8 @@ pub fn run_on_its_runner(
     let moved = || held.chats().asks_may_have_moved();
     // The runner this chat's link reached, as the desktop's host said it (#3417).
     let reached = crate::hooks::reached_over_the_link();
-    let owned = |config: &Path, pool: &str| Bound::over_the_link(config, pool, reached.as_deref());
+    let owned =
+        |config: &Path, pool: &str| Bound::over_the_link_kinded(config, pool, reached.as_deref());
     let gate = Gate {
         pool,
         ask: &ask,
@@ -534,26 +734,33 @@ pub fn run_on_its_runner(
         authorised: &authorised,
         owned: &owned,
     };
-    let decided = checked(&gate).and_then(|checked| {
-        tracing::info!(
-            "purlis: chat {session}'s {} on pool {pool} asks the person whether its values may \
-             be sent for this run",
-            checked.tool.name
-        );
-        answered(
-            &gate,
-            checked,
-            &Waiting {
-                tools: held.pool_tools(),
-                gone: &gone,
-                moved: &moved,
-                read: &read,
-                within: A_HANDED_LINE_WAITS_AT_MOST,
-                now: crate::sandboxing::now_secs(),
-            },
-            &mut *writer,
-        )
-    });
+    // A key the vault here holds no value under is asked of the person first (#5077), its names
+    // read and no value.
+    let keys = |tool: &Tool| {
+        purlis_core::secrets::cmd::provider(&ctx, &tool.vault)
+            .and_then(|vault| purlis_core::secrets::cmd::keys(&ctx, &vault))
+            .map_err(|e| e.message.to_string())
+    };
+    let missing = Missing {
+        asks: held.secret_asks(),
+        keys: &keys,
+        within: purlis_core::secrets::ask::holds_for(
+            asker.as_ref().and_then(|asker| asker.harness),
+        ),
+    };
+    let decided = decided(
+        &gate,
+        &missing,
+        &Waiting {
+            tools: held.pool_tools(),
+            gone: &gone,
+            moved: &moved,
+            read: &read,
+            within: A_HANDED_LINE_WAITS_AT_MOST,
+            now: crate::sandboxing::now_secs(),
+        },
+        &mut *writer,
+    );
     match decided {
         Ok(approved) => match sent(
             root,
@@ -572,9 +779,13 @@ pub fn run_on_its_runner(
                     .to_owned(),
             ),
         },
-        Err(why) => {
+        Err(Refused { why, code }) => {
             tracing::info!("purlis: chat {session} on pool {pool} was sent no vault value");
-            brokered::refused(writer, why);
+            if code == brokered::WAITING_ON_THE_PERSON {
+                brokered::refused_for_now(writer, why);
+            } else {
+                brokered::refused(writer, why);
+            }
         }
     }
 }

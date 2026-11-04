@@ -165,6 +165,21 @@ impl Bound {
         reached: Option<&str>,
         vouch: &dyn Fn(&Path, &str) -> Result<String, crate::clusterpool::Refused>,
     ) -> Result<Option<Bound>, String> {
+        Self::of_a_cluster_pool_kinded(config_root, pool, reached, vouch).map_err(String::from)
+    }
+
+    /// [`Bound::of_a_cluster_pool`], refused by kind ([`NotSent`]): what this machine decides
+    /// alone (the link, the mark, a chat run there unconfined, an operator or runner key that
+    /// changed, a statement that does not vouch for this runner) is [`NotSent::NotYours`]; the
+    /// cluster not answering, or its wait for a statement running out, the runner moving while
+    /// it was asked, and this machine's own records not reading, are [`NotSent::Unconfirmed`].
+    pub fn of_a_cluster_pool_kinded(
+        config_root: &Path,
+        pool: &str,
+        reached: Option<&str>,
+        vouch: &dyn Fn(&Path, &str) -> Result<String, crate::clusterpool::Refused>,
+    ) -> Result<Option<Bound>, NotSent> {
+        use crate::clusterpool::Refused as Vouch;
         // A link to a chat's own runner of the pool names that runner (#3709). Only its own pool's.
         let link = reached
             .and_then(|reached| reached.split_once('@'))
@@ -172,36 +187,49 @@ impl Bound {
             .filter(|name| name.split_once('/').is_some_and(|(of, _)| of == pool))
             .filter(|name| *name != format!("{pool}/{pool}"))
             .unwrap_or(pool);
-        let read = || crate::runners::cluster_runner_for(config_root, link);
-        let Some((held, kept)) = read().map_err(|why| why.to_string())? else {
+        let read = || {
+            crate::runners::cluster_runner_for(config_root, link)
+                .map_err(|why| NotSent::Unconfirmed(why.to_string()))
+        };
+        let Some((held, kept)) = read()? else {
             return Ok(None);
         };
         // The runner the values would go to is the link's: it must be the one judged here.
         if reached != Some(kept.reached().as_str()) {
-            return Err(format!(
+            return Err(NotSent::NotYours(format!(
                 "this chat's link does not reach the runner pool {pool} keeps now, so purlis sent \
                  it no vault value and no token: restart purlis, and start the chat again"
-            ));
+            )));
         }
         if !held.owned() {
-            return Err(not_marked_said(pool));
+            return Err(NotSent::NotYours(not_marked_said(pool)));
         }
         // By the pool's own name, whatever name this was asked by.
         if crate::runnertaint::pool_ran_unsandboxed(config_root, held.name()) {
-            return Err(crate::runnertaint::sent_nothing_on(pool));
+            return Err(NotSent::NotYours(crate::runnertaint::sent_nothing_on(pool)));
         }
         let pod = vouch(config_root, link).map_err(|why| {
             tracing::info!("purlis: pool {pool}'s runner was not vouched for now: {why}");
-            not_vouched_said(pool)
+            match why {
+                // A key that changed, or a statement that does not vouch for this runner (none
+                // this desktop can trust, of another cluster, claim or requester), is a fact
+                // about the runner, not about the cluster now.
+                Vouch::KeyChanged { .. }
+                | Vouch::OperatorKeyChanged { .. }
+                | Vouch::NotVouched(_) => NotSent::NotYours(not_vouched_said(pool)),
+                // The wait for a statement ran out, or the cluster or its kubectl did not answer:
+                // asked again, it may.
+                Vouch::WaitRanOut(_) | Vouch::Other(_) => {
+                    NotSent::Unconfirmed(not_vouched_said(pool))
+                }
+            }
         })?;
-        let (now, runner) = read()
-            .map_err(|why| why.to_string())?
-            .ok_or_else(|| not_vouched_said(pool))?;
+        let (now, runner) = read()?.ok_or_else(|| NotSent::Unconfirmed(not_vouched_said(pool)))?;
         if runner != kept {
-            return Err(not_vouched_said(pool));
+            return Err(NotSent::Unconfirmed(not_vouched_said(pool)));
         }
         if !now.owned() {
-            return Err(not_marked_said(pool));
+            return Err(NotSent::NotYours(not_marked_said(pool)));
         }
         Ok(Some(Bound::of_cluster(&now, &runner, &pod)))
     }
@@ -221,12 +249,23 @@ impl Bound {
         pool: &str,
         reached: Option<&str>,
     ) -> Result<Bound, String> {
+        Self::over_the_link_kinded(config_root, pool, reached).map_err(String::from)
+    }
+
+    /// [`Bound::over_the_link`], refused by kind ([`NotSent`]): a runner this machine does not
+    /// show to be the person's own, or one it could not confirm just now. Never told apart by
+    /// its words.
+    pub fn over_the_link_kinded(
+        config_root: &Path,
+        pool: &str,
+        reached: Option<&str>,
+    ) -> Result<Bound, NotSent> {
         if let Some(bound) =
-            Self::of_a_cluster_pool(config_root, pool, reached, &crate::pools::vouched_now)?
+            Self::of_a_cluster_pool_kinded(config_root, pool, reached, &crate::pools::vouched_now)?
         {
             return Ok(bound);
         }
-        Self::over_the_link_with(
+        Self::over_the_link_with_kinded(
             crate::dockerpool::Docker::engine_on_this_machine(),
             config_root,
             pool,
@@ -241,47 +280,97 @@ impl Bound {
         pool: &str,
         reached: Option<&str>,
     ) -> Result<Bound, String> {
-        let engine = owned(engine)?;
+        Self::over_the_link_with_kinded(engine, config_root, pool, reached).map_err(String::from)
+    }
+
+    /// [`Bound::over_the_link_with`], refused by kind ([`NotSent`]). A Docker pool's runner is
+    /// this machine, so nothing of it is unconfirmed but this machine's own records not reading.
+    pub fn over_the_link_with_kinded(
+        engine: Result<std::path::PathBuf, String>,
+        config_root: &Path,
+        pool: &str,
+        reached: Option<&str>,
+    ) -> Result<Bound, NotSent> {
+        let unread = |why: crate::runners::Refused| NotSent::Unconfirmed(why.to_string());
+        let engine = owned(engine).map_err(NotSent::NotYours)?;
         // Tools and tokens as browser logins: nothing goes to a pool a chat ran on unconfined.
         if crate::runnertaint::pool_ran_unsandboxed(config_root, pool) {
-            return Err(crate::runnertaint::sent_nothing_on(pool));
+            return Err(NotSent::NotYours(crate::runnertaint::sent_nothing_on(pool)));
         }
         let kept = crate::runners::pools(config_root)
-            .map_err(|why| why.to_string())?
+            .map_err(unread)?
             .into_iter()
             .find(|one| one.name() == pool)
-            .ok_or_else(|| format!("no pool named {pool} is on this machine"))?;
+            .ok_or_else(|| NotSent::NotYours(format!("no pool named {pool} is on this machine")))?;
         let runner = match reached {
             Some(reached) => {
                 let Some((of, name)) = reached.split_once('/').filter(|(of, _)| *of == pool) else {
-                    return Err(format!(
+                    return Err(NotSent::NotYours(format!(
                         "this chat's link reached {reached}, which is no runner of pool {pool}"
-                    ));
+                    )));
                 };
                 crate::runners::read(config_root)
-                    .map_err(|why| why.to_string())?
+                    .map_err(unread)?
                     .into_iter()
                     .find(|kept| kept.pool() == of && kept.name() == name)
                     .ok_or_else(|| {
-                        format!("runner {name} of pool {pool} is no longer on this machine")
+                        NotSent::NotYours(format!(
+                            "runner {name} of pool {pool} is no longer on this machine"
+                        ))
                     })?
             }
             None => {
                 let draining = crate::runners::draining(config_root)
-                    .map_err(|why| why.to_string())?
+                    .map_err(unread)?
                     .into_iter()
                     .any(|kept| kept.pool() == pool);
                 if draining {
-                    return Err(format!(
+                    return Err(NotSent::NotYours(format!(
                         "pool {pool} moved to a new runner, and purlis's session host did not say \
                          which of its runners this chat's link reached: restart purlis to \
                          update it"
-                    ));
+                    )));
                 }
-                crate::runners::runner_for(config_root, pool).map_err(|why| why.to_string())?
+                crate::runners::runner_for(config_root, pool)
+                    .map_err(|why| NotSent::NotYours(why.to_string()))?
             }
         };
         Ok(Bound::of(&kept, &runner, &engine))
+    }
+}
+
+/// **Why a runner chat's link was sent no value, by kind** (#5077): what decides whether its
+/// chat is told its runner can't receive secrets, or that it waits. Its words are the same
+/// either way; nothing tells the kinds apart by them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotSent {
+    /// The runner is not shown to be the person's own: no value goes there until that changes.
+    NotYours(String),
+    /// Whether it is could not be confirmed just now: its cluster did not vouch for it, it moved
+    /// while it was asked, or this machine's records of it did not read. Asked again, it may be.
+    Unconfirmed(String),
+}
+
+impl NotSent {
+    /// Its words.
+    pub fn why(&self) -> &str {
+        match self {
+            NotSent::NotYours(why) | NotSent::Unconfirmed(why) => why,
+        }
+    }
+}
+
+impl std::fmt::Display for NotSent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.why())
+    }
+}
+
+impl From<NotSent> for String {
+    fn from(not: NotSent) -> Self {
+        match not {
+            NotSent::NotYours(why) | NotSent::Unconfirmed(why) => why,
+        }
     }
 }
 

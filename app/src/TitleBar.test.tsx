@@ -12,6 +12,8 @@ import { HELP } from "./About";
 import type { About, Moved, OpenChat, PlaneSaving, RepoSaving } from "./bindings";
 import { chipName, queryStripNamed, stripNamed, workspaceChips } from "./test-strips";
 import { forgetRailMode, RAIL_MODE } from "./railMode";
+import { aBatchOf } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * **The title bar's own rules**, on the component, and **what the bar holds in the window**
@@ -571,11 +573,11 @@ describe("the title bar in the window, and the project rail below it (#2915)", (
           refusals: [],
           children: [],
         };
-        for (const handler of listeners.get("chat-moved") ?? [])
+        for (const handler of listeners.get(CHAT_EVENTS) ?? [])
           window.__TAURI_INTERNALS__.runCallback(handler, {
-            event: "chat-moved",
+            event: CHAT_EVENTS,
             id: 1,
-            payload: moved,
+            payload: aBatchOf("moved", moved),
           });
       },
     };

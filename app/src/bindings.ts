@@ -2661,6 +2661,12 @@ export const commands = {
 	 */
 	reopenFinishedTask: (plane: PlaneId, id: string, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("reopen_finished_task", { plane, id, columns, rows })),
 	/**
+	 *  **Resume** on the ended band of a chat the person ended (#5019, spec #4750 story 62): the
+	 *  same chat on its conversation, in a new run ([`crate::chats::Chats::resume_ended`]). The
+	 *  answer is the chat as the window draws it, which takes the pane the ended one was left in.
+	 */
+	resumeEndedChat: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("resume_ended_chat", { plane, session, columns, rows })),
+	/**
 	 *  **The brief a task was sent, as it was sent** (#1494): from the task's dispatch record,
 	 *  found by its chat while that is open, or by the record's id for a finished task. With who
 	 *  sent it, when, to which persona and where it works. It reads, and changes nothing.
@@ -6212,8 +6218,8 @@ export type ChatBrowser = {
 };
 
 /**
- *  What `chat-doing` carries, and what `chat_doings` answers a list of: one chat's line, or
- *  that it has none. It travels in memory only.
+ *  What a `chat-events` batch carries of a chat's doing, and what `chat_doings` answers a list
+ *  of: one chat's line, or that it has none. It travels in memory only.
  */
 export type ChatDoing = {
 	plane: PlaneId,
@@ -6225,6 +6231,26 @@ export type ChatDoing = {
 	sequence: number,
 	/**  What it is doing, or null: its turn ended, it is asking the person, or it is gone. */
 	doing: Doing | null,
+};
+
+/**  One thing a chat told the window: what each of the four events used to carry on its own. */
+export type ChatEvent = 
+/**  The chat moved on the board (`chat-moved` before). */
+{ kind: "moved"; told: Moved } | 
+/**  What the chat is doing changed (`chat-doing` before, #1493). */
+{ kind: "doing"; told: ChatDoing } | 
+/**  The chat's tool touched a file (`chat-touching` before, FM-6). */
+{ kind: "touching"; told: ChatTouching } | 
+/**  The chat's open skill run changed (`chat-skill-run` before, SK-3). */
+{ kind: "skill-run"; told: ChatSkillRun };
+
+/**
+ *  What `chat-events` carries: everything one project's chats told within an interval, in the
+ *  order they told it.
+ */
+export type ChatEvents = {
+	plane: PlaneId,
+	events: ChatEvent[],
 };
 
 /**  A chat the window has open, by its plane and its session. */
@@ -6357,8 +6383,8 @@ export type ChatSkill = {
 };
 
 /**
- *  What `chat-skill-run` carries, and what `chat_skill_runs` answers a list of: one chat's open
- *  run, or that it has none.
+ *  What a `chat-events` batch carries of a chat's skill run, and what `chat_skill_runs` answers
+ *  a list of: one chat's open run, or that it has none.
  */
 export type ChatSkillRun = {
 	plane: PlaneId,
