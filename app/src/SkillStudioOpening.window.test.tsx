@@ -7,6 +7,7 @@ import { act, cleanup, render as renderBare, screen, waitFor } from "@testing-li
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetStudioReadAhead } from "./studioReadAhead";
 
 /**
@@ -69,6 +70,8 @@ function core() {
       if (cmd === "skill_studio_on") return true;
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
+      // Its tab on alpha's strip, from the stored layout (#4758).
+      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,
