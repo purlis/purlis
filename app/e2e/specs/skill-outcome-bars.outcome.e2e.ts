@@ -388,7 +388,8 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       { timeout: 30_000, interval: 100, timeoutMsg: "the studio's Library drew no row in 30 s" },
     );
     samples.push(took as number);
-    // Probe (#4351, do not merge): each L10 opening as it is timed, so a run cut short keeps them.
+    // Probe (#4351, do not merge): each L10 opening as it is timed, so a run cut short keeps them;
+    // the full timeline of the opening follows on its own line.
     console.log(`L10 opening ${n + 1}/${OPENINGS}: ${Math.round(took as number)} ms`);
     const tl = await browser.execute(() => (globalThis as { __tl4351?: string[] }).__tl4351 ?? []); // [DEBUG-4351]
     console.log(
