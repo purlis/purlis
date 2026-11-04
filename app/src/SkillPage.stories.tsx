@@ -188,8 +188,15 @@ const meta = {
             default:
               return DEPLOY_FOLDER;
           }
-        case "skill_file":
-          return { kind: "text", text: FILE_TEXT[(args as { path: string }).path] ?? "" };
+        case "skill_file": {
+          const { folder, path } = args as { folder: string; path: string };
+          // Each skill's own files: a built-in skill's SKILL.md is its own, never deploy's.
+          const text =
+            folder === BROWSER.folder
+              ? "---\nname: purlis-browser\n---\n\n# purlis-browser\n\nDrive a real browser, with credentials from a vault.\n"
+              : FILE_TEXT[path];
+          return { kind: "text", text: text ?? "" };
+        }
         case "skill_deletes_cut_short":
           return { settled: [], unsettled: [] };
         default:
