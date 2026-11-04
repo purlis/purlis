@@ -45,9 +45,9 @@
 //! sentence it answers carries a value.
 //!
 //! **A login a chat chose starts clean on its own site** (#5121, the person's ruling of 2026-11-05):
-//! once the browser is held to the login, and before anything is filled, the cookies its sites
-//! would be sent, a parent domain's too, and their service workers are gone, and the page is
-//! loaded again. Where that can't be done, nothing is filled. Other sites are left as they are.
+//! once the browser is held to the login, and before anything is filled, every page showing those
+//! sites goes blank, the cookies they would be sent, a parent domain's too, and their service workers
+//! are gone, and the page is loaded again. Where that can't be done, nothing is filled. Other sites are left as they are.
 //!
 //! **A login is a preset of secret fill** (#5121, the person's ruling SF-7 on #5096): a fill of the
 //! user name, a fill of the password and a press of submit, under the same rules as any fill. Each
@@ -371,14 +371,21 @@ impl Browser {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         // A login a chat chose starts clean on its own site (#5121), held already, and before
         // anything watches this page leave, as it's loaded again.
-        if login.suggested && login.origin.is_empty() {
+        if login.suggested {
+            // No document of those sites is left to put back what goes.
+            self.blank_pages_of(&target, login).map_err(|why| {
+                not_logged_in(format!(
+                    "purlis could not clear {origin} before the login ({why}), so nothing was \
+                     filled"
+                ))
+            })?;
             self.clear_sites(&target, login).map_err(|why| {
                 not_logged_in(format!(
                     "purlis could not clear {origin} before the login ({why}), so nothing was \
                      filled"
                 ))
             })?;
-            let before = self.document_of(&target);
+            let before = self.main_document(&target);
             let session = self.page_session(&target)?;
             {
                 let _addressing = self.addressing(&target, Why::Addressed);
@@ -386,14 +393,15 @@ impl Browser {
             }
             lock(&self.inner.state).current = Some(target.clone());
             self.wait_until(within, 1, || {
-                Ok(self.document_of(&target) != before && shows_form(self)? == Some(true))
+                Ok(self.main_document(&target) != before && shows_form(self)? == Some(true))
             })
             .map_err(|why| {
                 or_said(
                     why,
                     format!(
                         "no login form appeared on {origin} within {} seconds of clearing it, so \
-                         nothing was filled",
+                         nothing was filled: a login page that needs another site can't load it \
+                         once the browser is held to the login",
                         within.as_secs()
                     ),
                 )
@@ -426,6 +434,37 @@ impl Browser {
             }
         }
         done
+    }
+
+    /// **Sends every page showing a document of the login's sites to a blank one** (module docs),
+    /// `target` too, and waits until none shows one: a page there could put back what's cleared.
+    /// Pages of other sites are left as they are.
+    fn blank_pages_of(&self, target: &str, login: &Login) -> Result<(), String> {
+        let on_its_sites = |this: &Self, page: &str| {
+            this.document_origin(page).is_some_and(|here| {
+                here == login.origin || login.back_to.as_deref() == Some(here.as_str())
+            })
+        };
+        let pages: Vec<String> = self
+            .targets()
+            .into_iter()
+            .filter(|page| page == target || on_its_sites(self, page))
+            .collect();
+        for page in &pages {
+            let session = self.page_session(page).map_err(|why| why.to_string())?;
+            let _addressing = self.addressing(page, Why::Addressed);
+            self.devtools()
+                .call(
+                    "Page.navigate",
+                    json!({ "url": "about:blank" }),
+                    Some(session.as_str()),
+                )
+                .map_err(|_| "a page of its would not leave".to_owned())?;
+        }
+        self.wait_until(self.inner.limits.login_within, 1, || {
+            Ok(!pages.iter().any(|page| on_its_sites(self, page)))
+        })
+        .map_err(|_| "a page of its would not leave".to_owned())
     }
 
     /// **Clears what the login's sites hold** (module docs): the service workers of its origin and
@@ -971,7 +1010,7 @@ impl Browser {
 }
 
 /// The host of `origin` (`scheme://host[:port]`), as a cookie's domain spells it.
-fn host_of(origin: &str) -> Option<&str> {
+pub(super) fn host_of(origin: &str) -> Option<&str> {
     let (_, rest) = origin.split_once("://")?;
     let host = match rest.rsplit_once(':') {
         Some((host, port)) if port.bytes().all(|byte| byte.is_ascii_digit()) => host,

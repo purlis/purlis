@@ -4168,9 +4168,9 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
     login.keep = kept.filter(|_| store.is_some());
     // Always on its notice writes a declared line, and this is the call it answered, or one soon
     // after it: as much the chat's choice as one allowed once (#5121).
-    login.suggested |= held
-        .login_grants()
-        .allowed_from_a_notice(name, &login.address);
+    login.suggested |=
+        held.login_grants()
+            .allowed_from_a_notice(asker.persona.as_deref(), name, &login.address);
     Ok(LoginRead {
         login,
         opens,
@@ -4277,6 +4277,11 @@ fn pool_login_of(
         return Err(why);
     }
     let was_granted = granted.is_some();
+    // As on this machine: Always on its notice is as much the chat's choice (#5121).
+    let mut login = login;
+    login.suggested |=
+        held.login_grants()
+            .allowed_from_a_notice(Some(persona.as_str()), name, &login.address);
     // Again once it is read: a vault may wait on a sign-in for as long as it takes (#4071).
     if purlis_core::poollogins::Bound::over_the_link(&config, pool, reached.as_deref()).as_ref()
         != Ok(&bound)

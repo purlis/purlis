@@ -204,6 +204,29 @@ fn a_login_a_chat_chose_fills_the_form_of_a_site_with_no_earlier_session() {
     assert!(!snapshot(&browser).contains("Kept for the earlier session"));
 }
 
+/// #5121: a page left open on the site goes blank with the clearing, and one of another stays.
+#[test]
+fn a_login_a_chat_chose_leaves_no_page_of_its_site_open_and_others_where_they_are() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "clean-earlier-session.html");
+    let login = Login {
+        suggested: true,
+        ..login_on("clean-site.html", "http://fixture.test")
+    };
+    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let pages = call(&browser, Call::Pages);
+    let Content::Pages(pages) = pages.content else {
+        panic!("its pages");
+    };
+    assert!(
+        !pages.iter().any(|page| page.title == "An earlier session"),
+        "the page of its site went blank"
+    );
+}
+
 /// #5121, the person's ruling: a declared login stays as it is, which is what the test above is
 /// measured against: this page shows its settings field to the earlier session.
 #[test]

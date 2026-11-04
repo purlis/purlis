@@ -1197,10 +1197,16 @@ fn a_login_a_chat_chose_clears_its_own_site_before_anything_is_filled() {
     assert_eq!(workers.len(), 1);
     assert_eq!(workers[0].params["storageTypes"], "service_workers");
     assert_eq!(workers[0].params["origin"], ORIGIN);
+    let went: Vec<_> = engine
+        .sent("Page.navigate")
+        .iter()
+        .filter(|sent| sent.session.as_deref() == Some("S-PAGE-2"))
+        .map(|sent| sent.params["url"].as_str().unwrap_or_default().to_owned())
+        .collect();
     assert_eq!(
-        engine.sent("Page.navigate").len(),
-        2,
-        "the page is loaded again, with nothing of before"
+        went,
+        [ADDRESS, "about:blank", ADDRESS],
+        "its page goes blank, then loads again with nothing of before"
     );
     assert_eq!(inserted(&engine).len(), 1, "and only then filled");
 }
@@ -1259,4 +1265,40 @@ fn a_cookie_reaches_its_host_and_every_host_under_a_parent_domain_alone() {
     );
     assert!(!reaches(".notexample.test", "app.example.test"), "alike");
     assert!(!reaches(".ample.test", "app.example.test"), "alike");
+}
+
+/// #5121: a form on another host counts: its page's site is cleared with it.
+#[test]
+fn a_login_a_chat_chose_with_its_form_elsewhere_clears_both_sites() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::None);
+    let login = Login {
+        back_to: Some("https://app.example.test".to_owned()),
+        ..chosen()
+    };
+    let ended = browser.log_in(&login, holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let origins: Vec<_> = engine
+        .sent("Storage.clearDataForOrigin")
+        .iter()
+        .map(|sent| {
+            sent.params["origin"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(origins, [ORIGIN, "https://app.example.test"]);
+}
+
+#[test]
+fn a_host_is_read_from_an_origin_as_a_cookie_spells_it() {
+    use super::super::login::host_of;
+    assert_eq!(
+        host_of("https://app.example.test"),
+        Some("app.example.test")
+    );
+    assert_eq!(host_of("http://localhost:8080"), Some("localhost"));
+    assert_eq!(host_of("no-scheme"), None);
+    assert_eq!(host_of("https://"), None);
 }

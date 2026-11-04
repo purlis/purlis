@@ -962,11 +962,13 @@ fn a_login_allowed_from_a_notice_is_known_by_its_name_and_its_page() {
     let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/");
     let tool = proposal.tool().expect("a tool");
     let page = tool.login.as_ref().expect("a login").url.clone();
-    assert!(!grants.allowed_from_a_notice("shop-login", &page));
+    assert!(!grants.allowed_from_a_notice(Some("qa"), "shop-login", &page));
 
     assert!(grants.allow(id, "qa", tool, false));
 
-    assert!(grants.allowed_from_a_notice("shop-login", &page));
-    assert!(!grants.allowed_from_a_notice("shop-login", "https://other.example.test/"));
-    assert!(!grants.allowed_from_a_notice("other", &page));
+    assert!(grants.allowed_from_a_notice(Some("qa"), "shop-login", &page));
+    assert!(!grants.allowed_from_a_notice(Some("qa"), "shop-login", "https://other.example.test/"));
+    assert!(!grants.allowed_from_a_notice(Some("qa"), "other", &page));
+    assert!(!grants.allowed_from_a_notice(Some("devops"), "shop-login", &page));
+    assert!(!grants.allowed_from_a_notice(None, "shop-login", &page));
 }

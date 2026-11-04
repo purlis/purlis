@@ -373,7 +373,7 @@ impl Browser {
     }
 
     /// The document page `page` shows in its main frame, by its number.
-    fn main_document(&self, page: &str) -> Option<u64> {
+    pub(super) fn main_document(&self, page: &str) -> Option<u64> {
         let state = lock(&self.inner.state);
         Some(state.page(page)?.frames.get(page)?.generation)
     }

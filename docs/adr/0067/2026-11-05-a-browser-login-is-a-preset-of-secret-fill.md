@@ -47,6 +47,8 @@ amended by #5152) stay as they are.
   stricter than a fill's refusal. Its hold stays the browser's life (#5099), stricter than a fill's.
 - A login that needs another site than the one a page holding a filled secret holds the browser to is
   refused at once, saying why.
+- Every page showing the login's sites goes blank first, and the page loads again once they're clear.
+- Every page showing the login's sites goes blank first, and the page loads again once they're clear.
 - Clearing comes after the browser is held to the login and before any fill, on every fill of such a
   login, not the first alone, as a page that asks to sign in again has nothing to lose. A login whose
   page asks for nothing clears nothing. Always on a notice counts until purlis restarts, after which

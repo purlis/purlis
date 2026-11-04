@@ -86,6 +86,8 @@ struct Inner {
     /// Every login allowed from a notice since purlis started, used up or closed too: where a key
     /// went counts for a warning whatever became of the grant.
     filled: Vec<Tool>,
+    /// The same, by the persona each was allowed for (#5121).
+    from_notices: Vec<(String, Tool)>,
 }
 
 /// What a chat is told while the person is being asked about another of its logins.
@@ -204,6 +206,7 @@ impl Grants {
             .grants
             .retain(|one| !(one.session == wait.session && one.tool.name == tool.name));
         inner.filled.push(tool.clone());
+        inner.from_notices.push((persona.to_owned(), tool.clone()));
         inner.grants.push(Grant {
             session: wait.session,
             persona: persona.to_owned(),
@@ -276,11 +279,12 @@ impl Grants {
         self.lock().filled.clone()
     }
 
-    /// Whether login `name` on page `address` was allowed from a notice since purlis started, Always
-    /// too (#5121).
-    pub fn allowed_from_a_notice(&self, name: &str, address: &str) -> bool {
-        self.lock().filled.iter().any(|tool| {
-            tool.name == name
+    /// Whether `persona`'s login `name` on page `address` was allowed from a notice since purlis
+    /// started, Always too (#5121). Another's login of that name and page is its own.
+    pub fn allowed_from_a_notice(&self, persona: Option<&str>, name: &str, address: &str) -> bool {
+        self.lock().from_notices.iter().any(|(whose, tool)| {
+            persona == Some(whose.as_str())
+                && tool.name == name
                 && tool
                     .login
                     .as_ref()
