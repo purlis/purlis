@@ -622,6 +622,42 @@ fn an_address_for_another_site_is_refused_with_why_while_a_filled_page_holds_the
     }
 }
 
+/// #5150: the engine's own page for a load the hold refused answers why, naming the site the
+/// browser is held to and what ends the hold, and nothing of the address, which may carry what a
+/// filled page sent.
+#[test]
+fn a_load_a_fills_hold_refused_says_why_and_nothing_of_where_it_went() {
+    use crate::sandbox::browser_reach::Bound;
+    let refused = "https://elsewhere.example.test/search?q=open-sesame";
+    let bound = Bound::default();
+    assert_eq!(
+        super::load_held_said(&bound, refused),
+        None,
+        "nothing holds"
+    );
+    bound
+        .hold_for_fill(&Site::of("dash.example.test", 443))
+        .expect("held");
+
+    let said = super::load_held_said(&bound, refused).expect("refused");
+
+    assert!(
+        said.contains("reaches only dash.example.test:443"),
+        "{said}"
+    );
+    assert!(said.contains("did not load"), "{said}");
+    assert!(said.contains("browser_close"), "{said}");
+    for never in ["elsewhere", "open-sesame"] {
+        assert!(!said.contains(never), "{never}: {said}");
+    }
+    assert_eq!(
+        super::load_held_said(&bound, "https://dash.example.test/gone"),
+        None,
+        "a page of the site it is held to failed by itself"
+    );
+    assert_eq!(super::load_held_said(&bound, "about:blank"), None);
+}
+
 /// #5117: a fill's holder holds a real reach proxy to the field's site from its hold until the
 /// engine says the page is gone; another site the chat lists is refused meanwhile. These bind
 /// sockets, so they first run on CI.
