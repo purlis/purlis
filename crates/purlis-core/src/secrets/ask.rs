@@ -116,8 +116,9 @@ impl Reason {
     /// report's text is, and naming the entry the key reads where it is a link.
     pub fn replace(ctx: &Ctx, vault: &str, key: &str, said: &str) -> Self {
         Self::Replace {
+            // One line: what the chat wrapped is folded, never shown escaped.
             said: crate::dispatchrecord::masked(&crate::shown::one_line(
-                said.trim(),
+                &said.split_whitespace().collect::<Vec<_>>().join(" "),
                 MOST_REASON_CHARS,
             )),
             reads: super::links::of(ctx, vault, key).ok().flatten(),
@@ -933,6 +934,10 @@ pub struct SecretAsk {
     /// The vault, where the chat names one: its persona's otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vault: Option<String>,
+    /// **The chat says the value it has doesn't work** (#5075), and why, in its own words: the
+    /// person is asked to replace it even though the vault holds it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replace: Option<String>,
 }
 
 /// **What a chat hears of its Secret ask** (#5072): never a value, and never where it lives
@@ -1041,7 +1046,25 @@ pub fn raised_within(
             None => (persona.to_owned(), true),
         },
     };
-    if holds_already(ctx, persona, &vault, &line.key) {
+    // A replace (#5075) asks the person even for a key the vault holds, and only in a vault the
+    // persona may use: the person may overwrite what is there.
+    let reason = match line.replace.as_deref() {
+        None => None,
+        Some(why) => {
+            let reason = Reason::replace(ctx, &vault, &line.key, why);
+            if matches!(&reason, Reason::Replace { said, .. } if said.is_empty()) {
+                return Err(
+                    "say why the value doesn't work: the person reads it before replacing it"
+                        .to_owned(),
+                );
+            }
+            super::brokered::authorise(ctx, Some(persona), &vault).map_err(|why| {
+                format!("{why} A replace is asked only in a vault {persona} may use.")
+            })?;
+            Some(reason)
+        }
+    };
+    if reason.is_none() && holds_already(ctx, persona, &vault, &line.key) {
         return Ok(Said::Filled {
             vault,
             key: line.key.clone(),
@@ -1056,7 +1079,7 @@ pub fn raised_within(
         purpose: Some(purpose),
         declared: super::needs::declared(&ctx.root, persona, &line.key).map(|need| need.purpose),
         names_no_vault,
-        reason: None,
+        reason,
     };
     Ok(match asks.hold(need, within, &mut |_: &str| moved()) {
         Held::Filled { vault, key } => Said::Filled { vault, key },
@@ -1192,6 +1215,7 @@ pub fn ask_the_window(
     key: &str,
     purpose: &str,
     vault: Option<&str>,
+    replace: Option<&str>,
 ) -> Result<Said, String> {
     use crate::hookwire::{Answer, Ask, Asking, ChatToken, NOTHING_ANSWERS, UNKNOWN_LINE};
     let env = |name: &str| ctx.env.get(name);
@@ -1216,6 +1240,7 @@ pub fn ask_the_window(
         key: key.to_owned(),
         purpose: purpose.to_owned(),
         vault: vault.map(str::to_owned),
+        replace: replace.map(str::to_owned),
     }));
     match asking.ask(&line, command_timeout(harness) + ASKER_WAITS_PAST_THE_HOLD) {
         Ok(Answer::Secret(said)) => Ok(said),
@@ -1240,6 +1265,7 @@ pub fn ask_the_window(
     _key: &str,
     _purpose: &str,
     _vault: Option<&str>,
+    _replace: Option<&str>,
 ) -> Result<Said, String> {
     Err(
         "a secret ask is answered in purlis's window, which a chat on this system has no \

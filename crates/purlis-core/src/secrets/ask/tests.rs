@@ -623,6 +623,11 @@ fn a_starts_ask_is_recorded_under_no_chat() {
         let start =
             scope.spawn(|| asks.hold(a_start("MISSING"), Duration::from_secs(60), &mut |_| {}));
         let id = first_open(&asks).id;
+        // The ask is listed a moment before its raise is told: answered only once it is, so
+        // the record's order is the one this test is about.
+        while told.lock().unwrap().is_empty() {
+            std::thread::yield_now();
+        }
         asks.answer(&ctx(project.path()), id, Answer::Decline, window())
             .expect("declined");
         assert!(matches!(start.join().unwrap(), Held::Declined { .. }));
@@ -693,6 +698,7 @@ fn line(chat: u32, key: &str, vault: Option<&str>) -> SecretAsk {
         key: key.into(),
         purpose: "  charge test cards\nin the checkout e2e ".into(),
         vault: vault.map(str::to_owned),
+        replace: None,
     }
 }
 
@@ -1734,4 +1740,114 @@ fn a_chat_joining_an_ask_never_changes_why_it_was_asked() {
         },
     );
     assert_eq!(asks.open()[0].reason, None);
+}
+
+// ----------------------------------------------------------------------------------------
+// a chat asks for a replacement: `secret_ask` with `replace` (#5075)
+
+/// [`line`] asking to replace `key`, saying why.
+fn replacing_line(chat: u32, key: &str, vault: Option<&str>, why: &str) -> SecretAsk {
+    SecretAsk {
+        replace: Some(why.into()),
+        ..line(chat, key, vault)
+    }
+}
+
+#[test]
+fn a_replace_raises_an_ask_even_for_a_key_the_vault_holds_with_the_chats_reason() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    let said = raised_now(
+        project.path(),
+        &asks,
+        &replacing_line(7, "TOKEN", None, "  the API answers\n401 Unauthorized "),
+    )
+    .unwrap();
+    assert_eq!(
+        said,
+        Said::Pending {
+            vault: "team".into(),
+            key: "TOKEN".into()
+        },
+        "never filled at once: the person is asked"
+    );
+    let open = asks.open();
+    assert_eq!(
+        open[0].reason,
+        Some(Reason::Replace {
+            said: "the API answers 401 Unauthorized".into(),
+            reads: None
+        })
+    );
+}
+
+#[test]
+fn a_replace_filled_by_the_person_overwrites_the_value_and_the_chat_hears_filled() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    let said = std::thread::scope(|scope| {
+        let asking = scope.spawn(|| {
+            raised_within(
+                &ctx(project.path()),
+                &asks,
+                devops(7),
+                &replacing_line(7, "TOKEN", None, "401"),
+                Duration::from_secs(60),
+                &|| {},
+            )
+        });
+        let id = first_open(&asks).id;
+        asks.answer(
+            &ctx(project.path()),
+            id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+        asking.join().unwrap().unwrap()
+    });
+    assert_eq!(
+        said,
+        Said::Filled {
+            vault: "team".into(),
+            key: "TOKEN".into()
+        }
+    );
+    assert_eq!(stored(project.path(), "TOKEN").as_deref(), Some(VALUE));
+}
+
+#[test]
+fn a_replace_in_a_vault_the_persona_may_not_use_is_refused_and_asks_nothing() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    let refused = raised_now(
+        project.path(),
+        &asks,
+        &replacing_line(7, "TOKEN", Some("others"), "401"),
+    )
+    .unwrap_err();
+    assert!(refused.contains("others"), "{refused}");
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn a_replace_that_says_no_reason_is_refused() {
+    let project = project_with_needs();
+    let asks = Asks::new(project.path());
+    raised_now(
+        project.path(),
+        &asks,
+        &replacing_line(7, "TOKEN", None, "   "),
+    )
+    .unwrap_err();
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn a_secret_ask_line_without_replace_still_reads() {
+    let old: SecretAsk =
+        serde_json::from_value(serde_json::json!({"chat": 7, "key": "K", "purpose": "p"})).unwrap();
+    assert_eq!(old.replace, None);
+    let sent = serde_json::to_value(line(7, "K", None)).unwrap();
+    assert!(sent.get("replace").is_none(), "{sent}");
 }
