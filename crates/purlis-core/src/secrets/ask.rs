@@ -1487,8 +1487,8 @@ const ASKER_WAITS_PAST_THE_HOLD: Duration = Duration::from_secs(15);
 fn asker_waits(env: &dyn Fn(&str) -> Option<String>) -> Duration {
     // A start names the harness by the registry's name (`claude-code`), read as the app reads
     // it: by the kind's word alone it was no harness, and held to the shortest wait (#5192).
-    let harness = crate::hookwire::chat_harness(env)
-        .and_then(|name| Harness::of_registry_or_kind(&name));
+    let harness =
+        crate::hookwire::chat_harness(env).and_then(|name| Harness::of_registry_or_kind(&name));
     command_timeout(harness) + ASKER_WAITS_PAST_THE_HOLD
 }
 
