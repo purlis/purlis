@@ -8037,8 +8037,6 @@ nav.piece-files-head {
   list-style: none;
 }
 
-/* **Where the page is, and on which device** (#2024): purlis's own words, first in the bar
-   above the page and outside the frame, so a page can never draw them. */
 /* The secrets purlis filled on the page's site (#5119): beside its chip, never shrunk. */
 .browser-secrets {
   display: flex;
@@ -8047,6 +8045,8 @@ nav.piece-files-head {
   gap: var(--space-1);
 }
 
+/* **Where the page is, and on which device** (#2024): purlis's own words, first in the bar
+   above the page and outside the frame, so a page can never draw them. */
 .browser-chip {
   flex: 0 1 auto;
   min-width: 0;

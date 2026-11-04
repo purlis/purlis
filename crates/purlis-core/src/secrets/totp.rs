@@ -8,8 +8,9 @@
 //! - **A seed is what an authenticator app is given**: an `otpauth://totp/…` address, with its
 //!   own algorithm (SHA-1, SHA-256 or SHA-512), digits (6 to 10) and period, or the bare base32
 //!   secret, read as six digits of SHA-1 every 30 seconds, the defaults every app takes. A bare
-//!   secret is taken only at the lengths apps are given (10, 16, 20, 32 or 64 bytes), and a value
-//!   of either shape never goes into a page as itself ([`looks_like_a_seed`]).
+//!   secret is taken only at the lengths apps are given (10, 16, 20, 32 or 64 bytes), and is never
+//!   digits alone. A value that looks like a seed never goes into a page as itself, a wider net
+//!   than what a code is made from ([`looks_like_a_seed`]).
 //! - **A counter's seed (`otpauth://hotp/…`) is refused**: its code needs a count purlis doesn't
 //!   keep, and a code used out of turn locks the account.
 //! - **Words, never the seed**: a seed that can't be read is refused in fixed words, which name
@@ -73,11 +74,42 @@ pub fn an_address(text: &str) -> bool {
         .is_some_and(|scheme| scheme.eq_ignore_ascii_case("otpauth://"))
 }
 
-/// Whether `text` would be taken as a seed (#5118): an `otpauth://` address, or a bare secret of
-/// the shape an authenticator app is given. Such a value never goes into a page as itself.
+/// The fewest base32 characters a value is taken for a seed's by its look: 80 bits' worth.
+const FEWEST_CHARACTERS: usize = 16;
+
+/// How many base32 characters a bare secret of each of [`BARE_BYTES`] is.
+const BARE_CHARACTERS: [usize; 5] = [16, 26, 32, 52, 103];
+
+/// **Whether `text` looks like a 2FA seed** (#5118): such a value never goes into a page as
+/// itself, so this reads wider than [`Seed::parse`] and accepts refusing some passwords. An
+/// authenticator's address or its export's, or text of base32 characters alone, however grouped,
+/// that holds letters and digits from 80 bits' worth, or letters at a length apps are given.
+/// Digits alone are no seed: a card's test number is written so.
 pub fn looks_like_a_seed(text: &str) -> bool {
-    an_address(text) || secret(text, Shape::Bare).is_ok()
+    let trimmed = text.trim_start();
+    if an_address(trimmed)
+        || trimmed
+            .get(..MIGRATION.len())
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case(MIGRATION))
+    {
+        return true;
+    }
+    let (mut letters, mut digits) = (0usize, 0usize);
+    for c in text.chars() {
+        match c {
+            'a'..='z' | 'A'..='Z' => letters += 1,
+            '2'..='7' => digits += 1,
+            '=' | '-' => {}
+            c if c.is_whitespace() => {}
+            _ => return false,
+        }
+    }
+    let all = letters + digits;
+    letters > 0 && ((digits > 0 && all >= FEWEST_CHARACTERS) || BARE_CHARACTERS.contains(&all))
 }
+
+/// The address an authenticator app exports its seeds in.
+const MIGRATION: &str = "otpauth-migration://";
 
 impl Seed {
     /// **Reads a seed from a vault's value**: an `otpauth://totp/` address or a bare base32
@@ -120,9 +152,10 @@ impl Seed {
         let mut has_secret = false;
         for pair in query.split('&') {
             let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
-            let value: Zeroizing<Vec<u8>> =
-                Zeroizing::new(percent_encoding::percent_decode_str(value).collect());
-            let value = std::str::from_utf8(&value).map_err(|_| NOT_A_SEED)?;
+            // Sized first, so it never grows and leaves an unwiped copy behind.
+            let mut decoded = Zeroizing::new(Vec::with_capacity(value.len()));
+            decoded.extend(percent_encoding::percent_decode_str(value));
+            let value = std::str::from_utf8(&decoded).map_err(|_| NOT_A_SEED)?;
             match name {
                 "secret" => {
                     seed.key = secret(value, Shape::Named)?;
@@ -205,20 +238,29 @@ enum Shape {
 /// The lengths in bytes a bare secret is taken at.
 const BARE_BYTES: [usize; 5] = [10, 16, 20, 32, 64];
 
-/// A base32 secret as people copy one: in any case, in groups of spaces, padded or not, and
-/// nothing else. Every copy is wiped.
+/// A base32 secret as people copy one: in any case, in groups of spaces or hyphens, padded or
+/// not, and nothing else, with whatever its last character's unused bits hold, as a generator
+/// that picks characters leaves them. Every copy is wiped.
 fn secret(text: &str, shape: Shape) -> Result<Zeroizing<Vec<u8>>, &'static str> {
     let mut plain = Zeroizing::new(String::with_capacity(text.len()));
     for c in text.chars() {
         match c {
             'a'..='z' | 'A'..='Z' | '2'..='7' => plain.push(c.to_ascii_uppercase()),
-            '=' => {}
+            '=' | '-' => {}
             c if c.is_whitespace() => {}
             _ => return Err(NOT_A_SEED),
         }
     }
+    // Digits alone are a card's test number sooner than a seed.
+    if shape == Shape::Bare && plain.chars().all(|c| c.is_ascii_digit()) {
+        return Err(NOT_A_SEED);
+    }
+    let mut base32 = BASE32_NOPAD.specification();
+    base32.check_trailing_bits = false;
     let key = Zeroizing::new(
-        BASE32_NOPAD
+        base32
+            .encoding()
+            .map_err(|_| NOT_A_SEED)?
             .decode(plain.as_bytes())
             .map_err(|_| NOT_A_SEED)?,
     );

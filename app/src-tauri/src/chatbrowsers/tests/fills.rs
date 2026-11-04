@@ -543,3 +543,35 @@ fn a_field_in_a_part_of_the_page_from_another_site_is_marked_with_the_pages_site
     assert_eq!(marked[0].origin, "https://pay.example.test");
     assert_eq!(marked[0].page.as_deref(), Some("https://dash.example.test"));
 }
+
+#[test]
+fn a_fill_on_another_page_of_a_frames_site_leaves_the_first_pages_mark() {
+    let (browsers, hosted) = using_a_browser();
+    *hosted.field.lock().unwrap() = Some(one_line_on("https://pay.example.test"));
+    let asked = RefCell::new(Vec::new());
+    answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    );
+
+    *hosted.at.lock().unwrap() = Some("https://shop.example.test/cart".into());
+    answered_filling(
+        &browsers,
+        &hosted,
+        &ask(3, fill("e12")),
+        None,
+        &allowed(&asked),
+    );
+
+    let pages: Vec<Option<String>> = marks(&browsers).into_iter().map(|one| one.page).collect();
+    assert_eq!(
+        pages,
+        [
+            Some("https://dash.example.test".to_owned()),
+            Some("https://shop.example.test".to_owned())
+        ]
+    );
+}

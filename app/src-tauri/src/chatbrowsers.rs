@@ -1620,13 +1620,15 @@ impl ChatBrowsers {
             .then_some(BrowserDriver::Purlis)
     }
 
-    /// **`program` holds `filled` from now** (#5119): the same key on the same site is marked
-    /// once, with the label of the field it last went into.
+    /// **`program` holds `filled` from now** (#5119): the same key on the same site of the same
+    /// page is marked once, with the label of the field it last went into.
     fn secret_filled(&self, program: &str, filled: SecretFilled) {
         {
             let mut secrets = self.secrets.lock().unwrap_or_else(PoisonError::into_inner);
             let marks = secrets.entry(program.to_owned()).or_default();
-            marks.retain(|one| one.key != filled.key || one.origin != filled.origin);
+            marks.retain(|one| {
+                one.key != filled.key || one.origin != filled.origin || one.page != filled.page
+            });
             marks.push(filled);
         }
         self.relisted();

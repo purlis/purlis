@@ -5,7 +5,9 @@
 //! code goes into the site's code field as any secret does, and the site's own verifier, which
 //! holds the seed on its server, accepts it. Only the code reaches the engine: purlis works it
 //! out from the seed on the vault's side (`purlis_core::secrets::totp`), and neither the engine's
-//! step nor the page ever holds the seed.
+//! step nor the page ever holds the seed. The engine knows nothing of purlis-core, so the code
+//! here is the verifier's own arithmetic: what ties it to purlis-core's is that both are held to
+//! RFC 6238's vectors, below and in `secrets::totp`'s tests.
 //!
 //! These need a real Chrome, which a sandboxed agent cannot start: they run where
 //! `PURLIS_TEST_ENGINE` names one, and on CI. Anywhere else each says why it did not run and
@@ -15,11 +17,23 @@
 
 use crate::common;
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::drive::{call, find, open, ref_on, sees, snapshot};
 use common::site::{TWO_FACTOR_SEED, started, two_factor_code_at, unix_now};
-use purlis_browser_engine::drive::{Browser, Call, Ref, SecretFill};
+use purlis_browser_engine::drive::{Browser, Call, FillHold, Ref, SecretFill};
+
+/// What holds the browser to the field's site while its page lives (#5117): here, nothing.
+struct Holds;
+
+impl FillHold for Holds {
+    fn hold(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn released(&self) {}
+}
 
 /// The reference of the element on a line holding `line`, waiting for it to show.
 fn ref_of(browser: &Browser, line: &str) -> Ref {
@@ -46,7 +60,7 @@ fn the_sites_verifier_makes_rfc_6238s_codes() {
 }
 
 #[test]
-fn a_2fa_code_purlis_fills_is_accepted_by_the_sites_verifier() {
+fn a_code_filled_as_any_secret_is_accepted_by_the_sites_verifier() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
@@ -61,7 +75,9 @@ fn a_2fa_code_purlis_fills_is_accepted_by_the_sites_verifier() {
                 origin: "http://fixture.test".to_owned(),
                 key: "dash-2fa".to_owned(),
                 value: code.clone().into(),
+                multi_line: false,
             },
+            Arc::new(Holds),
         )
         .unwrap_or_else(|_| panic!("the code was filled"));
     let verify = ref_of(&browser, "button \"Verify\"");

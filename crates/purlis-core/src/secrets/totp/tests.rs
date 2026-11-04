@@ -144,6 +144,38 @@ fn a_value_that_would_be_taken_as_a_seed_is_known_for_one() {
 }
 
 #[test]
+fn a_seed_grouped_cut_or_exported_another_way_still_looks_like_one() {
+    // In groups of hyphens, at a length apps aren't given, and an app's export.
+    assert!(looks_like_a_seed("GEZD-GNBV-GY3T-QOJQ-GEZD-GNBV"));
+    assert!(looks_like_a_seed("GEZDGNBVGY3TQOJQGEZDGNBV"));
+    assert!(looks_like_a_seed(&BASE32_NOPAD.encode(&[7u8; 25])));
+    assert!(looks_like_a_seed("otpauth-migration://offline?data=abc"));
+    // 26 characters whose last one's unused bits aren't zero, as a generator leaves them.
+    let picked = "GEZDGNBVGY3TQOJQGEZDGNBVG7";
+    assert!(looks_like_a_seed(picked));
+    assert_eq!(Seed::parse(picked).unwrap().code_at(59).len(), 6);
+    // Grouped in hyphens, it makes the code it makes whole.
+    assert_eq!(
+        Seed::parse("GEZD-GNBV-GY3T-QOJQ-GEZD-GNBV-GY3T-QOJQ")
+            .unwrap()
+            .code_at(59),
+        Seed::parse("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+            .unwrap()
+            .code_at(59),
+    );
+}
+
+#[test]
+fn digits_alone_and_a_passphrase_are_no_seed() {
+    // Every digit is in base32's alphabet, as a card's number may be.
+    for value in ["2345234523452346", "7654 7654 7654 7654", "3333444455556666"] {
+        assert!(!looks_like_a_seed(value), "{value}");
+        assert!(Seed::parse(value).is_err(), "{value}");
+    }
+    assert!(!looks_like_a_seed("correct-horse-battery-staple"));
+}
+
+#[test]
 fn a_percent_encoded_secret_reads_as_its_plain_one() {
     let plain = Seed::parse(&format!(
         "otpauth://totp/x?secret={}",

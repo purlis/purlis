@@ -154,6 +154,9 @@ struct Inner {
     kept: Vec<ForChat>,
     /// What the person allowed for the chat (#5116): in memory, for the chat's life.
     granted: Vec<ForChat>,
+    /// The 2FA codes the person allowed for the chat (#5118): a grant of its own, so neither a
+    /// value's grant nor a code's ever stands for the other.
+    codes_granted: Vec<ForChat>,
 }
 
 /// How many Keep blocked one chat is given before it's asked about no more fills, so a chat can't
@@ -262,6 +265,14 @@ impl Fills {
             .any(|(chat, v, k, o)| *chat == session && v == vault && k == key && o == origin)
     }
 
+    /// Whether the person allowed codes of this key on this origin for this chat (#5118).
+    fn code_granted(&self, session: u32, vault: &str, key: &str, origin: &str) -> bool {
+        self.lock()
+            .codes_granted
+            .iter()
+            .any(|(chat, v, k, o)| *chat == session && v == vault && k == key && o == origin)
+    }
+
     /// Chat `session` closed: what it waited on and was allowed go with it, so nothing reaches a
     /// later chat dealt the same number, and its call stops waiting.
     pub fn forget(&self, session: u32) {
@@ -273,6 +284,7 @@ impl Fills {
         let mut inner = self.lock();
         inner.kept.retain(|(chat, ..)| *chat != session);
         inner.granted.retain(|(chat, ..)| *chat != session);
+        inner.codes_granted.retain(|(chat, ..)| *chat != session);
         inner.waits.retain(|(one, tell)| {
             if one.session != session {
                 return true;
@@ -507,7 +519,7 @@ fn asks(
 
 /// **Whether a fill goes in without a notice** (#5116): a line Always wrote, allowed here, or the
 /// person's Allow for this chat, each while policy still lets that scope be, and never a card's
-/// key.
+/// key. A 2FA code goes in only under a grant made for codes (#5118), and a value never does.
 fn granted(
     root: &std::path::Path,
     fills: &Fills,
@@ -523,6 +535,10 @@ fn granted(
         return false;
     }
     let locks = Locks::of(root);
+    if asked.code {
+        return fills.code_granted(session, &asked.vault, &asked.key, origin)
+            && locks.scope_removed(Level::Chat).is_none();
+    }
     (lines.always && locks.scope_removed(Level::You).is_none())
         || (fills.granted(session, &asked.vault, &asked.key, origin)
             && locks.scope_removed(Level::Chat).is_none())
@@ -538,8 +554,13 @@ fn held_open(origin: &str) -> bool {
 /// Why Always isn't offered to a chat that runs as no persona: it has no tools to write in.
 const NO_PERSONA: &str = "Always allow isn't offered for a chat that runs as no persona";
 
-/// **What the person is offered on `wait`**: a card's key Allow once alone (SF-4); otherwise
-/// Always too, with the line it writes, where the project lets one be written for the persona.
+/// Why Always isn't offered for a 2FA code: the line it writes allows a key's value, and says
+/// nothing of a code.
+const NO_ALWAYS_FOR_A_CODE: &str = "Always allow isn't offered for a 2FA code";
+
+/// **What the person is offered on `wait`**: a card's key Allow once alone (SF-4); a 2FA code
+/// never Always (#5118); otherwise Always too, with the line it writes, where the project lets
+/// one be written for the persona.
 fn offered(root: &std::path::Path, mut wait: FillWait) -> FillWait {
     let lines = purlis_core::secretfill::lines(
         &Ctx::new(root, Env::from_process()),
@@ -550,6 +571,10 @@ fn offered(root: &std::path::Path, mut wait: FillWait) -> FillWait {
     );
     wait.card = lines.card;
     if wait.once_only() {
+        return wait;
+    }
+    if wait.code {
+        wait.no_always = Some(NO_ALWAYS_FOR_A_CODE.to_owned());
         return wait;
     }
     let Some(persona) = wait.persona.clone() else {
@@ -615,21 +640,14 @@ fn read(
     origin: &str,
     started: std::time::Instant,
 ) -> Result<Secret, String> {
-    not_taken_over(held, asked)?;
+    not_taken_over(held.browsers(), asked)?;
     let (asker, _) = held
         .chats()
         .login_asker(held.root(), session)
         .ok_or_else(|| {
             "this chat is no longer open in purlis's window, so nothing was filled".to_owned()
         })?;
-    // A code is worked out from its seed here, as it is filled (#5118): the seed stays.
-    let read = || {
-        if asked.code {
-            brokered::fill_code(&asker, &asked.vault, &asked.key)
-        } else {
-            brokered::fill_value(&asker, &asked.vault, &asked.key)
-        }
-    };
+    let read = || read_now(&asker, asked);
     if let Some(value) = read()? {
         return Ok(value);
     }
@@ -639,7 +657,11 @@ fn read(
         vault: asked.vault.clone(),
         key: asked.key.clone(),
         // What the person reads the key is for.
-        tool: Some(format!("a secret fill on {origin}")),
+        tool: Some(if asked.code {
+            format!("a 2FA code on {origin}, made from the seed this key holds")
+        } else {
+            format!("a secret fill on {origin}")
+        }),
         // The chat names no purpose for a fill: the notice it answered named the key and site.
         purpose: None,
         declared: purlis_core::secrets::needs::declared(
@@ -675,7 +697,7 @@ fn read(
         purlis_core::secrets::ask::Held::Filled { .. } => {
             // Judged again as the project reads now: it may have changed while the key was added.
             judged(held, session, asked)?;
-            not_taken_over(held, asked)?;
+            not_taken_over(held.browsers(), asked)?;
             read()?.ok_or_else(|| {
                 format!(
                     "vault '{}' still holds no {}, so nothing was filled",
@@ -691,11 +713,23 @@ fn read(
     }
 }
 
+/// **What `asked` fills, read for the chat now**: the value, or the code its seed makes (#5118),
+/// worked out here as it is filled, so the seed stays. `None` where the vault holds no such key.
+fn read_now(asker: &brokered::Asker, asked: &FillAsked) -> Result<Option<Secret>, String> {
+    if asked.code {
+        brokered::fill_code(asker, &asked.vault, &asked.key)
+    } else {
+        brokered::fill_value(asker, &asked.vault, &asked.key)
+    }
+}
+
 /// **No value is read for a browser the person has taken over** (#5119, SF-10), which they may
 /// have done while they were asked.
-fn not_taken_over(held: &Held, asked: &FillAsked) -> Result<(), String> {
-    if held.browsers().driver_of(&asked.program) == Some(crate::chatbrowsers::BrowserDriver::Person)
-    {
+fn not_taken_over(
+    browsers: &crate::chatbrowsers::ChatBrowsers,
+    asked: &FillAsked,
+) -> Result<(), String> {
+    if browsers.driver_of(&asked.program) == Some(crate::chatbrowsers::BrowserDriver::Person) {
         return Err(crate::chatbrowsers::taken_over_said(&asked.browser));
     }
     Ok(())
@@ -844,9 +878,9 @@ pub fn answer(
                 audit,
             )?;
             format!(
-                "Allowed. {what} goes into fields on {} from now on: the line is in the project's \
+                "Allowed. {} goes into fields on {} from now on: the line is in the project's \
                  settings, and allowed on this machine.",
-                wait.origin
+                wait.key, wait.origin
             )
         }
         Press::Chat => {
@@ -857,8 +891,8 @@ pub fn answer(
             )
         }
         Press::Once | Press::Keep => format!(
-            "Allowed once. {} goes into that one field on {}; nothing was written.",
-            wait.key, wait.origin
+            "Allowed once. {what} goes into that one field on {}; nothing was written.",
+            wait.origin
         ),
     };
     // Held for the chat before its call hears the answer, under the presses' hold, so a chat
@@ -866,12 +900,17 @@ pub fn answer(
     if asked.press == Press::Chat {
         let mut inner = fills.lock();
         if inner.waits.iter().any(|(one, _)| one.id == wait.id) {
-            inner.granted.push((
+            let grant = (
                 wait.session,
                 wait.vault.clone(),
                 wait.key.clone(),
                 wait.origin.clone(),
-            ));
+            );
+            if wait.code {
+                inner.codes_granted.push(grant);
+            } else {
+                inner.granted.push(grant);
+            }
         }
     }
     if !fills.end(wait.id, Heard::Allowed) {

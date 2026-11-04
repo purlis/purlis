@@ -46,14 +46,15 @@ fn asker(root: &Path) -> Asker {
     }
 }
 
-/// The code `SEED` makes at each 30 seconds around now: a fill reads the clock itself.
+/// The code `SEED` makes at each 30 seconds around now: a fill reads the clock itself, a moment
+/// before this does.
 fn codes_around_now() -> [String; 2] {
     let seed = super::super::totp::Seed::parse(SEED).unwrap();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    [seed.code_at(now), seed.code_at(now + 30)]
+    [seed.code_at(now - 30), seed.code_at(now)]
 }
 
 #[test]

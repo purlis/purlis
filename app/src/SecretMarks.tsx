@@ -48,9 +48,9 @@ export function marksOn(
 export function SecretMarks({ secrets }: { secrets: readonly SecretFilled[] }) {
   if (secrets.length === 0) return null;
   return (
-    <span className="browser-secrets" role="group" aria-label="Secrets purlis filled on this page">
+    <span className="browser-secrets" role="group" aria-label="Secrets purlis filled on this site">
       {secrets.map((one) => (
-        <Tooltip key={`${one.key} ${one.origin}`} tip={secretMarkSaid(one)}>
+        <Tooltip key={`${one.key} ${one.origin} ${one.page}`} tip={secretMarkSaid(one)}>
           <Badge
             variant="accent"
             role="img"

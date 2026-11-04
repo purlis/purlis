@@ -40,7 +40,7 @@ afterEach(cleanup);
 describe("SecretMarks", () => {
   it("marks each secret by its key, and is heard by the key and the site", () => {
     render(<SecretMarks secrets={[DASH, LOCAL]} />);
-    const group = screen.getByRole("group", { name: "Secrets purlis filled on this page" });
+    const group = screen.getByRole("group", { name: "Secrets purlis filled on this site" });
     expect(
       within(group).getByRole("img", { name: "Secret dash-api-key, filled on dash.example.test" }),
     ).toHaveTextContent(/^secret: dash-api-key$/);

@@ -1413,8 +1413,9 @@ pub fn fill_value(
     }
     if super::totp::looks_like_a_seed(value.expose()) {
         return Err(format!(
-            "{key} in vault '{vault}' is a 2FA seed, so purlis filled nothing: a seed never goes \
-             into a page. Call browser_fill_secret again with `code` to fill the code it makes"
+            "{key} in vault '{vault}' looks like a 2FA seed, so purlis filled nothing: a seed \
+             never goes into a page. Call browser_fill_secret again with `code` to fill the code \
+             it makes"
         ));
     }
     Ok(Some(value))
