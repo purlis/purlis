@@ -5,7 +5,8 @@
  * **A skill's page inside the Skill studio** (#3682, `prototype/skill-page` variant A): the
  * header with its actions and "…" menu, the banner that says why a skill isn't plainly on with
  * its one fix, and the page's tabs with their counts. Drawn wide beside the Library and narrow
- * alone, for an ordinary skill, one that is off, a built-in one, and on its Text and History.
+ * alone, for an ordinary skill, one that is off, a built-in one, and on its Text, Files and
+ * History.
  * Walked by the keyboard, held to axe, and pictured in every pictured theme cell. The core is
  * faked at its command boundary.
  */
@@ -68,6 +69,32 @@ const version = (commit: string, subject: string, at: string) => ({
   before: null,
 });
 
+/** deploy's folder as the core walks it. */
+const DEPLOY_FOLDER = {
+  entries: [
+    { path: "evals", kind: "folder", refused: null },
+    { path: "evals/triggers.json", kind: "file", refused: null },
+    { path: "references", kind: "folder", refused: null },
+    { path: "references/rollback.md", kind: "file", refused: null },
+    { path: "references/staging.md", kind: "file", refused: null },
+    { path: "scripts", kind: "folder", refused: null },
+    { path: "scripts/smoke.sh", kind: "file", refused: null },
+    { path: "SKILL.md", kind: "file", refused: null },
+  ],
+  more: 0,
+};
+
+/** Each file's text, by its path in the folder. */
+const FILE_TEXT: Record<string, string> = {
+  "SKILL.md":
+    "---\nname: deploy\n---\n\n# deploy\n\n1. Check the preconditions.\n2. Deploy in small steps.\n",
+  "references/rollback.md":
+    "# Rolling back\n\nTag the last good release, then run the rollback job for the service.\n",
+  "references/staging.md": "# Staging\n\nStaging deploys need no approval.\n",
+  "evals/triggers.json": '[{ "prompt": "ship the api", "loads": true }]\n',
+  "scripts/smoke.sh": '#!/bin/sh\ncurl -fsS "$1/health"\n',
+};
+
 /** The studio tab, opened at `chosen`'s page on `tab`, `width` by `height` (560) px. */
 function Tab({
   width,
@@ -87,7 +114,7 @@ const meta = {
   component: Tab,
   args: { width: 1100, chosen: DEPLOY, tab: "overview" },
   beforeEach: ({ args }) => {
-    mockIPC((cmd) => {
+    mockIPC((cmd, args) => {
       switch (cmd) {
         case "skill_studio":
           return studio(SKILLS, { workspace: "smart-ide", workspaces: ["smart-ide"] });
@@ -138,6 +165,12 @@ const meta = {
           return { running: null };
         case "skill_updates":
           return { offers: [], unconfirmed: [], unasked: [] };
+        case "skill_files":
+          return (args as { folder?: string }).folder === BROWSER.folder
+            ? { entries: [{ path: "SKILL.md", kind: "file", refused: null }], more: 0 }
+            : DEPLOY_FOLDER;
+        case "skill_file":
+          return { kind: "text", text: FILE_TEXT[(args as { path: string }).path] ?? "" };
         case "skill_deletes_cut_short":
           return { settled: [], unsettled: [] };
         default:
@@ -398,5 +431,46 @@ export const Leaving: Story = {
       () => within(asked).getByRole("button", { name: "Keep editing" }),
       "the question starts on Keep editing",
     );
+  },
+};
+
+/**
+ * **Its Files**: the skill's folder as a tree beside the preview. Tab reaches the tree; → opens
+ * a folder and moves into it, ↓ walks it, and Enter shows a file; the picture is a reference
+ * rendered beside the tree.
+ */
+export const Files: Story = {
+  args: { tab: "files" },
+  play: async ({ canvas }) => {
+    const tree = await canvas.findByRole("treegrid", { name: "Files of deploy" });
+    const row = (name: string) => within(tree).getByRole("row", { name });
+    await tabInto(() => tree);
+    await untilFocused(() => row("evals"), "Files: Tab lands on the first row");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => row("references"), "Files: Down moves to references");
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => expect(row("references")).toHaveAttribute("aria-expanded", "true"));
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(() => row("rollback.md"), "Files: Right moves into the open folder");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await expect(await canvas.findByRole("heading", { name: "Rolling back" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Open in a tab of its own" })).toBeVisible();
+    await untilFocused(() => row("rollback.md"), "Files: the keyboard stays on the file shown");
+  },
+};
+
+/** **A built-in skill's Files**: shown, and said to be read only, with nothing that changes it. */
+export const FilesBuiltIn: Story = {
+  args: { chosen: BROWSER, tab: "files" },
+  play: async ({ canvas }) => {
+    const tree = await canvas.findByRole("treegrid", { name: "Files of purlis-browser" });
+    await tabInto(() => tree);
+    await userEvent.keyboard("{Enter}");
+    await expect(await canvas.findByTestId("skill-files-read-only")).toHaveTextContent(
+      "Read only: built-in skills can't be changed.",
+    );
+    await expect(canvas.queryByRole("button", { name: "Edit SKILL.md" })).toBeNull();
+    expectFocusInSight();
   },
 };

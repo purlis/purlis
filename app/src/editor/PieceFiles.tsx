@@ -87,9 +87,9 @@ export function sized(bytes: number): string {
  * One file, as the tabs draw it: still being read, refused with the core's sentence, or what
  * the core found it to be. One union, so every state is drawn in one place (#988).
  */
-type FileRead = { kind: "reading" } | { kind: "refused"; why: string } | PieceFile;
+export type FileRead = { kind: "reading" } | { kind: "refused"; why: string } | PieceFile;
 
-const READING: FileRead = { kind: "reading" };
+export const READING: FileRead = { kind: "reading" };
 
 /**
  * One file of the branch, read from the core each time its path changes: the one path both tabs
@@ -444,8 +444,9 @@ function SvgPreview({ name, text }: { name: string; text: string }) {
   return <ImagePreview name={name} mime={SVG} bytes={bytes} />;
 }
 
-/** A file as the preview draws it, or the sentence that says why it does not. */
-function Shown({
+/** A file as the preview draws it, or the sentence that says why it does not: the Files tab's
+ *  preview here, and a skill's Files tab's (`SkillFiles.tsx`). */
+export function Shown({
   path,
   read,
   line,
@@ -593,7 +594,7 @@ function ShowWhatChanged({
  * *Source*, beside a markdown file, or an SVG the window draws: its text in the light editor
  * rather than rendered.
  */
-function SourceToggle({
+export function SourceToggle({
   path,
   read,
   source,
