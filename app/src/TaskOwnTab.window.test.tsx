@@ -19,7 +19,7 @@ import App from "./App";
 import { TASKS_START_FRESH } from "./actions";
 import type { LaidOut, OpenChat } from "./bindings";
 import { chatsOf } from "./laidOut";
-import { leadOf, onScreenOf } from "./laidOut.testkit";
+import { aTabForEachChat, leadOf, onScreenOf } from "./laidOut.testkit";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { askToEnd } from "./menus.testkit";
@@ -104,6 +104,37 @@ function asListed(one: Listed): OpenChat {
 
 type Asked = { cmd: string; args: Record<string, unknown> };
 
+/**
+ * The layout a launch draws, the only place a tab comes from (#4758): a tab for each session
+ * and each task already given one, on its workspace's strip, and a task recorded beside its
+ * session in a split of that session's tab, the session on the left.
+ */
+function storedLayout(open: Listed[]): LaidOut {
+  const laid = aTabForEachChat(
+    open.filter((one) => !one.from?.task || one.from.tab),
+    (session) => open.find((one) => one.session === session)?.workspace ?? null,
+  );
+  return {
+    ...laid,
+    tabs: laid.tabs.map((tab) => {
+      const lead = tab.tree.kind === "chat" ? tab.tree.chat : undefined;
+      const beside = open.find((one) => lead !== undefined && one.beside === lead);
+      if (lead === undefined || beside === undefined) return tab;
+      return {
+        ...tab,
+        focused: "a",
+        tree: {
+          kind: "split",
+          direction: "row",
+          share: 500,
+          a: { kind: "chat", chat: lead },
+          b: { kind: "chat", chat: beside.session },
+        },
+      };
+    }),
+  };
+}
+
 /** Every command that ends a chat's program, by any road. */
 const ENDS = [
   "close_session",
@@ -127,8 +158,9 @@ type Core = {
 
 function core(open: Listed[], { running = [], spared = [], updated = [], fresh }: Core = {}) {
   const asked: Asked[] = [];
-  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it. */
-  let laidOut: LaidOut | null = null;
+  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it.
+   *  Before the window says any, the stored layout a launch draws (`storedLayout`, #4758). */
+  let laidOut: LaidOut | null = storedLayout(open);
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;

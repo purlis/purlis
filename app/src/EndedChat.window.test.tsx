@@ -18,6 +18,7 @@ import App from "./App";
 import { onTheWire } from "./chatEvents.testkit";
 import type { Moved, OpenChat } from "./bindings";
 import { forgetDismissals } from "./dismissals";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { askToEnd } from "./menus.testkit";
 import { stripNamed } from "./test-strips";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
@@ -86,6 +87,8 @@ function core(open: OpenChat[] = [CHAT]) {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return open;
+      // Each chat in a tab of its own on alpha, as the stored layout keeps it (#4758).
+      if (cmd === "reopened_layout") return aTabForEachChat(open, () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,

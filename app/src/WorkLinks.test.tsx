@@ -9,6 +9,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
@@ -92,6 +93,8 @@ function core({
         unfiled: atRoot ? [chat] : [],
       };
     if (cmd === "opened_chats") return [chat];
+    // The layout stored gives the chat its tab where it is filed (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat([chat], () => (atRoot ? null : "alpha"));
     if (cmd === "running_sessions") return [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];

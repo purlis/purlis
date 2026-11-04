@@ -1115,8 +1115,9 @@ has it; nothing reads the key after that.
     not meant to be written by hand; a key that names nothing on screen opens or folds
     nothing. The whole of `explorer` is held to 2 KiB, letting go of the folders opened
     longest ago first.
-  - **`chats`**: **`scope`**, the Chats view's scope, `tab` (This tab) or `all`. Leave it out
-    for the workspace's, the default. A pick an older purlis kept in the window's web storage
+  - **`chats`**: **`scope`**, the Chats view's scope: `all`, or leave it out for the
+    workspace's, the default. A `tab` an older purlis kept (This tab, gone since #4758) reads
+    as the workspace's. A pick an older purlis kept in the window's web storage
     is moved here the first time the Chats view is drawn. **`folds`**, the rows folded or
     opened by hand, by each chat's id (`true` is folded), so a relaunch draws the list as it
     was left (#1687). At most 48 are kept: past that, the folds of chats that are not open go

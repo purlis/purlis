@@ -13,6 +13,7 @@ import { TitleBarSwitch } from "./TitleBarSwitch";
 import { forgetRailMode } from "./railMode";
 import { forgetRepoClones } from "./repoClones";
 import { findOnCard } from "./actionResult.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A workspace's notices hang from its chip** (#3648, the tracer of spec #3647), on the real
@@ -140,6 +141,8 @@ function core({
         unfiled: [],
       };
     if (cmd === "opened_chats") return [CHAT];
+    // The layout stored gives the chat its tab on alpha (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
     if (cmd === "plane_pins")
       return {
         project: false,
@@ -282,7 +285,9 @@ describe("making a workspace opens it (#3648)", () => {
 
     await waitFor(() => expect(chips()).toEqual(["alpha", "gamma*"]));
     expect(pinned).toEqual(["alpha", "gamma"]);
-    // Its chats are none, so no chat stands in front of it: alpha's is not left on screen.
+    // Its chats are none, so no chat stands in front of it: alpha's is not left on screen, and
+    // its strip's one tab is an empty pane (#4758).
+    expect(await screen.findByTestId("empty-pane")).toBeInTheDocument();
     expect(screen.queryByTestId("pane")).toBeNull();
   });
 });

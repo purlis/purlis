@@ -4,6 +4,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
+import { focusWorkspace } from "../reach.js";
 
 /**
  * **A workspace's cross-repo changes, in a view tab of their own** (charter#470, ADR 0060),
@@ -118,6 +119,9 @@ describe("a workspace's changes", function () {
         2,
       )}\n`,
     );
+    // Its changes are alpha's: the palette offers Open changes for the workspace in focus, which
+    // no chat's tab chooses for it since a chat isn't a tab (#4758).
+    await focusWorkspace("alpha");
   });
 
   after(async () => {

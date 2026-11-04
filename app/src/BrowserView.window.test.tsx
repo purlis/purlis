@@ -126,7 +126,8 @@ describe("a browser's view tab", () => {
 
     await fromThePalette("New browser");
 
-    await waitFor(() => expect(tabNames()).toEqual(["Browser"]));
+    // Beside the empty tab every strip keeps (#4758).
+    await waitFor(() => expect(tabNames()).toEqual(["New chat", "Browser"]));
     expect(host.asked("open_browser")).toEqual([{ plane: PLANE }]);
     await screen.findByLabelText("The browser's page");
     await waitFor(() =>
@@ -154,7 +155,8 @@ describe("a browser's view tab", () => {
     await fromThePalette("New browser");
 
     expect(await screen.findByText("Every chat purlis started is stopped.")).toBeInTheDocument();
-    expect(tabNames()).toEqual([]);
+    // Only the empty tab every strip keeps (#4758).
+    expect(tabNames()).toEqual(["New chat"]);
   });
 
   it("ends its browser when its tab closes, after closing its view", async () => {
@@ -166,7 +168,7 @@ describe("a browser's view tab", () => {
     );
     await screen.findByTestId("title-about");
     await fromThePalette("New browser");
-    await waitFor(() => expect(tabNames()).toEqual(["Browser"]));
+    await waitFor(() => expect(tabNames()).toEqual(["New chat", "Browser"]));
     await waitFor(() => expect(host.asked("watch_browser").length).toBeGreaterThan(0));
 
     await fromThePalette("Close this view");

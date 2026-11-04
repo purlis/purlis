@@ -36,6 +36,7 @@ import { PURLIS_LIGHT } from "./theme/handed.testkit";
 import { findResult } from "./actionResult.testkit";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * A window holding more than one project (ADR 0033, spec decision 23).
@@ -198,6 +199,9 @@ function core(
     if (cmd === "close_plane" && over.closes !== undefined) return over.closes();
     if (cmd === "plane_sidebar") return sidebarOf(plane ?? "");
     if (cmd === "opened_chats") return chats[plane ?? ""] ?? [];
+    // Each project's stored layout gives each of its chats a tab (#4758): the strip is what
+    // these tests read a project by.
+    if (cmd === "reopened_layout") return aTabForEachChat(chats[plane ?? ""] ?? []);
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };

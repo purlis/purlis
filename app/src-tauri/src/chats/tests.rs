@@ -5332,8 +5332,8 @@ fn a_chat_put_back_is_one_the_next_quit_records_again() {
 
 #[test]
 fn a_chat_pin_is_read_once_from_a_record_with_no_tabs_and_then_the_tab_holds_it() {
-    // The upgrade: a record written before tabs were recorded keeps each chat's pin until the
-    // window reports its layout, which carries it on the tab. From then on the chat's own
+    // The upgrade: a record written before tabs were recorded is read into a layout as it is
+    // put back (#4758), and a chat's pin becomes its tab's there. From then on the chat's own
     // field is never written again.
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
@@ -5353,7 +5353,14 @@ fn a_chat_pin_is_read_once_from_a_record_with_no_tabs_and_then_the_tab_holds_it(
         ..Record::default()
     };
     chats.put_back(&old, SIZE);
-    assert!(chats.record().chats[1].pinned, "carried until a layout");
+    let upgraded = chats.record().layout.expect("the upgrade's layout");
+    assert!(
+        upgraded
+            .tabs
+            .iter()
+            .any(|tab| tab.pinned && tab.tree == Node::chat(4)),
+        "the pin is on chat 4's tab from the upgrade: {upgraded:?}"
+    );
 
     let mut pinned = front_tab(Node::chat(4));
     pinned.pinned = true;
@@ -5812,9 +5819,10 @@ fn laying_out_what_is_already_laid_out_writes_nothing() {
 }
 
 #[test]
-fn a_record_with_no_tabs_list_is_read_the_old_way_until_the_window_reports_and_then_its_old_fields_retire()
- {
-    // Today's records keep working: a chat beside the one in front is on screen, as before.
+fn a_record_with_no_tabs_list_is_upgraded_to_a_layout_at_launch_and_its_old_fields_retire() {
+    // A record written before tabs were recorded (#4758): the upgrade keeps the tab in front,
+    // with the chat beside it as the other half of a split, and the old fields that said so
+    // retire at once, since the layout now says it.
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
     let old = Record {
@@ -5833,19 +5841,19 @@ fn a_record_with_no_tabs_list_is_read_the_old_way_until_the_window_reports_and_t
         ..Record::default()
     };
     chats.put_back(&old, SIZE);
-    assert_eq!(chats.layout(), None);
-    assert_eq!(chats.looked_at(), vec![3, 4]);
+    let layout = chats.layout().expect("the upgrade lays it out");
+    assert_eq!(layout.tabs.len(), 1);
+    assert!(layout.tabs[0].front);
     assert_eq!(
-        chats.record().chats[1].beside,
-        Some(3),
-        "carried until a layout"
+        layout.tabs[0].tree,
+        Node::Split(Box::new(purlis_core::reopen::layout::Split {
+            direction: purlis_core::reopen::layout::Direction::Row,
+            share: 500,
+            a: Node::chat(3),
+            b: Node::chat(4),
+        }))
     );
-
-    chats
-        .lay_out(on_ops(vec![front_tab(Node::chat(4))]))
-        .unwrap();
-
-    assert_eq!(chats.looked_at(), vec![4]);
+    assert_eq!(chats.looked_at(), vec![3, 4]);
     let record = chats.record();
     assert!(
         record
@@ -5854,6 +5862,12 @@ fn a_record_with_no_tabs_list_is_read_the_old_way_until_the_window_reports_and_t
             .all(|one| one.beside.is_none() && one.shows.is_none())
     );
     assert!(record.layout.is_some());
+
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(4))]))
+        .unwrap();
+
+    assert_eq!(chats.looked_at(), vec![4]);
     chats.end_all();
 }
 

@@ -275,8 +275,9 @@ describe("a window holding more than one project", function () {
       { path: second, front: true },
     ]);
     // The second project is what is on screen now, and it has nothing open: its record was
-    // emptied, so opening it started nothing.
-    await chatTabsBecome(0);
+    // emptied, so opening it started nothing. Its strip keeps one tab, with an empty pane
+    // (#4758): every workspace and the plane root always keep one.
+    await chatTabsBecome(1);
   });
 
   it("leaves the first project's sessions running while the second is in front", async () => {

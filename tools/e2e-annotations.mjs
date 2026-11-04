@@ -73,15 +73,22 @@ export function evidenceOf(record) {
     over.length > 0
       ? `what covered it:\n${over.map((line) => redacted(String(line))).join("\n")}`
       : "";
+  // What the window showed as the test failed (`app/e2e/windowShows.ts`): read from the page
+  // too, so checked the same way.
+  const drew = Array.isArray(record.shown) ? record.shown : [];
+  const shown =
+    drew.length > 0
+      ? `what the window showed:\n${drew.map((line) => redacted(String(line))).join("\n")}`
+      : "";
   const log = Array.isArray(record.coreLog) ? record.coreLog : [];
   let logPart = "";
   if (log.length > 0) {
     const header = "the core's last log lines:\n";
-    // The late commands and the covers are kept whole; the log has the room they leave, its
-    // newest lines kept, since they say what happened last.
+    // The late commands, the covers and what the window showed are kept whole; the log has the
+    // room they leave, its newest lines kept, since they say what happened last.
     const room =
       EVIDENCE_CHARS -
-      [late, covers]
+      [late, covers, shown]
         .filter(Boolean)
         .reduce((n, part) => n + part.length + 1, 0) -
       header.length;
@@ -95,7 +102,7 @@ export function evidenceOf(record) {
     else
       logPart = `${header}${kept.length > room ? kept.slice(kept.length - room) : kept}`;
   }
-  const parts = [late, logPart, covers].filter(Boolean);
+  const parts = [late, logPart, covers, shown].filter(Boolean);
   // A block recorded with nothing in it says so: a quiet core reads apart from no block at all.
   if (parts.length === 0)
     parts.push("no command was late; the core logged nothing");

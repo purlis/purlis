@@ -11,6 +11,7 @@ import type { LaidOut } from "./bindings";
 import { forgetThisLaunch } from "./regions";
 import { dragWithTheKeyboard, laidOutInAColumn, laidOutInARow, stripNamed } from "./test-strips";
 import { findResult } from "./actionResult.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **Dragging a tab with the keyboard** (SI-6): Shift+Space picks the focused tab up, the arrows
@@ -85,6 +86,14 @@ function core({
     said.push({ cmd, args: a });
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return chats;
+    // The layout stored gives each chat a tab on alpha, pinned where the chat is (#4758).
+    if (cmd === "reopened_layout") {
+      const laid = aTabForEachChat(chats, () => "alpha");
+      return {
+        ...laid,
+        tabs: laid.tabs.map((tab, at) => ({ ...tab, pinned: chats[at]?.pinned ?? false })),
+      };
+    }
     if (cmd === "plane_pins") return { project: false, workspaces: pins, missing: [] };
     if (cmd === "arrange_workspace_pins")
       pins = (a.workspaces as string[]).filter((name) => pins.includes(name));

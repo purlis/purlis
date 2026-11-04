@@ -344,16 +344,20 @@ export const SHORTCUTS_KEY_SAID = shortcutsKeySaid(onAMac());
 /** What a row does, as a value the window can carry out. */
 export type Does =
   | { verb: "chat.new" }
-  /** Opens a plain shell tab (SI-5): the operator's own `$SHELL`, no harness, no profile —
-   *  in `workspace`'s directory and filed under it, or where a new chat would start when it
-   *  names none. Nothing asks first: a shell starts no harness, so ADR 0022's picker has
+  /** The strip's `+` (#4758; spec story 13): a new tab holding one empty pane. */
+  | { verb: "tab.new" }
+  /** Opens a plain shell (SI-5) in the focused pane (#4758): the operator's own `$SHELL`, no
+   *  harness, no profile — in `workspace`'s directory and filed under it, or where a new chat
+   *  would start when it names none. Nothing asks first: a shell starts no harness, so ADR 0022's picker has
    *  nothing to ask about. */
   | { verb: "newShell"; workspace?: string }
   /** Starts a browser in the session host and opens it in a view tab (#2012). The person's
    *  own act: nothing asks first, and Stop all refuses it. */
   | { verb: "newBrowser" }
-  /** Opens the picker for a new tab whose chat starts in `path` — the plane root's own row
-   *  (SI-1). It starts nothing by itself; the picker is the only path ADR 0022 admits. */
+  /** Opens the picker for a chat that starts in `path`, in the focused pane (#4758): the plane
+   *  root's own row (SI-1), and a clone's "New chat in <repo>", which leaves the explorer's pick
+   *  as it was (making the clone the spot for every chat after is `pickClone`'s). It starts
+   *  nothing by itself; the picker is the only path ADR 0022 admits. */
   | { verb: "newChatIn"; path: string }
   | { verb: "split"; direction: Direction }
   /** Hands a key the palette claimed to the chat in front, rather than swallowing it. */
@@ -565,10 +569,6 @@ export type Does =
    *  piece (charter-app#174). It starts nothing: the picker still asks, and the core still
    *  decides whether that directory can be started in. The path is the one the core spelled. */
   | { verb: "pickClone"; repo: string; path: string }
-  /** A new tab whose chat starts in that clone — this one tab. The explorer's pick is left as
-   *  it was, so the NEXT plain `New tab` starts where it would have; making the clone the spot
-   *  for every chat after is `pickClone`'s, and the two rows must not do the same thing. */
-  | { verb: "newTabIn"; repo: string; path: string }
   /** Opens the dialog that cuts a new branch in that clone (GL-1, ADR 0072 §4). The dialog
    *  names the branch; the core cuts it, and nothing is started. */
   | { verb: "newBranch"; repo: string }
@@ -1052,6 +1052,8 @@ export type ViewPlaced = { view: ViewId; name: string; region: RegionId; to?: Vi
 /** What the window does when a row is run. One function per verb, whichever surface asked. */
 export type Doing = {
   newChat: () => void;
+  /** The strip's `+` (#4758): a new tab with one empty pane, on the strip in front. */
+  newTab: () => void;
   /** A shell tab, in `workspace` when a row names one, else where a new chat would start. */
   newShell: (workspace?: string) => void;
   /** A browser, in a view tab of its own (#2012). */
@@ -1906,16 +1908,20 @@ export function catalogue(now: Now): Offer[] {
   const offers: Offer[] = [];
 
   // A chat starts through the picker, which is the only path ADR 0022 admits. The palette
-  // opens that question; it never answers it.
-  offers.push(can("chat.new", "New tab", { verb: "chat.new" }));
+  // opens that question; it never answers it. **The chat takes the focused pane** (#4758): a
+  // chat is never a tab of its own.
+  offers.push(can("chat.new", SAID.newChat, { verb: "chat.new" }));
 
-  // **Beside it, and never inside the picker** (SI-5). A shell tab runs no harness, so there
-  // is no profile to pick and nothing for ADR 0022 to ask. It is still a chat to the core — a
-  // session with a number, recorded and put back — which is why it is a tab like one.
+  // **Beside it, and never inside the picker** (SI-5). A shell runs no harness, so there is no
+  // profile to pick and nothing for ADR 0022 to ask. It is still a chat to the core — a session
+  // with a number, recorded and put back — which is why it takes the focused pane like one.
   offers.push({
     ...can("shell.new", "New shell", { verb: "newShell" }),
-    note: `Your own shell, with no harness, where a new tab would start. ${SHELL_KEY_SAID}.`,
+    note: `Your own shell, with no harness, in the focused pane. ${SHELL_KEY_SAID}.`,
   });
+  // **The strip's `+`** (#4758; spec story 13): a tab with one empty pane, which New chat then
+  // fills. "New tab" still means a tab.
+  offers.push(can("tab.new", SAID.newTab, { verb: "tab.new" }));
 
   // A browser purlis runs and you watch in a tab (#2012): it never opens as a window of its own.
   // It goes to an address you type in its tab (#2176).
@@ -2125,9 +2131,11 @@ export function catalogue(now: Now): Offer[] {
       : cannot(
           PASS_THROUGH_ID,
           sendKey,
-          front
-            ? "The pane in focus shows a view, not a chat, so there is nowhere to send it."
-            : "No chat is in front, so there is nowhere to send it.",
+          front === undefined
+            ? "No chat is in front, so there is nowhere to send it."
+            : focusedOn?.kind === "empty"
+              ? "The pane in focus shows nothing, so there is nowhere to send it."
+              : "The pane in focus shows a view, not a chat, so there is nowhere to send it.",
         ),
   );
 
@@ -2881,7 +2889,7 @@ export function catalogue(now: Now): Offer[] {
       can(`clone.focus:${repo}`, `Focus on repo ${repo}`, { verb: "focusRepo", repo }, repo),
     );
     offers.push(
-      can(`clone.chat:${repo}`, `New tab in ${repo}`, { verb: "newTabIn", repo, path }, repo),
+      can(`clone.chat:${repo}`, `New chat in ${repo}`, { verb: "newChatIn", path }, repo),
     );
     // The cut itself is a dialog away, so the row writes nothing either (GL-1).
     offers.push(
@@ -3421,6 +3429,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "chat.new":
       doing.newChat();
       return DID;
+    case "tab.new":
+      doing.newTab();
+      return DID;
     case "newShell":
       doing.newShell(...(does.workspace === undefined ? [] : [does.workspace]));
       return DID;
@@ -3625,7 +3636,6 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "forgetFailedClone":
       doing.forgetFailedClone(does.workspace, does.repo);
       return DID;
-    case "newTabIn":
     case "newChatIn":
       doing.newChatIn(does.path);
       return DID;

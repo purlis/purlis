@@ -108,7 +108,7 @@ import { onAMac } from "./tabKeys";
  *
  * **A clone is a heading, and it is picked from its menu rather than by a click.** A click on
  * the heading opens and closes it, which is what a heading does; the pick is `Start new chats
- * in <repo>` on the clone's context menu, beside `New tab in <repo>` (charter-app#174). Both
+ * in <repo>` on the clone's context menu, beside `New chat in <repo>` (charter-app#174). Both
  * carry the path the core spelled (`Panels.paths`), so nothing here joins one together, and a
  * picked clone is marked the way a picked piece is.
  *

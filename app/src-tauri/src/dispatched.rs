@@ -2382,7 +2382,7 @@ pub fn wait(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer {
 /// the window marks a task with and what `purlis dispatch list` prints are the same chats in
 /// the same words. A task the chat dispatched itself says more where the app knows more: that
 /// it is idle, cancelling, asking this chat a question, or how it reported. A task the person
-/// started from this chat's tab is listed too, by name and standing, and marked as theirs:
+/// started from this chat is listed too, by name and standing, and marked as theirs:
 /// the list gives the chat nothing over it ([`dispatched::owned`]).
 fn list(held: &Held, asker: u32) -> Vec<Row> {
     use crate::handoff::PersonaChatState;

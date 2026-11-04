@@ -20,6 +20,7 @@ import { stripNamed } from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { findResult } from "./actionResult.testkit";
 import { askToEnd } from "./menus.testkit";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **Smart close, as the window draws it** (ADR 0064, SI-8c): the close dialog's three answers,
@@ -115,8 +116,23 @@ function core(
   return { asked };
 }
 
+/**
+ * New chat in the empty pane in front (#4758): a chat takes the focused pane, so where a chat
+ * shows already the strip's `+` opens a new tab first, and the chat gets a tab of its own as it
+ * did when `+` started one. The sidebar's `+` is called New chat too, so the empty pane's is
+ * asked for by where it is.
+ */
+async function pressNewChat() {
+  const empty = await screen.findByTestId("empty-pane").catch(() => undefined);
+  if (empty === undefined)
+    await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await userEvent.click(
+    within(await screen.findByTestId("empty-pane")).getByRole("button", { name: "New chat" }),
+  );
+}
+
 async function openAChat() {
-  await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+  await pressNewChat();
   await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
@@ -476,6 +492,15 @@ function coreWith(
       if (cmd === "plane_sidebar")
         return { ...SIDEBAR, workspaces: [{ ...SIDEBAR.workspaces[0], chats: open }] };
       if (cmd === "opened_chats") return open;
+      // A chat gets a tab only from the stored layout (#4758): each has one, on alpha's strip,
+      // pinned where the chat is.
+      if (cmd === "reopened_layout") {
+        const laid = aTabForEachChat(open, () => "alpha");
+        return {
+          ...laid,
+          tabs: laid.tabs.map((tab, at) => ({ ...tab, pinned: open[at].pinned })),
+        };
+      }
       if (cmd === "running_sessions") return [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];

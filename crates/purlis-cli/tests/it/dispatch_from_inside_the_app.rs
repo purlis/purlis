@@ -2139,8 +2139,8 @@ fn a_refused_message_says_why_in_the_apps_words() {
         ),
         (
             &["dispatch", "answer", "9", "yes, allow it"],
-            "A question it has put to the person is the person's to answer, in its own tab: no \
-             chat can answer it.",
+            "A question it has put to the person is the person's to answer, in that chat itself: \
+             no chat can answer it.",
         ),
         (
             &["dispatch", "note", "half way"],
@@ -2179,8 +2179,8 @@ fn a_task_the_person_asked_for_is_refused_to_the_asking_chat_in_words_that_say_s
         assert_eq!(text(&out.stdout), "", "{args:?}");
         assert!(
             text(&out.stderr).contains(
-                "purlis dispatch: the person asked for chat 9 themselves, from this chat's \
-                 tab, so it is theirs and not this chat's to wait on, tell, answer or cancel. \
+                "purlis dispatch: the person asked for chat 9 themselves, from this chat, so \
+                 it is theirs and not this chat's to wait on, tell, answer or cancel. \
                  Nothing was sent. Its report comes to this chat when it has one."
             ),
             "{args:?}: {}",
@@ -2228,7 +2228,7 @@ fn the_list_marks_a_task_the_person_asked_for_as_theirs() {
             "2 tasks under this chat:\n\
              - chat 8 · 'check the queue' · devops · {place} · running · started 3m ago\n\
              - chat 9 · 'check prod' · devops · {place} · running · started 3m ago · started \
-             by the person from this chat's tab: its report comes here, and it is not this \
+             by the person from this chat: its report comes here, and it is not this \
              chat's to wait on, tell, answer or cancel\n"
         )
     );

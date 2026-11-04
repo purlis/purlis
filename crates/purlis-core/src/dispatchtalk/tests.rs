@@ -510,7 +510,7 @@ fn an_answer_with_no_question_of_the_tasks_own_behind_it_is_refused() {
         Err(
             "'check the queue' (chat 9) has asked this chat no question that is still open, \
              so there is nothing here to answer. A question it has put to the person is the \
-             person's to answer, in its own tab: no chat can answer it."
+             person's to answer, in that chat itself: no chat can answer it."
                 .to_owned()
         )
     );

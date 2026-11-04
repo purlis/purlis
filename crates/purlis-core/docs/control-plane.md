@@ -558,7 +558,7 @@ folder is only forgotten, and its folder stays. A chat may not make, import, rem
 in a profile.
 
 A made profile is signed in through its harness's own sign-in (ADR 0095 §3): **Sign in**, on
-its row in Settings or on its Ask in the Inbox, opens a shell tab that runs `claude auth login`,
+its row in Settings or on its Ask in the Inbox, opens a shell that runs `claude auth login`,
 `codex login` or `opencode auth login --provider <plan>` with the profile's folder set, and
 `purlis profile sign-in <name>` runs the same in your own terminal (`--provider openai` or
 `--provider github-copilot` for opencode, which is never signed in to a Claude plan: the plans its declaration's `[sign_in] plans` lists, and `anthropic` is refused in any declaration but Claude Code's own). You drive the harness's own

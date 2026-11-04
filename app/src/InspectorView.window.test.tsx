@@ -122,8 +122,9 @@ describe("Inspect", () => {
         expect.objectContaining({ program: "B1" }),
       ),
     );
-    // Beside the browser, in its tab: one tab still.
-    expect(tabNames()).toEqual(["Browser"]);
+    // Beside the browser, in its tab: no tab more. The strip's first tab is the empty one every
+    // strip keeps (#4758), which the browser opened beside.
+    expect(tabNames()).toEqual(["New chat", "Browser"]);
     expect(screen.getByLabelText("The browser's page")).toBeInTheDocument();
 
     host.devtoolsSend("/9j/AA==");

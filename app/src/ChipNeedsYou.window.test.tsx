@@ -11,6 +11,7 @@ import { asksMoved } from "./asks";
 import type { Shown } from "./bindings";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetRailMode } from "./railMode";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **A chat asking to remove a workspace puts a ✋ on its chip** (#3652, spec #3647), on the real
@@ -107,6 +108,8 @@ function core({ front = 1, removes = "beta" }: { front?: number; removes?: strin
         unfiled: [],
       };
     if (cmd === "opened_chats") return chats;
+    // The layout stored gives each chat a tab on alpha (#4758).
+    if (cmd === "reopened_layout") return aTabForEachChat(chats, () => "alpha");
     if (cmd === "plane_pins")
       return { project: false, workspaces: pinned, missing: [], order: pinned, certain: true };
     if (cmd === "pin_workspace") {

@@ -10,6 +10,7 @@ import App from "./App";
 import { ApprovalSentence } from "./ProfileApproval";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 
 /**
@@ -91,6 +92,8 @@ function core(): Asked[] {
         unfiled: [],
       };
     if (cmd === "opened_chats") return open;
+    // The layout stored gives each chat a tab on alpha (#4758), where its notice is drawn.
+    if (cmd === "reopened_layout") return aTabForEachChat(open, () => "alpha");
     if (cmd === "chat_states")
       return states.map((one, at) => ({
         plane: PLANE,

@@ -14,12 +14,13 @@ import {
 } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import type { OpenChat } from "./bindings";
+import type { LaidNode, LaidOut, OpenChat } from "./bindings";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 import { PANE_NOTICES } from "./paneNoticesPref";
 import { stripNamed } from "./test-strips";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **The first dispatch on a machine explains the chip, once** (#1501, V100-55), against the
@@ -110,6 +111,38 @@ function asListed(one: Listed): OpenChat {
 
 type Asked = { cmd: string; args: Record<string, unknown> };
 
+/**
+ * **The layout stored for `open`** (#4758): a chat gets a tab only from it. A tab for each chat
+ * its lineage says has one, showing the task its `shows` names where it names one, and split
+ * with the task whose `beside` names it, as the core would have stored them.
+ */
+function laidFor(open: Listed[]): LaidOut {
+  const laid = aTabForEachChat(
+    open.filter((one) => one.from?.tab !== false && (one.beside ?? null) === null),
+    (session) => open.find((one) => one.session === session)?.workspace ?? null,
+  );
+  const tree = (session: number): LaidNode => {
+    const shown = open.find((one) => one.session === session)?.shows ?? session;
+    const beside = open.find((one) => one.beside === session);
+    const own: LaidNode = { kind: "chat", chat: shown };
+    return beside === undefined
+      ? own
+      : {
+          kind: "split",
+          direction: "row",
+          share: 500,
+          a: own,
+          b: { kind: "chat", chat: beside.session },
+        };
+  };
+  return {
+    ...laid,
+    tabs: laid.tabs.map((tab) =>
+      tab.tree.kind === "chat" ? { ...tab, tree: tree(tab.tree.chat) } : tab,
+    ),
+  };
+}
+
 /** What this machine's layout file holds of what was seen once, as a launch reads it. */
 const disk: { seen: string[] } = { seen: [] };
 
@@ -136,8 +169,10 @@ function launch() {
 /** A core that lists `open`, and answers which chats a person is at by `attended`. */
 function core(open: Listed[], attended: (session: number) => boolean = () => true) {
   const asked: Asked[] = [];
-  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it. */
-  let laidOut: unknown = null;
+  /** Every tab as the window last said it (`window_layout`, #4751): a reload is answered it.
+   *  Before the window has said any, the layout stored gives a tab to each chat its lineage
+   *  says has one (#4758): a task sits in its asker's chip until the person opens it. */
+  let laidOut: unknown = laidFor(open);
   const listeners = new Map<string, number[]>();
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;

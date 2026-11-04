@@ -4,7 +4,7 @@
 //! A branch of its own for a chat that writes to a repo (GL-1, ADR 0072 §4).
 //!
 //! **A writing chat is one that starts in a repo's clone**: `workspaces/<ws>/<repo>`, the
-//! directory "New tab in <repo>" and "Start new chats in <repo>" point at. By default it does
+//! directory "New chat in <repo>" and "Start new chats in <repo>" point at. By default it does
 //! not start there. charter cuts a piece off the clone's HEAD, and the chat starts in that
 //! instead, so two chats in one repo stop sharing a working tree. A chat that starts in the
 //! workspace's own directory, at the project root, or in a piece that already exists gets

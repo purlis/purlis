@@ -32,7 +32,7 @@ work its own persona owns, it is a sub-agent. Otherwise it is a **task** (*A tas
 persona*, below): listed under this chat, waited on, told more and cancelled.
 
 **Will you read the new chat yourself?** Then it is a handoff: a chat that works on its own,
-with a tab of its own, and this chat hears nothing back.
+in the sidebar of the workspace it is handed to, and this chat hears nothing back.
 
 **This workspace or another: does the ask serve this workspace's vision?** Yes → a chat here.
 No → another workspace, matched against other workspaces' visions (`purlis workspace list`,
@@ -55,10 +55,10 @@ BRIEF
   whole. A line that starts with the workspace is still a
   handoff and is decided the same way; the harness asks about it first, as it asks about
   any command it has no rule for.
-- **`--name` is what the new chat is called** — its tab, and wherever else a chat's name is
-  shown: `drop account-console-commons`, not `steward 7`. Held to a chat name's rule: trimmed,
-  at most 64 characters, no control or invisible character. Without it the chat is called what
-  any new chat is, `<persona> <N>`.
+- **`--name` is what the new chat is called** — its row in the sidebar, its pane, and wherever
+  else a chat's name is shown: `drop account-console-commons`, not `steward 7`. Held to a chat
+  name's rule: trimmed, at most 64 characters, no control or invisible character. Without it
+  the chat is called what any new chat is, `<persona> <N>`.
 - **`--report` is not a way to get an answer any more.** It is still taken, and is carried
   out as a task. See *A report back*.
 
@@ -93,9 +93,9 @@ below. Then, from a chat the app started:
    stamp say so. A profile that is offered and not approved opens nothing.
 4. Its first message is the stamp line, a blank line, then the brief verbatim. It rides the
    harness's own argv (`claude "<message>"`, `codex "<message>"`), never typed into its pane.
-5. The chat lands as a new tab on the target workspace's strip, **behind the tab you are
-   reading**, and the window is not raised. It takes the front only in a window with no tab at
-   all, where there is nothing to interrupt.
+5. The chat starts in the target workspace's sidebar and **takes no pane and no tab**, so
+   nothing you are reading moves, and the window is not raised. It is shown in a pane when you
+   pick it.
 6. The command records a todo in the target workspace: the brief's first line, and which chat
    and workspace handed it off. The rest of the brief is not in it, because a LIVE workspace
    commits its todos and a brief never reaches a committed file. If an open todo there is
@@ -111,16 +111,15 @@ The todo comes after the chat is open, and a failure to write it is said and nev
 the open. A handoff the app would not open writes none. **A handoff that was held for a
 grant and then allowed has its todo written by the app** (#1471): the command returned when
 the handoff was held, and what could not be written is said to the asking chat with the
-start. There is no mark on
-the strip beyond the new tab itself: the tab is how you see it.
+start. Its row in that workspace's sidebar is how you see it.
 
 **The app opens one chat per `purlis handoff`**: the command asks the app for a single-use
 ticket and spends it on the same connection, so no single line on the socket opens a chat and
 no line can be replayed. The ticket cannot tell this chat's command from another process
 running inside the same chat, which could run `purlis handoff` itself, just as it can already
 start a harness in the background with `claude -p`. That is why a handed-off chat always
-lands as a tab you can see, stamped with the chat it came from, and why what consents to it
-is the app's own decision and never a word the chat sends.
+lands as a row you can see in its workspace's sidebar, stamped with the chat it came from, and
+why what consents to it is the app's own decision and never a word the chat sends.
 
 **Outside a chat the app started**, or when the app is not listening or does not answer,
 nothing is opened and nothing is created. The command says so, tells you to open purlis and
@@ -159,7 +158,8 @@ does not carry the stamp of a handoff from the asking chat. Having checked it, t
 chat's name in its place. Minutes, not seconds: the stamp is read by a person deciding which
 handoff this message came from.
 
-The same note is on the new chat's tab, as its tooltip, and in its pane's corner:
+The same note is in the corner of the new chat's pane once it is shown, and on a tab it fills,
+as its tooltip:
 `↳ from steward 3 · platform-next` (`↳ from steward 3 · plane root` from the plane root).
 
 ## A report back
@@ -176,7 +176,7 @@ dispatch, so:
 
 - it is in this chat's `purlis dispatch list`, and `purlis dispatch wait`, `tell`, `answer`
   and `cancel` work on it;
-- the window shows it as a task of this chat, not as a tab that moved away;
+- the window lists it as a task of this chat, under this chat's row;
 - its first message is a task's (`⟨task from …⟩`) and says how to report, with `purlis
   dispatch report`;
 - its report is delivered as a task's is, and where purlis may type into this chat, the line
@@ -239,7 +239,7 @@ the next chat to start there learns it at its `SessionStart`. A report that was 
 when its chat closed goes the same way. The task still ends at its report, as every other task
 does (#1510): it is told it is finished and where its report is kept, and it raises no item.
 Only a report from a chat that stays open has nowhere to go and needs you (a task you started
-from a tab, a blocked task, a handoff's chat, a task you took up again): the chat that wrote it
+from a chat, a blocked task, a handoff's chat, a task you took up again): the chat that wrote it
 becomes a needs-you item that says so.
 
 **A chat you stop from the window** gets one short turn to write what it did, and may send one
@@ -348,7 +348,7 @@ BRIEF
   nobody is at is never asked for; see *A dispatch from an unattended chat*, below.
 - **It is a chat of its own**, in the app, in this chat's folder unless the dispatch says
   otherwise (*Where it works*, below). You can see it, open it, type in it and stop it. It is listed in the Chats section under the chat that asked for it, by
-  its name and what it is doing, and has a tab once you open it.
+  its name and what it is doing, and takes a pane only when you pick it.
 - **Its harness profile is its persona's own** where the persona's definition names one, else
   this chat's; `--profile` names another of the project's profiles. Where the project lists
   profiles for the persona (`[dispatch.profiles]`), the chat starts on one of those or not at
@@ -683,7 +683,7 @@ A chat that has dispatched tasks and then ends its turn is waiting on them, not 
   whose own turn has just ended. Where purlis types the chat no line (its harness takes
   none, or you had keys in its pane), it is yours at once. Where the line was typed and no
   turn began on it within a minute, it is yours then.
-- **A task you asked for yourself, from a chat's tab, does not hold that chat's end.** The
+- **A task you asked for yourself, from a chat, does not hold that chat's end.** The
   chat asked for nothing and waits on nothing; the task is still counted on its row.
 - **A task paused on a question to the chat that asked is no needs-you item either**, while
   that chat is open and running. Its row says `asking <chat>`: that chat is the one who can
@@ -757,7 +757,7 @@ persona, where it works, its state and how long ago it started. The states are `
 worktree of its own says so after where it works: the branch purlis cut for it, and whether
 its worktree is kept, was merged and removed, or was discarded. A task is listed until its
 chat is closed. The `dispatch_list` tool prints the same list. A task you started yourself
-from this chat's tab (*Ask <persona>…*) is listed too, and its row says so: its report comes
+from this chat (*Ask <persona>…*) is listed too, and its row says so: its report comes
 to this chat, and the chat can wait on, send to, answer and cancel nothing of it.
 
 `cancel` records the cancel, so the task's report arrives with the outcome `cancelled` whatever
@@ -837,7 +837,7 @@ purlis dispatch pass-on <chat> --note "..." # the asking chat, on to you, in the
 - **A task has one way to ask.** Its route is decided by purlis's record of the chat. A task's
   own question prompt on Claude Code, Codex and opencode, and a plain `ask_operator`, go to its
   asking chat as `dispatch_ask` does, and the task is told who answered. A handoff, a task you
-  started from a tab, and your own chats ask you directly, as a browser takeover does. A redirect
+  started from a chat, and your own chats ask you directly, as a browser takeover does. A redirect
   that fails keeps the prompt in the task's pane and the Inbox. On Codex the redirect is one more
   hook, so Codex asks once more to trust purlis's hooks; until you trust them, its prompt asks in
   its pane. On opencode it is purlis's plugin, which the app already loads.
@@ -897,7 +897,7 @@ A task is never lost for want of the chat that was doing it, or of the chat that
   again when you answer it there, since the turn that reported goes on. Answering in the task's
   own pane is a key of yours, and keeps the chat for good. Never while a task of its own is
   still at work. **Two reports end nothing**: one that came out blocked (the task is waiting
-  on something), and the report of a persona chat you started yourself with Ask from a tab (it
+  on something), and the report of a persona chat you started yourself with Ask from a chat (it
   is your conversation). A report whose asking chat has gone ends its task as any other does,
   and is kept for the workspace (#1510). A task that had reported when the app
   quit is not started again at the next launch: it is a finished row. Its row stays under the
@@ -906,10 +906,10 @@ A task is never lost for want of the chat that was doing it, or of the chat that
   of its own until cleared. The rows are read from the dispatch records, so they are there
   after the app is restarted, and they go when the chat that asked closes. A wait on a finished
   task still answers with its report; a cancel, a follow-up or an answer says it has finished.
-- **Reopen makes a finished task an ordinary chat.** It resumes the task's conversation in a
-  tab of its own. It is no longer a task: a report from it is refused in plain words, and the
-  chat that asked is told nothing. One row is one chat: a second press while the first is
-  starting is refused. The row goes once the new chat is heard from; if its harness ends at
+- **Reopen makes a finished task an ordinary chat.** It resumes the task's conversation as a
+  chat of its own, in the sidebar. It is no longer a task: a report from it is refused in plain
+  words, and the chat that asked is told nothing. One row is one chat: a second press while the
+  first is starting is refused. The row goes once the new chat is heard from; if its harness ends at
   once without bringing the conversation back, the row stays and says so. Reopen is refused
   where the profile the task ran on now runs another harness.
 - **Closing a chat asks you once about the chats at work below it**: its persona chats that
@@ -923,10 +923,10 @@ A task is never lost for want of the chat that was doing it, or of the chat that
   each once its session record is written, and the dialog says which. One with no record yet
   is asked for it first, and closes when it is saved. One you gave more to do, one asking you
   something, and one whose saved record is gone, stay open.
-- **A task you started yourself is yours.** If the chat whose tab you asked from has closed,
+- **A task you started yourself is yours.** If the chat you asked from has closed,
   its report is not handed to the next chat in that workspace: it stays with the persona
   chat, which is marked as needing you.
-- **A persona chat that is waiting on you** (a permission prompt, a question, in its own tab)
+- **A persona chat that is waiting on you** (a permission prompt, a question, in that chat itself)
   reads `waiting on the person` to the chat that asked. That chat cannot answer for you,
   and is told the wait is not its own to end.
 
@@ -956,7 +956,7 @@ The chat that asked is told once:
   for the person is typed the one line a landed report types.
 
 A start that the person's stop refused is not a failed start: the stop says what became of
-the chats below it, and no row is written. A task the person asked for from a tab is answered
+the chats below it, and no row is written. A task the person asked for from a chat is answered
 in the dialog they asked from, and leaves no row.
 
 **A launch that cannot start a task again ends nothing.** The reason is a condition of the
@@ -978,9 +978,9 @@ not start, with Retry now and Forget this chat, as before.
 
 ### Asking a persona yourself
 
-You can dispatch too, from the app: **Ask <persona>…** on a chat's tab menu and in the palette,
+You can dispatch too, from the app: **Ask <persona>…** on a chat's menu and in the palette,
 one entry for each persona the project has finished. It asks for the task's name, what to
-ask and where it works, and starts a chat as that persona under the chat whose tab you used.
+ask and where it works, and starts a chat as that persona under the chat you asked from.
 *Where it works* offers the three places a chat's dispatch has (*Where it works*, above): this
 chat's folder, a branch of its own that purlis cuts from the repo this chat works in, or
 another workspace. The window says *branch* where the command says worktree.
@@ -990,8 +990,8 @@ another workspace. The window says *branch* where the command says worktree.
 - **It runs as that persona, with that persona's own sandbox, hosts and vaults**, and takes
   nothing the chat it was launched from holds. So from a `steward` chat, Ask devops… starts a
   chat that can use the vault tagged for `devops`.
-- **Its first message says you asked**, and from which chat's tab: ``⟨the person asks, from
-  the tab of `steward 3` · workspace alpha · 2026-10-07 14:32⟩``. No chat's stamp opens with
+- **Its first message says you asked**, and from which chat: ``⟨the person asks, from
+  `steward 3` · workspace alpha · 2026-10-07 14:32⟩``. No chat's stamp opens with
   those words, whatever a chat is named. Every command that asks you still asks you.
 - **Its report goes to the chat you launched it from**, on that chat's next turn, and says the
   task was started by you and not dispatched by that chat.
@@ -1003,9 +1003,9 @@ another workspace. The window says *branch* where the command says worktree.
 
 The project's dispatch limits hold for it as well, and a refusal says what you can change.
 **An administrator's policy binds it too.** Where policy locks all dispatch, the entry is not
-on any tab, and the palette's *Ask a persona…* row says who locked it. Where policy locks a
-pair, say `steward` to `devops`, *Ask devops…* is not on the tab of a chat running as
-`steward`, and its palette row says who locked it: asking from that tab would send devops's
+on any chat's menu, and the palette's *Ask a persona…* row says who locked it. Where policy locks
+a pair, say `steward` to `devops`, *Ask devops…* is not on the menu of a chat running as
+`steward`, and its palette row says who locked it: asking from that chat would send devops's
 report into the steward chat. You can still start a chat as `devops` from the picker.
 
 ## What `purlis handoff` refuses before it changes anything
@@ -1105,7 +1105,7 @@ should move, and the places above are where a chat deciding whether to hand off 
 ## A handoff is a dispatch: consent is the grant
 
 A handoff is one chat starting another, as a task is: a **dispatch** in handoff mode. The work
-moves, the new chat opens as a tab, and it owes no report. What
+moves, the new chat starts in the sidebar, and it owes no report. What
 may start is decided the same way for both, by the app, from its own record of the asking
 chat:
 
@@ -1130,7 +1130,7 @@ chat:
 
 **Nobody approves the brief.** A brief is a request from another chat, never your word: the
 new chat is told who asked, applies its own charter and its own guards, and every command of
-its that asks you still asks you, in its own tab. The brief is the first message in that tab,
+its that asks you still asks you, in that chat. The brief is the first message in that chat,
 it is kept in the dispatch's record, and the Notice for a first grant shows it in full. Nothing
 in a brief approves anything.
 

@@ -262,7 +262,7 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "shell.new": {
     said: SAID.newShell,
     slot: "open",
-    // The key opens a shell where a new tab would start: the row with no place of its own.
+    // The key opens a shell in the focused pane: the row with no place of its own.
     keys: (offer) => (offer.id === "shell.new" ? shellKeySaid(onAMac()) : undefined),
   },
   "workspace.create": { said: (offer) => offer.title, slot: "open" },
@@ -305,7 +305,7 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "worktree.remove": { said: SAID.removeFolder, slot: "end" },
   "worktree.discard": { said: SAID.discardAnyway, slot: "end", danger: true },
   "clone.focus": { said: SAID.focus, slot: "first" },
-  "clone.chat": { said: SAID.newTab, slot: "open" },
+  "clone.chat": { said: SAID.newChat, slot: "open" },
   "clone.branch": { said: SAID.newBranch, slot: "open" },
   "clone.pick": { said: SAID.startChatsHere, slot: "run" },
   "absent.clone": { said: SAID.clone, slot: "first" },

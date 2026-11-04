@@ -681,7 +681,7 @@ describe("the first run", () => {
     await vi.waitFor(() => expect(calls("send_input")).toHaveLength(1));
     expect(calls("send_input")[0].args).toMatchObject({ plane: LOCAL, text: "gh auth login\n" });
 
-    await person.click(await screen.findByRole("button", { name: "New tab" }));
+    await person.click(await screen.findByRole("button", { name: "New chat" }));
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
     await person.click(within(picker).getByRole("button", { name: "Start chat" }));
     await vi.waitFor(() => expect(calls("start_chat")).toHaveLength(1));

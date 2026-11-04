@@ -34,92 +34,15 @@ export function inScope(rows: readonly ChatRow[], here: string): readonly ChatRo
 }
 
 /**
- * **The rows of the chats a tab holds** (#1679): `sessions` is the tab's set as the window
- * already reads it (`tabChats.chatsOfTabs`), in the order and nesting the whole list has. A
- * row whose asker the tab does not hold stands at the top, with the tab's rows below it: a
- * task in a tab of its own heads that tab's list.
- *
- * Every level is counted again among its own, as a screen reader reads them, and the rows
- * come back as they are where nothing is left out.
+ * **Which chats the Chats view lists** (#1679, B-15): the focused workspace's (the default,
+ * #1655), or every workspace's. Whichever it is, a chat it leaves out that needs the person is
+ * named at the top, with a way to it. **This tab went with the switch** (#4758): a chat isn't
+ * a tab, so a tab holds no chats of its own to list, and a stored "tab" reads as Workspace.
  */
-export function inTab(rows: readonly ChatRow[], sessions: ReadonlySet<number>): readonly ChatRow[] {
-  /** By level in the whole list, the level the nearest row the tab holds, at or above that
-   *  one on the way down to this row, is drawn at: 0 where there is none. */
-  const drawnAt: number[] = [];
-  const kept: ChatRow[] = [];
-  for (const row of rows) {
-    drawnAt.length = row.level - 1;
-    const above = drawnAt[row.level - 2] ?? 0;
-    const holds = sessions.has(row.session);
-    drawnAt.push(holds ? above + 1 : above);
-    if (holds) kept.push(above + 1 === row.level ? row : { ...row, level: above + 1 });
-  }
-  if (kept.length === rows.length) return rows;
-  return counted(kept);
-}
-
-/**
- * **The chats This tab lists, by number** (#1679, #1696): the tab's own set (`tab`, as the
- * window reads it), and each task it held `before` that has left that set while the list still
- * has its row. A task that ends is in no tab's set any more, but its row stays until its
- * finished row is read (`finished.useRowsUntilRead`), as Workspace and All keep it: This tab
- * keeps it too, for exactly as long. Only a task: a task moved to a tab of its own is still
- * listed among its session's tab's chats, so a task leaves a tab's set only by ending.
- *
- * `before` is what this answered for the same tab last, or nothing for a tab just brought
- * forward. **The same set comes back where nothing changed**, so a list drawn from it is not
- * drawn again for nothing.
- */
-export function tabSessions(
-  tab: readonly ChatRow[],
-  before: ReadonlySet<number> | undefined,
-  rows: readonly ChatRow[],
-): ReadonlySet<number> {
-  const now = new Set(tab.map((row) => row.session));
-  if (before !== undefined && before.size > 0) {
-    const tasks = new Set(rows.filter((row) => row.mode === "task").map((row) => row.session));
-    for (const session of before) if (tasks.has(session)) now.add(session);
-  }
-  if (before !== undefined && before.size === now.size && [...now].every((one) => before.has(one)))
-    return before;
-  return now;
-}
-
-/** `rows` with each one's place among the rows at its level under the same row above. */
-function counted(rows: readonly ChatRow[]): ChatRow[] {
-  const sizes = new Map<number, number>();
-  /** The group each row is in: the index of the row it is under, -1 for the top. */
-  const groups: number[] = [];
-  const under: number[] = [];
-  rows.forEach((row, at) => {
-    under.length = row.level - 1;
-    const group = row.level === 1 ? -1 : under[row.level - 2];
-    groups.push(group);
-    sizes.set(group, (sizes.get(group) ?? 0) + 1);
-    under.push(at);
-  });
-  const placed = new Map<number, number>();
-  return rows.map((row, at) => {
-    const group = groups[at];
-    const posinset = (placed.get(group) ?? 0) + 1;
-    placed.set(group, posinset);
-    const setsize = sizes.get(group) ?? 1;
-    return row.posinset === posinset && row.setsize === setsize
-      ? row
-      : { ...row, posinset, setsize };
-  });
-}
-
-/**
- * **Which chats the Chats view lists** (#1679, B-15): the tab in front's, the focused
- * workspace's (the default, #1655), or every workspace's. Whichever it is, a chat it leaves
- * out that needs the person is named at the top, with a way to it.
- */
-export type Scope = "tab" | "workspace" | "all";
+export type Scope = "workspace" | "all";
 
 /** The scopes, as the switch says them, narrowest first. */
 export const SCOPES: readonly { scope: Scope; says: string }[] = [
-  { scope: "tab", says: "This tab" },
   { scope: "workspace", says: "Workspace" },
   { scope: "all", says: "All" },
 ];

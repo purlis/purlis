@@ -3,6 +3,7 @@
 
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
+import { closeTheViewTabsOpenedSince } from "../reach.js";
 import { REST_MS } from "../../src/tabRest.ts";
 import { bringSideBack, putSideAway, sideIsAway, type SideRegion } from "../sides.js";
 import {
@@ -506,7 +507,11 @@ describe("the chip a session's tab wears for its tasks", () => {
     // so what earlier files left open decides which of this file's tabs are drawn, and how
     // wide each is: measured in CI, eleven tabs left behind, and this file's three not drawn.
     // The chatsLeft guard now starts every file with no chat running, so nothing is ended here
-    // that this file did not start.
+    // that this file did not start. **And the tabs earlier files left are closed**: every strip
+    // also keeps one empty tab now (#4758), so at 1280 wide a Settings tab or two left behind
+    // was enough to put this file's first two tabs behind "Show N tabs" when the third opened.
+    // Closing one ends nothing (#4756); the strip's kept empty tab stays.
+    await closeTheViewTabsOpenedSince([]);
     wereAlreadyOpen = await tabNames();
     // Only the dispatched pointer is ever on the strip (#3521, the file's comment).
     await fenceRealPointer(true);

@@ -24,6 +24,7 @@ import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { heard } from "./frame.testkit";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
+import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
  * **The Chats list at fifty chats, against the whole window** (#1499, V100-47 to V100-50): the
@@ -160,6 +161,13 @@ function core(open: Filed[], ended: FinishedTask[] = []) {
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return open.map(asListed);
+    // The layout stored gives a tab to each chat its lineage says has one (#4758): a task has
+    // none until the person opens it.
+    if (cmd === "reopened_layout")
+      return aTabForEachChat(
+        open.filter((one) => one.from?.tab !== false),
+        (session) => open.find((one) => one.session === session)?.workspace ?? null,
+      );
     if (cmd === "open_chat_tab") {
       const one = open.find((chat) => chat.session === a.session);
       if (one?.from) one.from = { ...one.from, tab: true };

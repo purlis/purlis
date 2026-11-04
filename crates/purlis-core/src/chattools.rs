@@ -944,7 +944,7 @@ pub static TOOLS: [Tool; 29] = [
         description: "Read what a task this chat dispatched said last and the commands it ran, \
                       with their exit codes, as its harness handed them to purlis: quoted as \
                       data, credential shapes masked. Only a task this chat dispatched can be \
-                      read; the whole conversation is the person's, in the task's tab.",
+                      read; the whole conversation is the person's, to read in the window.",
         schema: || {
             json!({
                 "type": "object",
