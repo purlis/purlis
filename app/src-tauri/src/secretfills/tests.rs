@@ -599,9 +599,11 @@ fn a_fill_is_approved_for_the_other_sites_its_key_is_allowed_on_in_this_chat() {
     grant(8, "dash-api-key", "https://elsewhere.example.test");
     let asked = FillAsked {
         browser: "b1".into(),
+        program: "program-1".into(),
         target: "e12".into(),
         vault: "qa".into(),
         key: "dash-api-key".into(),
+        code: false,
         field: FieldSaid {
             origin: Some("https://dash.example.test".into()),
             label: "API key".into(),
