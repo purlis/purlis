@@ -20,7 +20,7 @@ import { catalogued, type Offer } from "./actions";
 import { BriefButton, BriefOpener, type BriefAsk } from "./Brief";
 import { HarnessChip } from "./HarnessCard";
 import { PaneActions, PaneBellOf, PaneHead } from "./LayoutPanes";
-import { expectFocusInSight } from "./stories.testkit";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const SESSION = 7;
 
@@ -175,6 +175,9 @@ export const ATasksLine: Story = {
     await waitFor(() => expect(status).toHaveTextContent("Stop and get its report"));
     // The press closes the list, as a person's does: the story ends on the head, not the menu.
     await waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull());
+    // And the keyboard back on ⋯: the menu hands it back a frame later whenever nothing holds it,
+    // which, left to race the blur below, could draw ⋯ focused with its tip in the picture.
+    await untilFocused(() => more, "the closed menu hands the keyboard back to ⋯");
 
     right.focus();
     await expect(right).toHaveFocus();
