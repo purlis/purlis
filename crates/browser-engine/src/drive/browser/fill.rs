@@ -206,12 +206,23 @@ impl Browser {
             return Err(stale(target));
         };
         // SF-13: the field's own frame, at the moment of filling.
-        if here.as_deref() != Some(origin) {
-            return Err(not_filled(format!(
-                "{target} is in a document on {}, not on {origin}, where the person allowed it, \
-                 so nothing was filled",
-                here.as_deref().unwrap_or("no web origin")
-            )));
+        match here.as_deref() {
+            Some(here) if here == origin => {}
+            Some(here) => {
+                return Err(not_filled(format!(
+                    "{target} is in a document on {here}, not on {origin}, where the person \
+                     allowed it, so nothing was filled"
+                )));
+            }
+            // Where its frame is on its way to another document, or not read yet, or has no
+            // web origin, the engine cannot say it is on the approved one.
+            None => {
+                return Err(not_filled(format!(
+                    "purlis does not know yet that {target} is in a document on {origin}, where \
+                     the person allowed it, so nothing was filled: take a new snapshot in a \
+                     moment"
+                )));
+            }
         }
         // SF-5: read again as it fills, so a field that became multi-line since is caught.
         let (kind, _) = self.kind_of(&at, target)?;

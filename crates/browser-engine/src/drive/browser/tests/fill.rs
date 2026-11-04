@@ -192,12 +192,45 @@ fn a_field_in_a_frame_on_another_origin_is_refused_before_anything_is_typed() {
     let (browser, engine) = browser();
     as_fields(&engine, "one_line", Twist::None);
     let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
+    wait_for("the payment frame's document is known", || {
+        super::super::super::lock(&browser.inner.state)
+            .document_now("PAGE-1", "PAYMENT-FRAME")
+            .is_some_and(|(_, origin)| origin.is_some())
+    });
 
     let filled = filling(&browser, &fill_of(pay, "http://fixture.test"));
 
     match filled {
         Err(Refusal::NotFilled(why)) => {
             assert!(why.contains("http://other.test"), "{why}");
+            assert!(why.contains("nothing was filled"), "{why}");
+        }
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    assert_eq!(inserted(&engine), 0);
+}
+
+#[test]
+fn a_field_in_a_frame_whose_document_is_not_known_yet_is_refused_in_words_that_say_so() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    engine.emit(
+        "Page.frameStartedLoading",
+        json!({ "frameId": "PAGE-1" }),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the page's start is read", || {
+        super::super::super::lock(&browser.inner.state)
+            .document_origins
+            .awaits("PAGE-1", "PAGE-1")
+    });
+
+    let filled = filling(&browser, &fill_of(secret, "http://fixture.test"));
+
+    match filled {
+        Err(Refusal::NotFilled(why)) => {
+            assert!(why.contains("does not know yet"), "{why}");
             assert!(why.contains("nothing was filled"), "{why}");
         }
         other => panic!("refused otherwise: {}", ended_as(&other)),
