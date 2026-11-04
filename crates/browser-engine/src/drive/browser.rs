@@ -905,8 +905,6 @@ struct Page {
     /// that failed (#5150). What a filled page sent may be in it, so it is handed to the caller
     /// to judge ([`Browser::say_why_refused`]) and never said.
     failed_load: Option<String>,
-    }
-
     /// **It holds a secret and is leaving, or stands on what purlis replaces** (#5230): an answer
     /// and a read wait for how that ends.
     leaving: bool,
@@ -5806,6 +5804,15 @@ impl Inner {
                                     page.leaving = departing || (failed && held_one);
                                 }
                                 if failed && held_one {
+                                    // Told before the page goes: why it failed is said in the next
+                                    // answer, from then on there is no page to say it of (#5150).
+                                    let why = lock(&self.refused_load).clone();
+                                    let said = why
+                                        .zip(text("/frame/unreachableUrl"))
+                                        .and_then(|(why, address)| why(&address));
+                                    if let Some(said) = said {
+                                        state.say_of_leaving(said);
+                                    }
                                     follow.push(FollowUp::Leave(leaving::Leave::Failed(
                                         target.clone(),
                                     )));
@@ -6007,7 +6014,11 @@ impl Inner {
                                     follow.push(FollowUp::Refuse(paused.id));
                                 }
                                 leaving::Move::Elsewhere { origin } => {
-                                    state.say_of_leaving(leaving::elsewhere_said(&origin));
+                                    let said = lock(&self.refused_load)
+                                        .clone()
+                                        .and_then(|why| why(&address))
+                                        .unwrap_or_else(|| leaving::elsewhere_said(&origin));
+                                    state.say_of_leaving(said);
                                     follow.push(FollowUp::Stay(paused));
                                 }
                                 leaving::Move::Redirect(target) | leaving::Move::Form(target)

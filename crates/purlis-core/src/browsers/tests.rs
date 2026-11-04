@@ -725,6 +725,49 @@ fn a_fill_holds_the_real_reach_proxy_to_its_site_until_its_page_is_gone() {
     assert_eq!(status(other_port), carried);
 }
 
+/// #5230: a fill's holder asks the browser's judge where its page may leave for, is approved for
+/// the sites it was given, and holds the proxy to them too. These bind sockets, so run on CI.
+#[cfg(unix)]
+#[test]
+fn a_fill_holds_its_other_approved_sites_too_and_its_judge_says_where_it_may_leave_for() {
+    use purlis_browser_engine::drive::{FillHold, Leaving};
+
+    use crate::sandbox::browser_reach::{Lane, ReachProxy};
+
+    let reach = BrowserReach {
+        open_web: true,
+        ..BrowserReach::default()
+    };
+    let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
+    let (listed, _) = reach_of(Some(&reach)).unwrap();
+    let proxy = std::sync::Arc::new(
+        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap(),
+    );
+    let holder = super::FillHolder::of(&proxy, "https://auth.example.com")
+        .expect("a site")
+        .judged_by(Some(&sites), &["https://sso.example.com".to_owned()]);
+
+    holder.hold().expect("held");
+
+    assert!(sites.bound().lets("sso.example.com", 443));
+    assert!(!sites.bound().lets("elsewhere.example.com", 443));
+    assert!(holder.approved_for("https://sso.example.com/in"));
+    assert!(!holder.approved_for("https://elsewhere.example.com/in"));
+    assert_eq!(
+        holder.may_leave_for("https://app.example.com/?code=1", true),
+        Leaving::Go
+    );
+    assert!(matches!(
+        holder.may_leave_for("https://new.example.com/", false),
+        Leaving::Ask { .. }
+    ));
+    let unjudged = super::FillHolder::of(&proxy, "https://auth.example.com").expect("a site");
+    assert!(matches!(
+        unjudged.may_leave_for("https://app.example.com/", true),
+        Leaving::No { .. }
+    ));
+}
+
 /// #5152, the person's ruling of 2026-11-04 (amending #4995's of 2026-11-03): a login whose form
 /// is on another site, performed through a real reach proxy and judge, reaches the form's site
 /// from its bind for the browser's life, and keeps the agent off it once its page is back on the

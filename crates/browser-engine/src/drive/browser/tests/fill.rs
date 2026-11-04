@@ -649,7 +649,9 @@ fn an_answer_on_the_engines_own_page_says_why_its_caller_refused_that_load() {
     error_page_for("http://elsewhere.test/");
     main_frame_loads(&engine, "http://fixture.test/next.html");
     wait_for("the hold is released", || holding.told().len() == 2);
-    assert_eq!(note_of_a_read(&browser, 5), None, "a document loaded");
+    // What the failed load had to say is said once.
+    let _ = note_of_a_read(&browser, 5);
+    assert_eq!(note_of_a_read(&browser, 6), None, "a document loaded");
 }
 
 /// Going back to an address that carries a filled value would send it again, wherever that

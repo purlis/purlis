@@ -246,8 +246,7 @@ fn a_site_the_browser_has_not_been_on_asks_and_goes_on_once_allowed() {
 }
 
 /// A link, a link the fill's site redirects, a script and the chat's navigate don't take it there:
-/// none began with a form. The page stays, so no history entry of the engine's own page holds what
-/// it tried to send, and the hold lives on.
+/// none began the form the field was filled in. The page stays, and the hold lives on.
 #[test]
 fn links_scripts_and_the_chats_navigate_stay_refused() {
     let moves: [(&str, Moved); 5] = [

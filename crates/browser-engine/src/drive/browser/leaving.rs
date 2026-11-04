@@ -256,7 +256,6 @@ impl Inner {
                 }
             }
             Leave::Failed(target) => {
-                self.say("that page did not load".to_owned());
                 self.replace(
                     &target,
                     &said_as_a_page("Page not loaded", "That page did not load."),
