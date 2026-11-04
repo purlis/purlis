@@ -42,6 +42,16 @@
 //! reference dealt before is void. A password field that went is all purlis can tell: it says
 //! so, and never that the person is signed in, since a page may ask for a second step. No
 //! sentence it answers carries a value.
+//!
+//! **A login is a preset of secret fill** (#5121, the person's ruling SF-7 on #5096): a fill of the
+//! user name, a fill of the password and a press of submit, under the same rules as any fill. Each
+//! value is kept out as an address or a form would spell it too. Only a one-line field that takes
+//! typing is ever chosen. From the moment a value may be in a page, the agent copies, cuts and drags
+//! nothing in this browser, for its life, and each filled field gives nothing to a copy, a cut or a
+//! drag, whoever makes it ([`GUARD_FIELD`]). The value still goes in by typing where the field has
+//! the focus, with the checks above, since a login's page listens for typing: a page that changes
+//! as it goes in ends the browser, which is stricter than a fill's refusal, and a login's hold is
+//! stricter too: the browser stays held to its sites for its life, not while the page lives.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -52,6 +62,7 @@ use super::super::kept::Kept;
 use super::super::keys::key_events;
 use super::super::tree::NodeKey;
 use super::Browser;
+use super::fill::{GUARD_FIELD, spellings};
 use super::takeover::Carrying;
 use crate::drive::{Answer, Content, Driver, Hold, Login, Refusal, lock};
 
@@ -62,9 +73,10 @@ pub const LOGIN_WAIT: Duration = Duration::from_secs(30);
 /// How often a login looks at its page again while it waits.
 const LOOK_AGAIN: Duration = Duration::from_millis(250);
 
-/// The script that finds the page's first shown password field: a constant.
+/// The script that finds the page's first shown password field that takes typing: a constant.
 pub(crate) const PASSWORD_FIELD: &str = r#"(() => {
-  const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
+  const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
+    && !e.disabled && !e.readOnly;
   for (const e of document.querySelectorAll('input[type="password"]')) if (shown(e)) return e;
   return null;
 })()"#;
@@ -78,9 +90,12 @@ pub(crate) const SAYS_IT_IS_A_NAME: &str = r#"(() => {
   return null;
 })()"#;
 
-/// The script that finds the page's first shown user-name field: a constant.
+/// The script that finds the page's first shown user-name field: a constant. Only a one-line
+/// field that takes typing counts (SF-5, #5121): a box named for the user is not one.
 pub(crate) const NAME_FIELD: &str = r#"(() => {
-  const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
+  const oneLine = ['text', 'email', 'tel', 'url', 'number'];
+  const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
+    && oneLine.includes(e.type) && !e.disabled && !e.readOnly;
   const named = ['input[autocomplete~="username"]', 'input[autocomplete~="email"]',
     'input[type="email"]', 'input[name*="user" i]', 'input[name*="login" i]',
     'input[name*="email" i]', 'input[id*="user" i]', 'input[id*="email" i]', 'input[type="text"]'];
@@ -227,11 +242,12 @@ impl Browser {
         let origin = login.origin.as_str();
         // What it fills is kept out before anything else, for the browser's life.
         let mut held = Kept::default();
-        let values: Vec<&str> = login
+        let values: Vec<zeroize::Zeroizing<String>> = login
             .user
             .iter()
             .map(|user| user.as_str())
             .chain(std::iter::once(login.password.as_str()))
+            .flat_map(spellings)
             .collect();
         held.run(&values);
         lock(&self.inner.state).keep_out_everywhere(&held);
@@ -290,8 +306,7 @@ impl Browser {
                     .unwrap_or_else(|| target.clone());
                 let mut answer = self.answer_now(&shown, Content::Nothing);
                 answer.note = Some(format!(
-                    "{origin} asks for no password: this browser opened from its kept logins, \
-                     and purlis filled nothing"
+                    "already logged in: {origin} asks for no password, so purlis filled nothing"
                 ));
                 return Ok(answer);
             }
@@ -328,6 +343,11 @@ impl Browser {
                 "purlis could not hold this browser to {origin} ({why}), so nothing was filled"
             ))
         })?;
+        // From the moment a value may be in a page, the agent copies, cuts and drags nothing in
+        // this browser (#5121), as after any fill.
+        self.inner
+            .copy_withheld
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         // Its holder is told once this page leaves the form's origin (#4995): back on the
         // login's page's, or anywhere else.
         if login.back_to.is_some() {
@@ -504,6 +524,18 @@ impl Browser {
             .ok_or(Refusal::NoPage)
     }
 
+    /// **Whether the page the browser shows asks to sign in now** (#5121): its own document shows
+    /// a password field, or a field that says it's for a user name. A page that can't be read is
+    /// taken to ask, so nobody is told they're logged in on the strength of a page nobody read.
+    /// Purlis's own read, so it's made on a page of the site the agent is kept off too (#5152):
+    /// what it answers is one word, and the refusal there says as much.
+    pub(super) fn asks_to_sign_in(&self) -> Result<Answer, Refusal> {
+        let target = self.target(None)?;
+        let asks = self.shows(&target, PASSWORD_FIELD)? != Some(false)
+            || self.shows(&target, SAYS_IT_IS_A_NAME)? != Some(false);
+        Ok(self.answer_now(&target, Content::AsksToSignIn(asks)))
+    }
+
     /// Whether `target`'s own document shows a password field now (#5152): a page of the site
     /// the browser signs in on that asks to sign in again. Not where it cannot be read.
     pub(super) fn shows_password_field(&self, target: &str) -> bool {
@@ -627,6 +659,24 @@ impl Browser {
         .map_err(|_| could_not())?;
         if !self.still_filling(target, origin, document, field, on) {
             return Err(self.ended_for_a_changed_page(origin));
+        }
+        // The field gives nothing to a copy, a cut or a drag from before the value is in it: where
+        // that can't be made so, the value doesn't go in.
+        let guarded = self
+            .gated(|| {
+                self.devtools().call(
+                    "Runtime.callFunctionOn",
+                    json!({
+                        "objectId": field.object,
+                        "functionDeclaration": GUARD_FIELD,
+                        "arguments": [{ "value": value }],
+                    }),
+                    on,
+                )
+            })?
+            .map_err(|_| could_not())?;
+        if guarded.get("exceptionDetails").is_some() {
+            return Err(could_not());
         }
         self.gated(|| {
             self.devtools()

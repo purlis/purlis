@@ -152,8 +152,9 @@ pub struct Login {
     /// The user name, where the page asks for one.
     pub user: Option<zeroize::Zeroizing<String>>,
     pub password: zeroize::Zeroizing<String>,
-    /// Whether the browser may be signed in already, opened from kept logins (#2021): then
-    /// nothing is filled where the page asks for no password.
+    /// Whether the browser may be signed in already, opened from kept logins (#2021) or having
+    /// tried this login before (#5121): then nothing is filled where the page asks for no
+    /// password.
     pub only_if_asked: bool,
     /// A chat chose this page and these keys (#4595): the user name goes only into a field that
     /// says it's one, or beside a password field.
@@ -374,6 +375,9 @@ pub enum Call {
     DescribeField {
         target: Ref,
     },
+    /// **Whether the page the browser shows asks to sign in now** (#5121): nothing is typed,
+    /// and nothing moves.
+    AsksToSignIn,
     /// Sends a page to `address`.
     Navigate {
         page: Option<PageId>,
@@ -476,6 +480,7 @@ impl Call {
             self,
             Call::Snapshot { .. }
                 | Call::DescribeField { .. }
+                | Call::AsksToSignIn
                 | Call::Find { .. }
                 | Call::WaitForText { .. }
                 | Call::Pages
@@ -516,6 +521,8 @@ pub enum Content {
     Seen(bool),
     /// The field a [`Call::DescribeField`] read (#5115).
     Field(FieldInfo),
+    /// What a [`Call::AsksToSignIn`] read (#5121).
+    AsksToSignIn(bool),
 }
 
 /// **A field a secret may go into, as the engine reads it** (#5115): never what it holds.

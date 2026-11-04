@@ -2761,6 +2761,7 @@ impl Browser {
                 self.find_login_form(&address)
             }
             Call::DescribeField { target } => self.describe_field(&target),
+            Call::AsksToSignIn => self.asks_to_sign_in(),
             Call::Navigate { page, address } => {
                 self.not_kept_off_address(&address)?;
                 let target = self.target(page.as_ref())?;

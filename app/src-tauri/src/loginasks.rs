@@ -16,8 +16,9 @@
 //!   is. Where it isn't what was typed, or a warning now applies, the notice is drawn again and
 //!   takes another press.
 //! - **Once and this chat write nothing** ([`Grants`]): they're held here, for that chat and its
-//!   persona, keep no sealed login, and go with the chat. Each fills in a new browser of its own,
-//!   so nothing the chat did in another browser is there when the password goes in.
+//!   persona, keep no sealed login, and go with the chat. Each fills in the browser the chat names
+//!   or uses (#5121, the person's ruling SF-7 on #5096, which ends the new browser of its own):
+//!   what the chat did there before doesn't matter, as the value is kept out of all it reads.
 //! - **Always writes the one line and allows it here**, only where the persona's list was already
 //!   seen ([`purlis_core::sandbox::persona::list_seen_in`]), so its Allow carries nothing nobody
 //!   was shown. `sandbox.proposed-changes = "off"` holds it, and the line is shown first.

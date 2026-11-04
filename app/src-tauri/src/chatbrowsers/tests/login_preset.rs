@@ -1,0 +1,396 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! A browser login as a preset of secret fill (#5121, the person's ruling SF-7 on #5096): which
+//! browser it goes into, when it's already logged in, and when a new browser opens, at the
+//! window's browser-call seam, with the engine stood in.
+
+use super::*;
+
+/// The call as the window makes it: a browser holding the login answers first, then the normal
+/// path, each with the same stand-in.
+fn called_with(
+    browsers: &ChatBrowsers,
+    hosted: &Arc<Hosted>,
+    browse: &BrowseAsk,
+    still_it: &dyn Fn(&crate::chatbrowsers::LoggedIn) -> bool,
+) -> Answer {
+    let driver: Arc<dyn Driver> = hosted.clone();
+    if let Some(answer) = browsers.already_logged_in(
+        Some(&driver),
+        Path::new("/p"),
+        browse,
+        None,
+        &|| reach(),
+        still_it,
+    ) {
+        return answer;
+    }
+    answered(browsers, hosted, browse).0
+}
+
+fn called(browsers: &ChatBrowsers, hosted: &Arc<Hosted>, browse: &BrowseAsk) -> Answer {
+    called_with(browsers, hosted, browse, &|_| true)
+}
+
+/// A chat allowed to browse, with `b1` open and used.
+fn with_a_used_browser() -> (ChatBrowsers, Arc<Hosted>) {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    answered(&browsers, &hosted, &ask(3, click()));
+    (browsers, hosted)
+}
+
+fn browser_and_note(answer: &Answer) -> (String, String) {
+    let Answer::Browsed { browser, browsed } = answer else {
+        panic!("{answer:?}");
+    };
+    (browser.clone(), browsed.note.clone().unwrap_or_default())
+}
+
+fn logged_into(hosted: &Hosted) -> Vec<String> {
+    hosted
+        .logins
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(program, _)| program.clone())
+        .collect()
+}
+
+fn started_browsers(hosted: &Hosted) -> usize {
+    hosted.kept.lock().unwrap().len()
+}
+
+#[test]
+fn a_second_login_with_the_same_login_opens_no_browser_and_answers_already_logged_in() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let (browser, note) = browser_and_note(&answer);
+    assert_eq!(browser, "b1");
+    assert!(note.contains("already logged in with shop-login"), "{note}");
+    assert!(note.contains("purlis filled nothing"), "{note}");
+    assert_eq!(logged_into(&hosted).len(), 1, "nothing is filled again");
+    assert_eq!(started_browsers(&hosted), 1, "no new browser");
+}
+
+#[test]
+fn a_login_whose_page_asks_to_sign_in_again_is_filled_again_in_the_same_browser() {
+    // #5152: a site whose session ended shows its form, and the chat is told to call again.
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(true);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let (browser, note) = browser_and_note(&answer);
+    assert_eq!(browser, "b1");
+    assert!(!note.contains("already logged in"), "{note}");
+    assert_eq!(logged_into(&hosted), ["program-1", "program-1"]);
+    assert_eq!(started_browsers(&hosted), 1, "no new browser");
+}
+
+#[test]
+fn a_host_too_old_to_say_whether_a_page_asks_has_the_login_go_as_it_always_did() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = None;
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert!(!browser_and_note(&answer).1.contains("already logged in"));
+    assert_eq!(logged_into(&hosted), ["program-1", "program-1"]);
+}
+
+#[test]
+fn a_login_that_did_not_go_through_is_not_taken_for_a_session() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.login_fails.lock().unwrap() = 1;
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert!(!browser_and_note(&answer).1.contains("already logged in"));
+    assert_eq!(logged_into(&hosted), ["program-1"], "it is tried again");
+}
+
+#[test]
+fn a_failed_login_again_ends_the_session_a_browser_was_taken_to_hold() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(true);
+    *hosted.login_fails.lock().unwrap() = 1;
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert!(!browser_and_note(&answer).1.contains("already logged in"));
+}
+
+#[test]
+fn a_login_no_longer_the_same_login_is_not_answered_already_logged_in() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+
+    let answer = called_with(&browsers, &hosted, &ask(3, log_in("shop-login")), &|_| {
+        false
+    });
+
+    assert!(!browser_and_note(&answer).1.contains("already logged in"));
+    assert_eq!(logged_into(&hosted).len(), 2);
+    assert!(
+        !hosted
+            .acts
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, _, act)| matches!(act, Act::AsksToSignIn)),
+        "no page is read for a login it isn't"
+    );
+}
+
+#[test]
+fn another_login_is_not_answered_by_the_session_of_the_first() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("other-login")));
+
+    assert!(!browser_and_note(&answer).1.contains("already logged in"));
+    assert_eq!(logged_into(&hosted).len(), 2);
+}
+
+#[test]
+fn a_login_with_no_kept_store_fills_the_current_browser() {
+    let (browsers, hosted) = with_a_used_browser();
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert_eq!(browser_and_note(&answer).0, "b1");
+    assert_eq!(logged_into(&hosted), ["program-1"]);
+    assert_eq!(started_browsers(&hosted), 1);
+}
+
+#[test]
+fn a_login_the_person_allowed_from_its_notice_fills_the_current_browser() {
+    // It opened a new browser every time before SF-7 (#5096).
+    let (browsers, hosted) = with_a_used_browser();
+    let driver: Arc<dyn Driver> = hosted.clone();
+    let granted = |name: &str| {
+        logins(name).map(|read| crate::chatbrowsers::LoginRead {
+            granted: true,
+            login: LogIn {
+                keep: None,
+                ..read.login
+            },
+            ..read
+        })
+    };
+
+    let (answer, _) = browsers.answer(
+        Some(&driver),
+        Path::new("/p"),
+        None,
+        &ask(3, log_in("shop-login")),
+        &|| reach(),
+        false,
+        &AsPersona::default,
+        &granted,
+        &no_fills,
+        &|| Err("no folder here".to_owned()),
+        1000,
+    );
+
+    assert_eq!(browser_and_note(&answer).0, "b1");
+    assert_eq!(logged_into(&hosted), ["program-1"]);
+    assert_eq!(started_browsers(&hosted), 1, "no browser of its own");
+}
+
+#[test]
+fn a_login_goes_into_the_browser_the_chat_names_though_it_uses_another() {
+    let (browsers, hosted) = with_a_used_browser();
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    let mut named = ask(3, log_in("shop-login"));
+    named.browser = Some("b1".into());
+
+    let answer = called(&browsers, &hosted, &named);
+
+    assert_eq!(browser_and_note(&answer).0, "b1");
+    assert_eq!(logged_into(&hosted), ["program-1"]);
+}
+
+#[test]
+fn a_named_browser_is_filled_though_another_holds_the_login() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    answered(&browsers, &hosted, &ask(3, click()));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+    let mut named = ask(3, log_in("shop-login"));
+    named.browser = Some("b2".into());
+
+    let answer = called(&browsers, &hosted, &named);
+
+    assert_eq!(browser_and_note(&answer).0, "b2");
+    assert_eq!(logged_into(&hosted), ["program-1", "program-2"]);
+}
+
+#[test]
+fn a_browser_of_the_chats_that_holds_the_login_answers_though_it_uses_another_now() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    answered(&browsers, &hosted, &ask(3, click()));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let (browser, note) = browser_and_note(&answer);
+    assert_eq!(browser, "b1");
+    assert!(note.contains("already logged in"), "{note}");
+    assert_eq!(
+        browsers.which(3, None).map(|(name, _)| name).as_deref(),
+        Some("b1"),
+        "the chat goes on in it"
+    );
+}
+
+#[test]
+fn a_browser_the_chat_just_asked_for_takes_the_login_though_another_holds_it() {
+    // browser_new, then browser_login, is how a chat keeps a login, and how it asks for a new one.
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert_eq!(browser_and_note(&answer).0, "b2");
+    assert_eq!(logged_into(&hosted), ["program-1", "program-2"]);
+}
+
+#[test]
+fn a_kept_login_opens_a_browser_only_to_keep_it_says_why_and_offers_to_close_the_old_one() {
+    let (browsers, hosted) = with_a_used_browser();
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("kept-login")));
+
+    let (browser, note) = browser_and_note(&answer);
+    assert_eq!(browser, "b2");
+    assert!(note.contains("kept for later reuse"), "{note}");
+    assert!(
+        note.contains("Browser b1 is still open: close it with browser_close"),
+        "{note}"
+    );
+    assert_eq!(logged_into(&hosted), ["program-2"]);
+    // And the person's view says so, once.
+    let moment = browsers.left_behind_moment(3, 1000).expect("said");
+    assert_eq!(moment.moment.browser, "b2");
+    assert!(moment.moment.did.contains("kept for later"), "{moment:?}");
+    assert!(moment.moment.did.contains("b1 is still open"), "{moment:?}");
+    assert!(browsers.left_behind_moment(3, 1001).is_none(), "once");
+}
+
+#[test]
+fn a_kept_login_with_no_browser_open_leaves_nothing_behind_to_offer() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("kept-login")));
+
+    let (browser, note) = browser_and_note(&answer);
+    assert_eq!(browser, "b1");
+    assert!(!note.contains("still open"), "{note}");
+    assert!(browsers.left_behind_moment(3, 1000).is_none());
+}
+
+#[test]
+fn a_kept_login_called_again_opens_no_copy_of_its_store() {
+    // It opened b2, then b3, from one store (#5096).
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("kept-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("kept-login")));
+
+    let (browser, note) = browser_and_note(&answer);
+    assert_eq!(browser, "b2");
+    assert!(note.contains("already logged in"), "{note}");
+    assert_eq!(started_browsers(&hosted), 2, "no third browser");
+}
+
+#[test]
+fn a_kept_login_whose_page_asks_again_goes_into_the_browser_holding_it() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("kept-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(true);
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("kept-login")));
+
+    assert_eq!(browser_and_note(&answer).0, "b2");
+    assert_eq!(logged_into(&hosted), ["program-2", "program-2"]);
+    assert_eq!(started_browsers(&hosted), 2, "no third browser");
+}
+
+#[test]
+fn a_chat_cannot_ask_for_the_read_of_whether_a_page_asks_to_sign_in() {
+    let (browsers, hosted) = with_a_used_browser();
+    let before = hosted.acts.lock().unwrap().len();
+
+    let (answer, _) = answered(
+        &browsers,
+        &hosted,
+        &ask(3, Browsing::Act(Act::AsksToSignIn)),
+    );
+
+    assert!(matches!(answer, Answer::No { .. }), "{answer:?}");
+    assert_eq!(hosted.acts.lock().unwrap().len(), before);
+}
+
+#[test]
+fn a_browser_the_person_has_taken_over_takes_no_login_and_says_so_before_any_read() {
+    // SF-10: said before a vault is read, so an Allow once isn't spent on it.
+    let (browsers, _hosted) = with_a_used_browser();
+    let (name, program) = browsers.which(3, None).expect("b1");
+    assert_eq!(browsers.person_has_it(&ask(3, log_in("shop-login"))), None);
+
+    browsers.driven(&program, true, 1000);
+
+    let why = browsers
+        .person_has_it(&ask(3, log_in("shop-login")))
+        .expect("refused");
+    assert!(why.contains(&format!("taken browser {name} over")), "{why}");
+    assert!(why.contains("nothing was filled"), "{why}");
+}
+
+#[test]
+fn a_chat_kept_off_is_not_told_it_is_logged_in() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+    browsers.keep_off(3);
+    let driver: Arc<dyn Driver> = hosted.clone();
+
+    let answer = browsers.already_logged_in(
+        Some(&driver),
+        Path::new("/p"),
+        &ask(3, log_in("shop-login")),
+        None,
+        &|| reach(),
+        &|_| true,
+    );
+
+    assert!(answer.is_none(), "{answer:?}");
+}

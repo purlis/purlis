@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use serde_json::json;
 
+use super::super::fill::GUARD_FIELD;
 use super::super::login::{
     CLEAR_FIELD, FIELD_HAS_FOCUS, FIELD_LENGTH, FOCUS_FIELD, NAME_FIELD, PASSWORD_FIELD,
     SAYS_IT_IS_A_NAME, origin_of,
@@ -87,6 +88,8 @@ enum Twist {
     /// Submitted, the form sends the browser back to the site's own page on another origin, as
     /// a site that signs in on another host does (#4995).
     GoesBack,
+    /// The field can't be given the stops that keep its value from a copy or a drag (#5121).
+    Unguarded,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -132,6 +135,14 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                     std::thread::sleep(Duration::from_millis(50));
                 }
                 Some(Ok(json!({})))
+            }
+            "Runtime.callFunctionOn"
+                if p["functionDeclaration"] == GUARD_FIELD && twist == Twist::Unguarded =>
+            {
+                Some(Err(crate::cdp::CallError::Engine {
+                    code: -32000,
+                    message: "Cannot find context with specified id".into(),
+                }))
             }
             "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_HAS_FOCUS => {
                 Some(if twist == Twist::Unread {
@@ -1002,4 +1013,82 @@ fn a_kept_login_whose_page_sends_it_to_its_form_late_is_filled_there() {
     late.join().unwrap();
     assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
     assert_eq!(inserted(&engine), vec![FILLED.to_owned()]);
+}
+
+/// #5121, SF-7: a login's field gives nothing to a copy, a cut or a drag from before its value
+/// goes in, as any fill's does.
+#[test]
+fn a_logins_field_is_guarded_before_its_value_goes_in() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let guards: Vec<_> = engine
+        .sent("Runtime.callFunctionOn")
+        .into_iter()
+        .filter(|sent| sent.params["functionDeclaration"] == GUARD_FIELD)
+        .collect();
+    assert_eq!(guards.len(), 1, "the one field filled");
+    assert_eq!(guards[0].params["arguments"][0]["value"], FILLED);
+    assert!(
+        guards[0].params["objectId"].as_str().is_some(),
+        "run on the field, an object of purlis's own world"
+    );
+}
+
+/// #5121: where the field can't be guarded, its value doesn't go in.
+#[test]
+fn a_field_that_cannot_be_guarded_is_not_filled() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::Unguarded);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing went in");
+}
+
+/// #5121: from a login on, the agent copies and drags nothing in that browser, as after a fill.
+#[test]
+fn after_a_login_the_agent_copies_nothing_in_that_browser() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let copied = browser.call(
+        &id(2),
+        Call::Press {
+            page: None,
+            keys: vec!["Control+c".to_owned()],
+        },
+    );
+    assert_eq!(copied.err(), Some(Refusal::CopyWithheld));
+}
+
+/// #5121: a login that never reached a fill leaves the agent's copies alone.
+#[test]
+fn a_login_of_a_page_that_asks_nothing_withholds_no_copy() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::AsksNothing);
+    let login = Login {
+        only_if_asked: true,
+        ..login_at(ORIGIN)
+    };
+    let ended = browser.log_in(&login, holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let note = ended.outcome.ok().and_then(|answer| answer.note);
+    assert!(
+        note.unwrap_or_default().contains("already logged in"),
+        "the note says so"
+    );
+    let copied = browser.call(
+        &id(2),
+        Call::Press {
+            page: None,
+            keys: vec!["Control+c".to_owned()],
+        },
+    );
+    assert_ne!(copied.err(), Some(Refusal::CopyWithheld));
 }

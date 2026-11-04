@@ -49,6 +49,12 @@ pub enum Act {
     DescribeField {
         target: String,
     },
+    /// **Whether the page the browser shows asks to sign in now** (1.73, #5121): whether its own
+    /// document shows a password field, or a field that says it's for a user name. Nothing is
+    /// typed, nothing moves, and no value is read for it. The answer's
+    /// [`Browsed::asks_to_sign_in`] says; one that can't be read says it does. No browser tool of
+    /// a chat's sends it.
+    AsksToSignIn,
     /// Sends a page to `address`.
     Navigate {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -193,6 +199,7 @@ impl Act {
                 | Act::Pages
                 | Act::Screenshot { .. }
                 | Act::Downloads
+                | Act::AsksToSignIn
         )
     }
 }
@@ -274,6 +281,9 @@ pub struct Browsed {
     /// The field [`Act::DescribeField`] read (1.72, #5115).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field: Option<FieldSaid>,
+    /// What [`Act::AsksToSignIn`] read (1.73, #5121).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asks_to_sign_in: Option<bool>,
 }
 
 /// **A field a secret may go into, as the engine reads it** (1.72, #5115): never what it holds.

@@ -730,6 +730,7 @@ pub fn call_of(act: Act) -> Result<drive::Call, String> {
         Act::FindLoginForm { address: to } => Call::FindLoginForm {
             address: address(&to)?,
         },
+        Act::AsksToSignIn => Call::AsksToSignIn,
         Act::DescribeField { target: on } => Call::DescribeField {
             target: Ref::new(on),
         },
@@ -871,6 +872,7 @@ pub fn browsed(answer: drive::Answer, most: usize) -> Browsed {
         drive::Content::Pages(pages) => out.pages = pages.into_iter().map(said).collect(),
         drive::Content::Seen(seen) => out.seen = Some(seen),
         drive::Content::Field(field) => out.field = Some(field_said(field)),
+        drive::Content::AsksToSignIn(asks) => out.asks_to_sign_in = Some(asks),
         drive::Content::Image(png) => match drive::fit::to_fit(&png, most) {
             Ok(fitted) => {
                 if fitted.halved > 0 {
@@ -1057,6 +1059,18 @@ pub fn performed<T>(
     within: Duration,
     run: impl FnOnce(&Arc<Holder>) -> T,
 ) -> Result<T, String> {
+    // A page holding a secret purlis filled holds the browser to that site alone (#5117), so a
+    // login that needs another would only wait on a page that can't load (#5121).
+    if let Some(held) = sites.bound().held_for_fill()
+        && at.all().iter().any(|site| *site != held)
+    {
+        return Err(format!(
+            "this browser reaches only {held} while a page in it holds a secret purlis filled \
+             there, so nothing was filled on {origin}: once that page loads another of its own \
+             pages or is closed, call browser_login again, or log in from a new browser with \
+             browser_new"
+        ));
+    }
     if let Some(held) = sites.bound().page()
         && held != at.page
     {
@@ -1348,6 +1362,9 @@ struct Keeping {
     /// The kept login of each login tried in it, `None` for one that keeps none (#2693): it
     /// keeps a login only where every one tried was that one.
     tried: Vec<Option<wire::KeptLogin>>,
+    /// The identity of each login tried in it (#5121): trying one again fills nothing where its
+    /// page asks for nothing.
+    tried_as: Vec<String>,
 }
 
 /// The store `kept` names.
@@ -1368,6 +1385,7 @@ impl Keeping {
             began: std::time::SystemTime::now(),
             fresh: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             tried: Vec::new(),
+            tried_as: Vec::new(),
         }
     }
 
@@ -1395,6 +1413,19 @@ impl Keeping {
         if !self.tried.contains(&keep) {
             self.tried.push(keep);
         }
+    }
+
+    /// A login of `identity` is tried in it (#5121): whether one was before, so the browser may
+    /// be signed in with it already.
+    fn tried_again(&mut self, identity: Option<&str>) -> bool {
+        let Some(identity) = identity else {
+            return false;
+        };
+        if self.tried_as.iter().any(|tried| tried == identity) {
+            return true;
+        }
+        self.tried_as.push(identity.to_owned());
+        false
     }
 
     /// This device's key for kept logins.
@@ -1888,12 +1919,14 @@ impl Screen for EngineScreen {
         let (mut login, at) = login_of(asked).map_err(NotActed::Refused)?;
         // Opened from this very kept login, a page that asks for nothing is signed in already.
         // Tried from here, whatever comes of it (#2693).
-        let opened_from = {
+        let (opened_from, again) = {
             let mut keeping = self.keeping.lock().unwrap_or_else(PoisonError::into_inner);
             keeping.tried(asked.keep.as_ref());
-            keeping.opened_from.clone()
+            let again = keeping.tried_again(asked.identity.as_deref());
+            (keeping.opened_from.clone(), again)
         };
-        login.only_if_asked = asked.keep.is_some() && opened_from == asked.keep;
+        // And tried in it before, it may be signed in with it already (#5121).
+        login.only_if_asked = again || (asked.keep.is_some() && opened_from == asked.keep);
         let Some(sites) = &self.sites else {
             return Err(NotActed::Refused(
                 "this browser was started with no reach, so purlis logs nothing in to it"

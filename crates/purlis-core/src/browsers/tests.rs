@@ -688,6 +688,56 @@ fn a_fill_holds_the_real_reach_proxy_to_its_site_until_its_page_is_gone() {
     assert_eq!(status(other_port), carried);
 }
 
+/// #5121: a login that needs another site than the one a page holding a filled secret holds the
+/// browser to runs nothing and says why, and one of that very site goes ahead.
+#[cfg(unix)]
+#[test]
+fn a_login_of_another_site_is_refused_while_a_page_holding_a_secret_holds_the_browser() {
+    use crate::sandbox::browser_reach::{Lane, LoginSites, ReachProxy, Site};
+
+    let reach = BrowserReach::default();
+    let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
+    let (listed, _) = reach_of(Some(&reach)).unwrap();
+    let proxy = std::sync::Arc::new(
+        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap(),
+    );
+    let held = Site::of("dash.example.test", 443);
+    proxy.hold_for_fill(&held).expect("held");
+    let run = |at: &LoginSites| {
+        let mut ran = false;
+        let done = super::performed(
+            &sites,
+            &proxy,
+            at,
+            "https://any.example.test",
+            Duration::from_secs(60),
+            |_| ran = true,
+        );
+        (done, ran)
+    };
+
+    let (done, ran) = run(&LoginSites::page(Site::of("shop.example.test", 443)));
+    assert!(!ran, "nothing ran");
+    let why = done.expect_err("refused");
+    assert!(why.contains("dash.example.test"), "{why}");
+    assert!(why.contains("nothing was filled"), "{why}");
+
+    let (done, ran) = run(&LoginSites::page(held));
+    assert!(done.is_ok() && ran, "that very site goes ahead");
+}
+
+/// #5121: trying a login again in a browser that tried it says so, by its identity alone.
+#[test]
+fn a_browser_knows_a_login_it_tried_before_by_its_identity() {
+    let home = tempfile::tempdir().unwrap();
+    let mut keeping = super::Keeping::new(home.path(), home.path());
+    assert!(!keeping.tried_again(None), "no identity: nothing to know");
+    assert!(!keeping.tried_again(None));
+    assert!(!keeping.tried_again(Some("one")));
+    assert!(keeping.tried_again(Some("one")));
+    assert!(!keeping.tried_again(Some("two")), "another login");
+}
+
 /// #5152, the person's ruling of 2026-11-04 (amending #4995's of 2026-11-03): a login whose form
 /// is on another site, performed through a real reach proxy and judge, reaches the form's site
 /// from its bind for the browser's life, and keeps the agent off it once its page is back on the

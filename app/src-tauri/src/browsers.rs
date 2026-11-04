@@ -357,6 +357,14 @@ mod hosted {
             if matches!(act, Act::DescribeField { .. }) {
                 fills_secrets(link.version()).map_err(Refused::Said)?;
             }
+            // A host before 1.73 can't say whether a page asks to sign in (#5121).
+            if matches!(act, Act::AsksToSignIn) && link.version() < session::KNOWS_ASKS_TO_SIGN_IN {
+                return Err(Refused::Said(
+                    "the purlis that runs this browser is too old to say whether a page asks to \
+                     sign in"
+                        .to_owned(),
+                ));
+            }
             let command = Command::Browse {
                 program: program.to_owned(),
                 call_id: call_id.to_owned(),
