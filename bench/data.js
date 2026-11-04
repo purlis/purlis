@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793777373749,
+  "lastUpdate": 1793780137449,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38598,6 +38598,48 @@ window.BENCHMARK_DATA = {
             "value": 102.13324750000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.839, 102.106, 102.133, 102.451, 102.723 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e27f12c43e2fcc3d405dcff84ec966de487e2606",
+          "message": "Secret ask: any chat may ask, Secret needs, policy lock and audit (#5072, #5076, #5078) (#5127)\n\n* Secret ask (#5072): any chat may ask — secret_ask tool, purlis secret ask, the session-start line\n\nA chat raises a Secret ask for any credential it lacks, declared or not, over a new\nhook-socket line (Ask::Secret) that the secret_ask MCP tool and `purlis secret ask` both\nsend through one function; neither reads a vault. The vault is the persona's unless the line\nnames one (authorised by the broker); a key the vault holds already answers filled at once,\nwith nothing asked, and only for a vault the persona may use. The ask carries the chat's\npurpose (one line, bounded) and whether the persona declares the key as a Secret need\n(`secret-need.<KEY>: <purpose>` in its definition, docs/plane-format.md). The person may\nstore the fill under another key or vault (answer_secret_ask's vault and key); the chat hears\nfilled with the final name, or declined, or pending at its harness's margin. Every chat the\napp starts is told, at its start, on every harness, to raise one and never ask for a secret\nin conversation; the purlis-secrets skill and the tool's description say the same words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HG24ZNWX08TWTRA1D7X15K\nPurlis-Persona: steward\n\n* Secret ask (#5076): a persona's Secret needs, offered as a proposed change after a first fill\n\nAn ask for a key the persona declares (secret-need.<KEY>) carries and shows the purpose its\ndefinition gives, quoted as the definition's, with no undeclared tag. After the person fills a\nkey the persona does not declare, the app holds a proposed change of purlis's own adding the\nneed (the chat's purpose, one line) to personas/<p>/persona.md; nothing is written until the\nperson applies it, and a second offer for the same file builds on the first's. purlis may now\npropose a persona's definition (proposable_by_purlis). A first fill into a vault the project\ndoes not have makes it on the keyring, tagged for the persona; a persona with `vault: none`\n(or no vault) is asked into a vault named after it, and the offered change sets its vault.\nNothing about a value, a link or a vault entry is written to the definition, memory or a prompt.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HG24ZNWX08TWTRA1D7X15K\nPurlis-Persona: steward\n\n* Secret ask (#5078): policy lock for undeclared keys, and a metadata-only audit\n\nPolicy's new `sandbox.undeclared-secret-asks: false` lock (sandbox::policy::Locks) refuses a\nSecret ask, from a chat's line or a broker miss, for a key the persona does not declare: the\nchat hears declined by policy and the person is never asked. Settings shows it under Secret\nasks as policy's, with who set it. Each step of an ask (raised, joined, filled, declined,\nrefused) is one event-log record, the audit's and telemetry's source: eventlog::secretasks, a\nclosed set of counts and closed words with no field for a value, a link's target, a vault or\nkey name or the purpose, so telemetry counts only. The chat's purpose is masked as report text\nis (dispatchrecord::masked) and bounded wherever it is shown or kept.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HG24ZNWX08TWTRA1D7X15K\nPurlis-Persona: steward\n\n* Secret ask (#5072, #5076, #5078): review — needs read as committed, a fill only into the persona's vault and never over a value\n\nFrom the two-axis review of this branch:\n- A Secret need is read from the persona's definition as committed at HEAD (its extends chain\n  too), never from the file on disk, which a chat can write: an uncommitted line no longer\n  lifts policy's lock on undeclared keys or shows the chat's words as the persona's.\n- A fill goes only into a vault the persona may use (the broker's authorise) or one the fill\n  makes, and never over a key the vault already holds, whatever vault or name the chat or the\n  person chose; refused with what to do, the ask left open.\n- One sentence for a key name no ask takes; the unused policy refusal sentence removed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HG24ZNWX08TWTRA1D7X15K\nPurlis-Persona: steward\n\n* Secret ask (#5072): the tool lists and the read-only test name secret_ask; no deferral wording\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HG24ZNWX08TWTRA1D7X15K\nPurlis-Persona: steward\n\n* Secret ask (#5072): asks.ts as Prettier writes it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HG24ZNWX08TWTRA1D7X15K\nPurlis-Persona: steward\n\n* Secret ask (#5072): secret_ask runs without a harness prompt, as ruled 2026-11-04\n\nThe operator ruled secret_ask into the chat's own-scope tools beside\nask_operator (#3829): it reads no vault and returns no value, and the\nperson answers it in the window, so a harness prompt would ask twice.\nADR 0064 gains an amendment; purlis secret ask through the shell still asks.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HG24ZNWX08TWTRA1D7X15K\nPurlis-Persona: steward\n\n* Secret ask (#5072): ADR 0064 amended for the secret_ask ruling of 2026-11-04\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HG24ZNWX08TWTRA1D7X15K\nPurlis-Persona: steward\n\n* Secret ask: rebased onto #5124 (#5074), a start's ask carries the chat as optional\n\nMain's #5124 lets a browser login's or a profile's credential raise the\nsame Secret ask, and lets a chat's start wait on one with no chat yet.\nIts two reads take this branch's Need fields (declared as the persona\ndeclares the key, as a broker miss does), read_asking refuses a policy\nrefusal as it does a decline, and the audit's chat is optional through\nTelling, Recorder::secret_ask and Entry::SecretAsk, so a start's ask is\nrecorded under no chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6HG24ZNWX08TWTRA1D7X15K\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T07:42:33Z",
+          "tree_id": "3d538680eeb0bb422ce497e72da83102f7d8b06b",
+          "url": "https://github.com/purlis/purlis/commit/e27f12c43e2fcc3d405dcff84ec966de487e2606"
+        },
+        "date": 1793780132705,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.685432,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.665, 0.682, 0.685, 0.687, 0.715 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.574141,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.437, 16.571, 16.574, 16.685, 16.686 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.1735695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.967, 102.340, 103.174, 103.436, 103.547 ms"
           }
         ]
       }
