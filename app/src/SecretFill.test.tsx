@@ -12,7 +12,14 @@ import { selectNamed } from "./ui/select/select.testkit";
 
 afterEach(cleanup);
 
-const secret = { persona: "devops", vault: "team", key: "KUBECONFIG", tool: null, waiting: 1 };
+const secret = {
+  persona: "devops",
+  vault: "team",
+  key: "KUBECONFIG",
+  tool: null,
+  waiting: 1,
+  declared: true,
+};
 
 const KEPT: VaultEntries[] = [
   { vault: "own", keys: ["STRIPE"] },
