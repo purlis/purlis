@@ -5,4 +5,5 @@
   instead of asking you to paste one. The ask shows the chat's purpose in its own words, says
   when the persona does not declare the key, and goes to the persona's vault unless the chat
   names another. A key the vault holds already answers at once. The chat hears only filled
-  (under the name you stored it as) or declined, never the value.
+  (under the name you stored it as) or declined, never the value. The tool doesn't stop on
+  Claude Code's permission prompt first, since you answer the ask in the window.

@@ -1124,6 +1124,7 @@ fn the_tools_that_write_only_the_chat_s_own_scope_are_named_and_never_among_the_
             "ask_operator",
             "worktree_update",
             "worktree_remove",
+            "secret_ask",
         ]
     );
     for name in OWN_SCOPE_TOOLS {

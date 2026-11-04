@@ -228,7 +228,7 @@ pub const PRE_ALLOWED: [&str; 14] = [
 /// Apart from [`PRE_ALLOWED`] on purpose: a grade's chat is served the reads alone (SK-16), and
 /// is handed none of these. Named one by one, so a tool added later is asked about until it is
 /// ruled in here; an operator's or a project's `ask` or `deny` for any of them still wins.
-pub const OWN_SCOPE_TOOLS: [&str; 9] = [
+pub const OWN_SCOPE_TOOLS: [&str; 10] = [
     "todo_add",
     "todo_done",
     "memory_add",
@@ -240,6 +240,10 @@ pub const OWN_SCOPE_TOOLS: [&str; 9] = [
     WORKTREE_UPDATE,
     // The removal the app makes for the chat of its own finished branch folder (#3879).
     WORKTREE_REMOVE,
+    // A Secret ask (#5072, the operator's ruling of 2026-11-04, under #3829): it reads no
+    // vault and returns no value, and the person answers it in the window, so a harness
+    // prompt in front of it would ask twice, as before `ask_operator`.
+    SECRET_ASK,
 ];
 
 /// The variables the server reads to find the chat's place, as a `charter` command in the chat

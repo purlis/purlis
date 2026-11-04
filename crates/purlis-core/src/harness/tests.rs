@@ -622,6 +622,8 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "mcp__purlis__ask_operator",
             "mcp__purlis__worktree_update",
             "mcp__purlis__worktree_remove",
+            // And a Secret ask (#5072, ruled 2026-11-04).
+            "mcp__purlis__secret_ask",
             // And the browser tools, on the chat's browser Ask (#2245).
             "mcp__purlis__browser_open",
             "mcp__purlis__browser_navigate",
@@ -938,6 +940,8 @@ fn every_charter_tool_a_claude_code_chat_runs_without_asking_is_ruled_in_by_name
         "workspace_section",
         "workspace_vision",
         "ask_operator",
+        // And a Secret ask (#5072, ruled 2026-11-04): the person answers it in the window.
+        "secret_ask",
     ];
     let others: Vec<&str> = crate::chattools::TOOLS
         .iter()
