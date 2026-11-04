@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793748875900,
+  "lastUpdate": 1793751685427,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38178,6 +38178,48 @@ window.BENCHMARK_DATA = {
             "value": 101.38222350000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.535, 100.591, 101.382, 101.481, 102.327 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fbb8dbd144d8babe05df3e42030dd2083c7752f0",
+          "message": "A pane showing another workspace's chat wears that workspace's badge (#4982) (#5098)\n\n* A pane's chat filed in another workspace than its tab's: the model (#4982)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCD3T8C7EJVAMFZS765BTA\nPurlis-Persona: steward\n\n* A pane showing another workspace's chat wears that workspace's badge (#4982)\n\nThe pane head's \"harness · workspace\" names a chat filed in another workspace than its tab's\nwith a badge in that workspace's colour (plain for one with none), read as \"filed in <it>\",\nand dropped with that part in a narrow pane.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCD3T8C7EJVAMFZS765BTA\nPurlis-Persona: steward\n\n* Review: one answer names and colours the badge, the drop order is checked (#4982)\n\nThe badge's name comes with its colour from filedIn's answer, not from the chat's list\nentry; the theme is followed through PersonaMark's followTheme; the component is\nElsewhereBadge. The narrow test checks the parts dropped after harness · workspace are\nstill there, and the model's test pins a tab filed by its first pane.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HCD3T8C7EJVAMFZS765BTA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-03T23:15:46Z",
+          "tree_id": "1b9bc566a646e8d835c68ba0f97c9a049b9c7264",
+          "url": "https://github.com/purlis/purlis/commit/fbb8dbd144d8babe05df3e42030dd2083c7752f0"
+        },
+        "date": 1793751680200,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6720349999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.659, 0.665, 0.672, 0.680, 0.682 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5512875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.330, 16.542, 16.551, 16.557, 16.663 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.625539,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.047, 101.191, 101.626, 101.708, 102.007 ms"
           }
         ]
       }
