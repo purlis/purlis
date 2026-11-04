@@ -21,12 +21,12 @@ export async function pickAndStart(): Promise<void> {
   let pressing = "";
   await browser.waitUntil(
     async () => {
-      for (const words of ["Approve and start", "Start chat"])
-        if (await browser.execute(aDialogOffers, "dialog", PICKER, words, false)) {
-          pressing = words;
-          return true;
-        }
-      return false;
+      // Not while the rows' details are read (#4736): until they arrive the button says Start
+      // chat even for a profile that asks for its approval, and a press then shows the approval
+      // instead of going, so it is chosen once the picker knows which it is. In one look, so the
+      // dialog cannot be drawn between "is it checking?" and "which button?" (#4979).
+      pressing = (await browser.execute(whatThePickerOffers, PICKER)) ?? "";
+      return pressing !== "";
     },
     { timeout: 20_000, timeoutMsg: "the picker never offered Start" },
   );
@@ -38,6 +38,43 @@ export async function pickAndStart(): Promise<void> {
 
 /** The picker's title (`StartChat`). */
 const PICKER = "Start a chat";
+
+/**
+ * The words to press in a shown dialog saying `text`, Approve and start or Start chat, or `null`
+ * while there is none to press: no such dialog, or one still reading its rows' details, which it
+ * marks `aria-busy` (#4736). **One look, run in the page**, as {@link aDialogOffers} is: asked in
+ * two calls, "is it checking?" and "which button?", the picker could be drawn between them, and
+ * its Start chat was pressed before it knew whether the profile asks for its approval (#4979).
+ */
+export function whatThePickerOffers(text: string): string | null {
+  for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+    if (!(dialog.textContent ?? "").includes(text)) continue;
+    if (dialog.querySelector('[aria-busy="true"]') !== null) return null;
+    const seen = dialog as Element & { checkVisibility?: (options?: object) => boolean };
+    if (
+      typeof seen.checkVisibility === "function" &&
+      !seen.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+    )
+      continue;
+    const said = [...dialog.querySelectorAll("button")].map((one) =>
+      (one.textContent ?? "").trim(),
+    );
+    for (const words of ["Approve and start", "Start chat"]) if (said.includes(words)) return words;
+  }
+  return null;
+}
+
+/**
+ * Whether a dialog saying `text` is still reading its rows' details (#4736): it marks them
+ * `aria-busy` until they arrive. **Run in the page**, as {@link aDialogOffers} is.
+ */
+export function thePickerIsChecking(text: string): boolean {
+  return [...document.querySelectorAll('[role="dialog"]')].some(
+    (dialog) =>
+      (dialog.textContent ?? "").includes(text) &&
+      dialog.querySelector('[aria-busy="true"]') !== null,
+  );
+}
 
 /**
  * Whether the page shows a `role` dialog whose text holds `text` and which offers a button
@@ -242,7 +279,8 @@ async function openThePalette(): Promise<void> {
  * Ends every chat of the project in front, on a strip or in no pane at all: each one's End…
  * (#4753), the one row that ends a chat, since a close ends nothing (#4756). Run from the
  * palette, which lists an End… for every chat, one at a time, and bounded so that an End which
- * stops taking is a failure and not a hang.
+ * stops taking is a failure and not a hang. Then the panes End… left on the ended band are
+ * cleared (#5019).
  */
 export async function endEveryChat(most = 200): Promise<void> {
   for (let pressed = 0; pressed < most; pressed++) {
@@ -258,11 +296,56 @@ export async function endEveryChat(most = 200): Promise<void> {
     if (row === null) {
       await browser.keys(["Escape"]);
       await $(PALETTE).waitForDisplayed({ reverse: true, timeout: 10_000 });
+      await clearEndedPanes(undefined, most);
       return;
     }
     await answerTheAsk("");
   }
   throw new Error(`${most} presses did not end every chat`);
+}
+
+/** **An ended chat's band** (#4756, #5019), whichever chat's: the pane Notice its cause names. */
+export const ENDED_BAND = '[data-cause^="chat-ended:"]';
+
+/**
+ * **Clears the panes End… left on the ended band** (#5019): each ended chat's pane stays, its
+ * last screen under the band, until Clear pane takes it away, as a person does. Every tab of the
+ * strip is looked at in turn, since a band is drawn only in the tab in front, until a whole pass
+ * finds none: chat `session`'s alone where one is named, and every one where none is. Bounded,
+ * so a Clear pane that stops taking is a failure and not a hang.
+ */
+export async function clearEndedPanes(session?: number, most = 200): Promise<void> {
+  const cause = session === undefined ? ENDED_BAND : `[data-cause="chat-ended:${session}"]`;
+  /** Presses Clear pane, by its name, on a band drawn now; whether there was one. */
+  const clearedOne = async () => {
+    const band = await $(cause);
+    if (!(await band.isExisting())) return false;
+    const clear = await band.$("aria/Clear pane");
+    if (!(await clear.isExisting())) return false;
+    await clear.click();
+    return true;
+  };
+  let cleared = 0;
+  for (let pass = 0; pass < most; pass++) {
+    let found = false;
+    const tabs = await browser.execute(
+      () => document.querySelectorAll('[data-strip="Tabs"] [role="tab"]').length,
+    );
+    for (let at = 0; at <= tabs; at++) {
+      if (await clearedOne()) {
+        found = true;
+        if (++cleared >= most) throw new Error(`${most} presses did not clear every ended pane`);
+        await browser.pause(100);
+        break;
+      }
+      if (at === tabs) break;
+      await browser.execute((index: number) => {
+        document.querySelectorAll<HTMLElement>('[data-strip="Tabs"] [role="tab"]')[index]?.click();
+      }, at);
+      await browser.pause(100);
+    }
+    if (!found) return;
+  }
 }
 
 /**

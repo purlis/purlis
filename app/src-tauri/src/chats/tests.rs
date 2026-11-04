@@ -2558,6 +2558,70 @@ fn a_restart_keeps_the_conversation_and_compiles_the_sandbox_the_project_has_now
     );
 }
 
+/// **Resume on the band of a chat the person ended** (#5019, spec #4750 story 62): End… takes
+/// the chat off the board, and its band's Resume starts it again on its conversation, the same
+/// chat under its id in a new run, as Restart does for one still open.
+#[test]
+fn a_chat_the_person_ended_resumes_on_its_conversation_once() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    let id = chats.record().chats[0].identity.id.clone();
+    chats.close(session).expect("End… ends it");
+    assert!(chats.record().chats.is_empty(), "it is off the board");
+
+    let started = chats.resume_ended(session, SIZE).expect("resumes");
+
+    assert_ne!(started, session, "a new run, under a new number");
+    let opening = host.openings().pop().expect("opened");
+    assert!(
+        opening
+            .args
+            .windows(2)
+            .any(|pair| pair[0] == "--resume" && pair[1] == ID),
+        "{:?}",
+        opening.args
+    );
+    let record = chats.record();
+    assert_eq!(record.chats.len(), 1);
+    assert_eq!(record.chats[0].identity.id, id, "the same chat");
+    // A second press finds nothing left to resume: it is running again.
+    let twice = chats.resume_ended(session, SIZE).unwrap_err();
+    assert!(twice.contains("nothing to resume"), "{twice}");
+    assert_eq!(chats.record().chats.len(), 1, "nothing more started");
+}
+
+/// Resume on an ended band is for a chat the person ended and that has a conversation (#5019):
+/// one still open is restarted instead, one purlis never ended has nothing to resume, and one
+/// with no conversation says so. Each is refused, and nothing starts.
+#[test]
+fn a_chat_still_open_never_ended_or_with_no_conversation_is_not_resumed_and_says_why() {
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let open = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+
+    let running = chats.resume_ended(open, SIZE).unwrap_err();
+    assert!(running.contains("still open"), "{running}");
+    let never = chats.resume_ended(open + 100, SIZE).unwrap_err();
+    assert!(never.contains("nothing to resume"), "{never}");
+
+    let fresh = chats
+        .start(&a_chat_in_with(plane.path(), None), SIZE)
+        .expect("starts");
+    // A Claude Code chat is given its conversation's id as it starts: as the restart test of a
+    // chat with no conversation does, the stand-in is made one that never recorded any.
+    lock(&chats.open).get_mut(&fresh).expect("open").chat.resume = None;
+    chats.close(fresh).expect("ends");
+    let none = chats.resume_ended(fresh, SIZE).unwrap_err();
+    assert!(none.contains("no conversation to resume"), "{none}");
+    assert_eq!(chats.record().chats.len(), 1, "nothing started");
+}
+
 #[test]
 fn a_changed_sandbox_leaves_running_chats_on_the_older_one_and_a_rewrite_alone_does_not() {
     let plane = a_sandboxed_plane();

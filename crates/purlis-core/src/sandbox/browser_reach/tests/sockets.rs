@@ -390,15 +390,16 @@ fn echoes(open: &mut TcpStream) -> bool {
     open.read_exact(&mut back).is_ok() && &back == b"ping"
 }
 
-/// #4995, the person's ruling of 2026-11-03: a login whose form is on another site reaches it
-/// while it signs in. Once the sign-in is over, the tunnel to the form's site is ended and a new
-/// one refused, while the page's site goes on, its tunnel open before included.
+/// #5152, the person's ruling of 2026-11-04: a login whose form is on another site keeps
+/// reaching it once its sign-in is over, the page's own redirects and frames there included.
+/// The tunnels open before go on, a new one is carried, and every other site is still refused.
 #[test]
-fn a_sign_in_that_is_over_ends_the_form_sites_tunnels_and_keeps_the_pages() {
+fn a_sign_in_that_is_over_keeps_the_form_sites_tunnels_and_refuses_any_other_site() {
     let (form_site, form_port) = a_server();
     let (page_site, page_port) = a_server();
+    let (_other_site, other_port) = a_server();
     let (form_echo, page_echo) = (echoing(form_site), echoing(page_site));
-    let proxy = a_bound_proxy(&[form_port, page_port], Bound::default());
+    let proxy = a_bound_proxy(&[form_port, page_port, other_port], Bound::default());
     let sign_in = proxy
         .bind(&LoginSites {
             page: Site::of("127.0.0.1", page_port),
@@ -422,13 +423,83 @@ fn a_sign_in_that_is_over_ends_the_form_sites_tunnels_and_keeps_the_pages() {
     assert!(proxy.sign_in_over(sign_in));
     assert!(!proxy.sign_in_over(sign_in), "over once");
 
-    assert!(!echoes(&mut form), "the form's tunnel outlived its sign-in");
+    assert!(echoes(&mut form), "the form's tunnel goes on");
     assert!(echoes(&mut page), "the page's tunnel goes on");
     assert_eq!(
         status(&mut to(&proxy), &connect(form_port)),
+        "HTTP/1.1 200 Connection established",
+        "a new tunnel to the form's site is carried"
+    );
+    assert_eq!(
+        status(&mut to(&proxy), &connect(other_port)),
         "HTTP/1.1 403 Forbidden"
     );
     drop((form, page));
     form_echo.join().expect("the form's site");
     page_echo.join().expect("the page's site");
+}
+
+/// #5117, the person's ruling SF-3: once purlis is about to fill a secret, the browser reaches
+/// that secret's site alone while the page holding it lives. A tunnel to another site open before
+/// is ended and a new one refused, in words that say why; the secret's site goes on. Released,
+/// the browser reaches as before.
+#[test]
+fn a_filled_secret_holds_the_browser_to_its_site_until_its_page_is_gone() {
+    let (held_site, held_port) = a_server();
+    let (other_site, other_port) = a_server();
+    let held_echo = echoing(held_site);
+    // The other site echoes its first client until it goes, then takes the next.
+    let other_echo = std::thread::spawn(move || {
+        let (mut stream, _) = other_site.accept().expect("the proxy's connection");
+        let mut buf = [0u8; 64];
+        while let Ok(n @ 1..) = stream.read(&mut buf) {
+            if stream.write_all(&buf[..n]).is_err() {
+                break;
+            }
+        }
+        other_site
+    });
+    let proxy = a_bound_proxy(&[held_port, other_port], Bound::default());
+    let connect = |port: u16| format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n");
+    let mut held = to(&proxy);
+    assert_eq!(
+        status(&mut held, &connect(held_port)),
+        "HTTP/1.1 200 Connection established"
+    );
+    let mut other = to(&proxy);
+    assert_eq!(
+        status(&mut other, &connect(other_port)),
+        "HTTP/1.1 200 Connection established"
+    );
+    assert!(echoes(&mut held) && echoes(&mut other));
+
+    let number = proxy
+        .hold_for_fill(&Site::of("127.0.0.1", held_port))
+        .expect("held");
+
+    assert!(
+        !echoes(&mut other),
+        "the other site's tunnel outlived the hold"
+    );
+    assert!(echoes(&mut held), "the secret's site goes on");
+    let other_site = other_echo.join().expect("the other site");
+    let mut refused = to(&proxy);
+    refused
+        .write_all(connect(other_port).as_bytes())
+        .expect("sent");
+    let mut said = String::new();
+    let _ = refused.read_to_string(&mut said);
+    assert!(said.starts_with("HTTP/1.1 403 Forbidden"), "{said}");
+    assert!(said.contains("holds a secret purlis filled"), "{said}");
+    assert!(nobody_connected(&other_site));
+
+    assert!(proxy.fill_released(number));
+    assert!(!proxy.fill_released(number), "released once");
+    assert_eq!(
+        status(&mut to(&proxy), &connect(other_port)),
+        "HTTP/1.1 200 Connection established",
+        "the browser reaches as before"
+    );
+    drop((held, other, other_site));
+    held_echo.join().expect("the secret's site");
 }

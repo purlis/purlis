@@ -21,7 +21,9 @@ import { cardOf, theCard } from "./chatCard.testkit";
 import type { State } from "./chatState";
 import { forgetThisLaunch } from "./regions";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
-import { theFrameNow } from "./frame.testkit";
+import { heard } from "./frame.testkit";
+import { aBatchOf } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * **The Chats list at fifty chats, against the whole window** (#1499, V100-47 to V100-50): the
@@ -52,19 +54,6 @@ vi.mock("./SessionPane", () => ({
     <div data-testid="pane">session {session}</div>
   ),
 }));
-
-declare global {
-  interface Window {
-    __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
-  }
-}
-
-/** An event from the core, and the frame the window draws it in: the chat stores tell their
- *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
-function heard(handler: number, message: unknown) {
-  window.__TAURI_INTERNALS__.runCallback(handler, message);
-  theFrameNow();
-}
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
@@ -157,6 +146,8 @@ type Asked = { cmd: string; args: Record<string, unknown> };
 function core(open: Filed[], ended: FinishedTask[] = []) {
   const asked: Asked[] = [];
   const listeners = new Map<string, number>();
+  /** Every listener for the chat events: each chat store, and the asks, listen for them. */
+  const batches: number[] = [];
   let sequence = 0;
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
@@ -164,6 +155,7 @@ function core(open: Filed[], ended: FinishedTask[] = []) {
     if (cmd === "plugin:event|listen") {
       const { event, handler } = args as { event: string; handler: number };
       listeners.set(event, handler);
+      if (event === CHAT_EVENTS) batches.push(handler);
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
@@ -254,8 +246,8 @@ function core(open: Filed[], ended: FinishedTask[] = []) {
     },
     /** The core says chat `session` moved to `state`, with `queue` asking for the person. */
     move: (session: number, state: State, queue: number[] = [], more: Partial<Moved> = {}) => {
-      const handler = listeners.get("chat-moved");
-      if (handler === undefined) throw new Error("the window is not listening for moves");
+      const handlers = batches;
+      if (handlers.length === 0) throw new Error("the window is not listening for moves");
       sequence += 1;
       const moved: Moved = {
         plane: PLANE,
@@ -273,11 +265,8 @@ function core(open: Filed[], ended: FinishedTask[] = []) {
         ...more,
       };
       act(() => {
-        heard(handler, {
-          event: "chat-moved",
-          id: 1,
-          payload: moved,
-        });
+        for (const handler of handlers)
+          heard(handler, { event: CHAT_EVENTS, id: 1, payload: aBatchOf("moved", moved) });
       });
     },
   };

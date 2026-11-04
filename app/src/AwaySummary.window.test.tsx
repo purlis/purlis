@@ -28,7 +28,8 @@ import type { State } from "./chatState";
 import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
-import { theFrameNow } from "./frame.testkit";
+import { heard } from "./frame.testkit";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * **While you were away: one summary in place of a pile of Notices** (#1514, V100-65), against
@@ -47,19 +48,6 @@ vi.mock("./SessionPane", () => ({
     </div>
   ),
 }));
-
-declare global {
-  interface Window {
-    __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
-  }
-}
-
-/** An event from the core, and the frame the window draws it in: the chat stores tell their
- *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
-function heard(handler: number, message: unknown) {
-  window.__TAURI_INTERNALS__.runCallback(handler, message);
-  theFrameNow();
-}
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
@@ -237,6 +225,7 @@ function core(open: OpenChat[], rows: FinishedTask[] = [], other?: Project) {
     return null;
   });
   const send = async (event: string, payload: unknown) => {
+    [event, payload] = onTheWire(event, payload);
     const handlers = everyListener.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
     await act(async () => {

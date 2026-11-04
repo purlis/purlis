@@ -174,7 +174,8 @@ function core(
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "open_session") return ++opened;
-    if (cmd === "start_options") return options;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return options;
     if (cmd === "start_chat") return { session: ++opened };
     if (cmd === "harness_setup_found") return found();
     return null;
@@ -678,14 +679,15 @@ describe("App", () => {
     expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
-  it("ends a chat only by End…, which ends its program and takes its pane (#4753)", async () => {
+  it("ends a chat only by End…, which ends its program and leaves its pane on the ended band (#4753, #5019)", async () => {
     const { asked } = core();
     render(<App />);
     await openAChat();
 
     await endChat("steward 1");
 
-    expect(screen.queryAllByTestId("pane")).toEqual([]);
+    expect(await screen.findByRole("status", { name: /ended/i })).toBeInTheDocument();
+    expect(panes()).toEqual(["session 1"]);
     // The plane travels with the session, because a session number alone names a chat in
     // every plane the process holds.
     expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
@@ -791,7 +793,8 @@ describe("App", () => {
     await userEvent.keyboard("{Enter}");
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(screen.queryAllByTestId("pane")).toEqual([]);
+    // Its pane stays, under the ended band (#5019).
+    expect(await screen.findByRole("status", { name: /ended/i })).toBeInTheDocument();
     expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
       { plane: "/home/dev/plane", session: 1 },
     ]);
@@ -828,7 +831,8 @@ describe("App", () => {
       if (cmd === "opened_chats") return [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       if (cmd !== "start_chat") return null;
       if (++opened === 1) return { session: 1 };
       await new Promise<void>((starts) => (letTheSecondSessionStart = starts));
@@ -843,14 +847,14 @@ describe("App", () => {
     // `×` the only way there is — by leaving the picker first. Escape does not call the start
     // back; it is already in flight, which is exactly the race this test is about.
     await userEvent.keyboard("{Escape}");
-    await endChat("steward 1");
+    // The tab goes by its close, which ends nothing (#4756). End… would leave the chat's pane on
+    // the ended band, and the tab with it (#5019).
+    await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
     letTheSecondSessionStart();
 
     await waitFor(() => expect(opened).toBe(2));
-    expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
-      { plane: "/home/dev/plane", session: 1 },
-    ]);
-    expect(screen.queryAllByTestId("pane")).toEqual([]);
+    // Neither chat is ended: the one the split started goes on in the sidebar.
+    expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
   it("says why a chat would not start, in the picker, and opens no tab", async () => {
@@ -866,7 +870,8 @@ describe("App", () => {
       if (cmd === "opened_chats") return [];
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       // The panels ask the core too, and this test is about the picker: a refusal from them
       // is a second alert, which is not the one being asserted on.
       if (cmd === "workspace_panels" || cmd === "workspace_repos") return null;

@@ -13,6 +13,8 @@ import type { LaidOut, Moved, OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
 import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 import { measuring, type Room } from "./stripRoom.testkit";
+import { aBatchOf } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * The chat strip when it holds more than it has room for (ADR 0039, as amended).
@@ -73,11 +75,14 @@ function core(
   laid: LaidOut | null = null,
 ): { move: (moved: Moved) => void; ended: number[] } {
   const listeners = new Map<string, number>();
+  /** Every listener for the chat events: each chat store, and the asks, listen for them. */
+  const batches: number[] = [];
   const ended: number[] = [];
   mockIPC((cmd, args) => {
     if (cmd === "plugin:event|listen") {
       const { event, handler } = args as { event: string; handler: number };
       listeners.set(event, handler);
+      if (event === CHAT_EVENTS) batches.push(handler);
       return 1;
     }
     if (cmd === "plane_at_launch")
@@ -95,13 +100,13 @@ function core(
   return {
     ended,
     move: (moved: Moved) => {
-      const handler = listeners.get("chat-moved");
-      if (handler === undefined) throw new Error("the window is not listening for moves");
-      window.__TAURI_INTERNALS__.runCallback(handler, {
-        event: "chat-moved",
-        id: 1,
-        payload: moved,
-      });
+      if (batches.length === 0) throw new Error("the window is not listening for moves");
+      for (const handler of batches)
+        window.__TAURI_INTERNALS__.runCallback(handler, {
+          event: CHAT_EVENTS,
+          id: 1,
+          payload: aBatchOf("moved", moved),
+        });
     },
   };
 }

@@ -32,6 +32,7 @@ import { TaskPromptNotice } from "./TaskPromptNotice";
 import { SkillsChangedNotice } from "./SkillsChangedNotice";
 import { onItsPane } from "./inboxRules";
 import type { Shown } from "./bindings";
+import { SecretFillNotice } from "./SecretFillNotice";
 import { type HandedFrom } from "./handedFrom";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { askSettingsLink } from "./settings/links";
@@ -380,6 +381,8 @@ export function ChatNotices({
       <ProposedChangeNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A browser login this chat suggested (#4595): only your press fills it. */}
       <BrowserLoginNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
+      {/* A secret this chat asks purlis to fill (#5115): only your press fills it. */}
+      <SecretFillNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A skill this chat drafted (#2772): ready in the Skill studio, which alone asks for it. */}
       <DraftReadyNotice plane={plane} session={session} />
       {/* Two of this chat's tasks in one folder with no branch of their own (#1511). */}

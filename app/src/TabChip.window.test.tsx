@@ -24,7 +24,8 @@ import { forgetThisLaunch } from "./regions";
 import { GRACE_MS, REST_MS } from "./tabTasks";
 import { goToWorkspace, stripNamed } from "./test-strips";
 import { hoverPlacementOf, hoverTipOf } from "./ui/tooltip/tooltip.testkit";
-import { theFrameNow } from "./frame.testkit";
+import { heard } from "./frame.testkit";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * **A session's tab wears a chip of its tasks, which opens the menu to switch between them**
@@ -74,19 +75,6 @@ vi.mock("./SessionPane", async () => {
     },
   };
 });
-
-declare global {
-  interface Window {
-    __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
-  }
-}
-
-/** An event from the core, and the frame the window draws it in: the chat stores tell their
- *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
-function heard(handler: number, message: unknown) {
-  window.__TAURI_INTERNALS__.runCallback(handler, message);
-  theFrameNow();
-}
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
@@ -239,6 +227,7 @@ function core(open: Listed[], finished: FinishedTask[] = []) {
     return null;
   });
   const said = async (event: string, payload: unknown) => {
+    [event, payload] = onTheWire(event, payload);
     const handlers = listeners.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
     await act(async () => {

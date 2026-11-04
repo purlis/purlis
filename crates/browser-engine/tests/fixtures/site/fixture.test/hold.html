@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dashboard</title>
+<style> body { margin: 0; font: 24px sans-serif; } input, button { display: block; margin: 8px; font: 24px sans-serif; } </style></head>
+<body>
+  <h1 id="route">Dashboard home</h1>
+  <label>API key <input name="api-key" id="key"></label>
+  <button id="go-route" type="button">Open the settings route</button>
+  <button id="try" type="button">Try to take the key</button>
+  <button id="close" type="button">Close this page</button>
+  <a href="hold-next.html">Next page</a>
+  <p id="tried">Nothing tried yet</p>
+  <p id="count">The key holds 0 characters</p>
+  <script>
+    // A page that says how much its field holds, as it loads and as it is typed into, and
+    // tries to copy, cut and drag its field's text when asked.
+    const key = document.getElementById('key');
+    const show = () => {
+      document.getElementById('count').textContent =
+        'The key holds ' + key.value.length + ' characters';
+    };
+    key.addEventListener('input', show);
+    window.addEventListener('pageshow', () => setTimeout(show, 0));
+    document.getElementById('go-route').addEventListener('click', () => {
+      history.pushState({}, '', 'hold.html?route=settings');
+      document.getElementById('route').textContent = 'Settings route';
+    });
+    document.getElementById('close').addEventListener('click', () => window.close());
+    document.getElementById('try').addEventListener('click', () => {
+      const said = [];
+      for (const kind of ['copy', 'cut', 'dragstart']) {
+        let heard = false;
+        const hear = () => { heard = true; };
+        document.addEventListener(kind, hear);
+        const event = kind === 'dragstart'
+          ? new DragEvent(kind, { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })
+          : new ClipboardEvent(kind, { bubbles: true, cancelable: true, clipboardData: new DataTransfer() });
+        const went = key.dispatchEvent(event);
+        document.removeEventListener(kind, hear);
+        said.push(kind + (went || heard ? ' went' : ' stopped'));
+      }
+      // And the browser's own copy of the field's text, as a person's shortcut would make it.
+      let heard = false;
+      const hear = () => { heard = true; };
+      document.addEventListener('copy', hear);
+      key.focus();
+      key.select();
+      document.execCommand('copy');
+      document.removeEventListener('copy', hear);
+      said.push('trusted copy ' + (heard ? 'went' : 'stopped'));
+      document.getElementById('tried').textContent = 'Tried: ' + said.join(', ');
+    });
+  </script>
+</body></html>

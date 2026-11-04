@@ -231,6 +231,24 @@ pub fn asked(name: &str, args: &Map<String, Value>) -> Result<Asked, String> {
                 changes: false,
             });
         }
+        "browser_fill_secret" => {
+            let target = required(args, "target")?.trim().to_owned();
+            let vault = required(args, "vault")?.trim().to_owned();
+            let key = required(args, "key")?.trim().to_owned();
+            if target.is_empty() || vault.is_empty() || key.is_empty() {
+                return Err(
+                    "give `target` a field from your last snapshot (e12), and `vault` and `key` \
+                     the vault and the name of the value to put into it"
+                        .into(),
+                );
+            }
+            return Ok(Asked {
+                browser,
+                call_id,
+                asked: Browsing::FillSecret { target, vault, key },
+                changes: false,
+            });
+        }
         other => return Err(format!("purlis has no browser tool {other:?}")),
     };
     let changes = flag(args, "changes")?;
@@ -749,6 +767,28 @@ fn s_login() -> Value {
     )
 }
 
+fn s_fill_secret() -> Value {
+    schema(
+        json!({
+            "target": {
+                "type": "string",
+                "description": "The field to fill, as your last snapshot of the page named it \
+                                (e12). Only a one-line field takes a secret.",
+            },
+            "vault": {
+                "type": "string",
+                "description": "The vault the value is in.",
+            },
+            "key": {
+                "type": "string",
+                "description": "The name of the value in that vault (dash-api-key). Never the \
+                                value: you never see it.",
+            }
+        }),
+        &["target", "vault", "key"],
+    )
+}
+
 /// `schema` with `changes`, for a tool in [`SAY_CHANGES`].
 fn saying_changes(mut schema: Value) -> Value {
     schema["properties"]["changes"] = json!({
@@ -797,7 +837,7 @@ fn c_page_only() -> Value {
 }
 
 /// **The browser tools**, in the order the spec names them.
-pub const TOOLS: [Tool; 23] = [
+pub const TOOLS: [Tool; 24] = [
     Tool {
         name: "browser_open",
         description: "Open a new page at an http or https address in this chat's browser; it \
@@ -934,6 +974,20 @@ pub const TOOLS: [Tool; 23] = [
                       user_key if the page asks for a user name): the person is asked, and the \
                       call waits for their answer. Call this before asking for the vault.",
         schema: s_login,
+        read_only: false,
+    },
+    Tool {
+        name: "browser_fill_secret",
+        description: "Put a value from a vault (an API key, a token, a password) into a field \
+                      of the page this browser shows, by the field's reference from your last \
+                      snapshot, the vault and the key's name. The person is asked first, on a \
+                      notice naming the key and the site, and the call waits for their answer. \
+                      purlis fills it only where the field is on the site they allowed, and the \
+                      value never reaches you: it is kept out of every snapshot, find and \
+                      screenshot. Type the page's other fields first: while the filled page \
+                      is open you press no key and type or choose nothing in it, so send its \
+                      form by clicking its button. To log in, use browser_login.",
+        schema: s_fill_secret,
         read_only: false,
     },
     Tool {

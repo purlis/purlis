@@ -105,6 +105,9 @@ function core(
     (cmd, args) => {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
       if (cmd in answers) return answers[cmd]();
+      // The picker's first answer (#4736) is what a test says the whole answer is.
+      if (cmd === "start_options_first" && "start_options" in answers)
+        return answers.start_options();
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return put;
       if (cmd === "open_session") {
@@ -152,7 +155,8 @@ function core(
             },
           ],
         };
-      if (cmd === "start_options") return START_OPTIONS;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       if (cmd === "chat_states") return heard;
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions") return [];

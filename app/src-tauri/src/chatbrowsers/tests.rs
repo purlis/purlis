@@ -63,6 +63,12 @@ struct Hosted {
     notes: Mutex<std::collections::HashMap<String, super::Note>>,
     /// How many notes were sent.
     notes_sent: Mutex<u32>,
+    /// What a read of a field answers, where it answers one (#5115).
+    field: Mutex<Option<purlis_session_protocol::browsing::FieldSaid>>,
+    /// Each secret fill it was handed, by program (#5115).
+    fills: Mutex<Vec<(String, purlis_session_protocol::browsing::FillSecret)>>,
+    /// Where set, the browser refuses each fill so, as an engine judging the field does (#5122).
+    fill_refused: Mutex<Option<String>>,
 }
 
 impl Hosted {
@@ -140,7 +146,14 @@ impl Driver for Hosted {
         if pages && fails(&self.pages_fail) {
             return Err(Refused::Said("the page did not answer in time".into()));
         }
+        let field = matches!(
+            self.acts.lock().unwrap().last(),
+            Some((_, _, Act::DescribeField { .. }))
+        )
+        .then(|| self.field.lock().unwrap().clone())
+        .flatten();
         Ok(Browsed {
+            field,
             settled: true,
             asked: self.asks.lock().unwrap().clone(),
             page: self.at.lock().unwrap().clone().map(|address| {
@@ -168,6 +181,25 @@ impl Driver for Hosted {
         Ok(Browsed {
             settled: true,
             note: Some("the password field is gone from https://shop.example.test since purlis submitted the login".into()),
+            ..Browsed::default()
+        })
+    }
+
+    fn fill_secret(
+        &self,
+        program: &str,
+        fill: purlis_session_protocol::browsing::FillSecret,
+    ) -> Result<Browsed, Refused> {
+        if self.ended.lock().unwrap().iter().any(|one| one == program) {
+            return Err(Refused::Gone);
+        }
+        if let Some(why) = self.fill_refused.lock().unwrap().clone() {
+            return Err(Refused::Said(why));
+        }
+        self.fills.lock().unwrap().push((program.to_owned(), fill));
+        Ok(Browsed {
+            settled: true,
+            note: Some("purlis filled the key".into()),
             ..Browsed::default()
         })
     }
@@ -286,9 +318,15 @@ fn answered_started(
         unsandboxed,
         &|| as_persona.clone(),
         &logins,
+        &no_fills,
         &|| Err("no folder here".to_owned()),
         1000,
     )
+}
+
+/// A secret fill no test of this file asks about (#5115): refused, so nothing is filled.
+fn no_fills(_: &crate::secretfills::FillAsked) -> Result<crate::secretfills::Allowed, String> {
+    Err("no secret is filled in this test".to_owned())
 }
 
 /// The one browser login a test chat has: `shop-login`, its values a test's own (#2016).
@@ -629,6 +667,7 @@ fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_wha
         false,
         &AsPersona::default,
         &logins,
+        &no_fills,
         &|| Err("no folder here".to_owned()),
         1000,
     );
@@ -696,6 +735,7 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
                 false,
                 &AsPersona::default,
                 &logins,
+                &no_fills,
                 &|| Err("no folder here".to_owned()),
                 0,
             )
@@ -1487,7 +1527,10 @@ fn a_browser_login_is_performed_in_the_chats_browser_and_no_value_reaches_the_ch
         note.contains("since purlis submitted the login, with shop-login: take a snapshot"),
         "{note}"
     );
-    assert!(note.contains("reaches that site alone"), "{note}");
+    assert!(
+        note.contains("This browser now reaches ") && note.contains(" alone; open another"),
+        "{note}"
+    );
     assert!(!format!("{browsed:?}").contains(LOGIN_VALUE));
     assert_eq!(
         *hosted.logins.lock().unwrap(),
@@ -1548,6 +1591,7 @@ fn answered_at(
             true,
             &AsPersona::default,
             &logins,
+            &no_fills,
             &|| Err("no folder here".to_owned()),
             now,
         )
@@ -2764,6 +2808,7 @@ fn a_chat_on_a_pools_runner_has_its_browser_started_on_that_runner() {
             false,
             &AsPersona::default,
             &logins,
+            &no_fills,
             &|| Err("no folder here".to_owned()),
             1000,
         )
@@ -3211,6 +3256,7 @@ fn a_runners_refusal_for_its_engines_sandbox_names_that_runner_to_the_chat_and_o
             false,
             &AsPersona::default,
             &logins,
+            &no_fills,
             &|| Err("no folder here".to_owned()),
             1000,
         )
@@ -3247,6 +3293,7 @@ fn a_runners_refusal_for_its_engines_sandbox_names_that_runner_to_the_chat_and_o
     assert!(runners("relayed").is_empty());
 }
 
+mod fills;
 mod taken_back;
 
 // ---- Following a page to its login form (#4995, #5015) ----
@@ -3382,6 +3429,7 @@ fn a_shop_login() -> purlis_core::sandbox::tools::Tool {
         args: None,
         mint: None,
         host: None,
+        fill: None,
     }
 }
 
@@ -3398,6 +3446,7 @@ fn an_open_ask(chat: u32, vault: &str, key: &str) -> purlis_core::secrets::ask::
         names_no_vault: false,
         chats: vec![chat],
         starts: 0,
+        cannot_receive: Vec::new(),
         since: 0,
     }
 }
@@ -3422,4 +3471,41 @@ fn allow_once_is_kept_only_while_its_chat_waits_on_an_ask_for_that_logins_own_ke
         "another chat's ask"
     );
     assert!(!waits(&[]), "no ask open");
+}
+
+/// #5152, the person's ruling of 2026-11-04: a login whose form is on another site is answered
+/// with both sites the browser reaches, and what the chat may do on each; one whose form is on
+/// its page's own site, with that site alone.
+#[test]
+fn a_login_says_the_sites_its_browser_reaches_and_what_the_chat_may_do_on_each() {
+    let both = super::logged_in_said(
+        "sso-login",
+        &super::reaches_said(
+            "https://app.example.com/start",
+            Some("https://auth.example.com"),
+        ),
+        None,
+    );
+    assert!(
+        both.contains("This browser now reaches app.example.com:443, where you may read and act"),
+        "{both}"
+    );
+    assert!(
+        both.contains("and auth.example.com:443, the site it signs in on"),
+        "{both}"
+    );
+    assert!(
+        both.contains("only while browser_login signs in")
+            && both.contains("call browser_login again"),
+        "{both}"
+    );
+    let alone = super::logged_in_said(
+        "shop-login",
+        &super::reaches_said("https://shop.example.com/login", None),
+        None,
+    );
+    assert!(
+        alone.contains("This browser now reaches shop.example.com:443 alone; open another"),
+        "{alone}"
+    );
 }

@@ -227,10 +227,20 @@ export const commands = {
 	 */
 	moveToWindow: (plane: PlaneId, tab: number, pane: string | null, to: number | null) => typedError<MovedTo, string>(__TAURI_INVOKE("move_to_window", { plane, tab, pane, to })),
 	/**
-	 *  **A press on chat `chat` in a project with tab windows** (#4768, ruled on #4701): where
-	 *  another of the project's windows has it in a pane, that window comes forward and shows it
-	 *  there, and its label is answered; a chat is never shown in two windows. Null where no other
-	 *  window has it, and the press is the asking window's.
+	 *  **A pane of this window was used** (#5108): the person focused one of its panes, or pressed
+	 *  into one. The window says it while its project has another window, so a press on a chat in
+	 *  no pane goes to the most recently used pane across them ([`press_elsewhere`]). A window
+	 *  that does not show `plane` says nothing.
+	 */
+	paneUsed: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("pane_used", { plane })),
+	/**
+	 *  **A press on chat `chat` in a project with tab windows** (#4768, #5108; spec #4750 story
+	 *  97): where another of the project's windows has it in a pane, that window comes forward and
+	 *  shows it there; a chat is never shown in two windows. Where no window has it, it goes to the
+	 *  most recently used pane across the project's windows: where that is another window's, that
+	 *  window comes forward and shows it in its focused pane (`Chats::window_pressed`). Either way
+	 *  that window's label is answered, and its pane counts as used. Null where the press is the
+	 *  asking window's: the chat is in its pane, its pane was used last, or none has been.
 	 */
 	pressElsewhere: (plane: PlaneId, chat: number) => typedError<string | null, string>(__TAURI_INVOKE("press_elsewhere", { plane, chat })),
 	/**
@@ -434,6 +444,7 @@ export const commands = {
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
 	answerPoolLogin: __WINDOW_ONLY_RESULT,
 	answerBrowserLogin: __WINDOW_ONLY_RESULT,
+	answerSecretFill: __WINDOW_ONLY_RESULT,
 	answerPoolTool: __WINDOW_ONLY_RESULT,
 	answerSecretAsk: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
@@ -453,6 +464,8 @@ export const commands = {
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
+	dismissedSecretNeeds: __WINDOW_ONLY_RESULT,
+	offerSecretNeedAgain: __WINDOW_ONLY_RESULT,
 	removeOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	dismissOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
@@ -1348,6 +1361,7 @@ export const commands = {
 	finishedTasks: (plane: PlaneId) => typedError<FinishedTask[], string>(__TAURI_INVOKE("finished_tasks", { plane })),
 	clearFinishedTasks: __WINDOW_ONLY_RESULT,
 	reopenFinishedTask: __WINDOW_ONLY_RESULT,
+	resumeEndedChat: __WINDOW_ONLY_RESULT,
 	taskBrief: __WINDOW_ONLY_RESULT,
 	activity: __WINDOW_ONLY_RESULT,
 	/**
@@ -1520,15 +1534,35 @@ export const commands = {
 	 *  What the picker draws: every profile this machine has, every one charter will not use,
 	 *  and the plane's personas.
 	 * 
-	 *  Read fresh every time it is opened, like the sidebar: `charter.local.toml` is a file the
-	 *  operator edits by hand and a chat can write, so a cache here would be a second answer to
-	 *  "what is on disk" that nothing invalidates.
+	 *  Read fresh on every ask: what a fix in the picker reads to draw what is true after it, and
+	 *  what every other caller reads. The dialog's own two answers ([`start_options_first`],
+	 *  [`start_details`]) are kept per project instead, and the plane watch is what drops them
+	 *  (#4737): `charter.local.toml` is a file the operator edits by hand and a chat can write.
 	 * 
 	 *  **Off the main thread**: a sandboxed project's picker asks each approved Claude Code
 	 *  profile's program its `--version` (ruling V87g), which can take seconds, and the window
 	 *  must not freeze for it.
 	 */
 	startOptions: (plane: PlaneId) => typedError<StartOptions, string>(__TAURI_INVOKE("start_options", { plane })),
+	/**
+	 *  **The picker's first answer** (#4736): what [`start_options`] answers, without what takes a
+	 *  moment to read: every row's approval, sandbox and billing are none here, and
+	 *  [`start_details`] answers them. The dialog opens on this, at once, and fills its rows in as
+	 *  the details arrive. A start pressed before then goes through every gate it does today: the
+	 *  window waits for the details, and the core's start asks them again.
+	 * 
+	 *  **Kept per project** (#4737), with [`start_details`]: an open with nothing changed is
+	 *  served from what the last one read ([`planes::Held::kept_start_first`]), and a change to
+	 *  the profiles, the personas, the sandbox or the installed harnesses drops it first.
+	 */
+	startOptionsFirst: (plane: PlaneId) => typedError<StartOptions, string>(__TAURI_INVOKE("start_options_first", { plane })),
+	/**
+	 *  **The picker's second answer** (#4736): each row's approval, sandbox and billing, by its
+	 *  name, the slow part of [`start_options`]: a sandbox compile per harness and a check of
+	 *  each approved profile's program. Kept as [`start_options_first`] is (#4737), so a second open with
+	 *  nothing changed compiles nothing and runs no program.
+	 */
+	startDetails: (plane: PlaneId) => typedError<RowDetails[], string>(__TAURI_INVOKE("start_details", { plane })),
 	/**
 	 *  Every harness the project has, its card at a glance (HP-19): the palette's *What <product>
 	 *  can do here* rows, one per harness, reached with no chat open (#1134).
@@ -1676,6 +1710,7 @@ export const commands = {
 	poolSetupWake: __WINDOW_ONLY_RESULT,
 	poolSetupTry: __WINDOW_ONLY_RESULT,
 	poolSetupTryCancel: __WINDOW_ONLY,
+	poolSetupInThePicker: __WINDOW_ONLY_RESULT,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -2777,6 +2812,11 @@ export type AnswerPath =
  *  masked field, Not now with none.
  */
 { via: "secret"; id: number } | 
+/**
+ *  `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
+ *  whose digest is `shown` (#5115).
+ */
+{ via: "secret-fill"; id: number; shown: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2963,7 +3003,12 @@ export type AskSource =
  *  A key a chat's brokered run found missing from its persona's vault (#5068, ADR 0109):
  *  answered by a value typed in the window, or Not now.
  */
-"secret";
+"secret" | 
+/**
+ *  A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
+ *  purlis put that one key into that field, on that one origin, once.
+ */
+"secret-fill";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -3727,8 +3772,8 @@ export type ChatBrowser = {
 };
 
 /**
- *  What `chat-doing` carries, and what `chat_doings` answers a list of: one chat's line, or
- *  that it has none. It travels in memory only.
+ *  What a `chat-events` batch carries of a chat's doing, and what `chat_doings` answers a list
+ *  of: one chat's line, or that it has none. It travels in memory only.
  */
 export type ChatDoing = {
 	plane: PlaneId,
@@ -3740,6 +3785,26 @@ export type ChatDoing = {
 	sequence: number,
 	/**  What it is doing, or null: its turn ended, it is asking the person, or it is gone. */
 	doing: Doing | null,
+};
+
+/**  One thing a chat told the window: what each of the four events used to carry on its own. */
+export type ChatEvent = 
+/**  The chat moved on the board (`chat-moved` before). */
+{ kind: "moved"; told: Moved } | 
+/**  What the chat is doing changed (`chat-doing` before, #1493). */
+{ kind: "doing"; told: ChatDoing } | 
+/**  The chat's tool touched a file (`chat-touching` before, FM-6). */
+{ kind: "touching"; told: ChatTouching } | 
+/**  The chat's open skill run changed (`chat-skill-run` before, SK-3). */
+{ kind: "skill-run"; told: ChatSkillRun };
+
+/**
+ *  What `chat-events` carries: everything one project's chats told within an interval, in the
+ *  order they told it.
+ */
+export type ChatEvents = {
+	plane: PlaneId,
+	events: ChatEvent[],
 };
 
 /**  A chat the window has open, by its plane and its session. */
@@ -3872,8 +3937,8 @@ export type ChatSkill = {
 };
 
 /**
- *  What `chat-skill-run` carries, and what `chat_skill_runs` answers a list of: one chat's open
- *  run, or that it has none.
+ *  What a `chat-events` batch carries of a chat's skill run, and what `chat_skill_runs` answers
+ *  a list of: one chat's open run, or that it has none.
  */
 export type ChatSkillRun = {
 	plane: PlaneId,
@@ -4296,6 +4361,12 @@ export type DiskHeld =
 { state: "not_read"; why: string } | 
 /**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
 { state: "unanswered" };
+
+/**  One Secret need offer the person dismissed (#5159): the persona and the key, names only. */
+export type DismissedNeed = {
+	persona: string,
+	key: string,
+};
 
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
@@ -5390,6 +5461,43 @@ export type FilesUnwatched = {
 	 *  own, and the others are of a branch not watched yet as a whole (#1727, #1745).
 	 */
 	refused: BranchFolder[],
+};
+
+/**
+ *  **A secret fill, as its notice draws it** (#5115): the key's name and its vault, the exact
+ *  site, the page and the field's label; never a value, which purlis hasn't read.
+ */
+export type FillShown = {
+	key: string,
+	vault: string,
+	/**
+	 *  The site the field's own frame is on, as purlis read it: its host, with a port where it
+	 *  has one, and the scheme where it isn't https (`http://localhost:3000`).
+	 */
+	site: string,
+	/**  The page the field is on, where the browser said: an address. */
+	page?: string | null,
+	/**  What the page labels the field: the page's words, never purlis's. */
+	label: string,
+	/**  The chat's browser, by its name to the chat (`b1`). */
+	browser: string,
+	/**  Plain warnings, said above the choices. */
+	warnings: string[],
+	/**  **A card's or payment value's key** (#5116, SF-4): Allow once and Keep blocked alone. */
+	card: boolean,
+	/**
+	 *  **A multi-line text box or an editable area** (#5120, SF-5): asked each time, with Allow
+	 *  once and Keep blocked alone.
+	 */
+	multi_line: boolean,
+	/**  The line Always allow writes, shown before it's pressed (#5116). */
+	line?: string | null,
+	/**  Where the line goes: `[sandbox.personas.<persona>] tools`. */
+	under?: string | null,
+	/**  Why Always allow isn't offered, where it isn't and the key is no card's. */
+	no_always?: string | null,
+	/**  Always also allows the vault for the persona. */
+	vault_too: boolean,
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */
@@ -8785,6 +8893,15 @@ export type PoolDisk = {
 	not_listed: number,
 };
 
+/**  One pool as the chat picker offers it (#4484, D on #4469). */
+export type PoolInPicker = {
+	pool: string,
+	/**  False where a chat can't start there: the picker doesn't offer it. */
+	offered: boolean,
+	/**  "Setup not finished", and why: where setup isn't finished, and where a chat can't start. */
+	said: string | null,
+};
+
 /**  **A group of a pool's limits**: what they affect, and the limits that aren't under Advanced. */
 export type PoolLimitGroup = {
 	label: string,
@@ -10544,6 +10661,24 @@ export type RowAction = {
 	deletes: boolean,
 };
 
+/**
+ *  The facts of one picker row that take a moment to read (#4736): whether its command waits
+ *  for an approval, what the sandbox does for a chat on it (a compile per harness and its
+ *  program's check), and what it is billed to. [`start_details`] answers them after
+ *  [`start_options_first`], by the row's name, and the picker draws the row as pending until
+ *  then.
+ */
+export type RowDetails = {
+	/**  The profile's name: the row these are of. */
+	name: string,
+	/**  As [`ProfileRow::approval`]. */
+	approval: string | null,
+	/**  As [`ProfileRow::sandbox`]. */
+	sandbox: SandboxAhead | null,
+	/**  As [`ProfileRow::billed_to`]. */
+	billed_to: string | null,
+};
+
 /**  A dispatch's worktree, as its row lists it (#1453). */
 export type RowWorktree = {
 	/**  The repo it was cut from. */
@@ -11714,6 +11849,11 @@ export type Shown = {
 	 *  is typed in. Absent for any other ask.
 	 */
 	secret?: SecretShown | null,
+	/**
+	 *  **The secret a fill would put into a page, and where** (#5115): drawn with its site
+	 *  large. Absent for any other ask.
+	 */
+	fill?: FillShown | null,
 };
 
 /**

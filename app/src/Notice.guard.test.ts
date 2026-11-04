@@ -543,12 +543,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "It stays mounted, so its word is heard as it comes.",
   },
   "StartChat.tsx": {
-    count: 5,
+    count: 6,
     why:
       "a dialog's refusal: an inline error, not a Notice (V91n). NO-8: the local file git " +
       "would carry offers the doctor's local-ignore fix, refused profiles link to Settings › " +
-      "Harness, a sandbox it cannot apply offers its install, a start's refusal is ACTION's, and a slow " +
-      "start's status says what it waits for, or where its runner has got to, in the dialog's footer",
+      "Harness, a sandbox it cannot apply offers its install, a start's refusal is ACTION's, a slow " +
+      "start's status says what it waits for, or where its runner has got to, in the dialog's " +
+      "footer, and a Start pressed early that the details turned into a grant says, there, why " +
+      "nothing started (#4736, ADR 0097 §6); the turned button above it is the way on",
   },
   "TabRename.tsx": { count: 1, why: "a rename's refusal, beside the box being typed in" },
   "ThemeDraftStrip.tsx": {
@@ -610,10 +612,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: VIEWS,
   },
   "Welcome.tsx": {
-    count: 2,
+    count: 3,
     why:
       ACTION +
-      ": an open refused, beside the doors and the path box that asked it; and " +
+      ": an open refused, beside the doors and the path box that asked it; " +
+      ACTION +
+      ": Run chats on another machine said once it is pressed, under its row (#4484); and " +
       READING +
       ": the recent projects it could not read",
   },

@@ -37,7 +37,8 @@ import { chipSays, rowSays, stripNamed } from "./test-strips";
 import { askOfBlock, askOfDispatch } from "./test-asks";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 import { findResult } from "./actionResult.testkit";
-import { theFrameNow } from "./frame.testkit";
+import { heard } from "./frame.testkit";
+import { onTheWire } from "./chatEvents.testkit";
 
 /**
  * **A task opens inside its session's tab** (#1486), against the whole window: pressing a task
@@ -83,19 +84,6 @@ vi.mock("./SessionPane", async () => {
     },
   };
 });
-
-declare global {
-  interface Window {
-    __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
-  }
-}
-
-/** An event from the core, and the frame the window draws it in: the chat stores tell their
- *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
-function heard(handler: number, message: unknown) {
-  window.__TAURI_INTERNALS__.runCallback(handler, message);
-  theFrameNow();
-}
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
@@ -415,6 +403,7 @@ function core(open: Listed[]) {
     return null;
   });
   const said = async (event: string, payload: unknown) => {
+    [event, payload] = onTheWire(event, payload);
     const handlers = listeners.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
     await act(async () => {
@@ -849,7 +838,10 @@ describe("a shown task that ends", () => {
 
     await userEvent.click(within(said).getByRole("button", { name: "Clear pane" }));
 
-    await waitFor(() => expect(onScreen()).toEqual([]));
+    // Clear pane closes the pane (#5019): the tab's only pane, and not the strip's last tab, so
+    // the tab goes and the one beside it is in front.
+    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
+    expect(onScreen()).toEqual([2]);
     expect(away()).toBeNull();
     expect(crumbs()).toBeNull();
     // Nothing more is ended by it.

@@ -74,7 +74,7 @@ pub fn of(root: &Path, persona: &str) -> Vec<Need> {
     let mut needs: Vec<Need> = Vec::new();
     for pairs in chain.into_iter().rev() {
         for (name, purpose) in pairs {
-            let Some(key) = name.strip_prefix(PREFIX).filter(|key| is_key(key)) else {
+            let Some(key) = key_of(&name) else {
                 continue;
             };
             match needs.iter_mut().find(|need| need.key == key) {
@@ -152,6 +152,29 @@ pub fn with_need(
         .map(|(key, value)| (key.as_str(), value.as_deref()))
         .collect();
     purlis_skills::fence::with_keys(text, &keys).map_err(|why| format!("the definition {why}"))
+}
+
+/// **The keys of the Secret needs `after` adds to `before`**, each a definition's text: what a
+/// dismissed offer of purlis's turned down (#5159). A key `before` names already is not one.
+pub fn added(before: &str, after: &str) -> Vec<String> {
+    let keys = |text: &str| -> Vec<String> {
+        crate::personas::frontmatter(text)
+            .iter()
+            .filter_map(|(name, _)| key_of(name))
+            .map(str::to_owned)
+            .collect()
+    };
+    let was = keys(before);
+    keys(after)
+        .into_iter()
+        .filter(|key| !was.contains(key))
+        .collect()
+}
+
+/// The key a frontmatter line named `name` declares a need for, where it is a need's line and
+/// a key a Secret ask takes.
+fn key_of(name: &str) -> Option<&str> {
+    name.strip_prefix(PREFIX).filter(|key| is_key(key))
 }
 
 /// The purpose a need is proposed with where the chat said none: the person edits it before

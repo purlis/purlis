@@ -108,7 +108,8 @@ pub struct Server {
 ///   chat with a curation's prompt typed), and `relaunch` (the launch's answer, which starts
 ///   every chat the project held);
 /// - **it starts a chat again**: `restart_chat_without_sandbox`, `restart_chat`,
-///   `start_chat_fresh`, `ask_chat_restart`.
+///   `start_chat_fresh`, `ask_chat_restart`, `resume_ended_chat` (Resume on the ended band of a
+///   chat the person ended, #5019).
 ///
 /// - **it lets a persona's committed hosts reach past this machine's sandbox** (#1362):
 ///   `allow_persona_hosts`, which the person at this machine's window allows as it was shown
@@ -312,6 +313,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Starts again.
     "restart_chat_without_sandbox",
     "restart_chat",
+    "resume_ended_chat",
     // A chat moved to or from a pool's runner (#2048): a new run where it moves.
     "move_chat",
     "move_chat_now",
@@ -359,6 +361,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A browser login a chat suggested (#4595): the person's answer alone. No chat confirms the
     // site it suggested.
     "answer_browser_login",
+    // A secret fill a chat asked for (#5115): the person's answer alone.
+    "answer_secret_fill",
     // Whether this desktop sends a persona's tool its vault values on a pool's runner (#2047):
     // the person's answer alone. No chat allows its own tool.
     "answer_pool_tool",
@@ -378,6 +382,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // And the change whole, for its own tab (PC-7): what the configuration file holds is the
     // person's to read, never a chat's through the UI's link.
     "proposed_change",
+    // The Secret need offers the person dismissed, and offering one again (#5159): the
+    // person's own answers, read and undone in the vault view. No chat lifts its own dismissal.
+    "dismissed_secret_needs",
+    "offer_secret_need_again",
     // Remove and Dismiss on the Notice of the old `[harness_plugins]` keys (#3467): Remove holds
     // purlis's own proposed change for the person to apply, and the answer is the person's.
     "remove_old_harness_plugins",
@@ -794,6 +802,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_try",
     // And only that press's own Cancel stops it (#4976).
     "pool_setup_try_cancel",
+    // How each pool stands in the picker: read from this machine's own records.
+    "pool_setup_in_the_picker",
     "pool_setup_open_docker",
     "add_docker_pool",
     "remove_docker_pool",
@@ -1207,6 +1217,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "open_view",
     "opened_chats",
     "owed_restarts",
+    "pane_used",
     "pending_asks",
     "put_away_chat_move",
     "persona_chats_of",
@@ -1314,6 +1325,11 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "smart_closing",
     "stale_clones",
     "start_options",
+    // `start_options` in two answers (#4736): the cheap first one the dialog opens on, and
+    // each row's approval, sandbox and billing by name. Together they answer what
+    // `start_options` does, so they are served where it is.
+    "start_options_first",
+    "start_details",
     "stopping_chats",
     "tab_window_handed",
     "tab_windows_back",

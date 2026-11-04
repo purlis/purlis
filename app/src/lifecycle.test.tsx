@@ -16,6 +16,8 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { LaidOut, Moved, NotStarted, OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { aBatchOf } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 // The Inbox lists a chat that came back as an update too (#1693), after its Notices (#1695):
 // these tests are about the Notice, so the update is not what they find.
@@ -120,6 +122,8 @@ function core(
 } {
   const asked: Asked[] = [];
   const listeners = new Map<string, number>();
+  /** Every listener for the chat events: the stores and the asks each listen for them. */
+  const batches: number[] = [];
   let opened = 0;
   /** One-shot: resolved the moment this core answers `cmd`. */
   const answering = new Map<string, () => void>();
@@ -151,11 +155,13 @@ function core(
     if (cmd === "plugin:event|listen") {
       const { event, handler } = args as { event: string; handler: number };
       listeners.set(event, handler);
+      if (event === CHAT_EVENTS) batches.push(handler);
       return 1;
     }
     if (cmd === "plane_at_launch")
       return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat") return { session: ++opened };
     if (cmd === "opened_chats") return open;
     if (cmd === "chat_states") return states;
@@ -167,13 +173,14 @@ function core(
     asked,
     settled,
     move: (moved: Moved) => {
-      const handler = listeners.get("chat-moved");
-      if (handler === undefined) throw new Error("the window is not listening for moves");
-      window.__TAURI_INTERNALS__.runCallback(handler, {
-        event: "chat-moved",
-        id: 1,
-        payload: moved,
-      });
+      const handlers = batches;
+      if (handlers.length === 0) throw new Error("the window is not listening for moves");
+      for (const handler of handlers)
+        window.__TAURI_INTERNALS__.runCallback(handler, {
+          event: CHAT_EVENTS,
+          id: 1,
+          payload: aBatchOf("moved", moved),
+        });
     },
     askToQuit: async () => {
       const handler = listeners.get("quit-asked");

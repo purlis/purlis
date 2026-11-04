@@ -571,7 +571,20 @@ fn finish(root: &Path, locks: &Locks, proposal: Proposal) -> Result<Judged, Stri
     if let (true, Some(why)) = (vault_too, refused) {
         return Err(why);
     }
-    let no_always = locks
+    let no_always = always_held(root, locks, &proposal.persona);
+    Ok(Judged {
+        proposal,
+        vault_too,
+        no_always,
+    })
+}
+
+/// **Why Always allow isn't offered for a line in `persona`'s tools**, where it isn't (#4595,
+/// #5116): policy holds proposed changes or the scope back, the project's settings have no
+/// `[sandbox]`, or the persona's list waits for the person's Allow, which a line's Allow would
+/// carry with it unseen.
+pub fn always_held(root: &Path, locks: &Locks, persona: &str) -> Option<String> {
+    locks
         .proposed_changes_refused()
         .or_else(|| locks.scope_removed(sandbox::grant::Level::You))
         .or_else(|| {
@@ -583,18 +596,13 @@ fn finish(root: &Path, locks: &Locks, proposal: Proposal) -> Result<Judged, Stri
                         .to_owned(),
                 );
             }
-            (!sandbox::persona::list_seen_in(root, &file, &proposal.persona, locks)).then(|| {
+            (!sandbox::persona::list_seen_in(root, &file, persona, locks)).then(|| {
                 format!(
-                    "Always allow isn't offered while {}'s hosts and tools wait for your Allow",
-                    proposal.persona
+                    "Always allow isn't offered while {persona}'s hosts and tools wait for your \
+                     Allow"
                 )
             })
-        });
-    Ok(Judged {
-        proposal,
-        vault_too,
-        no_always,
-    })
+        })
 }
 
 /// A press on a login's notice.
@@ -777,7 +785,18 @@ pub fn answer(
         },
     )?;
     let said = if press == Press::Always {
-        written(root, &locks, &proposal, judged.vault_too, session, audit)?;
+        written(
+            root,
+            &locks,
+            &Line {
+                persona: &proposal.persona,
+                vault: &proposal.vault,
+                vault_too: judged.vault_too,
+                with: &|text| loginask::with_line(text, &proposal),
+            },
+            session,
+            audit,
+        )?;
         if proposal.replaces.is_some() {
             format!(
                 "Replaced. {} opens {} in the project's settings now, and is allowed on this \
@@ -802,13 +821,23 @@ pub fn answer(
     Ok(Pressed::Done { said })
 }
 
+/// **A line Always writes in a persona's tools** (#4595, #5116): whose, the vault it reads, and
+/// how the project's file reads with it.
+pub struct Line<'a> {
+    pub persona: &'a str,
+    pub vault: &'a str,
+    /// The persona needs the vault allowed too.
+    pub vault_too: bool,
+    /// The project's file with the line, from the file as read.
+    pub with: &'a dyn Fn(&str) -> Result<String, String>,
+}
+
 /// **Always**: the file with the one line, written only over what was read, then the persona's
 /// list allowed as what was written says it, and its vault where it needs it.
-fn written(
+pub fn written(
     root: &Path,
     locks: &Locks,
-    proposal: &Proposal,
-    vault_too: bool,
+    line: &Line<'_>,
     session: u32,
     audit: Audit<'_>,
 ) -> Result<(), String> {
@@ -826,21 +855,21 @@ fn written(
         None => "",
     };
     // Judged again from the very bytes the write is pinned to.
-    if !sandbox::persona::list_seen_in(root, text, &proposal.persona, locks) {
+    if !sandbox::persona::list_seen_in(root, text, line.persona, locks) {
         return Err(NOT_WRITTEN.to_owned());
     }
-    let after = loginask::with_line(text, proposal)?;
-    let digest = sandbox::persona::digest_in(root, &after, &proposal.persona, locks)
+    let after = (line.with)(text)?;
+    let digest = sandbox::persona::digest_in(root, &after, line.persona, locks)
         .ok_or_else(|| NOT_WRITTEN.to_owned())?;
     let base = purlis_core::proposed::base_of(before.as_deref());
     purlis_core::proposed::write_pinned(root, rel, base.as_deref(), &after)
         .map_err(|_| NOT_WRITTEN.to_owned())?;
-    sandbox::local::allow_persona_hosts(root, &proposal.persona, &digest)
+    sandbox::local::allow_persona_hosts(root, line.persona, &digest)
         .map_err(|why| format!("purlis wrote the line, and could not allow it here: {why}"))?;
-    if vault_too {
+    if line.vault_too {
         let grant = sandbox::local::VaultGrant {
-            vault: proposal.vault.clone(),
-            persona: proposal.persona.clone(),
+            vault: line.vault.to_owned(),
+            persona: line.persona.to_owned(),
         };
         let target = grant.target();
         audit(

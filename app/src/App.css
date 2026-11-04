@@ -4630,6 +4630,11 @@ body {
   border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
+/* Run chats on another machine (#4484): below the ways in, quiet, as a first day needs no pool. */
+.welcome-elsewhere {
+  padding-block-start: var(--space-3);
+}
+
 /* A quiet act inside the page's prose: Back above a door's page, and New project… at the foot of
    Create a project. Drawn as a link, because neither is the page's own act, and still a button,
    because each does something rather than goes somewhere. */
@@ -8851,4 +8856,12 @@ nav.piece-files-head {
   flex: none;
   gap: var(--space-1);
   align-items: center;
+}
+
+/* The room an approval sentence keeps in a dialog opened before its details (#4736): the kept
+   words take the sentence's own padding, edge and size, so the room is the sentence's. */
+.start-chat-told [data-scope="reserved"][data-part="kept"] {
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 2px solid;
+  font-size: var(--font-size-sm);
 }

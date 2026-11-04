@@ -42,6 +42,13 @@ pub enum Act {
     FindLoginForm {
         address: String,
     },
+    /// **What a field is, before a secret goes into it** (1.72, #5115): the field `target` names
+    /// from the last snapshot, read for the person's notice, with nothing typed. The answer's
+    /// [`Browsed::field`] says the origin of the document of the frame that holds it, as the
+    /// engine records it, its label and its kind. No browser tool of a chat's sends it.
+    DescribeField {
+        target: String,
+    },
     /// Sends a page to `address`.
     Navigate {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -264,6 +271,53 @@ pub struct Browsed {
     /// [`Act::Downloads`] every one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub downloads: Vec<DownloadSaid>,
+    /// The field [`Act::DescribeField`] read (1.72, #5115).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<FieldSaid>,
+}
+
+/// **A field a secret may go into, as the engine reads it** (1.72, #5115): never what it holds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldSaid {
+    /// The origin of the document of the frame that holds it, as the engine records that
+    /// document ([`origin_of`]): none for a document of no web origin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    /// What the page labels it, made plain and short: the page's words, never purlis's.
+    pub label: String,
+    pub kind: FieldKind,
+}
+
+/// **What kind of field a secret would go into** (1.72, #5115).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldKind {
+    /// A one-line input: password, text, email, number, tel or url.
+    OneLine,
+    /// A multi-line text box.
+    MultiLine,
+    /// An editable area of the page.
+    Editable,
+    /// Anything else, which takes no secret.
+    #[serde(other)]
+    Other,
+}
+
+/// **A vault value purlis puts into one field of a browser** (1.72, #5115): the field from the
+/// last snapshot, the one origin the person approved, which the engine checks the field's own
+/// frame against at the moment of filling, and the value. The key's name rides along for what
+/// the browser says it filled, never the value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FillSecret {
+    pub target: String,
+    pub origin: String,
+    pub key: String,
+    pub value: Secret,
+    /// **The person answered a notice for this very fill that named a multi-line text box or an
+    /// editable area** (#5120, SF-5): only then does one take it. Absent, a one-line field
+    /// alone, which a host that doesn't read it holds every fill to as well.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub multi_line: bool,
 }
 
 /// **One download of a browser's, as an answer says it** (1.46, #2020): its name in the browser
@@ -610,5 +664,48 @@ mod optional_base64 {
         let text = Option::<String>::deserialize(from)?;
         text.map(|text| STANDARD.decode(text).map_err(serde::de::Error::custom))
             .transpose()
+    }
+}
+
+#[cfg(test)]
+mod fill_tests {
+    use super::*;
+
+    #[test]
+    fn a_fill_never_shows_its_value_in_debug() {
+        let fill = FillSecret {
+            target: "e12".into(),
+            origin: "https://dash.example.test".into(),
+            key: "dash-api-key".into(),
+            value: Secret::new("fixture-word-5115".into()),
+            multi_line: false,
+        };
+        let said = format!("{fill:?}");
+        assert!(!said.contains("fixture-word-5115"), "{said}");
+        assert!(said.contains("dash-api-key"), "{said}");
+    }
+
+    #[test]
+    fn a_fill_that_names_no_multi_line_answer_is_held_to_a_one_line_field() {
+        let fill: FillSecret = serde_json::from_str(
+            r#"{"target":"e12","origin":"https://dash.example.test","key":"k","value":"v"}"#,
+        )
+        .expect("a fill of 1.72 reads");
+        assert!(!fill.multi_line);
+        let said = serde_json::to_string(&FillSecret {
+            multi_line: true,
+            ..fill
+        })
+        .expect("written");
+        assert!(said.contains(r#""multi_line":true"#), "{said}");
+    }
+
+    #[test]
+    fn a_field_kind_a_later_engine_names_reads_as_one_that_takes_no_secret() {
+        let field: FieldSaid =
+            serde_json::from_str(r#"{"label":"Notes","kind":"rich_text_of_a_later_minor"}"#)
+                .expect("a field of a later minor reads");
+        assert_eq!(field.kind, FieldKind::Other);
+        assert_eq!(field.origin, None);
     }
 }

@@ -6,8 +6,10 @@ import { expect } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import type { OpenChat } from "./bindings";
+import type { Moved, OpenChat } from "./bindings";
 import { SETTLE_MS as ASKS_SETTLE_MS } from "./asks";
+import { CHAT_EVENTS } from "./chatEvents";
+import { aBatchOf } from "./chatEvents.testkit";
 import { panes } from "./countedPane.testkit";
 import { commitRoots, counts, renderedBy } from "./reactCommits.testkit";
 import { stripNamed } from "./test-strips";
@@ -169,7 +171,8 @@ function core(shape: Shape): Core {
     }
     if (cmd === "opened_chats") return open;
     // A split starts a chat, on the profile its picker offers.
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat") return { session: (started += 1) };
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
@@ -208,8 +211,12 @@ function core(shape: Shape): Core {
       });
     },
     chatMoved: (payload) => {
-      for (const handler of listening.get("chat-moved") ?? [])
-        window.__TAURI_INTERNALS__.runCallback(handler, { event: "chat-moved", id: 1, payload });
+      for (const handler of listening.get(CHAT_EVENTS) ?? [])
+        window.__TAURI_INTERNALS__.runCallback(handler, {
+          event: CHAT_EVENTS,
+          id: 1,
+          payload: aBatchOf("moved", payload as Moved),
+        });
     },
     holdSidebar: () => {
       let release = () => {};

@@ -24,6 +24,7 @@ import { commands, type Asking, type GrantLevel, type Press, type Shown } from "
 import type { QuestionsHeld } from "./taskQuestions";
 import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
+import { listenForChats } from "./chatEvents";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
 import { sandboxCommandReturned } from "./sandboxAsked";
@@ -34,12 +35,12 @@ import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
 import { askProfileSignIn } from "./settings/links";
 
 /**
- * The events after which a project's asks may read differently: its hooks' asks, a chat
- * moving on the board, a dispatch held for a grant, a block heard.
+ * The events after which a project's asks may read differently: its hooks' asks, a dispatch
+ * held for a grant, a block heard. A chat moving on the board is one too, and comes in a batch
+ * of chat events (`chatEvents.ts`).
  */
 export const ASKS_MAY_HAVE_MOVED = [
   ASKS_CHANGED,
-  "chat-moved",
   "dispatch-grant-needed",
   "chat-sandbox-blocked",
 ] as const;
@@ -103,6 +104,7 @@ export function useAsks(planes: readonly string[]): {
         if (typeof plane === "string") reader.soon(plane);
       }).catch(() => undefined),
     );
+    stops.push(listenForChats("moved", (told) => reader.soon(told.plane)).catch(() => undefined));
     return () => {
       moved.delete(reader.soon);
       reader.stop();
@@ -398,6 +400,24 @@ export async function answerTaken(
           reason?.trim() || null,
         );
         if (pressed.status === "error") return pressed;
+        if (pressed.data.kind === "drawn-again")
+          return { status: "error", error: pressed.data.said };
+        return { status: "ok" };
+      }
+      case "secret-fill": {
+        // A secret a chat asks purlis to fill (#5115): the press names what the notice drew.
+        const press = PRESS_OF[option];
+        if (press === undefined) break;
+        const pressed = await commands.answerSecretFill(
+          plane,
+          ask.session,
+          path.id,
+          press,
+          path.shown,
+          reason?.trim() || null,
+        );
+        if (pressed.status === "error") return pressed;
+        // Drawn again as the project reads now (#5116): read and choose again.
         if (pressed.data.kind === "drawn-again")
           return { status: "error", error: pressed.data.said };
         return { status: "ok" };

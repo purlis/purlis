@@ -120,7 +120,8 @@ function core(over: (cmd: string, args: unknown) => unknown = () => undefined) {
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
     if (cmd === "start_chat") return { session: ++opened };
     if (cmd === "worktree_of_chat") return PIECE;
     return null;
@@ -306,7 +307,8 @@ describe("the palette reaching what the window can do", () => {
     await runFromPalette("end chat steward 1…");
     await answerTheAsk("End chat steward 1…");
 
-    expect(screen.queryAllByTestId("pane")).toEqual([]);
+    // Its pane stays, under the ended band (#5019).
+    expect(await screen.findByRole("status", { name: /ended/i })).toBeInTheDocument();
     expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
       { plane: "/home/dev/plane", session: 1 },
     ]);

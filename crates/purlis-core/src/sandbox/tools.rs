@@ -80,6 +80,7 @@ use std::path::{Path, PathBuf};
 use crate::settings::Refusal;
 
 pub mod args;
+pub mod fill;
 pub mod host;
 pub mod login;
 pub mod mint;
@@ -92,9 +93,10 @@ pub const KEY: &str = "tools";
 pub const VALUES_KEY: &str = "values";
 
 /// The keys one tool's table holds: `as` and `key`, or `values`, for a program's; `browser`,
-/// `user` and `form` for a browser login's ([`login`]); `args` for any program's ([`args`]); `mint` and
+/// `user` and `form` for a browser login's ([`login`]); `fill` and `card` for a secret-fill
+/// line's ([`fill`]); `args` for any program's ([`args`]); `mint` and
 /// `app` for a GitHub App's token's ([`mint`]); `host` for a forge's ([`host`]).
-const TOOL_KEYS: [&str; 11] = [
+const TOOL_KEYS: [&str; 13] = [
     "vault",
     "as",
     "key",
@@ -106,6 +108,8 @@ const TOOL_KEYS: [&str; 11] = [
     mint::KEY,
     mint::APP_KEY,
     host::KEY,
+    fill::KEY,
+    fill::CARD_KEY,
 ];
 
 /// The keys one of a tool's `values` holds.
@@ -184,6 +188,9 @@ pub struct Tool {
     /// **The forge host its run reaches** ([`host`], #3869), for a tool whose program is `gh`
     /// or `glab`: none reaches `github.com` or `gitlab.com`.
     pub host: Option<String>,
+    /// **Where the line is a secret-fill line** ([`fill`], #5116): its key and the one origin it
+    /// goes to. Such a line runs no program and holds no [`Self::values`].
+    pub fill: Option<fill::Fill>,
 }
 
 impl Tool {
@@ -201,7 +208,14 @@ impl Tool {
             args: None,
             mint: None,
             host: None,
+            fill: None,
         }
+    }
+
+    /// **Whether the line runs no program**: a browser login, which purlis performs in the
+    /// chat's own browser, or a secret-fill line, which purlis fills there.
+    pub fn runs_no_program(&self) -> bool {
+        self.login.is_some() || self.fill.is_some()
     }
 
     /// The values handed `handed`, as `secret exec` spells each (`VAR=key`), in order.
@@ -253,6 +267,17 @@ impl Tool {
     /// [`Self::whole`] without its `args`: the line a tool without them has always had, so an
     /// Allow made before `args` was read still stands.
     fn declared_line(&self) -> String {
+        if let Some(fill) = &self.fill {
+            let line = format!(
+                "{} fills {:?} from vault {} into fields on {}",
+                self.name, fill.key, self.vault, fill.origin
+            );
+            return if fill.card {
+                format!("{line}, a card: Allow once each time")
+            } else {
+                line
+            };
+        }
         if let Some(login) = &self.login {
             let user = self
                 .key_in(login::USER_VAR)
@@ -484,7 +509,7 @@ pub fn refused_program(tool: &Tool, program: &Path) -> Option<String> {
 
 /// [`refused_program`], for `found` as found and `real` as its links resolve.
 fn refused_at(tool: &Tool, found: &Path, real: &Path) -> Option<String> {
-    if tool.login.is_some() {
+    if tool.runs_no_program() {
         return None;
     }
     [found, real]
@@ -601,7 +626,7 @@ fn search_dirs() -> Vec<PathBuf> {
 /// where it runs or is not found. A chat's start judges again, also leaving out what that chat
 /// alone may write.
 pub fn refused_here(root: &Path, tool: &Tool) -> Option<String> {
-    if tool.login.is_some() {
+    if tool.runs_no_program() {
         return None;
     }
     let mut written = vec![root.to_path_buf()];
@@ -650,7 +675,7 @@ pub fn general_purpose(program: &Path) -> bool {
 /// purlis picks. The sentence is said beside the tool's line, never part of it, so an Allow
 /// stays bound to the line alone ([`super::persona::digest_of`]).
 pub fn caution(tool: &Tool, search: &[PathBuf]) -> Option<String> {
-    if tool.login.is_some() {
+    if tool.runs_no_program() {
         return None;
     }
     let found = search.iter().filter_map(|dir| {
@@ -784,6 +809,14 @@ pub fn keyed(
                 );
                 continue;
             }
+            Some(_) if tool.contains_key(fill::KEY) => {
+                fault(
+                    "a secret-fill line runs no program, so it takes no args — purlis fills its \
+                     field"
+                        .to_owned(),
+                );
+                continue;
+            }
             Some(value) => match args::of(value) {
                 Ok(patterns) => with_args.push((name.clone(), patterns)),
                 Err(why) => {
@@ -797,6 +830,12 @@ pub fn keyed(
             None => {}
             Some(_) if tool.contains_key(login::KEY) => {
                 fault("a browser login reaches its declared page, so it takes no host".to_owned());
+                continue;
+            }
+            Some(_) if tool.contains_key(fill::KEY) => {
+                fault(
+                    "a secret-fill line goes to its origin alone, so it takes no host".to_owned(),
+                );
                 continue;
             }
             Some(value) => match host::of(value) {
@@ -831,6 +870,8 @@ pub fn keyed(
                 login::FORM_KEY,
                 mint::KEY,
                 mint::APP_KEY,
+                fill::KEY,
+                fill::CARD_KEY,
             ]
             .into_iter()
             .find(|key| tool.contains_key(*key))
@@ -850,6 +891,7 @@ pub fn keyed(
                     args: None,
                     mint: None,
                     host: None,
+                    fill: None,
                 }),
                 Err(why) => fault(why),
             }
@@ -859,6 +901,32 @@ pub fn keyed(
             fault("it names no key of the vault".to_owned());
             continue;
         };
+        // A secret-fill line (#5116): its key goes into fields on one origin, and no run is
+        // handed it.
+        if tool.contains_key(fill::KEY) {
+            match fill::of(tool, key, &text) {
+                Ok(fill) => tools.push(Tool {
+                    name: name.clone(),
+                    vault,
+                    values: Vec::new(),
+                    login: None,
+                    args: None,
+                    mint: None,
+                    host: None,
+                    fill: Some(fill),
+                }),
+                Err(why) => fault(why),
+            }
+            continue;
+        }
+        if tool.contains_key(fill::CARD_KEY) {
+            fault(format!(
+                "{} marks a secret-fill line's key as a card's — a line that fills names its \
+                 origin with fill = \"https://…\"",
+                fill::CARD_KEY
+            ));
+            continue;
+        }
         if tool.contains_key(mint::KEY) || tool.contains_key(mint::APP_KEY) {
             // The token minted from the key is handed in GH_TOKEN, never the key (#2053).
             match mint::of(tool, &text) {
@@ -894,6 +962,7 @@ pub fn keyed(
                         args: None,
                         mint: None,
                         host: None,
+                        fill: None,
                     });
                 }
                 Err(why) => fault(why),
@@ -1187,7 +1256,7 @@ pub fn absent_from_the_image(
     let named = Path::new(program).file_name()?.to_string_lossy();
     let declared = listed
         .iter()
-        .find(|tool| tool.name == named && tool.login.is_none())?;
+        .find(|tool| tool.name == named && !tool.runs_no_program())?;
     let is_absent = !armed.iter().any(|ready| names(ready, program))
         && found_in(&declared.name, &search_dirs(), &[]).is_none();
     is_absent.then(|| not_in_the_image(persona, &declared.name, pool_image().as_deref()))
@@ -1356,6 +1425,10 @@ pub(crate) fn resolve_beside(
     for tool in tools {
         if let Some(why) = locks.refuses_tool(persona, &tool.name) {
             left.push(why);
+            continue;
+        }
+        // A secret-fill line is never armed: it runs nothing and is handed nothing (#5116).
+        if tool.fill.is_some() {
             continue;
         }
         // A browser login runs no program: purlis fills it in the chat's own browser (#2016).
@@ -1529,6 +1602,14 @@ pub fn declared<'a>(
              {terminal}."
         ));
     };
+    // A secret-fill line is never run, however it came to be armed (#5116).
+    if ready.tool.fill.is_some() {
+        return Err(format!(
+            "{} is {persona}'s secret-fill line: it runs nothing, and purlis fills its key in the \
+             chat's own browser through browser_fill_secret",
+            ready.tool.name
+        ));
+    }
     // Exactly the tool's vault and every one of its hand-overs, each the way it is declared,
     // and nothing else: not a subset, not one more, not another pairing of variable and key,
     // not a file where an env was declared, and never a `--dotenv` (T-1, D-PE-ruling-2).
@@ -2114,6 +2195,8 @@ mod login_tests;
 #[cfg(test)]
 mod args_tests;
 
+#[cfg(test)]
+mod fill_tests;
 #[cfg(test)]
 mod host_tests;
 #[cfg(test)]
