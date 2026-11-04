@@ -28,6 +28,30 @@ export async function pictureNow(): Promise<void> {
 /** The global the story tests put their window-sizer on (`.storybook/cell.setup.ts`). */
 export const WINDOW_GLOBAL = "__PURLIS_STORY_WINDOW__";
 
+/** The global the story tests put the engine's cursor mover on (`.storybook/cell.setup.ts`). */
+export const CURSOR_GLOBAL = "__PURLIS_STORY_CURSOR__";
+
+/**
+ * **The engine's own cursor, out of the story's way** (#4098): the browser has a cursor of its
+ * own besides a story's pointer, and it stays where it last was, over the frame's top left,
+ * where most stories draw. As a story lays out under it, Chromium tells the page that cursor came
+ * over what is drawn there, a real `pointerover`; a story that walks a pointer of its own and
+ * holds to what the page does as a pointer leaves hears it as its own pointer leaving. This
+ * puts the cursor in the frame's far corner, which such a story never draws in, and leaves it
+ * there. Says whether it moved it: only a story test can, never Storybook's own page, where the
+ * cursor is the person's.
+ */
+export async function parkTheEnginesCursor(): Promise<boolean> {
+  const park = (globalThis as Record<string, unknown>)[CURSOR_GLOBAL];
+  if (typeof park !== "function") {
+    if (cellInTest() !== undefined)
+      throw new Error("a story test has no cursor mover (.storybook/cell.setup.ts)");
+    return false;
+  }
+  await (park as () => Promise<void>)();
+  return true;
+}
+
 /** The short window the operator's complaint was of (#3389): about 500 px tall. */
 export const SHORT_WINDOW = { width: 800, height: 500 } as const;
 
