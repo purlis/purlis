@@ -855,6 +855,26 @@ export function lineChildren(source: string): { chips: string[]; unlisted: strin
   return { chips, unlisted };
 }
 
+/** **The pane head's right side, as its source draws it** (#5203, spec #5191): the parts
+ *  `PaneActions` writes in its `.pane-actions`, then those `PaneDoing` writes in its
+ *  `.pane-doing`, in the order they are written, which is the order they are drawn and tabbed
+ *  through. A part is a component's name, `{state}` for the state button handed in, `Separator`
+ *  for the divider, and `rows` for the pane's controls, drawn from its list of rows. */
+export function headActionsOrder(source: string): string[] {
+  const text = withoutComments(source, "ts");
+  const body = (name: string) => {
+    const start = text.search(new RegExp(`function ${name}\\b`));
+    if (start < 0) return "";
+    const end = text.slice(start + 1).search(/\n(?:export )?(?:function|const) /);
+    return end < 0 ? text.slice(start) : text.slice(start, start + 1 + end);
+  };
+  const parts = (within: string) =>
+    [
+      ...within.matchAll(/\{state\}|<(PaneBell|ChatMenuButton|PaneDoing|Separator)\b|rows\.map\(/g),
+    ].map((hit) => hit[1] ?? (hit[0] === "{state}" ? "{state}" : "rows"));
+  return [...parts(body("PaneActions")), ...parts(body("PaneDoing"))];
+}
+
 /** Whether some component draws an element whose `className` hands the DOM `chip`, written as
  *  a string, in `cn(…)` or beside other classes. */
 function drawn(chip: string, sources: readonly string[]): boolean {
@@ -1162,6 +1182,36 @@ export const plantedTall = { minBlockSize: 32 };
     ).toEqual([
       ".pane-chips > .pane-harness | height: var(--size-control) (a strip)",
       ".pane-skills | min-height: var(--size-control) (a strip)",
+    ]);
+  });
+
+  it("reads the head's right side as the chat's actions, a divider, then the pane's controls (#5203)", () => {
+    const source = readFileSync(join(SRC, "LayoutPanes.tsx"), "utf8");
+    // The state button, the bell and ⋯ last; then the divider and Split right, Split down and
+    // Close last, the pane's rows, inside `PaneDoing`.
+    expect(headActionsOrder(source)).toEqual([
+      "{state}",
+      "PaneBell",
+      "ChatMenuButton",
+      "PaneDoing",
+      "Separator",
+      "rows",
+    ]);
+    const planted = `
+      export function PaneActions({ state }) {
+        return (<div className="pane-actions">{state}<ChatMenuButton /><PaneBell /><PaneDoing /></div>);
+      }
+      function PaneDoing() {
+        return <div className="pane-doing">{rows.map(draw)}</div>;
+      }
+    `;
+    // ⋯ before the bell, and no divider: the order the head had before the person's ruling.
+    expect(headActionsOrder(planted)).toEqual([
+      "{state}",
+      "ChatMenuButton",
+      "PaneBell",
+      "PaneDoing",
+      "rows",
     ]);
   });
 
