@@ -18,6 +18,8 @@ import {
   workspacesListed,
 } from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { aBatchOf } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * The workspace axis: **projects, then workspaces, then chats** (ADR 0036).
@@ -118,7 +120,7 @@ function core(opened: ReturnType<typeof chat>[] = [], waiting: number[] = []) {
     asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
     if (cmd === "plugin:event|listen") {
       const { event, handler } = args as { event: string; handler: number };
-      if (event === "chat-moved") moves.push(handler);
+      if (event === CHAT_EVENTS) moves.push(handler);
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
@@ -179,7 +181,11 @@ function core(opened: ReturnType<typeof chat>[] = [], waiting: number[] = []) {
     /** Fires one `chat-moved`, the way the core pushes one. */
     move(payload: Moved) {
       for (const handler of moves)
-        window.__TAURI_INTERNALS__.runCallback(handler, { event: "chat-moved", id: 1, payload });
+        window.__TAURI_INTERNALS__.runCallback(handler, {
+          event: CHAT_EVENTS,
+          id: 1,
+          payload: aBatchOf("moved", payload),
+        });
     },
   };
 }

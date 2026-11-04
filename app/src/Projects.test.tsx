@@ -34,6 +34,8 @@ import { EXTENSIONS_ON_ASKED_AGAIN_AFTER, forgetExtensionsOn } from "./extension
 import { aboutThisMachine, sayAboutThisMachine } from "./windowprefs";
 import { PURLIS_LIGHT } from "./theme/handed.testkit";
 import { findResult } from "./actionResult.testkit";
+import { aBatchOf } from "./chatEvents.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
 
 /**
  * A window holding more than one project (ADR 0033, spec decision 23).
@@ -226,13 +228,13 @@ function core(
     },
     /** Fires one `chat-moved`, the way the core pushes one. */
     move(moved: Moved) {
-      const handlers = listeners.get("chat-moved") ?? [];
+      const handlers = listeners.get(CHAT_EVENTS) ?? [];
       if (handlers.length === 0) throw new Error("the window is not listening for moves");
       for (const handler of handlers) {
         window.__TAURI_INTERNALS__.runCallback(handler, {
-          event: "chat-moved",
+          event: CHAT_EVENTS,
           id: 1,
-          payload: moved,
+          payload: aBatchOf("moved", moved),
         });
       }
     },

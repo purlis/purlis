@@ -7,6 +7,8 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Moved, OpenChat } from "./bindings";
 import App from "./App";
+import { CHAT_EVENTS } from "./chatEvents";
+import { aBatchOf } from "./chatEvents.testkit";
 import { countReactsCommits, counts, drawnOutside } from "./reactCommits.testkit";
 import { measuring, type Room } from "./stripRoom.testkit";
 import { theFrameNow } from "./frame.testkit";
@@ -62,11 +64,11 @@ function chat(session: number): OpenChat {
 
 /** A core holding `open` chats and no sidebar, so every chat is on one strip. */
 function core(open: OpenChat[]): (moved: Moved) => void {
-  const listeners = new Map<string, number>();
+  const listeners = new Map<string, number[]>();
   mockIPC((cmd, args) => {
     if (cmd === "plugin:event|listen") {
       const { event, handler } = args as { event: string; handler: number };
-      listeners.set(event, handler);
+      listeners.set(event, [...(listeners.get(event) ?? []), handler]);
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
@@ -76,14 +78,15 @@ function core(open: OpenChat[]): (moved: Moved) => void {
     return null;
   });
   return (moved) => {
-    const handler = listeners.get("chat-moved");
-    if (handler === undefined) throw new Error("the window is not listening for moves");
+    const handlers = listeners.get(CHAT_EVENTS) ?? [];
+    if (handlers.length === 0) throw new Error("the window is not listening for moves");
     act(() => {
-      window.__TAURI_INTERNALS__.runCallback(handler, {
-        event: "chat-moved",
-        id: 1,
-        payload: moved,
-      });
+      for (const handler of handlers)
+        window.__TAURI_INTERNALS__.runCallback(handler, {
+          event: CHAT_EVENTS,
+          id: 1,
+          payload: aBatchOf("moved", moved),
+        });
       // The chat stores tell their readers once a frame (`heldStore.ts`): draw it in this act.
       theFrameNow();
     });
