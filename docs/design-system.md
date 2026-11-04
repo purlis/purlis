@@ -477,8 +477,10 @@ asked for), whatever the system's appearance. Where its values come from:
   (`accent.fill`, `accent.fill-hover`), the focus ring and the selected row's edge turn the same
   way, so the white words keep their 4.5:1 on the fill and the ring its 3:1; one that would come
   nearer the waiting or danger colour than 0.1, and nearer than Purlis's own, stays Purlis's
-  (`vocabulary::holds_as_apart`). A fill the parent draws as its surface (Purlis Classic) keeps
-  following the surface. `tab.active` stays Purlis's: it is a grey ground there, with nothing
+  (`vocabulary::holds_as_apart`). One the parent draws as its accent (the ring and the edge, in
+  Purlis and Purlis Classic) is the accent given, so what the parent draws alike stays alike: a
+  base16 import's edge is its ring (#5157). A fill the parent draws as its surface (Purlis
+  Classic) follows the surface as it is drawn, turned or not (#5157). `tab.active` stays Purlis's: it is a grey ground there, with nothing
   of the accent to turn. Section labels are tracked at
   .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
   that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its

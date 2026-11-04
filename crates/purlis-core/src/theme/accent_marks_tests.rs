@@ -177,32 +177,42 @@ fn a_ring_the_theme_gives_is_its_own() {
 }
 
 #[test]
-fn a_fill_the_parent_draws_as_its_surface_follows_the_surface_not_the_accent() {
+fn a_fill_the_parent_draws_as_its_surface_follows_the_surface_as_turned_not_as_written() {
     // Purlis Classic's primary is filled with its surface (#3177's KIN): an accent given over it
-    // alone leaves the fill as Classic draws it, and the ring and the edge turn.
+    // alone turns the surface (#4666), and the fill is that turned surface, sharing its hue
+    // (#5157), not Classic's teal beside a red surface. The fill under the pointer is Classic's
+    // active tab, which no accent turns; the ring and the edge turn.
     for classic in built_ins() {
-        let loaded = load(&json!({
-            "name": "Teal over Classic",
-            "appearance": if light(classic) { "light" } else { "dark" },
-            "tokens": { "accent.base": if light(classic) { DARK_TEAL } else { TEAL } },
-        }));
-        assert!(!loaded.refused, "{:?}", loaded.complaints);
-        let theme = loaded.theme.first();
-        for fill in ["accent.fill", "accent.fill-hover"] {
-            assert_eq!(
-                theme.value(fill),
-                classic.value(fill),
-                "{} {fill}",
-                classic.id
-            );
-        }
-        for edge in ["focus.ring", "list.selected-edge"] {
+        for accent in [
+            if light(classic) { DARK_TEAL } else { TEAL },
+            if light(classic) { "#5b3f9e" } else { "#9d7cd8" },
+        ] {
+            let loaded = load(&json!({
+                "name": "An accent over Classic",
+                "appearance": if light(classic) { "light" } else { "dark" },
+                "tokens": { "accent.base": accent },
+            }));
+            assert!(!loaded.refused, "{:?}", loaded.complaints);
+            let theme = loaded.theme.first();
+            let id = format!("{} {accent}", classic.id);
             assert_ne!(
-                theme.value(edge),
-                classic.value(edge),
-                "{} {edge}",
-                classic.id
+                theme.value("accent.surface"),
+                classic.value("accent.surface"),
+                "{id}"
             );
+            assert_eq!(
+                theme.value("accent.fill"),
+                theme.value("accent.surface"),
+                "{id}"
+            );
+            assert_eq!(
+                theme.value("accent.fill-hover"),
+                classic.value("accent.fill-hover"),
+                "{id}"
+            );
+            for edge in ["focus.ring", "list.selected-edge"] {
+                assert_eq!(theme.value(edge), accent, "{id} {edge}");
+            }
         }
     }
 }

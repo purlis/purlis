@@ -460,12 +460,20 @@ pub fn follow_kin(
             }
         }
         for token in DRAWN_IN_THE_ACCENT {
+            if given.contains_key(token) {
+                continue;
+            }
             // A token `below` draws as the one that drew it before follows that one, as it always
-            // did (Classic's primary fill is its surface), not the accent.
+            // did (Classic's primary fill is its surface), not the accent: as that one is now
+            // drawn, turned to the accent or not (#5157).
             let drawn_as_kin = KIN
                 .iter()
-                .any(|(kin, drew)| *kin == token && below.get(kin) == below.get(drew));
-            if given.contains_key(token) || drawn_as_kin {
+                .find(|(kin, drew)| *kin == token && below.get(kin) == below.get(drew));
+            if let Some((_, drew)) = drawn_as_kin {
+                if let Some(value) = given.get(drew).cloned() {
+                    given.insert(token, value);
+                    followed.push((token, *drew));
+                }
                 continue;
             }
             let Some(under) = below.get(token) else {
@@ -529,8 +537,8 @@ const ACCENT: &str = "accent.base";
 /// turning would bring nearer
 /// the waiting or danger colour than the rules of [`super::tint::APART`] allow, and nearer than
 /// the parent's, stays the parent's. One the parent draws alike the token of [`KIN`] that drew
-/// it before follows that token as it always did, not the accent: Purlis Classic's primary is
-/// filled with its surface. The active tab is not here: Purlis draws it as a grey ground, with
+/// it before follows that token as it is drawn, turned or not (#5157), not the accent: Purlis
+/// Classic's primary is filled with its surface, turned or not. The active tab is not here: Purlis draws it as a grey ground, with
 /// nothing of the accent to turn.
 pub const DRAWN_IN_THE_ACCENT: [&str; 4] = [
     "accent.fill",
