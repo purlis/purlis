@@ -168,11 +168,33 @@ fn a_seed_grouped_cut_or_exported_another_way_still_looks_like_one() {
 #[test]
 fn digits_alone_and_a_passphrase_are_no_seed() {
     // Every digit is in base32's alphabet, as a card's number may be.
-    for value in ["2345234523452346", "7654 7654 7654 7654", "3333444455556666"] {
+    for value in [
+        "2345234523452346",
+        "7654 7654 7654 7654",
+        "3333444455556666",
+    ] {
         assert!(!looks_like_a_seed(value), "{value}");
         assert!(Seed::parse(value).is_err(), "{value}");
     }
     assert!(!looks_like_a_seed("correct-horse-battery-staple"));
+}
+
+#[test]
+fn text_in_both_cases_is_no_seed_at_any_length() {
+    // A password or an API key, base32's characters by chance: no app gives a seed so.
+    for value in [
+        "aB3dE5fG7hJ2kL4mN6pQ",
+        "aB3dE5fG7hJ2kL4m",
+        "aB3dE5fG7hJ2kL4mN6pQrS2tU3vW4xY5",
+    ] {
+        assert!(!looks_like_a_seed(value), "{value}");
+        assert!(Seed::parse(value).is_err(), "{value}");
+    }
+    // Everything a bare seed is taken as still looks like one.
+    let upper = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    assert!(looks_like_a_seed(upper) && Seed::parse(upper).is_ok());
+    let lower = upper.to_ascii_lowercase();
+    assert!(looks_like_a_seed(&lower) && Seed::parse(&lower).is_ok());
 }
 
 #[test]

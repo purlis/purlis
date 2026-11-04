@@ -11,8 +11,8 @@ This builds on the amendment of the same day that records the secret fill. It ad
   code, since its line says nothing of one. Only once it is allowed does purlis read the seed and
   work the code out (TOTP, RFC 6238), on the vault's side, at the moment of filling. Only the code
   goes to the browser. A counter seed (`hotp`) is refused, since purlis keeps no count. A value
-  that looks like a seed, an authenticator's address or text of base32 characters alone, is
-  refused as a plain value too, so a seed never goes into a page.
+  that looks like a seed, an authenticator's address or text of base32 characters alone in one
+  case, is refused as a plain value too, so a seed never goes into a page.
 - **What the person sees** (SF-8). The browser's view marks each key filled into the page it
   shows `secret: <key>`, beside the page's site, while that page is on the site the key went to.
   The mark is heard as the key and the site, and its hint names the field the page labels. It is

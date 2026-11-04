@@ -389,6 +389,11 @@ fn allow_for_this_chat_says_a_code_goes_in_and_holds_the_seed_for_that_site_alon
         !fills.granted(7, "qa", "dash-2fa", "https://dash.example.test"),
         "a code's Allow holds no value"
     );
+    fills.forget(7);
+    assert!(
+        !fills.code_granted(7, "qa", "dash-2fa", "https://dash.example.test"),
+        "it goes with the chat"
+    );
 }
 
 #[test]

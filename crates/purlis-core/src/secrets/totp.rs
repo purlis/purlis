@@ -8,8 +8,8 @@
 //! - **A seed is what an authenticator app is given**: an `otpauth://totp/…` address, with its
 //!   own algorithm (SHA-1, SHA-256 or SHA-512), digits (6 to 10) and period, or the bare base32
 //!   secret, read as six digits of SHA-1 every 30 seconds, the defaults every app takes. A bare
-//!   secret is taken only at the lengths apps are given (10, 16, 20, 32 or 64 bytes), and is never
-//!   digits alone. A value that looks like a seed never goes into a page as itself, a wider net
+//!   secret is taken only at the lengths apps are given (10, 16, 20, 32 or 64 bytes), in one case,
+//!   and is never digits alone. A value that looks like a seed never goes into a page as itself, a wider net
 //!   than what a code is made from ([`looks_like_a_seed`]).
 //! - **A counter's seed (`otpauth://hotp/…`) is refused**: its code needs a count purlis doesn't
 //!   keep, and a code used out of turn locks the account.
@@ -82,9 +82,10 @@ const BARE_CHARACTERS: [usize; 5] = [16, 26, 32, 52, 103];
 
 /// **Whether `text` looks like a 2FA seed** (#5118): such a value never goes into a page as
 /// itself, so this reads wider than [`Seed::parse`] and accepts refusing some passwords. An
-/// authenticator's address or its export's, or text of base32 characters alone, however grouped,
-/// that holds letters and digits from 80 bits' worth, or letters at a length apps are given.
-/// Digits alone are no seed: a card's test number is written so.
+/// authenticator's address or its export's, or text of base32 characters alone, however grouped
+/// and in one case, that holds letters and digits from 80 bits' worth, or letters at a length apps
+/// are given. Digits alone are no seed, as a card's number may be written, and neither is text in
+/// both cases, as a password or an API key often is: no app gives a seed so.
 pub fn looks_like_a_seed(text: &str) -> bool {
     let trimmed = text.trim_start();
     if an_address(trimmed)
@@ -94,16 +95,21 @@ pub fn looks_like_a_seed(text: &str) -> bool {
     {
         return true;
     }
-    let (mut letters, mut digits) = (0usize, 0usize);
+    let (mut lower, mut upper, mut digits) = (0usize, 0usize, 0usize);
     for c in text.chars() {
         match c {
-            'a'..='z' | 'A'..='Z' => letters += 1,
+            'a'..='z' => lower += 1,
+            'A'..='Z' => upper += 1,
             '2'..='7' => digits += 1,
             '=' | '-' => {}
             c if c.is_whitespace() => {}
             _ => return false,
         }
     }
+    if lower > 0 && upper > 0 {
+        return false;
+    }
+    let letters = lower + upper;
     let all = letters + digits;
     letters > 0 && ((digits > 0 && all >= FEWEST_CHARACTERS) || BARE_CHARACTERS.contains(&all))
 }
@@ -238,8 +244,8 @@ enum Shape {
 /// The lengths in bytes a bare secret is taken at.
 const BARE_BYTES: [usize; 5] = [10, 16, 20, 32, 64];
 
-/// A base32 secret as people copy one: in any case, in groups of spaces or hyphens, padded or
-/// not, and nothing else, with whatever its last character's unused bits hold, as a generator
+/// A base32 secret as people copy one: in either case, in groups of spaces or hyphens, padded or
+/// not, and nothing else (as a value alone, in one case throughout), with whatever its last character's unused bits hold, as a generator
 /// that picks characters leaves them. Every copy is wiped.
 fn secret(text: &str, shape: Shape) -> Result<Zeroizing<Vec<u8>>, &'static str> {
     let mut plain = Zeroizing::new(String::with_capacity(text.len()));
@@ -251,8 +257,12 @@ fn secret(text: &str, shape: Shape) -> Result<Zeroizing<Vec<u8>>, &'static str> 
             _ => return Err(NOT_A_SEED),
         }
     }
-    // Digits alone are a card's test number sooner than a seed.
-    if shape == Shape::Bare && plain.chars().all(|c| c.is_ascii_digit()) {
+    // Digits alone are a card's number sooner than a seed, and both cases a password's.
+    if shape == Shape::Bare
+        && (plain.chars().all(|c| c.is_ascii_digit())
+            || (text.chars().any(|c| c.is_ascii_lowercase())
+                && text.chars().any(|c| c.is_ascii_uppercase())))
+    {
         return Err(NOT_A_SEED);
     }
     let mut base32 = BASE32_NOPAD.specification();
