@@ -617,7 +617,7 @@ fn read(
         return Ok(value);
     }
     let need = purlis_core::secrets::ask::Need {
-        chat: session,
+        chat: Some(session),
         persona: asker.persona.clone().unwrap_or_default(),
         vault: asked.vault.clone(),
         key: asked.key.clone(),
