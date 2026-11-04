@@ -16,6 +16,7 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 
+use crate::counts::counted;
 use crate::dispatchplace::{self, InFolder};
 use crate::finished::{self, Commits, Folder};
 use crate::piececlaim::{self, Live};
@@ -158,24 +159,20 @@ pub fn prune(
     say(Say::Info(
         if asked.dry_run {
             format!(
-                "Would remove {removed} finished folder{} and keep {}. Nothing was removed.",
-                plural(removed),
+                "Would remove {} and keep {}. Nothing was removed.",
+                counted(removed, "finished folder", "finished folders"),
                 kept.len()
             )
         } else {
             format!(
-                "Removed {removed} finished folder{}, kept {}.",
-                plural(removed),
+                "Removed {}, kept {}.",
+                counted(removed, "finished folder", "finished folders"),
                 kept.len()
             )
         }
         .into(),
     ));
     code
-}
-
-fn plural(n: usize) -> &'static str {
-    if n == 1 { "" } else { "s" }
 }
 
 /// How `folder`'s commits stand where it may go but for links, else why it stays.
