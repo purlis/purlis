@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793824994278,
+  "lastUpdate": 1793827988422,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39270,6 +39270,48 @@ window.BENCHMARK_DATA = {
             "value": 101.584663,
             "unit": "ms",
             "extra": "median of 5 runs: 100.967, 101.105, 101.585, 102.251, 102.642 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8bf4e6387d18913ff7082f5ab134646eeb3f20a5",
+          "message": "Finished folders: ignored links, finished task folders, carried branches, worktree prune (#4245, #5168) (#5209)\n\n* An ignored link does not keep a chat's branch folder (#4245)\n\ngit lists a symbolic link with no closing slash, so regenerated() never\nmatched a lane's linked app/node_modules and a chat's removal was refused.\nAn ignored link is now disposable wherever it points: removing the folder\ndeletes the link, never its target.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KGJ0FPPQ8VX2HFVV8PH9Q7\nPurlis-Persona: steward\n\n* A finished task folder goes without --force (#5168, ADR 0110)\n\nA branch folder purlis cut for a task was refused by purlis worktree\nremove and the explorer's Remove whatever its state (#1534). Now a\nfinished one goes, from a chat or a terminal: its task has ended,\nnothing in it would be lost, and no other folder links into it. One\nthat is not finished is still sent to its Changes tab, and the refusal\nsays why. --force on a task's folder stays refused.\n\nThe reading lives in purlis_core::finished, for remove, the explorer\nand the prune to come. ADR 0110 records the decision; CONTEXT.md gains\nthe term and keeps 'landed' for change members.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGJ0FPPQ8VX2HFVV8PH9Q7\nPurlis-Persona: steward\n\n* A carried branch is deleted with -D when asked (#5168, ADR 0110)\n\ngit's branch -d never finds a squash-landed branch merged, so\n--delete-branch and a task's Discard left every squashed lane behind as\na branch. Where standing::landed reads it Carried, read while its folder\nis there, the local branch now goes with git branch -D. A branch only\nfound in history (its base changed those files since) stays.\n\nContract moved on purpose: the #3879 suite's squash test asked\n--delete-branch and pinned the branch kept; it now asks without it, and\na new test pins the branch gone when asked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGJ0FPPQ8VX2HFVV8PH9Q7\nPurlis-Persona: steward\n\n* Changelog fragment for the carried-branch deletion (#5168)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGJ0FPPQ8VX2HFVV8PH9Q7\nPurlis-Persona: steward\n\n* Finished task folders: the app's test reads the new refusal, and the explorer's rule is tested (#5168)\n\nThe window's Remove of a running task's folder now says why it is not\nfinished (ADR 0110); a forced one is still left to the Changes tab.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGJ0FPPQ8VX2HFVV8PH9Q7\nPurlis-Persona: steward\n\n* purlis worktree prune: every finished folder of a workspace (#5168, ADR 0110)\n\npurlis worktree prune -w <ws> [repo] [--dry-run] [--keep-branches]\nremoves every finished folder, task folders and plain ones, in every\nrepo or one, and a folder on no branch at a commit of its base. A folder\nthat links into another goes first; one a remaining folder links into\nstays. A folder an open chat holds that has declared neither done nor\nabandoned stays; without the app, which chats are open cannot be told,\nso a held folder is kept. Each removed folder's local branch goes (-d,\nor -D where carried) unless --keep-branches. --dry-run lists what would\ngo and every folder kept, with why.\n\nIn a chat the app runs it (GitWork::WorktreePrune) by the route a\nremoval takes: from the workspace's folder or the project root, each\nfolder's git in its checked clone and folder, each removal held to its\nclaim. It joins the own-scope allow, alone in its call as a removal is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGJ0FPPQ8VX2HFVV8PH9Q7\nPurlis-Persona: steward\n\n* Prune and finished folders: what the two-axis review found (#5168)\n\n- A chat may prune from inside a branch folder; the folder it stands in\n  is kept and said, where before the whole prune was refused.\n- A folder git still lists but whose folder is gone is listed as kept,\n  with the command that clears it.\n- Links are read file by file inside untracked folders, so a link one\n  level down still keeps what it points into.\n- A folder on no branch reads the clone's own branch as its base only\n  where origin names no default.\n- One listing of a workspace's folders serves links and prune.\n- Every reason says what to do next; 'nothing was removed' is said once.\n- The task-folder fixture and its helpers live in tests/support/folders.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGJ0FPPQ8VX2HFVV8PH9Q7\nPurlis-Persona: steward\n\n* Prune says its count through counts::counted (#5168)\n\nThe house guard (no_count_says_thing_s, #2416) refuses an inline plural\nsuffix.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGJ0FPPQ8VX2HFVV8PH9Q7\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T20:16:23Z",
+          "tree_id": "6a687c113af83025ebe9914d5bcde1c5595b9fcc",
+          "url": "https://github.com/purlis/purlis/commit/8bf4e6387d18913ff7082f5ab134646eeb3f20a5"
+        },
+        "date": 1793827982093,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.701704,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.692, 0.700, 0.702, 0.717, 0.730 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5593295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.449, 16.538, 16.559, 16.580, 16.652 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.92839450000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.520, 101.571, 101.928, 102.823, 103.803 ms"
           }
         ]
       }
