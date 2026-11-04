@@ -4,6 +4,7 @@
 import { useContext, useState } from "react";
 import type { FillShown, PlaneId, Shown } from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
+import { AlwaysLine } from "./LoginSite";
 import { Notice, NoticeOf, type NoticeAction } from "./Notice";
 
 /**
@@ -60,11 +61,12 @@ export function SecretFillSite({ fill }: { fill: FillShown }) {
         <p className="ui-text-meta">{fill.no_always}.</p>
       ) : (
         fill.line != null && (
-          <p className="ui-text-meta">
-            Always allow adds this to <code>{fill.under}</code>
-            {fill.vault_too ? ", and lets this persona use the vault" : ""}:{" "}
-            <code className="login-site-line">{fill.line}</code>
-          </p>
+          <AlwaysLine
+            lead="Always allow adds this to "
+            under={fill.under}
+            vaultToo={fill.vault_too}
+            line={fill.line}
+          />
         )
       )}
     </div>

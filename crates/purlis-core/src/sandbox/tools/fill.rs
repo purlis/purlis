@@ -83,9 +83,13 @@ pub(super) fn of(
     Ok(Fill { key, origin, card })
 }
 
+/// Names other settings read as a program's tool by name alone (a forge's command line), which
+/// a line Always writes never takes.
+const READ_AS_A_PROGRAM: [&str; 3] = ["gh", "glab", "git"];
+
 /// **The name Always gives a line of `key`**, where `taken` holds the persona's tools' names: the
-/// key's own, made a tool's name, then with `-2`, `-3` and on until one is free. None where the
-/// key makes no name.
+/// key's own, made a tool's name, then with `-2`, `-3` and on until one is free, never a name
+/// read as a program's ([`READ_AS_A_PROGRAM`]). None where the key makes no name.
 pub fn name_for(key: &str, taken: &dyn Fn(&str) -> bool) -> Option<String> {
     let plain: String = key
         .chars()
@@ -110,5 +114,9 @@ pub fn name_for(key: &str, taken: &dyn Fn(&str) -> bool) -> Option<String> {
                 format!("{base}-{n}")
             }
         })
-        .find(|name| super::refused_name(name).is_none() && !taken(name))
+        .find(|name| {
+            super::refused_name(name).is_none()
+                && !taken(name)
+                && !READ_AS_A_PROGRAM.contains(&name.as_str())
+        })
 }

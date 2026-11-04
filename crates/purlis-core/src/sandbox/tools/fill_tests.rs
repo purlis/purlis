@@ -148,6 +148,11 @@ fn always_names_a_line_after_its_key_and_steps_past_a_name_taken() {
         Some("dash-api-key-2")
     );
     assert_eq!(fill::name_for("..", &|_| false), None);
+    assert_eq!(
+        fill::name_for("gh", &|_| false).as_deref(),
+        Some("gh-2"),
+        "never a name a forge's tool is read by"
+    );
 }
 
 #[test]

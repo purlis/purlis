@@ -85,7 +85,7 @@ impl FillWait {
     /// Whether only Allow once and Keep blocked are offered: a card's key, or a field that asks
     /// each time.
     pub fn once_only(&self) -> bool {
-        self.card || self.multi_line
+        self.card || self.multi_line || !held_open(&self.origin)
     }
 
     /// **The digest of what the notice draws**: a press names it, so a notice drawn of anything
@@ -391,6 +391,7 @@ fn frame_warning(origin: &str, page: Option<&str>) -> Option<String> {
 /// for the answer, at most [`purlis_core::loginask::THE_PERSON_IS_WAITED_FOR`], under no lock of
 /// the browsers', and then on a Secret ask where the vault holds no such key.
 pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<Allowed, String> {
+    let started = std::time::Instant::now();
     let (origin, warnings) = judged(held, session, asked)?;
     // SF-5: a multi-line text box or an editable area asks each time, whatever was allowed.
     let multi_line = asked.field.kind != FieldKind::OneLine;
@@ -461,7 +462,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
             Heard::Gone => return Err(NOT_ANSWERED.to_owned()),
         }
     }
-    let value = read(held, session, asked)?;
+    let value = read(held, session, asked, &origin, started)?;
     // Again once it is read: the pool or its runner may have changed meanwhile.
     if let Some((read, bound)) = &runner
         && read().as_ref() != Ok(bound)
@@ -507,14 +508,22 @@ fn granted(
     origin: &str,
 ) -> bool {
     use purlis_core::sandbox::grant::Level;
-    let lines = purlis_core::secretfill::lines(root, persona, &asked.vault, &asked.key, origin);
-    if lines.card {
+    let ctx = Ctx::new(root, Env::from_process());
+    let lines = purlis_core::secretfill::lines(&ctx, persona, &asked.vault, &asked.key, origin);
+    if lines.card || !held_open(origin) {
         return false;
     }
     let locks = Locks::of(root);
     (lines.always && locks.scope_removed(Level::You).is_none())
         || (fills.granted(session, &asked.vault, &asked.key, origin)
             && locks.scope_removed(Level::Chat).is_none())
+}
+
+/// **Whether a grant may hold `origin` open** (#5116): an `https` site alone. A site on this
+/// machine (`http://localhost` and the like) is served by whatever listens on its port, which
+/// may be a program the chat itself started, so each fill there is asked about.
+fn held_open(origin: &str) -> bool {
+    origin.starts_with("https://")
 }
 
 /// Why Always isn't offered to a chat that runs as no persona: it has no tools to write in.
@@ -524,7 +533,7 @@ const NO_PERSONA: &str = "Always allow isn't offered for a chat that runs as no 
 /// Always too, with the line it writes, where the project lets one be written for the persona.
 fn offered(root: &std::path::Path, mut wait: FillWait) -> FillWait {
     let lines = purlis_core::secretfill::lines(
-        root,
+        &Ctx::new(root, Env::from_process()),
         wait.persona.as_deref(),
         &wait.vault,
         &wait.key,
@@ -588,7 +597,15 @@ fn heard(held: &Held, fills: &Fills, wait: FillWait) -> Result<Heard, String> {
 
 /// **The value to fill, read for the chat now**; where the vault holds no such key, asked of the
 /// person on a Secret ask (#5054, ADR 0109), and read again once they added it.
-fn read(held: &Held, session: u32, asked: &FillAsked) -> Result<Secret, String> {
+/// It waits on that ask for what is left of the time the person is waited for on a fill, and at
+/// least as long as a brokered run waits on one. The fill is judged again once the key is added.
+fn read(
+    held: &Held,
+    session: u32,
+    asked: &FillAsked,
+    origin: &str,
+    started: std::time::Instant,
+) -> Result<Secret, String> {
     let (asker, _) = held
         .chats()
         .login_asker(held.root(), session)
@@ -604,20 +621,27 @@ fn read(held: &Held, session: u32, asked: &FillAsked) -> Result<Secret, String> 
         persona: asker.persona.clone().unwrap_or_default(),
         vault: asked.vault.clone(),
         key: asked.key.clone(),
-        tool: None,
+        // What the person reads the key is for.
+        tool: Some(format!("a secret fill on {origin}")),
     };
-    let within = purlis_core::secrets::ask::holds_for(asker.harness);
+    let within = purlis_core::loginask::THE_PERSON_IS_WAITED_FOR
+        .saturating_sub(started.elapsed())
+        .max(purlis_core::secrets::ask::holds_for(asker.harness));
     let moved = || held.chats().asks_may_have_moved();
     match held
         .secret_asks()
         .hold(need, within, &mut |_: &str| moved())
     {
-        purlis_core::secrets::ask::Held::Filled => read()?.ok_or_else(|| {
-            format!(
-                "vault '{}' still holds no {}, so nothing was filled",
-                asked.vault, asked.key
-            )
-        }),
+        purlis_core::secrets::ask::Held::Filled => {
+            // Judged again as the project reads now: it may have changed while the key was added.
+            judged(held, session, asked)?;
+            read()?.ok_or_else(|| {
+                format!(
+                    "vault '{}' still holds no {}, so nothing was filled",
+                    asked.vault, asked.key
+                )
+            })
+        }
         purlis_core::secrets::ask::Held::Declined { line }
         | purlis_core::secrets::ask::Held::StillOpen { line } => {
             Err(format!("{line}: nothing was filled"))
@@ -699,7 +723,14 @@ pub fn answer(
             ..wait.clone()
         },
     );
-    if now.digest() != wait.digest() {
+    // Once and this chat are drawn again only where what they are changed: a card's mark. Always
+    // writes the line, so anything of it changed is a new notice.
+    let moved = if asked.press == Press::Always {
+        now.digest() != wait.digest()
+    } else {
+        now.card != wait.card
+    };
+    if moved {
         let said = format!(
             "The project's settings for {} changed. Check the ask, then choose again.",
             wait.key
@@ -709,6 +740,13 @@ pub fn answer(
     }
     if asked.press == Press::Always
         && let Some(why) = wait.no_always.clone()
+    {
+        return Err(why);
+    }
+    // Policy that took vault grants away since the notice was drawn holds Always's back too.
+    if asked.press == Press::Always
+        && wait.vault_too
+        && let Some(why) = locks.vault_grants_refused()
     {
         return Err(why);
     }

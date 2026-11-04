@@ -295,7 +295,7 @@
     {
       "at": "loginasks.rs written",
       "writes": "the project's manifest and its local settings",
-      "by": ["answerBrowserLogin"]
+      "by": ["answerBrowserLogin", "answerSecretFill"]
     },
     {
       "at": "proposals.rs apply_in",

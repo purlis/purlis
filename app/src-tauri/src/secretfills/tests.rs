@@ -288,7 +288,8 @@ fn a_fill_on_a_runner_not_shown_to_be_the_persons_own_is_refused_before_anyone_i
 
 const VAULTS: &str = r#"{"vaults":{
     "qa":{"provider":"plain-file","config":{"file":"q.json"},"persona":"qa"},
-    "pay":{"provider":"plain-file","config":{"file":"p.json"},"persona":"qa"}
+    "pay":{"provider":"plain-file","config":{"file":"p.json"},"persona":"qa"},
+    "prod":{"provider":"plain-file","config":{"file":"o.json"},"persona":"ops"}
 }}"#;
 
 /// A project whose settings are `file`, with the vaults above.
@@ -495,7 +496,7 @@ fn always_writes_the_one_line_allows_it_here_and_the_next_fill_asks_nothing() {
         file_of(dir.path())
     );
     let lines = purlis_core::secretfill::lines(
-        dir.path(),
+        &Ctx::new(dir.path(), Env::of(&[])),
         Some("qa"),
         "qa",
         "dash-api-key",
@@ -504,7 +505,7 @@ fn always_writes_the_one_line_allows_it_here_and_the_next_fill_asks_nothing() {
     assert!(lines.always, "allowed here in the same press");
     assert!(
         !purlis_core::secretfill::lines(
-            dir.path(),
+            &Ctx::new(dir.path(), Env::of(&[])),
             Some("qa"),
             "qa",
             "dash-api-key",
@@ -614,6 +615,7 @@ fn asked_into(key: &str, kind: FieldKind) -> FillAsked {
             kind,
         },
         page: None,
+        pool: None,
     }
 }
 
@@ -716,4 +718,99 @@ fn a_multi_line_notice_takes_allow_once_and_keep_blocked_alone_and_says_so() {
     .expect("once");
     assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
     assert!(!fills.granted(7, "qa", "dash-api-key", "https://dash.example.test"));
+}
+
+#[test]
+fn always_on_another_personas_vault_says_so_and_allows_that_vault_too() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let fills = Fills::default();
+    let shown = offered_in(
+        dir.path(),
+        "prod",
+        "deploy-token",
+        "https://dash.example.test",
+    );
+    assert!(shown.vault_too, "{shown:?}");
+    let locks = purlis_core::sandbox::policy::Locks::of(dir.path());
+    assert!(
+        crate::asking::secret_fill(&shown, &locks)
+            .fill
+            .expect("a fill")
+            .vault_too
+    );
+    let (id, _heard) = fills.raise(shown.clone()).expect("raised");
+
+    answered_in(
+        dir.path(),
+        &fills,
+        &Audited::default(),
+        &press(id, Press::Always, &shown.digest()),
+    )
+    .expect("allowed");
+
+    assert!(
+        purlis_core::sandbox::local::granted_vaults(dir.path())
+            .iter()
+            .any(|grant| grant.vault == "prod" && grant.persona == "qa")
+    );
+}
+
+#[test]
+fn a_site_on_this_machine_is_asked_about_each_time() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let fills = Fills::default();
+    fills.lock().granted.push((
+        7,
+        "qa".into(),
+        "dash-api-key".into(),
+        "http://localhost:3000".into(),
+    ));
+    let mut asked = asked_into("dash-api-key", FieldKind::OneLine);
+    asked.field.origin = Some("http://localhost:3000".into());
+    assert!(asks(
+        dir.path(),
+        &fills,
+        7,
+        Some("qa"),
+        &asked,
+        "http://localhost:3000"
+    ));
+    let one = offered_in(dir.path(), "qa", "dash-api-key", "http://localhost:3000");
+    let options: Vec<String> =
+        crate::asking::secret_fill(&one, &purlis_core::sandbox::policy::Locks::of(dir.path()))
+            .options
+            .into_iter()
+            .map(|o| o.label)
+            .collect();
+    assert_eq!(options, ["Allow once", "Keep blocked"]);
+}
+
+#[test]
+fn allow_once_isnt_drawn_again_for_a_change_only_always_would_write() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let fills = Fills::default();
+    let shown = offered_in(
+        dir.path(),
+        "qa",
+        "dash-api-key",
+        "https://dash.example.test",
+    );
+    let (id, heard) = fills.raise(shown.clone()).expect("raised");
+    // Another tool takes the name the line would have had.
+    std::fs::write(
+        purlis_core::names::manifest(dir.path()),
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.qa.tools.dash-api-key]\nvault = \"qa\"\nkey = \"other\"\nfill = \"https://elsewhere.example.test\"\n",
+    )
+    .expect("changed");
+
+    let pressed = answered_in(
+        dir.path(),
+        &fills,
+        &Audited::default(),
+        &press(id, Press::Once, &shown.digest()),
+    )
+    .expect("allowed once");
+
+    assert!(matches!(pressed, Pressed::Done { .. }), "{pressed:?}");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
 }
