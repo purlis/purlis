@@ -12,7 +12,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Group, Panel } from "react-resizable-panels";
 import { expect, waitFor } from "storybook/test";
 import { expectFocusInSight } from "../../stories.testkit";
-import { panelRoot } from "./Panel";
+import { resizablePanelRoot } from "./Panel";
 import { Separator } from "./Separator";
 
 /** A row of regions: a side, its edge, and the content holding two panes split by a handle. */
@@ -27,14 +27,19 @@ function Regions() {
               id="side"
               className="region-slot slot-left"
               defaultSize="35%"
-              {...panelRoot("side")}
+              {...resizablePanelRoot("side")}
               role="region"
               aria-label="Side"
             >
               <p style={{ margin: "var(--space-3)" }}>Chats</p>
             </Panel>
             <Separator aria-label="Resize the side" />
-            <Panel id="content" {...panelRoot("content")} role="region" aria-label="Content">
+            <Panel
+              id="content"
+              {...resizablePanelRoot("content")}
+              role="region"
+              aria-label="Content"
+            >
               <Group orientation="vertical">
                 <Panel id="talk">
                   <p style={{ margin: "var(--space-3)" }}>talk</p>

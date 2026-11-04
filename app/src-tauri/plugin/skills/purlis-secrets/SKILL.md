@@ -24,6 +24,24 @@ purlis secret list <vault>        # the KEYS in one vault. No values.
                                   # this chat's persona may use.
 ```
 
+## A credential you lack: raise a Secret ask
+
+Never ask the person for a password, token or key in this conversation, and never have them
+paste one: raise a Secret ask for any credential you lack, declared or not, with the
+`secret_ask` tool or `purlis secret ask <KEY> --purpose "<what for>"`, and the person fills it
+in purlis's window. You hear only filled, with the vault and key to use, or declined.
+
+```bash
+purlis secret ask STRIPE_KEY --purpose "charge test cards in the e2e suite"
+# filled team/STRIPE_KEY: ...     exit 0: use that vault and key with `purlis secret exec`
+# declined team/STRIPE_KEY ...    exit 1: go on without it; don't ask again in this chat
+# waiting on you for team/...     exit 75: not answered yet; you are told when it is
+```
+
+The vault is your persona's unless you add `--vault <name>`. A key the vault holds already
+answers filled at once, so asking is also how you check. The person may store it under
+another name or vault: use the name you hear. On Codex and opencode, use the command.
+
 ## Store one: the value never goes on the command line
 
 ```bash

@@ -370,14 +370,20 @@ fn missing_key(missing: &Missing<'_>, tool: &Tool) -> Option<String> {
         .cloned()
 }
 
-/// The Secret ask of run `ask` of `persona`'s `tool` for `key`.
-fn need_of(ask: &brokered::Ask, persona: &str, tool: &Tool, key: String) -> Need {
+/// The Secret ask of run `ask` of `persona`'s `tool` for `key`, in the project at `root`: as a
+/// brokered run of this machine asks it, with what the persona's definition declares the key
+/// for, and no words of the chat's (#5072, #5076).
+fn need_of(root: &Path, ask: &brokered::Ask, persona: &str, tool: &Tool, key: String) -> Need {
     Need {
         chat: Some(ask.chat),
         persona: persona.to_owned(),
         vault: tool.vault.clone(),
+        declared: purlis_core::secrets::needs::declared(root, persona, &key)
+            .map(|need| need.purpose),
         key,
         tool: Some(tool.name.clone()),
+        purpose: None,
+        names_no_vault: false,
     }
 }
 
@@ -398,15 +404,23 @@ fn filled_first(
         if asked.contains(&key) {
             break;
         }
-        let need = need_of(gate.ask, &checked.persona, &checked.tool, key.clone());
+        let need = need_of(
+            gate.root,
+            gate.ask,
+            &checked.persona,
+            &checked.tool,
+            key.clone(),
+        );
         let held = missing.asks.hold(need, missing.within, &mut |line: &str| {
             moved();
             say(writer, &Frame::Note(line.to_owned()));
         });
         moved();
         match held {
-            Held::Filled => asked.push(key),
-            Held::Declined { line } => return Err(line.into()),
+            // Filled under another name, the key is still missing: read after the Allow, and
+            // refused there as before.
+            Held::Filled { .. } => asked.push(key),
+            Held::Declined { line } | Held::Refused { line } => return Err(line.into()),
             Held::StillOpen { line } => {
                 return Err(Refused {
                     why: line,
@@ -436,7 +450,7 @@ pub fn decided(
             let Some(key) = missing_key(missing, &unbound.tool) else {
                 return Err(String::from(not).into());
             };
-            let need = need_of(gate.ask, &unbound.persona, &unbound.tool, key);
+            let need = need_of(gate.root, gate.ask, &unbound.persona, &unbound.tool, key);
             // By the gate's kind, never its words: a runner not confirmed just now is not one
             // that can't receive, and its chat is declined nothing.
             let told = match not {

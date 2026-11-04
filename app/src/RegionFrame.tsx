@@ -58,7 +58,7 @@ import { inADialog } from "./paneKeyboard";
 import { CHAT_KEYBOARD } from "./actions";
 import { forgetFrameScroll, useViewScroll } from "./viewScroll";
 import { IconButton } from "./ui/button/Button";
-import { PanelTitle, panelRoot } from "./ui/panel/Panel";
+import { PanelTitle, panelRoot, resizablePanelRoot } from "./ui/panel/Panel";
 import { ActivityBarFrame } from "./ui/activity/ActivityItem";
 
 /**
@@ -1149,7 +1149,7 @@ function Slot({
       className={`region-slot slot-${side}${arrived ? " arrived" : ""}`}
       data-slot={side}
       // A side is a panel (`ui/panel`); the bottom slot only holds its halves, each one.
-      {...(side === "panel" ? {} : panelRoot("side"))}
+      {...(side === "panel" ? {} : resizablePanelRoot("side"))}
       // A region only while it has a name: an unnamed one is no landmark.
       role="region"
       aria-label={named}

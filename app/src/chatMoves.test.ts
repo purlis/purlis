@@ -9,6 +9,7 @@ import {
   heardMove,
   moveCancellable,
   moveOffers,
+  movesOnceAPoolIsSetUp,
   moveSaid,
   movesDue,
   movesWith,
@@ -154,5 +155,15 @@ describe("Move to runner and Move here (#2048)", () => {
       words: "Moving to pool builds now, with two.",
       trouble: false,
     });
+  });
+});
+
+describe("Move to a pool… while none is kept (#4484)", () => {
+  it("is a harness chat's here while this machine keeps no pool, and nothing else's", () => {
+    expect(movesOnceAPoolIsSetUp({ harness: "claude-code", pool: null }, false)).toBe(true);
+    expect(movesOnceAPoolIsSetUp({ harness: "claude-code", pool: null }, true)).toBe(false);
+    expect(movesOnceAPoolIsSetUp({ harness: "claude-code", pool: "builds" }, false)).toBe(false);
+    expect(movesOnceAPoolIsSetUp({ harness: null, pool: null }, false)).toBe(false);
+    expect(movesOnceAPoolIsSetUp(undefined, false)).toBe(false);
   });
 });

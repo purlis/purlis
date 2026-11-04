@@ -20,14 +20,16 @@
 //!   naming the vault and key and never a value, sent as the person's message as the board allows
 //!   (`crate::vaultroute::tell`, ADR 0064's gated send) and otherwise handed to its next turn.
 
-use purlis_core::secrets::ask::{Answer, Answered};
+use purlis_core::secrets::ask::{Answer, Answered, Named};
 use purlis_core::secrets::{Ctx, Env, Zeroizing};
 
 use crate::vaultroute::{Told, sent_as, tell};
 
 /// **The person fills Secret ask `id`, or with no `value` says Not now** (#5068): a fill is
 /// stored in the vault and every command that waits on it runs; Not now tells them it was
-/// declined. Each chat that stopped waiting is nudged.
+/// declined. Each chat that stopped waiting is nudged. A fill goes into `vault` under `key`
+/// where the person chose either in place of the asked one (#5072), and the chats hear that
+/// name.
 #[tauri::command]
 #[specta::specta]
 pub async fn answer_secret_ask(
@@ -35,10 +37,17 @@ pub async fn answer_secret_ask(
     plane: crate::planes::PlaneId,
     id: u32,
     value: Option<crate::vaults::SecretValue>,
+    vault: Option<String>,
+    key: Option<String>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("answering a secret ask", move || {
-        secret_answered(&held, id, value.map(crate::vaults::SecretValue::into_value))
+        secret_answered(
+            &held,
+            id,
+            value.map(crate::vaults::SecretValue::into_value),
+            Named { vault, key },
+        )
     })
     .await
 }
@@ -48,12 +57,13 @@ pub fn secret_answered(
     held: &crate::planes::Held,
     id: u32,
     value: Option<Zeroizing<String>>,
+    named: Named,
 ) -> Result<(), String> {
     let answer = value.map_or(Answer::Decline, Answer::Fill);
     let ctx = Ctx::new(held.root(), Env::from_process());
-    let answered = held
-        .secret_asks()
-        .answer(&ctx, id, answer, crate::asking::the_window());
+    let answered =
+        held.secret_asks()
+            .answer_as(&ctx, id, answer, named, crate::asking::the_window());
     held.chats().asks_may_have_moved();
     let answered = answered?;
     tracing::info!(
@@ -67,6 +77,9 @@ pub fn secret_answered(
         answered.key,
     );
     nudge(held, &answered);
+    // A first fill of a key the persona does not declare, or into a vault it did not name, is
+    // offered to the person as a change to the persona (#5076).
+    crate::proposals::offer_need(held, &answered);
     Ok(())
 }
 
@@ -87,5 +100,38 @@ fn nudge(held: &crate::planes::Held, answered: &Answered) {
         if told == Told::NotSent {
             held.chats().tell_outcome(chat, answered.told.clone());
         }
+    }
+}
+
+/// **A chat's `secret_ask` line** (#5072, ADR 0109): `purlis secret ask` or the `secret_ask`
+/// tool. The persona and the harness are this app's record of the chat whose token the line
+/// carries; the rest is [`purlis_core::secrets::ask::raised`]'s. Answered once the person
+/// answers, or pending at the chat's harness's timeout margin.
+pub fn asked(
+    held: &crate::planes::Held,
+    asked: &purlis_core::secrets::ask::SecretAsk,
+) -> purlis_core::hookwire::Answer {
+    use purlis_core::hookwire::Answer;
+    let Some(open) = held
+        .chats()
+        .open_now()
+        .into_iter()
+        .find(|open| open.session == asked.chat)
+    else {
+        return Answer::No {
+            why: format!("chat {} is not one this app has open", asked.chat),
+        };
+    };
+    let ctx = Ctx::new(held.root(), Env::from_process());
+    let chat = purlis_core::secrets::ask::Chat {
+        chat: asked.chat,
+        persona: open.persona.as_deref(),
+        harness: open.harness,
+    };
+    match purlis_core::secrets::ask::raised(&ctx, held.secret_asks(), chat, asked, &|| {
+        held.chats().asks_may_have_moved();
+    }) {
+        Ok(said) => Answer::Secret(said),
+        Err(why) => Answer::No { why },
     }
 }

@@ -3,7 +3,7 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, within } from "@testing-library/react";
+import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -208,6 +208,20 @@ describe("the welcome's way in by path and recents", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(asked.some((one) => one.cmd === "approve_plane")).toBe(false);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Welcome to purlis");
+  });
+
+  it("keeps pools to one quiet row, which waits for a project to open Pool setup in (#4484)", async () => {
+    core(() => undefined);
+    render(<App />);
+    const row = await screen.findByRole("button", { name: /Run chats on another machine/ });
+    expect(row).toHaveAccessibleDescription("Set up a pool on your Docker, step by step.");
+    await userEvent.setup().click(row);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Pool setup opens in the project you open or create next."),
+      ).toHaveAttribute("role", "status"),
+    );
   });
 
   it("draws the path box as a setting row, and its acts in the set's rows (#1719)", async () => {
@@ -704,6 +718,11 @@ describe("the welcome's doors (#1812)", () => {
     }
     await person.tab();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: SIGN_IN }));
+    // Then the one quiet row for pools (#4484).
+    await person.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /Run chats on another machine/ }),
+    );
     // Then the page beside them: its recent projects, a stop of their own, and the path box.
     await person.tab();
     await person.tab();

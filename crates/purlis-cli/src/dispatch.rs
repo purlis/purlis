@@ -507,6 +507,7 @@ pub fn send(
             | Answer::Drafted { .. }
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
+            | Answer::Secret(_)
             | Answer::Working(_)
             | Answer::Pointed { .. }
             | Answer::Task(_),
@@ -773,6 +774,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Drafted { .. }
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
+            | Answer::Secret(_)
             | Answer::Working(_)
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }

@@ -129,6 +129,19 @@ pub const WORKTREE_UPDATE: &str = "worktree_update";
 /// it removes nothing.
 pub const WORKTREE_REMOVE: &str = "worktree_remove";
 
+/// Ask the person, in purlis's window, for a credential the chat lacks (#5072, ADR 0109): sent
+/// to the app as `purlis secret ask` sends it, and never a value back.
+pub const SECRET_ASK: &str = "secret_ask";
+
+/// **What every chat is told about a credential it lacks** (#5072, ADR 0109): in its
+/// session-start line ([`crate::briefing`]), the `secret_ask` tool's description and the
+/// purlis-secrets skill, word for word.
+pub const SECRET_ASK_SAID: &str = "Never ask the person for a password, token or key in this \
+     conversation, and never have them paste one: raise a Secret ask for any credential you \
+     lack, declared or not, with the `secret_ask` tool or `purlis secret ask <KEY> --purpose \
+     \"<what for>\"`, and the person fills it in purlis's window. You hear only filled, with \
+     the vault and key to use, or declined.";
+
 /// What [`WORKTREE_REMOVE`] is asked to remove: the `repo` and `piece` of a branch folder of
 /// the chat's own workspace, and whether to delete its branch too, as `git branch -d` does.
 pub fn worktree_remove_args(args: &Map<String, Value>) -> Result<(String, String, bool), String> {
@@ -215,7 +228,7 @@ pub const PRE_ALLOWED: [&str; 14] = [
 /// Apart from [`PRE_ALLOWED`] on purpose: a grade's chat is served the reads alone (SK-16), and
 /// is handed none of these. Named one by one, so a tool added later is asked about until it is
 /// ruled in here; an operator's or a project's `ask` or `deny` for any of them still wins.
-pub const OWN_SCOPE_TOOLS: [&str; 9] = [
+pub const OWN_SCOPE_TOOLS: [&str; 10] = [
     "todo_add",
     "todo_done",
     "memory_add",
@@ -227,6 +240,10 @@ pub const OWN_SCOPE_TOOLS: [&str; 9] = [
     WORKTREE_UPDATE,
     // The removal the app makes for the chat of its own finished branch folder (#3879).
     WORKTREE_REMOVE,
+    // A Secret ask (#5072, the operator's ruling of 2026-11-04, under #3829): it reads no
+    // vault and returns no value, and the person answers it in the window, so a harness
+    // prompt in front of it would ask twice, as before `ask_operator`.
+    SECRET_ASK,
 ];
 
 /// The variables the server reads to find the chat's place, as a `charter` command in the chat
@@ -582,7 +599,7 @@ fn wait_seconds() -> Value {
 }
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 28] = [
+pub static TOOLS: [Tool; 29] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
@@ -1101,6 +1118,43 @@ pub static TOOLS: [Tool; 28] = [
         read_only: false,
     },
     Tool {
+        name: SECRET_ASK,
+        description: "Ask the person, in purlis's window, for a credential this chat lacks: \
+                      an API key, a token, a password. Never ask the person for a password, \
+                      token or key in this conversation, and never have them paste one: raise \
+                      a Secret ask for any credential you lack, declared or not, with the \
+                      `secret_ask` tool or `purlis secret ask <KEY> --purpose \"<what for>\"`, \
+                      and the person fills it in purlis's window. You hear only filled, with \
+                      the vault and key to use, or declined. The vault is your persona's unless \
+                      you name one. A key the vault holds already answers filled at once. \
+                      Pending means the person has not answered yet: you are told when they \
+                      do.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "The key, as you will hand it to `purlis secret exec`: \
+                                        letters, digits, _, - and .",
+                    },
+                    "purpose": {
+                        "type": "string",
+                        "description": "What it is for, in one line: the person reads it \
+                                        before filling it.",
+                    },
+                    "vault": {
+                        "type": "string",
+                        "description": "The vault, where not your persona's.",
+                    },
+                },
+                "required": ["key", "purpose"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
         name: DISPATCH_NOTE,
         description: "From a dispatched task: send the chat that asked a progress note. It \
                       reads it on its next turn, and nothing waits on it. With `ack`, it \
@@ -1221,6 +1275,7 @@ pub fn call(
         DISPATCH_ASK,
         WORKTREE_UPDATE,
         WORKTREE_REMOVE,
+        SECRET_ASK,
     ]
     .contains(&tool)
     {

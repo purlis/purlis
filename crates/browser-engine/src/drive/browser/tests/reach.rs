@@ -1179,6 +1179,114 @@ fn a_blank_frame_is_judged_by_the_origin_its_document_has() {
     assert_eq!(whys(&told).last().unwrap().0, "http://third.test/");
 }
 
+/// The payment frame, on its own session, starts on another document: `method` is the
+/// engine's word of it, with `more` beside the frame's id. No word comes that its old
+/// document's context ended.
+fn the_frame_starts_another_document(
+    engine: &super::Engine,
+    browser: &crate::drive::Browser,
+    method: &str,
+    more: serde_json::Value,
+) {
+    let mut params = json!({"frameId": "PAYMENT-FRAME"});
+    params
+        .as_object_mut()
+        .unwrap()
+        .extend(more.as_object().unwrap().clone());
+    engine.emit(method, params, Some("S-PAYMENT"));
+    events_taken_in(browser, engine);
+}
+
+/// A blank payment frame whose document's origin is `http://third.test`, and a frame that
+/// starts another document by `method`: its origin is not known until the new document's own
+/// context says it, and then it is judged there.
+fn a_blank_frame_reads_its_origin_again_when_it_starts(method: &str, more: serde_json::Value) {
+    let (judge, told) = judge(&["http://third.test/", "http://fourth.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    the_frame_shows(&engine, &browser, "about:blank", Some("://"));
+    the_document_has(&engine, &browser, "http://third.test");
+    the_frame_starts_another_document(&engine, &browser, method, more);
+    assert_eq!(
+        typed_into_the_frame(&browser).err(),
+        Some(crate::drive::Refusal::FrameUnread)
+    );
+    assert!(engine.sent("Input.insertText").is_empty());
+    the_document_has(&engine, &browser, "http://fourth.test");
+    let answer = typed_into_the_frame_as(&browser, 60).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert_eq!(whys(&told).last().unwrap().0, "http://fourth.test/");
+}
+
+#[test]
+fn a_frames_origin_is_read_again_when_it_starts_loading_another_document() {
+    a_blank_frame_reads_its_origin_again_when_it_starts("Page.frameStartedLoading", json!({}));
+}
+
+#[test]
+fn a_frames_origin_is_read_again_when_it_starts_navigating_to_another_document() {
+    a_blank_frame_reads_its_origin_again_when_it_starts(
+        "Page.frameStartedNavigating",
+        json!({"url": "about:blank", "loaderId": "LOADER-8", "navigationType": "differentDocument"}),
+    );
+}
+
+#[test]
+fn a_frame_that_moves_within_its_document_keeps_its_origin() {
+    let (judge, told) = judge(&["http://third.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    the_frame_shows(&engine, &browser, "about:blank", Some("://"));
+    the_document_has(&engine, &browser, "http://third.test");
+    for kind in ["sameDocument", "historySameDocument"] {
+        the_frame_starts_another_document(
+            &engine,
+            &browser,
+            "Page.frameStartedNavigating",
+            json!({"url": "about:blank#top", "loaderId": "LOADER-7", "navigationType": kind}),
+        );
+    }
+    let answer = typed_into_the_frame(&browser).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert_eq!(whys(&told).last().unwrap().0, "http://third.test/");
+}
+
+#[test]
+fn a_frames_origin_is_read_again_when_it_moves_to_another_process() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    // The frame's session had told of a document of this frame before, and no word came that
+    // it ended.
+    engine.emit(
+        "Runtime.executionContextCreated",
+        json!({"context": {
+            "id": 73,
+            "origin": "http://third.test",
+            "name": "",
+            "uniqueId": "U-73",
+            "auxData": {"isDefault": true, "type": "default", "frameId": "PAYMENT-FRAME"},
+        }}),
+        Some(MOVED),
+    );
+    wait_for("the earlier document's origin is kept", || {
+        super::super::lock(&browser.inner.state)
+            .document_origins
+            .origin(MOVED, "PAYMENT-FRAME")
+            .is_some()
+    });
+    frame_moves(&engine, "", "about:blank", Duration::from_millis(1));
+    frame_read(&browser);
+    assert_eq!(
+        super::super::lock(&browser.inner.state)
+            .document_origins
+            .origin(MOVED, "PAYMENT-FRAME"),
+        None
+    );
+    assert_eq!(
+        typed_into_the_frame(&browser).err(),
+        Some(crate::drive::Refusal::FrameUnread)
+    );
+    assert!(engine.sent("Input.insertText").is_empty());
+}
+
 #[test]
 fn a_blob_frame_is_judged_by_the_origin_that_made_it() {
     let (judge, told) = judge(&["http://third.test/"]);
@@ -1255,34 +1363,258 @@ fn the_pages_frame_has(
     });
 }
 
+/// Waits until every event the engine sent before this one is taken in: the engine's word of
+/// another session's context, as an event the driver takes in order behind the rest.
+fn everything_before_is_taken_in(engine: &super::Engine, browser: &crate::drive::Browser) {
+    static NEXT: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(7000);
+    let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let frame = format!("MARK-{id}");
+    engine.emit(
+        "Runtime.executionContextCreated",
+        json!({"context": {
+            "id": id,
+            "origin": "http://mark.test",
+            "name": "",
+            "uniqueId": format!("U-{id}"),
+            "auxData": {"isDefault": true, "type": "default", "frameId": frame},
+        }}),
+        Some("S-ELSEWHERE"),
+    );
+    wait_for("the events before are taken in", || {
+        super::super::lock(&browser.inner.state)
+            .document_origins
+            .origin("S-ELSEWHERE", &frame)
+            .is_some()
+    });
+}
+
+/// The page's session tells of frame `frame`: `method`, with `more` beside the frame's id.
+fn the_pages_frame_does(
+    engine: &super::Engine,
+    browser: &crate::drive::Browser,
+    frame: &str,
+    method: &str,
+    more: serde_json::Value,
+) {
+    let mut params = json!({"frameId": frame});
+    params
+        .as_object_mut()
+        .unwrap()
+        .extend(more.as_object().unwrap().clone());
+    engine.emit(method, params, Some("S-PAGE-1"));
+    everything_before_is_taken_in(engine, browser);
+}
+
+/// The page's session ends context `id`.
+fn the_pages_context_ends(engine: &super::Engine, browser: &crate::drive::Browser, id: i64) {
+    engine.emit(
+        "Runtime.executionContextDestroyed",
+        json!({"executionContextId": id, "executionContextUniqueId": format!("U-{id}")}),
+        Some("S-PAGE-1"),
+    );
+    everything_before_is_taken_in(engine, browser);
+}
+
+fn documents_of(browser: &crate::drive::Browser, frame: &str) -> Result<Vec<String>, Unjudged> {
+    super::super::lock(&browser.inner.state).documents_of("PAGE-1", frame)
+}
+
 #[test]
-fn a_srcdoc_frame_in_the_pages_session_whose_document_has_ended_is_judged_by_the_page() {
+fn a_srcdoc_frame_in_the_pages_session_whose_document_has_ended_is_not_judged_until_its_next_is_known()
+ {
     let (judge, _) = judge(&[]);
     let (browser, engine) = browser_judged(judge);
     the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:srcdoc");
     the_pages_frame_has(&engine, &browser, "SRCDOC", 81, "://");
+    assert_eq!(documents_of(&browser, "SRCDOC"), Err(Unjudged::Opaque));
+    the_pages_context_ends(&engine, &browser, 81);
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(documents_of(&browser, "SRCDOC"), Err(Unjudged::Unread));
+    the_pages_frame_has(&engine, &browser, "SRCDOC", 82, "http://fixture.test");
     assert_eq!(
-        super::super::lock(&browser.inner.state).documents_of("PAGE-1", "SRCDOC"),
-        Err(Unjudged::Opaque)
+        documents_of(&browser, "SRCDOC").unwrap(),
+        ["http://fixture.test/"]
     );
-    engine.emit(
-        "Runtime.executionContextDestroyed",
-        json!({"executionContextId": 81, "executionContextUniqueId": "U-81"}),
-        Some("S-PAGE-1"),
-    );
-    wait_for("the document's context is gone", || {
-        super::super::lock(&browser.inner.state)
-            .document_origins
-            .origin("S-PAGE-1", "SRCDOC")
-            .is_none()
-    });
+}
+
+/// A blank frame in the page's session whose document is of `http://third.test`, not the
+/// page's, read for its sandbox.
+fn a_blank_frame_of_another_origin_in_the_pages_session()
+-> (crate::drive::Browser, Arc<super::Engine>) {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    the_page_shows_a_frame(&engine, &browser, "BLANK", "PAGE-1", "about:blank");
+    the_pages_frame_has(&engine, &browser, "BLANK", 84, "http://third.test");
     browser.read_sandboxes("PAGE-1");
     assert_eq!(
-        super::super::lock(&browser.inner.state)
-            .documents_of("PAGE-1", "SRCDOC")
-            .unwrap(),
+        documents_of(&browser, "BLANK").unwrap(),
+        ["http://third.test/"]
+    );
+    (browser, engine)
+}
+
+/// A blank frame in the page's session that starts another document by `method` is not
+/// judged, not even by the page around it, until the new document's own context says its
+/// origin.
+fn a_blank_frame_in_the_pages_session_is_not_judged_once_it_starts(
+    method: &str,
+    more: serde_json::Value,
+) {
+    let (browser, engine) = a_blank_frame_of_another_origin_in_the_pages_session();
+    the_pages_frame_does(&engine, &browser, "BLANK", method, more);
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(documents_of(&browser, "BLANK"), Err(Unjudged::Unread));
+    the_pages_context_ends(&engine, &browser, 84);
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(documents_of(&browser, "BLANK"), Err(Unjudged::Unread));
+    the_pages_frame_has(&engine, &browser, "BLANK", 85, "http://fourth.test");
+    assert_eq!(
+        documents_of(&browser, "BLANK").unwrap(),
+        ["http://fourth.test/"]
+    );
+}
+
+#[test]
+fn a_blank_frame_in_the_pages_session_that_starts_loading_is_not_judged_until_its_document_is_known()
+ {
+    a_blank_frame_in_the_pages_session_is_not_judged_once_it_starts(
+        "Page.frameStartedLoading",
+        json!({}),
+    );
+}
+
+#[test]
+fn a_blank_frame_in_the_pages_session_that_starts_navigating_is_not_judged_until_its_document_is_known()
+ {
+    a_blank_frame_in_the_pages_session_is_not_judged_once_it_starts(
+        "Page.frameStartedNavigating",
+        json!({"url": "about:blank", "loaderId": "LOADER-9", "navigationType": "differentDocument"}),
+    );
+}
+
+#[test]
+fn a_frame_not_judged_refuses_what_would_reach_it_and_says_to_try_again() {
+    let (browser, engine) = a_blank_frame_of_another_origin_in_the_pages_session();
+    the_pages_frame_does(
+        &engine,
+        &browser,
+        "BLANK",
+        "Page.frameStartedLoading",
+        json!({}),
+    );
+    browser.read_sandboxes("PAGE-1");
+    let refused = browser
+        .known_documents("PAGE-1", documents_of(&browser, "BLANK"))
+        .unwrap_err();
+    assert_eq!(refused, crate::drive::Refusal::FrameUnread);
+    assert!(refused.to_string().contains("try again"));
+}
+
+#[test]
+fn a_load_that_stops_with_the_old_document_still_shown_judges_the_frame_by_that_document() {
+    let (browser, engine) = a_blank_frame_of_another_origin_in_the_pages_session();
+    the_pages_frame_does(
+        &engine,
+        &browser,
+        "BLANK",
+        "Page.frameStartedLoading",
+        json!({}),
+    );
+    assert_eq!(documents_of(&browser, "BLANK"), Err(Unjudged::Unread));
+    the_pages_frame_does(
+        &engine,
+        &browser,
+        "BLANK",
+        "Page.frameStoppedLoading",
+        json!({}),
+    );
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(
+        documents_of(&browser, "BLANK").unwrap(),
+        ["http://third.test/"]
+    );
+}
+
+#[test]
+fn a_load_that_stops_after_the_old_document_ended_leaves_a_blank_frame_not_judged() {
+    let (browser, engine) = a_blank_frame_of_another_origin_in_the_pages_session();
+    the_pages_frame_does(
+        &engine,
+        &browser,
+        "BLANK",
+        "Page.frameStartedLoading",
+        json!({}),
+    );
+    the_pages_context_ends(&engine, &browser, 84);
+    the_pages_frame_does(
+        &engine,
+        &browser,
+        "BLANK",
+        "Page.frameStoppedLoading",
+        json!({}),
+    );
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(documents_of(&browser, "BLANK"), Err(Unjudged::Unread));
+}
+
+#[test]
+fn a_srcdoc_document_that_stops_loading_with_no_context_is_judged_by_the_page_around_it() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:blank");
+    the_pages_frame_has(&engine, &browser, "SRCDOC", 86, "http://third.test");
+    the_pages_frame_does(
+        &engine,
+        &browser,
+        "SRCDOC",
+        "Page.frameStartedLoading",
+        json!({}),
+    );
+    the_pages_context_ends(&engine, &browser, 86);
+    the_page_shows_a_frame(&engine, &browser, "SRCDOC", "PAGE-1", "about:srcdoc");
+    the_pages_frame_does(
+        &engine,
+        &browser,
+        "SRCDOC",
+        "Page.frameStoppedLoading",
+        json!({}),
+    );
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(
+        documents_of(&browser, "SRCDOC").unwrap(),
         ["http://fixture.test/frames.html"]
     );
+}
+
+#[test]
+fn a_frame_whose_contexts_are_cleared_is_not_judged_until_its_next_document_is_known() {
+    let (browser, engine) = a_blank_frame_of_another_origin_in_the_pages_session();
+    engine.emit(
+        "Runtime.executionContextsCleared",
+        json!({}),
+        Some("S-PAGE-1"),
+    );
+    everything_before_is_taken_in(&engine, &browser);
+    browser.read_sandboxes("PAGE-1");
+    assert_eq!(documents_of(&browser, "BLANK"), Err(Unjudged::Unread));
+}
+
+#[test]
+fn a_frame_that_is_gone_is_no_longer_awaited() {
+    let mut origins = super::super::DocumentOrigins::default();
+    origins.started("F-1");
+    assert!(origins.awaits("F-1"));
+    origins.gone("F-1");
+    assert!(!origins.awaits("F-1"));
+}
+
+#[test]
+fn past_the_most_frames_awaited_every_frame_with_no_origin_kept_is_awaited() {
+    let mut origins = super::super::DocumentOrigins::default();
+    for id in 0..=super::super::FRAME_ORIGINS_KEPT {
+        origins.started(&format!("F-{id}"));
+    }
+    assert!(origins.awaits("NEVER-STARTED"));
 }
 
 #[test]

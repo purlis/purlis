@@ -332,6 +332,10 @@ pub fn answer(
         Ask::Keys { chat, vault } => {
             crate::vaults::keys_for_chat(held, plane, &|_| {}, chat, &vault)
         }
+        // A chat's Secret ask (#5072, ADR 0109): no ticket, for the listing's reason. It can
+        // only ask: the vault is this app's record of the chat's persona unless the line names
+        // one, which the broker authorises, and only the person, in the window, fills it.
+        Ask::Secret(asked) => crate::secretasks::asked(held, &asked),
         // A proposed change (#1975): no ticket, for the removal's reason. The line names a file
         // and a change; the app writes nothing for it, and holds it for the person on the tab
         // of the chat whose token the line carries.

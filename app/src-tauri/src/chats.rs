@@ -851,6 +851,10 @@ pub struct Chats {
     /// window says it. Never recorded. A chat in one of them is not looked at
     /// ([`Self::looked_at`]): a minimised window counts as nothing.
     away: Mutex<purlis_core::reopen::layout::Away>,
+    /// **The order the project's windows had a pane used in** (#5108): as each window says it
+    /// (`pane_used`). Never recorded. A press on a chat in no pane goes to the latest
+    /// ([`Self::window_pressed`]).
+    used: Mutex<purlis_core::reopen::layout::Used>,
     /// The order the window's strip draws the chats in, by session, as it last said — or, at
     /// a launch, the order the record listed them in (ADR 0039, as amended by SI-6).
     ///
@@ -1472,6 +1476,7 @@ impl Chats {
             focus: Mutex::new(None),
             layout: Mutex::new(None),
             away: Mutex::default(),
+            used: Mutex::default(),
             order: Mutex::new(Vec::new()),
             skills_now: Arc::default(),
             record_it,
@@ -5535,9 +5540,20 @@ impl Chats {
         let held = Some(layout.without(|number| one_job.contains(&number)).held());
         let changed = std::mem::replace(&mut *lock(&self.layout), held.clone()) != held;
         if changed {
+            self.forget_windows_gone();
             self.write_it_down();
         }
         Ok(())
+    }
+
+    /// Forgets the use of every tab window the held layout no longer names (#5108): a tab
+    /// window goes with its last tab, however that tab left.
+    fn forget_windows_gone(&self) {
+        let windows = lock(&self.layout)
+            .as_ref()
+            .map(Layout::tab_windows)
+            .unwrap_or_default();
+        lock(&self.used).keep(&windows);
     }
 
     /// **Window `window`'s own report of its tabs** (#4768): the project window's (`0`) or one
@@ -5564,10 +5580,23 @@ impl Chats {
         lock(&self.layout).as_ref()?.window_showing(session)
     }
 
-    /// The window with a tab that has chat `session` in a pane (`Layout::window_naming`): where
-    /// a press on it goes. None where no tab does, or no layout is held.
-    pub fn window_naming(&self, session: u32) -> Option<u32> {
-        lock(&self.layout).as_ref()?.window_naming(session)
+    /// **A pane of window `window` was used** (#5108): the person focused one, or pressed into
+    /// one. It is the latest window a press on a chat in no pane goes to. Answers whether that
+    /// changed anything.
+    pub fn pane_used(&self, window: u32) -> bool {
+        lock(&self.used).touch(window)
+    }
+
+    /// **The window a press on chat `session` lands in** (`Layout::window_pressed`; spec #4750
+    /// story 97): the one with a tab that has it in a pane, else the one whose pane was used
+    /// last and is on screen. None where neither is, or no layout is held: the press is the
+    /// pressing window's.
+    pub fn window_pressed(&self, session: u32) -> Option<u32> {
+        let used = lock(&self.used).clone();
+        let away = lock(&self.away).clone();
+        lock(&self.layout)
+            .as_ref()?
+            .window_pressed(session, &used, &away)
     }
 
     /// **Move to new window** (`to` none) or **Move to window ▸**: the `nth` tab of window
@@ -5610,6 +5639,7 @@ impl Chats {
         let to = change(&mut next).map_err(|why| format!("purlis did not move that: {why}."))?;
         *layout = next.held();
         drop(held);
+        self.forget_windows_gone();
         self.write_it_down();
         Ok(to)
     }
@@ -5622,6 +5652,7 @@ impl Chats {
             .as_mut()
             .is_some_and(|layout| layout.send_back(window));
         lock(&self.away).set(window, false);
+        lock(&self.used).forget(window);
         if moved {
             self.write_it_down();
         }

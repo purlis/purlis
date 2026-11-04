@@ -19,6 +19,7 @@ const secret = {
   vault: "team",
   key: "KUBECONFIG",
   tool: "kubectl",
+  declared: true,
   waiting: 1,
 };
 
