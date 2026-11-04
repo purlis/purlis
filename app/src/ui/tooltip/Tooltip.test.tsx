@@ -25,6 +25,7 @@ import {
   TOOLTIP_PLACEMENT,
 } from "./Tooltip";
 import { shownTip, tipOf } from "./tooltip.testkit";
+import { partsWithoutTheirClass } from "../partClasses";
 
 /** Long enough for any tooltip that is closing to have closed, and the warm-up to have cooled. */
 const SETTLED = TOOLTIP_DELAY + TOOLTIP_CLOSE_DELAY + 1000;
@@ -64,6 +65,19 @@ function Path() {
     </>
   );
 }
+
+describe("a tooltip's element and the parts it is handed (#4351)", () => {
+  it("carries the classes of the part it ends as, not of a part its parent handed it", () => {
+    const { container } = render(
+      <Tooltip tip="Close this tab" data-scope="dialog" data-part="close">
+        <button type="button" data-scope="tabs" data-part="closer" aria-label="Close">
+          ×
+        </button>
+      </Tooltip>,
+    );
+    expect(partsWithoutTheirClass(container)).toEqual([]);
+  });
+});
 
 describe("a tooltip under the pointer", () => {
   it("opens after the one delay, beside its target at its end, 10 px from it (R166)", async () => {

@@ -131,7 +131,16 @@ function listReader(
         if (!(live && watched.has(plane) && asks)) return;
         // An older core lists no task question with its asking chat: none is.
         const with_asking_chat = listed?.with_asking_chat ?? [];
-        setHeld((was) => ({ ...was, [plane]: { asks, with_asking_chat } }));
+        const next = { asks, with_asking_chat };
+        // **An answer that says what the last one said changes nothing** (#4727): every burst of
+        // a busy chat's moves reads the list again, and a fresh list each time drew the whole
+        // window again for asks that had not moved. The core's answer is plain data, written
+        // the same way each time, so its text is the comparison.
+        setHeld((was) =>
+          was[plane] !== undefined && JSON.stringify(was[plane]) === JSON.stringify(next)
+            ? was
+            : { ...was, [plane]: next },
+        );
         lookAtHoldsEnd(plane, asks);
       },
       () => {},
@@ -399,6 +408,13 @@ export async function answerTaken(
         // The command that waits goes on, or is refused, at once.
         if (option === "allow") return commands.answerPoolTool(plane, ask.session, path.run, true);
         if (option === "keep") return commands.answerPoolTool(plane, ask.session, path.run, false);
+        break;
+      case "secret":
+        // A key a chat's brokered run missed (#5068, ADR 0109): Fill stores the value typed in
+        // the ask's masked box in the vault, and every command that waits on it runs; Not now
+        // tells them it was declined. The chat never hears the value.
+        if (option === "fill") return commands.answerSecretAsk(plane, path.id, typed ?? "");
+        if (option === "keep") return commands.answerSecretAsk(plane, path.id, null);
         break;
       case "take-over": {
         // A browser whose page needs the person (#2015): Take over takes the session host's

@@ -19,6 +19,7 @@ use purlis_core::engine::Size;
 use purlis_core::eventlog::{Attributes, Began, RunOf};
 use purlis_core::harness::{Harness, SessionId};
 use purlis_core::hoststart::Armed;
+use purlis_core::reopen::layout::Refused;
 use purlis_core::reopen::{Chat, Focus, Layout, Record, Reopened, View};
 
 use crate::host::{Opening, SessionHost};
@@ -176,6 +177,11 @@ pub struct Open {
     /// Why what it was doing could not be taken from the session host as it was reattached
     /// (#2006): its tab says so until the Notice is dismissed. `None` for any other chat.
     pub untaken: Option<String>,
+    /// **Whether it is a one-job program** (#4761, ADR 0062 and 0081 as amended 2026-11-02): a
+    /// terminal editor opened from a file, or a forge login, drawn as a split beside the pane
+    /// it was opened from and gone when its program exits. Never recorded
+    /// ([`Chats::start_one_job`]), and no sidebar row.
+    pub one_job: bool,
 }
 
 /// Who an open chat is beyond this launch, and the directory it works in.
@@ -780,6 +786,10 @@ pub struct Chats {
     /// Why what each chat reattached was doing could not be taken from the session host, by
     /// session (#2006): [`Open::untaken`].
     untaken: Mutex<HashMap<u32, String>>,
+    /// **The one-job programs open, by chat id** (#4761): never recorded, and their panes left
+    /// out of the layout held ([`Self::start_one_job`]). By id and not by number, so a record
+    /// written while one is starting, before its number is known, leaves it out too.
+    one_jobs: Mutex<std::collections::HashSet<String>>,
     /// The older Claude Code a chat's late notes say it is on (#1699): marked said once the
     /// window takes them ([`Self::start_notes`]), not before.
     older_in_notes: Mutex<HashMap<u32, purlis_core::sandbox::ClaudeCodeVersion>>,
@@ -837,6 +847,10 @@ pub struct Chats {
     /// **The window's to say, for the reason [`Self::views`] is**, and held to two rules here
     /// ([`Self::lay_out`]): no chat in two panes, and no chat that is not open.
     layout: Mutex<Option<Layout>>,
+    /// **The project's windows that are not on screen** (#4768): minimised or hidden, as the
+    /// window says it. Never recorded. A chat in one of them is not looked at
+    /// ([`Self::looked_at`]): a minimised window counts as nothing.
+    away: Mutex<purlis_core::reopen::layout::Away>,
     /// The order the window's strip draws the chats in, by session, as it last said — or, at
     /// a launch, the order the record listed them in (ADR 0039, as amended by SI-6).
     ///
@@ -882,6 +896,9 @@ pub struct Chats {
     /// a live ask held for its chat whose Notice the throttle held back. Empty until the
     /// project's hooks listen.
     asks_moved: Arc<Mutex<Option<AsksMoved>>>,
+    /// The project's Secret asks, which a start whose profile's credential its vault holds none
+    /// of waits on (#5074, ADR 0109). Empty until the project is held.
+    secret_asks: Mutex<Option<Arc<purlis_core::secrets::ask::Asks>>>,
     /// What hears each host purlis's own proxy refused a chat it wraps (Codex, opencode,
     /// #1663), as that chat's block: the road a hook's block takes into the app
     /// ([`crate::hooks::Hooks::block_hearer`]). Empty until the project's hooks listen.
@@ -1378,6 +1395,16 @@ impl Drop for StartOnItsOwnRunner<'_> {
     }
 }
 
+/// Whether `chat` is a one-job program ([`Chats::start_one_job`]): its id is among `one_jobs`.
+/// One-job programs are known by id, which is minted before the start, so a record written while
+/// one starts already leaves it out (#4761).
+fn is_a_one_job(chat: &Chat, one_jobs: &std::collections::HashSet<String>) -> bool {
+    chat.identity
+        .id
+        .as_ref()
+        .is_some_and(|id| one_jobs.contains(id))
+}
+
 impl Chats {
     /// Chats whose record is written by `record_it` every time what is open changes, in no
     /// project: what the tests use when the project is not what they are about.
@@ -1426,6 +1453,7 @@ impl Chats {
             replacing: Mutex::new(std::collections::HashSet::new()),
             floorless: Mutex::new(HashMap::new()),
             untaken: Mutex::new(HashMap::new()),
+            one_jobs: Mutex::new(std::collections::HashSet::new()),
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
             pools_in: None,
@@ -1443,6 +1471,7 @@ impl Chats {
             views: Mutex::new(Vec::new()),
             focus: Mutex::new(None),
             layout: Mutex::new(None),
+            away: Mutex::default(),
             order: Mutex::new(Vec::new()),
             skills_now: Arc::default(),
             record_it,
@@ -1454,6 +1483,7 @@ impl Chats {
             kubeconfigs: Mutex::new(HashMap::new()),
             blocks: Arc::default(),
             asks_moved: Arc::new(Mutex::new(None)),
+            secret_asks: Mutex::new(None),
             refused: Arc::new(Mutex::new(None)),
             refused_more: Arc::new(Mutex::new(None)),
             reached: Arc::new(Mutex::new(None)),
@@ -3308,6 +3338,12 @@ impl Chats {
         *lock(&self.asks_moved) = Some(moved);
     }
 
+    /// The project's Secret asks, which a start asks for a missing profile credential through
+    /// from now on (#5074).
+    pub fn ask_secrets_in(&self, asks: Arc<purlis_core::secrets::ask::Asks>) {
+        *lock(&self.secret_asks) = Some(asks);
+    }
+
     /// The pool chat `session` runs on, where it runs on a pool's runner (#2046).
     pub fn pool_of(&self, session: u32) -> Option<String> {
         self.sessions.pool_of(session)
@@ -3851,6 +3887,40 @@ impl Chats {
         self.start_as(chat, size, true, Why::New)
     }
 
+    /// **A one-job program** (#4761, ADR 0062 and 0081 as amended 2026-11-02): a terminal
+    /// editor opened from a file, or a forge login typed into a shell, started as the
+    /// operator's own shell is ([`Self::start_operator_shell`]).
+    ///
+    /// **Never written to the record**, from before its start: its id is minted here and held
+    /// in [`Self::one_jobs`] first, so no record written while it starts names it, and its
+    /// pane is left out of every layout held ([`Self::lay_out`]). A quit or a relaunch puts
+    /// none back. Its split goes when its program exits, which the window carries out.
+    pub fn start_one_job(&self, chat: &Chat, size: Size) -> Result<u32, String> {
+        let id = minted();
+        lock(&self.one_jobs).insert(id.clone());
+        let chat = Chat {
+            identity: purlis_core::reopen::Identity {
+                id: Some(id.clone()),
+                device: self.device.clone(),
+                run: None,
+                resumed_from: None,
+            },
+            ..chat.clone()
+        };
+        self.start_operator_shell(&chat, size).inspect_err(|_| {
+            lock(&self.one_jobs).remove(&id);
+        })
+    }
+
+    /// Whether chat `session` is a one-job program ([`Self::start_one_job`]). The window reads
+    /// it from [`Open::one_job`].
+    #[cfg(test)]
+    pub fn is_one_job(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|one| is_a_one_job(&one.chat, &lock(&self.one_jobs)))
+    }
+
     fn start_as(
         &self,
         chat: &Chat,
@@ -4340,6 +4410,21 @@ impl Chats {
         // that does not open to it starts nothing, and leaves no event and no hook behind
         // (#2036). Set on the harness's program as it starts; the commands, hooks and tools it
         // starts inherit them.
+        // One its vault holds none of is a Secret ask (#5074, ADR 0109), raised and waited on
+        // by nothing: the start is refused, saying so, and the ask stays in the Inbox, where the
+        // person fills it and starts the chat again, which reads the value filled. No start
+        // waits, as none waits on a sign-in (ADR 0095 §3): the Start dialog is modal, so the
+        // person could not reach the ask while it waited, and any other start (a relaunch, a
+        // dispatch's) may run under a lock the window's commands wait on.
+        let secret_asks = lock(&self.secret_asks).clone();
+        let moved = || self.asks_may_have_moved();
+        let missing = secret_asks
+            .as_deref()
+            .map(|asks| purlis_core::secrets::brokered::Missing {
+                asks,
+                within: std::time::Duration::ZERO,
+                moved: &moved,
+            });
         let handed =
             match sign_in.filter(|s| !reattaching && !on_the_runner && !s.credentials.is_empty()) {
                 Some(sign_in) => purlis_core::profilesignin::read(
@@ -4349,6 +4434,7 @@ impl Chats {
                     ),
                     runs_as.as_deref(),
                     &sign_in.credentials,
+                    missing.as_ref(),
                 )?,
                 None => purlis_core::profilesignin::Handed::default(),
             };
@@ -5226,6 +5312,9 @@ impl Chats {
         lock(&self.untaken).remove(&session);
         lock(&self.ended).remove(&session);
         let gone = lock(&self.open).remove(&session);
+        if let Some(id) = gone.as_ref().and_then(|one| one.chat.identity.id.as_ref()) {
+            lock(&self.one_jobs).remove(id);
+        }
         // A Try it's scratch chat takes its throwaway piece with it, where no other open chat
         // stands in it (SK-9): a restart starts before the chat it replaces ends.
         if let Some(cwd) = gone.as_ref().and_then(|gone| gone.chat.cwd.clone())
@@ -5325,7 +5414,7 @@ impl Chats {
         // **Derived from the tree once there is one** (#4751): every chat in a pane of the front
         // tab of each window on screen ([`Layout::on_screen`]). Before that, the old way.
         if let Some(layout) = lock(&self.layout).as_ref() {
-            return layout.on_screen();
+            return layout.on_screen_but(&lock(&self.away));
         }
         let Some(front) = self.front() else {
             return Vec::new();
@@ -5368,28 +5457,16 @@ impl Chats {
         Ok(())
     }
 
-    /// **The person sent task chat `session`'s tab back to the Chats list** (#1488, V100-38):
-    /// the other half of [`Self::open_tab`]. It has no tab from here on, across a reload and a
-    /// relaunch, and **nothing of the task changes**: its program runs, it owes what it owed,
-    /// and nobody is told anything. Only a task has this: every other chat is its tab, and
-    /// taking that away is ending it, which this never does. Written only when it changes.
+    /// **The person closed chat `session`'s tab** (#1488, V100-38; #4756): the other half of
+    /// [`Self::open_tab`]. **A tab close never ends a chat and is never refused**: nothing of
+    /// the chat changes, its program runs, it owes what it owed, and nobody is told anything.
+    /// A task has no tab from here on, across a reload and a relaunch; for any other chat there
+    /// is nothing to write, since only a task records one. Written only when it changes.
     pub fn close_tab(&self, session: u32) -> Result<(), String> {
         let mut open = lock(&self.open);
         let Some(one) = open.get_mut(&session) else {
             return Err(format!("purlis has no chat {session} open."));
         };
-        let task = one
-            .chat
-            .from
-            .as_ref()
-            .is_some_and(|from| from.mode == purlis_core::reopen::Mode::Task);
-        if !task {
-            return Err(
-                "Only a task goes back to the Chats list. This chat is not one: closing its \
-                 tab ends it."
-                    .to_owned(),
-            );
-        }
         if !one.chat.tab_opened {
             return Ok(());
         }
@@ -5445,12 +5522,110 @@ impl Chats {
         for running in lock(&self.open).values_mut() {
             running.chat.pinned = false;
         }
-        let held = Some(layout.held());
+        // **A one-job split is never recorded** (#4761, spec #4750): its pane is left out, and
+        // the pane it was beside takes its split's place.
+        let one_job: Vec<u32> = {
+            let one_jobs = lock(&self.one_jobs).clone();
+            lock(&self.open)
+                .iter()
+                .filter(|(_, one)| is_a_one_job(&one.chat, &one_jobs))
+                .map(|(number, _)| *number)
+                .collect()
+        };
+        let held = Some(layout.without(|number| one_job.contains(&number)).held());
         let changed = std::mem::replace(&mut *lock(&self.layout), held.clone()) != held;
         if changed {
             self.write_it_down();
         }
         Ok(())
+    }
+
+    /// **Window `window`'s own report of its tabs** (#4768): the project window's (`0`) or one
+    /// of its tab windows'. Its tabs take the place of the ones held for it, every other
+    /// window's stand, and the whole is held to [`Self::lay_out`]'s rules: a chat named in a
+    /// pane of another window as well is refused, so a chat is shown once across every window
+    /// of the project. A refusal changes nothing.
+    pub fn lay_out_window(&self, window: u32, report: Layout) -> Result<(), String> {
+        let held = lock(&self.layout).clone().unwrap_or_default();
+        self.lay_out(held.with_window(window, report))
+    }
+
+    /// **Window `window` went away from the screen or came back** (#4768): minimised or hidden,
+    /// or shown again. A chat on screen only there is not looked at while it is away. Answers
+    /// whether that changed anything, so a caller looks at held tasks again only then.
+    pub fn window_away(&self, window: u32, away: bool) -> bool {
+        lock(&self.away).set(window, away)
+    }
+
+    /// The window whose front tab shows chat `session` (`0` the project window), or none where
+    /// no window's does, or no layout is held. What a notification about it asks: whether
+    /// **that** window has the keyboard.
+    pub fn window_showing(&self, session: u32) -> Option<u32> {
+        lock(&self.layout).as_ref()?.window_showing(session)
+    }
+
+    /// The window with a tab that has chat `session` in a pane (`Layout::window_naming`): where
+    /// a press on it goes. None where no tab does, or no layout is held.
+    pub fn window_naming(&self, session: u32) -> Option<u32> {
+        lock(&self.layout).as_ref()?.window_naming(session)
+    }
+
+    /// **Move to new window** (`to` none) or **Move to window ▸**: the `nth` tab of window
+    /// `from` goes to that window as its front tab, in one step (`Layout::move_tab`). Answers
+    /// the window it is in now. Refused, saying why and changing nothing, where no layout is
+    /// held or the move is not one.
+    pub fn move_tab(&self, from: u32, nth: usize, to: Option<u32>) -> Result<u32, String> {
+        self.moved(|layout| {
+            let at = layout.place_of(from, nth).ok_or(Refused::NoSuchTab)?;
+            layout.move_tab(at, to)
+        })
+    }
+
+    /// A pane's **Move to new window** or **Move to window ▸**: the pane at `path` in the `nth`
+    /// tab of window `from` becomes a tab of its own, the front tab of that window (`Layout::move_pane`).
+    pub fn move_pane(
+        &self,
+        from: u32,
+        nth: usize,
+        path: &[purlis_core::reopen::layout::Side],
+        to: Option<u32>,
+    ) -> Result<u32, String> {
+        self.moved(|layout| {
+            let at = layout.place_of(from, nth).ok_or(Refused::NoSuchTab)?;
+            layout.move_pane(at, path, to)
+        })
+    }
+
+    fn moved(
+        &self,
+        change: impl FnOnce(&mut Layout) -> Result<u32, Refused>,
+    ) -> Result<u32, String> {
+        let mut held = lock(&self.layout);
+        let Some(layout) = held.as_mut() else {
+            return Err(
+                "purlis did not move that: this project's tabs are not known yet.".to_owned(),
+            );
+        };
+        let mut next = layout.clone();
+        let to = change(&mut next).map_err(|why| format!("purlis did not move that: {why}."))?;
+        *layout = next.held();
+        drop(held);
+        self.write_it_down();
+        Ok(to)
+    }
+
+    /// **Tab window `window` closed** (#4768): its tabs go back to the project window, behind
+    /// the front tab of each one's strip, and every chat in them goes on running: closing
+    /// never ends anything. Answers whether any tab moved. The window is not away any more.
+    pub fn send_back(&self, window: u32) -> bool {
+        let moved = lock(&self.layout)
+            .as_mut()
+            .is_some_and(|layout| layout.send_back(window));
+        lock(&self.away).set(window, false);
+        if moved {
+            self.write_it_down();
+        }
+        moved
     }
 
     /// The tabs the window last reported, or at a launch the record's; `None` for a record
@@ -6532,6 +6707,7 @@ impl Chats {
         // Read out before `open` is held, as `order` is: no lock here is taken under another.
         let floorless = lock(&self.floorless).clone();
         let untaken = lock(&self.untaken).clone();
+        let one_jobs = lock(&self.one_jobs).clone();
         let open = lock(&self.open);
         let front = *lock(&self.front);
         ordered
@@ -6563,6 +6739,7 @@ impl Chats {
                     sandbox: running.confines.as_ref().map(|confines| confines.level),
                     floorless: floorless.get(&session).cloned(),
                     untaken: untaken.get(&session).cloned(),
+                    one_job: is_a_one_job(chat, &one_jobs),
                 })
             })
             .collect()
@@ -6597,6 +6774,9 @@ impl Chats {
             .collect();
         let models = lock(&self.models).clone();
         let layout = lock(&self.layout).clone();
+        // **A one-job program is never written** (#4761): read before `open`, as each lock here
+        // is taken alone.
+        let one_jobs = lock(&self.one_jobs).clone();
         // Taken before `open`, which `front` does not hold.
         let front = self.front();
         let open = lock(&self.open);
@@ -6694,6 +6874,9 @@ impl Chats {
             if superseded(chat, Some(session)) {
                 return None;
             }
+            if is_a_one_job(chat, &one_jobs) {
+                return None;
+            }
             Some(retired(Chat {
                 active: front == Some(session),
                 // The number it is actually running under, which is the key its workspace
@@ -6709,6 +6892,8 @@ impl Chats {
                 ..chat.clone()
             }))
         }));
+        // A chat no relaunch puts back is never written at all (#4976, [`Chat::unrecorded`]).
+        chats.retain(|chat| !chat.unrecorded);
         Record {
             chats,
             // Kept beside the tree (#4751): what each view tab was, where it was, whether it was in
@@ -7121,6 +7306,8 @@ impl Chats {
                 sandbox: None,
                 floorless: None,
                 untaken: None,
+                // A one-job program is never recorded, so a launch puts none back.
+                one_job: false,
             })
             .collect()
     }
@@ -7911,3 +8098,7 @@ mod restoring_tests;
 #[cfg(test)]
 #[path = "chats/tests/letting_go.rs"]
 mod letting_go_tests;
+
+#[cfg(test)]
+#[path = "chats/tests/windows.rs"]
+mod windows_tests;

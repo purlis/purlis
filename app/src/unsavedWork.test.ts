@@ -115,7 +115,7 @@ describe("which close would lose it", () => {
   it("is the close of the tab that shows its view, in its project", () => {
     const tabs = openView(noTabs(), STUDIO, "Skill studio", "ops");
     const tab = tabs.order[0];
-    const close = { verb: "closeTab", tab, ends: false } as const;
+    const close = { verb: "closeTab", tab } as const;
     expect(unsavedClosedBy("p", tabs, close)).toBeUndefined();
 
     const deploy = work("deploy");
@@ -133,7 +133,7 @@ describe("which close would lose it", () => {
     // A chat beside it, focused.
     const split = splitFocusedPane(one, "row", 5, "ops.1");
     const deploy = work("deploy");
-    const close = { verb: "closePane", ends: false } as const;
+    const close = { verb: "closePane" } as const;
     const studioPane = one.byId[tab].focused;
     expect(split.byId[tab].focused).not.toBe(studioPane);
 
@@ -143,7 +143,7 @@ describe("which close would lose it", () => {
       tab,
     });
     // The tab's close takes both panes.
-    expect(unsavedClosedBy("p", split, { verb: "closeTab", tab, ends: false })).toEqual({
+    expect(unsavedClosedBy("p", split, { verb: "closeTab", tab })).toEqual({
       work: [deploy],
       tab,
     });

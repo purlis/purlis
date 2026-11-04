@@ -1066,7 +1066,7 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | --- | --- |
 | `ListBox`, `ListOption`, `ListSection` | **A list to choose from** (the WAI-ARIA listbox): a persona to start a chat with, a theme, a search hit, a skill. A choice of one follows the arrows; `onAction` runs the one picked; `layout="grid"` lays its options out as cards the arrows walk in two directions; an option `unavailable` says so (`aria-disabled`) and keeps the keyboard, so why is read |
 | `List`, `ListRow`, `ListRowSection` | **A list of rows that act** (a grid of one column): a panel's todos, a vault's rows. A row runs something (`onAction`), may be chosen, and may hold its own buttons, which ← and → reach |
-| `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description** (React Aria's `label` and `description` slots), so a reader hears the name alone and then what it is, never the row's content run together |
+| `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description** (React Aria's `label` and `description` slots), so a reader hears the name alone and then what it is, never the row's content run together. **A `RowBelow` with `clamp` and `tipWhenCut` says its whole words in its row's tooltip while the clamp cuts them** (#4711), under the pointer and while the keyboard is on the row, and nothing while they fit, the tooltip being the row's description while it is shown (a list's row is named by its `textValue` alone). One to a row, and a list's row's alone (`ListRow`, `ListOption`) |
 | `ListCardRow`, `RowMenuButton` (`CardRow.tsx`); `RowSummary`, `RowActions` (`Row.tsx`) | **A card row** (#3669, the sidebar Skills view's variant C): a row of a `List` drawn as a small card (`variant="card"`), as tall as its lines. Its first line is its name, its tag, its own actions (Use) and its **⋯**, which opens the row's own menu (`menu`), the one a right-click and Shift+F10 open; then **two lines about it** (`RowSummary`), its description cut cleanly after the second line, or a reason in its place in the waiting colour (it needs the person) or the quiet tier (it is left out); then its **action line** (`RowActions`), its one fix. The whole of its summary is its tooltip. ← and → reach Use, the ⋯ and the fix; a press on it runs it. A state changes a fill or a ring, never its height; it fits a 260 px side view |
 | `ListFoldSection`, `ListRun` (`Fold.tsx`) | **What folds** (#3670, in a `List`): a group whose name folds its rows, and a run of rows folded to one quiet line. A group's name is a row the keyboard reaches, with the tree's twist (`TwistMark`), its count at its end and an optional `waiting` tone (Needs you); Enter, Space, → and ← fold and unfold it, `aria-expanded` on its cell says which (a grid's row takes none), and it may start folded, its owner holding what is folded (`folded`, `onFoldedChange`). A run (`ListRun`, folded by default) is one row in the quiet tier, a mark and "N …"; pressing it unfolds its rows in place, then its closing line ("They ship with purlis…", with what may be done). A row of the run that must show (`standsOut`: it needs the person, it clashes, it matches the filter) is drawn on its own, outside the fold. Folding moves only what is under it, and a fold's row runs nothing of the list's `onAction` |
 | `AimedList`, `AimedOption` (`AimedList.tsx`) | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row |
@@ -1262,7 +1262,12 @@ tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classe
 #2910, ADR 0104), on React Aria's `ModalOverlay`, `Modal` and `Dialog`. No screen writes
 `role="dialog"` or `role="alertdialog"` itself: `eslint.config.js` refuses it
 (`purlis/dialog-family`, an error). A surface with an anatomy of its own, the palette, is
-`DialogSurface`: the family's modal, fixed top, width and height, and its own rows inside.
+`DialogSurface`: the family's scrim, fixed top, width and height, and its own rows inside.
+**`DialogSurface` is not modal**, as VS Code's palette is not (the operator's ruling of
+2026-11-04, [ADR 0104's amendment](adr/0104/2026-11-04-the-palette-is-not-modal.md)): it holds
+the keyboard in itself (`FocusScope contain`) and closes on Esc and on a press outside it, but the
+window behind it is never made inert or hidden. Every other dialog stays modal, and a click
+outside one answers nothing.
 
 **The dialog rules** (#2798, #2789, the operator's ruling in #2910), each held by the family:
 
@@ -2880,22 +2885,28 @@ on a button. An answer that grants something (a refused dispatch's Allow from no
 within `SETTLE_MS` of its update being drawn or moved by what came in above it is not sent, and
 the update says why, as a dispatch's Notice does when its question changes.
 
-**The keys for the chats inside a tab take nothing either** (#1487, `taskKeys.taskKeyOf`).
+**The keys for panes, tabs and the focused chat take nothing either** (#4767, ruled on #4699;
+`moveKeys.ts`, `taskKeys.ts`). A chat is not a tab, so the keys that stepped through a tab's
+chats went with it.
 
-|                                                               | On a Mac      | Everywhere else                 |
-| ------------------------------------------------------------- | ------------- | ------------------------------- |
-| The tab's task menu                                           | `⌘⇧J`         | `Ctrl+Shift+J`                  |
-| The next / previous chat in the tab                           | `⌘⌥↓` / `⌘⌥↑` | `Ctrl+Shift+]` / `Ctrl+Shift+[` |
-| Back to the session's own chat                                | `⌘⇧H`         | `Ctrl+Shift+H`                  |
-| **Reserved, not built**: the next / previous tab on the strip | `⌘⇧]` / `⌘⇧[` | `Ctrl+PageDown` / `Ctrl+PageUp` |
+|                                          | On a Mac      | Everywhere else                                  |
+| ---------------------------------------- | ------------- | ------------------------------------------------ |
+| The pane in that direction (no wrap)     | `⌘⌥←↑→↓`      | `Alt+←↑→↓`, left to a chat's terminal and a view |
+| The next / previous tab (round the ends) | `⌘⇧]` / `⌘⇧[` | `Ctrl+Shift+]` / `Ctrl+Shift+[`                  |
+| The focused chat's tasks                 | `⌘⇧J`         | `Ctrl+Shift+J`                                   |
+| Back to the chat this pane showed before | `⌘⇧H`         | `Ctrl+Shift+H`                                   |
 
-Read in xterm.js 6.0.0 (`common/input/Keyboard.ts`): a `⌘` chord with a letter sends nothing
-but `⌘A`; each arrow's case breaks on `metaKey` before it builds anything, so `⌘⌥↓` and `⌘⌥↑`
-send nothing, while `⌥↓` without `⌘` is `ESC [1;3B` and stays the terminal's; and `Ctrl` with a
-letter, `[` or `]` is encoded only when Shift is not held (the branch is `ctrlKey && !shiftKey`,
-and with Shift only `_` and `@` are turned into anything). So none of the chords was ever a
-byte, and plain `Ctrl+J` (newline), `Ctrl+H` (backspace), `Ctrl+[` (Escape) and `Ctrl+]` still
-reach the shell. `⌘H` alone stays the system's Hide: Shift is part of that chord.
+**Read from xterm.js itself, not from memory**: `app/src/keys/harnessBytes.test.ts` puts every
+chord of these four through the pinned xterm.js's `evaluateKeyboardEvent` and fails if one the
+window takes from a terminal is a byte, or if one it leaves to the terminal is not. A `⌘` chord
+with a letter sends nothing but `⌘A`; each arrow's case breaks on `metaKey` before it builds
+anything, so `⌘⌥←` sends nothing, while `⌥←` without `⌘` is `ESC [1;3D` (word movement); and
+`Ctrl` with a letter, `[` or `]` is encoded only when Shift is not held. So plain `Ctrl+J`
+(newline), `Ctrl+H` (backspace), `Ctrl+[` (Escape) and `Ctrl+]` still reach the shell, and off a
+Mac `Alt` and an arrow is the terminal's while it has the keyboard: there `Ctrl+Tab` leaves the
+terminal first. `⌘H` alone stays the system's Hide. **If the pinned xterm.js gains the kitty
+keyboard protocol**, which Claude Code asks for, the off-a-Mac chords become bytes and that test
+fails: they then need a `chatKeeps` review.
 
 **Where a task is drawn has keys too, and each is on the thing it moves** (#1489). On a task's
 row in the Chats list, Space opens it beside the session that asked for it. On its line in its
@@ -2908,22 +2919,20 @@ The buttons at the end of a menu line are the pointer's way to the same, and are
 accessibility tree, as a list row's fold is not: the keyboard's way is the line's own keys and
 the task's menu in the Chats list.
 
-**Down and Up on a Mac, because a tab's chats hang under it**: its menu lists them top to
-bottom and Down on a focused tab opens that menu. **`⌘⇧]` and `⌘⇧[` are not taken**: they are
-next and previous tab in every tabbed program on a Mac, and they are kept for the strip. Off a
-Mac the brackets have no such meaning (tabs there are `Ctrl+PageUp` and `Ctrl+PageDown`) and
-`Ctrl+Alt` with an arrow is the desktop's.
+**⌘⌥ and an arrow is iTerm2's pane key, and Alt and an arrow Windows Terminal's**; `⌘⇧]` and
+`⌘⇧[` are next and previous tab in every tabbed program on a Mac, and were kept free for this.
+Off a Mac `Ctrl+Alt` with an arrow is the desktop's, and Alt with ← and → is a view's Back and
+Forward (`keys/viewKeys.ts`), which a view keeps.
 
 **A key is matched by what it types, not by where it is**, so a layout that puts another
 character on a key never fires two of the window's actions at once: on Dvorak the key in `]`'s
 place types `=` and `+`, which with the same modifier is the text size's. Only where a layout
 has no `[` or `]` without AltGr (German, Nordic, French) is the key in their place taken, and
-then never when it types a letter or a digit or is another of the window's keys. The palette's
-rows for the two say so.
+then never when it types a letter or a digit or is another of the window's keys.
 
-They are one capture listener on the window, held by the project in front, and each presses
-its catalogue row (`tasks.menu`, `tasks.next`, `tasks.previous`, `tasks.own`), which the
-palette lists with its key. **Nothing is taken while a dialog has the keyboard.** Over a
+They are capture listeners on the window, held by the project in front. ⌘⇧J and ⌘⇧H press
+their catalogue rows (`tasks.menu`, `pane.back`), which the palette lists with their keys; the
+pane and tab keys move the keyboard and have no rows. **Nothing is taken while a dialog has the keyboard.** Over a
 terminal the chord is the window's whether or not its row can run, so the same chord never
 means two things from one tab to the next; in a text field or an editor a chord whose row
 cannot run is left to the field.

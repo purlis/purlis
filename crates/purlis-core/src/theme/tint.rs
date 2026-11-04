@@ -89,6 +89,56 @@ pub fn tint_hex(hex: &str, hue: f64) -> String {
 /// [`tint_hex`] with the chroma held to at most `most`: how a tint keeps its accent apart from
 /// the danger colour ([`apart_chroma`]).
 pub fn tint_hex_within(hex: &str, hue: f64, most: f64) -> String {
+    let asked = (hue.to_bits(), most.to_bits());
+    let kept = TURNED.with(|turned| {
+        turned
+            .borrow()
+            .at
+            .get(&asked)
+            .and_then(|at| at.get(hex))
+            .cloned()
+    });
+    if let Some(found) = kept {
+        return found;
+    }
+    let found = turning(hex, hue, most);
+    TURNED.with(|turned| {
+        let mut turned = turned.borrow_mut();
+        if turned.kept >= KEPT {
+            *turned = Turned::default();
+        }
+        turned.kept += 1;
+        turned
+            .at
+            .entry(asked)
+            .or_default()
+            .insert(hex.to_owned(), found.clone());
+    });
+    found
+}
+
+/// How many answers each of [`TURNED`] and [`OKLAB`] keeps on a thread.
+const KEPT: usize = 1 << 16;
+
+/// **What [`tint_hex_within`] answered on this thread** (#5056), by hue and most chroma, then by
+/// value: the floors and the import's walks ask it the same colours at every whole degree and
+/// chroma step again and again, and each answer is a search of its own. Emptied once it holds
+/// [`KEPT`].
+#[derive(Default)]
+struct Turned {
+    kept: usize,
+    at: std::collections::HashMap<(u64, u64), std::collections::HashMap<String, String>>,
+}
+
+thread_local! {
+    static TURNED: std::cell::RefCell<Turned> = std::cell::RefCell::new(Turned::default());
+    /// [`oklab_of`]'s answers on this thread, as [`TURNED`] keeps [`tint_hex_within`]'s.
+    static OKLAB: std::cell::RefCell<std::collections::HashMap<String, Option<Vec3>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// [`tint_hex_within`], worked out.
+fn turning(hex: &str, hue: f64, most: f64) -> String {
     let Some((rgb, alpha)) = parse(hex) else {
         return hex.to_owned();
     };
@@ -96,6 +146,12 @@ pub fn tint_hex_within(hex: &str, hue: f64, most: f64) -> String {
     let [_, a, b] = oklab(rgb);
     let had = a.hypot(b);
     let chroma = if had < GREY { NEUTRAL_CHROMA } else { had }.min(most);
+    turned_to(&alpha, target, hue, chroma)
+}
+
+/// [`tint_hex_within`]'s search: a colour at `hue` and `chroma`, at the lightness that gives it
+/// luminance `target`, with `alpha` kept as written.
+fn turned_to(alpha: &str, target: f64, hue: f64, chroma: f64) -> String {
     let at = |lightness: f64| shown(lightness, chroma, hue);
     // Luminance rises with lightness at a fixed chroma and hue, so the lightness that gives the
     // luminance the colour had is found by halving the interval.
@@ -1000,7 +1056,18 @@ pub(super) fn distance(a: Vec3, b: Vec3) -> f64 {
 
 /// A theme value in OKLab, its alpha left out; `None` for a value that is not a colour.
 pub(super) fn oklab_of(hex: &str) -> Option<Vec3> {
-    parse(hex).map(|(rgb, _)| oklab(rgb))
+    if let Some(kept) = OKLAB.with(|known| known.borrow().get(hex).copied()) {
+        return kept;
+    }
+    let found = parse(hex).map(|(rgb, _)| oklab(rgb));
+    OKLAB.with(|known| {
+        let mut known = known.borrow_mut();
+        if known.len() >= KEPT {
+            known.clear();
+        }
+        known.insert(hex.to_owned(), found);
+    });
+    found
 }
 
 /// **`hex` at the OKLab lightness `lightness`** (#2940): its hue kept, its chroma lowered only as

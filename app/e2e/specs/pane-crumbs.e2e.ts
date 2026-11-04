@@ -4,6 +4,7 @@
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { pressAndStart } from "../opening.js";
+import { roomForTwoPanes } from "../paneRoom.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
@@ -109,8 +110,12 @@ async function draw(
             size: "sm",
             inline: "",
           });
+          // The part's classes, which the built stylesheet keys it on (#4351).
+          button.classList.add("ds-button", "dp-root");
           const label = el("span", "", name);
           Object.assign(label.dataset, { scope: "button", part: "label" });
+          // The part's classes, which the built stylesheet keys it on (#4351).
+          label.classList.add("ds-button", "dp-label");
           button.append(label);
           button.setAttribute("type", "button");
           button.tabIndex = 0;
@@ -137,15 +142,26 @@ async function draw(
         size: "sm",
         iconOnly: "",
       });
+      // The part's classes, which the built stylesheet keys it on (#4351).
+      brief.classList.add("ds-button", "dp-root");
       brief.setAttribute("type", "button");
       brief.setAttribute("aria-label", `Brief of ${path[path.length - 1]}`);
       brief.tabIndex = 0;
       const icon = el("span", "");
       Object.assign(icon.dataset, { scope: "button", part: "icon" });
+      // The part's classes, which the built stylesheet keys it on (#4351).
+      icon.classList.add("ds-button", "dp-icon");
       const mark = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       mark.setAttribute("class", "lucide");
       icon.append(mark);
       brief.append(icon);
+      // A pane that shows a path names no chat of its own beside it, and says no state but the
+      // path's (#4760): the head's name and state mark are drawn only where there is no path.
+      // Hidden, not removed: React still holds them, and takes them out itself.
+      for (const own of line.querySelectorAll<HTMLElement>(
+        ":scope > :is(.pane-name, .pane-state-mark)",
+      ))
+        own.style.display = "none";
       line.prepend(crumbs, brief);
       return true;
     },
@@ -181,9 +197,13 @@ async function drawEnds(pane: number): Promise<boolean> {
         variant: "secondary",
         size: "sm",
       });
+      // The part's classes, which the built stylesheet keys it on (#4351).
+      button.classList.add("ds-button", "dp-root");
       button.tabIndex = 0;
       const label = document.createElement("span");
       Object.assign(label.dataset, { scope: "button", part: "label" });
+      // The part's classes, which the built stylesheet keys it on (#4351).
+      label.classList.add("ds-button", "dp-label");
       label.textContent = words;
       button.append(label);
       group.append(button);
@@ -246,7 +266,10 @@ async function lineOf(pane: number) {
     return {
       frame: frames[at].getBoundingClientRect().width,
       line: said(line),
-      on: [...line.children].map((child) => said(child as HTMLElement)),
+      // What the line draws: a part the head drew and this file hid is not on it.
+      on: [...line.children]
+        .filter((child) => getComputedStyle(child).display !== "none")
+        .map((child) => said(child as HTMLElement)),
       ways: [...line.querySelectorAll<HTMLElement>(".pane-task-ends > *")].map(said),
     };
   }, pane);
@@ -298,8 +321,8 @@ async function asATaskPane(pane: number): Promise<number> {
       frame.querySelector('[data-testid="pane"]'),
     );
     const controls = frames[at]?.querySelector(".pane-head > .pane-actions > .pane-doing");
-    const close = [...(controls?.querySelectorAll<HTMLElement>("button") ?? [])].find((button) =>
-      (button.getAttribute("aria-label") ?? "").startsWith("End this pane"),
+    const close = [...(controls?.querySelectorAll<HTMLElement>("button") ?? [])].find(
+      (button) => (button.getAttribute("aria-label") ?? "") === "Close this pane",
     );
     if (close) {
       close.style.display = "none";
@@ -360,8 +383,9 @@ async function measured(pane: number) {
       corner: box(frame?.querySelector(".pane-head")),
       line: box(line),
       // The line's other items, which were there before the breadcrumb: the gauge, the harness.
+      // A part the head drew and this file hid (its name and state mark, #4760) is not one.
       others: [...(line?.children ?? [])]
-        .filter((one) => one !== crumbs)
+        .filter((one) => one !== crumbs && getComputedStyle(one).display !== "none")
         .map((one) => ({ what: one.className, box: box(one) })),
       controls: box(frame?.querySelector(".pane-head > .pane-actions > .pane-doing")),
       crumbs: box(crumbs),
@@ -370,7 +394,7 @@ async function measured(pane: number) {
       briefNeeds: brief ? brief.scrollWidth : 0,
       // Everything of the line after the breadcrumb, in order, and whether each is cut.
       after: [...(line?.children ?? [])]
-        .filter((one) => one !== crumbs)
+        .filter((one) => one !== crumbs && getComputedStyle(one).display !== "none")
         .map((one) => ({ what: one.className, box: box(one), cut: cut(one) })),
       names: [...(crumbs?.querySelectorAll(".crumb") ?? [])].map((name) => ({
         text: name.textContent ?? "",
@@ -491,6 +515,9 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
       },
       { timeout: 20_000, interval: 250, timeoutMsg: "the window never stopped resizing" },
     );
+    // Two panes side by side, never one folded to a rail (#4766): what the window leaves the
+    // panes varies by runner, so it is widened by any shortfall.
+    await roomForTwoPanes();
   }
 
   it("sits in the pane's existing top line, and the pane gains no row", async () => {
@@ -529,7 +556,8 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
   });
 
   // Each narrow pane twice: with the controls a pane showing a task draws (the chat's ⋯ and
-  // the two splits, #4753), and with the four every other pane draws. The line reserves what is there, measured, so
+  // the two splits, #4753; ⋯ before the bell since #4760), and with the four every other pane
+  // draws. The line reserves what is there, measured, so
   // neither is a number this file or the stylesheet has to know.
   for (const [pane, task] of [
     [0, true],
@@ -541,7 +569,9 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
       // 1024 px is the narrowest window purlis supports (ADR 0054), and with two panes side by
       // side each is a few hundred pixels.
       await windowIs(1024, 768);
-      if (task) expect(await asATaskPane(pane)).toBe(3);
+      // The splits: the chat's ⋯ is drawn before the bell since #4760, outside this cluster,
+      // and takes the same room from the line it took inside it.
+      if (task) expect(await asATaskPane(pane)).toBe(2);
       else await untilReserved(pane);
       expect(
         await draw(pane, { path: LONG_PATH, state: LONGEST_STATE, elsewhere: "release-train" }),
@@ -716,8 +746,12 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
         const button = document.createElement("button");
         button.type = "button";
         Object.assign(button.dataset, { scope: "button", part: "root", variant, size: "md" });
+        // The part's classes, which the built stylesheet keys it on (#4351).
+        button.classList.add("ds-button", "dp-root");
         const label = document.createElement("span");
         Object.assign(label.dataset, { scope: "button", part: "label" });
+        // The part's classes, which the built stylesheet keys it on (#4351).
+        label.classList.add("ds-button", "dp-label");
         label.textContent = words;
         button.append(label);
         confirm.append(button);
@@ -772,7 +806,9 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
   // the breadcrumb, and five controls in the pane's corner taking room from the line.
   it("keeps the longest state whole in a narrow pane with Brief, two word buttons and five pane controls, by cutting everything else first", async () => {
     await windowIs(1024, 768);
-    expect(await oneMoreControl(1)).toBe(5);
+    // The splits, the close and the one added: the chat's ⋯ is drawn before the bell since
+    // #4760, outside this cluster, so the corner holds five controls as before.
+    expect(await oneMoreControl(1)).toBe(4);
     expect(
       await draw(1, {
         path: LONG_PATH,

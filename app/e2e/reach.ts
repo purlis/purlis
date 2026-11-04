@@ -96,33 +96,60 @@ export async function endTheSessionsStartedSince(before: readonly number[]): Pro
   await endChatsStartedHere(started.map((session) => ({ plane, session, name: "" })));
 }
 
+/** What the strip's kept empty tab is called (`tabs.EMPTY_TAB`, #4755). */
+export const KEPT_EMPTY = "New chat";
+
 /**
- * Closes every view tab that was not on the strip in `before`, by its own `Close <name>`, and
- * waits until the strip is as it was: one app process serves the whole run. A view tab ends
- * nothing and closes without a question. **It ends no chat**: a chat is ended by its number
- * ({@link endTheSessionsStartedSince}) first, and a chat's tab still on the strip fails here.
+ * **The tabs on `now` that were not on `before`**: by name, and as many times as each was added,
+ * so a second tab of a name the strip already had is one. **The strip's kept empty tab is never
+ * one** (#4756): closing a strip's last tab keeps one empty pane, named "New chat", and closing
+ * that changes nothing. The one rule both a spec's own `after` and `tabsLeft.ts`'s guard use.
+ */
+export function openedSince(before: readonly string[], now: readonly string[]): string[] {
+  const had = new Map<string, number>();
+  for (const name of before) had.set(name, (had.get(name) ?? 0) + 1);
+  const opened: string[] = [];
+  for (const name of now) {
+    const kept = had.get(name) ?? 0;
+    if (kept > 0) had.set(name, kept - 1);
+    else if (name !== KEPT_EMPTY) opened.push(name);
+  }
+  return opened;
+}
+
+/** Presses each named tab's own `Close <name>` on the strip in front, from the page. */
+export async function pressClose(names: readonly string[]): Promise<void> {
+  await browser.execute(
+    (strip: string, called: string[]) => {
+      for (const name of called)
+        document
+          .querySelector<HTMLElement>(`${strip} button[aria-label="Close ${CSS.escape(name)}"]`)
+          ?.click();
+    },
+    TABS,
+    [...names],
+  );
+}
+
+/**
+ * Closes every view tab that was not on the strip in `before` ({@link openedSince}), by its own
+ * `Close <name>`, and waits until the strip is as it was: one app process serves the whole run.
+ * A view tab ends nothing and closes without a question. **It ends no chat**: a chat is ended by
+ * its number ({@link endTheSessionsStartedSince}) first, and a chat's tab still on the strip
+ * fails here.
  */
 export async function closeTheViewTabsOpenedSince(before: readonly string[]): Promise<void> {
   for (let round = 0; round < 5; round++) {
-    const left = (await tabNames()).filter((tab) => !before.includes(tab));
+    const left = openedSince(before, await tabNames());
     if (left.length === 0) break;
-    for (const name of left)
-      await browser.execute(
-        (strip: string, called: string) => {
-          document
-            .querySelector<HTMLElement>(`${strip} button[aria-label="Close ${CSS.escape(called)}"]`)
-            ?.click();
-        },
-        TABS,
-        name,
-      );
+    await pressClose(left);
     await browser.pause(500);
   }
   let left: string[] = [];
   await browser
     .waitUntil(
       async () => {
-        left = (await tabNames()).filter((tab) => !before.includes(tab));
+        left = openedSince(before, await tabNames());
         return left.length === 0;
       },
       { timeout: 20_000, interval: 250 },

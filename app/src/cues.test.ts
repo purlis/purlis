@@ -7,11 +7,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * **A cue no theme can erase** (#3295): the close that ends a chat is the button family's quiet
- * ghost, whose hover a theme reaches (`button.root.quiet.hover.*`) in the `parts` layer, after
- * the family's own rules. Its danger hover fill stays the family's to theme; its danger mark (the
- * glyph's colour, and an edge in it) is drawn in the `cues` layer, after `parts`, which no theme
- * writes into. The story `QuietPaneMarks` holds it in a real browser with such a theme.
+ * **A cue no theme can erase** (#3295): the `cues` layer, after `parts`, which no theme writes
+ * into. Its first cue was the close that ended a chat; a close ends nothing since #4756, so no
+ * close wears the danger colour anywhere, under a theme or not.
  */
 
 /** A stylesheet's name, in parts: the stylesheet guard reads a quoted path ending in the
@@ -23,7 +21,7 @@ const read = (file: string) =>
 
 const LAYERS = /@layer ([a-z, ]+);/;
 
-describe("the close that ends a chat (#3295)", () => {
+describe("the cues layer (#3295)", () => {
   it("is drawn in a layer after the theme's parts", () => {
     const styles = read(sheet("styles"));
     const order = (LAYERS.exec(styles)?.[1] ?? "").split(/,\s*/);
@@ -31,15 +29,16 @@ describe("the close that ends a chat (#3295)", () => {
     expect(order.indexOf("cues")).toBeGreaterThan(order.indexOf("parts"));
     expect(styles).toContain(`@import "./${sheet("cues")}" layer(cues);`);
   });
+});
 
-  it("keeps its danger mark under the pointer: the glyph and an edge in the danger colour", () => {
-    const cues = read(sheet("cues"));
-    const rule =
-      /\.ends-a-chat\[data-scope="button"\]\[data-variant="quiet"\]\[data-hovered\]:not\(\[data-disabled\]\)\s*\{([^}]*)\}/.exec(
-        cues,
-      )?.[1];
-    expect(rule, "the hover rule in the cues sheet").toBeDefined();
-    expect(rule).toMatch(/color:\s*var\(--danger-text\)/);
-    expect(rule).toMatch(/box-shadow:\s*inset 0 0 0 [^;]*var\(--danger-text\)/);
+describe("a close (#4756)", () => {
+  it("wears no danger cue, since it ends nothing", () => {
+    for (const file of [
+      sheet("cues"),
+      sheet("paneFrame"),
+      sheet("App"),
+      `ui/tabs/${sheet("tabs")}`,
+    ])
+      expect(read(file), file).not.toMatch(/ends-a-chat/);
   });
 });

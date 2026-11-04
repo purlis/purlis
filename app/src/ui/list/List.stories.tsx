@@ -357,6 +357,95 @@ export const LinesUnderTheWords: Story = {
   },
 };
 
+/** A reason the Library's line cuts short, as #4711 found it, and one that fits. */
+const CUT_REASON =
+  "Left out: a name starting with purlis- is purlis's own, so this one is never handed to a chat here";
+
+/** Skills left out, as the Skill studio's Library lists them, each line asking for its whole. */
+function ReasonsCutShort() {
+  return (
+    <div style={{ inlineSize: "20rem" }}>
+      <List aria-label="Skills">
+        <ListRow id="purlis-review" textValue="purlis-review">
+          <RowLabel>purlis-review</RowLabel>
+          <RowTrail>
+            <Badge>project</Badge>
+            <Badge variant="waiting">Left out</Badge>
+          </RowTrail>
+          <RowBelow clamp={1} tipWhenCut data-testid="below-cut">
+            {CUT_REASON}
+          </RowBelow>
+        </ListRow>
+        <ListRow id="lint-rs" textValue="lint-rs">
+          <RowLabel>lint-rs</RowLabel>
+          <RowTrail>
+            <Badge>workspace</Badge>
+          </RowTrail>
+          <RowBelow clamp={1} tipWhenCut data-testid="below-fits">
+            Left out: off here
+          </RowBelow>
+        </ListRow>
+      </List>
+    </div>
+  );
+}
+
+/**
+ * **A line under the words, cut short, reads whole in the row's tooltip** (#4711): under the
+ * pointer after the delay and at once under the keyboard, Esc taking it down; a line that fits
+ * has none, and the row stays as it is drawn, its line one line. The picture is the cut row under
+ * the keyboard, its whole reason in the tooltip.
+ */
+export const ALineCutShortReadsWhole: Story = {
+  parameters: { screenshot: "page" },
+  render: () => <ReasonsCutShort />,
+  play: async ({ canvas, userEvent }) => {
+    const cutRow = canvas.getByRole("row", { name: /^purlis-review/ });
+    const fitsRow = canvas.getByRole("row", { name: /^lint-rs/ });
+    const below = canvas.getByTestId("below-cut");
+    const rowHeight = cutRow.getBoundingClientRect().height;
+    const lineHeight = below.getBoundingClientRect().height;
+    /** The row and its line are drawn as they were, the line one line, whatever is shown. */
+    const stillOneLine = async (where: string) => {
+      await expect(
+        cutRow.getBoundingClientRect().height,
+        `${where}: the row keeps its height`,
+      ).toBe(rowHeight);
+      await expect(below.getBoundingClientRect().height, `${where}: its line stays one`).toBe(
+        lineHeight,
+      );
+      await expect(
+        Math.abs(lineHeight - Number.parseFloat(getComputedStyle(below).lineHeight)),
+        `${where}: the line is one line high`,
+      ).toBeLessThan(Number.parseFloat(getComputedStyle(below).lineHeight) / 2);
+    };
+    await stillOneLine("At rest");
+    // A line that fits: past the delay under the pointer, and no tooltip.
+    await userEvent.hover(fitsRow);
+    await new Promise((done) => setTimeout(done, 800));
+    await expect(tipShown(), "A reason that fits shows no tooltip").toBeNull();
+    // A line cut short: its whole words under the pointer, and Esc takes them down.
+    await userEvent.hover(cutRow);
+    await waitFor(() => expect(tipShown()).toHaveTextContent(CUT_REASON));
+    await stillOneLine("Under the pointer");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(tipShown()).toBeNull());
+    await userEvent.unhover(cutRow);
+    // And under the keyboard, at once, by the row's words.
+    await userEvent.tab();
+    await untilFocused(() => cutRow, "Cut short: Tab lands on the first row");
+    await waitFor(() => expect(tipShown()).toHaveTextContent(CUT_REASON));
+    await stillOneLine("Under the keyboard");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => fitsRow, "Cut short: Down moves to the row whose line fits");
+    await waitFor(() => expect(tipShown()).toBeNull());
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocused(() => cutRow, "Cut short: Up comes back to the row cut short");
+    await waitFor(() => expect(tipShown()).toHaveTextContent(CUT_REASON));
+    expectFocusInSight();
+  },
+};
+
 /** The theme gallery's cards: a grid the arrows walk in two directions. */
 function Cards() {
   const [chosen, setChosen] = useState<Selection>(new Set(["purlis"]));

@@ -4,6 +4,7 @@
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { pressAndStart } from "../opening.js";
+import { roomForTwoPanes } from "../paneRoom.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
@@ -110,6 +111,12 @@ async function raise(pane: number, sentence: string, ways: string[]): Promise<vo
         line.append(button);
       }
       box.append(line);
+      // Each hand-drawn part takes the classes the built stylesheet keys it on (#4351).
+      for (const one of [box, ...box.querySelectorAll("[data-scope], [data-part]")]) {
+        const { scope, part } = (one as HTMLElement).dataset;
+        if (scope) one.classList.add(`ds-${scope}`);
+        if (part) one.classList.add(`dp-${part}`);
+      }
       stack.prepend(box);
       return true;
     },
@@ -284,6 +291,9 @@ describe("a pane's warnings, inside the pane", () => {
       },
       { timeout: 20_000, interval: 250, timeoutMsg: "the window never stopped resizing" },
     );
+    // Two panes side by side, never one folded to a rail (#4766): what the window leaves the
+    // panes varies by runner, so it is widened by any shortfall.
+    await roomForTwoPanes();
   }
 
   it("keeps the chosen tab joined to its pane while a warning shows (rules 1 and 2)", async () => {

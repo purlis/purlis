@@ -171,17 +171,11 @@ describe("the Chats list, in Settings (#1499, V100-73)", () => {
     expect(box).toBeChecked();
   });
 
-  it("opens tasks in their own tabs, off until it is turned on (#1489)", async () => {
+  it("offers no switch for tasks in their own tabs: a pressed task lands in the focused pane (#4757)", async () => {
     render(<SettingsTab />);
     await userEvent.click(group("Chats list"));
 
-    const box = screen.getByRole("switch", { name: "Open tasks in their own tabs" });
-    expect(box).not.toBeChecked();
-
-    await userEvent.click(box);
-
-    expect(chatsListPrefs().tabbed).toBe(true);
-    expect(box).toBeChecked();
+    expect(screen.queryByRole("switch", { name: "Open tasks in their own tabs" })).toBeNull();
   });
 
   it("sums up what happened while you were away, on until it is turned off (#1514)", async () => {

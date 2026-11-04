@@ -944,9 +944,10 @@ fn verify_vault(ctx: &Ctx, v: &Vault) -> Vec<(String, Option<String>)> {
     };
     keys.into_iter()
         .map(|k| {
-            let err = cmd::resolves(ctx, v, &k)
-                .err()
-                .map(|e| e.message.to_string());
+            // A broken link is said for the person, naming the entry it read (#5069).
+            let err = cmd::resolves(ctx, v, &k).err().map(|e| {
+                super::links::verify_said(ctx, v, &k, &e).unwrap_or_else(|| e.message.to_string())
+            });
             (k, err)
         })
         .collect()
@@ -1225,6 +1226,7 @@ pub fn destroy_with(
             }
         }
     }
+    super::links::forget_vault(ctx, name)?;
     registry::remove_vault(ctx, name)?;
     Ok(Destroyed {
         provider: v.provider,

@@ -5,13 +5,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { $$, browser, expect } from "@wdio/globals";
 import { focusWorkspace, projectRoot, stateOf } from "../acting.js";
-import {
-  SELECTED_TAB,
-  bringChatForward,
-  endChatsStartedHere,
-  startAChat,
-  type Started,
-} from "../started.js";
+import { runFromThePalette } from "../reach.js";
+import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 import { ask } from "../switching.js";
 import { workspacesListed } from "../titleBarWorkspaces.js";
 
@@ -20,7 +15,7 @@ import { workspacesListed } from "../titleBarWorkspaces.js";
  * local folder of a chat working in a workspace is drawn there and named on the workspace's
  * strip; Compare draws the kept theme while it is held; a save that breaks a hard floor is not
  * drawn and the last good version stays; the revert key, Revert and Keep each end the draft; and
- * closing the chat asks Keep or Revert.
+ * ending the chat (its End…) asks Keep or Revert.
  *
  * The engine's tests hold where a draft is, how it is read, the hard floors and what Keep and
  * Revert leave on disk (`theme/drafts_tests.rs`), and the app's which chat's draft a workspace
@@ -251,17 +246,11 @@ describe("a chat's theme draft", () => {
     await untilDrawn(FIRST, "the kept theme, chosen for this workspace");
   });
 
-  it("is asked about when its chat closes, and Revert deletes it", async () => {
+  it("is asked about when its chat ends, and Revert deletes it", async () => {
     draft(join(drafts, FOLDER), SECOND);
     await untilStripSays(`Theme draft — ${FOLDER}`);
-    await bringChatForward(chat?.session ?? -1);
-    await browser.execute((selected: string) => {
-      document
-        .querySelector(selected)
-        ?.closest("span.tab")
-        ?.querySelector<HTMLElement>("button.closer:not([data-minimise])")
-        ?.click();
-    }, SELECTED_TAB);
+    // Its End… (#4753), the one row that ends a chat: a tab's close ends nothing (#4756).
+    await runFromThePalette("End chat", `chat.end:${chat?.session ?? -1}`);
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
@@ -290,7 +279,7 @@ describe("a chat's theme draft", () => {
       {
         timeout: 20_000,
         interval: 100,
-        timeoutMsg: "closing the chat never asked about its draft",
+        timeoutMsg: "ending the chat never asked about its draft",
       },
     );
     await browser.waitUntil(() => !existsSync(join(drafts, FOLDER)), {

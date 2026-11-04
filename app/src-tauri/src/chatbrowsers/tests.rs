@@ -306,6 +306,7 @@ fn logins(name: &str) -> super::ReadLogin {
             keep: Some(kept_as(name)),
             identity: Some(IDENTITY.into()),
             suggested: false,
+            form: None,
         },
         opens: name == "kept-login",
         identity: IDENTITY.into(),
@@ -3247,3 +3248,175 @@ fn a_runners_refusal_for_its_engines_sandbox_names_that_runner_to_the_chat_and_o
 }
 
 mod taken_back;
+
+// ---- Following a page to its login form (#4995, #5015) ----
+
+/// Chat `session` follows `page` to its form in a browser of purlis's own, its persona's Always
+/// answering its browser's Ask.
+fn follows(
+    browsers: &ChatBrowsers,
+    hosted: &Arc<Hosted>,
+    session: u32,
+    page: &str,
+) -> Result<String, String> {
+    let driver: Arc<dyn Driver> = hosted.clone();
+    browsers.find_login_form(
+        Some(&driver),
+        Path::new("/p"),
+        None,
+        session,
+        reach(),
+        Some(false),
+        page,
+    )
+}
+
+/// #5015: the browser that follows a page to its form counts against the project's browser
+/// limit: refused with that limit's sentence where the project is full, starting nothing, and
+/// counted while it runs, so another chat's browser waits for it.
+#[test]
+fn a_browser_that_follows_a_page_to_its_form_counts_against_the_projects_limit() {
+    let browsers = Arc::new(
+        ChatBrowsers::default().limited(purlis_core::browserlimits::Limits {
+            per_project: 1,
+            ..purlis_core::browserlimits::Limits::for_memory(None)
+        }),
+    );
+    let hosted = Arc::new(Hosted::default());
+    *hosted.at.lock().unwrap() = Some("https://auth.example.test/login".into());
+    allowed_and_acting(&browsers, &hosted, 3);
+
+    let why = follows(&browsers, &hosted, 4, "https://app.example.test/").unwrap_err();
+    assert!(
+        why.contains("this project's chats have 1 browser open"),
+        "{why}"
+    );
+    assert_eq!(hosted.started.lock().unwrap().len(), 1, "nothing started");
+
+    // While one follows, it is the project's one browser.
+    let browsers = Arc::new(
+        ChatBrowsers::default().limited(purlis_core::browserlimits::Limits {
+            per_project: 1,
+            ..purlis_core::browserlimits::Limits::for_memory(None)
+        }),
+    );
+    let hosted = Arc::new(Hosted::default());
+    *hosted.at.lock().unwrap() = Some("https://auth.example.test/login".into());
+    hosted.hold_closes_from(1);
+    let following = {
+        let (browsers, hosted) = (Arc::clone(&browsers), Arc::clone(&hosted));
+        std::thread::spawn(move || follows(&browsers, &hosted, 4, "https://app.example.test/"))
+    };
+    hosted.until_a_close_waits();
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    let why = refusal(answered(&browsers, &hosted, &ask(3, click())).0);
+    assert!(
+        why.contains("this project's chats have 1 browser open"),
+        "{why}"
+    );
+    hosted.answer_closes();
+    assert_eq!(
+        following.join().unwrap().as_deref(),
+        Ok("https://auth.example.test/login")
+    );
+    // Once it ended, the project has room again.
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert_eq!(hosted.started.lock().unwrap().len(), 2);
+}
+
+/// #5015: a chat whose suggested pages can't be followed, several times, has none followed for a
+/// while, starting no browser, and is told why in a plain sentence; another chat is still
+/// followed.
+#[test]
+fn a_chat_whose_pages_cant_be_followed_again_and_again_rests_for_a_while() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    // Every page shows nothing: none can be followed.
+    for _ in 0..super::FOLLOWS_FAILED_AT_MOST {
+        let why = follows(&browsers, &hosted, 4, "https://app.example.test/").unwrap_err();
+        assert!(why.contains("could not follow"), "{why}");
+    }
+    let started = hosted.started.lock().unwrap().len();
+    assert_eq!(started, super::FOLLOWS_FAILED_AT_MOST);
+
+    let why = follows(&browsers, &hosted, 4, "https://app.example.test/").unwrap_err();
+    assert!(why.contains("follows none for"), "{why}");
+    assert!(why.contains("login page itself"), "{why}");
+    assert_eq!(
+        hosted.started.lock().unwrap().len(),
+        started,
+        "nothing started"
+    );
+
+    *hosted.at.lock().unwrap() = Some("https://auth.example.test/login".into());
+    assert_eq!(
+        follows(&browsers, &hosted, 5, "https://app.example.test/").as_deref(),
+        Ok("https://auth.example.test/login"),
+        "another chat is followed"
+    );
+}
+
+/// A browser login `shop` in vault `qa`, its user in key `shop-user`, its password in `shop-pass`.
+fn a_shop_login() -> purlis_core::sandbox::tools::Tool {
+    use purlis_core::sandbox::tools::{Handed, Tool, Value, login};
+    Tool {
+        name: "shop".to_owned(),
+        vault: "qa".to_owned(),
+        values: [
+            (login::PASS_VAR, "shop-pass"),
+            (login::USER_VAR, "shop-user"),
+        ]
+        .into_iter()
+        .map(|(var, key)| Value {
+            var: var.to_owned(),
+            handed: Handed::File,
+            key: key.to_owned(),
+        })
+        .collect(),
+        login: Some(login::Login {
+            url: "https://shop.example.test/".to_owned(),
+            origin: "https://shop.example.test".to_owned(),
+            form: None,
+        }),
+        args: None,
+        mint: None,
+        host: None,
+    }
+}
+
+/// An open Secret ask for `vault`/`key`, chat `chat` waiting on it.
+fn an_open_ask(chat: u32, vault: &str, key: &str) -> purlis_core::secrets::ask::Open {
+    purlis_core::secrets::ask::Open {
+        id: 1,
+        persona: "dev".to_owned(),
+        vault: vault.to_owned(),
+        key: key.to_owned(),
+        tool: None,
+        chats: vec![chat],
+        starts: 0,
+        since: 0,
+    }
+}
+
+#[test]
+fn allow_once_is_kept_only_while_its_chat_waits_on_an_ask_for_that_logins_own_keys() {
+    let shop = a_shop_login();
+    let waits =
+        |open: &[purlis_core::secrets::ask::Open]| super::waits_on_its_secret(open, 7, &shop);
+    assert!(waits(&[an_open_ask(7, "qa", "shop-pass")]), "its password");
+    assert!(waits(&[an_open_ask(7, "qa", "shop-user")]), "its user");
+    assert!(
+        !waits(&[an_open_ask(7, "qa", "other-key")]),
+        "another key of its vault"
+    );
+    assert!(
+        !waits(&[an_open_ask(7, "ops", "shop-pass")]),
+        "the same key of another vault"
+    );
+    assert!(
+        !waits(&[an_open_ask(8, "qa", "shop-pass")]),
+        "another chat's ask"
+    );
+    assert!(!waits(&[]), "no ask open");
+}

@@ -178,7 +178,8 @@ export async function pressAndStart(name: string): Promise<void> {
 
 /**
  * Ending a chat, as the operator does it since the pane controls landed: press, then answer
- * **Close** — the dialog's answer that ends it (ADR 0064 added Smart close beside it).
+ * **Close** — the dialog's answer that ends it (ADR 0064 added Smart close beside it), or
+ * **End** on a shell, whose question has only Cancel and End (#4761).
  *
  * **Nothing ends a chat without asking** — the operator's *"closing session should ask
  * confirmation"*, and it is asked in one place (`PlaneView`'s `run`), so a tab's `×`, a
@@ -193,37 +194,73 @@ export async function answerTheAsk(ending: string): Promise<void> {
   // The question is about the row that was pressed; its title says which. Looked for by that,
   // afresh at every look: `endEveryChat` asks one after another, and a node held from the last
   // question is not this one (#2126).
+  // A chat's question ends it on Close; a shell's asks only Cancel or End (#4761).
+  let word = "Close";
   await browser.waitUntil(
-    async () => browser.execute(aDialogOffers, "alertdialog", ending, "Close", false),
+    async () => {
+      for (const one of ["Close", "End"])
+        if (await browser.execute(aDialogOffers, "alertdialog", ending, one, false)) {
+          word = one;
+          return true;
+        }
+      return false;
+    },
     { timeout: 20_000, timeoutMsg: `the question about ${ending} was never asked` },
   );
-  const answer = await $('[role="alertdialog"]').$("button=Close");
+  const answer = await $('[role="alertdialog"]').$(`button=${word}`);
   await answer.waitForClickable({ timeout: 20_000 });
   await answer.click();
   await theDialogHasGone("alertdialog", ending, `the question about ${ending} never went`);
 }
 
-/** Ends the chat a control named `name` belongs to, and answers the question it asks. */
-export async function endChat(name: string): Promise<void> {
-  await pressOnly(name);
-  await answerTheAsk(name);
+/**
+ * **Opens the palette**, and makes sure it is up: F2, and where the driver's F2 reaches nothing
+ * that opens it (the keyboard left on something that takes the key, such as a terminal or a
+ * dialog that just closed), the same key dispatched on the window, where the palette listens,
+ * as `reach.ts`'s `runFromThePalette` does.
+ */
+async function openThePalette(): Promise<void> {
+  const palette = await $(PALETTE);
+  if (await palette.isDisplayed().catch(() => false)) return;
+  await browser.keys(["F2"]);
+  const opened = await palette
+    .waitForDisplayed({ timeout: 3_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!opened) {
+    await browser.execute(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true }),
+      );
+    });
+    await palette.waitForDisplayed({ timeout: 20_000 });
+  }
+  await $("#palette-query").waitForDisplayed({ timeout: 10_000 });
 }
 
 /**
- * Ends every chat the strip is drawing, and the ones it is not.
- *
- * **The strip collapses rather than scrolling** (ADR 0039, as amended), so at fifty
- * chats it draws a handful and hides the rest. This terminates because closing a drawn tab
- * gives the strip room for a hidden one — the hidden tabs flow onto the strip as the drawn
- * ones go — and it is bounded so that a close which stops taking is a failure and not a hang.
+ * Ends every chat of the project in front, on a strip or in no pane at all: each one's End…
+ * (#4753), the one row that ends a chat, since a close ends nothing (#4756). Run from the
+ * palette, which lists an End… for every chat, one at a time, and bounded so that an End which
+ * stops taking is a failure and not a hang.
  */
 export async function endEveryChat(most = 200): Promise<void> {
   for (let pressed = 0; pressed < most; pressed++) {
-    const closer = await $('button[aria-label^="End chat "]');
-    if (!(await closer.isExisting())) return;
-    const name = (await closer.getAttribute("aria-label")) ?? "";
-    await closer.click();
-    await answerTheAsk(name);
+    await openThePalette();
+    await $("#palette-query").addValue("End chat");
+    const row = await browser.execute(() => {
+      const found = document.querySelector<HTMLElement>(
+        '[id^="palette-row-chat.end:"]:not([aria-disabled="true"])',
+      );
+      found?.click();
+      return found?.id ?? null;
+    });
+    if (row === null) {
+      await browser.keys(["Escape"]);
+      await $(PALETTE).waitForDisplayed({ reverse: true, timeout: 10_000 });
+      return;
+    }
+    await answerTheAsk("");
   }
   throw new Error(`${most} presses did not end every chat`);
 }

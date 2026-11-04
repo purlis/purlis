@@ -195,9 +195,10 @@ const CHOICE_SCOPES = ["checkbox", "radio", "switch", "segment", "option-card", 
   .map((scope) => `[data-scope="${scope}"]`)
   .join(", ");
 
-/** The points of a box a person looks at: its centre and a point just inside each corner. */
-function pointsOf(box: DOMRect): [number, number][] {
-  const inset = Math.min(2, box.width / 4, box.height / 4);
+/** The points of a box a person looks at: its centre and a point just inside each corner, at
+ *  least `round` px in for a box whose corners are rounded that far. */
+function pointsOf(box: DOMRect, round = 0): [number, number][] {
+  const inset = Math.min(Math.max(2, round), box.width / 4, box.height / 4);
   return [
     [box.left + box.width / 2, box.top + box.height / 2],
     [box.left + inset, box.top + inset],
@@ -237,8 +238,42 @@ export function expectFocusInSight(): void {
   }
   throw new Error(
     `the focus is on ${describe(focused)}, and none of it is in sight` +
-      (covering.size > 0 ? `: it is under ${[...covering].join(", ")}` : ""),
+      (covering.size > 0 ? `: it is under ${[...covering].join(", ")}` : "") +
+      ` (${whereItIs(seen)})`,
   );
+}
+
+/** A box, rounded, as `x,y wxh`. */
+function boxSaid(box: DOMRect): string {
+  const r = Math.round;
+  return `${r(box.x)},${r(box.y)} ${r(box.width)}x${r(box.height)}`;
+}
+
+/**
+ * **Where an element out of sight is** (#4672): its box, the window's size and scroll, and every
+ * ancestor that clips or scrolls it, with that ancestor's box and scroll. So one failure says
+ * whether the window is too small, a frame did not scroll, or a frame scrolled the wrong way.
+ */
+function whereItIs(element: Element): string {
+  const said = [
+    `its box ${boxSaid(element.getBoundingClientRect())}`,
+    `the window ${window.innerWidth}x${window.innerHeight} scrolled ${Math.round(window.scrollX)},${Math.round(window.scrollY)}`,
+  ];
+  for (let at = element.parentElement; at !== null; at = at.parentElement) {
+    if (at.scrollHeight <= at.clientHeight && at.scrollWidth <= at.clientWidth) continue;
+    const style = getComputedStyle(at);
+    if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+    const part = at.getAttribute("data-part");
+    const scope = at.getAttribute("data-scope");
+    const name =
+      (scope !== null ? `${scope}${part !== null ? `.${part}` : ""}` : null) ??
+      at.getAttribute("data-testid") ??
+      at.tagName.toLowerCase();
+    said.push(
+      `${name} ${boxSaid(at.getBoundingClientRect())} scrolled ${Math.round(at.scrollLeft)},${Math.round(at.scrollTop)} of ${at.scrollWidth}x${at.scrollHeight}`,
+    );
+  }
+  return said.join("; ");
 }
 
 /**
@@ -258,6 +293,68 @@ export async function untilFocusInSight(step: string): Promise<void> {
   }
   // Said after the step, with what the check last found.
   throw new Error(`${step}: ${why instanceof Error ? why.message : String(why)}`);
+}
+
+/**
+ * **`element` scrolled to the middle of the pane it scrolls in**, and nothing else moved: the
+ * nearest ancestor that scrolls, never the page or anything around the pane, as
+ * `scrollIntoView` would, so the frame that is pictured stays where the story drew it (#5016).
+ * For a story that pictures what sits under its pane's fold.
+ */
+export function scrollIntoItsPane(element: Element): void {
+  let pane = element.parentElement;
+  while (pane !== null && !scrolls(pane)) pane = pane.parentElement;
+  if (pane === null) throw new Error(`${describe(element)} is in no pane that scrolls`);
+  // A pane with nothing under its fold stays as it is: the browser holds `scrollTop` at 0.
+  const [box, room] = [element.getBoundingClientRect(), pane.getBoundingClientRect()];
+  pane.scrollTop += box.top - room.top - (room.height - box.height) / 2;
+}
+
+/** Whether `element` is a pane its content scrolls up and down in, overflowing now or not. */
+function scrolls(element: Element): boolean {
+  const { overflowY } = getComputedStyle(element);
+  return overflowY === "auto" || overflowY === "scroll";
+}
+
+/** Why `part` is not wholly in sight, or `null` when every point a person looks at is. */
+function outOfSight(part: Element): string | null {
+  const box = part.getBoundingClientRect();
+  if (box.width === 0 || box.height === 0) return `${describe(part)} is not drawn`;
+  // A rounded part is hit only inside its curve: its corners are looked at as far in as it rounds.
+  // A radius in px; a percentage reads as its number, held inside the box by `pointsOf`.
+  const round = parseFloat(getComputedStyle(part).borderTopLeftRadius) || 0;
+  for (const [x, y] of pointsOf(box, round)) {
+    if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight)
+      return `${describe(part)} runs past the window`;
+    // The part or something inside it: an ancestor there, such as a pane that clips it, is
+    // drawn where the part is not.
+    const top = document.elementFromPoint(x, y);
+    if (top === null || !part.contains(top))
+      return `${describe(part)} is ${top === null ? "not drawn there" : `under ${describe(top)}`}`;
+  }
+  return null;
+}
+
+/**
+ * **Each of `parts` comes wholly into sight** (`step` names where in the story): its centre and
+ * each corner on the screen and not under anything else the page draws, such as a dialog's
+ * sticky footer or the pane that clips it. For a story that scrolls what it pictures into view
+ * before `pictureNow` (#5016), waited for as WebKit may draw the scroll late. Throws, after the
+ * step, the first part out of sight and what is over it.
+ */
+export async function untilInSight(parts: Element[], step: string): Promise<void> {
+  let why: string | null = null;
+  try {
+    await waitFor(
+      () => {
+        why = parts.map(outOfSight).find((one) => one !== null) ?? null;
+        if (why !== null) throw new Error(why);
+      },
+      { timeout: LANDS_WITHIN_MS },
+    );
+  } catch {
+    throw new Error(`${step}: ${why ?? "out of sight"}`);
+  }
 }
 
 function describe(element: Element): string {

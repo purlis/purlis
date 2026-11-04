@@ -7,8 +7,9 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
+import { SETTLE_MS as ASKS_SETTLE_MS } from "./asks";
 import { panes } from "./countedPane.testkit";
-import { counts, renderedBy } from "./reactCommits.testkit";
+import { commitRoots, counts, renderedBy } from "./reactCommits.testkit";
 import { stripNamed } from "./test-strips";
 import { themeInForce } from "./theme/inForce.testkit";
 
@@ -101,6 +102,8 @@ type Core = {
   asked: Asked[];
   /** Says `plane-changed` for `plane`'s answer `answer`, as the core's watcher would. */
   planeChanged: (plane: string, answer: string) => Promise<void>;
+  /** Says `chat-moved` with `payload`, as the core does for each move of a chat. */
+  chatMoved: (payload: unknown) => void;
   /** Holds every `plane_sidebar` answer from now on until the function it answers is called. */
   holdSidebar: () => () => void;
   /** Writes every `plane_sidebar` answer from now on with each object's keys in reverse order:
@@ -204,6 +207,10 @@ function core(shape: Shape): Core {
           });
       });
     },
+    chatMoved: (payload) => {
+      for (const handler of listening.get("chat-moved") ?? [])
+        window.__TAURI_INTERNALS__.runCallback(handler, { event: "chat-moved", id: 1, payload });
+    },
     holdSidebar: () => {
       let release = () => {};
       held = new Promise((done) => {
@@ -240,14 +247,24 @@ const inFront = () =>
     .find((tab) => tab.getAttribute("aria-selected") === "true")
     ?.getAttribute("aria-label");
 
-/** Everything the window has started has settled: nothing new was asked for a while. */
+/**
+ * **Everything the window has started has settled**: a round in which nothing new was asked and
+ * React committed nothing, the two things a switch is read by.
+ *
+ * **Each round spans an animation frame and then a timer** (#3032), as `afterPaint` does
+ * (`projectShown.tsx`): what is read again once the project is painted is asked from a timer set
+ * in a frame, so a round that only waited a timer could end before that frame came, on a runner
+ * whose frames come late, and the switch's own reads and commits were counted for the next one.
+ * Any `afterPaint` started before the round has run by its end.
+ */
 export async function settled(asked: Asked[]): Promise<void> {
-  let seen = -1;
-  for (let rounds = 0; seen !== asked.length; rounds++) {
+  const now = () => `${asked.length}:${counts.commits}`;
+  let seen = "";
+  for (let rounds = 0; seen !== now(); rounds++) {
     if (rounds > 200) throw new Error(`the window never settled: ${asked.at(-1)?.cmd}`);
-    seen = asked.length;
+    seen = now();
     await act(async () => {
-      await new Promise((done) => setTimeout(done, 30));
+      await new Promise((done) => requestAnimationFrame(() => setTimeout(done, 30)));
     });
   }
 }
@@ -262,6 +279,8 @@ export type Switch = {
   rendered: number;
   /** How many times each component was drawn for it, by name. */
   renderedBy: Record<string, number>;
+  /** Where each of its commits began: the topmost components drawn in it (`commitRoots`). */
+  began: string[][];
   mounted: number;
   unmounted: number;
   nodesAdded: number;
@@ -385,6 +404,17 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
       await waitFor(() => expect(screen.getAllByTestId("pane")).toHaveLength(held + 1));
       await settled(asked);
     }
+    // Each split offers its Undo for a few seconds (#4763). The line is put away now, as the
+    // person would, so that its time running out is not counted as a switch's cost: a switch
+    // slow enough here, forty panes on a busy runner, saw it go mid-switch and counted its 20
+    // components among the unmounted.
+    // The cause is on the card's message; its Dismiss is beside it.
+    for (const said of document.querySelectorAll('[data-cause="layout-changed"]'))
+      fireEvent.click(
+        within(said.parentElement as HTMLElement).getByRole("button", { name: "Dismiss" }),
+      );
+    await settled(asked);
+    expect(document.querySelector('[data-cause="layout-changed"]')).toBeNull();
   }
 
   const out: Switch[] = [];
@@ -400,6 +430,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     watching.observe(document.body, { childList: true, subtree: true });
     Object.assign(counts, { rendered: 0, mounted: 0, unmounted: 0, commits: 0 });
     renderedBy.clear();
+    commitRoots.length = 0;
     Object.assign(panes, { started: 0, stopped: 0 });
     watchLayoutReads();
     reads.clear();
@@ -430,6 +461,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
       commits: counts.commits,
       rendered: counts.rendered,
       renderedBy: Object.fromEntries(renderedBy),
+      began: commitRoots.map((roots) => [...roots]),
       mounted: counts.mounted,
       unmounted: counts.unmounted,
       nodesAdded: nodes.added,
@@ -446,4 +478,66 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     });
   }
   return out;
+}
+
+/** What a run of chat moves cost the window. */
+export type Moves = {
+  /** How many times React committed for them, until everything they started had settled. */
+  commits: number;
+  /** How many times the window's root (`App`) was drawn again for them. */
+  windowDrawn: number;
+  /** Commands sent to the core for them, by name. */
+  invokes: Record<string, number>;
+};
+
+/**
+ * Mounts the window holding `shape`, brings every project to the front once and the first back,
+ * then has the core push `times` moves of one busy chat of project `of`: the same chat, working
+ * throughout and waiting on nobody, each move newer than the last, as a harness at work makes
+ * them. Answers with what those moves cost.
+ */
+export async function chatMoves(
+  shape: Shape,
+  { of, times }: { of: number; times: number },
+): Promise<Moves> {
+  const held = core(shape);
+  const { asked } = held;
+  render(<App />);
+  await waitFor(() => expect(inFront()).toBe(nameOf(0)), { timeout: 20_000 });
+  await settled(asked);
+  for (const n of [...Array.from({ length: shape.projects }, (_, n) => n).slice(1), 0]) {
+    fireEvent.click(projectTab(nameOf(n)));
+    await settled(asked);
+  }
+  const plane = rootOf(of);
+  const move = (at: number) =>
+    held.chatMoved({
+      plane,
+      session: 2,
+      state: "working",
+      needs_you: false,
+      queue: [],
+      sequence: 1_000 + at,
+      moved_at: 1_000 + at,
+      reports: [],
+      refusals: [],
+    });
+
+  // The first move says the chat is working; what is counted is every move after it.
+  act(() => move(0));
+  await settled(asked);
+
+  Object.assign(counts, { rendered: 0, mounted: 0, unmounted: 0, commits: 0 });
+  renderedBy.clear();
+  const from = asked.length;
+  for (let at = 1; at <= times; at++) act(() => move(at));
+  // Past the wait after which a burst of moves has the asks read again (`asks.ts`), which is
+  // longer than the one `settled` looks for.
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, ASKS_SETTLE_MS * 4));
+  });
+  await settled(asked);
+  const invokes: Record<string, number> = {};
+  for (const one of asked.slice(from)) invokes[one.cmd] = (invokes[one.cmd] ?? 0) + 1;
+  return { commits: counts.commits, windowDrawn: renderedBy.get("App") ?? 0, invokes };
 }

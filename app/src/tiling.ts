@@ -8,14 +8,13 @@
  * - **Tile all** evens a tab's panes into a grid of ⌈√n⌉ columns, filled row by row in reading
  *   order, with even shares: six panes are 3 × 2 at 333 then 500. Only the tab's own panes, so
  *   it never pulls in a chat nobody put there. Disabled at one pane.
- * - **Undo** holds the tab's last tree in memory (spec: "Undo holds the tab's last tree in
- *   memory"), one step, and only while the tab's layout is the very tree the move wrote: any
- *   later change in that tab retires it. A drop, a close and a split (#4763) record theirs
- *   with {@link withUndo}.
+ * - **Undo** puts the tree back, one step, while the tabs are as Tile all left them: it is the
+ *   window's one Undo (`layoutUndo.ts`), which a drop and a split record too (#4763).
  * - **Zoom** shows one pane for now. The tree stays whole, so the core keeps the split.
  *
- * Zoom and Undo are per tab, and neither is told to the core.
+ * A zoom is per tab, and neither it nor Undo is told to the core.
  */
+import { recorded } from "./layoutUndo";
 import type { Layout, Tab, Tabs } from "./tabs";
 
 type Pane = Extract<Layout, { kind: "pane" }>;
@@ -87,47 +86,15 @@ export function canTileAll(tabs: Tabs, id: number): boolean {
 }
 
 /**
- * `change` made to tab `id`, with Undo holding the tree and focus it had before. A `change`
- * that leaves the layout as it was records nothing and answers `tabs` itself.
- */
-export function withUndo(tabs: Tabs, id: number, change: (tab: Tab) => Tab): Tabs {
-  const tab = tabs.byId[id];
-  if (tab === undefined) return tabs;
-  const changed = change(tab);
-  if (changed.layout === tab.layout) return tabs;
-  return withTab(tabs, {
-    ...changed,
-    undo: { layout: tab.layout, focused: tab.focused, after: changed.layout },
-  });
-}
-
-/**
  * **Tile all** on tab `id`: its own panes, in reading order, into an even grid, the focused pane
  * kept focused and any zoom ended. Answers `tabs` itself at one pane, or for a tab not there.
  */
 export function tileAll(tabs: Tabs, id: number): Tabs {
   if (!canTileAll(tabs, id)) return tabs;
-  return withUndo(tabs, id, (tab) => ({
-    ...unzoomed(tab),
-    layout: grid(inReadingOrder(tab.layout)),
-  }));
-}
-
-/** Whether Undo would put tab `id`'s last tree back: the tab's layout is still what it left. */
-export function canUndoLayout(tabs: Tabs, id: number): boolean {
   const tab = tabs.byId[id];
-  return tab?.undo !== undefined && tab.undo.after === tab.layout;
-}
-
-/** **Undo** on tab `id`: its last tree and focus back, once. Answers `tabs` itself when there
- *  is nothing to undo. */
-export function undoLayout(tabs: Tabs, id: number): Tabs {
-  const tab = tabs.byId[id];
-  const undo = tab?.undo;
-  if (tab === undefined || undo === undefined || undo.after !== tab.layout) return tabs;
-  const back: Tab = { ...unzoomed(tab), layout: undo.layout, focused: undo.focused };
-  delete back.undo;
-  return withTab(tabs, back);
+  const panes = inReadingOrder(tab.layout);
+  const tiled = withTab(tabs, { ...unzoomed(tab), layout: grid(panes) });
+  return recorded(tabs, tiled, `Tiled the tab's ${panes.length} panes.`);
 }
 
 /**

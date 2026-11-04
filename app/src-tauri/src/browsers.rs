@@ -382,9 +382,20 @@ mod hosted {
             if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
                 return Err(Refused::Said(why));
             }
+            // A host before 1.70 drops a login's form and would fill it on its page's origin
+            // (#4995): such a login is never sent to one.
+            if let Some(form) = &login.form
+                && link.version() < session::KNOWS_LOGIN_FORMS
+            {
+                return Err(Refused::Said(format!(
+                    "this login's password goes only to {form}, and the purlis that runs this \
+                     browser is too old to hold it there, so nothing was filled. Update purlis \
+                     where the browser runs, then call browser_login again"
+                )));
+            }
             let command = Command::LogIn {
                 program: program.to_owned(),
-                login,
+                login: Box::new(login),
             };
             // purlis drives it while it logs in (#2293), unless the person does: the host
             // refuses the login then. Who drives it is the host's word where this window has
@@ -1121,6 +1132,7 @@ mod hosted {
                 kind: ViewKind::Browser,
                 role: Some(role),
                 rate: None,
+                history: None,
             })? {
                 Answer::Attached(attached) => attached,
                 other => {
@@ -1361,6 +1373,7 @@ mod hosted {
                 kind: ViewKind::Inspector,
                 role: Some(ViewRole::Focused),
                 rate: None,
+                history: None,
             })? {
                 Answer::Attached(attached) => attached,
                 other => {

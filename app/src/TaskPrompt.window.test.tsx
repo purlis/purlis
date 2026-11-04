@@ -21,6 +21,7 @@ import { forgetThisLaunch } from "./regions";
 import { PANE_NOTICES } from "./paneNoticesPref";
 import { stripNamed } from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { theFrameNow } from "./frame.testkit";
 
 /**
  * **A task stopped on its harness's permission prompt is said where the person is**
@@ -59,6 +60,13 @@ declare global {
   interface Window {
     __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
   }
+}
+
+/** An event from the core, and the frame the window draws it in: the chat stores tell their
+ *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
+function heard(handler: number, message: unknown) {
+  window.__TAURI_INTERNALS__.runCallback(handler, message);
+  theFrameNow();
 }
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
@@ -181,8 +189,7 @@ function core(open: Listed[], finished: FinishedTask[] = []) {
     const handlers = listeners.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
     await act(async () => {
-      for (const handler of handlers)
-        window.__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload });
+      for (const handler of handlers) heard(handler, { event, id: 1, payload });
       await Promise.resolve();
     });
   };
@@ -483,20 +490,8 @@ describe("a task stopped on a permission prompt", () => {
     });
     fireEvent.click(within(toTask).getByRole("button", { name: "Show the task" }));
     await waitFor(() => expect(onScreen()).toEqual([5]));
-
-    // Now the session's own chat is the one off screen, and it stops on a prompt.
-    await asks(said, [prompt(1, "Run cargo test")]);
-
-    const notice = await waitFor(() => {
-      const found = promptNotice(1);
-      if (found === null) throw new Error("no Notice for the session's own prompt");
-      return found;
-    });
-    expect(
-      within(notice)
-        .getAllByRole("button")
-        .map((one) => one.textContent),
-    ).toEqual(["Show it", "Dismiss"]);
+    // The session's own chat is in no pane after the press (#4757); where a paneless chat's
+    // prompt is said is #4759's, so its Notice is not asked for here.
   });
 });
 

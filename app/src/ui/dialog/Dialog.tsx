@@ -63,6 +63,7 @@ import {
   Modal as AriaModal,
   ModalOverlay as AriaModalOverlay,
 } from "react-aria-components";
+import { FocusScope, Overlay, useOverlay } from "react-aria";
 import { createPortal } from "react-dom";
 import { LockOpen } from "lucide-react";
 import { useProjectShown } from "../../projectShown";
@@ -211,9 +212,12 @@ function DialogKeyboard({
   root,
   initialFocus,
   alert,
+  modal,
   closing,
 }: {
   root: RefObject<HTMLElement | null>;
+  /** Whether it made the window behind it inert, which it gives back as it goes. */
+  modal: boolean;
   initialFocus: InitialFocus | undefined;
   alert: boolean;
   /**
@@ -264,13 +268,15 @@ function DialogKeyboard({
   // moment later, after the commit; a control that takes the keyboard as the dialog goes (a tab's
   // rename box a palette row opened) would find it still inert, and its focus would be lost.
   // No dialog is up while another is, so whatever is inert outside this one is this one's.
+  // A surface that is not modal (the palette) made nothing inert, so it gives nothing back.
   useLayoutEffect(() => {
+    if (!modal) return;
     const dialog = root.current;
     return () => {
       for (const held of document.querySelectorAll<HTMLElement>("[inert]"))
         if (!dialog?.contains(held)) held.inert = false;
     };
-  }, [root]);
+  }, [root, modal]);
   // Whether it is still drawn: React's strict mode takes every effect down and puts it back as
   // a dialog first draws, which is not a close, so what a close does waits a microtask and is
   // done only if the dialog did not come back.
@@ -411,8 +417,9 @@ export function useADialogIsUp(): boolean {
 }
 
 /**
- * **The modal itself**: the scrim, the window behind it made unreachable, the keyboard held in
- * it, Esc, the fixed top, the width and the height. `Dialog` and `AlertDialog` draw the family's
+ * **The modal itself**: the scrim, the window behind it made unreachable (unless `modal` is
+ * false: the palette's, `NotModal`), the keyboard held in it, Esc, the fixed top, the width and
+ * the height. `Dialog` and `AlertDialog` draw the family's
  * three rows in it; `DialogSurface` lets a surface with an anatomy of its own (the palette) draw
  * its own.
  */
@@ -431,10 +438,16 @@ function DialogModal({
   afterClose,
   returnFocus,
   own = false,
+  modal = true,
   children,
 }: Omit<Surface, "aria-describedby" | "data-testid"> & {
   /** Whether what is inside lays itself out (`DialogSurface`). */
   own?: boolean;
+  /**
+   * Whether the window behind it is made unreachable. Only the palette is not modal
+   * (`DialogSurface`).
+   */
+  modal?: boolean;
   role: "dialog" | "alertdialog";
   label?: string;
   labelledBy?: string;
@@ -461,6 +474,44 @@ function DialogModal({
   if (!shown) return null;
   const style =
     height === undefined ? undefined : ({ "--dialog-height": `${height}px` } as CSSProperties);
+  const dialog = (
+    <AriaDialog
+      ref={root}
+      role={role}
+      aria-label={label}
+      aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+      className={className}
+      style={style}
+      data-testid={testId}
+      data-scope="dialog"
+      data-part="root"
+      data-variant={role === "alertdialog" ? "alert" : "dialog"}
+      data-size={size}
+      data-fixed-height={height === undefined ? undefined : ""}
+      data-own-anatomy={own ? "" : undefined}
+      // Not modal, it is in React Aria's top layer: a popover that hides what is added outside it
+      // while it is up (a menu still open as F2 opens the palette) leaves it and the scrim it is
+      // in alone, as a modal's own was left. On the dialog, not the scrim, so a press on the
+      // scrim is still a press outside.
+      data-react-aria-top-layer={modal ? undefined : "true"}
+    >
+      <DialogKeyboard
+        root={root}
+        initialFocus={initialFocus}
+        alert={role === "alertdialog"}
+        modal={modal}
+        closing={closing}
+      />
+      {children}
+    </AriaDialog>
+  );
+  if (!modal)
+    return open ? (
+      <NotModal root={root} onClose={onClose}>
+        {dialog}
+      </NotModal>
+    ) : null;
   return (
     <AriaModalOverlay
       isOpen={open}
@@ -475,38 +526,59 @@ function DialogModal({
       data-part="scrim"
     >
       <AriaModal data-scope="dialog" data-part="modal">
-        <AriaDialog
-          ref={root}
-          role={role}
-          aria-label={label}
-          aria-labelledby={labelledBy}
-          aria-describedby={describedBy}
-          className={className}
-          style={style}
-          data-testid={testId}
-          data-scope="dialog"
-          data-part="root"
-          data-variant={role === "alertdialog" ? "alert" : "dialog"}
-          data-size={size}
-          data-fixed-height={height === undefined ? undefined : ""}
-          data-own-anatomy={own ? "" : undefined}
-        >
-          <DialogKeyboard
-            root={root}
-            initialFocus={initialFocus}
-            alert={role === "alertdialog"}
-            closing={closing}
-          />
-          {children}
-        </AriaDialog>
+        {dialog}
       </AriaModal>
     </AriaModalOverlay>
   );
 }
 
 /**
- * **A surface over the window with an anatomy of its own** (the palette): the family's modal,
+ * **A dialog over the window that leaves the window alone** (the palette; the operator's ruling of
+ * 2026-11-04, #4351): drawn where a modal is, on the same scrim, and holding the keyboard in itself
+ * as a modal does, but the window behind it is never made inert or hidden, so taking that away as
+ * it closes restyles nothing (a WebKit restyle of the whole window, some 80 ms). A press outside
+ * it, on the scrim, closes it, as Esc does; a layer opened from inside it closes first.
+ */
+function NotModal({
+  root,
+  onClose,
+  children,
+}: {
+  root: RefObject<HTMLElement | null>;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const { overlayProps, underlayProps } = useOverlay(
+    { isOpen: true, onClose, isDismissable: true, isKeyboardDismissDisabled: true },
+    root,
+  );
+  // Opening, it fades in as the family's modals do (`dialog.css`, React Aria's `data-entering`),
+  // and only then.
+  const [entering, setEntering] = useState(true);
+  return (
+    <Overlay>
+      <div
+        {...underlayProps}
+        data-entering={entering ? "" : undefined}
+        onAnimationEnd={(event) => {
+          if (event.target === event.currentTarget) setEntering(false);
+        }}
+        data-scope="dialog"
+        data-part="scrim"
+      >
+        <div {...overlayProps} data-scope="dialog" data-part="modal">
+          <FocusScope contain>{children}</FocusScope>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+/**
+ * **A surface over the window with an anatomy of its own** (the palette): the family's scrim,
  * width, fixed top and height, and nothing inside it of the family's. Named by `aria-label`.
+ * **Not modal** (`NotModal`, the operator's ruling of 2026-11-04): it holds the keyboard, and Esc
+ * or a press outside closes it, but the window behind it stays reachable.
  */
 export function DialogSurface({
   "aria-label": label,
@@ -519,6 +591,7 @@ export function DialogSurface({
     <DialogModal
       {...surface}
       own
+      modal={false}
       role="dialog"
       label={label}
       describedBy={describedBy}

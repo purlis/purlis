@@ -31,10 +31,14 @@ file input. Only files you may read are taken, and no link out of the folder is 
 **In a chat purlis started, log in with `browser_login`, and call it first.** Don't ask for the
 vault or list its keys beforehand: that raises a second notice. If your persona has no login for
 the site, call `browser_login` with a short new `login` name, `site` (the login page's https
-address), `vault` and `key`, plus `user_key` if the page asks for a user name. The person sees one
-notice and confirms the site, which they may change. Your call waits for their answer; on Allow it
-goes on to log in. Fill in only what you know, never guess a key name, and if they keep it blocked,
-tell them what needs the login and don't suggest it again.
+address), `vault` and `key`, plus `user_key` if the page asks for a user name. Give the site's own
+address even where it signs in on another host: the page is followed to its login form, and the
+person is shown both hosts. The person sees one notice and confirms the site, which they may change. If a
+login your persona declares is on the wrong site, call `browser_login` again with its name, its
+`vault` and keys, and the right `site`: the person is asked whether to replace the recorded one.
+Your call waits for their answer; on Allow it goes on to log in. Fill in only what you know, never
+guess a key name, and if they keep it blocked, tell them what needs the login and don't suggest it
+again.
 
 A project may also declare a login once, in its committed settings, and the user allows it on
 their machine with the persona's hosts:
@@ -50,11 +54,13 @@ your browsers). purlis goes to the declared page in your browser, fills the logi
 only while the page is on the login's origin, submits, waits for the password field to go, and
 hands the browser back logged in. You never see the login: it is kept out of every snapshot and
 screenshot, and the fields purlis filled are blanked. From then on that browser reaches the
-login's site alone; call `browser_new` for any other site. A login the person allowed from its
+login's site alone; call `browser_new` for any other site. Where it signs in on another host,
+that host is reached only while it signs in: until the browser is back on the login's page, for
+two minutes at most. A step that host asks for after the password is yours or the user's to take
+in that time. A login the person allowed from its
 notice opens in a browser of its own, so log in before you work in the site. If the login is refused, tell the user the sentence: it names what to declare or
-allow. A page with a captcha or a second factor, or one that first sends the browser to a
-sign-in page on another site, does not log in this way; ask the user, or hand them the browser
-with `ask_operator` pointed at it.
+allow. A page with a captcha or a second factor does not log in this way; ask the user, or hand
+them the browser with `ask_operator` pointed at it.
 
 Running the login's name as a command does nothing: it says to use `browser_login`.
 

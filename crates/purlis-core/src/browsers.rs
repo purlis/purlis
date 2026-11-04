@@ -73,7 +73,7 @@ use purlis_host::{
     ScreenEnded,
 };
 
-use crate::sandbox::browser_reach::{Bound, Lane, NewSites, ReachProxy, Site};
+use crate::sandbox::browser_reach::{Bound, Lane, LoginSites, NewSites, ReachProxy, Site};
 use crate::sandbox::reach::{Reach, Written};
 
 pub use purlis_browser_engine::machine::machine_chrome;
@@ -409,7 +409,9 @@ impl Browsers for EngineBrowsers {
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
         let mut keeping = Keeping::new(&home, data);
         if let (Some(kept), Some(site), Some(sites)) = (kept, &kept_site, &sites) {
-            proxy.bind(site)?;
+            // Its page's site alone: a sign-in on its form's site opens only with a login
+            // performed in it (#4995).
+            proxy.bind(&LoginSites::page(site.clone()))?;
             sites.bound_to(site);
             keeping.open(kept)?;
         }
@@ -715,6 +717,9 @@ pub fn call_of(act: Act) -> Result<drive::Call, String> {
         Act::Open { address: to } => Call::Open {
             address: address(&to)?,
         },
+        Act::FindLoginForm { address: to } => Call::FindLoginForm {
+            address: address(&to)?,
+        },
         Act::Navigate {
             page: on,
             address: to,
@@ -960,16 +965,30 @@ fn not_taken(refusal: drive::Refusal) -> NotTaken {
     }
 }
 
-/// **The driver's login for what the window handed** (#2016): the address, its origin and the
-/// site it is on, and the values, or why it is no login a browser takes.
-pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, Site), String> {
+/// **The driver's login for what the window handed** (#2016): the address, the origin it fills
+/// on, the sites it is held to, and the values, or why it is no login a browser takes. A login
+/// whose form is on another origin (#4995) fills on the form's alone, and is held to its page's
+/// site, and its form's while it signs in.
+pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, LoginSites), String> {
     let address = WebAddress::parse(&login.address)
         .map_err(|why| format!("the login's address is not one a browser opens: {why}"))?;
     // https, or plain http on this machine's loopback alone; a name in its ASCII spelling, as
     // the engine records a page's address.
-    let origin = crate::sandbox::tools::login::origin_of(&login.address)?;
-    let (host, port) = judge::site_of(&origin)
-        .ok_or_else(|| "the login's address names no origin purlis can fill on".to_owned())?;
+    let page = crate::sandbox::tools::login::origin_of(&login.address)?;
+    let origin = match &login.form {
+        Some(form) => crate::sandbox::tools::login::form_of(form)?,
+        None => page.clone(),
+    };
+    let site = |origin: &str| {
+        judge::site_of(origin)
+            .map(|(host, port)| Site::of(&host, port))
+            .ok_or_else(|| "the login's address names no origin purlis can fill on".to_owned())
+    };
+    let back_to = (origin != page).then(|| page.clone());
+    let sites = LoginSites {
+        page: site(&page)?,
+        form: back_to.as_ref().map(|_| site(&origin)).transpose()?,
+    };
     Ok((
         drive::Login {
             address,
@@ -981,45 +1000,194 @@ pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, Site), String> {
             password: zeroize::Zeroizing::new(login.password.expose().to_owned()),
             only_if_asked: false,
             suggested: login.suggested,
+            back_to,
         },
-        Site::of(&host, port),
+        sites,
     ))
 }
 
+/// **How long a sign-in on a login's form's site lasts at most** (#4995, the person's ruling of
+/// 2026-11-03), from the moment the browser is held to the login's sites: long enough for the
+/// login, and for a step the form's site asks for after the password, taken by the agent or by
+/// the person.
+pub const SIGN_IN_WITHIN: Duration = Duration::from_secs(120);
+
 /// **A login purlis performs in a browser whose judge is `sites` and whose reach proxy is
-/// `proxy`** (#2016), at `site`, on `origin`: `run` performs it, and is handed what binds the
-/// browser to `site` alone just before the first value goes in. While it runs, what purlis sends
-/// to `site` goes; once bound, the proxy carries `site` alone for the browser's life, every
-/// connection it carried before ended. Refused, running nothing, for a browser that holds a login
-/// at another site already.
+/// `proxy`** (#2016), at `at`, on `origin`: `run` performs it, and is handed its [`Holder`],
+/// which binds the browser to the login's page's site alone just before the first value goes in.
+/// While it runs, what purlis sends to the login's sites goes; once bound, the proxy carries the
+/// page's site alone for the browser's life, every connection it carried before ended. A login
+/// whose form is on another site (#4995) reaches it too, during its sign-in alone: until the
+/// login's page is back on its page's origin, the login fails, or `within` has passed
+/// ([`Holder`]). Refused, running nothing, for a browser that holds another page's login already.
 pub fn performed<T>(
-    sites: &judge::SiteJudge,
-    proxy: &ReachProxy,
-    site: &Site,
+    sites: &Arc<judge::SiteJudge>,
+    proxy: &Arc<ReachProxy>,
+    at: &LoginSites,
     origin: &str,
-    run: impl FnOnce(&dyn Fn() -> Result<(), String>) -> T,
+    within: Duration,
+    run: impl FnOnce(&Arc<Holder>) -> T,
 ) -> Result<T, String> {
-    if let Some(held) = sites.bound().sites()
-        && !held.contains(site)
+    if let Some(held) = sites.bound().page()
+        && held != at.page
     {
         return Err(format!(
-            "this browser holds a login at {}, and reaches nothing else: open a new browser \
+            "this browser holds a login at {held}, and reaches nothing else: open a new browser \
              with browser_new and log in to {origin} there",
-            held.iter()
-                .map(Site::to_string)
-                .collect::<Vec<_>>()
-                .join(", "),
         ));
     }
-    sites.logging_in(site);
-    let bind = || -> Result<(), String> {
-        proxy.bind(site)?;
-        sites.bound_to(site);
-        Ok(())
-    };
-    let done = run(&bind);
+    sites.logging_in(&at.all());
+    let holder = Arc::new(Holder {
+        sites: Arc::clone(sites),
+        proxy: Arc::downgrade(proxy),
+        at: at.clone(),
+        within,
+        sign_in: Mutex::new(None),
+        since: Mutex::new(None),
+        bound: std::sync::atomic::AtomicBool::new(false),
+    });
+    let done = run(&holder);
     sites.done_logging_in();
     Ok(done)
+}
+
+/// **What holds a browser to a login purlis performs in it** (#2016, #4995), handed to its
+/// engine. It binds the browser to the login's sites. Where its form is on another site, a
+/// sign-in reaches that site: from the bind, or, in a browser held to the login's page already
+/// (opened from kept logins, or logged in before), from the moment the login begins. It ends the
+/// sign-in (the browser reaches the page's site alone from then on, the person's ruling of
+/// 2026-11-03) as soon as the first of these comes: the login's own page is back on its page's
+/// origin ([`drive::Hold::back`]), the login answered with nothing to finish there
+/// ([`Self::answered`]), or its `within` has passed. Another login asks again.
+pub struct Holder {
+    sites: Arc<judge::SiteJudge>,
+    proxy: std::sync::Weak<ReachProxy>,
+    at: LoginSites,
+    within: Duration,
+    /// The sign-in it opened, if it opened one.
+    sign_in: Mutex<Option<u64>>,
+    /// When it opened it.
+    since: Mutex<Option<std::time::Instant>>,
+    /// Whether it bound the browser: a value may have gone in.
+    bound: std::sync::atomic::AtomicBool,
+}
+
+impl Holder {
+    /// **The sign-in this login opened is over**: the browser reaches its page's site alone from
+    /// now, and every connection to the form's site is ended. Nothing where it opened none, or
+    /// it is over already.
+    pub fn sign_in_over(&self) {
+        let number = *self.sign_in.lock().unwrap_or_else(PoisonError::into_inner);
+        if let (Some(number), Some(proxy)) = (number, self.proxy.upgrade()) {
+            proxy.sign_in_over(number);
+        }
+    }
+
+    /// **The login answered, as `ended`** (#4995): its sign-in is over unless there is something
+    /// left to finish on the form's site, a login that went through (a step the site asks for
+    /// after the password) or one the person took over. A login that never bound fills nothing
+    /// there, and one that failed with the agent's browser handed back is over.
+    pub fn answered(&self, ended: &Result<drive::LoginEnded, drive::Refusal>) {
+        let bound = self.bound.load(std::sync::atomic::Ordering::SeqCst);
+        let to_finish = matches!(
+            ended,
+            Ok(ended) if ended.outcome.is_ok() || ended.driver != drive::Driver::Agent
+        );
+        if !(bound && to_finish) {
+            self.sign_in_over();
+        }
+    }
+
+    /// **Opens a sign-in of its own on `proxy`**, sign-in `number`, ended once `within` has
+    /// passed. One it opened already goes on.
+    fn opened(&self, proxy: &Arc<ReachProxy>, number: u64) -> Result<(), String> {
+        let was = self
+            .sign_in
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .replace(number);
+        if was == Some(number) {
+            return Ok(());
+        }
+        *self.since.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some(std::time::Instant::now());
+        let ending = Arc::downgrade(proxy);
+        let within = self.within;
+        let ends = std::thread::Builder::new()
+            .name("browser-sign-in".to_owned())
+            .spawn(move || {
+                std::thread::sleep(within);
+                if let Some(proxy) = ending.upgrade() {
+                    proxy.sign_in_over(number);
+                }
+            });
+        // No thread to end it: it ends now, and the login cannot fill.
+        if ends.is_err() {
+            proxy.sign_in_over(number);
+            return Err("purlis could not time the sign-in".to_owned());
+        }
+        Ok(())
+    }
+
+    /// **Its browser's reach proxy**, or why there is none: the browser has ended.
+    fn proxy(&self) -> Result<Arc<ReachProxy>, String> {
+        self.proxy
+            .upgrade()
+            .ok_or_else(|| "the browser's reach proxy has stopped".to_owned())
+    }
+
+    /// **The form's site the browser reaches while this login's sign-in is open**, and how long
+    /// it has left, if it is open.
+    pub fn signing_in(&self) -> Option<(Site, Duration)> {
+        let number = (*self.sign_in.lock().unwrap_or_else(PoisonError::into_inner))?;
+        let since = (*self.since.lock().unwrap_or_else(PoisonError::into_inner))?;
+        let form = self.sites.bound().signing_in(number)?;
+        Some((form, self.within.saturating_sub(since.elapsed())))
+    }
+}
+
+impl drive::Hold for Holder {
+    fn begins(&self) -> Result<(), String> {
+        // A browser held to this login's page already reaches the form's site from now: its
+        // page may send it there before anything is filled.
+        let Some(form) = &self.at.form else {
+            return Ok(());
+        };
+        if self.sites.bound().page().as_ref() != Some(&self.at.page) {
+            return Ok(());
+        }
+        let proxy = self.proxy()?;
+        self.sites.bound_to(form);
+        match proxy.sign_in(&self.at)? {
+            Some(number) => self.opened(&proxy, number),
+            None => Ok(()),
+        }
+    }
+
+    fn bind(&self) -> Result<(), String> {
+        let proxy = self.proxy()?;
+        // A sign-in this login opened as it began goes on; the browser is held to its page.
+        let open = (*self.sign_in.lock().unwrap_or_else(PoisonError::into_inner))
+            .is_some_and(|number| self.sites.bound().signing_in(number).is_some());
+        let sign_in = if open {
+            proxy.bind(&LoginSites::page(self.at.page.clone()))?;
+            None
+        } else {
+            proxy.bind(&self.at)?
+        };
+        self.bound.store(true, std::sync::atomic::Ordering::SeqCst);
+        for site in self.at.all() {
+            self.sites.bound_to(&site);
+        }
+        match sign_in {
+            Some(number) => self.opened(&proxy, number),
+            None => Ok(()),
+        }
+    }
+
+    fn back(&self) {
+        self.sign_in_over();
+    }
 }
 
 /// **`<data>/browsers/`, made this user's alone and left out of this device's backups** (#2021):
@@ -1513,7 +1681,7 @@ impl Screen for EngineScreen {
     }
 
     fn log_in(&self, asked: &wire::LogIn) -> Result<LoginEnded, NotActed> {
-        let (mut login, site) = login_of(asked).map_err(NotActed::Refused)?;
+        let (mut login, at) = login_of(asked).map_err(NotActed::Refused)?;
         // Opened from this very kept login, a page that asks for nothing is signed in already.
         // Tried from here, whatever comes of it (#2693).
         let opened_from = {
@@ -1533,16 +1701,40 @@ impl Screen for EngineScreen {
             let held = held.as_ref().ok_or(NotActed::Ended)?;
             (Arc::clone(&held.browser), Arc::clone(&held.proxy))
         };
-        let ended = performed(sites, &proxy, &site, &login.origin, |bind| {
-            browser.log_in(&login, bind)
-        })
-        .map_err(NotActed::Refused)?
-        .map_err(not_acted)?;
+        let (ended, signing_in) = performed(
+            sites,
+            &proxy,
+            &at,
+            &login.origin,
+            SIGN_IN_WITHIN,
+            |holder| {
+                let ended = browser.log_in(&login, Arc::clone(holder) as Arc<dyn drive::Hold>);
+                // A login with nothing left to finish on its form's site signs in no more
+                // (#4995); one the person took over is theirs to finish meanwhile.
+                holder.answered(&ended);
+                (ended, holder.signing_in())
+            },
+        )
+        .map_err(NotActed::Refused)?;
+        let ended = ended.map_err(not_acted)?;
+        let (fills_on, page) = (login.origin.clone(), login.back_to.clone());
         drop(login);
         let mut outcome = ended
             .outcome
             .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
             .map_err(not_acted);
+        // Still on the form's site: what the agent may do there, and for how long (#4995).
+        if let (Ok(browsed), Some((_, left)), Some(page)) = (&mut outcome, signing_in, page) {
+            let said = format!(
+                "this browser reaches {fills_on} until it is back on {page}, for {} more seconds \
+                 at most, and then {page} alone",
+                left.as_secs().max(1),
+            );
+            browsed.note = Some(match browsed.note.take() {
+                Some(note) => format!("{note}; {said}"),
+                None => said,
+            });
+        }
         // A login that went through keeps what its browser holds, where it is to (#2021).
         if let (Ok(browsed), Some(keep)) = (&mut outcome, &asked.keep) {
             let said = self

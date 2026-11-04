@@ -21,8 +21,9 @@ import { ask } from "./switching.js";
  *   core gave each one, never by its tab's name (two chats may share a name): `before`, a spec
  *   writes down {@link chatsRunning}, and `after`, {@link endTheChatsStartedSince} ends every
  *   chat started since, in whichever workspace it is, through `started.ts`'s `endChatById`.
- * - **This file's root hooks are the backstop.** Wired once through `mochaOpts.require` in
- *   `wdio.conf.ts`, which every config but the benchmark's spreads, so every spec file runs
+ * - **This file's root hooks are the backstop.** Wired once, through `leftBehind.ts` in
+ *   `mochaOpts.require` in `wdio.conf.ts`, which every config but the benchmark's spreads, so
+ *   every spec file runs
  *   between them: `beforeAll` writes down the chats running in each open project, and `afterAll`
  *   ends, by id, every chat that was not, and then FAILS the file, naming it and the count. A file
  *   that leaves chats behind is a red file, not a quiet cost to the files after it.
@@ -103,10 +104,10 @@ async function runningOnceOpen(): Promise<Running> {
 let before: Running | null = null;
 
 /**
- * Mocha's root hooks, which `handleRequires` collects from a module named in `mochaOpts.require`.
- * They run once per spec file, because each file is a worker of its own.
+ * The chats' root hooks, run once per spec file by `leftBehind.ts`'s, because each file is a
+ * worker of its own.
  */
-export const mochaHooks = {
+export const chatHooks = {
   async beforeAll(this: Mocha.Context): Promise<void> {
     try {
       before = await runningOnceOpen();
@@ -191,11 +192,9 @@ async function endTheOnesHere(left: readonly Chat[]): Promise<Chat[]> {
  * **Ends, through the window and by number, every chat started since `before`**
  * ({@link chatsRunning}), in whichever workspace it was started, and puts the focus back on the
  * workspace it found in front. Each chat is ended as a person ends it (`started.ts`'s
- * `endChatById`: brought forward by its number, its own tab's `×`, the question's Close), so a
- * chat that was running first is never found by a name it shares. One case it does not guard:
- * a split tab's `×` ends the tab's own chat, so a spec chat split beside a chat that was running
- * first ends that chat on the first press. A spec splits only its own chats. A chat it could
- * not end fails the `after`, naming it; the root hook above stays the backstop.
+ * `endChatById`: its End…, by the number in the row's id, and the question's Close), so a chat
+ * that was running first is never found by a name it shares. A chat it could not end fails the
+ * `after`, naming it; the root hook above stays the backstop.
  */
 export async function endTheChatsStartedSince(before: Running): Promise<void> {
   let left = leftOver(before, await chatsRunning());

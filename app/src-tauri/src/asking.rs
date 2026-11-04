@@ -139,16 +139,37 @@ pub struct Shown {
     /// any, so a question a later turn pushed aside can be read back. Absent otherwise.
     #[specta(optional)]
     pub earlier_messages: Option<Vec<String>>,
+    /// **The key a Secret ask asks for** (#5068, ADR 0109): drawn with a masked field the value
+    /// is typed in. Absent for any other ask.
+    #[specta(optional)]
+    pub secret: Option<SecretShown>,
+}
+
+/// **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
+/// its chats miss, and how many wait on it. Names only: no value is ever here.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SecretShown {
+    pub persona: String,
+    pub vault: String,
+    pub key: String,
+    /// The declared tool whose run missed it, where it is one.
+    #[specta(optional)]
+    pub tool: Option<String>,
+    /// How many chats wait on it.
+    pub waiting: u32,
 }
 
 /// **A suggested login, as its notice draws it** (#4595). The vault and key names, and never a
 /// value: purlis hasn't read one.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct LoginShown {
-    /// The domain, with a port where it has one, exactly as it's filled: `shop.example.com`.
+    /// The domain of the page it opens, with a port where it has one: `shop.example.com`.
     pub domain: String,
     /// The page's path on it.
     pub path: String,
+    /// **The host the password is typed on** (#4995), with a port where it has one: the login
+    /// form's, which the page may have sent the browser to. The domain where they're one.
+    pub form: String,
     pub vault: String,
     #[specta(optional)]
     pub user_key: Option<String>,
@@ -163,6 +184,12 @@ pub struct LoginShown {
     pub no_always: Option<String>,
     /// The persona's chats get the vault too with Always.
     pub vault_too: bool,
+    /// **The page the declared login opens now, which this replaces** (#4996).
+    #[specta(optional)]
+    pub replaces: Option<String>,
+    /// The host its password is typed on now, with a port where it has one.
+    #[specta(optional)]
+    pub replaces_form: Option<String>,
 }
 
 /// The lines an action runs over, as a row draws them under its line (#3502). An action whose
@@ -237,6 +264,9 @@ pub enum AskSource {
     /// A browser login a chat suggested, which its persona doesn't declare (#4595): an Allow
     /// lets purlis fill it on the one origin the person confirmed.
     BrowserLogin,
+    /// A key a chat's brokered run found missing from its persona's vault (#5068, ADR 0109):
+    /// answered by a value typed in the window, or Not now.
+    Secret,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -317,6 +347,9 @@ pub enum AnswerPath {
     /// `answer_browser_login` at the press an option names, on held login `id`, for the proposal
     /// whose digest is `shown`, with the domain the person typed (#4595).
     BrowserLogin { id: u32, shown: String },
+    /// `answer_secret_ask` on Secret ask `id` (#5068): Fill with the value typed in the ask's
+    /// masked field, Not now with none.
+    Secret { id: u32 },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -424,6 +457,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -622,6 +656,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -666,6 +701,7 @@ pub fn sandbox_host(
             last_message: None,
             login: None,
             earlier_messages: None,
+            secret: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -702,6 +738,7 @@ pub fn sandbox_host(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -767,6 +804,7 @@ pub fn sandbox_write(
             last_message: None,
             login: None,
             earlier_messages: None,
+            secret: None,
         });
     }
     Some(Shown {
@@ -793,6 +831,7 @@ pub fn sandbox_write(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -859,6 +898,7 @@ pub fn sandbox_runner(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -936,6 +976,7 @@ pub fn sandbox_port(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -1010,6 +1051,7 @@ pub fn sandbox_local(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     })
 }
 
@@ -1017,11 +1059,29 @@ pub fn sandbox_local(
 /// shown in its own terminal, and purlis holds nothing it could answer it by. Named, so it
 /// does not wait unseen, with the kind of prompt its harness's nudge said (#1691); the person
 /// answers it in the chat.
-pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Shown {
+///
+/// **A form purlis's own server asks through says its question** (#4710): `asking` is what the
+/// server said it asks the person, held with the ask, masked. A form is the one prompt it asks
+/// through, so another prompt keeps its kind. Its words are `says`, on one line, and in full in
+/// `last_message`, as a question's are, so the strip, the Inbox card and the quiz show the ask as
+/// asked; no later turn replaces them.
+pub fn terminal(
+    session: u32,
+    prompt: purlis_core::harness::model::Prompt,
+    asking: Option<String>,
+) -> Shown {
+    let asked = asking.filter(|_| prompt == purlis_core::harness::model::Prompt::Form);
+    let says = match &asked {
+        Some(question) => purlis_core::shown::one_line(
+            &question.split_whitespace().collect::<Vec<_>>().join(" "),
+            purlis_core::shown::NO_CLIP,
+        ),
+        None => prompt.says().to_owned(),
+    };
     Shown {
         session,
         ask: format!("terminal:{session}"),
-        says: prompt.says().to_owned(),
+        says,
         options: Vec::new(),
         source: AskSource::Terminal,
         chain: Vec::new(),
@@ -1030,9 +1090,10 @@ pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Sh
         held_until: None,
         writes: None,
         lines: None,
-        last_message: None,
+        last_message: asked,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1055,6 +1116,7 @@ pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>
         last_message,
         login: None,
         earlier_messages: (!earlier.is_empty()).then_some(earlier),
+        secret: None,
     }
 }
 
@@ -1086,6 +1148,7 @@ pub fn task_question(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1144,6 +1207,7 @@ pub fn workspace_removal(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1259,6 +1323,7 @@ pub fn browser_posture(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1326,6 +1391,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1356,10 +1422,26 @@ pub fn browser_login(
     if locks.scope_removed(Level::Chat).is_none() {
         options.push(allow(Level::Chat, "Allow for this chat"));
     }
+    // A replacement of a declared login's site says what Always and Keep do to it (#4996).
+    let replaces = proposal.replaces.is_some();
     if wait.no_always.is_none() {
-        options.push(allow(Level::You, "Always allow"));
+        options.push(allow(
+            Level::You,
+            if replaces {
+                "Always replace"
+            } else {
+                "Always allow"
+            },
+        ));
     }
-    options.push(refuses(KEEP, KEEP_SAID));
+    options.push(refuses(
+        KEEP,
+        if replaces {
+            "Keep the recorded site"
+        } else {
+            KEEP_SAID
+        },
+    ));
     let domain = proposal
         .origin
         .strip_prefix("https://")
@@ -1368,10 +1450,17 @@ pub fn browser_login(
     Shown {
         session: wait.session,
         ask: browser_login_key(wait.id),
-        says: said_inertly(&format!(
-            "Wants to log its browser in as {}, from vault {}",
-            proposal.persona, proposal.vault
-        )),
+        says: said_inertly(&if replaces {
+            format!(
+                "Wants login {} of {} to sign in on another site",
+                proposal.login, proposal.persona
+            )
+        } else {
+            format!(
+                "Wants to log its browser in as {}, from vault {}",
+                proposal.persona, proposal.vault
+            )
+        }),
         options,
         source: AskSource::BrowserLogin,
         chain: Vec::new(),
@@ -1386,6 +1475,11 @@ pub fn browser_login(
         last_message: None,
         login: Some(LoginShown {
             path: proposal.page[proposal.origin.len()..].to_owned(),
+            form: proposal
+                .form
+                .strip_prefix("https://")
+                .unwrap_or(&proposal.form)
+                .to_owned(),
             domain,
             vault: proposal.vault.clone(),
             user_key: proposal.user_key.clone(),
@@ -1395,8 +1489,16 @@ pub fn browser_login(
             under: format!("[sandbox.personas.{}] tools", proposal.persona),
             no_always: wait.no_always.clone(),
             vault_too: wait.vault_too,
+            replaces: proposal.replaces.as_ref().map(|old| old.page.clone()),
+            replaces_form: proposal.replaces.as_ref().map(|old| {
+                old.form
+                    .strip_prefix("https://")
+                    .unwrap_or(&old.form)
+                    .to_owned()
+            }),
         }),
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1465,6 +1567,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1529,11 +1632,74 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
 /// The id of Allow on a pool tool Ask (#2047).
 pub const POOL_TOOL_ALLOW: &str = "allow";
+
+/// The key of Secret ask `id` (#5068).
+fn secret_key(id: u32) -> String {
+    format!("secret:{id}")
+}
+
+/// The id of Fill on a Secret ask (#5068).
+pub const SECRET_FILL: &str = "fill";
+
+/// **The Secret ask adapter** (#5068, #5071, ADR 0109): a chat's brokered run found a key
+/// missing from its persona's vault, and the command waits on the person. One ask per vault and
+/// key, however many chats wait on it; it is drawn under the first to ask. Fill stores the value
+/// typed in its masked field in the vault and lets every waiting command run; Not now tells them
+/// it was declined. Every word is purlis's but the names, which are the registry's and are data.
+pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
+    let (key, vault, persona) = (&open.key, &open.vault, &open.persona);
+    // A profile's credential a start misses names no tool, and no chat has started (#5074).
+    let used_by = match open.tool.as_deref() {
+        Some(tool) => format!(" for {tool}"),
+        None if open.chats.is_empty() && open.starts > 0 => " to start a chat".to_owned(),
+        None => String::new(),
+    };
+    let others = match open.waiting() {
+        0 | 1 => String::new(),
+        n => format!(". {n} chats wait on it"),
+    };
+    let says = format!(
+        "Needs {key} from {persona}'s vault {vault}{used_by}. Fill stores it in that vault on \
+         this machine; the chat never sees it{others}"
+    );
+    Shown {
+        session: open.chats.first().copied().unwrap_or_default(),
+        ask: secret_key(open.id),
+        says: said_inertly(&says),
+        options: vec![
+            Offered {
+                id: SECRET_FILL.to_owned(),
+                label: "Fill".to_owned(),
+                allows: true,
+                preselected: None,
+            },
+            refuses(KEEP, "Not now"),
+        ],
+        source: AskSource::Secret,
+        chain: Vec::new(),
+        answer: AnswerPath::Secret { id: open.id },
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        earlier_messages: None,
+        secret: Some(SecretShown {
+            persona: persona.clone(),
+            vault: vault.clone(),
+            key: key.clone(),
+            tool: open.tool.clone(),
+            waiting: u32::try_from(open.waiting()).unwrap_or(u32::MAX),
+        }),
+    }
+}
 
 /// The key of chat `session`'s browser sites Ask (#2018): one per chat, every site it waits on.
 fn browser_sites_key(session: u32) -> String {
@@ -1574,6 +1740,7 @@ pub fn browser_sites(
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1746,6 +1913,7 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1774,6 +1942,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1830,6 +1999,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1887,6 +2057,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -1944,6 +2115,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -2002,6 +2174,7 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -2033,6 +2206,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         last_message: None,
         login: None,
         earlier_messages: None,
+        secret: None,
     }
 }
 
@@ -2114,6 +2288,8 @@ pub struct Waiting<'a> {
     pub pool_tools: Vec<crate::pooltools::PoolToolWaits>,
     /// The logins chats suggested that wait on the person (#4595).
     pub browser_logins: Vec<crate::loginasks::LoginWait>,
+    /// The Secret asks chats' brokered runs wait on (#5068).
+    pub secrets: Vec<purlis_core::secrets::ask::Open>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// Whether a browser site for everyone in the project reaches a browser here: only where the
@@ -2133,6 +2309,8 @@ pub struct Waiting<'a> {
     pub last_message: &'a dyn Fn(u32) -> Option<String>,
     /// What its turns ended on before that, oldest first (#4563).
     pub earlier_messages: &'a dyn Fn(u32) -> Vec<String>,
+    /// What purlis's MCP server said a chat asks the person in its harness's form (#4710).
+    pub asking: &'a dyn Fn(u32) -> Option<String>,
     /// Until when a chat's proxy holds a connection to a host, where it holds one now, asking
     /// the person (#1709), given when the ask began.
     pub held: &'a HoldEnds<'a>,
@@ -2204,6 +2382,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
     asks.extend(waiting.pool_tools.iter().map(pool_tool));
+    // A chat whose brokered run missed a key waits on the person to fill it (#5068).
+    asks.extend(waiting.secrets.iter().map(secret_ask));
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
@@ -2216,7 +2396,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .iter()
             .filter(|session| !said.contains(session) && !(waiting.only_updates)(**session))
             .map(|&session| match (waiting.at_its_prompt)(session) {
-                Some(prompt) => terminal(session, prompt),
+                Some(prompt) => terminal(session, prompt, (waiting.asking)(session)),
                 None => question(
                     session,
                     (waiting.last_message)(session),
@@ -2321,6 +2501,9 @@ fn asker_in(chats: &crate::chats::Chats, session: u32) -> Option<u32> {
 
 /// Every ask project `held` has waiting now, as the window lists them.
 pub fn every_ask(held: &crate::planes::Held) -> Asking {
+    // A backstop for the host's board (the review of #4905): told when a vault value is
+    // remembered already, so this is nothing unless a value came since and no one was told.
+    crate::dispatched::said_masked_kept(held);
     let plane = held.plane_id();
     let root = held.root();
     let locks = purlis_core::sandbox::policy::Locks::of(root);
@@ -2416,6 +2599,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &pool_tools {
         since.insert(pool_tool_key(one.session, one.run), one.since);
     }
+    let secrets = held.secret_asks().open();
+    for one in &secrets {
+        since.insert(secret_key(one.id), one.since);
+    }
     let declared = purlis_core::sandbox::services::declared(root);
     let tasks = held.tasks();
     let waiting = Waiting {
@@ -2425,6 +2612,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         pool_logins,
         pool_tools,
         browser_logins,
+        secrets,
         sandbox_only,
         sign_ins,
         pool_sign_ins,
@@ -2461,6 +2649,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             })
         },
         last_message: &|session| tasks.ledger().last_said(session).map(str::to_owned),
+        asking: &|session| tasks.ledger().asking(session).map(str::to_owned),
         earlier_messages: &|session| {
             tasks
                 .ledger()

@@ -40,8 +40,9 @@
 //! redirect (#4044, id 180), 1.60's prompt key a chat's launch carries and its host answers
 //! back (#3369, ids 181 and 182), 1.61's settings a runner holds and a keep of what changed
 //! (#4088, ids 183 and 184), 1.63's grade asked for from a terminal (#3241, ids 185 to 188),
-//! 1.68's runner whose programs are not known (#4684, id 189), and 1.69's repositories a host
-//! holds (#4569, id 190).
+//! 1.68's runner whose programs are not known (#4684, id 189), 1.69's repositories a host
+//! holds (#4569, id 190), and 1.71's terminal view attached with a page of its history (#4742,
+//! id 191).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
 //! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back

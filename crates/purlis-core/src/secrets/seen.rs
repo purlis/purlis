@@ -30,7 +30,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
-use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 
 use hmac::{Hmac, KeyInit as _, Mac};
 use sha2::Sha256;
@@ -177,7 +177,44 @@ fn joined(mut found: Vec<Range<usize>>, text: &str) -> Vec<Range<usize>> {
 /// text, as written and with the white space around it trimmed, which a value read from a file
 /// often carries.
 pub fn remember(value: &str) {
-    seen().remember(keyed(), value);
+    let changed = {
+        let mut seen = seen();
+        let before = seen.generation;
+        seen.remember(keyed(), value);
+        seen.generation != before
+    };
+    if changed {
+        told_remembered();
+    }
+}
+
+/// What is told each time what [`remember`] holds changes ([`when_remembered`]).
+pub type Remembered = Arc<dyn Fn() + Send + Sync>;
+
+/// Those told when what is remembered changes, each for as long as its owner keeps it.
+static TOLD: Mutex<Vec<Weak<dyn Fn() + Send + Sync>>> = Mutex::new(Vec::new());
+
+fn tellers() -> MutexGuard<'static, Vec<Weak<dyn Fn() + Send + Sync>>> {
+    TOLD.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// **`told` is called each time what [`remember`] holds changes**, on the thread that
+/// remembered it, after it has, and with no lock of this module held: a store that kept a
+/// chat's words masked before the value was known masks them again then, not only when they are
+/// next read (the review of #4905). Told only while the caller keeps `told`; held here weakly.
+pub fn when_remembered(told: &Remembered) {
+    tellers().push(Arc::downgrade(told));
+}
+
+fn told_remembered() {
+    let live: Vec<Remembered> = {
+        let mut tellers = tellers();
+        tellers.retain(|one| one.strong_count() > 0);
+        tellers.iter().filter_map(Weak::upgrade).collect()
+    };
+    for one in live {
+        one();
+    }
 }
 
 /// **Whether `text` holds a value [`remember`] was given**, anywhere in it, byte for byte. True
@@ -287,6 +324,27 @@ mod tests {
         alone.remember(keyed(), &value);
         alone.remember(keyed(), &value);
         assert_eq!(alone.generation, 1);
+    }
+
+    #[test]
+    fn a_new_value_is_told_to_whoever_keeps_asking_and_to_no_one_who_let_go() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let heard = Arc::new(AtomicUsize::new(0));
+        let told: Remembered = {
+            let heard = Arc::clone(&heard);
+            Arc::new(move || {
+                heard.fetch_add(1, Ordering::SeqCst);
+            })
+        };
+        when_remembered(&told);
+        let value = "a value told when remembered 4905";
+        remember(value);
+        // Other tests remember values of their own meanwhile, so this counts at least once.
+        let once = heard.load(Ordering::SeqCst);
+        assert!(once >= 1);
+        drop(told);
+        remember("a value remembered once it is let go of 4905");
+        assert_eq!(heard.load(Ordering::SeqCst), once);
     }
 
     #[test]

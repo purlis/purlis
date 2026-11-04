@@ -30,9 +30,15 @@ import {
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
-import { AnchoredTooltip, onTooltipEscape, TOOLTIP_DELAY, type Tip } from "../tooltip/Tooltip";
+import {
+  AnchoredTooltip,
+  onTooltipEscape,
+  says,
+  TOOLTIP_DELAY,
+  type Tip,
+} from "../tooltip/Tooltip";
 import { useWindowLeft } from "../windowLeft";
-import { RowScope } from "./Row";
+import { RowCutWords, RowScope } from "./Row";
 
 /** What a row with a tooltip hands its element, and draws inside it. */
 export interface RowTipped {
@@ -88,6 +94,26 @@ export function useRowTip(
           {tip}
         </Shown>
       ),
+  };
+}
+
+/**
+ * **A list's row's tooltip, or the whole of its line cut short** (#4711): the row's own `tip`
+ * where it has one; else, while a `RowBelow` that asks (`tipWhenCut`) is cut by its clamp, that
+ * line's whole words, which are its row's description while they are shown (a row is named by its
+ * `textValue` alone, so a reader hears the line only so). `hold` draws the row's content where its
+ * `RowBelow` can say it is cut.
+ */
+export function useListRowTip(tip: Tip | undefined): {
+  tipped: RowTipped;
+  hold: (content: ReactNode) => ReactNode;
+} {
+  const [cut, setCut] = useState<string>();
+  const own = tip !== undefined && says(tip);
+  const tipped = useRowTip(own ? tip : cut);
+  return {
+    tipped,
+    hold: (content) => <RowCutWords.Provider value={setCut}>{content}</RowCutWords.Provider>,
   };
 }
 

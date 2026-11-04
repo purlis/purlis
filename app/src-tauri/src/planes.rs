@@ -272,6 +272,9 @@ pub struct Held {
     closing: Arc<crate::smartclose::Closing>,
     /// What the app remembers of the tasks its chats dispatched, and who waits on them (#1441).
     tasks: Arc<crate::dispatched::Tasks>,
+    /// Told each time a vault value is remembered, to mask what the host's board keeps of what
+    /// the chats said (the review of #4905). Kept here so it is told while the project is held.
+    _masked_kept: purlis_core::secrets::seen::Remembered,
     /// The window, for each step of a smart close.
     smart: crate::smartclose::Teller,
     /// Each chat's lane, which everything typed into a chat, its resizes and its views take in
@@ -304,6 +307,8 @@ pub struct Held {
     /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
     /// wait on one (#2047).
     pool_tools: crate::pooltools::PoolTools,
+    /// The Secret asks the chats' brokered runs wait on (#5068, ADR 0109).
+    secret_asks: Arc<purlis_core::secrets::ask::Asks>,
     /// Where the chats' browsers run: the window's session host, where it has one.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each time a browser is added to its chats' or taken from them (#2024).
@@ -644,6 +649,11 @@ impl Held {
         &self.pool_tools
     }
 
+    /// The Secret asks the chats' brokered runs wait on (#5068, ADR 0109).
+    pub fn secret_asks(&self) -> &purlis_core::secrets::ask::Asks {
+        &self.secret_asks
+    }
+
     /// Where the chats' browsers run: none where the window has no session host.
     pub fn browser_driver(&self) -> Option<&Arc<dyn crate::chatbrowsers::Driver>> {
         self.browser_driver.as_ref()
@@ -868,14 +878,19 @@ impl Held {
 
     /// A view of chat `session` opened in its turn in the chat's lane, after every resize sent
     /// before it (#891, #4734), waiting for the host's answer: never on the window's thread. The
-    /// view is paced by what its pane reports drawn (`session_drawn`, #4733).
+    /// view is paced by what its pane reports drawn (`session_drawn`, #4733). `history` is the
+    /// most lines of history the screen is drawn with, the newest (#4742), or all of them.
     pub fn watch_in_turn(
         &self,
         session: u32,
         sink: crate::host::Sink,
+        history: Option<u32>,
     ) -> Result<crate::host::Watching, String> {
-        self.lanes
-            .in_turn(session, || self.chats.sessions().watch_drawn(session, sink))
+        self.lanes.in_turn(session, || {
+            self.chats
+                .sessions()
+                .watch_drawn(session, sink, history.unwrap_or(u32::MAX))
+        })
     }
 
     /// Types `bytes` into chat `session` in its turn in the chat's lane, waiting for the host's
@@ -1294,6 +1309,8 @@ impl Held {
         self.removal_asks.forget(session);
         // What its runner's commands wait on goes with it (#2047).
         self.pool_tools.forget(session);
+        // And what it waits on or declined of a vault (#5068).
+        self.secret_asks.forget(session);
         // Its browsers end with it (#2013), and leave its rows and its tab (#2024); a pinned
         // one runs on, listed by what the chat was called (#2022).
         let was = self
@@ -3287,6 +3304,21 @@ impl Planes {
                 }
             })
         });
+        // What each chat last said, as the board the host kept had it (#4709): kept again,
+        // masked again under what this window knows, where the ledger heard nothing since.
+        // Weak for the handoff's reason.
+        held.hooks.when_said_taken({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat, said| {
+                if let Some(held) = held.upgrade() {
+                    let said = said
+                        .iter()
+                        .map(|one| purlis_core::secrets::mcpstart::masked(one))
+                        .collect();
+                    held.tasks().ledger().said_again(chat, said);
+                }
+            })
+        });
         // What a chat's turn ended saying (#1981, #4550): kept in memory, for every chat. Weak
         // for the handoff's reason.
         held.hooks.when_output({
@@ -4030,6 +4062,12 @@ impl Planes {
         if let Err(why) = machine::update(config, move |store| {
             store.remember(&plane, when);
             store.pin_the_most_active(&plane);
+            // A workspace removed or renamed outside purlis leaves its Runs on under a name no
+            // folder has: a pool there becomes This machine (#4591). Read under the store's lock,
+            // so a rename's carry can't fall between the list and the write.
+            if let Some(there) = machine::workspaces_surely_there(&plane) {
+                store.tidy_workspaces(&plane, &there);
+            }
         }) && why.kind() != std::io::ErrorKind::Unsupported
         {
             tracing::warn!(
@@ -4747,6 +4785,12 @@ impl Planes {
             let (plane, told) = (id.clone(), Arc::clone(&self.moves_told));
             Arc::new(move |one| told(plane.clone(), one))
         });
+        let tasks: Arc<crate::dispatched::Tasks> = Arc::default();
+        let masked_kept =
+            crate::dispatched::masked_kept_when_remembered(&tasks, hooks.shared_board());
+        // Shared with its chats, whose starts ask through it too (#5074).
+        let secret_asks = Arc::new(purlis_core::secrets::ask::Asks::new(&root));
+        chats.ask_secrets_in(Arc::clone(&secret_asks));
         Held {
             id,
             root,
@@ -4761,7 +4805,8 @@ impl Planes {
             started_on,
             typed,
             closing,
-            tasks: Arc::default(),
+            tasks,
+            _masked_kept: masked_kept,
             smart: Arc::clone(&self.smart),
             lanes,
             stopping: crate::stopping::Stopping::default(),
@@ -4781,6 +4826,7 @@ impl Planes {
                 .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
             browser_driver: self.browser_driver.clone(),
             pool_tools: crate::pooltools::PoolTools::default(),
+            secret_asks,
             browsers_listed,
             browser_timeline,
             proposals: crate::proposals::Proposals::default(),
@@ -5263,6 +5309,8 @@ pub struct Showing {
     held: Mutex<HashMap<String, Holding>>,
     /// The last split window's number, so a label is never used twice in one process.
     split: std::sync::atomic::AtomicU32,
+    /// Each tab window, by label (#4768): which project it is of, and its number there.
+    tab_windows: Mutex<HashMap<String, TabWindow>>,
 }
 
 impl Showing {
@@ -5360,10 +5408,11 @@ impl Showing {
     /// A label for a new split window, never one this process has used before.
     pub fn fresh_label(&self) -> String {
         let taken = self.held();
+        let tabs: Vec<String> = self.tab_windows().keys().cloned().collect();
         loop {
             let next = self.split.fetch_add(1, Ordering::Relaxed) + 1;
             let label = crate::windows::split_label(next);
-            if !taken.contains_key(&label) {
+            if !taken.contains_key(&label) && !tabs.contains(&label) {
                 return label;
             }
         }
@@ -5756,8 +5805,16 @@ fn the_host_s_stop(
 /// do (#2494).
 pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
 
+#[path = "planes/tab_windows.rs"]
+mod tab_windows;
+pub use tab_windows::TabWindow;
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "planes/tests/tab_windows.rs"]
+mod tab_windows_tests;
 
 #[cfg(test)]
 #[path = "planes/tests/restoring.rs"]

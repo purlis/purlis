@@ -184,9 +184,39 @@ fn a_vault_charter_does_not_track_sizes_for_lists_names_alone() {
         [VaultSecret {
             key: "DB_URL".into(),
             size: None,
-            updated: None
+            updated: None,
+            link: None,
+            linked_by: 0,
         }]
     );
+}
+
+#[test]
+fn opening_a_vault_names_each_linked_entry_and_counts_the_links_that_read_a_key() {
+    let (_dir, ctx) = plane();
+    add(
+        &ctx,
+        "files",
+        "STRIPE",
+        &SecretValue::from("sk_fixture-open-5069"),
+    )
+    .unwrap();
+    let ops = registry::vault(&ctx, "ops").unwrap();
+    purlis_core::secrets::links::link(&ctx, &ops, "PAY", "files", "STRIPE").unwrap();
+
+    let opened = open(&ctx, "ops").unwrap();
+    let pay = opened.secrets.iter().find(|s| s.key == "PAY").unwrap();
+    assert_eq!(
+        pay.link,
+        Some(VaultLink {
+            vault: "files".into(),
+            key: "STRIPE".into()
+        })
+    );
+    assert_eq!(opened.count, 1);
+    let files = open(&ctx, "files").unwrap();
+    assert_eq!(files.secrets[0].linked_by, 1, "{files:?}");
+    assert!(!wire(&Ok(files)).contains("sk_fixture-open-5069"));
 }
 
 #[test]

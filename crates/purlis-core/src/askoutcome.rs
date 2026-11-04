@@ -62,6 +62,9 @@ pub enum About {
     /// A browser login the chat suggested (#4595): an Allow is for this login, on the site the
     /// person confirmed.
     BrowserLogin { login: String },
+    /// A key a brokered run of the chat's found missing from vault `vault`, which the person
+    /// was asked for (#5068, ADR 0109). Names only, never a value.
+    Secret { vault: String, key: String },
 }
 
 impl About {
@@ -128,6 +131,7 @@ impl About {
             Self::BrowserLogin { login } => {
                 format!("browser login {}", code(login))
             }
+            Self::Secret { vault, key } => format!("secret {}", code(&format!("{vault}/{key}"))),
             Self::PoolLogin { pool } => {
                 format!(
                     "purlis filling your browser logins on pool {}'s runner",
@@ -213,6 +217,11 @@ pub enum Answer {
     /// The person finished in the browser they were asked to take over, and handed it back
     /// (#2015). Nothing of what they did there is told.
     Finished,
+    /// The person filled the secret asked for (#5068): the command that waited on it may run
+    /// again. Never the value.
+    Filled,
+    /// The person declined the secret asked for (#5068): this chat is not asked about it again.
+    Declined,
 }
 
 /// One Ask's answer, as the chat it was the Ask of is told it.
@@ -251,6 +260,12 @@ impl Outcome {
             }
             Answer::Finished => "They finished and handed it back — take a fresh snapshot \
                                  before you act: references from before are void."
+                .to_owned(),
+            Answer::Filled => {
+                "Filled by the person — run the command that waited on it again.".to_owned()
+            }
+            Answer::Declined => "Declined by the person — don't ask for it again in this chat; \
+                                 go on without it."
                 .to_owned(),
         };
         format!("⬢ purlis: {} — {answered}", self.about.named())

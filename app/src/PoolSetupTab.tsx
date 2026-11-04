@@ -13,8 +13,10 @@ import {
 } from "./bindings";
 import { Notice } from "./Notice";
 import { Action, SeeWhat, StepHead } from "./poolsetup/parts";
+import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
 import { SignInsStep } from "./poolsetup/SignInsStep";
+import { TryStep } from "./poolsetup/TryStep";
 import { Card } from "./ui/card/Card";
 import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
 
@@ -35,8 +37,9 @@ import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
  * value marked, and See what this does, with the commands the button runs ({@link SeeWhat}). A pool
  * made by hand under the name typed is noticed, and setup follows it.
  *
- * Where and Pool have their screens. The later steps show what the core finds and what to do next,
- * and get theirs in their tickets (#4482, #4483, #4490).
+ * Every step has its screen. Agent identity sets one up with the flow the Agent identity tab uses
+ * (#4490). Try it ends setup on a real chat started on the pool (#4483), and its last screen opens
+ * a chat there in the window's own picker.
  */
 
 /** How often the tab asks again while it waits on Docker. */
@@ -168,7 +171,23 @@ function Found({ step, onRecheck }: { step: PoolSetupStep; onRecheck: () => void
   );
 }
 
-export function PoolSetupTab({ plane }: { plane: PlaneId }) {
+export function PoolSetupTab({
+  plane,
+  workspace,
+  onOpenChat,
+  onOpenIdentity,
+  onOpenSettings,
+}: {
+  plane: PlaneId;
+  /** The workspace the tab is filed in, where it is in one: where Try it starts its chat. */
+  workspace?: string;
+  /** Opens the picker for a new chat on pool `pool`, chosen on its Runs on row. */
+  onOpenChat?: (pool: string, workspace?: string) => void;
+  /** Opens the Agent identity tab, where an identity is inspected and removed. */
+  onOpenIdentity?: () => void;
+  /** Opens the project's Settings, where a persona's tool is allowed. */
+  onOpenSettings?: () => void;
+}) {
   const [read, setRead] = useState<Read>({ state: "reading" });
   const [showing, setShowing] = useState<string>();
   const [trouble, setTrouble] = useState<string>();
@@ -264,6 +283,7 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
     );
 
   const { shown: setup } = read;
+  const madePool = setup.pool;
   const here = showing ?? at ?? setup.steps[setup.steps.length - 1]?.id ?? null;
   const step = setup.steps.find((one) => one.id === here);
   const after = (id: string) => {
@@ -338,6 +358,34 @@ export function PoolSetupTab({ plane }: { plane: PlaneId }) {
                 setShowing(undefined);
                 reread();
               }}
+            />
+          ) : step?.id === "identity" && madePool !== null ? (
+            <IdentityStep
+              key={madePool}
+              step={step}
+              pool={madePool}
+              plane={plane}
+              changed={() => {
+                setShowing(undefined);
+                reread();
+              }}
+              onNext={() => after("identity")}
+              onOpenIdentity={onOpenIdentity}
+              onOpenSettings={onOpenSettings}
+            />
+          ) : step?.id === "try" && madePool !== null ? (
+            <TryStep
+              key={madePool}
+              step={step}
+              pool={madePool}
+              plane={plane}
+              workspace={workspace}
+              changed={() => {
+                setShowing(undefined);
+                reread();
+              }}
+              onGo={(id) => setShowing(id)}
+              onOpenChat={(triedIn) => onOpenChat?.(madePool, triedIn ?? workspace)}
             />
           ) : (
             step && <Found step={step} onRecheck={reread} />

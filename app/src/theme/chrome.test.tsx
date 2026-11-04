@@ -373,7 +373,15 @@ const VAULT: VaultContents = {
   provider: "1password",
   count: 1,
   health: { ok: true, detail: "1 secret in 1Password" },
-  secrets: [{ key: "API_TOKEN", size: "16–31 bytes", updated: "2026-09-24T11:32:17Z" }],
+  secrets: [
+    {
+      key: "API_TOKEN",
+      size: "16–31 bytes",
+      updated: "2026-09-24T11:32:17Z",
+      link: null,
+      linked_by: 0,
+    },
+  ],
   refused: null,
   identity_unset_elsewhere: [],
   identity: [{ variable: "service-account-token", held: "keyring", kept: true }],
@@ -919,17 +927,16 @@ const DIALOGS: Opened[] = [
       render(
         <EndingChat
           offer={{
-            id: "tab.close:1",
-            title: "End chat claude 4",
+            id: "chat.end:4",
+            title: "End chat claude 4…",
             available: true,
             reason: "",
-            does: { verb: "closeTab", tab: 1, ends: true },
+            does: { verb: "endChat", session: 4 },
             note: ENDS_IT,
           }}
           smart={{ available: true, why: null, close_first: false }}
           running={["devops 6"]}
           closing={["steward 2"]}
-          back={["web 5"]}
           ownTabs={1}
           drafts={[
             {

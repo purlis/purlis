@@ -317,3 +317,82 @@ fn a_tab_dropped_for_its_size_takes_no_chat_from_the_tabs_after_it() {
         "the tab kept shows the chat the dropped one named"
     );
 }
+
+/// **A one-job split is never recorded** (#4761, spec #4750): a terminal editor or a forge
+/// login opened beside a pane is left out, and the pane it was beside takes the split's place
+/// with the focus, as the window draws it once the program exits.
+#[test]
+fn a_one_job_pane_leaves_its_split_to_the_pane_it_was_beside_with_the_focus() {
+    let beside = Tab {
+        focused: vec![Side::A, Side::B],
+        tree: Node::split(
+            Direction::Column,
+            300,
+            Node::split(Direction::Row, EVEN, Node::chat(3), Node::chat(9)),
+            Node::chat(4),
+        ),
+        ..two_chats_split(EVEN)
+    };
+    let layout = Layout {
+        strip: Some("ops".to_owned()),
+        tabs: vec![beside],
+    };
+
+    let kept = layout.without(|chat| chat == 9);
+
+    assert_eq!(
+        kept.tabs[0].tree,
+        Node::split(Direction::Column, 300, Node::chat(3), Node::chat(4)),
+    );
+    assert_eq!(kept.tabs[0].focused, [Side::A]);
+    assert_eq!(kept.on_screen(), [3, 4]);
+}
+
+#[test]
+fn a_focus_outside_the_one_job_pane_stays_on_the_pane_it_was_on() {
+    let layout = Layout {
+        strip: Some("ops".to_owned()),
+        tabs: vec![Tab {
+            focused: vec![Side::B, Side::B],
+            tree: Node::split(
+                Direction::Row,
+                EVEN,
+                Node::chat(9),
+                Node::split(Direction::Column, 600, Node::chat(3), Node::chat(4)),
+            ),
+            ..two_chats_split(EVEN)
+        }],
+    };
+
+    let kept = layout.without(|chat| chat == 9);
+
+    assert_eq!(
+        kept.tabs[0].tree,
+        Node::split(Direction::Column, 600, Node::chat(3), Node::chat(4)),
+    );
+    assert_eq!(kept.tabs[0].focused, [Side::B]);
+}
+
+#[test]
+fn a_tab_of_nothing_but_a_one_job_pane_keeps_an_empty_pane() {
+    let layout = Layout {
+        strip: None,
+        tabs: vec![Tab::of_chat(None, 9)],
+    };
+
+    let kept = layout.without(|chat| chat == 9);
+
+    assert_eq!(kept.tabs.len(), 1);
+    assert_eq!(kept.tabs[0].tree, Node::Pane(Pane::Empty));
+    assert!(kept.tabs[0].focused.is_empty());
+}
+
+#[test]
+fn a_layout_with_no_one_job_pane_is_kept_as_it_is() {
+    let layout = Layout {
+        strip: Some("ops".to_owned()),
+        tabs: vec![two_chats_split(333)],
+    };
+
+    assert_eq!(layout.clone().without(|_| false), layout);
+}

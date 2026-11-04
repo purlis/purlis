@@ -2046,6 +2046,32 @@ pub fn person_answers(
     question: &str,
     said: &str,
 ) -> Result<(), String> {
+    the_person_s_word(held, task, number, question, said, false)
+}
+
+/// **The person says otherwise to the answer task `task`'s asking chat gave question
+/// `number`** (#4566): the window's Say otherwise, once it drew that answer
+/// ([`chat_answered_of`]). Reaches each chat as [`person_answers`] does, marked as overriding.
+/// Only this says otherwise (#5005): a plain answer that comes after the chat's is refused,
+/// since the person never saw what it would override.
+pub fn person_overrides(
+    held: &Held,
+    task: u32,
+    number: u32,
+    question: &str,
+    said: &str,
+) -> Result<(), String> {
+    the_person_s_word(held, task, number, question, said, true)
+}
+
+fn the_person_s_word(
+    held: &Held,
+    task: u32,
+    number: u32,
+    question: &str,
+    said: &str,
+    overrides: bool,
+) -> Result<(), String> {
     let name = held
         .chats()
         .shown_name(task)
@@ -2064,10 +2090,15 @@ pub fn person_answers(
     // The asking chat, while it is open: one that has closed is told nothing, and its number
     // may be another chat's by now.
     let asker = Some(from.chat).filter(|asker| !seen(held, *asker).ended);
-    let unread = held
-        .tasks()
-        .ledger()
-        .person_answers(task, &name, asker, number, question, &text)?;
+    let unread = if overrides {
+        held.tasks()
+            .ledger()
+            .person_overrides(task, &name, asker, number, question, &text)?
+    } else {
+        held.tasks()
+            .ledger()
+            .person_answers(task, &name, asker, number, question, &text)?
+    };
     // The question the asking chat had not read: it is told it was answered, and not asked it.
     if let Some(file) = unread {
         purlis_core::handback::took(held.root(), &file);
@@ -2101,6 +2132,60 @@ pub(crate) fn task_question(
     Ok(question_of(&held, session))
 }
 
+/// **What an asking chat answered a task's question, as the window shows it** (#4566): the line
+/// a quiz leaves when an agent answered it first, which says who said what and offers the
+/// person's later word.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ChatAnsweredShown {
+    /// The task, by the name the person sees it under.
+    pub task: String,
+    /// The asking chat that answered, by its name.
+    pub from: String,
+    /// What it answered, masked, **as text**: a chat's own words, never drawn as markup.
+    pub said: String,
+    /// The question it answered, in the task's words: what the person's word is held to
+    /// (`answer_task_question`).
+    pub question: String,
+}
+
+/// What task `task`'s asking chat answered its question `number`, while the person may still
+/// say otherwise to it: `None` once the task has asked another, ended or been told the
+/// person's word, and for a chat that is no task.
+pub fn chat_answered_of(held: &Held, task: u32, number: u32) -> Option<ChatAnsweredShown> {
+    let from = held.chats().handed_from(task)?;
+    if from.mode != Mode::Task || seen(held, task).ended {
+        return None;
+    }
+    let answered = held.tasks().ledger().talk.chat_answered(task, number)?;
+    Some(ChatAnsweredShown {
+        task: dispatchtalk::chat_shown(&held.chats().shown_name(task)?),
+        from: dispatchtalk::chat_shown(&answered.from),
+        said: answered.text,
+        question: answered.question,
+    })
+}
+
+/// **What an asking chat answered task `session`'s question `number`** (#4566): read by a quiz
+/// the person had open when an agent answered it first, for the line it leaves. `null` where
+/// nobody but the person can be said to have answered it, or it can no longer be overridden.
+///
+/// **The window's alone**, as `task_question` is: it reads words a chat wrote. On a blocking
+/// thread, as it waits on the dispatch ledger's lock (#1949).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn task_question_answered(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+    number: u32,
+) -> Result<Option<ChatAnsweredShown>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading what a chat answered a task", move || {
+        Ok(chat_answered_of(&held, session, number))
+    })
+    .await
+}
+
 /// **The person answers the question a task put to its asking chat** (#1496, V100-46): chat
 /// `session`'s question `number` (`task_question`, or a line's `asks`), which read `question`
 /// as the window showed it, with `text`. It answers that question and no other: a question
@@ -2110,6 +2195,10 @@ pub(crate) fn task_question(
 /// person answered and does not answer again. An error is a sentence for the person, and
 /// nothing was sent: the question was answered first by the asking chat, the task has moved
 /// on, or the text is empty, too long or holds a character purlis hands to no chat.
+///
+/// `overrides` is the person's Say otherwise to an answer the asking chat gave first, which
+/// the window drew (`task_question_answered`), and nothing else sends it (#5005): without it,
+/// an answer that arrives after the chat's is refused, as the person never saw that answer.
 ///
 /// **The window's alone.** No chat's command, hook or tool reaches it, and no link serves it
 /// (`purlis_session_protocol::ui::WINDOW_ONLY`): what it sends reaches a chat marked as the
@@ -2123,10 +2212,15 @@ pub(crate) async fn answer_task_question(
     number: u32,
     question: String,
     text: String,
+    overrides: bool,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("answering a task's question", move || {
-        person_answers(&held, session, number, &question, &text)
+        if overrides {
+            person_overrides(&held, session, number, &question, &text)
+        } else {
+            person_answers(&held, session, number, &question, &text)
+        }
     })
     .await
 }
@@ -2933,6 +3027,7 @@ pub fn heard(held: &Held, report: &Report) {
             // the board has taken this report already, and says whether it is one.
             let background = held.hooks().board().background_turn(report.chat);
             held.tasks().ledger().turn_began_as(report.chat, background);
+            said_kept(held, report.chat);
         }
         Event::Stop => {
             held.tasks().ledger().turn_ended(report.chat);
@@ -2949,6 +3044,88 @@ pub fn heard(held: &Held, report: &Report) {
     moved(held, report.chat);
 }
 
+/// **What chat `chat` last said, as the ledger keeps it, told to the board the session host
+/// keeps** (#4709), so a window that comes back shows it in the waiting strip at once. The
+/// ledger's lock is let go of before the board's is taken.
+fn said_kept(held: &Held, chat: u32) {
+    let board = held.hooks().shared_board();
+    keep_said_masked(held.tasks(), &[chat], |said| {
+        let mut board = crate::hooks::held_board(&board);
+        for (chat, said) in said {
+            board.keep_said(*chat, said);
+        }
+    });
+}
+
+/// **What `chats` last said, read from the ledger and handed to `keep`, until no vault value
+/// was remembered meanwhile** (the review of #4972). The ledger's lock is let go of before
+/// `keep` runs, so a value remembered between the read and the write is masked, and told to
+/// the board, by [`said_masked_kept`] on the thread that remembered it, and the text read
+/// before would then overwrite it unmasked. Read again whenever [`seen::generation`] moved,
+/// the board always ends on text masked for every value remembered before the last write.
+///
+/// [`seen::generation`]: purlis_core::secrets::seen::generation
+fn keep_said_masked(tasks: &Tasks, chats: &[u32], mut keep: impl FnMut(&[(u32, Vec<String>)])) {
+    loop {
+        let at = purlis_core::secrets::seen::generation();
+        let said: Vec<(u32, Vec<String>)> = {
+            let mut ledger = tasks.ledger();
+            chats
+                .iter()
+                .map(|&chat| (chat, ledger.said(chat)))
+                .collect()
+        };
+        keep(&said);
+        if purlis_core::secrets::seen::generation() == at {
+            return;
+        }
+    }
+}
+
+/// **What each chat last said, masked again for a vault value read since, told to the board the
+/// session host keeps** (the review of #4905): a window relaunched from that board may not know
+/// the value, so it could not mask it itself. Told when the value is remembered
+/// ([`masked_kept_when_remembered`]), and again where the asks are read, which costs nothing
+/// when no value came since. The ledger's lock is let go of before the board's is taken.
+pub fn said_masked_kept(held: &Held) {
+    said_masked_kept_in(held.tasks(), &held.hooks().shared_board());
+}
+
+fn said_masked_kept_in(tasks: &Tasks, board: &Mutex<purlis_core::state::Board>) {
+    let remasked: Vec<u32> = tasks
+        .ledger()
+        .said_masked_again()
+        .into_iter()
+        .map(|(chat, _)| chat)
+        .collect();
+    if remasked.is_empty() {
+        return;
+    }
+    keep_said_masked(tasks, &remasked, |said| {
+        let mut board = crate::hooks::held_board(board);
+        for (chat, said) in said {
+            board.keep_said(*chat, said);
+        }
+    });
+}
+
+/// **What [`said_masked_kept`] does for a project, each time a vault value is remembered**
+/// (the review of #4905), so a chat the window never read since is masked in the host's board
+/// too. Told only while the project's [`Held`] keeps what this returns.
+pub fn masked_kept_when_remembered(
+    tasks: &Arc<Tasks>,
+    board: Arc<Mutex<purlis_core::state::Board>>,
+) -> purlis_core::secrets::seen::Remembered {
+    let tasks = Arc::downgrade(tasks);
+    let told: purlis_core::secrets::seen::Remembered = Arc::new(move || {
+        if let Some(tasks) = tasks.upgrade() {
+            said_masked_kept_in(&tasks, &board);
+        }
+    });
+    purlis_core::secrets::seen::when_remembered(&told);
+    told
+}
+
 /// **What chat `output.chat`'s turn put out** (#1981), heard on its own line before the turn's
 /// end. The message it ended on is kept for every chat, masked and made a report's text
 /// (`handback::last_message_summary`), in memory, until its next turn begins: what a question in
@@ -2959,6 +3136,19 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
     if let purlis_core::hookwire::Output::Final { text } = &output.turn_output {
         let kept = purlis_core::handback::last_message_summary(Some(text));
         held.tasks().ledger().said_last(output.chat, kept);
+        said_kept(held, output.chat);
+    }
+    // The question purlis's server asks the person in the harness's form, and its end (#4710):
+    // held with that ask, masked again here, and never recorded.
+    match &output.turn_output {
+        purlis_core::hookwire::Output::Asking { question } => {
+            let kept = purlis_core::handback::last_message_summary(Some(question));
+            held.tasks().ledger().asks_the_person(output.chat, kept);
+        }
+        purlis_core::hookwire::Output::Asked => {
+            held.tasks().ledger().asked_the_person(output.chat);
+        }
+        _ => {}
     }
     let task = held
         .chats()
@@ -3222,4 +3412,31 @@ pub fn followed(held: &Held, old: u32, new: u32) {
     // A task that had reported is still to be ended, under its new number (#1485).
     delivered(held, new);
     held.tasks().changed();
+}
+
+#[cfg(test)]
+mod said_kept_tests {
+    use super::*;
+
+    #[test]
+    fn a_vault_value_remembered_between_the_read_and_the_write_is_masked_in_what_is_kept() {
+        // The review of #4972: another thread remembers the value after the ledger was read
+        // and before the board was written. What is kept last must be masked.
+        let tasks = Tasks::default();
+        let value = "vault value remembered mid write 4972";
+        tasks
+            .ledger()
+            .said_last(7, format!("Is {value} the right one?"));
+        let mut kept: Vec<Vec<String>> = Vec::new();
+        keep_said_masked(&tasks, &[7], |said| {
+            if kept.is_empty() {
+                purlis_core::secrets::seen::remember(value);
+            }
+            kept.push(said[0].1.clone());
+        });
+        assert_eq!(
+            kept.last().map(Vec::as_slice),
+            Some(["Is *** the right one?".to_owned()].as_slice())
+        );
+    }
 }

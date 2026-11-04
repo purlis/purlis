@@ -35,6 +35,7 @@ import type { Shown } from "./bindings";
 import { type HandedFrom } from "./handedFrom";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { askSettingsLink } from "./settings/links";
+import { ChatOffers } from "./ViewOpen";
 
 /**
  * **What a chat's pane says above its terminal** (#1035, split out of `PlaneView.tsx`): its
@@ -305,9 +306,12 @@ export function ChatNotices({
   waiting,
   onShowInbox,
   onAnswer,
+  pane,
 }: {
   plane: PlaneId;
   session: number;
+  /** The pane whose band this is: an offer's Open beside goes beside it (#4769). */
+  pane?: number;
   /** A harness started by hand in this shell tab, while its banner is up (ADR 0062). */
   byHand?: ByHandNote;
   onByHand: (open: boolean) => void;
@@ -435,6 +439,8 @@ export function ChatNotices({
       {/* Its move to or from a pool's runner (#2048). */}
       <MoveNotice plane={plane} session={session} />
       <TaskQuietNotice plane={plane} session={session} />
+      {/* An extension's offer of its view about this chat (#4769): one quiet note. */}
+      <ChatOffers session={session} pane={pane} />
       {restartSaid?.trouble !== undefined && (
         <Notice
           cause={`restart:${session}`}

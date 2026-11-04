@@ -15,6 +15,7 @@ import {
   type PlaneId,
 } from "./bindings";
 import { extensionsChanged } from "./extensionsOn";
+import { offersFrom, useOffersOff } from "./offersPref";
 import { listen } from "./here";
 import { Choice, SettingActions } from "./settings/components";
 import { plainLine } from "./settings/iconsPick";
@@ -297,6 +298,11 @@ function InstalledRows({
   onForget: (id: string) => void;
 }) {
   const { query, setQuery, shown, filtered } = useListFilter(rows, extensionName);
+  // **Stop offers from <extension>, undone here** (#4769): a row whose offers the person
+  // stopped has a switch that turns them back on, kept while the dialog is open so turning it
+  // back off is the same switch.
+  const offersOff = useOffersOff();
+  const [stoppedHere] = useState(() => new Set(offersOff));
   return (
     <>
       {filtered && (
@@ -338,6 +344,22 @@ function InstalledRows({
                 {troubleSaid(trouble)}
               </span>
             ))}
+            {(stoppedHere.has(row.id) || offersOff.includes(row.id)) && (
+              <span className="extension-on">
+                <Choice
+                  ids={{
+                    id: `offers-${row.id}`,
+                    labelledBy: `name-${row.id} offers-${row.id}-said`,
+                  }}
+                  kind="switch"
+                  checked={!offersOff.includes(row.id)}
+                  onCheckedChange={(on) => offersFrom(row.id, on)}
+                />
+                <label htmlFor={`offers-${row.id}`} id={`offers-${row.id}-said`}>
+                  Offers its views
+                </label>
+              </span>
+            )}
             {row.ask && <Button onPress={() => onReview(row.ask as ExtensionAsk)}>Review</Button>}
             {row.source === "app" ? (
               // On or off the moment it is turned: the settings set's switch (#1860), named by

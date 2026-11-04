@@ -158,6 +158,10 @@ pub struct Login {
     /// A chat chose this page and these keys (#4595): the user name goes only into a field that
     /// says it's one, or beside a password field.
     pub suggested: bool,
+    /// **The page's own origin, where the form is on another** (#4995): a page that has gone
+    /// back there since the login was submitted is a login that went through, and its holder is
+    /// told ([`Hold::back`]). Nothing is ever filled on it.
+    pub back_to: Option<String>,
 }
 
 impl fmt::Debug for Login {
@@ -165,8 +169,43 @@ impl fmt::Debug for Login {
         f.debug_struct("Login")
             .field("address", &self.address.as_str())
             .field("origin", &self.origin)
+            .field("back_to", &self.back_to)
             .finish_non_exhaustive()
     }
+}
+
+/// **What holds a browser to the login purlis performs in it** (#2016, #4995): the caller's.
+/// [`Hold::begins`] is told as the login begins, and [`Hold::bind`] holds what the browser
+/// reaches to the login's sites just before the first value goes in; where it cannot, no value
+/// goes in. A login whose form is on another origin than its page ([`Login::back_to`]) is told
+/// [`Hold::back`] once its own page leaves the form's origin, whenever that is: during the login
+/// or after it.
+pub trait Hold: Send + Sync {
+    /// **The login begins**, purlis driving: told once, before its page is opened, so a browser
+    /// held to a login already can reach the login's form (#4995). Why not, where it cannot; the
+    /// login then fills nothing.
+    fn begins(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Holds the browser to the login's sites, or why it cannot.
+    fn bind(&self) -> Result<(), String>;
+
+    /// **The login's own page has left its form's origin** since the browser was held: the page
+    /// purlis opened for the login, never another, shows a document back on its page's origin,
+    /// or anywhere else. Told at most once per login, on the thread that reads the engine's
+    /// events, so it must not wait on the browser.
+    fn back(&self);
+}
+
+/// A login that only binds, told nothing of its page coming back: what a caller with one site
+/// passes.
+impl<F: Fn() -> Result<(), String> + Send + Sync> Hold for F {
+    fn bind(&self) -> Result<(), String> {
+        self()
+    }
+
+    fn back(&self) {}
 }
 
 /// What a frame showed: its page, and its documents (a number that changes each time the page
@@ -305,6 +344,12 @@ pub enum DragTo {
 pub enum Call {
     /// Opens a new page at `address`, which becomes the current page.
     Open {
+        address: WebAddress,
+    },
+    /// **Where `address` sends the browser to sign in** (#4995): a new page opened at `address`
+    /// and followed until its own document shows a login form. Its answer's page is that
+    /// document, as the engine records it. Nothing is typed.
+    FindLoginForm {
         address: WebAddress,
     },
     /// Sends a page to `address`.
@@ -594,6 +639,12 @@ pub enum Refusal {
          own, so where this would go cannot be told"
     )]
     FrameOpaque,
+    /// The tab is a fresh blank one, with no page in it to type into (#4889).
+    #[error(
+        "nothing was sent: this is a blank tab, with no page to type into: open a page in it \
+         first"
+    )]
+    BlankTab,
     #[error("nothing on the page has the focus")]
     NothingFocused,
     #[error("the page cannot tell which field has the focus")]

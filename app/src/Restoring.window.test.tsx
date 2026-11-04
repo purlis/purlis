@@ -305,13 +305,14 @@ describe("a launch's chats, coming back behind the window", () => {
     expect(restoringTabs()).toBe(1);
   });
 
-  it("is not ended by its close until it has started, and the press says why", async () => {
+  it("is not closed until it has started, and the press says why", async () => {
     const the = core([restoring(4, { in_front: true })]);
     render(<App />);
     await screen.findByTestId("chat-restoring");
 
+    // Its tab's close, which ends nothing (#4756) and still waits for the chat to start.
     const close = [...document.querySelectorAll<HTMLElement>(".tabs .tab button")].find((one) =>
-      (one.getAttribute("aria-label") ?? "").startsWith("End chat"),
+      (one.getAttribute("aria-label") ?? "").startsWith("Close "),
     );
     if (close === undefined) throw new Error("the restoring tab draws no close");
     await userEvent.click(close);

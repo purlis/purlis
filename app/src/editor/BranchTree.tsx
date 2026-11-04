@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useBranchFolders, type BranchFolderRef } from "../branchFolders";
 import { branchKey, type Indexed, type StatusRead } from "../branchStatus";
 import {
@@ -20,7 +20,16 @@ import { commands, type OpenChat, type PlaneId } from "../bindings";
 import { useFileIcons } from "../projectTheme";
 import { placeName, type Place } from "../pieceViews";
 import { useReferenceChats } from "../references";
-import { touchingIn, useTouching, type Touching, type Touches } from "../touching";
+import {
+  touchedInside,
+  touchingIn,
+  touchingOf,
+  useHeldTouches,
+  useTouches,
+  type Touch,
+  type Touches,
+  type TouchingOf,
+} from "../touching";
 import { ToggleButton } from "../ui/button/Button";
 import { Tree } from "../ui/tree/Tree";
 
@@ -101,7 +110,7 @@ export function BranchTree({
     changedOnly: false,
     filter: "",
     levels: new Map(),
-    touching: touching.size === 0 ? undefined : new Map([[branchKey(place), touching]]),
+    touching,
   };
   const rows = fileTreeRows(workspace, top, files);
   const pickedRow = picked === undefined ? undefined : fileRow({ ...top, folder: picked });
@@ -207,11 +216,27 @@ export function BranchTree({
  * after the last ask. A chat is named as its tab is where the window lends the names
  * (`references.tsx`), else by the core's name for it.
  */
-function useTouchingHere(plane: PlaneId, place: Place): Touching {
-  const touches = useTouching(plane);
+function useTouchingHere(plane: PlaneId, place: Place): TouchingOf {
+  const store = useTouches(plane);
   const lent = useReferenceChats();
-  const folder = useFolderOnce(plane, place, newest(touches));
-  const open = useOpenChatsFor(plane, touches);
+  const folderHeld = useState<FolderHeld>();
+  const chatsHeld = useState<ChatsHeld>();
+  const found = folderOf(folderHeld[0], plane, place);
+  const known = chatsOf(chatsHeld[0], plane);
+  // **Drawn again only for a touch it acts on** (#4730): every touch while it does not know where
+  // its branch is or which chat touched, since each may ask again, and once it does, only those
+  // inside its branch. A chat working elsewhere draws nothing here.
+  const keeps = useCallback(
+    (touch: Touch) => {
+      if (found === undefined) return true;
+      const chat = known.find((one) => one.session === touch.session);
+      return chat === undefined || touchedInside(touch, chat, found) !== undefined;
+    },
+    [found, known],
+  );
+  const touches = useHeldTouches(store, plane, keeps);
+  const folder = useFolderOnce(plane, place, newest(touches), folderHeld);
+  const open = useOpenChatsFor(plane, touches, chatsHeld);
   const named =
     lent === undefined || lent.plane !== plane
       ? open
@@ -219,7 +244,10 @@ function useTouchingHere(plane: PlaneId, place: Place): Touching {
           ...chat,
           name: lent.chats.find((one) => one.session === chat.session)?.name ?? chat.name,
         }));
-  return touchingIn(touches, named, folder);
+  const key = branchKey(place);
+  return touchingOf(store, plane, (now, of) =>
+    of === key ? touchingIn(now, named, folder) : undefined,
+  );
 }
 
 /** How long after an ask that found nothing a touch asks again (#1605): long enough that a chat
@@ -232,6 +260,19 @@ function newest(touches: Touches): number | undefined {
   return touches.length === 0 ? undefined : Math.max(...touches.map((one) => one.at));
 }
 
+/** Where a branch was found on disk, of the branch `key` names, and when it was asked. */
+type FolderHeld = { key: string; folder?: string; at: number };
+
+/** Which branch of which project `place` is, as {@link FolderHeld} keys it. */
+function folderKey(plane: PlaneId, { workspace, repo, piece }: Place): string {
+  return `${String(plane)}\n${workspace}\n${repo}\n${piece ?? ""}`;
+}
+
+/** Where `held` says `place`'s branch is; nothing while it is unknown or could not be found. */
+function folderOf(held: FolderHeld | undefined, plane: PlaneId, place: Place): string | undefined {
+  return held?.key === folderKey(plane, place) ? held.folder : undefined;
+}
+
 /** Where `place`'s branch is on disk, asked once a touch was heard (`touched`, the newest's time);
  *  nothing while it is unknown or when the core could not say. A lookup that could not say is
  *  asked again on a touch {@link ASK_AGAIN_MS} or more after it. */
@@ -239,10 +280,10 @@ function useFolderOnce(
   plane: PlaneId,
   place: Place,
   touched: number | undefined,
+  [held, setHeld]: [FolderHeld | undefined, (held: FolderHeld) => void],
 ): string | undefined {
   const { workspace, repo, piece } = place;
-  const key = `${String(plane)}\n${workspace}\n${repo}\n${piece ?? ""}`;
-  const [held, setHeld] = useState<{ key: string; folder?: string; at: number }>();
+  const key = folderKey(plane, place);
   const known = held?.key === key;
   const due =
     touched !== undefined &&
@@ -270,16 +311,19 @@ function useFolderOnce(
     return () => {
       gone = true;
     };
-  }, [due, key, plane, workspace, repo, piece]);
+  }, [due, key, plane, workspace, repo, piece, setHeld]);
   return known ? held.folder : undefined;
 }
 
 /** The project's open chats, asked again when `touches` names a chat not yet known: at once for
  *  a new set of such chats, and for the same set on a touch {@link ASK_AGAIN_MS} or more after
  *  the last ask, since a chat can touch a file before the list has it. */
-function useOpenChatsFor(plane: PlaneId, touches: Touches): readonly OpenChat[] {
-  const [held, setHeld] = useState<{ plane: PlaneId; chats: readonly OpenChat[] }>();
-  const chats = held?.plane === plane ? held.chats : NO_CHATS;
+function useOpenChatsFor(
+  plane: PlaneId,
+  touches: Touches,
+  [held, setHeld]: [ChatsHeld | undefined, (held: ChatsHeld) => void],
+): readonly OpenChat[] {
+  const chats = chatsOf(held, plane);
   const strangers = touches.filter((one) => !chats.some((chat) => chat.session === one.session));
   const unknown = [...new Set(strangers.map((one) => one.session))].sort((a, b) => a - b).join(",");
   const touched = newest(strangers);
@@ -302,8 +346,16 @@ function useOpenChatsFor(plane: PlaneId, touches: Touches): readonly OpenChat[] 
     return () => {
       gone = true;
     };
-  }, [plane, unknown, touched]);
+  }, [plane, unknown, touched, setHeld]);
   return chats;
+}
+
+/** The open chats of the project `plane`, as last asked. */
+type ChatsHeld = { plane: PlaneId; chats: readonly OpenChat[] };
+
+/** The open chats `held` lists of `plane`: none of another project's. */
+function chatsOf(held: ChatsHeld | undefined, plane: PlaneId): readonly OpenChat[] {
+  return held?.plane === plane ? held.chats : NO_CHATS;
 }
 
 const NO_CHATS: readonly OpenChat[] = [];

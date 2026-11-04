@@ -130,6 +130,8 @@ fn a_changed_runner_or_operator_key_is_told_to_the_link_as_a_changed_key() {
 #[cfg(unix)]
 #[test]
 fn a_workspace_can_run_its_chats_on_a_cluster_pool_and_the_setting_offers_it() {
+    // A change of Runs on rechecks the marks other tests read (#4591).
+    let _marks = crate::notheld::rechecking();
     let config = tempfile::tempdir().unwrap();
     a_cluster_pool_kept(config.path());
     let plane = Path::new("/planes/a");

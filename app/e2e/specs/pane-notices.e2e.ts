@@ -4,6 +4,7 @@
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { pressAndStart, pressOnly } from "../opening.js";
+import { roomForTwoPanes } from "../paneRoom.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
@@ -224,6 +225,12 @@ async function raise(
       const theApps = [...stack.children].find(
         (one) => (one as HTMLElement).dataset.raised !== "pane-notices.e2e",
       );
+      // Each hand-drawn part takes the classes the built stylesheet keys it on (#4351).
+      for (const one of [box, ...box.querySelectorAll("[data-scope], [data-part]")]) {
+        const { scope, part } = (one as HTMLElement).dataset;
+        if (scope) one.classList.add(`ds-${scope}`);
+        if (part) one.classList.add(`dp-${part}`);
+      }
       stack.insertBefore(box, theApps ?? null);
       return true;
     },
@@ -574,6 +581,9 @@ describe("a Notice in a pane", () => {
       },
       { timeout: 20_000, interval: 250, timeoutMsg: "the window never stopped resizing" },
     );
+    // Two panes side by side, never one folded to a rail (#4766): what the window leaves the
+    // panes varies by runner, so it is widened by any shortfall.
+    await roomForTwoPanes();
   }
 
   for (const pane of [0, 1]) {
@@ -1289,6 +1299,12 @@ describe("the Ask persona dialog", () => {
       dialog.append(header, form);
       modal.append(dialog);
       scrim.append(modal);
+      // Each hand-drawn part takes the classes the built stylesheet keys it on (#4351).
+      for (const one of [scrim, ...scrim.querySelectorAll("[data-scope], [data-part]")]) {
+        const { scope, part } = (one as HTMLElement).dataset;
+        if (scope) one.classList.add(`ds-${scope}`);
+        if (part) one.classList.add(`dp-${part}`);
+      }
       document.body.append(scrim);
 
       const box = [

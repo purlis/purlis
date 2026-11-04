@@ -339,9 +339,11 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
     mockIPC((cmd) => (cmd === "skill_grade_scorecard" ? card : null));
     renderCard();
     const table = await screen.findByRole("grid", { name: "Outcome evals of deploy" });
-    const headers = within(table)
-      .getAllByRole("columnheader")
-      .map((one) => one.textContent);
+    // React Aria draws the grid before its columns (#5007): the headers are waited for, not the
+    // grid alone.
+    const headers = (await within(table).findAllByRole("columnheader")).map(
+      (one) => one.textContent,
+    );
     expect(headers).toEqual(["Outcome eval", "The draft", "Without it", "Current version"]);
     const why = screen.getAllByTestId("grade-scorecard-eval-why").map((one) => one.textContent);
     expect(why).toEqual([

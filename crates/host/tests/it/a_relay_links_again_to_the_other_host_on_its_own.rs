@@ -260,6 +260,7 @@ impl<B> Window<B> {
                 kind: ViewKind::Terminal,
                 role: None,
                 rate: None,
+                history: None,
             })
             .await
             .expect("host B opens a view");
@@ -1255,6 +1256,7 @@ impl session::Host for Gated {
                     cols: 80,
                     rows: 24,
                     kind: Some(ViewKind::Terminal),
+                    older: None,
                 }))
             }
             _ => Ok(Answer::Chats(Vec::new())),
@@ -1296,6 +1298,7 @@ async fn what_the_window_changes_while_a_renewed_link_is_carried_over_is_carried
             kind: ViewKind::Terminal,
             role: None,
             rate: None,
+            history: None,
         })
         .await
         .unwrap();
@@ -1353,6 +1356,7 @@ async fn watching_through(b: &Gated, path: &str) -> Window<Gated> {
             kind: ViewKind::Terminal,
             role: None,
             rate: None,
+            history: None,
         })
         .await
         .unwrap();

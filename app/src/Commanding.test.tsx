@@ -231,8 +231,9 @@ describe("the palette reaching what the window can do", () => {
         "New tab",
         "Split right",
         "Split down",
-        "End this pane's chat",
-        "End chat steward 1",
+        "Close this pane",
+        "Close steward 1",
+        "End chat steward 1…",
         "Focus workspace beta",
         "Merge steward 1's branch into its clone",
         "Remove steward 1's branch folder",
@@ -297,13 +298,13 @@ describe("the palette reaching what the window can do", () => {
     await waitFor(() => expect(line).toHaveTextContent("beta"));
   });
 
-  it("closes a chat", async () => {
+  it("ends a chat by its End…, the one row that ends one (#4756)", async () => {
     const { asked } = core();
     render(<App />);
     await openAChat();
 
-    await runFromPalette("end chat steward 1");
-    await answerTheAsk("End chat steward 1");
+    await runFromPalette("end chat steward 1…");
+    await answerTheAsk("End chat steward 1…");
 
     expect(screen.queryAllByTestId("pane")).toEqual([]);
     expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
@@ -311,19 +312,18 @@ describe("the palette reaching what the window can do", () => {
     ]);
   });
 
-  it("closes a pane", async () => {
+  it("closes a pane, asking nothing and ending no chat (#4756)", async () => {
     const { asked } = core();
     render(<App />);
     await openAChat();
     await userEvent.click(screen.getByRole("button", { name: "Split down" }));
     await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 
-    await runFromPalette("end this pane");
-    await answerTheAsk("End this pane's chat");
+    await runFromPalette("close this pane");
 
-    expect(asked.filter(({ cmd }) => cmd === "close_session").map(({ args }) => args)).toEqual([
-      { plane: "/home/dev/plane", session: 2 },
-    ]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getAllByTestId("pane").map((pane) => pane.textContent)).toEqual(["session 1"]);
+    expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
   it("shows the chat that needs you, and says so when none does", async () => {
@@ -481,8 +481,8 @@ describe("one list, two surfaces", () => {
       "New tab",
       "Split right",
       "Split down",
-      "End this pane's chat",
-      "End chat steward 1",
+      "Close this pane",
+      "Close steward 1",
     ]) {
       expect(rows).toContain(words);
       expect(screen.getByRole("button", { name: words })).toBeInTheDocument();

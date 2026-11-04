@@ -399,7 +399,8 @@ The session host's copy of what each chat of a project is doing and its **Needs 
 kept so it outlives the window. While a window holds the project, the window decides each move,
 makes it on its own copy and tells the host, which makes the same move; with no window there, the
 host moves it by the lines the chats' hooks write. A window that holds the project takes it whole
-(ADR 0068, amended for #2194). Not the **Board** of work items, which is derived and never stored.
+(ADR 0068, amended for #2194), with the last few messages each chat's turns ended on, masked,
+which the window's ledger keeps again for the waiting strip (#4709). Not the **Board** of work items, which is derived and never stored.
 _Avoid_: board (unqualified: that is the work items'), state store, snapshot
 
 **Host record**:
@@ -1030,7 +1031,16 @@ _Avoid_: link (unqualified: that is a runner's), channel, subscription
 **Split window**:
 An OS window a project tab was moved into, beside the main window. It holds its own projects,
 and closing it moves them back to the main window with every chat still running.
-_Avoid_: detached tab, pop-out, secondary window
+_Avoid_: detached tab, pop-out, secondary window, tab window (that holds one project's torn-off
+tabs)
+
+**Tab window**:
+An OS window that holds tabs torn off one project's strip: the strip and its panes, with no
+sidebar and no project strip. It belongs to the window that holds the project, its **project
+window**, and never holds a project of its own. Closing it sends its tabs back to the project
+window, behind its front tab, and every chat keeps running. Its last tab leaving closes it, and
+it comes back at the next launch, in its place on screen (#4701, #4768, ADR 0033 as amended).
+_Avoid_: detached tab, pop-out, split window (that holds whole projects)
 
 **Welcome**:
 What a window with no project open shows, always, whatever the machine remembers: three doors
@@ -1185,7 +1195,7 @@ _Avoid_: digest, recap, notification
 
 **Ask**:
 A chat's harness handing control to a human: a permission, a question, a request for values (an
-ACP elicitation, which always elicits a secret), or a nudge. Every
+ACP elicitation or a **Secret ask**, each of which elicits a secret), or a nudge. Every
 harness's own form of it is read into one shape: what it would do, the options as the harness
 offered them, who may answer, its deadline, its risk, a masked one-line summary, and whether it
 elicits a secret. One answer per ask, and the first wins; every later one hears "answered
@@ -1231,12 +1241,23 @@ reading as a chat whose program ended. A new shell still opens, so the operator 
 Nothing on the command line re-arms (ADR 0071).
 _Avoid_: panic button, pause (nothing is resumed on re-arm)
 
-**Shell tab**:
-A tab running the operator's own shell, with no harness and no profile, opened by `New shell`.
-A harness typed into one runs outside purlis's session tracking, so purlis's **shell-tab
-shims** stand first on its `PATH`: the harness still starts, after one line saying so, and the
-tab shows a banner offering to open it as a chat instead (ADR 0062).
-_Avoid_: terminal (for the tab), console, plain chat
+**Shell**:
+The operator's own shell, with no harness and no profile, opened by `New shell`. It follows a
+chat's rules: it takes the focused pane, closing or replacing its pane leaves it running in the
+sidebar, and End… on it asks only Cancel or End. When its program exits, its row goes and its
+pane is left empty. A harness typed into one runs outside purlis's session tracking, so
+purlis's **shell shims** stand first on its `PATH`: the harness still starts, after one line
+saying so, and its pane shows a banner offering to open it as a chat instead (ADR 0062, amended
+2026-11-02).
+_Avoid_: shell tab (a chat isn't a tab), terminal (for the shell), console, plain chat
+
+**One-job pane**:
+A pane running a program for one job, a terminal editor opened from a file or a forge login,
+opened as a split beside the focused pane with the keyboard. It has no sidebar row, no grip, no
+close and no swap, though its edges still take a split. When its program exits its split goes
+and the keyboard goes back to the pane it opened from. It is never written to the record (ADR
+0062 and 0081, amended 2026-11-02).
+_Avoid_: shell (for a one-job pane), popup
 
 **Light editor**:
 purlis's one editor, for reading a file of a chat's branch, making a small edit in it and
@@ -1980,6 +2001,26 @@ a built-in skill's name is never taken; a **grading framework** produces **trigg
 A named set of secrets purlis keeps in the system keyring and hands to a command, never to
 the model and never to an extension. Vaults are core.
 _Avoid_: secret store, keychain (as the name of the concept)
+
+**Secret need**:
+A key a persona says its work uses, with a one-line purpose, committed with the persona so every
+teammate's chat knows its name and why. It names a key, never a value, and never which entry
+fills it on anyone's machine.
+_Avoid_: required secret, secret binding, declared secret (in UI text)
+
+**Secret ask**:
+An **Ask** that elicits a secret for one key of a vault: raised by purlis when a command it hands
+secrets to finds the key missing, or by the chat itself whenever its work needs a credential,
+declared or not. Only the person, in the window, answers it, by a new value or a **Linked
+entry**, or declines. The chat hears filled or declined and the key's final name, never a
+value.
+_Avoid_: secret request, credential prompt, missing-secret notice
+
+**Linked entry**:
+A key in one vault that holds no value of its own and reads another vault entry's, so a value
+lives once and a rotation reaches every key linked to it. It lives on one machine, like the
+value it points at.
+_Avoid_: alias, copy, reference (that is a vault provider)
 
 **Forge extension**:
 An extension about a code host's pull requests, merge requests or issues, which reaches the

@@ -24,7 +24,7 @@ use super::settle::{Activity, Settle, activity};
 use super::site::site;
 use super::tree::{FrameAx, NodeKey, Query, Scrub, Snapshot, View, build_kept};
 use super::{
-    Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, Gate, Judge, Limits, Outbound,
+    Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, Gate, Hold, Judge, Limits, Outbound,
     PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
 };
 use crate::WebAddress;
@@ -542,6 +542,13 @@ impl DocumentOrigins {
             .retain(|(on, _), (context, _)| on != session || *context != id);
     }
 
+    /// `frame` starts another document, or moves to another process: whatever origin was kept
+    /// for it, on any session, is of a document it no longer shows. Its origin is read again
+    /// from the new document's own context.
+    fn started(&mut self, frame: &str) {
+        self.kept.retain(|(_, of), _| of != frame);
+    }
+
     /// Every context on `session` is gone: they were cleared, or the session ended.
     fn cleared(&mut self, session: &str) {
         self.kept.retain(|(on, _), _| on != session);
@@ -580,6 +587,10 @@ fn scheme_rest<'a>(address: &'a str, scheme: &str) -> Option<&'a str> {
     let (named, rest) = address.split_once(':')?;
     named.eq_ignore_ascii_case(scheme).then_some(rest)
 }
+
+/// **The most frames whose `sandbox` one act reads** (#4889): as many as a chain of frames
+/// nested in each other may need, and no more however many frames the page shows.
+pub(crate) const FRAME_READS_PER_ACT: usize = 8;
 
 /// Why where a frame's document would send cannot be told.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -982,6 +993,23 @@ impl State {
         self.pages.iter().find(|p| p.target == target)
     }
 
+    /// **Whether `target`'s page is a fresh blank tab** (#4889): its own document is blank,
+    /// and has no web origin, as one no page opened has.
+    fn blank_tab(&self, target: &str) -> bool {
+        let Some(page) = self.page(target) else {
+            return false;
+        };
+        let url = page
+            .frames
+            .get(&page.target)
+            .map_or(page.url.as_str(), |top| top.url.as_str());
+        takes_the_origin_around(url)
+            && matches!(
+                judged_at(page, &page.target, &self.document_origins),
+                Err(Unjudged::Opaque)
+            )
+    }
+
     fn page_mut(&mut self, target: &str) -> Option<&mut Page> {
         self.pages.iter_mut().find(|p| p.target == target)
     }
@@ -1240,6 +1268,7 @@ impl State {
         }
         entry.session = session.to_owned();
         entry.sandboxed = None;
+        self.document_origins.started(frame);
         self.generations += 1;
         let generation = self.generations;
         if let Some(page) = self.page_mut(target)
@@ -1380,6 +1409,16 @@ pub(crate) struct Inner {
     worlds: Worlds,
     /// The folder its downloads are held in, once it was given one (#2020).
     held_in: Mutex<Option<std::path::PathBuf>>,
+    /// The login whose holder is told once its page is back on its page's origin (#4995).
+    back: Mutex<Option<Back>>,
+}
+
+/// **A login whose page is to leave its form's origin** (#4995): the page purlis opened for it,
+/// the form's origin, and who is told.
+struct Back {
+    target: String,
+    form: String,
+    hold: Arc<dyn Hold>,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -1503,6 +1542,7 @@ impl Browser {
             following: Mutex::new(None),
             worlds: Worlds::default(),
             held_in: Mutex::new(None),
+            back: Mutex::new(None),
         });
         Screencast::start(&inner);
         if inner.judge.is_some() {
@@ -1771,18 +1811,55 @@ impl Browser {
 
     /// The addresses what is typed into the element `written` names goes to: its document's.
     fn addresses_of(&self, written: &Ref) -> Result<Vec<String>, Refusal> {
-        let page = live_ref(&lock(&self.inner.state), written)?.0;
-        self.read_sandboxes(&page);
-        let state = lock(&self.inner.state);
-        let (page, key) = live_ref(&state, written)?;
-        self.known_documents(state.documents_of(&page, &key.frame))
+        let (page, key) = live_ref(&lock(&self.inner.state), written)?;
+        self.read_chain_sandboxes(&page, &key.frame);
+        let (page, documents) = {
+            let state = lock(&self.inner.state);
+            let (page, key) = live_ref(&state, written)?;
+            let documents = state.documents_of(&page, &key.frame);
+            (page, documents)
+        };
+        self.known_documents(&page, documents)
+    }
+
+    /// **Reads the `sandbox` of the frames on the way from `frame` of `target`'s page up to the
+    /// page** that need it ([`Browser::read_sandboxes_of`]): what is in `frame` is judged by
+    /// them alone, so no other frame of the page is read (#4889).
+    fn read_chain_sandboxes(&self, target: &str, frame: &str) {
+        let chain: Vec<String> = {
+            let state = lock(&self.inner.state);
+            let Some(page) = state.page(target) else {
+                return;
+            };
+            let mut chain = Vec::new();
+            let mut at = Some(frame);
+            while let Some(id) = at.filter(|id| *id != page.target)
+                && chain.len() <= page.frames.len()
+            {
+                let Some(frame) = page.frames.get(id) else {
+                    break;
+                };
+                chain.push(id.to_owned());
+                at = frame.parent.as_deref();
+            }
+            chain
+        };
+        self.read_sandboxes_of(target, |id| chain.iter().any(|one| one == id));
+    }
+
+    /// **Reads the `sandbox` of frames of `target`'s page that need it**, wherever in the page
+    /// they are, for an act that may land in any of its documents: at most
+    /// [`FRAME_READS_PER_ACT`] of them, so a page of many frames keeps each act quick; what is
+    /// read stays read, so the next act reads on where this one stopped (#4889).
+    fn read_sandboxes(&self, target: &str) {
+        self.read_sandboxes_of(target, |_| true);
     }
 
     /// **Reads the `sandbox` of the frame element of each blank or srcdoc frame of `target`'s
-    /// page with no word of its own context** ([`Frame::sandboxed`]), where a judge is to say
-    /// where what is in it goes: such a frame is judged by it. A read that fails leaves the
-    /// frame not known.
-    fn read_sandboxes(&self, target: &str) {
+    /// page that `wanted` names, with no word of its own context** ([`Frame::sandboxed`]),
+    /// where a judge is to say where what is in it goes: such a frame is judged by it. At most
+    /// [`FRAME_READS_PER_ACT`] frames are read. A read that fails leaves the frame not known.
+    fn read_sandboxes_of(&self, target: &str, wanted: impl Fn(&str) -> bool) {
         if self.inner.judge.is_none() {
             return;
         }
@@ -1791,10 +1868,12 @@ impl Browser {
             let Some(page) = state.page(target) else {
                 return;
             };
-            page.frames
+            let mut unread: Vec<_> = page
+                .frames
                 .iter()
                 .filter(|(id, frame)| {
                     **id != page.target
+                        && wanted(id)
                         && frame.sandboxed.is_none()
                         && takes_the_origin_around(&frame.url)
                         && state.document_origins.origin(&frame.session, id).is_none()
@@ -1807,7 +1886,10 @@ impl Browser {
                         frame.told,
                     )
                 })
-                .collect()
+                .collect();
+            unread.sort();
+            unread.truncate(FRAME_READS_PER_ACT);
+            unread
         };
         for (id, session, url, told) in wanted {
             let on = Some(session.as_str());
@@ -1843,14 +1925,20 @@ impl Browser {
     /// `documents`, as [`State::documents_of`] answers them: where they are not known, or have
     /// no web origin, and a judge is to say where they may go, nothing can be judged, so nothing
     /// goes (#4472).
+    /// On a fresh blank tab, whose own document has no web origin, there is no page to type
+    /// into, and the refusal says so (#4889).
     fn known_documents(
         &self,
+        target: &str,
         documents: Result<Vec<String>, Unjudged>,
     ) -> Result<Vec<String>, Refusal> {
         match documents {
             Ok(documents) => Ok(documents),
             Err(_) if self.inner.judge.is_none() => Ok(Vec::new()),
             Err(Unjudged::Unread) => Err(Refusal::FrameUnread),
+            Err(Unjudged::Opaque) if lock(&self.inner.state).blank_tab(target) => {
+                Err(Refusal::BlankTab)
+            }
             Err(Unjudged::Opaque) => Err(Refusal::FrameOpaque),
         }
     }
@@ -1869,12 +1957,18 @@ impl Browser {
                 [one] => Some(one.frame.clone()),
                 _ => None,
             });
-        self.read_sandboxes(target);
-        let state = lock(&self.inner.state);
-        self.known_documents(match focused {
-            Some(frame) => state.documents_of(target, &frame),
-            None => state.every_document(target),
-        })
+        match &focused {
+            Some(frame) => self.read_chain_sandboxes(target, frame),
+            None => self.read_sandboxes(target),
+        }
+        let documents = {
+            let state = lock(&self.inner.state);
+            match focused {
+                Some(frame) => state.documents_of(target, &frame),
+                None => state.every_document(target),
+            }
+        };
+        self.known_documents(target, documents)
     }
 
     /// Marks `target`'s page as the one the agent's act is sending to an address, until the
@@ -2087,6 +2181,7 @@ impl Browser {
     fn run(&self, call: Call) -> Result<Answer, Refusal> {
         match call {
             Call::Open { address } => self.open(&address),
+            Call::FindLoginForm { address } => self.find_login_form(&address),
             Call::Navigate { page, address } => {
                 let target = self.target(page.as_ref())?;
                 let session = self.page_session(&target)?;
@@ -3572,7 +3667,7 @@ impl Browser {
             if self.carries_kept_text(target, data) {
                 return Err(Refusal::DragKeptOut);
             }
-            let drops_into = self.known_documents(drops_into.map(<[String]>::to_vec))?;
+            let drops_into = self.known_documents(target, drops_into.map(<[String]>::to_vec))?;
             if let Some(site) = self.sends_to_a_new_site(&drops_into) {
                 return Ok(Some(format!(
                     "nothing was dropped: the drop would have gone to {site}, a site new to this \
@@ -4215,6 +4310,34 @@ impl Drop for Browser {
 }
 
 impl Inner {
+    /// **`hold` is told once page `target` shows a document anywhere but on `form`** (#4995):
+    /// back on its login's page's origin, or elsewhere. In place of any login told before.
+    pub(crate) fn watch_back(&self, target: &str, form: &str, hold: Arc<dyn Hold>) {
+        *lock(&self.back) = Some(Back {
+            target: target.to_owned(),
+            form: form.to_owned(),
+            hold,
+        });
+    }
+
+    /// Page `target`'s own document is now at `address`: a login waiting for that page to leave
+    /// its form's origin has its holder told, once (#4995).
+    fn came_back(&self, target: &str, address: &str) {
+        let here = login::origin_of(address);
+        let told = {
+            let mut back = lock(&self.back);
+            match back.as_ref() {
+                Some(one) if one.target == target && here.as_deref() != Some(&*one.form) => {
+                    back.take()
+                }
+                _ => None,
+            }
+        };
+        if let Some(told) = told {
+            told.hold.back();
+        }
+    }
+
     /// **Its DevTools connection ended** (#2745): unless purlis is stopping the engine, which
     /// tells of it itself, the engine is given a moment to end by itself where its pipe closed,
     /// and ended at once where the connection closed on a message, and whoever waits is told how.
@@ -4393,6 +4516,8 @@ impl Inner {
         }
         let now = Instant::now();
         let mut follow = Vec::new();
+        // The page whose own document changed, and its address (#4995).
+        let mut navigated: Option<(String, String)> = None;
         {
             let mut state = lock(&self.state);
             let params = &event.params;
@@ -4622,8 +4747,29 @@ impl Inner {
                             && let Some(target) = state.page_of_session(session)
                         {
                             lock(&self.devtools_unread).remove(&target);
+                            // A page's own document, where a login waits for it (#4995).
+                            if text("/frame/id").as_deref() == Some(target.as_str()) {
+                                navigated = Some((target, text("/frame/url").unwrap_or_default()));
+                            }
                         }
                         state.frame_seen(session, &params["frame"], Seen::Navigated);
+                    }
+                }
+                // A frame that starts another document has its origin read again from that
+                // document's own context. A move within the same document keeps it.
+                "Page.frameStartedLoading" => {
+                    if let Some(frame) = text("/frameId") {
+                        state.document_origins.started(&frame);
+                    }
+                }
+                "Page.frameStartedNavigating"
+                    if !matches!(
+                        text("/navigationType").as_deref(),
+                        Some("sameDocument" | "historySameDocument")
+                    ) =>
+                {
+                    if let Some(frame) = text("/frameId") {
+                        state.document_origins.started(&frame);
                     }
                 }
                 // purlis's own worlds, as the engine tells of them (#2138).
@@ -4755,6 +4901,9 @@ impl Inner {
             {
                 page.settle.observe(session, seen, now);
             }
+        }
+        if let Some((target, address)) = navigated {
+            self.came_back(&target, &address);
         }
         self.changed.notify_all();
         for step in follow {

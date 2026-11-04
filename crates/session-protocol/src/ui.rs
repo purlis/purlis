@@ -302,6 +302,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "start_chat_here",
     "open_session",
     "open_shell_in_branch",
+    "open_one_job_shell",
     "first_task_run",
     "resume_session",
     "retry_chat_that_did_not_start",
@@ -328,6 +329,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A question's trail, opened from its line in the Activity above (#4567).
     "question_trail",
     "task_question",
+    // What an asking chat answered a question the person had open (#4566).
+    "task_question_answered",
     // Answers as the person.
     "answer_task_question",
     // What stands and what waits: the person's and every chat's, so never a link's to read.
@@ -359,6 +362,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Whether this desktop sends a persona's tool its vault values on a pool's runner (#2047):
     // the person's answer alone. No chat allows its own tool.
     "answer_pool_tool",
+    // A Secret ask (#5068, ADR 0109): only the person, in the window, fills a secret or
+    // declines it. No chat, relayed link or other client answers one.
+    "answer_secret_ask",
     // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
     // browser a site.
     "allow_browser_sites",
@@ -784,6 +790,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_sizes",
     "pool_setup_skip",
     "pool_setup_wake",
+    // Try it starts a real chat on a pool on the person's press, and keeps that it started.
+    "pool_setup_try",
+    // And only that press's own Cancel stops it (#4976).
+    "pool_setup_try_cancel",
     "pool_setup_open_docker",
     "add_docker_pool",
     "remove_docker_pool",
@@ -1188,6 +1198,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "memory_unarchive",
     "move_projects",
     "move_their_agents_md_aside",
+    "move_to_window",
     "open_chat_tab",
     "open_local_project",
     "open_plane",
@@ -1221,6 +1232,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "plane_saving",
     "plane_sidebar",
     "planes_to_restore",
+    "press_elsewhere",
     "project_extensions",
     "project_icons_drawn",
     "project_saving_in_force",
@@ -1303,6 +1315,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "stale_clones",
     "start_options",
     "stopping_chats",
+    "tab_window_handed",
+    "tab_windows_back",
     "take_repos",
     "task_branch_merge_question",
     "task_changes",

@@ -1218,6 +1218,8 @@ pub struct Store {
     pub browsers: BrowserLimits,
     /// The flags turned on on this machine (#2764): each off until turned on.
     pub flags: Flags,
+    /// Where each tab window was on screen (#4768, [`places`]).
+    pub places: Vec<Place>,
 }
 
 /// **The browser limits set on this machine** (#2023): `browsers.per_project`,
@@ -1685,6 +1687,68 @@ impl Store {
         }
     }
 
+    /// **Sets a workspace of `plane` that isn't in `there` and names a pool to This machine**
+    /// (#4591). Answers whether anything changed.
+    ///
+    /// A folder removed or renamed outside purlis leaves its setting under a name nothing has,
+    /// and a workspace made under that name later would take a pool up unasked. So such a name
+    /// never names a pool again: one that names This machine stays as it is, and either keeps a
+    /// folder that comes back on this machine, whatever the project names. What a chat on a pool
+    /// left, its record and its branches still owed, stays: a put-back settles it (#4590).
+    pub fn tidy_workspaces(&mut self, plane: &Path, there: &[String]) -> bool {
+        let Some(entry) = self.recents.iter_mut().find(|one| one.plane == plane) else {
+            return false;
+        };
+        let gone: Vec<String> = entry
+            .chats_run_on
+            .keys()
+            .filter(|workspace| !there.contains(workspace))
+            .cloned()
+            .collect();
+        for workspace in &gone {
+            entry.chats_run_on.remove(workspace);
+            entry.chats_run_here.insert(workspace.clone());
+        }
+        !gone.is_empty()
+    }
+
+    /// **The pools `plane`'s settings run a chat of one of its `workspaces` on** (#4591): each a
+    /// workspace names, and the project's while one of `workspaces` follows it. A project's pool
+    /// nothing follows runs nothing. `None` is a list of workspaces that could not be read, and
+    /// the project's pool counts then.
+    pub fn pools_named(&self, plane: &Path, workspaces: Option<&[String]>) -> BTreeSet<String> {
+        let Some(entry) = self.recent(plane) else {
+            return BTreeSet::new();
+        };
+        let mut named: BTreeSet<String> = entry.chats_run_on.values().cloned().collect();
+        let followed = |workspaces: &[String]| {
+            workspaces.iter().any(|workspace| {
+                self.chat_place(plane, workspace, None).level == PlaceLevel::Project
+            })
+        };
+        if let Some(pool) = &entry.project_chats_run_on
+            && workspaces.is_none_or(followed)
+        {
+            named.insert(pool.clone());
+        }
+        named
+    }
+
+    /// **Whether `workspace` of `plane` has something on `pool` still to ask about** (#4591): a
+    /// chat kept there, or branches still owed from there (#4590).
+    pub fn ran_on(&self, plane: &Path, workspace: &str, pool: &str) -> bool {
+        self.recent(plane).is_some_and(|entry| {
+            entry
+                .chats_on_pools
+                .values()
+                .any(|chat| chat.pool == pool && chat.workspace == workspace)
+                || entry
+                    .branches_to_fetch
+                    .get(pool)
+                    .is_some_and(|owed| owed.contains(workspace))
+        })
+    }
+
     /// What `workspace` of `plane` itself says of where its chats run (#4536).
     pub fn workspace_place(&self, plane: &Path, workspace: &str) -> WorkspacePlace {
         let Some(entry) = self.recent(plane) else {
@@ -1997,6 +2061,7 @@ impl Store {
         for window in &mut self.windows {
             window.active = window.active.min(window.planes.len() - 1);
         }
+        self.places.retain(|place| place.plane != plane);
         self.recents.len() != had
     }
 
@@ -2242,6 +2307,28 @@ pub struct Loaded {
     /// differently: content charter could read and did not understand is replaced, and a file
     /// charter could not read is left exactly where it is.
     pub unreadable: Option<String>,
+}
+
+/// **The workspaces of the plane at `plane`, where the list can be trusted to say what is gone**
+/// (#4591).
+///
+/// `None` where it can't: a plane with no `workspaces/` folder, one whose entries the filesystem
+/// would not all describe, and one with a rename under way, whose folder has moved before its
+/// settings are carried ([`crate::wscmd::rename::in_flight`]).
+pub fn workspaces_surely_there(plane: &Path) -> Option<Vec<String>> {
+    let folder = std::fs::symlink_metadata(plane.join("workspaces")).ok()?;
+    if !folder.is_dir() || crate::wscmd::rename::in_flight(plane).is_some() {
+        return None;
+    }
+    let (names, unread) = crate::workspaces::Plane::open(plane)
+        .read_workspaces()
+        .ok()?;
+    // Asked again: a rename that began after the first look moves its folder before it carries
+    // anything, and it writes its journal before either.
+    if crate::wscmd::rename::in_flight(plane).is_some() {
+        return None;
+    }
+    unread.is_empty().then_some(names)
 }
 
 /// Everything charter kept outside a plane, with whatever it would not take back named.
@@ -2754,6 +2841,7 @@ fn load(doc: &serde_json::Value, dropped: &mut Vec<Dropped>) -> Store {
             .and_then(crate::updates::IsoWeek::named),
         browsers: browsers_of(doc.get("browsers")),
         flags: flags_of(doc.get("flags")),
+        places: places::places_of(doc.get("tabWindows")),
     }
 }
 
@@ -3072,6 +3160,9 @@ struct OnDisk {
     /// Left out while no flag is on, for the same reason (#2764).
     #[serde(skip_serializing_if = "FlagsOnDisk::is_unset")]
     flags: FlagsOnDisk,
+    /// Left out while no tab window has a place, for the same reason (#4768).
+    #[serde(rename = "tabWindows", skip_serializing_if = "Vec::is_empty")]
+    tab_windows: Vec<places::PlaceOnDisk>,
 }
 
 #[derive(serde::Serialize)]
@@ -3199,6 +3290,11 @@ impl From<&Store> for OnDisk {
             flags: FlagsOnDisk {
                 skill_studio: store.flags.skill_studio,
             },
+            tab_windows: store
+                .places
+                .iter()
+                .filter_map(places::PlaceOnDisk::of)
+                .collect(),
             recents: store
                 .recents
                 .iter()
@@ -3269,6 +3365,9 @@ impl From<&Store> for OnDisk {
 /// Two attributes rather than `cfg(all(test, unix))`, because cargo-mutants recognises test
 /// code by a bare `#[cfg(test)]`: under the combined form it mutated this module's own
 /// helpers and reported a changed fixture as untested production code.
+mod places;
+pub use places::{MOST_PLACES, Place};
+
 #[cfg(test)]
 #[cfg(unix)]
 mod tests;

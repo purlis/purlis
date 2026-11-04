@@ -35,6 +35,7 @@ fn login_on(page: &str, origin: &str) -> Login {
         password: PASSWORD.to_owned().into(),
         only_if_asked: false,
         suggested: false,
+        back_to: None,
     }
 }
 
@@ -62,7 +63,7 @@ fn a_declared_login_goes_through_and_no_value_reaches_the_agent() {
     };
     open(&browser, "frames.html");
     let ended = browser
-        .log_in(&login_at("http://fixture.test"), &|| Ok(()))
+        .log_in(&login_at("http://fixture.test"), binds())
         .expect("the login runs");
     let answer = ended.outcome.expect("the login goes through");
     assert_eq!(ended.driver, Driver::Agent);
@@ -115,7 +116,7 @@ fn a_login_that_does_not_go_through_is_cleared_and_its_toggle_shows_nothing() {
     let ended = browser
         .log_in(
             &login_on("login-stays.html", "http://fixture.test"),
-            &|| Ok(()),
+            binds(),
         )
         .expect("the login runs");
     match ended.outcome {
@@ -144,7 +145,7 @@ fn a_login_on_another_origin_fills_nothing() {
         return;
     };
     let ended = browser
-        .log_in(&login_at("https://shop.example.test"), &|| Ok(()))
+        .log_in(&login_at("https://shop.example.test"), binds())
         .expect("the login runs");
     match ended.outcome {
         Err(Refusal::NotLoggedIn(why)) => assert!(why.contains("nothing was filled"), "{why}"),
@@ -165,7 +166,7 @@ fn a_login_on_a_page_that_redefines_finding_and_focusing_a_field_goes_through() 
     let ended = browser
         .log_in(
             &login_on("login-redefined.html", "http://fixture.test"),
-            &|| Ok(()),
+            binds(),
         )
         .expect("the login runs");
     let answer = ended.outcome.expect("the login goes through");
@@ -178,4 +179,9 @@ fn a_login_on_a_page_that_redefines_finding_and_focusing_a_field_goes_through() 
     let shown = snapshot(&browser);
     assert!(shown.contains("Account"), "the account page shows");
     assert!(!holds_a_value(&shown), "the account page shows no value");
+}
+
+/// A holder that binds, and is told nothing.
+fn binds() -> std::sync::Arc<dyn purlis_browser_engine::drive::Hold> {
+    std::sync::Arc::new(|| -> Result<(), String> { Ok(()) })
 }

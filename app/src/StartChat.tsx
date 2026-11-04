@@ -179,6 +179,7 @@ export function StartChat({
   onFix,
   onOpenSettings,
   runsOn,
+  pool,
   poolUnavailable,
   onPoolSetup,
   onCancel,
@@ -255,6 +256,9 @@ export function StartChat({
   /** Where a new chat here would run and which level says so (#4536): the Runs on row. Absent,
    *  no row is drawn. */
   runsOn?: StartRunsOn;
+  /** A pool chosen on the Runs on row as the picker opens, where the row offers it: Pool setup's
+   *  Open a chat (#4483). The person can still choose otherwise, and presses Start. */
+  pool?: string;
   /** The pool the last attempt was to run on, where it is gone, stopped or not reached: beside
    *  `trouble`, the picker offers Try again, Pool setup and Run on this machine this once. */
   poolUnavailable?: string;
@@ -393,7 +397,11 @@ export function StartChat({
   // **Runs on, for this start alone** (#4536): the levels' answer until the person picks a pool
   // or this machine here. It never writes a setting, and is not remembered between chats. A chat
   // at the project's root runs here, so it is offered no choice.
-  const [runsOnChoice, setRunsOnChoice] = useState(AS_SET);
+  const [runsOnChoice, setRunsOnChoice] = useState(() =>
+    pool !== undefined && runsOn !== undefined && !runsOn.at_root && runsOn.pools.includes(pool)
+      ? pool
+      : AS_SET,
+  );
   const runsOnPick: RunsOnPick | undefined =
     runsOn === undefined || runsOn.at_root || runsOnChoice === AS_SET
       ? undefined
@@ -998,6 +1006,18 @@ export function runsOnReason(runsOn: StartRunsOn): string {
 }
 
 /**
+ * **What a workspace's first chat on `pool` does** (#4591), said before anything is sent there:
+ * nothing where the chat runs on this machine, or where the workspace has run on that pool.
+ */
+export function firstOnPoolSaid(runsOn: StartRunsOn, pool: string | null): string | undefined {
+  if (pool === null || runsOn.at_root || runsOn.ran_on.includes(pool)) return undefined;
+  return (
+    `This is this workspace's first chat on pool ${pool}. Its code is copied to that pool's ` +
+    "runner. The chat's work comes back here when it ends."
+  );
+}
+
+/**
  * **The Runs on row** (#4536, the person's rulings of 2026-11-01): where this chat would run and
  * which level says so, and a pool or this machine for this start alone. The levels are this
  * start, then the workspace, then the project, then this machine, and the most specific wins. A
@@ -1037,10 +1057,13 @@ function RunsOnRow({
     { value: HERE, label: "This machine" },
     ...runsOn.pools.map((pool) => ({ value: pool, label: `Pool ${pool}` })),
   ];
-  const why =
+  const chosen = choice === AS_SET ? runsOn.pool : choice === HERE ? null : choice;
+  const said =
     choice === AS_SET
       ? runsOnReason(runsOn)
-      : `${capital(poolSaid(choice === HERE ? null : choice))} for this start only. No setting changes.`;
+      : `${capital(poolSaid(chosen))} for this start only. No setting changes.`;
+  const first = firstOnPoolSaid(runsOn, chosen);
+  const why = first === undefined ? said : `${said} ${first}`;
   return (
     <>
       <Select

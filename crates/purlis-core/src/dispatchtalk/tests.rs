@@ -885,25 +885,39 @@ fn the_person_answers_first_and_the_asking_chat_s_answer_is_refused_saying_so() 
 }
 
 #[test]
-fn the_asking_chat_answers_first_and_the_person_is_told_who_answered() {
+fn the_asking_chat_answers_first_and_the_person_s_later_word_overrides_it() {
+    // #4566: the person keeps the last say (spec #4551 story 37) when they say otherwise to
+    // the chat's answer they were shown, and the chat's answer stands as the chat's
+    // (`override_tests` holds the rest). A plain answer after it is still refused.
     let mut talk = asked();
     talk.answer(TASK, ASKER, "check the queue", an_answer())
         .expect("answered");
 
-    let refused = the_person_answers(&mut talk, "The first one.");
+    assert_eq!(
+        talk.person_overrides(
+            TASK,
+            "check the queue",
+            Some(ASKER),
+            1,
+            "Which queue?",
+            "The first one."
+        ),
+        Ok(None)
+    );
 
     assert_eq!(
-        refused,
-        Err(
-            "The chat 'steward 3' answered that question of 'check the queue' first, so \
-             your answer was not sent. What it answered is in the asking chat's Activity."
-                .to_owned()
-        )
+        talk.answered(TASK),
+        Some(&an_answer()),
+        "the chat's, unmarked"
     );
-    // The chat's answer stands, unmarked, and neither chat is told the person said a thing.
-    assert_eq!(talk.answered(TASK), Some(&an_answer()));
-    assert!(handed(&mut talk, TASK).is_empty());
-    assert!(handed(&mut talk, ASKER).is_empty());
+    assert!(matches!(
+        handed(&mut talk, TASK).as_slice(),
+        [PersonSaid::Overrode { .. }]
+    ));
+    assert!(matches!(
+        handed(&mut talk, ASKER).as_slice(),
+        [PersonSaid::OverrodeFor { .. }]
+    ));
 }
 
 #[test]

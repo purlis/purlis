@@ -3072,6 +3072,7 @@ fn served_recorded(asker: &Asker, wanted: Wanted) -> (Vec<Frame>, Vec<RunBlocked
                     .push((target.map(str::to_owned), by, times));
             })
         }),
+        None,
     );
     let frames = String::from_utf8(wire.0.lock().unwrap().clone())
         .unwrap()
@@ -3855,6 +3856,7 @@ fn shop_login_armed(vault: &str, key: &str, user: Option<&str>) -> crate::sandbo
             login: Some(Login {
                 url: "https://shop.example.test/login".into(),
                 origin: "https://shop.example.test".into(),
+                form: None,
             }),
             ..tool
         },
@@ -4665,7 +4667,8 @@ fn a_login_allowed_now_answers_the_identity_its_values_are_read_by() {
     .unwrap();
     let mut asker = asker(project.path(), Some("devops"));
     asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("team", "TOKEN", None)];
-    let (_, read_by) = login_and_identity_for(&asker, "shop-login", false).expect("the login");
+    let (_, read_by) =
+        login_and_identity_for(&asker, "shop-login", false, None).expect("the login");
 
     let allowed = login_allowed(&asker, "shop-login", false).expect("allowed");
     assert_eq!(allowed, read_by);
@@ -5160,4 +5163,286 @@ fn a_github_app_tool_whose_mint_is_refused_runs_nothing() {
         "{frames:?}"
     );
     assert_eq!(stdout(&frames), "");
+}
+
+// ----------------------------------------------------------------------------------------
+// a key the vault does not hold is a Secret ask (#5068, #5071, ADR 0109)
+
+/// Every frame the app wrote for `wanted`, served unwrapped and asking `asks`, holding at most
+/// `within`.
+fn served_asking(
+    asker: &Asker,
+    wanted: Wanted,
+    asks: &crate::secrets::ask::Asks,
+    within: Duration,
+) -> Vec<Frame> {
+    let (asker, wanted) = as_tool(asker.clone(), wanted);
+    let (reader, _keep) = held_open();
+    let wire = Wire::default();
+    serve_asking(
+        &asker,
+        wanted,
+        reader,
+        Box::new(wire.clone()),
+        Wrap::Unwrapped,
+        Missing {
+            asks,
+            within,
+            moved: &|| {},
+        },
+    );
+    let bytes = wire.0.lock().unwrap().clone();
+    String::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("every line is a frame"))
+        .collect()
+}
+
+fn a_missing_key(root: &Path) -> Wanted {
+    let mut want = wanted(root, "team", sh(r#"test "$X" = "fr3sh-v4lue" && echo ran"#));
+    want.env = vec!["X=MISSING".into()];
+    want
+}
+
+#[test]
+fn a_run_missing_its_key_waits_on_a_secret_ask_and_runs_with_the_value_filled() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            served_asking(
+                &asker(project.path(), Some("devops")),
+                a_missing_key(project.path()),
+                &asks,
+                Duration::from_secs(60),
+            )
+        });
+        let open = loop {
+            if let Some(one) = asks.open().into_iter().next() {
+                break one;
+            }
+            std::thread::yield_now();
+        };
+        assert_eq!(
+            (
+                open.chats.as_slice(),
+                open.persona.as_str(),
+                open.vault.as_str(),
+                open.key.as_str()
+            ),
+            (&[7][..], "devops", "team", "MISSING")
+        );
+        asks.answer(
+            &Ctx::new(project.path(), Env::of(&[])),
+            open.id,
+            crate::secrets::ask::Answer::Fill("fr3sh-v4lue".to_owned().into()),
+            crate::harness::asks::Answerer::admitted(crate::harness::asks::Admitted::LocalUi)
+                .unwrap(),
+        )
+        .unwrap();
+        run.join().unwrap()
+    });
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "ran\n");
+    assert!(
+        !format!("{frames:?}").contains("fr3sh-v4lue"),
+        "the value never comes back: {frames:?}"
+    );
+}
+
+#[test]
+fn a_run_missing_its_key_that_the_person_declines_hears_declined() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            served_asking(
+                &asker(project.path(), Some("devops")),
+                a_missing_key(project.path()),
+                &asks,
+                Duration::from_secs(60),
+            )
+        });
+        let id = loop {
+            if let Some(one) = asks.open().first() {
+                break one.id;
+            }
+            std::thread::yield_now();
+        };
+        asks.answer(
+            &Ctx::new(project.path(), Env::of(&[])),
+            id,
+            crate::secrets::ask::Answer::Decline,
+            crate::harness::asks::Answerer::admitted(crate::harness::asks::Admitted::LocalUi)
+                .unwrap(),
+        )
+        .unwrap();
+        run.join().unwrap()
+    });
+    assert_eq!(
+        frames.last(),
+        Some(&Frame::Refused {
+            why: "declined team/MISSING".into(),
+            code: 1
+        }),
+        "{frames:?}"
+    );
+}
+
+#[test]
+fn a_run_missing_its_key_that_nobody_answers_in_time_ends_waiting_on_the_person() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let frames = served_asking(
+        &asker(project.path(), Some("devops")),
+        a_missing_key(project.path()),
+        &asks,
+        Duration::ZERO,
+    );
+    assert_eq!(
+        frames.last(),
+        Some(&Frame::Refused {
+            why: "waiting on you for team/MISSING; retry once answered".into(),
+            code: WAITING_ON_THE_PERSON
+        }),
+        "{frames:?}"
+    );
+    assert!(
+        frames
+            .iter()
+            .any(|frame| matches!(frame, Frame::Note(note) if note.contains("asked the person"))),
+        "{frames:?}"
+    );
+    assert_eq!(asks.open().len(), 1, "the ask stays open");
+}
+
+#[test]
+fn a_run_missing_its_key_where_nothing_asks_is_refused_as_before() {
+    let project = project();
+    let frames = served(
+        &asker(project.path(), Some("devops")),
+        a_missing_key(project.path()),
+    );
+    assert!(
+        matches!(frames.last(), Some(Frame::Refused { code: 1, .. })),
+        "{frames:?}"
+    );
+}
+
+// ----------------------------------------------------------------------------------------
+// a browser login whose vault entry is missing is a Secret ask too (#5074, ADR 0109)
+
+/// Chat 7's `shop-login`, its password under `SHOP_PASS`, which vault `team` does not hold.
+fn a_login_missing_its_password(root: &Path) -> Asker {
+    let mut asker = asker(root, Some("devops"));
+    asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("team", "SHOP_PASS", None)];
+    asker
+}
+
+/// `shop-login` read for `asker`, asking `asks` and holding at most `within`.
+fn login_asking(
+    asker: &Asker,
+    asks: &crate::secrets::ask::Asks,
+    within: Duration,
+) -> Result<purlis_session_protocol::browsing::LogIn, String> {
+    let missing = Missing {
+        asks,
+        within,
+        moved: &|| {},
+    };
+    login_and_identity_for(asker, "shop-login", false, Some(&missing)).map(|(login, _)| login)
+}
+
+fn the_window() -> crate::harness::asks::Answerer {
+    crate::harness::asks::Answerer::admitted(crate::harness::asks::Admitted::LocalUi).unwrap()
+}
+
+#[test]
+fn a_browser_login_missing_its_password_waits_on_a_secret_ask_and_logs_in_with_the_value_filled() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let asker = a_login_missing_its_password(project.path());
+    let login = std::thread::scope(|scope| {
+        let read = scope.spawn(|| login_asking(&asker, &asks, Duration::from_secs(60)));
+        let open = loop {
+            if let Some(one) = asks.open().into_iter().next() {
+                break one;
+            }
+            std::thread::yield_now();
+        };
+        assert_eq!(
+            (
+                open.chats.as_slice(),
+                open.persona.as_str(),
+                open.vault.as_str(),
+                open.key.as_str(),
+                open.tool.as_deref()
+            ),
+            (&[7][..], "devops", "team", "SHOP_PASS", Some("shop-login"))
+        );
+        asks.answer(
+            &Ctx::new(project.path(), Env::of(&[])),
+            open.id,
+            crate::secrets::ask::Answer::Fill("sh0p-pass".to_owned().into()),
+            the_window(),
+        )
+        .unwrap();
+        read.join().unwrap()
+    })
+    .expect("the login proceeds once filled");
+    assert_eq!(login.address, "https://shop.example.test/login");
+    assert_eq!(login.password.expose(), "sh0p-pass");
+}
+
+#[test]
+fn a_browser_login_missing_its_password_that_the_person_declines_fills_nothing() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let asker = a_login_missing_its_password(project.path());
+    let why = std::thread::scope(|scope| {
+        let read = scope.spawn(|| login_asking(&asker, &asks, Duration::from_secs(60)));
+        let id = loop {
+            if let Some(one) = asks.open().first() {
+                break one.id;
+            }
+            std::thread::yield_now();
+        };
+        asks.answer(
+            &Ctx::new(project.path(), Env::of(&[])),
+            id,
+            crate::secrets::ask::Answer::Decline,
+            the_window(),
+        )
+        .unwrap();
+        read.join().unwrap()
+    })
+    .unwrap_err();
+    assert!(why.contains("declined team/SHOP_PASS"), "{why}");
+    assert!(why.contains("nothing was filled"), "{why}");
+}
+
+#[test]
+fn a_browser_login_missing_its_password_that_nobody_answers_in_time_waits_on_the_person() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let asker = a_login_missing_its_password(project.path());
+    let why = login_asking(&asker, &asks, Duration::ZERO).unwrap_err();
+    assert!(
+        why.contains("waiting on you for team/SHOP_PASS; retry once answered"),
+        "{why}"
+    );
+    assert_eq!(asks.open().len(), 1, "the ask stays open");
+}
+
+#[test]
+fn a_browser_login_missing_its_password_where_nothing_asks_is_refused_as_before() {
+    let project = project();
+    let why = login_for(
+        &a_login_missing_its_password(project.path()),
+        "shop-login",
+        false,
+    )
+    .unwrap_err();
+    assert!(why.contains("did not give shop-login's login"), "{why}");
 }

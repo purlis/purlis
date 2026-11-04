@@ -16,7 +16,13 @@ own, as long as it keeps the contract below.
   registry sign-in pulls both architectures and checks the signature and the provenance, and a
   release does not name an image that fails. An image that fails its checks is never pushed.
   An image can still be left in the package untagged and unsigned when a later step fails, such
-  as the other architecture's build; pull only a digest a release names. If the
+  as the other architecture's build; pull only a digest a release names. The `image leftovers`
+  workflow lists such images once a day, three days after their run failed (#4930), and a person
+  deletes them in the package's settings; the run's summary links each one. It lists only an
+  untagged image that the failed run recorded as its own push and that no tag reaches, never an
+  index's own images, signatures or attestations, and deletes nothing itself: deleting with a
+  workflow's token would need the repository to hold the Admin role on the package, which every
+  job holding `packages: write` would then hold too. If the
   package is ever deleted, every run stops until someone pushes a new one by hand and makes it
   public in its settings.
 - **What:** `linux/amd64` and `linux/arm64` under one index. Each architecture is built on

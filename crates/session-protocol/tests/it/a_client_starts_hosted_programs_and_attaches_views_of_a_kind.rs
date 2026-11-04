@@ -83,6 +83,7 @@ impl Host for OneProgram {
                     cols: 80,
                     rows: 24,
                     kind: Some(ViewKind::Terminal),
+                    older: None,
                 }))
             }
             Command::DetachView { program, view } if program == SHELL => {
@@ -210,6 +211,7 @@ async fn an_attach_from_a_client_a_version_behind_is_a_terminal_view() {
                 kind: ViewKind::Terminal,
                 role: None,
                 rate: None,
+                history: None,
             },
             Command::DetachView {
                 program: SHELL.into(),

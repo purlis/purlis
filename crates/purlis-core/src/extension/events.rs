@@ -290,8 +290,37 @@ pub(super) fn declares(manifest: &super::Manifest) -> Vec<String> {
     lines
 }
 
+/// **An offer of a view** (#4769, ADR 0043 as amended 2026-11-03): an extension that heard an
+/// event may answer that one of its own declared views is worth a look, and nothing more. It
+/// opens nothing, takes no pane, tab or focus, and its program is asked nothing until the person
+/// presses Open or Open beside on the window's one quiet note. Where it would go is never the
+/// extension's to say, so it carries no placement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Offered {
+    /// The extension's id.
+    pub extension: String,
+    /// One of the views its manifest declares ([`crate::executor::Executor::tell`] refuses any
+    /// other).
+    pub view: String,
+    /// What the view is about: a persona's name, or empty for the whole plane's view.
+    pub key: String,
+    /// The chat the offer is about, by its number, when the extension named one: its note goes
+    /// on that chat's pane band while the chat is on screen.
+    pub chat: Option<u64>,
+}
+
+/// What telling the extensions that hear an event came back with.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Delivered {
+    /// One sentence, naming the extension, for each that could not be told.
+    pub notes: Vec<String>,
+    /// The views they offered, in the order they were asked.
+    pub offers: Vec<Offered>,
+}
+
 /// Tell every approved extension that hears `event` and is on in `choices`' project about it,
-/// all at once, and answer one note for each that could not be told. See the module docstring.
+/// all at once, and answer one note for each that could not be told, and the views they
+/// offered ([`Offered`]). See the module docstring.
 ///
 /// **Called after the action `event` reports has completed**, by the surface that did it.
 pub fn deliver(
@@ -299,12 +328,12 @@ pub fn deliver(
     config_root: &Path,
     choices: &Choices,
     event: &Event,
-) -> Vec<String> {
+) -> Delivered {
     let kind = event.kind();
     let loaded = super::read(config_root, executor.built_in());
     // An unreadable record approves nothing; the Extensions list is where it is said.
     if loaded.unreadable.is_some() {
-        return Vec::new();
+        return Delivered::default();
     }
     // Only the manifest, to learn who hears it — the fingerprint is re-taken by `tell`, as it
     // is before any program starts.
@@ -320,12 +349,15 @@ pub fn deliver(
         })
         .collect();
     if hearing.is_empty() {
-        return Vec::new();
+        return Delivered::default();
     }
     // No program starts by itself in a project this purlis may not write (FR-24, #826): an
     // extension may write the paths it declares there. Said once, for those that hear it.
     if let Some(why) = choices.plane().and_then(crate::compat::read_only) {
-        return vec![format!("no extension was told: {why}")];
+        return Delivered {
+            notes: vec![format!("no extension was told: {why}")],
+            offers: Vec::new(),
+        };
     }
     std::thread::scope(|scope| {
         let asked: Vec<_> = hearing
@@ -335,20 +367,24 @@ pub fn deliver(
                 (name, told)
             })
             .collect();
-        asked
-            .into_iter()
-            .filter_map(|(name, told)| -> Option<String> {
-                let why = match told.join() {
-                    Ok(Ok(None)) => return None,
+        let mut delivered = Delivered::default();
+        for (name, told) in asked {
+            let why = match told.join() {
+                Ok(Ok(told)) => {
                     // It heard, and wrote outside what it declares: the watch's own sentence,
                     // which names it.
-                    Ok(Ok(Some(overreach))) => return Some(overreach),
-                    Ok(Err(why)) => why,
-                    Err(_) => "purlis's own thread asking it stopped".to_owned(),
-                };
-                Some(format!("{name} missed {}: {why}", happened(event)))
-            })
-            .collect()
+                    delivered.notes.extend(told.overreach);
+                    delivered.offers.extend(told.offer);
+                    continue;
+                }
+                Ok(Err(why)) => why,
+                Err(_) => "purlis's own thread asking it stopped".to_owned(),
+            };
+            delivered
+                .notes
+                .push(format!("{name} missed {}: {why}", happened(event)));
+        }
+        delivered
     })
 }
 

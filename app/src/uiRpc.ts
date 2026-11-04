@@ -214,6 +214,43 @@ export const commands = {
 	 */
 	showWindowHolding: (plane: PlaneId) => __TAURI_INVOKE<string | null>("show_window_holding", { plane }),
 	/**
+	 *  **Move to new window** (`to` null) or **Move to window ▸** (`to` a window of the project,
+	 *  `0` the project window): the `tab`th tab of the asking window, or the pane at `pane` in it
+	 *  (`a` and `b` from the root), goes there as that window's front tab. A new window is made for
+	 *  it; a window there already comes forward. Every window of the project is told what it holds
+	 *  now.
+	 * 
+	 *  **Refused**, saying why and changing nothing, from a window that is not one of the
+	 *  project's, for a tab or pane that is not there, an empty pane, or a window that is not the
+	 *  project's. A window only ever moves its own tabs. Async, as [`crate::windows::move_projects`]
+	 *  is, for its reason: making a window from a synchronous command deadlocks on Windows.
+	 */
+	moveToWindow: (plane: PlaneId, tab: number, pane: string | null, to: number | null) => typedError<MovedTo, string>(__TAURI_INVOKE("move_to_window", { plane, tab, pane, to })),
+	/**
+	 *  **A press on chat `chat` in a project with tab windows** (#4768, ruled on #4701): where
+	 *  another of the project's windows has it in a pane, that window comes forward and shows it
+	 *  there, and its label is answered; a chat is never shown in two windows. Null where no other
+	 *  window has it, and the press is the asking window's.
+	 */
+	pressElsewhere: (plane: PlaneId, chat: number) => typedError<string | null, string>(__TAURI_INVOKE("press_elsewhere", { plane, chat })),
+	/**
+	 *  What this window is a tab window of, and its number there: null for a window that is not
+	 *  one. A tab window asks it once, as it first draws, and draws that project's strip and panes
+	 *  with no sidebar.
+	 */
+	tabWindowHanded: () => __TAURI_INVOKE<{
+	plane: PlaneId,
+	/**  Never `0`, which is the project window. */
+	number: number,
+} | null>("tab_window_handed"),
+	/**
+	 *  **The project window put back `plane`'s tabs** (#4768): each tab window its record names
+	 *  and no window draws yet is made again, in its place on screen where this machine kept one.
+	 *  Answers how many were made. Asked by the window holding the project, once it has drawn the
+	 *  project's tabs; a window that does not hold it makes none.
+	 */
+	tabWindowsBack: (plane: PlaneId) => typedError<number, string>(__TAURI_INVOKE("tab_windows_back", { plane })),
+	/**
 	 *  Makes a NEW project — scaffolds a plane in a directory — **and opens it through the gate**.
 	 * 
 	 *  Two halves, in this order and never the other way round. What is written is
@@ -398,6 +435,7 @@ export const commands = {
 	answerPoolLogin: __WINDOW_ONLY_RESULT,
 	answerBrowserLogin: __WINDOW_ONLY_RESULT,
 	answerPoolTool: __WINDOW_ONLY_RESULT,
+	answerSecretAsk: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
@@ -554,6 +592,7 @@ export const commands = {
 	firstTaskStarted: __WINDOW_ONLY_RESULT,
 	openSession: __WINDOW_ONLY_RESULT,
 	openShellInBranch: __WINDOW_ONLY_RESULT,
+	openOneJobShell: __WINDOW_ONLY_RESULT,
 	closeSession: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Drops a chat's request for the operator until it asks again — the needs-you item's Ignore
@@ -796,9 +835,10 @@ export const commands = {
 	 */
 	openChatTab: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("open_chat_tab", { plane, session })),
 	/**
-	 *  The person sent a task chat's tab back to the Chats list: the tab goes, and the task keeps
-	 *  working. It ends nothing and tells no chat anything. Refused for a chat that is not a task.
-	 *  The record keeps it, so a reloaded window and the next launch draw no tab for it.
+	 *  The person closed a chat's tab, or sent a task's back to the Chats list: the tab goes, and
+	 *  the chat keeps working. It ends nothing, tells no chat anything, and is never refused for an
+	 *  open chat (#4756). The record keeps a task's, so a reloaded window and the next launch draw
+	 *  no tab for it.
 	 */
 	closeChatTab: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("close_chat_tab", { plane, session })),
 	/**
@@ -806,10 +846,14 @@ export const commands = {
 	 *  relaunch puts each split, its sizes, its views and each strip's front tab back, and what is
 	 *  on screen is derived from it (`Chats::looked_at`).
 	 * 
+	 *  **Each window says its own tabs** (#4768): the project window's, or a tab window's, filed
+	 *  under that window whatever window the tabs name, and every other window's stand. A window
+	 *  that is not one of the project's is refused: it cannot report another's tabs.
+	 * 
 	 *  **A press sends its new layout here, in the same call** that shows the chat, so a task the
 	 *  person presses onto is held from that moment and is not ended under them. A layout that
-	 *  names a chat twice, or a chat that is not open, is refused with why, and nothing changes. A
-	 *  window command only: no chat can call it.
+	 *  names a chat twice across the project's windows, or a chat that is not open, is refused
+	 *  with why, and nothing changes. A window command only: no chat can call it.
 	 */
 	windowLayout: (plane: PlaneId, layout: LaidOut) => typedError<null, string>(__TAURI_INVOKE("window_layout", { plane, layout })),
 	/**
@@ -1317,6 +1361,7 @@ export const commands = {
 	activityChat: (plane: PlaneId, key: string) => typedError<number | null, string>(__TAURI_INVOKE("activity_chat", { plane, key })),
 	questionTrail: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
+	taskQuestionAnswered: __WINDOW_ONLY_RESULT,
 	answerTaskQuestion: __WINDOW_ONLY_RESULT,
 	resumeSession: __WINDOW_ONLY_RESULT,
 	/**
@@ -1629,6 +1674,8 @@ export const commands = {
 	poolSetupSizes: __WINDOW_ONLY_RESULT,
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,
+	poolSetupTry: __WINDOW_ONLY_RESULT,
+	poolSetupTryCancel: __WINDOW_ONLY,
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -2725,6 +2772,11 @@ export type AnswerPath =
  *  whose digest is `shown`, with the domain the person typed (#4595).
  */
 { via: "browser-login"; id: number; shown: string } | 
+/**
+ *  `answer_secret_ask` on Secret ask `id` (#5068): Fill with the value typed in the ask's
+ *  masked field, Not now with none.
+ */
+{ via: "secret"; id: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2906,7 +2958,12 @@ export type AskSource =
  *  A browser login a chat suggested, which its persona doesn't declare (#4595): an Allow
  *  lets purlis fill it on the one origin the person confirmed.
  */
-"browser-login";
+"browser-login" | 
+/**
+ *  A key a chat's brokered run found missing from its persona's vault (#5068, ADR 0109):
+ *  answered by a value typed in the window, or Not now.
+ */
+"secret";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -3524,6 +3581,25 @@ export type ChangedIn = {
 	more: number,
 	/**  Why purlis could not read what changed there, where it could not. */
 	unread: string | null,
+};
+
+/**
+ *  **What an asking chat answered a task's question, as the window shows it** (#4566): the line
+ *  a quiz leaves when an agent answered it first, which says who said what and offers the
+ *  person's later word.
+ */
+export type ChatAnsweredShown = {
+	/**  The task, by the name the person sees it under. */
+	task: string,
+	/**  The asking chat that answered, by its name. */
+	from: string,
+	/**  What it answered, masked, **as text**: a chat's own words, never drawn as markup. */
+	said: string,
+	/**
+	 *  The question it answered, in the task's words: what the person's word is held to
+	 *  (`answer_task_question`).
+	 */
+	question: string,
 };
 
 /**
@@ -5095,9 +5171,13 @@ export type ExtensionFacts = {
 	notes: string[],
 };
 
-/**  What `extension-heard` carries: the project whose extensions were just told something. */
+/**
+ *  What `extension-heard` carries: the project whose extensions were just told something, and
+ *  the views they offered while they heard it (#4769).
+ */
 export type ExtensionHeard = {
 	plane: PlaneId,
+	offers: ViewOffered[],
 };
 
 /**  One row of "what has contributed what to this window". */
@@ -6810,10 +6890,15 @@ export type LocalModelRow = {
  *  value: purlis hasn't read one.
  */
 export type LoginShown = {
-	/**  The domain, with a port where it has one, exactly as it's filled: `shop.example.com`. */
+	/**  The domain of the page it opens, with a port where it has one: `shop.example.com`. */
 	domain: string,
 	/**  The page's path on it. */
 	path: string,
+	/**
+	 *  **The host the password is typed on** (#4995), with a port where it has one: the login
+	 *  form's, which the page may have sent the browser to. The domain where they're one.
+	 */
+	form: string,
 	vault: string,
 	user_key?: string | null,
 	key: string,
@@ -6826,6 +6911,10 @@ export type LoginShown = {
 	no_always?: string | null,
 	/**  The persona's chats get the vault too with Always. */
 	vault_too: boolean,
+	/**  **The page the declared login opens now, which this replaces** (#4996). */
+	replaces?: string | null,
+	/**  The host its password is typed on now, with a port where it has one. */
+	replaces_form?: string | null,
 };
 
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
@@ -7182,6 +7271,12 @@ export type MovedChat = {
 	chat: OpenChat,
 	/**  What its tab says after the move: what came back that the person is to look at. */
 	notices: string[],
+};
+
+/**  Where a move landed: the window's number in its project, and its label. */
+export type MovedTo = {
+	window: number,
+	label: string,
 };
 
 /**
@@ -7657,6 +7752,12 @@ export type OpenChat = {
 	 *  `chat-restored` says when it has. `null` for a chat that is open.
 	 */
 	restoring?: RestoringChat | null,
+	/**
+	 *  `true` for a one-job program (#4761): a terminal editor opened from a file or a forge
+	 *  login, drawn as a split beside a pane and gone when it exits. It has no sidebar row and
+	 *  is never recorded. `null` for every other chat.
+	 */
+	one_job?: boolean | null,
 };
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */
@@ -8904,6 +9005,8 @@ export type PoolSetupAction = {
 
 /**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
 export type PoolSetupCheck = {
+	/**  What it checks: `chat`, `signins` or `identity`. */
+	about: string,
 	verdict: string,
 	title: string,
 	more: string | null,
@@ -8915,6 +9018,14 @@ export type PoolSetupCheck = {
  */
 export type PoolSetupCreated = {
 	breaks: string[],
+};
+
+/**  Why Try it didn't pass, and the step that mends it, where one does (#4483). */
+export type PoolSetupFailed = {
+	/**  What happened and what to do, in a sentence or two. */
+	why: string,
+	/**  The step to go to, by its id: `signins` for a sign-in. Null where trying again is it. */
+	step: string | null,
 };
 
 /**  A limit a profile is over. */
@@ -8979,6 +9090,25 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+};
+
+/**  What Try it found. */
+export type PoolSetupTried = {
+	/**
+	 *  Why it didn't pass; null where a real chat started and the proof is kept, or where the
+	 *  person cancelled it.
+	 */
+	failed: PoolSetupFailed | null,
+	/**  The person cancelled it (#4976): nothing was kept, and its chat is closed. */
+	cancelled: boolean,
+	/**
+	 *  What Try it proved of the agent's identity itself (#4490), for the identity's line: a
+	 *  read-only token GitHub made for the App, read with and revoked. None where the identity
+	 *  step's own line stands: no App of Agent identity's, no repo, or a step not done.
+	 */
+	identity: PoolSetupCheck | null,
+	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
+	workspace: string | null,
 };
 
 /**  What the person is asked. */
@@ -9559,6 +9689,11 @@ export type PublishReviewView = {
 	grades: PublishGrade[],
 	/**  The request's description, whole. */
 	body: string,
+	/**
+	 *  Whether the forge says the person's account may not push to the source (#4342). The page
+	 *  says so up front and offers Export, and never refuses on it: the push answers for itself.
+	 */
+	forge_says_no_push: boolean,
 	accepted: PublishAccepted,
 };
 
@@ -11171,6 +11306,20 @@ export type SecretAt = {
 };
 
 /**
+ *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
+ *  its chats miss, and how many wait on it. Names only: no value is ever here.
+ */
+export type SecretShown = {
+	persona: string,
+	vault: string,
+	key: string,
+	/**  The declared tool whose run missed it, where it is one. */
+	tool?: string | null,
+	/**  How many chats wait on it. */
+	waiting: number,
+};
+
+/**
  *  A value the window hands over to be stored, and the one a reveal hands back
  *  ([`vault_secret_reveal`], the only command whose answer holds one).
  */
@@ -11540,6 +11689,11 @@ export type Shown = {
 	 *  any, so a question a later turn pushed aside can be read back. Absent otherwise.
 	 */
 	earlier_messages?: string[] | null,
+	/**
+	 *  **The key a Secret ask asks for** (#5068, ADR 0109): drawn with a masked field the value
+	 *  is typed in. Absent for any other ask.
+	 */
+	secret?: SecretShown | null,
 };
 
 /**
@@ -12552,12 +12706,15 @@ export type StartRefused = {
  *  shows before the person picks anything, and every pool this machine keeps, which the row
  *  offers for this start only. `at_root` is a chat at the project's root, which runs here and is
  *  offered no pool. Nothing here is checked against the pool's runner: the start does that.
+ *  `ran_on` is each of those pools the workspace has run a chat on, or every one where it has no
+ *  clone to send, so the row can say a first start anywhere else (#4591).
  */
 export type StartRunsOn = {
 	pool: string | null,
 	level: RunsOnLevel,
 	at_root: boolean,
 	pools: string[],
+	ran_on: string[],
 };
 
 /**  A chat that started: its session, and the name it was given as charter holds it. */
@@ -13008,6 +13165,13 @@ export type SvgIcon = {
 export type SvgShape = {
 	tag: string,
 	attributes: { [key in string]: string },
+};
+
+/**  One tab window: the project it is of, and its number in that project's record. */
+export type TabWindow = {
+	plane: PlaneId,
+	/**  Never `0`, which is the project window. */
+	number: number,
 };
 
 /**  The brief a task was sent, and the facts of its sending. */
@@ -13657,6 +13821,12 @@ export type VaultIdentity = {
 	kept: boolean,
 };
 
+/**  The entry a linked entry reads, as its row names it. */
+export type VaultLink = {
+	vault: string,
+	key: string,
+};
+
 /**
  *  A vault a chat was refused, as the Notice on its tab shows it: names only. No key, no
  *  value, and nothing of the command the chat ran.
@@ -13705,6 +13875,10 @@ export type VaultSecret = {
 	key: string,
 	size: string | null,
 	updated: string | null,
+	/**  The entry it reads, when it is a linked entry (#5069): names, never a value. */
+	link: VaultLink | null,
+	/**  How many linked entries read it: what deleting it would break. */
+	linked_by: number,
 };
 
 /**  One registered vault, as the Vaults panel lists it. */
@@ -13809,6 +13983,18 @@ changes?: ChangeList[] | null }) & { why?: never } |
 ({ kind: "gone"; why: string }) & { blocks?: never; changes?: never; overreach?: never; took_ms?: never };
 
 /**
+ *  One view an extension offered (#4769, `purlis_core::extension::events::Offered`): one of its
+ *  own declared views, about `key`, and about the chat `chat` when it named one. Nothing here
+ *  says where it would go: that is the window's and the person's.
+ */
+export type ViewOffered = {
+	extension: string,
+	view: string,
+	key: string,
+	chat: number | null,
+};
+
+/**
  *  A tab that holds a view, as the window and the record both know it (`reopen::View`).
  * 
  *  **The window says these and the record keeps them**; nothing in the core decides one. They
@@ -13881,6 +14067,11 @@ export type Watching = {
 	 *  keeps the terminal's own Enter.
 	 */
 	newline: string | null,
+	/**
+	 *  How many lines of history the session keeps above those the view was drawn with
+	 *  (#4742): what the pane asks for, with a larger `history`, as the person scrolls up.
+	 */
+	older: number,
 };
 
 /**  Which of the two ways the person ends a chat (#1488). */

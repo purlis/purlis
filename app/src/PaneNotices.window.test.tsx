@@ -192,22 +192,22 @@ describe("a pane's notices, minimised (the default)", () => {
     expect([...top.children].map((one) => one.getAttribute("data-scope") ?? one.className)).toEqual(
       ["pane-head", "notice-row"],
     );
-    // A fixed slot, right before the splits and the close, and outside the cluster of them that
-    // is drawn only under the pointer or the keyboard (`.pane-doing`, `App.css`): the bell and
-    // its count are always on screen.
+    // A fixed slot, after the chat's ⋯ and right before the splits and the close (#4760), and
+    // outside the cluster of them that is drawn only under the pointer or the keyboard
+    // (`.pane-doing`, `App.css`): the bell and its count are always on screen.
     // (Its polite announcement is an unseen line beside it, `.sr-only`.)
     const actions = [...(frame().querySelector(".pane-actions")?.children ?? [])].filter(
       (one) => !one.classList.contains("sr-only"),
     );
-    expect(actions[0]).toBe(bell());
+    // The chat's ⋯ (#4753) is before it, a chat's part of the head (#4760).
+    expect(actions[0]).toHaveAccessibleName(/^More for /);
+    expect(actions[1]).toBe(bell());
     expect(bell().closest(".pane-doing")).toBeNull();
-    expect(actions[1]).toHaveClass("pane-doing");
-    const doing = [...actions[1].querySelectorAll("button")].map((one) =>
+    expect(actions[2]).toHaveClass("pane-doing");
+    const doing = [...actions[2].querySelectorAll("button")].map((one) =>
       one.getAttribute("aria-label"),
     );
-    // The chat's ⋯ (#4753) leads that cluster, then the splits.
-    expect(doing[0]).toMatch(/^More for /);
-    expect(doing.slice(1, 3)).toEqual(["Split right", "Split down"]);
+    expect(doing.slice(0, 2)).toEqual(["Split right", "Split down"]);
   });
 
   it("keeps the bell's slot with no count when there is nothing, and draws no band", async () => {

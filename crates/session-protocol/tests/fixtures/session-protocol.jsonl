@@ -217,3 +217,5 @@
 {"reply":{"re":189,"refused":{"code":"programs_not_known","why":"the runner this host relays to speaks session protocol 1.66, which says nothing of what runs there over a link between hosts, so it was not asked"}}}
 {"call":{"id":190,"command":"repos_held"}}
 {"reply":{"re":190,"ok":{"repos_held":{"repos":[{"project":"01J9PRJCT00000000000000000","path":"","refs":[{"name":"refs/heads/main","oid":"1111111111111111111111111111111111111111"},{"name":"HEAD","oid":"1111111111111111111111111111111111111111"}]},{"project":"01J9PRJCT00000000000000000","path":"workspaces/app/web","refs":[{"name":"HEAD","oid":"2222222222222222222222222222222222222222"}],"changed":[{"path":"draft.txt","now":"blob:3333333333333333333333333333333333333333"},{"path":"gone.txt"}]}],"unread":["a folder in workspaces/app/web in project 01J9PRJCT00000000000000000 has a name that is not text, so it was not looked through"]}}}}
+{"call":{"id":191,"command":"attach_view","program":"01J9ZQ3V7K8M2N4P6R8T0V2X4Z","kind":"terminal","history":200}}
+{"reply":{"re":191,"ok":{"attached":{"view":6,"cols":80,"rows":24,"kind":"terminal","older":4800}}}}

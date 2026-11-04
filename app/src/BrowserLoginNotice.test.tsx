@@ -17,6 +17,7 @@ import type { Shown } from "./bindings";
 const login = (more: Partial<NonNullable<Shown["login"]>> = {}) => ({
   domain: "shop.example.test",
   path: "/login",
+  form: "shop.example.test",
   vault: "qa",
   user_key: "username",
   key: "password",
@@ -73,6 +74,48 @@ describe("BrowserLoginNotice", () => {
     );
     expect(screen.getByTestId("login-site")).toHaveTextContent("also used on https://a.test");
     expect(screen.getByTestId("login-site")).toHaveTextContent("Not now.");
+  });
+
+  it("names where the password is typed, and the page that sends it there", () => {
+    render(
+      <BrowserLoginNotice
+        plane="p"
+        session={7}
+        asks={[ask({ domain: "app.example.test", path: "/", form: "auth.example.test" })]}
+      />,
+    );
+    expect(screen.getByTestId("login-site")).toHaveTextContent("https://app.example.test/");
+    expect(screen.getByTestId("login-site-form")).toHaveTextContent("https://auth.example.test");
+    expect(screen.getByTestId("login-site")).toHaveTextContent("sign in elsewhere");
+  });
+
+  it("says the password stays on the site it opens where the form is there", () => {
+    render(<BrowserLoginNotice plane="p" session={7} asks={[ask()]} />);
+    expect(screen.getByTestId("login-site-form")).toHaveTextContent("https://shop.example.test");
+    expect(screen.getByTestId("login-site")).toHaveTextContent("this site alone");
+  });
+
+  it("shows the site recorded now beside the one a replacement asks for", () => {
+    render(
+      <BrowserLoginNotice
+        plane="p"
+        session={7}
+        asks={[
+          ask({
+            domain: "app.example.test",
+            path: "/",
+            form: "auth.example.test",
+            replaces: "https://app.example.test/",
+            replaces_form: "app.example.test",
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("login-site-replaces")).toHaveTextContent(
+      "https://app.example.test/, password typed on https://app.example.test",
+    );
+    expect(screen.getByTestId("login-site-form")).toHaveTextContent("https://auth.example.test");
+    expect(screen.getByTestId("login-site")).toHaveTextContent("Always replace swaps its line");
   });
 
   it("draws nothing for another chat", () => {

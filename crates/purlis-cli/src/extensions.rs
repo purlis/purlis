@@ -90,7 +90,9 @@ pub fn tell(root: &Path, event: &Event) {
     };
     let _ = std::io::stdout().flush();
     let choices = Choices::read_in(root, event.workspace());
-    for note in events::deliver(&executor(), &config, &choices, event) {
+    // An offer (#4769) is the window's to show, and no window hears this process: the command
+    // line says nothing of one.
+    for note in events::deliver(&executor(), &config, &choices, event).notes {
         eprintln!("purlis: {note}");
     }
 }

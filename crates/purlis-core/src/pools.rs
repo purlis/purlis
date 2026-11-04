@@ -450,11 +450,32 @@ pub fn branches_to_fetch(
 }
 
 /// **Every pool a workspace of the plane at `plane` runs its chats on**, with those
-/// workspaces, as this machine's store names them (#2046). Whether each pool is kept is asked
-/// as each is reached ([`runs_on`]).
+/// workspaces, as this machine's store names them (#2046): the pools a put-back closes what
+/// nothing took back on. Whether each pool is kept is asked as each is reached ([`runs_on`]).
+/// What fetch-back and the away list ask about is [`workspaces_to_fetch`].
 pub fn workspaces_on_pools(
     config_root: &Path,
     plane: &Path,
+) -> std::collections::BTreeMap<String, Vec<String>> {
+    on_pools(config_root, plane, false)
+}
+
+/// **[`workspaces_on_pools`], as fetch-back and the away list ask about them** (#4591): a
+/// workspace that follows the project's pool is listed once it has run a chat there, a chat of
+/// it kept there or its branches still owed from there (#4590), and never before, since nothing
+/// of it is there to come back. A workspace that names a pool of its own is listed as its setting
+/// says: a chat of it from before those records may have left work there.
+pub fn workspaces_to_fetch(
+    config_root: &Path,
+    plane: &Path,
+) -> std::collections::BTreeMap<String, Vec<String>> {
+    on_pools(config_root, plane, true)
+}
+
+fn on_pools(
+    config_root: &Path,
+    plane: &Path,
+    ran_there: bool,
 ) -> std::collections::BTreeMap<String, Vec<String>> {
     let loaded = crate::machine::read(config_root);
     let mut on: std::collections::BTreeMap<String, Vec<String>> = Default::default();
@@ -476,6 +497,7 @@ pub fn workspaces_on_pools(
             let place = loaded.store.chat_place(plane, &workspace, None);
             if place.level == crate::machine::PlaceLevel::Project
                 && let Some(pool) = place.pool
+                && (!ran_there || loaded.store.ran_on(plane, &workspace, &pool))
             {
                 on.entry(pool).or_default().push(workspace);
             }
@@ -498,6 +520,33 @@ pub fn fresh_runners_of_plane(
             let of = kept.of.as_ref().filter(|of| of.plane == plane)?;
             Some((kept.link_name(), vec![of.workspace.clone()]))
         })
+        .collect()
+}
+
+/// **Which of `pools` a first chat of `workspace` would send nothing new to** (#4591): each one
+/// a chat of it is kept on, its branches are still owed from, or a clone of it holds branches
+/// that came back from ([`crate::codelink::holds_branches_of`]), and every one where the
+/// workspace has no clone to send. What Start chat's row reads to say a first start anywhere
+/// else. The store is read once and each clone asked once a pool.
+pub fn pools_run_on(
+    config_root: &Path,
+    plane: &Path,
+    workspace: &str,
+    pools: &[String],
+) -> Vec<String> {
+    let store = crate::machine::read(config_root).store;
+    let clones = crate::codelink::clones_in(plane, workspace).unwrap_or_default();
+    let folder = plane.join("workspaces").join(workspace);
+    pools
+        .iter()
+        .filter(|pool| {
+            clones.is_empty()
+                || store.ran_on(plane, workspace, pool)
+                || clones
+                    .iter()
+                    .any(|clone| crate::codelink::holds_branches_of(&folder.join(clone), pool))
+        })
+        .cloned()
         .collect()
 }
 

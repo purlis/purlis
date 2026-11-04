@@ -263,27 +263,21 @@ export const UnavailableSubmit: Story = {
 
 /**
  * **The quiet ghost as the window draws it** (#3214): small icon marks in a pane's corner, split
- * and close, where the close that ends a chat takes the danger colour under the pointer
- * (`paneFrame.css`), and the split keeps the quiet hover.
+ * and close. Both keep the quiet hover: a close ends nothing (#4756), so it is drawn as lightly
+ * as the split beside it, and never in the danger colour.
  */
 export const QuietPaneMarks: Story = {
   render: () => (
     // The pane's group shows itself on the pane's hover or focus; here it is always shown.
     <div className="pane-doing" style={{ visibility: "visible" }}>
       <IconButton icon={<Plus />} aria-label="Split right" variant="quiet" size="sm" />
-      <IconButton
-        icon={<X />}
-        aria-label="End this pane's chat"
-        variant="quiet"
-        size="sm"
-        className="ends-a-chat"
-      />
+      <IconButton icon={<X />} aria-label="Close this pane" variant="quiet" size="sm" />
       <span data-testid="danger" style={{ background: "var(--danger-surface)" }} />
     </div>
   ),
   play: async ({ canvas, userEvent }) => {
     const split = canvas.getByRole("button", { name: "Split right" });
-    const close = canvas.getByRole("button", { name: "End this pane's chat" });
+    const close = canvas.getByRole("button", { name: "Close this pane" });
     for (const one of [split, close]) {
       const box = one.getBoundingClientRect();
       await expect(box.height).toBeGreaterThanOrEqual(24);
@@ -299,50 +293,11 @@ export const QuietPaneMarks: Story = {
       one.removeAttribute("data-hovered");
       return ground;
     };
-    await expect(hovered(close)).toBe(danger);
-    await expect(hovered(split)).not.toBe(danger);
-    await expect(getComputedStyle(close).backgroundColor).not.toBe(danger);
+    await expect(hovered(close)).toBe(hovered(split));
+    await expect(hovered(close)).not.toBe(danger);
     await userEvent.tab();
     await expect(split).toHaveFocus();
     expectFocusInSight();
-  },
-};
-/**
- * **A theme that draws the quiet hover its own way** (#3295): it sets `button.root.quiet.hover`'s
- * fill and words in the `parts` layer, as the engine writes a theme's parts. The close that ends a
- * chat takes the theme's fill, but keeps its danger mark: its glyph in the danger colour and an
- * edge of it, drawn in the `cues` layer after the theme's.
- */
-export const QuietHoverThemedKeepsTheCloseCue: Story = {
-  // What is held is a computed colour and edge under a theme's rule, not a picture.
-  parameters: { screenshot: false },
-  render: () => (
-    <div className="pane-doing" style={{ visibility: "visible" }}>
-      <style>{`@layer parts {
-  :where([data-scope="button"][data-part="root"][data-variant="quiet"][data-hovered]:not([data-disabled])) {
-    background-color: var(--surface-hover);
-    color: var(--text-primary);
-  }
-}`}</style>
-      <IconButton
-        icon={<X />}
-        aria-label="End this pane's chat"
-        variant="quiet"
-        size="sm"
-        className="ends-a-chat"
-      />
-      <span data-testid="danger" style={{ color: "var(--danger-text)" }} />
-    </div>
-  ),
-  play: async ({ canvas }) => {
-    const close = canvas.getByRole("button", { name: "End this pane's chat" });
-    const danger = getComputedStyle(canvas.getByTestId("danger")).color;
-    close.setAttribute("data-hovered", "true");
-    const drawn = getComputedStyle(close);
-    const [words, edge] = [drawn.color, drawn.boxShadow];
-    close.removeAttribute("data-hovered");
-    await expect(words).toBe(danger);
-    await expect(edge).toContain(danger);
   },
 };
 export const Link: Story = {

@@ -147,4 +147,34 @@ describe("the palette coming and going (#4351)", () => {
 
     expect(paneDrawn.times).toBe(drawn);
   });
+
+  // **Not modal, as VS Code's is** (the operator's ruling of 2026-11-04): a window made inert
+  // under it is restyled whole by WebKit as it closes, before what a row opened is drawn.
+  it("leaves the window under it neither inert nor hidden while it is open", async () => {
+    core();
+    render(<App />);
+    const pane = await screen.findByTestId("pane");
+    await userEvent.keyboard("{F2}");
+    await screen.findByRole("dialog", { name: "Command palette" });
+    await settle();
+    expect(pane.closest("[inert]")).toBeNull();
+    expect(pane.closest('[aria-hidden="true"]')).toBeNull();
+    expect(document.querySelector("[inert]")).toBeNull();
+  });
+
+  it("closes on a press outside it, and the keyboard goes back to the window", async () => {
+    core();
+    render(<App />);
+    await screen.findByTestId("pane");
+    await userEvent.keyboard("{F2}");
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    const scrim = palette.closest('[data-part="scrim"]');
+    expect(scrim).not.toBeNull();
+    await userEvent.click(scrim as Element);
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull(),
+    );
+    await settle();
+    expect(document.activeElement === null || palette.contains(document.activeElement)).toBe(false);
+  });
 });

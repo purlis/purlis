@@ -786,3 +786,905 @@ fn a_file_marked_as_unchanged_that_the_task_removed_keeps_the_runner() {
 
     assert!(says(&missing, "differ here: index.html"), "{missing:?}");
 }
+
+/// A runner's whole file system, as its pod has it: its home a folder of the volume it is on
+/// (`/var/lib/purlis/home`), and what was there before its host first started a program.
+#[cfg(unix)]
+fn a_runners_root() -> (tempfile::TempDir, PathBuf, PathBuf, std::time::SystemTime) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let home = root.join("var/lib/purlis/home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(root.join("usr/share/doc")).unwrap();
+    std::fs::write(root.join("usr/share/doc/readme"), "from the image\n").unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let started = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    (dir, root, home, started)
+}
+
+#[cfg(unix)]
+fn the_runners_user() -> u32 {
+    rustix::process::geteuid().as_raw()
+}
+
+/// **A file a task saved outside the runner's home keeps the runner too** (#4933): at the
+/// sandbox's floor a task writes wherever the runner's user may, such as the volume its home is
+/// a folder of, and the Notice names it from `/`.
+#[cfg(unix)]
+#[test]
+fn a_file_a_task_saved_outside_the_runners_home_keeps_the_runner() {
+    let (_dir, root, home, started) = a_runners_root();
+    std::fs::write(
+        root.join("var/lib/purlis/findings.md"),
+        "what the task found\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("opt/work")).unwrap();
+    std::fs::write(root.join("opt/work/.env"), "A=1\n").unwrap();
+
+    let said = outside_the_projects_and_beyond(
+        &home,
+        &[],
+        Some(started),
+        Some(Beyond {
+            root: &root,
+            owner: the_runners_user(),
+        }),
+    );
+
+    assert!(
+        says(&said, "/var/lib/purlis/findings.md") && says(&said, "/opt/work/.env"),
+        "{said:?}"
+    );
+}
+
+/// **What holds no task's work outside the home keeps no runner** (#4933): the kernel's views of
+/// itself, temporary folders, what a program keeps hidden in a person's home, what was there
+/// before, and the home itself, which is looked through by its own rules.
+#[cfg(unix)]
+#[test]
+fn what_holds_no_tasks_work_outside_the_home_keeps_no_runner() {
+    let (_dir, root, home, started) = a_runners_root();
+    for temporary in [
+        "tmp/x",
+        "var/tmp/x",
+        "run/purlis-link/x",
+        "dev/shm/x",
+        "proc/1/x",
+        "sys/x",
+    ] {
+        let at = root.join(temporary);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, "temporary\n").unwrap();
+    }
+    std::fs::create_dir_all(root.join("home/purlis/.ssh")).unwrap();
+    std::fs::write(root.join("home/purlis/.ssh/known_hosts"), "a host\n").unwrap();
+    std::fs::create_dir_all(home.join(".config")).unwrap();
+    std::fs::write(home.join(".config/tool.toml"), "a program's\n").unwrap();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user(),
+    };
+
+    assert_eq!(
+        outside_the_projects_and_beyond(&home, &[], Some(started), Some(beyond)),
+        Vec::<String>::new()
+    );
+
+    std::fs::write(root.join("home/purlis/report.md"), "a task's\n").unwrap();
+    let said = outside_the_projects_and_beyond(&home, &[], Some(started), Some(beyond));
+    assert!(says(&said, "/home/purlis/report.md"), "{said:?}");
+    assert!(
+        !says(&said, "~/"),
+        "the home is named once, by its own rules: {said:?}"
+    );
+}
+
+/// **A file another user owns is no task's** (#4933): only what the runner's user owns counts
+/// outside its home.
+#[cfg(unix)]
+#[test]
+fn a_file_outside_the_home_another_user_owns_keeps_no_runner() {
+    use std::os::unix::fs::PermissionsExt;
+    if the_runners_user() == 0 {
+        return; // Every file is open to root.
+    }
+    let (_dir, root, home, started) = a_runners_root();
+    std::fs::write(root.join("var/lib/purlis/findings.md"), "made\n").unwrap();
+    // Another's, and shut to the runner's user, as the walk sees it.
+    std::fs::set_permissions(
+        root.join("var/lib/purlis/findings.md"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
+
+    assert_eq!(
+        outside_the_projects_and_beyond(
+            &home,
+            &[],
+            Some(started),
+            Some(Beyond {
+                root: &root,
+                owner: the_runners_user().wrapping_add(1),
+            }),
+        ),
+        Vec::<String>::new()
+    );
+}
+
+/// **A file another user owns that the runner's user may write counts as its own** (#5103):
+/// a task may change it as well as one it owns, so a change keeps the runner.
+#[cfg(unix)]
+#[test]
+fn a_file_outside_the_home_its_user_may_write_but_does_not_own_keeps_the_runner() {
+    if the_runners_user() == 0 {
+        return; // Every file is open to root.
+    }
+    let (_dir, root, home, started) = a_runners_root();
+    // Another's, as the walk sees it, but one the runner's user may write.
+    std::fs::write(root.join("var/lib/purlis/findings.md"), "made\n").unwrap();
+
+    let said = outside_the_projects_and_beyond(
+        &home,
+        &[],
+        Some(started),
+        Some(Beyond {
+            root: &root,
+            owner: the_runners_user().wrapping_add(1),
+        }),
+    );
+
+    assert!(says(&said, "/var/lib/purlis/findings.md"), "{said:?}");
+}
+
+/// **An unreadable folder outside the home is said unless it is another's, unchanged, that the
+/// runner's user can neither write in nor pass through** (#4933): only such a one can hold
+/// nothing a task made.
+#[cfg(unix)]
+#[test]
+fn a_folder_the_runners_user_cannot_read_is_said_unless_it_could_hold_nothing_of_a_task() {
+    use std::os::unix::fs::PermissionsExt;
+    if the_runners_user() == 0 {
+        return; // Every folder is open to root.
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    let shut = |folder: &str, mode: u32| {
+        std::fs::create_dir_all(root.join(folder)).unwrap();
+        std::fs::set_permissions(root.join(folder), std::fs::Permissions::from_mode(mode)).unwrap();
+    };
+    shut("var/locked", 0o000);
+    shut("var/passage", 0o100);
+    shut("var/dropbox", 0o300);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let since = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    shut("var/shut-since", 0o000);
+    // Another user's folders, as the walk sees them.
+    let others = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+
+    let said = outside_the_projects_and_beyond(&home, &[], Some(since), Some(others));
+    // The user's own, however long shut.
+    let mine = Beyond {
+        owner: the_runners_user(),
+        ..others
+    };
+    let said_mine = outside_the_projects_and_beyond(&home, &[], Some(since), Some(mine));
+    for folder in ["var/locked", "var/passage", "var/dropbox", "var/shut-since"] {
+        std::fs::set_permissions(root.join(folder), std::fs::Permissions::from_mode(0o700))
+            .unwrap();
+    }
+
+    for folder in ["/var/dropbox", "/var/passage", "/var/shut-since"] {
+        assert!(
+            says(&said, &format!("{folder} on the runner could not be read")),
+            "{folder}: {said:?}"
+        );
+    }
+    assert!(!says(&said, "/var/locked"), "{said:?}");
+    assert_eq!(said.len(), 3, "{said:?}");
+    assert!(
+        says(&said_mine, "/var/locked on the runner could not be read"),
+        "{said_mine:?}"
+    );
+}
+
+/// **A folder too deep is said, not looked into** (#4933): the folders a walk holds open stay
+/// bounded however deep a task nests them.
+#[cfg(unix)]
+#[test]
+fn a_folder_nested_too_deep_outside_the_projects_is_said_and_keeps_the_runner() {
+    let (_dir, home, started) = a_home();
+    let deep: PathBuf = (0..MOST_DEPTH + 2).map(|_| "d").collect();
+    std::fs::create_dir_all(home.join(&deep)).unwrap();
+
+    let said = outside_the_projects(&home, &[], Some(started));
+
+    assert!(says(&said, "folders deep"), "{said:?}");
+}
+
+/// **The first program's start is marked once, and kept** (#4933): a later start, or the host
+/// starting again, never moves it; before any, nothing is marked.
+#[cfg(unix)]
+#[test]
+fn the_first_programs_start_is_marked_once_and_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let projects = dir.path().join("data/projects");
+
+    assert_eq!(first_program_at(&projects), Ok(None));
+
+    first_program_starting(&projects).unwrap();
+    let first = first_program_at(&projects).unwrap().expect("marked");
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    first_program_starting(&projects).unwrap();
+
+    assert_eq!(first_program_at(&projects), Ok(Some(first)));
+}
+
+/// **A mark that is not the file purlis made says so, which keeps the runner** (#4933), and a
+/// link in its place is never followed, nor a pipe waited on: the program starts, since the
+/// runner is kept for it (#5103).
+#[cfg(unix)]
+#[test]
+fn a_mark_that_is_not_the_file_purlis_made_keeps_the_runner_and_is_never_followed() {
+    let dir = tempfile::tempdir().unwrap();
+    let projects = dir.path().join("projects");
+    std::fs::create_dir_all(projects.join(FIRST_PROGRAM)).unwrap();
+
+    assert_eq!(first_program_starting(&projects), Ok(()));
+    let unknown = first_program_at(&projects).unwrap_err();
+    assert!(unknown.contains("could not be looked for"), "{unknown}");
+
+    std::fs::remove_dir(projects.join(FIRST_PROGRAM)).unwrap();
+    let elsewhere = dir.path().join("elsewhere");
+    std::os::unix::fs::symlink(&elsewhere, projects.join(FIRST_PROGRAM)).unwrap();
+    assert_eq!(first_program_starting(&projects), Ok(()));
+    assert!(!elsewhere.exists(), "never through the link");
+    assert!(first_program_at(&projects).is_err());
+
+    // A pipe in its place is never waited on, nor while a task holds it open to read.
+    std::fs::remove_file(projects.join(FIRST_PROGRAM)).unwrap();
+    let made = crate::forklock::status(
+        std::process::Command::new("mkfifo").arg(projects.join(FIRST_PROGRAM)),
+    )
+    .unwrap();
+    assert!(made.success(), "a pipe is made");
+    assert_eq!(first_program_starting(&projects), Ok(()));
+    let _reading = rustix::fs::open(
+        projects.join(FIRST_PROGRAM),
+        rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NONBLOCK | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .unwrap();
+    assert_eq!(first_program_starting(&projects), Ok(()));
+    let unknown = first_program_at(&projects).unwrap_err();
+    assert!(unknown.contains("not a file purlis made"), "{unknown}");
+}
+
+/// A runner's home with purlis's data home in it, as purlis's own image has it
+/// (`~/.local/share/purlis`), its projects folder made and marked, and when that was.
+#[cfg(unix)]
+fn a_home_with_its_data() -> (tempfile::TempDir, PathBuf, PathBuf, std::time::SystemTime) {
+    let (dir, home, _) = a_home();
+    let data = home.join(".local/share/purlis");
+    std::fs::create_dir_all(data.join(crate::datahome::PROJECTS)).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let started = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    first_program_starting(&data.join(crate::datahome::PROJECTS)).unwrap();
+    (dir, home, data, started)
+}
+
+/// **A file a task saved in the data home outside any repository keeps the runner** (#5029):
+/// beside the projects, loose in the projects folder, or in a project's folder that holds no
+/// repository. No repository lists it.
+#[cfg(unix)]
+#[test]
+fn a_file_a_task_saved_in_the_data_home_outside_any_repository_keeps_the_runner() {
+    let (_dir, home, data, started) = a_home_with_its_data();
+    let projects = data.join(crate::datahome::PROJECTS);
+    std::fs::write(data.join("beside.md"), "a task's\n").unwrap();
+    std::fs::write(projects.join("loose.txt"), "a task's\n").unwrap();
+    std::fs::create_dir_all(projects.join(PROJECT).join("notes")).unwrap();
+    std::fs::write(projects.join(PROJECT).join("notes/found.md"), "a task's\n").unwrap();
+    std::fs::write(projects.join(".notes"), "a task's, hidden\n").unwrap();
+
+    let said = outside_with(
+        &home,
+        Some(DataHome {
+            data: &data,
+            projects: &projects,
+            listed: &[],
+        }),
+        std::slice::from_ref(&data),
+        Some(started),
+        None,
+    );
+
+    for file in [
+        "~/.local/share/purlis/beside.md",
+        "~/.local/share/purlis/projects/loose.txt",
+        "~/.local/share/purlis/projects/.notes",
+        &format!("~/.local/share/purlis/projects/{PROJECT}/notes/found.md"),
+    ] {
+        assert!(says(&said, file), "{file}: {said:?}");
+    }
+}
+
+/// **What purlis keeps in its data home keeps no runner** (#5029): its own stores (a browser's
+/// profile, the host's events), the mark of the first program, a transfer's scratch, and each
+/// repository listed on its own.
+#[cfg(unix)]
+#[test]
+fn what_purlis_keeps_in_its_data_home_keeps_no_runner() {
+    let (_dir, home, data, started) = a_home_with_its_data();
+    let projects = data.join(crate::datahome::PROJECTS);
+    for (folder, file) in [
+        ("browsers/chat-7/Default", "Cookies"),
+        ("events/device", "events.jsonl"),
+        ("app-state/key", "state.json"),
+        ("cache-homes/key", "x"),
+        ("projects/.code-random", "bundle"),
+    ] {
+        std::fs::create_dir_all(data.join(folder)).unwrap();
+        std::fs::write(data.join(folder).join(file), "purlis's own\n").unwrap();
+    }
+    let repo = projects.join(PROJECT);
+    std::fs::create_dir_all(&repo).unwrap();
+    init(&repo);
+    std::fs::write(repo.join("work.txt"), "in a repository\n").unwrap();
+    let (held, unread) = repos_held(&projects);
+    assert_eq!(unread, Vec::<String>::new());
+    let listed: Vec<PathBuf> = held.iter().map(|one| projects.join(&one.project)).collect();
+    assert_eq!(listed.len(), 1, "{held:?}");
+
+    assert_eq!(
+        outside_with(
+            &home,
+            Some(DataHome {
+                data: &data,
+                projects: &projects,
+                listed: &listed,
+            }),
+            std::slice::from_ref(&data),
+            Some(started),
+            None
+        ),
+        Vec::<String>::new()
+    );
+}
+
+/// **A folder whose `.git` git does not take for a repository of its own is said** (#5029): git
+/// would read the next repository up in its place, and its files would be in no list.
+#[test]
+fn a_folder_with_a_git_folder_that_is_not_a_repository_keeps_the_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let projects = dir.path().join("projects");
+    let project = projects.join(PROJECT);
+    std::fs::create_dir_all(&project).unwrap();
+    init(&project);
+    std::fs::create_dir_all(project.join("notes/.git")).unwrap();
+    std::fs::write(project.join("notes/found.md"), "a task's\n").unwrap();
+
+    let (held, unread) = repos_held(&projects);
+
+    assert!(
+        says(&unread, "notes in project") && says(&unread, "repository of its own"),
+        "{unread:?} {held:?}"
+    );
+}
+
+/// **A home inside the data home is looked through by the home's rules, not the data home's**
+/// (#5029): what programs keep hidden in it keeps no runner.
+#[cfg(unix)]
+#[test]
+fn a_home_inside_the_data_home_is_looked_through_as_a_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().canonicalize().unwrap().join("var/lib/purlis");
+    let home = data.join("home");
+    let projects = data.join(crate::datahome::PROJECTS);
+    std::fs::create_dir_all(home.join(".config")).unwrap();
+    std::fs::create_dir_all(&projects).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let started = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    std::fs::write(home.join(".config/tool.toml"), "a program's\n").unwrap();
+    let look = || {
+        outside_with(
+            &home,
+            Some(DataHome {
+                data: &data,
+                projects: &projects,
+                listed: &[],
+            }),
+            std::slice::from_ref(&data),
+            Some(started),
+            None,
+        )
+    };
+
+    assert_eq!(look(), Vec::<String>::new());
+
+    std::fs::write(home.join("report.md"), "a task's\n").unwrap();
+    let said = look();
+    assert!(says(&said, "~/report.md"), "{said:?}");
+    assert!(!says(&said, "/var/lib/purlis/home"), "named once: {said:?}");
+}
+
+/// **The stores the walk of the data home leaves out are those the plane format names there**
+/// (#5029, #5052): a store added there without it would keep every fresh runner, and a name left
+/// out that the plane format does not name would hide a task's work there.
+#[test]
+fn every_store_the_plane_format_names_in_the_data_home_is_left_out_of_its_walk() {
+    let format = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/plane-format.md"),
+    )
+    .unwrap();
+    let mut named: Vec<&str> = format
+        .match_indices("<data>/")
+        .map(|(at, found)| {
+            let rest = &format[at + found.len()..];
+            let end = rest
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.'))
+                .unwrap_or(rest.len());
+            &rest[..end]
+        })
+        .filter(|name| !name.is_empty())
+        .collect();
+    named.sort_unstable();
+    named.dedup();
+    assert!(named.contains(&"events"), "{named:?}");
+
+    let missing: Vec<&&str> = named
+        .iter()
+        .filter(|name| **name != crate::datahome::PROJECTS && !PURLIS_KEEPS.contains(name))
+        .collect();
+
+    assert!(missing.is_empty(), "add to PURLIS_KEEPS: {missing:?}");
+    let unnamed: Vec<&&str> = PURLIS_KEEPS
+        .iter()
+        .filter(|kept| !named.contains(kept))
+        .collect();
+    assert!(
+        unnamed.is_empty(),
+        "name in docs/plane-format.md, with its tier: {unnamed:?}"
+    );
+}
+
+/// **Each folder purlis keeps for itself is left out wherever the environment puts it** (#5028):
+/// its config, data, log and socket homes moved outside the runner's home keep no runner, and a
+/// file of another program's beside them still does.
+#[cfg(unix)]
+#[test]
+fn each_home_purlis_keeps_moved_outside_the_runners_home_keeps_no_runner() {
+    let looked_through = |env: &[(&str, &str)], written: &[&str]| {
+        let (_dir, root, home, started) = a_runners_root();
+        for file in written {
+            std::fs::create_dir_all(root.join(file).parent().unwrap()).unwrap();
+            std::fs::write(root.join(file), "written\n").unwrap();
+        }
+        let var = |name: &str| {
+            env.iter()
+                .find(|(set, _)| *set == name)
+                .map(|(_, rel)| root.join(rel).to_string_lossy().into_owned())
+        };
+        outside_the_projects_and_beyond(
+            &home,
+            &purlis_keeps_for_itself(&var, &home),
+            Some(started),
+            Some(Beyond {
+                root: &root,
+                owner: the_runners_user(),
+            }),
+        )
+    };
+    let by_xdg = [
+        ("XDG_CONFIG_HOME", "srv/config"),
+        ("XDG_DATA_HOME", "srv/data"),
+        ("XDG_RUNTIME_DIR", "srv/run"),
+        ("XDG_STATE_HOME", "srv/state"),
+        ("XDG_CACHE_HOME", "srv/cache"),
+    ];
+
+    let said = looked_through(
+        &by_xdg,
+        &[
+            "srv/config/purlis/machine.json",
+            "srv/config/charter/old.json",
+            "srv/data/purlis/events/device/events.jsonl",
+            "srv/data/dev.purlis.app/logs/purlis.log",
+            "srv/run/purlis/host.lock",
+        ],
+    );
+    assert_eq!(said, Vec::<String>::new());
+
+    let said = looked_through(
+        &[("PURLIS_CONFIG_HOME", "opt/purlis-config")],
+        &[
+            "opt/purlis-config/purlis/machine.json",
+            "opt/purlis-config/.purlis.lock",
+        ],
+    );
+    assert_eq!(said, Vec::<String>::new());
+
+    // A folder a variable names as it is could be one others share: it is never left out
+    // whole, nor is a folder holding the home.
+    let said = looked_through(
+        &[
+            ("PURLIS_LOG_DIR", "srv"),
+            ("PURLIS_DATA_HOME", "srv"),
+            ("XDG_RUNTIME_DIR", "var/lib"),
+        ],
+        &["srv/work/out.txt", "var/lib/purlis/findings.md"],
+    );
+    assert!(
+        says(&said, "/srv/work/out.txt") && says(&said, "/var/lib/purlis/findings.md"),
+        "{said:?}"
+    );
+
+    // purlis keeps nothing of its own in a state or cache home, nor beside its folders: another
+    // program's file there is the runner's user's like any other.
+    let said = looked_through(
+        &by_xdg,
+        &["srv/state/tool/history", "srv/config/tool/settings.toml"],
+    );
+    assert!(
+        says(&said, "/srv/state/tool/history") && says(&said, "/srv/config/tool/settings.toml"),
+        "{said:?}"
+    );
+}
+
+/// Makes each of `folders` in `root` one the runner's user can't write in, and gives them back.
+#[cfg(unix)]
+struct Shut(Vec<PathBuf>);
+
+#[cfg(unix)]
+impl Shut {
+    fn folders(root: &Path, folders: &[&str]) -> Shut {
+        use std::os::unix::fs::PermissionsExt;
+        let mut shut: Vec<PathBuf> = folders.iter().map(|rel| root.join(rel)).collect();
+        // The deepest first, so each is still open to be shut.
+        shut.sort_by_key(|path| std::cmp::Reverse(path.components().count()));
+        for path in &shut {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o555)).unwrap();
+        }
+        Shut(shut)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Shut {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        for path in self.0.iter().rev() {
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755));
+        }
+    }
+}
+
+/// An image whose own folders, shut to the runner's user, outnumber what one check looks
+/// through, with the volume its home is on (`/var/lib/purlis`) the one place it may write.
+#[cfg(unix)]
+fn a_large_image(folders: usize) -> (tempfile::TempDir, PathBuf, PathBuf, Shut) {
+    let (dir, root, home, _) = a_runners_root();
+    let mut shut = vec![String::new(), "var".to_owned(), "var/lib".to_owned()];
+    for n in 0..folders {
+        let rel = format!("usr/lib/{n:03}");
+        std::fs::create_dir_all(root.join(&rel)).unwrap();
+        shut.push(rel);
+    }
+    shut.extend(["usr", "usr/lib", "usr/share", "usr/share/doc"].map(str::to_owned));
+    let shut: Vec<&str> = shut.iter().map(String::as_str).collect();
+    let shut = Shut::folders(&root, &shut);
+    (dir, root, home, shut)
+}
+
+/// **A large image is looked through once, for where its user may write, and each check walks
+/// only those places** (#5030): an image's own folders, shut to that user, are never what keeps
+/// a fresh runner for its size.
+#[cfg(unix)]
+#[test]
+fn a_large_images_own_folders_are_looked_through_once_and_keep_no_runner_for_their_size() {
+    if the_runners_user() == 0 {
+        return; // Every folder is open to root.
+    }
+    let (_dir, root, home, _shut) = a_large_image(40);
+    let since = std::time::SystemTime::now();
+    // As another user's image: what only ownership would open is shut.
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+
+    let found = writable(beyond, std::slice::from_ref(&home), since);
+
+    assert_eq!(found.places(), ["var/lib/purlis"], "{found:?}");
+    assert_eq!(
+        outside_within(&home, None, &[], Some(since), Some((beyond, &found)), 10),
+        Vec::<String>::new(),
+        "40 shut folders are past a bound of 10 a check, and keep nothing"
+    );
+}
+
+/// **An image too large even to look through once is said** (#5030), which keeps the runner as
+/// anything not looked through does.
+#[cfg(unix)]
+#[test]
+fn an_image_too_large_to_look_through_once_is_said() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _shut) = a_large_image(40);
+    let since = std::time::SystemTime::now();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+
+    let found = writable_within(beyond, std::slice::from_ref(&home), since, 10);
+    let said = outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+
+    assert!(says(&said, "more than 10 folders"), "{said:?}");
+}
+
+/// **A place its user owns is looked through whatever its mode** (#5030): the user could open
+/// it again at any time.
+#[cfg(unix)]
+#[test]
+fn a_folder_its_user_owns_is_a_place_it_may_write_however_shut() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _shut) = a_large_image(2);
+    let since = std::time::SystemTime::now();
+
+    let found = writable(
+        Beyond {
+            root: &root,
+            owner: the_runners_user(),
+        },
+        std::slice::from_ref(&home),
+        since,
+    );
+
+    assert_eq!(
+        found.places(),
+        [""],
+        "the root is the user's own: {found:?}"
+    );
+}
+
+/// **A file of its user's own outside every place it may write is looked at again at each
+/// check** (#5030): the user may change it wherever it is, and a change keeps the runner.
+#[cfg(unix)]
+#[test]
+fn a_file_its_user_owns_where_it_may_not_write_keeps_the_runner_once_changed() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    std::fs::create_dir_all(root.join("etc/tool")).unwrap();
+    std::fs::write(root.join("etc/tool/settings.conf"), "as the image had it\n").unwrap();
+    let _shut = Shut::folders(
+        &root,
+        &[
+            "",
+            "etc",
+            "etc/tool",
+            "usr",
+            "usr/share",
+            "usr/share/doc",
+            "var",
+            "var/lib",
+        ],
+    );
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let since = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user(),
+    };
+    // As an image's folders, shut to its user, which the test's own user can only stand for.
+    let found = writable_bounded(
+        beyond,
+        std::slice::from_ref(&home),
+        since,
+        MOST_IMAGE_FOLDERS,
+        MOST_OWN_FILES,
+        false,
+    );
+    assert_eq!(found.places(), ["var/lib/purlis"], "{found:?}");
+    let look = || outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+
+    assert_eq!(look(), Vec::<String>::new());
+
+    std::fs::write(root.join("etc/tool/settings.conf"), "as the task left it\n").unwrap();
+    let said = look();
+    assert!(says(&said, "/etc/tool/settings.conf"), "{said:?}");
+}
+
+/// **Past the most files of its user's own it records, the look is said and not whole**
+/// (#5030), so it keeps the runner and is made again at the next check.
+#[cfg(unix)]
+#[test]
+fn too_many_files_of_its_users_own_where_it_may_not_write_are_said() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    std::fs::create_dir_all(root.join("etc")).unwrap();
+    for n in 0..3 {
+        std::fs::write(root.join(format!("etc/{n}.conf")), "the image's\n").unwrap();
+    }
+    let _shut = Shut::folders(
+        &root,
+        &[
+            "",
+            "etc",
+            "usr",
+            "usr/share",
+            "usr/share/doc",
+            "var",
+            "var/lib",
+        ],
+    );
+    let since = std::time::SystemTime::now();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user(),
+    };
+
+    let found = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 2, false);
+
+    assert!(!found.whole(), "{found:?}");
+    let said = outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+    assert!(says(&said, "more than 2 files"), "{said:?}");
+    let whole = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 10, false);
+    assert!(whole.whole(), "{whole:?}");
+}
+
+/// **A file another user owns that the runner's user may write, where it may not write in the
+/// folder, is looked at again at each check** (#5103): a task may change it in place, and a
+/// change keeps the runner. One it may not write is not.
+#[cfg(unix)]
+#[test]
+fn a_file_its_user_may_write_where_it_may_not_write_the_folder_keeps_the_runner_once_changed() {
+    use std::os::unix::fs::PermissionsExt;
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    std::fs::create_dir_all(root.join("etc/tool")).unwrap();
+    std::fs::write(root.join("etc/tool/shared.conf"), "as the image had it\n").unwrap();
+    std::fs::write(root.join("etc/tool/shut.conf"), "as the image had it\n").unwrap();
+    std::fs::set_permissions(
+        root.join("etc/tool/shut.conf"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
+    let _shut = Shut::folders(
+        &root,
+        &[
+            "",
+            "etc",
+            "etc/tool",
+            "usr",
+            "usr/share",
+            "usr/share/doc",
+            "var",
+            "var/lib",
+        ],
+    );
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let since = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    // As another user's image: the test's own files are another's to the walk.
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+    let found = writable(beyond, std::slice::from_ref(&home), since);
+    assert_eq!(found.places(), ["var/lib/purlis"], "{found:?}");
+    let look = || outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+
+    assert_eq!(look(), Vec::<String>::new());
+
+    std::fs::write(root.join("etc/tool/shared.conf"), "as the task left it\n").unwrap();
+    std::fs::set_permissions(
+        root.join("etc/tool/shut.conf"),
+        std::fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        root.join("etc/tool/shut.conf"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
+    let said = look();
+    assert!(says(&said, "/etc/tool/shared.conf"), "{said:?}");
+    assert!(!says(&said, "/etc/tool/shut.conf"), "{said:?}");
+}
+
+/// **A name the runner reports is shown with each character a reader would not see marked**
+/// (#5103): a control, a line end or a bidirectional override in a file's name is written as
+/// `⟦U+XXXX⟧` in the sentences the window shows.
+#[cfg(unix)]
+#[test]
+fn a_name_holding_a_character_a_reader_would_not_see_is_shown_marked() {
+    let (_dir, home, started) = a_home();
+    std::fs::write(home.join("a\u{202e}b.txt"), "a task's\n").unwrap();
+    std::fs::create_dir_all(home.join("two\nlines\u{1b}[31m")).unwrap();
+    std::fs::write(home.join("two\nlines\u{1b}[31m/x"), "a task's\n").unwrap();
+
+    let said = outside_the_projects(&home, &[], Some(started));
+
+    assert!(says(&said, "~/a⟦U+202E⟧b.txt"), "{said:?}");
+    assert!(says(&said, "~/two⟦U+000A⟧lines⟦U+001B⟧[31m/x"), "{said:?}");
+    for sentence in &said {
+        assert!(
+            !purlis_unicode::hides(sentence, purlis_unicode::Breaks::Marked),
+            "{sentence:?}"
+        );
+    }
+}
+
+/// **What the desktop says a runner holds is shown marked too** (#5103): a path, a ref's name
+/// or a sentence a runner sent holding a character a reader would not see.
+#[test]
+fn what_a_runner_reports_is_shown_marked_on_the_desktop() {
+    let world = World::new();
+    let held = vec![
+        Held {
+            project: PROJECT.to_owned(),
+            path: String::new(),
+            refs: Vec::new(),
+            changed: Vec::new(),
+        },
+        Held {
+            project: PROJECT.to_owned(),
+            path: "web\u{202e}b".to_owned(),
+            refs: vec![Ref {
+                name: "refs/heads/a\u{1b}b".to_owned(),
+                oid: "0".repeat(40),
+            }],
+            changed: Vec::new(),
+        },
+    ];
+    let unread = vec!["a sentence the runner sent\nwith a second line\u{2066}".to_owned()];
+
+    let missing = not_home(&world.desktop, PROJECT, &held, &unread);
+
+    assert!(says(&missing, "web⟦U+202E⟧b"), "{missing:?}");
+    assert!(says(&missing, "sent⟦U+000A⟧with"), "{missing:?}");
+    for sentence in &missing {
+        assert!(
+            !purlis_unicode::hides(sentence, purlis_unicode::Breaks::Marked),
+            "{sentence:?}"
+        );
+    }
+}
+
+/// **A start is refused where no mark could be made and nothing stands in its place** (#4933):
+/// a host started again would then know of no program, and look for nothing.
+#[cfg(unix)]
+#[test]
+fn a_start_is_refused_where_no_mark_can_be_made() {
+    use std::os::unix::fs::PermissionsExt;
+    if the_runners_user() == 0 {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let projects = dir.path().join("projects");
+    std::fs::create_dir_all(&projects).unwrap();
+    std::fs::set_permissions(&projects, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let refused = first_program_starting(&projects);
+    std::fs::set_permissions(&projects, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert!(refused.unwrap_err().contains("could not note"));
+    assert_eq!(first_program_at(&projects), Ok(None));
+}

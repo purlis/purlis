@@ -40,6 +40,16 @@ vi.mock("./SessionPane", async () => ({
   SessionPane: (await import("./countedPane.testkit")).CountedPane,
 }));
 
+// A read on a wall-clock beat (`everyWhileShown`: the saving rows every 10 s, the alerts, the
+// state clock, a running chat's gauge) is not what a switch costs, and on a slow runner one
+// landed inside a measured switch and drew the window again: 8 commits where a switch makes 5.
+// No beat runs here. What a switch reads as its project comes back is read after the paint
+// (`useOnShownAgain`), not on a beat, and is still counted.
+vi.mock("./whileShown", async (actual) => ({
+  ...(await actual<typeof import("./whileShown")>()),
+  everyWhileShown: () => () => {},
+}));
+
 afterEach(() => {
   cleanup();
   clearMocks();
@@ -130,5 +140,18 @@ function held(one: Switch): void {
   expect(one.mounted).toBeLessThanOrEqual(MOUNTS);
   expect(one.unmounted).toBeLessThanOrEqual(MOUNTS);
   expect(one.invokedAtOnce).toBeLessThanOrEqual(COMMANDS_AT_ONCE);
-  expect(one.commits).toBeLessThanOrEqual(COMMITS);
+  // A switch over its commits says where each began and what it asked (#3032): a commit only a slow runner
+  // makes is named in the failure itself, where a CI run shows it.
+  expect(one.commits, drewAndAsked(one)).toBeLessThanOrEqual(COMMITS);
+}
+
+/** Where each of a switch's commits began, and what it asked the core. */
+function drewAndAsked(one: Switch): string {
+  const began = one.began
+    .map((roots, at) => `${at + 1}: ${[...new Set(roots)].slice(0, 8).join(", ")}`)
+    .join("; ");
+  const asked = Object.entries(one.invokes)
+    .map(([cmd, times]) => `${cmd} ${times}`)
+    .join(", ");
+  return `${one.commits} commits to ${one.to} (${one.panes} panes), each begun at ${began}. Asked: ${asked}`;
 }

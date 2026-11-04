@@ -1,0 +1,108 @@
+{
+  "_recorded": "2026-11-03, the Actions API list of release.yml runs created since 04:00, cut to the fields the report reads (head_repository read from each run the same day)",
+  "total_count": 6,
+  "workflow_runs": [
+    {
+      "conclusion": null,
+      "created_at": "2026-11-03T05:55:14Z",
+      "event": "workflow_run",
+      "head_branch": "main",
+      "head_sha": "ba20cf31c2b9c4b2a416d621be838a6f192ba0c3",
+      "id": 41586694683,
+      "name": "ci success (push) of ba20cf31c2b9c4b2a416d621be838a6f192ba0c3",
+      "path": ".github/workflows/release.yml",
+      "run_attempt": 1,
+      "run_started_at": "2026-11-03T05:55:14Z",
+      "status": "pending",
+      "updated_at": "2026-11-03T05:55:15Z",
+      "head_repository": {
+        "full_name": "purlis/purlis"
+      }
+    },
+    {
+      "conclusion": null,
+      "created_at": "2026-11-03T05:25:28Z",
+      "event": "workflow_run",
+      "head_branch": "main",
+      "head_sha": "ba20cf31c2b9c4b2a416d621be838a6f192ba0c3",
+      "id": 41583835270,
+      "name": "ci success (push) of ab7eba4e66917f6c19dc13a4b85070642c221b4e",
+      "path": ".github/workflows/release.yml",
+      "run_attempt": 1,
+      "run_started_at": "2026-11-03T05:25:28Z",
+      "status": "in_progress",
+      "updated_at": "2026-11-03T05:57:25Z",
+      "head_repository": {
+        "full_name": "purlis/purlis"
+      }
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-11-03T04:58:20Z",
+      "event": "workflow_run",
+      "head_branch": "main",
+      "head_sha": "ab7eba4e66917f6c19dc13a4b85070642c221b4e",
+      "id": 41581143090,
+      "name": "ci success (push) of b2387adf30401924f2f39c2ac18ab0e18082d4a8",
+      "path": ".github/workflows/release.yml",
+      "run_attempt": 1,
+      "run_started_at": "2026-11-03T04:58:20Z",
+      "status": "completed",
+      "updated_at": "2026-11-03T05:43:40Z",
+      "head_repository": {
+        "full_name": "purlis/purlis"
+      }
+    },
+    {
+      "conclusion": "skipped",
+      "created_at": "2026-11-03T04:52:00Z",
+      "event": "workflow_run",
+      "head_branch": "main",
+      "head_sha": "ab7eba4e66917f6c19dc13a4b85070642c221b4e",
+      "id": 41580570558,
+      "name": "ci cancelled (push) of e8b0c3bce4c64d723973815651374424991b627f",
+      "path": ".github/workflows/release.yml",
+      "run_attempt": 1,
+      "run_started_at": "2026-11-03T04:52:00Z",
+      "status": "completed",
+      "updated_at": "2026-11-03T04:52:02Z",
+      "head_repository": {
+        "full_name": "purlis/purlis"
+      }
+    },
+    {
+      "conclusion": "cancelled",
+      "created_at": "2026-11-03T04:22:00Z",
+      "event": "workflow_run",
+      "head_branch": "main",
+      "head_sha": "b2387adf30401924f2f39c2ac18ab0e18082d4a8",
+      "id": 41577697984,
+      "name": "ci success (push) of c841814f17d143649dde885d12d793922d5945e3",
+      "path": ".github/workflows/release.yml",
+      "run_attempt": 1,
+      "run_started_at": "2026-11-03T04:22:00Z",
+      "status": "completed",
+      "updated_at": "2026-11-03T04:58:22Z",
+      "head_repository": {
+        "full_name": "purlis/purlis"
+      }
+    },
+    {
+      "conclusion": "skipped",
+      "created_at": "2026-11-03T04:16:13Z",
+      "event": "workflow_run",
+      "head_branch": "main",
+      "head_sha": "b2387adf30401924f2f39c2ac18ab0e18082d4a8",
+      "id": 41577125330,
+      "name": "ci cancelled (push) of 2e0061df8a1a36b20b6c0156300c5cc189df2ec4",
+      "path": ".github/workflows/release.yml",
+      "run_attempt": 1,
+      "run_started_at": "2026-11-03T04:16:13Z",
+      "status": "completed",
+      "updated_at": "2026-11-03T04:16:15Z",
+      "head_repository": {
+        "full_name": "purlis/purlis"
+      }
+    }
+  ]
+}

@@ -1428,6 +1428,30 @@ fn saying_the_same_chat_order_again_writes_nothing() {
 }
 
 #[test]
+fn a_chat_no_relaunch_puts_back_is_never_written_into_the_record() {
+    // #4976: Try it's chat lives for the seconds it takes to report its start. A quit in those
+    // seconds must not bring back a chat nobody asked to keep.
+    let dir = tempfile::tempdir().unwrap();
+    let claude = a_claude(dir.path());
+    let (chats, wrote) = recorded();
+    chats.start(&chat(&claude, "kept", None), SIZE).unwrap();
+    let trying = Chat {
+        unrecorded: true,
+        ..chat(&claude, "try", None)
+    };
+    chats.start(&trying, SIZE).unwrap();
+
+    assert_eq!(names_in(&chats.record()), ["kept"]);
+    let written = lock(&wrote);
+    assert!(
+        written
+            .iter()
+            .all(|record| !names_in(record).contains(&"try".to_owned())),
+        "a record holding it was written"
+    );
+}
+
+#[test]
 fn saying_the_order_the_record_already_has_writes_nothing() {
     // The window says the order after every change to its tabs, opening a chat included,
     // and a chat it has just opened is already last in the record.
@@ -5313,6 +5337,102 @@ fn split_of(one: u32, other: u32) -> Layout {
     ))])
 }
 
+/// **A one-job pane is never written to the record** (#4761, spec #4750): a terminal editor or
+/// a forge login is held out of every record from its start, and its split out of the layout
+/// held, so the pane it opened beside is what a relaunch draws, and what is on screen still
+/// counts that pane's chat (a task is not ended under the person, nor a notice sent about it).
+#[test]
+fn a_one_job_pane_is_never_written_to_the_record() {
+    let (chats, wrote) = recorded();
+    let shell = chats
+        .start(&chat("/bin/sh", "shell 1", None), SIZE)
+        .unwrap();
+    let job = chats
+        .start_one_job(&chat("/bin/sh", "vim notes.md", None), SIZE)
+        .unwrap();
+
+    chats.lay_out(split_of(shell, job)).expect("both are open");
+
+    assert!(chats.is_one_job(job));
+    assert!(!chats.is_one_job(shell));
+    let listed = chats.open_now();
+    assert!(listed.iter().any(|one| one.session == job && one.one_job));
+    assert!(
+        listed
+            .iter()
+            .any(|one| one.session == shell && !one.one_job)
+    );
+    let records = lock(&wrote).clone();
+    assert!(
+        !records.is_empty(),
+        "the starts and the layout were written"
+    );
+    for record in &records {
+        assert!(
+            record.chats.iter().all(|one| one.name != "vim notes.md"),
+            "no record names the one-job program: {:?}",
+            record.chats
+        );
+        if let Some(layout) = &record.layout {
+            assert!(!layout.chats().contains(&job), "{layout:?}");
+        }
+    }
+    let last = records.last().expect("written");
+    assert_eq!(
+        last.layout,
+        Some(on_ops(vec![front_tab(Node::chat(shell))])),
+        "the pane it opened beside takes its split's place"
+    );
+    assert_eq!(chats.looked_at(), vec![shell]);
+    let _ = chats.close(job);
+    assert!(!chats.is_one_job(job));
+    let _ = chats.close(shell);
+}
+
+/// **A shell keeps running when its pane closes, or another chat replaces it** (#4761, ADR 0062
+/// as amended 2026-11-02): a layout without its pane ends nothing, and the record still holds
+/// it, so a dev server in it survives a closed pane and a relaunch.
+#[test]
+fn a_shell_keeps_running_when_its_pane_closes() {
+    let (chats, wrote) = recorded();
+    let shell = chats
+        .start(&chat("/bin/sh", "shell 1", None), SIZE)
+        .unwrap();
+    let other = chats
+        .start(&chat("/bin/sh", "shell 2", None), SIZE)
+        .unwrap();
+    let third = chats
+        .start(&chat("/bin/sh", "shell 3", None), SIZE)
+        .unwrap();
+    chats.lay_out(split_of(shell, other)).unwrap();
+
+    // Its pane closed: the split goes, the other pane takes its place.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(other))]))
+        .unwrap();
+    let running = |session: u32| chats.open_now().iter().any(|one| one.session == session);
+    assert!(running(shell), "closing its pane ended nothing");
+    assert!(
+        lock(&wrote)
+            .last()
+            .is_some_and(|record| record.chats.iter().any(|one| one.name == "shell 1")),
+        "the record still holds it"
+    );
+
+    // Shown again, then replaced in its pane by another chat.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(shell))]))
+        .unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(third))]))
+        .unwrap();
+    assert!(running(shell), "replacing it ended nothing");
+    assert!(!chats.looks_at(shell));
+    for session in [shell, other, third] {
+        let _ = chats.close(session);
+    }
+}
+
 #[test]
 fn two_chats_split_together_with_their_sizes_come_back_the_same_after_a_relaunch() {
     let dir = tempfile::tempdir().unwrap();
@@ -5761,6 +5881,26 @@ fn a_task_chat_sent_back_out_of_its_tab_has_none_in_the_record_and_is_still_open
     assert!(!chats.record().chats[0].has_tab());
     assert_eq!(chats.open_now().len(), 1, "sending it back ends nothing");
     assert!(!chats.open_now()[0].tab);
+    let _ = chats.close(session);
+}
+
+#[test]
+fn closing_the_tab_of_a_chat_that_is_not_a_task_ends_nothing_and_is_not_refused() {
+    // #4756: a close never ends a chat. The core used to refuse this one, saying closing its
+    // tab ends it; now it is open after, and its record is as it was.
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "steward", None), SIZE)
+        .unwrap();
+    let before = chats.record();
+
+    chats
+        .close_tab(session)
+        .expect("a tab close is never refused");
+
+    assert_eq!(chats.open_now().len(), 1, "closing its tab ends nothing");
+    assert_eq!(chats.record(), before);
     let _ = chats.close(session);
 }
 
@@ -9817,4 +9957,84 @@ fn a_dispatched_chats_choice_of_where_it_runs_puts_nothing_on_a_claim() {
         Some(None),
         "it follows the levels"
     );
+}
+
+#[test]
+fn a_task_pressed_into_a_pane_is_held_from_that_layout_and_the_chat_it_replaced_keeps_running() {
+    // #4757: a press shows a chat in the focused pane and says the new layout in the same call.
+    // The task it lands on is on screen from that layout (`dispatched::is_held_back` reads
+    // `looks_at`), so its due end waits for the person; the chat the pane showed before is in
+    // no pane now, and nothing of it ends. A press that moves on lets the task's end go, and a
+    // notification about it is no longer held back.
+    use purlis_core::reopen::{HandedFrom, Mode, Owed};
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let asker = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let task = chats
+        .start(
+            &Chat {
+                from: Some(HandedFrom {
+                    id: None,
+                    chat: asker,
+                    name: "ide.7".to_owned(),
+                    workspace: purlis_core::active::Place::Workspace("alpha".to_owned()),
+                    report: Owed::Due,
+                    mode: Mode::Task,
+                    depth: 1,
+                    root: None,
+                    above: None,
+                    by_person: false,
+                    long: false,
+                }),
+                ..chat(&a_claude(dir.path()), "talk", None)
+            },
+            SIZE,
+        )
+        .unwrap();
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(asker))]))
+        .unwrap();
+    assert!(!chats.looks_at(task), "the task is in no pane yet");
+
+    // The press: the focused pane shows the task in place of the chat that asked for it.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(task))]))
+        .expect("a press may show any open chat");
+
+    assert!(chats.looks_at(task), "held from the press's own layout");
+    assert!(!chats.looks_at(asker));
+    let looking = |chat_on_screen| crate::asknotify::Looking {
+        window_in_front: true,
+        inbox_open: false,
+        chat_on_screen,
+    };
+    assert!(
+        looking(chats.looks_at(task)).is_looking(),
+        "a notification about the task is held back while the person reads it"
+    );
+    assert!(
+        lock(&chats.open).contains_key(&asker),
+        "the chat the press replaced keeps running"
+    );
+
+    // ⌘⇧H: the pane goes back to the chat that asked.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(asker))]))
+        .unwrap();
+
+    assert!(
+        !chats.looks_at(task),
+        "its end is no longer held by the pane"
+    );
+    assert!(
+        !looking(chats.looks_at(task)).is_looking(),
+        "and a notification about it is sent again"
+    );
+    assert!(
+        lock(&chats.open).contains_key(&task),
+        "and nothing of it ended"
+    );
+    chats.end_all();
 }

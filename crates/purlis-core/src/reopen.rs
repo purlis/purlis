@@ -279,6 +279,13 @@ pub struct Chat {
     /// level could be written into by anyone who can write the plane's state, and a chat
     /// brought back from it starts in its harness's default.
     pub task_level: crate::dispatchmode::Level,
+    /// **A chat no relaunch puts back** (#4976): Pool setup's Try it chat, which lives for the
+    /// seconds it takes to report its start. **Never written to the record on disk**: the record
+    /// leaves such a chat out whole, so a launch after a quit mid-try puts nothing back, and the
+    /// pool's own record of what it kept running closes it on its pool once that is reached. Not
+    /// a format change: no key is written or read for it. **Only for a chat that does no work**:
+    /// what reads the record, a commit's provenance among it, never sees such a chat.
+    pub unrecorded: bool,
 }
 
 impl Chat {
@@ -1990,6 +1997,8 @@ impl From<ChatOnDisk> for Chat {
             routing: chat.routing,
             // Never on disk ([`Chat::task_level`]): a chat read back asks.
             task_level: crate::dispatchmode::Level::Asks,
+            // Never on disk ([`Chat::unrecorded`]): a chat that is read back was recorded.
+            unrecorded: false,
         }
     }
 }

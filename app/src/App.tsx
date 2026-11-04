@@ -28,6 +28,7 @@ import {
   type RelaunchChoice,
   type RelaunchQuestion,
   type SlowStart,
+  type TabWindow,
   type TemplateChoice,
 } from "./bindings";
 import type { ForgeAsk } from "./ForgeQuestion";
@@ -201,6 +202,15 @@ function layoutUpdates(name: string, behind: readonly string[]): string {
   return `${LAYOUT_FIX_LABEL} brings it up to date, and ${named} too.`;
 }
 
+/** The window root's attribute in a tab window (#4768): its number in its project. */
+export const TAB_WINDOW = "data-tab-window";
+
+/** What a tab window tells the other windows: nothing (#4768). One value each, so a render
+ *  says nothing new. */
+const NOTHING_NEEDING: Needing[] = [];
+const NOTHING_QUIET: Quiet[] = [];
+const NOTHING_ENDING: Ending[] = [];
+
 function App() {
   // The WebView's own menu, taken away from the whole window (`Menus.tsx`). One listener, on
   // the window, so it covers every surface including the ones with no charter menu of their
@@ -211,6 +221,12 @@ function App() {
    *  moved into. Tauri's label, read once — a window never becomes another. */
   const own = useMemo(() => thisWindow(), []);
   const split = own !== MAIN;
+  /**
+   * **What this window is a tab window of** (#4768), or null: a bare window of one project,
+   * holding the strip and panes of its own tabs, with no sidebar, no project strip and no
+   * opener. Asked once, as a split window first draws.
+   */
+  const [tabWindow, setTabWindow] = useState<TabWindow | null>(null);
   /** What the launch resolved, asked once. `undefined` while the core has not answered. */
   const [launch, setLaunch] = useState<{ plane: PlaneId | null; here: boolean; reason: string }>();
   /** The projects this window holds, left to right as the strip shows them. */
@@ -1232,6 +1248,14 @@ function App() {
     if (split) {
       void (async () => {
         try {
+          // A tab window draws its project's tabs that are its own, and nothing else.
+          const tab = await commands.tabWindowHanded().catch(() => null);
+          if (tab) {
+            setTabWindow(tab);
+            setPlanes([tab.plane]);
+            setShowing({ at: "plane", plane: tab.plane });
+            return;
+          }
           const held = await commands.projectsHanded().catch(() => null);
           if (held) {
             setPlanes(held.planes);
@@ -1597,10 +1621,11 @@ function App() {
   // FROM, so a window that reported "I hold nothing" on its first render would wipe the very
   // record it is about to read.
   useEffect(() => {
-    if (restoring) return;
+    // A tab window holds no project of its own: its project window does (#4768).
+    if (restoring || tabWindow !== null) return;
     const at = inFront === undefined ? -1 : planes.indexOf(inFront);
     void commands.windowHoldsPlanes({ planes, active: at < 0 ? null : at }).catch(() => undefined);
-  }, [inFront, planes, restoring]);
+  }, [inFront, planes, restoring, tabWindow]);
 
   // A second launch handed its directory over (ADR 0033). It goes through the same opener
   // every other path uses, so the trust ask is the same ask — and it opens as another project
@@ -1774,6 +1799,7 @@ function App() {
       createWorkspace: () => undefined,
       removeWorkspace: () => undefined,
       showChat: () => undefined,
+      paneBack: () => undefined,
       showTabTasks: () => undefined,
       ownTab: () => undefined,
       beside: () => undefined,
@@ -1790,6 +1816,7 @@ function App() {
       // A view is shown in a project's tab, and there is no project here. The rows that open one
       // do not exist without a plane, for the same reason the workspace rows above do not.
       openView: () => undefined,
+      openViewBeside: () => undefined,
       // A session record is resumed into a project, and there is no project here: its rows are
       // a project's catalogue's, and this one lists none.
       resumeSession: async () => nowhere(),
@@ -1823,6 +1850,7 @@ function App() {
       stopBrowser: async () => nowhere(),
       openBrowserTimeline: () => undefined,
       pinTab: async () => nowhere(),
+      moveToWindow: async () => nowhere(),
       tileAll: () => undefined,
       zoomPane: () => undefined,
       undoLayout: () => undefined,
@@ -2178,7 +2206,13 @@ function App() {
    * and draws theirs beside its own. A row a window has not caught up on — a project that has
    * just moved in here — is drawn once, from this window's own report.
    */
-  const others = useOtherWindows({ needing, quiet, ending, settled });
+  // **A tab window says nothing of its own** (#4768): its project's asks and what a quit would
+  // end are its project window's to say, once.
+  const others = useOtherWindows(
+    tabWindow === null
+      ? { needing, quiet, ending, settled }
+      : { needing: NOTHING_NEEDING, quiet: NOTHING_QUIET, ending: NOTHING_ENDING, settled: true },
+  );
   const everyNeeding = useMemo(
     () => [...needing, ...others.needing.filter((one) => !planes.includes(one.plane))],
     [needing, others.needing, planes],
@@ -2433,8 +2467,10 @@ function App() {
     <main
       className="window"
       {...{
-        [FOCUS_MODE]: focusMode.on ? "" : undefined,
+        // A tab window is the work alone, as focus mode draws it, for good (#4768).
+        [FOCUS_MODE]: focusMode.on || tabWindow !== null ? "" : undefined,
         [FOCUS_BACK]: focusMode.back ? "" : undefined,
+        [TAB_WINDOW]: tabWindow === null ? undefined : String(tabWindow.number),
       }}
     >
       {/* The window's own title bar (ADR 0054): on macOS it IS the title bar — the system's
@@ -2444,7 +2480,7 @@ function App() {
           itself, the bar's first control shows it again (R91). */}
       <TitleBar
         leading={
-          planes.length > 0 ? (
+          planes.length > 0 && tabWindow === null ? (
             <>
               {railMode === "auto" && (
                 <IconButton
@@ -2506,7 +2542,8 @@ function App() {
           beside it, which glides as the rail hides and shows (R84). Its left edge is where the
           pointer peeks a hidden rail (R86). */}
       <div className="window-below" ref={below}>
-        {planes.length > 0 && (
+        {/* A tab window has no project rail: its one project is its project window's (#4768). */}
+        {planes.length > 0 && tabWindow === null && (
           <ProjectRail
             projects={drawn}
             inFront={inFront}
@@ -2744,6 +2781,7 @@ function App() {
               poolSetupAsked={poolSetupAsk?.plane === plane ? poolSetupAsk.at : undefined}
               licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
               focusMode={focusMode.on}
+              tabWindow={tabWindow?.number}
               settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
               settingsLinkAsked={settingsLinkAsk?.plane === plane ? settingsLinkAsk : undefined}
               yourSettingsAsked={yourSettingsAsk?.plane === plane ? yourSettingsAsk.at : undefined}

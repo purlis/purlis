@@ -14,15 +14,8 @@ import {
   splitFocusedPane,
   type Tabs,
 } from "./tabs";
-import {
-  canTileAll,
-  canUndoLayout,
-  tileAll,
-  undoLayout,
-  zoomedLayout,
-  zoomedOf,
-  zoomFocusedPane,
-} from "./tiling";
+import { canUndoLayout, undoLayout } from "./layoutUndo";
+import { canTileAll, tileAll, zoomedLayout, zoomedOf, zoomFocusedPane } from "./tiling";
 
 /**
  * **Tile all and Focus this pane** (#4765, spec #4750 stories 76, 77 and 85): Tile all evens a
@@ -227,46 +220,48 @@ describe("Undo after Tile all (#4765)", () => {
   it("puts the tab's tree and focus back as they were", () => {
     const tabs = focusPane(nested(5), 3);
     const tiled = tileAll(tabs, 1);
-    expect(canUndoLayout(tiled, 1)).toBe(true);
+    expect(canUndoLayout(tiled)).toBe(true);
+    expect(tiled.undo?.did).toBe("Tiled the tab's 5 panes.");
 
-    const undone = undoLayout(tiled, 1);
+    const undone = undoLayout(tiled);
 
     expect(treeOf(undone)).toEqual(treeOf(tabs));
     expect(undone.byId[1].focused).toBe(3);
-    expect(canUndoLayout(undone, 1)).toBe(false);
+    expect(canUndoLayout(undone)).toBe(false);
   });
 
   it("is one step: a second Undo changes nothing", () => {
-    const undone = undoLayout(tileAll(nested(4), 1), 1);
+    const undone = undoLayout(tileAll(nested(4), 1));
 
-    expect(undoLayout(undone, 1)).toBe(undone);
+    expect(undoLayout(undone)).toBe(undone);
   });
 
   it("is gone once the tab's layout has changed since", () => {
     const tiled = tileAll(nested(4), 1);
     const split = splitFocusedPane(tiled, "row", 9, "9");
 
-    expect(canUndoLayout(split, 1)).toBe(false);
-    expect(undoLayout(split, 1)).toBe(split);
+    expect(canUndoLayout(split)).toBe(false);
+    expect(undoLayout(split)).toBe(split);
   });
 
-  it("is per tab: tiling another tab leaves this tab's Undo", () => {
+  it("is the window's one Undo: tiling another tab puts that one back, not both (#4763)", () => {
     let tabs = nested(3);
     tabs = splitFocusedPane(openTab(tabs, 7, "7", "steward"), "row", 8, "8");
     const [first, second] = tabs.order;
+    const once = tileAll(tabs, first);
 
-    const both = tileAll(tileAll(tabs, first), second);
+    const back = undoLayout(tileAll(once, second));
 
-    expect(canUndoLayout(both, first)).toBe(true);
-    expect(canUndoLayout(both, second)).toBe(true);
-    expect(treeOf(undoLayout(both, first))).toEqual(treeOf(tabs));
+    expect(treeOf(back, 0)).toEqual(treeOf(once, 0));
+    expect(treeOf(back, 1)).toEqual(treeOf(tabs, 1));
+    expect(canUndoLayout(back)).toBe(false);
   });
 
   it("is nothing for a tab never tiled", () => {
     const tabs = nested(3);
 
-    expect(canUndoLayout(tabs, 1)).toBe(false);
-    expect(undoLayout(tabs, 1)).toBe(tabs);
+    expect(canUndoLayout(tabs)).toBe(false);
+    expect(undoLayout(tabs)).toBe(tabs);
   });
 });
 

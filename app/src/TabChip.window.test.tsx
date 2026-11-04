@@ -22,8 +22,9 @@ import { CARD_DELAY_MS } from "./ChatsSection";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { GRACE_MS, REST_MS } from "./tabTasks";
-import { stripNamed } from "./test-strips";
+import { goToWorkspace, stripNamed } from "./test-strips";
 import { hoverPlacementOf, hoverTipOf } from "./ui/tooltip/tooltip.testkit";
+import { theFrameNow } from "./frame.testkit";
 
 /**
  * **A session's tab wears a chip of its tasks, which opens the menu to switch between them**
@@ -78,6 +79,13 @@ declare global {
   interface Window {
     __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
   }
+}
+
+/** An event from the core, and the frame the window draws it in: the chat stores tell their
+ *  readers once a frame (`heldStore.ts`), and this test reads the result on the next line. */
+function heard(handler: number, message: unknown) {
+  window.__TAURI_INTERNALS__.runCallback(handler, message);
+  theFrameNow();
 }
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
@@ -234,8 +242,7 @@ function core(open: Listed[], finished: FinishedTask[] = []) {
     const handlers = listeners.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
     await act(async () => {
-      for (const handler of handlers)
-        window.__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload });
+      for (const handler of handlers) heard(handler, { event, id: 1, payload });
       await Promise.resolve();
     });
   };
@@ -563,8 +570,9 @@ describe("the chip on a session's tab", () => {
 
     await waitFor(() => expect(onScreen()).toEqual([5]));
     expect(document.activeElement).toBe(pane(5));
-    // It is on screen now, so the tab wears no hand for it. And the tab stays on it.
-    expect(hand("steward 1")).toBeNull();
+    // It is on screen now, in the focused pane (#4757): the tab is named for it and wears no
+    // hand for it. And the pane stays on it.
+    expect(hand("sweep")).toBeNull();
     await move(5, "running", 2, []);
     expect(onScreen()).toEqual([5]);
   });
@@ -579,29 +587,16 @@ describe("the chip on a session's tab", () => {
     );
     await userEvent.click(hand("steward 1") as HTMLElement);
 
+    // probe works in beta: the press brings beta's strip forward with it and shows probe in a
+    // pane there (#4757). Steward 1's tab stays on alpha's strip, still showing steward 1.
     await waitFor(() => expect(onScreen()).toEqual([6]));
-    expect(hand("steward 1")?.getAttribute("aria-label")).toBe("talk needs you. Go to talk");
-  });
-
-  it("is still worn, with a line for it, by a tab showing a task that has ended", async () => {
-    const { tree, ended } = await drawn([
-      chat(1, "alpha"),
-      chat(4, "alpha", { persona: "devops", label: "talk", from: taskOf(1) }),
-    ]);
-    await userEvent.click(treeRow(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    await ended(4);
-    await waitFor(() => expect(screen.queryByTestId("task-away")).not.toBeNull());
-
-    // Its program ended owing its report: it failed, and is counted so.
-    expect(theChip("steward 1").getAttribute("aria-label")).toBe("Tasks of steward 1: 1 failed");
-    press(theChip("steward 1"));
-    expect(lines()).toEqual([
-      "steward 1 running (no detail from claude)",
-      "talk, shown now ended without a report",
-    ]);
-    expect(line("talk").hasAttribute("data-current")).toBe(true);
+    expect(tab("probe")).toBeTruthy();
+    // Back on alpha, beta's strip is not drawn, so probe is off screen again and still first.
+    await goToWorkspace("alpha");
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+    expect(hand("steward 1")?.getAttribute("aria-label")).toBe(
+      "probe and 1 more need you. Go to probe",
+    );
   });
 });
 
@@ -660,7 +655,7 @@ describe("the menu a chip opens", () => {
     expect(facts(screen.getByRole("tooltip"))["In this state"]).toBe("2m");
   });
 
-  it("switches the tab to the row picked, closes, and puts the keyboard in that chat", async () => {
+  it("shows the row picked in the focused pane, closes, and puts the keyboard in that chat", async () => {
     const { asked } = await drawn(withTasks());
     press(theChip("steward 1"));
 
@@ -669,26 +664,12 @@ describe("the menu a chip opens", () => {
     await waitFor(() => expect(onScreen()).toEqual([5]));
     expect(menu()).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(pane(5)));
-    // No tab was added, and the core was told of none.
+    // No tab was added, and the core was told of none. A line is a press (#4757): sweep took
+    // steward 1's place in the pane, and the tab is named for it. (Where the menu marks the
+    // chat on screen is "opens the fold by itself", below.)
     expect(within(strip()).getAllByRole("tab")).toHaveLength(2);
     expect(commandsOf(asked, "open_chat_tab")).toEqual([]);
-
-    // And the menu marks where the tab is now.
-    press(theChip("steward 1"));
-    expect(line("sweep").hasAttribute("data-current")).toBe(true);
-    expect(line("steward 1").hasAttribute("data-current")).toBe(false);
-  });
-
-  it("goes back to the session's own chat from its row", async () => {
-    const { tree } = await drawn(withTasks());
-    await userEvent.click(treeRow(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    press(theChip("steward 1"));
-    await userEvent.click(line("steward 1"));
-
-    await waitFor(() => expect(onScreen()).toEqual([1]));
-    await waitFor(() => expect(document.activeElement).toBe(pane(1)));
+    expect(tab("sweep")).toBeTruthy();
   });
 
   it("folds done and cancelled into Finished (n), and leaves a failure a row of its own", async () => {
@@ -724,11 +705,15 @@ describe("the menu a chip opens", () => {
 
   it("opens the fold by itself where the chat on screen is in it", async () => {
     const { tree, reported } = await drawn(withTasks());
-    await userEvent.click(treeRow(tree, "sweep"));
-    await waitFor(() => expect(onScreen()).toEqual([5]));
+    // Beside its session (Space), so steward 1 keeps its pane and its chip: a plain press
+    // would show sweep in steward 1's place (#4757).
+    treeRow(tree, "sweep").focus();
+    await userEvent.keyboard(" ");
+    await waitFor(() => expect(onScreen()).toEqual([1, 5]));
     await reported(5, "done");
 
-    press(theChip("steward 1"));
+    // The tab is named for its focused pane, sweep's (#4762), and still wears steward 1's chip.
+    press(within(cell("sweep")).getByRole("button", { name: /^Tasks of steward 1/ }));
 
     expect(line("sweep").hasAttribute("data-current")).toBe(true);
   });
@@ -813,7 +798,14 @@ describe("what the menu says of the work (#1493, #1494, #1495)", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(commandsOf(asked, "answer_task_question")).toEqual([
-      { plane: PLANE, session: 4, number: 2, question: "Which branch?", text: "main" },
+      {
+        plane: PLANE,
+        session: 4,
+        number: 2,
+        question: "Which branch?",
+        text: "main",
+        overrides: false,
+      },
     ]);
   });
 
@@ -1184,30 +1176,6 @@ describe("the keys for the chats inside a tab", () => {
     });
   });
 
-  it("stays, with the keyboard on the line, when Enter is pressed on a task that has ended", async () => {
-    const { tree, ended } = await drawn([
-      chat(1, "alpha"),
-      chat(4, "alpha", { persona: "devops", label: "talk", from: taskOf(1) }),
-    ]);
-    await userEvent.click(treeRow(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-    await ended(4);
-    const back = await screen.findByRole("button", { name: /^Back to/ });
-    await waitFor(() => expect(document.activeElement).toBe(back));
-
-    // The key lands the keyboard on the chat the tab shows, which is the ended task's line.
-    chord("J");
-    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
-    await userEvent.keyboard("{Enter}");
-
-    expect(menu()).not.toBeNull();
-    expect(document.activeElement).toBe(line("talk"));
-    // And Escape still gives the keyboard back to where it was.
-    await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(menu()).toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(back));
-  });
-
   describe("where the window's keys are not the window's", () => {
     /** Something on the page that the keyboard is in, taken away after the test. */
     function typingIn(html: string): HTMLElement {
@@ -1242,7 +1210,7 @@ describe("the keys for the chats inside a tab", () => {
       await waitFor(() => expect(onScreen()).toEqual([2]));
       const field = typingIn("<input data-typing-in />");
 
-      // steward 2 has no tasks: none of the four rows can run.
+      // steward 2 has no tasks: its tasks row cannot run.
       const reached = fireEvent.keyDown(field, { key: "J", ctrlKey: true, shiftKey: true });
 
       expect(reached).toBe(true);
@@ -1259,27 +1227,16 @@ describe("the keys for the chats inside a tab", () => {
     });
   });
 
-  it("goes to the next and the previous chat in the tab, round its ends, and back to its own", async () => {
+  it("goes to the next tab with Ctrl+Shift+], not to the next chat in this one (#4767)", async () => {
     await drawn(withTasks());
     pane(1).focus();
 
+    // The key that stepped through a tab's chats brings the next tab forward now, round the
+    // strip's end, and the tab's own chat keeps its pane.
     chord("}", "BracketRight");
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-    await waitFor(() => expect(document.activeElement).toBe(pane(4)));
+    await waitFor(() => expect(onScreen()).toEqual([2]));
     chord("}", "BracketRight");
-    await waitFor(() => expect(onScreen()).toEqual([7]));
-
-    chord("{", "BracketLeft");
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-    chord("{", "BracketLeft");
     await waitFor(() => expect(onScreen()).toEqual([1]));
-    // Round the end: before the session's own chat is the last task.
-    chord("{", "BracketLeft");
-    await waitFor(() => expect(onScreen()).toEqual([6]));
-
-    chord("H");
-    await waitFor(() => expect(onScreen()).toEqual([1]));
-    await waitFor(() => expect(document.activeElement).toBe(pane(1)));
     // No tab was added on the way.
     expect(within(strip()).getAllByRole("tab")).toHaveLength(2);
   });
@@ -1306,7 +1263,6 @@ describe("the keys for the chats inside a tab", () => {
     pane(2).focus();
 
     chord("J");
-    chord("}", "BracketRight");
     chord("H");
 
     expect(menu()).toBeNull();
@@ -1426,28 +1382,6 @@ describe("tasks that have finished", () => {
       "steward 1, shown now running (no detail from claude)",
       "Finished (1)",
     ]);
-  });
-
-  it("are one line, marked as shown, for the task the tab was left on", async () => {
-    const { tree, finishes } = await drawn(some());
-    await userEvent.click(treeRow(tree, "talk"));
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-
-    // Its finished row carries the number its chat had: what the tab was left on is found
-    // by that, never by its name.
-    await finishes(4, finishedTask(1, "talk", { ...failed, chat: 4 }));
-    await waitFor(() => expect(screen.queryByTestId("task-away")).not.toBeNull());
-
-    await waitFor(() =>
-      expect(theChip("steward 1").getAttribute("aria-label")).toBe("Tasks of steward 1: 1 failed"),
-    );
-    press(theChip("steward 1"));
-    // Not two lines for one task: the finished row is the line of what the tab shows.
-    expect(lines()).toEqual([
-      "steward 1 running (no detail from claude)",
-      "talk, shown now failed",
-    ]);
-    expect(line("talk").hasAttribute("data-current")).toBe(true);
   });
 });
 

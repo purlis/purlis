@@ -1,0 +1,42 @@
+{
+ "_recorded": "2026-11-03, anonymously from ghcr.io/purlis/purlis-runner: a part of its tags and the manifests they reach, each cut to the fields the selection reads (mediaType, artifactType, subject, manifests).",
+ "tags": {
+  "main": "sha256:7f08c6fa1d0fef230602648ee552d0d8c94f558c509fb42f8949e321af2e500a",
+  "sha-b2387adf30401924f2f39c2ac18ab0e18082d4a8": "sha256:d33906a406ebe3b7ea5a0544f5a2437fc350b31fb712c16f188566d0126d65aa",
+  "sha256-d33906a406ebe3b7ea5a0544f5a2437fc350b31fb712c16f188566d0126d65aa": "sha256:ff218757f8bb51461af73d12da1810da850f2306298fbe73c2fa8175bffea29d",
+  "sha256-21c122b9355ce9016ff8028a4ea57d6a931e6ea9c930c33d7be73f02da05faeb": "sha256:d007367797d560228c5dea54e4e7424fe58d0246f11408798a030b4102af3c61",
+  "sha256-35a494956481828609179ab6756df467b25e40a65148017a0e4a955acd529b1d": "sha256:5a10b6efb9744aad687a338d3df73d6e476015d682d2c4dbeeb275464b45a7d4",
+  "sha-02ce5aed5acbf7acb872d27ae9d9b55082de6bad": "sha256:8237925ac22d406590b1daae0c27398e1aba44024b148a00264123fbcbf1dbed",
+  "sha256-8237925ac22d406590b1daae0c27398e1aba44024b148a00264123fbcbf1dbed": "sha256:4a0bd4176b31f166f30346eb7ad8cfeb4fe4610540e3e468a1d36ed47d5a661f",
+  "sha256-aa446a16e363def3509006924a51b04ce76b93f038309ad9b25b6aab897971bc": "sha256:93ecdd68cbf69df5e912f41ba6d6c36aca8af25c2c3f02e972351c8ab06250eb",
+  "sha256-a4de49e7d983fb6738eddc8fbb6f66dcbbd483c0d9bc5e3bd4a5afd24740d17d": "sha256:649b66007c86e17c8dc79a11bcc01d1589d89e18bb08b4fd1d3a45f926977de4"
+ },
+ "manifests": {
+  "sha256:7f08c6fa1d0fef230602648ee552d0d8c94f558c509fb42f8949e321af2e500a": {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [
+   {"digest": "sha256:d393ae758105fcb3d4f0df64935e4d0a59872470c996766f3135f338eb3b2fea", "mediaType": "application/vnd.oci.image.manifest.v1+json", "platform": {"architecture": "amd64", "os": "linux"}},
+   {"digest": "sha256:9926eaf1fb84ef39aa74ba4762a48fdbb739e12ee3937e66ea4c9859e9ca0bd4", "mediaType": "application/vnd.oci.image.manifest.v1+json", "platform": {"architecture": "arm64", "os": "linux"}}]},
+  "sha256:d33906a406ebe3b7ea5a0544f5a2437fc350b31fb712c16f188566d0126d65aa": {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [
+   {"digest": "sha256:21c122b9355ce9016ff8028a4ea57d6a931e6ea9c930c33d7be73f02da05faeb", "mediaType": "application/vnd.oci.image.manifest.v1+json", "platform": {"architecture": "amd64", "os": "linux"}},
+   {"digest": "sha256:35a494956481828609179ab6756df467b25e40a65148017a0e4a955acd529b1d", "mediaType": "application/vnd.oci.image.manifest.v1+json", "platform": {"architecture": "arm64", "os": "linux"}}]},
+  "sha256:ff218757f8bb51461af73d12da1810da850f2306298fbe73c2fa8175bffea29d": {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [
+   {"digest": "sha256:66e41446cbb45da3e4ea314989ca7ecf1c0b719872bab69d474126ffcac39022", "mediaType": "application/vnd.oci.image.manifest.v1+json", "artifactType": "application/vnd.oci.empty.v1+json"},
+   {"digest": "sha256:1b3fe7493ce02fd2eed8269310c9df18e53b01b621181fed025fa115ec1b6fa9", "mediaType": "application/vnd.oci.image.manifest.v1+json", "artifactType": "application/vnd.dev.sigstore.bundle.v0.3+json"}]},
+  "sha256:d007367797d560228c5dea54e4e7424fe58d0246f11408798a030b4102af3c61": {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [
+   {"digest": "sha256:7904a5cd355dad01d9c61ff15c9a25ae8083a991a3c058a9fab7a0ea4283b509", "mediaType": "application/vnd.oci.image.manifest.v1+json", "artifactType": "application/vnd.oci.empty.v1+json"},
+   {"digest": "sha256:272d2d4186eaeef0d28177512d8599cd23c5a98a45924ecf5dfa4c89e7acd0a7", "mediaType": "application/vnd.oci.image.manifest.v1+json", "artifactType": "application/vnd.dev.sigstore.bundle.v0.3+json"}]},
+  "sha256:5a10b6efb9744aad687a338d3df73d6e476015d682d2c4dbeeb275464b45a7d4": {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [
+   {"digest": "sha256:3bc9563770b68aa5f92c368f557b45b73d8e1eeb303442affdbe905f15f04024", "mediaType": "application/vnd.oci.image.manifest.v1+json", "artifactType": "application/vnd.oci.empty.v1+json"},
+   {"digest": "sha256:4db53e5c04fe20af60f2990f6d5db107fc570cffefd9a8d65c3434046aff72d5", "mediaType": "application/vnd.oci.image.manifest.v1+json", "artifactType": "application/vnd.dev.sigstore.bundle.v0.3+json"}]},
+  "sha256:8237925ac22d406590b1daae0c27398e1aba44024b148a00264123fbcbf1dbed": {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [
+   {"digest": "sha256:aa446a16e363def3509006924a51b04ce76b93f038309ad9b25b6aab897971bc", "mediaType": "application/vnd.oci.image.manifest.v1+json", "platform": {"architecture": "amd64", "os": "linux"}},
+   {"digest": "sha256:a4de49e7d983fb6738eddc8fbb6f66dcbbd483c0d9bc5e3bd4a5afd24740d17d", "mediaType": "application/vnd.oci.image.manifest.v1+json", "platform": {"architecture": "arm64", "os": "linux"}}]},
+  "sha256:4a0bd4176b31f166f30346eb7ad8cfeb4fe4610540e3e468a1d36ed47d5a661f": {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [
+   {"digest": "sha256:6680ef18840340309996dae95cafc0662cf30b3f8c20b818691c457a06cd15cc", "mediaType": "application/vnd.oci.image.manifest.v1+json", "artifactType": "application/vnd.oci.empty.v1+json"}]},
+  "sha256:93ecdd68cbf69df5e912f41ba6d6c36aca8af25c2c3f02e972351c8ab06250eb": {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [
+   {"digest": "sha256:3d0e7a0aceab2189cec30d21a5ffb169785819a6c376705e187bb38e5f94aa71", "mediaType": "application/vnd.oci.image.manifest.v1+json", "artifactType": "application/vnd.oci.empty.v1+json"}]},
+  "sha256:649b66007c86e17c8dc79a11bcc01d1589d89e18bb08b4fd1d3a45f926977de4": {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [
+   {"digest": "sha256:2f8020dc1a0f6d020a7ad9008bb9486eb6cefe9c66a434a17b5420dbf62d9d87", "mediaType": "application/vnd.oci.image.manifest.v1+json", "artifactType": "application/vnd.oci.empty.v1+json"}]},
+  "sha256:6680ef18840340309996dae95cafc0662cf30b3f8c20b818691c457a06cd15cc": {"mediaType": "application/vnd.oci.image.manifest.v1+json", "artifactType": "application/vnd.dev.sigstore.bundle.v0.3+json", "subject": {"mediaType": "application/vnd.oci.image.index.v1+json", "digest": "sha256:8237925ac22d406590b1daae0c27398e1aba44024b148a00264123fbcbf1dbed"}},
+  "sha256:21c122b9355ce9016ff8028a4ea57d6a931e6ea9c930c33d7be73f02da05faeb": {"mediaType": "application/vnd.oci.image.manifest.v1+json", "config": {"mediaType": "application/vnd.oci.image.config.v1+json"}}
+ }
+}
