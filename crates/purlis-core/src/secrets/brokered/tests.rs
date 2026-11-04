@@ -3072,6 +3072,7 @@ fn served_recorded(asker: &Asker, wanted: Wanted) -> (Vec<Frame>, Vec<RunBlocked
                     .push((target.map(str::to_owned), by, times));
             })
         }),
+        None,
     );
     let frames = String::from_utf8(wire.0.lock().unwrap().clone())
         .unwrap()
@@ -5161,4 +5162,169 @@ fn a_github_app_tool_whose_mint_is_refused_runs_nothing() {
         "{frames:?}"
     );
     assert_eq!(stdout(&frames), "");
+}
+
+// ----------------------------------------------------------------------------------------
+// a key the vault does not hold is a Secret ask (#5068, #5071, ADR 0109)
+
+/// Every frame the app wrote for `wanted`, served unwrapped and asking `asks`, holding at most
+/// `within`.
+fn served_asking(
+    asker: &Asker,
+    wanted: Wanted,
+    asks: &crate::secrets::ask::Asks,
+    within: Duration,
+) -> Vec<Frame> {
+    let (asker, wanted) = as_tool(asker.clone(), wanted);
+    let (reader, _keep) = held_open();
+    let wire = Wire::default();
+    serve_asking(
+        &asker,
+        wanted,
+        reader,
+        Box::new(wire.clone()),
+        Wrap::Unwrapped,
+        Missing {
+            asks,
+            within,
+            moved: &|| {},
+        },
+    );
+    let bytes = wire.0.lock().unwrap().clone();
+    String::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("every line is a frame"))
+        .collect()
+}
+
+fn a_missing_key(root: &Path) -> Wanted {
+    let mut want = wanted(root, "team", sh(r#"test "$X" = "fr3sh-v4lue" && echo ran"#));
+    want.env = vec!["X=MISSING".into()];
+    want
+}
+
+#[test]
+fn a_run_missing_its_key_waits_on_a_secret_ask_and_runs_with_the_value_filled() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            served_asking(
+                &asker(project.path(), Some("devops")),
+                a_missing_key(project.path()),
+                &asks,
+                Duration::from_secs(60),
+            )
+        });
+        let open = loop {
+            if let Some(one) = asks.open().into_iter().next() {
+                break one;
+            }
+            std::thread::yield_now();
+        };
+        assert_eq!(
+            (
+                open.chats.as_slice(),
+                open.persona.as_str(),
+                open.vault.as_str(),
+                open.key.as_str()
+            ),
+            (&[7][..], "devops", "team", "MISSING")
+        );
+        asks.answer(
+            &Ctx::new(project.path(), Env::of(&[])),
+            open.id,
+            crate::secrets::ask::Answer::Fill("fr3sh-v4lue".to_owned().into()),
+            crate::harness::asks::Answerer::admitted(crate::harness::asks::Admitted::LocalUi)
+                .unwrap(),
+        )
+        .unwrap();
+        run.join().unwrap()
+    });
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "ran\n");
+    assert!(
+        !format!("{frames:?}").contains("fr3sh-v4lue"),
+        "the value never comes back: {frames:?}"
+    );
+}
+
+#[test]
+fn a_run_missing_its_key_that_the_person_declines_hears_declined() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            served_asking(
+                &asker(project.path(), Some("devops")),
+                a_missing_key(project.path()),
+                &asks,
+                Duration::from_secs(60),
+            )
+        });
+        let id = loop {
+            if let Some(one) = asks.open().first() {
+                break one.id;
+            }
+            std::thread::yield_now();
+        };
+        asks.answer(
+            &Ctx::new(project.path(), Env::of(&[])),
+            id,
+            crate::secrets::ask::Answer::Decline,
+            crate::harness::asks::Answerer::admitted(crate::harness::asks::Admitted::LocalUi)
+                .unwrap(),
+        )
+        .unwrap();
+        run.join().unwrap()
+    });
+    assert_eq!(
+        frames.last(),
+        Some(&Frame::Refused {
+            why: "declined team/MISSING".into(),
+            code: 1
+        }),
+        "{frames:?}"
+    );
+}
+
+#[test]
+fn a_run_missing_its_key_that_nobody_answers_in_time_ends_waiting_on_the_person() {
+    let project = project();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+    let frames = served_asking(
+        &asker(project.path(), Some("devops")),
+        a_missing_key(project.path()),
+        &asks,
+        Duration::ZERO,
+    );
+    assert_eq!(
+        frames.last(),
+        Some(&Frame::Refused {
+            why: "waiting on you for team/MISSING; retry once answered".into(),
+            code: WAITING_ON_THE_PERSON
+        }),
+        "{frames:?}"
+    );
+    assert!(
+        frames
+            .iter()
+            .any(|frame| matches!(frame, Frame::Note(note) if note.contains("asked the person"))),
+        "{frames:?}"
+    );
+    assert_eq!(asks.open().len(), 1, "the ask stays open");
+}
+
+#[test]
+fn a_run_missing_its_key_where_nothing_asks_is_refused_as_before() {
+    let project = project();
+    let frames = served(
+        &asker(project.path(), Some("devops")),
+        a_missing_key(project.path()),
+    );
+    assert!(
+        matches!(frames.last(), Some(Frame::Refused { code: 1, .. })),
+        "{frames:?}"
+    );
 }

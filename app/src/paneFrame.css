@@ -303,6 +303,61 @@
   margin-block-start: var(--space-2);
 }
 
+/* **The chat at a glance** (#4760, spec #4750 story 54): its name, its sandbox, its state, the
+   breathing mark while it wraps up, and "harness · workspace". The name is primary and cut to an
+   ellipsis before anything after it is; the rest is the line's muted tier, and a narrow pane
+   drops it part by part (`paneHead.ts`), so the name keeps its room. */
+.pane-chips > .pane-name {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-inline-size: 3ch;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-strong);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The chat's persona and state icon (`ChatPersonaState`, #4762): the tab's size, its badge
+   ringed in the terminal's fill the head stands on. */
+.pane-chips > .pane-persona {
+  --chat-persona-size: var(--space-6);
+  --chat-badge-ground: var(--terminal-background);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+.pane-chips > :is(.pane-state-mark, .pane-wrapping) {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  white-space: nowrap;
+}
+
+/* The breathing mark keeps its own gap: the line's is enough. */
+.pane-chips > .pane-wrapping > .wrapping-up {
+  margin-inline-start: 0;
+}
+
+.pane-chips > .pane-where {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* **The one state button** (`PaneStateButton`, #4760): the chat's part of the head, before ⋯
+   and the bell, drawn always, as they are. */
+.pane-actions > :is(.pane-state, .pane-brief) {
+  flex: none;
+}
+
 /* **The bell** (`PaneBell`, #4754): a fixed slot, as wide with no count as with two digits, so
    nothing beside it moves when a notice arrives. The count is neutral, and in the trouble colour
    while one note is trouble; told by its words too, never the colour alone. */
@@ -571,4 +626,212 @@
 
 .pane-drop-says[data-refused] {
   color: var(--danger-text);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A folded side (#4766, `PaneRail.tsx`).
+   --------------------------------------------------------------------------------------------- */
+
+/* **A split that cannot give each side its minimum** draws the side without the focus as a rail
+   beside the other (side by side) or a bar above or below it (stacked), and the other takes the
+   rest. Folding is drawn only: the tab's tree, and its shares, are as they were. */
+.pane-folds {
+  display: flex;
+  block-size: 100%;
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 0;
+  gap: var(--space-1);
+}
+
+.pane-folds[data-direction="column"] {
+  flex-direction: column;
+}
+
+.pane-folds-kept {
+  display: flex;
+  flex: 1 1 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.pane-folds-kept > * {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+/* The rail is `paneFold.ts`'s RAIL wide, the bar its BAR tall: the model gives the kept side the
+   rest, so the two must agree. */
+.pane-rail {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  /* No pane goes off screen: a rail too short (or a bar too narrow) for its panes scrolls. */
+  overflow: auto;
+  background-color: var(--surface-raised);
+  border-radius: var(--radius-lg);
+}
+
+.pane-rail[data-fold="rail"] {
+  flex-direction: column;
+  inline-size: 40px;
+  padding-block: var(--space-2);
+}
+
+.pane-rail[data-fold="bar"] {
+  block-size: 32px;
+  padding-inline: var(--space-2);
+}
+
+/* A folded pane: its button, then its count and ✋, under it on a rail and after it on a bar. */
+.pane-rail-item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+.pane-rail[data-fold="rail"] .pane-rail-item {
+  flex-direction: column;
+  align-self: stretch;
+}
+
+/* Placed only: on a rail, the rail's width, a target the pointer can't miss (WCAG 2.5.8). */
+.pane-rail[data-fold="rail"] .pane-rail-pane {
+  align-self: stretch;
+}
+
+.pane-rail[data-fold="bar"] .pane-rail-pane {
+  min-inline-size: 0;
+}
+
+/* The button's words, one flex item: a bar's name ends in an ellipsis where it runs out of room. */
+.pane-rail-words {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The comma after a bar's name: heard, not seen, and inside the name's run, so no space falls
+   before it. */
+.pane-rail-name .pane-rail-pause {
+  opacity: 0;
+}
+
+.pane-rail-asks {
+  color: var(--needs-you-base);
+}
+
+.pane-rail-count {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.pane-rail-count[data-trouble] {
+  color: var(--danger-text);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A task's question, at the top of the pane (#4565).
+   --------------------------------------------------------------------------------------------- */
+
+/* **Above the Notices, in the same runway**: the line that offers where you answer, then the
+   quiz, the band's width. Past the band's room it scrolls inside it, so Send is always reachable
+   and the terminal below keeps its input where it was. */
+.quiz-band {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-4) 0;
+}
+
+/* Each keeps its own height, so a short pane scrolls the band and never squeezes the line over
+   the quiz. */
+.quiz-band > * {
+  flex: none;
+}
+
+.task-quiz.inbox-ask {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* **The pause before the next quiz** (#4566): the quiz's own height, held by the slot it stood
+   in, so nothing below the band moves and a second click lands on this, which does nothing. */
+.task-quiz-pause {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  justify-content: center;
+  min-block-size: inherit;
+}
+
+.task-quiz-pause > p {
+  margin: 0;
+}
+
+/* The box under a closing line, where the person says otherwise (#4566). */
+.quiz-closing-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.quiz-closing-how {
+  margin: 0;
+}
+
+.task-quiz-top-end {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.task-quiz-why {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+/* The asking chat's note, marked as its own: never the task's words. */
+.task-quiz-note {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  margin: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--border-strong);
+  font-size: var(--font-size-sm);
+}
+
+.task-quiz-note-who {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.task-quiz-answer {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.task-quiz-box {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.task-quiz-foot {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
 }

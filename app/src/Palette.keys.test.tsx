@@ -67,3 +67,48 @@ describe("the palette's keys under a modal", () => {
     expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
   });
 });
+
+describe("⌥Enter on a view's row (#4769)", () => {
+  const STATS = { from: "statistics", view: "stats", key: "" };
+  const VIEW_ROW: Offer = {
+    ...ready("view.open:statistics/stats", "Open Statistics from statistics"),
+    does: { verb: "openView", view: STATS, title: "Statistics" },
+    beside: { verb: "openViewBeside", view: STATS, title: "Statistics" },
+  };
+
+  it("opens the aimed view beside the focused pane, and Enter in a tab", async () => {
+    const ran: Offer[] = [];
+    const run = (offer: Offer): Ran => {
+      ran.push(offer);
+      return { ok: true };
+    };
+    render(<Palette offers={[VIEW_ROW]} onRun={run} />);
+    await userEvent.keyboard("{F2}");
+    await screen.findByRole("option", { name: /Open Statistics/ });
+    expect(screen.getByText(/Open beside the focused pane/)).toBeInTheDocument();
+    await userEvent.keyboard("{Alt>}{Enter}{/Alt}");
+    expect(ran.map((offer) => offer.does.verb)).toEqual(["openViewBeside"]);
+    await userEvent.keyboard("{F2}");
+    await screen.findByRole("option", { name: /Open Statistics/ });
+    await userEvent.keyboard("{Enter}");
+    expect(ran.map((offer) => offer.does.verb)).toEqual(["openViewBeside", "openView"]);
+  });
+
+  it("runs any other row as Enter does", async () => {
+    const ran: string[] = [];
+    render(
+      <Palette
+        offers={OFFERS}
+        onRun={(offer) => {
+          ran.push(offer.id);
+          return { ok: true };
+        }}
+      />,
+    );
+    await userEvent.keyboard("{F2}");
+    await screen.findByRole("option", { name: /New shell/ });
+    await userEvent.keyboard("{Alt>}{Enter}{/Alt}");
+    expect(ran).toEqual(["shell.new"]);
+    expect(screen.queryByText(/Open beside the focused pane/)).toBeNull();
+  });
+});

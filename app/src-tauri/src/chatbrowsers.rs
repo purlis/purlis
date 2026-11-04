@@ -249,7 +249,22 @@ struct Chat {
     handed: Vec<String>,
     /// How long, in minutes, those had gone unused when they stopped.
     idled_after: u64,
+    /// Browsers following a page to its login form for it now (#5015): counted as its own.
+    following: usize,
+    /// When each page it suggested last failed to be followed, in seconds since 1970, within
+    /// [`FOLLOWS_REST`] of each other and since the last that was followed (#5015).
+    unfollowed: Vec<u64>,
+    /// Until when, in seconds since 1970, none of its pages is followed (#5015).
+    rests_until: u64,
 }
+
+/// **How many suggested pages of one chat may fail to be followed** within [`FOLLOWS_REST`]
+/// before it has none followed (#5015): each opens a browser.
+pub const FOLLOWS_FAILED_AT_MOST: usize = 3;
+
+/// How long, in seconds, a chat's failed follows are remembered, and how long it rests from the
+/// last of [`FOLLOWS_FAILED_AT_MOST`] (#5015).
+pub const FOLLOWS_REST: u64 = 10 * 60;
 
 impl Default for Chat {
     fn default() -> Self {
@@ -273,6 +288,9 @@ impl Default for Chat {
             pinned: Vec::new(),
             handed: Vec::new(),
             idled_after: 0,
+            following: 0,
+            unfollowed: Vec::new(),
+            rests_until: 0,
         }
     }
 }
@@ -304,10 +322,12 @@ impl Chat {
 
     /// How many of its browsers run: one whose engine ended counts no more.
     fn running(&self) -> usize {
-        self.browsers
-            .iter()
-            .filter(|(_, program)| !self.ended.contains(program))
-            .count()
+        self.following
+            + self
+                .browsers
+                .iter()
+                .filter(|(_, program)| !self.ended.contains(program))
+                .count()
     }
 
     fn drop_browser(&mut self, name: &str) {
@@ -1684,33 +1704,54 @@ impl ChatBrowsers {
             &sites,
             &purlis_core::sandbox::policy::Locks::of(root),
         );
-        let program = driver
-            .start(root, pool, reach.clone(), None)
-            .map_err(|not| match not {
-                NotStarted::Failed(why) => not_followed(&why),
-                _ => not_followed("no browser could be started for it"),
-            })?;
-        // The browser is its own, so its one call needs no id of its own.
-        let found = driver.act(
-            &program,
-            "login-form",
-            Act::FindLoginForm {
-                address: page.to_owned(),
-            },
-            reach,
-        );
-        // It holds nothing, so it ends now, whatever it found.
-        if driver.close(&program).is_err() {
-            let _ = driver.stop(&program);
+        // Its browser is one of the project's while it runs, and a chat whose pages can't be
+        // followed again and again rests (#5015).
+        let now = crate::sandboxing::now_secs();
+        {
+            let mut chats = self.lock();
+            let per_project = (self.limits)().per_project;
+            let running =
+                self.endings().browsers.len() + chats.values().map(Chat::running).sum::<usize>();
+            let chat = chats.entry(session).or_default();
+            if now < chat.rests_until {
+                let minutes = (chat.rests_until - now).div_ceil(60);
+                let minutes = if minutes == 1 {
+                    "1 minute".to_owned()
+                } else {
+                    format!("{minutes} minutes")
+                };
+                return Err(format!(
+                    "purlis could not follow the last {FOLLOWS_FAILED_AT_MOST} login pages this \
+                     chat suggested, so it follows none for {minutes} more, and nothing was \
+                     recorded or filled. Give the address of the login page itself, or ask the \
+                     person to declare the login"
+                ));
+            }
+            if running >= per_project {
+                return Err(not_followed(
+                    &purlis_core::browserlimits::project_full_said(per_project),
+                ));
+            }
+            chat.following += 1;
         }
-        match found {
-            Ok(browsed) => browsed
-                .page
-                .map(|page| page.address)
-                .ok_or_else(|| not_followed("the browser showed no page")),
-            Err(Refused::Said(why)) => Err(not_followed(&why)),
-            Err(Refused::Gone) => Err(not_followed("the browser ended")),
+        let found = followed(driver.as_ref(), root, pool, reach, page);
+        // A chat that closed meanwhile has nothing left to count.
+        if let Some(chat) = self.lock().get_mut(&session) {
+            chat.following = chat.following.saturating_sub(1);
+            match &found {
+                Ok(_) => chat.unfollowed.clear(),
+                Err(_) => {
+                    chat.unfollowed
+                        .retain(|at| now.saturating_sub(*at) < FOLLOWS_REST);
+                    chat.unfollowed.push(now);
+                    if chat.unfollowed.len() >= FOLLOWS_FAILED_AT_MOST {
+                        chat.unfollowed.clear();
+                        chat.rests_until = now + FOLLOWS_REST;
+                    }
+                }
+            }
         }
+        found.map_err(|why| not_followed(&why))
     }
 
     /// **Allow** on chat `session`'s Ask, with the open web or not. Answers whether it waited.
@@ -3199,6 +3240,46 @@ pub async fn chat_browser_timeline_shot(
     }
 }
 
+/// **`page` followed to its login form** (#4995) in a browser of `driver`'s started for it alone
+/// with `reach`, and ended: the address the form showed on, as the engine recorded it, or why
+/// there is none, in words.
+fn followed(
+    driver: &dyn Driver,
+    root: &Path,
+    pool: Option<&str>,
+    reach: BrowserReach,
+    page: &str,
+) -> Result<String, String> {
+    let program = driver
+        .start(root, pool, reach.clone(), None)
+        .map_err(|not| match not {
+            NotStarted::Failed(why) => why,
+            NotStarted::Full { most } => purlis_core::browserlimits::device_full_said(most),
+            _ => "no browser could be started for it".to_owned(),
+        })?;
+    // The browser is its own, so its one call needs no id of its own.
+    let found = driver.act(
+        &program,
+        "login-form",
+        Act::FindLoginForm {
+            address: page.to_owned(),
+        },
+        reach,
+    );
+    // It holds nothing, so it ends now, whatever it found.
+    if driver.close(&program).is_err() {
+        let _ = driver.stop(&program);
+    }
+    match found {
+        Ok(browsed) => browsed
+            .page
+            .map(|page| page.address)
+            .ok_or_else(|| "the browser showed no page".to_owned()),
+        Err(Refused::Said(why)) => Err(why),
+        Err(Refused::Gone) => Err("the browser ended".to_owned()),
+    }
+}
+
 /// **Chat `session`'s browser login `name`** (#2016): read for the chat as the app records it,
 /// never as the line says, exactly as a declared tool's run is (`purlis_core::secrets::brokered`).
 fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
@@ -3246,9 +3327,9 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
         )
         .ok()
     });
-    // A login whose form is on another origin keeps none yet (#4995): a kept login holds its
-    // browser to one site.
-    let store = store.filter(|_| login.form.is_none());
+    // A login whose form is on another origin keeps one too (#5014): reopened, its browser is
+    // held to its page's site, and reaches its form's only while a login signs in there anew
+    // (the person's ruling of 2026-11-03).
     let opens = match (&store, purlis_core::datahome::root()) {
         (Some(store), Some(data)) => store.exists(&data),
         _ => false,

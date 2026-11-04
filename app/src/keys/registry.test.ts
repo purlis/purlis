@@ -24,9 +24,10 @@ import { switcherKeySaid } from "../switcherKey";
 import { pinKeySaid, workspacesKeySaid } from "../workspaceSwitch";
 import { sideKeysSaid } from "../sideKeys";
 import { taskKeySaid } from "../taskKeys";
+import { tabStepSaid } from "../moveKeys";
 import { shellKeySaid } from "../shellKey";
 import { CHAT_KEYBOARD, RENAMES_ON_F2 } from "../actions";
-import { EDITOR_HOLDER } from "./contexts";
+import { EDITOR_HOLDER, VIEW_HOLDER } from "./contexts";
 import { defaultKeymap, historyKeymap } from "@codemirror/commands";
 import type { KeyBinding } from "@codemirror/view";
 
@@ -77,12 +78,11 @@ describe("the key registry (N24)", () => {
   it("puts Ctrl in ⌘'s place off a Mac, but where a chat would lose the chord", () => {
     // Each of these adds Shift or Alt off a Mac, for the reason beside it in its own module: a
     // Ctrl letter is a byte to a terminal (Ctrl+P, Ctrl+F), Ctrl with Alt is AltGr, or the
-    // operator's ruling spells it so (Ctrl+Alt+Shift+P). A tab's next and previous chat are its
-    // menu's Down and Up on a Mac, and the brackets elsewhere, where Ctrl+Alt+arrows are the
-    // desktop's (`taskKeys.ts`).
+    // operator's ruling spells it so (Ctrl+Alt+Shift+P). The pane in a direction is ⌘⌥ and an
+    // arrow on a Mac and Alt and an arrow elsewhere, where Ctrl+Alt+arrows are the desktop's
+    // (`moveKeys.ts`).
     const apart = new Set([
-      "tasks.next",
-      "tasks.previous",
+      "pane.focus",
       "finder.open",
       "workspaces.open",
       "chat.find",
@@ -124,7 +124,8 @@ describe("the key registry (N24)", () => {
       expect(keySaid("workspaces.open", mac)).toBe(workspacesKeySaid(mac));
       expect(keySaid("workspace.pin", mac)).toBe(`${pinKeySaid(1, mac)}–${pinKeySaid(9, mac)}`);
       expect(keySaid("shell.new", mac)).toBe(shellKeySaid(mac));
-      expect(keySaid("tasks.next", mac)).toBe(taskKeySaid("next", mac));
+      expect(keySaid("tab.next", mac)).toBe(tabStepSaid("next", mac));
+      expect(keySaid("pane.back", mac)).toBe(taskKeySaid("back", mac));
       const side = sideKeysSaid(mac);
       expect(keySaid("region.navigation", mac)).toBe(side.navigation);
       expect(keySaid("region.aside", mac)).toBe(side.aside);
@@ -452,5 +453,66 @@ describe("the palette's keys are the window's", () => {
     expect(rowKey("chat.rename:7", false, true)).toBeUndefined();
     expect(rowKey("shell.new", true, true)).toBe("⌘⇧T");
     expect(rowAriaKeys("tab.close:7", true, true)).toBeUndefined();
+  });
+});
+
+describe("the keys once a chat isn't a tab (#4767, ruled on #4699)", () => {
+  it("has no key for a tab's next, previous or own chat any more", () => {
+    const ids = SHORTCUTS.map((one) => one.id);
+    for (const gone of ["tasks.next", "tasks.previous", "tasks.own"])
+      expect(ids).not.toContain(gone);
+  });
+
+  it("says each new key as the ruling spells it, on each keyboard", () => {
+    expect(keySaid("pane.focus", true)).toBe("⌘⌥←↑→↓");
+    expect(keySaid("pane.focus", false)).toBe("Alt+←↑→↓");
+    expect(keySaid("tab.next", true)).toBe("⌘⇧]");
+    expect(keySaid("tab.previous", true)).toBe("⌘⇧[");
+    expect(keySaid("tab.next", false)).toBe("Ctrl+Shift+]");
+    expect(keySaid("tab.previous", false)).toBe("Ctrl+Shift+[");
+    expect(keySaid("tasks.menu", true)).toBe("⌘⇧J");
+    expect(shortcut("tasks.menu").does).toBe("The focused chat's tasks");
+    expect(keySaid("pane.back", true)).toBe("⌘⇧H");
+    expect(keySaid("pane.back", false)).toBe("Ctrl+Shift+H");
+  });
+
+  it("takes ⌘⌥ and an arrow from a chat on a Mac, and leaves it Alt and an arrow elsewhere", () => {
+    const terminal = landOn({}, { [CHAT_KEYBOARD]: "" });
+    const mac = keystroke({ key: "ArrowLeft", meta: true, alt: true }, terminal);
+    expect(pressed(mac, ["pane.focus"], { mac: true })?.id).toBe("pane.focus");
+    const other = keystroke({ key: "ArrowLeft", alt: true }, terminal);
+    expect(pressed(other, ["pane.focus"], { mac: false })).toBeUndefined();
+    expect(
+      pressed(keystroke({ key: "ArrowLeft", alt: true }), ["pane.focus"], { mac: false })?.id,
+    ).toBe("pane.focus");
+  });
+
+  it("leaves a view its Back and Forward off a Mac, which are Alt and an arrow too", () => {
+    const view = landOn({}, { [VIEW_HOLDER]: "" });
+    const back = keystroke({ key: "ArrowLeft", alt: true }, view);
+    expect(pressed(back, ["pane.focus"], { mac: false })).toBeUndefined();
+    expect(pressed(back, ["view.back"], { mac: false })?.id).toBe("view.back");
+    // On a Mac a view's Back is ⌘[, so ⌘⌥← moves to the next pane from a view too.
+    const mac = keystroke({ key: "ArrowLeft", meta: true, alt: true }, view);
+    expect(pressed(mac, ["pane.focus"], { mac: true })?.id).toBe("pane.focus");
+  });
+
+  it("leaves an editor its own Alt and an arrow off a Mac, and ⌘⌥ with Up and Down on one", () => {
+    const editor = landOn({}, { [EDITOR_HOLDER]: "" });
+    const other = keystroke({ key: "ArrowUp", alt: true }, editor);
+    expect(pressed(other, ["pane.focus"], { mac: false })).toBeUndefined();
+    // On a Mac it keeps ⌘⌥ with Up and Down (a cursor above or below), not Left and Right.
+    const up = keystroke({ key: "ArrowUp", meta: true, alt: true }, editor);
+    expect(pressed(up, ["pane.focus"], { mac: true })).toBeUndefined();
+    const left = keystroke({ key: "ArrowLeft", meta: true, alt: true }, editor);
+    expect(pressed(left, ["pane.focus"], { mac: true })?.id).toBe("pane.focus");
+  });
+
+  it("takes the next and previous tab from a chat on either keyboard", () => {
+    const terminal = landOn({}, { [CHAT_KEYBOARD]: "" });
+    const mac = keystroke({ key: "}", code: "BracketRight", meta: true, shift: true }, terminal);
+    expect(pressed(mac, ["tab.next"], { mac: true })?.id).toBe("tab.next");
+    const other = keystroke({ key: "{", code: "BracketLeft", ctrl: true, shift: true }, terminal);
+    expect(pressed(other, ["tab.previous"], { mac: false })?.id).toBe("tab.previous");
   });
 });

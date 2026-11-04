@@ -638,7 +638,8 @@ const A_MOVE_WAITS: std::time::Duration = std::time::Duration::from_millis(250);
 ///
 /// The identity writers take the same lock ([`lock_keys_named`]): a token stored, replaced or
 /// deleted, and the move of a record's items, each under it from the record read to the last
-/// item written.
+/// item written. So does every change to the linked entries' index ([`super::links`]), which
+/// calls no provider while it holds it.
 ///
 /// **It never deadlocks.** Nothing that holds it takes it again, and every wait for it ends
 /// ([`crate::filelock::lock_within`]). A writer refused this way writes nothing.
@@ -658,23 +659,33 @@ pub(super) fn lock_keys_named(
     vault: &str,
     wait: std::time::Duration,
 ) -> Result<crate::filelock::Held, VaultError> {
-    let refused = |e: std::io::Error| {
-        VaultError::new(format!(
-            "purlis could not take the keys of vault '{vault}': {e}"
-        ))
-    };
+    lock_vaults_folder(ctx, vault, &format!("the keys of vault '{vault}'"), wait)
+}
+
+/// The vaults' folder lock, for the writer of `what`. On unix it is the one lock every vault of
+/// the project shares; elsewhere it is a file beside the indexes named after `stem`, which a
+/// writer that is no vault names by something no vault can be called ([`super::links`]).
+pub(super) fn lock_vaults_folder(
+    ctx: &Ctx,
+    stem: &str,
+    what: &str,
+    wait: std::time::Duration,
+) -> Result<crate::filelock::Held, VaultError> {
+    let refused = |e: std::io::Error| VaultError::new(format!("purlis could not take {what}: {e}"));
     let dir = ctx.vaults_dir();
     crate::contain::no_link_on_the_way(ctx.trust(), &dir).map_err(refused)?;
     super::make_private_dir(&dir).map_err(refused)?;
     #[cfg(unix)]
-    let file = crate::contain::nofollow(std::fs::OpenOptions::new().read(true))
-        .open(&dir)
-        .map_err(refused)?;
+    let file = {
+        let _ = stem;
+        crate::contain::nofollow(std::fs::OpenOptions::new().read(true))
+            .open(&dir)
+            .map_err(refused)?
+    };
     #[cfg(not(unix))]
     let file =
-        crate::contain::create_no_link(ctx.trust(), &lock_path(ctx, vault)).map_err(refused)?;
-    crate::filelock::lock_within(file, wait, &format!("the keys of vault '{vault}'"))
-        .map_err(refused)
+        crate::contain::create_no_link(ctx.trust(), &lock_path(ctx, stem)).map_err(refused)?;
+    crate::filelock::lock_within(file, wait, what).map_err(refused)
 }
 
 /// The vault's index. A missing file is a vault nothing has been written to.

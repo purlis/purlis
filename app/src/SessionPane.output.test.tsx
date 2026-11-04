@@ -7,6 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
 import type { Terminal } from "@xterm/xterm";
 import { SessionPane } from "./SessionPane";
+import { letGoOfKeptTerminals } from "./keptTerminals";
 
 /**
  * **One terminal write per pane per frame** (#4732): a long harness message arrives as many
@@ -95,6 +96,9 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  // A chat shown last keeps its terminal (`keptTerminals.ts`), and letting go of it closes its
+  // view through the core: let go while this file's IPC mock still answers.
+  letGoOfKeptTerminals();
   clearMocks();
   vi.stubGlobal("requestAnimationFrame", ownFrame);
   vi.stubGlobal("cancelAnimationFrame", ownCancel);
@@ -138,11 +142,13 @@ describe("a chat's output reaching its terminal (#4732)", () => {
     expect(writes.mock.calls.map(([written]) => text(written))).toEqual(["one", "twothree"]);
   });
 
-  it("writes nothing once the pane is gone, even for chunks it had gathered", async () => {
+  it("writes nothing once its terminal is let go of, even for chunks it had gathered", async () => {
     const { writes, unmount } = await openPane();
 
     await send("late");
     unmount();
+    // The chat was shown last, so its terminal was kept (`keptTerminals.ts`) until now.
+    letGoOfKeptTerminals();
     frame();
 
     expect(writes).not.toHaveBeenCalled();

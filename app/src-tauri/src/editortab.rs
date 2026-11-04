@@ -1,14 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A terminal `$VISUAL`/`$EDITOR` opens in a shell tab, at the line** (#1042, ADR 0062,
+//! **A terminal `$VISUAL`/`$EDITOR` opens as a one-job program, at the line** (#1042, ADR 0062,
 //! ADR 0081 §3).
 //!
 //! A terminal editor started with no terminal reads the end of its input and exits, so
-//! purlis starts it in a tab of its own instead: a shell tab (ADR 0062) whose program is the
-//! editor, standing in the file's branch folder. An editor that opens its own window is started
-//! as it always was ([`crate::piecefiles::started`]). Which is which is
-//! [`youreditor::in_a_terminal`]'s known list (D-qw309-1).
+//! purlis starts it as a one-job program instead (#4761): a shell (ADR 0062) whose program is
+//! the editor, drawn beside the pane it was opened from, standing in the file's branch folder.
+//! An editor that opens its own window is started as it always was
+//! ([`crate::piecefiles::started`]). Which is which is [`youreditor::in_a_terminal`]'s known
+//! list (D-qw309-1).
 //!
 //! **The editor is an argument vector, never a command line.** The program, the words
 //! `$VISUAL`/`$EDITOR` was split into, `+line` and the file are the tab's program and its
@@ -117,10 +118,11 @@ fn tab_name(program: &str, file: Option<&Path>) -> String {
     }
 }
 
-/// `chat` started as the operator's own shell is: in a tab, through the kill switch, as the
-/// detached editor always was (D-qw309-2).
+/// `chat` started as the operator's own shell is, through the kill switch, as the detached
+/// editor always was (D-qw309-2), and as a one-job program (#4761): drawn beside the pane it was
+/// opened from, gone when it exits, and never recorded.
 pub(crate) fn in_a_tab(held: &Held, chat: &Chat) -> Result<u32, String> {
-    held.chats().start_operator_shell(chat, STARTING)
+    held.chats().start_one_job(chat, STARTING)
 }
 
 #[cfg(test)]

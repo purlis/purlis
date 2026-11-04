@@ -1132,6 +1132,7 @@ mod hosted {
                 kind: ViewKind::Browser,
                 role: Some(role),
                 rate: None,
+                history: None,
             })? {
                 Answer::Attached(attached) => attached,
                 other => {
@@ -1372,6 +1373,7 @@ mod hosted {
                 kind: ViewKind::Inspector,
                 role: Some(ViewRole::Focused),
                 rate: None,
+                history: None,
             })? {
                 Answer::Attached(attached) => attached,
                 other => {

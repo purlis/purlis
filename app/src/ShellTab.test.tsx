@@ -112,6 +112,12 @@ function core(
         chats.push(opened(++next, name, cwd));
         return next;
       }
+      // A forge login is a one-job program (#4761): no row, never recorded.
+      if (cmd === "open_one_job_shell") {
+        const { cwd, name } = args as { cwd: string | null; name: string };
+        chats.push(opened(++next, name, cwd, { one_job: true }));
+        return next;
+      }
       if (cmd === "start_chat") {
         const { cwd, name, profile } = args as {
           cwd: string | null;
@@ -157,6 +163,7 @@ function core(
   return {
     asked,
     opens: () => asked.filter(({ cmd }) => cmd === "open_session").map(({ args }) => args),
+    logins: () => asked.filter(({ cmd }) => cmd === "open_one_job_shell").map(({ args }) => args),
     starts: () => asked.filter(({ cmd }) => cmd === "start_chat").map(({ args }) => args),
   };
 }
@@ -391,17 +398,19 @@ describe("a harness started by hand in a shell tab", () => {
 });
 
 describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
-  it("types a forge login the repo picker asks for in a shell tab at the root, not run", async () => {
-    const { asked, opens } = core();
+  it("types a forge login the repo picker asks for in a one-job shell at the root, not run", async () => {
+    const { asked, opens, logins } = core();
     render(<App />);
     expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
     await settle();
 
     act(() => askLogin(PLANE, "gh auth login --hostname github.com"));
 
+    // A one-job program (#4761): beside the focused pane, named for the login, never recorded.
     await waitFor(() =>
-      expect(opens()).toEqual([expect.objectContaining({ program: null, cwd: PLANE })]),
+      expect(logins()).toEqual([expect.objectContaining({ cwd: PLANE, name: "gh auth login" })]),
     );
+    expect(opens()).toEqual([]);
     await waitFor(() =>
       expect(asked.filter(({ cmd }) => cmd === "send_input").map(({ args }) => args.text)).toEqual([
         "gh auth login --hostname github.com",
@@ -410,7 +419,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
   });
 
   it("types no login line that holds a control character, so nothing is run", async () => {
-    const { asked, opens } = core();
+    const { asked, opens, logins } = core();
     render(<App />);
     expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
     await settle();
@@ -420,11 +429,12 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
     await settle();
 
     expect(opens()).toEqual([]);
+    expect(logins()).toEqual([]);
     expect(asked.some(({ cmd }) => cmd === "send_input")).toBe(false);
   });
 
   it("ignores a login asked for another project", async () => {
-    const { opens } = core();
+    const { opens, logins } = core();
     render(<App />);
     expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
     await settle();
@@ -433,6 +443,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
     await settle();
 
     expect(opens()).toEqual([]);
+    expect(logins()).toEqual([]);
   });
 
   it("applies the doctor's fix from the picker, and draws the picker read again", async () => {

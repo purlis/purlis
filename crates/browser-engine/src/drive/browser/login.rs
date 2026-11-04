@@ -28,9 +28,12 @@
 //! A world the engine no longer has, or cannot make, fills nothing more: the login fails with a
 //! sentence and the browser is handed back, or, where a value already went in, is ended.
 //!
-//! **The browser holds the login from the first fill**: `bind`, the caller's, holds what the
-//! browser reaches to the declared origin before the first value goes in. Where it cannot, no
-//! value goes in.
+//! **The browser holds the login from the first fill**: its [`Hold`], the caller's, holds what
+//! the browser reaches to the login's sites before the first value goes in. Where it cannot, no
+//! value goes in. A login whose form is on another origin than its page (#4995) has its holder
+//! told once the page purlis opened for it shows a document anywhere but on the form's origin
+//! ([`Hold::back`]): back on the page's origin, or elsewhere, during the login or after it. The
+//! browser's page, never another.
 //!
 //! **Then it submits, and waits for the password field to go.** A login that does not go
 //! through within [`crate::drive::Limits::login_within`] has every field it filled cleared,
@@ -40,6 +43,7 @@
 //! so, and never that the person is signed in, since a page may ask for a second step. No
 //! sentence it answers carries a value.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -49,7 +53,7 @@ use super::super::keys::key_events;
 use super::super::tree::NodeKey;
 use super::Browser;
 use super::takeover::Carrying;
-use crate::drive::{Answer, Content, Driver, Login, Refusal, lock};
+use crate::drive::{Answer, Content, Driver, Hold, Login, Refusal, lock};
 
 /// How long a login waits for its form to show, and then for the password field to go, unless
 /// the browser's limits say otherwise ([`crate::drive::Limits::login_within`]).
@@ -168,14 +172,10 @@ pub fn origin_of(address: &str) -> Option<String> {
 impl Browser {
     /// **purlis performs `login`** (module docs): it takes the lease from the agent, goes to the
     /// declared address, fills only while the page's document is on the declared origin, with
-    /// `bind` told just before the first value goes in, submits, waits for the password field to
+    /// `hold` bound just before the first value goes in, submits, waits for the password field to
     /// go, clears what it filled where the login did not go through, and hands the browser back
     /// to the agent. Refused while the person drives, or while another login runs.
-    pub fn log_in(
-        &self,
-        login: &Login,
-        bind: &dyn Fn() -> Result<(), String>,
-    ) -> Result<LoginEnded, Refusal> {
+    pub fn log_in(&self, login: &Login, hold: Arc<dyn Hold>) -> Result<LoginEnded, Refusal> {
         let epoch = {
             let mut lease = lock(&self.lease);
             match lease.driver {
@@ -198,7 +198,7 @@ impl Browser {
             let _carrying = Carrying::under(Driver::Purlis, epoch);
             // Once the agent's call in flight has seen it is cut.
             let _one = lock(&self.acting);
-            let outcome = self.logging_in(login, bind);
+            let outcome = self.logging_in(login, hold);
             if self.cut() {
                 Err(Refusal::Interrupted)
             } else {
@@ -223,11 +223,7 @@ impl Browser {
     }
 
     /// The login itself, under purlis's lease.
-    fn logging_in(
-        &self,
-        login: &Login,
-        bind: &dyn Fn() -> Result<(), String>,
-    ) -> Result<Answer, Refusal> {
+    fn logging_in(&self, login: &Login, hold: Arc<dyn Hold>) -> Result<Answer, Refusal> {
         let origin = login.origin.as_str();
         // What it fills is kept out before anything else, for the browser's life.
         let mut held = Kept::default();
@@ -239,6 +235,11 @@ impl Browser {
             .collect();
         held.run(&values);
         lock(&self.inner.state).keep_out_everywhere(&held);
+        hold.begins().map_err(|why| {
+            not_logged_in(format!(
+                "purlis could not let this browser reach {origin} ({why}), so nothing was filled"
+            ))
+        })?;
         let target = self.go_to(login)?;
         let within = self.inner.limits.login_within;
         let deadline = Instant::now() + within;
@@ -258,10 +259,31 @@ impl Browser {
         };
         // Opened from kept logins, a page that asks for nothing is signed in already: twice
         // read, so a page between documents is not taken for one (#2021), and never a page
-        // that cannot be read.
+        // that cannot be read. One whose form is on another origin (#5014) must stay on its own
+        // page's origin for a fifth of the wait, as a page may send the browser to its form by
+        // script once it has loaded.
         if login.only_if_asked && shows_form(self)? == Some(false) {
-            self.pause(LOOK_AGAIN)?;
-            if shows_form(self)? == Some(false) {
+            let stays = match login.back_to {
+                Some(_) => within / 5,
+                None => LOOK_AGAIN,
+            };
+            let until = Instant::now() + stays;
+            let mut asks_nothing = true;
+            loop {
+                self.pause(LOOK_AGAIN)?;
+                let on_its_page = login
+                    .back_to
+                    .as_deref()
+                    .is_none_or(|back| self.on_origin(&target, back));
+                if !on_its_page || shows_form(self)? != Some(false) {
+                    asks_nothing = false;
+                    break;
+                }
+                if Instant::now() >= until {
+                    break;
+                }
+            }
+            if asks_nothing {
                 let shown = lock(&self.inner.state)
                     .current
                     .clone()
@@ -301,11 +323,16 @@ impl Browser {
             self.pause(LOOK_AGAIN)?;
         }
         // From here on, the browser holds the login.
-        bind().map_err(|why| {
+        hold.bind().map_err(|why| {
             not_logged_in(format!(
                 "purlis could not hold this browser to {origin} ({why}), so nothing was filled"
             ))
         })?;
+        // Its holder is told once this page leaves the form's origin (#4995): back on the
+        // login's page's, or anywhere else.
+        if login.back_to.is_some() {
+            self.inner.watch_back(&target, origin, hold);
+        }
         let mut filled: Vec<NodeKey> = Vec::new();
         let done = self.fill_and_submit(&target, login, &mut filled);
         // Focus is emulated for the fill alone.

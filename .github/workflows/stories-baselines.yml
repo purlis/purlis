@@ -43,7 +43,9 @@ name: stories-baselines
 # other adds an appearance. Then main has no picture of the new story in the new appearance, and
 # every pull request's `stories` check fails on it. A push to main draws nothing. Open a pull
 # request off main that touches something in the stories' scope, label it `update-baselines`
-# and `fixes-main`, and land it (#4880 with #4969 and #5003, 2026-11-03).
+# and `fixes-main`, and land it (#4880 with #4969 and #5003, 2026-11-03; again with #4957's
+# EndedBand stories the same day). The same goes for two pull requests that each change what one
+# story draws, such as a key added to the shortcuts list (#5045 with #5090, 2026-11-04).
 
 on:
   pull_request:

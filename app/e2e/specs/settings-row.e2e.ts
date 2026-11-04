@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
+import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
@@ -20,22 +21,11 @@ import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
  * tab it opened.
  */
 
-const TABS = '[data-strip="Tabs"]';
 const PALETTE = '[role="dialog"][aria-label="Command palette"]';
 const GROUPS = 'nav[aria-label="Groups"]';
-const SETTINGS = "Settings";
 const LABEL = "[memory] share (deprecated)";
 
 type Box = { top: number; bottom: number; left: number; right: number; height: number };
-
-/** The names on the tab strip. */
-async function tabNames(): Promise<string[]> {
-  return browser.execute(() =>
-    [
-      ...(document.querySelector('[data-strip="Tabs"]')?.querySelectorAll('[role="tab"]') ?? []),
-    ].map((tab) => tab.querySelector(".tab-name")?.textContent ?? tab.textContent ?? ""),
-  );
-}
 
 /** Opens Settings at the Project level through the palette, as the operator does. */
 async function openProjectSettings(): Promise<void> {
@@ -101,17 +91,16 @@ describe("a settings row, in the real WebView", () => {
   before(() => windowAt(WINDOW_1280));
   after(() => theWindowHoldsTheRail());
 
-  let tabWasOpen = false;
+  /** The tabs on the strip before this spec, so its `after` closes only what it opened. */
+  let wereOpen: string[] = [];
 
   before(async () => {
-    tabWasOpen = (await tabNames()).some((name) => name.includes(SETTINGS));
+    wereOpen = await tabNames();
   });
 
   after(async () => {
-    if (!tabWasOpen) {
-      const closer = await $(`${TABS} button[aria-label="Close ${SETTINGS}"]`);
-      if (await closer.isExisting()) await closer.click();
-    }
+    // The Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
+    await closeTheViewTabsOpenedSince(wereOpen);
   });
 
   it("draws a select and its Reset one height, side by side, on the label's line", async () => {

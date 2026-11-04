@@ -3,6 +3,7 @@
 
 import {
   useCallback,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -10,6 +11,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { Channel } from "@tauri-apps/api/core";
+import { PaneTerminalAt } from "./paneTerminal";
 import { FitAddon } from "@xterm/addon-fit";
 import { afterTheSlide } from "./railSlide";
 import { SearchAddon } from "@xterm/addon-search";
@@ -52,13 +54,30 @@ import { scrollByDistance } from "./wheel";
 import { drawnReports, writePerFrame } from "./paneWrites";
 import { useProjectShown } from "./projectShown";
 import { viewOpening } from "./slowLog";
+import { FIRST_PAGE, keepInView, pageHistory } from "./historyPages";
+
+/** A full reset (RIS): what a pane is written before the screen of a view opened again. */
+const RESET = new TextEncoder().encode("\x1bc");
+
+import {
+  chatShown,
+  keepTerminal,
+  keptKey,
+  takeKeptTerminal,
+  type KeptTerminal,
+} from "./keptTerminals";
 
 /**
  * One pane, drawing one session.
  *
- * A terminal here exists only while the pane is drawn. It opens a view of the session,
- * which is sent the screen the session already has and then its output, so a pane can come and
- * go without the session noticing — the core has held its terminal all along.
+ * A terminal here opens a view of the session, which is sent the screen the session already
+ * has and then its output, so a pane can come and go without the session noticing — the core
+ * has held its terminal all along.
+ *
+ * **The last three chats shown keep their terminal when the pane leaves them**
+ * (`keptTerminals.ts`, #4735): off the window, with their view open, taking what the program
+ * writes. Switching back to one puts that terminal in the pane as it is, so nothing is started
+ * and nothing is sent again. A chat further back is let go of, and showing it starts a terminal.
  *
  * **A pane of a project that is not in front stays drawn** (`projectShown.tsx`): its terminal
  * and its view stay open and go on taking what the program writes, so the project comes back
@@ -160,6 +179,17 @@ export function SessionPane({
     });
   }, []);
 
+  // **Its pane's head reaches it** (#4760): Copy and Paste on a right-click of the head run
+  // here, as its own menu's do.
+  const headRef = useContext(PaneTerminalAt);
+  useEffect(() => {
+    if (headRef === null) return;
+    headRef.current = { selected: () => terminal.current?.hasSelection() ?? false, run };
+    return () => {
+      headRef.current = null;
+    };
+  }, [headRef, run]);
+
   /** The menu closed on a row of the terminal's own, or on Escape: the keyboard is the
    *  terminal's again, said here and not left to where the engine thinks it was. */
   const giveBack = useCallback(() => terminal.current?.focus(), []);
@@ -176,95 +206,34 @@ export function SessionPane({
     if (focused && shown) terminal.current?.focus();
   }, [focused, shown]);
 
+  // **A chat on screen is one of the last shown** (`keptTerminals.ts`), and is marked so before
+  // its pane takes its terminal below: a chat drawn in a project off the window is not shown.
+  useEffect(() => {
+    if (shown) chatShown(keptKey(plane, session));
+  }, [plane, session, shown]);
+
   useEffect(() => {
     const where = holder.current;
     if (!where) return;
+    const key = keptKey(plane, session);
 
-    const pane = new Terminal({
-      // The machine's terminal text size (charter-app#283), 13px unless the operator changed it.
-      fontSize: textSizes().terminal,
-      // The theme's terminal font, or the person's in its place (#2326): the engine wrote the
-      // family list, and core's is today's.
-      fontFamily: terminalFont(),
-      // The same theme the rest of the window is drawn from. It used to be two hex values
-      // written out here, which were `--paper` and `--ink` spelled a second time and had
-      // nothing keeping them equal — and which left the other eighteen colours a terminal
-      // has to the library's defaults.
-      theme: xtermTheme(inForce()),
-      // The cursor's shape and blink, the line height and bold in the bright colours are the
-      // theme's too (#2327).
-      ...xtermLook(inForce()),
-      // The search addon draws every match as a decoration, which xterm.js 6.0.0 still calls
-      // proposed API (`registerDecoration` throws without this). Nothing else here uses it.
-      allowProposedApi: true,
-      // **Screen-reader mode, when the person turned it on** (DS-6, #629): xterm then keeps
-      // its rows as a list a screen reader reads, and says what is written as it arrives.
-      screenReaderMode: screenReaderMode(),
-    });
-    const fitting = new FitAddon();
-    pane.loadAddon(fitting);
-    /**
-     * Fits the terminal to its pane, **only while the pane is in the window**. A project that
-     * is not in front keeps its panes in an element that is in no document (`projectShown.tsx`),
-     * where a pane has no size: fitting it there would tell the program its screen is two
-     * columns wide. Its size is the one it was left at, and it is fitted again when it is back
-     * and the pane's size is known (the observer below hears that).
-     */
-    const fit = {
-      fit: () => {
-        if (where.isConnected) fitting.fit();
-      },
+    // **The chat's own terminal, if it is one of the last shown** (`keptTerminals.ts`): it was
+    // kept when the pane left it, has taken what its program wrote since, and is put back here
+    // as it is. Otherwise a new one, which opens a view and is sent the screen.
+    const kept = takeKeptTerminal<Live>(key);
+    const live = kept ?? startTerminal(plane, session, where);
+    const pane = live.pane;
+    live.owner = {
+      holder: where,
+      fromKeys,
+      find: (search) => setFinding((open) => ({ search, asked: (open?.asked ?? 0) + 1 })),
     };
-    const search = new SearchAddon();
-    pane.loadAddon(search);
-    /** What Shift+Enter sends, once the view says which harness this is — none for a shell,
-     *  which keeps the terminal's own Enter (`Harness::newline`). */
-    let newline: string | undefined;
-    // **The two keys a chat's terminal answers itself** (SI-4), decided before xterm encodes
-    // them. Each is swallowed on every phase — keydown, keypress, keyup — so xterm sends
-    // nothing of its own for it, and acted on once, at keydown.
-    pane.attachCustomKeyEventHandler((event) => {
-      if (isKey(event, "chat.find")) {
-        if (event.type === "keydown") {
-          event.preventDefault();
-          setFinding((open) => ({ search, asked: (open?.asked ?? 0) + 1 }));
-        }
-        return false;
-      }
-      // **The menu key and Shift+F10 open the terminal's menu, under its cursor**, with the
-      // event a right-click sends (`ContextMenu` in `ui/menu` opens on it as on a right-click).
-      // Shift+F10 stays the program's while it has the mouse (`asksForTheMenu`).
-      if (asksForTheMenu(event, programHasTheMouse(pane))) {
-        // A key held down asks once: its repeats are swallowed with it.
-        if (event.type === "keydown" && !event.repeat) {
-          event.preventDefault();
-          fromKeys.current = true;
-          try {
-            where.dispatchEvent(
-              new MouseEvent("contextmenu", {
-                bubbles: true,
-                cancelable: true,
-                ...underTheCursor(pane, where),
-              }),
-            );
-          } finally {
-            fromKeys.current = false;
-          }
-        }
-        return false;
-      }
-      if (newline !== undefined && isKey(event, "chat.newline")) {
-        if (event.type === "keydown") {
-          event.preventDefault();
-          // Through the terminal's own input, so it reaches the program by the one path
-          // everything typed does (`onData` below).
-          pane.input(newline);
-        }
-        return false;
-      }
-      return true;
-    });
-    pane.open(where);
+    if (pane.element !== undefined && pane.element.parentElement !== where)
+      where.appendChild(pane.element);
+    terminal.current = pane;
+    saying.current = live.say;
+    if (kept !== undefined) bench.paneShownAgain(session, pane);
+
     // **Shift and a right-click are the menu's, whatever the program asked for.** On a Mac
     // xterm reports a press to a program that has the mouse with Shift held too, Shift among
     // the modifiers (elsewhere Shift is xterm's own way past the program), so the press is
@@ -287,174 +256,32 @@ export function SessionPane({
     // **The wheel scrolls by the distance moved** (SI-4), in the history and to a program that
     // tracks the mouse alike — not xterm's own answer, which is slow to start (`wheel.ts`).
     const wheeling = scrollByDistance(pane, where);
-    // **A theme drawn while the pane is up is the pane's theme too** (M6.7). xterm is handed an
-    // object, not a stylesheet, so nothing about the custom properties changing reaches it: the
-    // window would repaint and the terminal — the thing the operator stares at — would not.
-    // `pane.options.theme` is xterm's own way to change it on a live terminal. The strip under
-    // the last row needs nothing here: it is `App.css`'s, read from `--terminal-background`,
-    // now that xterm's stylesheet sits in a layer below charter's (M6.8).
-    const unfollow = onDrawn((theme) => {
-      pane.options.theme = xtermTheme(theme);
-      const look = xtermLook(theme);
-      const lineHeightChanged = look.lineHeight !== pane.options.lineHeight;
-      Object.assign(pane.options, look);
-      // A new line height is a new cell size, so the rows that fit the pane are new.
-      if (lineHeightChanged) fit.fit();
-    });
-    // **And so is a text size changed while it is up** (charter-app#283), then a refit: the
-    // cells are a new size, so the rows and columns that fit the pane are new, and `fit` is
-    // what tells the program (`onResize` below). The window's own size is not the terminal's.
-    let drawnAt = pane.options.fontSize;
-    const unsize = onTextSizes(({ terminal: size }) => {
-      if (size === drawnAt) return;
-      drawnAt = size;
-      pane.options.fontSize = size;
-      fit.fit();
-    });
-    // **And so is the terminal's font** (#2326): another theme's, the person's, or a face that
-    // has just arrived, which has xterm measure its cells again (`terminalFont.ts`); a refit
-    // follows, as for a size.
-    const unfont = onTerminalFont((family, arrived) => {
-      if (drawTerminalFont(pane, family, arrived)) fit.fit();
-    });
-    // **And so is screen-reader mode turned on or off** while it is up: `options` is xterm's
-    // own way to change it on a live terminal, which builds or drops the rows it keeps.
-    const unread = onScreenReaderMode((on) => {
-      pane.options.screenReaderMode = on;
-    });
-    terminal.current = pane;
     // A tab switched to this chat owes its terminal the keyboard (#1486, `paneKeyboard.ts`).
     const undrawn = paneDrawn(plane, session, () => pane.focus());
-    bench.paneOpened(session, pane);
-
-    let gone = false;
-    const say = (trouble: string) => {
-      if (!gone) pane.write(`\r\n\x1b[31mcharter: ${trouble}\x1b[0m\r\n`);
-    };
-    saying.current = say;
-    // The renderer loads its own code, so a pane draws with the DOM until it is there.
-    void draw(pane, say, () => !gone).then((drawing) => bench.paneDrawing(pane, drawing));
-    // Input refused is worth seeing: the program has stopped reading it, or has ended.
-    const sayIfRefused = (
-      sending: Promise<{ status: "ok" } | { status: "error"; error: string }>,
-    ) =>
-      void sending.then(
-        (sent) => {
-          if (sent.status === "error") say(sent.error);
-        },
-        (err: unknown) => say(String(err)),
-      );
-    const typed = pane.onData((text) => sayIfRefused(commands.sendInput(plane, session, text)));
-    // **And what is not text, as the bytes it is** (charter#493): xterm hands a mouse report in
-    // the default encoding (`?1000h` without `?1006h`) to `onBinary`, one character per byte.
-    // Sent as text, a column or row past 95 — a byte above 127 — would reach the program as two.
-    const bytes = pane.onBinary((binary) =>
-      sayIfRefused(
-        commands.sendInputBytes(
-          plane,
-          session,
-          Array.from(binary, (char) => char.charCodeAt(0) & 0xff),
-        ),
-      ),
-    );
-    // The terminal decides the size, and the program is told it.
-    const resized = pane.onResize(({ cols, rows }) => {
-      void commands.resizeSession(plane, session, cols, rows);
-    });
     // Once the project rail's slide is over, not on each of its frames (`railSlide.ts`): the
-    // program is told one new size per hide or show.
-    const refit = () => fit.fit();
+    // program is told one new size per hide or show. Heard as the pane is first watched too, so
+    // a kept terminal is fitted to the pane it is put back in.
+    const refit = () => live.fit();
     let unqueue = () => {};
     const watching = new ResizeObserver(() => {
       unqueue = afterTheSlide(refit);
     });
     watching.observe(where);
 
-    let view: number | undefined;
-    // What the view is sent waits here until the terminal is the size that screen was drawn
-    // for, so a line the session wrapped is not wrapped again somewhere else. A benchmark
-    // wants to know when its text reached the grid, so what it gives back travels with the
-    // text it belongs to.
-    const waiting: { bytes: Uint8Array; written?: () => void }[] = [];
-    let ready = false;
-    // What arrives within a frame is one write to the terminal, not one per chunk (#4732).
-    const writes = writePerFrame((bytes, parsed) => pane.write(bytes, parsed));
-    // What the terminal has drawn is told back, one report per write, and the session host
-    // paces the view by it (#4733): a pane that falls behind is sent a fresh screen, not a
-    // backlog.
-    const drawn = drawnReports((pieces) => {
-      if (gone || view === undefined) return;
-      void commands.sessionDrawn(plane, session, view, pieces);
-    });
-    // Each piece is the bytes the program wrote, a raw body over IPC rather than a string
-    // escaped into JSON (#4745); the terminal decodes them, a character cut between two
-    // pieces included.
-    const output = new Channel<ArrayBuffer>();
-    output.onmessage = (buffer) => {
-      if (gone) return;
-      const bytes = new Uint8Array(buffer);
-      const benched = bench.paneSent(pane, bytes);
-      const written = () => {
-        benched?.();
-        drawn.piece();
-      };
-      if (ready) writes.add(bytes, written);
-      else waiting.push({ bytes, written });
-    };
-    // Opening the view, until its screen is handed to the terminal: what the stall log says was
-    // going on (`slowLog.ts`).
-    const openingDone = viewOpening();
-    // The pane's own size first: a session nobody is showing keeps whatever size it had.
-    void (async () => {
-      fit.fit();
-      const opened = await commands
-        .watchSession(plane, session, output)
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (opened.status === "error") {
-        openingDone();
-        say(opened.error);
-        return;
-      }
-      if (gone) {
-        openingDone();
-        void commands.unwatchSession(plane, session, opened.data.view);
-        return;
-      }
-      view = opened.data.view;
-      // The core keeps the history; the pane keeps the same, so scrolling back shows what the
-      // session has rather than what this terminal happens to have seen.
-      pane.options.scrollback = opened.data.scrollback;
-      newline = opened.data.newline ?? undefined;
-      pane.resize(opened.data.columns, opened.data.rows);
-      ready = true;
-      for (const held of waiting.splice(0)) writes.add(held.bytes, held.written);
-      // Now that the screen is drawn, the pane's own size applies again.
-      fit.fit();
-      openingDone();
-    })();
-
     return () => {
-      gone = true;
-      openingDone();
       where.removeEventListener("mousedown", pastTheProgram, true);
+      wheeling.dispose();
       undrawn();
-      unfollow();
-      unsize();
-      unfont();
-      unread();
       watching.disconnect();
       // A pane gone before the slide's end fits nothing at it.
       unqueue();
-      wheeling.dispose();
-      typed.dispose();
-      bytes.dispose();
-      resized.dispose();
-      if (view !== undefined) void commands.unwatchSession(plane, session, view);
-      writes.dispose();
-      pane.dispose();
+      live.owner = undefined;
       terminal.current = undefined;
       setFinding(null);
-      bench.paneClosed(session, pane);
+      // **Kept if the chat is one of the last shown**, off the window and still taking what
+      // its program writes; let go of otherwise, its view closed.
+      if (keepTerminal(key, live)) pane.element?.remove();
+      else live.release();
     };
   }, [plane, session]);
   // **An ended chat's last screen takes no input** (#4756): xterm sends nothing typed, and the
@@ -504,6 +331,317 @@ export function SessionPane({
   );
 }
 
+/** What a pane draws a terminal in, while one does: kept, a terminal has none. */
+type Owner = {
+  holder: HTMLElement;
+  /** Set while the menu is asked for from the keyboard (`asked` in the pane). */
+  fromKeys: { current: boolean };
+  /** Opens the find bar on the terminal's search, or asks an open one for the keyboard. */
+  find: (search: SearchAddon) => void;
+};
+
+/**
+ * **A chat's terminal and its view, for as long as either is drawn or kept**
+ * (`keptTerminals.ts`): built by the first pane to show the chat, drawn by each pane that shows
+ * it after, and let go of by {@link Live.release}.
+ */
+type Live = KeptTerminal & {
+  pane: Terminal;
+  /** The pane drawing it now. */
+  owner: Owner | undefined;
+  say: (trouble: string) => void;
+  /** Fits it to the pane it is in, while it is in the window. */
+  fit: () => void;
+};
+
+/**
+ * Starts chat `session`'s terminal in `where`, opens a view of the session and draws what the
+ * view is sent. What follows the window, a theme, a text size, a font or screen-reader mode,
+ * is followed for as long as the terminal is, drawn or kept.
+ */
+function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Live {
+  const pane = new Terminal({
+    // The machine's terminal text size (charter-app#283), 13px unless the operator changed it.
+    fontSize: textSizes().terminal,
+    // The theme's terminal font, or the person's in its place (#2326): the engine wrote the
+    // family list, and core's is today's.
+    fontFamily: terminalFont(),
+    // The same theme the rest of the window is drawn from. It used to be two hex values
+    // written out here, which were `--paper` and `--ink` spelled a second time and had
+    // nothing keeping them equal — and which left the other eighteen colours a terminal
+    // has to the library's defaults.
+    theme: xtermTheme(inForce()),
+    // The cursor's shape and blink, the line height and bold in the bright colours are the
+    // theme's too (#2327).
+    ...xtermLook(inForce()),
+    // The search addon draws every match as a decoration, which xterm.js 6.0.0 still calls
+    // proposed API (`registerDecoration` throws without this). Nothing else here uses it.
+    allowProposedApi: true,
+    // **Screen-reader mode, when the person turned it on** (DS-6, #629): xterm then keeps
+    // its rows as a list a screen reader reads, and says what is written as it arrives.
+    screenReaderMode: screenReaderMode(),
+  });
+  const fitting = new FitAddon();
+  pane.loadAddon(fitting);
+  /**
+   * Fits the terminal to its pane, **only while the pane is in the window**. A terminal kept
+   * off it, a chat's or a project's (`keptTerminals.ts`, `projectShown.tsx`), has no size
+   * there: fitting it would tell the program its screen is two columns wide. Its size is the
+   * one it was left at, and it is fitted again when it is back and the pane's size is known
+   * (the pane's observer hears that).
+   */
+  const fit = () => {
+    if (pane.element?.isConnected) fitting.fit();
+  };
+  const search = new SearchAddon();
+  pane.loadAddon(search);
+  /** What Shift+Enter sends, once the view says which harness this is — none for a shell,
+   *  which keeps the terminal's own Enter (`Harness::newline`). */
+  let newline: string | undefined;
+  const live: Live = {
+    pane,
+    owner: undefined,
+    say: () => {},
+    fit,
+    release: () => {},
+  };
+  // **The two keys a chat's terminal answers itself** (SI-4), decided before xterm encodes
+  // them. Each is swallowed on every phase — keydown, keypress, keyup — so xterm sends
+  // nothing of its own for it, and acted on once, at keydown.
+  pane.attachCustomKeyEventHandler((event) => {
+    if (isKey(event, "chat.find")) {
+      if (event.type === "keydown") {
+        event.preventDefault();
+        live.owner?.find(search);
+      }
+      return false;
+    }
+    // **The menu key and Shift+F10 open the terminal's menu, under its cursor**, with the
+    // event a right-click sends (`ContextMenu` in `ui/menu` opens on it as on a right-click).
+    // Shift+F10 stays the program's while it has the mouse (`asksForTheMenu`).
+    if (asksForTheMenu(event, programHasTheMouse(pane))) {
+      // A key held down asks once: its repeats are swallowed with it.
+      const owner = live.owner;
+      if (owner !== undefined && event.type === "keydown" && !event.repeat) {
+        event.preventDefault();
+        owner.fromKeys.current = true;
+        try {
+          owner.holder.dispatchEvent(
+            new MouseEvent("contextmenu", {
+              bubbles: true,
+              cancelable: true,
+              ...underTheCursor(pane, owner.holder),
+            }),
+          );
+        } finally {
+          owner.fromKeys.current = false;
+        }
+      }
+      return false;
+    }
+    if (newline !== undefined && isKey(event, "chat.newline")) {
+      if (event.type === "keydown") {
+        event.preventDefault();
+        // Through the terminal's own input, so it reaches the program by the one path
+        // everything typed does (`onData` below).
+        pane.input(newline);
+      }
+      return false;
+    }
+    return true;
+  });
+  pane.open(where);
+  // **A theme drawn while the terminal is up is its theme too** (M6.7). xterm is handed an
+  // object, not a stylesheet, so nothing about the custom properties changing reaches it: the
+  // window would repaint and the terminal — the thing the operator stares at — would not.
+  // `pane.options.theme` is xterm's own way to change it on a live terminal. The strip under
+  // the last row needs nothing here: it is `App.css`'s, read from `--terminal-background`,
+  // now that xterm's stylesheet sits in a layer below charter's (M6.8).
+  const unfollow = onDrawn((theme) => {
+    pane.options.theme = xtermTheme(theme);
+    const look = xtermLook(theme);
+    const lineHeightChanged = look.lineHeight !== pane.options.lineHeight;
+    Object.assign(pane.options, look);
+    // A new line height is a new cell size, so the rows that fit the pane are new.
+    if (lineHeightChanged) fit();
+  });
+  // **And so is a text size changed while it is up** (charter-app#283), then a refit: the
+  // cells are a new size, so the rows and columns that fit the pane are new, and `fit` is
+  // what tells the program (`onResize` below). The window's own size is not the terminal's.
+  let drawnAt = pane.options.fontSize;
+  const unsize = onTextSizes(({ terminal: size }) => {
+    if (size === drawnAt) return;
+    drawnAt = size;
+    pane.options.fontSize = size;
+    fit();
+  });
+  // **And so is the terminal's font** (#2326): another theme's, the person's, or a face that
+  // has just arrived, which has xterm measure its cells again (`terminalFont.ts`); a refit
+  // follows, as for a size.
+  const unfont = onTerminalFont((family, arrived) => {
+    if (drawTerminalFont(pane, family, arrived)) fit();
+  });
+  // **And so is screen-reader mode turned on or off** while it is up: `options` is xterm's
+  // own way to change it on a live terminal, which builds or drops the rows it keeps.
+  const unread = onScreenReaderMode((on) => {
+    pane.options.screenReaderMode = on;
+  });
+  bench.paneOpened(session, pane);
+
+  let gone = false;
+  const say = (trouble: string) => {
+    if (!gone) pane.write(`\r\n\x1b[31mcharter: ${trouble}\x1b[0m\r\n`);
+  };
+  live.say = say;
+  // The renderer loads its own code, so a pane draws with the DOM until it is there.
+  void draw(pane, say, () => !gone).then((drawing) => bench.paneDrawing(pane, drawing));
+  // Input refused is worth seeing: the program has stopped reading it, or has ended.
+  const sayIfRefused = (sending: Promise<{ status: "ok" } | { status: "error"; error: string }>) =>
+    void sending.then(
+      (sent) => {
+        if (sent.status === "error") say(sent.error);
+      },
+      (err: unknown) => say(String(err)),
+    );
+  const typed = pane.onData((text) => sayIfRefused(commands.sendInput(plane, session, text)));
+  // **And what is not text, as the bytes it is** (charter#493): xterm hands a mouse report in
+  // the default encoding (`?1000h` without `?1006h`) to `onBinary`, one character per byte.
+  // Sent as text, a column or row past 95 — a byte above 127 — would reach the program as two.
+  const bytes = pane.onBinary((binary) =>
+    sayIfRefused(
+      commands.sendInputBytes(
+        plane,
+        session,
+        Array.from(binary, (char) => char.charCodeAt(0) & 0xff),
+      ),
+    ),
+  );
+  // The terminal decides the size, and the program is told it.
+  const resized = pane.onResize(({ cols, rows }) => {
+    void commands.resizeSession(plane, session, cols, rows);
+  });
+
+  let view: number | undefined;
+  /** The view asked for last (#4742): the one drawn before it is let go of once it answers. */
+  let asked = 0;
+  /** The view whose output the pane draws: the last asked for that answered. Until the next
+   *  one answers, the one before it is still attached and still drawn, so a page refused or
+   *  slow to answer never leaves the pane showing nothing new. */
+  let drawing = 0;
+  /** How many lines of history the view in use left out, above those it drew. */
+  let older = 0;
+  // **Older history is paged in as the person scrolls up** (#4742): the view is opened again
+  // with more, and the one before it let go of once the new one answers.
+  const paging = pageHistory(pane, (history) => void open(history));
+  // **Kept or drawn, it takes what the program writes** (`keptTerminals.ts`), so a chat shown
+  // again has its screen as it is now and nothing to catch up.
+  // What arrives within a frame is one write to the terminal, not one per chunk (#4732): one
+  // for the terminal, whichever view it came from, so a page's reset stays in its order.
+  const writes = writePerFrame((bytes, parsed) => pane.write(bytes, parsed));
+  /** Ends the stall log's note of the view being opened (`slowLog.ts`). */
+  let openingDone = () => {};
+  // What the view is sent waits here until the terminal is the size that screen was drawn
+  // for, so a line the session wrapped is not wrapped again somewhere else. A benchmark
+  // wants to know when its text reached the grid, so what it gives back travels with the
+  // text it belongs to.
+  const open = async (history: number) => {
+    const mine = ++asked;
+    const again = view !== undefined;
+    const waiting: { bytes: Uint8Array; written?: () => void }[] = [];
+    /** Put back after each piece of a page is written, so the person keeps their place. */
+    let keep = () => {};
+    // What the terminal has drawn of this view is told back, one report per write, and the
+    // session host paces the view by it (#4733): a pane that falls behind is sent a fresh
+    // screen, not a backlog. A view a page has replaced is closed, so it is told nothing.
+    const drawn = drawnReports((pieces) => {
+      if (gone || mine !== drawing || view === undefined) return;
+      void commands.sessionDrawn(plane, session, view, pieces);
+    });
+    // Each piece is the bytes the program wrote, a raw body over IPC rather than a string
+    // escaped into JSON (#4745); the terminal decodes them, a character cut between two
+    // pieces included.
+    const output = new Channel<ArrayBuffer>();
+    output.onmessage = (buffer) => {
+      if (gone || (mine !== drawing && mine !== asked)) return;
+      const bytes = new Uint8Array(buffer);
+      const benched = bench.paneSent(pane, bytes);
+      const written = () => {
+        keep();
+        benched?.();
+        drawn.piece();
+      };
+      if (mine === drawing) writes.add(bytes, written);
+      else waiting.push({ bytes, written });
+    };
+    // Opening the view, until its screen is handed to the terminal: what the stall log says
+    // was going on (`slowLog.ts`). A page's view opened again counts too, and ends the
+    // opening of the one it replaces, whose answer is let go of. A kept terminal's view still
+    // opening is still going on.
+    openingDone();
+    const done = viewOpening();
+    openingDone = done;
+    // The pane's own size first: a session nobody is showing keeps whatever size it had.
+    if (!again) fit();
+    const opened = await commands
+      .watchSession(plane, session, output, history)
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+    if (opened.status === "error") {
+      done();
+      if (again) paging.refused();
+      else say(opened.error);
+      return;
+    }
+    if (gone || mine !== asked) {
+      done();
+      void commands.unwatchSession(plane, session, opened.data.view);
+      return;
+    }
+    // From here the new view is drawn and the one before it is not.
+    drawing = mine;
+    const before = view;
+    view = opened.data.view;
+    if (before !== undefined) {
+      void commands.unwatchSession(plane, session, before);
+      // The lines paged in go above the ones the person was reading.
+      const above = pane.buffer.active.viewportY + Math.max(0, older - opened.data.older);
+      keep = keepInView(pane, above);
+      // Written, not `reset()`: after whatever of the old view is still queued to be parsed,
+      // and so the full reset the core writes before a fresh snapshot of one view too.
+      writes.add(RESET);
+    }
+    older = opened.data.older;
+    // The core keeps the history; the pane keeps the same, so scrolling back shows what the
+    // session has rather than what this terminal happens to have seen.
+    pane.options.scrollback = opened.data.scrollback;
+    newline = opened.data.newline ?? undefined;
+    pane.resize(opened.data.columns, opened.data.rows);
+    for (const held of waiting.splice(0)) writes.add(held.bytes, held.written);
+    // Now that the screen is drawn, the pane's own size applies again.
+    fit();
+    done();
+    paging.opened(history, older);
+  };
+  void open(FIRST_PAGE);
+
+  live.release = () => {
+    gone = true;
+    openingDone();
+    unfollow();
+    unsize();
+    unfont();
+    unread();
+    typed.dispose();
+    bytes.dispose();
+    paging.dispose();
+    resized.dispose();
+    if (view !== undefined) void commands.unwatchSession(plane, session, view);
+    writes.dispose();
+    pane.dispose();
+    bench.paneClosed(session, pane);
+  };
+  return live;
+}
+
 /** Screen-reader mode (DS-6, #629): kept in the layout file by `screenReader.ts`, and said
  *  from here too, where every chat's terminal follows it. */
 export { screenReaderMode, setScreenReaderMode } from "./screenReader";
@@ -530,11 +668,21 @@ export { opensFind };
  * On the capture phase of the pane, so it runs before xterm's own listener on its textarea,
  * and stops the event there. WebKit has no default action for Ctrl+Tab (its tab handler
  * returns early on Ctrl), so where the keyboard goes is decided here, along the same sequence
- * Tab walks (`tabSequence.ts`).
+ * Tab walks (`tabSequence.ts`), past a split's resize handle, so it lands on the next pane's
+ * head.
  */
 export function leavesTheChat(event: KeyboardEvent<HTMLElement>) {
   if (!isKey(event.nativeEvent, "chat.leave")) return;
   event.preventDefault();
   event.stopPropagation();
-  moveAlong(event.currentTarget, event.shiftKey);
+  moveAlong(event.currentTarget, event.shiftKey, isASplitHandle);
+}
+
+/**
+ * **A split's resize handle is passed on the way out of a terminal** (#4767, ruled on #4699):
+ * Ctrl+Tab out of one pane's terminal lands on the next pane's head, not on the handle between
+ * the two panes, which Tab still reaches. A region's handle is no pane's, and stays a stop.
+ */
+function isASplitHandle(el: HTMLElement): boolean {
+  return el.getAttribute("role") === "separator" && el.classList.contains("pane-split");
 }

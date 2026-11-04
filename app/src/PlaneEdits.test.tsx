@@ -20,7 +20,7 @@ const OPS: VaultContents = {
   provider: "keyring",
   count: 1,
   health: { ok: true, detail: "" },
-  secrets: [{ key: "API_TOKEN", size: null, updated: null }],
+  secrets: [{ key: "API_TOKEN", size: null, updated: null, link: null, linked_by: 0 }],
   refused: null,
   identity_unset_elsewhere: [],
   identity: [],

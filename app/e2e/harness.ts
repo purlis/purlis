@@ -296,10 +296,38 @@ export function launchedUnderLaunchdsLimit(app: string): string {
   return launcher;
 }
 
+/**
+ * The line that starts a turn in a chat of {@link writeShell}'s harness, once the spec has asked
+ * for one with {@link aTurnIsWanted}: the harness writes its output again and fires the turn's
+ * `UserPromptSubmit` from inside the chat (#5126).
+ */
+export const A_TURN = "/scenario-turn";
+
+/**
+ * Asks chat `chat` of `plane` to fire a turn's hook when it is next typed {@link A_TURN}. Per
+ * chat, so no other spec's chat fires one, and absent by default, so no chat fires one at start.
+ */
+export function aTurnIsWanted(plane: string, chat: string): void {
+  const where = join(plane, ".charter", "scenario-harness");
+  mkdirSync(where, { recursive: true });
+  writeFileSync(join(where, `turn-${chat}`), "");
+}
+
 export function writeShell(fakeHarness: string): string {
   const where = join(THE_RUNS_TREE, "shells");
   mkdirSync(where, { recursive: true });
   const shell = join(where, "harness-as-a-shell");
+  // **A turn from inside the chat** (#5126): a hook only moves a chat when it carries that
+  // chat's token and comes from inside its program, so a spec cannot fire one for it from
+  // outside. Run by the fake harness after each play, it does nothing unless the spec asked
+  // for a turn in this chat (`aTurnIsWanted`); the payload and `CLAUDE_PID` are a Claude Code's,
+  // as `writeAPluginHookingShell`'s are, and its stdout is the harness's, never the pane's.
+  const theTurn = [
+    '[ ! -f "$CHARTER_ROOT/.charter/scenario-harness/turn-$CHARTER_CHAT" ] ||',
+    `{ printf '{"session_id":"%s","hook_event_name":"UserPromptSubmit","prompt":"a turn"}'`,
+    '"$CLAUDE_CODE_SESSION_ID"',
+    `| CLAUDE_PID=$PPID ${singleQuoted(built("charter"))} hook userpromptsubmit >/dev/null; }`,
+  ].join(" ");
   writeFileSync(
     shell,
     [
@@ -308,6 +336,8 @@ export function writeShell(fakeHarness: string): string {
       `exec ${JSON.stringify(fakeHarness)} \\`,
       "  --synthetic 4096 \\",
       `  --sentinel ${JSON.stringify(READY)} \\`,
+      `  --hook ${singleQuoted(theTurn)} \\`,
+      `  --again ${JSON.stringify(A_TURN)} \\`,
       "  --interactive",
       "",
     ].join("\n"),

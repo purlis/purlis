@@ -1031,7 +1031,16 @@ _Avoid_: link (unqualified: that is a runner's), channel, subscription
 **Split window**:
 An OS window a project tab was moved into, beside the main window. It holds its own projects,
 and closing it moves them back to the main window with every chat still running.
-_Avoid_: detached tab, pop-out, secondary window
+_Avoid_: detached tab, pop-out, secondary window, tab window (that holds one project's torn-off
+tabs)
+
+**Tab window**:
+An OS window that holds tabs torn off one project's strip: the strip and its panes, with no
+sidebar and no project strip. It belongs to the window that holds the project, its **project
+window**, and never holds a project of its own. Closing it sends its tabs back to the project
+window, behind its front tab, and every chat keeps running. Its last tab leaving closes it, and
+it comes back at the next launch, in its place on screen (#4701, #4768, ADR 0033 as amended).
+_Avoid_: detached tab, pop-out, split window (that holds whole projects)
 
 **Welcome**:
 What a window with no project open shows, always, whatever the machine remembers: three doors
@@ -1232,12 +1241,23 @@ reading as a chat whose program ended. A new shell still opens, so the operator 
 Nothing on the command line re-arms (ADR 0071).
 _Avoid_: panic button, pause (nothing is resumed on re-arm)
 
-**Shell tab**:
-A tab running the operator's own shell, with no harness and no profile, opened by `New shell`.
-A harness typed into one runs outside purlis's session tracking, so purlis's **shell-tab
-shims** stand first on its `PATH`: the harness still starts, after one line saying so, and the
-tab shows a banner offering to open it as a chat instead (ADR 0062).
-_Avoid_: terminal (for the tab), console, plain chat
+**Shell**:
+The operator's own shell, with no harness and no profile, opened by `New shell`. It follows a
+chat's rules: it takes the focused pane, closing or replacing its pane leaves it running in the
+sidebar, and End… on it asks only Cancel or End. When its program exits, its row goes and its
+pane is left empty. A harness typed into one runs outside purlis's session tracking, so
+purlis's **shell shims** stand first on its `PATH`: the harness still starts, after one line
+saying so, and its pane shows a banner offering to open it as a chat instead (ADR 0062, amended
+2026-11-02).
+_Avoid_: shell tab (a chat isn't a tab), terminal (for the shell), console, plain chat
+
+**One-job pane**:
+A pane running a program for one job, a terminal editor opened from a file or a forge login,
+opened as a split beside the focused pane with the keyboard. It has no sidebar row, no grip, no
+close and no swap, though its edges still take a split. When its program exits its split goes
+and the keyboard goes back to the pane it opened from. It is never written to the record (ADR
+0062 and 0081, amended 2026-11-02).
+_Avoid_: shell (for a one-job pane), popup
 
 **Light editor**:
 purlis's one editor, for reading a file of a chat's branch, making a small edit in it and

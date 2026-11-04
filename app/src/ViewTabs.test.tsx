@@ -136,7 +136,13 @@ const vaultOf = (name: string): VaultContents => ({
   health: { ok: true, detail: "" },
   secrets:
     name === "ops"
-      ? held.map((key) => ({ key, size: "16–31 bytes", updated: "2026-09-24T11:32:17Z" }))
+      ? held.map((key) => ({
+          key,
+          size: "16–31 bytes",
+          updated: "2026-09-24T11:32:17Z",
+          link: null,
+          linked_by: 0,
+        }))
       : [],
   refused: null,
   identity_unset_elsewhere: [],
@@ -672,7 +678,7 @@ describe("a project's own extensions (charter-app#253)", () => {
     await userEvent.click(await within(panel).findByRole("row", { name: /steward/ }));
 
     const tab = await screen.findByTestId("view-pane-charter-persona-steward");
-    expect(await within(tab).findByRole("button", { name: /Statistics/ })).toBeInTheDocument();
+    expect(await within(tab).findByRole("button", { name: "Statistics" })).toBeInTheDocument();
     expect(within(panel).queryByRole("button", { name: /Statistics/ })).toBeNull();
   });
 

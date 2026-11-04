@@ -94,6 +94,7 @@ impl Host for Runner {
                     cols: 1280,
                     rows: 800,
                     kind: Some(ViewKind::Browser),
+                    older: None,
                 }))
             }
             _ => Ok(Answer::Done),

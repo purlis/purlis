@@ -749,6 +749,13 @@ body {
    heights guard holds every chip here (`PANE_LINE_CHIPS`). */
 .pane-chips
   > :is(
+    .pane-persona,
+    .pane-name,
+    .tab-sandbox,
+    .pane-state-mark,
+    .pane-wrapping,
+    .pane-where,
+    .pane-task-ends,
     .pane-crumbs,
     .pane-brief,
     .chat-gauge,
@@ -4293,12 +4300,6 @@ body {
 }
 /* Its tab's amber underline is the tabs family's (`ui/tabs/tabs.css`). */
 
-/* **A chat in the background** (SI-8f): its tab shrinks to a chip, the chat's icon and the
-   breathing diamond, at the strip's left edge while the chat writes its record. Its width,
-   exactly `--chip` as `fits.ts` counts it, is the tabs family's (`ui/tabs/tabs.css`). */
-.tabs .tab.chip .wrapping-up {
-  margin-inline-start: 0;
-}
 /* **The needs-you hand, in the title bar** (charter-app#249, #1692): a hand and a count, and a
    press opens the Inbox. Minimal, as the bar is: no border of its own, and the colour is the
    count's alone. */
@@ -6152,6 +6153,14 @@ nav.piece-files-head {
 }
 
 .vault-secret-name {
+  overflow-wrap: anywhere;
+}
+
+/* A linked entry's target, under its name (#5069): a secondary line, as long as it needs. */
+.vault-secret-link {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
   overflow-wrap: anywhere;
 }
 
