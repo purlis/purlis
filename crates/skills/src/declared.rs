@@ -134,8 +134,9 @@ pub(crate) fn declared_at(path: &Path) -> Declared {
         .unwrap_or_default()
 }
 
-/// What a `SKILL.md`'s text declares, read by the one frontmatter rule ([`crate::frontmatter`]),
-/// and a block list of arguments from the frontmatter's lines under its key.
+/// What a `SKILL.md`'s text declares, read by the one reader of a skill's keys
+/// ([`crate::frontmatter`]: a folded or literal `when_to_use` is its text, #5182), and a block
+/// list of arguments from the frontmatter's lines under its key.
 pub(crate) fn declared_in(text: &str) -> Declared {
     let pairs = crate::frontmatter(text);
     let value = |key: &str| {
@@ -156,13 +157,7 @@ pub(crate) fn declared_in(text: &str) -> Declared {
         .map(str::to_owned);
     let when_to_use = value(WHEN_TO_USE)
         .map(unquoted)
-        .map(|when| {
-            if when.starts_with(['>', '|']) {
-                block_text(text, WHEN_TO_USE)
-            } else {
-                when.to_owned()
-            }
-        })
+        .map(str::to_owned)
         .filter(|when| !when.is_empty());
     Declared {
         manual,
@@ -228,23 +223,6 @@ fn block_list(text: &str, key: &str) -> Vec<String> {
         .filter(|name| !name.is_empty())
         .map(str::to_owned)
         .collect()
-}
-
-/// The indented lines under `key`, a YAML block scalar, joined by spaces.
-fn block_text(text: &str, key: &str) -> String {
-    let lines = crate::read::frontmatter_lines(text);
-    let Some(at) = lines
-        .iter()
-        .position(|line| line.split_once(':').is_some_and(|(k, _)| k.trim() == key))
-    else {
-        return String::new();
-    };
-    lines[at + 1..]
-        .iter()
-        .take_while(|line| line.starts_with([' ', '\t']))
-        .map(|line| line.trim())
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 #[cfg(test)]

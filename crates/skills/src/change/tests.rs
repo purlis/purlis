@@ -168,3 +168,74 @@ fn a_personas_block_list_follows_a_rename_too() {
         "deploy"
     ));
 }
+
+/// The issue's header (#5182): a folded description, one line of whose text reads like a key.
+const FOLDED: &str = "---\ndescription: >\n  Design a traceable test matrix for a ticket.\n  name: is words here, not a key\nname: test-design\n---\nBody\n";
+
+fn description(text: &str) -> Option<String> {
+    crate::frontmatter(text)
+        .into_iter()
+        .find(|(key, _)| key == "description")
+        .map(|(_, value)| value)
+}
+
+#[test]
+fn a_folded_literal_or_quoted_description_passes_the_lint_as_the_text_it_reads_as() {
+    assert_eq!(check(FOLDED, "test-design"), vec![]);
+    let literal =
+        "---\nname: x\ndescription: |\n  Use when: the person asks.\n  Then: this.\n---\n";
+    assert_eq!(check(literal, "x"), vec![]);
+    let quoted = "---\nname: x\ndescription: \"Use when: the person asks\"\n---\n";
+    assert_eq!(check(quoted, "x"), vec![]);
+    let long = format!(
+        "---\nname: x\ndescription: >\n  {}\n---\n",
+        "a".repeat(MOST_DESCRIPTION + 1)
+    );
+    assert!(matches!(
+        check(&long, "x").as_slice(),
+        [Problem::Description(_)]
+    ));
+}
+
+#[test]
+fn the_lint_says_a_description_that_cannot_be_read_rather_than_showing_its_marker() {
+    // `other: a: b` is not YAML, so the folded description below it has no reader.
+    let text = "---\nname: x\nother: a: b\ndescription: >\n  Words.\n---\n";
+    let problems = check(text, "x");
+    let [Problem::DescriptionUnread(why)] = problems.as_slice() else {
+        panic!("{problems:?}");
+    };
+    assert!(why.contains("cannot be read"), "{why}");
+    let said = problems[0].to_string();
+    assert!(
+        said.contains("cannot be read") && !said.contains(": >"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_rename_keeps_a_folded_description_whole_and_never_renames_a_line_of_it() {
+    let renamed = with_name(FOLDED, "matrix").unwrap();
+    assert_eq!(renamed, FOLDED.replace("name: test-design", "name: matrix"));
+    assert_eq!(description(&renamed), description(FOLDED));
+    assert_eq!(
+        without_name(FOLDED).unwrap(),
+        FOLDED.replace("name: test-design", "")
+    );
+}
+
+#[test]
+fn a_copy_that_rewrites_a_folded_description_leaves_none_of_its_old_lines() {
+    let copied = crate::fence::with_keys(
+        FOLDED,
+        &[("name", Some("copy")), ("description", Some("A copy."))],
+    )
+    .unwrap();
+    assert_eq!(copied, "---\ndescription: A copy.\nname: copy\n---\nBody\n");
+    assert_eq!(description(&copied).as_deref(), Some("A copy."));
+    // Rewriting another key keeps the block as written, and a blank line after it stays.
+    let spaced = "---\ndescription: |\n  One.\n\n  Two.\n\nname: x\n---\n";
+    let renamed = crate::fence::with_keys(spaced, &[("name", Some("y"))]).unwrap();
+    assert_eq!(renamed, spaced.replace("name: x", "name: y"));
+    assert_eq!(description(&renamed).as_deref(), Some("One.\n\nTwo."));
+}

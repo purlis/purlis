@@ -1466,6 +1466,16 @@ a name twice, or that spells a widening key another way (`allowed_tools`, `allow
 handed to no chat, and the chat's tab says why. Every key not in the table is read by nothing and
 left out of what is handed.
 
+**Every key's value is the text YAML reads** (#5182, the operator's ruling of 2026-11-04): a
+folded (`>`), literal (`|`), quoted or plain multi-line `description` is its text wherever purlis
+reads a skill: the Skill studio, the Skills panel, the listing and index the router gives a
+model, and the budget that counts it (`purlis_skills::frontmatter`). A frontmatter that is not
+YAML (a plain value holding `: `, the common case) is read line by line instead, as harnesses fall
+back to; a value that opens a block scalar there has no text that can be read, so the skill has
+no description and the studio's lint says why, never `>`. A rename or a copy rewrites a key's line
+and keeps every other key's block scalar as written, and a rewritten key's block lines go with
+it.
+
 | Key | Neutral? | What purlis does with it |
 |---|---|---|
 | `name`, `description`, `arguments`, `argument-hint` | neutral | read by purlis on every harness (the listing, Use skill…), and handed on |
@@ -3230,10 +3240,17 @@ curation actions is offered.
       anywhere after the opening one ended the frontmatter, so a value holding `---` cut the
       keys and the body there. A file that relied on that (a closing `---` with more on its
       line, such as `role: r---`) now reads as unclosed.
-    - The same rule cuts every line-format frontmatter purlis reads: a `SKILL.md`'s `name:`
-      and `description:`, a curation action, a session record, and a workspace memory's
-      frontmatter where `purlis memory` shows a line of its body under a hit (#3482). A memory
-      whose frontmatter is never closed shows no line there.
+    - The same rule cuts every line-format frontmatter purlis reads: a curation action, a
+      session record, a `SKILL.md` (whose keys are then read as YAML), and a workspace
+      memory's frontmatter where `purlis memory` shows a line of its body under a hit (#3482).
+      A memory whose frontmatter is never closed shows no line there.
+  - **A block scalar's lines are its key's** (#5182). Under a key whose value opens a YAML
+    block scalar (`>` or `|`, then at most a chomping sign and an indent digit), the lines
+    indented further than the key, and the blank lines between them, are that value: never a
+    key of their own, and a rewrite of the key takes them with it. The value reads as empty. A
+    `SKILL.md` is cut by the same fences, but its keys are read as YAML
+    ([`skills/`](#skills--the-projects-skills)); a persona's stay this line format, quotes
+    kept, as the Python charter read them.
   - Each frontmatter line: skipped if it has no `:`; `key, _, value = line.partition(":")`;
     both sides `.strip()`ed; empty key skipped (`charter/persona.py:261`-`:267`). Quotes are
     **kept** as part of the value (`charter/persona.py:95`).
