@@ -267,6 +267,14 @@ pub fn read(
                     vault: reference.vault.clone(),
                     key: reference.key.clone(),
                     tool: None,
+                    purpose: None,
+                    declared: crate::secrets::needs::declared(
+                        &ctx.root,
+                        persona.unwrap_or_default(),
+                        &reference.key,
+                    )
+                    .map(|need| need.purpose),
+                    names_no_vault: false,
                 };
                 missing
                     .read_asking(need, &mut once)

@@ -10925,6 +10925,11 @@ export type SandboxPolicy = {
 	required: string | null,
 	/**  Whether every folder a grant would let a chat write is forbidden. */
 	write_grants: boolean,
+	/**
+	 *  Whether a chat's ask for a secret its persona does not declare is refused (#5078): the
+	 *  chat hears `declined: policy` and the person is never asked.
+	 */
+	undeclared_secret_asks: boolean,
 };
 
 /**  One Internet access preset (`sandbox::Preset`), as Settings shows it. */
@@ -11315,6 +11320,21 @@ export type SecretShown = {
 	key: string,
 	/**  The declared tool whose run missed it, where it is one. */
 	tool?: string | null,
+	/**
+	 *  **What the chat says it is for** (#5072), in its own words: drawn as the chat's, never
+	 *  as purlis's. Absent for a broker miss.
+	 */
+	purpose?: string | null,
+	/**
+	 *  Whether the persona declares the key as a Secret need: one it does not is drawn with a
+	 *  quiet "not declared by this persona" tag (#5072).
+	 */
+	declared: boolean,
+	/**
+	 *  **What the persona's committed definition says the key is for** (#5076), where it
+	 *  declares it: the maintainers' words, quoted as theirs.
+	 */
+	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
 };

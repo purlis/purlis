@@ -413,8 +413,9 @@ export async function answerTaken(
         // A key a chat's brokered run missed (#5068, ADR 0109): Fill stores the value typed in
         // the ask's masked box in the vault, and every command that waits on it runs; Not now
         // tells them it was declined. The chat never hears the value.
-        if (option === "fill") return commands.answerSecretAsk(plane, path.id, typed ?? "");
-        if (option === "keep") return commands.answerSecretAsk(plane, path.id, null);
+        if (option === "fill")
+          return commands.answerSecretAsk(plane, path.id, typed ?? "", null, null);
+        if (option === "keep") return commands.answerSecretAsk(plane, path.id, null, null, null);
         break;
       case "take-over": {
         // A browser whose page needs the person (#2015): Take over takes the session host's

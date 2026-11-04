@@ -690,6 +690,7 @@ fn in_the_app(
             | Answer::Drafted { .. }
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
+            | Answer::Secret(_)
             | Answer::Working(_)
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
@@ -740,6 +741,7 @@ pub(crate) fn ticketed() -> Ticketed {
             | Answer::Drafted { .. }
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
+            | Answer::Secret(_)
             | Answer::Working(_)
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }

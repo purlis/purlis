@@ -3126,6 +3126,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::ThemePreview(_) => 16,
             Ask::ThemeDraft(_) => 17,
             Ask::Prompt(_) => 18,
+            Ask::Secret(_) => 19,
         }
     }
     let asks = vec![
@@ -3233,10 +3234,18 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             chat,
             prompt: "stop everything".to_owned(),
         })),
+        // A Secret ask (#5072): it can only ask the person. A key no ask takes, so it is
+        // refused at once rather than held to the chat's timeout margin.
+        Ask::Secret(Box::new(purlis_core::secrets::ask::SecretAsk {
+            chat,
+            key: "stop everything".to_owned(),
+            purpose: "stop this chat".to_owned(),
+            vault: None,
+        })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=18).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=19).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
