@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793804355437,
+  "lastUpdate": 1793815420673,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39060,6 +39060,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4992845,
             "unit": "ms",
             "extra": "median of 5 runs: 101.812, 102.489, 102.499, 102.630, 102.719 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2bd49cb4236b5c1a0a730c2f58f54821ed836a48",
+          "message": "e2e: openMenuOn presses the right button first, so the menu takes the keyboard (#5193) (#5197)\n\n* DIAGNOSTIC (#5193): run terminal-menu 30 rounds and record where the keyboard went\n\nDropped before merge.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KANCXYFS0M06HYNGT4846V\nPurlis-Persona: steward\n\n* e2e: openMenuOn presses the right button before contextmenu, so the menu takes the keyboard (#5193)\n\nReact Aria reads a page-side click() as a virtual cursor and then defers focusing an opening\nmenu until every CSS transition ends, giving up if the keyboard moved meanwhile. A pointerdown\nsays the pointer is in use, so the menu is focused as it opens and Escape reaches it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KANCXYFS0M06HYNGT4846V\nPurlis-Persona: steward\n\n* DIAGNOSTIC (#5193): 20 rounds with the fix, and the race pinned old way vs new way\n\nDropped before merge.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KANCXYFS0M06HYNGT4846V\nPurlis-Persona: steward\n\n* Drop the #5193 diagnostic: terminal-menu is main's again\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KANCXYFS0M06HYNGT4846V\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T17:09:25Z",
+          "tree_id": "935878f648c9e70d7bf032a1f9987a1daa28f85b",
+          "url": "https://github.com/purlis/purlis/commit/2bd49cb4236b5c1a0a730c2f58f54821ed836a48"
+        },
+        "date": 1793815413123,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.531665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.530, 0.530, 0.532, 0.541, 0.542 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.379612,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.878, 16.339, 16.380, 16.386, 16.509 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5110995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.053, 101.382, 101.511, 102.066, 102.604 ms"
           }
         ]
       }
