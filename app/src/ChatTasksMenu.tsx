@@ -4,16 +4,15 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
 import { AnchoredMenu, Menu, MenuItem } from "./ui/menu/Menu";
 
-/** A task of the chat, as its line says it. */
-export type ChatTask = {
-  /** Its chat, by number, while it runs; none for one that has finished. */
-  session?: number;
-  /** A key for its line: the session, or a finished task's record id. */
-  key: string;
-  name: string;
-  /** How a finished one ended, in words (`done`, `stopped by you`). None while it runs. */
-  ended?: string;
-};
+/** A task of the chat, as its line says it: one that runs, which a pick shows, or one that has
+ *  finished, said by how it ended. */
+export type ChatTask =
+  | { kind: "running"; session: number; name: string }
+  /** `id` is its dispatch record's; `ended` how it ended, in words (`done`, `stopped by you`). */
+  | { kind: "finished"; id: string; name: string; ended: string };
+
+/** The key of a task's line. */
+const keyOf = (task: ChatTask) => (task.kind === "running" ? `${task.session}` : task.id);
 
 /**
  * **⌘⇧J: the focused chat's own tasks** (#5058, ruled on #4699): a menu of the tasks the chat
@@ -21,8 +20,9 @@ export type ChatTask = {
  * it in that pane, as a press does: a task on screen already is jumped to (D1). A task that has
  * finished is listed by how it ended and cannot be picked: nothing of it runs to be shown.
  *
- * Open while its owner says so, and drawn while closed, so the close is seen. Escape, a press outside and a pick close it; a close that was
- * no pick hands the keyboard back to where it was when the menu opened.
+ * Open while its owner says so, and drawn while closed, so the close is seen. Escape, a press
+ * outside and a pick close it; a close that was no pick hands the keyboard back to where it
+ * was when the menu opened.
  */
 export function ChatTasksMenu({
   open,
@@ -66,25 +66,28 @@ export function ChatTasksMenu({
       }}
     >
       <Menu aria-label={`Tasks of ${name}`} className="tasks-menu">
-        {tasks.map((task) => (
-          <MenuItem
-            key={task.key}
-            id={task.key}
-            className="tasks-menu-row"
-            textValue={task.name}
-            // A finished task stays in the arrows' way and says how it ended.
-            aria-disabled={task.session === undefined ? true : undefined}
-            shouldCloseOnSelect={task.session !== undefined}
-            onAction={() => {
-              if (task.session === undefined) return;
-              picked.current = true;
-              onShow(task.session);
-            }}
-          >
-            <span className="name">{task.name}</span>
-            {task.ended !== undefined && <span className="where"> {task.ended}</span>}
-          </MenuItem>
-        ))}
+        {tasks.map((task) => {
+          const runs = task.kind === "running";
+          return (
+            <MenuItem
+              key={keyOf(task)}
+              id={keyOf(task)}
+              className="tasks-menu-row"
+              textValue={task.name}
+              // A finished task stays in the arrows' way and says how it ended.
+              aria-disabled={runs ? undefined : true}
+              shouldCloseOnSelect={runs}
+              onAction={() => {
+                if (!runs) return;
+                picked.current = true;
+                onShow(task.session);
+              }}
+            >
+              <span className="name">{task.name}</span>
+              {!runs && <span className="where"> {task.ended}</span>}
+            </MenuItem>
+          );
+        })}
       </Menu>
     </AnchoredMenu>
   );

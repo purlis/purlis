@@ -1674,7 +1674,7 @@ export const PlaneView = memo(function PlaneView({
    * asked for, where the keyboard was then, and the pane a pick is shown in, the focused one
    * (`ChatTasksMenu`). Asked again for the same chat while it is open, it closes.
    */
-  const [chatTasks, setChatTasks] = useState<{
+  const [chatTasksAsked, setChatTasksAsked] = useState<{
     session: number;
     from: Element | null;
     into: PaneAt;
@@ -1682,15 +1682,17 @@ export const PlaneView = memo(function PlaneView({
   }>();
   /** What that menu stands under: the focused pane's head, as it was asked for. */
   const chatTasksAt = useRef<Element | null>(null);
+  /** The box of the tab in front's panes, which that head is found in. */
+  const panesNow = useRef<HTMLElement | null>(null);
   const showChatTasks = useCallback((session: number) => {
     const front = now.current.inFront;
     if (front === undefined) return;
     const into = { tab: front, pane: now.current.byId[front].focused };
-    chatTasksAt.current =
-      document.querySelector(".panes .pane-frame[data-focused] .pane-head") ??
-      document.querySelector(".panes");
+    // This view's own panes: a project behind this one keeps its panes drawn, out of sight.
+    const panes = panesNow.current;
+    chatTasksAt.current = panes?.querySelector(".pane-frame[data-focused] .pane-head") ?? panes;
     const from = document.activeElement;
-    setChatTasks((was) =>
+    setChatTasksAsked((was) =>
       was?.open === true && was.session === session
         ? { ...was, open: false }
         : { session, from, into, open: true },
@@ -2521,7 +2523,8 @@ export const PlaneView = memo(function PlaneView({
     [filedIn],
   );
   /** Chat `session`'s pane no longer shows it as ended: cleared, or resumed. */
-  const forgetEndedHere = useCallback((session: number) => {
+  /** A task's pane no longer shows it as ended: cleared, or resumed. */
+  const forgetEndedFiled = useCallback((session: number) => {
     endedInPanes.current.delete(session);
     setEndedFiled((was) => {
       if (!was.has(session)) return was;
@@ -2529,13 +2532,19 @@ export const PlaneView = memo(function PlaneView({
       left.delete(session);
       return left;
     });
-    if (!endedHereNow.current.delete(session)) return;
-    setEndedHere((was) => {
-      const left = new Map(was);
-      left.delete(session);
-      return left;
-    });
   }, []);
+  const forgetEndedHere = useCallback(
+    (session: number) => {
+      forgetEndedFiled(session);
+      if (!endedHereNow.current.delete(session)) return;
+      setEndedHere((was) => {
+        const left = new Map(was);
+        left.delete(session);
+        return left;
+      });
+    },
+    [forgetEndedFiled],
+  );
   /**
    * **A chat ended on purpose that no tab shows any more is forgotten** (#5019): its pane went
    * another way than Clear pane or Resume (Close pane, its tab's close, Close other tabs). Kept,
@@ -2552,7 +2561,14 @@ export const PlaneView = memo(function PlaneView({
       const keep = askedByNow(session) !== undefined || endedHereNow.current.has(session);
       // Filed where it was as it ends (#5106), before the plane stops listing it.
       if (keep) {
-        const workspace = filedIn(session);
+        // Where the plane was read again before the end arrived, it lists the task no more:
+        // it is filed where the chat that asked for it is, as a task is.
+        const listed =
+          sidebar === undefined ||
+          sidebar.unfiled.some((one) => one.session === session) ||
+          sidebar.workspaces.some((ws) => ws.chats.some((one) => one.session === session));
+        const asker = askedByNow(session);
+        const workspace = filedIn(listed || asker === undefined ? session : asker);
         endedInPanes.current.set(session, workspace);
         setEndedFiled((was) =>
           was.get(session) === workspace ? was : new Map(was).set(session, workspace),
@@ -2560,7 +2576,7 @@ export const PlaneView = memo(function PlaneView({
       }
       return keep;
     },
-    [askedByNow, filedIn],
+    [askedByNow, filedIn, sidebar],
   );
 
   const stoppedFor = useCallback((session: number, why: string | undefined) => {
@@ -5470,7 +5486,14 @@ export const PlaneView = memo(function PlaneView({
   /** **The room the front tab's panes have** (#4766), measured: a split that cannot give each
    *  side its minimum folds a side to a rail, and a split row greys out where a half would be
    *  under it. Nothing is measured before the window is laid out, and then nothing folds. */
-  const [panesAt, paneRoom] = usePaneRoom();
+  const [measurePanes, paneRoom] = usePaneRoom();
+  const panesAt = useCallback(
+    (element: HTMLDivElement | null) => {
+      panesNow.current = element;
+      measurePanes(element);
+    },
+    [measurePanes],
+  );
   const focusedRoom = useMemo(
     () =>
       frontTab === undefined || paneRoom === undefined
@@ -6793,7 +6816,7 @@ export const PlaneView = memo(function PlaneView({
       if (said.status === "error") return;
       const chat = said.data;
       noteStarted(chat);
-      if (was !== undefined) endedInPanes.current.delete(was);
+      if (was !== undefined) forgetEndedFiled(was);
       change((tabs) =>
         was === undefined
           ? openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label)
@@ -6801,7 +6824,7 @@ export const PlaneView = memo(function PlaneView({
       );
       rereadFinished();
     },
-    [change, noteStarted, plane, rereadFinished],
+    [change, forgetEndedFiled, noteStarted, plane, rereadFinished],
   );
 
   /**
@@ -8741,34 +8764,51 @@ export const PlaneView = memo(function PlaneView({
   /** **The lines of ⌘⇧J's menu** (#5058): the tasks the chat asked for and nothing else's, those
    *  running first, by number, which is the order it asked for them, then those that finished. */
   const chatTasksLines = useMemo<ChatTask[]>(() => {
-    if (chatTasks === undefined) return [];
-    const asker = chatTasks.session;
+    if (chatTasksAsked === undefined) return [];
+    const asker = chatTasksAsked.session;
     return [
       ...listedChats
         .filter((chat) => chat.mode === "task" && chat.parent === asker)
-        .map((chat) => ({ session: chat.session, key: `${chat.session}`, name: chat.name })),
+        .map((chat) => ({ kind: "running" as const, session: chat.session, name: chat.name })),
       ...(finishedTasks.get(asker) ?? []).map((task) => ({
-        key: task.id,
+        kind: "finished" as const,
+        id: task.id,
         name: task.name,
         ended: task.outcome,
       })),
     ];
-  }, [chatTasks, finishedTasks, listedChats]);
+  }, [chatTasksAsked, finishedTasks, listedChats]);
   /** **A task picked there is shown in the focused pane**, as a press shows it: one on screen
-   *  already is jumped to (D1). That pane, while its tab is still open. */
-  const showChatTask = useCallback(
+   *  already is jumped to (D1), in this window or, asked first, another of the project's
+   *  (#4768). That pane while it is still there; else wherever a press puts it. */
+  const showPickedTask = useCallback(
     (session: number) => {
-      const into = chatTasks?.into;
-      showChatNow.current(
-        session,
-        into !== undefined && now.current.byId[into.tab] !== undefined ? into : undefined,
-      );
-      giveKeyboardTo(plane, session);
+      const asked = chatTasksAsked?.into;
+      const into =
+        asked !== undefined &&
+        now.current.byId[asked.tab] !== undefined &&
+        contentsOf(now.current, asked.tab).some((one) => one.pane === asked.pane)
+          ? asked
+          : undefined;
+      const here = () => {
+        showChatNow.current(session, into);
+        giveKeyboardTo(plane, session);
+      };
+      if (oneWindow() || tabHolding(now.current, session) !== undefined) {
+        here();
+        return;
+      }
+      void commands
+        .pressElsewhere(plane, session)
+        .then((answer) => {
+          if (answer.status !== "ok" || answer.data === null) here();
+        })
+        .catch(here);
     },
-    [chatTasks, plane],
+    [chatTasksAsked, oneWindow, plane],
   );
   const closeChatTasks = useCallback(
-    () => setChatTasks((was) => (was === undefined ? was : { ...was, open: false })),
+    () => setChatTasksAsked((was) => (was === undefined ? was : { ...was, open: false })),
     [],
   );
 
@@ -11058,14 +11098,14 @@ export const PlaneView = memo(function PlaneView({
                     openBrowser={openChatBrowser}
                   />
                   {/* ⌘⇧J's menu of the focused chat's own tasks (#5058), under its pane's head. */}
-                  {chatTasks !== undefined && (
+                  {chatTasksAsked !== undefined && (
                     <ChatTasksMenu
-                      open={chatTasks.open}
-                      name={nameOf(chatTasks.session)}
+                      open={chatTasksAsked.open}
+                      name={nameOf(chatTasksAsked.session)}
                       tasks={chatTasksLines}
                       at={chatTasksAt}
-                      from={chatTasks.from}
-                      onShow={showChatTask}
+                      from={chatTasksAsked.from}
+                      onShow={showPickedTask}
                       onClose={closeChatTasks}
                     />
                   )}

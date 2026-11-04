@@ -1337,6 +1337,25 @@ describe("the focused chat's own tasks, on its key (#5058, ruled on #4699)", () 
     await waitFor(() => expect(onScreen()).toEqual([1]));
   });
 
+  it("lists a task that has finished by how it ended, and a pick of it shows nothing", async () => {
+    await drawn(
+      [chat(1, "alpha"), chat(4, "alpha", { persona: "devops", label: "talk", from: taskOf(1) })],
+      [finishedTask(1, "probe")],
+    );
+    pane(1).focus();
+    chord("J");
+    await waitFor(() => expect(named()).toEqual(["talk", "probe"]));
+    expect(line("probe").getAttribute("aria-disabled")).toBe("true");
+    expect(line("probe").textContent).toContain("done");
+
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(line("probe"));
+    await userEvent.keyboard("{Enter}");
+
+    expect(menu()).not.toBeNull();
+    expect(onScreen()).toEqual([1]);
+  });
+
   it("gives the keyboard back to the chat when it is left with Escape", async () => {
     await drawn(withTasks());
     pane(1).focus();
