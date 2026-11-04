@@ -273,6 +273,55 @@ pub fn link(
     })
 }
 
+/// **One vault's entries a link may read**, as the person picks one (#5073): its name, and the
+/// keys that hold a value of their own, or why they could not be listed. Names only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pickable {
+    pub vault: String,
+    /// The keys a link may read, sorted; or the provider's own sentence for why none could be
+    /// listed, which is the person's to read.
+    pub keys: Result<Vec<String>, String>,
+}
+
+/// **Every entry the person could link a key to** (#5073), vault by vault in the order of their
+/// names: each key that holds a value of its own. Left out are what [`link`] refuses: a linked
+/// entry (a link never reads another link), a GitHub App's key, by its reserved name or by a
+/// persona's `mint` line, and, where `but` names it, the key a link is being made at. A vault
+/// whose keys cannot be listed is listed with why, so the picker can say so in its place.
+pub fn pickable(ctx: &Ctx, but: Option<&Target>) -> Result<Vec<Pickable>, VaultError> {
+    use crate::sandbox::tools::mint;
+    let index = load(ctx)?;
+    let registered = registry::vaults(&registry::load_registry(ctx)?);
+    let mut names: Vec<&String> = registered.keys().collect();
+    names.sort();
+    Ok(names
+        .into_iter()
+        .map(|name| {
+            let keys = registry::vault(ctx, name)
+                .and_then(|v| cmd::stored_keys(ctx, &v))
+                .map(|keys| {
+                    let mut keys: Vec<String> = keys
+                        .into_iter()
+                        .filter(|key| !is_link(&index, name, key))
+                        .filter(|key| but.is_none_or(|at| at.vault != *name || at.key != *key))
+                        .filter(|key| !mint::reserved(key))
+                        .filter(|key| {
+                            !matches!(mint::raw(&ctx.root, name, key), mint::Raw::Refused(_))
+                        })
+                        .collect();
+                    keys.sort();
+                    keys.dedup();
+                    keys
+                })
+                .map_err(|e| e.message.lines().next().unwrap_or_default().to_owned());
+            Pickable {
+                vault: name.clone(),
+                keys,
+            }
+        })
+        .collect())
+}
+
 /// Take the link `key` in `vault` is away. Whether there was one.
 pub fn unlink(ctx: &Ctx, vault: &str, key: &str) -> Result<bool, VaultError> {
     if of(ctx, vault, key)?.is_none() {

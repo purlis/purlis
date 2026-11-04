@@ -2,14 +2,30 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect } from "storybook/test";
+import { useState } from "react";
+import { expect, screen, waitFor, within } from "storybook/test";
 import { SecretFill } from "./SecretFill";
+import type { VaultEntries, VaultEntry } from "./VaultEntryPicker";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
+
+/** The entries the person keeps, vault by vault: names only (#5073). */
+const KEPT: VaultEntries[] = [
+  { vault: "own", keys: ["GITHUB_TOKEN", "STRIPE"] },
+  { vault: "team", keys: ["DB_PASSWORD", "KUBECONFIG_PROD"] },
+  { vault: "prod", keys: [], unlisted: "1Password is locked" },
+];
+
+/** The fill, holding the entry the person picks as the Inbox row does. */
+function Held(props: Omit<Parameters<typeof SecretFill>[0], "picked" | "onPicked">) {
+  const [picked, setPicked] = useState<VaultEntry>();
+  return <SecretFill {...props} picked={picked} onPicked={setPicked} />;
+}
 
 const meta = {
   title: "Notices/Missing secret",
-  component: SecretFill,
-} satisfies Meta<typeof SecretFill>;
+  component: Held,
+  args: { entries: () => Promise.resolve(KEPT) },
+} satisfies Meta<typeof Held>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -40,4 +56,49 @@ export const ForATool: Story = {
 /** A key no declared tool names. */
 export const NoTool: Story = {
   args: { secret: { ...secret, key: "API_TOKEN", tool: null }, box: null },
+};
+
+/**
+ * #5073: "Use an entry I have" opens a picker over the person's vaults, grouped by vault with a
+ * filter on top (the ruling on #5070); a pick says the key becomes a link, never a copy.
+ */
+export const UseAnEntry: Story = {
+  args: { secret, box: null },
+  parameters: { screenshot: "page" },
+  play: async ({ canvas, userEvent }) => {
+    const entry = canvas.getByRole("radio", { name: "Use an entry I have" });
+    await userEvent.tab();
+    await untilFocused(() => canvas.getByRole("radio", { name: "New value" }), "New value");
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(() => entry, "Use an entry I have");
+    expectFocusInSight();
+    await userEvent.tab();
+    const picker = canvas.getByRole("button", { name: /Entry KUBECONFIG reads$/ });
+    await untilFocused(() => picker, "the picker");
+    await userEvent.keyboard("{Enter}");
+    const filter = await screen.findByRole("textbox", { name: "Filter" });
+    await untilFocused(() => filter, "the filter takes the keyboard");
+    const list = screen.getByRole("listbox");
+    await expect(within(list).getAllByRole("group")).toHaveLength(3);
+    await userEvent.keyboard("stripe");
+    const stripe = await within(list).findByRole("option", { name: "STRIPE" });
+    await waitFor(() => expect(filter).toHaveAttribute("aria-activedescendant", stripe.id));
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent(
+        "KUBECONFIG becomes a link to STRIPE in own",
+      ),
+    );
+  },
+};
+
+/** #5073: nothing to link to yet, said in place of the picker's help. */
+export const NoEntryToUse: Story = {
+  args: { secret, box: null, entries: () => Promise.resolve([]) },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("radio", { name: "Use an entry I have" }));
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent("No vault holds an entry"),
+    );
+  },
 };

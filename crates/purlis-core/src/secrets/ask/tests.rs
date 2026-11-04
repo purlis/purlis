@@ -30,8 +30,15 @@ fn project() -> tempfile::TempDir {
     tmp
 }
 
+/// The project's vault context. Its state directory is named by `$PURLIS_HOME`, as a person may
+/// name it: the same reads and writes, under a folder no sandbox of the run holds back (the
+/// links index takes the vaults' folder lock).
 fn ctx(root: &Path) -> Ctx {
-    Ctx::new(root, crate::secrets::Env::of(&[]))
+    let home = root.join("home");
+    Ctx::new(
+        root,
+        crate::secrets::Env::of(&[("PURLIS_HOME", &home.to_string_lossy())]),
+    )
 }
 
 fn need(chat: u32, key: &str) -> Need {
@@ -1646,4 +1653,157 @@ fn a_started_chat_waits_longer_than_the_app_holds_its_ask() {
             holds_for(Some(harness)),
         );
     }
+}
+
+// ----------------------------------------------------------------------------------------
+// filled by picking an entry the person keeps: a Linked entry (#5073)
+
+const PICKED: &str = "str1pe-v4lue";
+
+/// [`project`], with a second vault `own` holding `STRIPE`: the entry the person picks.
+fn project_with_an_entry() -> tempfile::TempDir {
+    let tmp = project();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+            "own": {"provider": "plain-file", "config": {"file": "own.json"}},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("own.json"),
+        serde_json::json!({"STRIPE": PICKED}).to_string(),
+    )
+    .unwrap();
+    tmp
+}
+
+fn stripe_in_own() -> Answer {
+    Answer::Link(crate::secrets::links::Target {
+        vault: "own".into(),
+        key: "STRIPE".into(),
+    })
+}
+
+#[test]
+fn picking_an_entry_stores_a_linked_entry_and_never_a_copy() {
+    let project = project_with_an_entry();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, need(7, "MISSING"));
+    let id = asks.open()[0].id;
+    let answered = asks
+        .answer(&ctx(project.path()), id, stripe_in_own(), window())
+        .unwrap();
+    assert!(answered.filled, "{answered:?}");
+    assert_eq!(
+        crate::secrets::links::of(&ctx(project.path()), "team", "MISSING").unwrap(),
+        Some(crate::secrets::links::Target {
+            vault: "own".into(),
+            key: "STRIPE".into()
+        }),
+        "the asked key is a link to the picked entry"
+    );
+    let team = std::fs::read_to_string(project.path().join("team.json")).unwrap();
+    assert!(
+        !team.contains("MISSING") && !team.contains(PICKED),
+        "nothing was copied into the vault: {team}"
+    );
+    assert_eq!(
+        stored(project.path(), "MISSING").as_deref(),
+        Some(PICKED),
+        "the key reads the picked entry's value"
+    );
+    assert!(asks.open().is_empty());
+}
+
+#[test]
+fn a_waiting_command_hears_a_picked_entry_as_filled_and_reads_the_entrys_value() {
+    let project = project_with_an_entry();
+    let asks = Asks::new(project.path());
+    std::thread::scope(|scope| {
+        let waiting =
+            scope.spawn(|| asks.hold(need(7, "MISSING"), Duration::from_secs(60), &mut |_| {}));
+        let id = loop {
+            if let Some(one) = asks.open().first() {
+                break one.id;
+            }
+            std::thread::yield_now();
+        };
+        asks.answer(&ctx(project.path()), id, stripe_in_own(), window())
+            .unwrap();
+        assert_eq!(waiting.join().unwrap(), filled("MISSING"));
+    });
+    // A rotation of the entry reaches the key that reads it.
+    std::fs::write(
+        project.path().join("own.json"),
+        serde_json::json!({"STRIPE": "r0tated"}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        stored(project.path(), "MISSING").as_deref(),
+        Some("r0tated")
+    );
+}
+
+#[test]
+fn the_chat_hears_filled_with_the_keys_name_and_never_the_entry_a_link_reads() {
+    let project = project_with_an_entry();
+    let asks = Asks::new(project.path());
+    let (_, said_while_waiting) = held_for_nothing(&asks, need(7, "MISSING"));
+    let id = asks.open()[0].id;
+    let answered = asks
+        .answer(&ctx(project.path()), id, stripe_in_own(), window())
+        .unwrap();
+    assert_eq!(answered.nudge, vec![7], "the chat stopped waiting");
+    let told = answered.told.line();
+    assert!(told.contains("team/MISSING"), "{told}");
+    let trace = traced(project.path());
+    for what in [told, said_while_waiting.join("\n"), trace.clone()] {
+        for target in ["own", "STRIPE", PICKED] {
+            assert!(!what.contains(target), "{target} in: {what}");
+        }
+    }
+    assert!(
+        trace
+            .lines()
+            .any(|line| line.contains("\"secret.ask\"") && line.contains("linked")),
+        "a link is traced as one, by the asked names alone: {trace}"
+    );
+}
+
+#[test]
+fn a_pick_the_vault_refuses_leaves_the_ask_open_and_links_nothing() {
+    let project = project_with_an_entry();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, need(7, "MISSING"));
+    let id = asks.open()[0].id;
+    let gone = Answer::Link(crate::secrets::links::Target {
+        vault: "own".into(),
+        key: "NOT_THERE".into(),
+    });
+    asks.answer(&ctx(project.path()), id, gone, window())
+        .unwrap_err();
+    assert_eq!(asks.open().len(), 1, "the ask stays open");
+    assert_eq!(
+        crate::secrets::links::of(&ctx(project.path()), "team", "MISSING").unwrap(),
+        None
+    );
+}
+
+#[test]
+fn only_the_window_links_an_entry() {
+    let project = project_with_an_entry();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, need(7, "MISSING"));
+    let id = asks.open()[0].id;
+    let inbox = Answerer::admitted(Admitted::Approval).unwrap();
+    asks.answer(&ctx(project.path()), id, stripe_in_own(), inbox)
+        .unwrap_err();
+    assert_eq!(
+        crate::secrets::links::of(&ctx(project.path()), "team", "MISSING").unwrap(),
+        None
+    );
 }

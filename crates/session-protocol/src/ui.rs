@@ -369,6 +369,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A Secret ask (#5068, ADR 0109): only the person, in the window, fills a secret or
     // declines it. No chat, relayed link or other client answers one.
     "answer_secret_ask",
+    // And with an entry the person keeps (#5073): the asked key becomes a link to it. Which
+    // entries the person keeps, vault by vault, is theirs to read in the window, never a
+    // client's: a chat must not learn where a value lives.
+    "link_secret_ask",
+    "secret_ask_entries",
     // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
     // browser a site.
     "allow_browser_sites",

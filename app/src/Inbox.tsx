@@ -23,7 +23,7 @@ import {
   type ReachedWhy,
   type Shown,
 } from "./bindings";
-import { answerTaken, asksMoved } from "./asks";
+import { answerTaken, asksMoved, secretAskEntries } from "./asks";
 import { counted as countedSaid } from "./dispatches";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import {
@@ -76,6 +76,7 @@ import { AskWrites } from "./AskWrites";
 import { LoginSite, useTypedSite } from "./LoginSite";
 import { SecretFill } from "./SecretFill";
 import { SecretFillSite } from "./SecretFillNotice";
+import type { VaultEntry } from "./VaultEntryPicker";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
@@ -860,6 +861,8 @@ function Ask({
   const [typed, setTyped] = useTypedSite(ask);
   /** The box a Secret ask's value is typed in (#5068): it holds its own words, read on Fill. */
   const secretBox = useRef<HTMLInputElement>(null);
+  /** The entry a Secret ask is filled with, where the person uses one they keep (#5073). */
+  const [secretPick, setSecretPick] = useState<VaultEntry>();
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
   const openAnswer = useOpenAnswer();
@@ -895,7 +898,15 @@ function Ask({
     // A Secret ask's value is read from its box as Fill is pressed, and the box emptied.
     const given = ask.secret != null && option.allows ? (secretBox.current?.value ?? "") : typed;
     if (ask.secret != null && secretBox.current) secretBox.current.value = "";
-    void answerTaken(plane, ask, option.id, option.id === "keep" ? reason : undefined, given)
+    const linked = ask.secret != null && option.allows ? secretPick : undefined;
+    void answerTaken(
+      plane,
+      ask,
+      option.id,
+      option.id === "keep" ? reason : undefined,
+      given,
+      linked,
+    )
       .then(({ refused, live, opened }) => {
         if (refused !== undefined) {
           setSaid(refused);
@@ -952,7 +963,13 @@ function Ask({
         )}
         {ask.secret != null && (
           <Stop id={`${key}:secret`}>
-            <SecretFill secret={ask.secret} box={secretBox} />
+            <SecretFill
+              secret={ask.secret}
+              box={secretBox}
+              entries={() => secretAskEntries(plane, ask)}
+              picked={secretPick}
+              onPicked={setSecretPick}
+            />
           </Stop>
         )}
         {/* What a secret fill puts where (#5115): words to read, nothing to reach. */}
