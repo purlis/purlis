@@ -269,6 +269,24 @@ function keepTheWindowInUse() {
   return () => window.removeEventListener("blur", keep, true);
 }
 
+/**
+ * **The engine's own cursor, out of the story's way** (#4098): the browser has a cursor of its
+ * own besides the story's pointer, and it stays where it last was, over the frame's top left,
+ * which is where the story draws its panel. As the story lays out under it, Chromium tells the
+ * page that cursor came over the panel's wrapper, a real `pointerover` outside the list; heard
+ * just after the story's pointer came onto a row, it lets the list's hold go before the card is
+ * up, as a person's pointer leaving would. So the cursor is put in the frame's far corner, which
+ * the story never draws in, before the story's pointer moves, and left there.
+ */
+async function parkTheEnginesCursor() {
+  // The engine's own mouse: imported only where a story runs in it.
+  const { userEvent: engine } = await import("vitest/browser");
+  const page = document.documentElement;
+  await engine.hover(page, {
+    position: { x: page.clientWidth - 1, y: page.clientHeight - 1 },
+  });
+}
+
 /** Two frames: whatever a change asked to draw has been drawn. */
 const drawn = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
 
@@ -290,6 +308,7 @@ export const HeldAcrossTheGapToTheCard: Story = {
     const user = userEvent.setup();
     const row = canvasElement.querySelector<HTMLElement>('[role="treeitem"][data-session="1"]');
     await expect(row).not.toBeNull();
+    await parkTheEnginesCursor();
     const inUse = keepTheWindowInUse();
     const clock = parkTheCardsWait();
     heldLog().length = 0;
