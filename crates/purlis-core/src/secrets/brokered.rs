@@ -1413,34 +1413,39 @@ pub fn fill_value(
             "{key} in vault '{vault}' is a private key, so purlis filled nothing"
         ));
     }
+    // The next step, said only where it would work.
+    let code = if super::totp::Seed::parse(value.expose()).is_ok() {
+        "Call browser_fill_secret again with `code` to fill the code it makes"
+    } else {
+        "purlis can't make a code from this value either"
+    };
     if super::totp::holds_an_address(value.expose()) {
         return Err(format!(
             "{key} in vault '{vault}' holds an otpauth address, so purlis filled nothing: a seed \
-             never goes into a page, and no mark changes that. Call browser_fill_secret again \
-             with `code` to fill the code it makes"
+             never goes into a page, and no mark changes that. {code}"
         ));
     }
     if super::totp::looks_like_a_seed(value.expose()) {
+        let place = format!(
+            "in the window, open the vault's tab and open the menu on the row of {key}, or of the \
+             entry it reads if it is linked, and choose"
+        );
         let then = match super::no_seed::of(&reading_for(asker), vault, key, value.expose()) {
             super::no_seed::Mark::Holds => return Ok(Some(value)),
             super::no_seed::Mark::None => format!(
-                "If its value is no seed, ask the person to mark it: in the window, open the \
-                 vault's tab, open the menu on the row of {key} and choose \
-                 \"{}\"",
+                "If its value is no seed, ask the person to mark it: {place} {}",
                 super::no_seed::MARK_WORDS
             ),
             super::no_seed::Mark::ValueChanged => format!(
-                "The person marked {key} as no 2FA seed, and its value has changed since. If \
-                 this value is no seed either, ask them to mark it again: in the window, open \
-                 the vault's tab, open the menu on the row of {key}, choose \"{}\" and then \"{}\"",
+                "The person marked {key} as no 2FA seed, and its value has changed since. If this \
+                 value is no seed either, ask them to mark it again: {place} {}, then {}",
                 super::no_seed::UNMARK_WORDS,
                 super::no_seed::MARK_WORDS
             ),
         };
         return Err(format!(
             "{key} in vault '{vault}' looks like a 2FA seed, so purlis filled nothing: a seed \
-             never goes into a page. Call browser_fill_secret again with `code` to fill the code \
-             it makes. {then}. A chat can't make that mark"
+             never goes into a page. {code}. A chat can't make this mark. {then}"
         ));
     }
     Ok(Some(value))

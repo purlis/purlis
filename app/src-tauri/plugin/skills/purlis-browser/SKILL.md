@@ -86,7 +86,8 @@ same on a pool's runner.
 **A 2FA code comes from its seed**: name the key that holds the seed (an `otpauth://totp/`
 address or the base32 secret) and set `code` to true. purlis works the current code out from
 the seed as it fills, and only the code goes into the page; the seed never does. A seed asked for
-without `code` is refused.
+without `code` is refused. So is any value that looks like one, unless the person marked its key
+as no 2FA seed in the vault's tab, and a chat can't make that mark. Pass on what the refusal says.
 
 **In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
 temp file and points `PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by

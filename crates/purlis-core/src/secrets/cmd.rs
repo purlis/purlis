@@ -346,12 +346,13 @@ fn value_free(field: &Value, values: &[String]) -> Value {
 
 /// Every event [`trace_secret_use`] records under. A trace holding one is kept past the 30-day
 /// sweep (`retention`, V71) until AU-5 writes these into the audit chain.
-pub const HANDED_OUT: [&str; 6] = [
+pub const HANDED_OUT: [&str; 7] = [
     "secret-exec",
     super::brokered::FORWARDED,
     "secret-reveal",
     "secret-cp",
     "identity-move",
+    super::no_seed::TRACED,
     crate::profilesignin::PROFILE_SIGN_IN,
 ];
 

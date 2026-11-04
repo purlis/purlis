@@ -374,7 +374,7 @@ describe("a vault's tab", () => {
 
     await fromTheMenuOf("APP", "Mark as no 2FA seed…");
     const again = await screen.findByRole("alertdialog");
-    await userEvent.click(within(again).getByRole("button", { name: "Mark as no seed" }));
+    await userEvent.click(within(again).getByRole("button", { name: "Mark as no 2FA seed" }));
 
     await screen.findByText("Marked as no 2FA seed. Fills as a plain value.");
     expect(asked.find((one) => one.cmd === "vault_secret_mark_no_seed")?.args).toEqual({
@@ -391,11 +391,22 @@ describe("a vault's tab", () => {
     draw();
     await fromTheMenuOf("APP", "Mark as no 2FA seed…");
     const asking = await screen.findByRole("alertdialog");
-    await userEvent.click(within(asking).getByRole("button", { name: "Mark as no seed" }));
+    await userEvent.click(within(asking).getByRole("button", { name: "Mark as no 2FA seed" }));
     expect(await within(asking).findByRole("alert")).toHaveTextContent(
       "APP holds an otpauth address",
     );
     expect(screen.queryByText("Marked as no 2FA seed. Fills as a plain value.")).toBeNull();
+  });
+
+  it("offers no mark on a linked entry, whose value is another entry's (#5237)", async () => {
+    core(contents([secret("K", { link: { vault: "team", key: "STRIPE" } })]));
+    draw();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    const row = screen.getByRole("row", { name: /^K/ });
+    row.focus();
+    await userEvent.keyboard("{Enter}");
+    const menu = await screen.findByRole("menu", { name: "K" });
+    expect(within(menu).queryByRole("menuitem", { name: "Mark as no 2FA seed…" })).toBeNull();
   });
 
   it("takes the mark off a marked key at once, with nothing to ask (#5237)", async () => {

@@ -103,7 +103,7 @@ its own plane:
   (`retention::KEEP_FOR`) — every ending but `.tools` and `.gate`, which go sooner (below);
 - a `.charter/persona-state/trace/<session>.jsonl` trace last appended to 30 days or more
   before, **unless it records a secret handed out** (`secret-exec`, `secret.forwarded`,
-  `secret-reveal`, `secret-cp`, `identity-move`, `profile-sign-in`:
+  `secret-reveal`, `secret-cp`, `identity-move`, `secret-no-seed`, `profile-sign-in`:
   `secrets::cmd::HANDED_OUT`). Such a trace is kept until AU-5
   writes those events into the audit chain, and after that it follows the 30-day rule (V71);
 - a `.charter/reports/<id>.json` draft the Python charter left, last written 30 days or more
@@ -273,6 +273,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`.charter/vaults/<name>.meta.json` — rotation sidecar](#chartervaultsnamemetajson--rotation-sidecar)
   - [`.charter/vaults/<name>.keys.json` — keyring vault's keys index](#chartervaultsnamekeysjson--keyring-vaults-keys-index)
   - [`.charter/vault-links.json` — linked entries](#chartervault-linksjson--linked-entries)
+  - [`.charter/vaults/-no-seed.json` — keys the person marked as no 2FA seed](#chartervaults-no-seedjson--keys-the-person-marked-as-no-2fa-seed)
   - [`.charter/keyring-stub.json` — a test build's keyring](#charterkeyring-stubjson--a-test-builds-keyring)
   - [`.charter/vaults/exec/` — a brokered run's credential files](#chartervaultsexec--a-brokered-runs-credential-files)
   - [`.charter/vaults/<name>.json` — reference vault (same path, different content)](#chartervaultsnamejson--reference-vault-same-path-different-content)
@@ -4530,7 +4531,8 @@ Legacy spellings `op_vault` / `op_item` are still read (`charter/secrets/onepass
   every file inside `-rw-------`.
 - File names: `<vault name>.json` and `<vault name>.meta.json` by default
   (`charter/commands_secrets.py:141`, `charter/secrets/plain_file.py:165`). Any other path
-  is legal via `--file`, absolute included (`charter/secrets/base.py:40`).
+  is legal via `--file`, absolute included (`charter/secrets/base.py:40`). purlis also keeps
+  `-no-seed.json` here, a name no vault can have.
 
 Live-plane check (names and modes only, no contents): the real plane has
 `.charter/vaults.json` and a `.charter/vaults/` directory of `<name>.json` /
@@ -4663,6 +4665,8 @@ purlis only (#5069; ADR 0109, #5055); the Python charter has no linked entries a
   one, so a link never travels with a vault shared with a team.
 - **Status:** **experimental** — its first readers are the vault view and the secret ask
   (#5054).
+- **Sandbox:** every chat's sandbox denies it both ways, as it does the vaults: it says where a
+  key's value is read from.
 - **Tier:** Clone state — under the project's state folder beside the keys indexes, never
   committed; one person's links between their own entries, and nothing rebuilds it.
 - **Written by:** `crates/purlis-core/src/secrets/links.rs` (`link`, `unlink`, `renamed`,
@@ -4694,22 +4698,25 @@ purlis only (#5237, ADR 0067 as amended); the Python charter has no secret fill 
   plane's key.
 - **What it says:** the person said the value under this key is no 2FA seed, so a plain secret fill
   fills it though it looks like one. A row counts only where its seal is the seal of the value the
-  fill read: a value that changed, or a row written by anything but purlis, is no mark. An
-  `otpauth://` or `otpauth-migration://` address is refused as a plain fill whatever this file says.
+  fill read: a value that changed, or a row written by anything but purlis, is no mark. A linked
+  entry holds no row, and fills on the row of the entry it reads. A value holding `otpauth:` or
+  `otpauth-migration:`, with its `:` plain or as `%3A`, is refused as a plain fill whatever this
+  file says.
 - **Who writes it:** the person alone, from the vault's tab in the window. No command of the
   `purlis` binary, no session protocol method and no settings key makes a mark, and the window's
-  commands are served on no link. It sits under `vaults/` because every chat's sandbox denies that
-  folder both ways, at every level, and the seal needs a key those sandboxes deny too.
+  commands are served on no link. It sits under `vaults/` because a chat's sandbox denies that
+  folder both ways, and the seal needs a key those sandboxes deny too.
 - **Status:** **experimental** — its one reader is the secret fill.
 - **Tier:** Clone state — under the project's state folder, never committed; one person's word about
   their own values, and nothing rebuilds it.
 - **Written by:** `crates/purlis-core/src/secrets/no_seed.rs` (`mark`, `unmark`, `forget`, `renamed`,
   `forget_vault`), under the vaults' folder lock, 0600 and replaced whole, never through a link.
   `mark` and `unmark` are called from the window's commands. A write of the key's value and a delete
-  of the key take its row away, a rename moves it, and deleting a vault takes its rows away, from
-  whichever process does them.
+  of the key take its row away, and so does a link written over it; a rename moves it, and deleting
+  a vault takes its rows away, from whichever process does them.
 - **Read by:** the same module: `secrets::brokered::fill_value` for each plain fill of a value that
-  looks like a seed, and the vault's tab, which shows which keys hold a row by name and checks no seal.
+  looks like a seed, and the vault's tab, which shows which keys hold a row by name and checks no
+  seal, so a row can still show after its value changed outside purlis.
 - **Name:** no vault can be called `-no-seed` (`registry::name_ok` wants a letter or digit first), so
   it is no vault's file.
 - **Git / encoding:** under `.charter/`, so gitignored; indent 2, trailing newline, keys sorted.

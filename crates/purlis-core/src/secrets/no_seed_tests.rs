@@ -74,7 +74,7 @@ fn a_value_that_looks_like_a_seed_is_refused_in_words_that_say_where_to_mark_it(
     assert!(refused.contains("looks like a 2FA seed"), "{refused}");
     assert!(refused.contains("vault's tab"), "{refused}");
     assert!(refused.contains(MARK_WORDS), "{refused}");
-    assert!(refused.contains("A chat can't make that mark"), "{refused}");
+    assert!(refused.contains("A chat can't make this mark"), "{refused}");
     assert!(!refused.contains(APP_PASSWORD), "{refused}");
 }
 
@@ -212,7 +212,10 @@ fn an_otpauth_address_cannot_be_marked() {
     let tmp = project(serde_json::json!({"APP": ADDRESS}));
     let c = ctx(tmp.path());
     let refused = mark(&c, &team(tmp.path()), "APP").unwrap_err();
-    assert!(refused.message.contains("otpauth address"), "{refused:?}");
+    assert!(
+        refused.message.contains("authenticator app's address"),
+        "{refused:?}"
+    );
     assert!(!path(&c).exists());
 }
 
@@ -255,7 +258,9 @@ fn nothing_a_chat_can_propose_is_read_for_a_mark() {
         .to_string(),
     )
     .unwrap();
-    assert!(filled(tmp.path(), "APP").is_err());
+    assert_eq!(of(&c, "team", "APP", APP_PASSWORD), Mark::None);
+    let refused = filled(tmp.path(), "APP").unwrap_err();
+    assert!(refused.contains("looks like a 2FA seed"), "{refused}");
 }
 
 #[test]
@@ -307,4 +312,82 @@ fn a_change_with_no_mark_to_change_writes_nothing() {
     renamed(&c, "team", "APP", "MAIL");
     forget_vault(&c, "team");
     assert!(!path(&c).exists());
+}
+
+/// `key` in `team` reads `to` in `team`, written straight into the links index.
+fn linked(root: &Path, key: &str, to: &str) {
+    let c = ctx(root);
+    std::fs::create_dir_all(&c.state).unwrap();
+    std::fs::write(
+        crate::secrets::links::path(&c),
+        serde_json::json!({"links": {"team": {key: {"vault": "team", "key": to}}}}).to_string(),
+    )
+    .unwrap();
+}
+
+const A_SEED: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+
+#[test]
+fn a_linked_entry_is_not_marked_and_the_person_is_told_which_entry_to_mark() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD, "ELSE": A_SEED}));
+    let c = ctx(tmp.path());
+    linked(tmp.path(), "APP", "ELSE");
+    let refused = mark(&c, &team(tmp.path()), "APP").unwrap_err();
+    assert!(
+        refused.message.contains("linked to ELSE in team"),
+        "{refused:?}"
+    );
+    assert!(!path(&c).exists());
+    assert!(filled(tmp.path(), "APP").is_err());
+}
+
+#[test]
+fn a_marked_key_that_comes_to_read_another_entry_is_refused() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD, "ELSE": A_SEED}));
+    let c = ctx(tmp.path());
+    mark(&c, &team(tmp.path()), "APP").unwrap();
+    linked(tmp.path(), "APP", "ELSE");
+    assert_eq!(of(&c, "team", "APP", A_SEED), Mark::None);
+    assert!(filled(tmp.path(), "APP").is_err());
+}
+
+#[test]
+fn a_linked_entry_fills_on_the_mark_of_the_entry_it_reads() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    mark(&ctx(tmp.path()), &team(tmp.path()), "APP").unwrap();
+    linked(tmp.path(), "MAIL", "APP");
+    assert_eq!(filled(tmp.path(), "MAIL").unwrap(), APP_PASSWORD);
+}
+
+#[test]
+fn the_persons_view_of_a_refusal_keeps_where_to_mark_the_key() {
+    let tmp = project(serde_json::json!({"AN_APP_PASSWORD_KEY": APP_PASSWORD}));
+    let refused = filled(tmp.path(), "AN_APP_PASSWORD_KEY").unwrap_err();
+    let seen = crate::browsertimeline::fill_refused("b1", "AN_APP_PASSWORD_KEY", &refused, 1);
+    assert!(seen.moment.did.contains(MARK_WORDS), "{}", seen.moment.did);
+    // So does the longer one, for a value that changed.
+    let c = ctx(tmp.path());
+    mark(&c, &team(tmp.path()), "AN_APP_PASSWORD_KEY").unwrap();
+    holding(
+        tmp.path(),
+        &serde_json::json!({"AN_APP_PASSWORD_KEY": A_SEED}),
+    );
+    let refused = filled(tmp.path(), "AN_APP_PASSWORD_KEY").unwrap_err();
+    let seen = crate::browsertimeline::fill_refused("b1", "AN_APP_PASSWORD_KEY", &refused, 1);
+    assert!(seen.moment.did.contains(MARK_WORDS), "{}", seen.moment.did);
+}
+
+#[test]
+fn a_next_step_is_said_only_where_it_would_work() {
+    // A labelled address makes no code, so the refusal doesn't send the chat round again.
+    let tmp = project(serde_json::json!({"APP": format!("my login: {ADDRESS}")}));
+    let refused = filled(tmp.path(), "APP").unwrap_err();
+    assert!(refused.contains("can't make a code"), "{refused}");
+    assert!(!refused.contains("with `code`"), "{refused}");
+    let tmp = project(serde_json::json!({"APP": ADDRESS}));
+    assert!(
+        filled(tmp.path(), "APP")
+            .unwrap_err()
+            .contains("with `code`")
+    );
 }

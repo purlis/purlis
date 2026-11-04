@@ -965,7 +965,7 @@ function SecretRow({
           <MenuItem id="copy" textValue={SAID.copy} onAction={onCopy}>
             <MenuWords said={SAID.copy} />
           </MenuItem>
-          {secret.no_seed ? (
+          {secret.link !== null ? null : secret.no_seed ? (
             <MenuItem id="unmark-no-seed" textValue={SAID.unmarkNoSeed} onAction={onUnmarkNoSeed}>
               <MenuWords said={SAID.unmarkNoSeed} />
             </MenuItem>
@@ -1254,10 +1254,6 @@ function deleteSaid(held: VaultSecret | undefined): string {
 }
 
 /**
- * Asking before a secret is deleted. **Cancel has the focus**, as it has in every dialog here
- * that ends something: an Enter pressed out of habit keeps the secret.
- */
-/**
  * **The person's word that a key's value is no 2FA seed** (#5237): what it is for and what it
  * lets through, asked before it is said. Marking widens what a chat can fill, so it is a grant:
  * it starts on Cancel, as every grant does. The core reads and seals the value, and no value
@@ -1296,8 +1292,8 @@ function NoSeedDialog({
       }
       cancel={{ isDisabled: marking }}
       main={{
-        children: marking ? "Marking…" : "Mark as no seed",
-        reserve: ["Mark as no seed", "Marking…"],
+        children: marking ? "Marking…" : "Mark as no 2FA seed",
+        reserve: ["Mark as no 2FA seed", "Marking…"],
         variant: "grants",
         isDisabled: marking,
         onPress: () => {
@@ -1319,6 +1315,10 @@ function NoSeedDialog({
   );
 }
 
+/**
+ * Asking before a secret is deleted. **Cancel has the focus**, as it has in every dialog here
+ * that ends something: an Enter pressed out of habit keeps the secret.
+ */
 function DeleteDialog({
   vault,
   secret,

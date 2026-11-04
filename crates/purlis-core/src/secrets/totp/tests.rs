@@ -111,6 +111,11 @@ fn an_address_is_found_anywhere_in_a_value_in_any_case() {
     assert!(holds_an_address("otpauth-migration://offline?data=AAAA"));
     assert!(holds_an_address("my login\nOtpAuth://totp/x"));
     assert!(holds_an_address("é otpauth://totp/x"));
+    assert!(holds_an_address(
+        "otpauth%3A%2F%2Ftotp%2Fx%3Fsecret%3DGEZDGNBV"
+    ));
+    assert!(holds_an_address("otpauth:\\/\\/totp\\/x"));
+    assert!(holds_an_address("OTPAUTH-MIGRATION%3a%2f%2foffline"));
     assert!(!holds_an_address("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"));
     assert!(!holds_an_address("otpauth"));
 }

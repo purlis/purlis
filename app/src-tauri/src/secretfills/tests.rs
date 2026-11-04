@@ -538,6 +538,35 @@ fn a_fill_asked_as_a_code_reads_the_code_and_one_asked_as_a_value_never_reads_a_
 }
 
 #[test]
+fn a_key_the_person_marked_as_no_seed_is_read_for_the_fill_they_allowed_and_a_new_value_is_not() {
+    let (dir, asker) = vault_with_a_seed();
+    let asked = FillAsked {
+        code: false,
+        ..asked_into("app", FieldKind::OneLine)
+    };
+    let holding = |value: &str| {
+        std::fs::write(
+            dir.path().join("q.json"),
+            serde_json::json!({ "app": value }).to_string(),
+        )
+        .expect("a vault");
+    };
+    holding("abcdefghijklmnop");
+    assert!(read_now(&asker, &asked).is_err());
+
+    let ctx = purlis_core::secrets::Ctx::new(dir.path(), asker.env.clone());
+    // The window's own call makes the mark: this test stands for the person's press.
+    crate::vaults::mark_no_seed(&ctx, "qa", "app").expect("marked");
+    let value = read_now(&asker, &asked)
+        .expect("a value")
+        .expect("the vault holds it");
+    assert_eq!(value.expose(), "abcdefghijklmnop");
+
+    holding("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
+    assert!(read_now(&asker, &asked).is_err());
+}
+
+#[test]
 fn no_value_is_read_for_a_browser_the_person_has_taken_over() {
     let browsers = crate::chatbrowsers::ChatBrowsers::default();
     let asked = asked_into("dash-api-key", FieldKind::OneLine);

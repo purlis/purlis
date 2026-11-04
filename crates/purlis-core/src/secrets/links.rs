@@ -44,9 +44,13 @@ pub struct Target {
 /// Every link on this machine: vault → key → the entry it reads.
 type Index = BTreeMap<String, BTreeMap<String, Target>>;
 
-/// Where the links index lives: in the state directory, beside the vaults' own folder.
+/// The links index's file name under the state directory.
+pub const FILE: &str = "vault-links.json";
+
+/// Where the links index lives: in the state directory, beside the vaults' own folder. It says
+/// where a key's value is read from, so every chat's sandbox denies it as it does the vaults.
 pub fn path(ctx: &Ctx) -> PathBuf {
-    ctx.state.join("vault-links.json")
+    ctx.state.join(FILE)
 }
 
 fn corrupt(ctx: &Ctx, why: &str) -> VaultError {
@@ -254,6 +258,7 @@ pub fn link_over(
             e.message.lines().next().unwrap_or_default()
         )));
     }
+    super::no_seed::forget(ctx, &v.name, key);
     Ok(())
 }
 

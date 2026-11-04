@@ -7,7 +7,7 @@
  * break. The core is faked at its command boundary; no value is ever drawn.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { VaultContents, VaultSecret } from "./bindings";
 import { VaultTab } from "./VaultTab";
@@ -107,7 +107,26 @@ const HELD: VaultContents = {
 };
 
 function holding() {
-  mockIPC((cmd) => (cmd === "vault_open" ? HELD : new Promise(() => {})));
+  mockIPC((cmd) => {
+    if (cmd === "vault_open") return HELD;
+    if (cmd === "vault_secret_mark_no_seed")
+      throw "APP_PASSWORD holds an authenticator app's address, which carries a 2FA seed, so purlis didn't mark it";
+    return new Promise(() => {});
+  });
+}
+
+/** A key's row, from the keyboard, to its Mark as no 2FA seed…. */
+async function askToMark(canvasElement: HTMLElement) {
+  const page = within(canvasElement);
+  const row = await page.findByRole("row", { name: /^APP_PASSWORD/ });
+  row.focus();
+  expectFocusInSight();
+  await userEvent.keyboard("{Enter}");
+  const body = within(document.body);
+  await body.findByRole("menu", { name: "APP_PASSWORD" });
+  expectFocusInSight();
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
+  return body.findByRole("alertdialog", { name: "Mark APP_PASSWORD as no 2FA seed?" });
 }
 
 /** A key the person marked says so on its row, and its menu takes the mark off. */
@@ -129,26 +148,32 @@ export const MarkedAsNoSeed: Story = {
 
 /**
  * The rows from the keyboard to Mark as no 2FA seed…, which says what it is for and starts on
- * Cancel, since the mark widens what a chat can fill. Escape marks nothing.
+ * Cancel, since the mark widens what a chat can fill. The grant is reached on purpose, and Escape
+ * marks nothing.
  */
 export const MarkAsNoSeedAsksFirst: Story = {
   beforeEach: holding,
   play: async ({ canvasElement }) => {
-    const page = within(canvasElement);
-    const row = await page.findByRole("row", { name: /^APP_PASSWORD/ });
-    row.focus();
-    expectFocusInSight();
-    await userEvent.keyboard("{Enter}");
-    const body = within(document.body);
-    const menu = await body.findByRole("menu", { name: "APP_PASSWORD" });
-    expectFocusInSight();
-    await userEvent.click(within(menu).getByRole("menuitem", { name: "Mark as no 2FA seed…" }));
-    const asking = await body.findByRole("alertdialog", {
-      name: "Mark APP_PASSWORD as no 2FA seed?",
-    });
+    const asking = await askToMark(canvasElement);
     await expect(asking).toHaveTextContent("a 16-letter app password");
     await expect(within(asking).getByRole("button", { name: "Cancel" })).toHaveFocus();
     expectFocusInSight();
-    await within(asking).findByRole("button", { name: "Mark as no seed" });
+    await userEvent.tab();
+    await expect(within(asking).getByRole("button", { name: "Mark as no 2FA seed" })).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(within(document.body).queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+  },
+};
+
+/** The core's refusal, in the dialog beside the question. */
+export const MarkAsNoSeedRefused: Story = {
+  beforeEach: holding,
+  play: async ({ canvasElement }) => {
+    const asking = await askToMark(canvasElement);
+    await userEvent.click(within(asking).getByRole("button", { name: "Mark as no 2FA seed" }));
+    await within(asking).findByRole("alert");
   },
 };

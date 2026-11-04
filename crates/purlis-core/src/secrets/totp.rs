@@ -63,9 +63,6 @@ impl std::fmt::Debug for Seed {
     }
 }
 
-/// The address an authenticator app is given a seed in.
-const SCHEME: &str = "otpauth://";
-
 /// What a value that is no TOTP seed is refused with.
 const NOT_A_SEED: &str = "isn't a 2FA seed: give the key of an otpauth://totp/ address or of \
                           the base32 secret an authenticator app is given";
@@ -77,12 +74,20 @@ pub fn an_address(text: &str) -> bool {
         .is_some_and(|scheme| scheme.eq_ignore_ascii_case("otpauth://"))
 }
 
-/// **Whether `text` holds an authenticator's address anywhere** (#5237): `otpauth://` or its
-/// export's `otpauth-migration://`, in any case and wherever in the text it stands. Such a value
-/// is refused as a plain fill whatever the person's mark says, so this looks inside the text
-/// where [`looks_like_a_seed`] looks at its start: a label before the address changes nothing.
+/// **Whether `text` holds an authenticator's address anywhere** (#5237): `otpauth:` or its
+/// export's `otpauth-migration:`, whether its `:` is written plainly or escaped as in a link, in
+/// any case and wherever in the text it stands. Such a value is refused as a plain fill whatever
+/// the person's mark says, so this looks inside the text where [`looks_like_a_seed`] looks at its
+/// start: a label before the address changes nothing.
 pub fn holds_an_address(text: &str) -> bool {
-    [SCHEME, MIGRATION].iter().any(|scheme| {
+    [
+        "otpauth:",
+        "otpauth%3a",
+        "otpauth-migration:",
+        "otpauth-migration%3a",
+    ]
+    .iter()
+    .any(|scheme| {
         text.as_bytes()
             .windows(scheme.len())
             .any(|at| at.eq_ignore_ascii_case(scheme.as_bytes()))

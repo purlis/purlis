@@ -12,8 +12,14 @@ use std::path::{Path, PathBuf};
 /// The one file outside the store's own that may make a mark: the window's commands.
 const THE_WINDOWS: &str = "app/src-tauri/src/vaults.rs";
 
-/// What a caller of the store's writer, or of the commands, is spelled with.
-const CALL: &str = "no_seed::mark(";
+/// How a caller of the store's two writers is spelled, by path or through an import.
+const CALLS: [&str; 5] = [
+    "no_seed::mark(",
+    "no_seed::unmark(",
+    "no_seed::{",
+    "no_seed::*",
+    "no_seed as ",
+];
 
 fn rust_files(dir: &Path, into: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -49,7 +55,10 @@ fn the_only_caller_of_the_marks_writer_is_the_windows_command() {
     let mut callers: Vec<String> = files
         .iter()
         .filter(|file| !file.ends_with("a_no_seed_mark_is_made_only_in_the_window.rs"))
-        .filter(|file| std::fs::read_to_string(file).is_ok_and(|text| text.contains(CALL)))
+        .filter(|file| {
+            std::fs::read_to_string(file)
+                .is_ok_and(|text| CALLS.iter().any(|call| text.contains(call)))
+        })
         .map(|file| {
             file.strip_prefix(&root)
                 .expect("under the workspace")
@@ -67,5 +76,17 @@ fn the_commands_that_make_and_take_off_a_mark_reach_no_link() {
     for command in ["vault_secret_mark_no_seed", "vault_secret_unmark_no_seed"] {
         assert!(ui::window_only(command), "{command}");
         assert!(!ui::SERVED_ON_A_LINK.contains(&command), "{command}");
+    }
+}
+
+#[test]
+fn a_refusal_names_the_rows_the_window_draws() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let words = std::fs::read_to_string(root.join("app/src/menuWords.ts")).expect("the words");
+    for said in [
+        purlis_core::secrets::no_seed::MARK_WORDS,
+        purlis_core::secrets::no_seed::UNMARK_WORDS,
+    ] {
+        assert!(words.contains(&format!("\"{said}\"")), "{said}");
     }
 }

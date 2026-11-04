@@ -32,7 +32,6 @@
 // The shared helpers, in the folders they always had; each module reaches one as
 // `crate::support` and so on.
 #[path = "../old_names/mod.rs"]
-mod a_no_seed_mark_is_made_only_in_the_window;
 mod old_names;
 #[path = "../oracle_corpus/mod.rs"]
 mod oracle_corpus;
@@ -101,6 +100,7 @@ mod a_memory_is_edited_in_place_and_archived_reversibly;
 mod a_memory_moves_between_scopes_whole;
 mod a_memory_op_acts_on_the_file_it_names_and_no_other;
 mod a_missing_git_identity_is_fixed_from_a_form;
+mod a_no_seed_mark_is_made_only_in_the_window;
 mod a_panic_on_any_thread_ends_a_shipped_binary;
 mod a_per_device_log_is_named_by_the_device_id;
 mod a_persona_brings_its_skills_into_every_workspace;
