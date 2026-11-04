@@ -291,6 +291,8 @@ impl Fills {
 pub struct FillAsked {
     /// The chat's browser, by the name the chat knows it by.
     pub browser: String,
+    /// That browser's program in the session host.
+    pub program: String,
     pub target: String,
     pub vault: String,
     pub key: String,
@@ -613,6 +615,7 @@ fn read(
     origin: &str,
     started: std::time::Instant,
 ) -> Result<Secret, String> {
+    not_taken_over(held, asked)?;
     let (asker, _) = held
         .chats()
         .login_asker(held.root(), session)
@@ -672,6 +675,7 @@ fn read(
         purlis_core::secrets::ask::Held::Filled { .. } => {
             // Judged again as the project reads now: it may have changed while the key was added.
             judged(held, session, asked)?;
+            not_taken_over(held, asked)?;
             read()?.ok_or_else(|| {
                 format!(
                     "vault '{}' still holds no {}, so nothing was filled",
@@ -685,6 +689,16 @@ fn read(
             Err(format!("{line}: nothing was filled"))
         }
     }
+}
+
+/// **No value is read for a browser the person has taken over** (#5119, SF-10), which they may
+/// have done while they were asked.
+fn not_taken_over(held: &Held, asked: &FillAsked) -> Result<(), String> {
+    if held.browsers().driver_of(&asked.program) == Some(crate::chatbrowsers::BrowserDriver::Person)
+    {
+        return Err(crate::chatbrowsers::taken_over_said(&asked.browser));
+    }
+    Ok(())
 }
 
 /// Writes the audit of a press, and answers whether it was written.

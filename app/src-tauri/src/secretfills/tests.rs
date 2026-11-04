@@ -430,6 +430,7 @@ fn allow_for_this_chat_fills_the_next_ask_without_a_notice_and_never_a_cards() {
     ));
     let asked = |key: &str| FillAsked {
         browser: "b1".into(),
+        program: "program-1".into(),
         target: "e12".into(),
         vault: "qa".into(),
         key: key.into(),
@@ -675,6 +676,7 @@ fn a_cards_mark_added_while_the_notice_is_up_draws_it_again_before_a_press_count
 fn asked_into(key: &str, kind: FieldKind) -> FillAsked {
     FillAsked {
         browser: "b1".into(),
+        program: "program-1".into(),
         target: "e12".into(),
         vault: "qa".into(),
         key: key.into(),
