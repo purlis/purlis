@@ -21,12 +21,16 @@ const SHORT = "Left out: off here";
 
 /** The lines under whose words are wider than their box, as a browser would draw them. */
 let cut: Set<string>;
+/** How many times a line's width was asked for: each is a layout the browser has to do. */
+let measured = 0;
 
 beforeEach(() => {
   cut = new Set();
+  measured = 0;
   vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (
     this: HTMLElement,
   ) {
+    measured += 1;
     return cut.has(this.textContent ?? "") ? 400 : 100;
   });
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => 100);
@@ -103,5 +107,157 @@ describe("a line under a row's words that asks for its whole in the tooltip (#47
     render(<Skills whole={false} />);
     hover("long");
     expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("is its row's description under the pointer too, while it is shown", () => {
+    vi.useFakeTimers();
+    cut.add(LONG);
+    render(<Skills />);
+    hover("long");
+    expect(row("long")).toHaveAccessibleName("long");
+    expect(row("long")).toHaveAccessibleDescription(LONG);
+  });
+});
+
+describe("whether a line is cut, measured only when its row could say so (#4351)", () => {
+  it("measures no line while the rows are only drawn", () => {
+    cut.add(LONG);
+    render(<Skills />);
+    expect(measured).toBe(0);
+  });
+
+  it("says the whole of a line cut after its row was drawn, as the pointer comes", () => {
+    vi.useFakeTimers();
+    render(<Skills />);
+    // The row grew narrower since: the line is cut now, and the row was told nothing.
+    cut.add(LONG);
+    hover("long");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(LONG);
+  });
+
+  it("says the whole of a line cut after its row was drawn, as the keyboard comes", async () => {
+    render(<Skills />);
+    cut.add(LONG);
+    await userEvent.tab();
+    expect(row("long")).toHaveFocus();
+    expect(screen.getByRole("tooltip")).toHaveTextContent(LONG);
+    expect(row("long")).toHaveAccessibleDescription(LONG);
+  });
+
+  it("measures nothing for a pointer that passes over the rows", () => {
+    vi.useFakeTimers();
+    cut.add(LONG);
+    render(<Skills />);
+    fireEvent.pointerEnter(row("long"), { pointerType: "mouse" });
+    fireEvent.pointerLeave(row("long"), { pointerType: "mouse" });
+    fireEvent.pointerEnter(row("short"), { pointerType: "mouse" });
+    fireEvent.pointerLeave(row("short"), { pointerType: "mouse" });
+    act(() => void vi.advanceTimersByTime(TOOLTIP_DELAY));
+    expect(measured).toBe(0);
+  });
+
+  it("says the new whole words of a line whose words change while the keyboard is on it", async () => {
+    const { rerender } = render(<OneLine words={SHORT} />);
+    await userEvent.tab();
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    cut.add(LONG);
+    rerender(<OneLine words={LONG} />);
+
+    expect(screen.getByRole("tooltip")).toHaveTextContent(LONG);
+    expect(row("long")).toHaveAccessibleDescription(LONG);
+  });
+
+  it("takes its tooltip down once the line it was for fits, the keyboard still on the row", async () => {
+    cut.add(LONG);
+    const { rerender } = render(<OneLine words={LONG} />);
+    await userEvent.tab();
+    expect(screen.getByRole("tooltip")).toHaveTextContent(LONG);
+
+    rerender(<OneLine words={SHORT} />);
+
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+});
+
+/** One row whose line says `words`: `drawn` names the line's element, a new one for a new name. */
+function OneLine({ words, drawn, tip }: { words: string; drawn?: string; tip?: string }) {
+  return (
+    <List aria-label="Skills">
+      <ListRow id="long" textValue="long" tip={tip}>
+        <RowLabel>long</RowLabel>
+        <RowBelow key={drawn} clamp={1} tipWhenCut>
+          {words}
+        </RowBelow>
+      </ListRow>
+    </List>
+  );
+}
+
+describe("a row watching its line only while someone attends it (#4351)", () => {
+  /** The lines being watched for their size now. */
+  let watched: Set<Element>;
+
+  beforeEach(() => {
+    watched = new Set();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        private seen: Element[] = [];
+        observe(target: Element) {
+          this.seen.push(target);
+          watched.add(target);
+        }
+        disconnect() {
+          for (const one of this.seen) watched.delete(one);
+        }
+        unobserve() {}
+      },
+    );
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** The rows' lines among what is watched: a tooltip shown watches its own size too. */
+  const lines = () => [...watched].filter((one) => one.matches('[data-part="below"]'));
+
+  it("watches nothing while nobody attends", () => {
+    render(<Skills />);
+    expect(lines()).toEqual([]);
+  });
+
+  it("watches the line drawn now, when it is drawn again while the keyboard is on the row", async () => {
+    const { rerender } = render(<OneLine words={SHORT} drawn="first" />);
+    await userEvent.tab();
+    rerender(<OneLine words={SHORT} drawn="second" />);
+
+    const line = row("long").querySelector('[data-part="below"]');
+    expect(lines()).toEqual([line]);
+  });
+
+  it("stops watching once the keyboard has gone, even past a stretch with a tip of its own", async () => {
+    const { rerender } = render(
+      <>
+        <OneLine words={SHORT} />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+    await userEvent.tab();
+    rerender(
+      <>
+        <OneLine words={SHORT} tip="Its own." />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+    await userEvent.tab();
+    rerender(
+      <>
+        <OneLine words={SHORT} />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+
+    expect(screen.getByRole("button", { name: "elsewhere" })).toHaveFocus();
+    expect(lines()).toEqual([]);
   });
 });
