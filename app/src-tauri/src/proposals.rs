@@ -956,9 +956,11 @@ fn offered(
     }
     let rel = Path::new("personas").join(persona).join("persona.md");
     let rel = proposed::proposable_by_purlis(root, &root.join(rel))?;
-    let now_text = std::fs::read(root.join(&rel)).map_err(|why| why.to_string())?;
-    let base = proposed::base_of(Some(&now_text));
     let path = rel.display().to_string();
+    let now_text = std::fs::read(root.join(&rel)).map_err(|why| {
+        format!("{path} did not read ({why}), so nothing was offered. Check the file is there, then try again.")
+    })?;
+    let base = proposed::base_of(Some(&now_text));
     let text = String::from_utf8(now_text).map_err(|_| "the definition is not text".to_owned())?;
     // On top of an offer for this file still waiting, so a second need does not take the
     // first's place.
@@ -1024,27 +1026,31 @@ pub struct DismissedNeed {
 /// view to offer each again.
 #[tauri::command]
 #[specta::specta]
-pub fn dismissed_secret_needs(
+pub async fn dismissed_secret_needs(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<Vec<DismissedNeed>, String> {
     let held = planes.held(&plane)?;
-    let root = held.root();
-    Ok(purlis_core::secrets::dismissed_needs::read(root)
-        .into_iter()
-        .filter(|one| {
-            purlis_core::secrets::dismissed_needs::is_dismissed(
-                root,
-                &one.persona,
-                &one.key,
-                &declared_keys(root, &one.persona),
-            )
-        })
-        .map(|one| DismissedNeed {
-            persona: one.persona,
-            key: one.key,
-        })
-        .collect())
+    // Off the window: each persona's needs are read from git (`needs::of`).
+    crate::off_the_window("reading the dismissed Secret needs", move || {
+        let root = held.root();
+        Ok(purlis_core::secrets::dismissed_needs::read(root)
+            .into_iter()
+            .filter(|one| {
+                purlis_core::secrets::dismissed_needs::is_dismissed(
+                    root,
+                    &one.persona,
+                    &one.key,
+                    &declared_keys(root, &one.persona),
+                )
+            })
+            .map(|one| DismissedNeed {
+                persona: one.persona,
+                key: one.key,
+            })
+            .collect())
+    })
+    .await
 }
 
 /// **Offer a dismissed Secret need again** (#5159), on the person's press in the vault view:

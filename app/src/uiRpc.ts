@@ -463,17 +463,8 @@ export const commands = {
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **The Secret need offers dismissed on this machine** (#5159), for the vault view to offer
-	 *  each again.
-	 */
-	dismissedSecretNeeds: (plane: PlaneId) => typedError<DismissedNeed[], string>(__TAURI_INVOKE("dismissed_secret_needs", { plane })),
-	/**
-	 *  **Offer a dismissed Secret need again** (#5159), on the person's press in the vault view:
-	 *  the dismissal is lifted, and the change adding `key` to `persona`'s needs is held for them
-	 *  to apply or dismiss. Window-only.
-	 */
-	offerSecretNeedAgain: (plane: PlaneId, persona: string, key: string) => typedError<null, string>(__TAURI_INVOKE("offer_secret_need_again", { plane, persona, key })),
+	dismissedSecretNeeds: __WINDOW_ONLY_RESULT,
+	offerSecretNeedAgain: __WINDOW_ONLY_RESULT,
 	removeOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	dismissOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */

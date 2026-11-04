@@ -1014,7 +1014,8 @@ function OfferAgain({
           textValue={SUBMENU.offerNeed.said}
           aria-label={SUBMENU.offerNeed.said}
           aria-describedby={noted}
-          {...rest}
+          onFocus={rest.onFocus}
+          onBlur={rest.onBlur}
         >
           <MenuWords said={SUBMENU.offerNeed.said} />
           <span id={noted} hidden>

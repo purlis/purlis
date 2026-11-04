@@ -871,8 +871,8 @@ export const commands = {
 	 */
 	dismissProposedChange: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_proposed_change", { plane, id })),
 	/**
-	 *  **The Secret need offers dismissed on this machine** (#5159), for the vault view to offer
-	 *  each again.
+	 *  **The Secret need offers dismissed on this machine that still hold** (#5159), for the vault
+	 *  view to offer each again.
 	 */
 	dismissedSecretNeeds: (plane: PlaneId) => typedError<DismissedNeed[], string>(__TAURI_INVOKE("dismissed_secret_needs", { plane })),
 	/**
