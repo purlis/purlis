@@ -83,7 +83,7 @@ describe("an edit's change in the Inbox (#1146)", () => {
     expect(lines(before)).toEqual(["fn one() {}", ""]);
     expect(lines(after)).toEqual(["fn two() {}", ""]);
     expect(screen.getByText("Replaces this text")).toBeTruthy();
-    expect(buttons()).toEqual(["Allow", "Deny", "Go to chat"]);
+    expect(buttons()).toEqual(["Go to chat", "Allow", "Deny"]);
   });
 
   it("counts no Allow pressed as the change is drawn, and one pressed once it was read", async () => {
@@ -163,7 +163,7 @@ describe("an edit's change in the Inbox (#1146)", () => {
     expect(screen.getByTestId("ask-writes-not-shown").textContent).toBe(why);
     expect(screen.queryByTestId("merge-viewer")).toBeNull();
     // Even were an Allow offered with it, none is drawn.
-    expect(buttons()).toEqual(["Deny", "Go to chat"]);
+    expect(buttons()).toEqual(["Go to chat", "Deny"]);
   });
 });
 
@@ -225,6 +225,6 @@ describe("a proposed change in the Inbox (#1975)", () => {
     draw([
       proposal({ kind: "not-shown", why: "This change holds what looks like a credential." }, both),
     ]);
-    expect(buttons()).toEqual(["Dismiss", "Go to chat"]);
+    expect(buttons()).toEqual(["Go to chat", "Dismiss"]);
   });
 });

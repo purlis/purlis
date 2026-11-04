@@ -941,8 +941,9 @@ describe("a shown task that ends", () => {
 
     const pane = await band();
     const report = await within(pane).findByRole("region", { name: "Report from sweep" });
-    // Text, every character: a report is a chat's words and never markup.
-    expect(report.textContent).toBe("The queue is locked.\n<b>Nothing</b> was changed.");
+    // A chat's text (#5214): its line break kept, its raw HTML dropped, never drawn.
+    expect(report.textContent).toBe("The queue is locked.\nNothing was changed.");
+    expect(report.querySelector("br")).not.toBeNull();
     expect(report.querySelector("b")).toBeNull();
 
     // One vocabulary: the pane, the breadcrumb and the finished row say the same state, and

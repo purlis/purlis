@@ -742,6 +742,16 @@ export function componentHeights(source: string, from: StyleSource = {}): string
  * entry whose rule is gone fails until it is deleted, and a new one says why here.
  */
 const HEIGHT_EXCEPTIONS: Record<string, Record<string, string>> = {
+  "ui/field/field.css": {
+    '[data-scope="textarea"][data-part="root"][data-foot-strip] > textarea | block-size: 1lh (a control)':
+      "a reply strip is as tall as the lines it holds, in its own line height (#5214): one at rest, two holding the caret, up to four; the control around it is the textarea, whose height is its lines",
+    '[data-scope="textarea"][data-part="root"][data-foot-strip][data-rows="2"] > textarea | block-size: 2lh (a control)':
+      "a reply strip is as tall as the lines it holds, in its own line height (#5214): one at rest, two holding the caret, up to four; the control around it is the textarea, whose height is its lines",
+    '[data-scope="textarea"][data-part="root"][data-foot-strip][data-rows="3"] > textarea | block-size: 3lh (a control)':
+      "a reply strip is as tall as the lines it holds, in its own line height (#5214): one at rest, two holding the caret, up to four; the control around it is the textarea, whose height is its lines",
+    '[data-scope="textarea"][data-part="root"][data-foot-strip][data-rows="4"] > textarea | block-size: 4lh (a control)':
+      "a reply strip is as tall as the lines it holds, in its own line height (#5214): one at rest, two holding the caret, up to four; the control around it is the textarea, whose height is its lines",
+  },
   "App.css": {
     ".title-bar | min-height: max(40px, 2.1rem) (a strip)":
       "the system's title bar, 40px as the prototype draws it (R90): on macOS the traffic lights are placed at its own title bar's height whatever the page draws, and a shorter bar has them over the regions (ADR 0054)",

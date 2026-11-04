@@ -1548,14 +1548,13 @@ body {
   white-space: nowrap;
 }
 
-/* **A task's report on the band of a pane left on it as it ended** (#4757, `EndedBand.tsx`):
-   text, every character, wrapped and never cut, in a box of its own that scrolls. */
+/* **A task's report on the band of a pane left on it as it ended** (#4757, `EndedBand.tsx`): a
+   chat's text (`ChatText`, #5214), folded past six lines; opened, in a box that scrolls. */
 .ended-report {
   max-width: 100%;
   max-height: 30vh;
   margin: var(--space-2) 0 0;
   overflow: auto;
-  white-space: pre-wrap;
 }
 
 /* **A runner chat's change, whole, in its own tab** (#2046): every line as it would be written,
@@ -2599,7 +2598,8 @@ body {
 .inbox-ask + .inbox-ask {
   margin-top: var(--space-2);
 }
-/* **An ask card's top row** (R132): the chat's name, then the workspace at the row's end. */
+/* **An ask card's top row** (R132): the chat's name, then the workspace at the row's end. The
+   task question card's (`TaskQuiz.tsx`). */
 .inbox-ask-top {
   display: flex;
   gap: var(--space-4);
@@ -2631,6 +2631,96 @@ body {
 .inbox-ask > .inbox-says > .inbox-kind,
 .inbox-ask > .inbox-says > .inbox-primary {
   grid-row: 2;
+}
+/* **An ask card's head, one row in the pane band's style** (#5214): its kind's mark, the chat's
+   name over its status line (what it waits on in the waiting amber, then how long and where,
+   quiet), and at its end Go to chat and the ×. */
+.inbox-card {
+  --inbox-card-indent: calc(1em + var(--space-3));
+}
+.inbox-ask-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  min-width: 0;
+}
+.inbox-ask-head > .inbox-kind {
+  grid-area: auto;
+}
+.inbox-ask-title {
+  display: grid;
+  min-width: 0;
+}
+.inbox-ask-title > .inbox-who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-ask-sub {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+}
+.inbox-ask-sub > .inbox-meta {
+  flex: none;
+  justify-content: flex-start;
+}
+.inbox-ask-sub > .inbox-meta > .inbox-source {
+  color: var(--state-waiting);
+}
+.inbox-ask-sub > .inbox-meta-dot {
+  flex: none;
+  white-space: pre;
+}
+.inbox-ask-sub > .inbox-where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inbox-ask-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* Its words, under the name, past the mark. */
+.inbox-card > .inbox-says {
+  display: block;
+  padding-inline-start: var(--inbox-card-indent);
+}
+/* **A chat's own words on a card** (#5214): the card's smaller size in the secondary tier, its
+   bold in the primary words. They wear no text role, so these rules are the words' own. */
+.inbox-card .inbox-chat-text,
+.inbox-card .inbox-said,
+.inbox-card .inbox-note {
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+}
+.inbox-card .inbox-said,
+.inbox-card .inbox-note,
+.inbox-card > .inbox-secondary {
+  padding-inline-start: var(--inbox-card-indent);
+}
+.inbox-card :is(.inbox-chat-text, .inbox-said, .inbox-note) strong {
+  color: var(--text-primary);
+}
+/* The reply strip runs to the card's edges and sits at its foot (#5214). */
+.inbox-card:has(> .inbox-reply) {
+  overflow: hidden;
+}
+.inbox-card > .inbox-reply {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-inline: calc(var(--space-5) * -1);
+  margin-block-end: calc(var(--space-4) * -1);
+}
+.inbox-reply > .inbox-refused {
+  margin: 0;
+  padding: 0 var(--space-5) var(--space-2);
 }
 
 /* **A row's words, in three ranks** (qw359, `InboxRow.tsx`): its kind's mark and what needs you
@@ -2671,15 +2761,10 @@ body {
   line-clamp: 2;
   overflow: hidden;
 }
-/* What a chat said, over the lines it wrote (#4550). Never clamped: a report's bound is the cap,
-   and the list scrolls. */
+/* What a chat said, over the lines it wrote (#4550), as a chat's text is drawn (`ChatText`,
+   #5214): folded past six lines, never cut. */
 .inbox-said {
   margin: 0;
-  white-space: pre-wrap;
-}
-/* Its mark stays by its first line, however many it runs over. */
-.inbox-says:has(> .inbox-said) > .inbox-kind {
-  align-self: start;
 }
 /* A command over several lines, one per line (#3502). */
 .ask-lines {
@@ -2731,14 +2816,10 @@ body {
 /* The answers are the shared row whose buttons wrap their words (`ButtonRow`, #1855): an
    answer's label is the source's, and in a narrow sidebar a long one must wrap, not widen the
    Inbox (inbox-long-ask.state.e2e). */
-.inbox-answers,
-.inbox-reply {
+.inbox-answers {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-}
-.inbox-reply > .inbox-reply-box {
-  flex: 1 1 8rem;
 }
 /* An edit's change (#1146): each in the light editor's merge view, one under another, its box
    scrolling within a share of the window so the answers under it stay near. */
@@ -5374,6 +5455,81 @@ body {
 
 .release-notes :is(h1, h2, h3, h4, h5, h6) {
   color: var(--markdown-heading);
+}
+
+/* **What a chat wrote** (`ChatText.tsx`, #5214): its markdown under the safe subset, in the
+   words' own size. Its link, code and code block take a markdown render's own colours
+   from `.release-notes`, which its body wears, so each colour is read in one place; its spacing
+   is its own. A heading is bold words, no larger. */
+.chat-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.chat-text-body {
+  min-width: 0;
+  inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+.chat-text-body > :first-child {
+  margin-block-start: 0;
+}
+.chat-text-body > :last-child {
+  margin-block-end: 0;
+}
+.chat-text-body :is(p, ul, ol, pre, table) {
+  margin: 0 0 var(--space-2);
+}
+.chat-text-body :is(ul, ol) {
+  padding-inline-start: var(--space-6);
+}
+/* Its own markers, whatever a list item around it says (an Inbox card is an `li` with none). */
+.chat-text-body ul {
+  list-style: disc;
+}
+.chat-text-body ol {
+  list-style: decimal;
+}
+.chat-text-body li {
+  margin: 0;
+}
+.chat-text-body li + li {
+  margin-block-start: var(--space-1);
+}
+.chat-text-body code {
+  font-family: var(--font-mono);
+}
+.chat-text-body pre {
+  overflow-x: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-sunken);
+}
+/* Where a link goes, quiet beside its words. */
+.chat-text-host {
+  color: var(--text-secondary);
+}
+/* A table scrolls across in its own box rather than widening the card. */
+.chat-text-body table {
+  display: block;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.chat-text-body :is(th, td) {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  text-align: start;
+}
+/* **Folded** past six lines (#5214): cut at six of its lines, the last of them fading out. The
+   rest is still in the page, for a screen reader. */
+.chat-text-body[data-folded="true"] {
+  max-block-size: 6lh;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, currentcolor calc(100% - 2lh), transparent);
 }
 
 /* =====================================================================================
