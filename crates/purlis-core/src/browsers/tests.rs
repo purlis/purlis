@@ -680,6 +680,9 @@ fn a_fill_holds_the_real_reach_proxy_to_its_site_until_its_page_is_gone() {
     assert_eq!(status(other_port), "HTTP/1.1 403 Forbidden");
     assert_eq!(status(held_port), carried);
     holder.released();
+    // Held a while yet: the page that left may still send as it unloads.
+    assert_eq!(status(other_port), "HTTP/1.1 403 Forbidden");
+    std::thread::sleep(super::FILL_RELEASED_AFTER + Duration::from_millis(500));
     assert_eq!(status(other_port), carried, "the browser reaches as before");
     holder.released();
     assert_eq!(status(other_port), carried);

@@ -78,8 +78,9 @@ pub(crate) const FIELD_KIND: &str = r"function () {
 /// document and that the document is on `origin`, answering `moved` where not and writing
 /// nothing, so no focus and no moment between a check and a write decides where the value goes.
 /// Before the value goes in, a copy, a cut and a drag started on the field are stopped for as
-/// long as the field lives (#5117): nothing is put on the clipboard or dragged, and nothing of the
-/// page hears of them after. And the field is marked as one the browser keeps nothing of, so a
+/// long as the field lives, and so is one anywhere in its document of a field or a selection that
+/// holds the value (#5117): nothing is put on the clipboard or dragged, and nothing of the page
+/// hears of them after. And the field is marked as one the browser keeps nothing of, so a
 /// page left and gone back to doesn't come back with the value in it. The value goes in through the field's own setter, with the events a
 /// page hears for typing, and the answer is how much the field then holds. A field that holds
 /// less is emptied again.
@@ -91,7 +92,17 @@ pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin) {
     event.preventDefault();
     event.stopImmediatePropagation();
   };
-  for (const kind of ['copy', 'cut', 'dragstart']) field.addEventListener(kind, stop, true);
+  // And anywhere in its document, of any field holding the value or a selection that does: a
+  // page may draw the field anew, or echo the value, while the hold lives.
+  const holds = (text) => typeof text === 'string' && value.length > 0 && text.includes(value);
+  const guard = (event) => {
+    const at = event.composedPath()[0];
+    if (holds(at && at.value) || holds(String(field.ownerDocument.getSelection()))) stop(event);
+  };
+  for (const kind of ['copy', 'cut', 'dragstart']) {
+    field.addEventListener(kind, stop, true);
+    field.ownerDocument.addEventListener(kind, guard, true);
+  }
   field.setAttribute('autocomplete', 'off');
   const own = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
   own.set.call(field, value);

@@ -1255,11 +1255,27 @@ impl drive::FillHold for FillHolder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        if let (Some(number), Some(proxy)) = (number, self.proxy.upgrade()) {
-            proxy.fill_released(number);
-        }
+        let Some(number) = number else {
+            return;
+        };
+        // The page that left may still send as it unloads, once the next document has come:
+        // it is let go a while after. Where no thread can time that, it is held on.
+        let proxy = self.proxy.clone();
+        let _ = std::thread::Builder::new()
+            .name("browser-fill-released".to_owned())
+            .spawn(move || {
+                std::thread::sleep(FILL_RELEASED_AFTER);
+                if let Some(proxy) = proxy.upgrade() {
+                    proxy.fill_released(number);
+                }
+            });
     }
 }
+
+/// **How long after the page holding a filled secret is gone its browser stays held** (#5117):
+/// the page that left may still send as it unloads, which the engine runs once the next document
+/// has come.
+pub const FILL_RELEASED_AFTER: Duration = Duration::from_secs(2);
 
 /// **Why the agent's `act` may not go where it would** (#5117): an address it wrote for another
 /// site than the one a page holding a secret purlis filled holds the browser to, in words that
@@ -1273,12 +1289,13 @@ pub fn held_to_said(bound: &Bound, act: &Act) -> Option<String> {
     };
     let held = bound.held_for_fill()?;
     let (host, port) = judge::site_of(address)?;
-    if Site::of(&host, port) == held {
+    let to = Site::of(&host, port);
+    if to == held {
         return None;
     }
     Some(format!(
         "this browser reaches only {held} while a page in it holds a secret purlis filled there, \
-         so it did not go to {host}:{port}. Once that page loads another of its own pages, or is \
+         so it did not go to {to}. Once that page loads another of its own pages, or is \
          closed with browser_close or by the person, the browser reaches as before"
     ))
 }

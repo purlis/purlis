@@ -90,13 +90,6 @@ impl FillHold for Holding {
 }
 
 impl Holding {
-    fn of(engine: &Arc<Engine>) -> Arc<Self> {
-        Arc::new(Self {
-            engine: Mutex::new(Some(Arc::clone(engine))),
-            ..Self::default()
-        })
-    }
-
     fn told(&self) -> Vec<String> {
         super::super::super::lock(&self.told).clone()
     }
@@ -458,11 +451,19 @@ fn a_page_that_loads_another_document_as_it_is_held_is_released_and_takes_no_val
     as_fields(&engine, "one_line", Twist::None);
     let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
     let loads = Arc::clone(&engine);
+    let inner = Arc::clone(&browser.inner);
+    let document = move || {
+        super::super::super::lock(&inner.state)
+            .page("PAGE-1")
+            .and_then(|page| page.frames.get("PAGE-1"))
+            .map(|main| main.generation)
+    };
+    let before = document();
     let holding = Arc::new(Holding {
         as_held: Mutex::new(Some(Box::new(move || {
             main_frame_loads(&loads, "http://fixture.test/next.html");
             // The engine's word is read before the hold is listed.
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            wait_for("the page's next document is read", || document() != before);
         }))),
         ..Holding::default()
     });
@@ -479,4 +480,43 @@ fn a_page_that_loads_another_document_as_it_is_held_is_released_and_takes_no_val
     }
     assert_eq!(inserted(&engine), 0);
     assert_eq!(holding.told(), ["held, 0 written", "released"]);
+}
+
+/// A request a filled page sent elsewhere was refused, and the engine showed its own page for it:
+/// no page was left, and the request is still in the page's history, so the hold lives on.
+#[test]
+fn the_engines_own_page_for_a_refused_load_keeps_the_hold() {
+    let holding = Arc::new(Holding::default());
+    let (browser, engine) = filled_under(&holding);
+
+    engine.emit(
+        "Page.frameNavigated",
+        json!({ "frame": {
+            "id": "PAGE-1", "loaderId": "LOADER-ERROR", "name": "",
+            "url": "chrome-error://chromewebdata/",
+            "unreachableUrl": "http://elsewhere.test/search?q=open%20sesame",
+        } }),
+        Some("S-PAGE-1"),
+    );
+    let _ = snapshot(&browser, 2);
+    assert_eq!(holding.told(), ["held, 0 written"], "still held");
+
+    main_frame_loads(&engine, "http://fixture.test/next.html");
+    wait_for("the hold is released", || holding.told().len() == 2);
+}
+
+/// Going back to an address that carries a filled value would send it again, wherever that
+/// address goes: refused, and nothing is sent.
+#[test]
+fn going_back_to_an_address_that_carries_a_filled_value_is_refused() {
+    let holding = Arc::new(Holding::default());
+    let (browser, engine) = filled_under(&holding);
+    super::super::super::lock(&engine.model).history = json!({"currentIndex":1,"entries":[
+        {"id":1,"url":"http://elsewhere.test/search?q=open%20sesame","title":""},
+        {"id":2,"url":"http://fixture.test/frames.html","title":""}]});
+
+    let back = browser.call(&id(5), Call::Back { page: None });
+
+    assert_eq!(back.err(), Some(Refusal::EarlierHoldsKept));
+    assert!(engine.sent("Page.navigateToHistoryEntry").is_empty());
 }

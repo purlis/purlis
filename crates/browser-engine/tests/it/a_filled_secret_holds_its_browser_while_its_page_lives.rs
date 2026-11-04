@@ -194,3 +194,38 @@ fn a_page_that_was_left_comes_back_without_the_value() {
         snapshot(&browser)
     );
 }
+
+/// The control for the test above: a value typed into the same field, which purlis marks
+/// nothing on, comes back when the browser goes back, so it is the fill's mark that keeps a
+/// filled value from coming back.
+#[test]
+fn a_value_typed_by_hand_comes_back_when_the_browser_goes_back() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "hold.html");
+    let key = ref_of(&browser, "textbox \"API key\"");
+    call(
+        &browser,
+        Call::Type {
+            page: None,
+            fields: vec![purlis_browser_engine::drive::Field {
+                into: Some(key),
+                text: "typed-5117".into(),
+                replace: true,
+            }],
+        },
+    );
+    assert!(sees(&browser, "The key holds 10 characters"));
+    click(&browser, "link \"Next page\"");
+    assert!(sees(&browser, "The next page"));
+
+    call(&browser, Call::Back { page: None });
+
+    assert!(sees(&browser, "Dashboard home"), "back on the dashboard");
+    assert!(
+        sees(&browser, "The key holds 10 characters"),
+        "the browser restored what was typed: {}",
+        snapshot(&browser)
+    );
+}

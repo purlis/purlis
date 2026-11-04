@@ -780,6 +780,13 @@ pub enum Refusal {
     NoEarlierPage,
     #[error("the earlier address is not a web address, so the browser does not go back to it")]
     EarlierNotWeb,
+    /// The earlier address carries a value purlis keeps out (#5117): going back would send it
+    /// again, wherever the address goes.
+    #[error(
+        "the earlier address carries a value purlis keeps out of this browser, so the browser \
+         does not go back to it: go to the page you need by its address"
+    )]
+    EarlierHoldsKept,
     #[error("the call's id {0} was given to a different call: give each call its own id")]
     IdReused(String),
     #[error("the engine refused: {0}")]

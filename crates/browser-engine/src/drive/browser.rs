@@ -1030,6 +1030,11 @@ impl State {
         }
     }
 
+    /// Whether `address` carries a text kept out, read as its reader would read it (#5117).
+    fn address_holds_kept(&self, address: &str) -> bool {
+        super::tree::Scrub::of(&self.kept).address(address) != address
+    }
+
     /// Keeps `held` out of every later answer about every page, and every page opened later.
     fn keep_out_everywhere(&mut self, held: &Kept) {
         self.kept.take_in(held);
@@ -3858,6 +3863,11 @@ impl Browser {
             .ok_or(Refusal::NoEarlierPage)?;
         let url = earlier.get("url").and_then(Value::as_str).unwrap_or("");
         WebAddress::parse(url).map_err(|_| Refusal::EarlierNotWeb)?;
+        // An address that carries a value kept out, as a form sent from a filled page may have
+        // left it (#5117), is never sent again.
+        if lock(&self.inner.state).address_holds_kept(url) {
+            return Err(Refusal::EarlierHoldsKept);
+        }
         let entry = earlier.get("id").cloned().unwrap_or_default();
         // A page gone back to was read before: its documents read again (#2018).
         let _revisiting = self.addressing(&target, Why::Reads);
@@ -4828,7 +4838,13 @@ impl Inner {
                             lock(&self.devtools_unread).remove(&target);
                             // A page's own document, where a login waits for it (#4995).
                             if text("/frame/id").as_deref() == Some(target.as_str()) {
-                                left.push(target.clone());
+                                // The engine's own page for a load that failed is no page left
+                                // (#5117): the request that failed is still in the page's
+                                // history, and the hold lives on until a page loads or it is
+                                // closed.
+                                if params.pointer("/frame/unreachableUrl").is_none() {
+                                    left.push(target.clone());
+                                }
                                 navigated = Some((target, text("/frame/url").unwrap_or_default()));
                             }
                         }
