@@ -188,6 +188,9 @@ export const ATasksLine: Story = {
     await expect(box(line).right).toBeLessThan(box(right).left);
     await expect(box(line).width).toBeGreaterThan(0);
     await expect(box(line).height).toBeLessThan(box(right).height);
+    // Centred on the marks it parts, not at the top of their row.
+    const middle = (one: Element) => box(one).top + box(one).height / 2;
+    await expect(Math.abs(middle(line) - middle(right))).toBeLessThanOrEqual(1);
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(status).toHaveTextContent("Split right"));
 
