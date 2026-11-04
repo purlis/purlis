@@ -6,3 +6,4 @@
 
 mod end_to_end;
 mod on_a_runner;
+mod sign_in_provider;
