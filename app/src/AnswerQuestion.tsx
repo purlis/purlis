@@ -114,6 +114,9 @@ export type AnswerProps = {
   closed?: string;
   /** The answer was taken: the surface puts the form away. */
   onDone: () => void;
+  /** Whether the box takes the keyboard once the question is read: a form the person opened
+   *  does, and a quiz that arrived by itself never does (#4565). */
+  takesFocus?: boolean;
 };
 
 /** What the form says under the box, while there is something to send. */
@@ -133,6 +136,7 @@ export function useAnswerQuestion({
   question,
   closed,
   onDone,
+  takesFocus = true,
 }: AnswerProps) {
   const given: Asked | undefined =
     number !== undefined && question !== undefined ? { number, question } : undefined;
@@ -180,11 +184,12 @@ export function useAnswerQuestion({
     };
   }, [plane, session, has]);
 
-  // The box is where the person types next, once there is a question to answer.
+  // The box is where the person types next, once there is a question to answer: where they
+  // opened the form, and never where it arrived by itself (#4565).
   const ready = asked !== undefined && asked !== null;
   useEffect(() => {
-    if (ready) box.current?.focus();
-  }, [ready]);
+    if (ready && takesFocus) box.current?.focus();
+  }, [ready, takesFocus]);
 
   /* Closed under the person: not while their own send is on its way, whose answer is what
      closes it. */
@@ -200,7 +205,7 @@ export function useAnswerQuestion({
     setSending(true);
     setRefused(undefined);
     const answer = await commands
-      .answerTaskQuestion(plane, session, asked.number, asked.question, text)
+      .answerTaskQuestion(plane, session, asked.number, asked.question, text, false)
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
     setSending(false);
     if (answer.status === "error") {

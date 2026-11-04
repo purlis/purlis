@@ -29,6 +29,7 @@ import {
 } from "./restoringChats";
 import { QueueRead } from "./QueueRead";
 import { QuestionsHere } from "./QuestionsHere";
+import { QuizPlaces } from "./QuizBand";
 import { standingOf, waitingOnYou, type QuestionsHeld } from "./taskQuestions";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
@@ -357,6 +358,7 @@ import {
   type Pinned,
   type Tabs,
   type ViewRef,
+  sessionOf,
 } from "./tabs";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
@@ -4716,6 +4718,17 @@ export const PlaneView = memo(function PlaneView({
     settingsLinkHandled.current = settingsLinkAsked.at;
     openSettingsAt(settingsLinkAsked.link);
   }, [settingsLinkAsked, openSettingsAt]);
+
+  /** **Where a task's question is drawn** (#4565): a task's top is the nearest chat above it
+   *  with a tab, as its session's tab is (`sessionOf`); Open task is the person's own press. */
+  const quizPlaces = useMemo(
+    () => ({
+      topOf: (task: number) => sessionOf(tabs, task, askedBy)?.own,
+      openTask: (task: number) => showChat(task),
+      openSettings: () => openSettingsAt({ group: "you.chats", setting: "you.chats.answer" }),
+    }),
+    [tabs, askedBy, showChat, openSettingsAt],
+  );
 
   /**
    * The Settings tab, opened the same way and for the same reason (SE-16), **at the focused
@@ -10685,85 +10698,87 @@ export const PlaneView = memo(function PlaneView({
                       {frontTab ? (
                         <TaskEndContext.Provider value={taskEndHand}>
                           <OfferOpeningContext.Provider value={offerOpening}>
-                            <LayoutPanes
-                              plane={plane}
-                              restoring={restoringChats}
-                              // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
-                              // session that asked, while the tab is switched to it.
-                              // A zoomed pane is drawn alone, the tree kept whole (#4765).
-                              layout={zoomedLayout(
-                                tabs,
-                                frontTab.id,
-                                layoutShown(tabs, frontTab.id) ?? frontTab.layout,
-                              )}
-                              crumbs={frontCrumbs}
-                              placed={frontPlaced}
-                              endedTasks={frontEndedPanes}
-                              unread={frontUnread}
-                              finished={frontFinished}
-                              explaining={chipToExplain}
-                              others={frontOthers}
-                              asked={frontAsked}
-                              asks={asksHere}
-                              waiting={waiting}
-                              onShowInbox={showInbox}
-                              onAnswer={answeredOnPane}
-                              closeOf={closeOfPane}
-                              onShowChat={showChatFromPane}
-                              focused={frontTab.focused}
-                              onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
-                              offerFor={by}
-                              offers={found}
-                              heads={paneHeads}
-                              onPaneDoes={onPaneDoes}
-                              name={frontTab.name}
-                              handedFrom={handedFrom}
-                              glances={glances}
-                              workItems={workItems}
-                              byHand={byHand}
-                              onByHand={answerByHand}
-                              startNotes={startNotes}
-                              onDismissStartNote={dismissStartNote}
-                              onRestartChat={askRestart}
-                              blocks={frontBlocks}
-                              onDismissBlock={dismissBlock}
-                              onRestarted={chatRestarted}
-                              onAllowed={oweRestart}
-                              restartsSaid={restartsSaid}
-                              onRestartAnswer={answerRestart}
-                              offered={views}
-                              onOpenView={showView}
-                              onOpenViewBeside={showViewBeside}
-                              onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
-                              onVaultChanged={reloadVaults}
-                              memory={{
-                                // The views follow the disk themselves (`ViewPane`), so a memory saved
-                                // redraws the views and not this whole window (FD-10).
-                                changed: memoryEdits.changed,
-                                onSaved: memoryEdits.onSaved,
-                                onClose: closeView,
-                                showInstead: (from, to, title) => {
-                                  change((tabs) => showInstead(tabs, from, to, title));
-                                  // The level switcher moving Settings is a way into it (#1206).
-                                  const place = placeOfView(to, plane);
-                                  if (place !== undefined) enterSettings(place);
-                                },
-                              }}
-                              firstTask={firstTaskDoes}
-                              onNewChatOn={newChatOn}
-                              split={{
-                                of: (view) => splitOf(tabs, view),
-                                moved: (view, split) =>
-                                  change((tabs) => setSplit(tabs, view, split)),
-                                shared: (path, share) =>
-                                  change((tabs) => withShare(tabs, frontTab.id, path, share)),
-                              }}
-                              runningIn={runningIn}
-                              tab={frontTab.id}
-                              chatName={nameOf}
-                              onClearPane={clearPane}
-                              onResumeTask={(pane, task) => void resumeTaskIn(pane, task)}
-                            />
+                            <QuizPlaces.Provider value={quizPlaces}>
+                              <LayoutPanes
+                                plane={plane}
+                                restoring={restoringChats}
+                                // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
+                                // session that asked, while the tab is switched to it.
+                                // A zoomed pane is drawn alone, the tree kept whole (#4765).
+                                layout={zoomedLayout(
+                                  tabs,
+                                  frontTab.id,
+                                  layoutShown(tabs, frontTab.id) ?? frontTab.layout,
+                                )}
+                                crumbs={frontCrumbs}
+                                placed={frontPlaced}
+                                endedTasks={frontEndedPanes}
+                                unread={frontUnread}
+                                finished={frontFinished}
+                                explaining={chipToExplain}
+                                others={frontOthers}
+                                asked={frontAsked}
+                                asks={asksHere}
+                                waiting={waiting}
+                                onShowInbox={showInbox}
+                                onAnswer={answeredOnPane}
+                                closeOf={closeOfPane}
+                                onShowChat={showChatFromPane}
+                                focused={frontTab.focused}
+                                onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
+                                offerFor={by}
+                                offers={found}
+                                heads={paneHeads}
+                                onPaneDoes={onPaneDoes}
+                                name={frontTab.name}
+                                handedFrom={handedFrom}
+                                glances={glances}
+                                workItems={workItems}
+                                byHand={byHand}
+                                onByHand={answerByHand}
+                                startNotes={startNotes}
+                                onDismissStartNote={dismissStartNote}
+                                onRestartChat={askRestart}
+                                blocks={frontBlocks}
+                                onDismissBlock={dismissBlock}
+                                onRestarted={chatRestarted}
+                                onAllowed={oweRestart}
+                                restartsSaid={restartsSaid}
+                                onRestartAnswer={answerRestart}
+                                offered={views}
+                                onOpenView={showView}
+                                onOpenViewBeside={showViewBeside}
+                                onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
+                                onVaultChanged={reloadVaults}
+                                memory={{
+                                  // The views follow the disk themselves (`ViewPane`), so a memory saved
+                                  // redraws the views and not this whole window (FD-10).
+                                  changed: memoryEdits.changed,
+                                  onSaved: memoryEdits.onSaved,
+                                  onClose: closeView,
+                                  showInstead: (from, to, title) => {
+                                    change((tabs) => showInstead(tabs, from, to, title));
+                                    // The level switcher moving Settings is a way into it (#1206).
+                                    const place = placeOfView(to, plane);
+                                    if (place !== undefined) enterSettings(place);
+                                  },
+                                }}
+                                firstTask={firstTaskDoes}
+                                onNewChatOn={newChatOn}
+                                split={{
+                                  of: (view) => splitOf(tabs, view),
+                                  moved: (view, split) =>
+                                    change((tabs) => setSplit(tabs, view, split)),
+                                  shared: (path, share) =>
+                                    change((tabs) => withShare(tabs, frontTab.id, path, share)),
+                                }}
+                                runningIn={runningIn}
+                                tab={frontTab.id}
+                                chatName={nameOf}
+                                onClearPane={clearPane}
+                                onResumeTask={(pane, task) => void resumeTaskIn(pane, task)}
+                              />
+                            </QuizPlaces.Provider>
                           </OfferOpeningContext.Provider>
                         </TaskEndContext.Provider>
                       ) : tabs.order.length > 0 ? (

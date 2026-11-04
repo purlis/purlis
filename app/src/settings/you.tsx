@@ -18,8 +18,9 @@ import {
 } from "../textSize";
 import { EDITORS, setYourEditor, useYourEditor } from "../yourEditor";
 import { setChatsListPrefs, useChatsListPrefs } from "../chatsListPrefs";
+import { setWhereYouAnswer, useWhereYouAnswer } from "../whereYouAnswer";
 import { Choice, Field } from "./components";
-import type { Setting, SettingsGroup } from "./groups";
+import type { LiveSetting, Setting, SettingsGroup } from "./groups";
 import { thisMachineGroup } from "./thisMachine";
 import { browserLimitsGroup } from "./browserLimits";
 import { previewsGroup } from "./previews";
@@ -85,7 +86,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
       id: "you.chats",
       label: "Chats list",
       help: "How chats are listed and summed up, on this machine.",
-      settings: [chatsGrouped, awaySummary, browsersBeside],
+      settings: [chatsGrouped, awaySummary, browsersBeside, whereYouAnswerSetting],
     },
     notificationsGroup(),
     thisMachineGroup(),
@@ -221,6 +222,44 @@ const editor: Setting = {
         />
       ),
       grouped: true,
+    };
+  },
+};
+
+/**
+ * **Where you answer** (#4565, spec #4551): where a task's question that has reached the person
+ * is drawn, from the top or from each session (`whereYouAnswer.ts`). Choosing here counts as the
+ * choice offered, so the line above the first question is not offered again.
+ */
+export const whereYouAnswerSetting: LiveSetting = {
+  id: "you.chats.answer",
+  label: "Where you answer",
+  help: "Moves where you see a task's question, never who is asked first. You can open any task and answer there either way.",
+  useControl: function useWhereYouAnswerControl() {
+    const { answer } = useWhereYouAnswer();
+    return {
+      control: (ids) => (
+        <Choice
+          kind="radio"
+          ids={ids}
+          options={[
+            {
+              value: "top",
+              label: "From the top",
+              says: "One question at a time, in the session's tab.",
+            },
+            {
+              value: "each",
+              label: "From each session",
+              says: "Each question waits in its task's own tab.",
+            },
+          ]}
+          value={answer}
+          onValueChange={(to) =>
+            setWhereYouAnswer({ answer: to === "each" ? "each" : "top", offered: true })
+          }
+        />
+      ),
     };
   },
 };

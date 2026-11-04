@@ -203,9 +203,10 @@ describe("the filtered nav, by keyboard", () => {
 
     // "wher" is in the window size's help ("anywhere") and Your editor's ("Where"), and in
     // neither group's own label or help: both groups stay, each narrowed to that one setting.
-    // This machine's own help has it ("where updates come from"), so it stays whole.
+    // This machine's own help has it ("where updates come from"), so it stays whole, and the
+    // Chats list keeps Where you answer (#4565).
     await userEvent.type(box(), "wher");
-    expect(inNav()).toEqual(["Text", "Editor", "This machine"]);
+    expect(inNav()).toEqual(["Text", "Editor", "Chats list", "This machine"]);
     expect(screen.getByRole("slider", { name: /window text size/i })).toBeInTheDocument();
     expect(screen.queryByRole("slider", { name: /terminal text size/i })).not.toBeInTheDocument();
     group("Text").focus();

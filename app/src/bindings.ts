@@ -2723,6 +2723,27 @@ export const commands = {
 	question: string,
 } | null, string>(__TAURI_INVOKE("task_question", { plane, session })),
 	/**
+	 *  **What an asking chat answered task `session`'s question `number`** (#4566): read by a quiz
+	 *  the person had open when an agent answered it first, for the line it leaves. `null` where
+	 *  nobody but the person can be said to have answered it, or it can no longer be overridden.
+	 * 
+	 *  **The window's alone**, as `task_question` is: it reads words a chat wrote. On a blocking
+	 *  thread, as it waits on the dispatch ledger's lock (#1949).
+	 */
+	taskQuestionAnswered: (plane: PlaneId, session: number, number: number) => typedError<{
+	/**  The task, by the name the person sees it under. */
+	task: string,
+	/**  The asking chat that answered, by its name. */
+	from: string,
+	/**  What it answered, masked, **as text**: a chat's own words, never drawn as markup. */
+	said: string,
+	/**
+	 *  The question it answered, in the task's words: what the person's word is held to
+	 *  (`answer_task_question`).
+	 */
+	question: string,
+} | null, string>(__TAURI_INVOKE("task_question_answered", { plane, session, number })),
+	/**
 	 *  **The person answers the question a task put to its asking chat** (#1496, V100-46): chat
 	 *  `session`'s question `number` (`task_question`, or a line's `asks`), which read `question`
 	 *  as the window showed it, with `text`. It answers that question and no other: a question
@@ -2733,11 +2754,15 @@ export const commands = {
 	 *  nothing was sent: the question was answered first by the asking chat, the task has moved
 	 *  on, or the text is empty, too long or holds a character purlis hands to no chat.
 	 * 
+	 *  `overrides` is the person's Say otherwise to an answer the asking chat gave first, which
+	 *  the window drew (`task_question_answered`), and nothing else sends it (#5005): without it,
+	 *  an answer that arrives after the chat's is refused, as the person never saw that answer.
+	 * 
 	 *  **The window's alone.** No chat's command, hook or tool reaches it, and no link serves it
 	 *  (`purlis_session_protocol::ui::WINDOW_ONLY`): what it sends reaches a chat marked as the
 	 *  person's. On a blocking thread, as it writes the dispatch's record.
 	 */
-	answerTaskQuestion: (plane: PlaneId, session: number, number: number, question: string, text: string) => typedError<null, string>(__TAURI_INVOKE("answer_task_question", { plane, session, number, question, text })),
+	answerTaskQuestion: (plane: PlaneId, session: number, number: number, question: string, text: string, overrides: boolean) => typedError<null, string>(__TAURI_INVOKE("answer_task_question", { plane, session, number, question, text, overrides })),
 	/**
 	 *  Resumes a session from its record (SI-8d): a NEW chat in the record's place, on its harness,
 	 *  given its conversation where it can be, and told the record in its briefing
@@ -6017,6 +6042,25 @@ export type ChangedIn = {
 	more: number,
 	/**  Why purlis could not read what changed there, where it could not. */
 	unread: string | null,
+};
+
+/**
+ *  **What an asking chat answered a task's question, as the window shows it** (#4566): the line
+ *  a quiz leaves when an agent answered it first, which says who said what and offers the
+ *  person's later word.
+ */
+export type ChatAnsweredShown = {
+	/**  The task, by the name the person sees it under. */
+	task: string,
+	/**  The asking chat that answered, by its name. */
+	from: string,
+	/**  What it answered, masked, **as text**: a chat's own words, never drawn as markup. */
+	said: string,
+	/**
+	 *  The question it answered, in the task's words: what the person's word is held to
+	 *  (`answer_task_question`).
+	 */
+	question: string,
 };
 
 /**

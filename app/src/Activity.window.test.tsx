@@ -843,7 +843,14 @@ describe("answering a task's question from the Activity tab (#1496)", () => {
 
     await waitFor(() =>
       expect(asked("answer_task_question")).toEqual([
-        { plane: PLANE, session: 7, number: 5, question: "Which host?", text: "prod-2." },
+        {
+          plane: PLANE,
+          session: 7,
+          number: 5,
+          question: "Which host?",
+          text: "prod-2.",
+          overrides: false,
+        },
       ]),
     );
     await waitFor(() => expect(within(list).queryByRole("form")).toBeNull());
@@ -885,7 +892,14 @@ describe("answering a task's question from the Activity tab (#1496)", () => {
 
     await waitFor(() =>
       expect(asked("answer_task_question")).toEqual([
-        { plane: PLANE, session: 12, number: 5, question: "Which host?", text: "prod-2." },
+        {
+          plane: PLANE,
+          session: 12,
+          number: 5,
+          question: "Which host?",
+          text: "prod-2.",
+          overrides: false,
+        },
       ]),
     );
   });
