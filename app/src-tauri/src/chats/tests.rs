@@ -4885,7 +4885,16 @@ fn a_record_holding_one_id_twice_puts_back_two_chats_with_their_own_ids_and_keep
         SIZE,
     );
 
-    assert_eq!(open.len(), 2, "both start");
+    assert_eq!(
+        open.len(),
+        2,
+        "both start: {:?}",
+        chats
+            .would_not_start()
+            .iter()
+            .map(|one| (one.name.clone(), one.why.clone()))
+            .collect::<Vec<_>>()
+    );
     let last = lock(&wrote).last().cloned().expect("a record was written");
     let ids: Vec<Option<String>> = last.chats.iter().map(|c| c.identity.id.clone()).collect();
     assert_eq!(ids.len(), 2, "both are recorded: {ids:?}");
