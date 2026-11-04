@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { note } from "../heldProbe";
 
 /**
  * **Whether the pointer left the window, or the window the front** (#3095): the one answer, the
@@ -29,7 +28,6 @@ const watchers = new Set<Watcher>();
 let told = false;
 
 function tell(why: WindowLeft) {
-  note("windowLeft:" + why);
   for (const watcher of [...watchers]) {
     // Each on its own: one that throws takes no other's answer away, and is still reported.
     try {
@@ -42,8 +40,7 @@ function tell(why: WindowLeft) {
   }
 }
 
-const pointerGone = (event?: Event) => {
-  note("pointerGone", event, { told });
+const pointerGone = () => {
   if (told) return;
   told = true;
   tell("pointer");
@@ -52,7 +49,6 @@ const pointerGone = (event?: Event) => {
 let outHeard = false;
 const outIntoNothing = (event: MouseEvent) => {
   if (event.relatedTarget !== null || outHeard) return;
-  note("outIntoNothing", event);
   outHeard = true;
   // **Weighed once what was dispatched with it has been heard**: an out into nothing with an
   // over right behind it (an element taken away under the pointer, a driven move) is a pointer

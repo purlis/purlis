@@ -14,9 +14,8 @@ import { aCardIsUp } from "./chatCard";
 import { CARD_LEAVE_MS, ChatsSection, ON_MEMORY_SAID } from "./ChatsSection";
 import { ChatsHere, fixedChats, moved, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
-import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, parkTheEnginesCursor, untilFocused } from "./stories.testkit";
 import { panelRoot } from "./ui/panel/Panel";
-import { heldLog, note, recordEvents } from "./heldProbe";
 
 /** A chat as the core lists it, open in a tab. */
 function listed(session: number, more: Partial<ListedChat> = {}): ListedChat {
@@ -269,24 +268,6 @@ function keepTheWindowInUse() {
   return () => window.removeEventListener("blur", keep, true);
 }
 
-/**
- * **The engine's own cursor, out of the story's way** (#4098): the browser has a cursor of its
- * own besides the story's pointer, and it stays where it last was, over the frame's top left,
- * which is where the story draws its panel. As the story lays out under it, Chromium tells the
- * page that cursor came over the panel's wrapper, a real `pointerover` outside the list; heard
- * just after the story's pointer came onto a row, it lets the list's hold go before the card is
- * up, as a person's pointer leaving would. So the cursor is put in the frame's far corner, which
- * the story never draws in, before the story's pointer moves, and left there.
- */
-async function parkTheEnginesCursor() {
-  // The engine's own mouse: imported only where a story runs in it.
-  const { userEvent: engine } = await import("vitest/browser");
-  const page = document.documentElement;
-  await engine.hover(page, {
-    position: { x: page.clientWidth - 1, y: page.clientHeight - 1 },
-  });
-}
-
 /** Two frames: whatever a change asked to draw has been drawn. */
 const drawn = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
 
@@ -298,7 +279,8 @@ const drawn = () => new Promise((done) => requestAnimationFrame(() => requestAni
  * by the browser: where the gap is, and what is under it, is the page's layout, which a window
  * test cannot see. It waits on what it checks, never on the clock (#3951): the card is up
  * before the chat arrives, the list says it is held (`data-holding`, #4020) before the chat
- * arrives, and the hold's wait is over only when the story says so.
+ * arrives, and the hold's wait is over only when the story says so. The engine's own cursor is
+ * out of the way first, so the story's pointer is the only one the list hears (#4098).
  */
 export const HeldAcrossTheGapToTheCard: Story = {
   render: () => <ArrivingInItsPanel />,
@@ -311,13 +293,8 @@ export const HeldAcrossTheGapToTheCard: Story = {
     await parkTheEnginesCursor();
     const inUse = keepTheWindowInUse();
     const clock = parkTheCardsWait();
-    heldLog().length = 0;
-    const unrecord = recordEvents();
-    const said = () => "\nPROBE4098 " + JSON.stringify(heldLog());
     try {
-      note("story:hover");
       await user.hover(row as HTMLElement);
-      note("story:hovered");
       // The card is up, as the list's hold reads it, before anything arrives.
       const card = await waitFor(
         () => {
@@ -333,9 +310,9 @@ export const HeldAcrossTheGapToTheCard: Story = {
       await expect(list).not.toBeNull();
       await waitFor(
         () =>
-          {
-            if (!list?.hasAttribute("data-holding")) throw new Error("PROBE not held" + said());
-          },
+          expect(list, "the list is held while the pointer rests on its row").toHaveAttribute(
+            "data-holding",
+          ),
         { timeout: 3000 },
       );
       // A chat arrives while the pointer is on the list: held. A red run says which side broke.
@@ -375,7 +352,6 @@ export const HeldAcrossTheGapToTheCard: Story = {
       clock.release();
       await waitFor(() => expect(rowsIn(canvasElement)).toBe(3), { timeout: 2000 });
     } finally {
-      unrecord();
       clock.restore();
       inUse();
     }

@@ -14,7 +14,6 @@ import {
   type RefObject,
 } from "react";
 import { watchWindowLeft } from "./ui/windowLeft";
-import { note } from "./heldProbe";
 
 /**
  * Whether the element that took the focus took it from the keyboard. A pointer's press focuses
@@ -107,29 +106,25 @@ export function useHeldStill<E extends HTMLElement>(
     leaving.current = undefined;
   }, []);
   /** The pointer is off the list: let go, at once or after the wait the list asks. */
-  const leave = useCallback((from: string, event?: Event) => {
+  const leave = useCallback(() => {
     const wait = asks.current();
-    note("leave:" + from, event, { wait, pending: leaving.current !== undefined });
     if (wait <= 0) {
       stay();
       setOver(false);
     } else if (leaving.current === undefined) {
       leaving.current = window.setTimeout(() => {
-        note("leave-wait-over");
         leaving.current = undefined;
         setOver(false);
       }, wait);
     }
   }, [stay]);
   if (!on && (over || inside)) {
-    note("off", null, { over, inside });
     setOver(false);
     setInside(false);
   }
   useEffect(() => {
     if (!on) return;
     const away = () => {
-      note("away");
       stay();
       setOver(false);
       setInside(false);
@@ -143,12 +138,12 @@ export function useHeldStill<E extends HTMLElement>(
     };
     // And the pointer over an element React did not hand the list is off it.
     const pointedAt = (event: Event) => {
-      if (seen.current !== event) leave("pointedAt", event);
+      if (seen.current !== event) leave();
       seen.current = null;
     };
     // The window from the front lets all go; the pointer gone from it (which WebKit may not say
     // on the list) is the pointer's hold alone: the keyboard's is still here (#3095).
-    const unwatch = watchWindowLeft((why) => (why === "focus" ? away() : leave("windowLeft")));
+    const unwatch = watchWindowLeft((why) => (why === "focus" ? away() : leave()));
     window.addEventListener("focusin", landed);
     window.addEventListener("pointerover", pointedAt);
     return () => {
@@ -167,7 +162,6 @@ export function useHeldStill<E extends HTMLElement>(
     if (at === null || !at.isConnected || at !== document.activeElement) setInside(false);
   }, [inside, drawn]);
   const holding = on && (over || inside);
-  useEffect(() => note("holding", null, { holding, over, inside, on }), [holding, over, inside, on]);
   return {
     holding,
     held: {
@@ -178,7 +172,6 @@ export function useHeldStill<E extends HTMLElement>(
         if (heardIn(event.target)) stay();
       },
       onPointerEnter: (event) => {
-        note("enter", event.nativeEvent, { heard: heardIn(event.target) });
         if (heardIn(event.target)) setOver(true);
       },
       // Taken again by the pointer's next move, after the window was left and come back to; and
@@ -186,12 +179,9 @@ export function useHeldStill<E extends HTMLElement>(
       onPointerMove: (event) => {
         const here = heardIn(event.target);
         if (here) stay();
-        if (here !== over) {
-          note("move-sets", event.nativeEvent, { here });
-          setOver(here);
-        }
+        if (here !== over) setOver(here);
       },
-      onPointerLeave: (event) => leave("pointerleave", event.nativeEvent),
+      onPointerLeave: () => leave(),
       // A focus by the keyboard takes the hold; any focus in the list while it holds moves what
       // the hold follows (an arrow's move, a menu's item, the row a menu gave the focus back to).
       onFocus: (event) => {

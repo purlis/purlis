@@ -22,12 +22,7 @@ import {
 import { inWorkspace, skillRowId, type GradingAt } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import {
-  expectFocusInSight,
-  untilFocused,
-  untilFocusInSight,
-  untilFocusWithin,
-} from "./stories.testkit";
+import { expectFocusInSight, untilFocusInSight, untilFocusWithin } from "./stories.testkit";
 import type { GradeRow, GradeScorecard, SkillDraft, SkillGradePlan } from "./bindings";
 
 const SCOPE = inWorkspace("smart-ide");
@@ -338,42 +333,16 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Probe #4098: the old loop, saying when it would Tab before the hand-off. */
-const PROBE_BEFORE = false;
-
-/** What a grid cell can hand the keyboard to. */
-const IN_A_CELL = "button, a[href], input, select, textarea, [tabindex]";
-
 /**
  * Tab, until the keyboard is inside `target`, at most `steps` times. Always ends in
  * `untilFocusWithin`, landed or not, so the frame React Aria scrolls the focused cell into sight
  * on is drawn before a check reads where the focus is (#4103, #4672).
- *
- * **A cell the Tab lands on hands the keyboard to what is in it a frame later** (React Aria's
- * `useGridCell`, in a `requestAnimationFrame`): that hand-off is waited for before the next
- * Tab. A Tab pressed before it went on from the cell past the grid, and the pane scrolled down
- * to what it reached, so the picture caught the Scorecard about 214 px higher than a person
- * sees it (#4098, stories run 41824461117).
  */
 async function tabInto(target: () => Element | null, steps = 60): Promise<void> {
   for (let step = 0; step < steps; step++) {
     const into = target();
     if (into !== null && into.contains(document.activeElement)) break;
-    {
-      const was = document.activeElement;
-      if (
-        PROBE_BEFORE &&
-        was?.getAttribute("role") === "gridcell" &&
-        was.querySelector(IN_A_CELL) !== null
-      )
-        throw new Error("PROBE tab during hand-off");
-    }
     await userEvent.tab();
-    if (PROBE_BEFORE) continue;
-    const at = document.activeElement;
-    const inIt = at?.getAttribute("role") === "gridcell" ? at.querySelector(IN_A_CELL) : null;
-    if (inIt !== null)
-      await untilFocused(() => inIt, "the cell hands the keyboard to what is in it");
   }
   await untilFocusWithin(target, "the keyboard reaches it by Tab");
 }

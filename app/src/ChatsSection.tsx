@@ -109,7 +109,6 @@ import {
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { useWindowLeft } from "./ui/windowLeft";
 import { useHeldStill } from "./heldStill";
-import { note } from "./heldProbe";
 import { property } from "./theme/theme";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
@@ -1555,7 +1554,6 @@ const Row = memo(function Row({
     resting.current = undefined;
   };
   const card = (up: boolean) => {
-    note("card:" + (up ? "up" : "down"), null, { session });
     unrest();
     if (up) cardUp(session);
     else cardDown(session);
