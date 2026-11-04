@@ -21,6 +21,7 @@ const fill = {
   browser: "b1",
   warnings: [],
   card: false,
+  multi_line: false,
   line: null,
   under: null,
   no_always: null,
@@ -76,6 +77,19 @@ export const ACard: Story = {
       page: "https://shop.example.test/checkout",
       label: "Card number",
       card: true,
+    },
+  },
+};
+
+/** A multi-line box or an editable area asks each time, and says why (#5120, SF-5). */
+export const AMultiLineBox: Story = {
+  args: {
+    fill: {
+      ...fill,
+      site: "forge.example.test",
+      page: "https://forge.example.test/issues/new",
+      label: "Comment",
+      multi_line: true,
     },
   },
 };

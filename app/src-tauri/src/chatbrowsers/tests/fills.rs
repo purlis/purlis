@@ -11,7 +11,7 @@ use std::cell::RefCell;
 use purlis_session_protocol::browsing::{FieldKind, FieldSaid};
 
 use super::*;
-use crate::secretfills::FillAsked;
+use crate::secretfills::{Allowed, FillAsked};
 
 const VALUE: &str = "fixture-key-5115";
 
@@ -70,11 +70,22 @@ fn using_a_browser() -> (ChatBrowsers, Arc<Hosted>) {
     (browsers, hosted)
 }
 
-/// The person allows once: the value, as the vault gave it.
-fn allowed(asked: &RefCell<Vec<FillAsked>>) -> impl Fn(&FillAsked) -> Result<Secret, String> + '_ {
+/// The person allows once: the value, as the vault gave it, on a notice for a one-line field.
+fn allowed(asked: &RefCell<Vec<FillAsked>>) -> impl Fn(&FillAsked) -> Result<Allowed, String> + '_ {
+    allowed_as(asked, false)
+}
+
+/// The person allows once, on a notice that named a multi-line field where `multi_line` says so.
+fn allowed_as(
+    asked: &RefCell<Vec<FillAsked>>,
+    multi_line: bool,
+) -> impl Fn(&FillAsked) -> Result<Allowed, String> + '_ {
     move |one: &FillAsked| {
         asked.borrow_mut().push(one.clone());
-        Ok(Secret::new(VALUE.into()))
+        Ok(Allowed {
+            value: Secret::new(VALUE.into()),
+            multi_line,
+        })
     }
 }
 
@@ -149,7 +160,7 @@ fn the_origin_filled_on_is_the_one_the_browser_read_for_the_fields_own_frame() {
 fn a_secret_the_person_keeps_blocked_fills_nothing_and_says_so() {
     let (browsers, hosted) = using_a_browser();
     *hosted.field.lock().unwrap() = Some(one_line_on("https://dash.example.test"));
-    let kept = |_: &FillAsked| -> Result<Secret, String> {
+    let kept = |_: &FillAsked| -> Result<Allowed, String> {
         Err(crate::secretfills::kept_said(
             "dash-api-key",
             "https://dash.example.test",
@@ -313,4 +324,30 @@ fn a_runners_refusal_of_a_field_on_another_origin_reaches_the_chat() {
     assert!(told.contains("https://pay.example.test"), "{told}");
     assert!(told.contains("nothing was filled"), "{told}");
     assert!(!told.contains(VALUE), "{told}");
+}
+
+/// SF-5 (#5120): the browser is told a multi-line field may take the value only where the person
+/// answered a notice for this very fill that named one, and the engine reads the field again.
+#[test]
+fn a_fill_lets_a_multi_line_field_take_it_only_where_the_person_was_asked_about_one() {
+    for (multi_line, kind) in [(false, FieldKind::OneLine), (true, FieldKind::MultiLine)] {
+        let (browsers, hosted) = using_a_browser();
+        *hosted.field.lock().unwrap() = Some(FieldSaid {
+            kind,
+            ..one_line_on("https://dash.example.test")
+        });
+        let asked = RefCell::new(Vec::new());
+
+        answered_filling(
+            &browsers,
+            &hosted,
+            &ask(3, fill("e12")),
+            None,
+            &allowed_as(&asked, multi_line),
+        );
+
+        assert_eq!(asked.into_inner()[0].field.kind, kind);
+        let fills = hosted.fills.lock().unwrap();
+        assert_eq!(fills[0].1.multi_line, multi_line, "{kind:?}");
+    }
 }

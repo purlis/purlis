@@ -33,6 +33,7 @@ fn fill_of(target: Ref, origin: &str) -> SecretFill {
         origin: origin.to_owned(),
         key: "dash-api-key".to_owned(),
         value: VALUE.to_owned().into(),
+        multi_line: false,
     }
 }
 
@@ -159,7 +160,7 @@ fn a_field_whose_frame_is_on_another_origin_is_refused_and_says_why() {
 }
 
 #[test]
-fn a_multi_line_box_or_an_editable_area_takes_no_secret() {
+fn a_multi_line_box_or_an_editable_area_takes_no_secret_nobody_was_asked_about() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
@@ -171,7 +172,7 @@ fn a_multi_line_box_or_an_editable_area_takes_no_secret() {
         let field = ref_of(&browser, label);
         assert_eq!(described(&browser, field.clone()).kind, kind, "{label}");
         match filled(&browser, field, "http://fixture.test") {
-            Err(Refusal::NotFilled(why)) => assert!(why.contains("one-line"), "{why}"),
+            Err(Refusal::NotFilled(why)) => assert!(why.contains("asked each time"), "{why}"),
             other => panic!("{label} refused otherwise: {}", ended_as(&other)),
         }
     }
@@ -232,4 +233,33 @@ fn once_a_secret_is_filled_the_agent_cannot_copy_it_out() {
         },
     );
     assert_eq!(copied.err(), Some(Refusal::CopyWithheld));
+}
+
+/// SF-5 (#5120): where the person answered a notice for this very fill, a multi-line box and an
+/// editable area take the value, and nothing the agent reads after shows it.
+#[test]
+fn a_multi_line_box_or_an_editable_area_takes_a_secret_the_person_was_asked_about() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "fill.html");
+    for label in ["textbox \"Notes\"", "textbox \"Editor\""] {
+        let field = ref_of(&browser, label);
+        let fill = SecretFill {
+            multi_line: true,
+            ..fill_of(field, "http://fixture.test")
+        };
+        let answer = browser.fill_secret(browser.epoch(), &fill, Arc::new(Holds));
+        assert!(answer.is_ok(), "{label}: {}", ended_as(&answer));
+    }
+    let shown = snapshot(&browser);
+    assert!(!holds_the_value(&shown), "a snapshot shows the value");
+    assert!(
+        !shown.contains("Draft"),
+        "the editable area holds the value now"
+    );
+    assert!(
+        !find(&browser, VALUE).contains('['),
+        "a find finds the value"
+    );
 }

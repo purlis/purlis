@@ -313,6 +313,11 @@ pub struct FillSecret {
     pub origin: String,
     pub key: String,
     pub value: Secret,
+    /// **The person answered a notice for this very fill that named a multi-line text box or an
+    /// editable area** (#5120, SF-5): only then does one take it. Absent, a one-line field
+    /// alone, which a host that doesn't read it holds every fill to as well.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub multi_line: bool,
 }
 
 /// **One download of a browser's, as an answer says it** (1.46, #2020): its name in the browser
@@ -673,10 +678,26 @@ mod fill_tests {
             origin: "https://dash.example.test".into(),
             key: "dash-api-key".into(),
             value: Secret::new("fixture-word-5115".into()),
+            multi_line: false,
         };
         let said = format!("{fill:?}");
         assert!(!said.contains("fixture-word-5115"), "{said}");
         assert!(said.contains("dash-api-key"), "{said}");
+    }
+
+    #[test]
+    fn a_fill_that_names_no_multi_line_answer_is_held_to_a_one_line_field() {
+        let fill: FillSecret = serde_json::from_str(
+            r#"{"target":"e12","origin":"https://dash.example.test","key":"k","value":"v"}"#,
+        )
+        .expect("a fill of 1.72 reads");
+        assert!(!fill.multi_line);
+        let said = serde_json::to_string(&FillSecret {
+            multi_line: true,
+            ..fill
+        })
+        .expect("written");
+        assert!(said.contains(r#""multi_line":true"#), "{said}");
     }
 
     #[test]

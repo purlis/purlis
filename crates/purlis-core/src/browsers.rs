@@ -1886,6 +1886,7 @@ impl Screen for EngineScreen {
             origin: fill.origin.clone(),
             key: fill.key.clone(),
             value: zeroize::Zeroizing::new(fill.value.expose().to_owned()),
+            multi_line: fill.multi_line,
         };
         // It waits on the engine: made outside the lock, as an act is.
         let held = {

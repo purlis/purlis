@@ -84,6 +84,7 @@ fn filled(browser: &Browser, told: &Arc<Told>) {
         origin: "http://fixture.test".to_owned(),
         key: "dash-api-key".to_owned(),
         value: VALUE.to_owned().into(),
+        multi_line: false,
     };
     let filled = browser.fill_secret(
         browser.epoch(),

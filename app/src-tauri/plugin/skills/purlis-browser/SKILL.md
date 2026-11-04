@@ -67,10 +67,12 @@ Running the login's name as a command does nothing: it says to use `browser_logi
 **Any other secret goes in with `browser_fill_secret`**: an API key into a dashboard's settings,
 a token into a deploy form. Take a snapshot, then call it with `target` (the field's reference,
 `e12`), `vault` and `key` (the value's name, never the value). The person is asked on a notice
-that names the key and the exact site the field is on; your call waits for their answer. purlis
-fills it only into a one-line field (password, text, email, number, tel, url), and only where
-the field's own frame is still on that site when it fills, so a field in a frame from another
-site is refused. The value never reaches you: every snapshot, find, wait and screenshot of that
+that names the key and the exact site the field is on; your call waits for their answer. Once
+they allowed it for the chat or always, a one-line field (password, text, email, number, tel,
+url) on that site takes it without asking; a multi-line text box or an editable area asks them
+each time. purlis fills only where the field's own frame is still on that site when it fills, so
+a field in a frame from another site is refused. A key the vault doesn't hold is asked of them
+too, and your call waits for it. The value never reaches you: every snapshot, find, wait and screenshot of that
 browser leaves it out, and from then on that browser copies, cuts and drags nothing for you. If they
 keep it blocked, tell them what needs it and don't ask again. While the page you filled stays
 open, the browser reaches only that site: an address for another is refused, saying so. Once that

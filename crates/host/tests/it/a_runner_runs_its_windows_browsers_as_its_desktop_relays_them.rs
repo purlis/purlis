@@ -182,6 +182,7 @@ fn a_fill() -> FillSecret {
         origin: "https://dash.example.test".into(),
         key: "dash-api-key".into(),
         value: Secret::new("fixture-key-5122".into()),
+        multi_line: false,
     }
 }
 

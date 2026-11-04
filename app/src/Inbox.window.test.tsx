@@ -1808,6 +1808,7 @@ describe("a secret fill (#5115)", () => {
         browser: "b1",
         warnings: [],
         card: false,
+        multi_line: false,
         vault_too: false,
       },
     };

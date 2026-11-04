@@ -325,7 +325,7 @@ fn answered_started(
 }
 
 /// A secret fill no test of this file asks about (#5115): refused, so nothing is filled.
-fn no_fills(_: &crate::secretfills::FillAsked) -> Result<Secret, String> {
+fn no_fills(_: &crate::secretfills::FillAsked) -> Result<crate::secretfills::Allowed, String> {
     Err("no secret is filled in this test".to_owned())
 }
 

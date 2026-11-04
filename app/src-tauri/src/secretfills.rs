@@ -70,6 +70,9 @@ pub struct FillWait {
     pub persona: Option<String>,
     /// **A card's or payment value's key** (SF-4): Allow once and Keep blocked alone.
     pub card: bool,
+    /// **A multi-line text box or an editable area** (#5120, SF-5): asked each time, whatever
+    /// was allowed, with Allow once and Keep blocked alone.
+    pub multi_line: bool,
     /// The line Always would write, as written: `<name> = { vault = …, key = …, fill = … }`.
     pub line: Option<String>,
     /// Why Always isn't offered, where it isn't.
@@ -79,6 +82,12 @@ pub struct FillWait {
 }
 
 impl FillWait {
+    /// Whether only Allow once and Keep blocked are offered: a card's key, or a field that asks
+    /// each time.
+    pub fn once_only(&self) -> bool {
+        self.card || self.multi_line
+    }
+
     /// **The digest of what the notice draws**: a press names it, so a notice drawn of anything
     /// else is never what's answered.
     pub fn digest(&self) -> String {
@@ -107,7 +116,11 @@ impl FillWait {
             hash.update(part.len().to_le_bytes());
             hash.update(part.as_bytes());
         }
-        hash.update([u8::from(self.card), u8::from(self.vault_too)]);
+        hash.update([
+            u8::from(self.card),
+            u8::from(self.vault_too),
+            u8::from(self.multi_line),
+        ]);
         hash.finalize()
             .iter()
             .map(|byte| format!("{byte:02x}"))
@@ -296,7 +309,7 @@ pub fn kept_said(key: &str, origin: &str, reason: Option<&str>) -> String {
 }
 
 /// **Whether `asked` may be put to the person, and what the notice warns of**: the field's frame
-/// has a web origin, the field is one line, and the project lets the key be offered.
+/// has a web origin, the field takes typing, and the project lets the key be offered.
 fn judged(held: &Held, session: u32, asked: &FillAsked) -> Result<(String, Vec<String>), String> {
     let target = &asked.target;
     let Some(origin) = asked.field.origin.clone() else {
@@ -304,10 +317,11 @@ fn judged(held: &Held, session: u32, asked: &FillAsked) -> Result<(String, Vec<S
             "{target} is in a document with no web origin, so nothing was filled"
         ));
     };
-    if asked.field.kind != FieldKind::OneLine {
+    if asked.field.kind == FieldKind::Other {
         return Err(format!(
-            "{target} is not a one-line field, so nothing was filled: only a one-line field \
-             (password, text, email, number, tel, url) takes a secret"
+            "{target} is not a field that takes typing, so nothing was filled: only a one-line \
+             field (password, text, email, number, tel, url), a multi-line text box or an \
+             editable area takes a secret"
         ));
     }
     let persona = held
@@ -376,8 +390,10 @@ fn frame_warning(origin: &str, page: Option<&str>) -> Option<String> {
 /// Allow for this chat, fills without a notice, never a card's key (SF-4). The call waits here
 /// for the answer, at most [`purlis_core::loginask::THE_PERSON_IS_WAITED_FOR`], under no lock of
 /// the browsers', and then on a Secret ask where the vault holds no such key.
-pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<Secret, String> {
+pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<Allowed, String> {
     let (origin, warnings) = judged(held, session, asked)?;
+    // SF-5: a multi-line text box or an editable area asks each time, whatever was allowed.
+    let multi_line = asked.field.kind != FieldKind::OneLine;
     // On a runner, only one shown to be the person's own, before anyone is asked (#5122).
     let runner = match asked.pool.as_deref() {
         Some(pool) => {
@@ -405,7 +421,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<S
     // A browser on a runner is asked about each time: a grant here holds this machine's
     // browsers (#5122).
     if runner.is_some()
-        || !granted(
+        || asks(
             held.root(),
             fills,
             session,
@@ -429,6 +445,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<S
                 since: now,
                 persona,
                 card: false,
+                multi_line,
                 line: None,
                 no_always: None,
                 vault_too: false,
@@ -454,7 +471,28 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<S
                 .to_owned(),
         );
     }
-    Ok(value)
+    Ok(Allowed { value, multi_line })
+}
+
+/// **What a fill the person allowed is handed to the browser with** (#5115, #5120): the value,
+/// and whether the person answered a notice for this very fill that named a multi-line text box
+/// or an editable area, which alone lets one take it.
+pub struct Allowed {
+    pub value: Secret,
+    pub multi_line: bool,
+}
+
+/// **Whether the person is asked about this fill**: a multi-line text box or an editable area
+/// each time, whatever was allowed (SF-5, #5120); any other field unless it is [`granted`].
+fn asks(
+    root: &std::path::Path,
+    fills: &Fills,
+    session: u32,
+    persona: Option<&str>,
+    asked: &FillAsked,
+    origin: &str,
+) -> bool {
+    asked.field.kind != FieldKind::OneLine || !granted(root, fills, session, persona, asked, origin)
 }
 
 /// **Whether a fill goes in without a notice** (#5116): a line Always wrote, allowed here, or the
@@ -493,7 +531,7 @@ fn offered(root: &std::path::Path, mut wait: FillWait) -> FillWait {
         &wait.origin,
     );
     wait.card = lines.card;
-    if wait.card {
+    if wait.once_only() {
         return wait;
     }
     let Some(persona) = wait.persona.clone() else {
@@ -617,8 +655,8 @@ pub fn answer(
     use purlis_core::sandbox::grant::Level;
     const NO_MORE: &str = "That ask has gone, and nothing was allowed.";
     const CHANGED: &str = "That ask changed, so nothing was allowed. Read it again.";
-    const ONCE_ONLY: &str =
-        "Only Allow once or Keep blocked can be pressed on this ask: it is a card's key.";
+    const ONCE_ONLY: &str = "Only Allow once or Keep blocked can be pressed on this ask: it is a \
+                             card's key, or a field that asks each time.";
     let _one_press = fills
         .answering
         .lock()
@@ -641,7 +679,7 @@ pub fn answer(
             });
         }
         Press::Once => Level::Once,
-        Press::Chat | Press::Always if wait.card => return Err(ONCE_ONLY.to_owned()),
+        Press::Chat | Press::Always if wait.once_only() => return Err(ONCE_ONLY.to_owned()),
         Press::Chat => Level::Chat,
         Press::Always => Level::You,
     };
@@ -654,6 +692,7 @@ pub fn answer(
         root,
         FillWait {
             card: false,
+            multi_line: wait.multi_line,
             line: None,
             no_always: None,
             vault_too: false,
