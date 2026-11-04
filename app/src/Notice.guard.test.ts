@@ -610,10 +610,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: VIEWS,
   },
   "Welcome.tsx": {
-    count: 2,
+    count: 3,
     why:
       ACTION +
-      ": an open refused, beside the doors and the path box that asked it; and " +
+      ": an open refused, beside the doors and the path box that asked it; " +
+      ACTION +
+      ": Run chats on another machine said once it is pressed, under its row (#4484); and " +
       READING +
       ": the recent projects it could not read",
   },

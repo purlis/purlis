@@ -61,6 +61,7 @@ import {
   RESTART_NOTE,
   MOVE_HERE_NOTE,
   MOVE_TO_RUNNER_NOTE,
+  MOVE_ONCE_SET_UP_NOTE,
   MOVE_TOGETHER_NOTE,
   noteOf,
   restartNoteNoState,
@@ -2459,9 +2460,10 @@ describe("the palette at fifty chats", () => {
       // `re` where `worktree.merge` had. One more under both since #4757: ⌘⇧H's row is `Back to
       // this pane's previous chat`, about the pane in front, before the branch's in the catalogue.
       // One fewer under both since #4767: `Previous chat in this tab` went with the tab a chat
-      // no longer has.
+      // no longer has. One more under `r` since #4484: `Add a cluster pool…` (`cluster` has an
+      // `r`).
       expect(at("re", loaded())).toBe(7);
-      expect(at("r", loaded())).toBe(18);
+      expect(at("r", loaded())).toBe(19);
       expect(at("rem", loaded())).toBe(1);
     });
 
@@ -2613,8 +2615,8 @@ describe("the palette at fifty chats", () => {
     // 1072 since #4760: Close other tabs on each of the fifty tabs' own right-click. The other
     // forty-nine are menu-only rows, so the palette still lists one.
     // 1123 since #4768: Move to new window, each of the fifty tabs' own row (+50), and the
-    // focused pane's (+1).
-    expect(offers).toHaveLength(1123);
+    // focused pane's (+1). 1124 since #4484: Add a cluster pool….
+    expect(offers).toHaveLength(1124);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
       1,
     );
@@ -3432,6 +3434,24 @@ describe("Move to runner and Move here on a chat (#2048)", () => {
     );
     const none = catalogue(now({ tabs, movesTo: () => [] }));
     expect([...catalogued(none).keys()].filter((id) => id.startsWith("chat.move:"))).toEqual([]);
+  });
+
+  it("offers Pool setup to move a chat here while no pool is set up (#4484)", async () => {
+    const offers = catalogue(
+      now({ tabs, plane: "/p", movesTo: () => [], movesOnceAPoolIsSetUp: () => true }),
+    );
+    expect(catalogued(offers).get("chat.pool-setup:7")).toMatchObject({
+      title: "Move chat one to a pool…",
+      available: true,
+      note: MOVE_ONCE_SET_UP_NOTE,
+    });
+    const hands = doing();
+    await run(offers, "chat.pool-setup:7", hands);
+    expect(hands.calls).toEqual(["openPoolSetup:/p"]);
+    const kept = catalogue(
+      now({ tabs, plane: "/p", movesTo: () => ["builds"], movesOnceAPoolIsSetUp: () => false }),
+    );
+    expect(catalogued(kept).has("chat.pool-setup:7")).toBe(false);
   });
 
   it("names the chats of its workspace that move with it, both ways (#3453)", () => {

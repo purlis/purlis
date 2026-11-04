@@ -1209,6 +1209,72 @@ fn elsewhere(root: &Path, hosts: &[HostFound]) -> Identity {
     }
 }
 
+/// **How a pool stands in the chat picker** (#4484, D on #4469, refining Q47): offered, offered
+/// marked "Setup not finished" with why, or not offered, with why, because a chat can't start
+/// there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InThePicker {
+    Offered,
+    /// A chat starts there, and setup isn't finished: why, in the picker's words.
+    NotFinished(String),
+    /// A chat can't start there: why, in the picker's words.
+    NotOffered(String),
+}
+
+/// What the picker says of a pool whose chats have no forge identity.
+pub const NO_IDENTITY_IN_THE_PICKER: &str =
+    "Setup not finished: chats start there, but gh and git push have no account to act as.";
+
+/// What the picker says of a pool where a chat can't start.
+pub const CANNOT_START_IN_THE_PICKER: &str =
+    "Setup not finished: a chat can't start there yet, as it has no runner ready.";
+
+/// **How each of `pools` stands in the chat picker of the project at `plane`**: read from what
+/// this machine keeps, its Pool setup choices and the plane's personas (read once), and nothing
+/// asked of Docker or a runner, since the picker opens often. A Docker pool with no runner that
+/// starts chats isn't offered. One whose agent identity step was skipped there is offered as the
+/// person left it. A pool that isn't a Docker pool kept here is offered as it is: Pool setup
+/// reads only Docker pools so far.
+pub fn in_the_picker(
+    config: &Path,
+    plane: Option<&Path>,
+    pools: &[String],
+) -> Vec<(String, InThePicker)> {
+    let kept = runners::pools(config).unwrap_or_default();
+    let skipped = read_choices(config)
+        .map(|choices| choices.skipped)
+        .unwrap_or_default();
+    let mut identity = None;
+    pools
+        .iter()
+        .map(|pool| {
+            let standing = if !kept.iter().any(|one| one.name() == pool) {
+                InThePicker::Offered
+            } else if runners::runner_for(config, pool).is_err() {
+                InThePicker::NotOffered(CANNOT_START_IN_THE_PICKER.to_owned())
+            } else if skipped
+                .get(pool)
+                .is_some_and(|steps| steps.contains(&StepId::Identity))
+            {
+                InThePicker::Offered
+            } else {
+                // No clone's remotes are read: only whether the identity reads as set counts here.
+                in_the_picker_by(identity.get_or_insert_with(|| identity_in(plane, &[])))
+            };
+            (pool.clone(), standing)
+        })
+        .collect()
+}
+
+/// [`in_the_picker`] for a pool whose runner starts chats, by the plane's forge identity.
+fn in_the_picker_by(identity: &Identity) -> InThePicker {
+    match identity {
+        // No project open says nothing of its personas.
+        Identity::Set { .. } | Identity::NoProject => InThePicker::Offered,
+        _ => InThePicker::NotFinished(NO_IDENTITY_IN_THE_PICKER.to_owned()),
+    }
+}
+
 /// **The choices kept on this machine.** None where nothing was chosen; refused where the file
 /// can't be read or isn't what purlis wrote, so a choice is never silently lost.
 pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
