@@ -206,6 +206,7 @@ fn a_secret_fill_names_a_field_a_vault_and_a_key_and_never_a_value() {
             target: "e12".into(),
             vault: "qa".into(),
             key: "dash-api-key".into(),
+            code: false,
         }
     );
     let schema = TOOLS
@@ -224,6 +225,39 @@ fn a_secret_fill_names_a_field_a_vault_and_a_key_and_never_a_value() {
         let refused = asked("browser_fill_secret", &args(given)).unwrap_err();
         assert!(refused.contains(missing), "{refused}");
     }
+}
+
+#[test]
+fn a_2fa_code_is_asked_for_by_the_key_that_holds_its_seed() {
+    let fill = asked(
+        "browser_fill_secret",
+        &args(json!({ "target": "e7", "vault": "qa", "key": "dash-2fa", "code": true })),
+    )
+    .expect("a code the tools take");
+    assert_eq!(
+        fill.asked,
+        Browsing::FillSecret {
+            target: "e7".into(),
+            vault: "qa".into(),
+            key: "dash-2fa".into(),
+            code: true,
+        }
+    );
+    let refused = asked(
+        "browser_fill_secret",
+        &args(json!({ "target": "e7", "vault": "qa", "key": "dash-2fa", "code": "yes" })),
+    )
+    .unwrap_err();
+    assert!(refused.contains("`code`"), "{refused}");
+    // Said on the wire only where it is asked for, so a fill of a value reads as it did.
+    let wire = serde_json::to_value(Browsing::FillSecret {
+        target: "e7".into(),
+        vault: "qa".into(),
+        key: "k".into(),
+        code: false,
+    })
+    .unwrap();
+    assert!(wire.to_string().find("code").is_none(), "{wire}");
 }
 
 #[test]

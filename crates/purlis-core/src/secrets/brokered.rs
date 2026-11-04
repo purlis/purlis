@@ -1395,9 +1395,56 @@ fn granted_ready(
 /// **The value of `key` in `vault`, for a secret fill the person allowed** (#5115): read for
 /// chat `asker` as a login the person allowed from its notice is ([`granted_login`]), since that
 /// press confirmed this vault and this key for one exact site. Refused, with a sentence and no
-/// value, for a private key, whoever asked: no private key is filled on a page. `None` where the
-/// vault holds no value under `key` (#5116).
+/// value, for a private key, whoever asked: no private key is filled on a page; and for a value
+/// taken as a 2FA seed, an address or a bare secret, which goes into no page: its code does
+/// ([`fill_code`]). `None` where the vault holds no value under `key` (#5116).
 pub fn fill_value(
+    asker: &Asker,
+    vault: &str,
+    key: &str,
+) -> Result<Option<purlis_session_protocol::browsing::Secret>, String> {
+    let Some(value) = read_for_fill(asker, vault, key)? else {
+        return Ok(None);
+    };
+    if crate::sandbox::tools::mint::a_private_key(value.expose()) {
+        return Err(format!(
+            "{key} in vault '{vault}' is a private key, so purlis filled nothing"
+        ));
+    }
+    if super::totp::looks_like_a_seed(value.expose()) {
+        return Err(format!(
+            "{key} in vault '{vault}' looks like a 2FA seed, so purlis filled nothing: a seed \
+             never goes into a page. Call browser_fill_secret again with `code` to fill the code \
+             it makes"
+        ));
+    }
+    Ok(Some(value))
+}
+
+/// **The 2FA code the seed under `key` in `vault` makes now, for a fill the person allowed**
+/// (#5118, ruling SF-4, decision SF-11): the seed is read as [`fill_value`] reads a value, the
+/// code worked out from it here ([`super::totp`]), and only the code leaves. Refused, in words
+/// that hold nothing of the value, where the key holds no TOTP seed. `None` where the vault holds
+/// no value under `key`, as for [`fill_value`].
+pub fn fill_code(
+    asker: &Asker,
+    vault: &str,
+    key: &str,
+) -> Result<Option<purlis_session_protocol::browsing::Secret>, String> {
+    let Some(value) = read_for_fill(asker, vault, key)? else {
+        return Ok(None);
+    };
+    let seed = super::totp::Seed::parse(value.expose())
+        .map_err(|why| format!("{key} in vault '{vault}' {why}, so purlis filled nothing"))?;
+    drop(value);
+    Ok(Some(purlis_session_protocol::browsing::Secret::new(
+        seed.code_now(),
+    )))
+}
+
+/// `key` of `vault`, read for chat `asker`'s fill: the value whole, `None` where the vault holds
+/// none under `key`, or why not, in words that hold none of it.
+fn read_for_fill(
     asker: &Asker,
     vault: &str,
     key: &str,
@@ -1409,24 +1456,16 @@ pub fn fill_value(
         None => Ctx::new(&asker.root, asker.env.clone()),
     };
     let provider = cmd::provider(&ctx, vault).map_err(|e| e.message.to_string())?;
-    let value = match cmd::get_value(&ctx, &provider, key) {
-        Ok(value) => purlis_session_protocol::browsing::Secret::new(value),
+    match cmd::get_value(&ctx, &provider, key) {
+        Ok(value) => Ok(Some(purlis_session_protocol::browsing::Secret::new(value))),
         // A key the vault holds no value under is the person's to add (#5116, #5054): told by
         // the provider's kind of failure, never by its sentence.
-        Err(e) if e.kind == super::Kind::NotFound => return Ok(None),
-        Err(e) => {
-            return Err(format!(
-                "vault '{vault}' did not give {key}, so nothing was filled ({})",
-                e.message
-            ));
-        }
-    };
-    if crate::sandbox::tools::mint::a_private_key(value.expose()) {
-        return Err(format!(
-            "{key} in vault '{vault}' is a private key, so purlis filled nothing"
-        ));
+        Err(e) if e.kind == super::Kind::NotFound => Ok(None),
+        Err(e) => Err(format!(
+            "vault '{vault}' did not give {key}, so nothing was filled ({})",
+            e.message
+        )),
     }
-    Ok(Some(value))
 }
 
 /// `ready`'s values, read from its vault, and its identity. A key the vault holds no value
@@ -3759,3 +3798,6 @@ impl Redactor {
 
 #[cfg(all(test, unix))]
 mod tests;
+
+#[cfg(test)]
+mod fill_tests;

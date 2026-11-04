@@ -51,7 +51,9 @@
 //!   ([`drive::Browser::fill_secret`]), and just before the value goes in the browser's reach
 //!   proxy is held to the field's site ([`FillHolder`]) until the page holding it loads another
 //!   document in its main frame or is closed. Meanwhile an address the agent writes for another
-//!   site is refused before the driver hears of it, in words that say why ([`held_to_said`]).
+//!   site is refused before the driver hears of it, in words that say why ([`held_to_said`]), and
+//!   a click or Back that leads elsewhere, which only the proxy can refuse, answers with the same
+//!   reason ([`load_held_said`], #5150).
 //! - **Its driver** (#2014): the host's lease is the driver's own ([`drive::Browser::take_over`]),
 //!   each act made under the epoch the host checked; the person's input becomes the driver's own
 //!   event ([`input_of`]), and each frame names what it shows ([`aim_of`]).
@@ -453,6 +455,11 @@ impl Browsers for EngineBrowsers {
             let bound = sites.bound().clone();
             browser.keep_off(Arc::new(move |address: &str| kept_off_at(&bound, address)));
         }
+        // A click or Back the proxy refused under a fill's hold answers why (#5150).
+        let bound = proxy.bound().clone();
+        browser.say_why_refused(Arc::new(move |address: &str| {
+            load_held_said(&bound, address)
+        }));
         // Its downloads are held in its own folder, which no chat reads (#2020), before any
         // page of it loads.
         let held_in = data.join(DOWNLOADS);
@@ -1298,11 +1305,28 @@ pub fn held_to_said(bound: &Bound, act: &Act) -> Option<String> {
     if to == held {
         return None;
     }
-    Some(format!(
+    Some(fill_hold_said(&held, &format!("it did not go to {to}")))
+}
+
+/// **Why a page shows the engine's own page for `address`** (#5150): a load of another site than
+/// the one a page holding a secret purlis filled holds the browser to, in words that say why and
+/// what ends it. They hold of a load that failed before the hold began too, so they name no cause
+/// of this one. `None` for a load that failed on that site, and while nothing holds the browser.
+/// The address may carry what a filled page sent, so neither it nor its site is said.
+pub fn load_held_said(bound: &Bound, address: &str) -> Option<String> {
+    let held = bound.held_for_fill()?;
+    let (host, port) = judge::site_of(address)?;
+    (Site::of(&host, port) != held)
+        .then(|| fill_hold_said(&held, "pages of other sites do not load"))
+}
+
+/// What a chat is told of `what` while a filled page holds its browser to `held` (#5117).
+fn fill_hold_said(held: &Site, what: &str) -> String {
+    format!(
         "this browser reaches only {held} while a page in it holds a secret purlis filled there, \
-         so it did not go to {to}. Once that page loads another of its own pages, or is \
-         closed with browser_close or by the person, the browser reaches as before"
-    ))
+         so {what}. Once the page holding the secret loads another of its own pages, or is closed \
+         with browser_close or by the person, the browser reaches as before a moment later"
+    )
 }
 
 /// **`<data>/browsers/`, made this user's alone and left out of this device's backups** (#2021):

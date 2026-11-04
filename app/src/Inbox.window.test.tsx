@@ -1810,6 +1810,7 @@ describe("a secret fill (#5115)", () => {
         card: false,
         multi_line: false,
         vault_too: false,
+        code: false,
       },
     };
     draw([fill]);

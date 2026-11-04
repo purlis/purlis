@@ -390,6 +390,8 @@ pub struct ChatBrowsers {
     /// The browsers the person took over, by program (#2022): what they typed may be in a page,
     /// so no quit keeps where they were.
     person_typed: Mutex<Vec<String>>,
+    /// The vault secrets purlis filled into each browser, by program (#5119): names and sites.
+    secrets: Mutex<HashMap<String, Vec<SecretFilled>>>,
     /// What each browser was last given to reach, by program (#2022): what a hand-over that
     /// fails gives back.
     reaches: Mutex<HashMap<String, BrowserReach>>,
@@ -515,6 +517,7 @@ impl Default for ChatBrowsers {
             addresses: Mutex::default(),
             at_quit: Mutex::default(),
             logins_held: Mutex::default(),
+            secrets: Mutex::default(),
             person_typed: Mutex::default(),
             reaches: Mutex::default(),
             chats: Mutex::default(),
@@ -662,6 +665,26 @@ pub struct ChatBrowser {
     /// The pool whose runner it runs on, beside its chat, or `null` on this machine (#2050):
     /// what its row and thumbnail name as its device.
     pub pool: Option<String>,
+    /// **The vault secrets purlis filled into it** (#5119, SF-8): by key and site, never a value,
+    /// oldest first. Its view marks each while its page is on that site.
+    pub secrets: Vec<SecretFilled>,
+}
+
+/// **A vault secret purlis filled into a browser** (#5119, SF-8), as its view marks it: the
+/// key's name, the site it went to and the field the page labels, never a value.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SecretFilled {
+    /// The key's name in its vault (`dash-api-key`).
+    pub key: String,
+    /// The origin of the field's own frame it went into (`https://dash.example.test`).
+    pub origin: String,
+    /// The origin of the page that frame was in, where it was known: the field may be in a
+    /// part of the page from another site.
+    pub page: Option<String>,
+    /// What the page labels the field: the page's words, never purlis's.
+    pub label: String,
+    /// A 2FA code the seed under `key` made (#5118), not the value itself.
+    pub code: bool,
 }
 
 /// **Who drives a browser, where its chat's agent does not** (#2300), as its row and thumbnail
@@ -1084,6 +1107,10 @@ impl ChatBrowsers {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .retain(|program| keep(program));
+        self.secrets
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|program, _| keep(program));
         self.addresses
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -1432,6 +1459,12 @@ impl ChatBrowsers {
                 .map(|held| held.login.clone());
         }
         drop(held);
+        // With the secrets filled into each (#5119).
+        let secrets = self.secrets.lock().unwrap_or_else(PoisonError::into_inner);
+        for one in &mut listed {
+            one.secrets = secrets.get(&one.program).cloned().unwrap_or_default();
+        }
+        drop(secrets);
         // And who drives each, where the agent does not (#2300).
         let person = self
             .person_drives
@@ -1585,6 +1618,32 @@ impl ChatBrowsers {
             .unwrap_or_else(PoisonError::into_inner)
             .contains_key(program)
             .then_some(BrowserDriver::Purlis)
+    }
+
+    /// **`program` holds `filled` from now** (#5119): the same key on the same site of the same
+    /// page is marked once, with the label of the field it last went into.
+    fn secret_filled(&self, program: &str, filled: SecretFilled) {
+        {
+            let mut secrets = self.secrets.lock().unwrap_or_else(PoisonError::into_inner);
+            let marks = secrets.entry(program.to_owned()).or_default();
+            marks.retain(|one| {
+                one.key != filled.key || one.origin != filled.origin || one.page != filled.page
+            });
+            marks.push(filled);
+        }
+        self.relisted();
+    }
+
+    /// The site purlis last filled `key` into browser `program` on (#5119).
+    fn filled_on(&self, program: &str, key: &str) -> Option<String> {
+        self.secrets
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(program)?
+            .iter()
+            .rev()
+            .find(|one| one.key == key)
+            .map(|one| one.origin.clone())
     }
 
     /// Whether browser `program` holds a login purlis performed, or was opened from a kept one
@@ -2704,7 +2763,12 @@ impl ChatBrowsers {
             Browsing::Act(act) => Doing::Act(act.clone()),
             // A secret goes only into a browser the chat uses already (#5115), on this machine or
             // on its pool's runner, through that runner's link (#5122).
-            Browsing::FillSecret { target, vault, key } => {
+            Browsing::FillSecret {
+                target,
+                vault,
+                key,
+                code,
+            } => {
                 if named.is_none() {
                     return (no(FILL_NEEDS_A_PAGE), false);
                 }
@@ -2712,6 +2776,7 @@ impl ChatBrowsers {
                     target: target.clone(),
                     vault: vault.clone(),
                     key: key.clone(),
+                    code: *code,
                 }
             }
             Browsing::LogIn { login, .. } => match read {
@@ -2806,7 +2871,12 @@ impl ChatBrowsers {
                     false,
                 );
             }
-            Doing::Fill { target, vault, key } => self.fill(
+            Doing::Fill {
+                target,
+                vault,
+                key,
+                code,
+            } => self.fill(
                 driver.as_ref(),
                 &program,
                 &browse.call_id,
@@ -2816,6 +2886,7 @@ impl ChatBrowsers {
                     vault,
                     key,
                     pool: pool.map(str::to_owned),
+                    code,
                 },
                 reach_now,
                 fills,
@@ -2907,7 +2978,13 @@ impl ChatBrowsers {
             vault,
             key,
             pool,
+            code,
         } = asked;
+        // No fill goes into a browser the person has taken over (#5119, SF-10): not even its
+        // field is read.
+        if self.driver_of(program) == Some(BrowserDriver::Person) {
+            return Err(Refused::Said(taken_over_said(&browser)));
+        }
         let read = driver.act(
             program,
             &format!("{call_id}:field"),
@@ -2922,33 +2999,54 @@ impl ChatBrowsers {
             )));
         };
         let asked = crate::secretfills::FillAsked {
-            browser,
+            browser: browser.clone(),
+            program: program.to_owned(),
             target: target.clone(),
             vault,
             key: key.clone(),
+            code,
             field,
             page: read.page.map(|page| page.address),
             pool,
         };
         let allowed = fills(&asked).map_err(Refused::Said)?;
+        // The person may have taken it over while they were asked.
+        if self.driver_of(program) == Some(BrowserDriver::Person) {
+            return Err(Refused::Said(taken_over_said(&browser)));
+        }
         // Asked of the person only with an origin, so one is here.
         let Some(origin) = asked.field.origin else {
             return Err(Refused::Said(format!(
                 "{target} is in a document with no web origin, so nothing was filled"
             )));
         };
-        driver.fill_secret(
+        let filled = driver.fill_secret(
             program,
             FillSecret {
                 target,
-                origin,
-                key,
+                origin: origin.clone(),
+                key: key.clone(),
                 value: allowed.value,
                 // Only where the person answered a notice naming a multi-line field (#5120): the
                 // engine reads the field again as it fills, and refuses one otherwise.
                 multi_line: allowed.multi_line,
             },
-        )
+        )?;
+        // The person's view marks it, by key and site (#5119, SF-8).
+        self.secret_filled(
+            program,
+            SecretFilled {
+                key,
+                origin,
+                page: asked
+                    .page
+                    .as_deref()
+                    .and_then(purlis_session_protocol::browsing::origin_of),
+                label: purlis_core::shown::short(&asked.field.label),
+                code,
+            },
+        );
+        Ok(filled)
     }
 }
 
@@ -3003,11 +3101,12 @@ enum Doing {
     Act(Act),
     /// A login by its name, as read: boxed, as it is far larger than an act.
     LogIn(String, Box<LoginRead>),
-    /// A secret into a field (#5115), by names alone.
+    /// A secret into a field (#5115), by names alone, or the 2FA code a seed makes (#5118).
     Fill {
         target: String,
         vault: String,
         key: String,
+        code: bool,
     },
 }
 
@@ -3039,11 +3138,21 @@ struct FillAsked {
     key: String,
     /// The pool whose runner the chat, and so its browser, runs on (#5122).
     pool: Option<String>,
+    code: bool,
 }
 
 /// What a chat is told of a secret fill with no browser open to fill it in (#5115).
 const FILL_NEEDS_A_PAGE: &str = "this chat has no browser open, so nothing was filled: open the \
                                  page, take a snapshot, and name the field from it";
+
+/// **What a chat is told of a secret fill into a browser the person has taken over** (#5119,
+/// SF-10): nothing goes in, and why.
+pub fn taken_over_said(browser: &str) -> String {
+    format!(
+        "the person has taken {browser} over, so nothing was filled: do something else, and \
+         call browser_fill_secret again once they hand it back"
+    )
+}
 
 /// What the chat is told once purlis performed its browser login `name` (#2016): that its
 /// password field went, where, and what the browser reaches from now (`reaches`,
@@ -3295,8 +3404,21 @@ pub fn timeline_of(
             timeline::acted(browser, act, browsed, at, seen)
         }
         Browsing::LogIn { login, .. } => Some(timeline::signed_in(browser, login, at)),
-        Browsing::FillSecret { key, target, .. } => {
-            Some(timeline::filled_secret(browser, key, target, at))
+        Browsing::FillSecret {
+            key, target, code, ..
+        } => {
+            // The site it went to (#5119, SF-8): what the person's view marked.
+            let origin = browsers
+                .which(browse.chat, Some(browser))
+                .and_then(|(_, program)| browsers.filled_on(&program, key));
+            Some(timeline::filled_secret(
+                browser,
+                key,
+                target,
+                origin.as_deref(),
+                *code,
+                at,
+            ))
         }
         Browsing::New | Browsing::Close | Browsing::NeedsYou { .. } => None,
     }

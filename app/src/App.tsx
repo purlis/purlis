@@ -1814,7 +1814,7 @@ function App() {
       removeWorkspace: () => undefined,
       showChat: () => undefined,
       paneBack: () => undefined,
-      showTabTasks: () => undefined,
+      showChatTasks: () => undefined,
       ownTab: () => undefined,
       beside: () => undefined,
       sendBack: () => undefined,

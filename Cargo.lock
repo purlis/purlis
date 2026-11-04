@@ -1394,6 +1394,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-encoding"
+version = "2.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
+
+[[package]]
 name = "dbus"
 version = "0.9.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5616,6 +5622,7 @@ version = "0.4.2"
 dependencies = [
  "base64 0.23.1",
  "chrono",
+ "hmac 0.13.0",
  "minisign",
  "nix 0.31.3",
  "p256",
@@ -5626,6 +5633,7 @@ dependencies = [
  "ring",
  "serde",
  "serde_json",
+ "sha1",
  "sha2 0.11.1",
  "sigstore-verify",
  "stand-in",
@@ -5672,6 +5680,7 @@ dependencies = [
  "changelog",
  "chrono",
  "curve25519-dalek",
+ "data-encoding",
  "dhat",
  "dirs",
  "flate2",
@@ -5719,6 +5728,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha1",
  "sha2 0.11.1",
  "shell-words",
  "signal-hook",
@@ -6749,6 +6759,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930"
 dependencies = [
  "stable_deref_trait",
+]
+
+[[package]]
+name = "sha1"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
 ]
 
 [[package]]
