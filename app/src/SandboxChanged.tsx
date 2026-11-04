@@ -141,11 +141,12 @@ export function useOlderSandbox(
         keepAnswer(plane, now);
         setOlder(now);
       })
-      .catch(() => undefined);
-    void commands
-      .chatsLevelWhy(plane)
+      .catch(() => undefined)
+      // After it, never beside it: why a chat runs at its level is on a hover or a Notice, so it
+      // does not add to what a project coming to the front waits on (#5207).
+      .then(() => (gone ? undefined : commands.chatsLevelWhy(plane)))
       .then((said) => {
-        if (!gone && said.status === "ok") keepWhys(plane, said.data);
+        if (!gone && said?.status === "ok") keepWhys(plane, said.data);
       })
       .catch(() => undefined);
     return () => {

@@ -746,11 +746,7 @@ export const commands = {
 	/**  The chats, by session, lowest first. */
 	chats: OnOlderSandbox[],
 } | null, string>(__TAURI_INVOKE("chats_on_older_sandbox", { plane })),
-	/**
-	 *  **Why each open chat of the project runs at its level** (#5207): what its sandbox mark and a
-	 *  block's Notice say. A read. On a blocking thread: it reads the project's files.
-	 */
-	chatsLevelWhy: (plane: PlaneId) => typedError<LevelWhy[], string>(__TAURI_INVOKE("chats_level_why", { plane })),
+	chatsLevelWhy: __WINDOW_ONLY_RESULT,
 	restartChatWithoutSandbox: __WINDOW_ONLY_RESULT,
 	moveChat: __WINDOW_ONLY_RESULT,
 	moveChatNow: __WINDOW_ONLY_RESULT,

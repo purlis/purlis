@@ -19,9 +19,10 @@ pub const WHERE: &str = "Settings › Project › Sandbox › Your level";
 pub enum Why {
     /// The project's level, as the person set or confirmed it.
     Chosen,
-    /// The project's level as the local file says it, stricter than the person confirmed: it
-    /// counts with no Confirm, and a chat may have written it, so it is never called theirs.
-    FileStricter,
+    /// The project's level as the local file alone says it, no lower than what the person
+    /// confirmed or the project's own: it counts with no Confirm, and a chat may have written
+    /// it, so it is never called theirs.
+    FileOnly,
     /// The person set no level, so the project's own stands.
     NoneChosen,
     /// The row for this persona, which wins over the project's level.
@@ -47,9 +48,10 @@ impl Why {
             Self::Chosen => {
                 format!("This is the level you chose for this project. Change it in {WHERE}.")
             }
-            Self::FileStricter => format!(
-                "This project's local file sets this level, stricter than you confirmed, so it \
-                 counts as it is. Change it in {WHERE}."
+            Self::FileOnly => format!(
+                "This project's local file sets this level, which you did not set in Settings. \
+                 It counts because it is no lower than what you confirmed or the project's own. \
+                 Change it in {WHERE}."
             ),
             Self::NoneChosen => format!(
                 "You have not chosen a level here, so this chat takes the project's own. Your \
@@ -180,7 +182,7 @@ fn why_of(
         Some(name) => Why::Persona(name.to_owned()),
         None if honoured.level.is_none() => Why::NoneChosen,
         None if honoured.level == local::confirmed_levels(root).level => Why::Chosen,
-        None => Why::FileStricter,
+        None => Why::FileOnly,
     }
 }
 

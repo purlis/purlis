@@ -4,9 +4,8 @@ A chat can stay sandboxed for good reasons after a person turns their level down
 which, so a chat told a person the only way out was Start without the sandbox.
 
 `sandbox::level_why::next_start` answers why a start of a chat runs at its level: a policy that
-holds it, a stricter chat that asked for it, a chain the record cannot read, a peer's start on the
-host, a level waiting for Confirm, a persona's row, the level you chose, a stricter level the file
-alone says, or none chosen. It decides
+holds it, a stricter chat that asked for it, a chain the record cannot read, a level waiting for Confirm, a persona's row, the level you chose, a level only the file
+says, or none chosen. It decides
 nothing: the level stays `sandbox::your_level`'s, and each reason is read by comparing what that
 seam answers with what its inputs say, so the rule is written once.
 
@@ -16,7 +15,9 @@ seam answers with what its inputs say, so the rule is written once.
   nothing of it: that is a purlis bug, and no level's.
 - **Never said of what it cannot describe.** A chat held by a sandbox this window has no compile
   of (one its host composed, so a peer's start too, or one reattached under a sandbox that changed)
-  and a project whose manifest a start is refused over have no answer.
+  and a project whose manifest a start is refused over have no answer. A start refused or left
+  floorless for another reason can still read as a restart applying the level: the answer is read
+  from the level, not from a compile, so the restart then says why itself.
 - **The window's alone.** `chats_level_why` says which levels wait, as `sandbox_levels_waiting` does,
   so no link is served it.
 - **A level the file alone says is never called the person's** (§7): a sandboxed chat can write

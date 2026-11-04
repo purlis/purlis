@@ -9,7 +9,7 @@ const FULL_PROJECT: &str = "[sandbox]\nmode = \"on\"\n";
 const FULL_NO_CACHES: &str =
     "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\n";
 
-const TEAM_OFF: &str = "[sandbox]\nmode = \"off\"\n";
+const TEAM_OFF: &str = "[sandbox]\nmode = \"off\"\negress = [\"model-providers\", \"forge\"]\n";
 
 /// A project with `manifest`, and `local` as this machine's own file.
 fn project(manifest: &str, local: &str) -> tempfile::TempDir {
@@ -110,10 +110,11 @@ fn a_stricter_level_the_file_alone_says_is_never_called_the_one_you_chose() {
         in_the_window(dir.path(), None),
         NextStart {
             level: Choice::On,
-            why: Why::FileStricter
+            why: Why::FileOnly
         }
     );
-    assert!(!Why::FileStricter.said().contains("you chose"));
+    assert!(!Why::FileOnly.said().contains("you chose"));
+    assert!(Why::FileOnly.said().contains("you did not set in Settings"));
 }
 
 #[test]
@@ -379,7 +380,7 @@ fn each_reason_says_where_to_change_it_or_whose_it_is() {
     );
     for why in [
         Why::Chosen,
-        Why::FileStricter,
+        Why::FileOnly,
         Why::NoneChosen,
         Why::Persona("steward".to_owned()),
         Why::WaitsForConfirm(Choice::Off),
