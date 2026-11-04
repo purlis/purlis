@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793763126764,
+  "lastUpdate": 1793768319417,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38388,6 +38388,48 @@ window.BENCHMARK_DATA = {
             "value": 101.958479,
             "unit": "ms",
             "extra": "median of 5 runs: 101.250, 101.919, 101.958, 102.312, 103.902 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4afff7e4a42e66bded841130e12de16923c44b18",
+          "message": "The command palette is not modal: closing it no longer restyles the whole window (#4351) (#5113)\n\n* The command palette is not modal, as VS Code's is not: the window behind it is never inert, so closing it restyles nothing (#4351)\n\nThe operator's ruling of 2026-11-04. DialogSurface, the palette's surface, keeps the keyboard in\nitself with its own FocusScope (contain) and closes on Esc and on a press outside it, but no\nlonger marks the window inert. React Aria's modal always asks for inert, and WebKit holds\ninertness as inherited style: taking it off the window's root as the palette closed restyled the\nwhole window, some 80 ms on the macOS runners, before what a row opened was drawn (#5001's A/B).\nEvery other dialog stays modal.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ7CQ2QWW7W99KZZ8DR168\nPurlis-Persona: steward\n\n* The palette's surface: a press on its scrim closes it, it fades in, it stays reachable over an open menu, and it gives back no inert (#4351)\n\nFrom /code-review high. A press on the scrim now closes the real palette and hands the keyboard\nback. The dialog itself is in React Aria's top layer, so a modal popover still open as F2 opens\nthe palette leaves it reachable, and the scrim stays outside that layer, so a press there counts\nas outside. The scrim fades in as the family's modals do, and the inert sweep on close runs only\nfor a modal.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ7CQ2QWW7W99KZZ8DR168\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T04:30:53Z",
+          "tree_id": "fe6b36d90049017b97ff49534328ff948e5d1f1d",
+          "url": "https://github.com/purlis/purlis/commit/4afff7e4a42e66bded841130e12de16923c44b18"
+        },
+        "date": 1793768314312,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5275895,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.505, 0.512, 0.528, 0.540, 0.542 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.357040499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.217, 16.265, 16.357, 16.645, 16.688 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.42421949999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.023, 101.412, 101.424, 103.121, 103.442 ms"
           }
         ]
       }
