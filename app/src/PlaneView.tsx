@@ -2102,6 +2102,14 @@ export const PlaneView = memo(function PlaneView({
    */
   const [endedHere, setEndedHere] = useState<ReadonlyMap<number, EndedHere>>(() => new Map());
   const endedHereNow = useRef<Map<number, EndedHere>>(new Map());
+  /**
+   * **The tasks that ended in a pane, kept there as ended** (#4757): a press put each in its
+   * pane, and its end does not take the pane away (`closeChat`'s `keeps`). The core is told
+   * the pane is empty (`sayLayout`'s `told`), since it has no such chat open to hold. Each with
+   * the workspace it was filed in as it ended (#5106): the plane lists it no more, and its tab
+   * stays on that workspace's strip.
+   */
+  const endedInPanes = useRef<Map<number, string>>(new Map());
   // **A chat ended on purpose counts as gone** (#5019): its pane keeps it, and the core no longer
   // lists it, so its ending is a change to what is open here.
   const openHere = useMemo(
@@ -2325,8 +2333,9 @@ export const PlaneView = memo(function PlaneView({
         if (workspace) return workspace.name;
         if (sidebar?.unfiled.some((one) => one.session === chat)) return OUTSIDE;
         // A chat ended on purpose in its pane is listed no more, and stays where it was filed
-        // as it ended (#5019), its tab on that workspace's strip.
-        return startedIn[chat] ?? endedHere.get(chat)?.workspace;
+        // as it ended (#5019), its tab on that workspace's strip; so does a task kept in its pane
+        // as it ended (#5106).
+        return startedIn[chat] ?? endedHere.get(chat)?.workspace ?? endedInPanes.current.get(chat);
       };
       // A task a scenario spec pretends (`e2eTasks.ts`, none in a shipped build) is in no
       // list of the core's: it is filed where the chat that asked for it is.
@@ -2461,12 +2470,6 @@ export const PlaneView = memo(function PlaneView({
       return now;
     });
   }, []);
-  /**
-   * **The tasks that ended in a pane, kept there as ended** (#4757): a press put each in its
-   * pane, and its end does not take the pane away (`closeChat`'s `keeps`). The core is told
-   * the pane is empty (`sayLayout`'s `told`), since it has no such chat open to hold.
-   */
-  const endedInPanes = useRef<Set<number>>(new Set());
   /** Chat `session` is being ended on purpose: where a pane shows it, that pane keeps it. */
   const leavesItsBand = useCallback(
     (session: number, record?: SavedRecord) => {
@@ -2511,10 +2514,11 @@ export const PlaneView = memo(function PlaneView({
   const keepsItsPane = useCallback(
     (session: number) => {
       const keep = askedByNow(session) !== undefined || endedHereNow.current.has(session);
-      if (keep) endedInPanes.current.add(session);
+      // Filed where it was as it ends (#5106), before the plane stops listing it.
+      if (keep) endedInPanes.current.set(session, filedIn(session));
       return keep;
     },
-    [askedByNow],
+    [askedByNow, filedIn],
   );
 
   const stoppedFor = useCallback((session: number, why: string | undefined) => {
