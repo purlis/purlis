@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793821073192,
+  "lastUpdate": 1793822562240,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39186,6 +39186,48 @@ window.BENCHMARK_DATA = {
             "value": 101.89984199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.650, 100.692, 101.900, 102.027, 102.269 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b5bb02e8cba68068446f9add9ffcfe80ef82cde6",
+          "message": "Hardening: secret exec masking tests, the macOS nightly, SECURITY.md on certificate checks and your level (#5210)\n\n* Secret exec: tests that --stream and --exec output is masked in a sandboxed chat\n\nA sandboxed chat's purlis secret exec is run by the app, which masks what\nthe child writes as it comes. Three tests drive it through exec::exec\nwith --stream and with --exec: a value printed whole on stdout, a value\nwritten in two halves with a pause between (two reads of the pipe), and\na value on stderr, whole and split, keeping the child's own status.\nOutside a sandboxed chat both modes inherit stdio and mask nothing, as\ntheir help says.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KFDNMG1ZPNFJGJTK9G4KAA\nPurlis-Persona: steward\n\n* macOS nightly: two product fixes and the tests that went stale\n\nThe scheduled ci run's three macOS core-and-app parts were red on\n2026-11-03 and -04 (and every night they finished since mid-October).\nRead test by test:\n\nProduct, fixed:\n- windowline::hung_up never heard a peer hang up on macOS: it set a read\n  timeout first, and macOS refuses SO_RCVTIMEO on a socket whose peer\n  has closed (EINVAL), so it answered 'still there'. The window's pool\n  sign-in confirm then kept asking after its command ended. It now\n  peeks without waiting (MSG_PEEK | MSG_DONTWAIT).\n- hoststart::settings_in_a_file: chats started side by side (a record put\n  back at launch) raced on making the clone key's folder and, under one\n  id, on the same file, so one could fail with 'a chat's settings could\n  not be written to its file'. A file already holding the settings is\n  taken as written, and a write that lost the race is tried once more.\n  A new test starts four at once, twenty times; it failed before.\n\nStale, each against the decision that moved it:\n- Claude Code settings pass one word's length on a macOS runner, so they\n  go through a file: the composed-start tests give their kit the folder\n  the app has, and the app's pins test reads the file the line names.\n- #3881 holds the state folder's names in every case on macOS, so the\n  vaults denial is a regex: the two brokered profile tests find either\n  form (still a read-write denial, before the given-back allow).\n- #4356 keeps every chat out of other harnesses' folders: a Claude Code\n  chat's sandbox now denies ~/.codex too, and the test says so.\n- #3721 denies the handbacks folder to every chat's writes; the app\n  removes a report. The opencode live test reads it under the wrap and\n  is refused the rm.\n- keeps_git_folder(.GIT, folded = false) is true where the disk itself\n  folds names: the test expects what the disk says.\n- The clone-through-the-host progress test waits two seconds a silence,\n  not one, over eight seconds of progress: its landing after git says\n  nothing, and the asker gave up at one second twice on 2026-11-04.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KFDNMG1ZPNFJGJTK9G4KAA\nPurlis-Persona: steward\n\n* SECURITY.md: the certificate check is on by default, with its residual\n\nIt said the macOS certificate check (trustd, [sandbox].certificate-checks)\nis off unless a project turns it on. It has been on by default since the\noperator's ruling of 2026-10-13 (R1, amending ADR 0093;\nsandbox.rs Widened::trust, plane-format.md). Say so, name the residual\nthat decision keeps (trustd makes its own requests for revocation and\nfor the certificates a certificate names, past the egress proxy), and\nhow a project or an administrator closes it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KFDNMG1ZPNFJGJTK9G4KAA\nPurlis-Persona: steward\n\n* SECURITY.md: your level can be off, for a project or a persona (ADR 0096)\n\nThe sandbox section described only the one-chat opt-out from the new-chat\npicker, and said no setting turns the sandbox off. ADR 0096 added one:\neach person's level (on, floor or off) per project and per persona, kept\nin this machine's purlis.local.toml and honoured only as far as the\nperson confirmed it in Settings. Describe it in the ADR's own words,\nwith how a confirmed off is audited (trust.sandbox.off, by: your-level,\nthe start's made and actor, counted as an opt-out), how a start another\nchat asks for is held to the chain's strictest level, and what a policy\nthat forbids the opt-out does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KFDNMG1ZPNFJGJTK9G4KAA\nPurlis-Persona: steward\n\n* App test: a record's shared id is a ULID, as a record holds one\n\na_record_holding_one_id_twice_puts_back_two_chats_with_their_own_ids_and_keeps_both\ngave both chats the UUID ID, a conversation-style id. A record's chat id\nis read through reopen::a_ulid, so a real record only ever holds a ULID.\nOn Linux the settings stay on the line and the id is never checked. On\nmacOS a Claude Code chat's settings go through a file named by the chat's\nid (SK-9), which settings_in_a_file refuses for anything but a ULID, so\nthe first chat was refused ('a chat with no id of its own'). The test now\nshares a ULID, and says why a chat did not start when it fails.\n\nThis, not the settings race fixed earlier in this branch, is what kept the\ntest red on the nightly. The race is still real: the four-at-once core\ntest failed before that fix.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KFDNMG1ZPNFJGJTK9G4KAA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T19:11:37Z",
+          "tree_id": "07fdcffbd5c578647e22e35405d62a4d4caf3835",
+          "url": "https://github.com/purlis/purlis/commit/b5bb02e8cba68068446f9add9ffcfe80ef82cde6"
+        },
+        "date": 1793822556352,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.669438,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.647, 0.655, 0.669, 0.676, 0.698 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.594550499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.463, 16.545, 16.595, 16.613, 16.632 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0036865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.775, 101.935, 102.004, 102.055, 102.395 ms"
           }
         ]
       }
