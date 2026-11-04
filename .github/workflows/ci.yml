@@ -1783,6 +1783,12 @@ jobs:
       # the dev profile, and #3560's opt-level made the cold build 21 to 32 min), another linker
       # (6 s to win), a `target/` cache (rust-cache already restores the dependencies, and the
       # workspace's crates change with every pull request that runs this job).
+      # Off before the build, so it indexes none of it (#4351): see the outcome bars below.
+      - name: Spotlight off for the outcome bars
+        if: ${{ runner.os == 'macOS' && matrix.outcome }}
+        continue-on-error: true
+        timeout-minutes: 2
+        run: sudo mdutil -a -i off
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
         # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
@@ -1870,11 +1876,13 @@ jobs:
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
       # GitHub's macOS image spends much of a job on its own, and the same code measured a p95 of
-      # about 300 ms on one run and 500 on the next (#4351). So its Spotlight indexing goes off and
-      # its disk-image service settles before the bars measure. The bars stay as they are.
-      - name: Quiet the runner for the outcome bars
-        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+      # about 300 ms on one run and 500 on the next (#4351). So the runner settles before each
+      # harness's bars (`tools/quiet-runner.mjs`), Spotlight having gone off before the build. The
+      # bars stay as they are.
+      - name: Let the runner settle before claude's bars
+        if: ${{ runner.os == 'macOS' && matrix.outcome }}
         continue-on-error: true
+        timeout-minutes: 5
         run: node tools/quiet-runner.mjs
       # The Skill studio's outcome bars, one run per harness on its stand-in (#4343). `outcome-bars`
       # alone runs these. Each runs whatever the one before it did, so a red run names every miss.
@@ -1890,6 +1898,11 @@ jobs:
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: claude
+      - name: Let the runner settle before codex's bars
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        continue-on-error: true
+        timeout-minutes: 5
+        run: node tools/quiet-runner.mjs
       - name: The Skill studio's outcome bars on codex's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
@@ -1902,6 +1915,11 @@ jobs:
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
+      - name: Let the runner settle before opencode's bars
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        continue-on-error: true
+        timeout-minutes: 5
+        run: node tools/quiet-runner.mjs
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}

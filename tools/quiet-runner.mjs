@@ -1,15 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// Quiets a macOS runner before the Skill studio's outcome bars measure on it (#4351, the person's
-// ruling of 2026-11-05).
+// Waits for a macOS runner to go quiet before the Skill studio's outcome bars measure on it (#4351,
+// the person's ruling of 2026-11-05).
 //
-// Run by the `outcome bars` job's macOS leg: `node tools/quiet-runner.mjs`, and again with
-// `--log-only` once the bars have run. GitHub's macOS image spends much of a job on its own: on
-// 2026-11-04 its simulator disk-image service sat at 55 to 100% of a core through nearly every L10
-// opening, with Spotlight indexing up to 90% beside it, and the same code measured a p95 of about
-// 300 ms on one run and 500 on the next. So this turns Spotlight's indexing off, waits for that
-// service to settle, and says what is still busy.
+// Run by the `outcome bars` job's macOS leg before each harness's bars: `node tools/quiet-runner.mjs`,
+// and with `--log-only` once they have run. GitHub's macOS image spends much of a job on its own:
+// on 2026-11-04 its simulator disk-image service sat at 55 to 100% of a core through nearly every
+// L10 opening, with Spotlight up to 90% beside it, and the same code measured a p95 of about 300 ms
+// on one run and 500 on the next. So the job turns Spotlight's indexing off before it builds
+// (`ci.yml`), and this waits for what is left of it and for that service, and says what is busy.
 //
 // The bars and what they measure stay as they are. This only takes noise out, and never fails the
 // job: a runner that did not settle is said in a warning, and the bars still judge what they
@@ -20,36 +20,43 @@ import process from "node:process";
 import { setTimeout as pause } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-/** The service that keeps a macOS runner busy, as `ps` names it. */
-const SERVICE = "simdiskimaged";
-/** Its CPU, in percent of a core, below which it counts as quiet. */
+/** What keeps a macOS runner busy, as `ps` names it: the disk images, and Spotlight's backlog. */
+const SERVICES = ["simdiskimaged", "mds_stores", "mds", "mdworker_shared"];
+/** Their CPU together, in percent of a core, below which the runner counts as quiet. */
 const BELOW_PERCENT = 20;
-/** How many samples in a row it has to be quiet for. */
-const QUIET_SAMPLES = 3;
+/** How many samples in a row it has to be quiet for: half a minute, more than a lull. */
+const QUIET_SAMPLES = 6;
 const EVERY_MS = 5_000;
-/** How long the job waits for it: a macOS runner is scarce, and the bars run either way. */
-const BUDGET_MS = 300_000;
+/** How long a harness's bars wait for it: a macOS runner is scarce, and they run either way. */
+const BUDGET_MS = 180_000;
 
-/** The first `count` lines of `ps -Ao pcpu=,comm= -r`, each by its program's own name. */
-export function busiest(ps, count = 6) {
+/** Every line of `ps -Ao pcpu=,comm= -r`, by its program's own name. */
+export function busiest(ps) {
   const found = [];
   for (const line of ps.split("\n")) {
-    const read = line.match(/^\s*([\d.]+)\s+(.+?)\s*$/);
+    const read = line.match(/^\s*([\d.,]+)\s+(.+?)\s*$/);
     if (read === null) continue;
-    found.push({ cpu: Number(read[1]), name: read[2].split("/").pop() });
+    found.push({
+      cpu: Number(read[1].replace(",", ".")),
+      name: read[2].split("/").pop(),
+    });
   }
-  return found.slice(0, count);
+  return found;
 }
 
+/** The busiest few of a reading, which is what is said of it. */
+export const topOf = (busy, count = 6) => busy.slice(0, count);
+
 /**
- * **Waits until `service` has stayed under `belowPercent` for `quietSamples` samples in a row**, or
- * until `budgetMs` has gone. A service with no process running is quiet.
+ * **Waits until `services` together have stayed under `belowPercent` for `quietSamples` samples in
+ * a row**, or until `budgetMs` has gone. One with no process running is quiet; a reading of nothing
+ * at all is no reading, and never counts as quiet.
  */
 export async function settle({
   sample,
   pause: wait,
   now,
-  service,
+  services,
   belowPercent,
   quietSamples,
   everyMs,
@@ -60,61 +67,57 @@ export async function settle({
   for (;;) {
     const last = sample();
     const cpu = last
-      .filter((one) => one.name === service)
+      .filter((one) => services.includes(one.name))
       .reduce((sum, one) => sum + one.cpu, 0);
-    quiet = cpu < belowPercent ? quiet + 1 : 0;
+    quiet = last.length > 0 && cpu < belowPercent ? quiet + 1 : 0;
     const waitedMs = now() - from;
-    if (quiet >= quietSamples)
-      return { settled: true, waitedMs, service, last };
-    if (waitedMs >= budgetMs)
-      return { settled: false, waitedMs, service, last };
+    const ended = { waitedMs, services, last: topOf(last) };
+    if (quiet >= quietSamples) return { settled: true, ...ended };
+    if (waitedMs >= budgetMs) return { settled: false, ...ended };
     await wait(everyMs);
   }
 }
 
-const inWords = (busy) =>
-  busy.map((one) => `${one.cpu} ${one.name}`).join(", ");
+const inWords = (busy) => busy.map((one) => `${one.cpu} ${one.name}`).join(", ");
 
 /** What the wait came to, as a GitHub notice or, where the runner stayed busy, a warning. */
-export function said({ settled, waitedMs, service, last }) {
+export function said({ settled, waitedMs, services, last }) {
   const seconds = Math.round(waitedMs / 1000);
+  const service = services.join(", ");
   return settled
     ? `::notice title=Quieting the runner::${service} settled after ${seconds} s. Busiest now: ${inWords(last)}`
     : `::warning title=Quieting the runner::${service} did not settle in ${seconds} s, so the bars measure on a busy runner. Busiest now: ${inWords(last)}`;
 }
 
-/** What is busiest on this machine now. */
+/** What is running on this machine now, busiest first; nothing where `ps` could not say. */
 function sampled() {
-  return busiest(
-    execFileSync("ps", ["-Ao", "pcpu=,comm=", "-r"], { encoding: "utf8" }),
-  );
+  try {
+    return busiest(
+      execFileSync("ps", ["-Ao", "pcpu=,comm=", "-r"], {
+        encoding: "utf8",
+        timeout: 10_000,
+      }),
+    );
+  } catch (error) {
+    console.log(`ps failed: ${String(error).split("\n")[0]}`);
+    return [];
+  }
 }
 
 async function main() {
   if (process.argv.includes("--log-only")) {
-    console.log(
-      `::notice title=Busiest after the outcome bars::${inWords(sampled())}`,
-    );
+    console.log(`::notice title=Busiest after the outcome bars::${inWords(topOf(sampled()))}`);
     return;
-  }
-  try {
-    console.log(
-      execFileSync("sudo", ["mdutil", "-a", "-i", "off"], { encoding: "utf8" }),
-    );
-  } catch (error) {
-    console.log(
-      `::warning title=Quieting the runner::Spotlight stayed on: ${String(error)}`,
-    );
   }
   const result = await settle({
     sample: () => {
       const busy = sampled();
-      console.log(inWords(busy));
+      console.log(inWords(topOf(busy)));
       return busy;
     },
     pause,
     now: () => Date.now(),
-    service: SERVICE,
+    services: SERVICES,
     belowPercent: BELOW_PERCENT,
     quietSamples: QUIET_SAMPLES,
     everyMs: EVERY_MS,
