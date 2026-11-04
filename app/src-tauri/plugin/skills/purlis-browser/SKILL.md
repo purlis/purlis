@@ -74,6 +74,11 @@ site is refused. The value never reaches you: every snapshot, find, wait and scr
 browser leaves it out, and from then on that browser copies, cuts and drags nothing for you. If they
 keep it blocked, tell them what needs it and don't ask again.
 
+**A 2FA code comes from its seed**: name the key that holds the seed (an `otpauth://totp/`
+address or the base32 secret) and set `code` to true. purlis works the current code out from
+the seed as it fills, and only the code goes into the page; the seed never does. A seed asked for
+without `code` is refused.
+
 **In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
 temp file and points `PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by
 name**. Playwright substitutes the value and scrubs it from the output it captures.

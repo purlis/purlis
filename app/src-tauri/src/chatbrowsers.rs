@@ -2705,7 +2705,12 @@ impl ChatBrowsers {
             }
             Browsing::Act(act) => Doing::Act(act.clone()),
             // A secret goes only into a browser the chat uses already, on this machine (#5115).
-            Browsing::FillSecret { target, vault, key } => {
+            Browsing::FillSecret {
+                target,
+                vault,
+                key,
+                code,
+            } => {
                 if let Some(pool) = pool {
                     return (no(&fill_on_a_runner_said(pool)), false);
                 }
@@ -2716,6 +2721,7 @@ impl ChatBrowsers {
                     target: target.clone(),
                     vault: vault.clone(),
                     key: key.clone(),
+                    code: *code,
                 }
             }
             Browsing::LogIn { login, .. } => match read {
@@ -2798,7 +2804,12 @@ impl ChatBrowsers {
                     .insert(program.clone(), reach_now.clone());
                 driver.act(&program, &browse.call_id, act, reach_now)
             }
-            Doing::Fill { target, vault, key } => self.fill(
+            Doing::Fill {
+                target,
+                vault,
+                key,
+                code,
+            } => self.fill(
                 driver.as_ref(),
                 &program,
                 &browse.call_id,
@@ -2807,6 +2818,7 @@ impl ChatBrowsers {
                     target,
                     vault,
                     key,
+                    code,
                 },
                 reach_now,
                 fills,
@@ -2902,6 +2914,7 @@ impl ChatBrowsers {
             target,
             vault,
             key,
+            code,
         } = asked;
         let read = driver.act(
             program,
@@ -2921,6 +2934,7 @@ impl ChatBrowsers {
             target: target.clone(),
             vault,
             key: key.clone(),
+            code,
             field,
             page: read.page.map(|page| page.address),
         };
@@ -2994,11 +3008,12 @@ enum Doing {
     Act(Act),
     /// A login by its name, as read: boxed, as it is far larger than an act.
     LogIn(String, Box<LoginRead>),
-    /// A secret into a field (#5115), by names alone.
+    /// A secret into a field (#5115), by names alone, or the 2FA code a seed makes (#5118).
     Fill {
         target: String,
         vault: String,
         key: String,
+        code: bool,
     },
 }
 
@@ -3012,6 +3027,7 @@ struct FillAsked {
     target: String,
     vault: String,
     key: String,
+    code: bool,
 }
 
 /// What a chat is told of a secret fill with no browser open to fill it in (#5115).

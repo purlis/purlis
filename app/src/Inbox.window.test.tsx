@@ -1807,6 +1807,7 @@ describe("a secret fill (#5115)", () => {
         label: "API key",
         browser: "b1",
         warnings: [],
+        code: false,
       },
     };
     draw([fill]);

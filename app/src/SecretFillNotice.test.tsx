@@ -23,6 +23,7 @@ const fill = (more: Partial<FillShown> = {}): FillShown => ({
   label: "API key",
   browser: "b1",
   warnings: [],
+  code: false,
   ...more,
 });
 
@@ -56,6 +57,20 @@ describe("SecretFillNotice", () => {
     expect(screen.getByTestId("fill-site-site")).toHaveTextContent(/^dash\.example\.test$/);
     expect(site).toHaveTextContent("https://dash.example.test/settings");
     expect(site).toHaveTextContent("the chat never sees the value");
+  });
+
+  it("says a 2FA code is made from the seed, and that the seed reaches neither page nor chat", () => {
+    render(
+      <SecretFillNotice plane="p" session={7} asks={[ask({ key: "dash-2fa", code: true })]} />,
+    );
+    const site = screen.getByTestId("fill-site");
+    expect(site).toHaveTextContent(
+      "Put a 2FA code from dash-2fa in vault qa into the field the page labels API key on",
+    );
+    expect(site).toHaveTextContent(
+      "purlis works the code out from the seed as it fills, and the page and the chat never see the seed.",
+    );
+    expect(site).not.toHaveTextContent("the chat never sees the value");
   });
 
   it("offers Allow once and Keep blocked, and nothing more", () => {

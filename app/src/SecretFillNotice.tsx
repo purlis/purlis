@@ -10,7 +10,8 @@ import { Notice, NoticeOf, type NoticeAction } from "./Notice";
  * **Where a secret a chat asks for would go** (#5115, the person's rulings SF-1, SF-2): the key
  * and its vault by name, never a value, then the exact site large, never cut short, since the
  * part a look-alike hides in is the part that would go. The page and the field's label are the
- * page's own words, said as such.
+ * page's own words, said as such. A 2FA code says it is one, made from the seed under the key
+ * (#5118, SF-4): the seed is what the person approves for the site, and never goes there.
  */
 export function SecretFillSite({ fill }: { fill: FillShown }) {
   // The label is the page's own words: set apart, so they never read as purlis's.
@@ -25,7 +26,16 @@ export function SecretFillSite({ fill }: { fill: FillShown }) {
   return (
     <div className="login-site" data-testid="fill-site">
       <p className="ui-text-meta">
-        Put <code>{fill.key}</code> from vault <code>{fill.vault}</code> into {field} on
+        {fill.code ? (
+          <>
+            Put a 2FA code from <code>{fill.key}</code> in vault <code>{fill.vault}</code> into{" "}
+            {field} on
+          </>
+        ) : (
+          <>
+            Put <code>{fill.key}</code> from vault <code>{fill.vault}</code> into {field} on
+          </>
+        )}
       </p>
       <p className="login-site-domain ui-text-title" data-testid="fill-site-site">
         {fill.site}
@@ -37,7 +47,9 @@ export function SecretFillSite({ fill }: { fill: FillShown }) {
         </p>
       )}
       <p className="ui-text-meta">
-        purlis fills it there and nowhere else, and the chat never sees the value.
+        {fill.code
+          ? "purlis works the code out from the seed as it fills, and the page and the chat never see the seed."
+          : "purlis fills it there and nowhere else, and the chat never sees the value."}
       </p>
       {fill.warnings.map((warning) => (
         <p key={warning} className="login-site-warning">

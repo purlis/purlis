@@ -21,6 +21,7 @@ fn wait(origin: &str) -> FillWait {
         page: Some(format!("{origin}/settings")),
         label: "API key".into(),
         warnings: Vec::new(),
+        code: false,
         since: 1,
     }
 }
@@ -239,4 +240,48 @@ fn a_field_in_a_frame_of_another_site_than_its_page_is_warned_of() {
         None
     );
     assert_eq!(frame_warning("https://shop.example.test", None), None);
+}
+
+#[test]
+fn a_2fa_codes_notice_says_so_and_a_press_on_the_values_notice_never_allows_it() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let locks = purlis_core::sandbox::policy::Locks::of(dir.path());
+    let mut code = wait("https://dash.example.test");
+    code.key = "dash-2fa".into();
+    code.code = true;
+
+    let shown = crate::asking::secret_fill(&code, &locks);
+    assert!(shown.fill.expect("a fill").code);
+    assert!(
+        shown.says.contains("2FA code from dash-2fa"),
+        "{}",
+        shown.says
+    );
+
+    // The value's notice and the code's are told apart by what a press names.
+    let fills = Fills::default();
+    let (id, heard) = fills.raise(code.clone()).expect("raised");
+    let audited = Audited::default();
+    let mut value = code.clone();
+    value.code = false;
+    let refused = answered(&fills, &audited, &press(id, Press::Once, &value.digest()));
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(heard.try_recv().is_err(), "the call still waits");
+
+    let pressed =
+        answered(&fills, &audited, &press(id, Press::Once, &code.digest())).expect("allowed");
+    let Pressed::Done { said } = pressed else {
+        panic!("{pressed:?}");
+    };
+    assert!(said.contains("A 2FA code from dash-2fa"), "{said}");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
+    // Audited as the seed's approval for that one site, as any key's is (SF-11).
+    assert_eq!(
+        audited.into_inner(),
+        [(
+            "secret-fill".to_owned(),
+            "qa/dash-2fa -> https://dash.example.test".to_owned(),
+            true
+        )]
+    );
 }

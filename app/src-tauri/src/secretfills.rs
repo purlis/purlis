@@ -51,6 +51,8 @@ pub struct FillWait {
     /// What the person is warned of: a vault the chat's persona isn't tagged for, a field in a
     /// frame of another site than its page's.
     pub warnings: Vec<String>,
+    /// A 2FA code the seed under `key` makes, not the value itself (#5118).
+    pub code: bool,
     pub since: u64,
 }
 
@@ -74,6 +76,8 @@ impl FillWait {
             hash.update(warning.len().to_le_bytes());
             hash.update(warning.as_bytes());
         }
+        // A press on the notice of a value never allows a code, nor one on a code a value.
+        hash.update([u8::from(self.code)]);
         hash.finalize()
             .iter()
             .map(|byte| format!("{byte:02x}"))
@@ -218,6 +222,8 @@ pub struct FillAsked {
     pub target: String,
     pub vault: String,
     pub key: String,
+    /// A 2FA code the seed under `key` makes, not the value itself (#5118).
+    pub code: bool,
     pub field: FieldSaid,
     /// The address of the page the field is on, where the browser said.
     pub page: Option<String>,
@@ -293,6 +299,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<S
         page: asked.page.clone(),
         label: asked.field.label.clone(),
         warnings,
+        code: asked.code,
         since: now,
     };
     let (id, heard) = fills.raise(wait)?;
@@ -328,7 +335,12 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<S
                     "this chat is no longer open in purlis's window, so nothing was filled"
                         .to_owned()
                 })?;
-            purlis_core::secrets::brokered::fill_value(&asker, &asked.vault, &asked.key)
+            // A code is worked out from its seed here, as it is filled (#5118): the seed stays.
+            if asked.code {
+                purlis_core::secrets::brokered::fill_code(&asker, &asked.vault, &asked.key)
+            } else {
+                purlis_core::secrets::brokered::fill_value(&asker, &asked.vault, &asked.key)
+            }
         }
         Heard::Kept(reason) => Err(kept_said(&asked.key, &origin, reason.as_deref())),
         Heard::Gone => Err(NOT_ANSWERED.to_owned()),
@@ -403,10 +415,15 @@ pub fn answer(
             if !fills.end(wait.id, Heard::Allowed) {
                 return Err(NO_MORE.to_owned());
             }
+            let what = if wait.code {
+                format!("A 2FA code from {}", wait.key)
+            } else {
+                wait.key.clone()
+            };
             Ok(Pressed::Done {
                 said: format!(
-                    "Allowed once. {} goes into that one field on {}; nothing was written.",
-                    wait.key, wait.origin
+                    "Allowed once. {what} goes into that one field on {}; nothing was written.",
+                    wait.origin
                 ),
             })
         }

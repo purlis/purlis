@@ -7888,6 +7888,11 @@ export type FillShown = {
 	browser: string,
 	/**  Plain warnings, said above the choices. */
 	warnings: string[],
+	/**
+	 *  **A 2FA code the seed under `key` makes, not the value itself** (#5118): the notice says
+	 *  so, and that the seed reaches no page.
+	 */
+	code: boolean,
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */

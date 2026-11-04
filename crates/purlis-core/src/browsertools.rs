@@ -242,10 +242,16 @@ pub fn asked(name: &str, args: &Map<String, Value>) -> Result<Asked, String> {
                         .into(),
                 );
             }
+            let code = flag(args, "code")?;
             return Ok(Asked {
                 browser,
                 call_id,
-                asked: Browsing::FillSecret { target, vault, key },
+                asked: Browsing::FillSecret {
+                    target,
+                    vault,
+                    key,
+                    code,
+                },
                 changes: false,
             });
         }
@@ -783,6 +789,11 @@ fn s_fill_secret() -> Value {
                 "type": "string",
                 "description": "The name of the value in that vault (dash-api-key). Never the \
                                 value: you never see it.",
+            },
+            "code": {
+                "type": "boolean",
+                "description": "true where `key` holds a 2FA seed: purlis puts the code the \
+                                seed makes now into the field, never the seed.",
             }
         }),
         &["target", "vault", "key"],
@@ -984,7 +995,8 @@ pub const TOOLS: [Tool; 24] = [
                       notice naming the key and the site, and the call waits for their answer. \
                       purlis fills it only where the field is on the site they allowed, and the \
                       value never reaches you: it is kept out of every snapshot, find and \
-                      screenshot. To log in, use browser_login.",
+                      screenshot. For a 2FA code, name the key that holds its seed and set \
+                      `code`. To log in, use browser_login.",
         schema: s_fill_secret,
         read_only: false,
     },

@@ -27,6 +27,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod a_2fa_code_purlis_fills_is_accepted_by_the_sites_verifier;
 mod a_blanked_field_in_a_frame_the_page_transforms_is_painted_over;
 mod a_browser_opened_from_kept_logins_is_signed_in;
 mod a_browser_says_how_its_engine_ended;

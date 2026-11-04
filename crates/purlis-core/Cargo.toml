@@ -132,6 +132,14 @@ unicode-width = "0.2"
 # The keyed fingerprint `secret get` prints (`charter/secrets/fingerprint.py`): HMAC-SHA256 over
 # `sha2`, and 32 random bytes for the plane's key. Both already in this workspace's lockfile.
 hmac = "0.13"
+# A 2FA code from a seed a vault holds (#5118): TOTP is RFC 6238's HMAC over SHA-1 by default,
+# with SHA-256 and SHA-512 where a seed names them, and its seed is base32. `sha1` is RustCrypto's,
+# the family `sha2` and `hmac` above are of; `data-encoding` reads base32. MIT OR Apache-2.0 and
+# MIT; neither has a dependency the tree lacks. `url` reads an `otpauth://` address, and is in the
+# tree already.
+sha1 = "0.11"
+data-encoding = "2"
+url = "2"
 # The `keyring` vault provider (ADR 0047): the operating system's own credential store — the
 # macOS Keychain, the Secret Service on Linux, the Windows Credential Manager — through the
 # standard crate every Rust program that keeps a password there uses. Its default `v1`

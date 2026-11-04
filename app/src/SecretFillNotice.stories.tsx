@@ -20,6 +20,7 @@ const fill = {
   label: "API key",
   browser: "b1",
   warnings: [],
+  code: false,
 };
 
 export const Plain: Story = {
@@ -47,4 +48,9 @@ export const Warned: Story = {
       warnings: ["Vault prod is ops's, not qa's."],
     },
   },
+};
+
+/** A 2FA code says it is made from the seed under the key, and that the seed goes nowhere. */
+export const TwoFactorCode: Story = {
+  args: { fill: { ...fill, key: "dash-2fa", label: "Authentication code", code: true } },
 };
