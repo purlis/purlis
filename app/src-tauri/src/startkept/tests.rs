@@ -137,7 +137,7 @@ fn held_plane() -> (tempfile::TempDir, crate::planes::Planes, Arc<Held>) {
 fn details(held: &Held, reads: &Cell<u32>) {
     held.kept_start_details(|| {
         reads.set(reads.get() + 1);
-        Ok((Vec::new(), Stamp::of(held.root(), &[])))
+        Ok((Vec::new(), Stamp::before_reading(held.root())))
     })
     .expect("answered");
 }
@@ -279,4 +279,73 @@ fn a_todo_written_leaves_the_kept_answer() {
 
     details(&held, &reads);
     assert_eq!(reads.get(), 1, "served kept");
+}
+
+// ---- the stamp is taken before what it covers is read --------------------------------------
+
+/// The profiles of the project at `root` as `for_launch` reads them, with `mid_read` landing on
+/// it once they are read: a change made while the picker reads.
+fn read_then(
+    root: &Path,
+    mid_read: impl FnOnce(&Path),
+) -> impl FnOnce(&Path) -> crate::LaunchProfiles {
+    move |at: &Path| {
+        let read = purlis_core::profiles::for_launch(at);
+        mid_read(root);
+        read
+    }
+}
+
+/// A project with one profile of its own.
+fn a_project() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("a project");
+    std::fs::write(dir.path().join("charter.toml"), "").expect("a manifest");
+    std::fs::write(
+        dir.path().join(purlis_core::profiles::LOCAL_FILE),
+        "[harness.mine]\nkind = \"claude\"\ncommand = [\"claude\"]\n",
+    )
+    .expect("a profile");
+    dir
+}
+
+/// Another profile written beside it, as a chat or the person would.
+fn another_profile(root: &Path) {
+    std::fs::write(
+        root.join(purlis_core::profiles::LOCAL_FILE),
+        "[harness.mine]\nkind = \"claude\"\ncommand = [\"claude\"]\n\n\
+         [harness.other]\nkind = \"claude\"\ncommand = [\"claude\"]\n",
+    )
+    .expect("another profile");
+}
+
+#[test]
+fn a_profile_changed_while_the_first_answer_reads_breaks_its_stamp() {
+    let project = a_project();
+    let root = project.path();
+
+    let (_first, stamp) =
+        crate::start_first_stamped(root, read_then(root, another_profile)).expect("read");
+
+    assert!(
+        !stamp.holds(),
+        "an answer read before the change must not be kept under a stamp taken after it"
+    );
+}
+
+#[test]
+fn a_profile_changed_while_the_details_read_breaks_their_stamp() {
+    let project = a_project();
+    let root = project.path();
+
+    let (_details, stamp) = crate::start_details_stamped(
+        root,
+        read_then(root, another_profile),
+        &purlis_core::sandbox::Machine::this(),
+        &|_| true,
+    );
+
+    assert!(
+        !stamp.holds(),
+        "details read before the change must not be kept under a stamp taken after it"
+    );
 }
