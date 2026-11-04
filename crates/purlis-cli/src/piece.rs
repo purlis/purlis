@@ -147,8 +147,8 @@ pub enum WorktreeCommand {
     /// uncommitted changes, every commit on its base or carried there by a squash merge, no
     /// ignored files but a build's folders and links, its task ended, no open chat holding it,
     /// and no other folder linking into it. A folder that links into another goes first. Each
-    /// removed folder's local branch is deleted. Every folder kept is listed with why. In a
-    /// chat the app runs it, from the workspace's folder or the project root.
+    /// removed folder's local branch is deleted. Every folder kept is listed with why, and the
+    /// folder you stand in is always kept. In a chat the app runs it.
     Prune {
         /// Only this repo's folders (default: every repo of the workspace).
         repo: Option<String>,
@@ -407,7 +407,14 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                 return Ok(1);
             }
             // Without the app, which chats are open cannot be told: a folder a chat holds is
-            // kept, in a chat and at the person's own terminal alike.
+            // kept, in a chat and at the person's own terminal alike. The folder this command
+            // stands in is kept too.
+            let stands_in = purlis_core::worktree::locate(&root, &here.cwd).map(|at| {
+                purlis_core::finished::Folder {
+                    repo: at.repo,
+                    piece: at.piece,
+                }
+            });
             purlis_core::prune::prune(
                 &purlis_core::prune::Asked {
                     ws: &ws,
@@ -419,6 +426,7 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                     who: &who,
                     live: None,
                     brokered: false,
+                    stands_in: stands_in.as_ref(),
                 },
                 &root,
                 now,

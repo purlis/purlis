@@ -91,8 +91,8 @@ purlis worktree prune --dry-run        # every finished folder of the workspace,
   for a task goes the same way once its task has ended and no other folder links into it;
   otherwise the refusal says why and sends you to its Changes tab. `--delete-branch` deletes a
   squash-landed branch too. `--force` is the person's: ask them to remove it from the window.
-- **`prune` removes every finished folder of the workspace**, task folders and plain ones, from
-  the workspace folder: nothing uncommitted, every commit on its base or squash-landed, its task
+- **`prune` removes every finished folder of the workspace**, task folders and plain ones, but
+  never the one you stand in: nothing uncommitted, every commit on its base or squash-landed, its task
   ended, no open chat holding it, no folder linking into it. Each one's branch goes with it
   (`--keep-branches` keeps them). Run `--dry-run` first: it lists what would go and why each
   other folder stays. Where purlis's tools are offered, the

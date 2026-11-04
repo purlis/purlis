@@ -469,7 +469,8 @@ const WORKTREE_REMOVE: &str = "worktree remove";
 /// pre-allowed by its spelling on the same terms.
 const WORKTREE_PRUNE: &str = "worktree prune";
 
-/// The command `own` names, for a sentence: `dispatch`, `handoff`, `commit` or `update`.
+/// The command `own` names, for a sentence: `dispatch`, `handoff`, `commit`, `update`,
+/// `removal` or `prune`.
 fn called(own: &str) -> &str {
     match own {
         WORKTREE_COMMIT => "commit",

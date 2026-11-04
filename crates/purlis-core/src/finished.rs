@@ -141,7 +141,9 @@ fn detached_on_its_base(plane: &Path, ws: &str, repo: &str, path: &Path) -> bool
         }
         bases.push(remote);
     }
-    if let Some(own) = read(&["symbolic-ref", "-q", "HEAD"]) {
+    if bases.is_empty()
+        && let Some(own) = read(&["symbolic-ref", "-q", "HEAD"])
+    {
         bases.push(own);
     }
     let Some(head) = git::run(path, &["rev-parse", "--verify", "-q", "HEAD"], git::READ)
@@ -182,32 +184,56 @@ pub struct Link {
     pub into: Folder,
 }
 
+/// The branch folders of a workspace, of every repo, as git lists them.
+#[derive(Debug, Clone, Default)]
+pub struct Listed {
+    /// Every repo of the workspace, by name.
+    pub repos: Vec<String>,
+    /// Each folder, and whether only git's record of it is left (its folder is gone).
+    pub folders: Vec<(Folder, bool)>,
+    /// The repos whose folders git would not list, and why.
+    pub unread: Vec<(String, String)>,
+}
+
+/// **Every branch folder of `ws`**, of every repo, sorted; `Err` where the workspace cannot be
+/// read at all.
+pub fn folders(plane: &Path, ws: &str) -> Result<Listed, String> {
+    let clones = crate::repos::clones(plane, ws).map_err(|why| why.to_string())?;
+    let mut listed = Listed::default();
+    for repo in clones.repos {
+        match worktree::list(plane, ws, &repo.name) {
+            Ok(found) => listed.folders.extend(found.into_iter().map(|p| {
+                (
+                    Folder {
+                        repo: repo.name.clone(),
+                        piece: p.piece,
+                    },
+                    p.prunable.is_some(),
+                )
+            })),
+            Err(why) => listed.unread.push((repo.name.clone(), why.to_string())),
+        }
+        listed.repos.push(repo.name);
+    }
+    listed.folders.sort();
+    Ok(listed)
+}
+
 /// **Every link between the branch folders of `ws`**, of every repo: a symbolic link git
 /// lists as untracked or ignored in one folder whose target is inside another. A folder links
-/// into itself as it likes. Only the paths `git status` names are read, so a link inside an
-/// ignored folder (a `node_modules/.bin`) is not one.
+/// into itself as it likes. An untracked folder is read file by file; an ignored one is not
+/// read into, so a link inside it (a `node_modules/.bin`) is not one.
 pub fn links(plane: &Path, ws: &str) -> Vec<Link> {
-    let Ok(clones) = crate::repos::clones(plane, ws) else {
-        return Vec::new();
-    };
-    let mut folders: Vec<(Folder, PathBuf)> = Vec::new();
-    for repo in clones.repos {
-        for p in worktree::list(plane, ws, &repo.name).unwrap_or_default() {
-            if p.prunable.is_some() {
-                continue;
-            }
-            let Ok(real) = std::fs::canonicalize(&p.path) else {
-                continue;
-            };
-            folders.push((
-                Folder {
-                    repo: repo.name.clone(),
-                    piece: p.piece,
-                },
-                real,
-            ));
-        }
-    }
+    let folders: Vec<(Folder, PathBuf)> = folders(plane, ws)
+        .map(|listed| listed.folders)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(_, gone)| !gone)
+        .filter_map(|(folder, _)| {
+            let path = worktree::path_for(plane, ws, &folder.repo, &folder.piece).ok()?;
+            Some((folder, std::fs::canonicalize(path).ok()?))
+        })
+        .collect();
     let mut found = Vec::new();
     for (from, at) in &folders {
         for target in link_targets(at) {
@@ -233,7 +259,13 @@ pub fn links(plane: &Path, ws: &str) -> Vec<Link> {
 fn link_targets(at: &Path) -> Vec<PathBuf> {
     let Ok(seen) = git::run(
         at,
-        &["status", "--porcelain", "-z", "--ignored=matching"],
+        &[
+            "status",
+            "--porcelain",
+            "-z",
+            "--untracked-files=all",
+            "--ignored=matching",
+        ],
         git::READ,
     ) else {
         return Vec::new();

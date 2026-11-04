@@ -13,14 +13,12 @@ use crate::support;
 
 use std::path::{Path, PathBuf};
 
-use purlis_core::dispatchplace::{self, Repo};
-use purlis_core::dispatchrecord;
 use purlis_core::piececlaim::Live;
 use purlis_core::pieces::{self, Event, Who};
 use purlis_core::prune::{self, Asked, Asker};
-use purlis_core::repocmd::Say;
 use purlis_core::worktree::git::Isolated;
 
+use support::folders::{excluding, has_branch, spoken, task_folder};
 use support::git;
 
 /// A plain folder `name`, cut from the clone's HEAD as the terminal cuts one.
@@ -40,66 +38,6 @@ fn plain(f: &support::Fixture, name: &str) -> PathBuf {
     );
     assert_eq!(code, 0, "{name} was not cut");
     f.workspace().join(".worktrees").join(&f.repo).join(name)
-}
-
-/// A folder cut for the task `task`, its record stored, ended or still running: its folder,
-/// piece and branch.
-fn task(f: &support::Fixture, task: &str, ended: bool) -> purlis_core::chatpiece::Cut {
-    let id = dispatchrecord::mint();
-    let repo = Repo {
-        workspace: f.ws.clone(),
-        repo: f.repo.clone(),
-        piece: None,
-        from_default: false,
-    };
-    let cut = dispatchplace::cut(&f.plane, &repo, task, &id, &Isolated::default()).expect("cut");
-    use dispatchrecord::{Asker, ChatRef, Mode, Opening, Place, Worker, Worktree};
-    let chat = |number: u32, name: &str| ChatRef {
-        chat: number,
-        id: None,
-        name: name.to_owned(),
-        persona: None,
-    };
-    let now = chrono::Utc::now();
-    dispatchrecord::open_as(
-        &f.plane,
-        id.clone(),
-        Opening {
-            mode: Mode::Task,
-            asker: Asker {
-                chat: chat(1, "steward 1"),
-                workspace: Some(cut.workspace.clone()),
-                by_person: false,
-                session_record: None,
-            },
-            persona: None,
-            worker: Worker {
-                chat: chat(7, task),
-                harness: None,
-                profile: None,
-                session_record: None,
-            },
-            task: Some(task.to_owned()),
-            place: Place {
-                workspace: Some(cut.workspace.clone()),
-                folder: None,
-                worktree: Some(Worktree {
-                    repo: cut.repo.clone(),
-                    piece: cut.piece.clone(),
-                    branch: Some(cut.branch.clone()),
-                    removed: None,
-                }),
-            },
-            brief: "b".to_owned(),
-            report_owed: true,
-        },
-        now,
-    )
-    .expect("a record");
-    if ended {
-        dispatchrecord::close(&f.plane, &id, dispatchrecord::Ending::default(), now).unwrap();
-    }
-    cut
 }
 
 /// Runs the prune from the person's terminal, and what it said.
@@ -132,45 +70,13 @@ fn pruned_by(
             who,
             live,
             brokered: false,
+            stands_in: None,
         },
         &f.plane,
         chrono::Utc::now(),
         &mut |line| said.push(spoken(&line)),
     );
     (code, said.join("\n"))
-}
-
-fn spoken(line: &Say) -> String {
-    match line {
-        Say::Info(t) | Say::Done(t) | Say::Warn(t) | Say::Fail(t) | Say::Plain(t) => t.to_string(),
-        Say::Out(t) => t.clone(),
-    }
-}
-
-fn has_branch(clone: &Path, branch: &str) -> bool {
-    let mut ask = support::unsigned();
-    ask.arg("-C").arg(clone).args([
-        "show-ref",
-        "--verify",
-        "--quiet",
-        &format!("refs/heads/{branch}"),
-    ]);
-    purlis_core::forklock::output(&mut ask)
-        .expect("git runs")
-        .status
-        .success()
-}
-
-/// `rule` added to what the clone's git ignores, in every folder of it.
-fn excluding(f: &support::Fixture, rule: &str) {
-    use std::io::Write;
-    std::fs::create_dir_all(f.clone.join(".git/info")).unwrap();
-    let mut exclude = std::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(f.clone.join(".git/info/exclude"))
-        .unwrap();
-    writeln!(exclude, "{rule}").unwrap();
 }
 
 #[test]
@@ -182,8 +88,8 @@ fn every_finished_folder_goes_with_its_branch_and_every_other_stays_saying_why()
     f.commit(&ahead, "only-here");
     let dirty = plain(&f, "dirty");
     std::fs::write(dirty.join("README.md"), "changed\n").unwrap();
-    let ended = task(&f, "ended task", true);
-    let running = task(&f, "running task", false);
+    let ended = task_folder(&f, "ended task", true);
+    let running = task_folder(&f, "running task", false);
 
     let (code, said) = pruned(&f, false, false);
 
@@ -288,7 +194,7 @@ fn a_linking_folder_goes_before_the_folder_it_links_into_and_one_that_stays_keep
     std::fs::write(f.clone.join("app/package.json"), "{}\n").unwrap();
     git(&f.clone, &["add", "app/package.json"]);
     git(&f.clone, &["commit", "-q", "-m", "app"]);
-    let shared = task(&f, "shares its install", true);
+    let shared = task_folder(&f, "shares its install", true);
     std::fs::create_dir_all(shared.path.join("app/node_modules/left-pad")).unwrap();
     let flakes = plain(&f, "flakes");
     std::os::unix::fs::symlink(
@@ -297,7 +203,7 @@ fn a_linking_folder_goes_before_the_folder_it_links_into_and_one_that_stays_keep
     )
     .unwrap();
     // A second pair, whose linking folder is not finished: both stay.
-    let kept_into = task(&f, "kept for a link", true);
+    let kept_into = task_folder(&f, "kept for a link", true);
     std::fs::create_dir_all(kept_into.path.join("app/node_modules")).unwrap();
     let dirty = plain(&f, "dirty");
     std::fs::write(dirty.join("README.md"), "changed\n").unwrap();
@@ -412,7 +318,7 @@ fn pruned_for_a_chat(
 }
 
 #[test]
-fn the_app_prunes_for_a_chat_from_the_workspace_and_never_from_inside_a_branch_folder() {
+fn the_app_prunes_for_a_chat_and_keeps_the_folder_the_chat_stands_in() {
     purlis_core::unsteered!();
     use purlis_core::hookwire::Answer;
     let f = support::plane_with_clone("api");
@@ -420,15 +326,53 @@ fn the_app_prunes_for_a_chat_from_the_workspace_and_never_from_inside_a_branch_f
     let here = plain(&f, "here");
 
     let (answer, said) = pruned_for_a_chat(&f, &here, false);
-    assert!(matches!(answer, Answer::No { .. }), "{said}");
+    assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
+    assert!(!done.exists(), "{said}");
+    assert!(!has_branch(&f.clone, "done"), "{said}");
     assert!(
-        said.contains("stands in branch folder api · here"),
+        said.contains("Kept api · here: this chat stands in it"),
         "{said}"
     );
-    assert!(done.is_dir() && here.is_dir());
+    assert!(here.is_dir());
 
     let (answer, said) = pruned_for_a_chat(&f, &f.workspace(), false);
     assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
-    assert!(!done.exists() && !here.exists(), "{said}");
-    assert!(!has_branch(&f.clone, "done"), "{said}");
+    assert!(!here.exists(), "{said}");
+}
+
+#[test]
+fn a_folder_already_gone_is_listed_with_how_to_clear_it() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let gone = plain(&f, "gone");
+    std::fs::remove_dir_all(&gone).unwrap();
+
+    let (code, said) = pruned(&f, true, false);
+
+    assert_eq!(code, 0, "{said}");
+    assert!(
+        said.contains("Kept api · gone: its folder is already gone")
+            && said.contains("`purlis worktree remove api gone`"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_link_inside_an_untracked_folder_still_keeps_what_it_links_into() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let into = plain(&f, "into");
+    let linking = plain(&f, "linking");
+    // An untracked folder, so the linking folder is not finished, with a link one level down.
+    std::fs::create_dir_all(linking.join("scratch")).unwrap();
+    std::fs::write(linking.join("scratch/notes.txt"), "mine\n").unwrap();
+    std::os::unix::fs::symlink(into.join("README.md"), linking.join("scratch/pointer")).unwrap();
+
+    let (_, said) = pruned(&f, false, false);
+
+    assert!(into.is_dir(), "{said}");
+    assert!(
+        said.contains("Kept api · into: api · linking links into it"),
+        "{said}"
+    );
 }

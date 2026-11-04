@@ -48,7 +48,7 @@ folder is removed by the app*) applied it. It adds a term, **finished folder**, 
    that links into another goes before it. Each removed folder's local branch is deleted, unless
    `--keep-branches`. `--dry-run` lists what would go and every folder kept, with its reason. In a
    chat the app runs it, by the route a chat's `remove` takes (ADR 0067, amended 2026-10-30):
-   from the workspace's folder or the project root, never from inside a branch folder, each
+   from anywhere in the chat's workspace, keeping the branch folder the chat stands in, each
    folder's git run in its checked clone and folder, each removal held to its claim. A Claude
    Code chat carries `Bash(purlis worktree prune)` and `Bash(purlis worktree prune *)` among its
    own-scope rules, alone in its call as a removal is. Without the app, which chats are open

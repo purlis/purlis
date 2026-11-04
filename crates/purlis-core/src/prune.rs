@@ -42,6 +42,9 @@ pub struct Asker<'a> {
     /// For a chat's prune the app runs: each folder's git is run in the checked clone and
     /// folder, as a chat's removal is ([`crate::gitbroker::in_a_checked_folder`]).
     pub brokered: bool,
+    /// The branch folder the asking chat stands in, which is never pruned for it: removing it
+    /// would take the chat's folder from under it.
+    pub stands_in: Option<&'a Folder>,
 }
 
 /// A folder that may go, and how its commits stand.
@@ -61,57 +64,59 @@ pub fn prune(
 ) -> u8 {
     let ws = asked.ws;
     say(Say::Info(format!("workspace: {ws}").into()));
-    let repos: Vec<String> = match asked.repo {
-        Some(repo) => vec![repo.to_owned()],
-        None => match crate::repos::clones(plane, ws) {
-            Ok(found) => found.repos.into_iter().map(|r| r.name).collect(),
-            Err(why) => {
-                say(Say::Fail(why.to_string().into()));
-                return 1;
-            }
-        },
+    let listed = match finished::folders(plane, ws) {
+        Ok(listed) => listed,
+        Err(why) => {
+            say(Say::Fail(why.into()));
+            return 1;
+        }
     };
+    if let Some(repo) = asked.repo
+        && !listed.repos.iter().any(|name| name == repo)
+    {
+        say(Say::Fail(
+            format!("'{repo}' is not a repo of workspace '{ws}'. Nothing was removed.").into(),
+        ));
+        return 1;
+    }
     let mut code = 0;
+    for (repo, why) in &listed.unread {
+        say(Say::Fail(format!("{repo}: {why}").into()));
+        code = 1;
+    }
     let mut kept: Vec<(Folder, String)> = Vec::new();
     let mut candidates: Vec<Candidate> = Vec::new();
-    let mut every: Vec<Folder> = Vec::new();
-    for repo in &repos {
-        let found = match worktree::list(plane, ws, repo) {
-            Ok(found) => found,
-            Err(why) => {
-                say(Say::Fail(format!("{repo}: {why}").into()));
-                code = 1;
-                continue;
-            }
+    for (folder, gone) in &listed.folders {
+        if asked.repo.is_some_and(|repo| repo != folder.repo) {
+            continue;
+        }
+        let judged = if *gone {
+            Err(format!(
+                "its folder is already gone, and only git's record of it is left: `purlis \
+                 worktree remove {} {}` clears it",
+                folder.repo, folder.piece
+            ))
+        } else if asker.stands_in == Some(folder) {
+            Err("this chat stands in it".to_owned())
+        } else {
+            why_kept(plane, ws, folder, asker)
         };
-        for piece in found.into_iter().filter(|p| p.prunable.is_none()) {
-            let folder = Folder {
-                repo: repo.clone(),
-                piece: piece.piece.clone(),
-            };
-            every.push(folder.clone());
-            match why_kept(plane, ws, &folder, asker) {
-                Ok(commits) => candidates.push(Candidate { folder, commits }),
-                Err(why) => kept.push((folder, why)),
-            }
+        match judged {
+            Ok(commits) => candidates.push(Candidate {
+                folder: folder.clone(),
+                commits,
+            }),
+            Err(why) => kept.push((folder.clone(), why)),
         }
     }
     // Links are read across the whole workspace: a folder of another repo may link in too.
     let links = finished::links(plane, ws);
-    let mut remaining: Vec<Folder> = every;
-    for repo in crate::repos::clones(plane, ws)
-        .map(|found| found.repos)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|r| !repos.contains(&r.name))
-    {
-        for p in worktree::list(plane, ws, &repo.name).unwrap_or_default() {
-            remaining.push(Folder {
-                repo: repo.name.clone(),
-                piece: p.piece,
-            });
-        }
-    }
+    let mut remaining: Vec<Folder> = listed
+        .folders
+        .iter()
+        .filter(|(_, gone)| !gone)
+        .map(|(folder, _)| folder.clone())
+        .collect();
     let mut removed = 0;
     loop {
         let ready: Vec<usize> = candidates
@@ -184,7 +189,8 @@ fn why_kept(plane: &Path, ws: &str, folder: &Folder, asker: &Asker<'_>) -> Resul
         }
         Some(InFolder::Unread(id)) => {
             return Err(format!(
-                "a dispatch record purlis cannot read ({id}.json) names it"
+                "a dispatch record purlis cannot read ({id}.json) names it: if no task works \
+                 there, move that file out of its folder"
             ));
         }
         _ => {}
@@ -256,7 +262,11 @@ fn remove_one(
                 lines.push(Say::Done(format!("Deleted branch {branch}").into()));
             } else if delete {
                 lines.push(Say::Warn(
-                    format!("Kept branch {branch}: git would not delete it.").into(),
+                    format!(
+                        "Kept branch {branch}: git would not delete it. See what only it holds \
+                         with `git log {branch} --not --remotes`."
+                    )
+                    .into(),
                 ));
             }
         }

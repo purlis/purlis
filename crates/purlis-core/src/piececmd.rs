@@ -543,7 +543,7 @@ pub fn ignored_would_go(plane: &Path, ws: &str, repo: &str, piece: &str) -> Opti
         Ok(kept) => kept,
         Err(why) => {
             return Some(format!(
-                "{why}. Ask the person to remove it from the window"
+                "{why}. Nothing was removed. Ask the person to remove it from the window"
             ));
         }
     };
@@ -584,7 +584,7 @@ pub(crate) fn ignored_kept(
     let Some(ignored) = risk.ignored else {
         return Some(Err(format!(
             "git would not say which files it ignores in {repo} · {piece}, and a removal \
-             deletes them, so nothing was removed"
+             deletes them"
         )));
     };
     let hidden = crate::guest::hidden_by_purlis(&folder);
