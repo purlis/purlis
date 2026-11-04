@@ -237,8 +237,42 @@ export function expectFocusInSight(): void {
   }
   throw new Error(
     `the focus is on ${describe(focused)}, and none of it is in sight` +
-      (covering.size > 0 ? `: it is under ${[...covering].join(", ")}` : ""),
+      (covering.size > 0 ? `: it is under ${[...covering].join(", ")}` : "") +
+      ` (${whereItIs(seen)})`,
   );
+}
+
+/** A box, rounded, as `x,y wxh`. */
+function boxSaid(box: DOMRect): string {
+  const r = Math.round;
+  return `${r(box.x)},${r(box.y)} ${r(box.width)}x${r(box.height)}`;
+}
+
+/**
+ * **Where an element out of sight is** (#4672): its box, the window's size and scroll, and every
+ * ancestor that clips or scrolls it, with that ancestor's box and scroll. So one failure says
+ * whether the window is too small, a frame did not scroll, or a frame scrolled the wrong way.
+ */
+function whereItIs(element: Element): string {
+  const said = [
+    `its box ${boxSaid(element.getBoundingClientRect())}`,
+    `the window ${window.innerWidth}x${window.innerHeight} scrolled ${Math.round(window.scrollX)},${Math.round(window.scrollY)}`,
+  ];
+  for (let at = element.parentElement; at !== null; at = at.parentElement) {
+    if (at.scrollHeight <= at.clientHeight && at.scrollWidth <= at.clientWidth) continue;
+    const style = getComputedStyle(at);
+    if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+    const part = at.getAttribute("data-part");
+    const scope = at.getAttribute("data-scope");
+    const name =
+      (scope !== null ? `${scope}${part !== null ? `.${part}` : ""}` : null) ??
+      at.getAttribute("data-testid") ??
+      at.tagName.toLowerCase();
+    said.push(
+      `${name} ${boxSaid(at.getBoundingClientRect())} scrolled ${Math.round(at.scrollLeft)},${Math.round(at.scrollTop)} of ${at.scrollWidth}x${at.scrollHeight}`,
+    );
+  }
+  return said.join("; ");
 }
 
 /**

@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { browser, expect, $ } from "@wdio/globals";
-import { built, READY, theRunsEnvironment } from "../harness.js";
+import { A_TURN, aTurnIsWanted, built, READY, theRunsEnvironment } from "../harness.js";
 import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
@@ -75,22 +75,22 @@ async function gauges(): Promise<string[]> {
 }
 
 /**
- * A hook, as Claude Code would fire it for this chat: in the run's own environment, as the app
- * hands its chats, so the fenced `purlis` keeps its machine store inside the run's tree and never
- * opens the runner's own (charter-app#129).
+ * **A turn starting in the chat's pane** (#5126): the harness is typed {@link A_TURN}, and fires
+ * the turn's `UserPromptSubmit` from inside the chat, where the hook channel admits it. A hook
+ * this spec ran itself carried no chat token and came from outside the chat's program, so the
+ * channel dropped it ("did not carry that chat's token") and the chat never moved: the pane drew
+ * the record only when its read 2 s after the chat's last move (`AFTER_A_MOVE_MS`) came after
+ * the record, which a slow runner missed.
  */
-function hook(event: string, plane: string, chat: string, socket: string, sid: string): void {
-  execFileSync(built("charter"), ["hook", event], {
-    input: JSON.stringify({ session_id: sid }),
-    env: {
-      ...process.env,
-      ...theRunsEnvironment(plane),
-      CHARTER_CHAT: chat,
-      CHARTER_HOOK_SOCKET: socket,
-      CLAUDE_CODE_SESSION_ID: sid,
-      CLAUDE_PID: String(process.pid),
-    },
+async function aTurnStarts(plane: string, chat: string): Promise<void> {
+  aTurnIsWanted(plane, chat);
+  // This chat's own pane: panes of tabs an earlier spec left open may still be in the page.
+  const keyboard = await $(`[data-testid="pane"][data-session="${chat}"] .xterm-helper-textarea`);
+  await keyboard.waitForExist({
+    timeout: 10_000,
+    timeoutMsg: `chat ${chat} has no pane to type in`,
   });
+  await keyboard.addValue(`${A_TURN}\n`);
 }
 
 describe("a chat's context gauge", () => {
@@ -148,7 +148,6 @@ describe("a chat's context gauge", () => {
     if (settingsFile === undefined) throw new Error("no settings were written for the new chat");
     const chat = settingsFile.slice("settings-".length);
     const sid = now[`session-${chat}`];
-    const socket = now[`socket-${chat}`];
     const settings = JSON.parse(now[settingsFile]) as {
       statusLine?: { type: string; command: string };
       enabledPlugins?: Record<string, boolean>;
@@ -205,8 +204,9 @@ describe("a chat's context gauge", () => {
       }),
       env: { ...process.env, ...theRunsEnvironment(plane) },
     });
-    // The turn starting, which is when the pane reads its record again.
-    hook("userpromptsubmit", plane, chat, socket, sid);
+    // The turn starting, which is when the pane reads its record again: after the record is
+    // written, so the read it brings finds it.
+    await aTurnStarts(plane, chat);
 
     // 2 and 3: filed under the conversation the board holds, and drawn in the pane.
     await browser.waitUntil(async () => (await gauges()).some((g) => g.includes("ctx 42%")), {
