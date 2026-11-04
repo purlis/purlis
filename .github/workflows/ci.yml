@@ -2130,7 +2130,7 @@ jobs:
   # so a fetch that fails doesn't block an unrelated merge (#5176 makes it required once it has
   # run steadily).
   pool-setup-scenario:
-    name: scenario tests (ubuntu-24.04, Pool setup on Docker)
+    name: scenario tests (${{ matrix.os }}, Pool setup on Docker)
     needs: changes
     # Evidence until #5176: its red stays on the job and leaves the `ci` run green, so a fetch that
     # fails on main's push doesn't stop `tools/land.mjs` or the dev build.
