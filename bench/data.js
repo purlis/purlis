@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793802795967,
+  "lastUpdate": 1793804355437,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39018,6 +39018,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8169265,
             "unit": "ms",
             "extra": "median of 5 runs: 100.991, 101.705, 101.817, 101.920, 102.079 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "96ced6bbec70eff997de614d1d2aa52a5bcd4683",
+          "message": "Pool setup: parity drives the whole of Try it, and a scenario walks the Docker path (#4977, #4985) (#5169)\n\n* Pool setup: the parity suite drives the whole of Try it on a Docker pool (#4977)\n\nThe parity test now presses Try it as the window does (poolsetuptab::try_it, the command's own\nbody): a project held as the window holds it, its chats routed as the settings say, a workspace\nset to this machine, and a Claude Code profile whose harness reports SessionStart two seconds\nafter it is spawned and only in a container. Try it must choose that profile, route the start to\nthe pool by its own runs_on, hear the hook, close the chat and keep tried in pool-setup.json.\nThe harness's wait makes Try it look for the chat in the host's running list before the hook.\n\nThe parity job's scope now covers poolsetuptab.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Red proof, reverted next: Try it's chat names no pool (#4977)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Pool setup: Try it takes this machine's docker, and the parity gate's copy names poolsetuptab (#4977)\n\ntry_it is handed the docker the window found, so the parity test hands it the pool's own,\nwhose settings are kept in its config home: a fenced test build never reaches for the\nperson's data home. tools/ci-scope.mjs holds the parity job's paths word for word.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Pool setup: a scenario run walks the Docker path in the real window on Linux (#4985)\n\nA third leg of scenario-linux has Docker and the runner image this build makes, pushed by digest\nto a registry of the job's own, whose claude says it is signed in and reports SessionStart as\nClaude Code's hook does. Its own run (wdio.pool.conf.ts) walks Pool setup from Add a pool to\nTry it's last screen, pressing each step's main button by its name, and fails if any tab but Pool\nsetup and Try it's chat opens on the way. The base run skips *.pool.e2e.ts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Pool setup: Try it's parity test passes over a default that can't report its start (#4977)\n\nThe project's default is a Codex profile, whose harness doesn't say when its chat started, so\nTry it has to choose the Claude Code one; the pool keeps only that one, as its Sign-ins step\ndoes. The harness waits five seconds before its hook, well past Try it's first look at the\nhost's running list, and the project is held with this machine's config home, as the window\nholds it. From the standards and spec review.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Pool setup: the Docker walk is a job of its own, gated, and counts each tab it sees added (#4985)\n\nThe walk runs as scenario tests (ubuntu-24.04, Pool setup on Docker), on main's push and on a\npull request its pool-setup gate lets in, and isn't required until it has run steadily (#5176):\nits image build fetches from the network, and no other pull request should wait on that. The\nspec waits on Try it's last heading by its name, notes every tab element the strip adds (so a\nsecond tab of a name already there counts), checks the watch saw Pool setup's own tab, and\nreads the strip through reach.ts's one TABS. The stress job's filters skip the run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Revert the red proof: Try it's chat names its pool again (#4977)\n\nThe parity job failed on 991241ac for the reason the test gives: Try it passed with its chat on\nthis machine, and \"the chat ran on the pool's runner, by the start's choice alone\" found no\nmark on the runner (run 41816448480).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Pool setup: the Docker walk is evidence until it is required (#4985)\n\nNot required, so its red stays on the job and leaves ci on main green (tools/ci-push-jobs.mjs),\nas the outcome bars are, until #5176.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Pool setup: Try it's parity test writes its profiles whole and is a listed fixture (#4977)\n\nThe test writes the project's local profiles in one go rather than reading the file back, as\nonly the settings and profiles modules read it by name, and app/src/writeSites.json lists its\nwrite of this machine's store as the other parity fixtures are.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Pool setup: the Docker walk's runner keeps its stand-in as an installed pinned Claude Code (#4985)\n\nPool setup refuses a team's image that carries a harness on PATH, as a runner fetches the version\nits profile pins. So the image keeps its stand-in where a runner keeps a pinned version it has\ninstalled (<data>/harnesses/claude/<version>/claude, filled into the home volume from the image),\nand the desktop's profile is pinned to that version: the runner runs it and fetches nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Pool setup: the Docker walk's job is named by its matrix, so nothing is appended (#4985)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Red proof, reverted next: the walk's stand-in never reports its start (#4985)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n* Revert the red proof: the walk's stand-in reports its start again (#4985)\n\nThe walk failed on 63890adf for the reason it gives: \"Try it never passed\", its chat on\nscenario-pool not seen to start (job 126553843374).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6K03V6APTWP1XE1KPES6J1T\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T14:19:16Z",
+          "tree_id": "9d93c8008ada2e762f9e553dd0547944a39156e0",
+          "url": "https://github.com/purlis/purlis/commit/96ced6bbec70eff997de614d1d2aa52a5bcd4683"
+        },
+        "date": 1793804350130,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6780649999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.652, 0.666, 0.678, 0.696, 0.709 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.503391999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.356, 16.450, 16.503, 16.675, 16.703 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4992845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.812, 102.489, 102.499, 102.630, 102.719 ms"
           }
         ]
       }
