@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793783601074,
+  "lastUpdate": 1793788808990,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -38724,6 +38724,48 @@ window.BENCHMARK_DATA = {
             "value": 101.76453599999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.221, 100.955, 101.765, 101.991, 102.138 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "35250ac244373a3aceb770c45556c9a544a6dea6",
+          "message": "Secret ask: open asks survive a restart (#5079); runner chats ask on the desktop, values only by existing routes (#5077) (#5123)\n\n* Secret ask: an open ask survives an app restart, and its chats are nudged on its answer (#5079)\n\nOpen Secret asks are kept in <state>/app/secret-asks.json (Clone state), names\nmasked as a task's open question is; an ask a name of which masking would change\nis not kept. Read back as the project opens with every waiter to be nudged; a\nlaunch that read its record of chats drops chats it did not bring back. Declines\nare not kept: they last the app's run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HG2M3WP6K56S1R0KA5ZWVB\nPurlis-Persona: steward\n\n* Secret ask: a runner chat's missing key asks on the desktop, and reaches the runner only by its run's Allow (#5077)\n\nA runner chat's declared tool whose key this desktop's vault does not hold\nraises a Secret ask before the run's Allow (key names listed, no value read).\nFilled, the fill is stored on the desktop and the run asks its Allow as every\nrunner run does; the value goes by hand_values and is recorded as\nsecret.forwarded. No new route. A runner not shown to be the person's own (or\nwith no pools kept here) is told 'declined <vault>/<key>: runner can't receive\nsecrets' at once; the ask stays, marked, for the person to store the key for\nthis machine's chats, and that chat is never nudged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6HG2M3WP6K56S1R0KA5ZWVB\nPurlis-Persona: steward\n\n* Secret ask review fixes: a refused statement is not yours, numbers dealt afresh wait on nothing (#5077, #5079)\n\n- A cluster statement that does not vouch for the runner (NotVouched: untrusted signature,\n  another cluster, claim or requester) is NotYours, so its chat is declined as a runner that\n  can't receive; only a wait that ran out, or a cluster that did not answer, is Unconfirmed.\n- A launch that read no record of chats deals numbers afresh, so no kept chat number waits\n  on an ask; a start's count stays.\n- A kept file with two asks of one number opens only the first, so no fill is written\n  under the other's key.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6HG2M3WP6K56S1R0KA5ZWVB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T09:51:09Z",
+          "tree_id": "695c4d537f4675d4dc6e82b04c549a53f4158eac",
+          "url": "https://github.com/purlis/purlis/commit/35250ac244373a3aceb770c45556c9a544a6dea6"
+        },
+        "date": 1793788801220,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.695319,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.675, 0.680, 0.695, 0.696, 0.697 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.558301,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.453, 16.558, 16.558, 16.572, 16.574 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.522817,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.946, 101.473, 101.523, 102.532, 103.210 ms"
           }
         ]
       }
