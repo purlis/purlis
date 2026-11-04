@@ -151,7 +151,8 @@ const NAME = "claude claude 4";
 
 const frame = () => screen.getByTestId("pane").closest(".pane-frame") as HTMLElement;
 const head = () => frame().querySelector(".pane-head") as HTMLElement;
-const foot = () => frame().querySelector('[data-scope="pane-foot"][data-part="root"]') as HTMLElement;
+const foot = () =>
+  frame().querySelector('[data-scope="pane-foot"][data-part="root"]') as HTMLElement;
 /** The head's controls, start to end, by their names: what a screen reader tabs through. */
 const controls = () =>
   [...head().querySelectorAll(".pane-actions button")].map(

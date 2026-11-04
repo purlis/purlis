@@ -84,7 +84,11 @@ export function PaneFootGauge({
   fill?: { percent: number; tone: PaneFootTone };
 }) {
   return (
-    <span data-scope="pane-foot" data-part="gauge" data-barred={fill === undefined ? undefined : ""}>
+    <span
+      data-scope="pane-foot"
+      data-part="gauge"
+      data-barred={fill === undefined ? undefined : ""}
+    >
       <span data-scope="pane-foot" data-part="label">
         {label}
       </span>{" "}

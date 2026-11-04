@@ -1096,6 +1096,25 @@ and its chat keeps running in the sidebar.
 _Avoid_: tile, frame, terminal (a pane may hold a view), split (that is two panes and the line
 between them)
 
+**Pane head**:
+The line above a pane's terminal that says which chat it shows, what the chat is doing and what
+the person can do to it now: the persona with its state, the chat's name or the path to the task
+it shows, the state button, then ⋯, the bell, the splits and Close (#4760, ADR 0111).
+_Avoid_: title bar, header (unqualified), toolbar
+
+**Pane line**:
+The pane head's row of chips about the chat: its persona, its name or path, its state mark and
+the details still drawn there. It is no longer the whole head's single line: harness · workspace
+and the gauge are on the **pane foot** (ADR 0111).
+_Avoid_: top line (it is one of two), status line (that is the window's)
+
+**Pane foot**:
+The quiet line under a chat's terminal that says where the chat runs and how healthy it is:
+harness · workspace at its start, and `ctx`, its fill a thin bar under its number, then `cache`
+at its end. Only a chat's pane has one; a view, an empty pane, a shell and a one-job program do
+not. It never asks for anything (ADR 0111, #5202).
+_Avoid_: footer, status bar, gauge row
+
 **Empty pane**:
 A pane that holds nothing. It says "Nothing in this pane", how many chats are running in the
 workspace, and offers **New chat**. A strip's last tab keeps one when its last pane closes, so

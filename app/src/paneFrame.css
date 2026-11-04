@@ -443,7 +443,10 @@
   .pane-foot
   .pane-harness[data-scope="button"][data-variant="ghost"],
 .pane-foot
-  .pane-harness[data-scope="button"][data-variant="ghost"]:is([data-hovered], [data-focus-visible]) {
+  .pane-harness[data-scope="button"][data-variant="ghost"]:is(
+    [data-hovered],
+    [data-focus-visible]
+  ) {
   color: var(--text-primary);
 }
 

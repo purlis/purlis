@@ -97,9 +97,7 @@ describe("the gauge, on the pane foot (#5202)", () => {
     expect(screen.getByTestId("chat-gauge").textContent).not.toContain("cold");
 
     rerender(<ChatGauge usage={{ ...USAGE, cold: 3 }} />);
-    expect(screen.getByTestId("chat-gauge").textContent?.replace(/\s+/g, " ")).toContain(
-      "cold 3",
-    );
+    expect(screen.getByTestId("chat-gauge").textContent?.replace(/\s+/g, " ")).toContain("cold 3");
   });
 });
 

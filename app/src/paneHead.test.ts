@@ -146,7 +146,12 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
 
   it("keeps the whole foot of a chat at every width, its drops being #5206's", () => {
     for (const width of [undefined, 1200, 520, 300, 0])
-      expect(paneLinesOf("chat", width, full).foot).toEqual(["harness", "workspace", "ctx", "cache"]);
+      expect(paneLinesOf("chat", width, full).foot).toEqual([
+        "harness",
+        "workspace",
+        "ctx",
+        "cache",
+      ]);
   });
 
   it("draws only the facts a chat has on the head's line", () => {

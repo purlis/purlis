@@ -238,13 +238,6 @@ function Pane({
             >
               11 skills
             </Button>
-            <Button size="sm" variant="ghost" className="pane-harness">
-              Claude Code
-            </Button>
-            <span className="chat-gauge" data-testid="chat-gauge">
-              <span className="gauge-label">ctx</span> 5% <span className="gauge-label">cache</span>{" "}
-              100%
-            </span>
           </div>
         </PaneHead>
         <NoticePaneRow

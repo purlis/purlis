@@ -20,6 +20,7 @@ import { ApprovePlane } from "./ApprovePlane";
 import { ChatGauge } from "./ChatGauge";
 import type { ListedChat } from "./chatsTree";
 import { PaneHead } from "./LayoutPanes";
+import { PaneFoot, PaneFootEnd, PaneFootSeparator, PaneFootStart } from "./ui/pane-foot/PaneFoot";
 import { PaneCrumbs } from "./PaneCrumbs";
 import { fadedWordsUnderFloor } from "./theme/fadedWords";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
@@ -52,29 +53,42 @@ const PATH = [
 ];
 
 /** A pane's header line as a pane showing a task draws it: the breadcrumb, where the chat came
- *  from, its work item and its gauge, on the terminal's fill. */
+ *  from and its work item, on the terminal's fill; and its foot (#5202): harness · workspace and
+ *  the gauge, the line's quiet words. */
 function HeaderLine() {
   return (
     // A pane's size is its layout's (`container-type: size`), so the story gives it one.
-    <div className="pane-frame pane-headed" style={{ inlineSize: 900, blockSize: 120 }}>
+    <div className="pane-frame pane-headed" style={{ inlineSize: 900, blockSize: 160 }}>
       <div className="pane-top">
         <PaneHead doing={null}>
           <div className="pane-chips">
             <PaneCrumbs crumbs={{ path: PATH, elsewhere: "beta" }} onShow={() => undefined} />
             <span className="pane-from">↳ from steward 3 · ops</span>
             <span className="pane-work-item">#3637</span>
-            <ChatGauge
-              usage={{
-                context: { value: 42, tone: "ok" },
-                cache: { value: 88, tone: "ok" },
-                rebuilds: null,
-                turns: [],
-                cold: null,
-              }}
-            />
           </div>
         </PaneHead>
       </div>
+      <div className="pane-body" />
+      <PaneFoot className="pane-foot">
+        <PaneFootStart>
+          <span className="pane-where">
+            Claude Code
+            <PaneFootSeparator />
+            alpha
+          </span>
+        </PaneFootStart>
+        <PaneFootEnd>
+          <ChatGauge
+            usage={{
+              context: { value: 42, tone: "ok" },
+              cache: { value: 88, tone: "ok" },
+              rebuilds: null,
+              turns: [],
+              cold: null,
+            }}
+          />
+        </PaneFootEnd>
+      </PaneFoot>
     </div>
   );
 }
@@ -148,7 +162,7 @@ export const GateSeesAFade: Story = {
     if (line === null) throw new Error("the story drew no pane header");
     await expect(fadedWordsUnderFloor(line)).toEqual([]);
     for (const rule of [
-      ".pane-head > .pane-chips > :is(.chat-gauge, .pane-from, .pane-work-item, .pane-crumbs)",
+      ".pane-head > .pane-chips > :is(.pane-from, .pane-work-item, .pane-crumbs)",
       ".pane-crumbs",
     ]) {
       const fade = document.createElement("style");

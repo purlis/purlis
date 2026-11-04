@@ -10,6 +10,9 @@ tester.run("purlis/pane-foot-family", rules["pane-foot-family"], {
     { code: `<div className="pane-body">{terminal}</div>` },
   ],
   invalid: [
-    { code: `<div data-scope="pane-foot" data-part="root">x</div>`, errors: [{ messageId: "scope" }] },
+    {
+      code: `<div data-scope="pane-foot" data-part="root">x</div>`,
+      errors: [{ messageId: "scope" }],
+    },
   ],
 });

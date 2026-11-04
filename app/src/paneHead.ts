@@ -106,15 +106,7 @@ export type PaneKind = "chat" | "task" | "shell" | "oneJob";
  * foot: its skills, where it came from and its work item.
  */
 export type LinePart =
-  | "persona"
-  | "name"
-  | "crumbs"
-  | "sandbox"
-  | "mark"
-  | "markWord"
-  | "skills"
-  | "from"
-  | "workItem";
+  "persona" | "name" | "crumbs" | "sandbox" | "mark" | "markWord" | "skills" | "from" | "workItem";
 
 /**
  * **A part of the pane foot** (#5202, spec #5191, look A), in its drawn order: the harness and the

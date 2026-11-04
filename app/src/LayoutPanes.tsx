@@ -99,12 +99,7 @@ import { stemOf } from "./menuModel";
 import { ChatShownState } from "./ChatRows";
 import { ChatPersonaState } from "./ChatPersonaState";
 import { SandboxMark } from "./SandboxMark";
-import {
-  PaneFoot,
-  PaneFootEnd,
-  PaneFootSeparator,
-  PaneFootStart,
-} from "./ui/pane-foot/PaneFoot";
+import { PaneFoot, PaneFootEnd, PaneFootSeparator, PaneFootStart } from "./ui/pane-foot/PaneFoot";
 import { WrappingUp } from "./NeedsYou";
 import { NEW_CHAT } from "./tabFace";
 import { bellCount, bellSays, HOLDS_NOTHING, type BandHolds } from "./paneNotices";
