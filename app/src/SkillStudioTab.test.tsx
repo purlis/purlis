@@ -23,7 +23,10 @@ import { catalogue, SKILL_STUDIO_SHOW, type Now } from "./actions";
 import { skill, studio } from "./skillsListing.testkit";
 import { noTabs } from "./tabs";
 
-afterEach(() => {
+afterEach(async () => {
+  // Frames a test held and did not let go: run, so the next test's frames are its own.
+  await letHeldFramesGo?.();
+  letHeldFramesGo = undefined;
   cleanup();
   clearMocks();
   forgetStudio();
@@ -38,16 +41,8 @@ function answering(studio: unknown) {
 }
 
 /** Holds every animation frame asked for from here; the answer lets them go, and later ones run. */
-function holdTheFrames(): () => void {
-  const held: FrameRequestCallback[] = [];
-  const spy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((run) => {
-    held.push(run);
-    return held.length;
-  });
-  return () => {
-    spy.mockRestore();
-    for (const run of held) run(performance.now());
-  };
+function holdTheFrames(): () => Promise<void> {
+  return stepTheFrames().all;
 }
 
 /** `count` skills' names, `crowd-000` on, in the Library's order. */
@@ -77,14 +72,17 @@ function stepTheFrames(): { next: () => Promise<void>; all: () => Promise<void> 
       for (const run of now) run(performance.now());
       await new Promise((done) => setTimeout(done, 0));
     });
-  return {
-    next,
-    all: async () => {
-      for (let n = 0; n < 50 && held.length > 0; n++) await next();
-      spy.mockRestore();
-    },
+  const all = async () => {
+    for (let n = 0; n < 50 && held.length > 0; n++) await next();
+    spy.mockRestore();
+    for (const run of held.splice(0)) run(performance.now());
   };
+  letHeldFramesGo = all;
+  return { next, all };
 }
+
+/** The frames held by the test running, for `afterEach` to let go if it did not. */
+let letHeldFramesGo: (() => Promise<void>) | undefined;
 
 describe("the Skill studio", () => {
   it("lists each skill with its level, and why one is left out", async () => {
@@ -194,7 +192,7 @@ describe("the Skill studio", () => {
     await screen.findByTestId("skill-crowd-00");
     expect(screen.queryByTestId("skill-crowd-59")).toBeNull();
 
-    letTheFrameGo();
+    await letTheFrameGo();
     expect(await screen.findByTestId("skill-crowd-59")).toBeTruthy();
   });
 
@@ -260,6 +258,22 @@ describe("the Skill studio", () => {
     expect(screen.getByTestId("skill-crowd-199")).toBeTruthy();
   });
 
+  it("keeps every row drawn for a chosen row past the first screen once an early row is pressed (#4351)", async () => {
+    const skills = crowd(200).map((name) => skill(name));
+    answering(studio(skills));
+    renderStudioAt({ page: "library", scope: AT_THE_ROOT, skill: skillRowId(skills[150]) });
+    await screen.findByTestId("skill-crowd-150");
+    const drawnForIt = skillRows();
+    expect(drawnForIt).toBeGreaterThanOrEqual(151);
+
+    const frames = stepTheFrames();
+    await userEvent.setup().click(screen.getByTestId("skill-crowd-005"));
+
+    expect(skillRows()).toBeGreaterThanOrEqual(drawnForIt);
+    await frames.all();
+    expect(skillRows()).toBe(200);
+  });
+
   it("draws a chosen row past the Library's first screen on the tab's first frame (#4351)", async () => {
     const skills = Array.from({ length: 60 }, (_, n) =>
       skill(`crowd-${String(n).padStart(2, "0")}`),
@@ -299,7 +313,7 @@ describe("the Skill studio", () => {
     await screen.findByTestId("skill-crowd-00");
     expect(screen.queryByTestId("skill-crowd-59")).toBeNull();
 
-    letTheFrameGo();
+    await letTheFrameGo();
     expect(await screen.findByTestId("skill-crowd-59")).toBeTruthy();
   });
 
