@@ -6,11 +6,11 @@
  * stories of a file run one after another on one page, and two things stay on it from one to the
  * next. Before each story, in this order:
  *
- * **Nothing is under the engine's pointer** (#5063). The pointer stays where it last was. As a
+ * **The engine's pointer is out of the way** (#5063). The pointer stays where it last was. As a
  * story lays out under it, the engine tells the page what came under it: a real `pointerover`,
  * `:hover`, and React Aria's `data-hovered`. So a story's picture could change with where the story
  * before it pressed, and a story that walks a pointer of its own could hear the engine's as its own
- * leaving (#4098). The pointer goes to the frame's far corner. `force`, because the story before
+ * leaving (#4098). The pointer goes to the window's far corner. `force`, because the story before
  * may still be drawn at that moment, and something of its over the corner must not fail this one on
  * the engine's check of what a pointer may land on. `src/PointerAtRest.stories.tsx` holds this to
  * it.
@@ -29,7 +29,8 @@
  * story would start from a pointer's, and a focused control draw no ring.
  *
  * **And the engine's press, for a story** (`pressWithTheEnginesPointer` in
- * `src/stories.testkit.ts`): set here, where `vitest/browser` is imported, and not in a story.
+ * `src/stories.testkit.ts`): set here, as importing `vitest/browser` in a story's file can break
+ * jest-dom's matcher types across the program (#4098).
  */
 import { setInteractionModality } from "react-aria";
 import { beforeEach } from "vitest";
