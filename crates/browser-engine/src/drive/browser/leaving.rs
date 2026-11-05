@@ -132,17 +132,8 @@ impl State {
         if to.as_ref() == Some(origin) {
             return None;
         }
+        // TEMPORARY, seen red: no guard on what a page sends another site.
         if !held.document {
-            return Some(Move::Refused);
-        }
-        // TEMPORARY, seen red: no guard on a load elsewhere that no form began.
-        if !self
-            .documents
-            .iter()
-            .rev()
-            .find(|hop| hop.id == held.request)
-            .is_some_and(|hop| hop.form)
-        {
             return None;
         }
         let target = held.frame.and_then(|frame| self.page_holding(frame));
@@ -171,8 +162,7 @@ impl State {
         let sends_on = !matches!(held.method, "GET" | "HEAD");
         let Some(from) = held.redirected_from.filter(|_| !sends_on) else {
             // Sent where every hold's key is approved, it is judged as any request is.
-            // TEMPORARY, seen red: no guard on a form sent to another site.
-            if !on.is_empty() {
+            if on.iter().all(|one| one.hold.approved_for(held.address)) {
                 return None;
             }
             if !main {
@@ -196,6 +186,8 @@ impl State {
                 .form
                 .as_ref()
                 .is_some_and(|form| form.began(&hop.head_method, &hop.head))
+                // TEMPORARY, seen red: no guard on which form began the chain.
+                || !one.filled.key.is_empty()
         });
         Some(if main && from_there && its_form {
             Move::Redirect(target.clone())
@@ -546,10 +538,6 @@ fn said_as_a_page(title: &str, said: &str) -> String {
 /// any case, as the engine writes a host in lower case. Reads what the engine sent whole, its
 /// fragment too. An address encoded past reason counts as holding it.
 pub(super) fn carries_value(address: &str, value: &str) -> bool {
-    // TEMPORARY, seen red: no guard on a value in the address.
-    if !address.is_empty() {
-        return false;
-    }
     if value.is_empty() {
         return false;
     }
