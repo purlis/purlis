@@ -34,7 +34,7 @@ _Avoid_: task, context
 **Chat**:
 One of the five concepts: one conversation with an agent, in one workspace or at the plane
 root. It has a row of its own in the sidebar for its whole life, and a **pane** shows it when
-the person picks it. Picking a chat shows it in the focused pane, and the chat it replaces
+the person picks it. Picking a chat opens it by the rule under **Pane**, and a chat it replaces
 keeps running. A chat is in one pane at most. Closing its pane never ends it: **End…** is an
 action on the chat. It is where work happens and what needs you. It has a number the window
 shows (`steward 3`) and an id that never changes, has one or more **runs**, and shows its
@@ -870,8 +870,8 @@ _Avoid_: spawn, delegate, delegation, sub-agent (that is the harness's child run
 **Task** (of a dispatch):
 A dispatch that expects a **report**, and the chat it starts: work done for the asking chat.
 It starts in the sidebar only, listed under the asking chat, never hidden, and takes no pane
-until the person picks it. Picking a task is picking a chat: it replaces what the focused pane
-shows, or goes to the pane that already shows it. The pane's head then says the path
+until the person picks it. Picking a task is picking a chat: it opens by the rule under
+**Pane**, or goes to the pane that already shows it. The pane's head then says the path
 (`steward 4 › talk · working`), and pressing a step of the path shows that chat in the same
 pane. Closing its pane ends nothing: the task keeps working in the sidebar. "Task" is the
 word in every sentence the app shows for that chat. Its row says its state in a word
@@ -1082,10 +1082,13 @@ _Avoid_: chat tab, session tab (a chat is not a tab), layout (unqualified), proj
 workspace tab (those are other strips' tabs)
 
 **Pane**:
-One place in a tab's layout, holding a chat, a view or nothing. Picking a chat in the sidebar
-or the palette shows it in the focused pane, and **New chat** starts one there. A pane holding
-a view is never replaced: the chat goes to the most recently used pane that shows a chat or
-nothing. A chat already in a pane is jumped to, never shown twice. Closing a pane clears it,
+One place in a tab's layout, holding a chat, a view or nothing. **One rule says where a chat
+opens** (`opensAt`): **New chat** fills an empty pane of the front tab, or else gets a new tab,
+and replaces nothing. Picking a chat in the sidebar or the palette fills an empty pane of the
+front tab; in a one-pane tab it shows there, and in a split it gets a new tab, so the layout
+survives. A chat already in a pane is jumped to, never shown twice. A view or a one-job program
+is never replaced: alone in the front tab, the pick goes to the most recently used pane on the
+strip that it could take, or a new tab. Closing a pane clears it,
 and its chat keeps running in the sidebar.
 _Avoid_: tile, frame, terminal (a pane may hold a view), split (that is two panes and the line
 between them)
@@ -1298,7 +1301,7 @@ _Avoid_: panic button, pause (nothing is resumed on re-arm)
 
 **Shell**:
 The operator's own shell, with no harness and no profile, opened by `New shell`. It follows a
-chat's rules: it takes the focused pane, closing or replacing its pane leaves it running in the
+chat's rules: it opens as a new chat does, closing or replacing its pane leaves it running in the
 sidebar, and End… on it asks only Cancel or End. When its program exits, its row goes and its
 pane is left empty. A harness typed into one runs outside purlis's session tracking, so
 purlis's **shell shims** stand first on its `PATH`: the harness still starts, after one line

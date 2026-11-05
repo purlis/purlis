@@ -26,11 +26,11 @@ import {
 } from "./tabs";
 
 /**
- * **A press shows the chat in the focused pane** (#4757): pressing a chat, a task or a Go
- * replaces what the focused pane shows, the replaced chat keeps running (nothing here ends it),
- * a chat is never shown twice, a view is never replaced, and each pane remembers the chat it
- * showed before for ⌘⇧H. The window's pure layout model, beside the pane model's own tests
- * (`tabs.panes.test.ts`).
+ * **What a press does** (#4757, #5289): pressing a chat, a task or a Go shows it in a one-pane
+ * tab, the replaced chat keeps running (nothing here ends it), a chat is never shown twice, a
+ * view is never replaced, and each pane remembers the chat it showed before for ⌘⇧H. Where a
+ * press opens is `tabs.opens.test.ts`. The window's pure layout model, beside the pane model's
+ * own tests (`tabs.panes.test.ts`).
  */
 
 const PERSONA: ViewRef = { from: null, view: "persona", key: "steward" };
@@ -69,7 +69,7 @@ function shows(tabs: Tabs, id: number): Content[] {
   return contentsOf(tabs, id).map((one) => one.content);
 }
 
-describe("a press shows the chat in the focused pane (#4757)", () => {
+describe("a press in a tab of one pane shows the chat there (#4757, #5289)", () => {
   it("replaces what the focused pane shows and adds no tab", () => {
     const { tabs, first, second } = twoTabs();
 
@@ -194,7 +194,7 @@ describe("a press never replaces a view (#4757)", () => {
     expect(next.inFront).toBe(first);
   });
 
-  it("goes to a view's sibling pane in the same split when that was used last", () => {
+  it("leaves a split with a view in it alone, and gets a tab of its own (#5289)", () => {
     const one = noteUsed(openTab(noTabs(), 1, "1", "steward"));
     const beside = noteUsed(
       insertPane(one, {
@@ -208,7 +208,8 @@ describe("a press never replaces a view (#4757)", () => {
 
     const { tabs: next } = press(beside, pressed(3), pressing());
 
-    expect(shows(next, 1)).toEqual([chat(3), { kind: "view", view: SETTINGS, workspace: "ops" }]);
+    expect(shows(next, 1)).toEqual([chat(1), { kind: "view", view: SETTINGS, workspace: "ops" }]);
+    expect(next.order).toHaveLength(2);
     expect(focusedChat(next)).toBe(3);
   });
 

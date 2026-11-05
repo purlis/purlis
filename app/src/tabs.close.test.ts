@@ -12,7 +12,6 @@ import {
   type FiledIn,
   noTabs,
   openTab,
-  openTabFilling,
   splitFocusedPane,
   type Tabs,
   visibleSessions,
@@ -115,37 +114,6 @@ describe("closing a tab (#4756)", () => {
     const tabs = openTab(noTabs(), 11);
 
     expect(closeLayout(tabs, 404, filed)).toBe(tabs);
-  });
-});
-
-describe("a new chat on a strip whose one tab is empty (#4756)", () => {
-  it("fills that empty tab rather than opening another beside it", () => {
-    const empty = closeFocusedPane(openTab(noTabs(), 11), filed);
-    const id = front(empty);
-
-    const opened = openTabFilling(empty, "alpha", 12, "12", "steward");
-
-    expect(opened.order).toEqual([id]);
-    expect(opened.inFront).toBe(id);
-    expect(visibleSessions(opened)).toEqual([12]);
-    expect(opened.byId[id].name).toBe("steward 12");
-  });
-
-  it("opens a tab of its own where the empty tab is another strip's", () => {
-    const empty = closeFocusedPane(openTab(noTabs(), 11), filed);
-
-    const opened = openTabFilling(empty, "beta", 33, "33", "steward");
-
-    expect(opened.order).toHaveLength(2);
-    expect(visibleSessions(opened)).toEqual([33]);
-  });
-
-  it("opens a tab of its own where no tab is empty", () => {
-    const tabs = openTab(noTabs(), 11);
-
-    expect(openTabFilling(tabs, "alpha", 12, "12", "steward")).toEqual(
-      openTab(tabs, 12, "12", "steward"),
-    );
   });
 });
 
