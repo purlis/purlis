@@ -5,13 +5,14 @@ what it does not.
 
 ## What holds
 
-1. **A sandboxed chat can't write these names directly** in the folders it may write (`PLANTED`,
-   and the project's manifests where they can change a chat's sandbox, as amended 2026-10-06).
-   That is a refusal, and it stays one. `tools/seatbelt-case.sh` holds it through the real
-   harness at each level on macOS.
-2. **A name that arrives another way than a direct write is detected, not refused**, by the look
-   below, within its bounds. Earlier text of this ADR and of `SECURITY.md` that reads as a
-   guarantee of more than item 1 is narrowed to this.
+1. **On macOS, a sandboxed Claude Code chat can't write these names directly** in the folders it
+   may write (`PLANTED`, and the project's manifests where they can change a chat's sandbox, as
+   amended 2026-10-06). That is a refusal, and it stays one. `tools/seatbelt-case.sh` holds it
+   through the real harness at each level. This amendment states that refusal for no other
+   system.
+2. **Anything item 1 doesn't state is detected, not refused**, by the look below, within its
+   bounds. Earlier text of this ADR and of `SECURITY.md` that reads as a guarantee of more than
+   item 1 is narrowed to this.
 3. **A temp folder or a cache home is not held by these names, and stays that way.** Earlier text
    that reads as if class 5 held them is narrowed too. Tests and tools build repositories and
    manifests in temp folders all the time, and git can't start one under such a denial.
