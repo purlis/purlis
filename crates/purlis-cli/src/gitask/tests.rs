@@ -233,3 +233,51 @@ fn what_the_app_said_is_printed_line_for_line_and_its_status_is_the_commands() {
     );
     assert_eq!(told(Forwarded::NotTaken, &mut |_| {}), None);
 }
+
+#[test]
+fn a_prune_is_asked_to_show_life_as_it_goes_and_a_removal_is_not() {
+    // #5439: a prune of a large workspace outlasts any one wait, so its wait is on a silence.
+    let prune = git_ask(
+        4,
+        "alpha",
+        GitWork::WorktreePrune {
+            repo: None,
+            dry_run: true,
+            keep_branches: false,
+        },
+    );
+    assert!(prune.alive);
+    let remove = git_ask(
+        4,
+        "alpha",
+        GitWork::WorktreeRemove {
+            repo: "api".to_owned(),
+            piece: "lane".to_owned(),
+            delete_branch: false,
+        },
+    );
+    assert!(!remove.alive);
+    assert!(A_FOLDER_IS_JUDGED_WITHIN > hookwire::alive::EVERY * 2);
+    assert!(A_FOLDER_IS_JUDGED_WITHIN > git::READ * 4);
+}
+
+#[test]
+fn a_prune_given_up_on_says_plainly_whether_anything_was_removed() {
+    // #5439: "it may still be running it" was read as "it may have worked".
+    let dry = unsure_prune(true, &[]);
+    assert!(
+        dry.contains("Nothing was removed: a dry run removes nothing"),
+        "{dry}"
+    );
+    let none = unsure_prune(false, &[]);
+    assert!(
+        none.contains("No folder has been removed since this prune was asked"),
+        "{none}"
+    );
+    assert!(none.contains("may still be"), "{none}");
+    let some = unsure_prune(false, &["api · a".to_owned(), "api · b".to_owned()]);
+    assert!(
+        some.contains("2 folders have been removed since this prune was asked: api · a, api · b"),
+        "{some}"
+    );
+}

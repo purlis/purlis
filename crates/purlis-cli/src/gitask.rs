@@ -46,20 +46,59 @@ pub const A_WORKTREE_TAKES_AT_MOST: Duration = Duration::from_secs(4 * git::READ
 /// [`Forwarded::NotTaken`] where there is none.
 pub fn forwarded(workspace: &str, work: GitWork, within: Duration) -> Forwarded {
     asked(
-        |chat| {
-            hookwire::Ask::Git(Box::new(GitAsk {
-                chat,
-                workspace: workspace.to_owned(),
-                // A clone's wait follows its liveness (#4080), and so does a push's: it may
-                // upload large files first (#4399).
-                alive: matches!(
-                    work,
-                    GitWork::Clone { .. } | GitWork::Create { .. } | GitWork::WorktreePush { .. }
-                ),
-                work,
-            }))
-        },
+        |chat| hookwire::Ask::Git(Box::new(git_ask(chat, workspace, work))),
         within,
+    )
+}
+
+/// The ask chat `chat` sends for `work` in `workspace`. A clone's wait follows its liveness
+/// (#4080), and so does a push's: it may upload large files first (#4399). So does a prune's,
+/// which reads every branch folder of the workspace, as many as there are (#5439).
+pub(crate) fn git_ask(chat: u32, workspace: &str, work: GitWork) -> GitAsk {
+    GitAsk {
+        chat,
+        workspace: workspace.to_owned(),
+        alive: matches!(
+            work,
+            GitWork::Clone { .. }
+                | GitWork::Create { .. }
+                | GitWork::WorktreePush { .. }
+                | GitWork::WorktreePrune { .. }
+        ),
+        work,
+    }
+}
+
+/// The longest a prune the app runs for this chat may show no life before this command stops
+/// waiting on it (#5439). Not a bound on the whole prune: the app says it is alive as it reads
+/// each folder ([`hookwire::Answer::Alive`]), so this bounds one folder's reading, a handful of
+/// local git calls each held to [`git::READ`].
+pub const A_FOLDER_IS_JUDGED_WITHIN: Duration = Duration::from_secs(8 * git::READ.as_secs());
+
+/// What a chat's prune says where the app took it and this command stopped waiting (#5439),
+/// plainly about what was removed: nothing, for a dry run; else the folders the piece log
+/// shows removed since it was asked, `removed`, each `<repo> · <piece>`.
+pub fn unsure_prune(dry_run: bool, removed: &[String]) -> String {
+    let stopped = "The app took this prune and did not answer in time, so this command stopped \
+                   waiting.";
+    if dry_run {
+        return format!(
+            "{stopped} Nothing was removed: a dry run removes nothing. Run it again to see \
+             the list."
+        );
+    }
+    let so_far = if removed.is_empty() {
+        "No folder has been removed since this prune was asked".to_owned()
+    } else {
+        format!(
+            "{} been removed since this prune was asked: {}",
+            purlis_core::counts::counted(removed.len(), "folder has", "folders have"),
+            removed.join(", ")
+        )
+    };
+    format!(
+        "{stopped} {so_far}. The app may still be removing folders: `purlis worktree prune \
+         --dry-run` shows what is left."
     )
 }
 
