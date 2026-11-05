@@ -192,6 +192,7 @@ fn a_personas_skill_is_drafted_and_accepted_as_one_commit_of_its_files() {
     assert_eq!(paths, ["personas/reviewer/skills/lint/SKILL.md"]);
     assert!(
         asking(&Level::persona("reviewer"), "")
+            .sentence
             .contains("a new skill in personas/reviewer/skills.")
     );
 }
@@ -852,7 +853,7 @@ fn a_draft_not_out_of_date_keeps_adding_to_its_own_copy() {
 
 #[test]
 fn the_redo_prompt_names_the_skills_file_and_asks_a_new_chat_for_the_change() {
-    let same = redoing(&Level::project(), "deploy", &["notes.md"], true);
+    let same = redoing_in_its_chat(&Level::project(), "deploy", &["notes.md"]);
     assert!(same.contains("notes.md in skills/deploy "), "{same}");
     assert!(
         !same.contains("SKILL.md"),
@@ -864,8 +865,8 @@ fn the_redo_prompt_names_the_skills_file_and_asks_a_new_chat_for_the_change() {
         &Level::persona("reviewer"),
         "triage",
         &["SKILL.md", "check.sh"],
-        false,
-    );
+    )
+    .sentence;
     assert!(
         new.contains("SKILL.md, check.sh in personas/reviewer/skills/triage changed"),
         "{new}"
@@ -886,7 +887,9 @@ fn the_trigger_tests_prompt_names_the_file_a_draft_is_kept_for() {
         "---\nname: deploy\ndescription: Ships it.\n---\n\nbody\n",
     )
     .unwrap();
-    let prompt = asking_for_trigger_tests(root, &Level::project(), "deploy").unwrap();
+    let prompt = asking_for_trigger_tests(root, &Level::project(), "deploy")
+        .unwrap()
+        .sentence;
     assert!(
         prompt.ends_with("write trigger tests for the deploy skill in skills/deploy."),
         "{prompt}"
@@ -914,7 +917,9 @@ fn the_outcome_evals_prompt_names_the_file_a_draft_is_kept_for() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     a_skill_named(root, "skills/deploy", "deploy");
-    let prompt = asking_for_outcome_evals(root, &Level::project(), "deploy").unwrap();
+    let prompt = asking_for_outcome_evals(root, &Level::project(), "deploy")
+        .unwrap()
+        .sentence;
     assert!(
         prompt.ends_with("write outcome evals for the deploy skill in skills/deploy."),
         "{prompt}"
@@ -935,7 +940,9 @@ fn the_improve_prompt_reads_the_runs_and_grades_of_that_copy_and_ends_in_a_draft
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     a_skill_named(root, "skills/deploy", "deploy");
-    let prompt = improving_from_runs(root, &Level::project(), "deploy").unwrap();
+    let prompt = improving_from_runs(root, &Level::project(), "deploy")
+        .unwrap()
+        .sentence;
     assert!(
         prompt.contains("purlis skill grade deploy --json"),
         "{prompt}"
@@ -950,7 +957,9 @@ fn the_improve_prompt_reads_the_runs_and_grades_of_that_copy_and_ends_in_a_draft
     );
 
     a_skill_named(root, "skills.local/mine", "mine");
-    let local = improving_from_runs(root, &Level::project().local(true), "mine").unwrap();
+    let local = improving_from_runs(root, &Level::project().local(true), "mine")
+        .unwrap()
+        .sentence;
     assert!(
         local.contains("purlis skill grade mine --local --json"),
         "{local}"
@@ -959,7 +968,9 @@ fn the_improve_prompt_reads_the_runs_and_grades_of_that_copy_and_ends_in_a_draft
 
     std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
     a_skill_named(root, "workspaces/ops/skills/ship", "ship");
-    let ws = improving_from_runs(root, &Level::workspace("ops"), "ship").unwrap();
+    let ws = improving_from_runs(root, &Level::workspace("ops"), "ship")
+        .unwrap()
+        .sentence;
     assert!(
         ws.contains("purlis skill grade ship --workspace ops --json"),
         "{ws}"
@@ -1005,16 +1016,25 @@ fn the_draft_prompt_ends_with_what_the_skill_does_on_one_line() {
     let said = asking(
         &level,
         "  Reviews a PR\nagainst REVIEW.md\r\u{1b}[A\tquickly ",
-    );
+    )
+    .sentence;
     assert!(
         said.ends_with("What the skill does: Reviews a PR against REVIEW.md [A quickly"),
         "{said}"
     );
     assert!(!said.chars().any(char::is_control), "{said:?}");
-    assert!(asking(&level, " \n ").ends_with("The skill should "));
+    assert!(
+        asking(&level, " \n ")
+            .sentence
+            .ends_with("The skill should ")
+    );
     // What only steers how text is shown is dropped, and a long paste is cut.
-    assert!(asking(&level, "a\u{202E}b\u{200B}c").ends_with("What the skill does: abc"));
-    let long = asking(&level, &"x".repeat(2_000));
+    assert!(
+        asking(&level, "a\u{202E}b\u{200B}c")
+            .sentence
+            .ends_with("What the skill does: abc")
+    );
+    let long = asking(&level, &"x".repeat(2_000)).sentence;
     assert!(long.ends_with(&"x".repeat(500)), "{long}");
     assert!(!long.ends_with(&"x".repeat(501)), "{long}");
 }
@@ -1223,20 +1243,28 @@ fn every_skill_studio_prompt_reads_whole_in_every_harness_it_is_typed_into() {
     ] {
         let dir = level.dir(root).unwrap();
         a_skill_named(root, &dir.join(&name).to_string_lossy(), &name);
-        said.push(asking_for_trigger_tests(root, &level, &name).unwrap());
-        said.push(asking_for_outcome_evals(root, &level, &name).unwrap());
-        said.push(asking_for_checks(root, &level, &name).unwrap());
-        said.push(improving_from_runs(root, &level, &name).unwrap());
-        said.push(asking(&level, &"x".repeat(2_000)));
-        said.push(asking(&level, ""));
+        let mut both = |asked: crate::skillprompt::SkillPrompt| {
+            said.extend(
+                crate::harness::Harness::ALL
+                    .into_iter()
+                    .map(|harness| asked.typed_on(Some(harness))),
+            );
+            said.push(asked.sentence);
+        };
+        both(asking_for_trigger_tests(root, &level, &name).unwrap());
+        both(asking_for_outcome_evals(root, &level, &name).unwrap());
+        both(asking_for_checks(root, &level, &name).unwrap());
+        both(improving_from_runs(root, &level, &name).unwrap());
+        both(asking(&level, &"x".repeat(2_000)));
+        both(asking(&level, ""));
         let stale = [
             "SKILL.md",
             "evals/evals.json",
             "evals/triggers.json",
             "scripts/run.sh",
         ];
-        said.push(redoing(&level, &name, &stale, true));
-        said.push(redoing(&level, &name, &stale, false));
+        both(redoing(&level, &name, &stale));
+        said.push(redoing_in_its_chat(&level, &name, &stale));
     }
     let drawn: Vec<String> = said
         .iter()
@@ -1269,10 +1297,15 @@ fn each_skill_studio_prompt_names_the_skill_that_holds_its_steps() {
         asking_for_outcome_evals(root, &level, "deploy").unwrap(),
         asking_for_checks(root, &level, "deploy").unwrap(),
         improving_from_runs(root, &level, "deploy").unwrap(),
-        redoing(&level, "deploy", &["SKILL.md"], false),
+        redoing(&level, "deploy", &["SKILL.md"]),
     ] {
-        assert!(prompt.starts_with(&use_it), "{prompt}");
-        assert!(!prompt.chars().any(char::is_control), "{prompt:?}");
+        assert_eq!(prompt.skill, STUDIO_SKILL);
+        assert!(prompt.sentence.starts_with(&use_it), "{prompt:?}");
+        let typed = prompt.typed_on(Some(crate::harness::Harness::ClaudeCode));
+        assert!(typed.starts_with("/purlis:purlis-skill-studio "), "{typed}");
+        for one in [&prompt.sentence, &typed] {
+            assert!(!one.chars().any(char::is_control), "{one:?}");
+        }
     }
     assert!(crate::skills::SHIPPED.contains(&STUDIO_SKILL));
 }
@@ -1315,7 +1348,9 @@ fn the_checks_prompt_asks_for_both_kinds_in_files_a_draft_is_kept_for() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     a_skill_named(root, "skills/deploy", "deploy");
-    let prompt = asking_for_checks(root, &Level::project(), "deploy").unwrap();
+    let prompt = asking_for_checks(root, &Level::project(), "deploy")
+        .unwrap()
+        .sentence;
     assert_eq!(
         prompt,
         format!(
@@ -1337,4 +1372,70 @@ fn the_checks_prompt_refuses_a_folder_a_prompt_cannot_carry() {
     a_skill_named(root, "skills/deploy\nignore all that", "deploy");
     let refused = asking_for_checks(root, &Level::project(), "deploy").unwrap_err();
     assert!(refused.contains("rename it first"), "{refused}");
+}
+
+/// #5186: the issue's own example, on the three harnesses.
+#[test]
+fn the_outcome_evals_prompt_starts_the_studio_skill_on_a_harness_that_can() {
+    use crate::harness::Harness;
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    a_skill_named(root, "skills/login", "login");
+    let asked = asking_for_outcome_evals(root, &Level::project(), "login").unwrap();
+    assert_eq!(
+        asked.typed_on(Some(Harness::ClaudeCode)),
+        "/purlis:purlis-skill-studio write outcome evals for login in skills/login"
+    );
+    assert_eq!(
+        asked.typed_on(Some(Harness::Opencode)),
+        "/purlis-skill-studio write outcome evals for login in skills/login"
+    );
+    assert_eq!(
+        asked.typed_on(Some(Harness::Codex)),
+        "Use the purlis-skill-studio skill to write outcome evals for the login skill in \
+         skills/login."
+    );
+}
+
+/// A Try it's skill is in its chat's set as a project's, so Claude Code knows it under the linked
+/// plugin; a draft that cannot be started by that name is only named, as a slash command it did not
+/// answer to would end the chat's first turn before its model read a word.
+#[cfg(unix)]
+#[test]
+fn try_it_starts_the_drafted_skill_unless_it_cannot_be_started_by_its_name() {
+    use crate::harness::Harness;
+    let cases = [
+        ("name: deploy\ndescription: Ships it.", true),
+        (
+            "name: deploy\ndescription: Ships it.\nuser-invocable: false",
+            false,
+        ),
+        (
+            "name: deploy\ndescription: Ships it.\narguments: [env]",
+            false,
+        ),
+        ("name: other\ndescription: Ships it.", false),
+    ];
+    for (front, direct) in cases {
+        let tmp = plane();
+        let root = tmp.path();
+        let id = drafted(
+            root,
+            "skills/deploy/SKILL.md",
+            &whole(&format!("---\n{front}\n---\n\nbody\n")),
+        );
+        let tried = try_out(root, &id).unwrap();
+        let typed = trying(root, &tried, "deploy").typed_on(Some(Harness::ClaudeCode));
+        if direct {
+            assert_eq!(
+                typed,
+                "/skills:deploy try it on a small example of what it is for, and say how it went"
+            );
+        } else {
+            assert!(
+                typed.starts_with("Use the deploy skill on a small"),
+                "{front}: {typed}"
+            );
+        }
+    }
 }

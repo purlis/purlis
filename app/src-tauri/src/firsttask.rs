@@ -126,6 +126,7 @@ pub fn start(
                     then_a_space: false,
                     starts_runs: None,
                     studio: None,
+                    skill: None,
                 },
                 size,
                 cannot_type,

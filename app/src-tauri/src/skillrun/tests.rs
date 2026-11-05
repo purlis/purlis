@@ -141,6 +141,8 @@ fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into
             level: None,
             text: PromptMarks::digest("$deploy", &salt),
             confirmed: Confirmed::ByPrompt,
+            started_by: purlis_core::skills::runs::StartedBy::UseSkill,
+            waits: false,
         },
     );
     assert!(runs.now([4]).is_empty(), "nothing runs until it is sent");

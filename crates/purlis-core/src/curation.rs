@@ -186,8 +186,35 @@ pub struct Resolved {
     pub runner: Option<String>,
     /// The directory the chat starts in.
     pub cwd: PathBuf,
-    /// The rendered prompt, to be typed into the chat and never sent.
+    /// The rendered prompt, to be typed into the chat and never sent: for one of purlis's own,
+    /// the sentence a harness with no direct start gets ([`Self::prompt_on`]).
     pub prompt: String,
+    /// The skill it exists to start, where it is one of purlis's own (#5186). A persona's prompt
+    /// is that persona's own words, one text for every harness, and is typed as written.
+    pub skill: Option<crate::skillprompt::SkillPrompt>,
+}
+
+impl Resolved {
+    /// **The prompt as a chat on `harness` is typed it**: the start of its skill in that harness's
+    /// syntax, or [`Self::prompt`].
+    pub fn prompt_on(&self, harness: Option<crate::harness::Harness>) -> String {
+        self.skill
+            .as_ref()
+            .map_or_else(|| self.prompt.clone(), |skill| skill.typed_on(harness))
+    }
+}
+
+/// **The harness a chat purlis opens for the person starts on in the project at `root`**: its
+/// default profile's, or the first the picker lists. `None` where that is a harness purlis has no
+/// adapter for, or nothing can start.
+pub fn default_harness(root: &Path) -> Option<crate::harness::Harness> {
+    let (set, _) = crate::profiles::for_launch(root);
+    let profile = set
+        .default
+        .as_deref()
+        .and_then(|name| set.get(name))
+        .or_else(|| set.profiles().first())?;
+    crate::harness::Harness::of_kind(&profile.kind)
 }
 
 /// What a subject is offered, and every action left out of it for an error, named.
@@ -207,8 +234,11 @@ pub struct Builtin {
     pub on: &'static [Kind],
     /// Always at the plane root, whatever the subject: Safe remove's subject is going away.
     pub at_plane_root: bool,
-    /// The prompt template.
+    /// The prompt template, as a sentence that names the skill.
     pub template: &'static str,
+    /// What follows the skill's name where its harness starts it directly: the same template, of
+    /// the job alone.
+    pub job: &'static str,
 }
 
 /// charter's own, in the order every list shows them.
@@ -216,8 +246,9 @@ pub struct Builtin {
 /// **Each prompt is one plain line that names its skill and its subject**, and the skill holds
 /// the procedure. A prompt is typed to be read before the operator presses Enter, and a harness
 /// draws a longer paste as a placeholder nobody can read (`Harness::why_drawn_as_a_placeholder`,
-/// ADR 0061 amended 2026-09-27). The skill is named in words, not by a slash command, so the
-/// same line works in every harness that reaches charter's skills.
+/// ADR 0061 amended 2026-09-27). A chat is typed its harness's own start of the skill, with
+/// [`Builtin::job`] as its arguments, and the [`Builtin::template`] sentence where that harness
+/// has none (ADR 0061 amended 2026-11-05).
 pub const BUILTINS: [Builtin; 4] = [
     Builtin {
         id: "safe-remove",
@@ -226,6 +257,7 @@ pub const BUILTINS: [Builtin; 4] = [
         on: &[Kind::Workspace, Kind::Persona],
         at_plane_root: true,
         template: "Use the purlis-safe-remove skill to remove the {subject.kind} {subject.name}.",
+        job: "remove the {subject.kind} {subject.name}",
     },
     Builtin {
         id: "compact",
@@ -234,6 +266,7 @@ pub const BUILTINS: [Builtin; 4] = [
         on: &[Kind::Workspace, Kind::Persona],
         at_plane_root: false,
         template: "Use the purlis-compact skill to compact and improve the {subject.kind} {subject.name}.",
+        job: "compact and improve the {subject.kind} {subject.name}",
     },
     Builtin {
         id: "add-curation-action",
@@ -243,6 +276,7 @@ pub const BUILTINS: [Builtin; 4] = [
         at_plane_root: false,
         template: "Use the purlis-add-curation-action skill to add a curation action to the persona \
                    {subject.name}.",
+        job: "add a curation action to the persona {subject.name}",
     },
     // The first of purlis's own on the plane (spec #2313, #2333): a chat at the plane root makes
     // the project's theme, one in a workspace that workspace's.
@@ -253,6 +287,7 @@ pub const BUILTINS: [Builtin; 4] = [
         on: &[Kind::Workspace, Kind::Plane],
         at_plane_root: false,
         template: "Use the purlis-theme skill to create a theme for the {subject.kind} {subject.name}.",
+        job: "create a theme for the {subject.kind} {subject.name}",
     },
 ];
 
@@ -756,6 +791,11 @@ pub fn resolve(root: &Path, subject: &Subject) -> Result<Resolution, String> {
             runner: builtin_runner.clone(),
             cwd,
             prompt: render(builtin.template)?,
+            skill: Some(crate::skillprompt::SkillPrompt::built_in(
+                builtin.skill,
+                render(builtin.job)?,
+                render(builtin.template)?,
+            )),
         });
     }
 
@@ -771,6 +811,7 @@ pub fn resolve(root: &Path, subject: &Subject) -> Result<Resolution, String> {
                         runner: Some(persona.clone()),
                         cwd: cwd(root, subject.kind, &dir, action.runs_in),
                         prompt: render(&action.template)?,
+                        skill: None,
                     });
                 }
                 Some(_) => {}

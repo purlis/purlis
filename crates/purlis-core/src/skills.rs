@@ -1255,6 +1255,8 @@ impl ChatSkills {
             }),
             text: crate::skillspan::PromptMarks::digest(&text, salt),
             confirmed: self.harness.typed_start(),
+            started_by: runs::StartedBy::UseSkill,
+            waits: false,
         });
         Ok(Typing { text, start: held })
     }
