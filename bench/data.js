@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793891712627,
+  "lastUpdate": 1793897766818,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40278,6 +40278,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5899205,
             "unit": "ms",
             "extra": "median of 5 runs: 100.496, 100.824, 101.590, 102.090, 102.219 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "250f824c03e1e1b1d5d8b1b69dc71b68b42e2e58",
+          "message": "Browser login: every login starts clean on its own site (#5272) (#5299)\n\n* A browser login follows the same value rules as a fill (#5272)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* Every browser login starts clean on its own site (#5272)\n\nEvery login that fills clears all its site stores first, whichever way it was allowed. A held login whose page asks for nothing clears nothing, and a browser that has held nothing has nothing to clear. A form that does not appear on the clean load is a refusal of its own at session protocol 1.74, which leads the window to one new browser that has held nothing, saying why and offering to close the old one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* Name the wire's login in the core test (#5272)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* A login reads a key the person marked as no seed as a fill does (#5272)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* A login moved by its clean load holds its session in the new browser: the test says the page asks nothing (#5272)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* Red proof, temporary: each guard of #5272 taken out, the tests left\n\nReverted by the next commit; the pair cancels out in a squash. CI shows which test goes red for each rule.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* Restore the guards after the red proof (#5272)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* A login's clean step holds other pages still, keeps a held session, and opens one browser (#5272)\n\nEvery other page is held still from before the hold until the login answers. A login that may be held clears only for a form it sees. A browser opened as a clean load failed opens no other, on this call or a later one, each browser left keeps its offer, and policy and the chat's browsing are asked again before it opens. A browser left behind lets go of the store it opened from. A host holds the runner it relays to at 1.74.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* Session protocol 1.75 in what the clean login says (#5272)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* Red proof, temporary: the review's guards of #5272 taken out, the tests left\n\nReverted by the next commit; the pair cancels out in a squash.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* Restore the guards after the second red proof (#5272)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* A login's held pages go free whoever has the browser, and a page that opens meanwhile is held too (#5272)\n\nEach page's loads stop before it's held still, and it's let go of by the session read then, as the person may have the browser by that time. The browser a clean load failed in opens no other when named again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* Red proof, temporary: the last guards of #5272 taken out, the tests left\n\nReverted by the next commit; the pair cancels out in a squash.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* Restore the guards after the last red proof (#5272)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6N8FF4VHEF2Q9XTSND1MXNJ\nPurlis-Persona: steward\n\n* The no-form test says so if its sentence stops holding the word it keeps out\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T16:26:56Z",
+          "tree_id": "712b7e3059e9f5eabf09da4ea16b4cd142b5018e",
+          "url": "https://github.com/purlis/purlis/commit/250f824c03e1e1b1d5d8b1b69dc71b68b42e2e58"
+        },
+        "date": 1793897759358,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6263525000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.612, 0.614, 0.626, 0.642, 0.648 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5934225,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.509, 16.516, 16.593, 16.626, 16.664 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.154399,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.960, 102.030, 102.154, 102.553, 103.075 ms"
           }
         ]
       }
