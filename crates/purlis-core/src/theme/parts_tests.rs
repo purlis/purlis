@@ -769,7 +769,7 @@ fn the_quiet_ghost_is_a_variant_of_the_next_manifest_held_to_its_words_floor() {
         .iter()
         .find(|one| one.name == "quiet")
         .expect("the quiet ghost");
-    assert_eq!(quiet.since, parts::NEXT);
+    assert_eq!(quiet.since, 13);
     // Its default: no box, quiet words; under the pointer, the ghost's hover fill.
     let held = parts::defaults_json("quiet");
     assert_eq!(held["fill"], "transparent");
@@ -1252,11 +1252,7 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     assert_eq!(manifest["version"], parts::VERSION);
     // A refused box (#3110) is the one state added since the first version.
     for one in manifest["states"].as_array().unwrap() {
-        let since = if one["name"] == "invalid" {
-            parts::NEXT
-        } else {
-            1
-        };
+        let since = if one["name"] == "invalid" { 13 } else { 1 };
         assert_eq!(one["since"], since, "{one}");
     }
     // The tab family's layout options came in version 8 (#2914).
@@ -1474,12 +1470,12 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     // The key at a row's end (#2921), the next release's, a card row's lines (#3669), and a
     // group's count and a run's quiet line (#3670).
     for at in 7..=11 {
-        assert_eq!(list["parts"][at]["since"], parts::NEXT);
+        assert_eq!(list["parts"][at]["since"], 13);
     }
     // The table family (#2911): a row, the card that holds the table, a column's name, a cell
     // and the bar over a table that chooses.
     let table = family("table");
-    assert_eq!(table["since"], parts::NEXT);
+    assert_eq!(table["since"], 13);
     assert_eq!(table["variants"], json!([]));
     assert_eq!(
         names(&table, "parts"),
@@ -1503,7 +1499,7 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
         .map(|one| one["name"].as_str().unwrap())
         .collect();
     assert_eq!(parts, ["root", "detail", "shortcut"]);
-    assert_eq!(tooltip["parts"][2]["since"], parts::NEXT);
+    assert_eq!(tooltip["parts"][2]["since"], 13);
 }
 
 #[test]
@@ -1610,6 +1606,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         12,
         "8a4b6d0a12377b03f8da2ff51f063c3066a96f6c2083c61fd9247b5359a845f6",
+    ),
+    (
+        13,
+        "04cd51ebb36da223d32c932cdae6f7168302dace29432f7281caf1047ab4b219",
     ),
 ];
 
@@ -2329,7 +2329,7 @@ fn the_select_families_default_is_what_select_css_draws() {
             .clone()
     };
     let select = words("select");
-    assert_eq!(select["since"], parts::NEXT);
+    assert_eq!(select["since"], 13);
     assert_eq!(select["focused"], "[data-focus-visible]");
     assert_eq!(words("combobox")["focused"], "[data-focus-within]");
 }

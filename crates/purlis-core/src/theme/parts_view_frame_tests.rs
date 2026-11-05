@@ -52,7 +52,7 @@ const NAV_ITEM: &str = "[data-scope=\"view-nav\"][data-part=\"item\"]";
 #[test]
 fn the_view_frame_comes_in_the_next_release_s_manifest() {
     let frame = family_json("view-frame");
-    assert_eq!(frame["since"], parts::NEXT);
+    assert_eq!(frame["since"], 13);
     assert_eq!(
         names(&frame, "parts"),
         [
@@ -73,7 +73,7 @@ fn the_view_frame_comes_in_the_next_release_s_manifest() {
         ]
     );
     for part in frame["parts"].as_array().unwrap() {
-        assert_eq!(part["since"], parts::NEXT, "{part}");
+        assert_eq!(part["since"], 13, "{part}");
     }
     assert_eq!(frame["variants"], json!([]));
     assert_eq!(frame["states"], json!([]));
@@ -82,7 +82,7 @@ fn the_view_frame_comes_in_the_next_release_s_manifest() {
 #[test]
 fn a_page_in_the_navigation_comes_in_the_next_release_s_manifest() {
     let nav = family_json("view-nav");
-    assert_eq!(nav["since"], parts::NEXT);
+    assert_eq!(nav["since"], 13);
     assert_eq!(names(&nav, "parts"), ["item", "label", "indicator"]);
     assert_eq!(
         nav["states"],

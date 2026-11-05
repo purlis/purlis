@@ -67,7 +67,7 @@ pub(super) const POPOVER: Family = Family {
         },
         Part {
             name: "point",
-            since: super::NEXT,
+            since: 13,
             description: "The point a notice's card takes from what it hangs from: its ground \
                           and its edge, in every variant and state alike.",
             properties: &[Prop::Fill, Prop::BorderColour],
@@ -88,7 +88,7 @@ pub(super) const POPOVER: Family = Family {
         },
         Variant {
             name: "notice",
-            since: super::NEXT,
+            since: 13,
             description: "A card of notices hung from what they are about, a title-bar chip, \
                           centred under it with its point.",
             consent: None,
