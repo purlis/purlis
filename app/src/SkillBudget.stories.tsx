@@ -70,13 +70,13 @@ const WARNS: SkillBudgetPreview = {
 };
 
 function Budget({
-  preview,
   extensionRouter,
   refuses,
   readOnly,
   followed,
   width = "46rem",
 }: {
+  /** What the core answers for what is typed: the story's `beforeEach` fakes it. */
   preview: SkillBudgetPreview;
   extensionRouter: boolean;
   refuses?: string;
@@ -86,8 +86,6 @@ function Budget({
   /** The room it has: a table from 32rem, a stacked form below that. */
   width?: string;
 }) {
-  clearMocks();
-  mockIPC((cmd) => (cmd === "skill_budget_preview" ? preview : null));
   return (
     <ReadOnlySaid.Provider value={readOnly}>
       <div style={{ inlineSize: width }}>
@@ -108,6 +106,13 @@ const meta = {
   title: "Skill studio/Skill budget",
   component: Budget,
   args: { preview: RISES, extensionRouter: false },
+  beforeEach: ({ args }) => {
+    mockIPC((cmd) => (cmd === "skill_budget_preview" ? args.preview : null));
+    // A mock left behind would answer the next story's font asks, in this worker, with nothing.
+    return () => {
+      clearMocks();
+    };
+  },
 } satisfies Meta<typeof Budget>;
 
 export default meta;

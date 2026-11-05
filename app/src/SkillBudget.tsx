@@ -181,7 +181,7 @@ export function SkillBudgetTable({
                   </Button>
                 </span>
               </TableCell>
-              <TableCell>
+              <TableCell heading="Change">
                 <Button
                   size="sm"
                   className="skill-budget-press"
