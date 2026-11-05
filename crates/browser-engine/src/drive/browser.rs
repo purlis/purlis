@@ -652,11 +652,12 @@ impl DocumentOrigins {
 
     /// The document of `frame` on `session` ended.
     fn document_ended(&mut self, session: &str, frame: &str, held: Option<FrameAt>) {
-        let page = held.map(|held| held.page);
-        self.await_(page, frame);
-        if let Some(held) = held
-            && held.session == session
-        {
+        // A frame no page holds any more has no next document to wait for.
+        let Some(held) = held else {
+            return;
+        };
+        self.await_(Some(held.page), frame);
+        if held.session == session {
             self.mark(held.page, frame);
         }
     }
@@ -910,9 +911,13 @@ struct Page {
     /// **It holds a secret and is leaving, or stands on what purlis replaces** (#5230): an answer
     /// and a read wait for how that ends.
     leaving: bool,
-    /// **The load it is on was chosen, by an address the agent wrote or by the person** (#5230):
-    /// only such a load makes a site one the browser was on.
-    chosen: bool,
+    /// **The load it is on, where that load was chosen by an address** the agent or the person
+    /// wrote or went back to, until that load shows a document (#5230).
+    chain_begins: Option<leaving::ChosenLoad>,
+    /// **The origin the chain leading to what it shows began at** (#5230): the last chosen load
+    /// that showed a document, or for a page another opened, that page's when it opened it. What
+    /// a page holding a secret may leave for without the person being asked.
+    chain_began: Option<String>,
 }
 
 impl Page {
@@ -1052,9 +1057,9 @@ struct State {
     offered: VecDeque<String>,
     /// Each document request held lately: what a redirect from it is.
     documents: VecDeque<Hop>,
-    /// **The sites this browser was on** (#5230), each by its origin: what a page holding a
-    /// secret may leave for without the person being asked, as it was when the secret went in.
-    been_on: HashSet<String>,
+    /// **The page that opened each window, where a script in one can reach the other** (#5230),
+    /// kept once either is gone: the engine lists an opener for a window with no such link too.
+    linked_openers: HashMap<String, String>,
     /// The request of the act [`Self::addressing`] marks has been seen (#5230).
     addressing_seen: bool,
     /// What a page leaving for another site, or kept from it, has to say in the next answer
@@ -1123,15 +1128,7 @@ impl State {
         let earlier = held
             .redirected_from
             .and_then(|from| self.documents.iter().find(|hop| hop.id == from))
-            .map(|hop| {
-                (
-                    hop.why,
-                    hop.form,
-                    hop.address.clone(),
-                    hop.head.clone(),
-                    hop.head_method.clone(),
-                )
-            });
+            .map(|hop| (hop.why, hop.form, hop.head.clone(), hop.head_method.clone()));
         let reads = matches!(held.method, "GET" | "HEAD" | "OPTIONS");
         let marked = held.document && held.redirected_from.is_none() && take(&mut self.forms, bare);
         // What began as a form stays one along its redirects (#5230). A document sent with a body
@@ -1140,17 +1137,6 @@ impl State {
             Some((_, form, ..)) => *form,
             None => held.document && held.redirected_from.is_none() && (marked || !reads),
         };
-        // A site that answered a page's own document with a redirect is one it was on (#5230):
-        // the app that sends the person to sign in shows nothing first.
-        if let Some((_, _, from, ..)) = &earlier
-            && held
-                .frame
-                .and_then(|frame| self.page(frame))
-                .is_some_and(|page| page.chosen)
-        {
-            let from = from.clone();
-            self.was_on(&from);
-        }
         let why = if !reads {
             Why::Sends
         } else if !held.document {
@@ -1969,12 +1955,17 @@ pub(crate) struct Inner {
 }
 
 /// **A page holding a secret purlis filled** (#5117): the page, who is told once it is gone, what
-/// was filled, and the sites the browser had been on by then (#5230).
+/// was filled, and where the chain leading to it began (#5230).
 struct PageHeld {
     target: String,
     hold: Arc<dyn FillHold>,
     filled: leaving::Filled,
-    been_on: Arc<HashSet<String>>,
+    chain_began: Option<String>,
+    /// **Every window that could reach it by script, or be reached by one that could**, gone or
+    /// not, itself among them (#5230): the hold is over only once the others are gone too.
+    family: HashSet<String>,
+    /// Its page has shown another document or closed, and the hold waits on [`Self::family`].
+    left: bool,
 }
 
 /// **One of the agent's calls being carried out** (#5152): counted in [`Inner`] until dropped.
@@ -2722,6 +2713,11 @@ impl Browser {
         let mut state = lock(&self.inner.state);
         state.addressing = Some((target.to_owned(), why));
         state.addressing_seen = false;
+        // Whatever it was on the way to is over: only this act's load showing a document begins a
+        // chain again, so an act that comes to nothing leaves none (#5230).
+        if let Some(page) = state.page_mut(target) {
+            page.chain_began = None;
+        }
         drop(state);
         Addressing(&self.inner)
     }
@@ -4265,7 +4261,7 @@ impl Browser {
     fn keys_withheld(&self, target: &str) -> Result<(), Refusal> {
         let held = lock(&self.inner.fill_holds)
             .iter()
-            .any(|held| held.target == target);
+            .any(|held| !held.left && held.target == target);
         if held {
             return Err(Refusal::KeysWithheld);
         }
@@ -5350,27 +5346,15 @@ impl Inner {
                 target: target.to_owned(),
                 hold,
                 filled,
-                been_on: Arc::new(state.been_on.clone()),
+                chain_began: state.page(target).and_then(|page| page.chain_began.clone()),
+                family: state.family_of(target),
+                left: false,
             });
             return Ok(());
         }
         drop(state);
         hold.released();
         Err("the page loaded another document".to_owned())
-    }
-
-    /// **Page `target` is closed, or shows another document in its main frame** (#5117): every
-    /// hold of a secret filled into it is released, once.
-    fn page_left(&self, target: &str) {
-        let released: Vec<PageHeld> = {
-            let mut holds = lock(&self.fill_holds);
-            let (gone, kept) = std::mem::take(&mut *holds)
-                .into_iter()
-                .partition(|held| held.target == target);
-            *holds = kept;
-            gone
-        };
-        self.released(target, released);
     }
 
     /// Page `target`'s own document is now at `address`: a login waiting for that page to leave
@@ -5675,6 +5659,25 @@ impl Inner {
                             {
                                 by.settle.observe("", Activity::Changed, now);
                             }
+                            let opener_linked = opener.is_some()
+                                && params
+                                    .pointer("/targetInfo/canAccessOpener")
+                                    .and_then(Value::as_bool)
+                                    != Some(false);
+                            // What opened it may be a frame in a page.
+                            let by = opener.as_deref().map(|opener| {
+                                state
+                                    .page_holding(opener)
+                                    .unwrap_or_else(|| opener.to_owned())
+                            });
+                            if opener_linked && let Some(by) = &by {
+                                state.linked_openers.insert(target.clone(), by.clone());
+                                follow.extend(self.window_opened(&target, by));
+                            }
+                            let chain_began = by
+                                .as_deref()
+                                .and_then(|by| state.page(by))
+                                .and_then(|by| by.chain_began.clone());
                             let id = PageId(format!("p{}", state.pages_listed));
                             let kept = state.kept.clone();
                             state.pages.push(Page {
@@ -5687,7 +5690,8 @@ impl Inner {
                                 scrubbed: kept,
                                 failed_load: None,
                                 leaving: false,
-                                chosen: false,
+                                chain_begins: None,
+                                chain_began,
                                 shows: 0,
                                 gone: 0,
                                 frames: HashMap::new(),
@@ -5718,7 +5722,11 @@ impl Inner {
                 "Target.targetDestroyed" => {
                     if let Some(target) = text("/targetId") {
                         left.push(target.clone());
-                        state.page_gone(&target);
+                        // A frame's target ending says nothing of its frame, which may live on in
+                        // its parent's process.
+                        if state.page(&target).is_some() {
+                            state.page_gone(&target);
+                        }
                         // A frame's target can go with no detach to follow, and a session left
                         // listed would go on speaking for the frame over its parent (#4472).
                         let frames: Vec<String> = state
@@ -5812,14 +5820,15 @@ impl Inner {
                                 // The engine's own page for a load that failed holds no value
                                 // either (#5230): the hold ends there too, so no browser is left
                                 // stuck. In a browser that held a value, purlis's own page stands
-                                // in for it, and no read comes before that. It is no site the
-                                // browser was on.
+                                // in for it, and no read comes before that. A load that failed
+                                // begins no chain.
                                 left.push(target.clone());
                                 let failed = params.pointer("/frame/unreachableUrl").is_some();
-                                let chosen = state.page(&target).is_some_and(|page| page.chosen);
-                                if !failed && chosen {
-                                    state.was_on(&text("/frame/url").unwrap_or_default());
-                                }
+                                state.load_shown(
+                                    &target,
+                                    &text("/frame/url").unwrap_or_default(),
+                                    failed,
+                                );
                                 let held_one = self.copy_withheld.load(Ordering::SeqCst);
                                 let departing = lock(&self.departing).contains_key(&target);
                                 if let Some(page) = state.page_mut(&target) {
@@ -5934,6 +5943,16 @@ impl Inner {
                         let frame = text("/frameId");
                         let redirected_from = text("/redirectedRequestId");
                         let document = text("/resourceType").as_deref() == Some("Document");
+                        // Read before the word of it is taken: a page's own link, script or form
+                        // is no load chosen by its address (#5230).
+                        let page_asked = {
+                            let bare = without_fragment(&address);
+                            state
+                                .forms
+                                .iter()
+                                .chain(&state.offered)
+                                .any(|one| one == bare)
+                        };
                         let why = state.why(&Held {
                             request: &request,
                             address: &address,
@@ -5971,19 +5990,31 @@ impl Inner {
                             Driver::Agent
                         };
                         // The first of a page's own chain says whether it was chosen (#5230): an
-                        // address the agent wrote is the first the call sends, and what the page
-                        // does while the call waits on it isn't.
-                        let chosen = by == Driver::Person
-                            || (why == Why::Addressed
-                                && document
-                                && redirected_from.is_none()
-                                && !std::mem::replace(&mut state.addressing_seen, true));
+                        // address written, or gone back to, is the first the call sends, and what
+                        // the page does while the call waits on it isn't.
+                        let addressed_here = state
+                            .addressing
+                            .as_ref()
+                            .is_some_and(|(page, _)| frame.as_deref() == Some(page.as_str()));
+                        let chosen = addressed_here
+                            && matches!(why, Why::Addressed | Why::Reads)
+                            && document
+                            && redirected_from.is_none()
+                            && !page_asked
+                            && !std::mem::replace(&mut state.addressing_seen, true);
                         if document
                             && redirected_from.is_none()
                             && let Some(page) =
                                 frame.as_deref().and_then(|frame| state.page_mut(frame))
                         {
-                            page.chosen = chosen;
+                            page.chain_begins = if chosen {
+                                login::origin_of(&address).map(|origin| leaving::ChosenLoad {
+                                    origin,
+                                    head: address.clone(),
+                                })
+                            } else {
+                                None
+                            };
                         }
                         // While one of the agent's calls is carried out, nothing is sent to a
                         // site it is kept off by an address it wrote, however written, nor by
@@ -6144,7 +6175,7 @@ impl Inner {
             }
         }
         for target in &left {
-            self.page_left(target);
+            follow.extend(self.page_left(target));
         }
         if let Some((target, address)) = navigated {
             self.came_back(&target, &address);

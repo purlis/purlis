@@ -259,8 +259,11 @@ struct Chat {
     /// first began to wait (#2018).
     sites_asked: Vec<Site>,
     /// The sites the person allowed when this chat's browser asked (#5230): a filled page may
-    /// leave for one by its server's redirect, as for a site the browser was on.
+    /// leave for one by its server's redirect, as for the site its sign-in began from.
     sites_answered: Vec<Site>,
+    /// **What a read before a login said, where the login goes on past it** (#5302): for the
+    /// answer that login comes to.
+    read_said: Option<String>,
     sites_since: u64,
     /// The browser sites allowed for this chat alone, while the app holds it (#2018).
     sites: Vec<Site>,
@@ -313,6 +316,7 @@ impl Default for Chat {
             rests_on: None,
             sites_asked: Vec::new(),
             sites_answered: Vec::new(),
+            read_said: None,
             sites_since: 0,
             sites: Vec::new(),
             used: HashMap::new(),
@@ -1464,20 +1468,22 @@ impl ChatBrowsers {
         if !still_it(&session) {
             return None;
         }
-        let (open_web, sites) = {
+        let (open_web, sites, answered) = {
             let chats = self.lock();
             let chat = chats.get(&browse.chat)?;
             let Posture::Allowed { open_web } = chat.posture else {
                 return None;
             };
-            (open_web, chat.sites.clone())
+            let answered = chat.sites_answered.iter().map(Site::to_string).collect();
+            (open_web, chat.sites.clone(), answered)
         };
-        let reach = with_sites(
+        let mut reach = with_sites(
             reach(),
             open_web,
             &sites,
             &purlis_core::sandbox::policy::Locks::of(root),
         );
+        reach.answered = answered;
         // Refused, or by a purlis too old to say: it goes as it always did.
         let read = driver
             .act(
@@ -1487,7 +1493,15 @@ impl ChatBrowsers {
                 reach,
             )
             .ok()?;
+        // What the read brought is told whichever way the login goes (#5302): a site the judge
+        // asked about counts as asked from now on.
+        self.files.heard(&program, &read.downloads);
+        let asked = sites_of(&read.asked);
+        if !asked.is_empty() {
+            self.asked_about(browse.chat, &asked, now);
+        }
         if read.asks_to_sign_in != Some(false) {
+            self.keep_what_a_read_said(browse.chat, &asked, read.note.as_deref());
             return None;
         }
         // Read on the login's own site, or it says nothing of the login: a page on its sign-in
@@ -1499,6 +1513,7 @@ impl ChatBrowsers {
             .and_then(|page| origin(&page.address))
             .is_some_and(|here| origin(&session.address).as_ref() == Some(&here));
         if !on_its_site {
+            self.keep_what_a_read_said(browse.chat, &asked, read.note.as_deref());
             return None;
         }
         // It's the browser the chat goes on in, whichever it was in before.
@@ -1509,17 +1524,14 @@ impl ChatBrowsers {
         }
         let reaches = reaches_said(&session.address, session.form.as_deref());
         let said = already_logged_in_said(&name, login, &reaches);
-        // What the read brought is told as any act's is: downloads, sites held back, and what the
-        // page it's on says (#5152).
-        self.files.heard(&program, &read.downloads);
+        // What the read brought is told as any act's is: sites held back, and what the page it's
+        // on says (#5152).
         let mut note = match read.note {
             Some(note) => format!("{said}; {note}"),
             None => said,
         };
         if !read.asked.is_empty() {
-            let sites = sites_of(&read.asked);
-            self.asked_about(browse.chat, &sites, now);
-            note = format!("{}. {note}", asked_about(&sites));
+            note = format!("{}. {note}", asked_about(&asked));
         }
         let browsed = Browsed {
             note: Some(note),
@@ -1532,6 +1544,50 @@ impl ChatBrowsers {
         };
         self.say_called(browse, None, &answer);
         Some(answer)
+    }
+
+    /// **A read before a login said this, and the login goes on past it** (#5302): kept for the
+    /// answer it comes to.
+    fn keep_what_a_read_said(&self, session: u32, asked: &[Site], note: Option<&str>) {
+        let held_back = (!asked.is_empty()).then(|| asked_about(asked));
+        let said = match (held_back, note) {
+            (Some(held_back), Some(note)) => format!("{held_back}. {note}"),
+            (Some(held_back), None) => held_back,
+            (None, Some(note)) => note.to_owned(),
+            (None, None) => return,
+        };
+        if let Some(chat) = self.lock().get_mut(&session) {
+            chat.read_said = Some(match chat.read_said.take() {
+                Some(earlier) => format!("{earlier}. {said}"),
+                None => said,
+            });
+        }
+    }
+
+    /// Whether a read before a login left something to say, a site it asked about among it.
+    pub fn a_read_left_word(&self, session: u32) -> bool {
+        self.lock()
+            .get(&session)
+            .is_some_and(|chat| chat.read_said.is_some())
+    }
+
+    /// **`answer` says what the read before it said, first** ([`Self::keep_what_a_read_said`]). It
+    /// waits for an answer that can say it.
+    fn with_what_a_read_said(&self, session: u32, answer: &mut Answer) {
+        let Answer::Browsed { browsed, .. } = answer else {
+            return;
+        };
+        let Some(said) = self
+            .lock()
+            .get_mut(&session)
+            .and_then(|chat| chat.read_said.take())
+        else {
+            return;
+        };
+        browsed.note = Some(match browsed.note.take() {
+            Some(note) => format!("{said}. {note}"),
+            None => said,
+        });
     }
 
     /// **What a `browser_login` hears before any notice or vault read** (#5121): that the browser
@@ -2666,7 +2722,7 @@ impl ChatBrowsers {
 
     /// **The person allowed `sites` when chat `session`'s browser asked**, at whatever level
     /// (#5230): a page in it holding a secret may leave for them by its server's redirect, as for
-    /// a site the browser was on. A site the chat's reach lists already is asked about too, so
+    /// the site its sign-in began from. A site the chat's reach lists already is asked about too, so
     /// this is told apart from what it lists.
     pub fn allowed_when_asked(&self, session: u32, sites: &[Site]) {
         let mut chats = self.lock();
@@ -3024,6 +3080,7 @@ impl ChatBrowsers {
             driver, root, pool, browse, reach, persona, read, fills, folder, now,
         );
         self.say_called(browse, before, &answer);
+        self.with_what_a_read_said(browse.chat, &mut answer);
         // Whatever became of the login, the browser closed for it is said (#5296).
         if let Some(said) = closed {
             match &mut answer {
@@ -3996,6 +4053,9 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
                 held.chats().asks_may_have_moved();
             }
             return answer;
+        }
+        if held.browsers().a_read_left_word(browse.chat) {
+            held.chats().asks_may_have_moved();
         }
     }
     // A login its persona doesn't declare waits on the person's answer here (#4595), under no

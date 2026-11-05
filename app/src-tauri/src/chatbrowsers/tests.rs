@@ -27,6 +27,8 @@ struct Hosted {
     reached: Mutex<Vec<BrowserReach>>,
     /// The sites each act answers it asked about (#2018).
     asks: Mutex<Vec<String>>,
+    /// The sites a read of whether a page asks to sign in answers it asked about (#5302).
+    asks_on_the_read: Mutex<Vec<String>>,
     closed: Mutex<Vec<String>>,
     /// Programs ended by their id, when a close did not end them.
     stopped: Mutex<Vec<String>>,
@@ -164,7 +166,13 @@ impl Driver for Hosted {
             asks_to_sign_in: asks_to_sign_in.flatten(),
             field,
             settled: true,
-            asked: self.asks.lock().unwrap().clone(),
+            asked: {
+                let mut asked = self.asks.lock().unwrap().clone();
+                if signs_in {
+                    asked.extend(self.asks_on_the_read.lock().unwrap().iter().cloned());
+                }
+                asked
+            },
             page: self.at.lock().unwrap().clone().map(|address| {
                 purlis_session_protocol::browsing::PageSaid {
                     page: "p1".into(),

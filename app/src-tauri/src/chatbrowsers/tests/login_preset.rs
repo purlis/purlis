@@ -101,6 +101,49 @@ fn a_login_whose_page_asks_to_sign_in_again_is_filled_again_in_the_same_browser(
 }
 
 #[test]
+fn a_site_asked_about_during_the_sign_in_read_reaches_the_person_where_the_login_goes_on() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(true);
+    *hosted.asks_on_the_read.lock().unwrap() = vec!["app.example.test:443".to_owned()];
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let note = browser_and_note(&answer).1;
+    assert!(note.contains("app.example.test"), "{note}");
+    assert!(note.contains("asked the person"), "{note}");
+    let waiting = browsers.sites_waiting();
+    assert_eq!(waiting.len(), 1, "{waiting:?}");
+    assert_eq!(waiting[0].sites, [site("app.example.test:443")]);
+    assert_eq!(logged_into(&hosted).len(), 2, "the login went on");
+}
+
+#[test]
+fn the_sign_in_read_keeps_the_sites_the_person_allowed() {
+    let (browsers, hosted) = with_a_used_browser();
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    let site = site("app.example.test:443");
+    browsers.asked_about(3, std::slice::from_ref(&site), 1000);
+    browsers
+        .sites_answered(3, std::slice::from_ref(&site), false)
+        .unwrap();
+    browsers.allowed_when_asked(3, std::slice::from_ref(&site));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let acts = hosted.acts.lock().unwrap();
+    let read = acts
+        .iter()
+        .rposition(|(_, _, act)| matches!(act, Act::AsksToSignIn))
+        .expect("the page was read");
+    assert_eq!(
+        hosted.reached.lock().unwrap()[read].answered,
+        [site.to_string()]
+    );
+}
+
+#[test]
 fn a_host_too_old_to_say_whether_a_page_asks_has_the_login_go_as_it_always_did() {
     let (browsers, hosted) = with_a_used_browser();
     called(&browsers, &hosted, &ask(3, log_in("shop-login")));

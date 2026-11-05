@@ -1602,6 +1602,37 @@ fn a_frame_whose_contexts_are_cleared_is_not_judged_until_its_next_document_is_k
 }
 
 #[test]
+fn a_frame_whose_own_target_ends_is_still_awaited() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    the_page_shows_a_frame(&engine, &browser, "BLANK", "PAGE-1", "about:blank");
+    super::super::lock(&browser.inner.state)
+        .document_origins
+        .started("PAGE-1", "BLANK");
+
+    engine.emit("Target.targetDestroyed", json!({"targetId": "BLANK"}), None);
+    everything_before_is_taken_in(&engine, &browser);
+
+    assert!(
+        super::super::lock(&browser.inner.state)
+            .document_origins
+            .awaits("PAGE-1", "BLANK")
+    );
+}
+
+#[test]
+fn a_frame_no_page_holds_is_not_left_awaited_when_its_contexts_are_cleared() {
+    let mut origins = super::super::DocumentOrigins::default();
+    origins.told(
+        "S-PAGE-1",
+        &json!({"id": 1, "origin": "http://else.test", "auxData": {"isDefault": true, "frameId": "F-1"}}),
+        None,
+    );
+    origins.cleared("S-PAGE-1", |_| None);
+    assert!(!origins.awaits("PAGE-1", "F-1"));
+}
+
+#[test]
 fn a_frame_that_is_gone_is_no_longer_awaited() {
     let mut origins = super::super::DocumentOrigins::default();
     origins.started("PAGE-1", "F-1");

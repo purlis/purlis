@@ -86,11 +86,16 @@ keep it blocked, tell them what needs it and don't ask again. While the page you
 open, the browser reaches only that site: an address for another is refused, saying so. Nor do
 you press any key in that page, or type or choose anything in it, so type the other fields (a user name) before you fill, and send the form by clicking its button,
 not with Enter. The form may go on to another site only by a redirect from that site's own
-server: to a site this browser was on before the fill it goes by itself, and any other asks the
-person once. A redirect whose address holds the value is refused, and a form that posts straight
+server: to the site that began the way to this sign-in (the address you opened, or what it
+redirected from) it goes by itself, and any other asks the person once, naming the site. A redirect
+whose address holds the value is refused, and a form that posts straight
 to another site is refused unless the person approved the key for that site too; the answer says
 how. Once that page loads another page, an error page, or you close it, the browser reaches and
-takes keys as before. It works the
+takes keys as before. A fill is refused while a window on that site opened the page or was opened
+by it, so open the form with `browser_open`, in a page of its own. Any other window related that
+way closes when the page is done, and the browser reaches as before once it has. The hold can't
+stop a script on the approved site using that site's own storage or workers: it can keep what it
+reads there and send it from that site later. It works the
 same on a pool's runner.
 
 **A 2FA code comes from its seed**: name the key that holds the seed (an `otpauth://totp/`
