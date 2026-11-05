@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793919411431,
+  "lastUpdate": 1793922937286,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40572,6 +40572,48 @@ window.BENCHMARK_DATA = {
             "value": 102.417335,
             "unit": "ms",
             "extra": "median of 5 runs: 101.498, 101.770, 102.417, 102.555, 103.762 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "046a3467e47ef4ce9a266b57359b668422bda08d",
+          "message": "The startup targets are held by tests with three projects restoring (#5326) (#5436)\n\n* Startup targets with three projects restoring held by tests (#5326) [wip: core test unverified]\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6PMHY9AMY785C8FA8X7K0R9\nPurlis-Persona: steward\n\n* Add the startup target tests' new files (#5326)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6PMHY9AMY785C8FA8X7K0R9\nPurlis-Persona: steward\n\n* The core holds the launch's 100 ms answer and 200 ms stall with two projects slow to open (#5326)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6PMHY9AMY785C8FA8X7K0R9\nPurlis-Persona: steward\n\n* The window test names where the core holds the stall (#5326)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6PMHY9AMY785C8FA8X7K0R9\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>",
+          "timestamp": "2026-11-05T22:03:55Z",
+          "tree_id": "641d12ddbe166046b92816f873497b6bab7ff099",
+          "url": "https://github.com/purlis/purlis/commit/046a3467e47ef4ce9a266b57359b668422bda08d"
+        },
+        "date": 1793922932679,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5345465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.523, 0.535, 0.544, 0.552 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.358226,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.174, 16.278, 16.358, 16.359, 16.386 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.3101005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.877, 101.300, 101.310, 101.854, 103.775 ms"
           }
         ]
       }
