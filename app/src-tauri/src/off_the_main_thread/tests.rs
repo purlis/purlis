@@ -64,46 +64,6 @@ pub(crate) struct Asked {
 /// Invokes `command` with `args` from the main window, as the app's page would, and waits
 /// for its answer.
 pub(crate) fn ask(app: &tauri::App<MockRuntime>, command: &str, args: Value) -> Asked {
-    ask_without_waiting(app, command, args).answered()
-}
-
-/// An invoke whose answer has not been waited for: how long it held the thread that asked,
-/// and where its answer comes.
-pub(crate) struct Asking {
-    pub(crate) held_for: Duration,
-    answer: mpsc::Receiver<(ThreadId, InvokeResponse)>,
-}
-
-impl Asking {
-    /// Waits for the answer.
-    pub(crate) fn answered(self) -> Asked {
-        let (answered_on, response) = self
-            .answer
-            .recv_timeout(Duration::from_secs(30))
-            .expect("the command answered");
-        let json = |body: InvokeResponseBody| match body {
-            InvokeResponseBody::Json(text) => serde_json::from_str(&text).expect("JSON"),
-            InvokeResponseBody::Raw(_) => Value::Null,
-        };
-        let answer = match response {
-            InvokeResponse::Ok(body) => Ok(json(body)),
-            InvokeResponse::Err(err) => Err(err.0),
-        };
-        Asked {
-            answered_on,
-            held_for: self.held_for,
-            answer,
-        }
-    }
-}
-
-/// Invokes `command` with `args` from the main window, as the app's page would, and answers
-/// as soon as the thread that asked is let go, without waiting for the command's answer.
-pub(crate) fn ask_without_waiting(
-    app: &tauri::App<MockRuntime>,
-    command: &str,
-    args: Value,
-) -> Asking {
     let window = app
         .get_webview_window(WINDOW)
         .expect("the main window is open");
@@ -123,9 +83,22 @@ pub(crate) fn ask_without_waiting(
             let _ = tx.send((std::thread::current().id(), response));
         }),
     );
-    Asking {
-        held_for: asked_at.elapsed(),
-        answer: rx,
+    let held_for = asked_at.elapsed();
+    let (answered_on, response) = rx
+        .recv_timeout(Duration::from_secs(30))
+        .expect("the command answered");
+    let json = |body: InvokeResponseBody| match body {
+        InvokeResponseBody::Json(text) => serde_json::from_str(&text).expect("JSON"),
+        InvokeResponseBody::Raw(_) => Value::Null,
+    };
+    let answer = match response {
+        InvokeResponse::Ok(body) => Ok(json(body)),
+        InvokeResponse::Err(err) => Err(err.0),
+    };
+    Asked {
+        answered_on,
+        held_for,
+        answer,
     }
 }
 

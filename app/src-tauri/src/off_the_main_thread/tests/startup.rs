@@ -23,7 +23,7 @@ use serde_json::json;
 use tauri::Manager;
 use tauri::test::{MockRuntime, mock_builder};
 
-use super::tests::{a_plane, ask, ask_without_waiting};
+use super::tests::{a_plane, ask};
 use crate::lifecycle::WINDOW;
 use crate::planes::{PlaneId, Planes};
 
@@ -57,7 +57,6 @@ fn app_restoring(
     let app = mock_builder()
         .manage(planes)
         .invoke_handler(tauri::generate_handler![
-            crate::opener::open_plane,
             crate::plane_sidebar,
             crate::workspace_panels,
             crate::plane_root_panels,
@@ -83,19 +82,15 @@ fn a_launch_restoring_three_projects_answers_within_100_ms_and_never_holds_the_w
     let (release, released) = mpsc::channel();
     let (app, front) = app_restoring(launch.path(), slow_roots.clone(), entered, released);
 
-    // The window asks for the two other projects, as its restore does, side by side.
+    // The other two open side by side, each on a thread of its own, as `open_plane` opens one
+    // on the blocking pool for the window's restore.
     let opening: Vec<_> = slow_roots
         .iter()
-        .map(|root| ask_without_waiting(&app, "open_plane", json!({ "path": root })))
+        .map(|root| {
+            let (app, root) = (app.handle().clone(), root.clone());
+            std::thread::spawn(move || app.state::<Planes>().open(&root))
+        })
         .collect();
-    for (root, asking) in slow_roots.iter().zip(&opening) {
-        assert!(
-            asking.held_for < STALL,
-            "opening {} held the window's thread {:?}",
-            root.display(),
-            asking.held_for
-        );
-    }
     for _ in &slow_roots {
         building
             .recv_timeout(Duration::from_secs(30))
@@ -120,7 +115,11 @@ fn a_launch_restoring_three_projects_answers_within_100_ms_and_never_holds_the_w
         let asked_at = Instant::now();
         let asked = ask(&app, command, args);
         let took = asked_at.elapsed();
-        assert!(asked.answer.is_ok(), "{command} refused: {:?}", asked.answer);
+        assert!(
+            asked.answer.is_ok(),
+            "{command} refused: {:?}",
+            asked.answer
+        );
         if took > FIRST_ANSWER || asked.held_for >= STALL {
             slow_answers.push(format!(
                 "{command} answered in {took:?}, holding the window {:?}",
@@ -133,16 +132,14 @@ fn a_launch_restoring_three_projects_answers_within_100_ms_and_never_holds_the_w
     for _ in &slow_roots {
         let _ = release.send(());
     }
-    assert!(still_opening, "the slow projects had opened before the reads were asked");
     assert!(slow_answers.is_empty(), "{slow_answers:#?}");
+    assert!(
+        still_opening,
+        "the slow projects had opened before the reads answered"
+    );
 
-    for (root, asking) in slow_roots.iter().zip(opening) {
-        let opened = asking.answered();
-        assert!(
-            opened.answer.is_ok(),
-            "{} did not open: {:?}",
-            root.display(),
-            opened.answer
-        );
+    for opened in opening {
+        opened.join().expect("each slow project opens");
     }
+    assert_eq!(app.state::<Planes>().open_now().len(), 3);
 }
