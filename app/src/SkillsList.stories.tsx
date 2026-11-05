@@ -21,7 +21,7 @@ import { SkillMenu, SkillsList } from "./SkillsList";
 import { fixOf, groupsOf, markOf, type GroupId, type ListedSkill } from "./skillsListing";
 import { DEFAULT_SKILLS_VIEW } from "./skillsViewPrefs";
 import { skill } from "./skillsListing.testkit";
-import { chatNeedsOf, chatSetSaid, type ChatSkillsSaid } from "./chatSkillNeeds";
+import { budgetSaid, chatNeedsOf, chatSetBeside, type ChatSkillsSaid } from "./chatSkillNeeds";
 import { inWorkspace } from "./skillStudio";
 
 /** A workspace's skills, as the studio answers them for `ops`. */
@@ -92,7 +92,9 @@ function Skills({
       <SkillsList
         whose={chat ? "steward 5" : "A new chat in ops"}
         chat={chat}
-        setSaid={whole === undefined ? [] : chatSetSaid(whole)}
+        setSaid={whole === undefined ? [] : chatSetBeside(whole)}
+        budgetSaid={whole?.budget ? budgetSaid(whole.budget) : undefined}
+        onBudget={() => setSaid("Routing")}
         chatNeeds={whole === undefined ? [] : chatNeedsOf(whole, inWorkspace("ops"))}
         onChatFix={(need) => setSaid(need.fix.label)}
         groups={groupsOf(filter.shown)}
@@ -350,6 +352,7 @@ const WHOLE: ChatSkillsSaid = {
     manual: 1,
     most_skills: 30,
     most_chars: 6000,
+    workspace: null,
     hidden: 2,
     still_over: null,
     pinned_by: [],

@@ -1136,6 +1136,9 @@ export const commands = {
 	skillRouters: (plane: PlaneId) => typedError<SkillRouterOffer[], string>(__TAURI_INVOKE("skill_routers", { plane })),
 	skillRouterChoose: __WINDOW_ONLY_RESULT,
 	skillRouterReadsPrompts: __WINDOW_ONLY_RESULT,
+	skillBudgetSet: __WINDOW_ONLY_RESULT,
+	/**  **What the numbers typed in Change… would do to new chats** (#5353): nothing is written. */
+	skillBudgetPreview: (plane: PlaneId, workspace: string | null, persona: string | null, program: string, skills: number | null, chars: number | null) => typedError<SkillBudgetPreview, string>(__TAURI_INVOKE("skill_budget_preview", { plane, workspace, persona, program, skills, chars })),
 	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
@@ -12145,6 +12148,11 @@ export type SkillBudget = {
 	 *  listing (SK-8).
 	 */
 	manual: number,
+	/**
+	 *  The workspace the chat works in, `None` at the project's root: whose numbers a link from
+	 *  here changes (#5353).
+	 */
+	workspace: string | null,
 	/**  The most skills the budget lists. */
 	most_skills: number,
 	/**  The most characters it holds. */
@@ -12169,6 +12177,22 @@ export type SkillBudget = {
 	 *  pins. Null where its pins are read.
 	 */
 	pins_together: SkillPinsTogether | null,
+};
+
+/**  **What a typed skill budget would do to new chats** (#5353), as the Change… dialog says it. */
+export type SkillBudgetPreview = {
+	listed: number,
+	hidden: number,
+	/**  By name, what would now be listed. */
+	now_listed: string[],
+	/**  By name, what would now be hidden. */
+	now_hidden: string[],
+	/**  About how many more tokens each new chat spends, or fewer below zero. */
+	more_tokens: number,
+	/**  What the program would drop, past a limit of its own purlis cannot move. */
+	past_limit: string | null,
+	/**  What stays listed past these numbers: the pins, or what no pin decides. */
+	over: string | null,
 };
 
 /**
@@ -13212,13 +13236,22 @@ export type Studio = {
 };
 
 /**
- *  **A chat's skill budget on one harness**, as the Routing page says it: the most skills its
- *  list holds, and the most characters of what is listed of them.
+ *  **A chat's skill budget on one harness**, as the Routing page and Settings say it: the most
+ *  skills its list holds and the most characters of what is listed of them, each with where it
+ *  comes from (#5353).
  */
 export type StudioBudget = {
 	program: string,
+	/**  The word its numbers are kept under and a change names it by: `claude`, `codex`. */
+	key: string,
 	skills: number,
 	chars: number,
+	/**  `100, this workspace · project says 60 · Claude Code's default is 60`. */
+	skills_said: string,
+	chars_said: string,
+	/**  What this level writes, which Change… starts from and Reset to default takes out. */
+	skills_here: number | null,
+	chars_here: number | null,
 };
 
 /**

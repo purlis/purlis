@@ -1659,6 +1659,26 @@ fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
     assert_eq!(at(Some("alpha")), "51532");
 }
 
+/// #5353: a program's own number is what that program is handed, and another's leaves it be.
+#[test]
+fn claude_codes_own_number_is_the_limit_it_is_handed_and_codexs_is_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = dir.path();
+    let write = |text: &str| std::fs::write(plane.join("charter.toml"), text).unwrap();
+    let handed = || {
+        listing_limit_handed(Some(crate::skills::PlaneSkills {
+            plane,
+            workspace: None,
+            repo: &[],
+            routed: None,
+        }))
+    };
+    write("schema = 1\n[skills.budget.claude]\nchars = 40000\n");
+    assert_eq!(handed(), "51532");
+    write("schema = 1\n[skills.budget.codex]\nchars = 40000\n");
+    assert_eq!(handed(), "40000");
+}
+
 /// **The measured bug** (#4610): a 200k Claude 5 chat's own limit is 6,000 characters, and Claude
 /// Code's own 14 entries take 6,848 of whatever limit it has, so every plane skill's description
 /// was dropped however few there were.

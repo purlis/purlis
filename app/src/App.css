@@ -8561,6 +8561,31 @@ nav.piece-files-head {
 
 /* The chat's budget and how its router did at its start, under whose skills (S8, #3694): what
    Use skill… used to say above its list, said once, here. */
+/* **A program's skill budget** (#5353): its table's number over its reset, and what a typed one
+   would cost. Places them; the table, the buttons and the words draw themselves. */
+.skill-budget {
+  margin-block-start: var(--space-3);
+}
+
+.skill-budget-number {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  white-space: normal;
+}
+
+.skill-budget-cost {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-block-size: 5lh;
+}
+
+.skill-budget-cost > p {
+  margin: 0;
+}
+
 .skills-view-said {
   margin: 0;
   font-size: var(--font-size-xs);

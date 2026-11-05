@@ -56,6 +56,8 @@ export function SkillsList({
   whose,
   chat,
   setSaid = [],
+  budgetSaid,
+  onBudget,
   chatNeeds = [],
   onChatFix,
   groups,
@@ -87,6 +89,9 @@ export function SkillsList({
   chat: boolean;
   /** What the chat's set says as a whole, under whose it is: its budget and its routing (S8). */
   setSaid?: readonly string[];
+  /** **The chat's budget in a line**, the numbers that link to where it is changed (#5353). */
+  budgetSaid?: string;
+  onBudget?: () => void;
   /** **What the chat needs of the person as a whole** (S8, #3694), first in Needs you, each with
    *  its one fix: its budget, pins, router, what it started without and what changed. */
   chatNeeds?: readonly ChatNeed[];
@@ -204,8 +209,20 @@ export function SkillsList({
         <strong>{whose}</strong>{" "}
         <span className="honest">· {counted(count, "skill", "skills")}</span>
       </p>
-      {setSaid.length > 0 && (
+      {(setSaid.length > 0 || budgetSaid !== undefined) && (
         <p className="skills-view-said" data-testid="skills-view-said">
+          {budgetSaid !== undefined && (
+            <Button
+              inline
+              variant="ghost"
+              data-testid="skills-view-budget"
+              tooltip="Change the skill budget"
+              onPress={onBudget}
+            >
+              {budgetSaid}
+            </Button>
+          )}
+          {budgetSaid !== undefined && setSaid.length > 0 && " · "}
           {setSaid.join(" · ")}
         </p>
       )}

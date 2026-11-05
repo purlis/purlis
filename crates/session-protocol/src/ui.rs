@@ -713,6 +713,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A router's reading of prompts turned on or off (ADR 0102 as amended 2026-10-31): only the
     // person's own press in their window, never a chat or another link.
     "skill_router_reads_prompts",
+    // A program's skill budget changed (#5353): the person's own press in their window, as a
+    // Settings save is.
+    "skill_budget_set",
     // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
     // and naming its owners. Each is one commit to the project, the person's own press in their
     // window.
@@ -1335,6 +1338,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_persona_skills",
     "skill_revert_widens",
     // The router extensions Change… offers (#3692): read only.
+    "skill_budget_preview",
     "skill_routers",
     "skill_runs",
     "skill_stats",

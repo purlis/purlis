@@ -1634,6 +1634,31 @@ export function SkillStudioTab({
                   () => Promise.resolve({ tone: "news", label: "Router changed", text }),
                 )
               }
+              budgetWorkspace={scope.at === "workspace" ? scope.name : null}
+              onBudget={(write, told) =>
+                change(
+                  "The skill budget was not changed",
+                  () =>
+                    commands
+                      .skillBudgetSet(
+                        plane,
+                        scope.at === "workspace" ? scope.name : null,
+                        write.program.key,
+                        write.skills,
+                        write.chars,
+                      )
+                      .then(answered),
+                  () => {
+                    told.done();
+                    return Promise.resolve({
+                      tone: "news",
+                      label: "Skill budget changed",
+                      text: write.said,
+                    });
+                  },
+                  told.refused,
+                )
+              }
               gradeRunning={gradeRunning}
               onGradeRunning={(grade) =>
                 go({ page: "routing", scope, item: routerGradingItem(grade) })

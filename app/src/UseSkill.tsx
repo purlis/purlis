@@ -455,6 +455,9 @@ const NOTHING_CHANGED: SkillsChangedHere = {};
 /** What the Skills chip's tooltip says it does (S8, #3694). */
 export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
 
+/** What the budget's number on a chat's pane does (#5353). */
+export const CHANGE_THE_SKILL_BUDGET = "Change the skill budget";
+
 /**
  * **The skills warning on a chat's pane foot** (#2775; spec #3679 S8, #3694, #3953, #5204): drawn
  * only while the Skills view's Needs you holds a card of the chat's own (`chatNeedsOf`, the view's

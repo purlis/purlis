@@ -2,15 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type PlaneId } from "../bindings";
+import { commands, type PlaneId, type StudioBudget } from "../bindings";
 import { counted } from "../dispatches";
 import { SETTINGS, usePlaneChanged } from "../planeChanged";
 import { OPEN_SKILL_STUDIO, SKILL_NEEDS_IN, SKILL_STUDIO_IN } from "../skillStudio";
-import { budgetSaid } from "../SkillStudioRouting";
+import { SkillBudgetTable, writeBudgetTo } from "../SkillBudget";
 import { Button } from "../ui/button/Button";
-import { key, numberAt, type Control } from "./fileControls";
 import { askSettingsAction } from "./links";
-import type { LiveSetting, Setting, SettingsGroup } from "./groups";
+import type { LiveSetting, SettingsGroup } from "./groups";
 
 /**
  * **Settings › Workspace › Skills** (#2767; spec #2762, decision 35; #3695, the amendment's S10):
@@ -20,16 +19,12 @@ import type { LiveSetting, Setting, SettingsGroup } from "./groups";
  * studio's Needs you. Its link runs the catalogue's `skills.studio:<ws>`, which lands on the
  * Library, the row the workspace's menu offers too. Behind the studio's flag.
  */
-export function workspaceSkillsGroup(
-  plane: PlaneId,
-  workspace: string,
-  budget: readonly Setting[] = [],
-): SettingsGroup {
+export function workspaceSkillsGroup(plane: PlaneId, workspace: string): SettingsGroup {
   return {
     id: "workspace.skills",
     label: "Skills",
     help: "The skills this workspace's chats get. They are chosen in the Skill studio.",
-    settings: [summarySetting(plane, workspace), ...budget],
+    settings: [summarySetting(plane, workspace)],
     after: [budgetInForce("workspace.skills.budget.in-force", plane, workspace)],
     links: [{ label: OPEN_SKILL_STUDIO, action: `${SKILL_STUDIO_IN}${workspace}` }],
   };
@@ -40,61 +35,74 @@ export function workspaceSkillsGroup(
  * which a workspace's own can override, and what it comes to on each program. Behind the studio's
  * flag.
  */
-export function projectSkillsGroup(plane: PlaneId, budget: readonly Setting[]): SettingsGroup {
+export function projectSkillsGroup(plane: PlaneId): SettingsGroup {
   return {
     id: "project.skills",
     label: "Skills",
     help: "How many skills a chat lists before the router moves the rest into an index skill. Pin a skill in the Skill studio to keep it listed.",
-    settings: budget,
+    settings: [],
     after: [budgetInForce("project.skills.budget.in-force", plane, null)],
   };
 }
 
-/** **The two numbers of `settings.skills.budget`**: an empty box leaves each program its own. */
-export function budgetControls(): Control[] {
-  return [
-    numberAt(
-      key("skills", "budget", "skills"),
-      "Most skills in a chat's list",
-      "Leave it empty for each program's own number.",
-    ),
-    numberAt(
-      key("skills", "budget", "chars"),
-      "Most characters in a chat's list",
-      "Leave it empty for each program's own number. More characters cost more of each chat's context, about 91 tokens a skill.",
-    ),
-  ];
-}
-
-/** What each program's budget comes to here, and what a program would drop of it, the core's. */
+/**
+ * **What each program's budget comes to here and where each number comes from, with Change… and
+ * Reset to default** (#5353): the same table the Routing page draws, and what a program would drop
+ * of it, the core's. `settings.skills.budget`'s numbers are written here, so a read-only project
+ * turns the table's buttons off with the project's sentence.
+ */
 function budgetInForce(id: string, plane: PlaneId, workspace: string | null): LiveSetting {
+  const level = { workspace, persona: null };
+  const write = writeBudgetTo(plane, level);
   return {
     id,
     label: "In force",
-    help: "What a chat starting here gets on each program.",
-    writes: "nothing",
+    help: "What a chat starting here gets on each program, and where each number comes from. More characters cost more of each chat's context, about 91 tokens a skill.",
+    writes: "per control",
     useControl: () => {
-      const [said, setSaid] = useState<{ line: string; past: readonly string[] }>();
+      const [said, setSaid] = useState<{
+        refused?: string;
+        budget: readonly StudioBudget[];
+        past: readonly string[];
+      }>();
       const changed = usePlaneChanged([plane], SETTINGS);
+      const [written, setWritten] = useState(0);
       useEffect(() => {
         let live = true;
         void commands.skillStudio(plane, workspace, null).then((answer) => {
           if (!live) return;
-          if (answer.status === "error") setSaid({ line: answer.error, past: [] });
+          if (answer.status === "error") setSaid({ refused: answer.error, budget: [], past: [] });
           else if (answer.data.router !== null)
             setSaid({
-              line: budgetSaid(answer.data.router.budget),
+              budget: answer.data.router.budget,
               past: answer.data.router.past_limits,
             });
         });
         return () => {
           live = false;
         };
-      }, [changed]);
+      }, [changed, written]);
       return {
         control: (ids) => (
           <div id={ids.id} aria-describedby={ids.describedBy} data-testid="skill-budget-in-force">
-            <p className="honest">{said?.line ?? "Reading…"}</p>
+            {said === undefined && <p className="honest">Reading…</p>}
+            {said?.refused !== undefined && <p className="honest">{said.refused}</p>}
+            {said !== undefined && said.budget.length > 0 && (
+              <SkillBudgetTable
+                plane={plane}
+                budget={said.budget}
+                level={level}
+                onWrite={(one, told) =>
+                  write(one, {
+                    refused: told.refused,
+                    done: () => {
+                      told.done();
+                      setWritten((was) => was + 1);
+                    },
+                  })
+                }
+              />
+            )}
             {said?.past.map((line) => (
               <p key={line} className="honest" data-testid="skill-budget-past-limit">
                 {line}

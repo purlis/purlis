@@ -48,6 +48,7 @@ const BUDGET: SkillBudget = {
   manual: 1,
   most_skills: 30,
   most_chars: 6000,
+  workspace: null,
   hidden: 0,
   still_over: null,
   pinned_by: [],
@@ -388,6 +389,33 @@ describe("the Skills chip on a chat's pane", () => {
     now = routedChat(QUICK);
     await act(() => emit("chat-prompt-routing", { plane: "p", session: 4 }));
     await waitFor(() => expect(screen.queryByTestId("pane-skills")).toBeNull());
+  });
+
+  it("links the number it is budgeted to where it is changed, the chat's workspace's (#5353)", async () => {
+    const asked: unknown[] = [];
+    const listen = (event: Event) => asked.push((event as CustomEvent).detail);
+    window.addEventListener(SKILL_STUDIO_ASKED, listen);
+    studioOn();
+    render(
+      <ChatSkillSetsHere.Provider
+        value={{
+          4: {
+            budget: { ...BUDGET, workspace: "ops", most_skills: 60 },
+            routing: null,
+            missing: null,
+            changed: null,
+          },
+        }}
+      >
+        <SkillsChip plane="p" session={4} />
+      </ChatSkillSetsHere.Provider>,
+    );
+    const link = await screen.findByTestId("pane-skills-budget");
+    expect(link).toHaveTextContent("of 60");
+    expect(link).toHaveAccessibleName("Of 60. Change the skill budget");
+    fireEvent.click(link);
+    window.removeEventListener(SKILL_STUDIO_ASKED, listen);
+    expect(asked).toEqual([{ plane: "p", scope: inWorkspace("ops"), page: "routing" }]);
   });
 
   it("reads no chat for a telling of another project or of a chat not open (#4445)", async () => {
