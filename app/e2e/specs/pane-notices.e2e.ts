@@ -995,12 +995,13 @@ describe("a Notice in a pane", () => {
 
     const seen = await measured(0);
     const [frame, stack] = [seen.frame as Box, seen.stack as Box];
-    // The band keeps to its share of the pane, and scrolls what it cannot show.
+    // The band gives way before the terminal goes under its three lines, and scrolls what it cannot
+    // show (#5215). A line of the terminal is at least a rem.
     check(
-      "the band runs past its share of the pane",
-      stack.height,
-      "atMost",
-      frame.height * 0.46 + 1,
+      "the terminal gave way past its three lines",
+      (seen.terminal as Box).height,
+      "atLeast",
+      3 * seen.rem,
     );
     // What each Notice draws, its box clipped to the stack, stays inside the pane and off the
     // terminal, however short the pane is.

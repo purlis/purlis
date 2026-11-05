@@ -73,18 +73,20 @@
 
 /* **The band's own box** (#5215, the approved prototype): the raised ground and a hairline, with
    its rows one under another inside it. Its folded line is the same box, one line high. */
-.pane-frame.pane-headed
-  > .pane-top
-  > [data-scope="notice-row"][data-part="root"]:has(
-    > [data-scope="notice-row"][data-part="head"],
-    > .pane-band-folded,
-    > [data-scope="notice-row"][data-part="stack"] > *:not([hidden])
-  ) {
+.pane-frame.pane-headed > .pane-top > [data-scope="notice-row"][data-part="root"] {
   gap: 0;
   overflow: hidden;
   border: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   border-radius: var(--radius-lg);
   background-color: var(--surface-raised);
+}
+
+/* Folded, its rows are all `hidden`: a stack with nothing to show takes no room and scrolls nothing
+   (its fades are boxes of their own). */
+.pane-top
+  > [data-scope="notice-row"][data-part="root"]
+  > [data-scope="notice-row"][data-part="stack"]:not(:has(> :not([hidden]))) {
+  display: none;
 }
 
 /* The folded band's line: the whole box is its one button. */
@@ -118,12 +120,12 @@
   overflow-y: auto;
 }
 
-/* **Its rows at rest take a few lines' room** (the prototype's 196px), so a pile of notices leaves
-   the terminal its height; a message opened, or what a way out opened, takes what it needs. */
+/* **Its rows at rest take a few lines' room** (the prototype's 196px of its 560px pane), so a pile of
+   notices leaves the terminal its height; a message opened, or what a way out opened, takes what it needs. */
 .pane-top
   > [data-scope="notice-row"][data-part="root"]
   > [data-scope="notice-row"][data-part="stack"]:not(:has([data-whole], [data-opened])) {
-  max-block-size: calc(var(--size-control) * 7);
+  max-block-size: min(calc(var(--size-control) * 7), 33cqb);
 }
 
 /* The band's fade goes to what the rows stand on here: the band's own ground (#3168, #5215). */
@@ -404,6 +406,11 @@
   align-items: center;
   justify-content: flex-end;
   min-inline-size: 0;
+}
+
+[data-scope="notice"][data-part="way-slot"] {
+  flex: none;
+  inline-size: max(24px, var(--size-chrome), var(--space-7));
 }
 
 /* **A consent's Allow stands apart from Keep blocked** (rule 9), and a plain way out has no edge. */

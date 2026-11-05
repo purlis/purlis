@@ -203,6 +203,11 @@ export function NoticeWays({ children }: { children: ReactNode }) {
   );
 }
 
+/** **The room a row's toggle would take** (#5215), kept where a way out must not move for it. */
+export function NoticeWaySlot() {
+  return <span data-scope="notice" data-part="way-slot" aria-hidden="true" />;
+}
+
 /** **What a way out opened**, under the line and outside its live region. */
 export function NoticeUnder({ children }: { children: ReactNode }) {
   return (

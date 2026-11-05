@@ -542,9 +542,9 @@ export const ALongMessageOpened: Story = {
     const { terminal } = rowsOf(canvasElement);
     const lines = 3 * parseFloat(getComputedStyle(terminal as Element).lineHeight || "0");
     expect(boxOf(terminal).height).toBeGreaterThanOrEqual(Number.isNaN(lines) ? 0 : lines - 1);
-    // The tooltip the keyboard brought up takes the first Esc (`ui/tooltip`), the row the next.
+    // A tooltip that is up takes the first Esc (`ui/tooltip`), and the row the next.
     await userEvent.keyboard("{Escape}");
-    await userEvent.keyboard("{Escape}");
+    if (box.hasAttribute("data-whole")) await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(box).not.toHaveAttribute("data-whole"));
     await untilFocused(
       () => within(row).getByRole("button", { name: "Show the whole message" }),
@@ -863,7 +863,7 @@ export const ConsentPressedByThePointer: Story = {
  * yourself is no move: the Allow pressed just after that scroll allows.
  */
 export const ConsentClamped: Story = {
-  args: { warnings: ["vault-refused", "sandbox-long"], width: 400 },
+  args: { warnings: ["vault-refused", "mcp-failed", "skills-missing", "sandbox-long"], width: 400 },
   play: async ({ canvas, userEvent }) => {
     allowed.length = 0;
     const vault = await canvas.findByRole("status", { name: "Vault" });
@@ -921,7 +921,7 @@ export const ConsentClamped: Story = {
  * both.
  */
 export const NarrowScrolled: Story = {
-  args: { warnings: ["vault-refused", "sandbox-long"], width: 400 },
+  args: { warnings: ["vault-refused", "mcp-failed", "skills-missing", "sandbox-long"], width: 400 },
   play: async ({ canvas, canvasElement }) => {
     const vault = await canvas.findByRole("status", { name: "Vault" });
     const stack = vault.closest('[data-scope="notice-row"][data-part="stack"]') as HTMLElement;

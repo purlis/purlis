@@ -167,16 +167,16 @@ export const FirstQuestionOffersTheChoice: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByText(FIRST_LINE)).toBeVisible();
     const quiz = canvas.getByRole("group", { name: "developer 7 asks" });
-    const title = within(quiz).getByText("developer 7 asks");
+    const title = within(quiz).getByText(/^developer 7 asks/);
     const close = within(quiz).getByRole("button", { name: CLOSE_QUIZ });
     const change = canvas.getByRole("button", { name: "Change" });
     const dismiss = canvas.getByRole("button", { name: "Dismiss" });
     for (const way of [change, dismiss, close]) await expect(apart(way, title)).toBe(true);
     await expect(apart(change, quiz)).toBe(true);
     await expect(apart(dismiss, quiz)).toBe(true);
+    await opened(canvasElement);
     await expect(quiz).toHaveTextContent("steward 4 passed this on.");
     await expect(quiz).toHaveTextContent("steward 4's note");
-    await opened(canvasElement);
     // It never took the keyboard: whatever had it still has it.
     await expect(box(canvasElement)).not.toHaveFocus();
     change.focus();
@@ -238,6 +238,7 @@ export const AQuestionOverSeveralLines: Story = {
   },
   play: async ({ canvasElement }) => {
     const quiz = within(canvasElement).getByRole("group", { name: "developer 7 asks" });
+    await opened(canvasElement);
     await expect(quiz).not.toHaveTextContent(/⟦U\+|\*\*/);
     // Drawn over its lines: the question's line above its list, each of the list's on its own.
     const line = within(quiz).getByText("Which branch should the fix land on?");
@@ -249,7 +250,6 @@ export const AQuestionOverSeveralLines: Story = {
     await expect(second.getBoundingClientRect().top).toBeGreaterThanOrEqual(
       first.getBoundingClientRect().bottom,
     );
-    await opened(canvasElement);
   },
 };
 
@@ -283,8 +283,8 @@ export const ClosingOneShowsTheNext: Story = {
 
 /**
  * **Folded with the pane's notices** (#5213): minimised, which every pane's notices are by
- * default, the note folds into the pane's bell and the quiz stands, as every ask does, with its
- * Close in reach. The picture is the band minimised.
+ * default, the note folds into the pane's bell and the band is one line that names the question.
+ * The picture is the band minimised.
  */
 export const FoldedWithThePanesNotices: Story = {
   args: { asks: [FIRST], minimised: true },
@@ -321,8 +321,8 @@ export const NoReplyInTime: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await opened(canvasElement);
     await expect(canvas.getByText("steward 4 did not reply in 100 seconds.")).toBeVisible();
     await expect(canvas.queryByText(/'s note/)).toBeNull();
-    await opened(canvasElement);
   },
 };

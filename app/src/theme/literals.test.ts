@@ -467,6 +467,7 @@ describe("the stylesheet and the vocabulary agree", () => {
     "--window-controls",
     "--dialog-height",
     "--tree-depth",
+    "--terminal-row",
   ];
 
   /**

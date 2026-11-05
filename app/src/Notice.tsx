@@ -15,7 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { PersonaMark } from "./PersonaMark";
-import { closedIn, closeIn, NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
+import { closedIn, closeIn, grants, NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
 import {
   bandHeadSays,
   bandRegionSays,
@@ -40,6 +40,7 @@ import {
   NoticeTitle,
   NoticeUnder,
   NoticeWays,
+  NoticeWaySlot,
   NoticeWhose,
   NoticeWords,
   type NoticeListAt,
@@ -563,8 +564,9 @@ function BandRow({
   }) {
   const [whole, setWhole] = useState(false);
   const { at, cut } = useCut(whole);
-  const grants = fixes?.some((fix) => fix.allows) === true;
-  const kind = mark ?? (grants ? "consent" : tone === "news" && !running ? "note" : undefined);
+  const asksConsent = fixes?.some((fix) => fix.allows) === true;
+  const holdsStill = asksConsent || grants(cause);
+  const kind = mark ?? (asksConsent ? "consent" : tone === "news" && !running ? "note" : undefined);
   const says = sub ?? label;
   return (
     <NoticeBox
@@ -637,7 +639,7 @@ function BandRow({
               Copy command
             </Button>
           )}
-          {(cut || whole) && (
+          {cut || whole ? (
             <IconButton
               size="sm"
               variant="ghost"
@@ -647,6 +649,10 @@ function BandRow({
               data-way="whole"
               icon={<Twist open={whole} />}
             />
+          ) : (
+            // **A way out the settle guard holds never moves for the toggle** (#1695): the line is
+            // measured only once it is drawn, so its room is kept from the first drawing.
+            holdsStill && <NoticeWaySlot />
           )}
           {onDismiss ? (
             <IconButton
@@ -1118,7 +1124,9 @@ export function NoticePaneRow({
   const headed = bell !== undefined && !folds && notes + asks > 0;
   /** **Folded, one line** (#5215): how many wait and on what. Notes alone fold into the bell. */
   const foldedLine = bell !== undefined && folds && asks > 0;
-  const empty = held.drawn === 0 && !foldedLine;
+  // Unfolding, the read of what it shows comes after: the head is what is drawn meanwhile, and the
+  // fold can only take the keyboard if the band is drawn by then.
+  const empty = held.drawn === 0 && !foldedLine && !headed;
   // The keyboard goes from the fold to the line that took its place, and back (WCAG 2.4.3).
   useLayoutEffect(() => {
     if (!goesOn.current) return;
@@ -1154,7 +1162,7 @@ export function NoticePaneRow({
           icon={<Twist />}
         >
           <span className="pane-band-folded-says">{foldedSays(asks, held.waitsOn)}</span>
-          <span className="pane-band-folded-show">{SHOW_BAND}</span>
+          <span className="pane-band-folded-show">{` · ${SHOW_BAND}`}</span>
         </Button>
       )}
       {headed && (

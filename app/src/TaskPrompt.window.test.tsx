@@ -430,7 +430,7 @@ describe("a task stopped on a permission prompt", () => {
     });
     // Without the prompt's words, which only the hold carried.
     expect(notice.querySelector('[data-part="message"]')?.textContent).toBe(
-      "“sweep” (a task of “steward 1”) is stopped on a prompt and waiting on you. Answer it in its own pane.Show the taskDismiss",
+      "“sweep” (a task of “steward 1”) is stopped on a prompt and waiting on you. Answer it in its own pane.",
     );
     expect(
       within(notice)
