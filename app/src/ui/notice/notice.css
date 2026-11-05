@@ -430,12 +430,6 @@
   min-inline-size: 0;
 }
 
-[data-scope="notice"][data-part="sub"] {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 [data-scope="notice"][data-part="ways"] {
   display: flex;
   flex-wrap: wrap;

@@ -313,13 +313,27 @@
    icon says what it is, and a consent keeps its full waiting-coloured edge (ADR 0097 §6).
    --------------------------------------------------------------------------------------------- */
 
-.pane-top [data-scope="notice"][data-part="root"][data-layout="row"] {
+.pane-top [data-scope="notice"][data-part="root"][data-placement="pane"][data-layout="row"] {
   padding: 0;
   border-radius: 0;
   background-color: transparent;
 }
 
-.pane-top [data-scope="notice"][data-part="root"][data-layout="row"]::before {
+/* **A note about a setting is an information line** (#5215, the prototype): quieter, and shorter. */
+.pane-top [data-layout="row"]:not(:has([data-part="sub"])) > [role="status"] {
+  min-block-size: var(--size-control);
+}
+
+.pane-top
+  [data-layout="row"]:not(:has([data-part="sub"]))
+  [data-part="words"]
+  > [data-part="message"] {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-regular);
+}
+
+.pane-top
+  [data-scope="notice"][data-part="root"][data-placement="pane"][data-layout="row"]::before {
   content: none;
 }
 
@@ -328,7 +342,8 @@
   border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
-.pane-top [data-scope="notice"][data-part="root"][data-layout="row"][data-consent] {
+.pane-top
+  [data-scope="notice"][data-part="root"][data-placement="pane"][data-layout="row"][data-consent] {
   border: 1px solid var(--state-waiting);
   border-radius: var(--radius-md);
   background-color: transparent;
@@ -382,6 +397,13 @@
 
 .pane-top [data-part="ways"] > [data-variant="secondary"] {
   border-color: transparent;
+}
+
+/* Its sub-line stays on its one line in the row, whatever it says. */
+.pane-top [data-layout="row"] [data-part="sub"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* **Opened, whole, with its ways pinned at its foot** (#5215): the band grows, the terminal gives

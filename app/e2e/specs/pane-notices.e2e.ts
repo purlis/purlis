@@ -880,7 +880,8 @@ describe("a Notice in a pane", () => {
     for (const [index, one] of seen.notices.entries()) {
       const next = seen.notices[index + 1];
       if (next === undefined) continue;
-      expect((next.box as Box).top).toBeGreaterThan((one.box as Box).bottom);
+      // Rows of one band touch, a line between them (#5215).
+      expect((next.box as Box).top).toBeGreaterThanOrEqual((one.box as Box).bottom);
       expect((next.box as Box).left).toBeCloseTo((one.box as Box).left, 0);
     }
     const reached = await browser.execute(() => {
