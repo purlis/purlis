@@ -3583,8 +3583,8 @@ fn a_login_says_the_sites_its_browser_reaches_and_what_the_chat_may_do_on_each()
 }
 
 /// #5251: a login the host refused before it ran leaves the browser's record as it was: the
-/// session of the login that went before stands, and so does what the browser holds, and the
-/// chat's Allow once is said to be its again, once.
+/// session of the login that went before stands, the browser still holds it, and the chat's Allow
+/// once is said to be its again, once.
 #[test]
 fn a_login_refused_before_it_ran_keeps_the_browsers_session_and_its_allow_once() {
     let browsers = ChatBrowsers::default();
@@ -3595,7 +3595,6 @@ fn a_login_refused_before_it_ran_keeps_the_browsers_session_and_its_allow_once()
     let went = answered_as(&browsers, &hosted, &ask(3, log_in("shop-login")), &qa);
     assert!(matches!(went.0, Answer::Browsed { .. }), "{went:?}");
     assert!(!browsers.login_never_ran(3, "shop-login"), "it ran");
-    let held_before = browsers.logins_held.lock().unwrap().clone();
     let sessions_before = browsers.logged_in.lock().unwrap().clone();
     *hosted.login_not_run.lock().unwrap() = 1;
 
@@ -3603,8 +3602,8 @@ fn a_login_refused_before_it_ran_keeps_the_browsers_session_and_its_allow_once()
 
     let why = refusal(refused.0);
     assert!(why.contains("holds a login at"), "{why}");
-    assert_eq!(*browsers.logins_held.lock().unwrap(), held_before);
     assert_eq!(*browsers.logged_in.lock().unwrap(), sessions_before);
+    assert!(browsers.holds_a_login("program-1"));
     assert!(browsers.login_never_ran(3, "other-login"));
     assert!(!browsers.login_never_ran(3, "other-login"), "said once");
 }

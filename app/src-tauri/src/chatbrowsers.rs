@@ -257,9 +257,10 @@ struct Chat {
     /// A browser it never used that purlis closed for a kept login, until the person's timeline
     /// has said so (#5296): the one closed and the login.
     closed_unused: Option<(String, String)>,
-    /// **The login its last call was refused before it ran** (#5251): the browser it was to go
-    /// into had ended, or refused it before it began. Its Allow once is the chat's again.
-    login_not_run: Option<String>,
+    /// **The logins its calls were refused before they ran** (#5251), until each call has
+    /// answered: the browser it was to go into had ended, or refused it before it began. Its
+    /// Allow once is the chat's again.
+    login_not_run: Vec<String>,
     /// Its identity (ADR 0066), as the app's record of it says: what a window that comes back
     /// matches its browsers' notes by (#2025).
     id: Option<String>,
@@ -334,7 +335,7 @@ impl Default for Chat {
             left_behind: Vec::new(),
             clean_load_tried: Vec::new(),
             closed_unused: None,
-            login_not_run: None,
+            login_not_run: Vec::new(),
             id: None,
             posture: Posture::Unasked,
             since: 0,
@@ -1771,43 +1772,27 @@ impl ChatBrowsers {
         ))
     }
 
-    /// Whether `program` holds `login` now (#2699).
-    fn holds(&self, program: &str, login: &HeldLogin) -> bool {
-        self.logins_held
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(program)
-            .is_some_and(|logins| logins.contains(login))
-    }
-
-    /// `program` no longer holds `login`: one that was refused before it began (#5251).
-    fn unheld(&self, program: &str, login: &HeldLogin) {
-        let mut held = self
-            .logins_held
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if let Some(logins) = held.get_mut(program) {
-            logins.retain(|one| one != login);
-            if logins.is_empty() {
-                held.remove(program);
-            }
-        }
-    }
-
     /// **Chat `session`'s call of login `login` was refused before it ran** (#5251).
     fn not_run(&self, session: u32, login: &str) {
         if let Some(chat) = self.lock().get_mut(&session) {
-            chat.login_not_run = Some(login.to_owned());
+            chat.login_not_run.push(login.to_owned());
         }
     }
 
     /// **Whether chat `session`'s call of login `login` was refused before it ran** (#5251), once:
     /// its Allow once is given back where it was.
     pub fn login_never_ran(&self, session: u32, login: &str) -> bool {
-        self.lock()
-            .get_mut(&session)
-            .and_then(|chat| chat.login_not_run.take())
-            .is_some_and(|one| one == login)
+        let mut chats = self.lock();
+        let Some(not_run) = chats.get_mut(&session).map(|chat| &mut chat.login_not_run) else {
+            return false;
+        };
+        match not_run.iter().position(|one| one == login) {
+            Some(at) => {
+                not_run.remove(at);
+                true
+            }
+            None => false,
+        }
     }
 
     /// **`program` holds `login` from now** (#2699), beside every login it held before: a later
@@ -3701,16 +3686,14 @@ impl ChatBrowsers {
                         login: declared.clone(),
                         identity: identity.clone(),
                     };
-                    let held_before = self.holds(program, &held_login);
-                    self.signed_in_with(program, held_login.clone());
+                    self.signed_in_with(program, held_login);
                     // Its row says purlis drives it while it logs in (#2300).
                     self.purlis_drives(program, true);
                     let done = driver.log_in(program, login);
                     if matches!(done, Err(Refused::LoginNotRun(_))) {
-                        // Refused before it began (#5251): the browser is as it was.
-                        if !held_before {
-                            self.unheld(program, &held_login);
-                        }
+                        // Refused before it began (#5251): what's known of its session stands.
+                        // What it holds stays as held, which may only be more than it holds: a
+                        // login of the same running beside it is never forgotten.
                         if !began.get() {
                             self.not_run(browse.chat, &declared);
                         }

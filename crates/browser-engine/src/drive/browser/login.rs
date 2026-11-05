@@ -423,9 +423,6 @@ impl Browser {
         if login.back_to.is_some() {
             self.inner.watch_back(&target, origin, hold);
         }
-        // The windows related to this page close once it's done with what's filled (the person's
-        // ruling of 2026-11-05), as a fill's do: known from before the first value goes in.
-        self.inner.login_fills(&target);
         let mut filled: Vec<NodeKey> = Vec::new();
         let done = self.fill_and_submit(&target, login, &mut filled);
         // Focus is emulated for the fill alone.
@@ -967,6 +964,10 @@ impl Browser {
         }
         let document = self.document_of(target);
         self.blank_node(target, field.key.clone())?;
+        // The windows related to this page close once it's done with what's filled (the person's
+        // ruling of 2026-11-05), as a fill's do: known from before each value goes in, as a step
+        // of its own may be a document of its own.
+        self.inner.login_fills(target);
         if lock(&self.inner.state).related_on_site(target, origin) {
             return Err(not_logged_in(format!(
                 "another window, on {origin} or on no site yet, is related to the login's page: \

@@ -2099,13 +2099,9 @@ impl Screen for EngineScreen {
                 (ended, holder.signing_in())
             })
             .map_err(NotActed::LoginNotRun)?;
-        // Refused by its lease before it began: another login runs, or the person drives it.
-        let ended = ended.map_err(|refusal| match refusal {
-            drive::Refusal::PersonDriving | drive::Refusal::PurlisDriving => {
-                NotActed::LoginNotRun(refusal.to_string())
-            }
-            other => not_acted(other),
-        })?;
+        // A refusal by its lease is not one before it ran: what the browser keeps was told of
+        // this login already.
+        let ended = ended.map_err(not_acted)?;
         if matches!(ended.outcome, Err(drive::Refusal::NoFormOnCleanLoad(_))) {
             self.keeping
                 .lock()
