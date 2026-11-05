@@ -240,6 +240,17 @@
   color: var(--text-secondary);
 }
 
+/* **A link in what it says wraps inside the card** (#1551). A button keeps its words on one line,
+   and past the mark there can be less room than the link's words: the away summary's ran out of
+   its card at the narrowest window, on macOS's wider words (#5305). */
+[data-placement="inbox"]
+  [data-scope="notice"][data-part="message"]
+  [data-scope="button"][data-part="root"][data-variant="link"] {
+  max-inline-size: 100%;
+  white-space: normal;
+  text-align: start;
+}
+
 /* **A chat's own words** (#5217), as an Inbox card draws them (#5214). */
 [data-scope="notice"][data-part="chat-words"] {
   padding-inline-start: var(--notice-indent);

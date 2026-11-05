@@ -571,6 +571,10 @@ describe("the pane Notice's rules", () => {
     expect(of('[data-placement="inbox"] [data-scope="notice"][data-part="message"]')).toMatch(
       /padding-inline-start:\s*var\(--notice-indent\)/,
     );
+    // A link in its words wraps inside the card (#1551): only macOS's scenario run measures it.
+    expect(family).toMatch(
+      /\[data-placement="inbox"\]\s+\[data-scope="notice"\]\[data-part="message"\]\s+\[data-scope="button"\]\[data-part="root"\]\[data-variant="link"\]\s*\{[^}]*white-space:\s*normal/,
+    );
     // No rule of the pane's reaches a Notice that is not in one.
     const reach = [...family.matchAll(/([^{}]+)\{[^{}]*\}/g)]
       .map((hit) => hit[1].trim())
