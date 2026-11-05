@@ -6974,6 +6974,76 @@ fn a_conversation_for_a_chat_that_is_not_open_invents_nothing() {
     assert_eq!(chats.record(), Record::default());
 }
 
+/// **A harness can name its conversation before its start has returned** (#5170): its report is
+/// heard while the start still reads the plane's skills, before the chat is listed as open. The
+/// board adopts it and never tells it again, so a report dropped here left the chat with nothing
+/// to resume for good, and "send it a message and restart it again" was not true of it.
+#[test]
+fn a_conversation_named_while_the_chat_is_starting_is_the_one_a_restart_resumes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, wrote) = recorded();
+    let chats = std::sync::Arc::new(chats);
+    let hears = std::sync::Arc::downgrade(&chats);
+    chats.when_one_starts(Box::new(move |session, _, _, _| {
+        hears
+            .upgrade()
+            .expect("the chats")
+            .follow_conversation(session, ID, Some(OLD_RUN));
+    }));
+
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+
+    let last = lock(&wrote).last().cloned().expect("a record was written");
+    assert_eq!(last.chats[0].resume, Some(SessionId::new(ID).unwrap()));
+    assert_eq!(last.chats[0].identity.run.as_deref(), Some(OLD_RUN));
+
+    chats.ask_restart(session).expect("asked");
+    let started = chats.restart(session, SIZE).expect("it has a conversation");
+    let _ = chats.close(started);
+    let _ = chats.close(session);
+}
+
+#[test]
+fn a_conversation_named_while_a_shell_tab_is_starting_resumes_nothing() {
+    let (chats, _wrote) = recorded();
+    let chats = std::sync::Arc::new(chats);
+    let hears = std::sync::Arc::downgrade(&chats);
+    chats.when_one_starts(Box::new(move |session, _, _, _| {
+        hears
+            .upgrade()
+            .expect("the chats")
+            .follow_conversation(session, ID, None);
+    }));
+
+    let session = chats.start(&chat("/bin/sh", "shell", None), SIZE).unwrap();
+
+    assert_eq!(chats.record().chats[0].resume, None);
+    let _ = chats.close(session);
+}
+
+#[test]
+fn a_conversation_named_for_a_number_nothing_is_starting_under_is_not_kept_for_a_later_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, _wrote) = recorded();
+    let first = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    chats.close(first).unwrap();
+
+    // The closed chat's last report, late. Its number may be given to the next chat.
+    chats.follow_conversation(first, ID, None);
+
+    let next = Chat {
+        number: Some(first),
+        ..chat(&a_claude(dir.path()), "ide.8", None)
+    };
+    let again = chats.start(&next, SIZE).unwrap();
+    assert_eq!(chats.record().chats[0].resume, None);
+    let _ = chats.close(again);
+}
+
 // ----- the model a chat's harness reported (#1021) -----
 
 fn session_start(chat: u32, conversation: &str, model: &str) -> purlis_core::hookwire::Report {
