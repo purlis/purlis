@@ -87,7 +87,7 @@ fn the_content_families_are_in_the_manifest_since_next() {
     assert_eq!(
         of("notice"),
         (
-            named(&["root", "message", "whose", "mark", "title", "sub"]),
+            named(&["root", "message", "whose", "mark", "title", "sub", "chat-words"]),
             vec![("news".into(), true), ("trouble".into(), true), ("attention".into(), true)]
         )
     );
@@ -537,7 +537,7 @@ fn the_separator_s_colour_reaches_every_line_between_groups() {
 }
 
 #[test]
-fn the_card_s_ground_and_edge_width_reach_the_inbox_s_list_of_notices() {
+fn the_card_s_ground_reaches_a_notices_centre_card_and_its_edge_width_the_list_on_the_page() {
     // On the page the list is a card of rows (#3177): a theme's card with no hairline draws it
     // with none, on the card's ground. In the Notices centre each plain Notice is a card of its
     // own and takes the ground, and its outline stays, since it says its kind and a consent's

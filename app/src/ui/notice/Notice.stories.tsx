@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState, type ReactNode } from "react";
 import { expect, waitFor } from "storybook/test";
-import { Notice, NoticeList, NoticeOf, NoticePaneRow } from "../../Notice";
+import { Notice, NoticeInCentre, NoticeList, NoticeOf, NoticePaneRow } from "../../Notice";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 
 /** A pane: its row of Notices above the terminal's place. */
@@ -237,10 +237,15 @@ export const NeedsADecision: Story = {
   },
 };
 
+/** No chat's row to tell. */
+const heldNowhere = () => undefined;
+
 /** The Notices centre as the Inbox draws it: as wide as the right sidebar. */
 const inTheCentre = (notice: ReactNode) => (
   <div style={{ inlineSize: "22rem" }}>
-    <NoticeList>{notice}</NoticeList>
+    <NoticeList>
+      <NoticeInCentre.Provider value={heldNowhere}>{notice}</NoticeInCentre.Provider>
+    </NoticeList>
   </div>
 );
 
@@ -283,6 +288,16 @@ export const CentreNote: Story = {
 
 /** **A note with no name of its own, and a plain one with no way but its ×** (#5217). */
 export const CentreNoteAlone: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(canvas.getAllByRole("status")).toHaveLength(2));
+    await userEvent.tab();
+    await expect(canvas.getAllByRole("button", { name: "Dismiss" })[0]).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Undo" })).toHaveFocus();
+    expectFocusInSight();
+    (document.activeElement as HTMLElement).blur();
+  },
   render: () =>
     inTheCentre(
       <>
@@ -303,6 +318,16 @@ export const CentreNoteAlone: Story = {
 /** **An arrival card in the Notices centre** (#4759, #5217): Go to chat a quiet link in its head,
  *  and no primary button, since it asks nothing. */
 export const CentreArrival: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const go = await canvas.findByRole("button", { name: "Go to chat" });
+    await userEvent.tab();
+    await expect(go).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Dismiss" })).toHaveFocus();
+    expectFocusInSight();
+    (document.activeElement as HTMLElement).blur();
+  },
   render: () =>
     inTheCentre(
       <Notice
@@ -320,12 +345,27 @@ export const CentreArrival: Story = {
 /** **A sandbox block in the Notices centre** (ADR 0097 §6, #5217): its full waiting edge, Allow
  *  beside Keep blocked at equal weight, no primary button, and what opens more a quiet link. */
 export const CentreSandboxBlock: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("button", { name: "Go to chat steward 4" });
+    await userEvent.tab();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Dismiss" })).toHaveFocus();
+    await userEvent.tab();
+    // Nothing moves the keyboard onto Allow but a Tab the person pressed (ADR 0097 §6).
+    await expect(canvas.getByRole("button", { name: "Allow for this chat" })).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Keep blocked" })).toHaveFocus();
+    expectFocusInSight();
+    (document.activeElement as HTMLElement).blur();
+  },
   render: () =>
     inTheCentre(
       <NoticeOf.Provider value={{ whose: "steward 4", onGo: () => undefined }}>
         <Notice
           cause="sandbox-blocked:4:network:connect:chat"
           at="pane"
+          tone="trouble"
           label="Sandbox block"
           consent
           fixes={[
@@ -348,6 +388,17 @@ export const CentreSandboxBlock: Story = {
 /** **A chat's own words on a card** (#5217): markdown under the safe subset, folded past six
  *  lines, with purlis's sentence above them in plain words. */
 export const CentreChatWords: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const all = await canvas.findByRole("button", { name: /^Show all/ });
+    all.focus();
+    await userEvent.keyboard("{Enter}");
+    const less = await canvas.findByRole("button", { name: "Show less" });
+    await expect(less).toHaveAttribute("aria-expanded", "true");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await canvas.findByRole("button", { name: /^Show all/ });
+    (document.activeElement as HTMLElement).blur();
+  },
   render: () =>
     inTheCentre(
       <NoticeOf.Provider value={{ whose: "steward 4", onGo: () => undefined }}>

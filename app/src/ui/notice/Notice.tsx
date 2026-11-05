@@ -132,8 +132,8 @@ export function NoticeHead({
 }: {
   mark: ReactNode;
   title: ReactNode;
-  /** What stands under the title: its state and age, where the title does not say them. */
-  sub?: ReactNode;
+  /** What stands under the title: its state, where the title does not say it, and its age. */
+  sub: ReactNode;
   end?: ReactNode;
 }) {
   return (
@@ -141,11 +141,10 @@ export function NoticeHead({
       {mark}
       <span data-scope="notice" data-part="heading">
         {title}
-        {sub !== undefined && (
-          <span data-scope="notice" data-part="sub">
-            {sub}
-          </span>
-        )}
+        {/* Its age changes every minute: nothing to read the whole card out again for. */}
+        <span data-scope="notice" data-part="sub" aria-live="off">
+          {sub}
+        </span>
       </span>
       {end !== undefined && (
         <span data-scope="notice" data-part="end">

@@ -93,6 +93,18 @@ describe("a note in the Notices centre (#5217)", () => {
     );
   });
 
+  it("takes no whole sentence for its title: a long label only names it for a reader", async () => {
+    const said = "While you were away, 3 chats finished and one is waiting on you";
+    const card = await inTheCentre({
+      cause: "away-summary",
+      label: said,
+      onDismiss: () => {},
+      children: said,
+    });
+    expect(part(card, "title")).toHaveTextContent(/^Note$/);
+    expect(screen.getByRole("status", { name: said })).toBe(card.querySelector('[role="status"]'));
+  });
+
   it("says its age beside its state once it has stood a while", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"], now: 1_000_000 });
     try {
@@ -108,6 +120,19 @@ describe("a note in the Notices centre (#5217)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("keeps its state and age muted in every tone, and never reads the card out for its age", async () => {
+    const card = await inTheCentre({
+      cause: "muted",
+      tone: "trouble",
+      label: "Muted",
+      onDismiss: () => {},
+      children: "It failed.",
+    });
+    const sub = part(card, "sub") as HTMLElement;
+    expect(drawnWith(sub, "color")).toBe("var(--text-muted)");
+    expect(sub).toHaveAttribute("aria-live", "off");
   });
 
   it("has one primary button where it has an answer, and every other way is a quiet link", async () => {
@@ -245,6 +270,23 @@ describe("a card waiting on consent in the Notices centre (ADR 0097 §6, #5217)"
     expect(drawnWith(news, "border-color")).toBe(
       "color-mix(in oklab, var(--state-success) 40%, transparent)",
     );
+  });
+
+  it("says it waits on you only where there is something to answer, and keeps its edge", async () => {
+    const card = await inTheCentre(
+      {
+        cause: "sandbox-block:never",
+        at: "pane",
+        label: "Sandbox block",
+        consent: true,
+        tone: "trouble",
+        onDismiss: () => {},
+        children: "The sandbox blocked it. purlis never allows that to a chat.",
+      },
+      { whose: "steward 4", onGo: () => {} },
+    );
+    expect(part(card, "sub")).toHaveTextContent(/^Problem/);
+    expect(drawnWith(card, "border-color")).toBe("var(--state-waiting)");
   });
 
   it("is a consent whenever a way out allows, though its caller says nothing more", async () => {

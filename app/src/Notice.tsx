@@ -162,9 +162,9 @@ type Said = {
   /** **A chat's own words, in a Notices centre card** (#5217): markdown under the safe subset,
    *  folded past six lines (`ChatText`). `children` stays purlis's, in plain text. */
   chatWords?: string;
-  /** **It waits on the person's consent** (ADR 0097 §6), though no way out on it says `allows`:
-   *  a sandbox block. In the Notices centre it keeps its full waiting edge, and takes no primary
-   *  way: its answers stand at equal weight. */
+  /** **A consent surface** (ADR 0097 §6), though no way out on it says `allows`: a sandbox block
+   *  not yet answered. In the Notices centre it keeps its full waiting edge and takes no primary
+   *  way, so its answers stand at equal weight. It says it waits only where it has an answer. */
   consent?: boolean;
 };
 
@@ -298,7 +298,8 @@ export function Notice(props: NoticeProps) {
   // the notice family's root: in a pane the box itself, in the Inbox the list's row, and alone
   // (a Notice on a Settings page) the inline surface.
   const placement = at === "pane" ? "pane" : stacked ? "inbox" : "alone";
-  // Standing in the Notices centre's list, it is one of the list's cards (#5217).
+  // Standing in a list, it is one of the list's cards (#5217): the Notices centre's, and the
+  // window's own lines, wherever they are drawn.
   if (stacked)
     return createPortal(
       <CentreCard
@@ -499,20 +500,23 @@ export function Notice(props: NoticeProps) {
   return drawn;
 }
 
+/** The longest label a Notices centre card takes for its one-line title. */
+const TITLE_AT_MOST = 40;
+
 /** What a Notices centre card says of itself under its title, in its tone. */
 function stateSaid({
   tone,
   running,
-  consent,
+  waitsOnYou,
   isCard,
 }: {
   tone: NoticeTone;
   running: boolean;
-  consent: boolean;
+  waitsOnYou: boolean;
   isCard: boolean;
 }): string {
-  if (consent) return "Waiting on you";
-  if (running) return "Under way";
+  if (waitsOnYou) return "Waiting on you";
+  if (running) return "Working…";
   if (tone === "attention") return "Needs a decision";
   // A card answers what the person did; a line says what purlis found.
   if (tone === "trouble") return isCard ? "Not done" : "Problem";
@@ -572,8 +576,12 @@ function CentreCard({
   const now = useNow();
   const toChat = fixes?.find((fix) => fix.go === true);
   const others = fixes?.filter((fix) => fix !== toChat) ?? [];
-  const named = title ?? whose?.whose ?? label;
-  const state = stateSaid({ tone, running, consent, isCard: title !== undefined });
+  // A label as long as a sentence (the away summary's) names it for a reader, and is no title.
+  const short = label !== undefined && label.length <= TITLE_AT_MOST ? label : undefined;
+  const named = title ?? whose?.whose ?? short;
+  // A consent with nothing left to press (purlis never allows it) waits on nobody.
+  const waitsOnYou = consent && others.some((fix) => fix.opens === undefined);
+  const state = stateSaid({ tone, running, waitsOnYou, isCard: title !== undefined });
   const answer = consent
     ? undefined
     : (others.find((fix) => fix.primary === true) ??

@@ -753,7 +753,6 @@ function AllowNotice({
         at="pane"
         tone="trouble"
         label="Sandbox block"
-        consent
         fixes={[{ label: "Restart this chat", onPress: restartThis, busy }]}
         onDismiss={onDismiss}
       >
