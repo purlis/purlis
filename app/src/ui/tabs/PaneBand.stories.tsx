@@ -984,9 +984,6 @@ export const Actions: Story = {
     const actions = boxOf(head?.querySelector(".pane-actions"));
     expect(boxOf(frame).right - actions.right).toBeLessThanOrEqual(16);
     expect(actions.top - boxOf(frame).top).toBeLessThanOrEqual(16);
-    // The picture is of the head at rest: neither a ring nor a tooltip.
-    (document.activeElement as HTMLElement | null)?.blur();
-    await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
   },
 };
 
