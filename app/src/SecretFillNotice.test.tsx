@@ -65,12 +65,12 @@ describe("SecretFillNotice", () => {
   });
 
   it("says the site receives the value and can send it on, or the code for a code", () => {
-    const { unmount } = render(<SecretFillNotice ask={ask()} />);
+    const { unmount } = render(<SecretFillNotice plane="p" session={7} asks={[ask()]} />);
     expect(screen.getByTestId("fill-site-receives").textContent).toBe(
       "dash.example.test will receive this value and can send it to its servers. Approve only for a site you'd type it into yourself.",
     );
     unmount();
-    render(<SecretFillNotice ask={ask({ code: true })} />);
+    render(<SecretFillNotice plane="p" session={7} asks={[ask({ code: true })]} />);
     expect(screen.getByTestId("fill-site-receives").textContent).toContain("receive this code");
   });
 
