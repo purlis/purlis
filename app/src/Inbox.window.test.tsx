@@ -753,11 +753,15 @@ describe("answering in place", () => {
     );
     const calls = core({ allow_refused_vault: { said: "Allowed." } });
     draw([vault]);
-    expect(
-      screen.getByText(
-        "Runs as steward, and vault devops is tagged for devops, so purlis did not open it",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText(vault.says)).toBeInTheDocument();
+    expect(vault.says).toContain(
+      "Allow lets every chat opened as steward use it in this project on this machine",
+    );
+    // A grant, told apart from Keep blocked at a glance, as the Notice's is (ADR 0097 §6).
+    expect(screen.getByRole("button", { name: "Allow steward to use this vault" })).toHaveAttribute(
+      "data-variant",
+      "grants",
+    );
     await userEvent.type(
       screen.getByRole("textbox", { name: /Why you keep it blocked/ }),
       "ask devops instead",

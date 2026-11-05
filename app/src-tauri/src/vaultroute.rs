@@ -425,7 +425,7 @@ fn allow(
     if !refusals.holds(session, vault) {
         return Err(
             "purlis allowed nothing: the chat was not refused that vault. A vault is allowed \
-             from the notice its refusal raises."
+             from the ask its refusal raises."
                 .to_owned(),
         );
     }

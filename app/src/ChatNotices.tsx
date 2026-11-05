@@ -441,6 +441,7 @@ export function ChatNotices({
         requestHere={dispatchDrawn.length > 0}
         onShowInbox={onShowInbox}
         asks={waiting === undefined ? undefined : drawn.filter((ask) => ask.source === "vault")}
+        onWay={onAnswer}
       />
       <McpFailedNotice plane={plane} session={session} onRestart={onRestart} />
       {/* What its pane sent that did not reach it (#4734). */}

@@ -1852,7 +1852,6 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
 /// The id of Allow on a pool tool Ask (#2047).
 pub const POOL_TOOL_ALLOW: &str = "allow";
 
-/// The key of Secret ask `id` (#5068).
 /// The key of chat `session`'s refusal of `vault`, unique in its project (#5160).
 fn vault_key(session: u32, vault: &str) -> String {
     format!("vault:{session}:{vault}")
@@ -1873,12 +1872,34 @@ pub fn vault_refused(one: &crate::vaultroute::VaultRefused) -> Shown {
         || "tagged for no persona".to_owned(),
         |them| format!("tagged for {them}"),
     );
-    let locked = one.locked.as_deref().map_or_else(String::new, |why| {
-        format!(". {}", why.trim_end_matches('.'))
-    });
-    let says = format!(
-        "Runs as {persona}, and vault {vault} is {tagged}, so purlis did not open it{locked}"
-    );
+    // What its Notice says beside its answers, since the row has these words alone. What Allow
+    // grants comes first after the reason: a line is cut at its width, and that must survive.
+    // Where policy took Allow away, the dispatch the chat was told of is the way forward.
+    let says = [
+        Some(format!(
+            "Runs as {persona}, and vault {vault} is {tagged}, so purlis did not open it"
+        )),
+        Some(one.locked.as_deref().map_or_else(
+            || {
+                format!(
+                    "Allow lets every chat opened as {persona} use it in this project on this \
+                     machine"
+                )
+            },
+            |why| why.trim_end_matches('.').to_owned(),
+        )),
+        one.login
+            .as_deref()
+            .map(|login| format!("It's for the browser login {login}")),
+        one.locked
+            .as_ref()
+            .and(one.dispatch_to.as_deref())
+            .map(|them| format!("purlis told the chat how to dispatch to {them}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(". ");
     let allow = one.locked.is_none().then(|| Offered {
         id: VAULT_ALLOW.to_owned(),
         label: format!("Allow {} to use this vault", said_inertly(persona)),
@@ -1910,6 +1931,7 @@ pub fn vault_refused(one: &crate::vaultroute::VaultRefused) -> Shown {
     }
 }
 
+/// The key of Secret ask `id` (#5068).
 fn secret_key(id: u32) -> String {
     format!("secret:{id}")
 }

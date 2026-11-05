@@ -125,11 +125,20 @@ export function askOfDispatch(held: DispatchPending, chain = [held.chat]): Shown
 export function askOfVault(refused: VaultRefused, chain = [`chat ${refused.session}`]): Shown {
   const tagged =
     refused.tagged_for === null ? "tagged for no persona" : `tagged for ${refused.tagged_for}`;
-  const locked = refused.locked === null ? "" : `. ${refused.locked.replace(/\.+$/, "")}`;
+  const says = [
+    `Runs as ${refused.persona}, and vault ${refused.vault} is ${tagged}, so purlis did not open it`,
+    refused.locked === null
+      ? `Allow lets every chat opened as ${refused.persona} use it in this project on this machine`
+      : refused.locked.replace(/\.+$/, ""),
+    ...(refused.login == null ? [] : [`It's for the browser login ${refused.login}`]),
+    ...(refused.locked === null || refused.dispatch_to === null
+      ? []
+      : [`purlis told the chat how to dispatch to ${refused.dispatch_to}`]),
+  ].join(". ");
   return {
     session: refused.session,
     ask: `vault:${refused.session}:${refused.vault}`,
-    says: `Runs as ${refused.persona}, and vault ${refused.vault} is ${tagged}, so purlis did not open it${locked}`,
+    says,
     options: [
       ...(refused.locked === null
         ? [{ id: "allow", label: `Allow ${refused.persona} to use this vault`, allows: true }]

@@ -175,7 +175,7 @@ describe("the refused vault Notice", () => {
     // Screenshot 43: the refusal had been answered elsewhere, the Notice stayed, and every
     // press said the same refusal. Now the press re-reads what the core holds.
     const refusal =
-      "purlis allowed nothing: the chat was not refused that vault. A vault is allowed from the notice its refusal raises.";
+      "purlis allowed nothing: the chat was not refused that vault. A vault is allowed from the ask its refusal raises.";
     let held: VaultRefused[] = [DEVOPS];
     mockIPC((cmd) => {
       if (cmd === "vault_refusals") return held;
@@ -270,6 +270,28 @@ describe("the refused vault Notice", () => {
 
     rerender(<VaultRefusedNotice plane={PLANE} session={7} asks={[]} />);
     await waitFor(() => expect(screen.queryByRole("status", { name: "Vault" })).toBeNull());
+  });
+
+  it("draws the answers its ask carries, and says which was taken (#5160)", async () => {
+    mockIPC((cmd) => (cmd === "vault_refusals" ? [DEVOPS] : null));
+    const said = askOfVault(DEVOPS);
+    const ask = {
+      ...said,
+      options: said.options.map((one) => ({ ...one, label: `${one.label}, as the registry says` })),
+    };
+    const onWay = vi.fn();
+    render(<VaultRefusedNotice plane={PLANE} session={7} asks={[ask]} onWay={onWay} />);
+
+    await screen.findByRole("button", {
+      name: "Allow steward to use this vault, as the registry says",
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Keep blocked, as the registry says" }),
+    );
+
+    await waitFor(() =>
+      expect(onWay).toHaveBeenCalledWith("Keep blocked, as the registry says", ask),
+    );
   });
 
   it("points to the chat's own held dispatch, and offers no second, manual one", async () => {

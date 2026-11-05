@@ -2536,9 +2536,25 @@ fn a_refused_vault_is_an_ask_answered_by_allow_or_keep_blocked() {
     assert_eq!(allows, [true, false]);
     assert_eq!(
         ask.says,
-        "Runs as steward, and vault devops is tagged for devops, so purlis did not open it"
+        "Runs as steward, and vault devops is tagged for devops, so purlis did not open it. \
+         Allow lets every chat opened as steward use it in this project on this machine"
     );
     assert_eq!(ask.since, Some(1_700_000_000));
+}
+
+/// #5160: what Allow grants is what the person answers on, so a long detail never cuts it off.
+#[test]
+fn a_refused_vaults_ask_says_what_allow_grants_whatever_else_it_says() {
+    let mut one = a_vault_refusal(3, "devops", None);
+    one.login = Some("a".repeat(400));
+    let ask = super::vault_refused(&one);
+    assert!(
+        ask.says.contains(
+            "Allow lets every chat opened as steward use it in this project on this machine"
+        ),
+        "{}",
+        ask.says
+    );
 }
 
 /// #5160: where an administrator's policy forbids a vault grant, the ask offers Keep blocked
@@ -2566,6 +2582,6 @@ fn a_refused_vault_policy_locks_offers_keep_blocked_alone_and_says_why() {
     assert_eq!(
         ask.says,
         "Runs as steward, and vault loose is tagged for no persona, so purlis did not open it. \
-         Locked by policy, set by IT"
+         Locked by policy, set by IT. purlis told the chat how to dispatch to devops"
     );
 }
