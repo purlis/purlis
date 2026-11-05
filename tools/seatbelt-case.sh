@@ -167,7 +167,7 @@ others_held() {
 # project's own folder, at any depth, is refused, which is asked where `$3` is `expect`. `$1`,
 # `what`. At the floor on macOS every folder is written and the names are held in all of them,
 # the temp folder too (#2071), so neither is made there, and what the test's look is to find is
-# laid out by the test, at `$SEATBELT_CASE_BROUGHT`.
+# laid out by the test, in `tmp/brought` beside the project.
 temp_and_folder_in() {
   p=$1
   what=$2
@@ -187,8 +187,8 @@ temp_and_folder_in() {
     done
   fi
   # What the test's look is to find.
-  from=${SEATBELT_CASE_BROUGHT-}
-  if [ -z "$from" ]; then
+  from=$(dirname "$p")/tmp/brought
+  if [ ! -d "$from" ]; then
     from=$t/brought
     mkdir -p "$from/.git/hooks" 2>/dev/null || :
     echo x > "$from/.git/hooks/pre-commit" 2>/dev/null || :

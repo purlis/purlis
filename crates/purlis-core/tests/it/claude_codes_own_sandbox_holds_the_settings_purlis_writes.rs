@@ -312,7 +312,6 @@ fn claude(program: &Path, home: &Path, tmp: &Path) -> Command {
 /// Claude Code at `program`, started in `root` with the settings at `settings` against a
 /// stand-in model whose one Bash call runs the probes of `root` as `what`: what that call's
 /// result said, the last time it was asked.
-#[allow(clippy::too_many_arguments)]
 fn probed(
     program: &Path,
     home: &Path,
@@ -321,7 +320,6 @@ fn probed(
     settings: &Path,
     sources: &[String],
     what: &str,
-    brought: Option<&Path>,
 ) -> String {
     let mode = if cfg!(target_os = "macos") {
         "--here"
@@ -329,10 +327,7 @@ fn probed(
         "--repositories-here"
     };
     let command = format!(
-        "{}/bin/sh '{}' {mode} '{}' '{what}'",
-        brought
-            .map(|from| format!("SEATBELT_CASE_BROUGHT='{}' ", from.display()))
-            .unwrap_or_default(),
+        "/bin/sh '{}' {mode} '{}' '{what}'",
         Path::new(SCRIPT)
             .canonicalize()
             .expect("the script")
@@ -487,23 +482,13 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
         };
         sandbox::arrived::begin(&root, CHAT, Some("probes"), &watched).expect("the record");
         // At the floor on macOS a chat can't make these names even in its temp folder, so what
-        // the look is to find is laid out here, for the chat to move in.
-        let brought = (cfg!(target_os = "macos") && level == Level::Floor).then(|| {
+        // the look is to find is laid out here, beside the project, for the chat to move in.
+        if cfg!(target_os = "macos") && level == Level::Floor {
             let from = tmp.join("brought");
             fs::create_dir_all(from.join(".git/hooks")).expect("a repository to bring");
             fs::write(from.join(".git/hooks/pre-commit"), "x\n").expect("its hook");
-            from
-        });
-        let result = probed(
-            program,
-            &home,
-            &tmp,
-            &root,
-            &file,
-            &sources,
-            &what,
-            brought.as_deref(),
-        );
+        }
+        let result = probed(program, &home, &tmp, &root, &file, &sources, &what);
         // Each wrong answer as the script wrote it, so the run's annotations name it.
         for line in result.lines().filter(|line| line.starts_with("::error::")) {
             println!("{line}");
