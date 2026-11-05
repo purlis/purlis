@@ -8587,7 +8587,8 @@ nav.piece-files-head {
 /* The chat's budget and how its router did at its start, under whose skills (S8, #3694): what
    Use skill… used to say above its list, said once, here. */
 .skills-view-said {
-  margin: 0;
+  /* Room under the budget's link: it is the line's height, so its target is its clear space. */
+  margin: 0 0 var(--space-2);
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
