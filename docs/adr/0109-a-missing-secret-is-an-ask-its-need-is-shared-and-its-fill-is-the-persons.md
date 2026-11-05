@@ -3,6 +3,8 @@
 **Accepted 2026-11-03**, from the operator's grill of the secret ask (M61 · Sandbox experience).
 It builds on #1407 (brokered `purlis secret exec`, persona tools), #3186 (the vault entry picker)
 and ADR 0107 (where a task's asks are answered).
+**Amended by ADR 0111** (2026-11-05): a Secret need is written only when the person asks, in the
+Fill notice, and a person may allow an undeclared program there.
 
 ## Where purlis was
 
