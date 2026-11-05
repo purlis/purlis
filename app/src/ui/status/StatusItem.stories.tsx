@@ -147,7 +147,8 @@ function OverPurlis() {
     // Drawn as its kin, it is that kin as drawn here, turned or not (#5157).
     if (kin !== undefined && value(kin) === value(token))
       return (ACCENT_GROUNDS as readonly Token[]).includes(kin) ? followed(kin) : value(kin);
-    // What the theme draws as its accent is the accent given (#5157).
+    // What the theme draws as its accent is the accent given (#5157). The engine also passes over
+    // a colour that would lose a contrast (`check::keeps_contrast`); a success green loses none here.
     const turned = value(token) === value("accent.base") ? accent : toward(value(token), accent);
     const holds = (colour: string) =>
       inForce()

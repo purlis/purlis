@@ -1673,22 +1673,53 @@ fn fits(density: Density, geometry: &Geometry, findings: &mut Vec<Finding>) {
 /// own colour is measured as those words ([`STANDS_IN`]); a `selected` pair is not measured
 /// while the theme colours selected text.
 pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> Option<f64> {
-    let (front, back) = drawn(theme, pair)?;
+    ratio_by(&|token| theme.value(token), pair)
+}
+
+/// [`ratio`], with each token's colour as `value` gives it.
+fn ratio_by<'v>(value: &dyn Fn(&str) -> &'v str, pair: &Pair) -> Option<f64> {
+    let (front, back) = drawn_by(value, pair)?;
     Some(two_places(contrast(&front, &back)))
+}
+
+/// **Whether `colour`, drawn as `token`, keeps every pair `token` is in**: each at its floor, or
+/// no lower than `was` has it. What follows an accent is held to this
+/// ([`super::vocabulary::follow_kin`]), because a theme's own accent has no person layer to leave
+/// a colour out, and a hard floor broken refuses the whole theme (#5157).
+pub(super) fn keeps_contrast<'v>(
+    token: &str,
+    colour: &'v str,
+    is: &dyn Fn(&str) -> &'v str,
+    was: &dyn Fn(&str) -> &'v str,
+) -> bool {
+    let now = |one: &str| if one == token { colour } else { is(one) };
+    PAIRS
+        .iter()
+        .filter(|pair| pair.tokens().any(|one| one == token))
+        .all(|pair| {
+            ratio_by(&now, pair).is_none_or(|ratio| {
+                ratio >= pair.floor || ratio_by(was, pair).is_some_and(|was| ratio >= was)
+            })
+        })
 }
 
 /// `pair`'s two colours as the screen draws them, opaque: its back laid over what it is laid on,
 /// and its front laid over that and faded as the pair says. `None` when the platform draws one.
 pub(super) fn drawn(theme: &ResolvedTheme, pair: &Pair) -> Option<(String, String)> {
-    let (front, back) = measured(theme, pair)?;
-    let back = theme.value(back);
+    drawn_by(&|token| theme.value(token), pair)
+}
+
+/// [`drawn`], with each token's colour as `value` gives it.
+fn drawn_by<'v>(value: &dyn Fn(&str) -> &'v str, pair: &Pair) -> Option<(String, String)> {
+    let (front, back) = measured(value, pair)?;
+    let back = value(back);
     // From the bottom up: each layer laid over the one under it.
     let drawn = match (pair.under, pair.beneath) {
-        (Some(under), Some(beneath)) => onto(back, &onto(theme.value(under), theme.value(beneath))),
-        (Some(under), None) => onto(back, theme.value(under)),
+        (Some(under), Some(beneath)) => onto(back, &onto(value(under), value(beneath))),
+        (Some(under), None) => onto(back, value(under)),
         (None, _) => back.to_owned(),
     };
-    let front = onto(theme.value(front), &drawn);
+    let front = onto(value(front), &drawn);
     let front = match pair.fade {
         Some(opacity) => mix(&front, &drawn, opacity),
         None => front,
@@ -1696,11 +1727,14 @@ pub(super) fn drawn(theme: &ResolvedTheme, pair: &Pair) -> Option<(String, Strin
     Some((front, drawn))
 }
 
-/// The tokens `pair` is measured between in `theme`: its own, a platform-drawn front's stand-in,
-/// or `None` when the platform draws one of them, or when the pair is of words selected in their
-/// own colour and the theme colours selected text.
-fn measured(theme: &ResolvedTheme, pair: &Pair) -> Option<(&'static str, &'static str)> {
-    let unset = |token: &str| is_platform(token, theme.value(token));
+/// The tokens `pair` is measured between as `value` draws them: its own, a platform-drawn front's
+/// stand-in, or `None` when the platform draws one of them, or when the pair is of words selected
+/// in their own colour and the theme colours selected text.
+fn measured<'v>(
+    value: &dyn Fn(&str) -> &'v str,
+    pair: &Pair,
+) -> Option<(&'static str, &'static str)> {
+    let unset = |token: &str| is_platform(token, value(token));
     if unset(pair.back) || (pair.selected && !unset("selection.text")) {
         return None;
     }

@@ -487,18 +487,31 @@ pub fn follow_kin(
             // drawn alike stay alike; one drawn in the accent's family turns to its hue. A mark
             // that would read as a state there takes the accent's own colour, since a link reads
             // as the accent (#3049), as a tinted one does ([`super::tint::signal_chroma_of`]).
-            let turned = if below.get(ACCENT) == Some(under) {
-                accent.clone()
+            // Either way a colour that would lose a contrast is passed over for the next: the
+            // turned one keeps the parent's luminance, and so its contrasts.
+            let turned = super::tint::toward(under, &accent);
+            let mark = super::tint::SIGNAL_MARKS.contains(&token);
+            let tries = if below.get(ACCENT) == Some(under) {
+                vec![accent.clone(), turned]
+            } else if mark {
+                vec![turned, accent.clone()]
             } else {
-                super::tint::toward(under, &accent)
+                vec![turned]
             };
-            let own = super::tint::SIGNAL_MARKS
-                .contains(&token)
-                .then(|| accent.clone());
-            let drawn = |token: &str| given.get(token).or_else(|| below.get(token)).cloned();
-            let holding = std::iter::once(turned)
-                .chain(own)
-                .find(|one| holds_as_apart(token, one, under, drawn));
+            let is = |token: &str| {
+                given
+                    .get(token)
+                    .or_else(|| below.get(token))
+                    .map_or("", String::as_str)
+            };
+            let was = |token: &str| below.get(token).map_or("", String::as_str);
+            let holding = tries
+                .iter()
+                .find(|one| {
+                    holds_as_apart(token, one, under, |token| Some(is(token).to_owned()))
+                        && super::check::keeps_contrast(token, one, &is, &was)
+                })
+                .cloned();
             if let Some(holding) = holding {
                 given.insert(token, holding);
                 followed.push((token, ACCENT));

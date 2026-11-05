@@ -294,3 +294,66 @@ fn an_accent_the_colour_of_success_leaves_the_link_and_first_chart_colour_as_the
         }
     }
 }
+
+#[test]
+fn a_theme_s_lavender_over_classic_light_leaves_its_ring_turned_and_the_theme_drawn() {
+    // A theme's own accent has no person layer to leave a colour out: the ring drawn as this
+    // lavender would be under its 3:1 on a light surface, a hard floor, and refuse the whole
+    // theme. It turns to the lavender's hue at Classic's lightness instead (#5157).
+    let classic = built_ins()
+        .iter()
+        .find(|one| light(one))
+        .expect("Classic light");
+    let lavender = "#b4a7f5";
+    let loaded = load(&json!({
+        "name": "Lavender over Classic", "appearance": "light",
+        "tokens": { "accent.base": lavender },
+    }));
+    assert!(!loaded.refused, "{:?}", loaded.complaints);
+    let theme = loaded.theme.first();
+    for edge in ["focus.ring", "list.selected-edge"] {
+        let now = theme.value(edge);
+        assert_ne!(now, lavender, "{edge}");
+        assert_ne!(now, classic.value(edge), "{edge}");
+        assert!(
+            degrees_apart(hue(now), hue(lavender)) < 6.0,
+            "{edge}: {now}"
+        );
+    }
+}
+
+#[test]
+fn what_follows_any_accent_keeps_every_contrast_it_had_or_its_floor() {
+    let steps = [0x10, 0x50, 0x90, 0xd0];
+    for theme in purlis().appearances.iter().chain(built_ins()) {
+        for r in steps {
+            for g in steps {
+                for b in steps {
+                    let accent = format!("#{r:02x}{g:02x}{b:02x}");
+                    let mut given = std::collections::BTreeMap::new();
+                    given.insert("accent.base", accent.clone());
+                    super::vocabulary::follow_kin(&mut given, &theme.values);
+                    let mut drawn = theme.clone();
+                    drawn.values.extend(given);
+                    let follows = |token: &str| {
+                        DRAWN_IN_THE_ACCENT.contains(&token) || tint::SIGNAL_MARKS.contains(&token)
+                    };
+                    for pair in PAIRS.iter().filter(|pair| pair.tokens().any(follows)) {
+                        let (Some(was), Some(is)) = (ratio(theme, pair), ratio(&drawn, pair))
+                        else {
+                            continue;
+                        };
+                        assert!(
+                            is >= was.min(pair.floor),
+                            "{} {} under {accent}: {} on {} is {is}, {was} as written",
+                            theme.name,
+                            theme.id,
+                            pair.front,
+                            pair.back
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

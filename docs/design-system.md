@@ -479,7 +479,10 @@ asked for), whatever the system's appearance. Where its values come from:
   nearer the waiting or danger colour than 0.1, and nearer than Purlis's own, stays Purlis's
   (`vocabulary::holds_as_apart`). One the parent draws as its accent (the ring and the edge, in
   Purlis and Purlis Classic) is the accent given, so what the parent draws alike stays alike: a
-  base16 import's edge is its ring (#5157). A fill the parent draws as its surface (Purlis
+  base16 import's edge is its ring (#5157). Where the accent itself would lose a contrast the
+  parent kept, it turns to the accent's hue at the parent's lightness instead
+  (`check::keeps_contrast`): a theme's accent has no person layer to leave a colour out, and a
+  hard floor broken refuses the theme. A fill the parent draws as its surface (Purlis
   Classic) follows the surface as it is drawn, turned or not (#5157). **So do the accent's marks**
   (#5157, `tint::SIGNAL_MARKS`): the link and `chart.1` turn the same way, each only where it
   stays 0.1 from every state colour, or no nearer than the theme's own. A mark that would read
