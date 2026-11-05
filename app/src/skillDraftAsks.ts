@@ -24,10 +24,15 @@ const NONE: readonly SkillDraft[] = [];
  * the Skill studio (`skill_drafts`). A draft is never an ask: the Inbox does not list it.
  *
  * The core says a draft came when the project's asks move (`asks-changed`), so the studio and a
- * chat's tab read the drafts again then, and after the person's own press.
+ * chat's tab read the drafts again then, and after the person's own press. Nothing is asked while
+ * `asked` is false: the window asks for its studio chats only while the studio has one open.
  */
-export function useSkillDrafts(plane: string, changed: number): readonly SkillDraft[] {
-  return useSkillDraftsRead(plane, changed) ?? NONE;
+export function useSkillDrafts(
+  plane: string,
+  changed: number,
+  asked = true,
+): readonly SkillDraft[] {
+  return useSkillDraftsRead(plane, changed, asked) ?? NONE;
 }
 
 /** {@link useSkillDrafts}, with `undefined` until the drafts were first read: the studio's Drafts
@@ -35,6 +40,7 @@ export function useSkillDrafts(plane: string, changed: number): readonly SkillDr
 export function useSkillDraftsRead(
   plane: string,
   changed: number,
+  asked = true,
 ): readonly SkillDraft[] | undefined {
   const [drafts, setDrafts] = useState<readonly SkillDraft[]>();
   const [moved, setMoved] = useState(0);
@@ -45,6 +51,7 @@ export function useSkillDraftsRead(
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
   }, [plane]);
   useEffect(() => {
+    if (!asked) return;
     let live = true;
     void commands
       .skillDrafts(plane)
@@ -59,7 +66,7 @@ export function useSkillDraftsRead(
     return () => {
       live = false;
     };
-  }, [plane, changed, moved]);
+  }, [plane, changed, moved, asked]);
   return drafts;
 }
 
