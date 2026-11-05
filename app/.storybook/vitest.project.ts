@@ -16,7 +16,8 @@
  * **Pictures are taken only where `PURLIS_STORY_PICTURES=1`**, which only the pinned Playwright
  * image of `.github/workflows/stories.yml` sets, and only in the cells `pictured.json` names: a
  * picture drawn on any other machine differs by its fonts and its rasteriser, so it is neither
- * compared nor kept anywhere else.
+ * compared nor kept anywhere else. There, Chromium's `monospace` is pinned to the one the
+ * image's fontconfig names (`monospace.ts`), and the run stops when fontconfig names none.
  */
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
@@ -46,13 +47,13 @@ export function cells(): Cell[] {
 
 export function stories(): TestProjectInlineConfiguration[] {
   const pictures = process.env[PICTURES] === "1";
-  // Where pictures are taken, Chromium's `monospace` is pinned to the image's own (#5402,
-  // `monospace.ts`): a picture never takes the one an earlier story left the process with.
-  const monospace = pictures ? imageMonospace() : undefined;
-  if (pictures && monospace === undefined)
-    throw new Error(
-      `${PICTURES}=1, but fc-match names no monospace to pin Chromium's to (monospace.ts)`,
-    );
+  // Where pictures are taken, Chromium's `monospace` is pinned to the image's own (`monospace.ts`).
+  let monospace: string | undefined;
+  if (pictures) {
+    monospace = imageMonospace();
+    if (monospace === undefined)
+      throw new Error(`${PICTURES}=1, but fc-match names no monospace to pin Chromium's to`);
+  }
   return cells().map((cell) => ({
     extends: true,
     plugins: [storybookTest({ configDir: here(".") })],

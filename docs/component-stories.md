@@ -182,12 +182,9 @@ wrong. A local run checks rendering, the keyboard and axe, and takes no picture.
 run shares, so a picture could differ by a pixel with the stories that ran before it; greyscale
 text draws the same each time.
 
-**Chromium's `monospace` is the image's own** where pictures are taken (#5402,
-`app/.storybook/monospace.ts`). Purlis Classic's mono and terminal stacks name no family the image
-has, so they end in `monospace`, and Chromium left alone draws that in fontconfig's answer
-(WenQuanYi Zen Hei Mono) until an earlier story in the same renderer process leaves it drawing
-Liberation Mono instead. Each page pins it to `fc-match monospace` before its first story, so a
-picture never depends on what ran before it.
+**Chromium's `monospace` is the image's own** where pictures are taken: each page pins it to
+`fc-match monospace` before its first story, so a picture never takes the family an earlier story
+left the browser drawing it in. `app/.storybook/monospace.ts` says why (#5402).
 
 **What a failure says.** In CI, each story that fails is one annotation on the `stories` check,
 titled `<story> in <browser>, <cell>`: its file, the gate it failed (`renders`, `keyboard`,

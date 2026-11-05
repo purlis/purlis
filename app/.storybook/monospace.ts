@@ -21,15 +21,15 @@ import { execFileSync } from "node:child_process";
 /** Runs `command` with `args` and returns what it printed. */
 export type Run = (command: string, args: string[]) => string;
 
-const run: Run = (command, args) =>
+const execute: Run = (command, args) =>
   execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 
 /** The family fontconfig names first for `monospace` on this machine, or none where there is
  *  no fontconfig (macOS, Windows) or it names none. */
-export function imageMonospace(ask: Run = run): string | undefined {
+export function imageMonospace(run: Run = execute): string | undefined {
   let family: string;
   try {
-    family = ask("fc-match", ["-f", "%{family[0]}", "monospace"]);
+    family = run("fc-match", ["-f", "%{family[0]}", "monospace"]);
   } catch {
     return undefined;
   }

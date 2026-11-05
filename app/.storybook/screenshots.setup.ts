@@ -47,19 +47,36 @@ const still = document.createElement("style");
 still.textContent = "* { caret-color: transparent !important; }";
 document.head.append(still);
 
-/**
- * **Chromium's `monospace` is the image's own** (#5402, `monospace.ts`): pinned on this page
- * before its first story renders, so a story's text, its `play` and its picture all meet the
- * family fontconfig names, and never the one an earlier story in the same process left Chromium
- * with.
- */
+/** How wide a line of code-like text draws in `family`, at a size where two families part. */
+function widthIn(family: string): number {
+  const probe = document.createElement("span");
+  probe.textContent = "07e0ff5 mmmiii WWW";
+  probe.style.cssText = "position: absolute; inset-inline-start: -9999px; white-space: pre";
+  probe.style.font = `100px ${family}`;
+  document.body.append(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return width;
+}
+
+/** **Chromium's `monospace` pinned to the image's own** (`monospace.ts`), once a page, before
+ *  its first story renders; and checked: a page whose `monospace` still draws another family
+ *  fails its stories rather than take their pictures in it. */
 let pinned: Promise<void> | undefined;
 function pinMonospace(): Promise<void> {
-  const fixed = inject("storyMonospace");
-  if (server.browser !== "chromium" || fixed === undefined) return Promise.resolve();
-  pinned ??= cdp()
-    .send("Page.setFontFamilies", { fontFamilies: { fixed } })
-    .then(() => undefined);
+  const family = inject("storyMonospace");
+  if (server.browser !== "chromium" || family === undefined) return Promise.resolve();
+  pinned ??= (async () => {
+    await cdp().send("Page.setFontFamilies", { fontFamilies: { fixed: family } });
+    // The setting reaches the page's renderer after the call returns: a few frames at most.
+    const named = `"${family}"`;
+    const until = performance.now() + 2000;
+    while (widthIn("monospace") !== widthIn(named)) {
+      if (performance.now() > until)
+        throw new Error(`monospace still draws another family than ${named} after pinning it`);
+      await new Promise((frame) => requestAnimationFrame(frame));
+    }
+  })();
   return pinned;
 }
 
