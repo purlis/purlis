@@ -23,11 +23,14 @@
 //! does not ignore. The tree names an ignored file, so the operator can see that a build output
 //! exists, but marks it ignored, and [`open`] refuses it.
 //!
-//! **Read only, but for three writes.** [`review_fetch`] fetches a request's head into the
+//! **Read only, but for four writes.** [`review_fetch`] fetches a request's head into the
 //! workspace's clone for its review and deletes those refs when nothing needs them (ADR 0084 §2).
-//! [`discard`] puts one hunk of a file back as the branch's base has it (#5406; ADR 0081, as
-//! amended 2026-11-05), through the same names and the same guards, and a Human edit records it.
-//! [`turns`] records each turn of a chat as refs in the clone (#5405), and moves no branch or file.
+//! [`discard`] puts one hunk of a file back as the branch's base has it, or on a turn's diff as the
+//! turn's start had it (#5406, #5411; ADR 0081, as amended 2026-11-05), through the same names and
+//! the same guards, and a Human edit records it. [`undo_turn`] puts back every file a turn changed
+//! as its start had them, through those guards too, and commits nothing (#5411). [`turns`] records
+//! each turn of a chat as refs in the clone (#5405), and marks one undone, and moves no branch or
+//! file.
 
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -61,9 +64,9 @@ pub use offered::{Ignored, Offered};
 mod compare;
 pub use compare::{
     Against, COUNTED, Compared, Comparison, Discard, Discarded, FileChange, FileDiff, Head, Hunk,
-    InTurn, Lines, MemberCompared, Shown, Sides, Target, TurnChanged, TurnKey, WhatChanged,
+    InTurn, Lines, MemberCompared, Shown, Sides, Target, TurnChanged, TurnKey, Undone, WhatChanged,
     Whitespace, compare, compare_change, compare_file, compare_file_with, compare_with, discard,
-    line_hunks, turn_changed, what_changed,
+    line_hunks, turn_changed, undo_turn, what_changed,
 };
 // A request's head, fetched under `refs/purlis/review/` for its review (RC-2's kind (f)).
 pub mod review_fetch;
@@ -251,6 +254,9 @@ pub enum Refused {
     /// A discard of a file that cannot be put back, and why (#5406).
     #[error("'{path}' was not discarded: {why}")]
     NotDiscarded { path: String, why: String },
+    /// An undo of a turn refused, or stopped, at one of its files, and why (#5411).
+    #[error("The turn was not undone: '{path}' {why}.")]
+    NotUndone { path: String, why: String },
     /// The branch's own folder is a link (#1143): placed, it would be what the link leads to.
     #[error("the folder of '{0}' is a link, and purlis places no folder a link leads to")]
     FolderIsALink(String),

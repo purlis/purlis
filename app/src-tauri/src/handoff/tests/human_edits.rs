@@ -66,6 +66,7 @@ fn the_operator_discards_the_hunk(held: &Held) {
         path: FILE.to_owned(),
         target: Target::Hunk(hunks[0]),
         against: Against::Opened(shown.stamp.expect("a stamp")),
+        turn: None,
     };
     let answer = discard_in(held, at, &ask, true).expect("the discard");
     assert!(
@@ -255,4 +256,215 @@ fn a_whole_chat_is_told_of_a_discarded_hunk_at_its_next_turn_and_not_at_the_one_
         prompts_of(&logs, &chat_id) == 3
     });
     assert_eq!(line_times(), 1, "the turn after is not told again");
+}
+
+/// **Undo a turn, from the window** (#5411): refused while the chat in the folder works, naming
+/// it and its state, with nothing written; once it is idle, every file goes back as the turn
+/// found it, and the chat's next turn is told that a turn was undone, by path alone.
+#[test]
+fn an_undo_is_refused_by_name_while_the_folders_chat_works_and_once_idle_is_told_as_undone() {
+    use crate::humanedits::{UndoAnswer, undo_in};
+    use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let logs = plane.root.join("events");
+    let events = crate::hooks::Events::here(Recorder::new(
+        Log::open(&logs, "DEVICE").expect("a log"),
+        ArgsKey::open(&logs).expect("a key"),
+    ));
+    let planes = planes_on(&host).recording_events(Some(events.clone()));
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let folder = a_folder_with_the_agents_change(&plane.root);
+    let at = Branch::piece("alpha", "svc", "piece");
+    let chat = a_chat_in(&held, &folder);
+    let chat_id = held.chats().id_of(chat).expect("the chat's id");
+    let before = std::fs::read_to_string(folder.join(FILE)).expect("the file");
+    its_prompt_is_recorded(&events, held.root(), chat);
+    files::turns::began(held.root(), at, &chat_id).expect("the turn begins");
+    std::fs::write(folder.join(FILE), "the turn's\n").expect("the agent's edit");
+    files::turns::ended(held.root(), at, &chat_id).expect("the turn ends");
+    let turn = files::TurnKey {
+        chat: chat_id,
+        number: 1,
+    };
+
+    // The chat on the board, as the host puts one there, and its own harness's hooks.
+    held.hooks().board().opened(chat, None, None);
+    let hears = |event: Event| {
+        held.hooks().board().reported(&Report {
+            chat,
+            event,
+            conversation: Conversation::Named("6f1c2d3e-4a5b-4c6d-8e7f-901a2b3c4d5e".to_owned()),
+            pid: None,
+            agent: None,
+            detail: Detail::default(),
+        });
+    };
+    hears(Event::UserPromptSubmit);
+    let UndoAnswer::Busy { chats } = undo_in(&held, at, &turn).expect("an answer") else {
+        panic!("a working chat refuses the undo");
+    };
+    let states: Vec<&str> = chats.iter().map(|busy| busy.state.as_str()).collect();
+    assert_eq!(states, ["is running"]);
+    assert!(chats.iter().all(|busy| !busy.name.is_empty()));
+    assert_eq!(
+        std::fs::read_to_string(folder.join(FILE)).expect("the file"),
+        "the turn's\n"
+    );
+    assert_eq!(told(&held, &id, chat), None);
+
+    hears(Event::Stop);
+    let answer = undo_in(&held, at, &turn).expect("the undo");
+    assert_eq!(
+        answer,
+        UndoAnswer::Undone {
+            unrecorded: None,
+            unmarked: None
+        }
+    );
+    assert_eq!(
+        std::fs::read_to_string(folder.join(FILE)).expect("the file"),
+        before
+    );
+    assert_eq!(
+        told(&held, &id, chat).as_deref(),
+        Some(
+            "The operator undid a turn since your last turn, so these files are as they were \
+             before it. Read them again before you change them: `src/lib.rs` in `svc`."
+        )
+    );
+}
+
+/// **The ticket's whole path, through the fake harness** (#5411): its first turn edits the file
+/// and its hooks record the turn; the operator discards that turn's hunk, as the turn's start had
+/// it; its next turn edits again and is undone, refused while it works and done once it is idle;
+/// and the turn after that is told a turn was undone.
+#[cfg(unix)]
+#[test]
+fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_told_so() {
+    use crate::humanedits::{UndoAnswer, undo_in};
+    let plane = Plane::new();
+    let logs = plane.root.join("events");
+    let planes = planes_recording_events(&logs);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let folder = a_folder_with_the_agents_change(&plane.root);
+    let at = Branch::piece("alpha", "svc", "piece");
+    let before = std::fs::read_to_string(folder.join(FILE)).expect("the file");
+    let scratch = tempfile::tempdir().expect("a folder for what the harness is told");
+    let told = scratch.path().join("told");
+    let purlis = crate::behaviour::built_beside("purlis", "purlis-cli");
+    let harness = crate::behaviour::built_beside("fake-harness", "fake-harness");
+    let hook = format!(
+        "printf '%s' '{{\"session_id\":\"s-1\",\"prompt\":\"carry on\"}}' \
+         | '{}' hook userpromptsubmit >> '{}'",
+        purlis.display(),
+        told.display()
+    );
+    // Each turn's edit waits for its start to be recorded, as a harness's waits for its model,
+    // and adds the turn's own line.
+    let edit = format!(
+        "cd '{dir}' && until [ \"$(git for-each-ref refs/purlis/turns/ | grep -c /start)\" -gt \
+         \"$(git for-each-ref refs/purlis/turns/ | grep -c /end)\" ]; do sleep 0.02; done; \
+         echo \"turn $(git for-each-ref refs/purlis/turns/ | grep -c /start)\" >> '{FILE}'",
+        dir = folder.display()
+    );
+    let stop = format!("'{}' hook stop </dev/null", purlis.display());
+    let chat = Chat {
+        program: harness.display().to_string(),
+        args: [
+            "--hook",
+            hook.as_str(),
+            "--hook",
+            edit.as_str(),
+            "--hook",
+            stop.as_str(),
+            "--interactive",
+            "--again",
+            "next turn",
+        ]
+        .map(str::to_owned)
+        .to_vec(),
+        name: "fake".to_owned(),
+        cwd: Some(folder.clone()),
+        ..Default::default()
+    };
+    let session = held
+        .chats()
+        .start(&chat, STARTING)
+        .expect("the chat starts");
+    let chat_id = held.chats().id_of(session).expect("the chat's id");
+    let ended = |number: u32| {
+        let refs = purlis_core::forklock::output(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&folder)
+                .args(["for-each-ref", "--format=%(refname)", "refs/purlis/turns/"]),
+        )
+        .expect("git runs");
+        String::from_utf8_lossy(&refs.stdout).contains(&format!("{chat_id}/{number}/end"))
+            && !crate::staleclones::mid_turn(&held.board().glance(session))
+    };
+    let next_turn = || {
+        held.chats()
+            .sessions()
+            .input(session, b"next turn\r")
+            .expect("typed");
+    };
+    let turn = |number: u32| files::TurnKey {
+        chat: chat_id.clone(),
+        number,
+    };
+
+    until("the first turn's end", || ended(1));
+    let files::TurnChanged::Of {
+        file: files::InTurn::Changed(shown),
+        ..
+    } = files::turn_changed(&crate::reader(), held.root(), at, FILE, Some(&turn(1)))
+        .expect("the turn's diff")
+    else {
+        panic!("the first turn changed the file");
+    };
+    let FileDiff::Text { hunks, .. } = shown.diff else {
+        panic!("a text file's diff");
+    };
+    let ask = Discard {
+        path: FILE.to_owned(),
+        target: Target::Hunk(hunks[0]),
+        against: Against::Opened(shown.stamp.expect("a stamp")),
+        turn: Some(turn(1)),
+    };
+    discard_in(&held, at, &ask, false).expect("the discard");
+    assert_eq!(
+        std::fs::read_to_string(folder.join(FILE)).expect("the file"),
+        before
+    );
+
+    next_turn();
+    until("the second turn's end", || ended(2));
+    let second = std::fs::read_to_string(folder.join(FILE)).expect("the file");
+    assert_eq!(second, format!("{before}turn 2\n"));
+    let answer = undo_in(&held, at, &turn(2)).expect("the undo");
+    assert_eq!(
+        answer,
+        UndoAnswer::Undone {
+            unrecorded: None,
+            unmarked: None
+        }
+    );
+    assert_eq!(
+        std::fs::read_to_string(folder.join(FILE)).expect("the file"),
+        before
+    );
+
+    next_turn();
+    until("the third turn's briefing", || {
+        std::fs::read_to_string(&told)
+            .unwrap_or_default()
+            .contains("The operator undid a turn since your last turn")
+    });
+    let briefed = std::fs::read_to_string(&told).unwrap_or_default();
+    assert!(briefed.contains("`src/lib.rs` in `svc`"), "{briefed}");
+    assert!(!briefed.contains("turn 2"), "{briefed}");
 }

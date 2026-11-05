@@ -44,6 +44,11 @@
  * **The branch's check results come with the comparison** (ADR 0114, #5407): each one on a line a
  * hunk shows is marked in the gutter, and every one is listed with its tool, severity and message,
  * so the keyboard and a screen reader reach them all (`CheckResults.tsx`).
+ *
+ * **On a turn, Discard puts a hunk back as the turn's start had it** (#5411), not the base, and a
+ * file changed since the turn ended is drawn from the turn's start to the file now, which the
+ * header says. The latest turn not yet undone offers [`UndoTurn`], which the core refuses while a
+ * chat works in the folder, naming each one.
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { FileDiff as FileDiffMark, LoaderCircle } from "lucide-react";
@@ -61,6 +66,7 @@ import {
 import type { Place } from "../pieceViews";
 import { MergeViewer } from "./LightEditor";
 import { DiffAgainst, TurnPicker, type Against } from "./DiffAgainst";
+import { UndoTurn } from "./UndoTurn";
 import { sized, ToYourEditor } from "./PieceFiles";
 import { CheckResultsList, marksOf } from "./CheckResults";
 import { jumpTo } from "../fileJump";
@@ -74,8 +80,9 @@ import { editorToolbar, ToolbarFile } from "../ui/tabs/Tabs";
 type Read =
   { kind: "reading" } | { kind: "refused"; why: string } | { kind: "read"; shown: WhatChanged };
 
-/** The turn a read was of, and the turns its chat has on the branch, newest first. */
-type OfTurn = { chat: string; number: number; turns: number[] };
+/** The turn a read was of, the turns its chat has on the branch, newest first, and every path an
+ *  undo would write where it is the turn offered. */
+type OfTurn = { chat: string; number: number; turns: number[]; undo: string[] | null };
 
 /** A discard the operator pressed, as it is asked again once they answer a warning. */
 type Asked = {
@@ -158,7 +165,7 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
               if (!gone)
                 setOfTurn(
                   turn.kind === "of"
-                    ? { chat: turn.chat, number: turn.number, turns: turn.turns }
+                    ? { chat: turn.chat, number: turn.number, turns: turn.turns, undo: turn.undo }
                     : undefined,
                 );
               return turnRead(turn, path);
@@ -191,6 +198,11 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
   const now: Read = current ? read.read : { kind: "reading" };
   // The branch moved since the comparison drawn was read, and it is being read again behind it.
   const again = current && read.moved !== moved;
+  /** The turn drawn, which a discard puts a hunk back as its start had it; `null` on the base. */
+  const onTurn: TurnPick | null =
+    comparedTo === "turn" && ofTurn !== undefined
+      ? { chat: ofTurn.chat, number: ofTurn.number }
+      : null;
   const discard = (ask: Asked) => {
     setWarning(undefined);
     setTrouble(undefined);
@@ -205,6 +217,7 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
         ask.target,
         ask.against,
         ask.busyToo,
+        onTurn,
       )
       .then((answer) => {
         if (answer.status === "error") {
@@ -225,12 +238,45 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
       .catch((err: unknown) => setTrouble(String(err)))
       .finally(() => setDiscarding(false));
   };
+  const undo = (turn: TurnPick) => {
+    setTrouble(undefined);
+    setDiscarding(true);
+    void commands
+      .undoTurn(plane, cut.workspace, cut.repo, cut.piece, turn)
+      .then((answer) => {
+        if (answer.status === "error") {
+          setTrouble(answer.error);
+          return;
+        }
+        const told = answer.data;
+        if (told.kind === "busy") {
+          const who = told.chats.map((chat) => `${chat.name} ${chat.state}`).join(", ");
+          const until = told.chats.length === 1 ? "it stops" : "they stop";
+          setTrouble(`Turn ${turn.number} was not undone, because ${who}. Undo it once ${until}.`);
+          return;
+        }
+        setAsked((n) => n + 1);
+        const unsaid = [told.unrecorded, told.unmarked].filter((why) => why !== null);
+        if (unsaid.length > 0)
+          setTrouble(`Turn ${turn.number} is undone, but ${unsaid.join(", and ")}`);
+      })
+      .catch((err: unknown) => setTrouble(String(err)))
+      .finally(() => setDiscarding(false));
+  };
+  // Offered on the turn drawn, once it is read, never on the one the picker is leaving.
+  const undoOffered =
+    comparedTo === "turn" && current && ofTurn?.undo != null && onTurn !== null
+      ? { turn: onTurn, files: ofTurn.undo }
+      : null;
   return (
     <div className="piece-file" aria-busy={again}>
       <header className="piece-files-head" {...editorToolbar}>
         {/* The tab is the file's name: the path alone, quiet (#3147). */}
         <ToolbarFile path={path} named={false} />
         {now.kind === "read" && <span>{against(now.shown)}</span>}
+        {now.kind === "read" && now.shown.sinceTurnEnded && (
+          <span>You changed this file since the turn ended.</span>
+        )}
         <span className="piece-files-actions">
           <DiffAgainst value={comparedTo} onChange={compareTo} />
           {comparedTo === "turn" && ofTurn !== undefined && (
@@ -241,6 +287,14 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
                 // The newest is the latest, and follows a turn that ends after it.
                 setPick(number === ofTurn.turns[0] ? null : { chat: ofTurn.chat, number })
               }
+            />
+          )}
+          {undoOffered !== null && (
+            <UndoTurn
+              number={undoOffered.turn.number}
+              files={undoOffered.files}
+              undoing={discarding}
+              onUndo={() => undo(undoOffered.turn)}
             />
           )}
           <ToYourEditor plane={plane} cut={cut} path={path} line={firstLine(now)} />
@@ -431,6 +485,7 @@ function noLine(name: string, shown: WhatChanged, on: string): { headline: strin
     return { headline: `Only its name changed: moved from ${shown.from}` };
   if (shown.mark === "added") return { headline: `${name} was added, and it is empty` };
   if (shown.mark === "deleted") return { headline: `${name} was deleted, and it was empty` };
+  if (shown.sinceTurnEnded) return { headline: `No line of ${name} differs from ${on}` };
   return {
     headline: `No line of ${name} differs from ${on}`,
     body: "What changed is not in its lines: its mode, or whether it is a link.",

@@ -52,6 +52,7 @@ const changed = (diff: WhatChanged["diff"]): WhatChanged => ({
   diff,
   stamp: "drawn",
   checks: NO_CHECKS,
+  sinceTurnEnded: false,
 });
 
 afterEach(() => {
@@ -93,6 +94,7 @@ describe("one turn beside against base (#5405, #5408)", () => {
     chat: CHAT,
     number,
     turns: [3, 2, 1],
+    undo: null,
     file: {
       kind: "changed",
       shown: {
@@ -191,7 +193,7 @@ describe("one turn beside against base (#5405, #5408)", () => {
     expect(asked.at(-1)).toBe("turn:latest");
   });
 
-  it("offers no Discard on a turn's hunks, which a discard would take for the base's", async () => {
+  it("offers no Discard on a turn's hunks drawn with no stamp", async () => {
     coreWithTurns({ ...whole, stamp: "drawn" }, ofTheTurn);
     render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
     expect(await screen.findByRole("button", { name: /^Discard the change/ })).toBeInTheDocument();
@@ -233,6 +235,7 @@ describe("one turn beside against base (#5405, #5408)", () => {
       chat: CHAT,
       number: 3,
       turns: [3, 2, 1],
+      undo: null,
       file: { kind: "not-this-file" },
     });
     render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
@@ -251,6 +254,7 @@ describe("one turn beside against base (#5405, #5408)", () => {
       chat: CHAT,
       number: 2,
       turns: [3, 2, 1],
+      undo: null,
       file: { kind: "nothing" },
     });
     render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
@@ -262,6 +266,132 @@ describe("one turn beside against base (#5405, #5408)", () => {
       "Turn 2 changed no file",
     );
     expect(turnOption()).toHaveTextContent("Turn 2");
+  });
+});
+
+describe("discarding on a turn and undoing it (#5411)", () => {
+  const BASE = changed({
+    kind: "text",
+    base: "one\n",
+    head: "one\ntwo\n",
+    hunks: [{ oldStart: 1, oldLines: 0, newStart: 2, newLines: 1 }],
+  });
+  const FILES = ["src/lib.rs", "src/new.rs"];
+  const turnShown = (since: boolean): WhatChanged => ({
+    ...changed({
+      kind: "text",
+      base: "one\n",
+      head: "one\nTWO\n",
+      hunks: [{ oldStart: 1, oldLines: 0, newStart: 2, newLines: 1 }],
+    }),
+    base: "the start of turn 3",
+    stamp: "turn-drawn",
+    sinceTurnEnded: since,
+  });
+  const ofTurn = (undo: string[] | null, since = false): TurnChanged => ({
+    kind: "of",
+    chat: CHAT,
+    number: 3,
+    turns: [3, 2, 1],
+    undo,
+    file: { kind: "changed", shown: turnShown(since) },
+  });
+  /** The core: the base, the turn, and each discard or undo answered by the next of `answers`. */
+  function onATurn(turn: () => TurnChanged, answers: readonly unknown[]) {
+    const asked: { cmd: string; args: Record<string, unknown> }[] = [];
+    const left = [...answers];
+    mockIPC((cmd, args) => {
+      if (cmd === "what_changed") return BASE;
+      if (cmd === "turn_changed") {
+        asked.push({ cmd, args: args as Record<string, unknown> });
+        return turn();
+      }
+      if (cmd === "discard_hunk" || cmd === "undo_turn") {
+        asked.push({ cmd, args: args as Record<string, unknown> });
+        return left.shift();
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+    return asked;
+  }
+  const toTheTurn = async () => {
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+    await screen.findByText("against the start of turn 3");
+  };
+
+  it("discards a turn's hunk as the turn started, naming the turn to the core", async () => {
+    const asked = onATurn(
+      () => ofTurn(null),
+      [{ kind: "discarded", now: turnShown(true), unrecorded: null }],
+    );
+    await toTheTurn();
+    expect(screen.queryByText("You changed this file since the turn ended.")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Discard the change at line 2" }));
+
+    await waitFor(() => expect(asked.map((one) => one.cmd)).toContain("discard_hunk"));
+    expect(asked.find((one) => one.cmd === "discard_hunk")?.args).toEqual(
+      expect.objectContaining({
+        against: { kind: "opened", stamp: "turn-drawn" },
+        turn: { chat: CHAT, number: 3 },
+      }),
+    );
+    expect(await screen.findByText("You changed this file since the turn ended.")).toBeVisible();
+  });
+
+  it("offers Undo only on the turn offered, and asks once, listing every file", async () => {
+    let undo: string[] | null = FILES;
+    const asked = onATurn(
+      () => ofTurn(undo),
+      [{ kind: "undone", unrecorded: null, unmarked: null }],
+    );
+    await toTheTurn();
+
+    await userEvent.click(screen.getByRole("button", { name: "Undo turn 3…" }));
+    const question = await screen.findByRole("alertdialog", { name: "Undo turn 3?" });
+    expect(
+      within(question)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(FILES);
+    expect(asked.map((one) => one.cmd)).not.toContain("undo_turn");
+    undo = null;
+    await userEvent.click(within(question).getByRole("button", { name: "Undo turn 3" }));
+
+    await waitFor(() => expect(asked.map((one) => one.cmd)).toContain("undo_turn"));
+    expect(asked.find((one) => one.cmd === "undo_turn")?.args).toEqual(
+      expect.objectContaining({ turn: { chat: CHAT, number: 3 } }),
+    );
+    // Read again once undone: the turn is no longer the one offered.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Undo turn 3…" })).toBeNull());
+    expect(asked.filter((one) => one.cmd === "turn_changed")).toHaveLength(2);
+  });
+
+  it("says a refused undo by each chat's name and state, and changes nothing", async () => {
+    const asked = onATurn(
+      () => ofTurn(FILES),
+      [{ kind: "busy", chats: [{ name: "Fix the parser", state: "is running" }] }],
+    );
+    await toTheTurn();
+
+    await userEvent.click(screen.getByRole("button", { name: "Undo turn 3…" }));
+    const question = await screen.findByRole("alertdialog", { name: "Undo turn 3?" });
+    await userEvent.click(within(question).getByRole("button", { name: "Undo turn 3" }));
+
+    expect(
+      await screen.findByText(
+        "Turn 3 was not undone, because Fix the parser is running. Undo it once it stops.",
+      ),
+    ).toBeVisible();
+    expect(asked.filter((one) => one.cmd === "turn_changed")).toHaveLength(1);
+  });
+
+  it("offers no Undo on a turn that is not the one offered", async () => {
+    onATurn(() => ofTurn(null), []);
+    await toTheTurn();
+    expect(screen.queryByRole("button", { name: /^Undo turn/ })).toBeNull();
   });
 });
 

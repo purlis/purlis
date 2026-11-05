@@ -156,15 +156,25 @@ pub fn announcement(edits: &[HumanEdit]) -> Option<String> {
 }
 
 /// What the line says the operator did, from the kinds of edit it folds; `None` for none. Every
-/// kind is named here, so a kind that needs its own words has to say them.
+/// kind is named here, so a kind that needs its own words has to say them: an undone turn is said
+/// as one (#5411), so the agent knows its work was rejected and not only edited.
 fn opening(kinds: impl Iterator<Item = EditKind>) -> Option<&'static str> {
-    kinds
-        .map(|kind| match kind {
-            EditKind::Typed | EditKind::DiscardedHunk | EditKind::UndoneTurn => {
-                "The operator edited these files by hand since your last turn."
-            }
-        })
-        .next()
+    let (mut undone, mut by_hand, mut any) = (false, false, false);
+    for kind in kinds {
+        any = true;
+        match kind {
+            EditKind::UndoneTurn => undone = true,
+            EditKind::Typed | EditKind::DiscardedHunk => by_hand = true,
+        }
+    }
+    any.then_some(match (undone, by_hand) {
+        (true, true) => "The operator undid a turn and edited files by hand since your last turn.",
+        (true, false) => {
+            "The operator undid a turn since your last turn, so these files are as they were \
+             before it."
+        }
+        (false, _) => "The operator edited these files by hand since your last turn.",
+    })
 }
 
 /// A name as the line quotes it. A file's name is the agent's or the repo's to choose, so it can
@@ -348,6 +358,32 @@ mod tests {
             Some(
                 "The operator edited these files by hand since your last turn. Read them again \
                  before you change them: `src/lib.rs`, `a.rs` in `svc`; `app.ts` in `web`."
+            )
+        );
+    }
+
+    #[test]
+    fn an_undone_turn_is_said_to_be_undone_and_alongside_hand_edits_both_are_said() {
+        let undone = an_edit(
+            EditKind::UndoneTurn,
+            "svc",
+            &["src/lib.rs", "new.rs"],
+            &[CHAT],
+        );
+        assert_eq!(
+            announcement(std::slice::from_ref(&undone)).as_deref(),
+            Some(
+                "The operator undid a turn since your last turn, so these files are as they were \
+                 before it. Read them again before you change them: `src/lib.rs`, `new.rs` in \
+                 `svc`."
+            )
+        );
+        let typed = an_edit(EditKind::Typed, "svc", &["a.rs"], &[CHAT]);
+        assert_eq!(
+            announcement(&[typed, undone]).as_deref(),
+            Some(
+                "The operator undid a turn and edited files by hand since your last turn. Read \
+                 them again before you change them: `a.rs`, `src/lib.rs`, `new.rs` in `svc`."
             )
         );
     }

@@ -5,6 +5,12 @@
 //! "what changed" put back as the branch's base has it, or a binary file's change whole. The
 //! files module's first write, under the guards its reads have.
 //!
+//! **On a turn's diff, as the turn's start had it** (#5411): a [`Discard::turn`] names the turn,
+//! and the hunk is put back from the state its start recorded, as Undo a turn puts back every file
+//! ([`super::restore`]). The hunk is one of the turn's start against the file as it is on disk, which
+//! is what a turn's diff draws for it once it changed since the turn ended, and the same hunks as
+//! the turn's own while it has not.
+//!
 //! **The window names a branch and a path, never a directory.** The path is confined as a read's
 //! is, then written through the folder held open, one component at a time and following no link
 //! ([`super::super::replace_inside`]), by a temporary file renamed over it, so a reader or a kill
@@ -64,6 +70,10 @@ pub struct Discard {
     pub path: String,
     pub target: Target,
     pub against: Against,
+    /// The turn whose diff it was drawn on, put back as that turn's start had it; `None` for the
+    /// branch's diff, put back as its base has it.
+    #[serde(default)]
+    pub turn: Option<super::TurnKey>,
 }
 
 /// What a discard did.
@@ -114,13 +124,16 @@ pub(in super::super) fn discard_here(
         &opened.base,
         &ask.path,
     )?;
-    let compared = compared_in(
-        plane,
-        branch,
-        &opened,
-        &Comparison::BranchAndUncommitted,
-        Whitespace::Shown,
-    )?;
+    let comparison = match &ask.turn {
+        Some(turn) => Comparison::Turn {
+            chat: turn.chat.clone(),
+            number: turn.number,
+        },
+        None => Comparison::BranchAndUncommitted,
+    };
+    let mut compared = compared_in(plane, branch, &opened, &comparison, Whitespace::Shown)?;
+    // A turn's hunk is of its start against the file as it is now.
+    compared.sides.head = super::Head::WorkingTree;
     let Some(change) = compared.files.into_iter().find(|one| one.path == relative) else {
         return Err(Refused::NotChanged(ask.path.clone()));
     };
@@ -169,7 +182,13 @@ pub(in super::super) fn discard_here(
         Some(&held),
         [old_path, path.as_str()],
     );
-    if converted(&attributes, old_path) || converted(&attributes, &path) {
+    // A turn's states are staged with every filter held, so a filtered file's blob is its own
+    // bytes there, and only a conversion of its content stands between the two (#5411).
+    let converted = |at: &str| match ask.turn {
+        Some(_) => converted_content(&attributes, at),
+        None => converted(&attributes, at),
+    };
+    if converted(old_path) || converted(&path) {
         return Err(refused(
             "the repo runs it through a filter or a conversion that purlis does not run",
         ));
@@ -244,7 +263,11 @@ pub(in super::super) fn discard_here(
         why: format!("it could not be written: {why}"),
     })?;
 
-    let now = match what_changed_here(plane, branch, &path) {
+    let now = match &ask.turn {
+        Some(_) => super::one_file_compared(plane, branch, &opened, &comparison, &path),
+        None => what_changed_here(plane, branch, &path),
+    };
+    let now = match now {
         Ok(Shown::Changed(shown)) => Some(Box::new(shown)),
         Ok(Shown::NotListed { .. }) | Err(_) => None,
     };
@@ -262,16 +285,30 @@ pub(in super::super) fn discard_here(
     })
 }
 
+/// Whether the attributes have git change `path`'s content on its way to its blob, a
+/// `working-tree-encoding` or `ident`: what a turn's state, staged with every filter held, still
+/// holds converted (#5411).
+pub(super) fn converted_content(attributes: &HeldAttributes, path: &str) -> bool {
+    any_set(attributes, path, ["working-tree-encoding", "ident"])
+}
+
 /// Whether the attributes have git do more to `path` than its line ends on its way to and from
 /// its blob: a `filter`, a `working-tree-encoding` or `ident`. If they cannot be read, not: as the
 /// comparison reads it then, by its bytes.
 fn converted(attributes: &HeldAttributes, path: &str) -> bool {
+    any_set(
+        attributes,
+        path,
+        ["filter", "working-tree-encoding", "ident"],
+    )
+}
+
+fn any_set<const N: usize>(attributes: &HeldAttributes, path: &str, names: [&str; N]) -> bool {
     use gix::attrs::StateRef;
     let Some(mut stack) = attributes.stack() else {
         return false;
     };
-    let mut outcome =
-        stack.selected_attribute_matches(["filter", "working-tree-encoding", "ident"]);
+    let mut outcome = stack.selected_attribute_matches(names);
     let Ok(at) = stack.at_path(Path::new(path), Some(gix::index::entry::Mode::FILE)) else {
         return false;
     };
@@ -330,7 +367,7 @@ fn from_line(start: u32, lines: u32) -> usize {
 }
 
 /// Where `hunk` left the file: the base's lines now stand where the head's did.
-fn lines_of(hunk: Hunk) -> EditedLines {
+pub(super) fn lines_of(hunk: Hunk) -> EditedLines {
     let before = from_line(hunk.new_start, hunk.new_lines) as u32;
     EditedLines {
         start: before + u32::from(hunk.old_lines > 0),

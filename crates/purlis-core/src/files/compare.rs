@@ -56,6 +56,9 @@ use crate::worktree::name;
 mod discard;
 pub(super) use discard::discard_here;
 pub use discard::{Against, Discard, Discarded, Target};
+// Its turn's side, and Undo a turn, which put files back as a turn's start had them (#5411).
+mod restore;
+pub(super) use restore::undo_here;
 
 /// What to compare (R1). Each kind names its two sides (ADR 0084 §1's table).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -271,6 +274,10 @@ pub struct WhatChanged {
     pub stamp: Option<String>,
     /// The branch's check results as this file shows them (ADR 0114): placed on the same hunks.
     pub checks: Box<crate::checks::OnFile>,
+    /// On a turn's diff, that the file changed since the turn ended, so it is drawn from the
+    /// turn's start to the file as it is now (#5411). Always `false` against the base.
+    #[serde(default)]
+    pub since_turn_ended: bool,
 }
 
 /// One file of `branch`, by its path relative to the branch's folder, compared against the
@@ -355,7 +362,12 @@ pub(super) fn what_changed_here(
 
 /// One file of `comparison`: the path confined in the resolved folder before anything else is
 /// read, then the file list, then the file's hunks at the sides the list was read at.
-fn one_file_compared(
+///
+/// **A turn's file** is drawn from the turn's two refs while it is on disk as the turn ended it,
+/// and otherwise from the turn's start to the file as it is now, said with
+/// [`WhatChanged::since_turn_ended`] (#5411): so a hunk discarded leaves it at once and each one
+/// left can be discarded, put back as the turn's start had it.
+pub(super) fn one_file_compared(
     plane: &Path,
     branch: Branch<'_>,
     opened: &Opened,
@@ -383,27 +395,38 @@ fn one_file_compared(
         Some(from) => Some(plain(from).ok_or_else(|| Refused::NotInPiece(from.to_string()))?),
         None => None,
     };
-    // Read before the diff, so a write between the two reads as stale and never as drawn.
-    // A turn's hunks are not the base's, and a discard puts a hunk back as the base has it: so a
-    // turn's diff has no stamp, and nothing can be discarded from it.
-    let stamp = (!matches!(comparison, Comparison::Turn { .. }))
-        .then(|| hold(plane, &opened.base).ok())
-        .flatten()
-        .and_then(|held| {
-            discard::stamp_of(
-                compared.sides.base.as_deref(),
-                &on_disk(&held, &at, super::LARGEST),
-            )
+    // Read before the diff, so a write between the two reads as stale and never as drawn. A
+    // turn's stamp is of its start, which its discard puts a hunk back as.
+    let held = hold(plane, &opened.base).ok();
+    let stamp = held.as_ref().and_then(|held| {
+        discard::stamp_of(
+            compared.sides.base.as_deref(),
+            &on_disk(held, &at, super::LARGEST),
+        )
+    });
+    let mut sides = compared.sides.clone();
+    let mut since_turn_ended = false;
+    if let (Comparison::Turn { .. }, Head::Commit(end), Some(held)) =
+        (comparison, &compared.sides.head, held.as_ref())
+    {
+        let end = tree_of(&opened.repo, commit_id(end)).ok().flatten();
+        let paths = [Some(at.as_str()), from.as_deref()];
+        let attributes = HeldAttributes::read(
+            &mut opened.repo.clone(),
+            Some(held),
+            paths.into_iter().flatten(),
+        );
+        let mut to_git = ToGit::of(&attributes);
+        let ended = paths.into_iter().flatten().all(|path| {
+            restore::as_it_ended(&opened.repo, held, to_git.as_mut(), end.as_ref(), path)
+                .unwrap_or(true)
         });
-    let diff = file_diff_in(
-        plane,
-        branch,
-        opened,
-        &compared.sides,
-        at,
-        from,
-        Whitespace::Shown,
-    )?;
+        if !ended {
+            sides.head = Head::WorkingTree;
+            since_turn_ended = true;
+        }
+    }
+    let diff = file_diff_in(plane, branch, opened, &sides, at, from, Whitespace::Shown)?;
     let head = opened.repo.head_commit().ok().map(|c| c.id.to_string());
     let hunks: &[Hunk] = match &diff {
         FileDiff::Text { hunks, .. } => hunks,
@@ -420,6 +443,7 @@ fn one_file_compared(
         diff,
         stamp,
         checks: Box::new(checks),
+        since_turn_ended,
     }))
 }
 
@@ -442,6 +466,9 @@ pub enum TurnChanged {
         number: u32,
         turns: Vec<u32>,
         file: InTurn,
+        /// Where this turn is the one Undo is offered on, the latest not yet undone (#5411): every
+        /// path the undo would write, sorted, which its confirmation lists. `None` on any other.
+        undo: Option<Vec<String>>,
     },
 }
 
@@ -509,25 +536,77 @@ pub(super) fn turn_changed_here(
         chat: chat.clone(),
         number,
     };
+    let offered = super::turns::offered_on(&opened.repo, &on).is_some_and(|offered| {
+        offered
+            == TurnKey {
+                chat: chat.clone(),
+                number,
+            }
+    });
+    let mut listed = None;
+    let mut list = || -> Result<Vec<FileChange>, Refused> {
+        if listed.is_none() {
+            listed =
+                Some(compared_in(plane, branch, &opened, &comparison, Whitespace::Shown)?.files);
+        }
+        Ok(listed.clone().unwrap_or_default())
+    };
     let file = match one_file_compared(plane, branch, &opened, &comparison, path)? {
         Shown::Changed(shown) => InTurn::Changed(Box::new(shown)),
         Shown::NotListed { .. } => {
-            if compared_in(plane, branch, &opened, &comparison, Whitespace::Shown)?
-                .files
-                .is_empty()
-            {
+            if list()?.is_empty() {
                 InTurn::Nothing
             } else {
                 InTurn::NotThisFile
             }
         }
     };
+    let undo = if offered {
+        Some(restore::paths_of(&list()?)).filter(|paths| !paths.is_empty())
+    } else {
+        None
+    };
     Ok(TurnChanged::Of {
         chat,
         number,
         turns,
         file,
+        undo,
     })
+}
+
+/// What an undo did (#5411).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Undone {
+    /// The record to keep: every file put back, and its lines.
+    pub edit: crate::humanedit::HumanEdit,
+    /// Why the turn could not be marked undone, with its files back, if it could not: Undo is
+    /// then offered on it again, and refused, as its files changed since it ended.
+    pub unmarked: Option<String>,
+}
+
+/// **Undo a turn** (#5411; ADR 0081 as amended 2026-11-05): every file `turn` changed in `branch`
+/// put back as the turn's start had it, in `reader`'s child ([`restore`]), and the turn then marked
+/// undone ([`super::turns::undone`]). Nothing is committed and no branch moves.
+///
+/// Refused, with nothing written, unless `turn` is the latest not yet undone on the branch, and
+/// when any file it changed is not on disk as it ended, naming the file. Whether the folder is
+/// idle is not this call's to know: the host checks it under the run's state lock, and makes this
+/// call in the same step (ADR 0084 §8).
+pub fn undo_turn(
+    reader: &super::Reader,
+    plane: &Path,
+    branch: Branch<'_>,
+    turn: &TurnKey,
+) -> Result<Undone, Refused> {
+    let edit = match reader.ask(plane, branch, super::Ask::UndoTurn(turn.clone()))? {
+        super::Answer::UndoneTurn(edit) => edit,
+        _ => return Err(Refused::Read("the reader answered something else".into())),
+    };
+    let unmarked = super::turns::undone(plane, branch, &turn.chat, turn.number)
+        .err()
+        .map(|why| why.to_string());
+    Ok(Undone { edit, unmarked })
 }
 
 /// One member of a cross-repo change, compared (e).

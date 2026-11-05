@@ -3545,17 +3545,31 @@ impl Hooks {
 }
 
 /// The in-process host's board. Each call is documented once, on [`ChatBoard`].
+/// Chat `session` as `board` has it now.
+fn glance_on(board: &Board, session: u32) -> Glance {
+    Glance {
+        state: board.state(session),
+        asking: board.asking(session),
+        turns: board.turns(session),
+        prompt: board.its_prompt(session),
+        own_work: board.own_work(session).is_some(),
+        wakes_on_its_own_work: board.wakes_on_its_own_work(session),
+    }
+}
+
+impl Hooks {
+    /// **`act` under the run's state lock** (ADR 0084 §8, as ADR 0081 §4 checks `place`): handed
+    /// how each chat stands, read while no hook can move one, and done in the same step, so a
+    /// prompt heard meanwhile waits until it is (#5411). `act` must not read the board itself.
+    pub(crate) fn while_held<R>(&self, act: impl FnOnce(&dyn Fn(u32) -> Glance) -> R) -> R {
+        let board = self.board();
+        act(&|session| glance_on(&board, session))
+    }
+}
+
 impl ChatBoard for Hooks {
     fn glance(&self, session: u32) -> Glance {
-        let board = self.board();
-        Glance {
-            state: board.state(session),
-            asking: board.asking(session),
-            turns: board.turns(session),
-            prompt: board.its_prompt(session),
-            own_work: board.own_work(session).is_some(),
-            wakes_on_its_own_work: board.wakes_on_its_own_work(session),
-        }
+        glance_on(&self.board(), session)
     }
 
     fn conversation(&self, session: u32) -> Option<String> {

@@ -3334,7 +3334,11 @@ export const commands = {
 	 *  sentence, for a path any file command would refuse and for a file the branch did not change.
 	 */
 	whatChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string) => typedError<WhatChanged, string>(__TAURI_INVOKE("what_changed", { plane, workspace, repo, piece, path })),
-	discardHunk: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, target: DiscardTarget, against: DiscardAgainst, busyToo: boolean) => typedError<DiscardAnswer, string>(__TAURI_INVOKE("discard_hunk", { plane, workspace, repo, piece, path, target, against, busyToo })),
+	discardHunk: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, target: DiscardTarget, against: DiscardAgainst, busyToo: boolean, turn: {
+	chat: string,
+	number: number,
+} | null) => typedError<DiscardAnswer, string>(__TAURI_INVOKE("discard_hunk", { plane, workspace, repo, piece, path, target, against, busyToo, turn })),
+	undoTurn: (plane: PlaneId, workspace: string, repo: string, piece: string | null, turn: TurnPick) => typedError<UndoAnswer, string>(__TAURI_INVOKE("undo_turn", { plane, workspace, repo, piece, turn })),
 	/**
 	 *  One file of a branch across a turn that ended there, the latest when `turn` is null, or why
 	 *  there is none.
@@ -16635,13 +16639,28 @@ export type TurnChanged =
  *  The file across turn `number` of `chat`, and that chat's turns on the branch, newest
  *  first: what the picker lists.
  */
-{ kind: "of"; chat: string; number: number; turns: number[]; file: InTurn };
+{ kind: "of"; chat: string; number: number; turns: number[]; file: InTurn; 
+/**
+ *  Where this turn is the one Undo is offered on, the latest not yet undone: every path
+ *  the undo would write, which its confirmation lists (#5411). `null` on any other.
+ */
+undo: string[] | null };
 
 /**  A turn the picker names: a chat's id and the turn's number. */
 export type TurnPick = {
 	chat: string,
 	number: number,
 };
+
+/**  What an undo came to. */
+export type UndoAnswer = 
+/**
+ *  Every file is back. `unrecorded` says why the log did not take it, `unmarked` why the turn
+ *  is not marked undone, if either.
+ */
+{ kind: "undone"; unrecorded: string | null; unmarked: string | null } | 
+/**  Nothing was written: these chats are not idle, and an undo waits until they are. */
+{ kind: "busy"; chats: BusyChat[] };
 
 /**
  *  Why a vault read through an identity variable could not be read: the core's own sentence,
@@ -17156,6 +17175,11 @@ export type WhatChanged = {
 	stamp: string | null,
 	/**  The branch's check results as this file shows them (ADR 0114). */
 	checks: CheckResults,
+	/**
+	 *  On a turn's diff, that the file changed since the turn ended: it is drawn from the turn's
+	 *  start to the file as it is now (#5411).
+	 */
+	sinceTurnEnded: boolean,
 };
 
 /**

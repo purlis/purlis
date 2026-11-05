@@ -398,6 +398,10 @@ pub struct WhatChanged {
     pub stamp: Option<String>,
     /// The branch's check results as this file shows them (ADR 0114).
     pub checks: Box<CheckResults>,
+    /// On a turn's diff, that the file changed since the turn ended: it is drawn from the turn's
+    /// start to the file as it is now (#5411).
+    #[serde(rename = "sinceTurnEnded")]
+    pub since_turn_ended: bool,
 }
 
 /// How much a check result matters, in SARIF's words.
@@ -540,7 +544,10 @@ pub enum TurnChanged {
         chat: String,
         number: u32,
         turns: Vec<u32>,
-        file: InTurn,
+        file: Box<InTurn>,
+        /// Where this turn is the one Undo is offered on, the latest not yet undone: every path
+        /// the undo would write, which its confirmation lists (#5411). `null` on any other.
+        undo: Option<Vec<String>>,
     },
 }
 
@@ -615,17 +622,19 @@ fn turn_changed_of(
             number,
             turns,
             file,
+            undo,
         } => TurnChanged::Of {
             chat,
             number,
             turns,
-            file: match file {
+            undo,
+            file: Box::new(match file {
                 files::InTurn::Nothing => InTurn::Nothing,
                 files::InTurn::NotThisFile => InTurn::NotThisFile,
                 files::InTurn::Changed(shown) => InTurn::Changed {
                     shown: what_changed_shown(*shown),
                 },
-            },
+            }),
         },
     })
 }
@@ -669,6 +678,7 @@ pub(crate) fn what_changed_shown(shown: files::WhatChanged) -> WhatChanged {
         diff,
         stamp: shown.stamp,
         checks: Box::new((*shown.checks).into()),
+        since_turn_ended: shown.since_turn_ended,
     }
 }
 

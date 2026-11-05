@@ -160,6 +160,18 @@ pub(crate) fn chats_in(
     held: &crate::planes::Held,
     folder: &std::path::Path,
 ) -> Vec<(u32, String, crate::host::Glance)> {
+    chats_placed_in(held, folder)
+        .into_iter()
+        .map(|(session, name)| (session, name, held.board().glance(session)))
+        .collect()
+}
+
+/// Every open chat whose folder is `folder` or one inside it: its number and its name, read
+/// without the board, so a caller can read how each stands under the board's lock (#5411).
+pub(crate) fn chats_placed_in(
+    held: &crate::planes::Held,
+    folder: &std::path::Path,
+) -> Vec<(u32, String)> {
     held.chats()
         .open_now()
         .into_iter()
@@ -169,14 +181,7 @@ pub(crate) fn chats_in(
                     || std::fs::canonicalize(cwd).is_ok_and(|real| real.starts_with(folder))
             })
         })
-        .map(|open| {
-            let glance = held.board().glance(open.session);
-            (
-                open.session,
-                open.label.clone().unwrap_or(open.name),
-                glance,
-            )
-        })
+        .map(|open| (open.session, open.label.clone().unwrap_or(open.name)))
         .collect()
 }
 

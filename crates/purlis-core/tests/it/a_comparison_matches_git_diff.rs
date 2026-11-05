@@ -1625,8 +1625,10 @@ fn the_latest_turn_on_the_branch_answers_one_files_diff() {
         panic!("src/lib.rs is what the second turn changed");
     };
     assert_eq!((chat.as_str(), number), (CHAT, 2));
-    // A discard puts a hunk back as the base has it, so a turn's hunks are not its to take.
-    assert_eq!(shown.stamp, None);
+    // A turn's hunk is discarded as the turn's start had it (#5411), so it is drawn with a stamp,
+    // and from the turn's refs while the file is as the turn ended it.
+    assert!(shown.stamp.is_some());
+    assert!(!shown.since_turn_ended);
     let (start, end) = (turn_ref(2, "start"), turn_ref(2, "end"));
     let FileDiff::Text { hunks, .. } = shown.diff else {
         panic!("not text")
@@ -1683,6 +1685,7 @@ fn a_chats_turns_are_listed_newest_first_and_the_diff_opens_on_the_latest() {
         number,
         turns,
         file,
+        undo: _,
     } = files::turn_changed(&reader(), &f.plane, at, "src/lib.rs", None).unwrap()
     else {
         panic!("three turns ended on the branch");
