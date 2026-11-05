@@ -263,7 +263,7 @@ describe("F6 (P-13)", () => {
     f6();
     // The focused pane's first control, on its head: never the pane foot under the terminal,
     // whose harness is no longer the head's (#5202).
-    expect(document.activeElement).toHaveAccessibleName("More for steward one");
+    expect(document.activeElement).toHaveAccessibleName(/^Pane notices:/);
     expect(document.activeElement?.closest(".pane-head")).not.toBeNull();
     f6();
     f6();
