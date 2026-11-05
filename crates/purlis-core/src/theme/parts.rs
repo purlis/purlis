@@ -5409,8 +5409,8 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
         let reaches = match (property, value) {
             (Prop::Fill, PartValue::Colour(token)) => (token == TRANSPARENT
                 || content::NOTICE.grounds.contains(&token))
-            .then_some(CARD_EDGED),
-            (Prop::BorderWidth, _) => Some(CARD_EDGED_TOO),
+            .then_some(CARD_GROUND),
+            (Prop::BorderWidth, _) => Some(CARD_EDGE_WIDTH),
             _ => None,
         };
         if let Some(reaches) = reaches {
@@ -5456,15 +5456,18 @@ const SEPARATOR_LINES: &[&str] = &[
     "[data-scope=\"status-bar\"][data-part=\"separator\"]",
 ];
 
-/// **What takes the card's ground and edge width** (#3177): the Inbox's list of Notices, a card of rows, in
-/// the Inbox and on the page a window with no project shows (not its band or its lines, which
-/// draw no box).
-const CARD_EDGED: &str =
-    "[data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"])";
+/// **What takes the card's ground** (#3177, #5217): on the page a window with no project shows,
+/// the list of Notices, a card of rows; in the Notices centre and the window's own lines there,
+/// each plain Notice, a card of its own. Trouble and attention keep their own grounds. (Not the
+/// list's band, which draws no box.)
+const CARD_GROUND: &str = "[data-scope=\"notice-list\"][data-part=\"root\"][data-at=\"page\"], \
+     [data-scope=\"notice-list\"]:is([data-at=\"inbox\"], [data-at=\"lines\"]) > * > [data-scope=\"notice\"][data-part=\"root\"][data-variant=\"news\"]";
 
-/// **What takes the card's edge width alone**: the list, and a Notice alone on a page, an inline
-/// surface whose hairline is decorative (#3177, the operator's no-hairline ruling).
-const CARD_EDGED_TOO: &str = "[data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"]), \
+/// **What takes the card's edge width alone**: the list on that page, and a Notice alone on a
+/// page, an inline surface whose hairline is decorative (#3177, the operator's no-hairline
+/// ruling). Never a Notices centre card: its outline says its kind, and a consent's its asking
+/// (#5217, ADR 0097 §6).
+const CARD_EDGE_WIDTH: &str = "[data-scope=\"notice-list\"][data-part=\"root\"][data-at=\"page\"], \
      [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]";
 
 // --- The manifest as JSON ----------------------------------------------------------------------

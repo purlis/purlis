@@ -16,7 +16,7 @@
  * measuring in a real narrow pane is `pane-notices.e2e.ts`.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { drawnWith } from "./cascade.testkit";
 import { Notice, NoticeList, NoticeOf } from "./Notice";
 
@@ -87,8 +87,10 @@ describe("a Notice's ways out", () => {
   it("are the shared small button in the Inbox's list too", async () => {
     render(<NoticeList>{everyWay("inbox")}</NoticeList>);
     const line = await screen.findByRole("status", { name: "Every way" });
-    expect(line).toHaveAttribute("data-scope", "button-row");
-    for (const button of within(line).getAllByRole("button")) isASharedWrappingButton(button);
+    const row = line.querySelector('[data-scope="button-row"]') as HTMLElement;
+    const ways = within(row).getAllByRole("button");
+    expect(ways.map((one) => one.textContent)).toContain("Copy command");
+    for (const button of ways) isASharedWrappingButton(button);
   });
 
   it("say a press on its way as busy, still reachable", () => {
@@ -147,12 +149,12 @@ describe("a Notice's surface", () => {
     expect(drawnWith(trouble, "color")).toBe("var(--danger-text)");
   });
 
-  it("is the list's row in the Inbox, not a box of its own", async () => {
+  it("is a card of its own in the Notices centre, whose list draws no box (#5217)", async () => {
     render(<NoticeList>{everyWay("inbox")}</NoticeList>);
-    await waitFor(() => screen.getByRole("status", { name: "Every way" }));
-    const row = boxOf(screen.getByRole("status", { name: "Every way" }));
-    expect(row).toHaveAttribute("data-placement", "inbox");
-    expect(drawnWith(row, "border-width")).toBe("0");
-    expect(drawnWith(row, "background-color")).toBe("transparent");
+    const line = await screen.findByRole("status", { name: "Every way" });
+    const card = line.closest('[data-scope="notice"][data-part="root"]') as HTMLElement;
+    expect(card).toHaveAttribute("data-placement", "inbox");
+    expect(drawnWith(card, "border-width")).toBe("1px");
+    expect(drawnWith(card, "background-color")).toBe("var(--surface-raised)");
   });
 });

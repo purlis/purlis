@@ -14,6 +14,9 @@ import {
   type Ref,
 } from "react";
 import { createPortal } from "react-dom";
+import { ChatText } from "./ChatText";
+import { useNow } from "./InboxRow";
+import { agoSaid } from "./inboxRules";
 import { PersonaMark } from "./PersonaMark";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
 import {
@@ -28,11 +31,14 @@ import { Twist } from "./ui/disclosure/Disclosure";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
   NoticeBox,
+  NoticeChatWords,
+  NoticeHead,
   NoticeListBox,
   NoticeMark,
   NoticeMessage,
   NoticeRow,
   NoticeRowHead,
+  NoticeSaid,
   NoticeStack,
   NoticeTitle,
   NoticeUnder,
@@ -115,6 +121,9 @@ export type NoticeAction = {
   /** A card Notice's disclosure (its Details, #3344): a ghost button led by a chevron that
    *  points down while what it opens is open. Needs `opens`. */
   disclosure?: boolean;
+  /** **The way to the chat it is about** (#5217): in the Notices centre it is Go to chat, a quiet
+   *  link in the card's head. Elsewhere it is a way like any other. */
+  go?: boolean;
 };
 
 type Ways = {
@@ -150,6 +159,13 @@ type Said = {
   /** What a way out opened (a fix's form, #1250): drawn right after the line, outside its live
    *  region, and moved with it by the Inbox's list. */
   under?: ReactNode;
+  /** **A chat's own words, in a Notices centre card** (#5217): markdown under the safe subset,
+   *  folded past six lines (`ChatText`). `children` stays purlis's, in plain text. */
+  chatWords?: string;
+  /** **A consent surface** (ADR 0097 §6), though no way out on it says `allows`: a sandbox block
+   *  not yet answered. In the Notices centre it keeps its full waiting edge and takes no primary
+   *  way, so its answers stand at equal weight. It says it waits only where it has an answer. */
+  consent?: boolean;
 };
 
 /** **A line Notice**: in a pane's row, the Inbox's list or alone on a page. */
@@ -244,6 +260,7 @@ export function Notice(props: NoticeProps) {
     under,
     title,
     quiet,
+    chatWords,
   } = props;
   // A pane's Notice of a chat in no pane is the Notices centre's line (#4759).
   const inCentre = centre !== null && askedAt === "pane";
@@ -281,6 +298,37 @@ export function Notice(props: NoticeProps) {
   // the notice family's root: in a pane the box itself, in the Inbox the list's row, and alone
   // (a Notice on a Settings page) the inline surface.
   const placement = at === "pane" ? "pane" : stacked ? "inbox" : "alone";
+  // Standing in a list, it is one of the list's cards (#5217): the Notices centre's, and the
+  // window's own lines, wherever they are drawn.
+  if (stacked)
+    return createPortal(
+      <CentreCard
+        cause={cause}
+        tone={tone}
+        running={running}
+        title={title}
+        label={label}
+        persona={persona}
+        whose={of ?? undefined}
+        quiet={quiet}
+        consent={
+          props.consent === true ||
+          (props as { waits?: boolean }).waits === true ||
+          fixes?.some((fix) => fix.allows) === true
+        }
+        fixes={fixes}
+        link={link}
+        copy={copy}
+        onDismiss={onDismiss}
+        dismissSays={dismissSays}
+        mayAct={mayAct}
+        chatWords={chatWords}
+        under={under}
+      >
+        {children}
+      </CentreCard>,
+      host,
+    );
   if (title !== undefined) {
     const card = (
       <NoticeBox
@@ -355,7 +403,7 @@ export function Notice(props: NoticeProps) {
         {under !== undefined && <NoticeUnder>{under}</NoticeUnder>}
       </NoticeBox>
     );
-    return stacked ? createPortal(card, host) : card;
+    return card;
   }
   const line = (
     <ButtonRow
@@ -449,7 +497,219 @@ export function Notice(props: NoticeProps) {
       {under !== undefined && <NoticeUnder>{under}</NoticeUnder>}
     </NoticeBox>
   );
-  return stacked ? createPortal(drawn, host) : drawn;
+  return drawn;
+}
+
+/** The longest label a Notices centre card takes for its one-line title. */
+const TITLE_AT_MOST = 40;
+
+/** What a Notices centre card says of itself under its title, in its tone. */
+function stateSaid({
+  tone,
+  running,
+  waitsOnYou,
+  isCard,
+}: {
+  tone: NoticeTone;
+  running: boolean;
+  waitsOnYou: boolean;
+  isCard: boolean;
+}): string {
+  if (waitsOnYou) return "Waiting on you";
+  if (running) return "Working…";
+  if (tone === "attention") return "Needs a decision";
+  // A card answers what the person did; a line says what purlis found.
+  if (tone === "trouble") return isCard ? "Not done" : "Problem";
+  return "Note";
+}
+
+/**
+ * **A Notice as a card of the Notices centre** (#5217, the Inbox card's style from #5214): a
+ * one-line head (its mark; its title, with its state and age muted beneath; Go to chat as a quiet
+ * link; its ×), what it says at the card's size, a chat's own words through `ChatText`, and its
+ * ways under them.
+ *
+ * **One primary, where it has an answer**: the way its caller leads with, else its first. Every
+ * other way is a quiet link. **A consent takes no primary** (ADR 0097 §6): Allow keeps the
+ * `grants` look and what stands beside it the plain one, at equal weight; only what opens more
+ * is quiet.
+ *
+ * **Its title is the one thing it may not lack**: what it names (a card's title, whose it is, its
+ * label), or else its state, which then is not said again under it. Its age is how long it has
+ * stood in this window: a Notice holds no time of its own, so a relaunch starts it again.
+ */
+function CentreCard({
+  cause,
+  tone,
+  running,
+  title,
+  label,
+  persona,
+  whose,
+  quiet,
+  consent,
+  fixes,
+  link,
+  copy,
+  onDismiss,
+  dismissSays,
+  mayAct,
+  chatWords,
+  under,
+  children,
+}: Ways & {
+  cause: string;
+  tone: NoticeTone;
+  running: boolean;
+  title?: ReactNode;
+  label?: string;
+  persona?: string | null;
+  whose?: { whose: string; onGo: () => void };
+  quiet?: boolean;
+  consent: boolean;
+  mayAct: (target: Element) => boolean;
+  chatWords?: string;
+  under?: ReactNode;
+  children: ReactNode;
+}) {
+  const [since] = useState(() => Date.now());
+  const now = useNow();
+  const toChat = fixes?.find((fix) => fix.go === true);
+  const others = fixes?.filter((fix) => fix !== toChat) ?? [];
+  // A label as long as a sentence (the away summary's) names it for a reader, and is no title.
+  const short = label !== undefined && label.length <= TITLE_AT_MOST ? label : undefined;
+  const named = title ?? whose?.whose ?? short;
+  // A consent with nothing left to press (purlis never allows it) waits on nobody.
+  const waitsOnYou = consent && others.some((fix) => fix.opens === undefined);
+  const state = stateSaid({ tone, running, waitsOnYou, isCard: title !== undefined });
+  const answer = consent
+    ? undefined
+    : (others.find((fix) => fix.primary === true) ??
+      others.find((fix) => fix.disclosure !== true && fix.opens === undefined));
+  const variantOf = (fix: NoticeAction) => {
+    if (fix.allows === true) return "grants";
+    if (fix === answer) return "primary";
+    // Beside a consent's Allow its answers are as plain as each other; what opens more is not one.
+    return consent && fix.opens === undefined ? "secondary" : "quiet-link";
+  };
+  const hasWays = others.length > 0 || link !== undefined || copy !== undefined;
+  const goes = whose?.onGo ?? toChat?.onPress;
+  return (
+    <NoticeBox
+      tone={tone}
+      placement="inbox"
+      opened={under !== undefined}
+      asks={fixes !== undefined || link !== undefined || under !== undefined}
+      consent={consent}
+      layout="head"
+    >
+      <NoticeSaid
+        label={whose !== undefined && label !== undefined ? `${whose.whose}: ${label}` : label}
+        cause={cause}
+        live={quiet !== true}
+      >
+        <NoticeHead
+          mark={<NoticeMark tone={tone} running={running} />}
+          title={
+            <NoticeTitle>
+              {persona != null && <PersonaMark persona={persona} />}
+              {named ?? state}
+            </NoticeTitle>
+          }
+          sub={
+            <>
+              {named !== undefined && `${state} · `}
+              <time dateTime={new Date(since).toISOString()}>{agoSaid(since, now)}</time>
+            </>
+          }
+          end={
+            goes === undefined && onDismiss === undefined ? undefined : (
+              <>
+                {goes !== undefined && (
+                  <Button
+                    size="sm"
+                    variant="quiet-link"
+                    aria-label={whose === undefined ? "Go to chat" : `Go to chat ${whose.whose}`}
+                    onPress={(press) => {
+                      if (whose !== undefined) whose.onGo();
+                      else if (mayAct(press.target)) toChat?.onPress();
+                    }}
+                    data-way="go"
+                  >
+                    Go to chat
+                  </Button>
+                )}
+                {onDismiss !== undefined && (
+                  <IconButton
+                    size="sm"
+                    variant="quiet"
+                    aria-label="Dismiss"
+                    tooltip={dismissSays}
+                    onPress={onDismiss}
+                    data-way="dismiss"
+                    icon={<X aria-hidden="true" />}
+                  />
+                )}
+              </>
+            )
+          }
+        />
+        {children !== undefined && <NoticeMessage>{children}</NoticeMessage>}
+        {chatWords !== undefined && (
+          <NoticeChatWords>
+            <ChatText text={chatWords} />
+          </NoticeChatWords>
+        )}
+        {hasWays && (
+          <ButtonRow size="sm">
+            {others.map((fix) => (
+              <Button
+                key={fix.label}
+                ref={fix.button}
+                size="sm"
+                variant={variantOf(fix)}
+                icon={
+                  fix.disclosure !== true ? undefined : <Twist open={fix.opens?.open === true} />
+                }
+                data-way={fix.disclosure === true ? "disclosure" : "fix"}
+                aria-expanded={fix.opens?.open}
+                aria-controls={fix.opens?.open ? fix.opens.id : undefined}
+                aria-disabled={fix.busy || fix.off !== undefined || undefined}
+                aria-busy={fix.busy || undefined}
+                tooltip={fix.off}
+                onPress={
+                  fix.busy || fix.off !== undefined
+                    ? undefined
+                    : (press) => {
+                        if (mayAct(press.target)) fix.onPress();
+                      }
+                }
+              >
+                {fix.label}
+              </Button>
+            ))}
+            {link && (
+              <Button size="sm" variant="quiet-link" onPress={link.onPress} data-way="link">
+                {link.label}
+              </Button>
+            )}
+            {copy !== undefined && (
+              <Button
+                size="sm"
+                variant="quiet-link"
+                tooltip={copy}
+                onPress={() => void navigator.clipboard?.writeText(copy).catch(() => undefined)}
+                data-way="copy"
+              >
+                Copy command
+              </Button>
+            )}
+          </ButtonRow>
+        )}
+      </NoticeSaid>
+      {under !== undefined && <NoticeUnder>{under}</NoticeUnder>}
+    </NoticeBox>
+  );
 }
 
 /**

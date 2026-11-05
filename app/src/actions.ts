@@ -187,7 +187,13 @@ export type NotCloned = {
 
 /** A way on from what an action answered (#3344): "Open git-ci-cd", the filled primary where
  *  `primary`, or "Add a vision". */
-export type SaidWay = { label: string; onPress: () => void; primary?: boolean };
+export type SaidWay = {
+  label: string;
+  onPress: () => void;
+  primary?: boolean;
+  /** The way to the chat it is about: Go to chat, in a Notices centre card's head (#5217). */
+  go?: boolean;
+};
 
 /**
  * **What the window says about the last action** — the closable notice at the top of the
