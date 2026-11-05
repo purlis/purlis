@@ -424,7 +424,7 @@ struct Brought {
 
 impl Brought {
     /// How a sentence says where the base's commits came from, or nothing.
-    fn from_where(&self) -> String {
+    fn said_from(&self) -> String {
         match (&self.moved_to, self.onto.strip_prefix("refs/remotes/")) {
             (Some(up), _) => format!(" ({} brought up to {up})", self.base),
             (None, Some(up)) => format!(" (as {up} has it)"),
@@ -526,7 +526,7 @@ fn start(
         }
         Moved::Stopped(code) => return Ok(code),
         Moved::Forward | Moved::Rebased => {
-            let moved = brought.from_where();
+            let moved = brought.said_from();
             say(Say::Done(
                 format!("{label} is rebased onto {base}{moved}").into(),
             ));

@@ -583,18 +583,17 @@ fn reaches_a_remote(from: &[&str]) -> bool {
 /// (`gpg.program`, `gpg.<format>.program`, `gpg.ssh.defaultKeyCommand`), the editors
 /// (`core.editor`, `sequence.editor`), `core.alternateRefsCommand`, each trailer's
 /// command, and each branch's `mergeOptions`, which hand `git merge` options as if typed, a
-/// strategy (a program by a name the repository chooses) among them. Each is given back empty, which git reads as no program or as a program it cannot
-/// start, and a filter whose program was held is no longer `required`, so git does not refuse
-/// the file it would have filtered. Where git fails to start an empty one, the call fails
-/// rather than run what the repository named: the patch verbs never reach the diff ones
-/// ([`PLAIN_PATCH`]), a merge that would need a held driver stops on a conflict, and a signed
-/// commit in a repository that names its own signer is refused. **A hook named in config**
-/// (`hook.<name>.command` and `.event`, git 2.54 and later) is not looked up through
-/// `core.hooksPath`, so each name the repository gives a command or an event is turned off by
-/// that name (`hook.<name>.enabled=false`); a git older than that reads no such key and runs no
-/// such hook. `core.gitProxy` is not held
-/// here: it is only for the `git://` transport, which every network call refuses
-/// ([`NETWORK_RULE`]), and no other call connects.
+/// strategy (a program by a name the repository chooses) among them. Each is given back empty,
+/// which git reads as no program or as a program it cannot start, and a filter whose program was
+/// held is no longer `required`, so git does not refuse the file it would have filtered. Where git
+/// fails to start an empty one, the call fails rather than run what the repository named: the patch
+/// verbs never reach the diff ones ([`PLAIN_PATCH`]), a merge that would need a held driver stops
+/// on a conflict, and a signed commit in a repository that names its own signer is refused. **A
+/// hook named in config** (`hook.<name>.command` and `.event`, git 2.54 and later) is not looked up
+/// through `core.hooksPath`, so each name the repository gives a command or an event is turned off
+/// by that name (`hook.<name>.enabled=false`); a git older than that reads no such key and runs no
+/// such hook. `core.gitProxy` is not held here: it is only for the `git://` transport, which every
+/// network call refuses ([`NETWORK_RULE`]), and no other call connects.
 ///
 /// **LFS's standard filter is kept** ([`LFS_FILTER`]), unless the repository's own config also
 /// names a program LFS itself would run (its transfer agents and extensions, a credential

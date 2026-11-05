@@ -376,7 +376,7 @@ fn finished(here: &Here, note: &Note, brought: &Brought, say: &mut dyn FnMut(Say
             "{} has {} merged in{}. No commit was rewritten, so `purlis worktree push` publishes it",
             here.label,
             brought.base,
-            brought.from_where()
+            brought.said_from()
         )
         .into(),
     ));
