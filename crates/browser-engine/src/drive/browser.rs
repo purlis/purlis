@@ -20,9 +20,10 @@ use super::kept::Kept;
 use super::keys::key_events;
 use super::ledger::{Begin, Ledger};
 use super::screencast::Screencast;
+use super::scrub::{Scrub, every_form};
 use super::settle::{Activity, Settle, activity};
 use super::site::site;
-use super::tree::{FrameAx, NodeKey, Query, Scrub, Snapshot, View, build_kept};
+use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build_kept};
 use super::{
     Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, FillHold, Gate, Hold, Judge,
     KeptOff, Limits, Outbound, PageId, PageInfo, Painted, Ref, Refusal, RefusedLoad, Settled, Why,
@@ -41,6 +42,7 @@ mod leaving;
 mod login;
 mod reading;
 mod takeover;
+mod told;
 mod view;
 mod world;
 
@@ -930,11 +932,6 @@ impl Page {
         kept_title(&self.shown(&self.title))
     }
 
-    /// [`Page::shown`] for an address, read as its reader would read it (decoded).
-    fn shown_address(&self, address: &str) -> String {
-        Scrub::of(&self.scrubbed).address(address)
-    }
-
     /// The site this page is on: the one of the document it has loaded, not of an address it
     /// is still loading; until its document is known, the one of its address.
     fn site(&self) -> Option<String> {
@@ -1378,7 +1375,7 @@ impl State {
 
     /// Whether `address` carries a text kept out, read as its reader would read it (#5117).
     fn address_holds_kept(&self, address: &str) -> bool {
-        super::tree::Scrub::of(&self.kept).address(address) != address
+        Scrub::of(&self.kept).holds(address)
     }
 
     /// The page whose own frame, or one of whose frames, is `frame` (#5152).
@@ -1510,7 +1507,7 @@ impl State {
     fn info(&self, target: &str) -> Option<PageInfo> {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
-            address: p.shown_address(&p.url),
+            address: p.shown(&p.url),
             title: p.shown_title(),
             current: self.current.as_deref() == Some(target),
         })
@@ -2297,6 +2294,11 @@ impl Browser {
     /// holds that lease now, and cut, answering [`Refusal::Interrupted`], if the person takes
     /// the browser over before it answers.
     pub fn call_at(&self, epoch: u64, id: &CallId, call: Call) -> Result<Answer, Refusal> {
+        let outcome = self.answering(epoch, id, call);
+        self.kept_out(outcome)
+    }
+
+    fn answering(&self, epoch: u64, id: &CallId, call: Call) -> Result<Answer, Refusal> {
         self.agent_holds(epoch)?;
         // A call that only reads acts on nothing, so a retry of it reads again; only what acts
         // is kept by id.
@@ -2388,9 +2390,11 @@ impl Browser {
         answer
     }
 
-    /// Every download the browser began, as it is now (#2020): told to nobody by this.
+    /// Every download the browser began, as it is now (#2020): told to nobody by this. Its name
+    /// is kept out of as an answer's is; its origin is the engine's, for its caller to judge by.
     pub fn downloads(&self) -> Vec<super::DownloadInfo> {
-        lock(&self.inner.state).downloads.all()
+        let all = lock(&self.inner.state).downloads.all();
+        self.names_kept_out(all)
     }
 
     /// **Holds every download of the browser's in `folder`** (#2020), each under the engine's
@@ -3557,7 +3561,7 @@ impl Browser {
                 "page {} \"{}\" {}\n{body}",
                 page.id,
                 title.replace('"', "\\\""),
-                page.shown_address(&page.url)
+                page.shown(&page.url)
             );
             (text, changes::document_of(&state, target))
         };
@@ -5077,7 +5081,9 @@ impl Browser {
             (page.scrubbed.clone(), greys, roots, blanked)
         };
         let loose: Vec<&str> = kept.loose();
-        let kept: Vec<&str> = kept.texts();
+        // A page may draw any form of a text kept out.
+        let spelled = every_form(&kept);
+        let kept: Vec<&str> = spelled.iter().map(|form| form.as_str()).collect();
         // The frame elements whose documents are read in sessions of their own.
         let read_apart: HashSet<(String, i64)> = roots
             .iter()

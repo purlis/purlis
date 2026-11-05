@@ -7,7 +7,9 @@
 //! What counts is read from the engine's own events (`Page.frameStartedLoading` and
 //! `frameStoppedLoading`, `Network.requestWillBeSent`, `loadingFinished` and `loadingFailed`).
 //! A stream that is meant never to end (a WebSocket, an event source) does not count. A page
-//! that has not settled says what it still waits for, in words.
+//! that has not settled says what it still waits for, in words: how many requests, and the hosts
+//! they went to. Never a path or a query (#5310): a page puts what it was given in those, and the
+//! chat reading this has no use for them.
 //!
 //! **A frame's document may end in another session than it started in** (#2689). The document
 //! of a frame from another site is asked for in the session of the page around it, and answered
@@ -16,7 +18,7 @@
 //! other process's requests share, so a document ended in any session of the page ends;
 //! another request's id is numbered per process, so it ends only in its own session.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -43,8 +45,15 @@ pub(crate) enum Activity {
 /// Request types that are meant to stay open.
 const NEVER_ENDING: &[&str] = &["WebSocket", "EventSource"];
 
-/// How many open requests a reason names.
+/// How many hosts of open requests a reason names.
 const NAMED: usize = 3;
+
+/// The host of `address`, with its port where that isn't its scheme's own: none for an address of
+/// no web scheme, and for one that names a user, which is not read for its host.
+fn host_of(address: &str) -> Option<String> {
+    let origin = super::origin_of(address)?;
+    origin.split_once("://").map(|(_, host)| host.to_owned())
+}
 
 /// What `method` with `params` means for settling, if anything.
 pub(crate) fn activity(method: &str, params: &Value) -> Option<Activity> {
@@ -186,21 +195,22 @@ impl Settle {
         }
         if !self.requests.is_empty() {
             let n = self.requests.len();
-            let named: Vec<&str> = self
+            let hosts: BTreeSet<String> = self
                 .requests
                 .values()
-                .take(NAMED)
-                .map(|request| request.url.as_str())
+                .filter_map(|request| host_of(&request.url))
                 .collect();
-            let more = if n > NAMED {
-                format!(" and {} more", n - NAMED)
-            } else {
+            let named: Vec<&str> = hosts.iter().take(NAMED).map(String::as_str).collect();
+            let hosts_said = if named.is_empty() {
                 String::new()
+            } else if hosts.len() > NAMED {
+                format!(": {} and {} more", named.join(", "), hosts.len() - NAMED)
+            } else {
+                format!(": {}", named.join(", "))
             };
             out.push(format!(
-                "{n} request{} still loading: {}{more}",
+                "{n} request{} still loading{hosts_said}",
                 if n == 1 { "" } else { "s" },
-                named.join(", ")
             ));
         }
         let since = now.saturating_duration_since(self.last_change);

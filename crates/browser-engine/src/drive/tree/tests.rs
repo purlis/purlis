@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
-use super::{FrameAx, NodeKey, Query, View, build, scrubbed, scrubbed_address};
+use super::{FrameAx, NodeKey, Query, View, build};
 
 /// `Accessibility.getFullAXTree` as the engine answered it for the fixture site's frames page.
 const MAIN_FRAME: &str = include_str!("../../../tests/fixtures/devtools/ax-main-frame.json");
@@ -499,39 +499,6 @@ fn a_frame_named_with_blanked_text_shows_none_of_it() {
     let found = find_pay(&frames, &["open sesame"]);
     assert!(found.contains("in frame \"(blanked)\""), "{found}");
     assert!(!found.to_lowercase().contains("sesame"), "{found}");
-}
-
-#[test]
-fn blanked_text_is_found_in_an_address_however_the_address_encodes_it() {
-    let cases = [
-        ("hunter2~", "http://fixture.test/login?p=hunter2%7E"),
-        ("hunter2~", "http://fixture.test/login?p=hunter2~"),
-        ("pass word!", "http://fixture.test/login?p=pass%20word!"),
-        ("pass word!", "http://fixture.test/login?p=pass+word%21"),
-        ("a*b*c", "http://fixture.test/login?p=a%2Ab%2Ac"),
-        ("a*b*c", "http://fixture.test/login?p=a*b*c"),
-    ];
-    for (value, address) in cases {
-        assert_eq!(
-            scrubbed_address(address, &[value]),
-            "http://fixture.test/login?p=(blanked)",
-            "{value} in {address}"
-        );
-    }
-    // An address that holds nothing blanked is given back as written.
-    assert_eq!(
-        scrubbed_address("http://fixture.test/a%20b?c=d+e", &["zzz"]),
-        "http://fixture.test/a%20b?c=d+e"
-    );
-}
-
-#[test]
-fn a_kept_text_and_its_beginnings_are_taken_out_whole_whatever_order_they_were_kept_in() {
-    let kept = ["squ", "squi", "squir", "squirre", "squirrel9"];
-
-    let said = scrubbed("Signed in as SQUIRREL9 today", &kept);
-
-    assert_eq!(said, "Signed in as (blanked) today");
 }
 
 /// One node of an engine's tree: `id` is both its node id and its element's id.

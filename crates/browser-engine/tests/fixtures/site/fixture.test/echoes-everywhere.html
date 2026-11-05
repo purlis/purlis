@@ -5,6 +5,7 @@
   <label>Search for <input name="q" id="q"></label>
   <p>Plain: <span id="plain"></span></p>
   <p>Encoded: <span id="encoded"></span></p>
+  <p>Encoded twice: <span id="twice"></span></p>
   <p>Lower hex: <span id="lower"></span></p>
   <p>Form: <span id="form"></span></p>
   <p>Base64: <span id="base64"></span></p>
@@ -42,6 +43,7 @@
       const base64 = btoa(value);
       shown('plain', value);
       shown('encoded', encoded);
+      shown('twice', encodeURIComponent(encoded));
       shown('lower', encoded.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase()));
       shown('form', form);
       shown('base64', base64);

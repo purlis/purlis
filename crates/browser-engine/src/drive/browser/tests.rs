@@ -1739,9 +1739,7 @@ fn an_action_whose_data_is_still_loading_says_it_has_not_settled_and_what_it_wai
     let answer = browser.call(&id(2), Call::Click { target: more }).unwrap();
     assert_eq!(
         answer.settled,
-        Settled::No(vec![
-            "1 request still loading: http://fixture.test/slow-data".into()
-        ])
+        Settled::No(vec!["1 request still loading: fixture.test".into()])
     );
 }
 
@@ -2050,12 +2048,12 @@ fn a_page_settles_once_a_frame_with_a_request_open_detaches() {
         }
     };
     until(
-        &|w| w.iter().any(|w| w.contains("ads-data")) && w.len() == 1,
+        &|w| w.iter().any(|w| w.contains("1 request still loading")) && w.len() == 1,
         "the request never counted alone",
     );
     let before = browser.call(&id(1), Call::Pages).unwrap();
     assert!(
-        matches!(&before.settled, Settled::No(why) if why.iter().any(|w| w.contains("ads-data"))),
+        matches!(&before.settled, Settled::No(why) if why.iter().any(|w| w.contains("1 request still loading"))),
         "{:?}",
         before.settled
     );

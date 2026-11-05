@@ -64,6 +64,16 @@ describe("SecretFillNotice", () => {
     expect(site).toHaveTextContent("the chat never sees the value");
   });
 
+  it("says the site receives the value and can send it on, or the code for a code", () => {
+    const { unmount } = render(<SecretFillNotice ask={ask()} />);
+    expect(screen.getByTestId("fill-site-receives").textContent).toBe(
+      "dash.example.test will receive this value and can send it to its servers. Approve only for a site you'd type it into yourself.",
+    );
+    unmount();
+    render(<SecretFillNotice ask={ask({ code: true })} />);
+    expect(screen.getByTestId("fill-site-receives").textContent).toContain("receive this code");
+  });
+
   it("says a 2FA code is made from the seed, and that the seed reaches neither page nor chat", () => {
     render(
       <SecretFillNotice plane="p" session={7} asks={[ask({ key: "dash-2fa", code: true })]} />,

@@ -61,11 +61,17 @@ fn forms() -> Vec<(&'static str, String)> {
         ("base64", STANDARD.encode(VALUE)),
         ("base64 with no padding", STANDARD_NO_PAD.encode(VALUE)),
         ("url-safe base64", URL_SAFE.encode(VALUE)),
-        ("url-safe base64 with no padding", URL_SAFE_NO_PAD.encode(VALUE)),
+        (
+            "url-safe base64 with no padding",
+            URL_SAFE_NO_PAD.encode(VALUE),
+        ),
         // What of a larger text's base64 only the value decides, at each of its three alignments.
         ("base64 inside a larger text", inside(AROUND[0])),
         ("base64 inside a larger text, shifted", inside(AROUND[1])),
-        ("base64 inside a larger text, shifted twice", inside(AROUND[2])),
+        (
+            "base64 inside a larger text, shifted twice",
+            inside(AROUND[2]),
+        ),
     ]
 }
 
@@ -143,7 +149,11 @@ fn every_read_holds_none(browser: &Browser, target: &Ref) {
             target: target.clone(),
         },
     );
-    let _ = read(browser, "a screenshot", Call::Screenshot { page: page.clone() });
+    let _ = read(
+        browser,
+        "a screenshot",
+        Call::Screenshot { page: page.clone() },
+    );
     // What it echoes of what it was asked.
     let waited = read(
         browser,
@@ -156,27 +166,22 @@ fn every_read_holds_none(browser: &Browser, target: &Ref) {
         },
     );
     assert!(
-        matches!(waited.map(|answer| answer.content), Ok(Content::Seen(false))),
+        matches!(
+            waited.map(|answer| answer.content),
+            Ok(Content::Seen(false))
+        ),
         "the page shows the value, and a wait for it sees nothing"
     );
-    for refused in [
-        Call::Click {
-            target: Ref::new(VALUE),
-        },
-        Call::SwitchPage {
-            page: purlis_browser_engine::drive::PageId::new(VALUE),
-        },
-    ] {
-        let _ = read(browser, "a refusal", refused);
-    }
-    for form in forms() {
-        let _ = read(
-            browser,
-            "a click on a reference spelled as the value",
-            Call::Click {
-                target: Ref::new(form.1),
-            },
-        );
+    // A snapshot shows where the page wrote each form, so the page did write them.
+    let shown = common::drive::snapshot(browser);
+    for label in ["Plain", "Encoded", "Encoded twice", "Form", "Base64"] {
+        let line = shown
+            .lines()
+            .skip_while(|line| !line.contains(&format!("{label}:")))
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(line.contains("(blanked)"), "what {label} shows is blanked");
     }
 }
 
