@@ -48,39 +48,55 @@ afterEach(() => {
   forgetYourEditor();
 });
 
-/** The core, answering both comparisons: what each was asked is noted by its command. */
-function coreWithTurns(base: WhatChanged, turn: TurnChanged) {
+/** The core, answering both comparisons: what each was asked is noted by its command, and a
+ *  turn asked by its pick (`turn:latest` or `turn:<chat>/<number>`). */
+function coreWithTurns(base: WhatChanged, turn: TurnChanged | ((number: number) => TurnChanged)) {
   const asked: string[] = [];
-  mockIPC((cmd) => {
-    if (cmd === "what_changed" || cmd === "latest_turn_changed") asked.push(cmd);
-    if (cmd === "what_changed") return base;
-    if (cmd === "latest_turn_changed") return turn;
+  mockIPC((cmd, args) => {
+    if (cmd === "what_changed") {
+      asked.push(cmd);
+      return base;
+    }
+    if (cmd === "turn_changed") {
+      const pick = (args as { turn: { chat: string; number: number } | null }).turn;
+      asked.push(pick === null ? "turn:latest" : `turn:${pick.chat}/${pick.number}`);
+      return typeof turn === "function" ? turn(pick?.number ?? 3) : turn;
+    }
     throw new Error(`unexpected ${cmd}`);
   });
   return asked;
 }
 
-describe("the latest turn beside against base (#5405)", () => {
+const CHAT = "01J9CHAT0000000000000000TN";
+
+describe("one turn beside against base (#5405, #5408)", () => {
   const whole = changed({
     kind: "text",
     base: "one\n",
     head: "one\ntwo\nthree\n",
     hunks: [{ oldStart: 1, oldLines: 0, newStart: 2, newLines: 2 }],
   });
-  const ofTheTurn: TurnChanged = {
-    kind: "changed",
-    number: 3,
-    shown: {
-      ...changed({
-        kind: "text",
-        base: "one\ntwo\n",
-        head: "one\ntwo\nthree\n",
-        hunks: [{ oldStart: 2, oldLines: 0, newStart: 3, newLines: 1 }],
-      }),
-      base: "the start of turn 3",
-      stamp: null,
+  const turnOf = (number: number, line: string, at: number): TurnChanged => ({
+    kind: "of",
+    chat: CHAT,
+    number,
+    turns: [3, 2, 1],
+    file: {
+      kind: "changed",
+      shown: {
+        ...changed({
+          kind: "text",
+          base: "one\ntwo\n",
+          head: `one\ntwo\n${line}\n`,
+          hunks: [{ oldStart: 2, oldLines: 0, newStart: at, newLines: 1 }],
+        }),
+        base: `the start of turn ${number}`,
+        stamp: null,
+      },
     },
-  };
+  });
+  const ofTheTurn = turnOf(3, "three", 3);
+  const turnOption = () => screen.getByRole("button", { name: /Turn$/ });
 
   it("opens against base, and a press draws the latest turn's own lines", async () => {
     const asked = coreWithTurns(whole, ofTheTurn);
@@ -89,7 +105,7 @@ describe("the latest turn beside against base (#5405)", () => {
     expect(screen.getByRole("radio", { name: "Against base" })).toBeChecked();
     expect(asked).toEqual(["what_changed"]);
 
-    await userEvent.click(screen.getByRole("radio", { name: "Latest turn" }));
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
 
     expect(await screen.findByText("against the start of turn 3")).toBeInTheDocument();
     await waitFor(() =>
@@ -97,7 +113,70 @@ describe("the latest turn beside against base (#5405)", () => {
         "three",
       ]),
     );
-    expect(asked).toEqual(["what_changed", "latest_turn_changed"]);
+    expect(asked).toEqual(["what_changed", "turn:latest"]);
+  });
+
+  it("lists the chat's turns newest first, and opens on the latest", async () => {
+    coreWithTurns(whole, ofTheTurn);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+    expect(screen.queryByRole("button", { name: /Turn$/ })).toBeNull();
+
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+    await screen.findByText("against the start of turn 3");
+    expect(turnOption()).toHaveTextContent("Turn 3, the latest");
+
+    await userEvent.click(turnOption());
+    const listed = within(await screen.findByRole("listbox")).getAllByRole("option");
+    expect(listed.map((option) => option.textContent)).toEqual([
+      "Turn 3, the latest",
+      "Turn 2",
+      "Turn 1",
+    ]);
+  });
+
+  it("steps to an earlier turn by the keyboard, and draws that turn's own lines", async () => {
+    const asked = coreWithTurns(whole, (number) =>
+      number === 2 ? turnOf(2, "two and a half", 3) : ofTheTurn,
+    );
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+    await screen.findByText("against the start of turn 3");
+
+    turnOption().focus();
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("listbox");
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+
+    expect(await screen.findByText("against the start of turn 2")).toBeInTheDocument();
+    await waitFor(() =>
+      expect([...document.querySelectorAll(".cm-changedLine")].map((l) => l.textContent)).toEqual([
+        "two and a half",
+      ]),
+    );
+    expect(asked).toEqual(["what_changed", "turn:latest", `turn:${CHAT}/2`]);
+    expect(turnOption()).toHaveTextContent("Turn 2");
+  });
+
+  it("goes back to the latest turn each time one turn is chosen again", async () => {
+    const asked = coreWithTurns(whole, (number) =>
+      number === 2 ? turnOf(2, "two and a half", 3) : ofTheTurn,
+    );
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+    await screen.findByText("against the start of turn 3");
+    await userEvent.click(turnOption());
+    await userEvent.click(await screen.findByRole("option", { name: "Turn 2" }));
+    await screen.findByText("against the start of turn 2");
+
+    await userEvent.click(screen.getByRole("radio", { name: "Against base" }));
+    await screen.findByText("against main");
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+
+    expect(await screen.findByText("against the start of turn 3")).toBeInTheDocument();
+    expect(asked.at(-1)).toBe("turn:latest");
   });
 
   it("offers no Discard on a turn's hunks, which a discard would take for the base's", async () => {
@@ -105,7 +184,7 @@ describe("the latest turn beside against base (#5405)", () => {
     render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
     expect(await screen.findByRole("button", { name: /^Discard the change/ })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("radio", { name: "Latest turn" }));
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
 
     await screen.findByText("against the start of turn 3");
     expect(screen.queryByRole("button", { name: /^Discard/ })).toBeNull();
@@ -129,22 +208,48 @@ describe("the latest turn beside against base (#5405)", () => {
     render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
     await screen.findByText("against main");
 
-    await userEvent.click(screen.getByRole("radio", { name: "Latest turn" }));
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
 
     expect(await screen.findByTestId("piece-diff-trouble")).toHaveTextContent(why);
     expect(document.querySelector(".cm-mergeView")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Turn$/ })).toBeNull();
   });
 
-  it("says a file the latest turn left alone by the turn's number", async () => {
-    coreWithTurns(whole, { kind: "not-changed", number: 3 });
+  it("says a file the turn left alone by the turn's number", async () => {
+    coreWithTurns(whole, {
+      kind: "of",
+      chat: CHAT,
+      number: 3,
+      turns: [3, 2, 1],
+      file: { kind: "not-this-file" },
+    });
     render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
     await screen.findByText("against main");
 
-    await userEvent.click(screen.getByRole("radio", { name: "Latest turn" }));
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
 
     expect(await screen.findByTestId("piece-diff-trouble")).toHaveTextContent(
       "Turn 3 did not change lib.rs",
     );
+  });
+
+  it("says a turn that changed nothing, and keeps the picker to step past it", async () => {
+    coreWithTurns(whole, {
+      kind: "of",
+      chat: CHAT,
+      number: 2,
+      turns: [3, 2, 1],
+      file: { kind: "nothing" },
+    });
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+
+    expect(await screen.findByTestId("piece-diff-trouble")).toHaveTextContent(
+      "Turn 2 changed no file",
+    );
+    expect(turnOption()).toHaveTextContent("Turn 2");
   });
 });
 

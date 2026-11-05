@@ -140,7 +140,7 @@ fn record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use purlis_core::files::{FileDiff, TurnChanged};
+    use purlis_core::files::{FileDiff, InTurn, TurnChanged};
 
     const CHAT: &str = "01J9CHAT0000000000000000TN";
 
@@ -218,15 +218,18 @@ mod tests {
         recorder.heard(&plane.1, CHAT, &folder, &report(Event::Stop, "{}"));
         until("the turn's end", || refs(&folder).contains("/1/end"));
 
-        let read = purlis_core::files::latest_turn_changed(
+        let read = purlis_core::files::turn_changed(
             &crate::reader(),
             &plane.1,
             Branch::repo("ws", "app"),
             "a.txt",
+            None,
         )
         .expect("it reads");
-        let TurnChanged::Changed {
-            number: 1, shown, ..
+        let TurnChanged::Of {
+            number: 1,
+            file: InTurn::Changed(shown),
+            ..
         } = read
         else {
             panic!("a.txt is what the turn changed: {read:?}");

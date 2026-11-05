@@ -410,32 +410,53 @@ fn one_file_compared(
     }))
 }
 
-/// One file of the latest turn on a branch: what the file diff's "Latest turn" draws (#5405).
+/// A turn of a chat, as the file diff's turn picker names it (#5408).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TurnKey {
+    pub chat: String,
+    pub number: u32,
+}
+
+/// One file across one turn on a branch: what the file diff's turn picker draws (#5405, #5408).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TurnChanged {
     /// No turn has ended on this branch.
     NoTurn,
-    /// The latest turn left this file as it found it.
-    NotChanged { number: u32 },
-    /// The file, compared across the turn.
-    Changed {
+    /// The file across turn `number` of `chat`, and every turn of that chat that ended on the
+    /// branch, newest first: what the picker lists.
+    Of {
         chat: String,
         number: u32,
-        shown: Box<WhatChanged>,
+        turns: Vec<u32>,
+        file: InTurn,
     },
 }
 
-/// One file of `branch`, by its path relative to the branch's folder, across the latest turn that
-/// ended there ([`super::turns`]). Confined and read as [`what_changed`] reads.
-pub fn latest_turn_changed(
+/// What one turn did to one file.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum InTurn {
+    /// The turn changed no file at all.
+    Nothing,
+    /// The turn changed other files and left this one as it found it.
+    NotThisFile,
+    /// The file, compared across the turn.
+    Changed(Box<WhatChanged>),
+}
+
+/// One file of `branch`, by its path relative to the branch's folder, across `turn`, or across the
+/// latest turn that ended there when `turn` is `None` ([`super::turns`]). Confined and read as
+/// [`what_changed`] reads.
+pub fn turn_changed(
     reader: &super::Reader,
     plane: &Path,
     branch: Branch<'_>,
     path: &str,
+    turn: Option<&TurnKey>,
 ) -> Result<TurnChanged, Refused> {
     super::spelled_inside(path)?;
     let ask = super::Ask::TurnChanged {
         path: path.to_string(),
+        turn: turn.cloned(),
     };
     match reader.ask(plane, branch, ask)? {
         super::Answer::TurnChanged(changed) => Ok(changed),
@@ -443,38 +464,57 @@ pub fn latest_turn_changed(
     }
 }
 
-/// [`latest_turn_changed`], in this process: only the bounded reader's child calls it.
-pub(super) fn latest_turn_changed_here(
+/// [`turn_changed`], in this process: only the bounded reader's child calls it.
+pub(super) fn turn_changed_here(
     plane: &Path,
     branch: Branch<'_>,
     path: &str,
+    turn: Option<TurnKey>,
 ) -> Result<TurnChanged, Refused> {
     let opened = open(plane, branch)?;
-    let on = opened
+    let Some(on) = opened
         .repo
         .head_name()
         .ok()
         .flatten()
-        .map(|name| name.shorten().to_string());
-    let Some(latest) = on.and_then(|on| super::turns::latest_of(&opened.repo, &on)) else {
+        .map(|name| name.shorten().to_string())
+    else {
         return Ok(TurnChanged::NoTurn);
     };
-    let comparison = Comparison::Turn {
-        chat: latest.chat.clone(),
-        number: latest.number,
+    let Some(TurnKey { chat, number }) =
+        turn.or_else(|| super::turns::latest_of(&opened.repo, &on))
+    else {
+        return Ok(TurnChanged::NoTurn);
     };
-    Ok(
-        match one_file_compared(plane, branch, &opened, &comparison, path)? {
-            Shown::Changed(shown) => TurnChanged::Changed {
-                chat: latest.chat,
-                number: latest.number,
-                shown: Box::new(shown),
-            },
-            Shown::NotListed { .. } => TurnChanged::NotChanged {
-                number: latest.number,
-            },
-        },
-    )
+    let turns = super::turns::ended_of(&opened.repo, &on, &chat);
+    if !turns.contains(&number) {
+        return Err(Refused::Read(format!(
+            "this branch has no turn {number} of that chat"
+        )));
+    }
+    let comparison = Comparison::Turn {
+        chat: chat.clone(),
+        number,
+    };
+    let file = match one_file_compared(plane, branch, &opened, &comparison, path)? {
+        Shown::Changed(shown) => InTurn::Changed(Box::new(shown)),
+        Shown::NotListed { .. } => {
+            if compared_in(plane, branch, &opened, &comparison, Whitespace::Shown)?
+                .files
+                .is_empty()
+            {
+                InTurn::Nothing
+            } else {
+                InTurn::NotThisFile
+            }
+        }
+    };
+    Ok(TurnChanged::Of {
+        chat,
+        number,
+        turns,
+        file,
+    })
 }
 
 /// One member of a cross-repo change, compared (e).

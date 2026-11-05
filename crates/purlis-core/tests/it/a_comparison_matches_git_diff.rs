@@ -1594,12 +1594,10 @@ fn the_latest_turn_on_the_branch_answers_one_files_diff() {
     let f = support::plane_with_clone("thing");
     let piece = branch_with_files(&f);
     let at = piece_of(&f);
-    use files::TurnChanged;
+    use files::{InTurn, TurnChanged};
+    let latest = |path: &str| files::turn_changed(&reader(), &f.plane, at, path, None).unwrap();
 
-    assert_eq!(
-        files::latest_turn_changed(&reader(), &f.plane, at, "keep.txt").unwrap(),
-        TurnChanged::NoTurn
-    );
+    assert_eq!(latest("keep.txt"), TurnChanged::NoTurn);
 
     files::turns::began(&f.plane, at, CHAT).unwrap();
     write(&piece, "keep.txt", "kept\nthe first turn\n");
@@ -1608,16 +1606,21 @@ fn the_latest_turn_on_the_branch_answers_one_files_diff() {
     write(&piece, "src/lib.rs", code(&["one", "the second turn"]));
     // Still running: the latest turn is the one that ended.
     assert!(matches!(
-        files::latest_turn_changed(&reader(), &f.plane, at, "keep.txt").unwrap(),
-        TurnChanged::Changed { number: 1, .. }
+        latest("keep.txt"),
+        TurnChanged::Of {
+            number: 1,
+            file: InTurn::Changed(_),
+            ..
+        }
     ));
     files::turns::ended(&f.plane, at, CHAT).unwrap();
 
-    let TurnChanged::Changed {
+    let TurnChanged::Of {
         chat,
         number,
-        shown,
-    } = files::latest_turn_changed(&reader(), &f.plane, at, "src/lib.rs").unwrap()
+        file: InTurn::Changed(shown),
+        ..
+    } = latest("src/lib.rs")
     else {
         panic!("src/lib.rs is what the second turn changed");
     };
@@ -1634,10 +1637,141 @@ fn the_latest_turn_on_the_branch_answers_one_files_diff() {
     );
 
     // A file the first turn changed and the latest did not is said, not drawn empty.
+    assert!(matches!(
+        latest("keep.txt"),
+        TurnChanged::Of {
+            number: 2,
+            file: InTurn::NotThisFile,
+            ..
+        }
+    ));
+}
+
+/// Three turns of one chat: a rename with an edit, a turn that changed nothing, and an edit.
+fn three_turns(f: &support::Fixture, piece: &Path) {
+    let at = piece_of(f);
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    std::fs::remove_file(piece.join("src/old.rs")).unwrap();
+    let mut moved = long_text("moved");
+    moved.push_str("one more line\n");
+    write(piece, "lib/moved.rs", moved);
+    files::turns::ended(&f.plane, at, CHAT).unwrap();
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    files::turns::ended(&f.plane, at, CHAT).unwrap();
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    write(piece, "src/lib.rs", code(&["one", "the third turn"]));
+    files::turns::ended(&f.plane, at, CHAT).unwrap();
+}
+
+fn pick(number: u32) -> files::TurnKey {
+    files::TurnKey {
+        chat: CHAT.into(),
+        number,
+    }
+}
+
+#[test]
+fn a_chats_turns_are_listed_newest_first_and_the_diff_opens_on_the_latest() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    three_turns(&f, &piece);
+
+    let files::TurnChanged::Of {
+        chat,
+        number,
+        turns,
+        file,
+    } = files::turn_changed(&reader(), &f.plane, at, "src/lib.rs", None).unwrap()
+    else {
+        panic!("three turns ended on the branch");
+    };
+    assert_eq!((chat.as_str(), number), (CHAT, 3));
+    assert_eq!(turns, vec![3, 2, 1]);
+    assert!(matches!(file, files::InTurn::Changed(_)), "{file:?}");
+}
+
+#[test]
+fn an_earlier_turn_answers_the_same_marks_renames_and_hunks_as_git_diff_between_its_refs() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    three_turns(&f, &piece);
+    let (start, end) = (turn_ref(1, "start"), turn_ref(1, "end"));
+    let range = [start.as_str(), end.as_str()];
+
+    // The turn's file list is the one engine's, as the branch diff's is.
+    let compared = files::compare(&reader(), &f.plane, at, &one_turn(1)).unwrap();
+    assert_eq!(listed(&compared), git_lists(&piece, &range, None));
+
+    let files::TurnChanged::Of {
+        number,
+        turns,
+        file: files::InTurn::Changed(shown),
+        ..
+    } = files::turn_changed(&reader(), &f.plane, at, "lib/moved.rs", Some(&pick(1))).unwrap()
+    else {
+        panic!("the first turn moved src/old.rs to lib/moved.rs");
+    };
+    assert_eq!((number, turns), (1, vec![3, 2, 1]));
+    assert_eq!(shown.change.mark, Mark::Renamed);
+    assert_eq!(shown.change.from.as_deref(), Some("src/old.rs"));
+    let FileDiff::Text { hunks, .. } = shown.diff else {
+        panic!("not text")
+    };
     assert_eq!(
-        files::latest_turn_changed(&reader(), &f.plane, at, "keep.txt").unwrap(),
-        TurnChanged::NotChanged { number: 2 }
+        hunks,
+        git_hunks(&piece, &range, &["src/old.rs", "lib/moved.rs"], None)
     );
+}
+
+#[test]
+fn a_turn_that_changed_nothing_says_so_apart_from_one_that_left_this_file_alone() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    three_turns(&f, &piece);
+    let file_of = |number: u32, path: &str| match files::turn_changed(
+        &reader(),
+        &f.plane,
+        at,
+        path,
+        Some(&pick(number)),
+    )
+    .unwrap()
+    {
+        files::TurnChanged::Of { file, .. } => file,
+        files::TurnChanged::NoTurn => panic!("turns ended on the branch"),
+    };
+
+    assert_eq!(file_of(2, "src/lib.rs"), files::InTurn::Nothing);
+    assert_eq!(file_of(3, "lib/moved.rs"), files::InTurn::NotThisFile);
+}
+
+#[test]
+fn only_the_chats_own_turns_are_listed_and_a_turn_it_has_not_is_refused() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    const OTHER: &str = "01J9CHAT0000000000000000OT";
+    files::turns::began(&f.plane, at, OTHER).unwrap();
+    files::turns::ended(&f.plane, at, OTHER).unwrap();
+    three_turns(&f, &piece);
+
+    let files::TurnChanged::Of { turns, .. } =
+        files::turn_changed(&reader(), &f.plane, at, "src/lib.rs", Some(&pick(2))).unwrap()
+    else {
+        panic!("turns ended on the branch");
+    };
+    assert_eq!(turns, vec![3, 2, 1]);
+
+    let refused =
+        files::turn_changed(&reader(), &f.plane, at, "src/lib.rs", Some(&pick(9))).unwrap_err();
+    assert!(refused.to_string().contains("turn 9"), "{refused}");
 }
 
 #[test]
@@ -1650,11 +1784,12 @@ fn a_turn_on_another_branch_of_the_clone_is_not_this_branchs_latest() {
     files::turns::ended(&f.plane, piece_of(&f), CHAT).unwrap();
 
     assert_eq!(
-        files::latest_turn_changed(
+        files::turn_changed(
             &reader(),
             &f.plane,
             Branch::repo(&f.ws, &f.repo),
-            "keep.txt"
+            "keep.txt",
+            None
         )
         .unwrap(),
         files::TurnChanged::NoTurn

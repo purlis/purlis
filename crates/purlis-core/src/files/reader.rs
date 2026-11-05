@@ -352,8 +352,12 @@ pub enum Ask {
     /// One hunk of that file put back (#5406): the one ask that writes, of the file alone, in the
     /// same child, so it starts no program and is bounded as a read is.
     Discard(super::Discard),
-    /// One file of the latest turn that ended on the branch (#5405).
-    TurnChanged { path: String },
+    /// One file across a turn that ended on the branch, the latest when none is named (#5405,
+    /// #5408).
+    TurnChanged {
+        path: String,
+        turn: Option<super::TurnKey>,
+    },
     /// Its offered list: what `git ls-files --cached --others --exclude-standard` lists, sorted,
     /// at most `most` of it (#1189).
     Offered { most: Option<usize> },
@@ -810,8 +814,8 @@ fn serve() -> i32 {
         Ask::Discard(ask) => {
             super::compare::discard_here(plane, branch, &ask).map(Answer::Discarded)
         }
-        Ask::TurnChanged { path } => {
-            super::compare::latest_turn_changed_here(plane, branch, &path).map(Answer::TurnChanged)
+        Ask::TurnChanged { path, turn } => {
+            super::compare::turn_changed_here(plane, branch, &path, turn).map(Answer::TurnChanged)
         }
         Ask::Offered { most } => super::offered::offered_here(plane, branch, most),
         Ask::Ignored { paths, folders } => {
