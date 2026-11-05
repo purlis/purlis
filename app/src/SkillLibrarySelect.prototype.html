@@ -1,0 +1,584 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Library Select mode</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!--
+  PROTOTYPE for purlis#5332: throwaway, fake data, never merged.
+  Question: what does the Library's Select mode (and the Deleted page's) look like, and where do its
+  bar, its actions and its review live?
+  Three variants (?variant=A|B|C) x thirteen moments (?moment=...). ?shot=1 hides the prototype's own
+  controls, ?theme=light|dark forces a theme.
+    A  Bar on the list    the list and the open skill stay put; a bar pinned under the list holds the
+                          count and the actions (two buttons, the rest in More); the review is a dialog.
+    B  Selection page     the page beside the list becomes the selection: the count, every action with
+                          how many it reaches, the names (the not-shown ones first); the review
+                          replaces that page, so no dialog.
+    C  Whole-width table  Select gives the list the page's width as a table with columns; a toolbar
+                          across the top spells out every action; the review is a sheet over the table.
+  Selecting works in all three: click, shift-click, Space, up and down arrows (shift for a range), cmd-A
+  for everything the search and filters match, Esc to leave. Search and the source filter work; the
+  selection stays across them.
+  Each piece names the family (app/src/ui) it would be built from in its data-family attribute.
+  Left and right arrows (or the bar at the bottom) switch variant; the Moment buttons step through.
+-->
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --warn:#a15c00; --warn-soft:#fbefdc; --danger:#b3261e; --danger-soft:#fbe4e2;
+  --ok:#21724a; --ok-soft:#e2f3ea; --tag:#e7eaf0; --shadow:0 10px 30px rgba(20,24,40,.18); --scrim:rgba(20,24,40,.35);
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121318; --panel:#191a21; --panel2:#23252e; --line:#2e313b; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --danger:#ff8f86; --danger-soft:#42201d;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); --scrim:rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121318; --panel:#191a21; --panel2:#23252e; --line:#2e313b; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --danger:#ff8f86; --danger-soft:#42201d;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); --scrim:rgba(0,0,0,.5); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding:12px 16px 76px}
+body.shot{padding:0;background:var(--panel)}
+body.shot .top,body.shot .bar{display:none}
+body.shot .win{border:0;border-radius:0;max-width:none;height:100vh}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,.row:focus-visible,tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:5px}
+a{color:var(--accent);cursor:pointer}
+code{font-family:var(--mono);font-size:12px}
+.top{max-width:1360px;margin:0 auto 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.top .q{color:var(--muted);flex:1 1 100%}.top .q b{color:var(--fg)}
+.moments{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.moments button{padding:3px 9px;border-right:1px solid var(--line);font-size:12px}
+.moments button.on{background:var(--accent);color:var(--panel)}
+/* the window */
+.win{position:relative;max-width:1360px;margin:0 auto;height:740px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.shead{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);min-height:42px}
+.shead .crumbs{color:var(--muted)}.shead .crumbs b{color:var(--fg);font-weight:500}
+.sp{flex:1}
+.columns{flex:1;min-height:0;display:grid;grid-template-columns:165px 350px minmax(0,1fr)}
+.columns.wide{grid-template-columns:165px minmax(0,1fr)}
+.snav{border-right:1px solid var(--line);padding:8px 6px;display:flex;flex-direction:column;gap:1px}
+.snav span{padding:5px 9px;border-radius:6px;display:flex;justify-content:space-between;color:var(--muted)}
+.snav span.on{background:var(--accent-soft);color:var(--fg);box-shadow:inset 3px 0 0 var(--accent);font-weight:500}
+.snav hr{border:0;border-top:1px solid var(--line);margin:6px 0;width:100%}
+.cnt{font-size:11px}
+.listcol{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
+.lh{padding:10px 12px 8px;display:grid;gap:7px}
+.lh h2{margin:0;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.lh p{margin:0;color:var(--muted)}
+.tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.search{flex:1 1 150px;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font:inherit;color:inherit}
+.fchip{font-size:12px;padding:1px 9px;border-radius:7px;background:var(--panel2);color:var(--fg);white-space:nowrap}
+.fchip.on{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.rows{flex:1;overflow:auto;padding:0 6px 6px;min-height:0}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:0 8px;padding:5px 8px;border-radius:6px;align-items:center;cursor:default;user-select:none}
+.row:hover{background:var(--panel2)}
+.row .nm{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .below{grid-column:2/4;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .trail{display:flex;gap:4px;align-items:center}
+.row.open{background:var(--panel2);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.row.sel{background:var(--accent-soft)}
+.row.fixed .nm{color:var(--muted)}
+.row.fold{color:var(--muted);grid-template-columns:auto minmax(0,1fr) auto}
+.row.group{background:var(--panel2);margin-bottom:3px}
+.box{width:15px;height:15px;border-radius:4px;border:1.5px solid var(--muted);display:inline-grid;place-items:center;font-size:11px;line-height:1;flex:none;grid-row:span 2;color:var(--panel)}
+.box.on{background:var(--accent);border-color:var(--accent)}
+.box.part{background:var(--accent);border-color:var(--accent)}
+.tag{font-size:10.5px;padding:0 6px;border-radius:9px;background:var(--tag);color:var(--muted);white-space:nowrap}
+.tag.src{background:none;box-shadow:inset 0 0 0 1px var(--line)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.btn{border:1px solid var(--line);border-radius:6px;padding:3px 10px;background:var(--panel2);white-space:nowrap;font-size:12.5px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn.danger{color:var(--danger);border-color:var(--danger);background:none}
+.btn.dangerous{background:var(--danger);border-color:var(--danger);color:var(--panel)}
+.btn[disabled]{opacity:.5;cursor:default}
+.btn.quiet{background:none;border-color:transparent;color:var(--muted)}
+.linky{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+/* a skill's page */
+.page{overflow:auto;min-width:0;position:relative}
+.ph{padding:12px 18px 10px;display:grid;gap:7px;border-bottom:1px solid var(--line)}
+.ph h1{margin:0;font-size:15px;font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ph p{margin:0;color:var(--muted);max-width:68ch}
+.tabs{display:flex;gap:14px;padding:0 18px;border-bottom:1px solid var(--line)}
+.tabs span{padding:7px 2px;color:var(--muted)}.tabs span.on{color:var(--fg);box-shadow:inset 0 -2px 0 var(--accent)}
+.facts{display:grid;grid-template-columns:110px minmax(0,1fr);gap:6px 12px;margin:0;padding:14px 18px}
+.facts dt{color:var(--muted)}.facts dd{margin:0}
+/* bar on the list (A) */
+.selbar{border-top:1px solid var(--line);background:var(--panel2);padding:8px 10px;display:grid;gap:7px;position:relative}
+.selbar .l1{display:flex;align-items:center;gap:8px}
+.selbar .l2{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.count{font-weight:600}
+.count .ns{font-weight:400}
+.menu{position:absolute;right:10px;bottom:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:4px;min-width:250px;z-index:3}
+.menu button{display:flex;justify-content:space-between;gap:16px;width:100%;padding:5px 9px;border-radius:5px;text-align:left}
+.menu button:hover{background:var(--panel2)}
+.menu button small{color:var(--muted);font-size:11.5px}
+.menu hr{border:0;border-top:1px solid var(--line);margin:3px 0}
+/* the selection page (B) */
+.acts{display:grid;gap:0;margin:0 18px 12px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.act{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 12px;align-items:center;padding:6px 11px;border-bottom:1px solid var(--line)}
+.act:last-child{border-bottom:0}
+.act small{color:var(--muted);font-size:12px;display:block}
+.sec{font-size:12px;font-weight:600;margin:0 18px 5px;color:var(--muted)}
+.names{display:flex;flex-wrap:wrap;gap:4px;margin:0 18px 14px}
+.name{font-size:12px;padding:1px 3px 1px 8px;border-radius:9px;background:var(--panel2);display:inline-flex;gap:3px;align-items:center}
+.name button{width:15px;height:15px;border-radius:50%;color:var(--muted);line-height:1}
+.name button:hover{background:var(--line)}
+.empty{padding:40px 24px;color:var(--muted);text-align:center;display:grid;gap:6px;justify-items:center}
+.empty b{color:var(--fg);font-size:14px;font-weight:600}
+kbd{font-family:var(--mono);font-size:11px;padding:0 5px;border:1px solid var(--line);border-radius:4px}
+/* the table (C) */
+.widecol{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
+.toolbar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--accent-soft);flex-wrap:wrap}
+.toolbar .btn{background:var(--panel)}
+.toolbar .btn.danger{background:var(--panel)}
+.toolbar i{width:1px;height:18px;background:var(--line);margin:0 3px}
+.tablewrap{flex:1;overflow:auto;min-height:0}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{text-align:left;padding:5px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:500;color:var(--muted);font-size:11.5px;position:sticky;top:0;background:var(--panel);z-index:1}
+td.desc{color:var(--muted);white-space:normal;min-width:180px}
+tr.sel td{background:var(--accent-soft)}
+tr.fixed td.nmc{color:var(--muted)}
+tr.stays td{opacity:.55}
+tr:hover td{background:var(--panel2)}
+tr.sel:hover td{background:var(--accent-soft)}
+tr{cursor:default;user-select:none}
+.sheet{position:absolute;top:0;right:0;bottom:0;width:470px;background:var(--panel);border-left:1px solid var(--line);box-shadow:var(--shadow);display:flex;flex-direction:column;z-index:4}
+.scrim{position:absolute;inset:0;background:var(--scrim);display:grid;place-items:center;z-index:5}
+.dialog{width:560px;max-height:88%;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column}
+/* the review, in all three */
+.rv-h{padding:13px 16px 9px;display:grid;gap:3px}
+.rv-h h2{margin:0;font-size:14.5px;font-weight:600}
+.rv-h p{margin:0;color:var(--muted)}
+.rv-b{padding:0 16px 10px;overflow:auto;display:grid;gap:9px;flex:1;align-content:start}
+.rv-f{padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.rv-f .sp{flex:1;color:var(--muted);font-size:12px}
+.line{display:flex;gap:8px;align-items:baseline;padding:6px 9px;border-radius:6px;background:var(--panel2);flex-wrap:wrap}
+.line.warn{background:var(--warn-soft)}
+.line .sp{min-width:8px}
+.stay{display:grid;gap:3px}
+.stay>div{display:flex;gap:8px;align-items:baseline}
+.stay small{color:var(--muted);font-size:12px}
+.field{display:grid;grid-template-columns:90px minmax(0,1fr);gap:6px 10px;align-items:center}
+.field label{color:var(--muted)}
+.selectish{border:1px solid var(--line);border-radius:6px;background:var(--panel2);padding:3px 8px;font:inherit;color:inherit;max-width:280px}
+.radio{display:flex;gap:7px;align-items:baseline}
+.radio i{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--muted);display:inline-block;flex:none;position:relative;top:1px}
+.radio.on i{border:4px solid var(--accent)}
+.radio small{color:var(--muted)}
+.notice{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 10px;border-radius:7px;background:var(--ok-soft);margin:0 12px 6px}
+.notice span{flex:1 1 160px}
+.bar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:6px;background:#111;color:#fff;border-radius:999px;padding:5px 8px;box-shadow:var(--shadow);font-size:12.5px;z-index:9}
+.bar button{width:28px;height:28px;border-radius:50%;color:#fff}.bar button:hover{background:#333}
+.bar b{min-width:220px;text-align:center;font-weight:500}
+</style>
+<div class="top">
+  <div class="q"><b>purlis#5332 · prototype.</b> The Library's Select mode and the Deleted page's. Fake data. <span id="vname"></span></div>
+  <div class="moments" role="group" aria-label="Moment" id="moments"></div>
+</div>
+<div class="win" id="win"></div>
+<div class="bar" role="group" aria-label="Variant">
+  <button id="prev" aria-label="Previous variant">◀</button><b id="label"></b><button id="next" aria-label="Next variant">▶</button>
+</div>
+<script>
+const VARIANTS = { A: "Bar on the list", B: "Selection page", C: "Whole-width table" };
+const MOMENTS = {
+  browse: "1 Before", enter: "2 Enter Select", selected: "3 14 selected", all: "4 ⌘A", actions: "5 Actions",
+  turnoff: "6 Turn off", review: "7 Delete review", move: "8 Move", export: "9 Export", done: "10 After",
+  deleted: "11 Deleted", bringback: "12 Bring back", deletenow: "13 Delete now",
+};
+const p = new URLSearchParams(location.search);
+let v = VARIANTS[p.get("variant")] ? p.get("variant") : "A";
+let m = MOMENTS[p.get("moment")] ? p.get("moment") : "selected";
+if (p.get("theme")) document.documentElement.dataset.theme = p.get("theme");
+if (p.get("shot")) document.body.classList.add("shot");
+
+/* ---------- fake data ---------- */
+const MP = "mattpocock-skills", WS = "workspace smart-ide";
+const s = (name, level, desc, o = {}) => ({ name, level, desc, state: "on", ...o });
+const SKILLS = [
+  s("deploy", "project", "Deploys a service to staging or production with the checks it needs.", { pinned: true }),
+  s("review-pr", "project", "Reviews a pull request against REVIEW.md: correctness first.", { pinned: true }),
+  s("lint-rs", WS, "Left out: turned off in smart-ide", { state: "off" }),
+  s("figma-handoff", "project", "Left out: a name starting with purlis- is purlis's own.", { state: "out" }),
+  s("release-notes", "project", "Writes the release notes from the merged pull requests."),
+  s("migrate-db", "project", "Plans and checks a database migration before it runs."),
+  s("runbook", WS, "Finds and follows the runbook for an alert."),
+  s("grilling", "project", "Grills the person about a plan until the gaps show.", { src: MP }),
+  s("to-spec", "project", "Turns a conversation into a spec. It names grilling.", { src: MP }),
+  s("tdd", "project", "Test-driven development: red, green, refactor.", { src: MP }),
+  s("diagnosing-bugs", "project", "A diagnosis loop for hard bugs and regressions.", { src: MP }),
+  s("research", "project", "Investigates a question against primary sources.", { src: MP, state: "off" }),
+  s("code-review", "project", "Reviews changes along standards and spec.", { src: MP, changed: true }),
+  s("domain-modeling", "project", "Builds and sharpens a project's domain model.", { src: MP, archived: true }),
+  s("prototype", "project", "Builds a throwaway prototype to answer a design question.", { src: MP, pinned: true }),
+  s("writing-for-agents", "project", "Writing documents for agents.", { src: MP }),
+  s("codebase-design", "project", "Vocabulary for designing deep modules.", { src: MP }),
+  s("wizard", "project", "Generates a bash wizard for steps only a person can do.", { src: MP, state: "off", clash: true }),
+  s("setup-pre-commit", "project", "Sets up pre-commit hooks in a repo.", { src: MP }),
+  s("purlis-browser", "built-in", "Drives a real browser for a task that needs one.", { fixed: true }),
+  s("purlis-theme", "built-in", "Creates, edits and checks a purlis theme.", { fixed: true }),
+  s("purlis-secrets", "built-in", "Uses a credential from a vault without showing it.", { fixed: true }),
+  s("purlis-persona", "built-in", "Works as a persona, or dispatches to one.", { fixed: true }),
+  s("purlis-handoff", "built-in", "Moves work into a new chat.", { fixed: true }),
+];
+const BUILT_IN = SKILLS.filter((x) => x.fixed).map((x) => x.name);
+const FOURTEEN = ["grilling", "tdd", "diagnosing-bugs", "research", "code-review", "domain-modeling", "prototype", "writing-for-agents", "codebase-design", "wizard", "setup-pre-commit", "deploy", "purlis-browser", "purlis-theme"];
+const GROUP = ["grilling", "to-spec", "tdd", "diagnosing-bugs", "research", "code-review", "domain-modeling", "prototype", "writing-for-agents", "codebase-design", "wizard", "setup-pre-commit", "scaffold-exercises", "migrate-to-shoehorn"];
+const DELETED = [
+  ...GROUP.map((name) => ({ name, level: "project", days: 30, group: true, hist: true })),
+  { name: "browser-old", level: "project", days: 27, hist: true },
+  { name: "pr-template", level: WS, days: 12, hist: true },
+  { name: "scratch-notes", level: "local", days: 3 },
+  { name: "purlis-notes", level: "project", days: 21, hist: true, reserved: true },
+];
+const GROUP_NAME = `14 skills from ${MP}, 5 Nov`;
+
+/* ---------- state ---------- */
+let page, selecting, sel, query, source, open, fold, onlySel, over, doneNote, moveTo, groupOpen, anchor = null, focusAt = 0;
+function seed() {
+  page = "library"; selecting = false; sel = new Set(); query = ""; source = null; open = "lint-rs";
+  fold = false; onlySel = false; over = null; doneNote = null; moveTo = WS; groupOpen = false;
+  if (m === "enter") selecting = true;
+  if (["selected", "actions", "turnoff", "review", "move", "export"].includes(m)) { selecting = true; sel = new Set(FOURTEEN); source = MP; }
+  if (m === "all") { selecting = true; sel = new Set(SKILLS.map((x) => x.name)); }
+  if (m === "actions" && v !== "B") over = "actions";
+  if (m === "turnoff") over = "turnoff";
+  if (m === "review") over = "delete";
+  if (m === "move") over = "move";
+  if (m === "export") over = "export";
+  if (m === "done") { doneNote = true; open = "review-pr"; }
+  if (["deleted", "bringback", "deletenow"].includes(m)) {
+    page = "deleted"; selecting = true; open = "browser-old";
+    sel = new Set([...GROUP, "browser-old", "purlis-notes"]);
+    if (m === "bringback") over = "bringback";
+    if (m === "deletenow") { over = "deletenow"; sel.add("scratch-notes"); }
+  }
+}
+const REMOVED = new Set(FOURTEEN.filter((x) => !BUILT_IN.includes(x)));
+const all = () => (page === "deleted" ? DELETED : SKILLS);
+const isShownByFilter = (x) => {
+  if (page === "deleted") return true;
+  if (doneNote && REMOVED.has(x.name)) return false;
+  if (onlySel) return sel.has(x.name);
+  if (source && x.src !== source) return false;
+  const q = query.trim().toLowerCase();
+  return !q || x.name.includes(q) || (x.desc || "").toLowerCase().includes(q);
+};
+const matching = () => all().filter(isShownByFilter);
+/* the rows that are drawn: a filter leaves some out, and the Library folds its built-in skills */
+function drawn() {
+  if (page === "deleted") return all().filter((x) => !x.group || groupOpen);
+  return matching().filter((x) => !x.fixed || fold || source || query.trim() || onlySel);
+}
+const notShown = () => { const d = new Set(drawn().map((x) => x.name)); return [...sel].filter((n) => !d.has(n) && !(page === "deleted" && GROUP.includes(n))); };
+const pick = () => all().filter((x) => sel.has(x.name));
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const verb = (n) => (n === 1 ? "is" : "are");
+function countWords() {
+  const ns = notShown().length;
+  if (sel.size === 0) return `<span class="count">Nothing selected</span>`;
+  return `<span class="count">${sel.size} selected${ns ? `<span class="ns">, <button class="linky" data-do="only" title="Show only what is selected">${ns} not shown</button></span>` : ""}</span>`;
+}
+
+/* ---------- what each action reaches ---------- */
+function reach() {
+  const c = pick(); const mine = c.filter((x) => !x.fixed);
+  const on = mine.filter((x) => x.state === "on"), off = mine.filter((x) => x.state !== "on");
+  const pinned = mine.filter((x) => x.pinned), arch = mine.filter((x) => x.archived);
+  const fixed = c.length - mine.length;
+  return { fixed, list: [
+    { id: "turnoff", label: "Turn off…", n: on.length, says: "Chats started after this don't get them." },
+    { id: "turnon", label: "Turn on…", n: off.length, says: "Chats started after this get them again." },
+    { id: "pin", label: "Pin…", n: mine.length - pinned.length, says: "Always in the chat's list, whatever the budget." },
+    { id: "unpin", label: "Unpin…", n: pinned.length, says: "The router decides again." },
+    { id: "archive", label: "Archive…", n: mine.length - arch.length, says: "They never load until they are restored." },
+    { id: "unarchive", label: "Unarchive…", n: arch.length, says: "They load again." },
+    { id: "move", label: "Move to another level…", n: mine.length, says: "Skills keep their history and grades." },
+    { id: "export", label: "Export…", n: mine.length, says: "A zip or a folder." },
+    { id: "delete", label: "Delete…", n: mine.length, says: "They stay in Deleted for 30 days.", danger: true },
+  ] };
+}
+function reviewOf(kind) {
+  const c = pick(); const mine = c.filter((x) => !x.fixed);
+  const fixed = c.length - mine.length;
+  const fixedWords = fixed ? `${fixed} ${verb(fixed)} built-in and stay` : "";
+  const join = (...a) => a.filter(Boolean).join(", ");
+  if (kind === "delete") return { title: `Delete ${plural(mine.length, "skill", "skills")}?`, head: join(`${mine.length} will be deleted`, fixedWords), go: `Delete ${plural(mine.length, "skill", "skills")}`, danger: true,
+    will: mine, why: "They stay in Deleted for 30 days. It is one commit: all of it applies or nothing changes, with one Undo right after.",
+    warns: [
+      sel.has("grilling") && !sel.has("to-spec") ? { html: "<code>to-spec</code> names <code>grilling</code>, which you're deleting.", act: "Keep grilling" } : null,
+      sel.has("code-review") ? { html: "<code>code-review</code> has changed since install.", act: "Keep code-review" } : null,
+      { html: "3 open chats use these. They keep the skills until restart, and each pane offers to restart once." },
+    ].filter(Boolean),
+    stays: BUILT_IN.filter((n) => sel.has(n)).map((n) => [n, "Built-in skills can't be changed."]) };
+  const SWITCH = {
+    turnoff: { does: (x) => x.state === "on", verb: "Turn off", done: "turned off", already: "off already", why: "Chats started after this don't get them." },
+    turnon: { does: (x) => x.state !== "on", verb: "Turn on", done: "turned on", already: "on already", why: "Chats started after this get them again." },
+    pin: { does: (x) => !x.pinned, verb: "Pin", done: "pinned", already: "pinned already", why: "A pinned skill stays in a chat's list." },
+    unpin: { does: (x) => x.pinned, verb: "Unpin", done: "unpinned", already: "not pinned", why: "The router decides about them again." },
+    archive: { does: (x) => !x.archived, verb: "Archive", done: "archived", already: "archived already", why: "They never load until they are restored." },
+    unarchive: { does: (x) => x.archived, verb: "Unarchive", done: "unarchived", already: "not archived", why: "They load again." },
+  }[kind];
+  if (SWITCH) { const will = mine.filter(SWITCH.does); const rest = mine.filter((x) => !SWITCH.does(x));
+    return { title: `${SWITCH.verb} ${plural(will.length, "skill", "skills")}?`, head: join(`${will.length} will be ${SWITCH.done}`, rest.length ? `${rest.length} ${verb(rest.length)} ${SWITCH.already}` : "", fixedWords), go: `${SWITCH.verb} ${plural(will.length, "skill", "skills")}`, label: `Will be ${SWITCH.done}`,
+      will, why: `${SWITCH.why} It is one commit, with one Undo right after.`,
+      warns: kind === "turnoff" || kind === "archive" ? [{ html: "3 open chats use these. They keep the skills until restart, and each pane offers to restart once." }] : [],
+      stays: [...rest.map((x) => [x.name, `${SWITCH.already[0].toUpperCase()}${SWITCH.already.slice(1)}.`]), ...BUILT_IN.filter((n) => sel.has(n)).map((n) => [n, "Built-in skills can't be changed."])] }; }
+  if (kind === "move") { const clash = mine.filter((x) => x.clash); const go = mine.filter((x) => !x.clash);
+    return { title: `Move ${plural(go.length, "skill", "skills")}?`, head: join(`${go.length} will move to ${moveTo}`, clash.length ? `${clash.length} ${verb(clash.length)} in the way there and stays` : "", fixedWords), go: `Move ${plural(go.length, "skill", "skills")}`, move: true,
+      will: go, why: "They keep their history and grades. It is one commit, with one Undo right after.",
+      warns: [{ html: "<code>to-spec</code> stays in the project skills and names <code>grilling</code>, which moves. Chats in other workspaces lose <code>grilling</code>." }],
+      stays: [...clash.map((x) => [x.name, `${moveTo} has a ${x.name} of its own.`]), ...BUILT_IN.filter((n) => sel.has(n)).map((n) => [n, "Built-in skills can't be changed."])] }; }
+  if (kind === "export") return { title: `Export ${plural(mine.length, "skill", "skills")}`, head: join(`${mine.length} will be exported`, fixedWords), go: "Choose where to save…", exp: true,
+    will: mine, why: "Export writes copies. Nothing in the project changes, so there is nothing to undo.", warns: [{ html: "Stays behind: <code>deploy/.env.staging</code>, it looks like a secret." }],
+    stays: BUILT_IN.filter((n) => sel.has(n)).map((n) => [n, "Built-in skills come with purlis, so there is nothing to export."]) };
+  if (kind === "bringback") { const res = c.filter((x) => x.reserved);
+    return { title: `Bring back ${plural(c.length, "skill", "skills")}?`, head: `${c.length - res.length} will come back as they were, ${res.length} under a new name`, go: `Bring back ${plural(c.length, "skill", "skills")}`, rename: res,
+      will: c, why: "They come back with their history and grades, and chats started after that get them again. It is one commit, with one Undo right after.", warns: [], stays: [] }; }
+  if (kind === "deletenow") { const h = c.filter((x) => x.hist);
+    return { title: `Delete ${plural(c.length, "skill", "skills")} now?`, head: "This can't be undone.", go: `Delete ${plural(c.length, "skill", "skills")} now`, danger: true, confirm: true,
+      will: c, why: `${h.length} leave this list, and the project's history still holds them. ${c.length - h.length} ${c.length - h.length === 1 ? "is" : "are"} removed from this machine for good.`, warns: [], stays: [] }; }
+}
+function reviewParts(kind) {
+  const r = reviewOf(kind);
+  const extra = r.move ? `<div class="field" data-family="select"><label>Move to</label><select class="selectish" data-field="moveTo">${[WS, "project", "local", "persona steward"].map((x) => `<option ${x === moveTo ? "selected" : ""}>${x}</option>`).join("")}</select></div>` : "";
+  const exp = r.exp ? `<div class="field" data-family="settings Choice"><label>Export as</label><div style="display:grid;gap:3px"><div class="radio on"><i></i>A zip <small>One file to send to someone</small></div><div class="radio"><i></i>A folder <small>Skill folders to drop into a project</small></div></div></div>` : "";
+  const rename = (r.rename || []).map((x) => `<div class="line warn"><span>Its name belongs to purlis now, so <code>${x.name}</code> comes back under a new name.</span></div><div class="field" data-family="settings Field"><label>New name</label><input class="search" value="${x.name.replace("purlis-", "my-")}" aria-label="New name for ${x.name}"></div>`).join("");
+  const warns = r.warns.map((w) => `<div class="line warn" data-family="Notice-shaped line"><span>${w.html}</span><span class="sp"></span>${w.act ? `<button class="btn quiet linky">${w.act}</button>` : ""}</div>`).join("");
+  const stays = r.stays.length ? `<div class="stay"><p class="sec" style="margin:0">Stay as they are</p>${r.stays.map(([n, why]) => `<div><code>${n}</code><small>${why}</small></div>`).join("")}</div>` : "";
+  const label = r.label || (r.rename ? "Will come back" : r.confirm ? "Will be deleted now" : r.move ? "Will move" : r.exp ? "Will be exported" : "Will be deleted");
+  const names = `<div><p class="sec" style="margin:0 0 4px">${label}</p><div class="names" style="margin:0">${r.will.slice(0, 18).map((x) => `<span class="name"><span>${x.name}</span><button aria-label="Take ${x.name} out" data-unsel="${x.name}">×</button></span>`).join("")}</div></div>`;
+  const body = `${extra}${exp}${rename}${warns}${names}${stays}<p style="margin:0;color:var(--muted)">${r.why}</p>`;
+  const head = `<div class="rv-h"><h2>${r.title}</h2><p>${r.head}</p></div>`;
+  const foot = `<div class="rv-f"><button class="btn" data-do="closeOver">Cancel</button><button class="btn ${r.danger ? "dangerous" : "primary"}" data-do="confirm">${r.go}</button></div>`;
+  return { head, body, foot, r };
+}
+
+const REVIEWS = ["turnoff", "turnon", "pin", "unpin", "archive", "unarchive", "delete", "move", "export", "bringback", "deletenow"];
+
+/* ---------- pieces all three share ---------- */
+function shead(extra = "") {
+  const crumb = page === "deleted" ? "<b>Deleted</b>" : `Library › <b>${selecting ? (sel.size ? `${sel.size} selected` : "Select") : open}</b>`;
+  return `<div class="shead"><span class="crumbs">‹ ›&nbsp;&nbsp;${crumb}</span>${extra}<span class="sp"></span><button class="btn">A chat in smart-ide ⌄</button><button class="btn">＋ New skill…</button></div>`;
+}
+function nav() {
+  const n = doneNote ? 30 : 18;
+  return `<nav class="snav"><span class="${page === "library" ? "on" : ""}" data-do="go:library">Library</span><span>Sources</span><span class="${page === "deleted" ? "on" : ""}" data-do="go:deleted">Deleted <span class="cnt">${n}</span></span><hr><span>Harness skills</span><span>Routing</span></nav>`;
+}
+function box(on, part) { return `<span class="box ${on ? "on" : ""} ${part ? "part" : ""}" aria-hidden="true">${part ? "–" : on ? "✓" : ""}</span>`; }
+function rowTags(x) {
+  const out = [];
+  if (x.src) out.push(`<span class="tag src">${x.src}</span>`);
+  out.push(`<span class="tag">${x.level}</span>`);
+  if (x.pinned) out.push(`<span class="tag">Pinned</span>`);
+  if (x.state === "off") out.push(`<span class="tag">Off</span>`);
+  if (x.state === "out") out.push(`<span class="tag warn">Left out</span>`);
+  if (x.archived) out.push(`<span class="tag">Archived</span>`);
+  return out.join("");
+}
+function listRows() {
+  const rows = [];
+  const d = drawn();
+  if (page === "deleted") {
+    const inG = GROUP.filter((n) => sel.has(n)).length;
+    rows.push(`<div class="row group" data-family="list/ListRow">${selecting ? `<button data-group="1" aria-label="Select the 14 skills">${box(inG === 14, inG > 0 && inG < 14)}</button>` : ""}<span class="nm">${GROUP_NAME}</span><span class="trail"><button class="btn" style="font-size:11.5px;padding:0 7px">Bring all back</button></span><button class="below linky" style="text-align:left;text-decoration:none;color:var(--muted)" data-do="groupfold">${groupOpen ? "⌄ Hide them" : "› Show them"} · 30 days left</button></div>`);
+    d.forEach((x) => rows.push(oneRow(x, `${plural(x.days, "day", "days")} left to bring it back`, `<span class="tag">${x.level}</span>`)));
+    return rows.join("");
+  }
+  d.filter((x) => !x.fixed).forEach((x) => rows.push(oneRow(x, x.desc, rowTags(x))));
+  if (!source && !query.trim() && !onlySel) {
+    const cnt = BUILT_IN.filter((n) => sel.has(n)).length;
+    rows.push(`<div class="row fold">${selecting ? box(cnt === BUILT_IN.length, cnt > 0 && cnt < BUILT_IN.length) : ""}<button style="text-align:left" data-do="fold" ${selecting ? "" : 'style="grid-column:1/3"'}>✦ ${BUILT_IN.length} built-in skills ${fold ? "⌄" : "›"}</button></div>`);
+    if (fold) d.filter((x) => x.fixed).forEach((x) => rows.push(oneRow(x, x.desc, rowTags(x))));
+  } else d.filter((x) => x.fixed).forEach((x) => rows.push(oneRow(x, x.desc, rowTags(x))));
+  if (d.length === 0) rows.push(`<div class="empty">No skill matches what is typed.</div>`);
+  return rows.join("");
+}
+function oneRow(x, below, tags) {
+  const cls = [selecting && sel.has(x.name) ? "sel" : "", !selecting && open === x.name ? "open" : "", x.fixed ? "fixed" : ""].join(" ");
+  return `<div class="row ${cls}" data-row="${x.name}" tabindex="0" role="${selecting ? "checkbox" : "row"}" ${selecting ? `aria-checked="${sel.has(x.name)}"` : ""} data-family="list/ListRow, selectionMode=multiple">${selecting ? box(sel.has(x.name)) : ""}<span class="nm" ${selecting ? "" : 'style="grid-column:1/3"'}>${x.name}</span><span class="trail">${tags}</span><span class="below" ${selecting ? "" : 'style="grid-column:1/4"'}>${below}</span></div>`;
+}
+function listHead(withSelect) {
+  const del = page === "deleted";
+  const title = del ? "Deleted" : "Library";
+  const lead = del ? "Skills deleted in the last 30 days. Bring one back and chats started after that get it again." : "Every skill a chat in smart-ide can get, and why any other is left out.";
+  const btn = withSelect ? (selecting ? `<button class="btn" data-do="leave">Done</button>` : `<button class="btn" data-do="enter" data-family="button/Button (toggle)">Select</button>`) : "";
+  const chips = del ? "" : `<div class="tools"><input class="search" id="q" placeholder="Search skills" aria-label="Search skills" value="${query}"></div>
+    <div class="tools" data-family="settings Choice (chips)">${["The project's own", "Built-in", "On", "Off or left out"].map((c) => `<span class="fchip">${c}</span>`).join("")}<button class="fchip ${source ? "on" : ""}" data-do="source">${MP}</button></div>`;
+  return `<div class="lh"><h2>${title}<span class="sp"></span>${btn}</h2>${selecting && withSelect && !del ? "" : `<p>${lead}</p>`}${chips}</div>`;
+}
+function skillPage() {
+  const x = (page === "deleted" ? DELETED : SKILLS).find((y) => y.name === open) || SKILLS[0];
+  if (page === "deleted") return `<div class="ph"><h1>${x.name} <span class="tag">${x.level}</span></h1><p>Deleted from the ${x.level} skills. It can be brought back for ${x.days} more days, with its history and grades. After that it leaves this list; the project's history still holds it.</p><div><button class="btn primary">Bring back</button></div></div><div style="padding:14px 18px;display:grid;gap:8px"><p style="margin:0">Chats started after it is brought back get it again.</p><p style="margin:0;color:var(--muted)">⌄ Show its last text</p></div>`;
+  return `<div class="ph"><h1>${x.name} ${rowTags(x)}</h1><p>${x.desc}</p><div class="tools"><button class="btn" disabled>Use in this chat</button><button class="btn">Edit</button><button class="btn">Grade</button><button class="btn">⋯</button></div></div>
+    <div class="tabs"><span class="on">Overview</span><span>Text</span><span>Files</span><span>History</span><span>Grades</span><span>Runs</span></div>
+    <dl class="facts"><dt>Who gets it</dt><dd>${x.state === "on" ? "Every chat in smart-ide" : "Left out: turned off in smart-ide"}</dd><dt>Where it lives</dt><dd><code>skills/${x.name}</code> · ${x.level}</dd><dt>Reaches</dt><dd>The project's root only</dd><dt>Owner</dt><dd>Not named</dd><dt>Grade</dt><dd>Not graded yet.</dd></dl>`;
+}
+function doneLine() {
+  return doneNote ? `<div class="notice" data-family="ActionResultNotice"><span><b>12 skills deleted.</b> They stay in Deleted for 30 days. 2 built-in skills stayed.</span><button class="btn">Undo</button><button class="btn quiet" data-do="dismiss">Dismiss</button></div>` : "";
+}
+
+/* ---------- A: a bar pinned under the list; the review is a dialog ---------- */
+function deletedActs(cls = "btn") {
+  const n = sel.size;
+  return `<button class="${cls}" data-over="bringback" ${n ? "" : "disabled"}>Bring back…</button><button class="${cls} danger" data-over="deletenow" ${n ? "" : "disabled"}>Delete now…</button>`;
+}
+function barA() {
+  if (!selecting) return "";
+  const { list } = reach();
+  const del = page === "deleted";
+  const none = sel.size === 0;
+  const first = del ? deletedActs() : `<button class="btn" data-over="turnoff" ${none ? "disabled" : ""}>Turn off…</button><button class="btn" data-over="move" ${none ? "disabled" : ""}>Move…</button><button class="btn" data-do="more" ${none ? "disabled" : ""} data-family="menu/Menu">More ⌄</button><span class="sp"></span><button class="btn danger" data-over="delete" ${none ? "disabled" : ""}>Delete…</button>`;
+  const menu = over === "actions" ? `<div class="menu" role="menu" data-family="menu/Menu">${list.filter((a) => a.n > 0 && !a.danger).map((a) => `<button role="menuitem" data-over="${a.id}">${a.label}<small>${a.n}</small></button>`).join("")}</div>` : "";
+  return `<div class="selbar" data-family="panel/ViewFrame footer">${menu}<div class="l1">${countWords()}<span class="sp"></span><button class="btn quiet" data-do="clear" ${none ? "disabled" : ""}>Clear</button></div><div class="l2">${first}</div></div>`;
+}
+function variantA() {
+  const rv = REVIEWS.includes(over) ? reviewParts(over) : null;
+  return `${shead()}<div class="columns">${nav()}<div class="listcol">${listHead(true)}${doneLine()}<div class="rows" id="rows" data-family="list/List selectionMode=multiple">${listRows()}</div>${barA()}</div><div class="page">${skillPage()}</div></div>
+    ${rv ? `<div class="scrim"><div class="dialog" role="dialog" aria-modal="true" data-family="dialog/Dialog">${rv.head}<div class="rv-b">${rv.body}</div>${rv.foot}</div></div>` : ""}`;
+}
+const map = (k) => k;
+
+/* ---------- B: the page beside the list is the selection; the review replaces it ---------- */
+function selectionPage() {
+  const del = page === "deleted";
+  if (REVIEWS.includes(over)) {
+    const rv = reviewParts(over);
+    return `<div class="ph" style="padding:8px 18px;border:0"><button class="linky" style="justify-self:start;font-size:12px" data-do="closeOver">‹ Back to the selection</button></div>${rv.head}<div class="rv-b">${rv.body}</div>${rv.foot}`;
+  }
+  if (sel.size === 0) return `<div class="empty"><b>Nothing selected</b><span>Click a row, or press <kbd>Space</kbd> on it. <kbd>⇧</kbd>-click takes a range.</span><span><kbd>⌘A</kbd> takes everything the search and filters match. <kbd>Esc</kbd> leaves Select.</span></div>`;
+  const ns = notShown();
+  const named = pick().filter((x) => !ns.includes(x.name));
+  const chip = (n) => `<span class="name"><span>${n}</span><button aria-label="Take ${n} out" data-unsel="${n}">×</button></span>`;
+  const rows = del
+    ? [["bringback", "Bring back…", `${sel.size}`, "With their history and grades. One undo right after.", ""], ["deletenow", "Delete now…", `${sel.size}`, "It asks first: this one has no undo.", "danger"]]
+    : reach().list.filter((a) => a.n > 0).map((a) => [a.id, a.label, `${a.n} of ${sel.size}`, a.says, a.danger ? "danger" : ""]);
+  return `<div class="ph" data-family="panel/ViewPageHeader"><h1>${countWords()}</h1><div class="tools"><button class="btn quiet" data-do="clear">Clear</button></div></div>
+    <div style="padding-top:12px"></div>
+    <p class="sec">What to do with them</p>
+    <div class="acts" data-family="settings SettingRow-like rows">${rows.map(([id, label, n, says, cls]) => `<div class="act"><div>${label.replace("…", "")} <span class="tag">${n}</span><small>${says}</small></div><button class="btn ${cls}" data-over="${map(id)}">${label}</button></div>`).join("")}</div>
+    ${ns.length ? `<p class="sec">Not shown in the list (${ns.length})</p><div class="names">${ns.map(chip).join("")}</div>` : ""}
+    <p class="sec">${ns.length ? "In the list" : "Selected"} (${named.length})</p><div class="names">${named.slice(0, 40).map((x) => chip(x.name)).join("")}</div>`;
+}
+function variantB() {
+  const pageHtml = selecting ? selectionPage() : skillPage();
+  return `${shead()}<div class="columns">${nav()}<div class="listcol">${listHead(!selecting || true)}${doneLine()}<div class="rows" id="rows" data-family="list/List selectionMode=multiple">${listRows()}</div></div><div class="page" style="display:flex;flex-direction:column">${pageHtml}</div></div>`;
+}
+
+/* ---------- C: the list takes the width as a table, with a toolbar across the top ---------- */
+function toolbarC() {
+  const del = page === "deleted";
+  const none = sel.size === 0;
+  const d = none ? "disabled" : "";
+  const acts = del ? deletedActs() : reach().list.filter((a) => none || a.n > 0).map((a) => `<button class="btn ${a.danger ? "danger" : ""}" data-over="${map(a.id)}" ${d}>${a.label.replace("Move to another level", "Move")}</button>`).join("");
+  return `<div class="toolbar" data-family="table/TableBar">${countWords()}<button class="btn quiet" data-do="clear" ${d}>Clear</button><i></i>${acts}<span class="sp"></span><button class="btn" data-do="leave">Done</button></div>`;
+}
+function tableC() {
+  const del = page === "deleted";
+  const d = drawn();
+  const allOn = d.length > 0 && d.every((x) => sel.has(x.name));
+  const part = !allOn && d.some((x) => sel.has(x.name));
+  const groupRow = del ? `<tr><td>${box(GROUP.every((n) => sel.has(n)), GROUP.some((n) => sel.has(n)) && !GROUP.every((n) => sel.has(n)))}</td><td colspan="2"><b style="font-weight:500">${GROUP_NAME}</b> <button class="linky" data-do="groupfold">${groupOpen ? "Hide them" : "Show them"}</button></td><td>project</td><td>30</td><td><button class="btn" style="font-size:11.5px;padding:0 7px">Bring all back</button></td></tr>` : "";
+  const head = del ? `<th>${box(allOn, part)}</th><th>Skill</th><th>From</th><th>Level</th><th>Days left</th><th></th>` : `<th>${box(allOn, part)}</th><th>Skill</th><th>What it does</th><th>Level</th><th>Source</th><th>State</th><th>Pinned</th><th>Runs, 30 days</th>`;
+  const staying = REVIEWS.includes(over) ? new Set(reviewOf(over).stays.map(([n]) => n)) : new Set();
+  const rows = d.map((x, i) => {
+    const cls = [sel.has(x.name) ? "sel" : "", x.fixed ? "fixed" : "", staying.has(x.name) ? "stays" : ""].join(" ");
+    if (del) return `<tr class="${cls}" data-row="${x.name}" tabindex="0"><td>${box(sel.has(x.name))}</td><td class="nmc">${x.name}</td><td>${x.group ? MP : "alone"}</td><td>${x.level}</td><td>${x.days}</td><td></td></tr>`;
+    return `<tr class="${cls}" data-row="${x.name}" tabindex="0"><td>${box(sel.has(x.name))}</td><td class="nmc">${x.name}</td><td class="desc">${x.desc}</td><td>${x.level}</td><td>${x.src || ""}</td><td>${x.fixed ? "Always on" : x.archived ? "Archived" : x.state === "on" ? "On" : x.state === "off" ? "Off" : "Left out"}</td><td>${x.pinned ? "Pinned" : ""}</td><td style="font-variant-numeric:tabular-nums">${(x.name.length * 7) % 41}</td></tr>`;
+  }).join("");
+  const fold1 = !del && !source && !query.trim() && !onlySel && !fold ? `<tr><td>${box(BUILT_IN.every((n) => sel.has(n)), BUILT_IN.some((n) => sel.has(n)) && !BUILT_IN.every((n) => sel.has(n)))}</td><td colspan="7"><button data-do="fold">✦ ${BUILT_IN.length} built-in skills ›</button></td></tr>` : "";
+  return `<table data-family="table/Table with table/TableBar"><thead><tr>${head}</tr></thead><tbody>${groupRow}${rows}${fold1}</tbody></table>`;
+}
+function variantC() {
+  if (!selecting) return variantB();
+  const del = page === "deleted";
+  const rv = REVIEWS.includes(over) ? reviewParts(over) : null;
+  const tools = del ? "" : `<div class="tools" style="padding:8px 12px;border-bottom:1px solid var(--line)"><input class="search" id="q" style="flex:0 1 240px" placeholder="Search skills" aria-label="Search skills" value="${query}">${["The project's own", "Built-in", "On", "Off or left out"].map((c) => `<span class="fchip">${c}</span>`).join("")}<button class="fchip ${source ? "on" : ""}" data-do="source">${MP}</button></div>`;
+  return `${shead()}<div class="columns wide">${nav()}<div class="widecol">${toolbarC()}${tools}<div class="tablewrap" id="rows">${tableC()}</div>
+    ${rv ? `<aside class="sheet" role="dialog" aria-modal="true" data-family="dialog/Dialog as a side sheet">${rv.head}<div class="rv-b">${rv.body}</div>${rv.foot}</aside>` : ""}</div></div>`;
+}
+
+/* ---------- drawing and input ---------- */
+function draw() {
+  const win = document.getElementById("win");
+  const keep = document.activeElement && document.activeElement.id === "q";
+  win.innerHTML = v === "A" ? variantA() : v === "B" ? variantB() : variantC();
+  if (keep) { const q = document.getElementById("q"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
+  document.getElementById("label").textContent = `${v} · ${VARIANTS[v]}`;
+  document.getElementById("vname").textContent = `Variant ${v}, ${VARIANTS[v]}. ${selecting ? `Selecting: ${sel.size} selected, ${notShown().length} not shown, ${drawn().length} rows drawn.` : "Not selecting."} ${over ? `Open: ${over}.` : ""}`;
+  document.getElementById("moments").innerHTML = Object.entries(MOMENTS).map(([k, n]) => `<button data-m="${k}" class="${k === m ? "on" : ""}" aria-pressed="${k === m}">${n}</button>`).join("");
+  const q = new URLSearchParams(location.search); q.set("variant", v); q.set("moment", m);
+  history.replaceState(null, "", "?" + q);
+  const f = document.querySelector(`[data-row="${focusName}"]`); if (f && wantFocus) { f.focus(); wantFocus = false; }
+}
+let focusName = null, wantFocus = false;
+const order = () => drawn().map((x) => x.name);
+function press(name, shift) {
+  if (!selecting) { open = name; draw(); return; }
+  const list = order();
+  if (shift && anchor !== null) {
+    const [a, b] = [list.indexOf(anchor), list.indexOf(name)].sort((x, y) => x - y);
+    list.slice(a, b + 1).forEach((n) => sel.add(n));
+  } else { if (sel.has(name)) sel.delete(name); else sel.add(name); anchor = name; }
+  focusName = name; wantFocus = true; draw();
+}
+document.getElementById("win").addEventListener("click", (e) => {
+  const over1 = e.target.closest("[data-over]");
+  if (over1 && !over1.disabled) { over = v === "A" ? over1.dataset.over : map(over1.dataset.over); draw(); return; }
+  const un = e.target.closest("[data-unsel]");
+  if (un) { sel.delete(un.dataset.unsel); draw(); return; }
+  if (e.target.closest("[data-group]")) { const on = GROUP.every((n) => sel.has(n)); GROUP.forEach((n) => (on ? sel.delete(n) : sel.add(n))); draw(); return; }
+  const d = e.target.closest("[data-do]");
+  if (d && !d.disabled) {
+    const a = d.dataset.do;
+    if (a === "enter") { selecting = true; doneNote = null; }
+    if (a === "leave") { selecting = false; sel = new Set(); over = null; onlySel = false; }
+    if (a === "clear") { sel = new Set(); onlySel = false; }
+    if (a === "only") { onlySel = !onlySel; }
+    if (a === "fold") fold = !fold;
+    if (a === "groupfold") groupOpen = !groupOpen;
+    if (a === "source") { source = source ? null : MP; onlySel = false; }
+    if (a === "more") over = over === "actions" ? null : "actions";
+    if (a === "closeOver") over = null;
+    if (a === "dismiss") doneNote = null;
+    if (a === "confirm") { over = null; selecting = false; sel = new Set(); if (page === "library") doneNote = true; }
+    if (a.startsWith("go:")) { page = a.slice(3); selecting = false; sel = new Set(); over = null; doneNote = null; open = page === "deleted" ? "browser-old" : "lint-rs"; }
+    draw(); return;
+  }
+  const r = e.target.closest("[data-row]");
+  if (r) press(r.dataset.row, e.shiftKey);
+});
+document.getElementById("win").addEventListener("input", (e) => {
+  if (e.target.id === "q") { query = e.target.value; onlySel = false; draw(); }
+  if (e.target.dataset.field === "moveTo") { moveTo = e.target.value; draw(); }
+});
+addEventListener("keydown", (e) => {
+  if (e.target.closest("input,textarea,select,[contenteditable]")) return;
+  if (selecting && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") { e.preventDefault(); matching().forEach((x) => sel.add(x.name)); draw(); return; }
+  if (e.key === "Escape" && over) { over = null; draw(); return; }
+  if (e.key === "Escape" && selecting) { selecting = false; sel = new Set(); onlySel = false; draw(); return; }
+  const row = e.target.closest("[data-row]");
+  if (row && e.key === " ") { e.preventDefault(); press(row.dataset.row, false); return; }
+  if (row && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+    e.preventDefault();
+    const list = order(); const i = list.indexOf(row.dataset.row) + (e.key === "ArrowDown" ? 1 : -1);
+    if (i < 0 || i >= list.length) return;
+    if (e.shiftKey && selecting) sel.add(list[i]);
+    focusName = list[i]; wantFocus = true; if (e.shiftKey && selecting) draw(); else document.querySelector(`[data-row="${focusName}"]`).focus();
+    return;
+  }
+  if (e.key === "ArrowLeft") step(-1);
+  if (e.key === "ArrowRight") step(1);
+});
+const keys = Object.keys(VARIANTS);
+const step = (d) => { v = keys[(keys.indexOf(v) + d + keys.length) % keys.length]; seed(); draw(); };
+document.getElementById("prev").onclick = () => step(-1);
+document.getElementById("next").onclick = () => step(1);
+document.getElementById("moments").onclick = (e) => { const b = e.target.closest("[data-m]"); if (b) { m = b.dataset.m; seed(); draw(); } };
+seed(); draw();
+</script>
