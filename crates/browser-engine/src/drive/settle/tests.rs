@@ -48,7 +48,7 @@ fn a_page_whose_data_is_still_loading_has_not_settled_and_says_what_it_waits_for
     let waiting = settle.waiting_for(now + Duration::from_secs(2), QUIET);
     assert_eq!(
         waiting,
-        vec!["1 request still loading: http://fixture.test/slow-data".to_owned()]
+        vec!["1 request still loading: fixture.test".to_owned()]
     );
 }
 
@@ -145,7 +145,7 @@ fn the_same_request_id_in_two_frames_sessions_is_two_requests() {
     );
     assert_eq!(
         settle.waiting_for(start + QUIET, QUIET),
-        vec!["1 request still loading: http://fixture.test/a".to_owned()]
+        vec!["1 request still loading: fixture.test".to_owned()]
     );
 }
 
@@ -193,7 +193,7 @@ fn a_request_other_than_a_document_ended_in_another_session_still_counts() {
     );
     assert_eq!(
         settle.waiting_for(start + QUIET, QUIET),
-        vec!["1 request still loading: http://other.test/frame.html".to_owned()]
+        vec!["1 request still loading: other.test".to_owned()]
     );
 }
 
@@ -226,7 +226,7 @@ fn a_frame_that_detaches_takes_its_open_requests_and_those_of_frames_inside_it_w
     // What the page itself has open still counts.
     assert_eq!(
         settle.waiting_for(gone_at + QUIET, QUIET),
-        vec!["1 request still loading: http://fixture.test/page-data".to_owned()]
+        vec!["1 request still loading: fixture.test".to_owned()]
     );
 }
 
@@ -268,7 +268,7 @@ fn a_frame_that_detaches_leaves_another_session_s_requests_counted() {
     settle.frames_gone("PAGE", &["CHILD".to_owned()], start);
     assert_eq!(
         settle.waiting_for(start + QUIET, QUIET),
-        vec!["1 request still loading: http://other.test/data".to_owned()]
+        vec!["1 request still loading: other.test".to_owned()]
     );
 }
 
@@ -303,5 +303,78 @@ fn a_frame_that_stopped_loading_has_no_document_left_to_wait_for() {
     assert_eq!(
         settle.waiting_for(start + QUIET * 2, QUIET),
         Vec::<String>::new()
+    );
+}
+
+/// A page's own request for `url`, seen as its event says.
+fn requested(settle: &mut Settle, id: &str, url: &str, now: Instant) {
+    settle.observe(
+        "S",
+        super::Activity::RequestStarted {
+            id: id.to_owned(),
+            url: url.to_owned(),
+            document: false,
+            frame: None,
+        },
+        now,
+    );
+}
+
+#[test]
+fn a_request_still_open_is_said_by_its_host_never_its_path_or_query() {
+    let now = Instant::now();
+    let mut settle = Settle::new(now);
+    requested(
+        &mut settle,
+        "1",
+        "https://www.example.test/complete/s?q=token-here&cp=3",
+        now,
+    );
+    requested(
+        &mut settle,
+        "2",
+        "https://www.example.test/path/token-here",
+        now,
+    );
+    requested(
+        &mut settle,
+        "3",
+        "http://api.example.test:8080/x#token-here",
+        now,
+    );
+    let said = settle.waiting_for(now, QUIET).join("; ");
+    assert_eq!(
+        said,
+        "3 requests still loading: api.example.test:8080, www.example.test"
+    );
+}
+
+#[test]
+fn a_request_that_names_no_web_host_is_only_counted() {
+    let now = Instant::now();
+    let mut settle = Settle::new(now);
+    requested(&mut settle, "1", "blob:http://a.test/token-here", now);
+    requested(&mut settle, "2", "https://user:token-here@a.test/", now);
+    assert_eq!(
+        settle.waiting_for(now, QUIET),
+        vec!["2 requests still loading".to_owned()]
+    );
+}
+
+#[test]
+fn past_the_hosts_a_reason_names_it_counts_the_rest() {
+    let now = Instant::now();
+    let mut settle = Settle::new(now);
+    for (id, host) in ["a", "b", "c", "d", "e"].iter().enumerate() {
+        requested(
+            &mut settle,
+            &id.to_string(),
+            &format!("https://{host}.test/x"),
+            now,
+        );
+    }
+    assert_eq!(
+        settle.waiting_for(now, QUIET),
+        vec!["5 requests still loading: a.test, b.test, c.test and 2 more".to_owned()]
     );
 }

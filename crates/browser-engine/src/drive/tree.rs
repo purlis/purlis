@@ -28,6 +28,7 @@ use std::fmt::Write as _;
 use serde_json::Value;
 
 use super::kept::Kept;
+use super::scrub::{SHORTEST_SCRUBBED, Scrub};
 
 /// One element of a page: its frame, and the engine's id for its node in that frame's document.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -74,9 +75,6 @@ pub(crate) struct NotOnPage;
 
 /// The longest name or value a line shows, in characters.
 const LONGEST_TEXT: usize = 200;
-/// The shortest value of a blanked element that is also taken out of other lines: shorter ones
-/// would take ordinary words out of the page.
-const SHORTEST_SCRUBBED: usize = 3;
 /// The most characters shown between two blanked boxes of one group (a dash, a space).
 const LONGEST_SEPARATOR: usize = 2;
 /// How deep a tree is followed; a page nested deeper shows its content no deeper than this.
@@ -269,101 +267,6 @@ fn groups_of(lines: &[Line], held: &HashMap<NodeKey, String>) -> Vec<Group> {
     out
 }
 
-/// What is taken out of an answer: texts kept out, matched as they are, and the texts groups of
-/// boxes hold together, matched also with any spaces or dashes between their characters.
-pub(crate) struct Scrub<'k> {
-    exact: Vec<&'k str>,
-    loose: Vec<&'k str>,
-}
-
-impl<'k> Scrub<'k> {
-    pub(crate) fn of(kept: &'k Kept) -> Self {
-        Self {
-            exact: kept.texts(),
-            loose: kept.loose(),
-        }
-    }
-
-    /// `text` with every text kept out taken out.
-    pub(crate) fn text(&self, text: &str) -> String {
-        loosely(&scrubbed(text, &self.exact), &self.loose)
-    }
-
-    /// [`Scrub::text`] for an address, read as its reader would read it ([`scrubbed_address_by`]).
-    pub(crate) fn address(&self, address: &str) -> String {
-        scrubbed_address_by(address, |text| self.text(text))
-    }
-
-    /// Whether `text` holds any text kept out.
-    pub(crate) fn holds(&self, text: &str) -> bool {
-        self.text(text) != text
-    }
-}
-
-/// Whether `text` holds any of `loose`, ignoring case and any spaces or dashes between its
-/// characters.
-pub(crate) fn holds_loosely(text: &str, loose: &[&str]) -> bool {
-    loosely(text, loose) != text
-}
-
-/// Characters a page may put between the characters of a code: spaces and dashes.
-fn separates(c: char) -> bool {
-    c.is_whitespace() || matches!(c, '-' | '\u{2010}'..='\u{2015}' | '\u{2212}')
-}
-
-/// `text` with every one of `loose` (at least [`SHORTEST_SCRUBBED`] characters once its
-/// separators are left out) taken out, ignoring case and any separators between its characters.
-fn loosely(text: &str, loose: &[&str]) -> String {
-    let mut needles: Vec<Vec<char>> = loose
-        .iter()
-        .map(|needle| {
-            needle
-                .chars()
-                .filter(|c| !separates(*c))
-                .flat_map(char::to_lowercase)
-                .collect::<Vec<char>>()
-        })
-        .filter(|needle| needle.len() >= SHORTEST_SCRUBBED)
-        .collect();
-    needles.sort_by_key(|needle| std::cmp::Reverse(needle.len()));
-    let mut out: Vec<char> = text.chars().collect();
-    for needle in needles {
-        out = replace_loosely(&out, &needle);
-    }
-    out.into_iter().collect()
-}
-
-fn replace_loosely(text: &[char], needle: &[char]) -> Vec<char> {
-    let mut out = Vec::with_capacity(text.len());
-    let mut at = 0;
-    while at < text.len() {
-        let mut look = at;
-        let mut matched = 0;
-        while look < text.len() && matched < needle.len() {
-            let c = text[look];
-            if matched > 0 && separates(c) {
-                look += 1;
-                continue;
-            }
-            let mut lower = c.to_lowercase();
-            if lower.next() == Some(needle[matched]) && lower.next().is_none() {
-                matched += 1;
-                look += 1;
-            } else {
-                break;
-            }
-        }
-        if matched == needle.len() {
-            out.extend("(blanked)".chars());
-            at = look;
-        } else {
-            out.push(text[at]);
-            at += 1;
-        }
-    }
-    out
-}
-
 /// Builds the tree of `frames` (the page's own frame first), blanking every element in
 /// `excluded`.
 #[cfg(test)]
@@ -439,11 +342,11 @@ pub(crate) fn build_kept(
             *value = cut(&all.text(value));
         }
         if let Some(address) = &mut line.address {
-            *address = all.address(address);
+            *address = all.text(address);
         }
         if let Some(frame) = &mut line.frame {
             // A frame's label is its name, or its address when it has none.
-            *frame = cut(&all.address(frame));
+            *frame = cut(&all.text(frame));
         }
     }
     Snapshot {
@@ -499,98 +402,6 @@ fn what_has_the_focus(
         }
     }
     focused
-}
-
-/// `address` with every one of `blanked` taken out of it ([`scrubbed_address_by`]).
-#[cfg(test)]
-pub(crate) fn scrubbed_address(address: &str, blanked: &[&str]) -> String {
-    scrubbed_address_by(address, |text| scrubbed(text, blanked))
-}
-
-/// `address` with what `scrub` takes out of a text taken out of it as a reader of the address
-/// would read it: percent-decoded, and in its query a `+` read as a space. An address that held
-/// none is given back as it was written.
-fn scrubbed_address_by(address: &str, scrub: impl Fn(&str) -> String) -> String {
-    let decoded = decoded_address(address);
-    let out = scrub(&decoded);
-    if out == decoded { scrub(address) } else { out }
-}
-
-/// `address` percent-decoded (as UTF-8, any byte that is not read as `?`), with `+` read as a
-/// space after its `?`.
-fn decoded_address(address: &str) -> String {
-    let query_at = address.find('?').unwrap_or(address.len());
-    let bytes = address.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        let byte = bytes[at];
-        let hex = |b: u8| char::from(b).to_digit(16);
-        match byte {
-            b'%' if at + 2 < bytes.len() => match (hex(bytes[at + 1]), hex(bytes[at + 2])) {
-                (Some(high), Some(low)) => {
-                    out.push(u8::try_from(high * 16 + low).unwrap_or(b'?'));
-                    at += 3;
-                    continue;
-                }
-                _ => out.push(byte),
-            },
-            b'+' if at > query_at => out.push(b' '),
-            _ => out.push(byte),
-        }
-        at += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// `text` with every one of `blanked` (at least [`SHORTEST_SCRUBBED`] characters) taken out,
-/// ignoring case: the longest first, so a text kept out is taken out whole, never in part by a
-/// shorter one it begins or ends with.
-pub(crate) fn scrubbed(text: &str, blanked: &[&str]) -> String {
-    let mut needles: Vec<&str> = blanked
-        .iter()
-        .copied()
-        .filter(|needle| needle.chars().count() >= SHORTEST_SCRUBBED)
-        .collect();
-    needles.sort_by_key(|needle| std::cmp::Reverse(needle.chars().count()));
-    let mut out = text.to_owned();
-    for needle in needles {
-        out = replace_ignoring_case(&out, needle, "(blanked)");
-    }
-    out
-}
-
-/// Whether `text` holds any of `blanked` (at least [`SHORTEST_SCRUBBED`] characters), ignoring
-/// case.
-pub(crate) fn holds_any(text: &str, blanked: &[&str]) -> bool {
-    scrubbed(text, blanked) != text
-}
-
-fn replace_ignoring_case(text: &str, needle: &str, with: &str) -> String {
-    let wanted: Vec<char> = needle.chars().flat_map(char::to_lowercase).collect();
-    let mut out = String::new();
-    let mut rest = text;
-    'outer: while !rest.is_empty() {
-        let mut matched = Vec::new();
-        for (at, c) in rest.char_indices() {
-            matched.extend(c.to_lowercase());
-            if matched.len() >= wanted.len() {
-                if matched == wanted {
-                    out.push_str(with);
-                    rest = &rest[at + c.len_utf8()..];
-                    continue 'outer;
-                }
-                break;
-            }
-            if !wanted.starts_with(&matched) {
-                break;
-            }
-        }
-        let first = rest.chars().next().expect("not empty");
-        out.push(first);
-        rest = &rest[first.len_utf8()..];
-    }
-    out
 }
 
 /// `text` cut at [`LONGEST_TEXT`] characters.
@@ -838,7 +649,7 @@ impl Snapshot {
                 break;
             }
             // Taken out as a reader of an address on the line would read it, too.
-            let _ = writeln!(out, "gone: {}", cut(&scrub.address(words)));
+            let _ = writeln!(out, "gone: {}", cut(&scrub.text(words)));
             told += 1;
         }
         let all = new.len() + gone.len();

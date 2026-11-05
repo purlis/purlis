@@ -709,14 +709,16 @@ fn a_destroyed_targets_frame_session_leaves_nothing_of_its_own_loading() {
         json!({"requestId":"9.1","request":{"url":"http://other.test/slow-data","method":"GET"},"type":"Fetch","frameId":"PAYMENT-FRAME"}),
         Some("S-PAYMENT"),
     );
-    wait_for("the request is seen", || waits().contains("slow-data"));
+    wait_for("the request is seen", || {
+        waits().contains("request still loading")
+    });
     engine.emit(
         "Target.targetDestroyed",
         json!({"targetId":"PAYMENT-FRAME"}),
         None,
     );
     wait_for("the request is forgotten", || {
-        !waits().contains("slow-data")
+        !waits().contains("request still loading")
     });
 }
 

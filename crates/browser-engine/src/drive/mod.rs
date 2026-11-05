@@ -52,6 +52,9 @@
 //!   go through, and hands the browser back. What it filled is kept out of every answer about
 //!   every page of the browser for as long as the browser lives, and each field it filled is
 //!   blanked before the value goes in.
+//! - **One way out** (#5310). Every answer and refusal to the agent's calls leaves through
+//!   `browser/told.rs`, which takes each text kept out of every string in it, in every form it is
+//!   commonly written in (`scrub.rs`).
 //! - **Inspect is the person's** (#2028). [`Browser::inspect`] opens the engine's own DevTools
 //!   for the page the browser shows, only while the person drives: a front end the driver never
 //!   lists as a page, watched as frames and spoken to through a tapped session over the one
@@ -66,6 +69,7 @@ mod kept;
 mod keys;
 mod ledger;
 mod screencast;
+mod scrub;
 mod settle;
 mod site;
 mod tree;
@@ -676,6 +680,18 @@ pub const MOST_FILE_NAME_CHARS: usize = 120;
 /// mark or a zero-width space, line and paragraph separators), no leading dot, at most [`MOST_FILE_NAME_CHARS`] characters;
 /// `download` where nothing is left.
 pub fn plain_file_name(suggested: &str) -> String {
+    let plain = plain_file_name_uncut(suggested);
+    let cut: String = plain.chars().take(MOST_FILE_NAME_CHARS).collect();
+    let cut = cut.trim();
+    if cut.is_empty() {
+        "download".to_owned()
+    } else {
+        cut.to_owned()
+    }
+}
+
+/// [`plain_file_name`] of any length, and empty where nothing is left.
+fn plain_file_name_uncut(suggested: &str) -> String {
     let kept: String = suggested
         .chars()
         .map(|c| {
@@ -687,14 +703,7 @@ pub fn plain_file_name(suggested: &str) -> String {
         })
         .filter(|c| !purlis_unicode::invisible(*c))
         .collect();
-    let trimmed = kept.trim().trim_start_matches('.').trim();
-    let cut: String = trimmed.chars().take(MOST_FILE_NAME_CHARS).collect();
-    let cut = cut.trim();
-    if cut.is_empty() {
-        "download".to_owned()
-    } else {
-        cut.to_owned()
-    }
+    kept.trim().trim_start_matches('.').trim().to_owned()
 }
 
 /// **What a request a page is about to send is**, as the driver tells the browser's judge
