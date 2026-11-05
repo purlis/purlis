@@ -23,8 +23,9 @@ file collected a line for every one-off key.
   first, derived from the command with no `args`. It also gives this chat a Run grant, because tools
   are armed at a chat's start. Where the persona was fully allowed on this machine, the allowed
   digest moves for that line alone; where anything else is pending, the usual Notice stays up.
-- **What never changes.** A program that runs what it is told is still refused, policy still wins,
-  and the run stays in the chat's own sandbox and hosts. A new policy lock turns Run grants off;
+- **What never changes.** A program that runs what it is told is still refused with no notice (a
+  `secret_ask` naming one gets Fill only and says why), policy still wins, and the run stays in the
+  chat's own sandbox and hosts. A new policy lock turns Run grants off;
   where it or the tools lock applies, the notice offers no Allow and Fill still works. A runner chat
   gets no Run grant for now, since the window cannot show what limits that machine holds it to.
 - **One notice for one run.** A run that misses a vault's access, keys or a program's allowance raises
@@ -33,6 +34,9 @@ file collected a line for every one-off key.
   not asked about that program and vault again. `secret_ask` takes an optional `program`, and chats
   are told to prefer simply running the command. An ask that names no program is Fill only, and a
   later run asks for the Allow: the use was not known yet.
+  **A Run grant carries the vault for its own scope.** Allow once and Allow for this chat write nothing
+  lasting and leave the persona's vault access as it was; only Always allow also gives the persona the
+  vault. Where a notice has no program Allow, the vault's line has its own, as today.
 - **What the person reads is told apart from what the chat wrote.** The program's path and the
   hosts come from the app. The command is the chat's, shown as plain monospace, wrapped, with
   control characters made visible.
