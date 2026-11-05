@@ -132,9 +132,8 @@ impl State {
         if to.as_ref() == Some(origin) {
             return None;
         }
-        // TEMPORARY, seen red: no guard on what a page sends another site.
         if !held.document {
-            return None;
+            return Some(Move::Refused);
         }
         let target = held.frame.and_then(|frame| self.page_holding(frame));
         let main = match (&target, held.frame) {
@@ -186,8 +185,6 @@ impl State {
                 .form
                 .as_ref()
                 .is_some_and(|form| form.began(&hop.head_method, &hop.head))
-                // TEMPORARY, seen red: no guard on which form began the chain.
-                || !one.filled.key.is_empty()
         });
         Some(if main && from_there && its_form {
             Move::Redirect(target.clone())
@@ -299,12 +296,7 @@ impl Inner {
             return;
         }
         match first.hold.may_leave_for(whole, first.been_on_at(whole)) {
-            // TEMPORARY, seen red: the hold ends while the page still lives.
-            Leaving::Go => {
-                first.hold.released();
-                std::thread::sleep(Duration::from_millis(2500));
-                self.replace(target, "about:blank", Some(whole));
-            }
+            Leaving::Go => self.replace(target, "about:blank", Some(whole)),
             Leaving::Ask { site } => {
                 lock(&self.leaving_asked).insert(target.to_owned(), whole.to_owned());
                 lock(&self.state).ask(&site);
