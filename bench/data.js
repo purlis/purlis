@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793912125998,
+  "lastUpdate": 1793919411431,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40530,6 +40530,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3902315,
             "unit": "ms",
             "extra": "median of 5 runs: 101.754, 102.027, 102.390, 102.942, 104.190 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b04e72a161aef1af1c6037d147b709833f12f055",
+          "message": "Migrate: the scanners and the app's repo paths use the resolver (#5371) (#5428)\n\n* Scanners and the app's repo paths read the resolver: a clone in repos/ is seen everywhere (#5371)\n\nThe repo list, the code link's clones, the workspace layer's guest trees,\ndoctor's clone reading, the sandbox's planted clones, the panels, the\nrunner code, away runners and the worktree discard check now go through\npurlis_core::repofolder, so a clone in workspaces/<ws>/repos/<name> is\nfound wherever one at the root is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PJ0DE2ZRQFDZEAKY4QE4N2\nPurlis-Persona: steward\n\n* Tests and changelog for the scanners reading repos/ (#5371)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PJ0DE2ZRQFDZEAKY4QE4N2\nPurlis-Persona: steward\n\n* Clippy: compare against a slice of the clone's path (#5371)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PJ0DE2ZRQFDZEAKY4QE4N2\nPurlis-Persona: steward\n\n* Review fixes: keep the root walks, add repos/, never wire a .git link (#5371)\n\n- sandbox: the root walk of every non-link folder stays (refused names, #353, #4830);\n  repos/ rows are added beside it.\n- wslayer::checkouts(plane, ws): the root walk as before plus repos/ rows; a .git that\n  is a link is never a guest tree, so no exclude block lands outside the plane.\n- codelink::clones_in: a linked worktree only at the root; dedup dropped (no name can\n  repeat once it is).\n- repos::clones: a .git link is said where it is (repos/<name>/.git).\n- runnercode::folder_of refuses what the resolver refuses instead of joining by hand.\n- Changelog: Security line for .git links.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PQN8G9NGPKPWXJYZ9HN777\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T21:58:33Z",
+          "tree_id": "c2224f0f808e6d243a26f16a0bcc928aa9fd7303",
+          "url": "https://github.com/purlis/purlis/commit/b04e72a161aef1af1c6037d147b709833f12f055"
+        },
+        "date": 1793919406543,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6675685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.659, 0.662, 0.668, 0.672, 0.691 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4919725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.354, 16.388, 16.492, 16.496, 16.654 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.417335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.498, 101.770, 102.417, 102.555, 103.762 ms"
           }
         ]
       }
