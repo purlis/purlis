@@ -182,13 +182,15 @@ wrong. A local run checks rendering, the keyboard and axe, and takes no picture.
 run shares, so a picture could differ by a pixel with the stories that ran before it; greyscale
 text draws the same each time.
 
-**A story's system monospace is Purlis's mono** (#5425). Purlis Classic's mono and terminal
-stacks name the system's (`ui-monospace, Menlo, Consolas, monospace`), which the pinned image
-does not have, and the monospace fontconfig fell back on changed with what the worker had drawn
-before, so a mono picture could change size by shard. A story's page makes `Menlo` and
-`Consolas` from the JetBrains Mono faces Purlis ships (`app/.storybook/systemMono.ts`), and
-`systemMono.test.ts` fails when a built-in stack would reach the machine's `monospace` first. The
-window still draws the machine's.
+**A story's monospace is Purlis's mono** (#5425). Purlis Classic's mono and terminal stacks
+name the system's (`ui-monospace, Menlo, Consolas, monospace`), which the pinned image does not
+have, and the monospace the browser fell back on changed with what it had drawn before, so a
+mono picture could change size by shard. A story draws each monospace slot that names no face
+first in `purlis-stories-mono`, a face made from the JetBrains Mono files Purlis ships
+(`app/.storybook/systemMono.ts`), so nothing after it in the stack is reached;
+`systemMono.test.ts` holds every built-in slot to it. Making `Menlo` from those files instead
+was tried first and was not enough: some cells still drew the machine's. The window still draws
+the machine's monospace.
 
 **What a failure says.** In CI, each story that fails is one annotation on the `stories` check,
 titled `<story> in <browser>, <cell>`: its file, the gate it failed (`renders`, `keyboard`,

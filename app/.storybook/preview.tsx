@@ -10,8 +10,9 @@
  *   below does it for every story; no story picks a theme of its own.
  * - **In the theme's own fonts**, made from the bytes purlis ships them in, as the window makes
  *   them from the bytes purlis serves it (`handed.plugin.ts`), every face made before the story
- *   renders. A stack that names the system's monospace draws Purlis's mono faces under those
- *   names, never the machine's, which changed with run order (`systemMono.ts`, #5425).
+ *   renders. A monospace slot that names no face, as Purlis Classic's, is drawn first in a face
+ *   made from Purlis's mono, never the machine's, which changed with run order (`systemMono.ts`,
+ *   #5425).
  * - **Inside one frame**, `[data-story-frame]`, on the theme's ground: what a picture is taken of
  *   (`screenshots.setup.ts`), so a picture is the story's size, not the page's.
  * - **Held to WCAG 2.2 AA by axe** in every cell: every rule tagged A or AA in WCAG 2.0, 2.1 and
@@ -32,7 +33,7 @@ import {
   type Theme,
 } from "../src/theme/theme";
 import { DENSITIES, cellInTest, type CellDensity } from "./matrix";
-import { faces as monoFaces, makeSystemMono } from "./systemMono";
+import { faces as monoFaces, inStoriesMono, makeStoriesMono } from "./systemMono";
 
 /** The axe tags of WCAG 2.2 level AA: every A and AA rule of 2.0, 2.1 and 2.2. */
 const WCAG_22_AA = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
@@ -47,13 +48,23 @@ async function bytesOf(asset: string): Promise<ArrayBuffer | undefined> {
 }
 fetchFacesWith(bytesOf);
 
-/** The system monospace a stack falls back on, made once from faces the stories ship (#5425). */
-let systemMono: Promise<void> | undefined;
+/** The face a monospace stack with none of its own is drawn in first, made once (#5425). */
+let storiesMono: Promise<void> | undefined;
+
+/** Each appearance as a story draws it, by theme and appearance id: one object each, so a
+ *  cell drawn again is the theme already drawn. */
+const asDrawn = new Map<string, Theme>();
 
 /** The theme `id`'s appearance `appearance`, or its first one when it has none of that id. */
 function appearanceOf(id: string, appearance: string): Theme {
+  const key = `${id} ${appearance}`;
+  const drawn = asDrawn.get(key);
+  if (drawn !== undefined) return drawn;
   const theme = themes[id] ?? themes[defaultCell.theme];
-  return (theme?.[appearance] ?? Object.values(theme ?? {})[0] ?? DEFAULT_THEME) as Theme;
+  const handed = (theme?.[appearance] ?? Object.values(theme ?? {})[0] ?? DEFAULT_THEME) as Theme;
+  const one = inStoriesMono(handed);
+  asDrawn.set(key, one);
+  return one;
 }
 
 /** Draws the story's cell: the test's, or the toolbar's in Storybook's own UI. */
@@ -71,9 +82,9 @@ function drawCell(globals: Record<string, unknown>): void {
 /** Before a story renders, its cell is drawn and every face of its theme made, so the story,
  *  its keyboard path and axe all meet the theme's own fonts, in every cell. */
 const inItsFonts: Loader = async ({ globals }) => {
-  systemMono ??= makeSystemMono(monoFaces(themes), bytesOf);
+  storiesMono ??= makeStoriesMono(monoFaces(themes), bytesOf);
   drawCell(globals);
-  await Promise.all([systemMono, facesLoaded()]);
+  await Promise.all([storiesMono, facesLoaded()]);
   return {};
 };
 
