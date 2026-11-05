@@ -1423,8 +1423,8 @@ mod pr_saves {
     /// files already settled, and Continue finishes it as a merge.
     #[test]
     fn a_conflict_in_a_persons_file_stops_the_save_and_resolve_settles_it_once() {
-        use purlis_core::planegit::resolve;
         purlis_core::unsteered!();
+        use purlis_core::planegit::resolve;
         if !in_child() {
             return;
         }

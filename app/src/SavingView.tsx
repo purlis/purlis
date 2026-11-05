@@ -293,35 +293,40 @@ export function SavingView({
                (qw382): Resolve, Continue and Abort are the window's, and a chat only edits. */
             <SaveConflict plane={plane} saving={saving} onSaved={onSaved} />
           )}
-          {saving.stage === "blocked" && saving.byHand == null &&
+          {saving.stage === "blocked" &&
+            saving.byHand == null &&
             saving.stoppedBy !== "rebase" &&
             saving.stoppedBy !== "merge" && (
-            <div className="saving-question" role="group" aria-label="Ways out">
-              {saving.conflicts.length > 0 && (
-                <ul className="saving-files" aria-label="Where it conflicts">
-                  {saving.conflicts.map((path) => (
-                    <li key={path}>{path}</li>
-                  ))}
-                </ul>
-              )}
-              <SettingActions>
-                {/* A rebase, `git am`, cherry-pick, revert or bisect git stopped part-way is
-                    finished with git, which a chat may not run in the project's root (qw382). */}
-                {chatMaySettle(saving) && (
-                  <Button size="sm" onPress={() => askWayOut(plane, "chat")} className="panel-view">
-                    Resolve in a chat
-                  </Button>
+              <div className="saving-question" role="group" aria-label="Ways out">
+                {saving.conflicts.length > 0 && (
+                  <ul className="saving-files" aria-label="Where it conflicts">
+                    {saving.conflicts.map((path) => (
+                      <li key={path}>{path}</li>
+                    ))}
+                  </ul>
                 )}
-                <Button
-                  size="sm"
-                  onPress={() => askWayOut(plane, "terminal")}
-                  className="panel-view"
-                >
-                  Open terminal here
-                </Button>
-              </SettingActions>
-            </div>
-          )}
+                <SettingActions>
+                  {/* A rebase, `git am`, cherry-pick, revert or bisect git stopped part-way is
+                    finished with git, which a chat may not run in the project's root (qw382). */}
+                  {chatMaySettle(saving) && (
+                    <Button
+                      size="sm"
+                      onPress={() => askWayOut(plane, "chat")}
+                      className="panel-view"
+                    >
+                      Resolve in a chat
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    onPress={() => askWayOut(plane, "terminal")}
+                    className="panel-view"
+                  >
+                    Open terminal here
+                  </Button>
+                </SettingActions>
+              </div>
+            )}
           {saving.notice !== null && (
             /* A request mode on an origin no forge charter knows (NO-7, #1232): the mode it
                complains about is changed in Settings › Saving, so that is where it links. */
